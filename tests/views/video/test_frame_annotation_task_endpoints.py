@@ -135,6 +135,10 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
         self.assertEqual(response.data["video_id"], self.video.pk)
         self.assertEqual(response.data["annotator"], "alice")
         self.assertIn("next_task", response.data)
+        self.assertNotEqual(
+            response.data["next_task"]["frame_id"],
+            self.frame_1.pk,
+        )
 
     def test_skip_rejects_unknown_frame(self):
         request = self.factory.post(

@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Any, List, Tuple
 from django.core.files import File
 from django.core.files.storage import FileSystemStorage
 
+from endoreg_db.utils.file_operations import atomic_write_file
+
 from ..utils import DJANGO_NAME_SALT, data_paths
 
 if TYPE_CHECKING:
@@ -117,10 +119,16 @@ def anonymize_frame(
         # If all_black, fill with censor_color (defaults to black)
         new_frame[:] = censor_color
 
-    # Check if writing the anonymized frame was successful
-    success = cv2.imwrite(target_frame_path.as_posix(), new_frame)
+    suffix = target_frame_path.suffix or ".jpg"
+    success, encoded = cv2.imencode(suffix, new_frame)
     if not success:
-        raise IOError(f"Failed to write anonymized frame to {target_frame_path}")
+        raise IOError(f"Failed to encode anonymized frame for {target_frame_path}")
+
+    atomic_write_file(
+        destination=target_frame_path,
+        content=[encoded.tobytes()],
+        required_bytes=int(encoded.nbytes),
+    )
 
 
 __all__ = [

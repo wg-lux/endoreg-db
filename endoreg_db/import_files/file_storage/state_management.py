@@ -5,18 +5,21 @@ from endoreg_db.utils.video.ffmpeg_wrapper import get_stream_info
 from endoreg_db.utils.paths import ANONYM_REPORT_DIR, ANONYM_VIDEO_DIR
 
 import logging
-import shutil
 from pathlib import Path
 from typing import Optional, Union
+import shutil
 
 from django.db import transaction
-
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.models.media import RawPdfFile, VideoFile
 from endoreg_db.models.state import RawPdfState, VideoState
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.utils import paths as path_utils
-from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.file_operations import (
+    atomic_move_file,
+    safe_unlink_file,
+    sha256_file,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -142,10 +145,9 @@ def finalize_report_success(
                 )
                 final_path = None
             else:
-                ANONYM_REPORT_DIR.mkdir(parents=True, exist_ok=True)
                 if expected_final_path.exists():
-                    expected_final_path.unlink()
-                shutil.move(str(src), str(expected_final_path))
+                    safe_unlink_file(expected_final_path, missing_ok=True)
+                atomic_move_file(source=src, destination=expected_final_path)
                 final_path = expected_final_path
                 logger.info("Moved anonymized report to %s", final_path)
 
@@ -284,17 +286,16 @@ def finalize_video_success(
                 )
                 final_path = None
             else:
-                ANONYM_VIDEO_DIR.mkdir(parents=True, exist_ok=True)
                 if expected_final_path.exists():
                     try:
-                        expected_final_path.unlink()
+                        safe_unlink_file(expected_final_path, missing_ok=True)
                     except Exception as e:
                         logger.warning(
                             "Could not remove existing anonymized video %s: %s",
                             expected_final_path,
                             e,
                         )
-                shutil.move(str(src), str(expected_final_path))
+                atomic_move_file(source=src, destination=expected_final_path)
                 final_path = expected_final_path
                 logger.info("Moved anonymized video to %s", final_path)
 

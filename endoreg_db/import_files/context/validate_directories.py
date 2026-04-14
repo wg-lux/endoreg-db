@@ -1,13 +1,18 @@
 import logging
 from pathlib import Path
 from typing import Iterable
+from endoreg_db.utils.file_operations import ensure_directory
 from endoreg_db.utils.paths import (
     ANONYM_REPORT_DIR,
     ANONYM_VIDEO_DIR,
+    FRAME_IMPORT_DIR,
+    IMPORT_ANONYMIZED_REPORT_DIR,
+    IMPORT_ANONYMIZED_VIDEO_DIR,
     IMPORT_REPORT_DIR,
     IMPORT_VIDEO_DIR,
     SENSITIVE_REPORT_DIR,
     SENSITIVE_VIDEO_DIR,
+    WEIGHTS_IMPORT_DIR,
 )
 
 dirs = [
@@ -15,6 +20,10 @@ dirs = [
     ANONYM_VIDEO_DIR,
     IMPORT_REPORT_DIR,
     IMPORT_VIDEO_DIR,
+    IMPORT_ANONYMIZED_REPORT_DIR,
+    IMPORT_ANONYMIZED_VIDEO_DIR,
+    FRAME_IMPORT_DIR,
+    WEIGHTS_IMPORT_DIR,
     SENSITIVE_REPORT_DIR,
     SENSITIVE_VIDEO_DIR,
 ]
@@ -41,7 +50,7 @@ def validate_directories(dirs: Iterable[Path] = dirs) -> bool:
         try:
             if not d.exists():
                 logger.info(f"Directory missing, creating: {d}")
-                d.mkdir(parents=True, exist_ok=True)
+                ensure_directory(d)
 
             if not d.is_dir():
                 logger.error(f"Path exists but is not a directory: {d}")

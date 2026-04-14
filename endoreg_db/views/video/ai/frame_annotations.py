@@ -623,6 +623,7 @@ class FrameAnnotationSkipView(APIView):
             information_source_name=information_source_name,
             annotator=annotator,
             exclude_annotated=exclude_annotated,
+            exclude_frame_ids={frame.id},
             target_label_id=None,
         )
 

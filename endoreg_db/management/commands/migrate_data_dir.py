@@ -15,6 +15,9 @@ from endoreg_db.models.media.video.storage_mode import VideoStorageMode
 from endoreg_db.utils.file_operations import atomic_copy_file
 from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.utils.paths import (
+    FRAME_IMPORT_DIR,
+    IMPORT_ANONYMIZED_REPORT_DIR,
+    IMPORT_ANONYMIZED_VIDEO_DIR,
     MANAGED_ANONYMIZED_REPORTS_DIR,
     MANAGED_ANONYMIZED_VIDEOS_DIR,
     SAP_IMPORT_DROP_DIR,
@@ -25,6 +28,7 @@ from endoreg_db.utils.paths import (
     WATCHER_PREANONYMIZED_DROP_DIR,
     WATCHER_REPORT_DROP_DIR,
     WATCHER_VIDEO_DROP_DIR,
+    WEIGHTS_IMPORT_DIR,
     to_storage_relative,
     build_manifest_path,
     build_upload_job_relative_path,
@@ -77,6 +81,24 @@ class MigrationRule:
     retention_policy: str
     source_file_persisted: bool
     cleanup_status: str
+    allowed_extensions: tuple[str, ...] | None = None
+
+
+VIDEO_FILE_EXTENSIONS = (".mp4", ".webm", ".avi", ".mkv", ".mov", ".m4v")
+REPORT_FILE_EXTENSIONS = (".pdf", ".txt")
+FRAME_FILE_EXTENSIONS = (
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".bmp",
+    ".gif",
+    ".tif",
+    ".tiff",
+    ".webp",
+    ".json",
+    ".csv",
+    ".txt",
+)
 
 
 MIGRATION_RULES: tuple[MigrationRule, ...] = (
@@ -89,6 +111,7 @@ MIGRATION_RULES: tuple[MigrationRule, ...] = (
         retention_policy=UploadJob.RetentionPolicy.MIGRATION_MANAGED,
         source_file_persisted=True,
         cleanup_status=UploadJob.CleanupStatus.PENDING,
+        allowed_extensions=VIDEO_FILE_EXTENSIONS,
     ),
     MigrationRule(
         legacy_relative=Path("import/report_import"),
@@ -99,6 +122,7 @@ MIGRATION_RULES: tuple[MigrationRule, ...] = (
         retention_policy=UploadJob.RetentionPolicy.MIGRATION_MANAGED,
         source_file_persisted=True,
         cleanup_status=UploadJob.CleanupStatus.PENDING,
+        allowed_extensions=REPORT_FILE_EXTENSIONS,
     ),
     MigrationRule(
         legacy_relative=Path("import/preanonymized_import"),
@@ -109,6 +133,51 @@ MIGRATION_RULES: tuple[MigrationRule, ...] = (
         retention_policy=UploadJob.RetentionPolicy.MIGRATION_MANAGED,
         source_file_persisted=True,
         cleanup_status=UploadJob.CleanupStatus.PENDING,
+        allowed_extensions=REPORT_FILE_EXTENSIONS,
+    ),
+    MigrationRule(
+        legacy_relative=Path("import/anonymized_video_import"),
+        target_root=IMPORT_ANONYMIZED_VIDEO_DIR,
+        create_upload_job=False,
+        storage_class=UploadJob.StorageClass.INGEST,
+        storage_tier=UploadJob.StorageTier.UPLOAD_WATCHER,
+        retention_policy=UploadJob.RetentionPolicy.MIGRATION_MANAGED,
+        source_file_persisted=True,
+        cleanup_status=UploadJob.CleanupStatus.SKIPPED,
+        allowed_extensions=VIDEO_FILE_EXTENSIONS,
+    ),
+    MigrationRule(
+        legacy_relative=Path("import/anonymized_report_import"),
+        target_root=IMPORT_ANONYMIZED_REPORT_DIR,
+        create_upload_job=False,
+        storage_class=UploadJob.StorageClass.INGEST,
+        storage_tier=UploadJob.StorageTier.UPLOAD_PREANONYMIZED,
+        retention_policy=UploadJob.RetentionPolicy.MIGRATION_MANAGED,
+        source_file_persisted=True,
+        cleanup_status=UploadJob.CleanupStatus.SKIPPED,
+        allowed_extensions=REPORT_FILE_EXTENSIONS,
+    ),
+    MigrationRule(
+        legacy_relative=Path("import/frames"),
+        target_root=FRAME_IMPORT_DIR,
+        create_upload_job=False,
+        storage_class=UploadJob.StorageClass.INGEST,
+        storage_tier=UploadJob.StorageTier.UPLOAD_PREANONYMIZED,
+        retention_policy=UploadJob.RetentionPolicy.MIGRATION_MANAGED,
+        source_file_persisted=True,
+        cleanup_status=UploadJob.CleanupStatus.SKIPPED,
+        allowed_extensions=FRAME_FILE_EXTENSIONS,
+    ),
+    MigrationRule(
+        legacy_relative=Path("import/model_weights"),
+        target_root=WEIGHTS_IMPORT_DIR,
+        create_upload_job=False,
+        storage_class=UploadJob.StorageClass.INGEST,
+        storage_tier=UploadJob.StorageTier.UPLOAD_PREANONYMIZED,
+        retention_policy=UploadJob.RetentionPolicy.MIGRATION_MANAGED,
+        source_file_persisted=True,
+        cleanup_status=UploadJob.CleanupStatus.SKIPPED,
+        allowed_extensions=None,
     ),
     MigrationRule(
         legacy_relative=Path("import/sap_import"),
@@ -119,6 +188,7 @@ MIGRATION_RULES: tuple[MigrationRule, ...] = (
         retention_policy=UploadJob.RetentionPolicy.MIGRATION_MANAGED,
         source_file_persisted=True,
         cleanup_status=UploadJob.CleanupStatus.PENDING,
+        allowed_extensions=None,
     ),
     MigrationRule(
         legacy_relative=Path("import/sap_import_processed"),
@@ -129,6 +199,7 @@ MIGRATION_RULES: tuple[MigrationRule, ...] = (
         retention_policy=UploadJob.RetentionPolicy.MIGRATION_MANAGED,
         source_file_persisted=True,
         cleanup_status=UploadJob.CleanupStatus.SKIPPED,
+        allowed_extensions=None,
     ),
     MigrationRule(
         legacy_relative=Path("import/sap_import_failed"),
@@ -139,6 +210,7 @@ MIGRATION_RULES: tuple[MigrationRule, ...] = (
         retention_policy=UploadJob.RetentionPolicy.MIGRATION_MANAGED,
         source_file_persisted=True,
         cleanup_status=UploadJob.CleanupStatus.SKIPPED,
+        allowed_extensions=None,
     ),
     MigrationRule(
         legacy_relative=Path("sensitive_videos"),
@@ -149,6 +221,7 @@ MIGRATION_RULES: tuple[MigrationRule, ...] = (
         retention_policy=UploadJob.RetentionPolicy.MIGRATION_MANAGED,
         source_file_persisted=True,
         cleanup_status=UploadJob.CleanupStatus.SKIPPED,
+        allowed_extensions=VIDEO_FILE_EXTENSIONS,
     ),
     MigrationRule(
         legacy_relative=Path("sensitive_reports"),
@@ -159,6 +232,7 @@ MIGRATION_RULES: tuple[MigrationRule, ...] = (
         retention_policy=UploadJob.RetentionPolicy.MIGRATION_MANAGED,
         source_file_persisted=True,
         cleanup_status=UploadJob.CleanupStatus.SKIPPED,
+        allowed_extensions=REPORT_FILE_EXTENSIONS,
     ),
     MigrationRule(
         legacy_relative=Path("storage/sensitive_videos"),
@@ -169,6 +243,7 @@ MIGRATION_RULES: tuple[MigrationRule, ...] = (
         retention_policy=UploadJob.RetentionPolicy.MIGRATION_MANAGED,
         source_file_persisted=True,
         cleanup_status=UploadJob.CleanupStatus.SKIPPED,
+        allowed_extensions=VIDEO_FILE_EXTENSIONS,
     ),
     MigrationRule(
         legacy_relative=Path("storage/sensitive_reports"),
@@ -179,6 +254,7 @@ MIGRATION_RULES: tuple[MigrationRule, ...] = (
         retention_policy=UploadJob.RetentionPolicy.MIGRATION_MANAGED,
         source_file_persisted=True,
         cleanup_status=UploadJob.CleanupStatus.SKIPPED,
+        allowed_extensions=REPORT_FILE_EXTENSIONS,
     ),
     MigrationRule(
         legacy_relative=Path("processed_videos_final"),
@@ -189,6 +265,7 @@ MIGRATION_RULES: tuple[MigrationRule, ...] = (
         retention_policy=UploadJob.RetentionPolicy.MIGRATION_MANAGED,
         source_file_persisted=True,
         cleanup_status=UploadJob.CleanupStatus.SKIPPED,
+        allowed_extensions=VIDEO_FILE_EXTENSIONS,
     ),
     MigrationRule(
         legacy_relative=Path("processed_reports_final"),
@@ -199,6 +276,7 @@ MIGRATION_RULES: tuple[MigrationRule, ...] = (
         retention_policy=UploadJob.RetentionPolicy.MIGRATION_MANAGED,
         source_file_persisted=True,
         cleanup_status=UploadJob.CleanupStatus.SKIPPED,
+        allowed_extensions=REPORT_FILE_EXTENSIONS,
     ),
     MigrationRule(
         legacy_relative=Path("storage/processed_videos_final"),
@@ -209,6 +287,7 @@ MIGRATION_RULES: tuple[MigrationRule, ...] = (
         retention_policy=UploadJob.RetentionPolicy.MIGRATION_MANAGED,
         source_file_persisted=True,
         cleanup_status=UploadJob.CleanupStatus.SKIPPED,
+        allowed_extensions=VIDEO_FILE_EXTENSIONS,
     ),
     MigrationRule(
         legacy_relative=Path("storage/processed_reports_final"),
@@ -219,6 +298,7 @@ MIGRATION_RULES: tuple[MigrationRule, ...] = (
         retention_policy=UploadJob.RetentionPolicy.MIGRATION_MANAGED,
         source_file_persisted=True,
         cleanup_status=UploadJob.CleanupStatus.SKIPPED,
+        allowed_extensions=REPORT_FILE_EXTENSIONS,
     ),
     MigrationRule(
         legacy_relative=Path("streamable_videos/raw"),
@@ -229,6 +309,7 @@ MIGRATION_RULES: tuple[MigrationRule, ...] = (
         retention_policy=UploadJob.RetentionPolicy.MIGRATION_MANAGED,
         source_file_persisted=True,
         cleanup_status=UploadJob.CleanupStatus.SKIPPED,
+        allowed_extensions=VIDEO_FILE_EXTENSIONS,
     ),
     MigrationRule(
         legacy_relative=Path("streamable_videos/processed"),
@@ -239,6 +320,7 @@ MIGRATION_RULES: tuple[MigrationRule, ...] = (
         retention_policy=UploadJob.RetentionPolicy.MIGRATION_MANAGED,
         source_file_persisted=True,
         cleanup_status=UploadJob.CleanupStatus.SKIPPED,
+        allowed_extensions=VIDEO_FILE_EXTENSIONS,
     ),
     MigrationRule(
         legacy_relative=Path("storage/streamable_videos/raw"),
@@ -249,6 +331,7 @@ MIGRATION_RULES: tuple[MigrationRule, ...] = (
         retention_policy=UploadJob.RetentionPolicy.MIGRATION_MANAGED,
         source_file_persisted=True,
         cleanup_status=UploadJob.CleanupStatus.SKIPPED,
+        allowed_extensions=VIDEO_FILE_EXTENSIONS,
     ),
     MigrationRule(
         legacy_relative=Path("storage/streamable_videos/processed"),
@@ -259,6 +342,7 @@ MIGRATION_RULES: tuple[MigrationRule, ...] = (
         retention_policy=UploadJob.RetentionPolicy.MIGRATION_MANAGED,
         source_file_persisted=True,
         cleanup_status=UploadJob.CleanupStatus.SKIPPED,
+        allowed_extensions=VIDEO_FILE_EXTENSIONS,
     ),
 )
 
@@ -325,8 +409,11 @@ class Command(BaseCommand):
                     continue
 
                 # FIX 2: Ignore non-media junk (Optional, but highly recommended)
-                allowed_extensions = {".mp4", ".webm", ".avi", ".mkv", ".pdf", ".txt"}
-                if source_path.suffix.lower() not in allowed_extensions:
+                allowed_extensions = rule.allowed_extensions
+                if (
+                    allowed_extensions is not None
+                    and source_path.suffix.lower() not in allowed_extensions
+                ):
                     logger.warning(f"Skipping unsupported file type: {source_path}")
                     continue
 
@@ -396,43 +483,112 @@ class Command(BaseCommand):
             self.style.NOTICE(f"Syncing DB for existing file: {source_path.name}")
         )
 
-        # Calculate hash to find the record in the DB
+        # Calculate content hash and derive the canonical hash stem from the filename.
+        # Processed media is typically named after the raw object hash, not the
+        # processed bytes hash, so we use both signals and fail closed on ambiguity.
         content_hash = sha256_file(destination_path)
+        stem_hash = self._canonical_hash_stem(destination_path)
         rel_path = to_storage_relative(destination_path)
         updated_count = 0
         # Re-point existing Video records
-        if rule.target_root == MANAGED_ANONYMIZED_VIDEOS_DIR:
-            updated_count = VideoFile.objects.filter(
-                Q(processed_video_hash=content_hash) | Q(video_hash=content_hash)
-            ).update(
-                processed_file=rel_path,
+        if rule.target_root in {
+            MANAGED_ANONYMIZED_VIDEOS_DIR,
+            IMPORT_ANONYMIZED_VIDEO_DIR,
+        }:
+            video = self._resolve_unique_video(
+                content_hash=content_hash,
+                stem_hash=stem_hash,
+                include_processed_hash=True,
+                source_path=source_path,
+                destination_path=destination_path,
             )
+            if video is not None:
+                video_update_fields: dict[str, object] = {"processed_file": rel_path}
+                processed_video_hash = getattr(video, "processed_video_hash", None)
+                if not processed_video_hash:
+                    video_update_fields["processed_video_hash"] = content_hash
+                elif processed_video_hash != content_hash:
+                    logger.warning(
+                        "Processed video hash mismatch during migration sync for "
+                        "video=%s source=%s destination=%s existing=%s incoming=%s. "
+                        "Leaving processed_video_hash unchanged.",
+                        video.pk,
+                        source_path,
+                        destination_path,
+                        processed_video_hash,
+                        content_hash,
+                    )
+                updated_count = VideoFile.objects.filter(pk=video.pk).update(
+                    **video_update_fields
+                )
         elif rule.target_root == SENSITIVE_VIDEO_DIR:
-            updated_count = VideoFile.objects.filter(video_hash=content_hash).update(
-                raw_file=rel_path
+            video = self._resolve_unique_video(
+                content_hash=content_hash,
+                stem_hash=stem_hash,
+                include_processed_hash=False,
+                source_path=source_path,
+                destination_path=destination_path,
             )
+            if video is not None:
+                updated_count = VideoFile.objects.filter(pk=video.pk).update(
+                    raw_file=rel_path
+                )
         elif rule.target_root == _streamable_raw_video_root():
-            updated_count = VideoFile.objects.filter(video_hash=content_hash).update(
-                streamable_relative_path=rel_path,
-                storage_mode=VideoStorageMode.STREAMABLE,
+            video = self._resolve_unique_video(
+                content_hash=content_hash,
+                stem_hash=stem_hash,
+                include_processed_hash=False,
+                source_path=source_path,
+                destination_path=destination_path,
             )
+            if video is not None:
+                updated_count = VideoFile.objects.filter(pk=video.pk).update(
+                    streamable_relative_path=rel_path,
+                    storage_mode=VideoStorageMode.STREAMABLE,
+                )
         elif rule.target_root == _streamable_processed_video_root():
-            updated_count = VideoFile.objects.filter(
-                Q(processed_video_hash=content_hash) | Q(video_hash=content_hash)
-            ).update(
-                processed_streamable_relative_path=rel_path,
-                storage_mode=VideoStorageMode.STREAMABLE,
+            video = self._resolve_unique_video(
+                content_hash=content_hash,
+                stem_hash=stem_hash,
+                include_processed_hash=True,
+                source_path=source_path,
+                destination_path=destination_path,
             )
+            if video is not None:
+                updated_count = VideoFile.objects.filter(pk=video.pk).update(
+                    processed_streamable_relative_path=rel_path,
+                    storage_mode=VideoStorageMode.STREAMABLE,
+                )
 
         # Re-point existing Report records
-        elif rule.target_root == MANAGED_ANONYMIZED_REPORTS_DIR:
-            updated_count = RawPdfFile.objects.filter(pdf_hash=content_hash).update(
-                processed_file=rel_path
+        elif rule.target_root in {
+            MANAGED_ANONYMIZED_REPORTS_DIR,
+            IMPORT_ANONYMIZED_REPORT_DIR,
+        }:
+            report = self._resolve_unique_report(
+                content_hash=content_hash,
+                stem_hash=stem_hash,
+                source_path=source_path,
+                destination_path=destination_path,
             )
+            if report is not None:
+                report_update_fields: dict[str, object] = {"processed_file": rel_path}
+                if not getattr(report.file, "name", None):
+                    report_update_fields["file"] = rel_path
+                updated_count = RawPdfFile.objects.filter(pk=report.pk).update(
+                    **report_update_fields
+                )
         elif rule.target_root == SENSITIVE_REPORT_DIR:
-            updated_count = RawPdfFile.objects.filter(pdf_hash=content_hash).update(
-                file=rel_path
+            report = self._resolve_unique_report(
+                content_hash=content_hash,
+                stem_hash=stem_hash,
+                source_path=source_path,
+                destination_path=destination_path,
             )
+            if report is not None:
+                updated_count = RawPdfFile.objects.filter(pk=report.pk).update(
+                    file=rel_path
+                )
 
         if updated_count > 0:
             self.stdout.write(
@@ -442,6 +598,76 @@ class Command(BaseCommand):
             )
             return True
         return False
+
+    @staticmethod
+    def _canonical_hash_stem(path: Path) -> str | None:
+        stem = path.stem.strip()
+        return stem or None
+
+    def _resolve_unique_video(
+        self,
+        *,
+        content_hash: str,
+        stem_hash: str | None,
+        include_processed_hash: bool,
+        source_path: Path,
+        destination_path: Path,
+    ) -> VideoFile | None:
+        query = Q(video_hash=content_hash)
+        if include_processed_hash:
+            query |= Q(processed_video_hash=content_hash)
+        if stem_hash:
+            query |= Q(video_hash=stem_hash)
+            if include_processed_hash:
+                query |= Q(processed_video_hash=stem_hash)
+
+        candidate_ids = list(
+            VideoFile.objects.filter(query).values_list("pk", flat=True).distinct()
+        )
+        if not candidate_ids:
+            return None
+        if len(candidate_ids) > 1:
+            logger.error(
+                "Ambiguous video migration sync for source=%s destination=%s "
+                "content_hash=%s stem_hash=%s candidate_ids=%s",
+                source_path,
+                destination_path,
+                content_hash,
+                stem_hash,
+                candidate_ids,
+            )
+            return None
+        return VideoFile.objects.get(pk=candidate_ids[0])
+
+    def _resolve_unique_report(
+        self,
+        *,
+        content_hash: str,
+        stem_hash: str | None,
+        source_path: Path,
+        destination_path: Path,
+    ) -> RawPdfFile | None:
+        query = Q(pdf_hash=content_hash)
+        if stem_hash:
+            query |= Q(pdf_hash=stem_hash)
+
+        candidate_ids = list(
+            RawPdfFile.objects.filter(query).values_list("pk", flat=True).distinct()
+        )
+        if not candidate_ids:
+            return None
+        if len(candidate_ids) > 1:
+            logger.error(
+                "Ambiguous report migration sync for source=%s destination=%s "
+                "content_hash=%s stem_hash=%s candidate_ids=%s",
+                source_path,
+                destination_path,
+                content_hash,
+                stem_hash,
+                candidate_ids,
+            )
+            return None
+        return RawPdfFile.objects.get(pk=candidate_ids[0])
 
     def _create_or_reuse_migration_upload_job(
         self,

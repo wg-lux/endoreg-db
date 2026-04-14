@@ -7,7 +7,14 @@ from pathlib import Path
 from django.core.management import call_command
 from django.test import TestCase
 
-from endoreg_db.utils.paths import MANIFEST_DIR
+from endoreg_db.management.commands.migrate_data_dir import Command, MIGRATION_RULES
+from endoreg_db.models import Center, RawPdfFile, VideoFile
+from endoreg_db.utils.paths import (
+    IMPORT_ANONYMIZED_REPORT_DIR,
+    IMPORT_ANONYMIZED_VIDEO_DIR,
+    MANIFEST_DIR,
+    to_storage_relative,
+)
 
 
 class MigrateDataDirCommandTests(TestCase):
@@ -82,3 +89,143 @@ class MigrateDataDirCommandTests(TestCase):
             destinations = {entry["destination_path"] for entry in migrated}
             self.assertTrue(any("/sensitive_videos/" in path for path in destinations))
             self.assertTrue(any("/sensitive_reports/" in path for path in destinations))
+
+    def test_dry_run_preserves_anonymized_import_tier_structure(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir_name:
+            temp_dir = Path(temp_dir_name)
+            legacy_root = temp_dir / "legacy"
+            (legacy_root / "import" / "anonymized_video_import").mkdir(parents=True)
+            (legacy_root / "import" / "anonymized_report_import").mkdir(parents=True)
+            (
+                legacy_root / "import" / "anonymized_video_import" / "video.mp4"
+            ).write_bytes(b"\x00\x00\x00\x18ftypmp42")
+            (
+                legacy_root / "import" / "anonymized_report_import" / "report.pdf"
+            ).write_bytes(b"%PDF-1.4\n%%EOF\n")
+
+            manifest_path = (
+                MANIFEST_DIR
+                / "tests"
+                / "migrate_data_dir_anonymized_import_dry_run.json"
+            )
+            if manifest_path.exists():
+                manifest_path.unlink()
+
+            call_command(
+                "migrate_data_dir",
+                str(legacy_root),
+                "--dry-run",
+                "--manifest-path",
+                str(manifest_path),
+            )
+
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+            migrated = payload["migrated_entries"]
+            self.assertEqual(len(migrated), 2)
+
+            by_legacy = {entry["source_path"]: entry for entry in migrated}
+            video_entry = by_legacy[
+                str(legacy_root / "import" / "anonymized_video_import" / "video.mp4")
+            ]
+            report_entry = by_legacy[
+                str(legacy_root / "import" / "anonymized_report_import" / "report.pdf")
+            ]
+
+            self.assertEqual(video_entry["storage_class"], "ingest")
+            self.assertEqual(report_entry["storage_class"], "ingest")
+            self.assertTrue(
+                video_entry["destination_path"].startswith(
+                    str(IMPORT_ANONYMIZED_VIDEO_DIR)
+                )
+            )
+            self.assertTrue(
+                report_entry["destination_path"].startswith(
+                    str(IMPORT_ANONYMIZED_REPORT_DIR)
+                )
+            )
+
+    def test_sync_db_links_anonymized_import_assets_by_canonical_filename_stem(
+        self,
+    ) -> None:
+        center = Center.objects.create(name="migration-sync-center")
+        video = VideoFile.objects.create(
+            center=center,
+            video_hash="video-sync-hash",
+            original_file_name="legacy.mp4",
+        )
+        report = RawPdfFile.objects.create(pdf_hash="report-sync-hash")
+
+        video_rule = next(
+            rule
+            for rule in MIGRATION_RULES
+            if rule.legacy_relative == Path("import/anonymized_video_import")
+        )
+        report_rule = next(
+            rule
+            for rule in MIGRATION_RULES
+            if rule.legacy_relative == Path("import/anonymized_report_import")
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir_name:
+            temp_dir = Path(temp_dir_name)
+            video_source = (
+                temp_dir
+                / "legacy"
+                / "import"
+                / "anonymized_video_import"
+                / "video-sync-hash.mp4"
+            )
+            report_source = (
+                temp_dir
+                / "legacy"
+                / "import"
+                / "anonymized_report_import"
+                / "report-sync-hash.pdf"
+            )
+            video_source.parent.mkdir(parents=True, exist_ok=True)
+            report_source.parent.mkdir(parents=True, exist_ok=True)
+            video_source.write_bytes(b"\x00\x00\x00\x18ftypmp42processed")
+            report_source.write_bytes(b"%PDF-1.4\nprocessed\n%%EOF\n")
+
+            video_destination = IMPORT_ANONYMIZED_VIDEO_DIR / video_source.name
+            report_destination = IMPORT_ANONYMIZED_REPORT_DIR / report_source.name
+
+            try:
+                video_destination.parent.mkdir(parents=True, exist_ok=True)
+                report_destination.parent.mkdir(parents=True, exist_ok=True)
+                video_destination.write_bytes(video_source.read_bytes())
+                report_destination.write_bytes(report_source.read_bytes())
+
+                command = Command()
+
+                self.assertTrue(
+                    command.sync_db(video_destination, video_source, video_rule)
+                )
+                self.assertTrue(
+                    command.sync_db(report_destination, report_source, report_rule)
+                )
+                self.assertTrue(
+                    command.sync_db(video_destination, video_source, video_rule)
+                )
+                self.assertTrue(
+                    command.sync_db(report_destination, report_source, report_rule)
+                )
+
+                video.refresh_from_db()
+                report.refresh_from_db()
+
+                self.assertEqual(
+                    video.processed_file.name,
+                    to_storage_relative(video_destination),
+                )
+                self.assertEqual(
+                    report.processed_file.name,
+                    to_storage_relative(report_destination),
+                )
+                self.assertEqual(
+                    report.file.name,
+                    to_storage_relative(report_destination),
+                )
+            finally:
+                video_destination.unlink(missing_ok=True)
+                report_destination.unlink(missing_ok=True)

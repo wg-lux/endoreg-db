@@ -280,3 +280,29 @@ def safe_unlink_file(path: Path, *, missing_ok: bool = True) -> None:
             status="ok",
             source=target,
         )
+
+
+def ensure_directory(
+    path: Path,
+    *,
+    dir_mode: int | None = None,
+) -> Path:
+    target = Path(path)
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+        if dir_mode is not None:
+            os.chmod(target, dir_mode)
+    except Exception as exc:
+        _emit_file_operation_event(
+            operation="mkdir",
+            status="error",
+            destination=target,
+            detail=str(exc),
+        )
+        raise
+    _emit_file_operation_event(
+        operation="mkdir",
+        status="ok",
+        destination=target,
+    )
+    return target
