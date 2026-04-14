@@ -10,11 +10,10 @@ from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.file_storage import create_video_file
 from endoreg_db.models import Center, EndoscopyProcessor
 from endoreg_db.models.state.processing_history import ProcessingHistory
-from endoreg_db.utils import paths as paths_module
 from endoreg_db.utils.file_operations import sha256_file
 
 
-def _configure_storage_layout(test_suffix: str) -> tuple[Path, Path, Path]:
+def _configure_storage_layout(mock_paths, test_suffix: str) -> tuple[Path, Path, Path]:
     """
     Helper: create video test files under the canonical storage contract.
 
@@ -22,13 +21,11 @@ def _configure_storage_layout(test_suffix: str) -> tuple[Path, Path, Path]:
     storage-relative naming assumptions as runtime code. Do not mutate
     `data_paths` here.
     """
-    storage_root = paths_module.STORAGE_DIR
+    storage_root = mock_paths.storage
     sensitive_dir = (
-        paths_module.SENSITIVE_VIDEO_DIR / f"pytest_create_video_file_{test_suffix}"
+        mock_paths.sensitive_video / f"pytest_create_video_file_{test_suffix}"
     )
-    transcoding_dir = (
-        paths_module.TRANSCODING_DIR / f"pytest_create_video_file_{test_suffix}"
-    )
+    transcoding_dir = mock_paths.transcoding / f"pytest_create_video_file_{test_suffix}"
 
     sensitive_dir.mkdir(parents=True, exist_ok=True)
     transcoding_dir.mkdir(parents=True, exist_ok=True)
@@ -59,13 +56,15 @@ def _patch_video_initialize(monkeypatch):
 
 
 @pytest.mark.django_db
-def test_create_from_file_happy_path(tmp_path, monkeypatch, base_db_data):
+def test_create_from_file_happy_path(mock_storage, tmp_path, monkeypatch, base_db_data):
     """
     Happy path: new VideoFile is created, file is stored under the configured
     sensitive_video directory, and get_raw_file_path() returns a regular file.
     """
     # --- Arrange: fake storage layout ---------------------------------------
-    storage_root, sensitive_dir, transcoding_dir = _configure_storage_layout("happy")
+    storage_root, sensitive_dir, transcoding_dir = _configure_storage_layout(
+        mock_storage, "happy"
+    )
 
     # Patch TRANSCODING_DIR in the module that actually uses it
     monkeypatch.setattr(
@@ -131,7 +130,7 @@ def test_create_from_file_happy_path(tmp_path, monkeypatch, base_db_data):
 
 @pytest.mark.django_db
 def test_create_from_file_duplicate_with_existing_file(
-    tmp_path, monkeypatch, base_db_data
+    mock_storage, tmp_path, monkeypatch, base_db_data
 ):
     """
     When a VideoFile with the same hash already exists *and* its raw file exists,
@@ -139,7 +138,7 @@ def test_create_from_file_duplicate_with_existing_file(
     create a new one.
     """
     storage_root, sensitive_dir, transcoding_dir = _configure_storage_layout(
-        "dup_existing"
+        mock_storage, "dup_existing"
     )
 
     monkeypatch.setattr(
@@ -212,14 +211,14 @@ def test_create_from_file_duplicate_with_existing_file(
 
 @pytest.mark.django_db
 def test_create_from_file_duplicate_with_missing_file_recreates(
-    tmp_path, monkeypatch, base_db_data
+    mock_storage, tmp_path, monkeypatch, base_db_data
 ):
     """
     When a VideoFile with the same hash exists but its raw file is missing,
     the orphaned record should be deleted and a new VideoFile created.
     """
     storage_root, sensitive_dir, transcoding_dir = _configure_storage_layout(
-        "dup_orphan"
+        mock_storage, "dup_orphan"
     )
 
     monkeypatch.setattr(
@@ -376,14 +375,14 @@ def test_create_or_retrieve_prefers_sensitive_path(monkeypatch, tmp_path):
 
 @pytest.mark.django_db
 def test_create_from_file_transcoding_failure_fails_closed(
-    tmp_path, monkeypatch, base_db_data
+    mock_storage, tmp_path, monkeypatch, base_db_data
 ):
     """
     If standardization fails, the raw import must fail closed and not commit a
     canonical managed raw file.
     """
     storage_root, sensitive_dir, transcoding_dir = _configure_storage_layout(
-        "transcode_fallback"
+        mock_storage, "transcode_fallback"
     )
 
     monkeypatch.setattr(
@@ -438,14 +437,14 @@ def test_create_from_file_transcoding_failure_fails_closed(
 
 @pytest.mark.django_db
 def test_create_from_file_transcoding_failure_is_retry_safe(
-    tmp_path, monkeypatch, base_db_data
+    mock_storage, tmp_path, monkeypatch, base_db_data
 ):
     """
     A failed standardization attempt must leave no canonical residue so a later
     retry can succeed idempotently with the same content hash.
     """
     storage_root, sensitive_dir, transcoding_dir = _configure_storage_layout(
-        "transcode_retry_safe"
+        mock_storage, "transcode_retry_safe"
     )
 
     monkeypatch.setattr(

@@ -27,6 +27,9 @@ class LabelVideoSegmentTimelineSerializer(serializers.ModelSerializer):
 
     label_id = serializers.SerializerMethodField()
     label_name = serializers.SerializerMethodField()
+    source_name = serializers.SerializerMethodField()
+    segment_origin = serializers.SerializerMethodField()
+    prediction_meta_id = serializers.SerializerMethodField()
     start_time = serializers.SerializerMethodField()
     end_time = serializers.SerializerMethodField()
 
@@ -36,6 +39,9 @@ class LabelVideoSegmentTimelineSerializer(serializers.ModelSerializer):
             "id",
             "label_id",
             "label_name",
+            "source_name",
+            "segment_origin",
+            "prediction_meta_id",
             "start_frame_number",
             "end_frame_number",
             "start_time",
@@ -59,6 +65,22 @@ class LabelVideoSegmentTimelineSerializer(serializers.ModelSerializer):
     def get_label_name(self, obj: LabelVideoSegment):
         label = getattr(obj, "label", None)
         return getattr(label, "name", None)
+
+    def get_source_name(self, obj: LabelVideoSegment):
+        source = getattr(obj, "source", None)
+        return getattr(source, "name", None)
+
+    def get_segment_origin(self, obj: LabelVideoSegment):
+        source_name = self.get_source_name(obj)
+        if (
+            getattr(obj, "prediction_meta_id", None) is not None
+            or source_name == "prediction"
+        ):
+            return "prediction"
+        return "manual"
+
+    def get_prediction_meta_id(self, obj: LabelVideoSegment):
+        return getattr(obj, "prediction_meta_id", None)
 
     def get_start_time(self, obj: LabelVideoSegment):
         return self._frame_to_seconds(obj, obj.start_frame_number)
@@ -87,6 +109,9 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
 
     # Read-only fields for Output
     video_name = serializers.SerializerMethodField(read_only=True)
+    source_name = serializers.SerializerMethodField(read_only=True)
+    segment_origin = serializers.SerializerMethodField(read_only=True)
+    prediction_meta_id = serializers.IntegerField(read_only=True)
     frame_predictions = serializers.SerializerMethodField(read_only=True)
     manual_frame_annotations = serializers.SerializerMethodField(read_only=True)
     time_segments = serializers.SerializerMethodField(read_only=True)
@@ -97,6 +122,9 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
             "id",
             "video_file",
             "video_name",
+            "source_name",
+            "segment_origin",
+            "prediction_meta_id",
             "video_id",
             "label",
             "label_name",
@@ -138,6 +166,19 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 f"VideoFile with id {video_id} does not exist"
             )
+
+    def get_source_name(self, obj: LabelVideoSegment):
+        source = getattr(obj, "source", None)
+        return getattr(source, "name", None)
+
+    def get_segment_origin(self, obj: LabelVideoSegment):
+        source_name = self.get_source_name(obj)
+        if (
+            getattr(obj, "prediction_meta_id", None) is not None
+            or source_name == "prediction"
+        ):
+            return "prediction"
+        return "manual"
 
     def _get_label(self, label_id, label_name):
         if label_id:

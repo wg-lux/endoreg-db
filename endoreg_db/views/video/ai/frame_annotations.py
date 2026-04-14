@@ -3,6 +3,7 @@ import random
 from typing import Any
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
@@ -24,6 +25,12 @@ from endoreg_db.utils.permissions import EnvironmentAwarePermission
 logger = logging.getLogger(__name__)
 SUPPORTED_FRAME_TASK_MODES = {"random", "filtered"}
 DEFAULT_FRAME_INFORMATION_SOURCE_NAME = "manual_annotation"
+
+PREDICTION_INFORMATION_SOURCE_NAMES = {
+    "prediction",
+    "default_prediction",
+    "prediction_annotation",
+}
 
 
 def _build_bulk_upsert_response(
@@ -349,7 +356,92 @@ def _pick_random_frame(
     return frames_qs[offset]
 
 
-def _serialize_frame_task(frame: Frame) -> dict[str, Any]:
+def _serialize_annotation(annotation: ImageClassificationAnnotation) -> dict[str, Any]:
+    return {
+        "id": annotation.id,
+        "label_id": annotation.label_id,
+        "label_name": annotation.label.name,
+        "value": annotation.value,
+        "float_value": annotation.float_value,
+        "annotator": annotation.annotator,
+        "information_source_name": (
+            annotation.information_source.name
+            if annotation.information_source
+            else None
+        ),
+        "model_meta_id": annotation.model_meta_id,
+        "external_annotation_id": annotation.external_annotation_id,
+    }
+
+
+def _get_frame_manual_annotations(
+    *,
+    frame: Frame,
+    label_set: LabelSet | None,
+    information_source_name: str,
+    annotator: str,
+):
+    queryset = frame.image_classification_annotations.select_related(
+        "label", "information_source", "model_meta"
+    ).filter(
+        information_source__name=information_source_name,
+    )
+    if label_set is not None:
+        queryset = queryset.filter(label__label_sets=label_set)
+    if annotator:
+        queryset = queryset.filter(annotator=annotator)
+    return queryset.order_by("label__name", "id").distinct()
+
+
+def _get_frame_prediction_annotations(*, frame: Frame, label_set: LabelSet | None):
+    queryset = frame.image_classification_annotations.select_related(
+        "label", "information_source", "model_meta"
+    ).filter(
+        Q(information_source__information_source_types__name="prediction")
+        | Q(information_source__name__in=PREDICTION_INFORMATION_SOURCE_NAMES)
+        | Q(model_meta_id__isnull=False)
+    )
+    if label_set is not None:
+        queryset = queryset.filter(label__label_sets=label_set)
+    return queryset.order_by("label__name", "id").distinct()
+
+
+def _serialize_frame_task(
+    frame: Frame,
+    *,
+    label_set: LabelSet | None,
+    target_label: Label | None,
+    information_source_name: str,
+    annotator: str,
+) -> dict[str, Any]:
+    label_options = []
+    if label_set is not None:
+        label_options = [
+            {"id": label.id, "name": label.name}
+            for label in label_set.labels.all().order_by("name", "id")
+        ]
+    elif target_label is not None:
+        label_options = [{"id": target_label.id, "name": target_label.name}]
+
+    manual_annotations = list(
+        _get_frame_manual_annotations(
+            frame=frame,
+            label_set=label_set,
+            information_source_name=information_source_name,
+            annotator=annotator,
+        )
+    )
+    prediction_annotations = list(
+        _get_frame_prediction_annotations(frame=frame, label_set=label_set)
+    )
+
+    manual_positive_ids = [
+        annotation.label_id for annotation in manual_annotations if annotation.value
+    ]
+    prediction_positive_ids = [
+        annotation.label_id for annotation in prediction_annotations if annotation.value
+    ]
+
     return {
         "frame_id": frame.id,
         "video_id": frame.video_id,
@@ -358,6 +450,17 @@ def _serialize_frame_task(frame: Frame) -> dict[str, Any]:
         "frame_stream_path": (
             f"/api/media/videos/{frame.video_id}/frames/{frame.frame_number}/stream/"
         ),
+        "annotation_mode": "multilabel",
+        "label_options": label_options,
+        "manual_annotations": [
+            _serialize_annotation(annotation) for annotation in manual_annotations
+        ],
+        "prediction_annotations": [
+            _serialize_annotation(annotation) for annotation in prediction_annotations
+        ],
+        "manual_positive_label_ids": manual_positive_ids,
+        "prediction_positive_label_ids": prediction_positive_ids,
+        "suggested_label_ids": manual_positive_ids or prediction_positive_ids,
     }
 
 
@@ -516,7 +619,15 @@ class FrameAnnotationRandomTaskView(APIView):
             )
             if frame is None:
                 break
-            tasks.append(_serialize_frame_task(frame))
+            tasks.append(
+                _serialize_frame_task(
+                    frame,
+                    label_set=label_set,
+                    target_label=target_label,
+                    information_source_name=information_source_name,
+                    annotator=annotator,
+                )
+            )
             excluded_ids.add(frame.id)
 
         if not tasks:
@@ -643,6 +754,12 @@ class FrameAnnotationSkipView(APIView):
             "reason": reason,
         }
         if next_frame is not None:
-            response_data["next_task"] = _serialize_frame_task(next_frame)
+            response_data["next_task"] = _serialize_frame_task(
+                next_frame,
+                label_set=None,
+                target_label=None,
+                information_source_name=information_source_name,
+                annotator=annotator,
+            )
 
         return Response(response_data, status=status.HTTP_200_OK)

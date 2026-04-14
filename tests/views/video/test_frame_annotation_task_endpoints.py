@@ -299,3 +299,57 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
         self.assertEqual(response.data["count"], 2)
         self.assertEqual(len(response.data["tasks"]), 2)
         self.assertIn("task", response.data)
+
+    def test_random_task_serializes_multilabel_prediction_and_manual_state(self):
+        self.prediction_source.name = "prediction_annotation"
+        self.prediction_source.save(update_fields=["name"])
+        ImageClassificationAnnotation.objects.create(
+            frame=self.frame_1,
+            label=self.target_label,
+            value=True,
+            float_value=0.91,
+            information_source=self.prediction_source,
+            annotator="pipe-1",
+        )
+        ImageClassificationAnnotation.objects.create(
+            frame=self.frame_1,
+            label=self.filter_label,
+            value=False,
+            information_source=self.source,
+            annotator="alice",
+            external_annotation_id="manual-false",
+        )
+        ImageClassificationAnnotation.objects.create(
+            frame=self.frame_1,
+            label=self.label,
+            value=True,
+            information_source=self.source,
+            annotator="alice",
+            external_annotation_id="manual-true",
+        )
+
+        request = self.factory.get(
+            "/api/media/annotations/frames/random-task/",
+            {
+                "video_id": self.video.pk,
+                "label_group_id": self.label_set.pk,
+                "information_source_name": self.source.name,
+                "annotator": "alice",
+                "exclude_annotated": "false",
+            },
+        )
+
+        response = self.random_task_view(request)
+
+        self.assertEqual(response.status_code, 200)
+        task = response.data["task"]
+        self.assertEqual(task["annotation_mode"], "multilabel")
+        self.assertEqual(
+            {label["id"] for label in task["label_options"]},
+            {self.target_label.pk, self.filter_label.pk, self.label.pk},
+        )
+        self.assertEqual(task["manual_positive_label_ids"], [self.label.pk])
+        self.assertEqual(task["prediction_positive_label_ids"], [self.target_label.pk])
+        self.assertEqual(task["suggested_label_ids"], [self.label.pk])
+        self.assertEqual(len(task["manual_annotations"]), 2)
+        self.assertEqual(len(task["prediction_annotations"]), 1)

@@ -12,7 +12,7 @@ import logging
 import uuid
 
 from django.db import models, transaction
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -20,6 +20,7 @@ from rest_framework.response import Response
 
 from endoreg_db.models import (
     ImageClassificationAnnotation,
+    InformationSource,
     Label,
     LabelVideoSegment,
     VideoFile,
@@ -32,6 +33,7 @@ from endoreg_db.services.video_post_validation_jobs import (
     dispatch_video_post_validation_rebuild,
 )
 from endoreg_db.serializers.label_video_segment.label_video_segment import (
+    LabelVideoSegmentTimelineSerializer,
     LabelVideoSegmentSerializer,
 )
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
@@ -45,6 +47,19 @@ from endoreg_db.utils.operation_log import (
 
 
 logger = logging.getLogger(__name__)
+
+
+def _prediction_segment_query() -> Q:
+    return Q(prediction_meta__isnull=False) | Q(source__name="prediction")
+
+
+def _filter_segments_by_origin(queryset, source_kind: str | None):
+    normalized = str(source_kind or "all").strip().lower()
+    if normalized == "prediction":
+        return queryset.filter(_prediction_segment_query()).distinct()
+    if normalized == "manual":
+        return queryset.exclude(_prediction_segment_query()).distinct()
+    return queryset
 
 
 def _segment_annotation_filters(
@@ -219,7 +234,7 @@ def video_segments_collection(request):
 
     GET /api/media/videos/segments/
     - Lists all segments, optionally filtered by video_id and/or label_id
-    - Query params: video_id, label_id, include_annotation_payload
+    - Query params: video_id, label_id, include_annotation_payload, source_kind
       (set include_annotation_payload=1 to include expensive frame-level data)
 
     POST /api/media/videos/segments/
@@ -260,6 +275,7 @@ def video_segments_collection(request):
         # Optional filtering by video_id
         video_id = request.GET.get("video_id")
         label_id = request.GET.get("label_id")
+        source_kind = request.GET.get("source_kind")
         include_annotation_payload = _query_param_as_bool(
             request.GET.get("include_annotation_payload"),
             default=False,
@@ -287,6 +303,8 @@ def video_segments_collection(request):
                     status=status.HTTP_404_NOT_FOUND,
                 )
 
+        queryset = _filter_segments_by_origin(queryset, source_kind)
+
         # Order by video and start time for consistent results
         segments = queryset.order_by("video_file__id", "start_frame_number")
         serializer = LabelVideoSegmentSerializer(
@@ -308,7 +326,7 @@ def video_segments_by_video(request, pk):
 
     GET /api/media/videos/<pk>/segments/
     - Lists all segments for a specific video
-    - Query params: label (label name filter), include_annotation_payload
+    - Query params: label (label name filter), include_annotation_payload, source_kind
       (set include_annotation_payload=1 to include expensive frame-level data)
     - Note: This was already implemented in segments.py as video_segments_by_pk
 
@@ -326,6 +344,7 @@ def video_segments_by_video(request, pk):
         # This duplicates video_segments_by_pk functionality
         # We keep both for compatibility during migration
         label_name = request.GET.get("label")
+        source_kind = request.GET.get("source_kind")
         include_annotation_payload = _query_param_as_bool(
             request.GET.get("include_annotation_payload"),
             default=False,
@@ -344,6 +363,8 @@ def video_segments_by_video(request, pk):
                     {"error": f'Label "{label_name}" not found'},
                     status=status.HTTP_404_NOT_FOUND,
                 )
+
+        queryset = _filter_segments_by_origin(queryset, source_kind)
 
         segments = queryset.order_by("start_frame_number")
         serializer = LabelVideoSegmentSerializer(
@@ -390,6 +411,109 @@ def video_segments_by_video(request, pk):
                     {"error": "Invalid data", "details": serializer.errors},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+
+
+@api_view(["POST"])
+@permission_classes([EnvironmentAwarePermission])
+def import_prediction_segments_to_manual(request, pk: int):
+    """
+    Replace or extend the manual segment layer for a video using a caller-supplied
+    segment list, typically loaded from pipe-1 predictions and adjusted in the UI.
+
+    POST /api/media/videos/<pk>/segments/import-predictions/
+
+    Body:
+    {
+      "segments": [
+        {"label_name": "outside", "start_time": 1.2, "end_time": 3.4},
+        ...
+      ],
+      "replace_existing": true
+    }
+    """
+    video = get_object_or_404(VideoFile, id=pk)
+    raw_segments = request.data.get("segments")
+    replace_existing = bool(
+        request.data.get("replace_existing", request.data.get("replaceExisting", True))
+    )
+
+    if not isinstance(raw_segments, list) or len(raw_segments) == 0:
+        return Response(
+            {"error": "segments must be a non-empty list"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    manual_source, _ = InformationSource.objects.get_or_create(
+        name="manual_annotation",
+        defaults={"description": "Manually created label segments via web interface"},
+    )
+
+    created_segments: list[LabelVideoSegment] = []
+    with transaction.atomic():
+        if replace_existing:
+            manual_segments = LabelVideoSegment.objects.filter(
+                video_file=video
+            ).exclude(_prediction_segment_query())
+            for segment in manual_segments.iterator():
+                if segment.label is not None:
+                    delete_model_meta = segment.get_model_meta()
+                    _delete_frame_annotations_for_segment(
+                        video=segment.video_file,
+                        start_frame_number=segment.start_frame_number,
+                        end_frame_number=segment.end_frame_number,
+                        label=segment.label,
+                        information_source_id=segment.source_id,
+                        model_meta_id=(
+                            delete_model_meta.pk if delete_model_meta else None
+                        ),
+                    )
+                segment.delete()
+
+        for idx, item in enumerate(raw_segments):
+            if not isinstance(item, dict):
+                return Response(
+                    {"error": f"segments[{idx}] must be an object"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            payload = {
+                "video_id": pk,
+                "label_name": item.get("label_name") or item.get("label"),
+                "start_time": item.get("start_time"),
+                "end_time": item.get("end_time"),
+                "export_segment": bool(item.get("export_segment", False)),
+            }
+            serializer = LabelVideoSegmentSerializer(data=payload)
+            if not serializer.is_valid():
+                return Response(
+                    {
+                        "error": "Invalid segment import payload",
+                        "details": serializer.errors,
+                        "segment_index": idx,
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            segment = serializer.save()
+            if segment.source_id != manual_source.id:
+                segment.source = manual_source
+                segment.save(update_fields=["source"])
+            _sync_frame_annotations(segment=segment)
+            created_segments.append(segment)
+
+    response_serializer = LabelVideoSegmentTimelineSerializer(
+        created_segments,
+        many=True,
+    )
+    return Response(
+        {
+            "message": "Prediction segments imported to manual annotations.",
+            "created_count": len(created_segments),
+            "replaced_existing": replace_existing,
+            "segments": response_serializer.data,
+        },
+        status=status.HTTP_200_OK,
+    )
 
 
 @api_view(["GET", "PATCH", "DELETE"])

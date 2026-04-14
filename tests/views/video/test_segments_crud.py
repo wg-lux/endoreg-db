@@ -16,6 +16,7 @@ from endoreg_db.services.video_post_validation_jobs import JobDispatchResult
 from endoreg_db.serializers import LabelVideoSegmentSerializer
 from endoreg_db.views.video.segments_crud import (
     ensure_prediction_segment_annotations_for_video,
+    import_prediction_segments_to_manual,
     video_segment_validate,
     video_segments_by_video,
 )
@@ -420,3 +421,137 @@ class VideoSegmentValidateAsyncSafetyTest(TestCase):
             .values_list("frame__frame_number", flat=True)
         )
         self.assertEqual(after, before)
+
+
+class VideoSegmentsSourceKindFilterTest(TestCase):
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        self.center = Center.objects.create(name="Segment Source Filter Center")
+        self.video = VideoFile.objects.create(
+            center=self.center,
+            video_hash="segment-source-filter-video",
+            original_file_name="segment_filter.mp4",
+            fps=25.0,
+            frame_count=100,
+        )
+        self.label = Label.objects.create(name="segment-filter-label")
+        self.manual_source = InformationSource.objects.create(name="manual_annotation")
+        self.prediction_source = InformationSource.objects.create(name="prediction")
+
+        self.manual_segment = LabelVideoSegment.objects.create(
+            video_file=self.video,
+            label=self.label,
+            start_frame_number=0,
+            end_frame_number=10,
+            source=self.manual_source,
+        )
+        self.prediction_segment = LabelVideoSegment.objects.create(
+            video_file=self.video,
+            label=self.label,
+            start_frame_number=20,
+            end_frame_number=30,
+            source=self.prediction_source,
+        )
+
+    def test_source_kind_manual_returns_only_manual_segments(self):
+        request = self.factory.get(
+            f"/api/media/videos/{self.video.pk}/segments/?source_kind=manual"
+        )
+        response = video_segments_by_video(request, pk=self.video.pk)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["id"], self.manual_segment.pk)
+        self.assertEqual(response.data[0]["segment_origin"], "manual")
+        self.assertEqual(response.data[0]["source_name"], "manual_annotation")
+
+    def test_source_kind_prediction_returns_only_prediction_segments(self):
+        request = self.factory.get(
+            f"/api/media/videos/{self.video.pk}/segments/?source_kind=prediction"
+        )
+        response = video_segments_by_video(request, pk=self.video.pk)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["id"], self.prediction_segment.pk)
+        self.assertEqual(response.data[0]["segment_origin"], "prediction")
+        self.assertEqual(response.data[0]["source_name"], "prediction")
+
+
+class ImportPredictionSegmentsToManualTest(TestCase):
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        self.center = Center.objects.create(name="Prediction Import Center")
+        self.video = VideoFile.objects.create(
+            center=self.center,
+            video_hash="prediction-import-video",
+            original_file_name="prediction_import.mp4",
+            fps=25.0,
+            frame_count=200,
+        )
+        self.label_a = Label.objects.create(name="outside")
+        self.label_b = Label.objects.create(name="polyp")
+        self.manual_source = InformationSource.objects.create(name="manual_annotation")
+        self.prediction_source = InformationSource.objects.create(name="prediction")
+
+        self.existing_manual_segment = LabelVideoSegment.objects.create(
+            video_file=self.video,
+            label=self.label_a,
+            start_frame_number=1,
+            end_frame_number=5,
+            source=self.manual_source,
+        )
+        self.prediction_segment = LabelVideoSegment.objects.create(
+            video_file=self.video,
+            label=self.label_b,
+            start_frame_number=10,
+            end_frame_number=20,
+            source=self.prediction_source,
+        )
+
+    def test_import_replaces_manual_segments_but_keeps_prediction_segments(self):
+        request = self.factory.post(
+            f"/api/media/videos/{self.video.pk}/segments/import-predictions/",
+            {
+                "replace_existing": True,
+                "segments": [
+                    {
+                        "label_name": "outside",
+                        "start_time": 2.0,
+                        "end_time": 4.0,
+                    },
+                    {
+                        "label_name": "polyp",
+                        "start_time": 5.0,
+                        "end_time": 7.0,
+                        "export_segment": True,
+                    },
+                ],
+            },
+            format="json",
+        )
+
+        response = import_prediction_segments_to_manual(request, pk=self.video.pk)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["created_count"], 2)
+        self.assertTrue(response.data["replaced_existing"])
+        self.assertEqual(
+            [segment["segment_origin"] for segment in response.data["segments"]],
+            ["manual", "manual"],
+        )
+
+        persisted_manual_segments = LabelVideoSegment.objects.filter(
+            video_file=self.video,
+            source__name="manual_annotation",
+        ).order_by("start_frame_number")
+        self.assertEqual(persisted_manual_segments.count(), 2)
+        self.assertFalse(
+            persisted_manual_segments.filter(
+                pk=self.existing_manual_segment.pk
+            ).exists()
+        )
+
+        self.assertTrue(
+            LabelVideoSegment.objects.filter(pk=self.prediction_segment.pk).exists()
+        )

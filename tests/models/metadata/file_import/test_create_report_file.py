@@ -12,18 +12,25 @@ from endoreg_db.utils import paths as paths_module
 from endoreg_db.utils.file_operations import sha256_file
 
 
-def _configure_storage_layout(test_suffix: str) -> tuple[Path, Path]:
-    """
-    Helper: create report test files under the canonical storage contract.
+@pytest.fixture(autouse=True)
+def cleanup_temp_files():
+    # Setup: do nothing
+    yield
+    # Teardown: Scan for any leftover .tmp files and delete them
+    # although tmp_path handles this, this is good for extra safety
+    for tmp_file in Path().glob("**/*.tmp.*"):
+        tmp_file.unlink(missing_ok=True)
 
-    Tests should stay inside the real protected storage tree and use the same
-    storage-relative naming assumptions as runtime code. Do not mutate
-    `data_paths` here.
-    """
-    storage_root = paths_module.STORAGE_DIR
-    sensitive_dir = paths_module.SENSITIVE_REPORT_DIR
 
-    sensitive_dir.mkdir(parents=True, exist_ok=True)
+def _configure_storage_layout(mock_paths) -> tuple[Path, Path]:
+    """
+    Returns the storage root and sensitive directory from the mocked model.
+    """
+    storage_root = mock_paths.storage
+    sensitive_dir = mock_paths.sensitive_report
+
+    # Directories are already created by model.ensure_directories()
+    # called inside from_environment()
 
     return storage_root, sensitive_dir
 
@@ -36,12 +43,12 @@ def _write_minimal_pdf(path: Path) -> None:
 
 
 @pytest.mark.django_db
-def test_create_from_file_happy_path(tmp_path, monkeypatch, base_db_data):
+def test_create_from_file_happy_path(mock_storage, tmp_path, base_db_data):
     """
     Happy path: new RawPdfFile is created, file is stored under the configured
     sensitive_report directory, and get_raw_file_path() returns a regular file.
     """
-    storage_root, sensitive_dir = _configure_storage_layout("happy")
+    storage_root, sensitive_dir = _configure_storage_layout(mock_storage)
 
     import_dir = tmp_path / "import"
     import_dir.mkdir(parents=True, exist_ok=True)
@@ -79,9 +86,9 @@ def test_create_from_file_happy_path(tmp_path, monkeypatch, base_db_data):
 
 @pytest.mark.django_db
 def test_create_from_file_prefers_sensitive_copy_for_canonical_raw_report(
-    tmp_path, base_db_data
+    mock_storage, tmp_path, base_db_data
 ):
-    _storage_root, sensitive_dir = _configure_storage_layout("sensitive_copy")
+    _storage_root, sensitive_dir = _configure_storage_layout(mock_storage)
 
     import_dir = tmp_path / "import"
     import_dir.mkdir(parents=True, exist_ok=True)
@@ -117,14 +124,14 @@ def test_create_from_file_prefers_sensitive_copy_for_canonical_raw_report(
 
 @pytest.mark.django_db
 def test_create_from_file_duplicate_with_existing_file(
-    tmp_path, monkeypatch, base_db_data
+    mock_storage, tmp_path, monkeypatch, base_db_data
 ):
     """
     When a RawPdfFile with the same hash already exists *and* its raw file exists,
     create_or_retrieve_report_file should return the existing instance and not
     create a new one.
     """
-    storage_root, sensitive_dir = _configure_storage_layout("dup_existing")
+    storage_root, sensitive_dir = _configure_storage_layout(mock_storage)
 
     import_dir = tmp_path / "import"
     import_dir.mkdir(parents=True, exist_ok=True)
@@ -170,13 +177,13 @@ def test_create_from_file_duplicate_with_existing_file(
 
 @pytest.mark.django_db
 def test_create_from_file_duplicate_with_missing_file_recreates(
-    tmp_path, monkeypatch, base_db_data
+    mock_storage, tmp_path, monkeypatch, base_db_data
 ):
     """
     When a RawPdfFile with the same hash exists but its raw file is missing,
     the orphaned record should be deleted and a new RawPdfFile created.
     """
-    storage_root, sensitive_dir = _configure_storage_layout("dup_orphan")
+    storage_root, sensitive_dir = _configure_storage_layout(mock_storage)
 
     import_dir = tmp_path / "import"
     import_dir.mkdir(parents=True, exist_ok=True)

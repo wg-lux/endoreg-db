@@ -168,6 +168,7 @@ class EndoregPathsModel(FilesAndDirsModel):
     managed_sensitive_sidecars: Path
     quarantine_failed: Path
     staging_migration: Path
+    test: Path
 
     # If any directory names change, please ensure continued support by changing the values  in key: value.
     legacy_key_map: ClassVar[dict[str, str]] = {
@@ -214,6 +215,7 @@ class EndoregPathsModel(FilesAndDirsModel):
         "managed_sensitive_sidecars": "managed_sensitive_sidecars",
         "quarantine_failed": "quarantine_failed",
         "staging_migration": "staging_migration",
+        "test": "test",
     }
 
     @classmethod
@@ -295,6 +297,7 @@ class EndoregPathsModel(FilesAndDirsModel):
                 export_dir / WEIGHTS_DIR_NAME,
                 import_dir / FRAME_DIR_NAME,
                 export_dir / FRAME_DIR_NAME,
+                storage_dir / "test",
             ],
             protected_root=protected_root,
             storage=storage_dir,
@@ -341,6 +344,7 @@ class EndoregPathsModel(FilesAndDirsModel):
             managed_sensitive_sidecars=managed_sensitive_sidecars_dir,
             quarantine_failed=quarantine_failed_dir,
             staging_migration=migration_staging_dir,
+            test=storage_dir / "test",
         )
         instance.ensure_directories()
         return instance

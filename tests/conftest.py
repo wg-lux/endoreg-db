@@ -13,6 +13,8 @@ import sys
 from pathlib import Path
 from endoreg_db.models import AiModel, ModelMeta, ModelType
 from endoreg_db.models.label import LabelSet
+from endoreg_db.utils import paths as paths_module
+
 import pytest
 from django.core.files.base import ContentFile
 from django.db.backends.signals import connection_created
@@ -1340,3 +1342,83 @@ def smart_video_mocks(monkeypatch, cache):
 
     print("SMART VIDEO MOCKS APPLIED!")  # Debug
     yield
+
+
+@pytest.fixture
+def mock_storage(tmp_path, monkeypatch):
+    # 1. Define the fake root
+    fake_root = tmp_path / "fake_protected_root"
+    fake_root.mkdir()
+
+    # 2. Create a fake instance of the model
+    # Use a dummy environment or manually override fields
+    monkeypatch.setenv("LX_ANNOTATE_ENCRYPTED_DATA_DIR", str(fake_root))
+    monkeypatch.setenv("STORAGE_DIR", str(fake_root / "storage"))
+    monkeypatch.setenv("IO_DIR", str(fake_root))
+
+    # Force the model to re-initialize from the new env
+    fake_paths_model = paths_module.EndoregPathsModel.from_environment()
+
+    # 3. Patch the module-level singleton and the factory method
+    monkeypatch.setattr(paths_module, "data_paths_model", fake_paths_model)
+    monkeypatch.setattr(paths_module, "data_paths", fake_paths_model)
+    monkeypatch.setattr(
+        paths_module.EndoregPathsModel,
+        "from_environment",
+        classmethod(lambda cls: fake_paths_model),
+    )
+
+    # 4. Patch the historical constants (for legacy code support)
+    monkeypatch.setattr(
+        paths_module, "PROTECTED_DATA_ROOT", fake_paths_model.protected_root
+    )
+    monkeypatch.setattr(paths_module, "STORAGE_DIR", fake_paths_model.storage)
+    monkeypatch.setattr(
+        paths_module, "SENSITIVE_VIDEO_DIR", fake_paths_model.sensitive_video
+    )
+    monkeypatch.setattr(paths_module, "TRANSCODING_DIR", fake_paths_model.transcoding)
+    monkeypatch.setattr(
+        paths_module, "SENSITIVE_REPORT_DIR", fake_paths_model.sensitive_report
+    )
+    monkeypatch.setattr(
+        paths_module, "IMPORT_REPORT_DIR", fake_paths_model.import_report
+    )
+
+    # Keep alias exports and import-time path constants in sync for modules that
+    # imported path constants by value before this fixture runs.
+    import endoreg_db.utils as utils_module
+    import endoreg_db.models.media.pdf.create_report_from_file as report_create_module
+    import endoreg_db.models.media.pdf.raw_pdf as raw_pdf_module
+    import endoreg_db.models.media.video.create_from_file as video_create_module
+    from django.core.files.storage import FileSystemStorage
+
+    monkeypatch.setattr(utils_module, "data_paths", fake_paths_model)
+    monkeypatch.setattr(report_create_module, "STORAGE_DIR", fake_paths_model.storage)
+    monkeypatch.setattr(
+        report_create_module, "SENSITIVE_REPORT_DIR", fake_paths_model.sensitive_report
+    )
+    monkeypatch.setattr(
+        report_create_module, "IMPORT_REPORT_DIR", fake_paths_model.import_report
+    )
+    monkeypatch.setattr(
+        raw_pdf_module, "IMPORT_REPORT_DIR", fake_paths_model.import_report
+    )
+    monkeypatch.setattr(
+        raw_pdf_module, "SENSITIVE_REPORT_DIR", fake_paths_model.sensitive_report
+    )
+    monkeypatch.setattr(
+        video_create_module, "IMPORT_VIDEO_DIR", fake_paths_model.import_video
+    )
+    monkeypatch.setattr(
+        video_create_module, "SENSITIVE_VIDEO_DIR", fake_paths_model.sensitive_video
+    )
+    monkeypatch.setattr(
+        video_create_module, "TRANSCODING_DIR", fake_paths_model.transcoding
+    )
+
+    # Ensure Django FileField storage roots also point to the mocked storage tree.
+    report_storage = FileSystemStorage(location=str(fake_paths_model.storage))
+    raw_pdf_module.RawPdfFile._meta.get_field("file").storage = report_storage
+    raw_pdf_module.RawPdfFile._meta.get_field("processed_file").storage = report_storage
+
+    return fake_paths_model
