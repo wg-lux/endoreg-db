@@ -8,11 +8,27 @@ from django.core.files import File
 
 from endoreg_db.utils.file_operations import get_content_hash_filename
 from endoreg_db.utils.hashs import get_pdf_hash
+from endoreg_db.utils.paths import (
+    IMPORT_REPORT_DIR,
+    SENSITIVE_REPORT_DIR,
+    to_storage_relative,
+)
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.pdf import RawPdfFile
 
 logger = logging.getLogger("raw_pdf")
+
+
+def _canonical_managed_report_relative_path(file_path: Path) -> str | None:
+    resolved = file_path.resolve()
+    for managed_root in (SENSITIVE_REPORT_DIR, IMPORT_REPORT_DIR):
+        try:
+            resolved.relative_to(managed_root.resolve())
+        except ValueError:
+            continue
+        return to_storage_relative(resolved)
+    return None
 
 
 def _create_from_file(
@@ -80,18 +96,34 @@ def _create_from_file(
         existing_pdf_file.delete()
 
     # 5. Create New Record
+    managed_relative_path = _canonical_managed_report_relative_path(file_path)
     new_file_name, _uuid = get_content_hash_filename(file_path)
 
     try:
-        with file_path.open("rb") as f:
-            django_file = File(f, name=new_file_name)
+        if managed_relative_path is not None:
             raw_pdf = cls_model(
-                pdf_hash=pdf_hash, center=center, file=django_file, **kwargs
+                pdf_hash=pdf_hash,
+                center=center,
+                **kwargs,
             )
-
+            raw_pdf.file.name = managed_relative_path
             if save:
                 raw_pdf.save()
-                logger.info(f"Successfully created RawPdfFile PK {raw_pdf.pk}")
+                logger.info(
+                    "Successfully attached managed RawPdfFile PK %s to %s",
+                    raw_pdf.pk,
+                    managed_relative_path,
+                )
+        else:
+            with file_path.open("rb") as f:
+                django_file = File(f, name=new_file_name)
+                raw_pdf = cls_model(
+                    pdf_hash=pdf_hash, center=center, file=django_file, **kwargs
+                )
+
+                if save:
+                    raw_pdf.save()
+                    logger.info(f"Successfully created RawPdfFile PK {raw_pdf.pk}")
 
         return raw_pdf
 
