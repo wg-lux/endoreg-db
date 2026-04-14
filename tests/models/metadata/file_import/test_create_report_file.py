@@ -5,7 +5,6 @@ import pytest
 
 # report equivalents
 import endoreg_db.import_files.file_storage.create_report_file as create_from_file_module  # <-- pdf create_from_file
-import endoreg_db.utils as utils
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.models import Center, EndoscopyProcessor
 from endoreg_db.models.state.processing_history import ProcessingHistory
@@ -15,17 +14,16 @@ from endoreg_db.utils.file_operations import sha256_file
 
 def _configure_storage_layout(test_suffix: str) -> tuple[Path, Path]:
     """
-    Helper: create a storage layout *inside* the real STORAGE_DIR so that
-    to_storage_relative() produces proper relative FileField names.
-    """
-    base = paths_module.STORAGE_DIR / f"pytest_create_report_file_{test_suffix}"
-    storage_root = base
-    sensitive_dir = storage_root / "sensitive_reports"
+    Helper: create report test files under the canonical storage contract.
 
-    storage_root.mkdir(parents=True, exist_ok=True)
+    Tests should stay inside the real protected storage tree and use the same
+    storage-relative naming assumptions as runtime code. Do not mutate
+    `data_paths` here.
+    """
+    storage_root = paths_module.STORAGE_DIR
+    sensitive_dir = paths_module.SENSITIVE_REPORT_DIR
+
     sensitive_dir.mkdir(parents=True, exist_ok=True)
-    data_paths = utils.data_paths
-    data_paths.protected_root = sensitive_dir
 
     return storage_root, sensitive_dir
 
@@ -111,8 +109,10 @@ def test_create_from_file_prefers_sensitive_copy_for_canonical_raw_report(
     assert processed is False
     assert needs_processing is True
     raw_path = report.get_raw_file_path()
-    assert raw_path == sensitive_copy
-    assert report.file.name == paths_module.to_storage_relative(sensitive_copy)
+    assert raw_path is not None
+    assert raw_path.parent == paths_module.SENSITIVE_REPORT_DIR
+    assert raw_path.name == f"{report.pdf_hash}.pdf"
+    assert report.file.name == paths_module.to_storage_relative(raw_path)
 
 
 @pytest.mark.django_db

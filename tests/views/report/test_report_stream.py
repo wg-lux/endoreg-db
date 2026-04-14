@@ -167,7 +167,7 @@ class ReportStreamViewTests(TestCase):
         fallback_path.parent.mkdir(parents=True, exist_ok=True)
         fallback_path.write_bytes(payload)
 
-        fake_file_field = LocalStubFieldFile("missing_reports/stale.pdf")
+        fake_file_field = LocalStubFieldFile("sensitive_reports/missing.pdf")
         fake_pdf_obj = SimpleNamespace(
             file=fake_file_field,
             processed_file=None,
@@ -197,7 +197,7 @@ class ReportStreamViewTests(TestCase):
         fallback_path.parent.mkdir(parents=True, exist_ok=True)
         fallback_path.write_bytes(payload)
 
-        fake_processed_field = LocalStubFieldFile("anonymized_reports/missing.pdf")
+        fake_processed_field = LocalStubFieldFile("processed_reports_final/missing.pdf")
         fake_pdf_obj = SimpleNamespace(
             pdf_hash="processed-hash",
             file=None,

@@ -143,7 +143,7 @@ def build_partial_content_response(
     range_header: str | None,
     disposition: str,
     filename: str,
-) -> HttpResponseBase:
+) -> StreamingHttpResponse:
     if range_header:
         byte_range = parse_byte_range(range_header, file_size)
         response = StreamingHttpResponse(

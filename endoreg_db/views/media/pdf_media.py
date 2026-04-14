@@ -137,7 +137,7 @@ class PdfMediaView(APIView):
             pdf_data = {
                 "id": pdf.pk,
                 "filename": getattr(pdf.file, "name", "Unknown"),
-                "file_size": getattr(pdf.file, "size", 0),
+                "file_size": self._safe_get_file_size(pdf.file),
                 "pdf_hash": pdf.pdf_hash,
                 "uploaded_at": pdf.date_created.isoformat()
                 if getattr(pdf, "date_created", None)

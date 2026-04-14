@@ -5,7 +5,7 @@ import mimetypes
 import os
 from pathlib import Path
 
-from django.http import Http404, HttpResponse
+from django.http import Http404, HttpResponse, StreamingHttpResponse
 from django.utils.decorators import method_decorator
 from django.views.decorators.clickjacking import xframe_options_exempt
 from rest_framework.views import APIView
@@ -20,6 +20,7 @@ from endoreg_db.utils.storage_streaming import (
     add_cors_headers,
     build_partial_content_response,
     field_file_size,
+    iter_field_file_bytes,
     maybe_local_plaintext_path,
     parse_byte_range,
 )
@@ -105,6 +106,49 @@ def _serve_with_nginx(
     return response
 
 
+def _build_eager_content_response(
+    *,
+    field_file,
+    content_type: str,
+    file_size: int,
+    range_header: str | None,
+    disposition: str,
+    filename: str,
+) -> StreamingHttpResponse:
+    if range_header:
+        byte_range = parse_byte_range(range_header, file_size)
+        payload = b"".join(
+            iter_field_file_bytes(
+                field_file,
+                start=byte_range.start,
+                end=byte_range.end,
+            )
+        )
+        response = StreamingHttpResponse(
+            iter((payload,)),
+            status=206,
+            content_type=content_type,
+        )
+        response["Content-Range"] = (
+            f"bytes {byte_range.start}-{byte_range.end}/{file_size}"
+        )
+        response["Content-Length"] = str(byte_range.length)
+    else:
+        payload = b"".join(
+            iter_field_file_bytes(field_file, start=0, end=file_size - 1)
+        )
+        response = StreamingHttpResponse(
+            iter((payload,)),
+            status=200,
+            content_type=content_type,
+        )
+        response["Content-Length"] = str(file_size)
+
+    response["Accept-Ranges"] = "bytes"
+    response["Content-Disposition"] = f'{disposition}; filename="{filename}"'
+    return response
+
+
 @method_decorator(xframe_options_exempt, name="dispatch")
 class ReportStreamView(APIView):
     permission_classes = [EnvironmentAwarePermission, PolicyPermission]
@@ -131,6 +175,7 @@ class ReportStreamView(APIView):
         field_file = _pick_report_field_file(report, file_type)
         filename = Path(field_file.name).name
         content_type = mimetypes.guess_type(field_file.name)[0] or "application/pdf"
+        recovered_from_fallback = False
         try:
             file_size = field_file_size(field_file)
         except FileNotFoundError as exc:
@@ -145,6 +190,7 @@ class ReportStreamView(APIView):
                 )
                 raise Http404("Report file is not available") from exc
             field_file = recovered_field_file
+            recovered_from_fallback = True
             file_size = field_file_size(field_file)
         if file_size <= 0:
             raise Http404("Report file is empty")
@@ -157,7 +203,7 @@ class ReportStreamView(APIView):
         range_header = request.headers.get("Range") or request.META.get("HTTP_RANGE")
         serve_with_nginx = os.environ.get("SERVE_WITH_NGINX", "false").lower() == "true"
 
-        if serve_with_nginx and not range_header:
+        if serve_with_nginx and not range_header and not recovered_from_fallback:
             nginx_response = _serve_with_nginx(
                 field_file,
                 content_type,
@@ -175,12 +221,22 @@ class ReportStreamView(APIView):
                 response["Accept-Ranges"] = "bytes"
                 return add_cors_headers(response, frontend_origin)
 
-        streaming_response = build_partial_content_response(
-            field_file=field_file,
-            content_type=content_type,
-            file_size=file_size,
-            range_header=range_header,
-            disposition=disposition,
-            filename=filename,
-        )
+        if recovered_from_fallback:
+            streaming_response = _build_eager_content_response(
+                field_file=field_file,
+                content_type=content_type,
+                file_size=file_size,
+                range_header=range_header,
+                disposition=disposition,
+                filename=filename,
+            )
+        else:
+            streaming_response = build_partial_content_response(
+                field_file=field_file,
+                content_type=content_type,
+                file_size=file_size,
+                range_header=range_header,
+                disposition=disposition,
+                filename=filename,
+            )
         return add_cors_headers(streaming_response, frontend_origin)

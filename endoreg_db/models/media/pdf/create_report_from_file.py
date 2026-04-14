@@ -10,6 +10,7 @@ from endoreg_db.utils.file_operations import get_content_hash_filename
 from endoreg_db.utils.hashs import get_pdf_hash
 from endoreg_db.utils.paths import (
     IMPORT_REPORT_DIR,
+    STORAGE_DIR,
     SENSITIVE_REPORT_DIR,
     to_storage_relative,
 )
@@ -22,6 +23,17 @@ logger = logging.getLogger("raw_pdf")
 
 def _canonical_managed_report_relative_path(file_path: Path) -> str | None:
     resolved = file_path.resolve()
+    try:
+        relative_to_storage = resolved.relative_to(STORAGE_DIR.resolve())
+    except ValueError:
+        relative_to_storage = None
+
+    if relative_to_storage is not None and relative_to_storage.parts[:1] in (
+        ("sensitive_reports",),
+        ("report_import",),
+    ):
+        return to_storage_relative(resolved)
+
     for managed_root in (SENSITIVE_REPORT_DIR, IMPORT_REPORT_DIR):
         try:
             resolved.relative_to(managed_root.resolve())
