@@ -33,7 +33,7 @@ weights_search_patterns:
 weights_search_dirs:
   - "tests/assets"
   - "assets" 
-  - "data/storage/model_weights"
+  - "model_weights"
   - "${STORAGE_DIR}/model_weights"  # Environment variable substitution
 
 # Default values for auto-generated metadata
@@ -154,7 +154,7 @@ weights_search_dirs:
   - "${MODEL_CACHE_DIR}/weights"      # Custom environment variable
   - "${HOME}/.endoreg/models"         # User-specific location
   - "/shared/models/endoreg"          # Shared network location
-  - "data/storage/model_weights"      # Default fallback
+  - "model_weights"      # Default fallback
 ```
 
 ## Migration from Hardcoded Setup

@@ -8,7 +8,6 @@ import pytest
 from endoreg_db.models import VideoFile
 from endoreg_db.services import streamable_media
 
-
 STREAMABLE_MEDIA = Path(
     "/home/admin/endoreg-db/endoreg_db/services/streamable_media.py"
 )
@@ -67,6 +66,7 @@ def test_sync_video_streamable_artifacts_materializes_plaintext_from_encrypted_s
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    # Create a mock settings object that points to your tmp_path
     raw_payload = b"\x00\x00\x00\x18ftypmp42raw"
     processed_payload = b"\x00\x00\x00\x18ftypmp42processed"
     video = StubVideo(

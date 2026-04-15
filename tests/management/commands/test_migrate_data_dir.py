@@ -10,9 +10,15 @@ from django.test import TestCase
 from endoreg_db.management.commands.migrate_data_dir import Command, MIGRATION_RULES
 from endoreg_db.models import Center, RawPdfFile, VideoFile
 from endoreg_db.utils.paths import (
+    DOCUMENT_DIR,
+    FRAME_DIR,
     IMPORT_ANONYMIZED_REPORT_DIR,
     IMPORT_ANONYMIZED_VIDEO_DIR,
+    INGEST_UPLOADS_DIR,
     MANIFEST_DIR,
+    MANAGED_SENSITIVE_SIDECARS_DIR,
+    RAW_FRAME_DIR,
+    WEIGHTS_DIR,
     to_storage_relative,
 )
 
@@ -141,6 +147,102 @@ class MigrateDataDirCommandTests(TestCase):
             self.assertTrue(
                 report_entry["destination_path"].startswith(
                     str(IMPORT_ANONYMIZED_REPORT_DIR)
+                )
+            )
+
+    def test_dry_run_includes_remaining_managed_storage_classes(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir_name:
+            temp_dir = Path(temp_dir_name)
+            legacy_root = temp_dir / "legacy"
+
+            (legacy_root / "raw_frames").mkdir(parents=True)
+            (legacy_root / "frames").mkdir(parents=True)
+            (legacy_root / "model_weights").mkdir(parents=True)
+            (legacy_root / "documents").mkdir(parents=True)
+            (legacy_root / "upload_jobs" / "api" / "aa" / "job1").mkdir(parents=True)
+            (legacy_root / "sensitive_sidecars").mkdir(parents=True)
+            (legacy_root / "storage" / "raw_frames").mkdir(parents=True)
+            (legacy_root / "storage" / "frames").mkdir(parents=True)
+            (legacy_root / "storage" / "model_weights").mkdir(parents=True)
+            (legacy_root / "storage" / "documents").mkdir(parents=True)
+            (legacy_root / "storage" / "upload_jobs" / "watcher" / "bb" / "job2").mkdir(
+                parents=True
+            )
+            (legacy_root / "storage" / "sensitive_sidecars").mkdir(parents=True)
+
+            (legacy_root / "raw_frames" / "frame_a.jpg").write_bytes(b"jpg")
+            (legacy_root / "frames" / "frame_b.jpg").write_bytes(b"jpg")
+            (legacy_root / "model_weights" / "weights.safetensors").write_bytes(
+                b"weights"
+            )
+            (legacy_root / "documents" / "doc_a.pdf").write_bytes(b"%PDF-1.4\n%%EOF\n")
+            (
+                legacy_root / "upload_jobs" / "api" / "aa" / "job1" / "upload_a.pdf"
+            ).write_bytes(b"%PDF-1.4\n%%EOF\n")
+            (legacy_root / "sensitive_sidecars" / "meta_a.json").write_text(
+                "{}",
+                encoding="utf-8",
+            )
+            (legacy_root / "storage" / "raw_frames" / "frame_c.jpg").write_bytes(b"jpg")
+            (legacy_root / "storage" / "frames" / "frame_d.jpg").write_bytes(b"jpg")
+            (
+                legacy_root / "storage" / "model_weights" / "weights2.safetensors"
+            ).write_bytes(b"weights")
+            (legacy_root / "storage" / "documents" / "doc_b.pdf").write_bytes(
+                b"%PDF-1.4\n%%EOF\n"
+            )
+            (
+                legacy_root
+                / "storage"
+                / "upload_jobs"
+                / "watcher"
+                / "bb"
+                / "job2"
+                / "upload_b.mp4"
+            ).write_bytes(b"\x00\x00\x00\x18ftypmp42")
+            (legacy_root / "storage" / "sensitive_sidecars" / "meta_b.json").write_text(
+                "{}", encoding="utf-8"
+            )
+
+            manifest_path = MANIFEST_DIR / "tests" / "migrate_data_dir_managed.json"
+            if manifest_path.exists():
+                manifest_path.unlink()
+
+            call_command(
+                "migrate_data_dir",
+                str(legacy_root),
+                "--dry-run",
+                "--manifest-path",
+                str(manifest_path),
+            )
+
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+            migrated = payload["migrated_entries"]
+            self.assertEqual(len(migrated), 12)
+
+            destination_paths = {entry["destination_path"] for entry in migrated}
+            self.assertTrue(
+                any(path.startswith(str(RAW_FRAME_DIR)) for path in destination_paths)
+            )
+            self.assertTrue(
+                any(path.startswith(str(FRAME_DIR)) for path in destination_paths)
+            )
+            self.assertTrue(
+                any(path.startswith(str(WEIGHTS_DIR)) for path in destination_paths)
+            )
+            self.assertTrue(
+                any(path.startswith(str(DOCUMENT_DIR)) for path in destination_paths)
+            )
+            self.assertTrue(
+                any(
+                    path.startswith(str(INGEST_UPLOADS_DIR))
+                    for path in destination_paths
+                )
+            )
+            self.assertTrue(
+                any(
+                    path.startswith(str(MANAGED_SENSITIVE_SIDECARS_DIR))
+                    for path in destination_paths
                 )
             )
 

@@ -218,15 +218,14 @@ def authenticate_network_node(
     normalized_key = str(provided_node_key or "").strip()
     normalized_secret = str(provided_secret or "").strip()
 
+    if normalized_key != source_node.node_key:
+        return None
+
     if source_node.shared_secret_hash:
-        if normalized_key != source_node.node_key:
-            return None
         if not source_node.check_shared_secret(normalized_secret):
             return None
         return source_node
 
-    if normalized_key and normalized_key != source_node.node_key:
-        return None
     return source_node
 
 

@@ -7,6 +7,7 @@ from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -23,7 +24,6 @@ from endoreg_db.services.hub import (
     resolve_allowed_center_id,
     transfer_api_enabled,
 )
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 
 def _assert_transfer_api_enabled() -> None:
@@ -61,12 +61,8 @@ def _assert_transfer_mtls(request) -> None:
         )
 
 
-def _enforce_transfer_node_auth(request, source_node_key: str) -> None:
+def _enforce_transfer_node_auth(request, source_node_key: str):
     _assert_secure_transfer_transport(request)
-    user = getattr(request, "user", None)
-    if getattr(user, "is_authenticated", False):
-        return
-
     _assert_transfer_mtls(request)
     provided_node_key = _node_header(request, "X-Network-Node-Key")
     provided_secret = _node_header(request, "X-Network-Node-Secret")
@@ -77,11 +73,25 @@ def _enforce_transfer_node_auth(request, source_node_key: str) -> None:
     )
     if authenticated_node is None:
         raise PermissionDenied("Invalid network node credentials for this transfer")
+    return authenticated_node
+
+
+def _assert_transfer_center_scope(request, source_center_id: int | None) -> None:
+    allowed_center_id = resolve_allowed_center_id(getattr(request, "user", None))
+    if allowed_center_id == -1:
+        raise PermissionDenied("You do not have access to transfer jobs.")
+    if (
+        allowed_center_id is not None
+        and allowed_center_id >= 0
+        and source_center_id is not None
+        and source_center_id != allowed_center_id
+    ):
+        raise Http404("Transfer job not found")
 
 
 @method_decorator(csrf_exempt, name="dispatch")
 class HubTransferCreateView(APIView):
-    permission_classes = [EnvironmentAwarePermission]
+    permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
         _assert_transfer_api_enabled()
@@ -92,6 +102,10 @@ class HubTransferCreateView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         _enforce_transfer_node_auth(request, data["source_node"].node_key)
+        _assert_transfer_center_scope(
+            request,
+            getattr(data.get("source_center"), "id", None),
+        )
 
         try:
             transfer_job, created = create_or_reuse_transfer_job(
@@ -126,7 +140,7 @@ class HubTransferCreateView(APIView):
 
 @method_decorator(csrf_exempt, name="dispatch")
 class HubTransferStatusView(APIView):
-    permission_classes = [EnvironmentAwarePermission]
+    permission_classes = [AllowAny]
 
     def get(self, request, transfer_key: str, *args, **kwargs):
         _assert_transfer_api_enabled()
@@ -143,15 +157,7 @@ class HubTransferStatusView(APIView):
             raise Http404("Transfer job not found")
 
         _enforce_transfer_node_auth(request, transfer_job.source_node.node_key)
-
-        allowed_center_id = resolve_allowed_center_id(getattr(request, "user", None))
-        if (
-            allowed_center_id is not None
-            and allowed_center_id != -1
-            and transfer_job.source_center_id is not None
-            and transfer_job.source_center_id != allowed_center_id
-        ):
-            raise Http404("Transfer job not found")
+        _assert_transfer_center_scope(request, transfer_job.source_center_id)
 
         serializer = TransferJobStatusSerializer(transfer_job)
         return Response(serializer.data)
@@ -159,7 +165,7 @@ class HubTransferStatusView(APIView):
 
 @method_decorator(csrf_exempt, name="dispatch")
 class HubTransferMediaUploadView(APIView):
-    permission_classes = [EnvironmentAwarePermission]
+    permission_classes = [AllowAny]
     parser_classes = [MultiPartParser, FormParser]
 
     def post(self, request, transfer_key: str, *args, **kwargs):
@@ -177,6 +183,7 @@ class HubTransferMediaUploadView(APIView):
             raise Http404("Transfer job not found")
 
         _enforce_transfer_node_auth(request, transfer_job.source_node.node_key)
+        _assert_transfer_center_scope(request, transfer_job.source_center_id)
 
         uploaded_file = request.FILES.get("file")
         if uploaded_file is None:

@@ -277,6 +277,13 @@ def resolve_api_upload_context(
             )
 
     allowed_center_id = resolve_allowed_center_id(user)
+    if allowed_center_id == -1:
+        return (
+            None,
+            allowed_center_id,
+            "You do not have access to upload jobs.",
+            {"hub_mode": hub_mode},
+        )
     if (
         allowed_center_id is not None
         and allowed_center_id >= 0
@@ -369,17 +376,23 @@ def create_or_reuse_upload_job(
             )
             .first()
         )
-        if existing_by_hash is not None:
-            emit_hub_audit_event(
-                "hub.upload_job_reused_by_content_hash",
-                upload_job_id=str(existing_by_hash.id),
-                source_system=source_system,
-                request_user=created_by,
-                center_key=source_center.center_key if source_center else None,
-                ingest_mode=ingest_mode,
-                content_hash=normalized_content_hash,
-            )
-            return existing_by_hash, False
+        if existing_by_hash:
+            # Check if the associated video or pdf actually exists
+            video_exists = VideoFile.objects.filter(
+                video_hash=normalized_content_hash
+            ).exists()
+            pdf_exists = RawPdfFile.objects.filter(
+                pdf_hash=normalized_content_hash
+            ).exists()
+
+            if video_exists or pdf_exists:
+                return existing_by_hash, False
+            else:
+                # If the media is gone, the job is "orphaned".
+                # Mark it as error so it can be recreated.
+                existing_by_hash.mark_error(
+                    "Associated media record was deleted. Forcing re-ingest."
+                )
 
     normalized_idempotency_key = (idempotency_key or "").strip()
     if normalized_idempotency_key:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 
+from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.test.utils import override_settings
@@ -9,7 +10,9 @@ from django.test.utils import override_settings
 from endoreg_db.models import (
     Center,
     EndoscopyProcessor,
+    Examiner,
     NetworkNode,
+    PortalUserInfo,
     TransferJob,
     VideoFile,
 )
@@ -275,6 +278,57 @@ class HubTransferEndpointTests(TestCase):
         assert not TransferJob.objects.filter(
             transfer_key="site-a__video__auth-fail"
         ).exists()
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_transfer_registration_does_not_allow_authenticated_user_to_bypass_node_auth(
+        self,
+    ):
+        user = User.objects.create_superuser(
+            username="hub-admin",
+            email="hub-admin@example.org",
+            password="secret",
+        )
+        self.client.force_login(user)
+        payload = self._video_transfer_payload(
+            transfer_key="site-a__video__user-bypass-denied",
+            video_hash="hash-user-bypass-denied",
+        )
+
+        response = self._secure_post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+        )
+
+        assert response.status_code == 403, response.content
+        assert "Invalid network node credentials" in response.json()["detail"]
+        assert not TransferJob.objects.filter(
+            transfer_key="site-a__video__user-bypass-denied"
+        ).exists()
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_transfer_registration_rejects_authenticated_user_without_center_scope(
+        self,
+    ):
+        user = User.objects.create_user(
+            username="unscoped-transfer-user",
+            password="secret",
+        )
+        self.client.force_login(user)
+        payload = self._video_transfer_payload(
+            transfer_key="site-a__video__unscoped-user",
+            video_hash="hash-unscoped-user",
+        )
+
+        response = self._secure_post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        assert response.status_code == 403, response.content
+        assert "do not have access" in response.json()["detail"]
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfer_registration_requires_secure_transport(self):
@@ -577,3 +631,56 @@ class HubTransferEndpointTests(TestCase):
         assert "Only anonymized processed media may be uploaded" in str(
             upload_response.json()
         )
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_transfer_media_upload_is_center_scoped_for_authenticated_users(self):
+        other_center = Center.objects.create(
+            name="center-b",
+            display_name="Center B",
+        )
+        examiner = Examiner.objects.create(
+            first_name="Scoped",
+            last_name="TransferUser",
+            hash="scoped-transfer-user-hash",
+            center=other_center,
+        )
+        user = User.objects.create_user(
+            username="scoped-transfer-user",
+            password="secret",
+        )
+        PortalUserInfo.objects.create(user=user, examiner=examiner)
+
+        processed_bytes = b"processed-video"
+        processed_hash = self._sha256(processed_bytes)
+        payload = self._video_transfer_payload(
+            transfer_key="site-a__video__center-scoped-media",
+            video_hash=self._sha256(b"raw-video"),
+            transfer_mode="metadata_and_processed_media",
+            processing_policy="preserve_processing_state",
+            sender_processing_success=True,
+            processed_video_hash=processed_hash,
+        )
+
+        create_response = self._secure_post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+        assert create_response.status_code == 201, create_response.content
+
+        self.client.force_login(user)
+        upload_response = self._secure_post(
+            f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
+            data={
+                "media_role": "processed",
+                "file": SimpleUploadedFile(
+                    "processed.mp4",
+                    processed_bytes,
+                    content_type="video/mp4",
+                ),
+            },
+            **self._auth_headers(),
+        )
+
+        assert upload_response.status_code == 404, upload_response.content

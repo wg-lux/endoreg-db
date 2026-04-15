@@ -1,11 +1,11 @@
 import logging
-
+from django.utils import timezone
 from django.db import transaction
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ...models import RawPdfFile, SensitiveMeta
+from ...models import RawPdfFile, SensitiveMeta, UploadJob
 from endoreg_db.services.report_import import ReportImportService
 from endoreg_db.utils.storage import ensure_local_file
 
@@ -91,6 +91,11 @@ class ReportReimportView(APIView):
                         logger.warning(
                             f"Could not delete old SensitiveMeta {old_meta_id}: {e}"
                         )
+                    UploadJob.objects.filter(content_hash=pdf.pdf_hash).update(
+                        status=UploadJob.Status.PROCESSING,
+                        error_detail="",
+                        updated_at=timezone.now(),
+                    )
 
                 # Use ReportImportService for reprocessing
                 try:

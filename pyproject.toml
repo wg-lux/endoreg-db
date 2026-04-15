@@ -1,14 +1,14 @@
 [project]
 authors = [
   {name = "Thomas J. Lux", email = "lux_t1@ukw.de"},
-  {name = "Max Hild"},
+  {name = "Max Hild", email = "hild_m@ukw.de"},
   {name = "Hamza Zahid"},
   {name = "Peter Kowalczyk"},
 ]
 description = "EndoReg Db Django App"
 maintainers = [
   {name = "Thomas J. Lux", email = "lux_t1@ukw.de"},
-  {name = "Max Hild"},
+  {name = "Max Hild", email = "hild_m@ukw.de"},
   {name = "Hamza Zahid"},
   {name = "Peter Kowalczyk"},
 ]

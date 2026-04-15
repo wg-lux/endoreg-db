@@ -143,6 +143,7 @@ class UploadFileView(APIView):
                         and "Authentication is required" in center_resolution_error
                     )
                     or "outside the authenticated scope" in center_resolution_error
+                    or "do not have access" in center_resolution_error
                     else status.HTTP_400_BAD_REQUEST
                 )
                 return Response(

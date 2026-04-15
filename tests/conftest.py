@@ -1349,12 +1349,23 @@ def mock_storage(tmp_path, monkeypatch):
     # 1. Define the fake root
     fake_root = tmp_path / "fake_protected_root"
     fake_root.mkdir()
+    streamable_root = fake_root / "storage" / "streamable_videos"
+    streamable_raw_root = streamable_root / "raw"
+    streamable_processed_root = streamable_root / "processed"
 
     # 2. Create a fake instance of the model
     # Use a dummy environment or manually override fields
     monkeypatch.setenv("LX_ANNOTATE_ENCRYPTED_DATA_DIR", str(fake_root))
     monkeypatch.setenv("STORAGE_DIR", str(fake_root / "storage"))
     monkeypatch.setenv("IO_DIR", str(fake_root))
+    monkeypatch.setenv("LX_ANNOTATE_STREAMABLE_VIDEO_ROOT", str(streamable_root))
+    monkeypatch.setenv(
+        "LX_ANNOTATE_STREAMABLE_VIDEO_RAW_ROOT", str(streamable_raw_root)
+    )
+    monkeypatch.setenv(
+        "LX_ANNOTATE_STREAMABLE_VIDEO_PROCESSED_ROOT",
+        str(streamable_processed_root),
+    )
 
     # Force the model to re-initialize from the new env
     fake_paths_model = paths_module.EndoregPathsModel.from_environment()
@@ -1390,6 +1401,9 @@ def mock_storage(tmp_path, monkeypatch):
     import endoreg_db.models.media.pdf.create_report_from_file as report_create_module
     import endoreg_db.models.media.pdf.raw_pdf as raw_pdf_module
     import endoreg_db.models.media.video.create_from_file as video_create_module
+    import endoreg_db.models.media.video.video_file as video_file_module
+    import endoreg_db.services.streamable_media as streamable_media_module
+    import endoreg_db.views.report.report_stream as report_stream_module
     from django.core.files.storage import FileSystemStorage
 
     monkeypatch.setattr(utils_module, "data_paths", fake_paths_model)
@@ -1406,6 +1420,10 @@ def mock_storage(tmp_path, monkeypatch):
     monkeypatch.setattr(
         raw_pdf_module, "SENSITIVE_REPORT_DIR", fake_paths_model.sensitive_report
     )
+    monkeypatch.setattr(report_stream_module, "STORAGE_DIR", fake_paths_model.storage)
+    monkeypatch.setattr(
+        report_stream_module, "ANONYM_REPORT_DIR", fake_paths_model.anonym_report
+    )
     monkeypatch.setattr(
         video_create_module, "IMPORT_VIDEO_DIR", fake_paths_model.import_video
     )
@@ -1415,10 +1433,44 @@ def mock_storage(tmp_path, monkeypatch):
     monkeypatch.setattr(
         video_create_module, "TRANSCODING_DIR", fake_paths_model.transcoding
     )
+    monkeypatch.setattr(
+        streamable_media_module, "STREAMABLE_VIDEO_ROOT", streamable_root
+    )
+    monkeypatch.setattr(
+        streamable_media_module, "STREAMABLE_RAW_VIDEO_ROOT", streamable_raw_root
+    )
+    monkeypatch.setattr(
+        streamable_media_module,
+        "STREAMABLE_PROCESSED_VIDEO_ROOT",
+        streamable_processed_root,
+    )
 
     # Ensure Django FileField storage roots also point to the mocked storage tree.
-    report_storage = FileSystemStorage(location=str(fake_paths_model.storage))
-    raw_pdf_module.RawPdfFile._meta.get_field("file").storage = report_storage
-    raw_pdf_module.RawPdfFile._meta.get_field("processed_file").storage = report_storage
+    raw_pdf_file_field = raw_pdf_module.RawPdfFile._meta.get_field("file")
+    raw_pdf_processed_field = raw_pdf_module.RawPdfFile._meta.get_field(
+        "processed_file"
+    )
+    video_raw_field = video_file_module.VideoFile._meta.get_field("raw_file")
+    video_processed_field = video_file_module.VideoFile._meta.get_field(
+        "processed_file"
+    )
+    previous_report_storage = raw_pdf_file_field.storage
+    previous_report_processed_storage = raw_pdf_processed_field.storage
+    previous_video_storage = video_raw_field.storage
+    previous_video_processed_storage = video_processed_field.storage
 
-    return fake_paths_model
+    report_storage = FileSystemStorage(location=str(fake_paths_model.storage))
+    raw_pdf_file_field.storage = report_storage
+    raw_pdf_processed_field.storage = report_storage
+    video_storage = FileSystemStorage(location=str(fake_paths_model.storage))
+    video_raw_field.storage = video_storage
+    video_processed_field.storage = video_storage
+
+    try:
+        yield fake_paths_model
+    finally:
+        raw_pdf_file_field.storage = previous_report_storage
+        raw_pdf_processed_field.storage = previous_report_processed_storage
+        video_raw_field.storage = previous_video_storage
+        video_processed_field.storage = previous_video_processed_storage
+        shutil.rmtree(fake_root, ignore_errors=True)

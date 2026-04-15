@@ -1,5 +1,6 @@
 from django.test import TestCase
 from rest_framework.test import APIRequestFactory
+from unittest.mock import patch
 
 from endoreg_db.models import (
     Center,
@@ -68,7 +69,11 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
             },
         )
 
-        response = self.random_task_view(request)
+        with patch(
+            "endoreg_db.views.video.ai.frame_annotations.random.randint",
+            return_value=0,
+        ):
+            response = self.random_task_view(request)
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["status"], "success")
@@ -110,7 +115,11 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
             },
         )
 
-        response = self.random_task_view(request)
+        with patch(
+            "endoreg_db.views.video.ai.frame_annotations.random.randint",
+            return_value=0,
+        ):
+            response = self.random_task_view(request)
 
         self.assertEqual(response.status_code, 404)
 
@@ -165,7 +174,11 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
             },
         )
 
-        response = self.random_task_view(request)
+        with patch(
+            "endoreg_db.views.video.ai.frame_annotations.random.randint",
+            return_value=0,
+        ):
+            response = self.random_task_view(request)
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("filter_label", response.data["error"])
@@ -339,7 +352,11 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
             },
         )
 
-        response = self.random_task_view(request)
+        with patch(
+            "endoreg_db.views.video.ai.frame_annotations.random.randint",
+            return_value=0,
+        ):
+            response = self.random_task_view(request)
 
         self.assertEqual(response.status_code, 200)
         task = response.data["task"]

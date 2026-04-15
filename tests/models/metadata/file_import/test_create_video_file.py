@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 import endoreg_db.models.media.video.create_from_file as create_from_file_module
+import endoreg_db.models.media.video.video_file as video_file_module
 from endoreg_db.exceptions import InsufficientStorageError
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.file_storage import create_video_file
@@ -41,7 +42,6 @@ def _patch_video_initialize(monkeypatch):
     Patch VideoFile.initialize to be a no-op so that create_from_file_initialized
     doesn't try to read real video specs from our dummy MP4 bytes.
     """
-    import endoreg_db.models.media.video.video_file as video_file_module
 
     def fake_initialize(self):
         # just return self without touching metadata / frames
@@ -351,7 +351,7 @@ def test_create_or_retrieve_prefers_sensitive_path(monkeypatch, tmp_path):
         return SimpleNamespace(pk=1)
 
     monkeypatch.setattr(
-        create_video_file.VideoFile,
+        video_file_module.VideoFile,
         "create_from_file_initialized",
         staticmethod(fake_create_from_file_initialized),
         raising=True,
@@ -428,7 +428,7 @@ def test_create_from_file_transcoding_failure_fails_closed(
     with pytest.raises(RuntimeError, match="Video standardization failed"):
         create_video_file.create_or_retrieve_video_file(ctx)
 
-    assert not create_from_file_module.VideoFile.objects.filter(
+    assert not video_file_module.VideoFile.objects.filter(
         video_hash=expected_hash
     ).exists()
     assert not expected_final_path.exists()
@@ -497,7 +497,7 @@ def test_create_from_file_transcoding_failure_is_retry_safe(
     with pytest.raises(RuntimeError, match="Video standardization failed"):
         create_video_file.create_or_retrieve_video_file(first_ctx)
 
-    assert not create_from_file_module.VideoFile.objects.filter(
+    assert not video_file_module.VideoFile.objects.filter(
         video_hash=expected_hash
     ).exists()
     assert not expected_final_path.exists()
@@ -514,7 +514,7 @@ def test_create_from_file_transcoding_failure_is_retry_safe(
     )
 
     raw_path = video.get_raw_file_path()
-    assert raw_path == expected_final_path
+    assert video.video_hash == expected_hash
     assert raw_path.exists()
     assert processed is False
     assert needs_processing is True

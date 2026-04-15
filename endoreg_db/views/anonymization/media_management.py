@@ -11,7 +11,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from endoreg_db.models import RawPdfFile, VideoFile, VideoState
+from endoreg_db.models import RawPdfFile, VideoFile, VideoState, UploadJob
 from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
 
 logger = logging.getLogger(__name__)
@@ -393,6 +393,9 @@ def force_remove_media(request, file_id: int):
             filename = video.original_file_name
             video.delete()
 
+            job = UploadJob.objects.get(content_hash=video.video_hash)
+            job.delete()
+
             return Response(
                 {
                     "detail": f"Video file '{filename}' (ID: {file_id}) removed successfully",
@@ -408,6 +411,8 @@ def force_remove_media(request, file_id: int):
             pdf = RawPdfFile.objects.get(id=file_id)
             filename = getattr(pdf.file, "name", "Unknown")
             pdf.delete()
+            job = UploadJob.objects.get(content_hash=pdf.pdf_hash)
+            job.delete()
 
             return Response(
                 {

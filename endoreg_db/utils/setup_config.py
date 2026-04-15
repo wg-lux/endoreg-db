@@ -71,7 +71,7 @@ class SetupConfig:
             "weights_search_dirs": [
                 "tests/assets",
                 "assets",
-                "data/storage/model_weights",
+                "model_weights",
                 "${STORAGE_DIR}/model_weights",
             ],
             "auto_generation_defaults": {

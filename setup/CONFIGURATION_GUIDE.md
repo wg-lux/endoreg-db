@@ -11,7 +11,7 @@ This repository is a reusable Django app. It ships a small, robust settings pack
 
 Legacy settings (prod_settings.py, dev/dev_settings.py, tests/test_settings.py) are thin wrappers and can be removed after consumers update.
 
-For a concise downstream upgrade checklist covering center identity, hub mode,
+For a concise downstream upgrade checklist covering center identity, hub-role
 transfer gating, and cleanup semantics, see
 [`docs/deployment_note_hub_contract.md`](/home/admin/endoreg-db/docs/deployment_note_hub_contract.md).
 
@@ -53,10 +53,9 @@ Production (endoreg_db.config.settings.prod)
 - DJANGO_DEBUG: true|false (use false in production)
 - DJANGO_ALLOWED_HOSTS: comma-separated
 - DB_ENGINE, DB_NAME, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT
-- ENDOREG_HUB_MODE: true|false. Enables strict remote-ingest policy and hub deployment guardrails.
-- ENDOREG_ENABLE_HUB_TRANSFERS: true|false. Enables the node-to-node transfer API. Defaults to false so transfer endpoints are never exposed accidentally.
+- ENDOREG_DEPLOYMENT_ROLE: `standalone`|`site_node`|`central_hub`. `central_hub` enables strict API ingest policy and exposes the transfer endpoints.
 - ENDOREG_HUB_TRANSFER_REQUIRE_SECURE_TRANSPORT: true|false. Defaults to true. Refuses insecure transfer requests.
-- ENDOREG_HUB_TRANSFER_REQUIRE_MTLS: true|false. Defaults to false outside hardened production profiles, but should be true for production transfer deployments.
+- ENDOREG_HUB_TRANSFER_REQUIRE_MTLS: true|false. Defaults to `true` for `central_hub` deployments and is required in production `central_hub` settings.
 - ENDOREG_HUB_TRANSFER_MTLS_META_KEY, ENDOREG_HUB_TRANSFER_MTLS_META_VALUE: proxy-attested client-certificate verification contract for Django when mTLS is terminated before the app.
 - SECURE_SSL_REDIRECT, SESSION_COOKIE_SECURE, CSRF_COOKIE_SECURE
 - SECURE_HSTS_SECONDS, SECURE_HSTS_INCLUDE_SUBDOMAINS, SECURE_HSTS_PRELOAD
@@ -77,7 +76,7 @@ The intended production workflow is:
 1. A boundary adapter accepts input.
    `watcher` reads trusted local files.
    `api` accepts authenticated remote uploads.
-   `transfer` accepts authenticated node-to-node synchronization only when explicitly enabled.
+   `transfer` accepts authenticated node-to-node synchronization only in `central_hub` deployments.
 2. The boundary resolves center identity.
    `center_key` is the canonical machine-facing identifier.
    Human-readable center names remain display data only.
@@ -116,14 +115,15 @@ Cleanup semantics are intentional:
 
 ## Transfer support
 
-The package also includes a node-to-node transfer API under `/api/media/hub/transfers/`, but this is not enabled by default.
+The package also includes a node-to-node transfer API under
+`/api/media/hub/transfers/`.
 
 - Default hub boundary: upload-job API ingest at `/api/upload/`
 - Optional secondary boundary: transfer-job ingest at `/api/media/hub/transfers/`
 
 Enable transfer support only when you are intentionally operating authenticated site-node to hub synchronization:
 
-- set `ENDOREG_ENABLE_HUB_TRANSFERS=true`
+- set `ENDOREG_DEPLOYMENT_ROLE=central_hub`
 - keep `ENDOREG_HUB_TRANSFER_REQUIRE_SECURE_TRANSPORT=true`
 - require proxy-verified mTLS with `ENDOREG_HUB_TRANSFER_REQUIRE_MTLS=true`
 - configure `ENDOREG_HUB_TRANSFER_MTLS_META_KEY` and `ENDOREG_HUB_TRANSFER_MTLS_META_VALUE`
@@ -136,13 +136,17 @@ Phase 1 transport protection for transfer support is:
 - node-authenticated transfer requests must present proxy-verified mTLS attestation
 - `NetworkNode.shared_secret` remains request authentication only and does not replace transport security
 
-If `ENDOREG_ENABLE_HUB_TRANSFERS` is not enabled, the transfer endpoints return 404. This is deliberate and prevents accidental exposure of a second ingress boundary in production.
+If `ENDOREG_DEPLOYMENT_ROLE` is not `central_hub`, the transfer endpoints
+return `404`. This is deliberate and prevents accidental exposure of a second
+ingress boundary in non-hub deployments.
 
-## Hub mode
+## Central Hub Role
 
-Set `ENDOREG_HUB_MODE=true` when the package is deployed as a shared multi-center ingest service rather than a local workstation or single-site embedded app.
+Set `ENDOREG_DEPLOYMENT_ROLE=central_hub` when the package is deployed as a
+shared multi-center ingest service rather than a local workstation or
+single-site embedded app.
 
-When hub mode is enabled:
+When `central_hub` is enabled:
 
 - API uploads must be authenticated.
 - API uploads must declare `center_key`.
@@ -150,7 +154,8 @@ When hub mode is enabled:
 - watcher ingestion remains supported and retains local default-center behavior.
 - production configuration must use a non-SQLite database engine.
 
-Hub mode is intentionally strict. It makes remote ingestion fail fast instead of guessing center identity from mutable names or local defaults.
+The central-hub role is intentionally strict. It makes remote ingestion fail
+fast instead of guessing center identity from mutable names or local defaults.
 
 ## Hub deployment profile
 
@@ -161,7 +166,7 @@ For hub deployments, treat the following as required:
 - Durable shared or object-backed storage semantics for managed media and upload artifacts. Node-local ephemeral disks are not sufficient for a multi-node hub.
 - Host-project encryption, backup, retention, and access-control controls around the managed storage root.
 - OIDC/session or token authentication configured for API access in production.
-- If transfer ingest is used, `ENDOREG_ENABLE_HUB_TRANSFERS=true` plus network-node secret management and rotation procedures.
+- If transfer ingest is used, `ENDOREG_DEPLOYMENT_ROLE=central_hub` plus network-node secret management and rotation procedures.
 
 This package provides the ingest and API contract, but the host deployment remains responsible for encrypted-at-rest guarantees and operational controls around the storage system.
 
@@ -262,7 +267,7 @@ python manage.py create_multilabel_model_meta --model_name image_multilabel_clas
 - Set DJANGO_ALLOWED_HOSTS to your domains.
 - Enforce HTTPS: SECURE_SSL_REDIRECT=true, cookie secure flags true.
 - Consider HSTS: set SECURE_HSTS_SECONDS (e.g., 31536000) only when ready; include subdomains/preload as appropriate.
-- For hub deployments, set `ENDOREG_HUB_MODE=true` and use PostgreSQL or another non-SQLite production database.
-- Leave `ENDOREG_ENABLE_HUB_TRANSFERS=false` unless node-to-node transfer ingest is intentionally part of the deployment.
+- For hub deployments, set `ENDOREG_DEPLOYMENT_ROLE=central_hub` and use PostgreSQL or another non-SQLite production database.
+- Use the transfer endpoints only in `central_hub` deployments that intentionally support node-to-node synchronization.
 - Keep `STORAGE_DIR` and `IO_DIR` inside `LX_ANNOTATE_ENCRYPTED_DATA_DIR`.
 - For remote ingest, provision authentication before exposing `/api/upload/`.

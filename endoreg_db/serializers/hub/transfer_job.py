@@ -4,7 +4,6 @@ from rest_framework import serializers
 
 from endoreg_db.models import Center, NetworkNode, TransferJob
 from endoreg_db.models.state.anonymization import AnonymizationState
-from endoreg_db.services.hub.ingest import resolve_allowed_center_id
 
 
 class TransferJobCreateSerializer(serializers.Serializer):
@@ -60,7 +59,6 @@ class TransferJobCreateSerializer(serializers.Serializer):
         return normalized
 
     def validate(self, attrs: dict) -> dict:
-        request = self.context.get("request")
         transfer_mode = attrs["transfer_mode"]
 
         if transfer_mode in {
@@ -122,19 +120,6 @@ class TransferJobCreateSerializer(serializers.Serializer):
                 )
         elif source_node.owning_center_id is not None:
             source_center = source_node.owning_center
-
-        allowed_center_id = resolve_allowed_center_id(getattr(request, "user", None))
-        if (
-            source_center is not None
-            and allowed_center_id is not None
-            and allowed_center_id >= 0
-            and source_center.id != allowed_center_id
-        ):
-            raise serializers.ValidationError(
-                {
-                    "source_center_key": "Transfer center is outside the authenticated scope"
-                }
-            )
 
         resource_rows = attrs.get("resource_rows") or {}
         if attrs["resource_kind"] == TransferJob.ResourceKind.VIDEO:

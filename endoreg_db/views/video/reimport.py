@@ -1,11 +1,12 @@
 import logging
+from django.utils import timezone
 
 from django.db import transaction
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ...models import SensitiveMeta, VideoFile
+from ...models import SensitiveMeta, VideoFile, UploadJob
 from ...services.video_import import VideoImportService
 from endoreg_db.utils.storage import ensure_local_file
 
@@ -87,6 +88,12 @@ class VideoReimportView(APIView):
                         logger.warning(
                             f"Could not delete old SensitiveMeta {old_meta_id}: {e}"
                         )
+
+                    UploadJob.objects.filter(content_hash=video.video_hash).update(
+                        status=UploadJob.Status.PROCESSING,
+                        error_detail="",  # Clear previous errors
+                        updated_at=timezone.now(),
+                    )
 
                 # Re-initialize video specs and frames
                 logger.info(f"Re-initializing video specs for {video.video_hash}")

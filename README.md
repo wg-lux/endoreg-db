@@ -18,11 +18,16 @@ The package supports two first-class ingest boundaries:
 
 Both boundaries create `UploadJob` records and converge on the same shared ingest services. The downstream processing model is shared; only the trust boundary differs.
 
-For shared multi-center deployments, enable `ENDOREG_HUB_MODE=true`. In hub mode the package requires authenticated API uploads with declared `center_key` and refuses default-center fallback on the API path.
+For shared multi-center deployments, set
+`ENDOREG_DEPLOYMENT_ROLE=central_hub`. In that role the package requires
+authenticated API uploads with declared `center_key` and refuses
+default-center fallback on the API path.
 
 AI and automation consumers should use the API read surfaces for reports, videos, frames, and patient timelines rather than reading `STORAGE_DIR` directly. Those media endpoints are the package-level contract for center-scoped access.
 
-The node-to-node transfer API under `/api/media/hub/transfers/` is supported, but it is intentionally disabled by default. Enable it with `ENDOREG_ENABLE_HUB_TRANSFERS=true` only when transfer-job ingest is part of the deployment. Otherwise `/api/upload/` remains the primary hub boundary.
+The node-to-node transfer API under `/api/media/hub/transfers/` is supported
+for `central_hub` deployments. In `standalone` and `site_node` deployments
+those endpoints return `404`. `/api/upload/` remains the primary hub boundary.
 
 For the current transport-security phase, transfer deployments must:
 
@@ -32,6 +37,8 @@ For the current transport-security phase, transfer deployments must:
 
 For downstream upgrade and deployment impact, see
 [`docs/deployment_note_hub_contract.md`](/home/admin/endoreg-db/docs/deployment_note_hub_contract.md).
+For the full current-state hub behavior, see
+[`docs/wiki/hub_ingest_current_state.md`](/home/admin/endoreg-db/docs/wiki/hub_ingest_current_state.md).
 
 ## Ingest workflow
 
