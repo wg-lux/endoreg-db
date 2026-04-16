@@ -975,7 +975,8 @@ def _annotation_to_row(
     video = frame.video if frame else None
     information_source = annotation.information_source
 
-    assert information_source is not None
+    if information_source is None:
+        raise ValueError("Information Source is None.")
 
     frame_relative_path = None
     if frame:

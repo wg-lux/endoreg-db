@@ -396,27 +396,45 @@ def create_or_reuse_upload_job(
 
     normalized_idempotency_key = (idempotency_key or "").strip()
     if normalized_idempotency_key:
-        existing = upload_job_manager.filter(
-            idempotency_key=normalized_idempotency_key,
-            source_system=source_system,
-            content_hash=normalized_content_hash,
-            source_center=source_center,
-            ingest_mode=ingest_mode,
-            storage_class=storage_class,
-            storage_tier=storage_tier,
-        ).first()
-        if existing is not None:
-            emit_hub_audit_event(
-                "hub.upload_job_reused",
-                upload_job_id=str(existing.id),
-                source_system=source_system,
-                request_user=created_by,
-                center_key=source_center.center_key if source_center else None,
-                ingest_mode=ingest_mode,
+        existing = (
+            upload_job_manager.filter(
                 idempotency_key=normalized_idempotency_key,
+                source_system=source_system,
+                content_hash=normalized_content_hash,
+                source_center=source_center,
+                ingest_mode=ingest_mode,
+                storage_class=storage_class,
+                storage_tier=storage_tier,
             )
-            return existing, False
+            .exclude(status=UploadJob.Status.ERROR)
+            .first()
+        )  # <-- ADD EXCLUDE HERE
 
+        if existing is not None:
+            # --- ADD THIS ORPHAN CHECK ---
+            video_exists = VideoFile.objects.filter(
+                video_hash=normalized_content_hash
+            ).exists()
+            pdf_exists = RawPdfFile.objects.filter(
+                pdf_hash=normalized_content_hash
+            ).exists()
+
+            if video_exists or pdf_exists:
+                emit_hub_audit_event(
+                    "hub.upload_job_reused",
+                    upload_job_id=str(existing.id),
+                    source_system=source_system,
+                    request_user=created_by,
+                    center_key=source_center.center_key if source_center else None,
+                    ingest_mode=ingest_mode,
+                    idempotency_key=normalized_idempotency_key,
+                )
+                return existing, False
+            else:
+                existing.mark_error(
+                    "Associated media record was deleted. Forcing re-ingest via idempotency bypass."
+                )
+            # -----------------------------
     job = upload_job_manager.create(
         file=uploaded_file,
         content_type=content_type,

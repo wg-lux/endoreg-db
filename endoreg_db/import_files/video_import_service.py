@@ -109,7 +109,11 @@ class VideoImportService:
 
         with file_lock(lock_path):
             logger.info("Acquired file lock for %s", lock_path)
-            assert isinstance(ctx.file_hash, str)
+            if not isinstance(ctx.file_hash, str):
+                ctx.file_hash = str(ctx.file_hash)
+            if ctx.file_hash is None:
+                raise ValueError("File hash missing.")
+
             with content_hash_lock(ctx.file_hash, HASH_LOCK_DIR):
                 logger.info("Acquired content-hash lock for %s", ctx.file_hash)
                 existing_completed_video = self._get_existing_completed_video(ctx)
@@ -127,7 +131,10 @@ class VideoImportService:
                     create_or_retrieve_video_file(ctx)
                 )
                 ctx.current_video.get_or_create_state()
-                assert ctx.current_video.state is not None
+                if ctx.current_video.state is None:
+                    raise ValueError(
+                        f"{ctx.current_video.original_file_name} has no video state after trying."
+                    )
                 ctx.current_video = ctx.current_video
 
                 ctx.retry = retry
@@ -146,8 +153,8 @@ class VideoImportService:
                     ctx.current_video, processed, needs_processing = (
                         create_or_retrieve_video_file(ctx)
                     )
-                    assert needs_processing is True
-                elif not needs_processing and not retry:
+
+                if not needs_processing and not retry:
                     self._cleanup_duplicate_staging(ctx)
                     return ctx.current_video
 

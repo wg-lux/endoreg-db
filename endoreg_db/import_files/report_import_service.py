@@ -167,11 +167,13 @@ class ReportImportService:
                 ctx.file_hash = sha256_file(ctx.file_path)
 
             lock_path = ctx.original_path if is_txt_input else ctx.file_path
-            assert lock_path is not None
+            if lock_path is None:
+                raise ValueError(f"failed to lock {ctx.original_path}")
 
             with file_lock(lock_path):
                 logger.info("Acquired file lock for %s", lock_path)
-                assert isinstance(ctx.file_hash, str)
+                if not isinstance(ctx.file_hash, str):
+                    ctx.file_hash = str(ctx.file_hash)
                 with content_hash_lock(ctx.file_hash, HASH_LOCK_DIR):
                     logger.info("Acquired content-hash lock for %s", ctx.file_hash)
                     existing_completed_report = self._get_existing_completed_report(ctx)
@@ -181,7 +183,8 @@ class ReportImportService:
                         return existing_completed_report
 
                     sensitive_src = ctx.original_path if is_txt_input else ctx.file_path
-                    assert sensitive_src is not None
+                    if sensitive_src is None:
+                        raise ValueError("Could not set any source for file.")
                     ctx.sensitive_path = create_sensitive_copy(
                         sensitive_src, SENSITIVE_REPORT_DIR
                     )
@@ -191,7 +194,8 @@ class ReportImportService:
                         create_or_retrieve_report_file(ctx)
                     )
                     ctx.current_report.get_or_create_state()
-                    assert ctx.current_report.state is not None
+                    if ctx.current_report.state is None:
+                        raise ValueError("Could not create state for video.")
                     ctx.current_report = ctx.current_report
 
                     if processed or retry:
@@ -209,7 +213,10 @@ class ReportImportService:
                             ctx.current_report, processed, needs_processing = (
                                 create_or_retrieve_report_file(ctx)
                             )
-                            assert needs_processing is True
+                            if needs_processing is not True:
+                                raise ValueError(
+                                    f"File already processed: {ctx.original_path}"
+                                )
                         elif not needs_processing and not ctx.retry:
                             self._cleanup_duplicate_staging(ctx)
                             return ctx.current_report
@@ -218,7 +225,8 @@ class ReportImportService:
                             ctx.current_report, processed, needs_processing = (
                                 create_or_retrieve_report_file(ctx)
                             )
-                            assert needs_processing is True
+                            if needs_processing is not True:
+                                raise ValueError("File already processed.")
 
                         mark_instance_processing_started(ctx.current_report, ctx)
                         try:
