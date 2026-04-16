@@ -220,6 +220,30 @@ class UploadJob(models.Model):
         ordering = ["-created_at"]
         verbose_name = "Upload Job"
         verbose_name_plural = "Upload Jobs"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["source_center", "content_type", "content_hash"],
+                condition=(
+                    ~models.Q(content_hash="") & ~models.Q(status__in=["error", "lost"])
+                ),
+                name="uniq_uploadjob_content_hash_active",
+            ),
+            models.UniqueConstraint(
+                fields=[
+                    "source_center",
+                    "source_system",
+                    "ingest_mode",
+                    "storage_class",
+                    "storage_tier",
+                    "idempotency_key",
+                ],
+                condition=(
+                    ~models.Q(idempotency_key="")
+                    & ~models.Q(status__in=["error", "lost"])
+                ),
+                name="uniq_uploadjob_idempotency_scope_active",
+            ),
+        ]
 
     def __str__(self):
         return f"UploadJob {self.id} - {self.status} ({self.content_type})"

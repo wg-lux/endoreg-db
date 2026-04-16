@@ -1,4 +1,4 @@
-# endoreg_db/services/video_import.py
+# endoreg_db/import_files/video_import_service.py
 import logging
 import os
 import shutil

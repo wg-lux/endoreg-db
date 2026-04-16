@@ -5,11 +5,12 @@ import logging
 import hashlib
 from pathlib import Path
 from typing import Any, NotRequired, TypedDict, cast
-
+from datetime import timedelta
+from django.utils import timezone
 from django.contrib.auth.models import AnonymousUser
 from django.core.files import File
 from django.core.exceptions import ObjectDoesNotExist
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from pydantic import ValidationError
 
 from endoreg_db.models import (
@@ -43,9 +44,12 @@ from endoreg_db.utils.file_operations import (
 from endoreg_db.utils.paths import (
     ANONYM_REPORT_DIR,
     ANONYM_VIDEO_DIR,
+    QUARANTINE_DIR,
     to_storage_relative,
 )
 
+
+STALE_UPLOAD_JOB_AGE = timedelta(hours=2)
 logger = logging.getLogger(__name__)
 
 
@@ -124,6 +128,10 @@ def _normalized_upload_provenance(
     return provenance
 
 
+def _get_upload_provenance(upload_job: UploadJob) -> UploadProvenance | None:
+    return cast(UploadProvenance | None, upload_job.processing_provenance)
+
+
 def _compute_uploaded_file_content_hash(uploaded_file) -> str:
     digest = hashlib.sha256()
     if hasattr(uploaded_file, "seek"):
@@ -131,8 +139,14 @@ def _compute_uploaded_file_content_hash(uploaded_file) -> str:
     if hasattr(uploaded_file, "chunks"):
         for chunk in uploaded_file.chunks():
             digest.update(chunk)
+    elif hasattr(uploaded_file, "read"):
+        while True:
+            chunk = uploaded_file.read(8192)  # Read 8KB chunks
+            if not chunk:
+                break
+            digest.update(chunk)
     else:
-        digest.update(uploaded_file.read())
+        raise ValueError("uploaded_file does not have 'chunks' or 'read' method.")
     if hasattr(uploaded_file, "seek"):
         uploaded_file.seek(0)
     return digest.hexdigest()
@@ -342,6 +356,43 @@ def resolve_api_upload_context(
     )
 
 
+def _upload_job_has_usable_media(upload_job: UploadJob) -> bool:
+    content_hash = (upload_job.content_hash or "").strip()
+    if not content_hash:
+        return False
+
+    if upload_job.content_type == "application/pdf":
+        report = (
+            RawPdfFile.objects.select_related("state")
+            .filter(pdf_hash=content_hash)
+            .first()
+        )
+        if report is None:
+            return False
+        processed_file = getattr(report, "processed_file", None)
+        if not processed_file or not processed_file.name:
+            return False
+        if not processed_file.storage.exists(processed_file.name):
+            return False
+        state = getattr(report, "state", None) or report.get_or_create_state()
+        return bool(getattr(state, "anonymization_validated", False))
+
+    video = (
+        VideoFile.objects.select_related("state")
+        .filter(video_hash=content_hash)
+        .first()
+    )
+    if video is None:
+        return False
+    processed_file = getattr(video, "processed_file", None)
+    if not processed_file or not processed_file.name:
+        return False
+    if not processed_file.storage.exists(processed_file.name):
+        return False
+    state = getattr(video, "state", None) or video.get_or_create_state()
+    return bool(getattr(state, "anonymization_validated", False))
+
+
 def create_or_reuse_upload_job(
     *,
     uploaded_file,
@@ -364,117 +415,143 @@ def create_or_reuse_upload_job(
     if not normalized_content_hash:
         normalized_content_hash = _compute_uploaded_file_content_hash(uploaded_file)
 
-    if normalized_content_hash:
-        existing_by_hash = (
-            upload_job_manager.filter(
-                content_hash=normalized_content_hash,
-                source_center=source_center,
-                content_type=content_type,
-            )
-            .exclude(
-                status=UploadJob.Status.ERROR,
-            )
-            .first()
-        )
-        if existing_by_hash:
-            # Check if the associated video or pdf actually exists
-            video_exists = VideoFile.objects.filter(
-                video_hash=normalized_content_hash
-            ).exists()
-            pdf_exists = RawPdfFile.objects.filter(
-                pdf_hash=normalized_content_hash
-            ).exists()
+    normalized_idempotency_key = (idempotency_key or "").strip()
 
-            if video_exists or pdf_exists:
-                return existing_by_hash, False
+    # Try to find an existing job with a content hash or idempotency key
+    # Use select_for_update to lock these rows to prevent race conditions during check-then-act
+    existing_job_qs = (
+        upload_job_manager.filter(
+            source_center=source_center,
+            content_type=content_type,
+        )
+        .exclude(status=UploadJob.Status.ERROR)
+        .select_for_update()
+    )
+
+    existing_job = None
+    if normalized_content_hash:
+        existing_job = existing_job_qs.filter(
+            content_hash=normalized_content_hash
+        ).first()
+    if existing_job is None and normalized_idempotency_key:
+        # If no job found by hash, try by idempotency key.
+        # Only consider jobs with a matching content_hash if one was provided.
+        idempotency_filter = {
+            "idempotency_key": normalized_idempotency_key,
+            "source_system": source_system,
+            "ingest_mode": ingest_mode,
+            "storage_class": storage_class,
+            "storage_tier": storage_tier,
+        }
+        if normalized_content_hash:
+            idempotency_filter["content_hash"] = normalized_content_hash
+        existing_job = existing_job_qs.filter(**idempotency_filter).first()
+
+    if existing_job:
+        # Found an existing job, now verify its validity
+        is_valid_reuse = False
+        invalid_reason: str | None = None
+
+        if existing_job.status in [
+            UploadJob.Status.PENDING,
+            UploadJob.Status.PROCESSING,
+        ]:
+            updated_at = getattr(existing_job, "updated_at", None)
+            if updated_at and timezone.now() - updated_at <= STALE_UPLOAD_JOB_AGE:
+                is_valid_reuse = True
             else:
-                # If the media is gone, the job is "orphaned".
-                # Mark it as error so it can be recreated.
-                existing_by_hash.mark_error(
+                invalid_reason = "Existing upload job was stale in pending/processing state. Forcing re-ingest."
+
+        elif existing_job.status == UploadJob.Status.ANONYMIZED:
+            if _upload_job_has_usable_media(existing_job):
+                is_valid_reuse = True
+            else:
+                invalid_reason = (
                     "Associated media record was deleted. Forcing re-ingest."
                 )
+        elif existing_job.status != UploadJob.Status.ERROR:
+            # Catch-all for unexpected states (e.g. LOST)
+            invalid_reason = (
+                "Previous job was incomplete or invalid for reuse. Forcing re-ingest."
+            )
 
-    normalized_idempotency_key = (idempotency_key or "").strip()
-    if normalized_idempotency_key:
-        existing = (
-            upload_job_manager.filter(
+        if is_valid_reuse:
+            emit_hub_audit_event(
+                "hub.upload_job_reused",
+                upload_job_id=str(existing_job.id),
+                source_system=source_system,
+                request_user=created_by,
+                center_key=source_center.center_key if source_center else None,
+                ingest_mode=ingest_mode,
                 idempotency_key=normalized_idempotency_key,
+            )
+            return existing_job, False
+
+        if invalid_reason is not None:
+            logger.warning(
+                "UploadJob %s found but not valid for reuse (status: %s). %s",
+                existing_job.id,
+                existing_job.status,
+                invalid_reason,
+            )
+            existing_job.mark_error(invalid_reason)
+
+    # If no valid existing job was found (either none existed, or it was orphaned/in error), create a new one.
+    # This creation is safe due to the `select_for_update` lock on any potential matching rows (if any)
+    # or because no matching rows were found, making a new creation valid.
+    try:
+        with transaction.atomic():
+            job = upload_job_manager.create(
+                file=uploaded_file,
+                content_type=content_type,
+                source_center=source_center,
                 source_system=source_system,
                 content_hash=normalized_content_hash,
-                source_center=source_center,
+                idempotency_key=normalized_idempotency_key,
                 ingest_mode=ingest_mode,
                 storage_class=storage_class,
                 storage_tier=storage_tier,
-            )
-            .exclude(status=UploadJob.Status.ERROR)
-            .first()
-        )  # <-- ADD EXCLUDE HERE
-
-        if existing is not None:
-            # --- ADD THIS ORPHAN CHECK ---
-            video_exists = VideoFile.objects.filter(
-                video_hash=normalized_content_hash
-            ).exists()
-            pdf_exists = RawPdfFile.objects.filter(
-                pdf_hash=normalized_content_hash
-            ).exists()
-
-            if video_exists or pdf_exists:
-                emit_hub_audit_event(
-                    "hub.upload_job_reused",
-                    upload_job_id=str(existing.id),
-                    source_system=source_system,
-                    request_user=created_by,
-                    center_key=source_center.center_key if source_center else None,
+                retention_policy=retention_policy,
+                source_file_persisted=source_file_persisted,
+                cleanup_status=cleanup_status,
+                original_filename=getattr(uploaded_file, "name", "") or "",
+                processing_provenance=_normalized_upload_provenance(
                     ingest_mode=ingest_mode,
-                    idempotency_key=normalized_idempotency_key,
-                )
-                return existing, False
-            else:
-                existing.mark_error(
-                    "Associated media record was deleted. Forcing re-ingest via idempotency bypass."
-                )
-            # -----------------------------
-    job = upload_job_manager.create(
-        file=uploaded_file,
-        content_type=content_type,
-        source_center=source_center,
-        source_system=source_system,
-        content_hash=normalized_content_hash,
-        idempotency_key=normalized_idempotency_key,
-        ingest_mode=ingest_mode,
-        storage_class=storage_class,
-        storage_tier=storage_tier,
-        retention_policy=retention_policy,
-        source_file_persisted=source_file_persisted,
-        cleanup_status=cleanup_status,
-        original_filename=getattr(uploaded_file, "name", "") or "",
-        processing_provenance=_normalized_upload_provenance(
-            ingest_mode=ingest_mode,
+                    source_system=source_system,
+                    content_hash=normalized_content_hash,
+                    source_center=source_center,
+                    storage_class=storage_class,
+                    storage_tier=storage_tier,
+                    retention_policy=retention_policy,
+                    processing_provenance=processing_provenance,
+                ),
+                created_by=created_by
+                if getattr(created_by, "is_authenticated", False)
+                else None,
+            )
+            emit_hub_audit_event(
+                "hub.upload_job_created",
+                upload_job_id=str(job.id),
+                source_system=source_system,
+                request_user=created_by,
+                center_key=source_center.center_key if source_center else None,
+                ingest_mode=ingest_mode,
+                content_hash=normalized_content_hash,
+                idempotency_key=normalized_idempotency_key,
+                storage_tier=storage_tier,
+                retention_policy=retention_policy,
+            )
+    except IntegrityError:
+        job = upload_job_manager.get(
+            idempotency_key=normalized_idempotency_key,
             source_system=source_system,
-            content_hash=normalized_content_hash,
             source_center=source_center,
+            ingest_mode=ingest_mode,
             storage_class=storage_class,
             storage_tier=storage_tier,
-            retention_policy=retention_policy,
-            processing_provenance=processing_provenance,
-        ),
-        created_by=created_by
-        if getattr(created_by, "is_authenticated", False)
-        else None,
-    )
-    emit_hub_audit_event(
-        "hub.upload_job_created",
-        upload_job_id=str(job.id),
-        source_system=source_system,
-        request_user=created_by,
-        center_key=source_center.center_key if source_center else None,
-        ingest_mode=ingest_mode,
-        content_hash=normalized_content_hash,
-        idempotency_key=normalized_idempotency_key,
-        storage_tier=storage_tier,
-        retention_policy=retention_policy,
-    )
+        )
+        return job, False
+
     return job, True
 
 
@@ -595,17 +672,6 @@ def _attach_external_id_to_sensitive_meta(
             patient=pseudo_patient,
             origin=normalized_origin,
             external_id=normalized_external_id,
-        )
-    elif (
-        sensitive_meta.pseudo_patient_id is not None
-        and existing.patient_id != sensitive_meta.pseudo_patient_id
-    ):
-        logger.warning(
-            "external_id %s/%s already belongs to patient %s; keeping existing link instead of overwriting pseudo patient %s",
-            normalized_origin,
-            normalized_external_id,
-            existing.patient_id,
-            sensitive_meta.pseudo_patient_id,
         )
 
     update_fields: list[str] = []
@@ -914,8 +980,23 @@ def process_upload_job(job_id: str) -> bool:
         job.mark_completed(sensitive_meta=sensitive_meta)
         return True
     except Exception as exc:
-        logger.exception("Upload job processing failed for %s: %s", job.id, exc)
+        logger.exception("Upload job processing failed for %s: %s", job_id, exc)
         job.mark_error(str(exc))
+        # Move the failed file to quarantine
+        try:
+            quarantine_path = QUARANTINE_DIR / file_path.name
+            atomic_move_file(source=file_path, destination=quarantine_path)
+            _update_upload_provenance(job, quarantined_path=str(quarantine_path))
+            job.save(update_fields=["processing_provenance", "updated_at"])
+            logger.warning(
+                "File %s moved to quarantine: %s", file_path, quarantine_path
+            )
+        except Exception as move_exc:
+            logger.error(
+                "Failed to move file %s to quarantine during error handling: %s",
+                file_path,
+                move_exc,
+            )
         return False
 
 
@@ -932,7 +1013,10 @@ def start_upload_job_processing(
         storage_class=upload_job.storage_class,
         storage_tier=upload_job.storage_tier,
         retention_policy=upload_job.retention_policy,
-        processing_provenance=upload_job.processing_provenance,
+        processing_provenance=cast(
+            UploadProvenance | None,
+            upload_job.processing_provenance,
+        ),
     )
     upload_job.processing_provenance = provenance
     handoff_mode = "celery" if task_dispatcher is not None else "inline"
@@ -1014,8 +1098,13 @@ def process_watcher_file(
         },
     )
     if upload_job.is_complete:
-        safe_unlink_file(watched_path, missing_ok=True)
-        return upload_job
+        if _upload_job_has_usable_media(upload_job):
+            safe_unlink_file(watched_path, missing_ok=True)
+            return upload_job
+
+        upload_job.mark_error(
+            "Upload job marked complete but no usable media artifact was found. Forcing re-ingest."
+        )
 
     upload_job.mark_processing()
     _ = _update_upload_provenance(
@@ -1060,6 +1149,21 @@ def process_watcher_file(
     except Exception as exc:
         logger.exception("Watcher processing failed for %s: %s", watched_path, exc)
         upload_job.mark_error(str(exc))
+        # Move the failed file to quarantine
+        try:
+            quarantine_path = QUARANTINE_DIR / watched_path.name
+            atomic_move_file(source=watched_path, destination=quarantine_path)
+            _update_upload_provenance(upload_job, quarantined_path=str(quarantine_path))
+            upload_job.save(update_fields=["processing_provenance", "updated_at"])
+            logger.warning(
+                "File %s moved to quarantine: %s", watched_path, quarantine_path
+            )
+        except Exception as move_exc:
+            logger.error(
+                "Failed to move file %s to quarantine during error handling: %s",
+                watched_path,
+                move_exc,
+            )
         raise
 
 
@@ -1123,10 +1227,15 @@ def process_preanonymized_watcher_file(
         },
     )
     if upload_job.is_complete:
-        safe_unlink_file(watched_path, missing_ok=True)
-        if sidecar_path is not None and sidecar_path.exists():
-            safe_unlink_file(sidecar_path, missing_ok=True)
-        return upload_job
+        if _upload_job_has_usable_media(upload_job):
+            safe_unlink_file(watched_path, missing_ok=True)
+            if sidecar_path is not None and sidecar_path.exists():
+                safe_unlink_file(sidecar_path, missing_ok=True)
+            return upload_job
+
+        upload_job.mark_error(
+            "Upload job marked complete but no usable media artifact was found. Forcing re-ingest."
+        )
 
     upload_job.mark_processing()
     _ = _update_upload_provenance(
@@ -1171,4 +1280,42 @@ def process_preanonymized_watcher_file(
             exc,
         )
         upload_job.mark_error(str(exc))
+        # Move the failed file to quarantine
+        try:
+            quarantine_path = QUARANTINE_DIR / watched_path.name
+            atomic_move_file(source=watched_path, destination=quarantine_path)
+            _update_upload_provenance(upload_job, quarantined_path=str(quarantine_path))
+            upload_job.save(update_fields=["processing_provenance"])
+            logger.warning(
+                "File %s moved to quarantine: %s", watched_path, quarantine_path
+            )
+        except Exception as move_exc:
+            logger.error(
+                "Failed to move file %s to quarantine during error handling: %s",
+                watched_path,
+                move_exc,
+            )
+        # Also attempt to move the sidecar if it exists
+        if sidecar_path is not None and sidecar_path.exists():
+            try:
+                quarantine_sidecar_path = QUARANTINE_DIR / sidecar_path.name
+                atomic_move_file(
+                    source=sidecar_path, destination=quarantine_sidecar_path
+                )
+                _update_upload_provenance(
+                    upload_job,
+                    quarantined_sidecar_path=str(quarantine_sidecar_path),
+                )
+                upload_job.save(update_fields=["processing_provenance", "updated_at"])
+                logger.warning(
+                    "Sidecar %s moved to quarantine: %s",
+                    sidecar_path,
+                    quarantine_sidecar_path,
+                )
+            except Exception as move_exc:
+                logger.error(
+                    "Failed to move sidecar %s to quarantine during error handling: %s",
+                    sidecar_path,
+                    move_exc,
+                )
         raise
