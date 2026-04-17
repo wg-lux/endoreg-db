@@ -8,7 +8,7 @@ from typing import IO
 import pytest
 from django.test import TestCase
 
-from endoreg_db.utils.paths import ANONYM_REPORT_DIR, STORAGE_DIR
+from endoreg_db.utils.paths import ANONYM_REPORT_DIR, protected_media_root
 
 
 class FakeStorage:
@@ -41,7 +41,7 @@ class LocalStubFieldFile:
 
     @property
     def path(self) -> str:
-        return str((STORAGE_DIR / self.name).resolve())
+        return str((protected_media_root() / self.name).resolve())
 
     @property
     def size(self) -> int:
@@ -68,7 +68,7 @@ class ReportStreamViewTests(TestCase):
     def test_pdf_stream_download_nginx_headers(self):
         from endoreg_db.views.report import report_stream as view_module
 
-        storage_dir = STORAGE_DIR.resolve()
+        storage_dir = protected_media_root().resolve()
         storage_dir.mkdir(parents=True, exist_ok=True)
         tmp_file_path = None
         monkeypatches = pytest.MonkeyPatch()
@@ -89,9 +89,7 @@ class ReportStreamViewTests(TestCase):
 
             monkeypatches.setenv("SERVE_WITH_NGINX", "true")
             monkeypatches.setenv("FRONTEND_ORIGIN", "http://frontend.test")
-            monkeypatches.setattr(
-                view_module, "NGINX_PROTECTED_URL", "/protected_media/"
-            )
+            monkeypatches.setenv("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
             monkeypatches.setattr(
                 view_module.RawPdfFile.objects, "get", lambda **kwargs: fake_pdf_obj
             )
@@ -156,34 +154,24 @@ class ReportStreamViewTests(TestCase):
         assert "X-Accel-Redirect" not in response
         assert b"".join(response.streaming_content) == payload
 
-    def test_pdf_stream_falls_back_when_report_is_outside_protected_media_root(self):
+    def test_pdf_stream_encrypted_storage_does_not_offload_by_storage_name_only(self):
         from endoreg_db.views.report import report_stream as view_module
 
-        storage_dir = STORAGE_DIR.resolve()
-        storage_dir.mkdir(parents=True, exist_ok=True)
-        protected_media_root = storage_dir.parent / "protected-media"
-        protected_media_root.mkdir(parents=True, exist_ok=True)
-        tmp_file_path = None
+        payload = (b"%PDF-1.4\n" * 16) + b"%%EOF\n"
+        fake_storage = FakeStorage(payload)
+        relative_name = "reports/encrypted-present-on-disk.pdf"
+        fake_field = StubFieldFile(fake_storage, relative_name)
+        fake_pdf_obj = SimpleNamespace(file=fake_field, processed_file=fake_field)
+
+        storage_dir = protected_media_root().resolve()
+        disk_path = storage_dir / relative_name
+        disk_path.parent.mkdir(parents=True, exist_ok=True)
+        disk_path.write_bytes(b"ciphertext-placeholder")
+
         monkeypatches = pytest.MonkeyPatch()
         try:
-            with tempfile.NamedTemporaryFile(
-                suffix=".pdf", dir=storage_dir, delete=False
-            ) as tmp:
-                payload = b"%PDF-1.4\nreport-outside-protected-media\n%%EOF\n"
-                tmp.write(payload)
-                tmp.flush()
-                tmp_file_path = Path(tmp.name)
-
-            relative_name = tmp_file_path.relative_to(storage_dir).as_posix()
-            fake_file_field = LocalStubFieldFile(relative_name)
-            fake_pdf_obj = SimpleNamespace(
-                file=fake_file_field,
-                processed_file=None,
-                get_raw_file_path=lambda: tmp_file_path,
-            )
-
             monkeypatches.setenv("SERVE_WITH_NGINX", "true")
-            monkeypatches.setenv("PROTECTED_MEDIA_ROOT", str(protected_media_root))
+            monkeypatches.setenv("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
             monkeypatches.setattr(
                 view_module.RawPdfFile.objects, "get", lambda **kwargs: fake_pdf_obj
             )
@@ -191,11 +179,11 @@ class ReportStreamViewTests(TestCase):
             response = self.client.get("/api/media/pdfs/123/stream/?type=raw")
         finally:
             monkeypatches.undo()
-            if tmp_file_path and tmp_file_path.exists():
-                tmp_file_path.unlink(missing_ok=True)
+            disk_path.unlink(missing_ok=True)
 
         assert response.status_code == 200
         assert "X-Accel-Redirect" not in response
+        assert b"".join(response.streaming_content) == payload
 
     def test_pdf_stream_recovers_raw_path_from_hash_lookup_when_field_name_is_stale(
         self,
@@ -203,7 +191,7 @@ class ReportStreamViewTests(TestCase):
         from endoreg_db.views.report import report_stream as view_module
 
         payload = b"%PDF-1.4\nraw-fallback\n%%EOF\n"
-        storage_dir = STORAGE_DIR.resolve()
+        storage_dir = protected_media_root().resolve()
         fallback_path = storage_dir / "sensitive_reports" / "fallback-raw.pdf"
         fallback_path.parent.mkdir(parents=True, exist_ok=True)
         fallback_path.write_bytes(payload)

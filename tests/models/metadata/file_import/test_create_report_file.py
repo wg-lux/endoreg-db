@@ -85,7 +85,7 @@ def test_create_from_file_happy_path(mock_storage, tmp_path, base_db_data):
 
 
 @pytest.mark.django_db
-def test_create_from_file_prefers_sensitive_copy_for_canonical_raw_report(
+def test_create_from_file_uses_sensitive_copy_as_input_but_not_as_canonical_raw_report(
     mock_storage, tmp_path, base_db_data
 ):
     _storage_root, sensitive_dir = _configure_storage_layout(mock_storage)
@@ -115,8 +115,12 @@ def test_create_from_file_prefers_sensitive_copy_for_canonical_raw_report(
 
     assert processed is False
     assert needs_processing is True
+
     raw_path = report.get_raw_file_path()
     assert raw_path is not None
+    assert raw_path.exists()
+    assert raw_path.is_file()
+    assert raw_path != sensitive_copy
     assert raw_path.parent == paths_module.SENSITIVE_REPORT_DIR
     assert raw_path.name == f"{report.pdf_hash}.pdf"
     assert report.file.name == paths_module.to_storage_relative(raw_path)
@@ -176,12 +180,13 @@ def test_create_from_file_duplicate_with_existing_file(
 
 
 @pytest.mark.django_db
-def test_create_from_file_duplicate_with_missing_file_recreates(
+def test_create_from_file_duplicate_with_missing_file_short_circuits_when_success_history_exists(
     mock_storage, tmp_path, monkeypatch, base_db_data
 ):
     """
-    When a RawPdfFile with the same hash exists but its raw file is missing,
-    the orphaned record should be deleted and a new RawPdfFile created.
+    Successful ProcessingHistory wins over orphan detection in the current
+    implementation, so a missing raw file still short-circuits to the existing
+    report instance.
     """
     storage_root, sensitive_dir = _configure_storage_layout(mock_storage)
 
@@ -224,17 +229,14 @@ def test_create_from_file_duplicate_with_missing_file_recreates(
         center_name=center_name,
         processor_name=processor_name,
     )
-    new_report, processed2, needs_processing2 = (
+    reused_report, processed2, needs_processing2 = (
         create_from_file_module.create_or_retrieve_report_file(ctx2)
     )
 
-    # NOTE:
-    # If you keep the short-circuit-on-success logic, you will *not* recreate the file here,
-    # you'll return existing instance (or attempt retrieval) and needs_processing will be False.
-    # If you want "orphan recreates even if success=True exists", that's a different contract.
     assert processed2 is True
     assert needs_processing2 is False
-    assert new_report.pk == orphan_pk
+    assert reused_report.pk == orphan_pk
+    assert reused_report.get_raw_file_path() is None
 
 
 def test_check_storage_capacity_raises_on_insufficient_space(tmp_path, monkeypatch):

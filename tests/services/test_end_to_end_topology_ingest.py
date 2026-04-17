@@ -37,6 +37,13 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
             first_drop.write_bytes(payload)
             second_drop.write_bytes(payload)
 
+            assert first_drop.is_relative_to(reloaded_paths.IMPORT_DIR)
+            assert second_drop.is_relative_to(reloaded_paths.IMPORT_DIR)
+            assert not first_drop.is_relative_to(reloaded_paths.protected_media_root())
+            assert (
+                reloaded_paths.resolve_existing_protected_media_path(first_drop) is None
+            )
+
             class _StubReportImportService:
                 def import_and_anonymize(
                     self,
@@ -96,7 +103,16 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
             assert managed_upload_path.exists()
             assert managed_upload_path.is_relative_to(reloaded_paths.UPLOAD_WATCHER_DIR)
             assert managed_upload_path.is_relative_to(
+                reloaded_paths.protected_media_root()
+            )
+            assert managed_upload_path.is_relative_to(
                 reloaded_paths.PROTECTED_DATA_ROOT
+            )
+            assert (
+                reloaded_paths.resolve_existing_protected_media_path(
+                    managed_upload_path
+                )
+                == managed_upload_path
             )
             assert first_drop.exists() is False
             assert second_drop.exists() is False

@@ -111,14 +111,12 @@ def ensure_within_protected_root(path: str | Path) -> Path:
 def _resolve_protected_media_root() -> Path:
     raw_value = os.environ.get(PROTECTED_MEDIA_ROOT_ENV, "").strip()
     if not raw_value:
-        storage_root = globals().get("STORAGE_DIR")
-        if isinstance(storage_root, Path):
-            return storage_root.resolve()
-        protected_root = globals().get("PROTECTED_DATA_ROOT")
-        if isinstance(protected_root, Path):
-            return (protected_root / "storage").resolve()
-        return (_resolve_protected_root() / "storage").resolve()
+        return EndoregPathsModel.from_environment().storage.resolve()
     return ensure_within_protected_root(_resolve_env_path(raw_value))
+
+
+def protected_media_root() -> Path:
+    return _resolve_protected_media_root()
 
 
 def normalize_protected_media_relative_path(relative_path: str | Path) -> str:
@@ -158,6 +156,22 @@ def resolve_protected_media_path(relative_path: str | Path) -> Path:
     return ensure_within_protected_media_root(
         _resolve_protected_media_root() / normalized
     )
+
+
+def resolve_existing_protected_media_path(path_value: str | Path) -> Path | None:
+    candidate = Path(path_value)
+
+    if candidate.is_absolute():
+        try:
+            resolved_absolute = candidate.resolve(strict=True)
+            return ensure_within_protected_media_root(resolved_absolute)
+        except (FileNotFoundError, ValueError):
+            return None
+
+    try:
+        return resolve_protected_media_path(candidate).resolve(strict=True)
+    except (FileNotFoundError, ValueError):
+        return None
 
 
 def _sanitize_path_token(value: str) -> str:

@@ -11,7 +11,7 @@ from django.test import TestCase
 from rest_framework.test import APIRequestFactory
 
 from endoreg_db.models import Center, Frame, VideoFile
-from endoreg_db.utils.paths import STORAGE_DIR
+from endoreg_db.utils.paths import protected_media_root
 
 
 class FrameStreamViewTests(TestCase):
@@ -26,7 +26,9 @@ class FrameStreamViewTests(TestCase):
             original_file_name="frame_stream_test.mp4",
         )
 
-        self.frame_dir = STORAGE_DIR / f"pytest_frame_stream_{uuid.uuid4().hex}"
+        self.frame_dir = (
+            protected_media_root() / f"pytest_frame_stream_{uuid.uuid4().hex}"
+        )
         self.frame_dir.mkdir(parents=True, exist_ok=True)
         self.video.frame_dir = str(self.frame_dir)
         self.video.save(update_fields=["frame_dir"])
@@ -73,9 +75,7 @@ class FrameStreamViewTests(TestCase):
         monkeypatches = pytest.MonkeyPatch()
         monkeypatches.setenv("SERVE_WITH_NGINX", "true")
         monkeypatches.setenv("FRONTEND_ORIGIN", "http://frontend.test")
-        monkeypatches.setattr(
-            frame_media_module, "NGINX_PROTECTED_URL", "/protected_media/"
-        )
+        monkeypatches.setenv("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
         monkeypatches.setattr(
             frame_media_module.VideoFile,
             "extract_specific_frame_range",
@@ -129,7 +129,7 @@ class FrameStreamViewTests(TestCase):
         assert resp.status_code == 404
 
     def test_frame_stream_rejects_path_outside_video_frame_dir(self):
-        escaped_target = STORAGE_DIR / f"frame_escape_{uuid.uuid4().hex}.jpg"
+        escaped_target = protected_media_root() / f"frame_escape_{uuid.uuid4().hex}.jpg"
         escaped_target.write_bytes(b"\xff\xd8\xff\xdbfakejpg")
         try:
             self.frame.relative_path = f"../{escaped_target.name}"

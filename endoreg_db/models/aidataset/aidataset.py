@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from django.db import models
-from pydantic import BaseModel, ConfigDict, Field
 from lx_dtypes.models.ledger.p_video.Pydantic import PatientVideoFile
+from pydantic import BaseModel, ConfigDict, Field
 
 if TYPE_CHECKING:
     from django.db.models import QuerySet
@@ -236,12 +236,10 @@ class AIDataSet(models.Model):
             return list(objects)
         return list(objects)
 
-    def get_image_annotations_queryset(
-        self,
-    ) -> models.Manager[ImageClassificationAnnotation]:
+    def get_image_annotations_queryset(self):
         return self.image_annotations
 
-    def get_video_annotations_queryset(self) -> models.Manager[LabelVideoSegment]:
+    def get_video_annotations_queryset(self):
         return self.video_annotations
 
     def get_annotations_queryset(self):
@@ -370,6 +368,9 @@ class AIDataSet(models.Model):
 
         for candidate in segment_candidates:
             if candidate["picked"]:
+                continue
+
+            if candidate["quality_gate"] <= 0.0:
                 continue
 
             selected_frame_numbers = selected_frames_by_video.get(

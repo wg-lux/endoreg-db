@@ -125,6 +125,7 @@ def video_asset_path():
 @pytest.fixture
 def video_asset_file(tmp_path, video_asset_path):
     """Provide a writable copy of the default video asset for file-operation tests."""
+    tmp_path.mkdir(parents=True, exist_ok=True)
     target = tmp_path / video_asset_path.name
     shutil.copy2(video_asset_path, target)
     return target
@@ -1357,6 +1358,7 @@ def mock_storage(tmp_path, monkeypatch):
     # Use a dummy environment or manually override fields
     monkeypatch.setenv("LX_ANNOTATE_ENCRYPTED_DATA_DIR", str(fake_root))
     monkeypatch.setenv("STORAGE_DIR", str(fake_root / "storage"))
+
     monkeypatch.setenv("IO_DIR", str(fake_root))
     monkeypatch.setenv("LX_ANNOTATE_STREAMABLE_VIDEO_ROOT", str(streamable_root))
     monkeypatch.setenv(
@@ -1420,7 +1422,6 @@ def mock_storage(tmp_path, monkeypatch):
     monkeypatch.setattr(
         raw_pdf_module, "SENSITIVE_REPORT_DIR", fake_paths_model.sensitive_report
     )
-    monkeypatch.setattr(report_stream_module, "STORAGE_DIR", fake_paths_model.storage)
     monkeypatch.setattr(
         report_stream_module, "ANONYM_REPORT_DIR", fake_paths_model.anonym_report
     )

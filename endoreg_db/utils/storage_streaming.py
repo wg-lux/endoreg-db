@@ -7,7 +7,10 @@ from typing import Iterator
 
 from django.http import HttpResponseBase, StreamingHttpResponse
 
-from endoreg_db.utils.paths import STORAGE_DIR, ensure_within_protected_root
+from endoreg_db.utils.paths import (
+    ensure_within_protected_root,
+    resolve_existing_protected_media_path,
+)
 
 RANGE_RE = re.compile(r"bytes=(\d+)-(\d*)$")
 
@@ -119,14 +122,8 @@ def maybe_local_plaintext_path(field_file) -> Path | None:
     file_name = getattr(field_file, "name", None)
     if not file_name:
         return None
-    candidate = Path(file_name)
-    if not candidate.is_absolute():
-        candidate = STORAGE_DIR / candidate
-    try:
-        candidate = candidate.resolve()
-    except OSError:
-        return None
-    if not candidate.exists():
+    candidate = resolve_existing_protected_media_path(file_name)
+    if candidate is None:
         return None
     try:
         ensure_within_protected_root(candidate)

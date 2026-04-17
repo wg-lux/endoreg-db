@@ -1,5 +1,6 @@
 from django.test import SimpleTestCase
-
+from pathlib import Path
+import shutil
 from endoreg_db.models.aidataset.aidataset import (
     AIDataSet,
     AIDataSetActiveLearningConfig,
@@ -7,6 +8,13 @@ from endoreg_db.models.aidataset.aidataset import (
 
 
 class AIDataSetActiveLearningTests(SimpleTestCase):
+    TMP_DIR = Path("/home/admin/endoreg-db/data/tests/tmp")
+
+    def setUp(self):
+        if self.TMP_DIR.exists():
+            shutil.rmtree(self.TMP_DIR)
+        self.TMP_DIR.mkdir(parents=True, exist_ok=True)
+
     def test_selector_returns_temporally_spread_sample_indices(self):
         selection = AIDataSet.select_active_learning_frame_indices(
             sample_indices=[0, 1, 2, 3, 4],

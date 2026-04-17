@@ -12,6 +12,7 @@ import logging
 import mimetypes
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from django.http import Http404, HttpResponse, HttpResponseBase
 from rest_framework.views import APIView
@@ -25,7 +26,8 @@ from endoreg_db.models.media.video.storage_mode import (
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.utils.paths import (
     normalize_protected_media_relative_path,
-    resolve_protected_media_path,
+    resolve_existing_protected_media_path,
+    to_storage_relative,
 )
 
 from endoreg_db.utils.storage_streaming import (
@@ -36,12 +38,13 @@ from endoreg_db.utils.storage_streaming import (
 )
 from endoreg_db.utils.nginx_accel import (
     build_nginx_accel_response,
-    nginx_protected_url,
     nginx_offload_enabled,
 )
 
 logger = logging.getLogger(__name__)
-NGINX_PROTECTED_URL = nginx_protected_url
+
+if TYPE_CHECKING:
+    from django.db.models.fields.files import FieldFile
 
 
 def _pick_video_field_file(video: VideoFile, file_type: str):
@@ -58,6 +61,27 @@ def _pick_video_field_file(video: VideoFile, file_type: str):
     if not getattr(field_file, "name", None):
         raise Http404("No raw video file available for this entry")
     return field_file
+
+
+def _recover_missing_video_field_path(
+    video: VideoFile, file_type: str
+) -> "FieldFile | None":
+    if file_type == "processed":
+        fallback_path = video.get_processed_file_path()
+        if fallback_path is not None and fallback_path.exists():
+            processed_field = getattr(video, "processed_file", None)
+            if processed_field is not None:
+                processed_field.name = to_storage_relative(fallback_path)
+                return processed_field
+        return None
+
+    fallback_path = video.get_raw_file_path()
+    if fallback_path is not None and fallback_path.exists():
+        raw_field = getattr(video, "raw_file", None)
+        if raw_field is not None:
+            raw_field.name = to_storage_relative(fallback_path)
+            return raw_field
+    return None
 
 
 def _normalize_internal_relative_path(relative_path: str) -> str | None:
@@ -100,11 +124,11 @@ def _stream_not_ready_reason(
     if relative_path is None:
         return "missing_streamable_path"
 
-    try:
-        expected_path = resolve_protected_media_path(relative_path)
-    except ValueError:
-        return "invalid_streamable_path"
-    if not expected_path.exists():
+    expected_path = resolve_existing_protected_media_path(relative_path)
+    if expected_path is None:
+        normalized_path = _normalize_internal_relative_path(relative_path)
+        if normalized_path is None:
+            return "invalid_streamable_path"
         return "missing_streamable_artifact"
 
     return None
@@ -168,6 +192,7 @@ class VideoStreamView(APIView):
             video = VideoFile.objects.get(pk=video_id)
         except VideoFile.DoesNotExist as exc:
             raise Http404(f"Video with ID {pk} not found") from exc
+        self.check_object_permissions(request, video)
 
         file_type = str(
             request.query_params.get("type")
@@ -180,7 +205,25 @@ class VideoStreamView(APIView):
         field_file = _pick_video_field_file(video, file_type)
         filename = Path(field_file.name).name
         content_type = mimetypes.guess_type(field_file.name)[0] or "video/mp4"
-        file_size = field_file_size(field_file)
+        recovered_from_fallback = False
+        try:
+            file_size = field_file_size(field_file)
+        except FileNotFoundError as exc:
+            recovered_field_file = _recover_missing_video_field_path(video, file_type)
+            if recovered_field_file is None:
+                logger.warning(
+                    "Video stream file missing for id=%s type=%s path=%s: %s",
+                    video_id,
+                    file_type,
+                    getattr(field_file, "name", None),
+                    exc,
+                )
+                raise Http404("Video file is not available") from exc
+            field_file = recovered_field_file
+            filename = Path(field_file.name).name
+            content_type = mimetypes.guess_type(field_file.name)[0] or "video/mp4"
+            recovered_from_fallback = True
+            file_size = field_file_size(field_file)
         if file_size <= 0:
             raise Http404("Video file is empty")
 
@@ -200,7 +243,7 @@ class VideoStreamView(APIView):
         frontend_origin = os.environ.get("FRONTEND_ORIGIN", "http://localhost:8000")
         range_header = request.headers.get("Range") or request.META.get("HTTP_RANGE")
 
-        if nginx_offload_enabled():
+        if nginx_offload_enabled() and not recovered_from_fallback:
             nginx_response = _serve_streamable_video_with_nginx(
                 video,
                 file_type=file_type,

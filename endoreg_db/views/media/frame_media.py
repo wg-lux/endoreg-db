@@ -1,7 +1,6 @@
 import logging
 import mimetypes
 import os
-import posixpath
 from pathlib import Path
 
 from django.core.files import File
@@ -13,17 +12,18 @@ from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.utils.paths import (
     ensure_within_protected_root,
-    to_protected_media_relative,
 )
 from endoreg_db.utils.storage_streaming import (
     add_cors_headers,
     build_partial_content_response,
     parse_byte_range,
 )
-from endoreg_db.utils.nginx_accel import nginx_protected_url, nginx_offload_enabled
+from endoreg_db.utils.nginx_accel import (
+    build_nginx_accel_response_for_path,
+    nginx_offload_enabled,
+)
 
 logger = logging.getLogger(__name__)
-NGINX_PROTECTED_URL = nginx_protected_url()
 
 
 class FrameStreamView(APIView):
@@ -44,23 +44,19 @@ class FrameStreamView(APIView):
         frontend_origin: str,
     ) -> HttpResponseBase | None:
         try:
-            relative_path = to_protected_media_relative(frame_path)
+            return build_nginx_accel_response_for_path(
+                path=frame_path,
+                content_type=content_type,
+                filename=frame_path.name,
+                disposition="inline",
+                frontend_origin=frontend_origin,
+            )
         except ValueError:
             logger.warning(
                 "Frame file %s is outside the configured protected media root. Falling back to Django file response.",
                 frame_path,
             )
             return None
-
-        response = HttpResponse(content_type=content_type)
-        response["X-Accel-Redirect"] = posixpath.join(
-            NGINX_PROTECTED_URL.rstrip("/"),
-            str(relative_path).lstrip("/"),
-        )
-        response["X-Accel-Buffering"] = "no"
-        response["Accept-Ranges"] = "bytes"
-        response["Content-Disposition"] = f'inline; filename="{frame_path.name}"'
-        return add_cors_headers(response, frontend_origin)
 
     @staticmethod
     def _expected_relative_path(frame_number: int) -> str:

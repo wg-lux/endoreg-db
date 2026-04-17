@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from endoreg_db.utils.paths import (
-    STORAGE_DIR,
+    protected_media_root,
     to_protected_media_relative,
     to_storage_relative,
 )
@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 STREAMABLE_VIDEO_ROOT = Path(
     os.environ.get(
         "LX_ANNOTATE_STREAMABLE_VIDEO_ROOT",
-        str(STORAGE_DIR / "streamable_videos"),
+        str(protected_media_root() / "streamable_videos"),
     )
 ).resolve()
 STREAMABLE_RAW_VIDEO_ROOT = Path(

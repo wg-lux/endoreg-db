@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import mimetypes
 import os
-import posixpath
 from pathlib import Path
 
 from django.http import Http404, HttpResponse, HttpResponseBase, StreamingHttpResponse
@@ -17,8 +16,6 @@ from endoreg_db.models import RawPdfFile
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.utils.paths import (
     ANONYM_REPORT_DIR,
-    STORAGE_DIR,
-    to_protected_media_relative,
     to_storage_relative,
 )
 
@@ -31,11 +28,13 @@ from endoreg_db.utils.storage_streaming import (
     parse_byte_range,
 )
 
-from endoreg_db.utils.nginx_accel import nginx_protected_url, nginx_offload_enabled
+from endoreg_db.utils.nginx_accel import (
+    build_nginx_accel_response_for_path,
+    nginx_offload_enabled,
+)
 
 
 logger = logging.getLogger(__name__)
-NGINX_PROTECTED_URL = nginx_protected_url()
 
 if TYPE_CHECKING:
     from django.db.models.fields.files import FieldFile
@@ -88,24 +87,7 @@ def _recover_missing_report_field_path(
 
 
 def _resolve_local_path_for_nginx(field_file) -> Path | None:
-    path = maybe_local_plaintext_path(field_file)
-    if path is not None:
-        return path
-
-    name = getattr(field_file, "name", None)
-    if not name:
-        return None
-
-    candidate = Path(name)
-    if not candidate.is_absolute():
-        candidate = STORAGE_DIR / candidate
-
-    try:
-        resolved = candidate.resolve(strict=True)
-    except FileNotFoundError:
-        return None
-
-    return resolved
+    return maybe_local_plaintext_path(field_file)
 
 
 def _serve_with_nginx(
@@ -116,25 +98,19 @@ def _serve_with_nginx(
         return None
 
     try:
-        relative_path = to_protected_media_relative(path)
+        return build_nginx_accel_response_for_path(
+            path=path,
+            content_type=content_type,
+            filename=Path(field_file.name).name,
+            disposition=disposition,
+            frontend_origin=frontend_origin,
+        )
     except ValueError:
         logger.warning(
             "Report file %s is outside the configured protected media root. Falling back to Django streaming.",
             path,
         )
         return None
-
-    response = HttpResponse(content_type=content_type)
-    response["X-Accel-Redirect"] = posixpath.join(
-        NGINX_PROTECTED_URL.rstrip("/"),
-        str(relative_path).lstrip("/"),
-    )
-    response["X-Accel-Buffering"] = "no"
-    response["Accept-Ranges"] = "bytes"
-    response["Content-Disposition"] = (
-        f'{disposition}; filename="{Path(field_file.name).name}"'
-    )
-    return add_cors_headers(response, frontend_origin)
 
 
 def _build_eager_content_response(

@@ -11,15 +11,18 @@ from django.http import HttpResponse, HttpResponseBase
 from endoreg_db.utils.paths import to_protected_media_relative
 from endoreg_db.utils.storage_streaming import add_cors_headers
 
-NGINX_PROTECTED_URL = os.environ.get("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
-
 
 def nginx_protected_url() -> str:
     return os.environ.get("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
 
 
 def nginx_offload_enabled() -> bool:
-    return os.environ.get("SERVE_WITH_NGINX", "false").lower() == "true"
+    return os.environ.get("SERVE_WITH_NGINX", "false").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 def build_nginx_accel_response(
@@ -35,7 +38,7 @@ def build_nginx_accel_response(
     response: HttpResponseBase = HttpResponse()
     response["Content-Type"] = content_type
     response["X-Accel-Redirect"] = posixpath.join(
-        NGINX_PROTECTED_URL.rstrip("/"),
+        nginx_protected_url().rstrip("/"),
         protected_relative_path.lstrip("/"),
     )
     response["X-Accel-Buffering"] = buffering

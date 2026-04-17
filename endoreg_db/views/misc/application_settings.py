@@ -569,7 +569,6 @@ def application_settings_model_training_runs(request):
     }
     run = _store_model_training_run(
         run_id,
-        run_id=run_id,
         status="queued",
         dataset_id=dataset.pk,
         dataset_name=dataset.name,

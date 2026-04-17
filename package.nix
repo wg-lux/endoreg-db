@@ -13,7 +13,7 @@
 let
   py = python312Packages;
   pname = "endoreg-db";
-  version = "0.9.1.6";
+  version = "0.9.4.5";
 
   tesseractWithLangs = tesseract.override {
     enableLanguages = [

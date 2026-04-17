@@ -6,8 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 from django.test import TestCase
-
-from endoreg_db.utils.paths import STORAGE_DIR
+from typing import IO, Any
+from endoreg_db.utils.paths import protected_media_root
 
 
 class FakeStorage:
@@ -33,11 +33,40 @@ class StubFieldFile:
         return self.storage.get_plaintext_size(self.name)
 
 
+class LocalStubFieldFile:
+    def __init__(self, name: str):
+        self.name = name
+        self.file: IO[Any]
+
+    @property
+    def path(self) -> str:
+        return str((protected_media_root() / self.name).resolve())
+
+    @property
+    def size(self) -> int:
+        return Path(self.path).stat().st_size
+
+    def open(self, mode: str = "rb") -> None:
+        self.file = open(self.path, mode)
+
+    def close(self) -> None:
+        if self.file is not None:
+            self.file.close()
+
+    def chunks(self, chunk_size: int = 64 * 1024):
+        with open(self.path, "rb") as handle:
+            while True:
+                chunk = handle.read(chunk_size)
+                if not chunk:
+                    break
+                yield chunk
+
+
 class VideoStreamViewTests(TestCase):
     def test_video_stream_nginx_headers(self):
         from endoreg_db.views.video import video_stream as view_module
 
-        storage_dir = STORAGE_DIR.resolve()
+        storage_dir = protected_media_root().resolve()
         storage_dir.mkdir(parents=True, exist_ok=True)
         tmp_file_path = None
         streamable_path = None
@@ -69,9 +98,7 @@ class VideoStreamViewTests(TestCase):
 
             monkeypatches.setenv("SERVE_WITH_NGINX", "true")
             monkeypatches.setenv("FRONTEND_ORIGIN", "http://frontend.test")
-            monkeypatches.setattr(
-                view_module, "NGINX_PROTECTED_URL", "/protected_media/"
-            )
+            monkeypatches.setenv("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
             monkeypatches.setattr(
                 view_module.VideoFile.objects, "get", lambda **kwargs: fake_video_obj
             )
@@ -162,7 +189,7 @@ class VideoStreamViewTests(TestCase):
     def test_video_stream_plaintext_legacy_mode_does_not_emit_nginx_redirect(self):
         from endoreg_db.views.video import video_stream as view_module
 
-        storage_dir = STORAGE_DIR.resolve()
+        storage_dir = protected_media_root().resolve()
         storage_dir.mkdir(parents=True, exist_ok=True)
         tmp_file_path = None
         monkeypatches = pytest.MonkeyPatch()
@@ -227,6 +254,73 @@ class VideoStreamViewTests(TestCase):
         assert response.status_code == 409
         assert response["X-Stream-State"] == "missing_streamable_artifact"
 
+    def test_video_stream_recovers_raw_path_when_field_name_is_stale(self):
+        from endoreg_db.views.video import video_stream as view_module
+
+        payload = b"\x00\x00\x00\x18ftypmp42raw-fallback"
+        storage_dir = protected_media_root().resolve()
+        fallback_path = storage_dir / "sensitive_videos" / "fallback-raw.mp4"
+        fallback_path.parent.mkdir(parents=True, exist_ok=True)
+        fallback_path.write_bytes(payload)
+
+        fake_raw_field = LocalStubFieldFile("sensitive_videos/missing.mp4")
+        fake_video_obj = SimpleNamespace(
+            raw_file=fake_raw_field,
+            active_raw_file=fake_raw_field,
+            processed_file=fake_raw_field,
+            storage_mode=view_module.VideoFile.StorageMode.APP_ENCRYPTED,
+            get_raw_file_path=lambda: fallback_path,
+            get_processed_file_path=lambda: fallback_path,
+        )
+
+        monkeypatches = pytest.MonkeyPatch()
+        try:
+            monkeypatches.setattr(
+                view_module.VideoFile.objects, "get", lambda **kwargs: fake_video_obj
+            )
+            response = self.client.get("/api/media/videos/123/stream/?type=raw")
+        finally:
+            monkeypatches.undo()
+            fallback_path.unlink(missing_ok=True)
+
+        assert response.status_code == 200
+        assert b"".join(response.streaming_content) == payload
+
+    def test_video_stream_recovers_processed_path_when_field_name_is_stale(self):
+        from endoreg_db.views.video import video_stream as view_module
+
+        payload = b"\x00\x00\x00\x18ftypmp42processed-fallback"
+        storage_dir = protected_media_root().resolve()
+        fallback_path = (
+            storage_dir / "processed_videos_final" / "fallback-processed.mp4"
+        )
+        fallback_path.parent.mkdir(parents=True, exist_ok=True)
+        fallback_path.write_bytes(payload)
+
+        fake_processed_field = LocalStubFieldFile("processed_videos_final/missing.mp4")
+        fake_raw_field = LocalStubFieldFile("sensitive_videos/unused.mp4")
+        fake_video_obj = SimpleNamespace(
+            raw_file=fake_raw_field,
+            active_raw_file=fake_raw_field,
+            processed_file=fake_processed_field,
+            storage_mode=view_module.VideoFile.StorageMode.APP_ENCRYPTED,
+            get_raw_file_path=lambda: None,
+            get_processed_file_path=lambda: fallback_path,
+        )
+
+        monkeypatches = pytest.MonkeyPatch()
+        try:
+            monkeypatches.setattr(
+                view_module.VideoFile.objects, "get", lambda **kwargs: fake_video_obj
+            )
+            response = self.client.get("/api/media/videos/123/stream/?type=processed")
+        finally:
+            monkeypatches.undo()
+            fallback_path.unlink(missing_ok=True)
+
+        assert response.status_code == 200
+        assert b"".join(response.streaming_content) == payload
+
     def test_video_stream_uses_configured_protected_media_root_for_streamable_paths(
         self,
     ):
@@ -245,20 +339,18 @@ class VideoStreamViewTests(TestCase):
             processed_streamable_relative_path="streamable_videos/processed/test.mp4",
         )
 
-        storage_dir = STORAGE_DIR.resolve()
-        protected_media_root = storage_dir.parent / "protected_media_mount"
+        storage_dir = protected_media_root().resolve()
+        protected_media_root_path = storage_dir.parent / "protected_media_mount"
         streamable_path = (
-            protected_media_root / "streamable_videos" / "raw" / "test.mp4"
+            protected_media_root_path / "streamable_videos" / "raw" / "test.mp4"
         )
         streamable_path.parent.mkdir(parents=True, exist_ok=True)
         streamable_path.write_bytes(b"\x00\x00\x00\x18ftypmp42")
 
         try:
             monkeypatches.setenv("SERVE_WITH_NGINX", "true")
-            monkeypatches.setenv("PROTECTED_MEDIA_ROOT", str(protected_media_root))
-            monkeypatches.setattr(
-                view_module, "NGINX_PROTECTED_URL", "/protected_media/"
-            )
+            monkeypatches.setenv("PROTECTED_MEDIA_ROOT", str(protected_media_root_path))
+            monkeypatches.setenv("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
             monkeypatches.setattr(
                 view_module.VideoFile.objects, "get", lambda **kwargs: fake_video_obj
             )

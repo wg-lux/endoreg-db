@@ -5,8 +5,8 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 from uuid import uuid4
 
-from django.core.management import call_command
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.test import TestCase
 
 from endoreg_db.models import AIDataSet, Center, EndoscopyProcessor, NetworkNode

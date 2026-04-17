@@ -196,3 +196,67 @@ def test_protected_media_path_helpers_honor_configured_root(monkeypatch, tmp_pat
 def test_protected_media_relative_path_rejects_unsafe_segments():
     with pytest.raises(ValueError, match="not safe"):
         paths_module.normalize_protected_media_relative_path("../escape.mp4")
+
+
+def test_watcher_intake_dirs_are_distinct_from_protected_media_root(
+    monkeypatch, tmp_path
+):
+    protected_root = tmp_path / "protected"
+    storage_root = protected_root / "storage"
+    io_root = protected_root / "io"
+
+    reloaded = reload_paths(
+        monkeypatch,
+        LX_ANNOTATE_ENCRYPTED_DATA_DIR=protected_root,
+        STORAGE_DIR=storage_root,
+        IO_DIR=io_root,
+    )
+
+    assert reloaded.protected_media_root() == storage_root.resolve()
+    assert reloaded.WATCHER_VIDEO_DROP_DIR.is_relative_to(io_root / "import")
+    assert reloaded.WATCHER_REPORT_DROP_DIR.is_relative_to(io_root / "import")
+    assert reloaded.WATCHER_PREANONYMIZED_DROP_DIR.is_relative_to(io_root / "import")
+    assert not reloaded.WATCHER_VIDEO_DROP_DIR.is_relative_to(
+        reloaded.protected_media_root()
+    )
+    assert not reloaded.WATCHER_REPORT_DROP_DIR.is_relative_to(
+        reloaded.protected_media_root()
+    )
+    assert not reloaded.WATCHER_PREANONYMIZED_DROP_DIR.is_relative_to(
+        reloaded.protected_media_root()
+    )
+
+
+def test_resolve_existing_protected_media_path_rejects_intake_and_accepts_managed_files(
+    monkeypatch, tmp_path
+):
+    protected_root = tmp_path / "protected"
+    storage_root = protected_root / "storage"
+    io_root = protected_root / "io"
+
+    reloaded = reload_paths(
+        monkeypatch,
+        LX_ANNOTATE_ENCRYPTED_DATA_DIR=protected_root,
+        STORAGE_DIR=storage_root,
+        IO_DIR=io_root,
+    )
+
+    intake_file = reloaded.WATCHER_REPORT_DROP_DIR / "incoming.pdf"
+    intake_file.parent.mkdir(parents=True, exist_ok=True)
+    intake_file.write_bytes(b"%PDF-1.4 intake")
+
+    managed_file = reloaded.UPLOAD_WATCHER_DIR / "job-123" / "incoming.pdf"
+    managed_file.parent.mkdir(parents=True, exist_ok=True)
+    managed_file.write_bytes(b"%PDF-1.4 managed")
+
+    assert reloaded.resolve_existing_protected_media_path(intake_file) is None
+    assert (
+        reloaded.resolve_existing_protected_media_path(managed_file)
+        == managed_file.resolve()
+    )
+    assert (
+        reloaded.resolve_existing_protected_media_path(
+            "upload_jobs/watcher/job-123/incoming.pdf"
+        )
+        == managed_file.resolve()
+    )

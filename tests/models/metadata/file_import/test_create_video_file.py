@@ -210,12 +210,13 @@ def test_create_from_file_duplicate_with_existing_file(
 
 
 @pytest.mark.django_db
-def test_create_from_file_duplicate_with_missing_file_recreates(
+def test_create_from_file_duplicate_with_missing_file_reuses_existing_record_without_success_history(
     mock_storage, tmp_path, monkeypatch, base_db_data
 ):
     """
-    When a VideoFile with the same hash exists but its raw file is missing,
-    the orphaned record should be deleted and a new VideoFile created.
+    Without a successful ProcessingHistory entry, the current create_or_retrieve
+    flow reuses the existing VideoFile record from context/failure finalization
+    and keeps the pipeline marked as needing processing.
     """
     storage_root, sensitive_dir, transcoding_dir = _configure_storage_layout(
         mock_storage, "dup_orphan"
@@ -271,7 +272,6 @@ def test_create_from_file_duplicate_with_missing_file_recreates(
     raw_path.unlink()
     assert not raw_path.exists()
 
-    # Second call with same hash: orphan should be deleted, new video created
     ctx2 = ImportContext(
         file_path=src_file,
         center_name=center_name,
@@ -281,9 +281,10 @@ def test_create_from_file_duplicate_with_missing_file_recreates(
         create_video_file.create_or_retrieve_video_file(ctx2)
     )
 
-    assert processed2 is True
+    assert processed2 is False
     assert needs_processing2 is True
     assert new_video.pk == orphan_pk
+    assert new_video.get_raw_file_path() is None
 
 
 def test_check_storage_capacity_raises_on_insufficient_space(tmp_path, monkeypatch):

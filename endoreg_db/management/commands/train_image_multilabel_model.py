@@ -1,7 +1,7 @@
 # endoreg_db/management/commands/train_image_multilabel_model.py
 
 from __future__ import annotations
-
+import json
 from django.core.management.base import BaseCommand, CommandError
 
 from endoreg_db.models import AIDataSet
@@ -130,19 +130,17 @@ class Command(BaseCommand):
                 f"treat_unlabeled_as_negative={treat_unlabeled_as_negative}"
             )
         )
-
-        result = train_gastronet_multilabel(
-            TrainingConfig(
-                dataset_id=dataset.id,
-                labelset_version_to_train=labelset_version,
-                backbone_checkpoint=backbone_checkpoint,
-                num_epochs=epochs,
-                batch_size=batch_size,
-                backbone_name=backbone_name,
-                freeze_backbone=freeze_backbone,
-                treat_unlabeled_as_negative=treat_unlabeled_as_negative,
-            )
+        config = TrainingConfig(
+            dataset_id=dataset.id,
+            labelset_version_to_train=labelset_version,
+            backbone_checkpoint=backbone_checkpoint,
+            num_epochs=epochs,
+            batch_size=batch_size,
+            backbone_name=backbone_name,
+            freeze_backbone=freeze_backbone,
+            treat_unlabeled_as_negative=treat_unlabeled_as_negative,
         )
+        result = train_gastronet_multilabel(config)
 
         self.stdout.write(
             self.style.SUCCESS(
@@ -150,4 +148,6 @@ class Command(BaseCommand):
                 f"Model saved to: {result['model_path']}"
             )
         )
-        return result
+
+        self.stdout.write(json.dumps(result))
+        return None
