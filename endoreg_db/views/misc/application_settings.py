@@ -2,11 +2,16 @@ from __future__ import annotations
 
 import json
 import shutil
+import threading
+import traceback
 from collections import Counter
 from datetime import datetime
+from io import StringIO
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
+from django.core.management import call_command
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -20,6 +25,9 @@ from endoreg_db.models import (
     PatientExaminationReport,
 )
 from endoreg_db.services.hub import deployment_profile_payload
+from endoreg_db.utils.ai.model_training.config import (
+    DEFAULT_LABELSET_VERSION_TO_TRAIN,
+)
 from endoreg_db.utils.file_operations import atomic_write_file
 from endoreg_db.utils.defaults.set_default_center import (
     get_application_defaults,
@@ -28,6 +36,46 @@ from endoreg_db.utils.defaults.set_default_center import (
 )
 from endoreg_db.utils.paths import EXPORT_DIR, IO_DIR, PROTECTED_DATA_ROOT, STORAGE_DIR
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
+
+
+MODEL_TRAINING_BACKBONE_OPTIONS: tuple[dict[str, str], ...] = (
+    {
+        "value": "gastro_rn50",
+        "label": "GastroNet ResNet50",
+        "description": "ResNet50 with optional GastroNet checkpoint loading.",
+    },
+    {
+        "value": "resnet50_imagenet",
+        "label": "ResNet50 ImageNet",
+        "description": "ResNet50 initialized from ImageNet weights.",
+    },
+    {
+        "value": "resnet50_random",
+        "label": "ResNet50 Random",
+        "description": "ResNet50 with random initialization.",
+    },
+    {
+        "value": "efficientnet_b0_imagenet",
+        "label": "EfficientNet-B0 ImageNet",
+        "description": "EfficientNet-B0 initialized from ImageNet weights.",
+    },
+)
+
+MODEL_TRAINING_FEATURE_MODE_OPTIONS: tuple[dict[str, str], ...] = (
+    {
+        "value": "freeze_backbone",
+        "label": "Frozen Backbone",
+        "description": "Train only the classifier head on top of fixed features.",
+    },
+    {
+        "value": "fine_tune_backbone",
+        "label": "Fine-Tune Backbone",
+        "description": "Update the full model including the backbone.",
+    },
+)
+
+_MODEL_TRAINING_RUNS: dict[str, dict[str, Any]] = {}
+_MODEL_TRAINING_RUNS_LOCK = threading.Lock()
 
 
 def _required_backup_sources() -> list[Path]:
@@ -103,6 +151,121 @@ def _settings_payload(request) -> dict[str, Any]:
         "deployment_profile": deployment_profile_payload(),
         "backup_status": _backup_status_payload(),
     }
+
+
+def _application_settings_ai_dataset_entries() -> list[dict[str, Any]]:
+    dataset_counts = Counter(
+        AIDataSet.objects.exclude(name__exact="").values_list("name", flat=True)
+    )
+    entries = []
+    for dataset in AIDataSet.objects.exclude(name__exact="").order_by(
+        "name", "dataset_type", "pk"
+    ):
+        entries.append(
+            {
+                "id": dataset.pk,
+                "value": dataset.name,
+                "label": dataset.name,
+                "dataset_type": dataset.dataset_type,
+                "ai_model_type": dataset.ai_model_type,
+                "is_active": dataset.is_active,
+                "name_count": dataset_counts.get(dataset.name, 1),
+            }
+        )
+    return entries
+
+
+def _utcnow_iso() -> str:
+    return datetime.utcnow().isoformat() + "Z"
+
+
+def _store_model_training_run(run_id: str, **updates: object) -> dict[str, Any]:
+    with _MODEL_TRAINING_RUNS_LOCK:
+        current = _MODEL_TRAINING_RUNS.setdefault(run_id, {})
+        current.update(updates)
+        return dict(current)
+
+
+def _get_model_training_run(run_id: str) -> dict[str, Any] | None:
+    with _MODEL_TRAINING_RUNS_LOCK:
+        run = _MODEL_TRAINING_RUNS.get(run_id)
+        return dict(run) if run is not None else None
+
+
+def _model_training_run_payload(run: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "run_id": run["run_id"],
+        "status": run["status"],
+        "dataset_id": run["dataset_id"],
+        "dataset_name": run.get("dataset_name"),
+        "backbone_name": run["backbone_name"],
+        "feature_mode": run["feature_mode"],
+        "freeze_backbone": run["freeze_backbone"],
+        "epochs": run["epochs"],
+        "batch_size": run["batch_size"],
+        "labelset_version": run["labelset_version"],
+        "treat_unlabeled_as_negative": run["treat_unlabeled_as_negative"],
+        "backbone_checkpoint": run.get("backbone_checkpoint"),
+        "created_at": run["created_at"],
+        "started_at": run.get("started_at"),
+        "finished_at": run.get("finished_at"),
+        "result": run.get("result"),
+        "error": run.get("error"),
+        "stdout": run.get("stdout", ""),
+    }
+
+
+def _execute_model_training_run(
+    run_id: str,
+    *,
+    command_kwargs: dict[str, Any],
+) -> None:
+    _store_model_training_run(run_id, status="running", started_at=_utcnow_iso())
+    stdout = StringIO()
+    stderr = StringIO()
+    try:
+        result = call_command(
+            "train_image_multilabel_model",
+            stdout=stdout,
+            stderr=stderr,
+            **command_kwargs,
+        )
+        output = stdout.getvalue()
+        error_output = stderr.getvalue()
+        if error_output:
+            output = f"{output}\n{error_output}".strip()
+        _store_model_training_run(
+            run_id,
+            status="completed",
+            finished_at=_utcnow_iso(),
+            stdout=output,
+            result=result,
+            error=None,
+        )
+    except Exception as exc:
+        output = stdout.getvalue()
+        error_output = stderr.getvalue()
+        trace = traceback.format_exc()
+        combined_output = "\n".join(
+            chunk for chunk in (output, error_output, trace) if chunk
+        ).strip()
+        _store_model_training_run(
+            run_id,
+            status="failed",
+            finished_at=_utcnow_iso(),
+            stdout=combined_output,
+            error=str(exc),
+            result=None,
+        )
+
+
+def _launch_model_training_run(run_id: str, *, command_kwargs: dict[str, Any]) -> None:
+    thread = threading.Thread(
+        target=_execute_model_training_run,
+        kwargs={"run_id": run_id, "command_kwargs": command_kwargs},
+        daemon=True,
+    )
+    thread.start()
 
 
 def _network_node_payload(node: NetworkNode) -> dict[str, Any]:
@@ -298,25 +461,147 @@ def application_settings_report_templates_dropdown(request):
 @api_view(["GET"])
 @permission_classes([EnvironmentAwarePermission])
 def application_settings_ai_datasets_dropdown(request):
-    dataset_counts = Counter(
-        AIDataSet.objects.exclude(name__exact="").values_list("name", flat=True)
+    return Response(
+        _application_settings_ai_dataset_entries(),
+        status=status.HTTP_200_OK,
     )
-    entries = []
-    for dataset in AIDataSet.objects.exclude(name__exact="").order_by(
-        "name", "dataset_type", "pk"
-    ):
-        entries.append(
-            {
-                "id": dataset.pk,
-                "value": dataset.name,
-                "label": dataset.name,
-                "dataset_type": dataset.dataset_type,
-                "ai_model_type": dataset.ai_model_type,
-                "is_active": dataset.is_active,
-                "name_count": dataset_counts.get(dataset.name, 1),
-            }
+
+
+@api_view(["GET"])
+@permission_classes([EnvironmentAwarePermission])
+def application_settings_model_training_options(request):
+    return Response(
+        {
+            "ai_datasets": [
+                entry
+                for entry in _application_settings_ai_dataset_entries()
+                if entry["dataset_type"] == AIDataSet.DATASET_TYPE_IMAGE
+                and entry["ai_model_type"] == AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL
+            ],
+            "backbones": list(MODEL_TRAINING_BACKBONE_OPTIONS),
+            "feature_modes": list(MODEL_TRAINING_FEATURE_MODE_OPTIONS),
+            "defaults": {
+                "epochs": 10,
+                "batch_size": 32,
+                "labelset_version": DEFAULT_LABELSET_VERSION_TO_TRAIN,
+                "backbone_name": "gastro_rn50",
+                "feature_mode": "freeze_backbone",
+                "treat_unlabeled_as_negative": True,
+                "backbone_checkpoint": None,
+            },
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+@api_view(["POST"])
+@permission_classes([EnvironmentAwarePermission])
+def application_settings_model_training_runs(request):
+    payload: dict[str, Any] = request.data or {}
+
+    dataset_id = payload.get("dataset_id")
+    backbone_name = str(payload.get("backbone_name", "gastro_rn50") or "").strip()
+    feature_mode = str(payload.get("feature_mode", "freeze_backbone") or "").strip()
+    backbone_checkpoint_raw = payload.get("backbone_checkpoint")
+    epochs = payload.get("epochs", 10)
+    batch_size = payload.get("batch_size", 32)
+    labelset_version = payload.get(
+        "labelset_version",
+        DEFAULT_LABELSET_VERSION_TO_TRAIN,
+    )
+    treat_unlabeled_as_negative = payload.get("treat_unlabeled_as_negative", True)
+
+    errors: dict[str, str] = {}
+    if not isinstance(dataset_id, int):
+        errors["dataset_id"] = "dataset_id must be an integer."
+    if backbone_name not in {
+        option["value"] for option in MODEL_TRAINING_BACKBONE_OPTIONS
+    }:
+        errors["backbone_name"] = "Unsupported backbone_name."
+    if feature_mode not in {
+        option["value"] for option in MODEL_TRAINING_FEATURE_MODE_OPTIONS
+    }:
+        errors["feature_mode"] = "Unsupported feature_mode."
+    if not isinstance(epochs, int) or epochs <= 0:
+        errors["epochs"] = "epochs must be a positive integer."
+    if not isinstance(batch_size, int) or batch_size <= 0:
+        errors["batch_size"] = "batch_size must be a positive integer."
+    if not isinstance(labelset_version, int) or labelset_version <= 0:
+        errors["labelset_version"] = "labelset_version must be a positive integer."
+    if not isinstance(treat_unlabeled_as_negative, bool):
+        errors["treat_unlabeled_as_negative"] = (
+            "treat_unlabeled_as_negative must be a boolean."
         )
-    return Response(entries, status=status.HTTP_200_OK)
+
+    backbone_checkpoint: str | None = None
+    if backbone_checkpoint_raw not in (None, ""):
+        if not isinstance(backbone_checkpoint_raw, str):
+            errors["backbone_checkpoint"] = "backbone_checkpoint must be a string."
+        else:
+            backbone_checkpoint = backbone_checkpoint_raw.strip() or None
+
+    dataset = None
+    if not errors:
+        dataset = AIDataSet.objects.filter(pk=dataset_id).first()
+        if dataset is None:
+            errors["dataset_id"] = "AIDataSet not found."
+        elif dataset.dataset_type != AIDataSet.DATASET_TYPE_IMAGE:
+            errors["dataset_id"] = "AIDataSet must have dataset_type='image'."
+        elif dataset.ai_model_type != AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL:
+            errors["dataset_id"] = (
+                "AIDataSet must have ai_model_type='image_multilabel_classification'."
+            )
+
+    if errors:
+        return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    freeze_backbone = feature_mode == "freeze_backbone"
+    run_id = uuid4().hex
+    command_kwargs = {
+        "dataset_id": dataset.pk,
+        "backbone_name": backbone_name,
+        "backbone_checkpoint": backbone_checkpoint,
+        "epochs": epochs,
+        "batch_size": batch_size,
+        "labelset_version": labelset_version,
+        "freeze_backbone": freeze_backbone,
+        "treat_unlabeled_as_negative": treat_unlabeled_as_negative,
+    }
+    run = _store_model_training_run(
+        run_id,
+        run_id=run_id,
+        status="queued",
+        dataset_id=dataset.pk,
+        dataset_name=dataset.name,
+        backbone_name=backbone_name,
+        feature_mode=feature_mode,
+        freeze_backbone=freeze_backbone,
+        epochs=epochs,
+        batch_size=batch_size,
+        labelset_version=labelset_version,
+        treat_unlabeled_as_negative=treat_unlabeled_as_negative,
+        backbone_checkpoint=backbone_checkpoint,
+        created_at=_utcnow_iso(),
+        started_at=None,
+        finished_at=None,
+        result=None,
+        error=None,
+        stdout="",
+    )
+    _launch_model_training_run(run_id, command_kwargs=command_kwargs)
+    return Response(_model_training_run_payload(run), status=status.HTTP_202_ACCEPTED)
+
+
+@api_view(["GET"])
+@permission_classes([EnvironmentAwarePermission])
+def application_settings_model_training_run_detail(request, run_id: str):
+    run = _get_model_training_run(run_id)
+    if run is None:
+        return Response(
+            {"detail": "Training run not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    return Response(_model_training_run_payload(run), status=status.HTTP_200_OK)
 
 
 def _sanitize_export_token(value: str) -> str:
@@ -640,6 +925,9 @@ __all__ = [
     "application_settings_annotators_dropdown",
     "application_settings_report_templates_dropdown",
     "application_settings_ai_datasets_dropdown",
+    "application_settings_model_training_options",
+    "application_settings_model_training_runs",
+    "application_settings_model_training_run_detail",
     "application_settings_ai_dataset_export",
     "application_settings_backup",
     "application_settings_network_nodes",

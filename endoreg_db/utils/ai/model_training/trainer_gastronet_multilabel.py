@@ -741,6 +741,8 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
             "dataset_id": config.dataset_id,
             "labelset_version_to_train": config.labelset_version_to_train,
             "backbone_checkpoint": config.backbone_checkpoint,
+            "backbone_name": config.backbone_name,
+            "freeze_backbone": config.freeze_backbone,
             "num_epochs": config.num_epochs,
             "batch_size": config.batch_size,
             "val_split": config.val_split,

@@ -386,7 +386,7 @@ def _resolve_ai_dataset_for_tasks(
     )
 
     if not dataset_name or dataset_type != AIDataSet.DATASET_TYPE_IMAGE:
-        return None
+        return AIDataSet.objects.first()
 
     return (
         AIDataSet.objects.filter(
@@ -400,9 +400,11 @@ def _resolve_ai_dataset_for_tasks(
 
 def _build_dataset_target_buckets(
     *,
-    dataset: AIDataSet,
+    dataset: AIDataSet | None,
     target_label: Label | None,
 ) -> dict[str, set[int]]:
+    if dataset is None:
+        return {}
     if dataset.dataset_type != AIDataSet.DATASET_TYPE_IMAGE:
         return {}
     if target_label is None:

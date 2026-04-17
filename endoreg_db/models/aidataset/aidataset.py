@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 from django.db import models
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from lx_dtypes.models.ledger.p_video.Pydantic import PatientVideoFile
 
 if TYPE_CHECKING:
@@ -23,6 +24,62 @@ class AIDataSetFrameLabelExport(BaseModel):
     id: int
     name: str
     labelset_name: str | None = None
+
+
+class AIDataSetActiveLearningConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    budget: int = 32
+    segment_gap_frames: int = 150
+    temporal_spacing_frames: int = 75
+    min_quality_score: float = 0.35
+    max_samples_per_segment: int = 1
+    max_rarity_boost: float = 2.0
+    max_label_weight: float = 3.0
+
+
+class AIDataSetActiveLearningCandidate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sample_index: int
+    video_id: int
+    frame_number: int
+    frame_id: int | None = None
+    timestamp: float | None = None
+    probs: list[float]
+    embedding: list[float]
+    quality_score: float | None = None
+
+
+class AIDataSetScoredActiveLearningCandidate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sample_index: int
+    video_id: int
+    frame_number: int
+    frame_id: int | None = None
+    timestamp: float | None = None
+    segment_id: int
+    probs: list[float]
+    quality_score: float | None = None
+    uncertainty: float
+    diversity: float
+    rarity: float
+    quality_gate: float
+    frame_score: float
+
+
+class AIDataSetActiveLearningSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    config: AIDataSetActiveLearningConfig
+    candidate_count: int
+    segment_count: int
+    selected_sample_indices: list[int] = Field(default_factory=list)
+    selected_frame_ids: list[int] = Field(default_factory=list)
+    selected_candidates: list[AIDataSetScoredActiveLearningCandidate] = Field(
+        default_factory=list
+    )
 
 
 class AIDataSetFrameAnnotationExport(BaseModel):
@@ -196,6 +253,412 @@ class AIDataSet(models.Model):
         if self.dataset_type == self.DATASET_TYPE_VIDEO:
             return self.video_annotations
         return self.image_annotations.none()
+
+    @staticmethod
+    def _l2_normalize(
+        values: np.ndarray,
+        *,
+        axis: int = -1,
+        eps: float = 1e-8,
+    ) -> np.ndarray:
+        norms = np.linalg.norm(values, axis=axis, keepdims=True)
+        return values / np.clip(norms, eps, None)
+
+    @staticmethod
+    def _binary_entropy(probabilities: np.ndarray, eps: float = 1e-8) -> np.ndarray:
+        clipped = np.clip(probabilities, eps, 1.0 - eps)
+        return -(clipped * np.log(clipped) + (1.0 - clipped) * np.log(1.0 - clipped))
+
+    @staticmethod
+    def _make_label_weights(
+        class_frequencies: np.ndarray,
+        *,
+        max_weight: float,
+    ) -> np.ndarray:
+        bounded = np.clip(class_frequencies.astype(np.float64), 1e-6, None)
+        weights = 1.0 / np.sqrt(bounded)
+        weights = weights / np.clip(weights.mean(), 1e-8, None)
+        return np.clip(weights, 0.5, max_weight)
+
+    @staticmethod
+    def _normalize_nonconstant(values: np.ndarray) -> np.ndarray:
+        if values.size == 0:
+            return values
+        lower = float(values.min())
+        upper = float(values.max())
+        if upper - lower <= 1e-8:
+            if upper <= 1e-8:
+                return np.zeros_like(values)
+            return np.ones_like(values)
+        return (values - lower) / (upper - lower)
+
+    @classmethod
+    def _cosine_distance_to_set(
+        cls,
+        candidate_embedding: np.ndarray,
+        reference_embeddings: np.ndarray,
+    ) -> float:
+        if reference_embeddings.size == 0:
+            return 1.0
+        candidate = cls._l2_normalize(candidate_embedding[None, :])[0]
+        references = cls._l2_normalize(reference_embeddings)
+        similarities = references @ candidate
+        return float(1.0 - np.max(similarities))
+
+    @classmethod
+    def _coerce_active_learning_candidates(
+        cls,
+        candidates: Sequence[AIDataSetActiveLearningCandidate | dict[str, Any]],
+    ) -> list[AIDataSetActiveLearningCandidate]:
+        return [
+            candidate
+            if isinstance(candidate, AIDataSetActiveLearningCandidate)
+            else AIDataSetActiveLearningCandidate.model_validate(candidate)
+            for candidate in candidates
+        ]
+
+    @classmethod
+    def _build_segment_ids(
+        cls,
+        candidates: Sequence[AIDataSetActiveLearningCandidate],
+        *,
+        segment_gap_frames: int,
+    ) -> list[int]:
+        ordered_positions = sorted(
+            range(len(candidates)),
+            key=lambda idx: (
+                candidates[idx].video_id,
+                candidates[idx].frame_number,
+                candidates[idx].sample_index,
+            ),
+        )
+        segment_ids = [0] * len(candidates)
+        current_segment_id = -1
+        previous_video_id: int | None = None
+        previous_frame_number: int | None = None
+
+        for position in ordered_positions:
+            candidate = candidates[position]
+            if (
+                previous_video_id != candidate.video_id
+                or previous_frame_number is None
+                or candidate.frame_number - previous_frame_number > segment_gap_frames
+            ):
+                current_segment_id += 1
+            segment_ids[position] = current_segment_id
+            previous_video_id = candidate.video_id
+            previous_frame_number = candidate.frame_number
+
+        return segment_ids
+
+    @classmethod
+    def _pick_segment_candidate(
+        cls,
+        segment_candidates: Sequence[dict[str, Any]],
+        *,
+        selected_embeddings: list[np.ndarray],
+        selected_frames_by_video: dict[int, list[int]],
+        temporal_spacing_frames: int,
+    ) -> dict[str, Any] | None:
+        best_candidate: dict[str, Any] | None = None
+        best_score = -1.0
+        selected_reference = (
+            np.vstack(selected_embeddings)
+            if selected_embeddings
+            else np.empty((0, 0), dtype=np.float64)
+        )
+
+        for candidate in segment_candidates:
+            if candidate["picked"]:
+                continue
+
+            selected_frame_numbers = selected_frames_by_video.get(
+                candidate["video_id"], []
+            )
+            if any(
+                abs(candidate["frame_number"] - frame_number) < temporal_spacing_frames
+                for frame_number in selected_frame_numbers
+            ):
+                continue
+
+            if selected_reference.size == 0:
+                dynamic_diversity = 1.0
+            else:
+                dynamic_diversity = cls._cosine_distance_to_set(
+                    candidate["embedding"],
+                    selected_reference,
+                )
+            candidate_score = candidate["frame_score"] * max(dynamic_diversity, 1e-6)
+            if candidate_score > best_score:
+                best_score = candidate_score
+                best_candidate = candidate
+
+        return best_candidate
+
+    @classmethod
+    def select_active_learning_frame_indices_from_candidates(
+        cls,
+        candidates: Sequence[AIDataSetActiveLearningCandidate | dict[str, Any]],
+        *,
+        labeled_embeddings: np.ndarray | Sequence[Sequence[float]] | None = None,
+        class_frequencies: np.ndarray | Sequence[float] | None = None,
+        config: AIDataSetActiveLearningConfig | None = None,
+    ) -> AIDataSetActiveLearningSelection:
+        resolved_config = config or AIDataSetActiveLearningConfig()
+        normalized_candidates = cls._coerce_active_learning_candidates(candidates)
+        if not normalized_candidates:
+            return AIDataSetActiveLearningSelection(
+                config=resolved_config,
+                candidate_count=0,
+                segment_count=0,
+            )
+
+        probs = np.asarray(
+            [candidate.probs for candidate in normalized_candidates],
+            dtype=np.float64,
+        )
+        embeddings = np.asarray(
+            [candidate.embedding for candidate in normalized_candidates],
+            dtype=np.float64,
+        )
+        if probs.ndim != 2 or embeddings.ndim != 2:
+            raise ValueError(
+                "Active learning candidates must contain 2D probs and embeddings."
+            )
+        if probs.shape[0] != embeddings.shape[0]:
+            raise ValueError("Active learning probabilities and embeddings must align.")
+
+        candidate_count, num_labels = probs.shape
+        if num_labels == 0:
+            raise ValueError(
+                "Active learning candidates must contain at least one label."
+            )
+
+        if class_frequencies is None:
+            frequencies = np.ones(num_labels, dtype=np.float64)
+        else:
+            frequencies = np.asarray(class_frequencies, dtype=np.float64)
+            if frequencies.shape != (num_labels,):
+                raise ValueError(
+                    "class_frequencies must match the number of model output labels."
+                )
+
+        if labeled_embeddings is None:
+            reference_embeddings = np.empty((0, embeddings.shape[1]), dtype=np.float64)
+        else:
+            reference_embeddings = np.asarray(labeled_embeddings, dtype=np.float64)
+            if reference_embeddings.ndim == 1:
+                reference_embeddings = reference_embeddings[None, :]
+            if (
+                reference_embeddings.ndim != 2
+                or reference_embeddings.shape[1] != embeddings.shape[1]
+            ):
+                raise ValueError(
+                    "labeled_embeddings must be empty or shaped [N, embedding_dim]."
+                )
+
+        label_weights = cls._make_label_weights(
+            frequencies,
+            max_weight=resolved_config.max_label_weight,
+        )
+        uncertainties = (cls._binary_entropy(probs) * label_weights[None, :]).sum(
+            axis=1
+        ) / np.clip(label_weights.sum(), 1e-8, None)
+        normalized_uncertainties = cls._normalize_nonconstant(uncertainties)
+
+        diversities = np.asarray(
+            [
+                cls._cosine_distance_to_set(embedding, reference_embeddings)
+                for embedding in embeddings
+            ],
+            dtype=np.float64,
+        )
+        normalized_diversities = cls._normalize_nonconstant(diversities)
+
+        rarity_weights = cls._make_label_weights(
+            frequencies,
+            max_weight=resolved_config.max_rarity_boost,
+        )
+        rarity = (probs * rarity_weights[None, :]).sum(axis=1) / np.clip(
+            probs.sum(axis=1),
+            1e-8,
+            None,
+        )
+        rarity = np.clip(rarity, 0.5, resolved_config.max_rarity_boost)
+
+        quality_scores = np.asarray(
+            [
+                1.0
+                if candidate.quality_score is None
+                else float(candidate.quality_score)
+                for candidate in normalized_candidates
+            ],
+            dtype=np.float64,
+        )
+        quality_scores = np.clip(quality_scores, 0.0, 1.0)
+        quality_gate = np.where(
+            quality_scores >= resolved_config.min_quality_score,
+            quality_scores,
+            0.0,
+        )
+
+        frame_scores = (
+            normalized_uncertainties * normalized_diversities * rarity * quality_gate
+        )
+
+        segment_ids = cls._build_segment_ids(
+            normalized_candidates,
+            segment_gap_frames=resolved_config.segment_gap_frames,
+        )
+        scored_candidates: list[dict[str, Any]] = []
+        segments: dict[int, list[dict[str, Any]]] = {}
+
+        for idx, candidate in enumerate(normalized_candidates):
+            scored = {
+                "sample_index": candidate.sample_index,
+                "frame_id": candidate.frame_id,
+                "video_id": candidate.video_id,
+                "frame_number": candidate.frame_number,
+                "timestamp": candidate.timestamp,
+                "segment_id": segment_ids[idx],
+                "probs": probs[idx].tolist(),
+                "embedding": embeddings[idx],
+                "quality_score": candidate.quality_score,
+                "uncertainty": float(normalized_uncertainties[idx]),
+                "diversity": float(normalized_diversities[idx]),
+                "rarity": float(rarity[idx]),
+                "quality_gate": float(quality_gate[idx]),
+                "frame_score": float(frame_scores[idx]),
+                "picked": False,
+            }
+            scored_candidates.append(scored)
+            segments.setdefault(segment_ids[idx], []).append(scored)
+
+        segment_ranking = sorted(
+            segments.items(),
+            key=lambda item: max(candidate["frame_score"] for candidate in item[1]),
+            reverse=True,
+        )
+
+        selected: list[dict[str, Any]] = []
+        selected_embeddings: list[np.ndarray] = []
+        selected_frames_by_video: dict[int, list[int]] = {}
+        segment_pick_counts: dict[int, int] = {segment_id: 0 for segment_id in segments}
+
+        while len(selected) < resolved_config.budget:
+            made_progress = False
+            for segment_id, segment_candidates in segment_ranking:
+                if len(selected) >= resolved_config.budget:
+                    break
+                if (
+                    segment_pick_counts[segment_id]
+                    >= resolved_config.max_samples_per_segment
+                ):
+                    continue
+
+                pick = cls._pick_segment_candidate(
+                    segment_candidates,
+                    selected_embeddings=selected_embeddings,
+                    selected_frames_by_video=selected_frames_by_video,
+                    temporal_spacing_frames=resolved_config.temporal_spacing_frames,
+                )
+                if pick is None:
+                    continue
+
+                pick["picked"] = True
+                segment_pick_counts[segment_id] += 1
+                selected.append(pick)
+                selected_embeddings.append(pick["embedding"])
+                selected_frames_by_video.setdefault(pick["video_id"], []).append(
+                    pick["frame_number"]
+                )
+                made_progress = True
+
+            if not made_progress:
+                break
+
+        selected_candidates = [
+            AIDataSetScoredActiveLearningCandidate.model_validate(
+                {
+                    key: value
+                    for key, value in candidate.items()
+                    if key != "embedding" and key != "picked"
+                }
+            )
+            for candidate in selected
+        ]
+
+        return AIDataSetActiveLearningSelection(
+            config=resolved_config,
+            candidate_count=candidate_count,
+            segment_count=len(segments),
+            selected_sample_indices=[
+                candidate.sample_index for candidate in selected_candidates
+            ],
+            selected_frame_ids=[
+                candidate.frame_id
+                for candidate in selected_candidates
+                if candidate.frame_id is not None
+            ],
+            selected_candidates=selected_candidates,
+        )
+
+    @classmethod
+    def select_active_learning_frame_indices(
+        cls,
+        *,
+        sample_indices: Sequence[int],
+        video_ids: Sequence[int],
+        frame_numbers: Sequence[int],
+        probs: Sequence[Sequence[float]],
+        embeddings: Sequence[Sequence[float]],
+        frame_ids: Sequence[int | None] | None = None,
+        timestamps: Sequence[float | None] | None = None,
+        quality_scores: Sequence[float | None] | None = None,
+        labeled_embeddings: np.ndarray | Sequence[Sequence[float]] | None = None,
+        class_frequencies: np.ndarray | Sequence[float] | None = None,
+        config: AIDataSetActiveLearningConfig | None = None,
+    ) -> AIDataSetActiveLearningSelection:
+        candidate_count = len(sample_indices)
+        if not (
+            len(video_ids)
+            == len(frame_numbers)
+            == len(probs)
+            == len(embeddings)
+            == candidate_count
+        ):
+            raise ValueError("All active learning arrays must have the same length.")
+
+        resolved_frame_ids: Sequence[int | None] = (
+            frame_ids if frame_ids is not None else [None] * candidate_count
+        )
+        resolved_timestamps: Sequence[float | None] = (
+            timestamps if timestamps is not None else [None] * candidate_count
+        )
+        resolved_quality_scores: Sequence[float | None] = (
+            quality_scores if quality_scores is not None else [None] * candidate_count
+        )
+
+        candidates = [
+            AIDataSetActiveLearningCandidate(
+                sample_index=sample_indices[idx],
+                frame_id=resolved_frame_ids[idx],
+                video_id=video_ids[idx],
+                frame_number=frame_numbers[idx],
+                timestamp=resolved_timestamps[idx],
+                probs=list(probs[idx]),
+                embedding=list(embeddings[idx]),
+                quality_score=resolved_quality_scores[idx],
+            )
+            for idx in range(candidate_count)
+        ]
+
+        return cls.select_active_learning_frame_indices_from_candidates(
+            candidates,
+            labeled_embeddings=labeled_embeddings,
+            class_frequencies=class_frequencies,
+            config=config,
+        )
 
     def add_frame_annotations(
         self,

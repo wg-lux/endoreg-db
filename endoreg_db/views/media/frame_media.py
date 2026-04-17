@@ -1,17 +1,17 @@
 import logging
 import mimetypes
 import os
+import posixpath
 from pathlib import Path
 
 from django.core.files import File
-from django.http import Http404, HttpResponse
+from django.http import Http404, HttpResponse, HttpResponseBase
 from rest_framework.views import APIView
 
 from endoreg_db.models import Frame, VideoFile
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.utils.paths import (
-    STORAGE_DIR,
     ensure_within_protected_root,
     to_protected_media_relative,
 )
@@ -20,9 +20,10 @@ from endoreg_db.utils.storage_streaming import (
     build_partial_content_response,
     parse_byte_range,
 )
+from endoreg_db.utils.nginx_accel import nginx_protected_url, nginx_offload_enabled
 
 logger = logging.getLogger(__name__)
-NGINX_PROTECTED_URL = os.environ.get("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
+NGINX_PROTECTED_URL = nginx_protected_url()
 
 
 class FrameStreamView(APIView):
@@ -36,24 +37,30 @@ class FrameStreamView(APIView):
     permission_classes = [EnvironmentAwarePermission, PolicyPermission]
 
     @staticmethod
-    def _serve_with_nginx(frame_path: Path, content_type: str) -> HttpResponse | None:
+    def _serve_with_nginx(
+        frame_path: Path,
+        content_type: str,
+        *,
+        frontend_origin: str,
+    ) -> HttpResponseBase | None:
         try:
-            relative_path = to_protected_media_relative(frame_path.resolve())
+            relative_path = to_protected_media_relative(frame_path)
         except ValueError:
             logger.warning(
-                "Frame file %s is not inside STORAGE_DIR %s. Falling back to Django file response.",
+                "Frame file %s is outside the configured protected media root. Falling back to Django file response.",
                 frame_path,
-                STORAGE_DIR,
             )
             return None
 
-        redirect_url = os.path.join(NGINX_PROTECTED_URL, str(relative_path))
-        response = HttpResponse()
-        response["Content-Type"] = content_type
-        response["X-Accel-Redirect"] = redirect_url
+        response = HttpResponse(content_type=content_type)
+        response["X-Accel-Redirect"] = posixpath.join(
+            NGINX_PROTECTED_URL.rstrip("/"),
+            str(relative_path).lstrip("/"),
+        )
         response["X-Accel-Buffering"] = "no"
         response["Accept-Ranges"] = "bytes"
-        return response
+        response["Content-Disposition"] = f'inline; filename="{frame_path.name}"'
+        return add_cors_headers(response, frontend_origin)
 
     @staticmethod
     def _expected_relative_path(frame_number: int) -> str:
@@ -222,15 +229,13 @@ class FrameStreamView(APIView):
         content_type = mime_type or "image/jpeg"
 
         frontend_origin = os.environ.get("FRONTEND_ORIGIN", "http://localhost:8000")
-        serve_with_nginx = os.environ.get("SERVE_WITH_NGINX", "false").lower() == "true"
-        if serve_with_nginx:
-            nginx_response = self._serve_with_nginx(frame_path, content_type)
+        if nginx_offload_enabled():
+            nginx_response = self._serve_with_nginx(
+                frame_path,
+                content_type,
+                frontend_origin=frontend_origin,
+            )
             if nginx_response is not None:
-                nginx_response["Content-Disposition"] = (
-                    f'inline; filename="{frame_path.name}"'
-                )
-                nginx_response["Access-Control-Allow-Origin"] = frontend_origin
-                nginx_response["Access-Control-Allow-Credentials"] = "true"
                 return nginx_response
 
         range_header = request.headers.get("Range") or request.META.get("HTTP_RANGE")

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 from uuid import uuid4
 
+from django.core.management import call_command
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
@@ -184,6 +186,122 @@ class ApplicationSettingsEndpointTests(TestCase):
             and entry["dataset_type"] == dataset.dataset_type
             for entry in response.json()
         )
+
+    def test_model_training_options_endpoint_returns_backbones_and_image_datasets(self):
+        image_dataset = AIDataSet.objects.create(
+            name=f"train-image-{uuid4().hex[:8]}",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+        AIDataSet.objects.create(
+            name=f"train-video-{uuid4().hex[:8]}",
+            dataset_type=AIDataSet.DATASET_TYPE_VIDEO,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_VIDEO_SEGMENT_CLASSIFICATION,
+        )
+
+        response = self.client.get("/api/settings/application/model_training/options/")
+
+        assert response.status_code == 200, response.content
+        payload = response.json()
+        assert any(entry["id"] == image_dataset.pk for entry in payload["ai_datasets"])
+        assert any(option["value"] == "gastro_rn50" for option in payload["backbones"])
+        assert any(
+            option["value"] == "freeze_backbone" for option in payload["feature_modes"]
+        )
+
+    def test_model_training_run_endpoints_create_and_report_run(self):
+        dataset = AIDataSet.objects.create(
+            name=f"train-run-{uuid4().hex[:8]}",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+
+        from endoreg_db.views.misc import application_settings as view_module
+
+        def fake_launch(run_id: str, *, command_kwargs: dict[str, object]) -> None:
+            view_module._store_model_training_run(
+                run_id,
+                status="completed",
+                started_at="2026-04-17T10:00:01Z",
+                finished_at="2026-04-17T10:00:30Z",
+                stdout="training finished",
+                result={
+                    "model_path": "/tmp/model.pth",
+                    "meta_path": "/tmp/meta.json",
+                },
+                error=None,
+            )
+
+        original_launch = view_module._launch_model_training_run
+        try:
+            view_module._launch_model_training_run = fake_launch
+            create_response = self.client.post(
+                "/api/settings/application/model_training/runs/",
+                data={
+                    "dataset_id": dataset.pk,
+                    "backbone_name": "resnet50_imagenet",
+                    "feature_mode": "fine_tune_backbone",
+                    "epochs": 3,
+                    "batch_size": 8,
+                    "labelset_version": 2,
+                    "treat_unlabeled_as_negative": False,
+                },
+                content_type="application/json",
+            )
+        finally:
+            view_module._launch_model_training_run = original_launch
+
+        assert create_response.status_code == 202, create_response.content
+        created_payload = create_response.json()
+        assert created_payload["dataset_id"] == dataset.pk
+        assert created_payload["backbone_name"] == "resnet50_imagenet"
+        assert created_payload["feature_mode"] == "fine_tune_backbone"
+        assert created_payload["freeze_backbone"] is False
+
+        detail_response = self.client.get(
+            f"/api/settings/application/model_training/runs/{created_payload['run_id']}/"
+        )
+        assert detail_response.status_code == 200, detail_response.content
+        detail_payload = detail_response.json()
+        assert detail_payload["status"] == "completed"
+        assert detail_payload["result"]["model_path"] == "/tmp/model.pth"
+        assert "training finished" in detail_payload["stdout"]
+
+    def test_train_image_multilabel_model_command_forwards_selected_backbone_and_feature_mode(
+        self,
+    ):
+        dataset = AIDataSet.objects.create(
+            name=f"command-train-{uuid4().hex[:8]}",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+
+        with patch(
+            "endoreg_db.management.commands.train_image_multilabel_model.train_gastronet_multilabel"
+        ) as mocked_trainer:
+            mocked_trainer.return_value = {
+                "model_path": "/tmp/model.pth",
+                "meta_path": "/tmp/meta.json",
+            }
+            call_command(
+                "train_image_multilabel_model",
+                dataset_id=dataset.pk,
+                backbone_name="efficientnet_b0_imagenet",
+                freeze_backbone=False,
+                epochs=4,
+                batch_size=16,
+                labelset_version=3,
+                treat_unlabeled_as_negative=False,
+            )
+
+        config = mocked_trainer.call_args.args[0]
+        assert config.dataset_id == dataset.pk
+        assert config.backbone_name == "efficientnet_b0_imagenet"
+        assert config.freeze_backbone is False
+        assert config.num_epochs == 4
+        assert config.batch_size == 16
+        assert config.labelset_version_to_train == 3
+        assert config.treat_unlabeled_as_negative is False
 
     def test_application_settings_backup_endpoint(self):
         from endoreg_db.views.misc import application_settings as view_module

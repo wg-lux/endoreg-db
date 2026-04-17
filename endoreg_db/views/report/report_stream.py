@@ -3,9 +3,10 @@ from __future__ import annotations
 import logging
 import mimetypes
 import os
+import posixpath
 from pathlib import Path
 
-from django.http import Http404, HttpResponse, StreamingHttpResponse
+from django.http import Http404, HttpResponse, HttpResponseBase, StreamingHttpResponse
 from django.utils.decorators import method_decorator
 from django.views.decorators.clickjacking import xframe_options_exempt
 from rest_framework.views import APIView
@@ -30,8 +31,11 @@ from endoreg_db.utils.storage_streaming import (
     parse_byte_range,
 )
 
+from endoreg_db.utils.nginx_accel import nginx_protected_url, nginx_offload_enabled
+
+
 logger = logging.getLogger(__name__)
-NGINX_PROTECTED_URL = os.environ.get("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
+NGINX_PROTECTED_URL = nginx_protected_url()
 
 if TYPE_CHECKING:
     from django.db.models.fields.files import FieldFile
@@ -105,8 +109,8 @@ def _resolve_local_path_for_nginx(field_file) -> Path | None:
 
 
 def _serve_with_nginx(
-    field_file, content_type: str, *, disposition: str
-) -> HttpResponse | None:
+    field_file, content_type: str, *, disposition: str, frontend_origin: str
+) -> HttpResponseBase | None:
     path = _resolve_local_path_for_nginx(field_file)
     if path is None:
         return None
@@ -120,15 +124,17 @@ def _serve_with_nginx(
         )
         return None
 
-    response = HttpResponse()
-    response["Content-Type"] = content_type
-    response["X-Accel-Redirect"] = os.path.join(NGINX_PROTECTED_URL, relative_path)
+    response = HttpResponse(content_type=content_type)
+    response["X-Accel-Redirect"] = posixpath.join(
+        NGINX_PROTECTED_URL.rstrip("/"),
+        str(relative_path).lstrip("/"),
+    )
     response["X-Accel-Buffering"] = "no"
     response["Accept-Ranges"] = "bytes"
     response["Content-Disposition"] = (
         f'{disposition}; filename="{Path(field_file.name).name}"'
     )
-    return response
+    return add_cors_headers(response, frontend_origin)
 
 
 def _build_eager_content_response(
@@ -226,16 +232,16 @@ class ReportStreamView(APIView):
         )
         frontend_origin = os.environ.get("FRONTEND_ORIGIN", "http://localhost:8000")
         range_header = request.headers.get("Range") or request.META.get("HTTP_RANGE")
-        serve_with_nginx = os.environ.get("SERVE_WITH_NGINX", "false").lower() == "true"
 
-        if serve_with_nginx and not range_header and not recovered_from_fallback:
+        if nginx_offload_enabled() and not range_header and not recovered_from_fallback:
             nginx_response = _serve_with_nginx(
                 field_file,
                 content_type,
                 disposition=disposition,
+                frontend_origin=frontend_origin,
             )
             if nginx_response is not None:
-                return add_cors_headers(nginx_response, frontend_origin)
+                return nginx_response
 
         if range_header:
             try:

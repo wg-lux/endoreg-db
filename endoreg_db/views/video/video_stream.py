@@ -11,10 +11,9 @@ from __future__ import annotations
 import logging
 import mimetypes
 import os
-import posixpath
 from pathlib import Path
 
-from django.http import Http404, HttpResponse
+from django.http import Http404, HttpResponse, HttpResponseBase
 from rest_framework.views import APIView
 
 from endoreg_db.authz.permissions import PolicyPermission
@@ -35,9 +34,14 @@ from endoreg_db.utils.storage_streaming import (
     field_file_size,
     parse_byte_range,
 )
+from endoreg_db.utils.nginx_accel import (
+    build_nginx_accel_response,
+    nginx_protected_url,
+    nginx_offload_enabled,
+)
 
 logger = logging.getLogger(__name__)
-NGINX_PROTECTED_URL = os.environ.get("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
+NGINX_PROTECTED_URL = nginx_protected_url
 
 
 def _pick_video_field_file(video: VideoFile, file_type: str):
@@ -112,7 +116,8 @@ def _serve_streamable_video_with_nginx(
     file_type: str,
     field_file,
     content_type: str,
-) -> HttpResponse | None:
+    frontend_origin: str,
+) -> HttpResponseBase | None:
     try:
         storage_mode = coerce_video_storage_mode(getattr(video, "storage_mode", None))
     except ValueError:
@@ -138,15 +143,13 @@ def _serve_streamable_video_with_nginx(
         )
         return None
 
-    response = HttpResponse()
-    response["Content-Type"] = content_type
-    response["X-Accel-Redirect"] = posixpath.join(
-        NGINX_PROTECTED_URL.rstrip("/"), relative_path
+    return build_nginx_accel_response(
+        protected_relative_path=relative_path,
+        content_type=content_type,
+        filename=Path(field_file.name).name,
+        disposition="inline",
+        frontend_origin=frontend_origin,
     )
-    response["X-Accel-Buffering"] = "no"
-    response["Accept-Ranges"] = "bytes"
-    response["Content-Disposition"] = f'inline; filename="{Path(field_file.name).name}"'
-    return response
 
 
 class VideoStreamView(APIView):
@@ -196,17 +199,17 @@ class VideoStreamView(APIView):
 
         frontend_origin = os.environ.get("FRONTEND_ORIGIN", "http://localhost:8000")
         range_header = request.headers.get("Range") or request.META.get("HTTP_RANGE")
-        serve_with_nginx = os.environ.get("SERVE_WITH_NGINX", "false").lower() == "true"
 
-        if serve_with_nginx:
+        if nginx_offload_enabled():
             nginx_response = _serve_streamable_video_with_nginx(
                 video,
                 file_type=file_type,
                 field_file=field_file,
                 content_type=content_type,
+                frontend_origin=frontend_origin,
             )
             if nginx_response is not None:
-                return add_cors_headers(nginx_response, frontend_origin)
+                return nginx_response
 
         if range_header:
             try:

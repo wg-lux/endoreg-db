@@ -5,21 +5,17 @@ from __future__ import annotations
 from django.core.management.base import BaseCommand, CommandError
 
 from endoreg_db.models import AIDataSet
-from endoreg_db.utils.ai.data_loader_for_model_training import (
-    build_dataset_for_training,
+from endoreg_db.utils.ai.model_training.config import (
+    DEFAULT_LABELSET_VERSION_TO_TRAIN,
+    TrainingConfig,
+)
+from endoreg_db.utils.ai.model_training.trainer_gastronet_multilabel import (
+    train_gastronet_multilabel,
 )
 
 
 class Command(BaseCommand):
-    help = (
-        "Train / fine-tune the image multi-label model on a given AIDataSet.\n"
-        "\n"
-        "This command is fully dynamic:\n"
-        "- It uses the AIDataSet row (id) to decide which annotations to use.\n"
-        "- It *infers* the LabelSet from the labels in those annotations.\n"
-        "- It builds image_paths, label_vectors, and label_masks for training.\n"
-        "- It prints detailed debug information about the chosen LabelSet and samples.\n"
-    )
+    help = "Train / fine-tune the image multi-label model on a given AIDataSet."
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -28,18 +24,93 @@ class Command(BaseCommand):
             required=True,
             help="Primary key of the AIDataSet to use for training.",
         )
+        parser.add_argument(
+            "--backbone-name",
+            type=str,
+            default="gastro_rn50",
+            help=(
+                "Backbone name. Supported values: "
+                "gastro_rn50, resnet50_imagenet, resnet50_random, "
+                "efficientnet_b0_imagenet."
+            ),
+        )
+        parser.add_argument(
+            "--backbone-checkpoint",
+            type=str,
+            default=None,
+            help="Optional checkpoint path for the selected backbone.",
+        )
+        parser.add_argument(
+            "--epochs",
+            type=int,
+            default=10,
+            help="Number of training epochs.",
+        )
+        parser.add_argument(
+            "--batch-size",
+            type=int,
+            default=32,
+            help="Training batch size.",
+        )
+        parser.add_argument(
+            "--labelset-version",
+            type=int,
+            default=DEFAULT_LABELSET_VERSION_TO_TRAIN,
+            help="Only train labels belonging to this LabelSet.version.",
+        )
+        parser.add_argument(
+            "--freeze-backbone",
+            dest="freeze_backbone",
+            action="store_true",
+            help="Freeze the backbone and train the classifier head only.",
+        )
+        parser.add_argument(
+            "--unfreeze-backbone",
+            dest="freeze_backbone",
+            action="store_false",
+            help="Fine-tune the full model including the backbone.",
+        )
+        parser.set_defaults(freeze_backbone=True)
+        parser.add_argument(
+            "--treat-unlabeled-as-negative",
+            dest="treat_unlabeled_as_negative",
+            action="store_true",
+            help="Interpret unlabeled entries as explicit negatives during training.",
+        )
+        parser.add_argument(
+            "--keep-unlabeled-unknown",
+            dest="treat_unlabeled_as_negative",
+            action="store_false",
+            help="Keep unlabeled entries masked out of the loss and metrics.",
+        )
+        parser.set_defaults(treat_unlabeled_as_negative=True)
 
     def handle(self, *args, **options):
         dataset_id = options["dataset_id"]
+        backbone_name = str(options["backbone_name"]).strip()
+        backbone_checkpoint = options["backbone_checkpoint"]
+        epochs = int(options["epochs"])
+        batch_size = int(options["batch_size"])
+        labelset_version = int(options["labelset_version"])
+        freeze_backbone = bool(options["freeze_backbone"])
+        treat_unlabeled_as_negative = bool(options["treat_unlabeled_as_negative"])
 
         try:
             dataset = AIDataSet.objects.get(id=dataset_id)
         except AIDataSet.DoesNotExist:
             raise CommandError(f"AIDataSet with id={dataset_id} does not exist.")
 
-        # ------------------------------------------------------------------
-        # Basic dataset info (AIDataSet row)
-        # ------------------------------------------------------------------
+        if dataset.dataset_type != AIDataSet.DATASET_TYPE_IMAGE:
+            raise CommandError(
+                "train_image_multilabel_model only supports image AIDataSet rows."
+            )
+
+        if dataset.ai_model_type != AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL:
+            raise CommandError(
+                "train_image_multilabel_model only supports "
+                "image_multilabel_classification datasets."
+            )
+
         self.stdout.write(
             self.style.NOTICE(
                 f"Using AIDataSet id={dataset.id}, "
@@ -48,97 +119,35 @@ class Command(BaseCommand):
                 f"ai_model_type={dataset.ai_model_type!r}"
             )
         )
-
-        # Build in-memory dataset (completely dynamic, labelset inferred automatically)
-        data = build_dataset_for_training(dataset)
-
-        image_paths = data["image_paths"]
-        label_vectors = data["label_vectors"]
-        label_masks = data["label_masks"]
-        labels = data["labels"]
-        labelset = data["labelset"]
-
-        # Optional: additional meta info, if present
-        frame_ids = data.get("frame_ids", [])
-        old_examination_ids = data.get("old_examination_ids", [])
-
-        # ------------------------------------------------------------------
-        # Debug: show which LabelSet was picked and its labels
-        # ------------------------------------------------------------------
-        self.stdout.write(self.style.NOTICE("Inferred LabelSet for this AIDataSet:"))
         self.stdout.write(
-            f"  LabelSet id={labelset.id}, "
-            f"name={labelset.name!r}, "
-            f"version={labelset.version}"
-        )
-        self.stdout.write("  Labels (index, id, name):")
-        for idx, lbl in enumerate(labels):
-            self.stdout.write(f"    [{idx}] id={lbl.id}, name={lbl.name!r}")
-
-        # ------------------------------------------------------------------
-        # Summary of constructed dataset
-        # ------------------------------------------------------------------
-        self.stdout.write(
-            self.style.SUCCESS(
-                f"\nBuilt training dataset from AIDataSet id={dataset.id}:\n"
-                f"- #samples: {len(image_paths)}\n"
-                f"- #labels:  {len(labels)}"
+            self.style.NOTICE(
+                "Training configuration: "
+                f"backbone_name={backbone_name!r}, "
+                f"freeze_backbone={freeze_backbone}, "
+                f"epochs={epochs}, "
+                f"batch_size={batch_size}, "
+                f"labelset_version={labelset_version}, "
+                f"treat_unlabeled_as_negative={treat_unlabeled_as_negative}"
             )
         )
 
-        # ------------------------------------------------------------------
-        # Debug: print each frame's path, label vector and mask
-        # NOTE: If your dataset is very large, this will spam the console.
-        #       For now you want full transparency, so we print all.
-        # ------------------------------------------------------------------
-        MAX_PRINT = 50
-        self.stdout.write(self.style.NOTICE("\nPer-sample debug output:"))
-        for i, (path, vec, mask) in enumerate(
-            zip(image_paths, label_vectors, label_masks)
-        ):
-            if i >= MAX_PRINT:
-                self.stdout.write(
-                    self.style.WARNING(
-                        f"... ({len(image_paths) - MAX_PRINT} more samples not shown)"
-                    )
-                )
-                break
-
-            frame_id = frame_ids[i] if i < len(frame_ids) else None
-            old_exam = old_examination_ids[i] if i < len(old_examination_ids) else None
-
-            self.stdout.write(
-                f"  Sample {i}:"
-                f"\n    path = {path!r}"
-                f"\n    frame_id = {frame_id}"
-                f"\n    old_examination_id = {old_exam}"
-                f"\n    vector (1/0/None) = {vec}"
-                f"\n    mask (1=use, 0=ignore) = {mask}"
+        result = train_gastronet_multilabel(
+            TrainingConfig(
+                dataset_id=dataset.id,
+                labelset_version_to_train=labelset_version,
+                backbone_checkpoint=backbone_checkpoint,
+                num_epochs=epochs,
+                batch_size=batch_size,
+                backbone_name=backbone_name,
+                freeze_backbone=freeze_backbone,
+                treat_unlabeled_as_negative=treat_unlabeled_as_negative,
             )
-
-        # ------------------------------------------------------------------
-        # TODO: Insert your actual training loop here
-        # ------------------------------------------------------------------
-        # Example (pseudo-code):
-        #
-        #   import torch
-        #   from torch.utils.data import Dataset, DataLoader
-        #
-        #   class EndoDataset(Dataset):
-        #       def __init__(self, image_paths, label_vectors, label_masks):
-        #           ...
-        #
-        #   ds = EndoDataset(image_paths, label_vectors, label_masks)
-        #   loader = DataLoader(ds, batch_size=32, shuffle=True)
-        #
-        #   for batch in loader:
-        #       # forward, compute loss using mask, backward, step, ...
-        #
-        # ------------------------------------------------------------------
+        )
 
         self.stdout.write(
             self.style.SUCCESS(
-                "\nDataset construction finished. "
-                "You can now plug this into your model training code."
+                "Training completed successfully. "
+                f"Model saved to: {result['model_path']}"
             )
         )
+        return result

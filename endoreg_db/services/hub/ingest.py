@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+import uuid
 import json
 import logging
 import hashlib
@@ -101,6 +101,51 @@ def _update_upload_provenance(
         if value is not None:
             cast(Any, provenance)[key] = value
     upload_job.processing_provenance = provenance
+    return provenance
+
+
+def record_active_learning_selection_provenance(
+    upload_job: UploadJob,
+    *,
+    selection_strategy: str = "temporal_segment_hybrid",
+    candidate_count: int,
+    selected_count: int,
+    annotation_budget: int,
+    ai_dataset_id: int | None = None,
+    model_meta_id: int | None = None,
+    extra_metadata: dict[str, Any] | None = None,
+    save: bool = True,
+) -> UploadProvenance:
+    active_learning_payload: dict[str, Any] = {
+        "selection_strategy": selection_strategy,
+        "candidate_count": candidate_count,
+        "selected_count": selected_count,
+        "annotation_budget": annotation_budget,
+    }
+    if ai_dataset_id is not None:
+        active_learning_payload["ai_dataset_id"] = ai_dataset_id
+    if model_meta_id is not None:
+        active_learning_payload["model_meta_id"] = model_meta_id
+    if extra_metadata:
+        active_learning_payload.update(extra_metadata)
+
+    existing_sidecar_payload = {}
+    if isinstance(upload_job.processing_provenance, dict):
+        current_sidecar_payload = upload_job.processing_provenance.get(
+            "sidecar_payload"
+        )
+        if isinstance(current_sidecar_payload, dict):
+            existing_sidecar_payload.update(current_sidecar_payload)
+    existing_sidecar_payload["active_learning"] = active_learning_payload
+
+    provenance = _update_upload_provenance(
+        upload_job,
+        ingest_variant="active_learning_selection",
+        sidecar_payload=existing_sidecar_payload,
+        custom_marker="active_learning",
+    )
+    if save:
+        upload_job.save(update_fields=["processing_provenance", "updated_at"])
     return provenance
 
 
@@ -486,11 +531,12 @@ def create_or_reuse_upload_job(
 
     for attempt in range(1, LOCK_RETRY_ATTEMPTS + 1):
         try:
+            invalid_job_id: uuid.UUID | None = None
+            invalid_reason: str | None = None
             with transaction.atomic():
                 existing_job = _matching_active_job()
                 if existing_job is not None:
                     is_valid_reuse = False
-                    invalid_reason: str | None = None
 
                     if existing_job.status in [
                         UploadJob.Status.PENDING,
@@ -541,69 +587,73 @@ def create_or_reuse_upload_job(
                         existing_job.status,
                         invalid_reason,
                     )
-                    logger.warning(
-                        "Before mark_error count=%s", UploadJob.objects.count()
-                    )
-                    existing_job.mark_error(
+                    invalid_job_id = existing_job.id
+                    invalid_reason = (
                         invalid_reason
                         or "Previous upload job was invalid for reuse. Forcing re-ingest."
                     )
-                    logger.warning(
-                        "After mark_error count=%s rows=%s",
-                        UploadJob.objects.count(),
-                        list(UploadJob.objects.values_list("id", "status")),
-                    )
-                    continue
-
-                try:
-                    if hasattr(uploaded_file, "seek"):
-                        uploaded_file.seek(0)
-                    job = upload_job_manager.create(
-                        file=uploaded_file,
-                        content_type=content_type,
-                        source_center=source_center,
-                        source_system=source_system,
-                        content_hash=normalized_content_hash,
-                        idempotency_key=normalized_idempotency_key,
-                        ingest_mode=ingest_mode,
-                        storage_class=storage_class,
-                        storage_tier=storage_tier,
-                        retention_policy=retention_policy,
-                        source_file_persisted=source_file_persisted,
-                        cleanup_status=cleanup_status,
-                        original_filename=getattr(uploaded_file, "name", "") or "",
-                        processing_provenance=_normalized_upload_provenance(
-                            ingest_mode=ingest_mode,
+                else:
+                    try:
+                        if hasattr(uploaded_file, "seek"):
+                            uploaded_file.seek(0)
+                        job = upload_job_manager.create(
+                            file=uploaded_file,
+                            content_type=content_type,
+                            source_center=source_center,
                             source_system=source_system,
                             content_hash=normalized_content_hash,
-                            source_center=source_center,
+                            idempotency_key=normalized_idempotency_key,
+                            ingest_mode=ingest_mode,
                             storage_class=storage_class,
                             storage_tier=storage_tier,
                             retention_policy=retention_policy,
-                            processing_provenance=processing_provenance,
-                        ),
-                        created_by=created_by
-                        if getattr(created_by, "is_authenticated", False)
-                        else None,
-                    )
-                    emit_hub_audit_event(
-                        "hub.upload_job_created",
-                        upload_job_id=str(job.id),
-                        source_system=source_system,
-                        request_user=created_by,
-                        center_key=source_center.center_key if source_center else None,
-                        ingest_mode=ingest_mode,
-                        content_hash=normalized_content_hash,
-                        idempotency_key=normalized_idempotency_key,
-                        storage_tier=storage_tier,
-                        retention_policy=retention_policy,
-                    )
-                    return job, True
-                except IntegrityError:
-                    conflict_job = _matching_active_job()
-                    if conflict_job is not None:
-                        return conflict_job, False
-                    raise
+                            source_file_persisted=source_file_persisted,
+                            cleanup_status=cleanup_status,
+                            original_filename=getattr(uploaded_file, "name", "") or "",
+                            processing_provenance=_normalized_upload_provenance(
+                                ingest_mode=ingest_mode,
+                                source_system=source_system,
+                                content_hash=normalized_content_hash,
+                                source_center=source_center,
+                                storage_class=storage_class,
+                                storage_tier=storage_tier,
+                                retention_policy=retention_policy,
+                                processing_provenance=processing_provenance,
+                            ),
+                            created_by=created_by
+                            if getattr(created_by, "is_authenticated", False)
+                            else None,
+                        )
+                        emit_hub_audit_event(
+                            "hub.upload_job_created",
+                            upload_job_id=str(job.id),
+                            source_system=source_system,
+                            request_user=created_by,
+                            center_key=source_center.center_key
+                            if source_center
+                            else None,
+                            ingest_mode=ingest_mode,
+                            content_hash=normalized_content_hash,
+                            idempotency_key=normalized_idempotency_key,
+                            storage_tier=storage_tier,
+                            retention_policy=retention_policy,
+                        )
+                        return job, True
+                    except IntegrityError:
+                        conflict_job = _matching_active_job()
+                        if conflict_job is not None:
+                            return conflict_job, False
+                        raise
+
+            if invalid_job_id is not None:
+                UploadJob.objects.filter(pk=invalid_job_id).exclude(
+                    status__in=[UploadJob.Status.ERROR, UploadJob.Status.LOST]
+                ).update(
+                    status=UploadJob.Status.ERROR,
+                    error_detail=invalid_reason,
+                    updated_at=timezone.now(),
+                )
+                continue
         except OperationalError as exc:
             if not _is_retryable_db_lock_error(exc) or attempt == LOCK_RETRY_ATTEMPTS:
                 raise
