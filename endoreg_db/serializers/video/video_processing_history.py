@@ -10,6 +10,10 @@ from collections.abc import Mapping
 from rest_framework import serializers
 
 from endoreg_db.models import VideoProcessingHistory
+from endoreg_db.utils.media_urls import (
+    build_absolute_media_url,
+    build_video_stream_path,
+)
 
 
 class VideoProcessingHistorySerializer(serializers.ModelSerializer):
@@ -60,13 +64,12 @@ class VideoProcessingHistorySerializer(serializers.ModelSerializer):
         if not obj.output_file or obj.status != VideoProcessingHistory.STATUS_SUCCESS:
             return None
 
-        relative_url = f"/api/media/videos/{obj.video.id}/stream/?type=processed"
         context = self.context if isinstance(self.context, Mapping) else None
         request = context.get("request") if context else None
-        if request:
-            return request.build_absolute_uri(relative_url)
-
-        return relative_url
+        return build_absolute_media_url(
+            request,
+            build_video_stream_path(obj.video.id, file_type="processed"),
+        )
 
     def get_operation_display(self, obj) -> str:
         display = getattr(obj, "get_operation_display", None)

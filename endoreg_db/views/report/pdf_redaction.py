@@ -20,6 +20,7 @@ from endoreg_db.serializers.pdf.pdf_processing_history import (
 )
 from endoreg_db.services.polling_coordinator import ProcessingLockContext
 from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.media_urls import build_pdf_stream_path
 from endoreg_db.utils.operation_log import record_operation
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.utils.storage import ensure_local_file
@@ -259,8 +260,8 @@ class PdfApplyRedactionsView(APIView):
                 response_payload = PdfRedactionResponse(
                     file_id=pdf.pk,
                     revision_id=history_entry.pk,
-                    processed_stream_url=(
-                        f"/api/media/pdfs/{pdf.pk}/stream/?type=processed"
+                    processed_stream_url=build_pdf_stream_path(
+                        pdf.pk, file_type="processed"
                     ),
                     status="done_processing_anonymization",
                     anonymization_validated=False,

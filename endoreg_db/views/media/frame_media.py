@@ -10,7 +10,11 @@ from rest_framework.views import APIView
 from endoreg_db.models import Frame, VideoFile
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
-from endoreg_db.utils.paths import STORAGE_DIR, ensure_within_protected_root
+from endoreg_db.utils.paths import (
+    STORAGE_DIR,
+    ensure_within_protected_root,
+    to_protected_media_relative,
+)
 from endoreg_db.utils.storage_streaming import (
     add_cors_headers,
     build_partial_content_response,
@@ -26,7 +30,7 @@ class FrameStreamView(APIView):
     Stream a single extracted frame image by video ID and frame number.
 
     Endpoint:
-    - GET /api/media/videos/<video_id>/frames/<frame_number>/stream/
+    - GET /api/media/videos/<video_id>/frames/<frame_number>/stream/ (Constructed from frame stream helper)
     """
 
     permission_classes = [EnvironmentAwarePermission, PolicyPermission]
@@ -34,7 +38,7 @@ class FrameStreamView(APIView):
     @staticmethod
     def _serve_with_nginx(frame_path: Path, content_type: str) -> HttpResponse | None:
         try:
-            relative_path = frame_path.resolve().relative_to(STORAGE_DIR.resolve())
+            relative_path = to_protected_media_relative(frame_path.resolve())
         except ValueError:
             logger.warning(
                 "Frame file %s is not inside STORAGE_DIR %s. Falling back to Django file response.",
@@ -48,6 +52,7 @@ class FrameStreamView(APIView):
         response["Content-Type"] = content_type
         response["X-Accel-Redirect"] = redirect_url
         response["X-Accel-Buffering"] = "no"
+        response["Accept-Ranges"] = "bytes"
         return response
 
     @staticmethod

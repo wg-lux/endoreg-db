@@ -3,6 +3,7 @@ from rest_framework.test import APIRequestFactory
 from unittest.mock import patch
 
 from endoreg_db.models import (
+    AIDataSet,
     Center,
     Frame,
     ImageClassificationAnnotation,
@@ -370,3 +371,68 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
         self.assertEqual(task["suggested_label_ids"], [self.label.pk])
         self.assertEqual(len(task["manual_annotations"]), 2)
         self.assertEqual(len(task["prediction_annotations"]), 1)
+
+    def test_random_task_balances_frames_from_ai_dataset_buckets(self):
+        dataset = AIDataSet.objects.create(
+            name="frame-task-dataset",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+        positive_annotation = ImageClassificationAnnotation.objects.create(
+            frame=self.frame_1,
+            label=self.target_label,
+            value=True,
+            information_source=self.source,
+            annotator="dataset",
+        )
+        negative_annotation = ImageClassificationAnnotation.objects.create(
+            frame=self.frame_2,
+            label=self.target_label,
+            value=False,
+            information_source=self.source,
+            annotator="dataset",
+        )
+        unknown_annotation = ImageClassificationAnnotation.objects.create(
+            frame=self.frame_3,
+            label=self.label,
+            value=True,
+            information_source=self.source,
+            annotator="dataset",
+        )
+        dataset.image_annotations.add(
+            positive_annotation,
+            negative_annotation,
+            unknown_annotation,
+        )
+
+        request = self.factory.get(
+            "/api/media/annotations/frames/random-task/",
+            {
+                "video_id": self.video.pk,
+                "label_group_id": self.label_set.pk,
+                "target_label": self.target_label.name,
+                "limit": 3,
+                "ai_dataset_name": dataset.name,
+                "ai_dataset_type": dataset.dataset_type,
+                "exclude_annotated": "false",
+            },
+        )
+
+        with patch(
+            "endoreg_db.views.video.ai.frame_annotations.random.randint",
+            return_value=0,
+        ):
+            response = self.random_task_view(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["ai_dataset_name"], dataset.name)
+        self.assertEqual(response.data["ai_dataset_type"], dataset.dataset_type)
+        self.assertEqual(
+            response.data["bucket_counts"],
+            {"positive": 1, "negative": 1, "unknown": 1},
+        )
+        self.assertEqual(response.data["count"], 3)
+        self.assertEqual(
+            [task["dataset_bucket"] for task in response.data["tasks"]],
+            ["positive", "negative", "unknown"],
+        )

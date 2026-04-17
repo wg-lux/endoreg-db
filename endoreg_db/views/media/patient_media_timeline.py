@@ -17,6 +17,12 @@ from endoreg_db.models import (
     RawPdfFile,
     VideoFile,
 )
+from endoreg_db.utils.media_urls import (
+    build_absolute_media_url,
+    build_pdf_stream_path,
+    build_video_frame_stream_path,
+    build_video_stream_path,
+)
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 logger = logging.getLogger(__name__)
@@ -295,14 +301,18 @@ class PatientMediaTimelineView(APIView):
                         [
                             {
                                 "type": "raw",
-                                "url": request.build_absolute_uri(
-                                    f"/api/media/pdfs/{raw_pdf_id}/stream/?type=raw"
+                                "url": build_absolute_media_url(
+                                    request,
+                                    build_pdf_stream_path(raw_pdf_id, file_type="raw"),
                                 ),
                             },
                             {
                                 "type": "processed",
-                                "url": request.build_absolute_uri(
-                                    f"/api/media/pdfs/{raw_pdf_id}/stream/?type=processed"
+                                "url": build_absolute_media_url(
+                                    request,
+                                    build_pdf_stream_path(
+                                        raw_pdf_id, file_type="processed"
+                                    ),
                                 ),
                             },
                         ]
@@ -389,14 +399,16 @@ class PatientMediaTimelineView(APIView):
                     "stream_options": [
                         {
                             "type": "raw",
-                            "url": request.build_absolute_uri(
-                                f"/api/media/pdfs/{pdf.pk}/stream/?type=raw"
+                            "url": build_absolute_media_url(
+                                request,
+                                build_pdf_stream_path(pdf.pk, file_type="raw"),
                             ),
                         },
                         {
                             "type": "processed",
-                            "url": request.build_absolute_uri(
-                                f"/api/media/pdfs/{pdf.pk}/stream/?type=processed"
+                            "url": build_absolute_media_url(
+                                request,
+                                build_pdf_stream_path(pdf.pk, file_type="processed"),
                             ),
                         },
                     ],
@@ -473,14 +485,18 @@ class PatientMediaTimelineView(APIView):
                     "stream_options": [
                         {
                             "type": "raw",
-                            "url": request.build_absolute_uri(
-                                f"/api/media/videos/{video.pk}/stream/?type=raw"
+                            "url": build_absolute_media_url(
+                                request,
+                                build_video_stream_path(video.pk, file_type="raw"),
                             ),
                         },
                         {
                             "type": "processed",
-                            "url": request.build_absolute_uri(
-                                f"/api/media/videos/{video.pk}/stream/?type=processed"
+                            "url": build_absolute_media_url(
+                                request,
+                                build_video_stream_path(
+                                    video.pk, file_type="processed"
+                                ),
                             ),
                         },
                     ],
@@ -565,8 +581,11 @@ class PatientMediaTimelineView(APIView):
                             "segment_label": getattr(
                                 selected_segment.label, "name", None
                             ),
-                            "stream_url": request.build_absolute_uri(
-                                f"/api/media/videos/{latest_video_id}/frames/{frame_number}/stream/"
+                            "stream_url": build_absolute_media_url(
+                                request,
+                                build_video_frame_stream_path(
+                                    latest_video_id, frame_number
+                                ),
                             ),
                         }
                     )
@@ -589,8 +608,11 @@ class PatientMediaTimelineView(APIView):
                                 "timestamp": frame.timestamp,
                                 "category": "fallback_latest",
                                 "selection_source": "latest_frame",
-                                "stream_url": request.build_absolute_uri(
-                                    f"/api/media/videos/{frame.video_id}/frames/{frame.frame_number}/stream/"
+                                "stream_url": build_absolute_media_url(
+                                    request,
+                                    build_video_frame_stream_path(
+                                        frame.video_id, frame.frame_number
+                                    ),
                                 ),
                             }
                         )

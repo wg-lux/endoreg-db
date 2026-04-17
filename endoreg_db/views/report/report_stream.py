@@ -14,7 +14,12 @@ from typing import TYPE_CHECKING
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models import RawPdfFile
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
-from endoreg_db.utils.paths import ANONYM_REPORT_DIR, STORAGE_DIR, to_storage_relative
+from endoreg_db.utils.paths import (
+    ANONYM_REPORT_DIR,
+    STORAGE_DIR,
+    to_protected_media_relative,
+    to_storage_relative,
+)
 
 from endoreg_db.utils.storage_streaming import (
     add_cors_headers,
@@ -78,26 +83,46 @@ def _recover_missing_report_field_path(
     return None
 
 
+def _resolve_local_path_for_nginx(field_file) -> Path | None:
+    path = maybe_local_plaintext_path(field_file)
+    if path is not None:
+        return path
+
+    name = getattr(field_file, "name", None)
+    if not name:
+        return None
+
+    candidate = Path(name)
+    if not candidate.is_absolute():
+        candidate = STORAGE_DIR / candidate
+
+    try:
+        resolved = candidate.resolve(strict=True)
+    except FileNotFoundError:
+        return None
+
+    return resolved
+
+
 def _serve_with_nginx(
     field_file, content_type: str, *, disposition: str
 ) -> HttpResponse | None:
-    path = maybe_local_plaintext_path(field_file)
+    path = _resolve_local_path_for_nginx(field_file)
     if path is None:
         return None
 
     try:
-        relative_path = path.relative_to(STORAGE_DIR.resolve())
+        relative_path = to_protected_media_relative(path)
     except ValueError:
         logger.warning(
-            "Report file %s is outside STORAGE_DIR %s. Falling back to Django streaming.",
+            "Report file %s is outside the configured protected media root. Falling back to Django streaming.",
             path,
-            STORAGE_DIR,
         )
         return None
 
     response = HttpResponse()
     response["Content-Type"] = content_type
-    response["X-Accel-Redirect"] = os.path.join(NGINX_PROTECTED_URL, str(relative_path))
+    response["X-Accel-Redirect"] = os.path.join(NGINX_PROTECTED_URL, relative_path)
     response["X-Accel-Buffering"] = "no"
     response["Accept-Ranges"] = "bytes"
     response["Content-Disposition"] = (

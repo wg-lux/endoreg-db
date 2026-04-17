@@ -95,6 +95,8 @@ class UploadProvenancePayload(BaseModel):
     processor_name: str | None = None
     processing_handoff: str | None = None
     stored_upload_path: str | None = None
+    quarantined_path: str | None = None
+    quarantined_sidecar_path: str | None = None
     custom_marker: str | None = None
     legacy_source_path: str | None = None
     migrated_destination_path: str | None = None

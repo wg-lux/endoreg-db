@@ -142,6 +142,14 @@ _IMPORT_TARGETS: dict[str, tuple[str, str]] = {
         "endoreg_db.views.misc",
         "application_settings_report_templates_dropdown",
     ),
+    "application_settings_ai_datasets_dropdown": (
+        "endoreg_db.views.misc",
+        "application_settings_ai_datasets_dropdown",
+    ),
+    "application_settings_ai_dataset_export": (
+        "endoreg_db.views.misc",
+        "application_settings_ai_dataset_export",
+    ),
     "application_settings_backup": (
         "endoreg_db.views.misc",
         "application_settings_backup",
@@ -244,6 +252,8 @@ __all__ = [
     "application_settings_processors_dropdown",
     "application_settings_annotators_dropdown",
     "application_settings_report_templates_dropdown",
+    "application_settings_ai_datasets_dropdown",
+    "application_settings_ai_dataset_export",
     "application_settings_network_nodes",
     "application_settings_network_node_detail",
     "application_settings_network_node_roles_dropdown",

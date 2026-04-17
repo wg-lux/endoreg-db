@@ -226,3 +226,51 @@ class VideoStreamViewTests(TestCase):
 
         assert response.status_code == 409
         assert response["X-Stream-State"] == "missing_streamable_artifact"
+
+    def test_video_stream_uses_configured_protected_media_root_for_streamable_paths(
+        self,
+    ):
+        from endoreg_db.views.video import video_stream as view_module
+
+        monkeypatches = pytest.MonkeyPatch()
+        fake_file_field = SimpleNamespace(
+            name="upload_jobs/api/test.mp4",
+            size=12,
+        )
+        fake_video_obj = SimpleNamespace(
+            active_raw_file=fake_file_field,
+            processed_file=fake_file_field,
+            storage_mode=view_module.VideoFile.StorageMode.FS_ENCRYPTED_STREAMABLE,
+            streamable_relative_path="streamable_videos/raw/test.mp4",
+            processed_streamable_relative_path="streamable_videos/processed/test.mp4",
+        )
+
+        storage_dir = STORAGE_DIR.resolve()
+        protected_media_root = storage_dir.parent / "protected_media_mount"
+        streamable_path = (
+            protected_media_root / "streamable_videos" / "raw" / "test.mp4"
+        )
+        streamable_path.parent.mkdir(parents=True, exist_ok=True)
+        streamable_path.write_bytes(b"\x00\x00\x00\x18ftypmp42")
+
+        try:
+            monkeypatches.setenv("SERVE_WITH_NGINX", "true")
+            monkeypatches.setenv("PROTECTED_MEDIA_ROOT", str(protected_media_root))
+            monkeypatches.setattr(
+                view_module, "NGINX_PROTECTED_URL", "/protected_media/"
+            )
+            monkeypatches.setattr(
+                view_module.VideoFile.objects, "get", lambda **kwargs: fake_video_obj
+            )
+
+            response = self.client.get("/api/media/videos/123/stream/?type=raw")
+        finally:
+            monkeypatches.undo()
+            if streamable_path.exists():
+                streamable_path.unlink(missing_ok=True)
+
+        assert response.status_code == 200
+        assert (
+            response["X-Accel-Redirect"]
+            == "/protected_media/streamable_videos/raw/test.mp4"
+        )

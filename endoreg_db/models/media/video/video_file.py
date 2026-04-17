@@ -19,7 +19,7 @@ from endoreg_db.models.media.video.storage_mode import (
     coerce_video_storage_mode,
     get_default_video_storage_mode_value,
 )
-from endoreg_db.utils.calc_duration_seconds import _calc_duration_vf
+from endoreg_db.utils.video.calc_duration_seconds import _calc_duration_vf
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.utils.paths import (
     ANONYM_VIDEO_DIR,

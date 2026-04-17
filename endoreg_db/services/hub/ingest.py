@@ -3,14 +3,16 @@ from __future__ import annotations
 import json
 import logging
 import hashlib
+import time
 from pathlib import Path
 from typing import Any, NotRequired, TypedDict, cast
 from datetime import timedelta
+from django.conf import settings
 from django.utils import timezone
 from django.contrib.auth.models import AnonymousUser
 from django.core.files import File
 from django.core.exceptions import ObjectDoesNotExist
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, OperationalError, transaction
 from pydantic import ValidationError
 
 from endoreg_db.models import (
@@ -50,6 +52,7 @@ from endoreg_db.utils.paths import (
 
 
 STALE_UPLOAD_JOB_AGE = timedelta(hours=2)
+LOCK_RETRY_ATTEMPTS = 10
 logger = logging.getLogger(__name__)
 
 
@@ -75,6 +78,8 @@ class UploadProvenance(TypedDict, total=False):
     processor_name: str | None
     processing_handoff: str
     stored_upload_path: str
+    quarantined_path: str
+    quarantined_sidecar_path: str
     custom_marker: NotRequired[str]
 
 
@@ -97,6 +102,29 @@ def _update_upload_provenance(
             cast(Any, provenance)[key] = value
     upload_job.processing_provenance = provenance
     return provenance
+
+
+def _resolve_job_file_path(job: UploadJob) -> Path:
+    candidate = Path(job.file.path)
+    if candidate.exists():
+        return candidate
+
+    file_name = str(getattr(job.file, "name", "") or "")
+    if file_name:
+        named_path = Path(file_name)
+        if named_path.is_absolute() and named_path.exists():
+            return named_path
+
+        legacy_candidate = (Path(settings.MEDIA_ROOT) / file_name).resolve()
+        if legacy_candidate.exists():
+            _update_upload_provenance(
+                job,
+                legacy_source_path=str(legacy_candidate),
+            )
+            job.save(update_fields=["processing_provenance", "updated_at"])
+            return legacy_candidate
+
+    return candidate
 
 
 def hub_mode_enabled() -> bool:
@@ -150,6 +178,19 @@ def _compute_uploaded_file_content_hash(uploaded_file) -> str:
     if hasattr(uploaded_file, "seek"):
         uploaded_file.seek(0)
     return digest.hexdigest()
+
+
+def _is_retryable_db_lock_error(exc: OperationalError) -> bool:
+    message = str(exc).lower()
+    return any(
+        marker in message
+        for marker in (
+            "database is locked",
+            "database table is locked",
+            "database schema is locked",
+            "database is busy",
+        )
+    )
 
 
 def resolve_upload_center(
@@ -409,6 +450,7 @@ def create_or_reuse_upload_job(
     source_file_persisted: bool = True,
     cleanup_status: str = UploadJob.CleanupStatus.PENDING,
     processing_provenance: UploadProvenance | None = None,
+    allow_completed_reuse_without_media: bool = False,
 ) -> tuple[UploadJob, bool]:
     upload_job_manager = cast(Any, getattr(UploadJob, "objects"))
     normalized_content_hash = (content_hash or "").strip()
@@ -417,142 +459,164 @@ def create_or_reuse_upload_job(
 
     normalized_idempotency_key = (idempotency_key or "").strip()
 
-    # Try to find an existing job with a content hash or idempotency key
-    # Use select_for_update to lock these rows to prevent race conditions during check-then-act
-    existing_job_qs = (
-        upload_job_manager.filter(
-            source_center=source_center,
-            content_type=content_type,
-        )
-        .exclude(status=UploadJob.Status.ERROR)
-        .select_for_update()
-    )
-
-    existing_job = None
-    if normalized_content_hash:
-        existing_job = existing_job_qs.filter(
-            content_hash=normalized_content_hash
-        ).first()
-    if existing_job is None and normalized_idempotency_key:
-        # If no job found by hash, try by idempotency key.
-        # Only consider jobs with a matching content_hash if one was provided.
-        idempotency_filter = {
-            "idempotency_key": normalized_idempotency_key,
-            "source_system": source_system,
-            "ingest_mode": ingest_mode,
-            "storage_class": storage_class,
-            "storage_tier": storage_tier,
-        }
-        if normalized_content_hash:
-            idempotency_filter["content_hash"] = normalized_content_hash
-        existing_job = existing_job_qs.filter(**idempotency_filter).first()
-
-    if existing_job:
-        # Found an existing job, now verify its validity
-        is_valid_reuse = False
-        invalid_reason: str | None = None
-
-        if existing_job.status in [
-            UploadJob.Status.PENDING,
-            UploadJob.Status.PROCESSING,
-        ]:
-            updated_at = getattr(existing_job, "updated_at", None)
-            if updated_at and timezone.now() - updated_at <= STALE_UPLOAD_JOB_AGE:
-                is_valid_reuse = True
-            else:
-                invalid_reason = "Existing upload job was stale in pending/processing state. Forcing re-ingest."
-
-        elif existing_job.status == UploadJob.Status.ANONYMIZED:
-            if _upload_job_has_usable_media(existing_job):
-                is_valid_reuse = True
-            else:
-                invalid_reason = (
-                    "Associated media record was deleted. Forcing re-ingest."
-                )
-        elif existing_job.status != UploadJob.Status.ERROR:
-            # Catch-all for unexpected states (e.g. LOST)
-            invalid_reason = (
-                "Previous job was incomplete or invalid for reuse. Forcing re-ingest."
-            )
-
-        if is_valid_reuse:
-            emit_hub_audit_event(
-                "hub.upload_job_reused",
-                upload_job_id=str(existing_job.id),
-                source_system=source_system,
-                request_user=created_by,
-                center_key=source_center.center_key if source_center else None,
-                ingest_mode=ingest_mode,
-                idempotency_key=normalized_idempotency_key,
-            )
-            return existing_job, False
-
-        if invalid_reason is not None:
-            logger.warning(
-                "UploadJob %s found but not valid for reuse (status: %s). %s",
-                existing_job.id,
-                existing_job.status,
-                invalid_reason,
-            )
-            existing_job.mark_error(invalid_reason)
-
-    # If no valid existing job was found (either none existed, or it was orphaned/in error), create a new one.
-    # This creation is safe due to the `select_for_update` lock on any potential matching rows (if any)
-    # or because no matching rows were found, making a new creation valid.
-    try:
-        with transaction.atomic():
-            job = upload_job_manager.create(
-                file=uploaded_file,
-                content_type=content_type,
+    def _matching_active_job() -> UploadJob | None:
+        existing_job_qs = (
+            upload_job_manager.filter(
                 source_center=source_center,
-                source_system=source_system,
-                content_hash=normalized_content_hash,
+                content_type=content_type,
+            )
+            .exclude(status__in=[UploadJob.Status.ERROR, UploadJob.Status.LOST])
+            .select_for_update()
+        )
+
+        existing_job = None
+        if normalized_content_hash:
+            existing_job = existing_job_qs.filter(
+                content_hash=normalized_content_hash
+            ).first()
+        if existing_job is None and normalized_idempotency_key:
+            existing_job = existing_job_qs.filter(
                 idempotency_key=normalized_idempotency_key,
+                source_system=source_system,
                 ingest_mode=ingest_mode,
                 storage_class=storage_class,
                 storage_tier=storage_tier,
-                retention_policy=retention_policy,
-                source_file_persisted=source_file_persisted,
-                cleanup_status=cleanup_status,
-                original_filename=getattr(uploaded_file, "name", "") or "",
-                processing_provenance=_normalized_upload_provenance(
-                    ingest_mode=ingest_mode,
-                    source_system=source_system,
-                    content_hash=normalized_content_hash,
-                    source_center=source_center,
-                    storage_class=storage_class,
-                    storage_tier=storage_tier,
-                    retention_policy=retention_policy,
-                    processing_provenance=processing_provenance,
-                ),
-                created_by=created_by
-                if getattr(created_by, "is_authenticated", False)
-                else None,
-            )
-            emit_hub_audit_event(
-                "hub.upload_job_created",
-                upload_job_id=str(job.id),
-                source_system=source_system,
-                request_user=created_by,
-                center_key=source_center.center_key if source_center else None,
-                ingest_mode=ingest_mode,
-                content_hash=normalized_content_hash,
-                idempotency_key=normalized_idempotency_key,
-                storage_tier=storage_tier,
-                retention_policy=retention_policy,
-            )
-    except IntegrityError:
-        job = upload_job_manager.get(
-            idempotency_key=normalized_idempotency_key,
-            source_system=source_system,
-            source_center=source_center,
-            ingest_mode=ingest_mode,
-            storage_class=storage_class,
-            storage_tier=storage_tier,
-        )
-        return job, False
+            ).first()
+        return existing_job
 
-    return job, True
+    for attempt in range(1, LOCK_RETRY_ATTEMPTS + 1):
+        try:
+            with transaction.atomic():
+                existing_job = _matching_active_job()
+                if existing_job is not None:
+                    is_valid_reuse = False
+                    invalid_reason: str | None = None
+
+                    if existing_job.status in [
+                        UploadJob.Status.PENDING,
+                        UploadJob.Status.PROCESSING,
+                    ]:
+                        updated_at = getattr(existing_job, "updated_at", None)
+                        if (
+                            updated_at
+                            and timezone.now() - updated_at <= STALE_UPLOAD_JOB_AGE
+                        ):
+                            is_valid_reuse = True
+                        else:
+                            invalid_reason = (
+                                "Existing upload job was stale in pending/processing "
+                                "state. Forcing re-ingest."
+                            )
+                    elif existing_job.status == UploadJob.Status.ANONYMIZED:
+                        if (
+                            allow_completed_reuse_without_media
+                            or _upload_job_has_usable_media(existing_job)
+                        ):
+                            is_valid_reuse = True
+                        else:
+                            invalid_reason = "Associated media record was deleted. Forcing re-ingest."
+                    else:
+                        invalid_reason = (
+                            "Previous job was incomplete or invalid for reuse. "
+                            "Forcing re-ingest."
+                        )
+
+                    if is_valid_reuse:
+                        emit_hub_audit_event(
+                            "hub.upload_job_reused",
+                            upload_job_id=str(existing_job.id),
+                            source_system=source_system,
+                            request_user=created_by,
+                            center_key=source_center.center_key
+                            if source_center
+                            else None,
+                            ingest_mode=ingest_mode,
+                            idempotency_key=normalized_idempotency_key,
+                        )
+                        return existing_job, False
+
+                    logger.warning(
+                        "UploadJob %s found but not valid for reuse (status: %s). %s",
+                        existing_job.id,
+                        existing_job.status,
+                        invalid_reason,
+                    )
+                    logger.warning(
+                        "Before mark_error count=%s", UploadJob.objects.count()
+                    )
+                    existing_job.mark_error(
+                        invalid_reason
+                        or "Previous upload job was invalid for reuse. Forcing re-ingest."
+                    )
+                    logger.warning(
+                        "After mark_error count=%s rows=%s",
+                        UploadJob.objects.count(),
+                        list(UploadJob.objects.values_list("id", "status")),
+                    )
+                    continue
+
+                try:
+                    if hasattr(uploaded_file, "seek"):
+                        uploaded_file.seek(0)
+                    job = upload_job_manager.create(
+                        file=uploaded_file,
+                        content_type=content_type,
+                        source_center=source_center,
+                        source_system=source_system,
+                        content_hash=normalized_content_hash,
+                        idempotency_key=normalized_idempotency_key,
+                        ingest_mode=ingest_mode,
+                        storage_class=storage_class,
+                        storage_tier=storage_tier,
+                        retention_policy=retention_policy,
+                        source_file_persisted=source_file_persisted,
+                        cleanup_status=cleanup_status,
+                        original_filename=getattr(uploaded_file, "name", "") or "",
+                        processing_provenance=_normalized_upload_provenance(
+                            ingest_mode=ingest_mode,
+                            source_system=source_system,
+                            content_hash=normalized_content_hash,
+                            source_center=source_center,
+                            storage_class=storage_class,
+                            storage_tier=storage_tier,
+                            retention_policy=retention_policy,
+                            processing_provenance=processing_provenance,
+                        ),
+                        created_by=created_by
+                        if getattr(created_by, "is_authenticated", False)
+                        else None,
+                    )
+                    emit_hub_audit_event(
+                        "hub.upload_job_created",
+                        upload_job_id=str(job.id),
+                        source_system=source_system,
+                        request_user=created_by,
+                        center_key=source_center.center_key if source_center else None,
+                        ingest_mode=ingest_mode,
+                        content_hash=normalized_content_hash,
+                        idempotency_key=normalized_idempotency_key,
+                        storage_tier=storage_tier,
+                        retention_policy=retention_policy,
+                    )
+                    return job, True
+                except IntegrityError:
+                    conflict_job = _matching_active_job()
+                    if conflict_job is not None:
+                        return conflict_job, False
+                    raise
+        except OperationalError as exc:
+            if not _is_retryable_db_lock_error(exc) or attempt == LOCK_RETRY_ATTEMPTS:
+                raise
+            logger.warning(
+                "UploadJob create/reuse hit a locked database for source_system=%s "
+                "idempotency_key=%s attempt=%d/%d; retrying.",
+                source_system,
+                normalized_idempotency_key,
+                attempt,
+                LOCK_RETRY_ATTEMPTS,
+            )
+            time.sleep(0.1 * attempt)
+    raise RuntimeError("UploadJob create/reuse exhausted lock retries")
 
 
 def create_or_reuse_watcher_upload_job(
@@ -594,6 +658,7 @@ def create_or_reuse_watcher_upload_job(
                 "content_hash": file_hash,
                 **(processing_provenance or {}),
             },
+            allow_completed_reuse_without_media=True,
         )
 
 
@@ -685,6 +750,98 @@ def _attach_external_id_to_sensitive_meta(
         sensitive_meta.save(update_fields=update_fields)
 
 
+def _normalize_sensitive_meta_payload(
+    *,
+    payload: dict[str, Any],
+    center: Center,
+) -> dict[str, Any]:
+    normalized: dict[str, Any] = {"center_name": center.name}
+    for key, value in payload.items():
+        if value is None:
+            continue
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                continue
+            normalized[key] = stripped
+            continue
+        normalized[key] = value
+
+    try:
+        from lx_dtypes.models.meta.SensitiveMeta import (
+            SensitiveMeta as LxSensitiveMetaContract,
+        )
+    except Exception as exc:
+        logger.debug("lx_dtypes SensitiveMeta unavailable for normalization: %s", exc)
+        return normalized
+
+    contract_input: dict[str, Any] = {}
+    key_map = {
+        "patient_first_name": "first_name",
+        "patient_last_name": "last_name",
+        "patient_dob": "dob",
+        "patient_gender": "gender",
+        "examination_date": "examination_date",
+        "examination_time": "examination_time",
+        "casenumber": "casenumber",
+        "text": "text",
+        "anonymized_text": "anonymized_text",
+        "endoscope_type": "endoscope_type",
+        "endoscope_sn": "endoscope_sn",
+        "external_id": "external_id",
+    }
+    for source_key, target_key in key_map.items():
+        value = normalized.get(source_key)
+        if value is None:
+            continue
+        if source_key == "patient_gender" and hasattr(value, "name"):
+            value = getattr(value, "name")
+        contract_input[target_key] = value
+
+    if not contract_input:
+        return normalized
+
+    validated = LxSensitiveMetaContract.model_validate(contract_input)
+    contract_dump = validated.model_dump(
+        include={
+            "first_name",
+            "last_name",
+            "dob",
+            "gender",
+            "examination_date",
+            "examination_time",
+            "casenumber",
+            "text",
+            "anonymized_text",
+            "endoscope_type",
+            "endoscope_sn",
+            "external_id",
+        },
+        exclude_none=True,
+    )
+
+    reverse_key_map = {
+        "first_name": "patient_first_name",
+        "last_name": "patient_last_name",
+        "dob": "patient_dob",
+        "gender": "patient_gender",
+        "examination_date": "examination_date",
+        "examination_time": "examination_time",
+        "casenumber": "casenumber",
+        "text": "text",
+        "anonymized_text": "anonymized_text",
+        "endoscope_type": "endoscope_type",
+        "endoscope_sn": "endoscope_sn",
+        "external_id": "external_id",
+    }
+    for source_key, target_key in reverse_key_map.items():
+        value = contract_dump.get(source_key)
+        if value is not None:
+            normalized[target_key] = value
+
+    return normalized
+
+
 def _apply_preanonymized_metadata(
     *,
     sensitive_meta: SensitiveMeta | None,
@@ -694,15 +851,17 @@ def _apply_preanonymized_metadata(
     if not payload:
         return sensitive_meta
 
-    payload_copy = payload.model_dump(exclude_none=True)
-    payload_copy.setdefault("center_name", center.name)
-    payload_copy.pop("external_id", None)
-    payload_copy.pop("external_id_origin", None)
+    payload_copy = _normalize_sensitive_meta_payload(
+        payload=payload.model_dump(exclude_none=True),
+        center=center,
+    )
 
     patient_hash = payload.patient_hash or ""
     examination_hash = payload.examination_hash or ""
     external_id = payload.external_id or ""
     external_id_origin = payload.external_id_origin or ""
+    payload_copy.pop("external_id", None)
+    payload_copy.pop("external_id_origin", None)
 
     if sensitive_meta is None:
         sensitive_meta = SensitiveMeta.create_from_dict(payload_copy)
@@ -951,7 +1110,7 @@ def process_upload_job(job_id: str) -> bool:
     provenance.setdefault("stored_upload_path", job.file.name)
     job.save(update_fields=["processing_provenance", "updated_at"])
 
-    file_path = Path(job.file.path)
+    file_path = _resolve_job_file_path(job)
     try:
         if job.content_type == "application/pdf":
             report = ReportImportService().import_and_anonymize(
@@ -1086,7 +1245,7 @@ def process_watcher_file(
     else:
         raise ValueError(f"Unsupported watcher file type: {file_type}")
 
-    upload_job, _ = create_or_reuse_watcher_upload_job(
+    upload_job, created = create_or_reuse_watcher_upload_job(
         file_path=watched_path,
         content_type=content_type,
         source_center=source_center,
@@ -1097,6 +1256,9 @@ def process_watcher_file(
             "file_type": normalized_type,
         },
     )
+    if not created:
+        safe_unlink_file(watched_path, missing_ok=True)
+        return upload_job
     if upload_job.is_complete:
         if _upload_job_has_usable_media(upload_job):
             safe_unlink_file(watched_path, missing_ok=True)
@@ -1208,7 +1370,7 @@ def process_preanonymized_watcher_file(
     )
 
     metadata_payload, sidecar_path = _load_preanonymized_sidecar(watched_path)
-    upload_job, _ = create_or_reuse_watcher_upload_job(
+    upload_job, created = create_or_reuse_watcher_upload_job(
         file_path=watched_path,
         content_type=content_type,
         source_center=source_center,
@@ -1226,6 +1388,11 @@ def process_preanonymized_watcher_file(
             ),
         },
     )
+    if not created:
+        safe_unlink_file(watched_path, missing_ok=True)
+        if sidecar_path is not None and sidecar_path.exists():
+            safe_unlink_file(sidecar_path, missing_ok=True)
+        return upload_job
     if upload_job.is_complete:
         if _upload_job_has_usable_media(upload_job):
             safe_unlink_file(watched_path, missing_ok=True)

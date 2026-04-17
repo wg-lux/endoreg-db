@@ -51,7 +51,7 @@ class UploadJobStatusSerializer(serializers.ModelSerializer):
         data = super().to_representation(instance)
 
         # Only include error_detail if status is error
-        if instance.status != UploadJob.Status.ERROR:
+        if instance.status not in {UploadJob.Status.ERROR, UploadJob.Status.LOST}:
             data.pop("error_detail", None)
 
         # Only include sensitive_meta_id if status is anonymized and we have a meta record

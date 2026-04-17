@@ -15,6 +15,8 @@ class application_defaults_snapshot:
     processor_name: str | None
     annotator_name: str
     report_template_name: str
+    ai_dataset_name: str
+    ai_dataset_type: str
 
 
 def get_application_settings() -> ApplicationSettings:
@@ -32,6 +34,8 @@ def get_application_defaults() -> application_defaults_snapshot:
         processor_name=getattr(processor, "name", None),
         annotator_name=settings_obj.annotator_name or "",
         report_template_name=settings_obj.report_template_name or "",
+        ai_dataset_name=settings_obj.ai_dataset_name or "",
+        ai_dataset_type=settings_obj.ai_dataset_type or "",
     )
 
 
@@ -74,6 +78,8 @@ def update_application_defaults(
     processor: int | str | EndoscopyProcessor | None = None,
     annotator_name: str | None = None,
     report_template_name: str | None = None,
+    ai_dataset_name: str | None = None,
+    ai_dataset_type: str | None = None,
 ) -> ApplicationSettings:
     settings_obj = get_application_settings()
 
@@ -85,6 +91,10 @@ def update_application_defaults(
         settings_obj.annotator_name = annotator_name
     if report_template_name is not None:
         settings_obj.report_template_name = report_template_name
+    if ai_dataset_name is not None:
+        settings_obj.ai_dataset_name = ai_dataset_name
+    if ai_dataset_type is not None:
+        settings_obj.ai_dataset_type = ai_dataset_type
 
     settings_obj.save()
     return settings_obj
@@ -113,11 +123,23 @@ def get_default_report_template_name(default: str = "") -> str:
     return value or default
 
 
+def get_default_ai_dataset_name(default: str = "") -> str:
+    value = get_application_settings().ai_dataset_name
+    return value or default
+
+
+def get_default_ai_dataset_type(default: str = "") -> str:
+    value = get_application_settings().ai_dataset_type
+    return value or default
+
+
 __all__ = [
     "application_defaults_snapshot",
     "get_application_defaults",
     "get_application_settings",
     "get_default_annotator_name",
+    "get_default_ai_dataset_name",
+    "get_default_ai_dataset_type",
     "get_default_processor",
     "get_default_report_template_name",
     "require_default_center",

@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from endoreg_db.models.media import RawPdfFile, VideoFile
+from endoreg_db.utils.media_urls import build_pdf_stream_path
 
 # TODO add this "naming convention" to the documentation
 # VoP: Video or Pdf
@@ -91,9 +92,6 @@ class VoPPatientDataSerializer(serializers.Serializer):
             }
 
         elif isinstance(instance, RawPdfFile):
-            # Generate report streaming URL using pdf_id (RawPdfFile.id)
-            report_stream_url = f"/api/media/pdfs/{instance.pk}/stream/"
-
             return {
                 "id": instance.pk,
                 "sensitiveMetaId": instance.sensitive_meta.pk
@@ -106,7 +104,7 @@ class VoPPatientDataSerializer(serializers.Serializer):
                 else None,
                 "status": "done" if instance.anonymized_text else "not_started",
                 "error": False,
-                "pdfStreamUrl": report_stream_url,
+                "pdfStreamUrl": build_pdf_stream_path(instance.pk),
             }
 
         else:

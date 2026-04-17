@@ -16,6 +16,11 @@ except ImportError:
 from django.conf import settings
 from rest_framework.exceptions import ValidationError
 
+from endoreg_db.utils.media_urls import (
+    build_absolute_media_url,
+    build_video_stream_path,
+)
+
 if TYPE_CHECKING:
     from endoreg_db.models import VideoFile
 
@@ -89,7 +94,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
             "request"
         )  # Gets the request object (provided by DRF).
         if request:
-            return request.build_absolute_uri(f"/api/media/videos/{obj.id}/stream/")
+            return build_absolute_media_url(request, build_video_stream_path(obj.id))
 
         return {"error": "Video URL not available"}
 

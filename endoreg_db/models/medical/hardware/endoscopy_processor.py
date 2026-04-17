@@ -21,21 +21,21 @@ class EndoscopyProcessor(models.Model):
     )
 
     name = models.CharField(max_length=255)
-    image_width = models.IntegerField()
-    image_height = models.IntegerField()
+    image_width = models.IntegerField(default=1)
+    image_height = models.IntegerField(default=1)
     # image_fps = models.IntegerField()
 
     # Roi for endoscope image
-    endoscope_image_x = models.IntegerField()
-    endoscope_image_y = models.IntegerField()
-    endoscope_image_width = models.IntegerField()
-    endoscope_image_height = models.IntegerField()
+    endoscope_image_x = models.IntegerField(default=0)
+    endoscope_image_y = models.IntegerField(default=0)
+    endoscope_image_width = models.IntegerField(default=0)
+    endoscope_image_height = models.IntegerField(default=0)
 
     # Roi for examination date
-    examination_date_x = models.IntegerField()
-    examination_date_y = models.IntegerField()
-    examination_date_width = models.IntegerField()
-    examination_date_height = models.IntegerField()
+    examination_date_x = models.IntegerField(default=0)
+    examination_date_y = models.IntegerField(default=0)
+    examination_date_width = models.IntegerField(default=0)
+    examination_date_height = models.IntegerField(default=0)
 
     # Roi for examination time
     examination_time_x = models.IntegerField(blank=True, null=True)
@@ -44,22 +44,22 @@ class EndoscopyProcessor(models.Model):
     examination_time_height = models.IntegerField(blank=True, null=True)
 
     # Roi for patient first name
-    patient_first_name_x = models.IntegerField()
-    patient_first_name_y = models.IntegerField()
-    patient_first_name_width = models.IntegerField()
-    patient_first_name_height = models.IntegerField()
+    patient_first_name_x = models.IntegerField(default=0)
+    patient_first_name_y = models.IntegerField(default=0)
+    patient_first_name_width = models.IntegerField(default=0)
+    patient_first_name_height = models.IntegerField(default=0)
 
     # Roi for patient name
-    patient_last_name_x = models.IntegerField()
-    patient_last_name_y = models.IntegerField()
-    patient_last_name_width = models.IntegerField()
-    patient_last_name_height = models.IntegerField()
+    patient_last_name_x = models.IntegerField(default=0)
+    patient_last_name_y = models.IntegerField(default=0)
+    patient_last_name_width = models.IntegerField(default=0)
+    patient_last_name_height = models.IntegerField(default=0)
 
     # Roi for patient dob
-    patient_dob_x = models.IntegerField()
-    patient_dob_y = models.IntegerField()
-    patient_dob_width = models.IntegerField()
-    patient_dob_height = models.IntegerField()
+    patient_dob_x = models.IntegerField(default=0)
+    patient_dob_y = models.IntegerField(default=0)
+    patient_dob_width = models.IntegerField(default=0)
+    patient_dob_height = models.IntegerField(default=0)
 
     # Roi for endoscope type
     endoscope_type_x = models.IntegerField(blank=True, null=True)

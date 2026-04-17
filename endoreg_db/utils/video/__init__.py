@@ -1,4 +1,3 @@
-from .video_splitter import split_video
 from .names import (
     get_video_key,
     identify_video_key,
@@ -17,7 +16,6 @@ from .ffmpeg_wrapper import (
 
 __all__ = [
     # Keep existing
-    "split_video",
     "get_video_key",
     "identify_video_key",
     "get_video_key_regex_by_examination_alias",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
 from endoreg_db.models import (
+    AIDataSet,
     Center,
     EndoscopyProcessor,
     ImageClassificationAnnotation,
@@ -18,12 +20,13 @@ from endoreg_db.models import (
     PatientExaminationReport,
 )
 from endoreg_db.services.hub import deployment_profile_payload
+from endoreg_db.utils.file_operations import atomic_write_file
 from endoreg_db.utils.defaults.set_default_center import (
     get_application_defaults,
     get_application_settings,
     update_application_defaults,
 )
-from endoreg_db.utils.paths import IO_DIR, PROTECTED_DATA_ROOT, STORAGE_DIR
+from endoreg_db.utils.paths import EXPORT_DIR, IO_DIR, PROTECTED_DATA_ROOT, STORAGE_DIR
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 
@@ -92,6 +95,8 @@ def _settings_payload(request) -> dict[str, Any]:
         "processor_name": snapshot.processor_name,
         "annotator_name": annotator_name,
         "report_template_name": snapshot.report_template_name,
+        "ai_dataset_name": snapshot.ai_dataset_name,
+        "ai_dataset_type": snapshot.ai_dataset_type,
         "updated_at": settings_obj.updated_at.isoformat()
         if settings_obj.updated_at
         else None,
@@ -168,6 +173,17 @@ def application_settings_detail(request):
     processor_value = data.get("processor_id", data.get("processor_name"))
     annotator_name = data.get("annotator_name")
     report_template_name = data.get("report_template_name")
+    ai_dataset_name = data.get("ai_dataset_name")
+    ai_dataset_type = data.get("ai_dataset_type")
+
+    if "annotator_name" in data and annotator_name is None:
+        annotator_name = ""
+    if "report_template_name" in data and report_template_name is None:
+        report_template_name = ""
+    if "ai_dataset_name" in data and ai_dataset_name is None:
+        ai_dataset_name = ""
+    if "ai_dataset_type" in data and ai_dataset_type is None:
+        ai_dataset_type = ""
 
     errors: dict[str, str] = {}
     if "center_id" in data or "center_name" in data:
@@ -200,6 +216,17 @@ def application_settings_detail(request):
         errors["annotator_name"] = "annotator_name must be a string."
     if report_template_name is not None and not isinstance(report_template_name, str):
         errors["report_template_name"] = "report_template_name must be a string."
+    if ai_dataset_name is not None and not isinstance(ai_dataset_name, str):
+        errors["ai_dataset_name"] = "ai_dataset_name must be a string."
+    if ai_dataset_type is not None:
+        if not isinstance(ai_dataset_type, str):
+            errors["ai_dataset_type"] = "ai_dataset_type must be a string."
+        elif ai_dataset_type not in {
+            "",
+            AIDataSet.DATASET_TYPE_IMAGE,
+            AIDataSet.DATASET_TYPE_VIDEO,
+        }:
+            errors["ai_dataset_type"] = "ai_dataset_type must be one of: image, video."
 
     if errors:
         return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
@@ -211,6 +238,8 @@ def application_settings_detail(request):
         else None,
         annotator_name=annotator_name,
         report_template_name=report_template_name,
+        ai_dataset_name=ai_dataset_name,
+        ai_dataset_type=ai_dataset_type,
     )
     return Response(_settings_payload(request), status=status.HTTP_200_OK)
 
@@ -263,6 +292,116 @@ def application_settings_report_templates_dropdown(request):
     return Response(
         [{"value": value, "label": value} for value in values],
         status=status.HTTP_200_OK,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([EnvironmentAwarePermission])
+def application_settings_ai_datasets_dropdown(request):
+    dataset_counts = Counter(
+        AIDataSet.objects.exclude(name__exact="").values_list("name", flat=True)
+    )
+    entries = []
+    for dataset in AIDataSet.objects.exclude(name__exact="").order_by(
+        "name", "dataset_type", "pk"
+    ):
+        entries.append(
+            {
+                "id": dataset.pk,
+                "value": dataset.name,
+                "label": dataset.name,
+                "dataset_type": dataset.dataset_type,
+                "ai_model_type": dataset.ai_model_type,
+                "is_active": dataset.is_active,
+                "name_count": dataset_counts.get(dataset.name, 1),
+            }
+        )
+    return Response(entries, status=status.HTTP_200_OK)
+
+
+def _sanitize_export_token(value: str) -> str:
+    normalized = []
+    for char in value.strip():
+        if char.isalnum():
+            normalized.append(char.lower())
+        elif char in {"-", "_"}:
+            normalized.append(char)
+        else:
+            normalized.append("_")
+    collapsed = "".join(normalized).strip("_")
+    return collapsed or "dataset"
+
+
+@api_view(["POST"])
+@permission_classes([EnvironmentAwarePermission])
+def application_settings_ai_dataset_export(request):
+    payload: dict[str, Any] = request.data or {}
+    settings_obj = get_application_settings()
+
+    dataset_name = payload.get("ai_dataset_name", settings_obj.ai_dataset_name)
+    dataset_type = payload.get("ai_dataset_type", settings_obj.ai_dataset_type)
+
+    errors: dict[str, str] = {}
+    if not isinstance(dataset_name, str) or not dataset_name.strip():
+        errors["ai_dataset_name"] = "ai_dataset_name is required."
+    if not isinstance(dataset_type, str) or dataset_type not in {
+        AIDataSet.DATASET_TYPE_IMAGE,
+        AIDataSet.DATASET_TYPE_VIDEO,
+    }:
+        errors["ai_dataset_type"] = "ai_dataset_type must be one of: image, video."
+    if errors:
+        return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    dataset = (
+        AIDataSet.objects.filter(name=dataset_name.strip(), dataset_type=dataset_type)
+        .order_by("-updated_at", "-pk")
+        .first()
+    )
+    if dataset is None:
+        return Response(
+            {
+                "errors": {
+                    "ai_dataset_name": (
+                        f"No AIDataSet found for name='{dataset_name.strip()}' "
+                        f"and dataset_type='{dataset_type}'."
+                    )
+                }
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    export_dir = EXPORT_DIR / "ai_datasets"
+    timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    file_name = (
+        f"{_sanitize_export_token(dataset.name or 'dataset')}"
+        f"_{_sanitize_export_token(dataset.dataset_type)}"
+        f"_{timestamp}.json"
+    )
+    output_path = export_dir / file_name
+
+    export_payload = dataset.export_to_standardized_structure()
+    json_bytes = json.dumps(
+        export_payload,
+        indent=2,
+        sort_keys=True,
+        ensure_ascii=True,
+    ).encode("utf-8")
+    atomic_write_file(
+        destination=output_path,
+        content=[json_bytes],
+        required_bytes=len(json_bytes),
+    )
+
+    return Response(
+        {
+            "success": True,
+            "dataset_id": dataset.pk,
+            "dataset_name": dataset.name,
+            "dataset_type": dataset.dataset_type,
+            "output_path": str(output_path),
+            "summary": export_payload.get("summary", {}),
+        },
+        status=status.HTTP_201_CREATED,
     )
 
 
@@ -500,6 +639,8 @@ __all__ = [
     "application_settings_processors_dropdown",
     "application_settings_annotators_dropdown",
     "application_settings_report_templates_dropdown",
+    "application_settings_ai_datasets_dropdown",
+    "application_settings_ai_dataset_export",
     "application_settings_backup",
     "application_settings_network_nodes",
     "application_settings_network_node_detail",

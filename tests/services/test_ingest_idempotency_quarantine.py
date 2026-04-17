@@ -216,6 +216,14 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
             source_system="test",
             idempotency_key=idempotency_key,
         )
+        print(
+            "all jobs:",
+            list(
+                UploadJob.objects.values_list(
+                    "id", "status", "content_hash", "idempotency_key", "error_detail"
+                )
+            ),
+        )
         self.assertTrue(created_reingest)
         self.assertNotEqual(job.id, job_reingest.id)
         self.assertEqual(UploadJob.objects.count(), 2)

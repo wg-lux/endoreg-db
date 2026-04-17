@@ -6,6 +6,8 @@ from endoreg_db.views import (
     application_settings_processors_dropdown,
     application_settings_annotators_dropdown,
     application_settings_report_templates_dropdown,
+    application_settings_ai_datasets_dropdown,
+    application_settings_ai_dataset_export,
     application_settings_backup,
     application_settings_network_nodes,
     application_settings_network_node_detail,
@@ -38,6 +40,16 @@ urlpatterns = [
         "settings/application/dropdowns/report_templates/",
         application_settings_report_templates_dropdown,
         name="application_settings_report_templates_dropdown",
+    ),
+    path(
+        "settings/application/dropdowns/ai_datasets/",
+        application_settings_ai_datasets_dropdown,
+        name="application_settings_ai_datasets_dropdown",
+    ),
+    path(
+        "settings/application/ai_dataset_export/",
+        application_settings_ai_dataset_export,
+        name="application_settings_ai_dataset_export",
     ),
     path(
         "settings/application/backup/",

@@ -77,3 +77,45 @@ class PreanonymizedWatcherIngestTests(TestCase):
         )
         assert upload_job.cleanup_status == UploadJob.CleanupStatus.ELIGIBLE
         assert upload_job.source_file_delete_eligible_at is not None
+
+    def test_process_preanonymized_report_normalizes_sensitive_meta_strings(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir_name:
+            temp_dir = Path(temp_dir_name)
+            report_path = temp_dir / "normalized.pdf"
+            report_path.write_bytes(b"%PDF-1.4\n%%EOF\n")
+            sidecar_path = report_path.with_suffix(".json")
+            sidecar_path.write_text(
+                json.dumps(
+                    {
+                        "patient_first_name": "  Alice  ",
+                        "patient_last_name": "  Miller  ",
+                        "patient_dob": "1980-01-01",
+                        "patient_gender": "  female  ",
+                        "examination_date": "2024-05-17",
+                        "anonymized_text": "  already anonymized  ",
+                        "text": "  source text  ",
+                        "external_id": "  ext-42  ",
+                        "external_id_origin": "  hospital  ",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            process_preanonymized_watcher_file(
+                file_path=report_path,
+                center=self.center,
+            )
+
+        report = RawPdfFile.objects.select_related("sensitive_meta").get()
+        sensitive_meta = report.sensitive_meta
+
+        assert sensitive_meta is not None
+        assert sensitive_meta.patient_first_name == "Alice"
+        assert sensitive_meta.patient_last_name == "Miller"
+        assert sensitive_meta.text == "source text"
+        assert report.anonymized_text == "already anonymized"
+        assert sensitive_meta.external_id is not None
+        assert sensitive_meta.external_id.external_id == "ext-42"
+        assert sensitive_meta.external_id.origin == "hospital"

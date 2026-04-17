@@ -4,7 +4,11 @@ from pathlib import Path
 
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.serializers.video.video_file_brief import VideoBriefSerializer
-from ...utils.calc_duration_seconds import _calc_duration_vf
+from endoreg_db.utils.media_urls import (
+    build_absolute_media_url,
+    build_video_stream_path,
+)
+from ...utils.video.calc_duration_seconds import _calc_duration_vf
 
 
 class VideoDetailSerializer(VideoBriefSerializer):
@@ -54,11 +58,7 @@ class VideoDetailSerializer(VideoBriefSerializer):
         """
         request = self.context.get("request")
         # Use video streaming endpoint (VideoStreamView)
-        return (
-            request.build_absolute_uri(f"/api/media/videos/{obj.pk}/stream/")
-            if request
-            else None
-        )
+        return build_absolute_media_url(request, build_video_stream_path(obj.pk))
 
     def get_duration(self, obj: VideoFile):
         """

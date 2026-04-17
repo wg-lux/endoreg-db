@@ -24,7 +24,10 @@ from endoreg_db.models.media.video.storage_mode import (
     coerce_video_storage_mode,
 )
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
-from endoreg_db.utils.paths import STORAGE_DIR
+from endoreg_db.utils.paths import (
+    normalize_protected_media_relative_path,
+    resolve_protected_media_path,
+)
 
 from endoreg_db.utils.storage_streaming import (
     add_cors_headers,
@@ -54,17 +57,10 @@ def _pick_video_field_file(video: VideoFile, file_type: str):
 
 
 def _normalize_internal_relative_path(relative_path: str) -> str | None:
-    candidate = Path(relative_path)
-    if str(relative_path or "").strip() == "":
+    try:
+        return normalize_protected_media_relative_path(relative_path)
+    except ValueError:
         return None
-    if candidate.is_absolute():
-        return None
-    if any(part in {"..", ""} for part in candidate.parts):
-        return None
-    normalized = Path(*candidate.parts).as_posix()
-    if normalized in {"", "."}:
-        return None
-    return normalized
 
 
 def _streamable_relative_path(
@@ -100,7 +96,10 @@ def _stream_not_ready_reason(
     if relative_path is None:
         return "missing_streamable_path"
 
-    expected_path = (Path(STORAGE_DIR) / relative_path).resolve()
+    try:
+        expected_path = resolve_protected_media_path(relative_path)
+    except ValueError:
+        return "invalid_streamable_path"
     if not expected_path.exists():
         return "missing_streamable_artifact"
 

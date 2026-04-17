@@ -156,6 +156,47 @@ class ReportStreamViewTests(TestCase):
         assert "X-Accel-Redirect" not in response
         assert b"".join(response.streaming_content) == payload
 
+    def test_pdf_stream_falls_back_when_report_is_outside_protected_media_root(self):
+        from endoreg_db.views.report import report_stream as view_module
+
+        storage_dir = STORAGE_DIR.resolve()
+        storage_dir.mkdir(parents=True, exist_ok=True)
+        protected_media_root = storage_dir.parent / "protected-media"
+        protected_media_root.mkdir(parents=True, exist_ok=True)
+        tmp_file_path = None
+        monkeypatches = pytest.MonkeyPatch()
+        try:
+            with tempfile.NamedTemporaryFile(
+                suffix=".pdf", dir=storage_dir, delete=False
+            ) as tmp:
+                payload = b"%PDF-1.4\nreport-outside-protected-media\n%%EOF\n"
+                tmp.write(payload)
+                tmp.flush()
+                tmp_file_path = Path(tmp.name)
+
+            relative_name = tmp_file_path.relative_to(storage_dir).as_posix()
+            fake_file_field = LocalStubFieldFile(relative_name)
+            fake_pdf_obj = SimpleNamespace(
+                file=fake_file_field,
+                processed_file=None,
+                get_raw_file_path=lambda: tmp_file_path,
+            )
+
+            monkeypatches.setenv("SERVE_WITH_NGINX", "true")
+            monkeypatches.setenv("PROTECTED_MEDIA_ROOT", str(protected_media_root))
+            monkeypatches.setattr(
+                view_module.RawPdfFile.objects, "get", lambda **kwargs: fake_pdf_obj
+            )
+
+            response = self.client.get("/api/media/pdfs/123/stream/?type=raw")
+        finally:
+            monkeypatches.undo()
+            if tmp_file_path and tmp_file_path.exists():
+                tmp_file_path.unlink(missing_ok=True)
+
+        assert response.status_code == 200
+        assert "X-Accel-Redirect" not in response
+
     def test_pdf_stream_recovers_raw_path_from_hash_lookup_when_field_name_is_stale(
         self,
     ):

@@ -3,6 +3,7 @@ from collections.abc import Mapping
 from rest_framework import serializers
 
 from endoreg_db.models import PdfProcessingHistory
+from endoreg_db.utils.media_urls import build_absolute_media_url, build_pdf_stream_path
 
 
 class PdfProcessingHistorySerializer(serializers.ModelSerializer):
@@ -44,9 +45,9 @@ class PdfProcessingHistorySerializer(serializers.ModelSerializer):
         }
 
     def get_processed_stream_url(self, obj) -> str:
-        relative_url = f"/api/media/pdfs/{obj.pdf_id}/stream/?type=processed"
         context = self.context if isinstance(self.context, Mapping) else None
         request = context.get("request") if context else None
-        if request:
-            return request.build_absolute_uri(relative_url)
-        return relative_url
+        return build_absolute_media_url(
+            request,
+            build_pdf_stream_path(obj.pdf_id, file_type="processed"),
+        )

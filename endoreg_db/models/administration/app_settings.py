@@ -37,6 +37,17 @@ class ApplicationSettings(models.Model):
     )
     annotator_name = models.CharField(max_length=255, blank=True, default="")
     report_template_name = models.CharField(max_length=255, blank=True, default="")
+    ai_dataset_name = models.CharField(max_length=255, blank=True, default="")
+    ai_dataset_type = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        choices=[
+            ("", "Unset"),
+            ("image", "Image"),
+            ("video", "Video"),
+        ],
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

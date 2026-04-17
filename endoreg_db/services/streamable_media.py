@@ -5,7 +5,11 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from endoreg_db.utils.paths import STORAGE_DIR, to_storage_relative
+from endoreg_db.utils.paths import (
+    STORAGE_DIR,
+    to_protected_media_relative,
+    to_storage_relative,
+)
 from endoreg_db.utils.file_operations import (
     atomic_write_file,
 )
@@ -41,6 +45,14 @@ STREAMABLE_PROCESSED_VIDEO_ROOT = Path(
 ).resolve()
 STREAMABLE_DIRECTORY_MODE = 0o750
 STREAMABLE_FILE_MODE = 0o640
+
+
+def _streamable_relative_path(target_path: Path) -> str:
+    resolved_target = Path(target_path).resolve()
+    try:
+        return to_protected_media_relative(resolved_target)
+    except ValueError:
+        return to_storage_relative(resolved_target)
 
 
 def _materialize_streamable_target(video_field_file, target_path: Path) -> Path:
@@ -93,7 +105,7 @@ def sync_video_streamable_artifacts(
             processed=False,
             suffix=Path(video.raw_file.name).suffix or ".mp4",
         )
-        relative_path = to_storage_relative(
+        relative_path = _streamable_relative_path(
             _materialize_streamable_target(video.raw_file, target_path)
         )
         if video.streamable_relative_path != relative_path:
@@ -126,7 +138,7 @@ def sync_video_streamable_artifacts(
             processed=True,
             suffix=Path(video.processed_file.name).suffix or ".mp4",
         )
-        relative_path = to_storage_relative(
+        relative_path = _streamable_relative_path(
             _materialize_streamable_target(video.processed_file, target_path)
         )
         if video.processed_streamable_relative_path != relative_path:

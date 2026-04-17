@@ -20,6 +20,7 @@ from rest_framework.views import APIView
 
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models import RawPdfFile
+from endoreg_db.utils.media_urls import build_absolute_media_url, build_pdf_stream_path
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.utils.storage import file_exists
 
@@ -147,8 +148,9 @@ class PdfMediaView(APIView):
                 "is_validated": getattr(pdf.sensitive_meta, "is_verified", False)
                 if pdf.sensitive_meta
                 else False,
-                "stream_url": self.request.build_absolute_uri(
-                    f"/api/media/pdfs/{pdf.pk}/stream/"
+                "stream_url": build_absolute_media_url(
+                    self.request,
+                    build_pdf_stream_path(pdf.pk),
                 ),
             }
 
@@ -308,8 +310,9 @@ class PdfMediaView(APIView):
                     "is_validated": getattr(pdf.sensitive_meta, "is_verified", False)
                     if pdf.sensitive_meta
                     else False,
-                    "stream_url": request.build_absolute_uri(
-                        f"/api/media/pdfs/{pdf.pk}/stream/"
+                    "stream_url": build_absolute_media_url(
+                        request,
+                        build_pdf_stream_path(pdf.pk),
                     ),
                 }
 

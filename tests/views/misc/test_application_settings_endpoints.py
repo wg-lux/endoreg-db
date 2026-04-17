@@ -7,7 +7,7 @@ from uuid import uuid4
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
-from endoreg_db.models import Center, EndoscopyProcessor, NetworkNode
+from endoreg_db.models import AIDataSet, Center, EndoscopyProcessor, NetworkNode
 
 
 class ApplicationSettingsEndpointTests(TestCase):
@@ -53,6 +53,8 @@ class ApplicationSettingsEndpointTests(TestCase):
             "processor_name",
             "annotator_name",
             "report_template_name",
+            "ai_dataset_name",
+            "ai_dataset_type",
             "updated_at",
             "backup_status",
         }
@@ -72,6 +74,8 @@ class ApplicationSettingsEndpointTests(TestCase):
                 "processor_id": self.processor.pk,
                 "annotator_name": "annotator_a",
                 "report_template_name": "template_a",
+                "ai_dataset_name": "dataset_a",
+                "ai_dataset_type": "image",
             },
             content_type="application/json",
         )
@@ -81,6 +85,8 @@ class ApplicationSettingsEndpointTests(TestCase):
         assert payload["processor_id"] == self.processor.pk
         assert payload["annotator_name"] == "annotator_a"
         assert payload["report_template_name"] == "template_a"
+        assert payload["ai_dataset_name"] == "dataset_a"
+        assert payload["ai_dataset_type"] == "image"
 
     def test_get_application_settings_uses_authenticated_username_as_fallback(self):
         user_model = get_user_model()
@@ -132,6 +138,52 @@ class ApplicationSettingsEndpointTests(TestCase):
         )
         assert templates_response.status_code == 200, templates_response.content
         assert isinstance(templates_response.json(), list)
+
+        datasets_response = self.client.get(
+            "/api/settings/application/dropdowns/ai_datasets/"
+        )
+        assert datasets_response.status_code == 200, datasets_response.content
+        assert isinstance(datasets_response.json(), list)
+
+    def test_ai_dataset_export_endpoint_exports_selected_dataset(self):
+        dataset = AIDataSet.objects.create(
+            name=f"dataset-export-{uuid4().hex[:8]}",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+
+        response = self.client.post(
+            "/api/settings/application/ai_dataset_export/",
+            data={
+                "ai_dataset_name": dataset.name,
+                "ai_dataset_type": dataset.dataset_type,
+            },
+            content_type="application/json",
+        )
+        assert response.status_code == 201, response.content
+        payload = response.json()
+        assert payload["success"] is True
+        assert payload["dataset_id"] == dataset.pk
+        output_path = Path(payload["output_path"])
+        assert output_path.exists()
+        exported = output_path.read_text(encoding="utf-8")
+        assert dataset.name in exported
+
+    def test_ai_dataset_dropdown_includes_existing_datasets(self):
+        dataset = AIDataSet.objects.create(
+            name=f"dataset-dropdown-{uuid4().hex[:8]}",
+            dataset_type=AIDataSet.DATASET_TYPE_VIDEO,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_VIDEO_SEGMENT_CLASSIFICATION,
+        )
+
+        response = self.client.get("/api/settings/application/dropdowns/ai_datasets/")
+        assert response.status_code == 200, response.content
+        assert any(
+            entry["id"] == dataset.pk
+            and entry["value"] == dataset.name
+            and entry["dataset_type"] == dataset.dataset_type
+            for entry in response.json()
+        )
 
     def test_application_settings_backup_endpoint(self):
         from endoreg_db.views.misc import application_settings as view_module

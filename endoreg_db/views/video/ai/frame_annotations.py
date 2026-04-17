@@ -1,5 +1,6 @@
 import logging
 import random
+from collections import defaultdict
 from typing import Any
 
 from django.db import transaction
@@ -10,6 +11,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from endoreg_db.models import (
+    AIDataSet,
     Frame,
     ImageClassificationAnnotation,
     InformationSource,
@@ -20,6 +22,8 @@ from endoreg_db.models import (
 from endoreg_db.serializers.label_video_segment.frame_annotation_bulk import (
     FrameAnnotationBulkItemSerializer,
 )
+from endoreg_db.utils.defaults.set_default_center import get_application_settings
+from endoreg_db.utils.media_urls import build_video_frame_stream_path
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 logger = logging.getLogger(__name__)
@@ -301,10 +305,15 @@ def _build_frame_task_queryset(
     exclude_annotated: bool,
     target_label_id: int | None,
     exclude_frame_ids: set[int] | None = None,
+    candidate_frame_ids: set[int] | None = None,
 ):
     frames_qs = Frame.objects.select_related("video")
     if video_id is not None:
         frames_qs = frames_qs.filter(video_id=video_id)
+    if candidate_frame_ids is not None:
+        if not candidate_frame_ids:
+            return frames_qs.none()
+        frames_qs = frames_qs.filter(id__in=candidate_frame_ids)
 
     if filter_label_id is not None:
         frames_qs = frames_qs.filter(
@@ -339,6 +348,7 @@ def _pick_random_frame(
     exclude_annotated: bool,
     target_label_id: int | None,
     exclude_frame_ids: set[int] | None = None,
+    candidate_frame_ids: set[int] | None = None,
 ) -> Frame | None:
     frames_qs = _build_frame_task_queryset(
         video_id=video_id,
@@ -348,12 +358,89 @@ def _pick_random_frame(
         exclude_annotated=exclude_annotated,
         target_label_id=target_label_id,
         exclude_frame_ids=exclude_frame_ids,
+        candidate_frame_ids=candidate_frame_ids,
     )
     count = frames_qs.count()
     if count == 0:
         return None
     offset = random.randint(0, count - 1)
     return frames_qs[offset]
+
+
+def _resolve_ai_dataset_for_tasks(
+    request,
+) -> AIDataSet | None:
+    dataset_name_raw = request.query_params.get("ai_dataset_name")
+    dataset_type_raw = request.query_params.get("ai_dataset_type")
+
+    settings_obj = get_application_settings()
+    dataset_name = (
+        str(dataset_name_raw).strip()
+        if dataset_name_raw is not None
+        else str(settings_obj.ai_dataset_name or "").strip()
+    )
+    dataset_type = (
+        str(dataset_type_raw).strip().lower()
+        if dataset_type_raw is not None
+        else str(settings_obj.ai_dataset_type or "").strip().lower()
+    )
+
+    if not dataset_name or dataset_type != AIDataSet.DATASET_TYPE_IMAGE:
+        return None
+
+    return (
+        AIDataSet.objects.filter(
+            name=dataset_name,
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+        )
+        .order_by("-updated_at", "-pk")
+        .first()
+    )
+
+
+def _build_dataset_target_buckets(
+    *,
+    dataset: AIDataSet,
+    target_label: Label | None,
+) -> dict[str, set[int]]:
+    if dataset.dataset_type != AIDataSet.DATASET_TYPE_IMAGE:
+        return {}
+    if target_label is None:
+        return {}
+
+    annotations = dataset.image_annotations.select_related("frame", "label").filter(
+        frame__isnull=False
+    )
+    if not annotations.exists():
+        return {}
+
+    frame_ids_by_bucket: dict[str, set[int]] = {
+        "positive": set(),
+        "negative": set(),
+        "unknown": set(),
+    }
+    seen_frame_ids: set[int] = set()
+    target_values_by_frame_id: dict[int, list[bool]] = defaultdict(list)
+
+    for annotation in annotations.iterator():
+        seen_frame_ids.add(annotation.frame_id)
+        if annotation.label_id == target_label.id:
+            target_values_by_frame_id[annotation.frame_id].append(annotation.value)
+
+    for frame_id in seen_frame_ids:
+        target_values = target_values_by_frame_id.get(frame_id, [])
+        if any(target_values):
+            frame_ids_by_bucket["positive"].add(frame_id)
+        elif target_values:
+            frame_ids_by_bucket["negative"].add(frame_id)
+        else:
+            frame_ids_by_bucket["unknown"].add(frame_id)
+
+    return {
+        bucket_name: frame_ids
+        for bucket_name, frame_ids in frame_ids_by_bucket.items()
+        if frame_ids
+    }
 
 
 def _serialize_annotation(annotation: ImageClassificationAnnotation) -> dict[str, Any]:
@@ -447,8 +534,8 @@ def _serialize_frame_task(
         "video_id": frame.video_id,
         "frame_number": frame.frame_number,
         "relative_path": frame.relative_path,
-        "frame_stream_path": (
-            f"/api/media/videos/{frame.video_id}/frames/{frame.frame_number}/stream/"
+        "frame_stream_path": build_video_frame_stream_path(
+            frame.video_id, frame.frame_number
         ),
         "annotation_mode": "multilabel",
         "label_options": label_options,
@@ -604,10 +691,55 @@ class FrameAnnotationRandomTaskView(APIView):
         exclude_annotated = _as_bool(
             request.query_params.get("exclude_annotated"), default=True
         )
+        ai_dataset = _resolve_ai_dataset_for_tasks(request)
+        dataset_buckets = _build_dataset_target_buckets(
+            dataset=ai_dataset,
+            target_label=target_label,
+        )
 
         tasks: list[dict[str, Any]] = []
         excluded_ids: set[int] = set()
-        for _ in range(limit):
+        bucket_order = ["positive", "negative", "unknown"]
+        if dataset_buckets:
+            while len(tasks) < limit:
+                progress = False
+                for bucket_name in bucket_order:
+                    bucket_frame_ids = dataset_buckets.get(bucket_name)
+                    if not bucket_frame_ids:
+                        continue
+                    frame = _pick_random_frame(
+                        video_id=video_id,
+                        filter_label_id=(
+                            filter_label.id if filter_label is not None else None
+                        ),
+                        information_source_name=information_source_name,
+                        annotator=annotator,
+                        exclude_annotated=exclude_annotated,
+                        target_label_id=(
+                            target_label.id if target_label is not None else None
+                        ),
+                        exclude_frame_ids=excluded_ids,
+                        candidate_frame_ids=bucket_frame_ids,
+                    )
+                    if frame is None:
+                        continue
+                    serialized_task = _serialize_frame_task(
+                        frame,
+                        label_set=label_set,
+                        target_label=target_label,
+                        information_source_name=information_source_name,
+                        annotator=annotator,
+                    )
+                    serialized_task["dataset_bucket"] = bucket_name
+                    tasks.append(serialized_task)
+                    excluded_ids.add(frame.id)
+                    progress = True
+                    if len(tasks) >= limit:
+                        break
+                if not progress:
+                    break
+
+        while len(tasks) < limit:
             frame = _pick_random_frame(
                 video_id=video_id,
                 filter_label_id=filter_label.id if filter_label is not None else None,
@@ -616,18 +748,40 @@ class FrameAnnotationRandomTaskView(APIView):
                 exclude_annotated=exclude_annotated,
                 target_label_id=target_label.id if target_label is not None else None,
                 exclude_frame_ids=excluded_ids,
+                candidate_frame_ids=(
+                    set().union(*dataset_buckets.values()) if dataset_buckets else None
+                ),
             )
             if frame is None:
-                break
-            tasks.append(
-                _serialize_frame_task(
-                    frame,
-                    label_set=label_set,
-                    target_label=target_label,
-                    information_source_name=information_source_name,
-                    annotator=annotator,
-                )
+                if dataset_buckets:
+                    frame = _pick_random_frame(
+                        video_id=video_id,
+                        filter_label_id=(
+                            filter_label.id if filter_label is not None else None
+                        ),
+                        information_source_name=information_source_name,
+                        annotator=annotator,
+                        exclude_annotated=exclude_annotated,
+                        target_label_id=(
+                            target_label.id if target_label is not None else None
+                        ),
+                        exclude_frame_ids=excluded_ids,
+                    )
+                if frame is None:
+                    break
+            serialized_task = _serialize_frame_task(
+                frame,
+                label_set=label_set,
+                target_label=target_label,
+                information_source_name=information_source_name,
+                annotator=annotator,
             )
+            if dataset_buckets and "dataset_bucket" not in serialized_task:
+                for bucket_name, bucket_frame_ids in dataset_buckets.items():
+                    if frame.id in bucket_frame_ids:
+                        serialized_task["dataset_bucket"] = bucket_name
+                        break
+            tasks.append(serialized_task)
             excluded_ids.add(frame.id)
 
         if not tasks:
@@ -645,6 +799,9 @@ class FrameAnnotationRandomTaskView(APIView):
                 details["target_label"] = target_label.name
             if filter_label is not None:
                 details["filter_label"] = filter_label.name
+            if ai_dataset is not None:
+                details["ai_dataset_name"] = ai_dataset.name
+                details["ai_dataset_type"] = ai_dataset.dataset_type
             return Response(
                 {
                     "error": "No frame task available.",
@@ -666,6 +823,13 @@ class FrameAnnotationRandomTaskView(APIView):
             response_data["target_label"] = target_label.name
         if filter_label is not None:
             response_data["filter_label"] = filter_label.name
+        if ai_dataset is not None:
+            response_data["ai_dataset_name"] = ai_dataset.name
+            response_data["ai_dataset_type"] = ai_dataset.dataset_type
+            response_data["bucket_counts"] = {
+                bucket_name: len(frame_ids)
+                for bucket_name, frame_ids in dataset_buckets.items()
+            }
 
         return Response(
             response_data,

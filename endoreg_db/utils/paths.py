@@ -49,6 +49,7 @@ MANIFEST_DIR_NAME = "manifests"
 PROTECTED_ROOT_ENV = "LX_ANNOTATE_ENCRYPTED_DATA_DIR"
 LEGACY_STORAGE_ENV = "STORAGE_DIR"
 LEGACY_IO_ENV = "IO_DIR"
+PROTECTED_MEDIA_ROOT_ENV = "PROTECTED_MEDIA_ROOT"
 
 
 def _resolve_env_path(raw_value: str) -> Path:
@@ -104,6 +105,58 @@ def ensure_within_protected_root(path: str | Path) -> Path:
     protected_root = current_protected_root
     raise ValueError(
         f"Path {resolved_path} is outside protected data root {protected_root}"
+    )
+
+
+def _resolve_protected_media_root() -> Path:
+    raw_value = os.environ.get(PROTECTED_MEDIA_ROOT_ENV, "").strip()
+    if not raw_value:
+        storage_root = globals().get("STORAGE_DIR")
+        if isinstance(storage_root, Path):
+            return storage_root.resolve()
+        protected_root = globals().get("PROTECTED_DATA_ROOT")
+        if isinstance(protected_root, Path):
+            return (protected_root / "storage").resolve()
+        return (_resolve_protected_root() / "storage").resolve()
+    return ensure_within_protected_root(_resolve_env_path(raw_value))
+
+
+def normalize_protected_media_relative_path(relative_path: str | Path) -> str:
+    candidate = Path(str(relative_path or "").strip())
+    if str(candidate) == "":
+        raise ValueError("Protected media path must not be empty")
+    if candidate.is_absolute():
+        raise ValueError("Protected media path must be relative")
+    if any(part in {"", ".", ".."} for part in candidate.parts):
+        raise ValueError(f"Protected media path is not safe: {relative_path}")
+    normalized = Path(*candidate.parts).as_posix()
+    if normalized in {"", "."}:
+        raise ValueError("Protected media path must not be empty")
+    return normalized
+
+
+def ensure_within_protected_media_root(path: str | Path) -> Path:
+    resolved_path = Path(path).resolve()
+    protected_media_root = _resolve_protected_media_root()
+    try:
+        resolved_path.relative_to(protected_media_root)
+    except ValueError as exc:
+        raise ValueError(
+            f"Path {resolved_path} is outside protected media root {protected_media_root}"
+        ) from exc
+    return resolved_path
+
+
+def to_protected_media_relative(path: str | Path) -> str:
+    resolved_path = ensure_within_protected_media_root(path)
+    protected_media_root = _resolve_protected_media_root()
+    return resolved_path.relative_to(protected_media_root).as_posix()
+
+
+def resolve_protected_media_path(relative_path: str | Path) -> Path:
+    normalized = normalize_protected_media_relative_path(relative_path)
+    return ensure_within_protected_media_root(
+        _resolve_protected_media_root() / normalized
     )
 
 
@@ -352,7 +405,6 @@ class EndoregPathsModel(FilesAndDirsModel):
     def ensure_directories(self) -> None:
         for path in self.dirs:
             path.mkdir(parents=True, exist_ok=True)
-            logger.debug("Path ready: %s", path.resolve())
 
     def as_dict(self) -> dict[str, Path]:
         return {key: self[key] for key in self.legacy_key_map}

@@ -26,6 +26,11 @@ from endoreg_db.serializers.report import (
 )
 from endoreg_db.services.report_history import get_patient_examination_history_context
 from endoreg_db.services.report_persistence import save_report_submission
+from endoreg_db.utils.media_urls import (
+    build_absolute_media_url,
+    build_patient_timeline_path,
+    build_pdf_stream_path,
+)
 
 
 class PatientExaminationReportViewSet(viewsets.ModelViewSet):
@@ -461,25 +466,33 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
             patient_examination = result.report.patient_examination
             patient_id = getattr(patient_examination, "patient_id", None)
             pdf_id = result.persisted_pdf_artifact_id
-            pdf_stream_path = (
-                f"/api/media/pdfs/{pdf_id}/stream/" if pdf_id is not None else None
-            )
             persisted_artifacts = {
                 "full_report_id": result.persisted_report_artifact_id,
                 "pdf_id": result.persisted_pdf_artifact_id,
                 "pdf_view_url": (
-                    request.build_absolute_uri(f"{pdf_stream_path}?type=raw")
-                    if pdf_stream_path
+                    build_absolute_media_url(
+                        request,
+                        build_pdf_stream_path(pdf_id, file_type="processed"),
+                    )
+                    if pdf_id is not None
                     else None
                 ),
                 "pdf_download_url": (
-                    request.build_absolute_uri(f"{pdf_stream_path}?type=raw&download=1")
-                    if pdf_stream_path
+                    build_absolute_media_url(
+                        request,
+                        build_pdf_stream_path(
+                            pdf_id,
+                            file_type="raw",
+                            download=True,
+                        ),
+                    )
+                    if pdf_id is not None
                     else None
                 ),
                 "patient_timeline_url": (
-                    request.build_absolute_uri(
-                        f"/api/media/patients/{patient_id}/timeline/"
+                    build_absolute_media_url(
+                        request,
+                        build_patient_timeline_path(patient_id),
                     )
                     if patient_id is not None
                     else None

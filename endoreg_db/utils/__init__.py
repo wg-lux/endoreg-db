@@ -80,12 +80,6 @@ def extract_frames(*args, **kwargs):
     return _impl(*args, **kwargs)
 
 
-def split_video(*args, **kwargs):
-    from endoreg_db.utils.video.video_splitter import split_video as _impl
-
-    return _impl(*args, **kwargs)
-
-
 # --- Exports ---
 
 __all__ = [
@@ -116,7 +110,6 @@ __all__ = [
     "transcode_video",
     "transcode_videofile_if_required",  # Added
     "extract_frames",  # Added
-    "split_video",
     "delete_field_file",
     "ensure_local_file",
     "save_local_file",

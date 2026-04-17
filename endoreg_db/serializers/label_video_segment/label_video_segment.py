@@ -18,6 +18,10 @@ from endoreg_db.serializers.label_video_segment.image_classification_annotation 
     ImageClassificationAnnotationSerializer,
 )
 from endoreg_db.services.segment_contracts import SegmentAnnotationInput
+from endoreg_db.utils.media_urls import (
+    build_absolute_media_url,
+    build_video_frame_stream_path,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -544,12 +548,9 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
             ).data
 
             rel = Path(str(frame.file_path)).name
-            url = (
-                request.build_absolute_uri(
-                    f"/api/media/videos/{frame.video_id}/frames/{frame.frame_number}/stream/"
-                )
-                if request is not None
-                else f"/api/media/videos/{frame.video_id}/frames/{frame.frame_number}/stream/"
+            url = build_absolute_media_url(
+                request,
+                build_video_frame_stream_path(frame.video_id, frame.frame_number),
             )
 
             frame_data = {
