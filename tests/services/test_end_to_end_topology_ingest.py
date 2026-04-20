@@ -75,8 +75,6 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
             )
 
             db_job = UploadJob.objects.get(id=first_job.id)
-            managed_upload_path = Path(db_job.file.path).resolve()
-
             assert first_job.id == second_job.id
             assert UploadJob.objects.count() == 1
             assert db_job.ingest_mode == UploadJob.IngestMode.WATCHER
@@ -87,8 +85,9 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
                 == UploadJob.RetentionPolicy.DELETE_AFTER_SUCCESS
             )
             assert db_job.status == UploadJob.Status.ANONYMIZED
-            assert db_job.cleanup_status == UploadJob.CleanupStatus.ELIGIBLE
+            assert db_job.cleanup_status == UploadJob.CleanupStatus.COMPLETED
             assert db_job.source_file_delete_eligible_at is not None
+            assert db_job.source_file_persisted is False
             assert db_job.source_center_id == center.id
             assert db_job.processing_provenance["entrypoint"] == "watcher"
             assert db_job.processing_provenance["file_type"] == "report"
@@ -99,21 +98,7 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
                 db_job.processing_provenance["source_center_key"] == center.center_key
             )
             assert db_job.processing_provenance["content_hash"] == db_job.content_hash
-            assert db_job.file.name.startswith("upload_jobs/watcher/")
-            assert managed_upload_path.exists()
-            assert managed_upload_path.is_relative_to(reloaded_paths.UPLOAD_WATCHER_DIR)
-            assert managed_upload_path.is_relative_to(
-                reloaded_paths.protected_media_root()
-            )
-            assert managed_upload_path.is_relative_to(
-                reloaded_paths.PROTECTED_DATA_ROOT
-            )
-            assert (
-                reloaded_paths.resolve_existing_protected_media_path(
-                    managed_upload_path
-                )
-                == managed_upload_path
-            )
+            assert db_job.file.name == ""
             assert first_drop.exists() is False
             assert second_drop.exists() is False
         finally:

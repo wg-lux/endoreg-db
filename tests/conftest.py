@@ -11,6 +11,38 @@ import posixpath
 import shutil
 import sys
 from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+TEST_PROTECTED_ROOT = PROJECT_ROOT / "data" / "tests" / "protected_runtime"
+TEST_STORAGE_DIR = TEST_PROTECTED_ROOT / "storage"
+TEST_ASSET_DIR = Path(__file__).parent / "assets"
+
+
+def _configure_test_path_env(protected_root: Path) -> None:
+    protected_root = protected_root.resolve()
+    storage_dir = (protected_root / "storage").resolve()
+    streamable_root = (storage_dir / "streamable_videos").resolve()
+
+    os.environ["LX_ANNOTATE_ENCRYPTED_DATA_DIR"] = str(protected_root)
+    os.environ["STORAGE_DIR"] = str(storage_dir)
+    os.environ["IO_DIR"] = str(protected_root)
+    os.environ["PROTECTED_MEDIA_ROOT"] = str(storage_dir)
+    os.environ["LX_ANNOTATE_STREAMABLE_VIDEO_ROOT"] = str(streamable_root)
+    os.environ["LX_ANNOTATE_STREAMABLE_VIDEO_RAW_ROOT"] = str(streamable_root / "raw")
+    os.environ["LX_ANNOTATE_STREAMABLE_VIDEO_PROCESSED_ROOT"] = str(
+        streamable_root / "processed"
+    )
+
+
+# Ensure the repository root is in the Python path before importing project code.
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+# Configure pytest-django and the protected storage contract before importing
+# modules that read path settings at import time.
+os.environ["DJANGO_SETTINGS_MODULE"] = "endoreg_db.config.settings.test"
+_configure_test_path_env(TEST_PROTECTED_ROOT)
+
 from endoreg_db.models import AiModel, ModelMeta, ModelType
 from endoreg_db.models.label import LabelSet
 from endoreg_db.utils import paths as paths_module
@@ -47,14 +79,6 @@ def disable_faker_logging():
 # Call this immediately to suppress faker logging
 disable_faker_logging()
 
-# Ensure the repository root is in the Python path
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
-# Configure pytest-django to use our test settings
-os.environ["DJANGO_SETTINGS_MODULE"] = "endoreg_db.config.settings.test"
-
 # Performance optimization settings
 SKIP_EXPENSIVE_TESTS = (
     os.environ.get("SKIP_EXPENSIVE_TESTS", "false").lower() == "false"
@@ -63,13 +87,62 @@ RUN_VIDEO_TESTS = os.environ.get("RUN_VIDEO_TESTS", "true").lower() == "true"
 MAX_MOCK_VIDEO_FRAMES = 2
 USE_STUB_MODEL_META = os.environ.get("USE_STUB_MODEL_META", "true").lower() == "true"
 
-# Set up protected runtime directories for tests
-TEST_PROTECTED_ROOT = (
-    Path(__file__).parent.parent / "data" / "tests" / "protected_runtime"
-)
-TEST_STORAGE_DIR = TEST_PROTECTED_ROOT / "storage"
 TEST_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
-TEST_ASSET_DIR = Path(__file__).parent / "assets"
+
+
+def _rebind_paths_module(fake_paths_model) -> None:
+    paths_module.data_paths_model = fake_paths_model
+    paths_module.data_paths = fake_paths_model
+
+    path_constant_map = {
+        "PROTECTED_DATA_ROOT": fake_paths_model.protected_root,
+        "STORAGE_DIR": fake_paths_model.storage,
+        "IO_DIR": fake_paths_model.io,
+        "IMPORT_DIR": fake_paths_model.import_dir,
+        "EXPORT_DIR": fake_paths_model.export_dir,
+        "IMPORT_VIDEO_DIR": fake_paths_model.import_video,
+        "IMPORT_REPORT_DIR": fake_paths_model.import_report,
+        "IMPORT_PREANONYMIZED_DIR": fake_paths_model.import_preanonymized,
+        "IMPORT_ANONYMIZED_VIDEO_DIR": fake_paths_model.import_anonymized_video,
+        "IMPORT_ANONYMIZED_REPORT_DIR": fake_paths_model.import_anonymized_report,
+        "VIDEO_EXPORT_DIR": fake_paths_model.video_export,
+        "REPORT_EXPORT_DIR": fake_paths_model.report_export,
+        "DOCUMENT_DIR": fake_paths_model.documents,
+        "TRANSCODING_DIR": fake_paths_model.transcoding,
+        "ANONYM_VIDEO_DIR": fake_paths_model.anonym_video,
+        "SENSITIVE_VIDEO_DIR": fake_paths_model.sensitive_video,
+        "ANONYM_REPORT_DIR": fake_paths_model.anonym_report,
+        "SENSITIVE_REPORT_DIR": fake_paths_model.sensitive_report,
+        "FRAME_DIR": fake_paths_model.frame,
+        "WEIGHTS_DIR": fake_paths_model.weights,
+        "RAW_FRAME_DIR": fake_paths_model.raw_frame,
+        "WEIGHTS_IMPORT_DIR": fake_paths_model.weights_import,
+        "WEIGHTS_EXPORT_DIR": fake_paths_model.weights_export,
+        "FRAME_IMPORT_DIR": fake_paths_model.import_frame,
+        "FRAME_EXPORT_DIR": fake_paths_model.frame_export,
+        "LOG_DIR": fake_paths_model.logs,
+        "QUARANTINE_DIR": fake_paths_model.quarantine,
+        "MIGRATION_STAGING_DIR": fake_paths_model.migration_staging,
+        "MANIFEST_DIR": fake_paths_model.manifest_dir,
+        "UPLOAD_API_DIR": fake_paths_model.upload_api,
+        "UPLOAD_WATCHER_DIR": fake_paths_model.upload_watcher,
+        "UPLOAD_PREANONYMIZED_DIR": fake_paths_model.upload_preanonymized,
+        "WATCHER_VIDEO_DROP_DIR": fake_paths_model.watcher_video_drop,
+        "WATCHER_REPORT_DROP_DIR": fake_paths_model.watcher_report_drop,
+        "WATCHER_PREANONYMIZED_DROP_DIR": fake_paths_model.watcher_preanonymized_drop,
+        "SAP_IMPORT_DROP_DIR": fake_paths_model.sap_import_drop,
+        "SAP_IMPORT_PROCESSED_DIR": fake_paths_model.sap_import_processed,
+        "SAP_IMPORT_FAILED_DIR": fake_paths_model.sap_import_failed,
+        "INGEST_UPLOADS_DIR": fake_paths_model.ingest_uploads,
+        "INGEST_PREANONYMIZED_DIR": fake_paths_model.ingest_preanonymized,
+        "MANAGED_ANONYMIZED_VIDEOS_DIR": fake_paths_model.managed_anonymized_videos,
+        "MANAGED_ANONYMIZED_REPORTS_DIR": fake_paths_model.managed_anonymized_reports,
+        "MANAGED_SENSITIVE_SIDECARS_DIR": fake_paths_model.managed_sensitive_sidecars,
+        "QUARANTINE_FAILED_DIR": fake_paths_model.quarantine_failed,
+        "STAGING_MIGRATION_DIR": fake_paths_model.staging_migration,
+    }
+    for name, value in path_constant_map.items():
+        setattr(paths_module, name, value)
 
 
 @pytest.fixture
@@ -658,21 +731,20 @@ def setup_test_environment(cache):
     # Ensure faker logging is disabled
     disable_faker_logging()
 
+    # Set environment variables for tests from one authoritative protected root,
+    # matching the runtime contract in endoreg_db.utils.paths.
+    _configure_test_path_env(TEST_PROTECTED_ROOT)
+    os.environ["DJANGO_SETTINGS_MODULE"] = "endoreg_db.config.settings.test"
+
+    test_paths_model = paths_module.EndoregPathsModel.from_environment()
+    _rebind_paths_module(test_paths_model)
+
     # Ensure storage directories exist
     TEST_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 
     # Remove stale lock files from interrupted runs so lock-based import tests
     # start from a clean session state.
     _cleanup_test_lock_files()
-
-    # Set environment variables for tests
-    os.environ.setdefault(
-        "LX_ANNOTATE_ENCRYPTED_DATA_DIR",
-        str(TEST_PROTECTED_ROOT),
-    )
-    os.environ.setdefault("STORAGE_DIR", str(TEST_STORAGE_DIR))
-    os.environ.setdefault("IO_DIR", str(TEST_PROTECTED_ROOT))
-    os.environ["DJANGO_SETTINGS_MODULE"] = "endoreg_db.config.settings.test"
 
     # Apply global video operation safety mocks
     _apply_global_video_mocks(cache)
@@ -1350,31 +1422,29 @@ def mock_storage(tmp_path, monkeypatch):
     # 1. Define the fake root
     fake_root = tmp_path / "fake_protected_root"
     fake_root.mkdir()
-    streamable_root = fake_root / "storage" / "streamable_videos"
+    previous_paths_model = paths_module.data_paths_model
+    storage_root = fake_root / "storage"
+    streamable_root = storage_root / "streamable_videos"
     streamable_raw_root = streamable_root / "raw"
     streamable_processed_root = streamable_root / "processed"
 
-    # 2. Create a fake instance of the model
-    # Use a dummy environment or manually override fields
-    monkeypatch.setenv("LX_ANNOTATE_ENCRYPTED_DATA_DIR", str(fake_root))
-    monkeypatch.setenv("STORAGE_DIR", str(fake_root / "storage"))
-
-    monkeypatch.setenv("IO_DIR", str(fake_root))
-    monkeypatch.setenv("LX_ANNOTATE_STREAMABLE_VIDEO_ROOT", str(streamable_root))
-    monkeypatch.setenv(
-        "LX_ANNOTATE_STREAMABLE_VIDEO_RAW_ROOT", str(streamable_raw_root)
-    )
-    monkeypatch.setenv(
-        "LX_ANNOTATE_STREAMABLE_VIDEO_PROCESSED_ROOT",
-        str(streamable_processed_root),
-    )
+    env_map = {
+        "LX_ANNOTATE_ENCRYPTED_DATA_DIR": str(fake_root),
+        "STORAGE_DIR": str(storage_root),
+        "IO_DIR": str(fake_root),
+        "PROTECTED_MEDIA_ROOT": str(storage_root),
+        "LX_ANNOTATE_STREAMABLE_VIDEO_ROOT": str(streamable_root),
+        "LX_ANNOTATE_STREAMABLE_VIDEO_RAW_ROOT": str(streamable_raw_root),
+        "LX_ANNOTATE_STREAMABLE_VIDEO_PROCESSED_ROOT": str(streamable_processed_root),
+    }
+    for env_key, env_value in env_map.items():
+        monkeypatch.setenv(env_key, env_value)
 
     # Force the model to re-initialize from the new env
     fake_paths_model = paths_module.EndoregPathsModel.from_environment()
 
     # 3. Patch the module-level singleton and the factory method
-    monkeypatch.setattr(paths_module, "data_paths_model", fake_paths_model)
-    monkeypatch.setattr(paths_module, "data_paths", fake_paths_model)
+    _rebind_paths_module(fake_paths_model)
     monkeypatch.setattr(
         paths_module.EndoregPathsModel,
         "from_environment",
@@ -1382,20 +1452,8 @@ def mock_storage(tmp_path, monkeypatch):
     )
 
     # 4. Patch the historical constants (for legacy code support)
-    monkeypatch.setattr(
-        paths_module, "PROTECTED_DATA_ROOT", fake_paths_model.protected_root
-    )
-    monkeypatch.setattr(paths_module, "STORAGE_DIR", fake_paths_model.storage)
-    monkeypatch.setattr(
-        paths_module, "SENSITIVE_VIDEO_DIR", fake_paths_model.sensitive_video
-    )
-    monkeypatch.setattr(paths_module, "TRANSCODING_DIR", fake_paths_model.transcoding)
-    monkeypatch.setattr(
-        paths_module, "SENSITIVE_REPORT_DIR", fake_paths_model.sensitive_report
-    )
-    monkeypatch.setattr(
-        paths_module, "IMPORT_REPORT_DIR", fake_paths_model.import_report
-    )
+    monkeypatch.setattr(paths_module, "data_paths_model", fake_paths_model)
+    monkeypatch.setattr(paths_module, "data_paths", fake_paths_model)
 
     # Keep alias exports and import-time path constants in sync for modules that
     # imported path constants by value before this fixture runs.
@@ -1405,6 +1463,7 @@ def mock_storage(tmp_path, monkeypatch):
     import endoreg_db.models.media.video.create_from_file as video_create_module
     import endoreg_db.models.media.video.video_file as video_file_module
     import endoreg_db.services.streamable_media as streamable_media_module
+    import endoreg_db.views.video.video_stream as video_stream_module
     import endoreg_db.views.report.report_stream as report_stream_module
     from django.core.files.storage import FileSystemStorage
 
@@ -1445,6 +1504,11 @@ def mock_storage(tmp_path, monkeypatch):
         "STREAMABLE_PROCESSED_VIDEO_ROOT",
         streamable_processed_root,
     )
+    monkeypatch.setattr(
+        video_stream_module,
+        "to_storage_relative",
+        paths_module.to_storage_relative,
+    )
 
     # Ensure Django FileField storage roots also point to the mocked storage tree.
     raw_pdf_file_field = raw_pdf_module.RawPdfFile._meta.get_field("file")
@@ -1470,6 +1534,7 @@ def mock_storage(tmp_path, monkeypatch):
     try:
         yield fake_paths_model
     finally:
+        _rebind_paths_module(previous_paths_model)
         raw_pdf_file_field.storage = previous_report_storage
         raw_pdf_processed_field.storage = previous_report_processed_storage
         video_raw_field.storage = previous_video_storage

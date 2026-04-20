@@ -276,6 +276,26 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
             str(quarantined_path),
         )
 
+    def test_process_watcher_file_cleans_upload_job_source_after_success(self):
+        filename = "successful_watcher_report.pdf"
+        temp_file_path = self._create_temp_file(filename, self.pdf_content)
+
+        with patch(
+            "endoreg_db.services.hub.ingest.ReportImportService.import_and_anonymize",
+            return_value=RawPdfFile(center=self.center),
+        ):
+            upload_job = process_watcher_file(
+                file_path=temp_file_path,
+                file_type="report",
+                center=self.center,
+            )
+
+        upload_job.refresh_from_db()
+        self.assertEqual(upload_job.status, UploadJob.Status.ANONYMIZED)
+        self.assertEqual(upload_job.cleanup_status, UploadJob.CleanupStatus.COMPLETED)
+        self.assertFalse(upload_job.source_file_persisted)
+        self.assertEqual(upload_job.file.name, "")
+
     def test_process_watcher_file_quarantines_on_failure(self):
         filename = "failed_watcher_video.mp4"
         temp_file_path = self._create_temp_file(filename, self.video_content)

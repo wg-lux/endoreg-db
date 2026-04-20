@@ -14,7 +14,7 @@ maintainers = [
 ]
 name = "endoreg_db"
 readme = "README.md"
-version = "0.9.4.6"
+version = "0.9.4.7"
 
 
 classifiers = [

@@ -75,8 +75,10 @@ class PreanonymizedWatcherIngestTests(TestCase):
             upload_job.processing_provenance["retention_policy"]
             == UploadJob.RetentionPolicy.DELETE_AFTER_SUCCESS
         )
-        assert upload_job.cleanup_status == UploadJob.CleanupStatus.ELIGIBLE
+        assert upload_job.cleanup_status == UploadJob.CleanupStatus.COMPLETED
         assert upload_job.source_file_delete_eligible_at is not None
+        assert upload_job.source_file_persisted is False
+        assert upload_job.file.name == ""
 
     def test_process_preanonymized_report_normalizes_sensitive_meta_strings(
         self,

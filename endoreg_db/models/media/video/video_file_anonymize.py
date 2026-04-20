@@ -484,7 +484,7 @@ def _cleanup_raw_assets(
     try:
         video_file = (
             VideoFile.objects.select_related("state")
-            .filter(content_hash=video_hash)
+            .filter(video_hash=video_hash)
             .first()
         )
         if not video_file:

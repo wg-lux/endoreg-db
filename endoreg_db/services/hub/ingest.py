@@ -26,6 +26,10 @@ from endoreg_db.models import (
 )
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.services.hub.audit import emit_hub_audit_event
+from endoreg_db.services.hub.cleanup import (
+    cleanup_upload_job_source,
+    reap_upload_job_sources,
+)
 from endoreg_db.services.auto_case_resolution import auto_resolve_media_case
 from endoreg_db.services.hub.deployment import (
     hub_mode_enabled as _deployment_hub_mode_enabled,
@@ -54,6 +58,17 @@ from endoreg_db.utils.paths import (
 STALE_UPLOAD_JOB_AGE = timedelta(hours=2)
 LOCK_RETRY_ATTEMPTS = 10
 logger = logging.getLogger(__name__)
+WATCHER_CLEANUP_BATCH_LIMIT = 512
+
+
+def _opportunistic_reap_watcher_sources(
+    *, limit: int = WATCHER_CLEANUP_BATCH_LIMIT
+) -> int:
+    try:
+        return reap_upload_job_sources(limit=limit)
+    except Exception as exc:
+        logger.warning("Watcher source cleanup preflight failed: %s", exc)
+        return 0
 
 
 class UploadProvenance(TypedDict, total=False):
@@ -1273,6 +1288,8 @@ def process_watcher_file(
     if not watched_path.exists():
         raise FileNotFoundError(f"Watcher file not found: {watched_path}")
 
+    _opportunistic_reap_watcher_sources()
+
     source_center = center or resolve_default_center()
     if source_center is None:
         raise ObjectDoesNotExist("No center is configured for watcher ingestion")
@@ -1357,6 +1374,7 @@ def process_watcher_file(
 
         upload_job.save(update_fields=["processing_provenance", "updated_at"])
         upload_job.mark_completed(sensitive_meta=sensitive_meta)
+        cleanup_upload_job_source(upload_job)
         return upload_job
     except Exception as exc:
         logger.exception("Watcher processing failed for %s: %s", watched_path, exc)
@@ -1389,6 +1407,8 @@ def process_preanonymized_watcher_file(
     watched_path = Path(file_path)
     if not watched_path.exists():
         raise FileNotFoundError(f"Watcher file not found: {watched_path}")
+
+    _opportunistic_reap_watcher_sources()
 
     suffix = watched_path.suffix.lower()
     if suffix == ".pdf":
@@ -1489,6 +1509,7 @@ def process_preanonymized_watcher_file(
             safe_unlink_file(sidecar_path, missing_ok=True)
         upload_job.save(update_fields=["processing_provenance", "updated_at"])
         upload_job.mark_completed(sensitive_meta=sensitive_meta)
+        cleanup_upload_job_source(upload_job)
         return upload_job
     except Exception as exc:
         logger.exception(

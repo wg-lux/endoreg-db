@@ -1,7 +1,9 @@
 import numpy as np
 import pytest
+from types import SimpleNamespace
 
 import endoreg_db.models.media.video.video_file_anonymize as anonymize_module
+import endoreg_db.models as endoreg_models
 from endoreg_db.models import Center, Frame, VideoFile
 
 
@@ -60,3 +62,57 @@ def test_create_anonymized_frame_files_masks_outside_frames(tmp_path, monkeypatc
 
     assert inside_image is not None and inside_image.mean() > 0
     assert outside_image is not None and np.all(outside_image == 5)
+
+
+def test_cleanup_raw_assets_deletes_raw_paths_and_updates_state(tmp_path, monkeypatch):
+    raw_file_path = tmp_path / "raw.mp4"
+    raw_file_path.write_bytes(b"raw-video")
+
+    raw_frame_dir = tmp_path / "frames"
+    raw_frame_dir.mkdir(parents=True, exist_ok=True)
+    (raw_frame_dir / "frame_0000001.jpg").write_bytes(b"frame")
+
+    class _FakeState:
+        def __init__(self):
+            self.frames_extracted = True
+            self.saved_update_fields = None
+
+        def save(self, update_fields=None):
+            self.saved_update_fields = update_fields
+
+    fake_state = _FakeState()
+    fake_video = SimpleNamespace(
+        state=fake_state,
+        get_or_create_state=lambda: fake_state,
+    )
+
+    class _FakeQuerySet:
+        def __init__(self, result):
+            self.result = result
+            self.filter_kwargs = None
+
+        def select_related(self, *_args, **_kwargs):
+            return self
+
+        def filter(self, **kwargs):
+            self.filter_kwargs = kwargs
+            return self
+
+        def first(self):
+            return self.result
+
+    fake_queryset = _FakeQuerySet(fake_video)
+    fake_video_model = SimpleNamespace(objects=fake_queryset)
+    monkeypatch.setattr(endoreg_models, "VideoFile", fake_video_model)
+
+    anonymize_module._cleanup_raw_assets(
+        video_hash="hash-cleanup",
+        raw_file_path=raw_file_path,
+        raw_frame_dir=raw_frame_dir,
+    )
+
+    assert not raw_file_path.exists()
+    assert not raw_frame_dir.exists()
+    assert fake_queryset.filter_kwargs == {"video_hash": "hash-cleanup"}
+    assert fake_state.frames_extracted is False
+    assert fake_state.saved_update_fields == ["frames_extracted"]
