@@ -207,6 +207,37 @@ def atomic_move_file(
     return destination
 
 
+def atomic_move_path(
+    *,
+    source: Path,
+    destination: Path,
+    dir_mode: int | None = None,
+) -> Path:
+    source = Path(source)
+    destination = Path(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if dir_mode is not None:
+        os.chmod(destination.parent, dir_mode)
+    try:
+        os.replace(source, destination)
+    except Exception as exc:
+        _emit_file_operation_event(
+            operation="move_path",
+            status="error",
+            source=source,
+            destination=destination,
+            detail=str(exc),
+        )
+        raise
+    _emit_file_operation_event(
+        operation="move_path",
+        status="ok",
+        source=source,
+        destination=destination,
+    )
+    return destination
+
+
 def atomic_write_file(
     *,
     destination: Path,
@@ -306,3 +337,32 @@ def ensure_directory(
         destination=target,
     )
     return target
+
+
+def safe_rmtree(path: Path, *, missing_ok: bool = True) -> None:
+    target = Path(path)
+    if not target.exists():
+        if missing_ok:
+            return
+        _emit_file_operation_event(
+            operation="rmtree",
+            status="error",
+            source=target,
+            detail="missing path",
+        )
+        raise FileNotFoundError(target)
+    try:
+        shutil.rmtree(target)
+    except Exception as exc:
+        _emit_file_operation_event(
+            operation="rmtree",
+            status="error",
+            source=target,
+            detail=str(exc),
+        )
+        raise
+    _emit_file_operation_event(
+        operation="rmtree",
+        status="ok",
+        source=target,
+    )

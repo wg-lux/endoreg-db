@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
-import os
 from enum import StrEnum
+
+from endoreg_db.config.env import get_endoreg_storage_profile_name
 
 logger = logging.getLogger(__name__)
 
@@ -58,8 +59,10 @@ PROFILE_POLICY_MAP: dict[StorageProfile, dict[PayloadKind, StoragePolicy]] = {
 
 
 def _bool_env(name: str) -> bool | None:
-    raw = os.environ.get(name)
-    if raw is None:
+    from endoreg_db.config.env import env_str
+
+    raw = env_str(name, "")
+    if raw == "":
         return None
     normalized = raw.strip().lower()
     if normalized in {"1", "true", "yes", "on"}:
@@ -97,7 +100,7 @@ def infer_storage_profile_from_legacy_env() -> StorageProfile:
 
 
 def get_storage_profile() -> StorageProfile:
-    explicit_profile = os.environ.get("ENDOREG_STORAGE_PROFILE", "").strip()
+    explicit_profile = get_endoreg_storage_profile_name()
     if explicit_profile:
         return StorageProfile(explicit_profile)
     return infer_storage_profile_from_legacy_env()

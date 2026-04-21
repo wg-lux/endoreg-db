@@ -3,10 +3,11 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
+from typing import IO, Any
 
 import pytest
 from django.test import TestCase
-from typing import IO, Any
+
 from endoreg_db.utils.paths import protected_media_root
 
 
@@ -62,6 +63,60 @@ class LocalStubFieldFile:
                 yield chunk
 
 
+def attach_video_stream_methods(fake_video_obj, view_module) -> None:
+    def get_stream_relative_path(file_type: str) -> str | None:
+        attr_name = (
+            "processed_streamable_relative_path"
+            if file_type == "processed"
+            else "raw_streamable_relative_path"
+        )
+        return getattr(fake_video_obj, attr_name, None)
+
+    def can_offload_stream_with_nginx(file_type: str) -> bool:
+        return (
+            getattr(fake_video_obj, "storage_mode", None)
+            == view_module.VideoFile.StorageMode.FS_ENCRYPTED_STREAMABLE
+            and get_stream_relative_path(file_type) is not None
+        )
+
+    def resolve_video_stream_source(
+        file_type: str,
+        *,
+        materialize_if_missing: bool = False,  # noqa: ARG001
+    ):
+        if file_type == "processed":
+            field_file = getattr(fake_video_obj, "processed_file", None)
+            fallback = getattr(fake_video_obj, "get_processed_file_path", None)
+        else:
+            field_file = getattr(fake_video_obj, "active_raw_file", None)
+            fallback = getattr(fake_video_obj, "get_raw_file_path", None)
+        if field_file is None or not getattr(field_file, "name", None):
+            raise FileNotFoundError(f"No {file_type} file")
+
+        stream_relative_path = get_stream_relative_path(file_type)
+        if stream_relative_path:
+            stream_path = protected_media_root() / stream_relative_path
+            if stream_path.exists():
+                return field_file, stream_path
+
+        field_path = getattr(field_file, "path", None)
+        if field_path and Path(field_path).exists():
+            return field_file, Path(field_path)
+
+        if callable(fallback):
+            fallback_path = fallback()
+            if fallback_path is not None and Path(fallback_path).exists():
+                return field_file, Path(fallback_path)
+
+        if getattr(field_file, "storage", None) is not None:
+            return field_file, None
+        raise FileNotFoundError(f"{file_type.title()} video file is not available")
+
+    fake_video_obj.get_stream_relative_path = get_stream_relative_path
+    fake_video_obj.can_offload_stream_with_nginx = can_offload_stream_with_nginx
+    fake_video_obj.resolve_video_stream_source = resolve_video_stream_source
+
+
 class VideoStreamViewTests(TestCase):
     def test_video_stream_nginx_headers(self):
         from endoreg_db.views.video import video_stream as view_module
@@ -92,12 +147,16 @@ class VideoStreamViewTests(TestCase):
                 active_raw_file=fake_file_field,
                 processed_file=fake_file_field,
                 storage_mode=view_module.VideoFile.StorageMode.FS_ENCRYPTED_STREAMABLE,
-                streamable_relative_path="streamable_videos/raw/test.mp4",
+                raw_streamable_relative_path="streamable_videos/raw/test.mp4",
                 processed_streamable_relative_path="streamable_videos/processed/test.mp4",
             )
+            attach_video_stream_methods(fake_video_obj, view_module)
 
             monkeypatches.setenv("SERVE_WITH_NGINX", "true")
-            monkeypatches.setenv("FRONTEND_ORIGIN", "http://frontend.test")
+            monkeypatches.setenv(
+                "DJANGO_CORS_ALLOWED_ORIGINS",
+                "http://frontend.test",
+            )
             monkeypatches.setenv("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
             monkeypatches.setattr(
                 view_module.VideoFile.objects, "get", lambda **kwargs: fake_video_obj
@@ -131,6 +190,7 @@ class VideoStreamViewTests(TestCase):
             processed_file=fake_field,
             storage_mode=view_module.VideoFile.StorageMode.APP_ENCRYPTED,
         )
+        attach_video_stream_methods(fake_video_obj, view_module)
 
         monkeypatches = pytest.MonkeyPatch()
         try:
@@ -171,6 +231,7 @@ class VideoStreamViewTests(TestCase):
                 processed_file=fake_file_field,
                 storage_mode=view_module.VideoFile.StorageMode.FS_ENCRYPTED_STREAMABLE,
             )
+            attach_video_stream_methods(fake_video_obj, view_module)
 
             monkeypatches.setenv("SERVE_WITH_NGINX", "true")
             monkeypatches.setattr(
@@ -210,9 +271,10 @@ class VideoStreamViewTests(TestCase):
                 active_raw_file=fake_file_field,
                 processed_file=fake_file_field,
                 storage_mode=view_module.VideoFile.StorageMode.APP_ENCRYPTED,
-                streamable_relative_path="streamable_videos/raw/test.mp4",
+                raw_streamable_relative_path="streamable_videos/raw/test.mp4",
                 processed_streamable_relative_path="streamable_videos/processed/test.mp4",
             )
+            attach_video_stream_methods(fake_video_obj, view_module)
 
             monkeypatches.setenv("SERVE_WITH_NGINX", "true")
             monkeypatches.setattr(
@@ -238,9 +300,10 @@ class VideoStreamViewTests(TestCase):
             active_raw_file=fake_field,
             processed_file=fake_field,
             storage_mode=view_module.VideoFile.StorageMode.FS_ENCRYPTED_STREAMABLE,
-            streamable_relative_path="streamable_videos/raw/missing.mp4",
+            raw_streamable_relative_path="streamable_videos/raw/missing.mp4",
             processed_streamable_relative_path="streamable_videos/processed/missing.mp4",
         )
+        attach_video_stream_methods(fake_video_obj, view_module)
 
         monkeypatches = pytest.MonkeyPatch()
         try:
@@ -272,6 +335,7 @@ class VideoStreamViewTests(TestCase):
             get_raw_file_path=lambda: fallback_path,
             get_processed_file_path=lambda: fallback_path,
         )
+        attach_video_stream_methods(fake_video_obj, view_module)
 
         monkeypatches = pytest.MonkeyPatch()
         try:
@@ -279,12 +343,13 @@ class VideoStreamViewTests(TestCase):
                 view_module.VideoFile.objects, "get", lambda **kwargs: fake_video_obj
             )
             response = self.client.get("/api/media/videos/123/stream/?type=raw")
+            body = b"".join(response.streaming_content)
         finally:
             monkeypatches.undo()
             fallback_path.unlink(missing_ok=True)
 
         assert response.status_code == 200
-        assert b"".join(response.streaming_content) == payload
+        assert body == payload
 
     def test_video_stream_recovers_processed_path_when_field_name_is_stale(self):
         from endoreg_db.views.video import video_stream as view_module
@@ -307,6 +372,7 @@ class VideoStreamViewTests(TestCase):
             get_raw_file_path=lambda: None,
             get_processed_file_path=lambda: fallback_path,
         )
+        attach_video_stream_methods(fake_video_obj, view_module)
 
         monkeypatches = pytest.MonkeyPatch()
         try:
@@ -314,12 +380,13 @@ class VideoStreamViewTests(TestCase):
                 view_module.VideoFile.objects, "get", lambda **kwargs: fake_video_obj
             )
             response = self.client.get("/api/media/videos/123/stream/?type=processed")
+            body = b"".join(response.streaming_content)
         finally:
             monkeypatches.undo()
             fallback_path.unlink(missing_ok=True)
 
         assert response.status_code == 200
-        assert b"".join(response.streaming_content) == payload
+        assert body == payload
 
     def test_video_stream_uses_configured_protected_media_root_for_streamable_paths(
         self,
@@ -335,9 +402,10 @@ class VideoStreamViewTests(TestCase):
             active_raw_file=fake_file_field,
             processed_file=fake_file_field,
             storage_mode=view_module.VideoFile.StorageMode.FS_ENCRYPTED_STREAMABLE,
-            streamable_relative_path="streamable_videos/raw/test.mp4",
+            raw_streamable_relative_path="streamable_videos/raw/test.mp4",
             processed_streamable_relative_path="streamable_videos/processed/test.mp4",
         )
+        attach_video_stream_methods(fake_video_obj, view_module)
 
         storage_dir = protected_media_root().resolve()
         protected_media_root_path = storage_dir.parent / "protected_media_mount"

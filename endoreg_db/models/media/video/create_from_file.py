@@ -36,6 +36,19 @@ def _verify_completed_file(path: Path) -> None:
 def _promote_atomic(temp_path: Path, final_path: Path) -> None:
     temp_path.parent.mkdir(parents=True, exist_ok=True)
     final_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if not temp_path.exists():
+        if final_path.exists():
+            logger.debug(
+                "Temp file missing, but final file exists. Assuming atomic move already occurred."
+            )
+            return
+        else:
+            # If neither exists, then we genuinely have a failure.
+            raise RuntimeError(
+                f"Expected output file does not exist at {temp_path} and was not found at {final_path}"
+            )
+
     _verify_completed_file(temp_path)
     atomic_move_file(source=temp_path, destination=final_path)
     logger.debug("Promoted file atomically: %s -> %s", temp_path, final_path)

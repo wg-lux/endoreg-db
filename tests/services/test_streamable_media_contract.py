@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 from pathlib import Path
 from typing import cast
 
@@ -16,6 +17,35 @@ def test_streamable_materialization_never_moves_canonical_source() -> None:
     assert "atomic_write_file(" in source
     assert "atomic_move_file(" not in source
     assert 'open(target_path, "wb")' not in source
+
+
+def test_streamable_processed_root_constant_uses_processed_helper(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    protected_root = tmp_path / "protected"
+    storage_root = protected_root / "storage"
+    data_root = tmp_path / "public"
+    processed_root = storage_root / "streamable_videos" / "processed-custom"
+    raw_root = storage_root / "streamable_videos" / "raw-custom"
+
+    monkeypatch.setenv("LX_ANNOTATE_ENCRYPTED_DATA_DIR", str(protected_root))
+    monkeypatch.setenv("STORAGE_DIR", str(storage_root))
+    monkeypatch.setenv("DATA_DIR", str(data_root))
+    monkeypatch.setenv("PROTECTED_MEDIA_ROOT", str(storage_root))
+    monkeypatch.setenv("LX_ANNOTATE_STREAMABLE_VIDEO_RAW_ROOT", str(raw_root))
+    monkeypatch.setenv(
+        "LX_ANNOTATE_STREAMABLE_VIDEO_PROCESSED_ROOT",
+        str(processed_root),
+    )
+
+    reloaded = importlib.reload(streamable_media)
+
+    assert reloaded.STREAMABLE_RAW_VIDEO_ROOT == raw_root.resolve()
+    assert reloaded.STREAMABLE_PROCESSED_VIDEO_ROOT == processed_root.resolve()
+    assert (
+        reloaded.STREAMABLE_PROCESSED_VIDEO_ROOT != reloaded.STREAMABLE_RAW_VIDEO_ROOT
+    )
 
 
 class FakeEncryptedStorage:
@@ -61,7 +91,7 @@ class StubVideo:
         self.processed_video_hash = "processedhash"
         self.raw_file = raw_file
         self.processed_file = processed_file
-        self.streamable_relative_path = ""
+        self.raw_streamable_relative_path = ""
         self.processed_streamable_relative_path = ""
         self.storage_mode = self.StorageMode.APP_ENCRYPTED
 
@@ -116,7 +146,7 @@ def test_sync_video_streamable_artifacts_materializes_plaintext_from_encrypted_s
 
     # ✅ Correct update fields
     assert update_fields == [
-        "streamable_relative_path",
+        "raw_streamable_relative_path",
         "processed_streamable_relative_path",
         "storage_mode",
     ]
@@ -125,7 +155,7 @@ def test_sync_video_streamable_artifacts_materializes_plaintext_from_encrypted_s
     assert video.storage_mode == video.StorageMode.FS_ENCRYPTED_STREAMABLE
 
     # ✅ Resolve absolute paths via STORAGE_DIR (correct contract!)
-    raw_target = paths_module.STORAGE_DIR / video.streamable_relative_path
+    raw_target = paths_module.STORAGE_DIR / video.raw_streamable_relative_path
     processed_target = (
         paths_module.STORAGE_DIR / video.processed_streamable_relative_path
     )
@@ -142,7 +172,7 @@ def test_sync_video_streamable_artifacts_clears_paths_when_not_streamable(
         processed_file=StubFieldFile(FakeEncryptedStorage(b"y"), "videos/proc.mp4"),
     )
 
-    video.streamable_relative_path = "foo/bar.mp4"
+    video.raw_streamable_relative_path = "foo/bar.mp4"
     video.processed_streamable_relative_path = "baz/qux.mp4"
 
     monkeypatch.setattr(
@@ -155,10 +185,10 @@ def test_sync_video_streamable_artifacts_clears_paths_when_not_streamable(
         cast(VideoFile, video)
     )
 
-    assert "streamable_relative_path" in update_fields
+    assert "raw_streamable_relative_path" in update_fields
     assert "processed_streamable_relative_path" in update_fields
 
-    assert video.streamable_relative_path == ""
+    assert video.raw_streamable_relative_path == ""
     assert video.processed_streamable_relative_path == ""
     assert video.storage_mode == video.StorageMode.APP_ENCRYPTED
 

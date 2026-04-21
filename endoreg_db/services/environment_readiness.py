@@ -1,16 +1,20 @@
 from __future__ import annotations
-
 import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from endoreg_db.config.env import (
+    get_media_url,
+    get_protected_media_root,
+    get_protected_media_url,
+)
 from endoreg_db.services.streamable_media import (
     STREAMABLE_PROCESSED_VIDEO_ROOT,
     STREAMABLE_RAW_VIDEO_ROOT,
     STREAMABLE_VIDEO_ROOT,
 )
 from endoreg_db.utils.paths import (
-    IO_DIR,
+    DATA_DIR,
     PROTECTED_DATA_ROOT,
     STORAGE_DIR,
     WATCHER_PREANONYMIZED_DROP_DIR,
@@ -74,14 +78,9 @@ def _check_directory_access(path: Path, *, code_prefix: str) -> list[ReadinessIs
 
 def _check_protected_media_contract() -> list[ReadinessIssue]:
     issues: list[ReadinessIssue] = []
-    protected_media_url = (
-        os.environ.get("NGINX_PROTECTED_MEDIA_URL", "/protected_media/").strip()
-        or "/protected_media/"
-    )
-    media_url = os.environ.get("MEDIA_URL", protected_media_url).strip()
-    protected_media_root = Path(
-        os.environ.get("PROTECTED_MEDIA_ROOT", str(STORAGE_DIR))
-    ).resolve()
+    protected_media_url = get_protected_media_url()
+    media_url = get_media_url()
+    protected_media_root = get_protected_media_root().resolve()
 
     if protected_media_url != "/protected_media/":
         issues.append(
@@ -140,8 +139,8 @@ def check_environment_readiness() -> list[ReadinessIssue]:
     issues.extend(
         _check_directory_access(PROTECTED_DATA_ROOT, code_prefix="protected_root")
     )
+    issues.extend(_check_directory_access(DATA_DIR, code_prefix="data_root"))
     issues.extend(_check_directory_access(STORAGE_DIR, code_prefix="storage_root"))
-    issues.extend(_check_directory_access(IO_DIR, code_prefix="io_root"))
     issues.extend(
         _check_directory_access(
             WATCHER_VIDEO_DROP_DIR, code_prefix="watcher_video_drop"

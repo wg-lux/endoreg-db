@@ -4,6 +4,15 @@ import json
 from pathlib import Path
 import shutil
 
+from endoreg_db.config.env import (
+    DATA_DIR_ENV,
+    DEFAULT_DJANGO_SETTINGS_MODULE,
+    PROTECTED_MEDIA_ROOT_ENV,
+    PROTECTED_ROOT_ENV,
+    STORAGE_DIR_ENV,
+    build_protected_runtime_env,
+)
+
 
 # --- Constants ---
 DEFAULT_DB_PASSWORD = "changeme_in_production" # Placeholder password
@@ -27,6 +36,11 @@ working_dir = Path(working_dir_str)
 conf_dir_rel = nix_vars.get("CONF_DIR", "conf")
 conf_dir = (working_dir / conf_dir_rel).resolve()
 db_pwd_file = conf_dir / "db_pwd"
+protected_runtime_env = build_protected_runtime_env(
+    default_protected_root=working_dir / "data",
+    base_dir=working_dir,
+    source=nix_vars,
+)
 
 # Update nix_vars with resolved absolute paths for consistency if needed elsewhere
 nix_vars["WORKING_DIR"] = str(working_dir)
@@ -89,6 +103,11 @@ if target.exists():
 # Process and update entries
 updated_lines = []
 django_module_from_nix = nix_vars.get("DJANGO_MODULE")
+default_django_settings_module = (
+    f"{django_module_from_nix}.settings_dev"
+    if django_module_from_nix
+    else DEFAULT_DJANGO_SETTINGS_MODULE
+)
 
 for line in lines:
     stripped_line = line.strip()
@@ -139,11 +158,17 @@ try:
             f.write(f'\nDJANGO_SALT={SALT}') # No quotes
             print("Added DJANGO_SALT to .env")
         
-        # Add Storage_DIR if missing
-        if "STORAGE_DIR" not in found_keys:
-            storage_dir = nix_vars.get("STORAGE_DIR", str(working_dir / "storage"))
-            f.write(f'\nSTORAGE_DIR={storage_dir}')
-            print("Added STORAGE_DIR to .env")
+        # Add canonical runtime path keys if missing. Existing values are
+        # intentionally preserved so env_setup.py never rewrites deployment paths.
+        for key in (
+            PROTECTED_ROOT_ENV,
+            STORAGE_DIR_ENV,
+            DATA_DIR_ENV,
+            PROTECTED_MEDIA_ROOT_ENV,
+        ):
+            if key not in found_keys:
+                f.write(f"\n{key}={protected_runtime_env[key]}")
+                print(f"Added {key} to .env")
 
         # Add paths and config from nix_vars if missing
         # Ensure paths are NOT quoted
@@ -160,22 +185,25 @@ try:
             "VIDEO_ALLOW_FPS_FALLBACK": "True",
             "VIDEO_DEFAULT_FPS": "50",
         }
-        for key, value in vars_to_add.items():
-            if value is not None and key not in found_keys:
-                f.write(f'\n{key}={value}') # No quotes
+        for key, env_value in vars_to_add.items():
+            if env_value is not None and key not in found_keys:
+                f.write(f'\n{key}={env_value}') # No quotes
                 print(f"Added {key} to .env")
 
         # Add Django settings module variants if missing and module name is known
         if django_module_from_nix:
             settings_variants = {
-                "DJANGO_SETTINGS_MODULE": f"{django_module_from_nix}.settings_dev",
+                "DJANGO_SETTINGS_MODULE": default_django_settings_module,
                 "DJANGO_SETTINGS_MODULE_PRODUCTION": f"{django_module_from_nix}.settings_prod",
-                "DJANGO_SETTINGS_MODULE_DEVELOPMENT": f"{django_module_from_nix}.settings_dev",
+                "DJANGO_SETTINGS_MODULE_DEVELOPMENT": default_django_settings_module,
             }
             for key, value in settings_variants.items():
                 if key not in found_keys:
                     f.write(f'\n{key}={value}') # No quotes
                     print(f"Added {key} to .env")
+        elif "DJANGO_SETTINGS_MODULE" not in found_keys:
+            f.write(f"\nDJANGO_SETTINGS_MODULE={default_django_settings_module}")
+            print("Added DJANGO_SETTINGS_MODULE to .env")
 
         # Add other defaults if missing
         default_values = {

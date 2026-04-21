@@ -308,18 +308,14 @@ class ApplicationSettingsEndpointTests(TestCase):
 
         with (
             TemporaryDirectory() as storage_dir,
-            TemporaryDirectory() as io_dir,
             TemporaryDirectory() as target_dir,
         ):
             storage_path = Path(storage_dir)
-            io_path = Path(io_dir)
             target_path = Path(target_dir)
             (storage_path / "alpha.txt").write_text("alpha", encoding="utf-8")
-            (io_path / "beta.txt").write_text("beta", encoding="utf-8")
-
             original_sources = view_module._required_backup_sources
             try:
-                view_module._required_backup_sources = lambda: [storage_path, io_path]
+                view_module._required_backup_sources = lambda: [storage_path]
                 response = self.client.post(
                     "/api/settings/application/backup/",
                     data={"target_path": str(target_path)},
@@ -335,9 +331,6 @@ class ApplicationSettingsEndpointTests(TestCase):
             assert (backup_root / "storage" / "alpha.txt").read_text(
                 encoding="utf-8"
             ) == "alpha"
-            assert (backup_root / "io" / "beta.txt").read_text(
-                encoding="utf-8"
-            ) == "beta"
             assert (backup_root / "manifest.json").exists()
 
     def test_application_settings_backup_requires_absolute_target(self):

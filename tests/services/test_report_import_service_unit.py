@@ -102,8 +102,8 @@ class TestReportImportServiceUnit(unittest.TestCase):
             ctx.sensitive_path = sensitive_path
 
             with patch(
-                "endoreg_db.import_files.report_import_service.IMPORT_REPORT_DIR",
-                import_dir,
+                "endoreg_db.import_files.report_import_service._import_report_dir",
+                return_value=import_dir,
             ):
                 service._cleanup_duplicate_staging(ctx)
 

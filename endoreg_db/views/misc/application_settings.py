@@ -34,7 +34,7 @@ from endoreg_db.utils.defaults.set_default_center import (
     get_application_settings,
     update_application_defaults,
 )
-from endoreg_db.utils.paths import EXPORT_DIR, IO_DIR, PROTECTED_DATA_ROOT, STORAGE_DIR
+from endoreg_db.utils.paths import EXPORT_DIR, PROTECTED_DATA_ROOT, STORAGE_DIR
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 
@@ -80,7 +80,7 @@ _MODEL_TRAINING_RUNS_LOCK = threading.Lock()
 
 def _required_backup_sources() -> list[Path]:
     sources: list[Path] = []
-    for path in (PROTECTED_DATA_ROOT, STORAGE_DIR, IO_DIR):
+    for path in (PROTECTED_DATA_ROOT, STORAGE_DIR):
         if path not in sources:
             sources.append(path)
     return sources
@@ -95,8 +95,6 @@ def _backup_source_label(index: int, path: Path) -> str:
         return "protected_root"
     if path == STORAGE_DIR:
         return "storage"
-    if path == IO_DIR:
-        return "io"
     if index == 0:
         return "storage"
     if index == 1:

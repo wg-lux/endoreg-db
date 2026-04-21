@@ -2,7 +2,8 @@
 Centralized environment configuration for EndoReg-DB.
 
 This module is the single place to read environment variables and .env files.
-It avoids loading .env during pytest, and provides typed helpers.
+It avoids loading .env during pytest, and provides typed helpers plus the
+runtime-setting defaults consumed by ``config/settings/base.py``.
 No Django imports here to prevent early settings configuration.
 """
 
@@ -11,64 +12,180 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Mapping, MutableMapping, Optional
 
-# Detect pytest early to avoid loading .env in test runs
-IS_PYTEST = bool(os.environ.get("PYTEST_CURRENT_TEST")) or any(
-    "pytest" in arg for arg in sys.argv
+
+DJANGO_SETTINGS_MODULE_ENV = "DJANGO_SETTINGS_MODULE"
+PROTECTED_ROOT_ENV = "LX_ANNOTATE_ENCRYPTED_DATA_DIR"
+STORAGE_DIR_ENV = "STORAGE_DIR"
+DATA_DIR_ENV = "DATA_DIR"
+PROTECTED_MEDIA_ROOT_ENV = "PROTECTED_MEDIA_ROOT"
+DEFAULT_DJANGO_SETTINGS_MODULE = "endoreg_db.config.settings.dev"
+DEFAULT_TIME_ZONE = "Europe/Berlin"
+DEFAULT_STATIC_URL = "/static/"
+DEFAULT_PROTECTED_MEDIA_URL = "/protected_media/"
+DEFAULT_CACHE_LOCATION = "endoreg-default-cache"
+DEFAULT_CACHE_TIMEOUT_SECONDS = 60 * 30
+DEFAULT_DRF_THROTTLE_USER = "100/hour"
+DEFAULT_DRF_THROTTLE_ANON = "20/hour"
+DEFAULT_FFMPEG_TRANSCODE_TIMEOUT_SECONDS = 3600
+DEFAULT_WATCHER_POLL_INTERVAL_SECONDS = 5.0
+DEFAULT_WATCHER_STABLE_AFTER_SECONDS = 10.0
+DEFAULT_VIDEO_POST_VALIDATION_JOB_MAX_WORKERS = 2
+DEFAULT_VIDEO_POST_VALIDATION_JOB_MODE = "celery"
+ENDOREG_DEPLOYMENT_ROLE_VALUES = (
+    "standalone",
+    "site_node",
+    "central_hub",
 )
+
 IS_STATIC_ANALYSIS = any("mypy" in arg for arg in sys.argv)
 
 # Compute repository BASE_DIR (repo root). This file is endoreg_db/config/env.py.
 BASE_DIR = Path(__file__).resolve().parents[2]
 TEST_PROTECTED_ROOT = BASE_DIR / "data" / "tests" / "protected_runtime"
+TEST_DATA_ROOT = BASE_DIR / "data" / "tests" / "runtime"
 
 
-def _normalize_protected_runtime_paths(default_protected_root: Path) -> None:
-    # LX_ANNOTATE_ENCRYPTED_DATA_DIR is the single canonical runtime root for
-    # deployment-owned protected data. STORAGE_DIR and IO_DIR are normalized to
-    # live inside that root even if callers provide legacy or invalid values.
-    os.environ["LX_ANNOTATE_ENCRYPTED_DATA_DIR"] = str(
-        Path(
-            os.environ.get(
-                "LX_ANNOTATE_ENCRYPTED_DATA_DIR", str(default_protected_root)
-            )
-        ).resolve()
+def _resolve_candidate_path(raw_value: str | Path, *, base_dir: Path) -> Path:
+    candidate = Path(raw_value)
+    if candidate.is_absolute():
+        return candidate.resolve()
+    return (base_dir / candidate).resolve()
+
+
+def build_protected_runtime_env(
+    *,
+    default_protected_root: Path | None = None,
+    default_data_root: Path | None = None,
+    base_dir: Path | None = None,
+    source: Mapping[str, str] | MutableMapping[str, str] | None = None,
+) -> dict[str, str]:
+    resolved_base_dir = (base_dir or BASE_DIR).resolve()
+    env_source = source if source is not None else os.environ
+
+    protected_root = _resolve_candidate_path(
+        env_source.get(PROTECTED_ROOT_ENV, str(default_protected_root)),
+        base_dir=resolved_base_dir,
     )
-    protected_root = Path(os.environ["LX_ANNOTATE_ENCRYPTED_DATA_DIR"])
-
-    storage_dir = Path(os.environ.get("STORAGE_DIR", protected_root / "storage"))
-    if not storage_dir.is_absolute():
-        storage_dir = (BASE_DIR / storage_dir).resolve()
+    storage_dir = _resolve_candidate_path(
+        env_source.get(STORAGE_DIR_ENV, str(protected_root / "storage")),
+        base_dir=resolved_base_dir,
+    )
     if protected_root not in (storage_dir, *storage_dir.parents):
         storage_dir = protected_root / "storage"
-    os.environ["STORAGE_DIR"] = str(storage_dir)
 
-    io_dir = Path(os.environ.get("IO_DIR", protected_root))
-    if not io_dir.is_absolute():
-        io_dir = (BASE_DIR / io_dir).resolve()
-    if protected_root not in (io_dir, *io_dir.parents):
-        io_dir = protected_root
-    os.environ["IO_DIR"] = str(io_dir)
+    data_dir = _resolve_candidate_path(
+        env_source.get(
+            DATA_DIR_ENV, str(default_data_root or (resolved_base_dir / "data"))
+        ),
+        base_dir=resolved_base_dir,
+    )
+    protected_media_root = _resolve_candidate_path(
+        env_source.get(PROTECTED_MEDIA_ROOT_ENV, str(storage_dir)),
+        base_dir=resolved_base_dir,
+    )
+    if protected_root not in (protected_media_root, *protected_media_root.parents):
+        protected_media_root = storage_dir
+
+    return {
+        PROTECTED_ROOT_ENV: str(protected_root),
+        STORAGE_DIR_ENV: str(storage_dir),
+        DATA_DIR_ENV: str(data_dir),
+        PROTECTED_MEDIA_ROOT_ENV: str(protected_media_root),
+    }
 
 
-if IS_PYTEST or IS_STATIC_ANALYSIS:
-    _normalize_protected_runtime_paths(TEST_PROTECTED_ROOT)
+def _is_explicit_test_settings() -> bool:
+    settings_module = os.environ.get(
+        DJANGO_SETTINGS_MODULE_ENV,
+        DEFAULT_DJANGO_SETTINGS_MODULE,
+    )
+    return settings_module in {
+        "endoreg_db.config.settings.test",
+        "tests.settings_test",
+    } or settings_module.endswith(".settings.test")
 
-# Optional: load .env only when not under pytest
+
+def _default_protected_runtime_root() -> Path:
+    if _is_explicit_test_settings():
+        return TEST_PROTECTED_ROOT
+    return BASE_DIR / "data"
+
+
+def _default_data_root() -> Path:
+    if _is_explicit_test_settings():
+        return TEST_DATA_ROOT
+    return BASE_DIR / "data"
+
+
+def _normalize_protected_runtime_paths(
+    default_protected_root: Path,
+    *,
+    default_data_root: Path | None = None,
+) -> None:
+    # LX_ANNOTATE_ENCRYPTED_DATA_DIR is the single canonical runtime root for
+    # deployment-owned protected data. STORAGE_DIR is normalized to
+    # live inside that root even if callers provide legacy or invalid values.
+    os.environ.update(
+        build_protected_runtime_env(
+            default_protected_root=default_protected_root,
+            default_data_root=default_data_root,
+        )
+    )
+
+
 _DOTENV_LOADED = False
-try:
-    if not IS_PYTEST:
-        import dotenv
 
-        dotenv.load_dotenv()
-        _DOTENV_LOADED = True
-except Exception:
-    # dotenv is optional, ignore errors
-    _DOTENV_LOADED = False
+import dotenv
 
-if not IS_PYTEST and not IS_STATIC_ANALYSIS:
-    _normalize_protected_runtime_paths(BASE_DIR / "data")
+dotenv.load_dotenv()
+_DOTENV_LOADED = True
+
+if _is_explicit_test_settings():
+    test_root = (BASE_DIR / "data" / "tests").resolve()
+    configured_protected_root = _resolve_candidate_path(
+        os.environ.get(PROTECTED_ROOT_ENV, str(TEST_PROTECTED_ROOT)),
+        base_dir=BASE_DIR,
+    )
+    if test_root not in (configured_protected_root, *configured_protected_root.parents):
+        configured_protected_root = TEST_PROTECTED_ROOT.resolve()
+        os.environ[PROTECTED_ROOT_ENV] = str(configured_protected_root)
+
+    configured_storage_root = _resolve_candidate_path(
+        os.environ.get(STORAGE_DIR_ENV, str(configured_protected_root / "storage")),
+        base_dir=BASE_DIR,
+    )
+    if configured_protected_root not in (
+        configured_storage_root,
+        *configured_storage_root.parents,
+    ):
+        configured_storage_root = (configured_protected_root / "storage").resolve()
+        os.environ[STORAGE_DIR_ENV] = str(configured_storage_root)
+
+    configured_data_root = _resolve_candidate_path(
+        os.environ.get(DATA_DIR_ENV, str(TEST_DATA_ROOT)),
+        base_dir=BASE_DIR,
+    )
+    if test_root not in (configured_data_root, *configured_data_root.parents):
+        configured_data_root = TEST_DATA_ROOT.resolve()
+        os.environ[DATA_DIR_ENV] = str(configured_data_root)
+
+    configured_media_root = _resolve_candidate_path(
+        os.environ.get(PROTECTED_MEDIA_ROOT_ENV, str(configured_storage_root)),
+        base_dir=BASE_DIR,
+    )
+    if configured_protected_root not in (
+        configured_media_root,
+        *configured_media_root.parents,
+    ):
+        os.environ[PROTECTED_MEDIA_ROOT_ENV] = str(configured_storage_root)
+
+_normalize_protected_runtime_paths(
+    _default_protected_runtime_root(),
+    default_data_root=_default_data_root(),
+)
+os.environ.setdefault(DATA_DIR_ENV, str(_default_data_root().resolve()))
 
 
 def _get(key: str, default: Optional[str] = None) -> Optional[str]:
@@ -97,6 +214,16 @@ def env_int(key: str, default: int = 0) -> int:
         return default
 
 
+def env_float(key: str, default: float = 0.0) -> float:
+    val = _get(key)
+    if val is None:
+        return default
+    try:
+        return float(str(val).strip())
+    except Exception:
+        return default
+
+
 def env_path(key: str, default_relative: str) -> Path:
     """Return an absolute path. If env is relative, resolve under BASE_DIR."""
     val = _get(key)
@@ -109,6 +236,239 @@ def env_path(key: str, default_relative: str) -> Path:
     return p
 
 
+def env_list(key: str, default: str = "", *, separator: str = ",") -> list[str]:
+    raw_value = env_str(key, default)
+    return [item.strip() for item in raw_value.split(separator) if item.strip()]
+
+
+def get_asset_dir() -> Path:
+    return env_path("ASSET_DIR", "tests/assets")
+
+
+def run_video_tests_enabled() -> bool:
+    return env_bool("RUN_VIDEO_TESTS", False)
+
+
+def get_center_name(default: str = "Default Center") -> str:
+    return env_str("CENTER_NAME", default)
+
+
+def get_endoreg_deployment_role() -> str:
+    role = env_str("ENDOREG_DEPLOYMENT_ROLE", "").strip().lower()
+    if role and role not in ENDOREG_DEPLOYMENT_ROLE_VALUES:
+        raise ValueError(
+            "ENDOREG_DEPLOYMENT_ROLE must be one of: "
+            f"{', '.join(ENDOREG_DEPLOYMENT_ROLE_VALUES)}"
+        )
+    return role or "standalone"
+
+
+def get_hub_transfer_require_secure_transport() -> bool:
+    return env_bool("ENDOREG_HUB_TRANSFER_REQUIRE_SECURE_TRANSPORT", True)
+
+
+def get_hub_transfer_require_mtls(*, deployment_role: str | None = None) -> bool:
+    resolved_role = deployment_role or get_endoreg_deployment_role()
+    return env_bool(
+        "ENDOREG_HUB_TRANSFER_REQUIRE_MTLS",
+        resolved_role == "central_hub",
+    )
+
+
+def get_hub_transfer_mtls_meta_key() -> str:
+    return env_str(
+        "ENDOREG_HUB_TRANSFER_MTLS_META_KEY",
+        "HTTP_X_CLIENT_CERT_VERIFIED",
+    )
+
+
+def get_hub_transfer_mtls_meta_value() -> str:
+    return env_str(
+        "ENDOREG_HUB_TRANSFER_MTLS_META_VALUE",
+        "SUCCESS",
+    )
+
+
+def get_lookup_requirement_source() -> str:
+    return env_str("LOOKUP_REQUIREMENT_SOURCE", "dtypes")
+
+
+def get_lookup_dtypes_module_name() -> str:
+    return env_str("LOOKUP_DTYPES_MODULE_NAME", "report_template_examples")
+
+
+def get_lookup_dtypes_module_version() -> str:
+    return env_str("LOOKUP_DTYPES_MODULE_VERSION", "")
+
+
+def get_lookup_dtypes_data_root() -> str:
+    return env_str("LOOKUP_DTYPES_DATA_ROOT", "")
+
+
+def get_lookup_requirement_legacy_fallback_enabled() -> bool:
+    return env_bool("LOOKUP_REQUIREMENT_LEGACY_FALLBACK_ENABLED", False)
+
+
+def get_lx_dtypes_host_models_module() -> str:
+    return env_str("LX_DTYPES_HOST_MODELS_MODULE", "endoreg_db.models")
+
+
+def get_lx_dtypes_kb_registry() -> str:
+    return env_str("LX_DTYPES_KB_REGISTRY", "")
+
+
+def get_celery_broker_url() -> str:
+    return env_str("CELERY_BROKER_URL", "")
+
+
+def get_time_zone() -> str:
+    return env_str("TIME_ZONE", DEFAULT_TIME_ZONE)
+
+
+def get_static_url() -> str:
+    return env_str("STATIC_URL", DEFAULT_STATIC_URL)
+
+
+def get_static_root() -> Path:
+    return env_path("STATIC_ROOT", "staticfiles")
+
+
+def get_protected_media_url() -> str:
+    return env_str("NGINX_PROTECTED_MEDIA_URL", DEFAULT_PROTECTED_MEDIA_URL)
+
+
+def get_protected_media_root() -> Path:
+    runtime_env = build_protected_runtime_env()
+    default_root = runtime_env[PROTECTED_MEDIA_ROOT_ENV]
+    return env_path(PROTECTED_MEDIA_ROOT_ENV, default_root)
+
+
+def get_data_dir() -> Path:
+    runtime_env = build_protected_runtime_env()
+    default_root = runtime_env[DATA_DIR_ENV]
+    return env_path(DATA_DIR_ENV, default_root)
+
+
+def get_media_url() -> str:
+    return env_str("MEDIA_URL", get_protected_media_url())
+
+
+def get_media_root() -> Path:
+    return get_protected_media_root()
+
+
+def get_django_cors_allowed_origins() -> list[str]:
+    return env_list("DJANGO_CORS_ALLOWED_ORIGINS")
+
+
+def nginx_offload_enabled() -> bool:
+    return env_bool("SERVE_WITH_NGINX", False)
+
+
+def get_ffmpeg_transcode_timeout_seconds() -> int:
+    return env_int(
+        "FFMPEG_TRANSCODE_TIMEOUT_SECONDS",
+        DEFAULT_FFMPEG_TRANSCODE_TIMEOUT_SECONDS,
+    )
+
+
+def get_ffmpeg_env_candidates() -> list[str]:
+    return [
+        env_str("FFMPEG_EXECUTABLE", ""),
+        env_str("FFMPEG_BINARY", ""),
+        env_str("FFMPEG_PATH", ""),
+    ]
+
+
+def get_endoreg_storage_profile_name() -> str:
+    return env_str("ENDOREG_STORAGE_PROFILE", "").strip()
+
+
+def get_watcher_poll_interval_seconds() -> float:
+    return env_float(
+        "WATCHER_POLL_INTERVAL_SECONDS",
+        DEFAULT_WATCHER_POLL_INTERVAL_SECONDS,
+    )
+
+
+def get_watcher_stable_after_seconds() -> float:
+    return env_float(
+        "WATCHER_STABLE_AFTER_SECONDS",
+        DEFAULT_WATCHER_STABLE_AFTER_SECONDS,
+    )
+
+
+def reconciliation_disabled() -> bool:
+    return env_str("ENDOREG_DISABLE_RECONCILIATION", "") == "1"
+
+
+def get_report_pdf_renderer_bin() -> str:
+    return env_str("ENDOREG_REPORT_PDF_RENDERER_BIN", "").strip()
+
+
+def get_video_post_validation_job_max_workers() -> int:
+    return max(
+        1,
+        env_int(
+            "VIDEO_POST_VALIDATION_JOB_MAX_WORKERS",
+            DEFAULT_VIDEO_POST_VALIDATION_JOB_MAX_WORKERS,
+        ),
+    )
+
+
+def get_video_post_validation_job_mode() -> str:
+    mode = (
+        env_str(
+            "VIDEO_POST_VALIDATION_JOB_MODE",
+            DEFAULT_VIDEO_POST_VALIDATION_JOB_MODE,
+        )
+        .strip()
+        .lower()
+    )
+    if mode not in {"celery", "thread", "inline"}:
+        return DEFAULT_VIDEO_POST_VALIDATION_JOB_MODE
+    return mode
+
+
+def get_cache_location() -> str:
+    return env_str("CACHE_LOCATION", DEFAULT_CACHE_LOCATION)
+
+
+def get_cache_timeout_seconds() -> int:
+    return env_int("CACHE_TIMEOUT", DEFAULT_CACHE_TIMEOUT_SECONDS)
+
+
+def get_drf_throttle_user_rate() -> str:
+    return env_str("DRF_THROTTLE_USER", DEFAULT_DRF_THROTTLE_USER)
+
+
+def get_drf_throttle_anon_rate() -> str:
+    return env_str("DRF_THROTTLE_ANON", DEFAULT_DRF_THROTTLE_ANON)
+
+
+def build_default_cache_settings() -> Dict[str, Dict[str, Any]]:
+    return {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": get_cache_location(),
+            "TIMEOUT": get_cache_timeout_seconds(),
+        }
+    }
+
+
+def build_base_rest_framework_settings() -> Dict[str, Any]:
+    return {
+        "DEFAULT_THROTTLE_CLASSES": [
+            "rest_framework.throttling.UserRateThrottle",
+            "rest_framework.throttling.AnonRateThrottle",
+        ],
+        "DEFAULT_THROTTLE_RATES": {
+            "user": get_drf_throttle_user_rate(),
+            "anon": get_drf_throttle_anon_rate(),
+        },
+    }
+
+
 def snapshot() -> Dict[str, Any]:
     """Return a snapshot of relevant config for debugging/logging."""
     keys = [
@@ -117,9 +477,15 @@ def snapshot() -> Dict[str, Any]:
         "TIME_ZONE",
         # Paths
         "STORAGE_DIR",
+        "DATA_DIR",
+        "LX_ANNOTATE_ENCRYPTED_DATA_DIR",
+        "STORAGE_DIR",
+        "DATA_DIR",
+        "PROTECTED_MEDIA_ROOT",
         "ASSET_DIR",
         "STATIC_URL",
         "MEDIA_URL",
+        "NGINX_PROTECTED_MEDIA_URL",
         # Dev DB
         "DEV_DB_ENGINE",
         "DEV_DB_NAME",
@@ -130,16 +496,26 @@ def snapshot() -> Dict[str, Any]:
         # Flags
         "RUN_VIDEO_TESTS",
         "SKIP_EXPENSIVE_TESTS",
+        "ENDOREG_DEPLOYMENT_ROLE",
+        "CACHE_LOCATION",
+        "CACHE_TIMEOUT",
+        "DRF_THROTTLE_USER",
+        "DRF_THROTTLE_ANON",
     ]
     data: Dict[str, Any] = {k: os.environ.get(k) for k in keys}
     data.update(
         {
-            "IS_PYTEST": IS_PYTEST,
             "DOTENV_LOADED": _DOTENV_LOADED,
             "BASE_DIR": str(BASE_DIR),
         }
     )
     return data
+
+
+DJANGO_SETTINGS_MODULE = env_str(
+    DJANGO_SETTINGS_MODULE_ENV,
+    DEFAULT_DJANGO_SETTINGS_MODULE,
+)
 
 
 # Back-compat short aliases used by settings modules

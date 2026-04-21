@@ -53,7 +53,11 @@ def test_export_videos_prefers_processed_artifact_over_raw(tmp_path, monkeypatch
     output_dir = tmp_path / "exported"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    monkeypatch.setattr(export_module, "STORAGE_DIR", storage_dir)
+    monkeypatch.setattr(
+        export_module,
+        "resolve_existing_protected_media_path",
+        lambda name: storage_dir / name if (storage_dir / name).exists() else None,
+    )
     monkeypatch.setattr(
         export_module.VideoFile.objects,
         "filter",

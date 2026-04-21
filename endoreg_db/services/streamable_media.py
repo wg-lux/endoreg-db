@@ -5,13 +5,11 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from endoreg_db.utils.file_operations import atomic_write_file
 from endoreg_db.utils.paths import (
     protected_media_root,
     to_protected_media_relative,
     to_storage_relative,
-)
-from endoreg_db.utils.file_operations import (
-    atomic_write_file,
 )
 from endoreg_db.utils.storage_profile import (
     PayloadKind,
@@ -25,34 +23,53 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from endoreg_db.models import VideoFile
 
-STREAMABLE_VIDEO_ROOT = Path(
-    os.environ.get(
-        "LX_ANNOTATE_STREAMABLE_VIDEO_ROOT",
-        str(protected_media_root() / "streamable_videos"),
-    )
-).resolve()
-STREAMABLE_RAW_VIDEO_ROOT = Path(
-    os.environ.get(
-        "LX_ANNOTATE_STREAMABLE_VIDEO_RAW_ROOT",
-        str(STREAMABLE_VIDEO_ROOT / "raw"),
-    )
-).resolve()
-STREAMABLE_PROCESSED_VIDEO_ROOT = Path(
-    os.environ.get(
-        "LX_ANNOTATE_STREAMABLE_VIDEO_PROCESSED_ROOT",
-        str(STREAMABLE_VIDEO_ROOT / "processed"),
-    )
-).resolve()
+
+def _streamable_video_root() -> Path:
+    return Path(
+        os.environ.get(
+            "LX_ANNOTATE_STREAMABLE_VIDEO_ROOT",
+            str(protected_media_root() / "streamable_videos"),
+        )
+    ).resolve()
+
+
+def _streamable_raw_video_root() -> Path:
+    return Path(
+        os.environ.get(
+            "LX_ANNOTATE_STREAMABLE_VIDEO_RAW_ROOT",
+            str(_streamable_video_root() / "raw"),
+        )
+    ).resolve()
+
+
+def _streamable_processed_video_root() -> Path:
+    return Path(
+        os.environ.get(
+            "LX_ANNOTATE_STREAMABLE_VIDEO_PROCESSED_ROOT",
+            str(_streamable_video_root() / "processed"),
+        )
+    ).resolve()
+
+
+STREAMABLE_VIDEO_ROOT = _streamable_video_root()
+STREAMABLE_RAW_VIDEO_ROOT = _streamable_raw_video_root()
+STREAMABLE_PROCESSED_VIDEO_ROOT = _streamable_processed_video_root()
 STREAMABLE_DIRECTORY_MODE = 0o750
 STREAMABLE_FILE_MODE = 0o640
 
 
 def _streamable_relative_path(target_path: Path) -> str:
     resolved_target = Path(target_path).resolve()
+
     try:
         return to_protected_media_relative(resolved_target)
     except ValueError:
-        return to_storage_relative(resolved_target)
+        try:
+            return to_storage_relative(resolved_target)
+        except ValueError as storage_exc:
+            raise ValueError(
+                f"Could not derive streamable relative path for {resolved_target}"
+            ) from storage_exc
 
 
 def _materialize_streamable_target(video_field_file, target_path: Path) -> Path:
@@ -78,7 +95,11 @@ def _video_streamable_target(
         if processed
         else video.video_hash
     )
-    root = STREAMABLE_PROCESSED_VIDEO_ROOT if processed else STREAMABLE_RAW_VIDEO_ROOT
+    root = (
+        _streamable_processed_video_root()
+        if processed
+        else _streamable_raw_video_root()
+    )
     return root / f"{stem}{suffix}"
 
 
@@ -108,9 +129,9 @@ def sync_video_streamable_artifacts(
         relative_path = _streamable_relative_path(
             _materialize_streamable_target(video.raw_file, target_path)
         )
-        if video.streamable_relative_path != relative_path:
-            video.streamable_relative_path = relative_path
-            update_fields.append("streamable_relative_path")
+        if video.raw_streamable_relative_path != relative_path:
+            video.raw_streamable_relative_path = relative_path
+            update_fields.append("raw_streamable_relative_path")
         synced_any = True
     elif (
         include_raw
@@ -123,9 +144,9 @@ def sync_video_streamable_artifacts(
             video.pk,
             raw_storage_policy,
         )
-        if video.streamable_relative_path:
-            video.streamable_relative_path = ""
-            update_fields.append("streamable_relative_path")
+        if video.raw_streamable_relative_path:
+            video.raw_streamable_relative_path = ""
+            update_fields.append("raw_streamable_relative_path")
 
     if (
         processed_storage_policy == StoragePolicy.FS_STREAMABLE
@@ -170,9 +191,9 @@ def sync_video_streamable_artifacts(
         video.storage_mode = preferred_storage_mode
         update_fields.append("storage_mode")
     if not synced_any and preferred_storage_mode == storage_mode_cls.APP_ENCRYPTED:
-        if video.streamable_relative_path:
-            video.streamable_relative_path = ""
-            update_fields.append("streamable_relative_path")
+        if video.raw_streamable_relative_path:
+            video.raw_streamable_relative_path = ""
+            update_fields.append("raw_streamable_relative_path")
         if video.processed_streamable_relative_path:
             video.processed_streamable_relative_path = ""
             update_fields.append("processed_streamable_relative_path")

@@ -6,7 +6,7 @@ from .yaml_model_loader import load_model_data_from_yaml
 from .dates import ensure_aware_datetime, random_day_by_month_year, random_day_by_year
 
 # env
-from .env import DEBUG, DJANGO_SETTINGS_MODULE, get_env_var
+from .env import DEBUG, get_env_var
 
 # file_operations
 from .file_operations import (
@@ -91,7 +91,6 @@ __all__ = [
     "DbConfig",
     "DEBUG",
     "DJANGO_NAME_SALT",
-    "DJANGO_SETTINGS_MODULE",
     "ensure_aware_datetime",
     "get_env_var",
     "get_examiner_hash",

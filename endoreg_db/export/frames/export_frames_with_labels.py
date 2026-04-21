@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import csv
+import io
 import logging
-import shutil
-import tempfile
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TypedDict, cast, Literal
@@ -19,7 +19,19 @@ from endoreg_db.models import (
     VideoFile,
     Frame,
 )
-from endoreg_db.utils.paths import STORAGE_DIR
+from endoreg_db.utils.file_operations import (
+    atomic_copy_file,
+    atomic_move_file,
+    atomic_write_file,
+    ensure_directory,
+    safe_rmtree,
+    safe_unlink_file,
+)
+from endoreg_db.utils.paths import (
+    ensure_within_protected_media_root,
+    normalize_protected_media_relative_path,
+    resolve_existing_protected_media_path,
+)
 from endoreg_db.utils.storage import ensure_local_file
 from endoreg_db.utils.video.ffmpeg_wrapper import (
     extract_frames as ffmpeg_extract_frames,
@@ -76,7 +88,7 @@ DEFAULT_TRANSCODE_EXT = "jpg"
 
 def _resolve_video_source_path(video: VideoFile) -> Path | None:
     """
-    Prefer the on-disk path resolution used by streaming (STORAGE_DIR + FileField.name).
+    Prefer the central protected-media path resolution used by streaming.
     Fall back to storage-backed downloads (ensure_local_file) elsewhere.
     """
     try:
@@ -88,11 +100,7 @@ def _resolve_video_source_path(video: VideoFile) -> Path | None:
     if not name:
         return None
 
-    path = Path(str(name))
-    if not path.is_absolute():
-        path = STORAGE_DIR / str(name)
-
-    return path if path.exists() else None
+    return resolve_existing_protected_media_path(str(name))
 
 
 @dataclass(frozen=True, slots=True)
@@ -360,7 +368,7 @@ def export_frames_with_labels_to_csv(
         load_base_db_data()
 
     output_file = Path(output_path)
-    output_file.parent.mkdir(parents=True, exist_ok=True)
+    ensure_directory(output_file.parent)
 
     if annotations is None:
         annotations = _build_annotations_queryset()
@@ -388,17 +396,22 @@ def export_frames_with_labels_to_csv(
             overwrite=transcode_overwrite,
         )
 
-    with output_file.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=DEFAULT_FIELDNAMES)
-        writer.writeheader()
-        for annotation in annotations.iterator():
-            writer.writerow(
-                _annotation_to_row(
-                    annotation,
-                    use_frame_pk_paths=use_frame_pk_paths,
-                    frame_ext=transcode_ext,
-                )
-            )
+    rows = [
+        _annotation_to_row(
+            annotation,
+            use_frame_pk_paths=use_frame_pk_paths,
+            frame_ext=transcode_ext,
+        )
+        for annotation in annotations.iterator()
+    ]
+    csv_buffer = io.StringIO()
+    writer = csv.DictWriter(csv_buffer, fieldnames=DEFAULT_FIELDNAMES)
+    writer.writeheader()
+    writer.writerows(rows)
+    atomic_write_file(
+        destination=output_file,
+        content=[csv_buffer.getvalue().encode("utf-8")],
+    )
 
     return output_file
 
@@ -428,7 +441,7 @@ def export_frames_with_labels_to_json(
         load_base_db_data()
 
     output_file = Path(output_path)
-    output_file.parent.mkdir(parents=True, exist_ok=True)
+    ensure_directory(output_file.parent)
 
     if annotations is None:
         annotations = _build_annotations_queryset()
@@ -468,9 +481,9 @@ def export_frames_with_labels_to_json(
             )
         )
 
-    output_file.write_text(
-        json.dumps(rows, indent=2, ensure_ascii=False),
-        encoding="utf-8",
+    atomic_write_file(
+        destination=output_file,
+        content=[json.dumps(rows, indent=2, ensure_ascii=False).encode("utf-8")],
     )
 
     return output_file
@@ -512,14 +525,14 @@ def _export_media_assets(
     transcode_overwrite: bool,
     use_frame_pk_paths: bool | None,
 ) -> ExportAssetResult:
-    output_dir.mkdir(parents=True, exist_ok=True)
+    ensure_directory(output_dir)
     video_output_dir = output_dir / "videos" if export_videos else None
     frame_output_dir = output_dir / "frames" if export_frames else None
 
     if export_videos and video_output_dir:
-        video_output_dir.mkdir(parents=True, exist_ok=True)
+        ensure_directory(video_output_dir)
     if export_frames and frame_output_dir:
-        frame_output_dir.mkdir(parents=True, exist_ok=True)
+        ensure_directory(frame_output_dir)
 
     if use_frame_pk_paths is None:
         use_frame_pk_paths = transcode_frames
@@ -573,10 +586,10 @@ def _export_videos_from_annotations(
                 video_hash = video.video_hash or "unknown"
                 target_path = output_dir / f"video_{video.pk}_{video_hash}{suffix}"
                 try:
-                    shutil.copy2(source_path, target_path)
+                    atomic_copy_file(source=source_path, destination=target_path)
                     exported_count += 1
                     continue
-                except (OSError, shutil.Error) as exc:
+                except OSError as exc:
                     logger.warning(
                         "Failed to export video %s from %s: %s",
                         video.pk,
@@ -590,9 +603,12 @@ def _export_videos_from_annotations(
                 video_hash = video.video_hash or "unknown"
                 target_path = output_dir / f"video_{video.pk}_{video_hash}{suffix}"
                 try:
-                    shutil.copy2(source_path_fallback, target_path)
+                    atomic_copy_file(
+                        source=source_path_fallback,
+                        destination=target_path,
+                    )
                     exported_count += 1
-                except (OSError, shutil.Error) as exc:
+                except OSError as exc:
                     logger.warning(
                         "Failed to export video %s from %s: %s",
                         video.pk,
@@ -633,6 +649,18 @@ def _export_frames_from_annotations(
         )
         if not frame_relative_path:
             continue
+        try:
+            frame_relative_path = normalize_protected_media_relative_path(
+                frame_relative_path
+            )
+        except ValueError as exc:
+            logger.warning(
+                "Skipping frame %s with unsafe relative path %r: %s",
+                frame.pk,
+                frame_relative_path,
+                exc,
+            )
+            continue
 
         frame_key = (video.pk, frame_relative_path)
         if frame_key in copied_frames:
@@ -654,12 +682,12 @@ def _export_frames_from_annotations(
 
         target_dir = output_dir / f"video_{video.pk}"
         target_path = target_dir / frame_relative_path
-        target_path.parent.mkdir(parents=True, exist_ok=True)
+        ensure_directory(target_path.parent)
         try:
-            shutil.copy2(source_path, target_path)
+            atomic_copy_file(source=source_path, destination=target_path)
             exported_count += 1
             copied_frames.add(frame_key)
-        except (OSError, shutil.Error) as exc:
+        except OSError as exc:
             logger.warning(
                 "Failed to export frame %s from %s: %s",
                 frame.pk,
@@ -686,10 +714,11 @@ def _resolve_frame_source_path(
         if frame_dir is None:
             return None
         pk_path = frame_dir / frame_relative_path
-        if pk_path.exists():
-            return pk_path
+        resolved_pk_path = resolve_existing_protected_media_path(pk_path)
+        if resolved_pk_path is not None:
+            return resolved_pk_path
 
-    return frame.file_path
+    return resolve_existing_protected_media_path(frame.file_path)
 
 
 def transcode_videos_for_annotations(
@@ -736,8 +765,9 @@ def _transcode_video_to_frame_dir(
     frame_dir = video.get_frame_dir_path()
     if not frame_dir:
         raise ValueError(f"frame dir not available for video {video.pk}")
+    frame_dir = ensure_within_protected_media_root(frame_dir)
 
-    frame_dir.mkdir(parents=True, exist_ok=True)
+    ensure_directory(frame_dir)
 
     if frame_pks and not overwrite:
         expected_names = {_frame_pk_filename(pk, ext) for pk in frame_pks}
@@ -753,47 +783,62 @@ def _transcode_video_to_frame_dir(
         source_path = _resolve_video_source_path(video)
         if source_path is None:
             with ensure_local_file(video.active_file) as source_path_fallback:
-                source_path = source_path_fallback
-                with tempfile.TemporaryDirectory(
-                    prefix="transcode_tmp_", dir=frame_dir
-                ) as tmp:
-                    tmp_dir = Path(tmp)
-                    extracted_paths = ffmpeg_extract_frames(
-                        source_path,
-                        tmp_dir,
-                        quality=quality,
-                        ext=ext,
-                        fps=fps,
-                    )
-                    _move_extracted_frames_to_pk_names(
-                        video,
-                        extracted_paths,
-                        frame_dir,
-                        frame_pks=frame_pks,
-                        ext=ext,
-                        overwrite=overwrite,
-                    )
+                _extract_and_move_transcoded_frames(
+                    video,
+                    source_path=source_path_fallback,
+                    frame_dir=frame_dir,
+                    frame_pks=frame_pks,
+                    fps=fps,
+                    quality=quality,
+                    ext=ext,
+                    overwrite=overwrite,
+                )
                 return
 
-        with tempfile.TemporaryDirectory(prefix="transcode_tmp_", dir=frame_dir) as tmp:
-            tmp_dir = Path(tmp)
-            extracted_paths = ffmpeg_extract_frames(
-                source_path,
-                tmp_dir,
-                quality=quality,
-                ext=ext,
-                fps=fps,
-            )
-            _move_extracted_frames_to_pk_names(
-                video,
-                extracted_paths,
-                frame_dir,
-                frame_pks=frame_pks,
-                ext=ext,
-                overwrite=overwrite,
-            )
+        _extract_and_move_transcoded_frames(
+            video,
+            source_path=source_path,
+            frame_dir=frame_dir,
+            frame_pks=frame_pks,
+            fps=fps,
+            quality=quality,
+            ext=ext,
+            overwrite=overwrite,
+        )
     except (ValueError, FileNotFoundError, IOError) as exc:
         raise ValueError(f"active video path missing for {video.pk}: {exc}") from exc
+
+
+def _extract_and_move_transcoded_frames(
+    video: VideoFile,
+    *,
+    source_path: Path,
+    frame_dir: Path,
+    frame_pks: set[int] | None,
+    fps: float,
+    quality: int,
+    ext: str,
+    overwrite: bool,
+) -> None:
+    tmp_dir = ensure_directory(frame_dir / f"transcode_tmp_{uuid.uuid4().hex}")
+    try:
+        extracted_paths = ffmpeg_extract_frames(
+            source_path,
+            tmp_dir,
+            quality=quality,
+            ext=ext,
+            fps=fps,
+        )
+        _move_extracted_frames_to_pk_names(
+            video,
+            extracted_paths,
+            frame_dir,
+            frame_pks=frame_pks,
+            ext=ext,
+            overwrite=overwrite,
+        )
+    finally:
+        safe_rmtree(tmp_dir, missing_ok=True)
 
 
 def _move_extracted_frames_to_pk_names(
@@ -815,26 +860,26 @@ def _move_extracted_frames_to_pk_names(
     for extracted_path in sorted(extracted_paths):
         frame_number = _parse_extracted_frame_number(extracted_path)
         if frame_number is None:
-            extracted_path.unlink(missing_ok=True)
+            safe_unlink_file(extracted_path, missing_ok=True)
             continue
 
         frame = frames_by_number.get(frame_number)
         if frame is None:
             frame = frames_by_number.get(frame_number - 1)
         if frame is None:
-            extracted_path.unlink(missing_ok=True)
+            safe_unlink_file(extracted_path, missing_ok=True)
             continue
 
         if frame_pks is not None and frame.pk not in frame_pks:
-            extracted_path.unlink(missing_ok=True)
+            safe_unlink_file(extracted_path, missing_ok=True)
             continue
 
         target_path = frame_dir / _frame_pk_filename(frame.pk, ext)
         if target_path.exists() and not overwrite:
-            extracted_path.unlink(missing_ok=True)
+            safe_unlink_file(extracted_path, missing_ok=True)
             continue
 
-        extracted_path.replace(target_path)
+        atomic_move_file(source=extracted_path, destination=target_path)
 
 
 def _parse_extracted_frame_number(frame_path: Path) -> int | None:

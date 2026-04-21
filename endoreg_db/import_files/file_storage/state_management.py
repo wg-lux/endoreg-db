@@ -1,27 +1,36 @@
-from endoreg_db.models.state.processing_history.processing_history import (
-    ProcessingHistory,
-)
-from endoreg_db.utils.video.ffmpeg_wrapper import get_stream_info
-from endoreg_db.utils.paths import ANONYM_REPORT_DIR, ANONYM_VIDEO_DIR
-
 import logging
+import os
 from pathlib import Path
 from typing import Optional, Union
-import shutil
 
 from django.db import transaction
+
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.models.media import RawPdfFile, VideoFile
 from endoreg_db.models.state import RawPdfState, VideoState
+from endoreg_db.models.state.processing_history.processing_history import (
+    ProcessingHistory,
+)
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.file_operations import (
     atomic_move_file,
+    atomic_move_path,
+    safe_rmtree,
     safe_unlink_file,
     sha256_file,
 )
+from endoreg_db.utils.video.ffmpeg_wrapper import get_stream_info
 
 logger = logging.getLogger(__name__)
+
+
+def _processed_report_dir() -> Path:
+    return path_utils.EndoregPathsModel.from_environment().anonym_report
+
+
+def _processed_video_dir() -> Path:
+    return path_utils.EndoregPathsModel.from_environment().anonym_video
 
 
 def _verify_final_video_output(path: Path) -> None:
@@ -116,7 +125,7 @@ def finalize_report_success(
         final_path = None
     else:
         pdf_hash = getattr(instance, "pdf_hash", None) or instance.pk
-        expected_final_path = ANONYM_REPORT_DIR / f"{pdf_hash}.pdf"
+        expected_final_path = _processed_report_dir() / f"{pdf_hash}.pdf"
 
         src = Path(ctx.anonymized_path)
 
@@ -191,7 +200,7 @@ def finalize_report_success(
 
         if not same_raw and ctx.sensitive_path.exists():
             try:
-                ctx.sensitive_path.unlink()
+                safe_unlink_file(ctx.sensitive_path, missing_ok=False)
                 logger.info(
                     "Deleted temporary sensitive copy after successful import: %s",
                     ctx.sensitive_path,
@@ -252,7 +261,7 @@ def finalize_video_success(
     else:
         # Use a stable naming convention: <video_hash>.mp4
         video_hash = getattr(instance, "video_hash", None) or instance.pk
-        expected_final_path = ANONYM_VIDEO_DIR / f"{video_hash}.mp4"
+        expected_final_path = _processed_video_dir() / f"{video_hash}.mp4"
 
         src = Path(ctx.anonymized_path)
 
@@ -358,7 +367,7 @@ def finalize_video_success(
 
         if not same_raw and ctx.sensitive_path.exists():
             try:
-                ctx.sensitive_path.unlink()
+                safe_unlink_file(ctx.sensitive_path, missing_ok=False)
                 logger.info(
                     "Deleted temporary sensitive copy after successful import: %s",
                     ctx.sensitive_path,
@@ -458,11 +467,13 @@ def delete_associated_files(ctx: ImportContext) -> None:
     Only restoration of the original import file is treated as critical.
     """
 
+    _delete_video_streamable_artifacts(ctx)
+
     # --- Delete anonymized file (best-effort) ---
     if isinstance(ctx.anonymized_path, Path):
         try:
             if ctx.anonymized_path.exists():
-                ctx.anonymized_path.unlink()
+                safe_unlink_file(ctx.anonymized_path, missing_ok=False)
                 logger.info("Deleted anonymized file %s", ctx.anonymized_path)
         except Exception as e:
             logger.error(
@@ -484,7 +495,7 @@ def delete_associated_files(ctx: ImportContext) -> None:
     if isinstance(ctx.sensitive_path, Path):
         try:
             if ctx.sensitive_path.exists():
-                ctx.sensitive_path.unlink()
+                safe_unlink_file(ctx.sensitive_path, missing_ok=False)
                 logger.info("Deleted sensitive file %s", ctx.sensitive_path)
         except Exception as e:
             logger.error(
@@ -495,6 +506,40 @@ def delete_associated_files(ctx: ImportContext) -> None:
             )
         finally:
             ctx.sensitive_path = None
+
+
+def _delete_video_streamable_artifacts(ctx: ImportContext) -> None:
+    video = ctx.instance if isinstance(ctx.instance, VideoFile) else ctx.current_video
+    if not isinstance(video, VideoFile):
+        return
+
+    update_fields: list[str] = []
+    for field_name in (
+        "raw_streamable_relative_path",
+        "processed_streamable_relative_path",
+    ):
+        relative_path = getattr(video, field_name, "")
+        if not relative_path:
+            continue
+
+        artifact_path = path_utils.resolve_existing_protected_media_path(relative_path)
+        if artifact_path is not None:
+            try:
+                safe_unlink_file(artifact_path, missing_ok=False)
+                logger.info("Deleted streamable video artifact %s", artifact_path)
+            except Exception as exc:
+                logger.error(
+                    "Error when unlinking streamable video artifact %s: %s",
+                    artifact_path,
+                    exc,
+                    exc_info=True,
+                )
+
+        setattr(video, field_name, "")
+        update_fields.append(field_name)
+
+    if update_fields and video.pk:
+        video.save(update_fields=update_fields)
 
 
 def nuke_transcoding_dir(transcoding_dir: Union[str, Path, None] = None) -> bool:
@@ -526,9 +571,13 @@ def nuke_transcoding_dir(transcoding_dir: Union[str, Path, None] = None) -> bool
         for entry in transcoding_dir.iterdir():
             try:
                 if entry.is_file() or entry.is_symlink():
-                    entry.unlink()
+                    safe_unlink_file(entry, missing_ok=False)
                 elif entry.is_dir():
-                    shutil.rmtree(entry)
+                    staged_entry = entry.with_name(
+                        f"{entry.name}.cleanup.{os.getpid()}"
+                    )
+                    atomic_move_path(source=entry, destination=staged_entry)
+                    safe_rmtree(staged_entry, missing_ok=False)
             except Exception as e:
                 logger.warning(
                     "Failed to remove entry %s in transcoding dir: %s", entry, e

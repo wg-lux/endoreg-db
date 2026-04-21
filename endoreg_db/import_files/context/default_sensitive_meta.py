@@ -40,12 +40,12 @@ def default_sensitive_meta(
     center = getattr(instance, "center", None)
     if center is not None and not isinstance(center.name, str):
         try:
-            center_name = os.environ.get("DEFAULT_CENTER_NAME")
+            center_name = os.environ.get("CENTER_NAME")
             assert center_name is not None
             center.name = center_name
         except AssertionError as e:
             logger.debug(
-                f"{e}Center name is not set! You can set it in .env under DEFAULT_CENTER_NAME using default from default_sensitive_meta"
+                f"{e}Center name is not set! You can set it in .env under CENTER_NAME using default from default_sensitive_meta"
             )
             center.name = DEFAULT_CENTER_NAME
             center.get_by_name(DEFAULT_CENTER_NAME)

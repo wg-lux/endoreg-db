@@ -86,3 +86,21 @@
   fields:
     name: "snare"
     label_type: "classification"
+
+- model: endoreg_db.Label
+  fields:
+    name: "cold_snare"
+    label_type: "classification"
+
+- model: endoreg_db.Label
+  fields:
+    name: "hot_snare"
+
+- model: endoreg_db.Label
+  fields:
+    name: "uncertain"
+
+- model: endoreg_db.Label
+  field:
+    name: "skin"  
+

@@ -1,35 +1,23 @@
 """
 report Media Management View (Phase 1.2)
 
-Provides standardized REST API for report files including listing, detail retrieval,
-and streaming for the media management system.
+Provides standardized REST API for report files including listing and detail
+retrieval for the media management system.
 
-This is separate from the existing pdf.reportMediaView which handles legacy workflows.
+Dedicated report streaming is handled by ReportStreamView.
 """
 
 import logging
-import os
-from pathlib import Path
 
 from django.db.models import Q
-from django.http import Http404, HttpResponse
-from django.views.decorators.clickjacking import xframe_options_exempt
+from django.http import Http404
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models import RawPdfFile
-from endoreg_db.utils.media_urls import build_absolute_media_url, build_pdf_stream_path
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
-from endoreg_db.utils.storage import file_exists
-
-from endoreg_db.utils.storage_streaming import (
-    add_cors_headers,
-    build_partial_content_response,
-    field_file_size,
-    parse_byte_range,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +29,6 @@ class PdfMediaView(APIView):
     Endpoints:
     - GET /api/media/pdfs/ - List all reports with filtering
     - GET /api/media/pdfs/{id}/ - Get report details
-    - GET /api/media/pdfs/{id}/stream/ - Stream report file (same as detail for reports)
     - PATCH /api/media/pdfs/{id}/ - Update report metadata (future)
     - DELETE /api/media/pdfs/{id}/ - Delete report (future)
 
@@ -54,11 +41,9 @@ class PdfMediaView(APIView):
     Examples:
     - GET /api/media/pdfs/?status=done&search=exam
     - GET /api/media/pdfs/123/
-    - GET /api/media/pdfs/123/stream/
 
     Phase 1.2 Implementation:
     - List and detail views implemented
-    - report streaming functionality
     - Filtering and search functionality
     - Pagination support
     - Error handling with proper HTTP status codes
@@ -84,25 +69,20 @@ class PdfMediaView(APIView):
 
     def get(self, request, pk=None):
         """
-        Handle GET requests for report listing, detail retrieval, or streaming.
+        Handle GET requests for report listing or detail retrieval.
 
         Args:
             request: HTTP request object
             pk: Optional report ID for detail view or streaming
 
         Returns:
-            Response: JSON response with report data or streamed report bytes
+            Response: JSON response with report data
 
         Raises:
             Http404: If specific report not found
         """
         if pk is not None:
-            # Check if this is a streaming request
-            if request.path.endswith("/stream/"):
-                return self._stream_pdf(request, pk)
-            else:
-                # Detail view
-                return self._get_pdf_detail(pk)
+            return self._get_pdf_detail(pk)
         else:
             # List view
             return self._list_pdfs(request)
@@ -148,10 +128,6 @@ class PdfMediaView(APIView):
                 "is_validated": getattr(pdf.sensitive_meta, "is_verified", False)
                 if pdf.sensitive_meta
                 else False,
-                "stream_url": build_absolute_media_url(
-                    self.request,
-                    build_pdf_stream_path(pdf.pk),
-                ),
             }
 
             # Add patient metadata if available
@@ -189,77 +165,6 @@ class PdfMediaView(APIView):
                 {"error": "Failed to retrieve report details"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
-
-    @xframe_options_exempt
-    def _stream_pdf(self, request, pk: int):
-        """
-        Stream report file content for viewing/download.
-
-        Args:
-            pk: report primary key
-
-        Returns:
-            Response: streamed report file content
-
-        Raises:
-            Http404: If report not found or file cannot be accessed
-        """
-        try:
-            # Validate pdf_id is numeric
-            try:
-                pdf_id_int = int(pk)
-            except (ValueError, TypeError):
-                raise Http404("Invalid report ID format")
-
-            # Fetch report
-            pdf = RawPdfFile.objects.get(pk=pdf_id_int)
-
-            file_field = pdf.file
-            if not file_field or not file_field.name:
-                raise Http404("report file not found")
-            if not file_exists(file_field):
-                raise Http404("report file does not exist in storage")
-
-            file_size = field_file_size(file_field)
-            range_header = request.headers.get("Range") or request.META.get(
-                "HTTP_RANGE"
-            )
-            if range_header:
-                try:
-                    parse_byte_range(range_header, file_size)
-                except ValueError:
-                    range_error_response = HttpResponse(
-                        status=416,
-                        content_type="application/pdf",
-                    )
-                    range_error_response["Content-Range"] = f"bytes */{file_size}"
-                    range_error_response["Accept-Ranges"] = "bytes"
-                    frontend_origin = os.environ.get(
-                        "FRONTEND_ORIGIN", "http://localhost:8000"
-                    )
-                    return add_cors_headers(range_error_response, frontend_origin)
-
-            filename = Path(file_field.name).name
-            streaming_response = build_partial_content_response(
-                field_file=file_field,
-                content_type="application/pdf",
-                file_size=file_size,
-                range_header=range_header,
-                disposition="inline",
-                filename=filename,
-            )
-            frontend_origin = os.environ.get("FRONTEND_ORIGIN", "http://localhost:8000")
-            return add_cors_headers(streaming_response, frontend_origin)
-
-        except RawPdfFile.DoesNotExist:
-            raise Http404(f"report with ID {pk} not found")
-
-        except Http404:
-            raise
-
-        except Exception as e:
-            logger.error(f"Unexpected error in report streaming for ID {pk}: {str(e)}")
-            raise Http404("report file cannot be streamed")
 
     def _list_pdfs(self, request):
         """
@@ -310,10 +215,6 @@ class PdfMediaView(APIView):
                     "is_validated": getattr(pdf.sensitive_meta, "is_verified", False)
                     if pdf.sensitive_meta
                     else False,
-                    "stream_url": build_absolute_media_url(
-                        request,
-                        build_pdf_stream_path(pdf.pk),
-                    ),
                 }
 
                 # Determine status based on anonymization and validation

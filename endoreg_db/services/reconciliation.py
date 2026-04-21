@@ -1,5 +1,5 @@
-import logging
 import os
+import logging
 import sys
 import time
 import uuid
@@ -7,14 +7,15 @@ from pathlib import Path
 
 from django.db import OperationalError, ProgrammingError, transaction
 
+from endoreg_db.config.env import reconciliation_disabled
 from endoreg_db.import_files.context.file_lock import STALE_LOCK_SECONDS
 from endoreg_db.models import VideoFile
 from endoreg_db.services.media_integrity import reconcile_media_integrity
-from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.services.streamable_media import (
     STREAMABLE_PROCESSED_VIDEO_ROOT,
     STREAMABLE_RAW_VIDEO_ROOT,
     STREAMABLE_VIDEO_ROOT,
+    sync_video_streamable_artifacts,
 )
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
@@ -61,7 +62,7 @@ class ReconciliationService:
         global _reconciliation_ran
         if _reconciliation_ran:
             return
-        if os.getenv("ENDOREG_DISABLE_RECONCILIATION") == "1":
+        if reconciliation_disabled():
             return
 
         try:
@@ -104,17 +105,17 @@ class ReconciliationService:
 
         removed = 0
         scan_dirs = (
-            data_paths["sensitive_video"],
-            data_paths["anonym_video"],
-            data_paths["transcoding"],
+            Path(data_paths["sensitive_video"]),
+            Path(data_paths["anonym_video"]),
+            Path(data_paths["transcoding"]),
             STREAMABLE_VIDEO_ROOT,
             STREAMABLE_RAW_VIDEO_ROOT,
             STREAMABLE_PROCESSED_VIDEO_ROOT,
         )
         for root in scan_dirs:
-            if not Path(root).exists():
+            if not root.exists():
                 continue
-            for path in Path(root).iterdir():
+            for path in root.iterdir():
                 if not path.is_file():
                     continue
                 if not self._is_cleanup_candidate(path):

@@ -1,6 +1,8 @@
 import os
 
-DEBUG = os.getenv("DEBUG", "false").lower() == "true"
+from endoreg_db.config.env import env_bool
+
+DEBUG = env_bool("DJANGO_DEBUG", False)
 
 
 def get_env_var(var_name: str, default: str = "None") -> str | None:
@@ -30,8 +32,3 @@ def set_env_var(var_name: str, value: str) -> None:
     os.environ[var_name] = value
     if DEBUG:
         print(f"Set environment variable {var_name}: {value}")
-
-
-DJANGO_SETTINGS_MODULE = (
-    get_env_var("DJANGO_SETTINGS_MODULE") or "endoreg_db.settings_dev"
-)

@@ -1,19 +1,19 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
-import os
 from pathlib import Path
-import logging
+
 from django.core.files import File
 from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Q
 
-from endoreg_db.models import UploadJob, VideoFile, RawPdfFile
+from endoreg_db.models import RawPdfFile, UploadJob, VideoFile
 from endoreg_db.models.media.video.storage_mode import VideoStorageMode
-from endoreg_db.utils.file_operations import atomic_copy_file
-from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.file_operations import atomic_copy_file, sha256_file
 from endoreg_db.utils.paths import (
     DOCUMENT_DIR,
     FRAME_DIR,
@@ -24,10 +24,10 @@ from endoreg_db.utils.paths import (
     MANAGED_ANONYMIZED_REPORTS_DIR,
     MANAGED_ANONYMIZED_VIDEOS_DIR,
     MANAGED_SENSITIVE_SIDECARS_DIR,
+    RAW_FRAME_DIR,
     SAP_IMPORT_DROP_DIR,
     SAP_IMPORT_FAILED_DIR,
     SAP_IMPORT_PROCESSED_DIR,
-    RAW_FRAME_DIR,
     SENSITIVE_REPORT_DIR,
     SENSITIVE_VIDEO_DIR,
     WATCHER_PREANONYMIZED_DROP_DIR,
@@ -35,13 +35,21 @@ from endoreg_db.utils.paths import (
     WATCHER_VIDEO_DROP_DIR,
     WEIGHTS_DIR,
     WEIGHTS_IMPORT_DIR,
-    to_storage_relative,
     build_manifest_path,
     build_upload_job_relative_path,
+    ensure_within_data_root,
     ensure_within_protected_root,
+    to_storage_relative,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _ensure_within_runtime_root(path: Path) -> Path:
+    try:
+        return ensure_within_protected_root(path)
+    except ValueError:
+        return ensure_within_data_root(path)
 
 
 def _streamable_video_root() -> Path:
@@ -530,7 +538,7 @@ class Command(BaseCommand):
             for source_path in sorted(legacy_dir.rglob("*")):
                 if not source_path.is_file():
                     continue
-                destination_path = ensure_within_protected_root(
+                destination_path = _ensure_within_runtime_root(
                     rule.target_root / source_path.relative_to(legacy_dir)
                 )
                 entry = {
@@ -555,9 +563,19 @@ class Command(BaseCommand):
                     logger.warning(f"Skipping unsupported file type: {source_path}")
                     continue
 
-                destination_path = ensure_within_protected_root(
+                destination_path = _ensure_within_runtime_root(
                     rule.target_root / source_path.relative_to(legacy_dir)
                 )
+
+                if dry_run:
+                    migrated_entries.append(
+                        {
+                            **entry,
+                            "dry_run": True,
+                            "destination_exists": destination_path.exists(),
+                        }
+                    )
+                    continue
 
                 # 2. If it already exists at the destination, run the "Database Sync" logic
                 if destination_path.exists():
@@ -565,10 +583,6 @@ class Command(BaseCommand):
                     skipped_entries.append(
                         {**entry, "reason": "destination_exists_and_synced"}
                     )
-                    continue
-
-                if dry_run:
-                    migrated_entries.append({**entry, "dry_run": True})
                     continue
 
                 atomic_copy_file(
@@ -681,7 +695,7 @@ class Command(BaseCommand):
             )
             if video is not None:
                 updated_count = VideoFile.objects.filter(pk=video.pk).update(
-                    streamable_relative_path=rel_path,
+                    raw_streamable_relative_path=rel_path,
                     storage_mode=VideoStorageMode.STREAMABLE,
                 )
         elif rule.target_root == _streamable_processed_video_root():
@@ -852,7 +866,7 @@ class Command(BaseCommand):
 
     def _resolve_manifest_path(self, *, raw_path: str, source_root: Path) -> Path:
         if raw_path:
-            return ensure_within_protected_root(Path(raw_path).expanduser().resolve())
+            return ensure_within_data_root(Path(raw_path).expanduser().resolve())
         return build_manifest_path(
             command_name="migrate_data_dir",
             stem=f"{source_root.name}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}",

@@ -47,9 +47,8 @@ from endoreg_db.utils.file_operations import (
     safe_unlink_file,
     sha256_file,
 )
+from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.paths import (
-    ANONYM_REPORT_DIR,
-    ANONYM_VIDEO_DIR,
     QUARANTINE_DIR,
     to_storage_relative,
 )
@@ -59,6 +58,14 @@ STALE_UPLOAD_JOB_AGE = timedelta(hours=2)
 LOCK_RETRY_ATTEMPTS = 10
 logger = logging.getLogger(__name__)
 WATCHER_CLEANUP_BATCH_LIMIT = 512
+
+
+def _processed_report_dir() -> Path:
+    return path_utils.EndoregPathsModel.from_environment().anonym_report
+
+
+def _processed_video_dir() -> Path:
+    return path_utils.EndoregPathsModel.from_environment().anonym_video
 
 
 def _opportunistic_reap_watcher_sources(
@@ -963,7 +970,7 @@ def _finalize_preanonymized_video(
     delete_source: bool,
 ) -> VideoFile:
     video_hash = sha256_file(source_path)
-    final_path = ANONYM_VIDEO_DIR / f"{video_hash}.mp4"
+    final_path = _processed_video_dir() / f"{video_hash}.mp4"
     _persist_preanonymized_file(
         source_path=source_path,
         target_path=final_path,
@@ -1073,7 +1080,7 @@ def _finalize_preanonymized_report(
     delete_source: bool,
 ) -> RawPdfFile:
     pdf_hash = sha256_file(source_path)
-    final_path = ANONYM_REPORT_DIR / f"{pdf_hash}.pdf"
+    final_path = _processed_report_dir() / f"{pdf_hash}.pdf"
     _persist_preanonymized_file(
         source_path=source_path,
         target_path=final_path,

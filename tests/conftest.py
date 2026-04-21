@@ -14,6 +14,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 TEST_PROTECTED_ROOT = PROJECT_ROOT / "data" / "tests" / "protected_runtime"
+TEST_DATA_DIR = PROJECT_ROOT / "data" / "tests" / "runtime"
 TEST_STORAGE_DIR = TEST_PROTECTED_ROOT / "storage"
 TEST_ASSET_DIR = Path(__file__).parent / "assets"
 
@@ -21,11 +22,12 @@ TEST_ASSET_DIR = Path(__file__).parent / "assets"
 def _configure_test_path_env(protected_root: Path) -> None:
     protected_root = protected_root.resolve()
     storage_dir = (protected_root / "storage").resolve()
+    data_dir = TEST_DATA_DIR.resolve()
     streamable_root = (storage_dir / "streamable_videos").resolve()
 
     os.environ["LX_ANNOTATE_ENCRYPTED_DATA_DIR"] = str(protected_root)
     os.environ["STORAGE_DIR"] = str(storage_dir)
-    os.environ["IO_DIR"] = str(protected_root)
+    os.environ["DATA_DIR"] = str(data_dir)
     os.environ["PROTECTED_MEDIA_ROOT"] = str(storage_dir)
     os.environ["LX_ANNOTATE_STREAMABLE_VIDEO_ROOT"] = str(streamable_root)
     os.environ["LX_ANNOTATE_STREAMABLE_VIDEO_RAW_ROOT"] = str(streamable_root / "raw")
@@ -88,6 +90,7 @@ MAX_MOCK_VIDEO_FRAMES = 2
 USE_STUB_MODEL_META = os.environ.get("USE_STUB_MODEL_META", "true").lower() == "true"
 
 TEST_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+TEST_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _rebind_paths_module(fake_paths_model) -> None:
@@ -96,8 +99,8 @@ def _rebind_paths_module(fake_paths_model) -> None:
 
     path_constant_map = {
         "PROTECTED_DATA_ROOT": fake_paths_model.protected_root,
+        "DATA_DIR": fake_paths_model.data,
         "STORAGE_DIR": fake_paths_model.storage,
-        "IO_DIR": fake_paths_model.io,
         "IMPORT_DIR": fake_paths_model.import_dir,
         "EXPORT_DIR": fake_paths_model.export_dir,
         "IMPORT_VIDEO_DIR": fake_paths_model.import_video,
@@ -1431,7 +1434,7 @@ def mock_storage(tmp_path, monkeypatch):
     env_map = {
         "LX_ANNOTATE_ENCRYPTED_DATA_DIR": str(fake_root),
         "STORAGE_DIR": str(storage_root),
-        "IO_DIR": str(fake_root),
+        "DATA_DIR": str(tmp_path / "fake_public_root"),
         "PROTECTED_MEDIA_ROOT": str(storage_root),
         "LX_ANNOTATE_STREAMABLE_VIDEO_ROOT": str(streamable_root),
         "LX_ANNOTATE_STREAMABLE_VIDEO_RAW_ROOT": str(streamable_raw_root),
@@ -1508,6 +1511,7 @@ def mock_storage(tmp_path, monkeypatch):
         video_stream_module,
         "to_storage_relative",
         paths_module.to_storage_relative,
+        raising=False,
     )
 
     # Ensure Django FileField storage roots also point to the mocked storage tree.

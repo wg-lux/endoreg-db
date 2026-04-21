@@ -8,6 +8,9 @@ import os
 import sys
 from pathlib import Path
 
+from endoreg_db.config.env import DEFAULT_DJANGO_SETTINGS_MODULE
+from endoreg_db.utils.paths import STORAGE_DIR
+
 # Parse command-line arguments and environment variables for configuration
 parser = argparse.ArgumentParser(
     description="Simple video file existence checker and path corrector for VideoFile records."
@@ -24,14 +27,20 @@ parser.add_argument(
 parser.add_argument(
     "--django-settings",
     type=str,
-    default=os.environ.get("DJANGO_SETTINGS_MODULE", "dev.dev_settings"),
-    help="Django settings module (default: env DJANGO_SETTINGS_MODULE or dev.dev_settings)",
+    default=os.environ.get(
+        "DJANGO_SETTINGS_MODULE",
+        DEFAULT_DJANGO_SETTINGS_MODULE,
+    ),
+    help=(
+        "Django settings module (default: env DJANGO_SETTINGS_MODULE or "
+        f"{DEFAULT_DJANGO_SETTINGS_MODULE})"
+    ),
 )
 parser.add_argument(
     "--storage-dir",
     type=str,
-    default=os.environ.get("ENDOREG_STORAGE_DIR", "./storage"),
-    help="Path to the storage directory (default: ./storage or $ENDOREG_STORAGE_DIR)",
+    default=str(STORAGE_DIR),
+    help=f"Path to the storage directory (default: {STORAGE_DIR})",
 )
 args, unknown = parser.parse_known_args()
 

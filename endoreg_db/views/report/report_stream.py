@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import mimetypes
-import os
 from pathlib import Path
 
 from django.http import Http404, HttpResponse, HttpResponseBase, StreamingHttpResponse
@@ -14,10 +13,8 @@ from typing import TYPE_CHECKING
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models import RawPdfFile
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
-from endoreg_db.utils.paths import (
-    ANONYM_REPORT_DIR,
-    to_storage_relative,
-)
+from endoreg_db.utils import paths as path_utils
+from endoreg_db.utils.paths import to_storage_relative
 
 from endoreg_db.utils.storage_streaming import (
     add_cors_headers,
@@ -33,11 +30,25 @@ from endoreg_db.utils.nginx_accel import (
     nginx_offload_enabled,
 )
 
+from endoreg_db.utils.cors import resolve_response_origin
+
 
 logger = logging.getLogger(__name__)
 
+# Compatibility alias for tests and legacy callers that patch imported path
+# constants; runtime path resolution still goes through path_utils helpers.
+ANONYM_REPORT_DIR = path_utils.ANONYM_REPORT_DIR
+
 if TYPE_CHECKING:
     from django.db.models.fields.files import FieldFile
+
+
+def _processed_report_fallback_path(report: RawPdfFile) -> Path | None:
+    candidate = (
+        path_utils.EndoregPathsModel.from_environment().anonym_report
+        / f"{report.pdf_hash}.pdf"
+    )
+    return path_utils.resolve_existing_protected_media_path(candidate)
 
 
 def _pick_report_field_file(report: RawPdfFile, file_type: str):
@@ -46,8 +57,8 @@ def _pick_report_field_file(report: RawPdfFile, file_type: str):
         if field_file and getattr(field_file, "name", None):
             return field_file
 
-        fallback_path = ANONYM_REPORT_DIR / f"{report.pdf_hash}.pdf"
-        if fallback_path.exists():
+        fallback_path = _processed_report_fallback_path(report)
+        if fallback_path is not None:
             relative_name = to_storage_relative(fallback_path)
             report.processed_file.name = relative_name
             return report.processed_file
@@ -71,8 +82,8 @@ def _recover_missing_report_field_path(
     report: RawPdfFile, file_type: str
 ) -> "FieldFile | None":
     if file_type == "processed":
-        fallback_path = ANONYM_REPORT_DIR / f"{report.pdf_hash}.pdf"
-        if fallback_path.exists():
+        fallback_path = _processed_report_fallback_path(report)
+        if fallback_path is not None:
             relative_name = to_storage_relative(fallback_path)
             report.processed_file.name = relative_name
             return report.processed_file
@@ -91,7 +102,11 @@ def _resolve_local_path_for_nginx(field_file) -> Path | None:
 
 
 def _serve_with_nginx(
-    field_file, content_type: str, *, disposition: str, frontend_origin: str
+    field_file,
+    content_type: str,
+    *,
+    disposition: str,
+    frontend_origin: str | None,
 ) -> HttpResponseBase | None:
     path = _resolve_local_path_for_nginx(field_file)
     if path is None:
@@ -111,6 +126,14 @@ def _serve_with_nginx(
             path,
         )
         return None
+
+
+def _add_cors_headers_if_configured(
+    response: HttpResponseBase, frontend_origin: str | None
+) -> HttpResponseBase:
+    if frontend_origin is None:
+        return response
+    return add_cors_headers(response, frontend_origin)
 
 
 def _build_eager_content_response(
@@ -171,6 +194,8 @@ class ReportStreamView(APIView):
         except RawPdfFile.DoesNotExist as exc:
             raise Http404(f"Report with ID {pk} not found") from exc
 
+        self.check_object_permissions(request, report)
+
         file_type = str(
             request.query_params.get("type")
             or request.query_params.get("file_type")
@@ -206,7 +231,7 @@ class ReportStreamView(APIView):
         disposition = (
             "attachment" if download_raw in {"1", "true", "yes", "on"} else "inline"
         )
-        frontend_origin = os.environ.get("FRONTEND_ORIGIN", "http://localhost:8000")
+        frontend_origin = resolve_response_origin(request)
         range_header = request.headers.get("Range") or request.META.get("HTTP_RANGE")
 
         if nginx_offload_enabled() and not range_header and not recovered_from_fallback:
@@ -226,7 +251,7 @@ class ReportStreamView(APIView):
                 response = HttpResponse(status=416, content_type=content_type)
                 response["Content-Range"] = f"bytes */{file_size}"
                 response["Accept-Ranges"] = "bytes"
-                return add_cors_headers(response, frontend_origin)
+                return _add_cors_headers_if_configured(response, frontend_origin)
 
         if recovered_from_fallback:
             streaming_response = _build_eager_content_response(
@@ -246,4 +271,4 @@ class ReportStreamView(APIView):
                 disposition=disposition,
                 filename=filename,
             )
-        return add_cors_headers(streaming_response, frontend_origin)
+        return _add_cors_headers_if_configured(streaming_response, frontend_origin)

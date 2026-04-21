@@ -6,6 +6,12 @@ from datetime import datetime, timedelta
 from django.core.management.base import BaseCommand, CommandError
 from endoreg_db.models import VideoFile
 from endoreg_db.utils.paths import PROTECTED_DATA_ROOT, data_paths
+from endoreg_db.utils.file_operations import (
+    atomic_write_file,
+    safe_rmtree,
+    safe_unlink_file,
+)
+from endoreg_db.utils.storage import delete_field_file
 
 logger = logging.getLogger(__name__)
 
@@ -301,7 +307,7 @@ class Command(BaseCommand):
                         dir_size = self.get_directory_size(frame_dir)
 
                         if not self.dry_run:
-                            shutil.rmtree(frame_dir, ignore_errors=True)
+                            safe_rmtree(frame_dir, missing_ok=True)
 
                         total_freed += dir_size
                         self.stdout.write(
@@ -336,7 +342,7 @@ class Command(BaseCommand):
                         file_size = file_path.stat().st_size
 
                         if not self.dry_run:
-                            file_path.unlink()
+                            safe_unlink_file(file_path, missing_ok=False)
 
                         total_freed += file_size
 
@@ -363,9 +369,7 @@ class Command(BaseCommand):
                     file_size = log_file.stat().st_size
 
                     if not self.dry_run:
-                        # Truncate instead of delete to preserve file handles
-                        with open(log_file, "w") as f:
-                            f.write("")
+                        atomic_write_file(destination=log_file, content=(b"",))
 
                     total_freed += file_size
                     self.stdout.write(
@@ -396,7 +400,7 @@ class Command(BaseCommand):
                         file_size = item.stat().st_size
 
                         if not self.dry_run:
-                            item.unlink()
+                            safe_unlink_file(item, missing_ok=False)
 
                         total_freed += file_size
 
@@ -454,21 +458,25 @@ class Command(BaseCommand):
 
         for video in old_videos:
             try:
-                if video.processed_file and hasattr(video.processed_file, "path"):
-                    processed_path = Path(video.processed_file.path)
-
-                    if processed_path.exists():
+                processed_field = getattr(video, "processed_file", None)
+                if processed_field and getattr(processed_field, "name", None):
+                    file_size = 0
+                    try:
+                        processed_path = Path(processed_field.path)
+                    except Exception:
+                        processed_path = None
+                    if processed_path and processed_path.exists():
                         file_size = processed_path.stat().st_size
 
-                        if not self.dry_run:
-                            processed_path.unlink()
-                            video.processed_file = None
-                            video.save(update_fields=["processed_file"])
+                    if not self.dry_run:
+                        delete_field_file(processed_field, missing_ok=True, save=False)
+                        video.processed_file = None
+                        video.save(update_fields=["processed_file"])
 
-                        total_freed += file_size
-                        self.stdout.write(
-                            f"  Removed processed video {video.uuid}: {file_size / (1024**2):.1f} MB"
-                        )
+                    total_freed += file_size
+                    self.stdout.write(
+                        f"  Removed processed video {video.uuid}: {file_size / (1024**2):.1f} MB"
+                    )
 
             except Exception as e:
                 logger.warning(f"Failed to clean processed video {video.uuid}: {e}")
@@ -503,7 +511,7 @@ class Command(BaseCommand):
                     dir_size = self.get_directory_size(item)
 
                     if not self.dry_run:
-                        shutil.rmtree(item, ignore_errors=True)
+                        safe_rmtree(item, missing_ok=True)
 
                     total_freed += dir_size
                     self.stdout.write(
@@ -513,7 +521,7 @@ class Command(BaseCommand):
                     file_size = item.stat().st_size
 
                     if not self.dry_run:
-                        item.unlink()
+                        safe_unlink_file(item, missing_ok=False)
 
                     total_freed += file_size
                     self.stdout.write(
@@ -544,7 +552,7 @@ class Command(BaseCommand):
                     file_size = item.stat().st_size
 
                     if not self.dry_run:
-                        item.unlink()
+                        safe_unlink_file(item, missing_ok=False)
 
                     total_freed += file_size
 
@@ -597,18 +605,23 @@ class Command(BaseCommand):
         """
         Helper to clean up a single processed video file, update DB, and return freed size in bytes.
         """
-        if video.processed_file and hasattr(video.processed_file, "path"):
-            processed_path = Path(video.processed_file.path)
-            if processed_path.exists():
+        processed_field = getattr(video, "processed_file", None)
+        if processed_field and getattr(processed_field, "name", None):
+            file_size = 0
+            try:
+                processed_path = Path(processed_field.path)
+            except Exception:
+                processed_path = None
+            if processed_path and processed_path.exists():
                 file_size = processed_path.stat().st_size
-                if not self.dry_run:
-                    processed_path.unlink()
-                    video.processed_file = None
-                    video.save(update_fields=["processed_file"])
-                self.stdout.write(
-                    f"  Removed processed video {video.uuid}: {file_size / (1024**2):.1f} MB"
-                )
-                return file_size
+            if not self.dry_run:
+                delete_field_file(processed_field, missing_ok=True, save=False)
+                video.processed_file = None
+                video.save(update_fields=["processed_file"])
+            self.stdout.write(
+                f"  Removed processed video {video.uuid}: {file_size / (1024**2):.1f} MB"
+            )
+            return file_size
         return 0
 
     def display_cleanup_summary(self, before, after):

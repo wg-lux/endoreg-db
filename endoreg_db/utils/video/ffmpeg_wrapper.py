@@ -1,19 +1,21 @@
 import json
 import logging
-import os
 import shutil
 import subprocess
 from functools import lru_cache
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-
+import os
 import cv2
 from tqdm import tqdm
 
-logger = logging.getLogger("ffmpeg_wrapper")
-FFMPEG_TRANSCODE_TIMEOUT_SECONDS = int(
-    os.environ.get("FFMPEG_TRANSCODE_TIMEOUT_SECONDS", "3600")
+from endoreg_db.config.env import (
+    get_ffmpeg_env_candidates,
+    get_ffmpeg_transcode_timeout_seconds,
 )
+
+logger = logging.getLogger("ffmpeg_wrapper")
+FFMPEG_TRANSCODE_TIMEOUT_SECONDS = get_ffmpeg_transcode_timeout_seconds()
 
 # Global hardware acceleration cache
 _nvenc_available = None
@@ -24,11 +26,7 @@ _preferred_encoder = None
 def _resolve_ffmpeg_executable() -> Optional[str]:
     """Locate the ffmpeg executable using multiple discovery strategies."""
     # 1) Explicit overrides via env vars
-    env_candidates = [
-        os.environ.get("FFMPEG_EXECUTABLE"),
-        os.environ.get("FFMPEG_BINARY"),
-        os.environ.get("FFMPEG_PATH"),
-    ]
+    env_candidates = get_ffmpeg_env_candidates()
 
     # 2) Django settings overrides (if Django is configured)
     try:

@@ -100,6 +100,24 @@ def iter_field_file_bytes(
         field_file.close()
 
 
+def iter_file_path_bytes(
+    file_path: Path,
+    *,
+    start: int,
+    end: int,
+    chunk_size: int = 64 * 1024,
+) -> Iterator[bytes]:
+    with open(file_path, "rb") as handle:
+        handle.seek(start)
+        remaining = end - start + 1
+        while remaining > 0:
+            chunk = handle.read(min(chunk_size, remaining))
+            if not chunk:
+                break
+            yield chunk
+            remaining -= len(chunk)
+
+
 def maybe_local_plaintext_path(field_file) -> Path | None:
     storage = getattr(field_file, "storage", None)
     if storage is not None and (
@@ -157,6 +175,43 @@ def build_partial_content_response(
     else:
         response = StreamingHttpResponse(
             iter_field_file_bytes(field_file, start=0, end=file_size - 1),
+            status=200,
+            content_type=content_type,
+        )
+        response["Content-Length"] = str(file_size)
+
+    response["Accept-Ranges"] = "bytes"
+    response["Content-Disposition"] = f'{disposition}; filename="{filename}"'
+    return response
+
+
+def build_partial_content_response_from_path(
+    *,
+    file_path: Path,
+    content_type: str,
+    file_size: int,
+    range_header: str | None,
+    disposition: str,
+    filename: str,
+) -> StreamingHttpResponse:
+    if range_header:
+        byte_range = parse_byte_range(range_header, file_size)
+        response = StreamingHttpResponse(
+            iter_file_path_bytes(
+                file_path,
+                start=byte_range.start,
+                end=byte_range.end,
+            ),
+            status=206,
+            content_type=content_type,
+        )
+        response["Content-Range"] = (
+            f"bytes {byte_range.start}-{byte_range.end}/{file_size}"
+        )
+        response["Content-Length"] = str(byte_range.length)
+    else:
+        response = StreamingHttpResponse(
+            iter_file_path_bytes(file_path, start=0, end=file_size - 1),
             status=200,
             content_type=content_type,
         )

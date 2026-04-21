@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Iterator, Optional
 
 from django.db import transaction
 
-from endoreg_db.utils.paths import data_paths
+from endoreg_db.utils import paths as path_utils
 
 # --- Aligned Imports ---
 from endoreg_db.utils.file_operations import safe_unlink_file
@@ -17,16 +17,18 @@ if TYPE_CHECKING:
 logger = logging.getLogger("video_file")
 
 
+def _resolve_streamable_path(relative_path: str | None) -> Optional[Path]:
+    if not relative_path:
+        return None
+
+    candidate = path_utils.resolve_existing_protected_media_path(relative_path)
+    return candidate if candidate and candidate.is_file() else None
+
+
 def _get_raw_file_path(video: "VideoFile") -> Optional[Path]:
     """Return the best-effort absolute path to the raw video on disk."""
     if not (video.has_raw and getattr(video.raw_file, "name", None)):
         return None
-
-    streamable_relative_path = getattr(video, "streamable_relative_path", "")
-    if streamable_relative_path:
-        streamable_candidate = data_paths.storage / streamable_relative_path
-        if streamable_candidate.is_file():
-            return streamable_candidate.resolve()
 
     # 1) Canonical: use Django's storage path
     try:
@@ -51,8 +53,8 @@ def _get_raw_file_path(video: "VideoFile") -> Optional[Path]:
     filename = raw_rel.name  # strip any (possibly wrong) prefix
 
     candidates = [
-        data_paths["import_video"] / filename,
-        data_paths["sensitive_video"] / filename,
+        path_utils.EndoregPathsModel.from_environment().import_video / filename,
+        path_utils.EndoregPathsModel.from_environment().sensitive_video / filename,
     ]
 
     for candidate in candidates:
@@ -65,6 +67,10 @@ def _get_raw_file_path(video: "VideoFile") -> Optional[Path]:
         video.video_hash,
     )
     return None
+
+
+def _get_raw_stream_path(video: "VideoFile") -> Optional[Path]:
+    return _resolve_streamable_path(getattr(video, "raw_streamable_relative_path", ""))
 
 
 @contextmanager
@@ -86,7 +92,7 @@ def _get_processed_file_path(video: "VideoFile") -> Optional[Path]:
     processed_name = str(processed_field.name)
     try:
         direct_path = Path(processed_field.path)
-        if direct_path.exists():
+        if direct_path.is_file():
             return direct_path.resolve()
     except Exception as exc:
         logger.debug(
@@ -99,7 +105,8 @@ def _get_processed_file_path(video: "VideoFile") -> Optional[Path]:
         candidate = (
             Path(processed_name)
             if processed_name.startswith("/")
-            else data_paths.storage / processed_name
+            else path_utils.EndoregPathsModel.from_environment().storage
+            / processed_name
         )
         if candidate.exists():
             return candidate.resolve()
@@ -115,6 +122,31 @@ def _get_processed_file_path(video: "VideoFile") -> Optional[Path]:
             "Could not get path for processed file of VideoFile %s: path unavailable",
             video.video_hash,
         )
+    return None
+
+
+def _get_processed_stream_path(
+    video: "VideoFile", *, materialize_if_missing: bool = False
+) -> Optional[Path]:
+    path = _resolve_streamable_path(
+        getattr(video, "processed_streamable_relative_path", "")
+    )
+    if path is not None:
+        return path
+
+    if materialize_if_missing:
+        from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
+
+        sync_video_streamable_artifacts(
+            video,
+            include_raw=False,
+            include_processed=True,
+            save=True,
+        )
+        return _resolve_streamable_path(
+            getattr(video, "processed_streamable_relative_path", "")
+        )
+
     return None
 
 
@@ -177,6 +209,14 @@ def _delete_with_file(video: "VideoFile", *args, **kwargs):
                 "Deleted orphaned local processed file for %s", video.video_hash
             )
 
+    raw_stream_path = _get_raw_stream_path(video)
+    if raw_stream_path and raw_stream_path.exists():
+        safe_unlink_file(raw_stream_path, missing_ok=True)
+
+    processed_stream_path = _get_processed_stream_path(video)
+    if processed_stream_path and processed_stream_path.exists():
+        safe_unlink_file(processed_stream_path, missing_ok=True)
+
     # 4. Delete Database Record
     try:
         super(type(video), video).delete(*args, **kwargs)
@@ -198,7 +238,7 @@ def _delete_with_file(video: "VideoFile", *args, **kwargs):
 
 
 def _get_base_frame_dir(video: "VideoFile") -> Path:
-    return data_paths["frame"] / str(video.video_hash)
+    return path_utils.EndoregPathsModel.from_environment().frame / str(video.video_hash)
 
 
 def _set_frame_dir(video: "VideoFile", force_update: bool = False):
@@ -237,6 +277,6 @@ def _get_target_anonymized_video_path(video: "VideoFile") -> Path:
     raw_path_relative = Path(video.raw_file.name)
 
     # Use the data_paths dictionary mapping instead of the uppercase constant
-    target_dir = data_paths["anonym_video"]
+    target_dir = path_utils.EndoregPathsModel.from_environment().anonym_video
 
     return target_dir / raw_path_relative.name

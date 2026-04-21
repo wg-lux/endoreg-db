@@ -1,6 +1,5 @@
 # endoreg_db/import_files/video_import_service.py
 import logging
-import os
 import shutil
 from pathlib import Path
 from typing import Optional, Union
@@ -31,18 +30,27 @@ from endoreg_db.models.state.processing_history.processing_history import (
 from endoreg_db.import_files.processing.video_processing.video_anonymization import (
     VideoAnonymizer,
 )
-from endoreg_db.utils.paths import (
-    STORAGE_DIR,
-    IMPORT_VIDEO_DIR,
-    SENSITIVE_VIDEO_DIR,
-)
-
+from endoreg_db.utils import paths as path_utils
+from endoreg_db.utils.file_operations import safe_unlink_file
 
 logger = logging.getLogger(__name__)
-HASH_LOCK_DIR = STORAGE_DIR / "locks" / "video_content"
-PIPELINE_STORAGE_MULTIPLIER = float(
-    os.environ.get("VIDEO_PIPELINE_STORAGE_MULTIPLIER", "2.5")
-)
+PIPELINE_STORAGE_MULTIPLIER = 2.5
+
+
+def _storage_dir() -> Path:
+    return path_utils.EndoregPathsModel.from_environment().storage
+
+
+def _sensitive_video_dir() -> Path:
+    return path_utils.EndoregPathsModel.from_environment().sensitive_video
+
+
+def _video_import_dir() -> Path:
+    return path_utils.EndoregPathsModel.from_environment().import_video
+
+
+def _hash_lock_dir() -> Path:
+    return _storage_dir() / "locks" / "video_content"
 
 
 class VideoImportService:
@@ -109,12 +117,12 @@ class VideoImportService:
 
         with file_lock(lock_path):
             logger.info("Acquired file lock for %s", lock_path)
-            if not isinstance(ctx.file_hash, str):
-                ctx.file_hash = str(ctx.file_hash)
             if ctx.file_hash is None:
                 raise ValueError("File hash missing.")
+            if not isinstance(ctx.file_hash, str):
+                ctx.file_hash = str(ctx.file_hash)
 
-            with content_hash_lock(ctx.file_hash, HASH_LOCK_DIR):
+            with content_hash_lock(ctx.file_hash, _hash_lock_dir()):
                 logger.info("Acquired content-hash lock for %s", ctx.file_hash)
                 existing_completed_video = self._get_existing_completed_video(ctx)
                 if existing_completed_video is not None and not retry:
@@ -123,7 +131,7 @@ class VideoImportService:
 
                 self._ensure_pipeline_storage_budget(ctx.file_path)
                 ctx.sensitive_path = create_sensitive_copy(
-                    ctx.file_path, SENSITIVE_VIDEO_DIR
+                    ctx.file_path, _sensitive_video_dir(), ctx
                 )
 
                 # create or retrieve VideoFile + update history
@@ -246,13 +254,14 @@ class VideoImportService:
         """
         source_size = source_path.stat().st_size
         required_space = int(source_size * PIPELINE_STORAGE_MULTIPLIER)
-        free_space = shutil.disk_usage(STORAGE_DIR).free
+        storage_dir = _storage_dir()
+        free_space = shutil.disk_usage(storage_dir).free
         if free_space < required_space:
             raise InsufficientStorageError(
                 (
                     "Insufficient pipeline storage. "
                     f"Required: {required_space / 1e9:.1f} GB, "
-                    f"Available: {free_space / 1e9:.1f} GB in {STORAGE_DIR}"
+                    f"Available: {free_space / 1e9:.1f} GB in {storage_dir}"
                 ),
                 required_space=required_space,
                 available_space=free_space,
@@ -281,7 +290,7 @@ class VideoImportService:
             except FileNotFoundError:
                 return
             try:
-                path.unlink()
+                safe_unlink_file(path, missing_ok=False)
                 logger.info("Deleted duplicate %s after short-circuit: %s", label, path)
             except Exception as exc:
                 logger.warning(
@@ -296,5 +305,8 @@ class VideoImportService:
         original_path = (
             ctx.original_path if isinstance(ctx.original_path, Path) else None
         )
-        if isinstance(original_path, Path) and original_path.parent == IMPORT_VIDEO_DIR:
+        if (
+            isinstance(original_path, Path)
+            and original_path.parent == _video_import_dir()
+        ):
             _safe_unlink(original_path, label="import source")

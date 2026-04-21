@@ -5,19 +5,22 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
+from endoreg_db.services.hub.ingest import (
+    resolve_declared_upload_center,
+    resolve_default_center,
+    process_preanonymized_watcher_file,
+)
 
 from endoreg_db.services.sap_ish_import import convert_sap_ish_zip_to_preanonymized_drop
 from endoreg_db.utils.paths import (
     SAP_IMPORT_DROP_DIR,
     WATCHER_PREANONYMIZED_DROP_DIR,
     build_manifest_path,
-    ensure_within_protected_root,
+    ensure_within_data_root,
 )
 
 
 def _resolve_declared_upload_center(*, center_key: str | None, center_name: str | None):
-    from endoreg_db.services.hub import resolve_declared_upload_center
-
     return resolve_declared_upload_center(
         center_key=center_key,
         center_name=center_name,
@@ -25,16 +28,12 @@ def _resolve_declared_upload_center(*, center_key: str | None, center_name: str 
 
 
 def _resolve_default_center():
-    from endoreg_db.services.hub import resolve_default_center
-
     return resolve_default_center()
 
 
 def _process_preanonymized_watcher_file(
     *, file_path, center, source_system: str
 ) -> None:
-    from endoreg_db.services.hub import process_preanonymized_watcher_file
-
     process_preanonymized_watcher_file(
         file_path=file_path,
         center=center,
@@ -100,7 +99,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options) -> None:
         zip_path = Path(options["zip_path"]).expanduser().resolve()
-        output_dir = ensure_within_protected_root(
+        output_dir = ensure_within_data_root(
             Path(options["output_dir"]).expanduser().resolve()
         )
         source_system = str(options["source_system"]).strip() or "sap_ish"
@@ -177,7 +176,7 @@ class Command(BaseCommand):
             )
 
         manifest_path = (
-            ensure_within_protected_root(Path(manifest_path_raw).expanduser().resolve())
+            ensure_within_data_root(Path(manifest_path_raw).expanduser().resolve())
             if manifest_path_raw
             else build_manifest_path(
                 command_name="import_sap_ish_zip",

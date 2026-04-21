@@ -95,7 +95,7 @@ def _verify_streamable_artifact(
     relative_name = (
         video.processed_streamable_relative_path
         if processed
-        else video.streamable_relative_path
+        else video.raw_streamable_relative_path
     ) or ""
     if not relative_name:
         return False, "missing streamable relative path"

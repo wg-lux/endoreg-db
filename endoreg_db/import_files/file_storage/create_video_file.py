@@ -67,7 +67,7 @@ def create_or_retrieve_video_file(
             ctx.current_video = VideoFile.get_video_by_content_hash(ctx.file_hash)
         finalize_failure(ctx)
 
-        processed = True
+        processed = False
         needs_processing = True
 
     # Determine the VideoFile instance to work with
@@ -103,18 +103,25 @@ def create_or_retrieve_video_file(
         file_type,
     )
 
+    raw_path = None
     try:
-        sync_video_streamable_artifacts(
-            video,
-            include_raw=True,
-            include_processed=False,
-            save=True,
-        )
-    except Exception as exc:
-        logger.warning(
-            "Could not synchronize raw streamable artifact for video %s: %s",
-            getattr(video, "pk", "unknown"),
-            exc,
-        )
+        raw_path = video.get_raw_file_path()
+    except Exception:
+        raw_path = None
+
+    if raw_path is not None and raw_path.exists():
+        try:
+            sync_video_streamable_artifacts(
+                video,
+                include_raw=True,
+                include_processed=False,
+                save=True,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Could not synchronize raw streamable artifact for video %s: %s",
+                getattr(video, "pk", "unknown"),
+                exc,
+            )
 
     return video, processed, needs_processing

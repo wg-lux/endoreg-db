@@ -75,8 +75,8 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
     )
     monkeypatch.setattr(
         state_management_module,
-        "ANONYM_VIDEO_DIR",
-        anonym_dir,
+        "_processed_video_dir",
+        lambda: anonym_dir,
         raising=True,
     )
     monkeypatch.setattr(
@@ -191,8 +191,8 @@ def test_finalize_video_success_rejects_unprobeable_final_output(tmp_path, monke
     )
     monkeypatch.setattr(
         state_management_module,
-        "ANONYM_VIDEO_DIR",
-        anonym_dir,
+        "_processed_video_dir",
+        lambda: anonym_dir,
         raising=True,
     )
     monkeypatch.setattr(

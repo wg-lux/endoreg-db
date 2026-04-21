@@ -5,11 +5,11 @@ import json
 from django.core.management.base import BaseCommand, CommandError
 
 from endoreg_db.utils.paths import (
+    DATA_DIR,
     EXPORT_DIR,
     IMPORT_DIR,
     INGEST_PREANONYMIZED_DIR,
     INGEST_UPLOADS_DIR,
-    IO_DIR,
     LOG_DIR,
     MANAGED_ANONYMIZED_REPORTS_DIR,
     MANAGED_ANONYMIZED_VIDEOS_DIR,
@@ -24,7 +24,7 @@ from endoreg_db.utils.paths import (
     WATCHER_PREANONYMIZED_DROP_DIR,
     WATCHER_REPORT_DROP_DIR,
     WATCHER_VIDEO_DROP_DIR,
-    data_paths,
+    ensure_within_data_root,
     ensure_within_protected_root,
 )
 
@@ -45,15 +45,17 @@ class Command(BaseCommand):
     def handle(self, *args, **options) -> None:
         protected_paths = {
             "protected_root": PROTECTED_DATA_ROOT,
-            "io": IO_DIR,
             "storage": STORAGE_DIR,
-            "import": IMPORT_DIR,
-            "export": EXPORT_DIR,
             "ingest_uploads": INGEST_UPLOADS_DIR,
-            "ingest_preanonymized": INGEST_PREANONYMIZED_DIR,
             "managed_anonymized_videos": MANAGED_ANONYMIZED_VIDEOS_DIR,
             "managed_anonymized_reports": MANAGED_ANONYMIZED_REPORTS_DIR,
             "managed_sensitive_sidecars": MANAGED_SENSITIVE_SIDECARS_DIR,
+        }
+        public_paths = {
+            "data_root": DATA_DIR,
+            "import": IMPORT_DIR,
+            "export": EXPORT_DIR,
+            "ingest_preanonymized": INGEST_PREANONYMIZED_DIR,
             "logs": LOG_DIR,
             "quarantine": QUARANTINE_DIR,
             "quarantine_failed": QUARANTINE_FAILED_DIR,
@@ -72,15 +74,19 @@ class Command(BaseCommand):
             except ValueError as exc:
                 violations.append(f"{label}: {exc}")
 
-        for key, path in data_paths.items():
+        for label, path in public_paths.items():
             try:
-                ensure_within_protected_root(path)
+                ensure_within_data_root(path)
             except ValueError as exc:
-                violations.append(f"{key}: {exc}")
+                violations.append(f"{label}: {exc}")
 
         payload = {
             "protected_root": str(PROTECTED_DATA_ROOT),
-            "paths": {label: str(path) for label, path in protected_paths.items()},
+            "data_root": str(DATA_DIR),
+            "protected_paths": {
+                label: str(path) for label, path in protected_paths.items()
+            },
+            "public_paths": {label: str(path) for label, path in public_paths.items()},
             "valid": not violations,
             "violations": violations,
         }
@@ -91,7 +97,10 @@ class Command(BaseCommand):
             self.stdout.write(
                 self.style.SUCCESS(f"Protected runtime root: {PROTECTED_DATA_ROOT}")
             )
+            self.stdout.write(self.style.SUCCESS(f"Public data root: {DATA_DIR}"))
             for label, path in protected_paths.items():
+                self.stdout.write(f"- {label}: {path}")
+            for label, path in public_paths.items():
                 self.stdout.write(f"- {label}: {path}")
             if violations:
                 for violation in violations:
@@ -100,5 +109,5 @@ class Command(BaseCommand):
         if violations:
             raise CommandError(
                 "Runtime storage contract is invalid; one or more paths escape "
-                "LX_ANNOTATE_ENCRYPTED_DATA_DIR."
+                "their configured protected or public runtime root."
             )

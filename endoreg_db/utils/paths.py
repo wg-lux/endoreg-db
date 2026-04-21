@@ -8,14 +8,71 @@ resolution and directory bootstrap stay consistent.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 import os
+from collections.abc import Iterable
 from logging import getLogger
 from pathlib import Path
 from typing import ClassVar
 
-from endoreg_db.config.env import BASE_DIR, IS_PYTEST, TEST_PROTECTED_ROOT, env_path
 from lx_dtypes.models.base.file.pydantic.FilesAndDirs import FilesAndDirsModel
+
+from endoreg_db.config.env import (
+    BASE_DIR,
+    DATA_DIR_ENV,
+    DJANGO_SETTINGS_MODULE,
+    PROTECTED_MEDIA_ROOT_ENV,
+    PROTECTED_ROOT_ENV,
+    STORAGE_DIR_ENV,
+    TEST_DATA_ROOT,
+    TEST_PROTECTED_ROOT,
+    env_path,
+)
+
+"""
+<protected_root>/                  # usually BASE_DIR/data
+├── storage/                       # protected storage root
+│   ├── upload_jobs/
+│   │   ├── api/
+│   │   ├── watcher/
+│   │   └── preanonymized/
+│   ├── documents/
+│   ├── temp/
+│   ├── sensitive_videos/
+│   ├── sensitive_reports/
+│   ├── processed_videos_final/
+│   ├── processed_reports_final/
+│   ├── raw_frames/
+│   ├── frames/
+│   ├── model_weights/
+│   ├── sensitive_sidecars/
+│   └── test/
+│
+└── ... possibly same as data root if configured that way
+
+
+<data_root>/                       # usually BASE_DIR/data
+├── import/
+│   ├── video_import/
+│   ├── report_import/
+│   ├── preanonymized_import/
+│   ├── anonymized_video_import/
+│   ├── anonymized_report_import/
+│   ├── model_weights/
+│   └── frames/
+├── export/
+│   ├── video_export/
+│   ├── report_export/
+│   ├── model_weights/
+│   └── frames/
+├── logs/
+├── quarantine/
+│   └── failed/
+├── migration_staging/
+│   └── manifests/
+├── sap_import/
+├── sap_import_processed/
+└── sap_import_failed/
+"""
 
 logger = getLogger(__name__)
 
@@ -46,11 +103,6 @@ QUARANTINE_DIR_NAME = "quarantine"
 MIGRATION_STAGING_DIR_NAME = "migration_staging"
 MANIFEST_DIR_NAME = "manifests"
 
-PROTECTED_ROOT_ENV = "LX_ANNOTATE_ENCRYPTED_DATA_DIR"
-LEGACY_STORAGE_ENV = "STORAGE_DIR"
-LEGACY_IO_ENV = "IO_DIR"
-PROTECTED_MEDIA_ROOT_ENV = "PROTECTED_MEDIA_ROOT"
-
 
 def _resolve_env_path(raw_value: str) -> Path:
     candidate = Path(raw_value)
@@ -59,8 +111,47 @@ def _resolve_env_path(raw_value: str) -> Path:
     return (BASE_DIR / candidate).resolve()
 
 
+def _is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
+def _test_path_compat_enabled() -> bool:
+    """Allow legacy test roots only for explicit test settings inside data/tests."""
+    if os.environ.get("DJANGO_ENV", "").strip().lower() == "production":
+        return False
+
+    settings_module = os.environ.get("DJANGO_SETTINGS_MODULE", DJANGO_SETTINGS_MODULE)
+    is_test_settings = settings_module in {
+        "endoreg_db.config.settings.test",
+        "tests.settings_test",
+    } or settings_module.endswith(".settings.test")
+    if not is_test_settings:
+        return False
+
+    test_root = (BASE_DIR / "data" / "tests").resolve()
+    protected_root = _resolve_env_path(
+        os.environ.get(PROTECTED_ROOT_ENV, str(TEST_PROTECTED_ROOT))
+    )
+    data_root = _resolve_env_path(os.environ.get(DATA_DIR_ENV, str(TEST_DATA_ROOT)))
+    return _is_relative_to(protected_root, test_root) and _is_relative_to(
+        data_root,
+        test_root,
+    )
+
+
+TEST_PATH_COMPAT_ENABLED = _test_path_compat_enabled()
+
+
 def _resolve_protected_root() -> Path:
     return env_path(PROTECTED_ROOT_ENV, "data").resolve()
+
+
+def _resolve_data_root() -> Path:
+    return env_path(DATA_DIR_ENV, "data").resolve()
 
 
 def _resolve_protected_subdir(
@@ -90,10 +181,14 @@ def ensure_within_protected_root(path: str | Path) -> Path:
         EndoregPathsModel.from_environment().protected_root.resolve()
     )
     protected_roots = [current_protected_root]
-    if IS_PYTEST:
-        legacy_test_root = TEST_PROTECTED_ROOT.resolve()
-        if legacy_test_root not in protected_roots:
-            protected_roots.append(legacy_test_root)
+    if TEST_PATH_COMPAT_ENABLED:
+        legacy_test_roots = [
+            TEST_PROTECTED_ROOT.resolve(),
+            (BASE_DIR / "data" / "tests" / "storage").resolve(),
+        ]
+        for legacy_root in legacy_test_roots:
+            if legacy_root not in protected_roots:
+                protected_roots.append(legacy_root)
 
     for protected_root in protected_roots:
         try:
@@ -106,6 +201,29 @@ def ensure_within_protected_root(path: str | Path) -> Path:
     raise ValueError(
         f"Path {resolved_path} is outside protected data root {protected_root}"
     )
+
+
+def ensure_within_data_root(path: str | Path) -> Path:
+    resolved_path = Path(path).resolve()
+    current_data_root = EndoregPathsModel.from_environment().data.resolve()
+    data_roots = [current_data_root]
+    if TEST_PATH_COMPAT_ENABLED:
+        legacy_test_roots = [
+            TEST_DATA_ROOT.resolve(),
+            (BASE_DIR / "data" / "tests" / "storage").resolve(),
+        ]
+        for legacy_root in legacy_test_roots:
+            if legacy_root not in data_roots:
+                data_roots.append(legacy_root)
+
+    for data_root in data_roots:
+        try:
+            resolved_path.relative_to(data_root)
+            return resolved_path
+        except ValueError:
+            continue
+
+    raise ValueError(f"Path {resolved_path} is outside data root {current_data_root}")
 
 
 def _resolve_protected_media_root() -> Path:
@@ -192,7 +310,7 @@ class EndoregPathsModel(FilesAndDirsModel):
 
     protected_root: Path
     storage: Path
-    io: Path
+    data: Path
     import_dir: Path
     export_dir: Path
     import_video: Path
@@ -239,6 +357,7 @@ class EndoregPathsModel(FilesAndDirsModel):
 
     # If any directory names change, please ensure continued support by changing the values  in key: value.
     legacy_key_map: ClassVar[dict[str, str]] = {
+        "data": "data",
         "storage": "storage",
         "import": "import_dir",
         "import_video": "import_video",
@@ -288,22 +407,17 @@ class EndoregPathsModel(FilesAndDirsModel):
     @classmethod
     def from_environment(cls) -> "EndoregPathsModel":
         protected_root = _resolve_protected_root()
+        data_dir = _resolve_data_root()
         storage_dir = _resolve_protected_subdir(
-            env_key=LEGACY_STORAGE_ENV,
+            env_key=STORAGE_DIR_ENV,
             default_path=protected_root / "storage",
             protected_root=protected_root,
         )
-        io_dir = _resolve_protected_subdir(
-            env_key=LEGACY_IO_ENV,
-            default_path=protected_root,
-            protected_root=protected_root,
-        )
-
-        import_dir = io_dir / IMPORT_DIR_NAME
-        export_dir = io_dir / EXPORT_DIR_NAME
-        logs_dir = io_dir / LOG_DIR_NAME
-        quarantine_dir = io_dir / QUARANTINE_DIR_NAME
-        migration_staging_dir = io_dir / MIGRATION_STAGING_DIR_NAME
+        export_dir = data_dir / EXPORT_DIR_NAME
+        import_dir = data_dir / IMPORT_DIR_NAME
+        logs_dir = data_dir / LOG_DIR_NAME
+        quarantine_dir = data_dir / QUARANTINE_DIR_NAME
+        migration_staging_dir = data_dir / MIGRATION_STAGING_DIR_NAME
         manifest_dir = migration_staging_dir / MANIFEST_DIR_NAME
         upload_api_dir = storage_dir / "upload_jobs" / "api"
         upload_watcher_dir = storage_dir / "upload_jobs" / "watcher"
@@ -323,8 +437,8 @@ class EndoregPathsModel(FilesAndDirsModel):
             dir=storage_dir,
             dirs=[
                 protected_root,
+                data_dir,
                 storage_dir,
-                io_dir,
                 import_dir,
                 export_dir,
                 logs_dir,
@@ -368,7 +482,7 @@ class EndoregPathsModel(FilesAndDirsModel):
             ],
             protected_root=protected_root,
             storage=storage_dir,
-            io=io_dir,
+            data=data_dir,
             import_dir=import_dir,
             export_dir=export_dir,
             import_video=import_dir / IMPORT_VIDEO_DIR_NAME,
@@ -449,8 +563,8 @@ data_paths_model = EndoregPathsModel.from_environment()
 data_paths = data_paths_model
 
 PROTECTED_DATA_ROOT = data_paths_model.protected_root
+DATA_DIR = data_paths_model.data
 STORAGE_DIR = data_paths_model.storage
-IO_DIR = data_paths_model.io
 
 IMPORT_DIR = data_paths_model.import_dir
 EXPORT_DIR = data_paths_model.export_dir
@@ -504,7 +618,8 @@ QUARANTINE_FAILED_DIR = data_paths_model.quarantine_failed
 STAGING_MIGRATION_DIR = data_paths_model.staging_migration
 
 logger.debug("Protected data root: %s", PROTECTED_DATA_ROOT.resolve())
-logger.debug("Storage directory: %s", STORAGE_DIR.resolve())
+logger.debug("Data directory: %s", DATA_DIR.resolve())
+logger.debug("Encrypted storage directory: %s", STORAGE_DIR.resolve())
 logger.debug("Export directory: %s", EXPORT_DIR.resolve())
 
 
@@ -512,14 +627,17 @@ def to_storage_relative(path: str | Path) -> str:
     """
     Return a path string relative to STORAGE_DIR, suitable for Django FileField.name.
 
-    If ``path`` is outside STORAGE_DIR, it is returned unchanged.
+    Local DATA_DIR paths are returned relative to DATA_DIR. If ``path`` is
+    outside STORAGE_DIR and DATA_DIR, protected-root paths are returned
+    unchanged after validation.
     """
     original_path = str(path)
     resolved_path = Path(path).resolve()
-    current_storage_root = EndoregPathsModel.from_environment().storage.resolve()
+    current_paths = EndoregPathsModel.from_environment()
+    current_storage_root = current_paths.storage.resolve()
     storage_roots = [current_storage_root]
-    if IS_PYTEST:
-        legacy_storage_root = (TEST_PROTECTED_ROOT / "storage").resolve()
+    if TEST_PATH_COMPAT_ENABLED:
+        legacy_storage_root = (BASE_DIR / "data" / "tests" / "storage").resolve()
         if legacy_storage_root not in storage_roots:
             storage_roots.append(legacy_storage_root)
 
@@ -527,6 +645,22 @@ def to_storage_relative(path: str | Path) -> str:
         try:
             relative_path = resolved_path.relative_to(storage_root)
             return relative_path.as_posix()
+        except ValueError:
+            continue
+
+    data_roots = [current_paths.data.resolve()]
+    if TEST_PATH_COMPAT_ENABLED:
+        legacy_data_roots = [
+            TEST_DATA_ROOT.resolve(),
+            (BASE_DIR / "data" / "tests" / "storage").resolve(),
+        ]
+        for data_root in legacy_data_roots:
+            if data_root not in data_roots:
+                data_roots.append(data_root)
+
+    for data_root in data_roots:
+        try:
+            return resolved_path.relative_to(data_root).as_posix()
         except ValueError:
             continue
 
@@ -581,17 +715,21 @@ def validate_runtime_storage_contract() -> None:
             f"{PROTECTED_ROOT_ENV} must be set for the protected runtime contract."
         )
 
-    paths_to_validate = {
+    protected_paths_to_validate = {
         "protected_root": PROTECTED_DATA_ROOT,
         "storage": STORAGE_DIR,
-        "io": IO_DIR,
+        "upload_api": UPLOAD_API_DIR,
+        "upload_watcher": UPLOAD_WATCHER_DIR,
+        "upload_preanonymized": UPLOAD_PREANONYMIZED_DIR,
+    }
+    public_paths_to_validate = {
+        "data_root": DATA_DIR,
+        "import": IMPORT_DIR,
+        "export": EXPORT_DIR,
         "logs": LOG_DIR,
         "quarantine": QUARANTINE_DIR,
         "migration_staging": MIGRATION_STAGING_DIR,
         "manifest": MANIFEST_DIR,
-        "upload_api": UPLOAD_API_DIR,
-        "upload_watcher": UPLOAD_WATCHER_DIR,
-        "upload_preanonymized": UPLOAD_PREANONYMIZED_DIR,
         "watcher_video_drop": WATCHER_VIDEO_DROP_DIR,
         "watcher_report_drop": WATCHER_REPORT_DROP_DIR,
         "watcher_preanonymized_drop": WATCHER_PREANONYMIZED_DROP_DIR,
@@ -599,15 +737,27 @@ def validate_runtime_storage_contract() -> None:
         "sap_import_processed": SAP_IMPORT_PROCESSED_DIR,
         "sap_import_failed": SAP_IMPORT_FAILED_DIR,
     }
-    for label, path in paths_to_validate.items():
+    for label, path in protected_paths_to_validate.items():
         try:
             ensure_within_protected_root(path)
         except ValueError as exc:
             raise RuntimeError(
                 f"Runtime storage contract invalid for {label}: {exc}"
             ) from exc
+    for label, path in public_paths_to_validate.items():
+        try:
+            ensure_within_data_root(path)
+        except ValueError as exc:
+            raise RuntimeError(
+                f"Runtime data contract invalid for {label}: {exc}"
+            ) from exc
+
+    for label, path in {
+        **protected_paths_to_validate,
+        **public_paths_to_validate,
+    }.items():
         if not path.exists():
-            if IS_PYTEST:
+            if TEST_PATH_COMPAT_ENABLED:
                 path.mkdir(parents=True, exist_ok=True)
                 continue
             raise RuntimeError(
@@ -626,7 +776,18 @@ def validate_runtime_storage_contract() -> None:
 def resolve_storage_tier_path(tier: str, *parts: str | Path) -> Path:
     root = get_storage_tier_root(tier)
     candidate = root.joinpath(*[str(part) for part in parts]).resolve()
-    return ensure_within_protected_root(candidate)
+    protected_tiers = {
+        "upload_api",
+        "upload_watcher",
+        "upload_preanonymized",
+        "ingest_uploads",
+        "managed_anonymized_videos",
+        "managed_anonymized_reports",
+        "managed_sensitive_sidecars",
+    }
+    if tier in protected_tiers:
+        return ensure_within_protected_root(candidate)
+    return ensure_within_data_root(candidate)
 
 
 def build_upload_job_relative_path(*, tier: str, filename: str, key: str) -> str:

@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-
-from endoreg_db.utils.file_operations import safe_unlink_file
 from typing import Any
+
+from endoreg_db.config.env import get_report_pdf_renderer_bin
+from endoreg_db.utils.file_operations import safe_unlink_file
 
 from endoreg_db.models import PatientExamination, PatientExaminationReport
 
@@ -18,7 +18,7 @@ class ReportPdfRendererError(RuntimeError):
 
 
 def get_renderer_binary() -> str | None:
-    configured = os.environ.get("ENDOREG_REPORT_PDF_RENDERER_BIN", "").strip()
+    configured = get_report_pdf_renderer_bin()
     if configured:
         return configured
     discovered = shutil.which("report_pdf_renderer")

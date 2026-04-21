@@ -25,12 +25,30 @@ from endoreg_db.models.media import RawPdfFile
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
-from endoreg_db.utils.file_operations import sha256_file
-from endoreg_db.utils.paths import IMPORT_REPORT_DIR, SENSITIVE_REPORT_DIR, STORAGE_DIR
+from endoreg_db.utils.file_operations import safe_unlink_file, sha256_file
+from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.rust_backend import render_single_page_pdf as rust_render_pdf
 
 logger = logging.getLogger(__name__)
-HASH_LOCK_DIR = STORAGE_DIR / "locks" / "report_content"
+
+
+def _sensitive_report_dir() -> Path:
+    return path_utils.EndoregPathsModel.from_environment().sensitive_report
+
+
+def _import_report_dir() -> Path:
+    return path_utils.EndoregPathsModel.from_environment().import_report
+
+
+def _report_lock_root() -> Path:
+    return (
+        path_utils.EndoregPathsModel.from_environment().staging_migration
+        / "report_locks"
+    )
+
+
+def _hash_lock_dir() -> Path:
+    return _report_lock_root() / "report_content"
 
 
 class ReportImportService:
@@ -132,7 +150,7 @@ class ReportImportService:
         if not file_path.exists():
             return
         try:
-            file_path.unlink()
+            safe_unlink_file(file_path, missing_ok=False)
             logger.info("%s %s", log_prefix, file_path)
         except OSError as exc:
             logger.warning("%s failed for %s: %s", log_prefix, file_path, exc)
@@ -174,7 +192,7 @@ class ReportImportService:
                 logger.info("Acquired file lock for %s", lock_path)
                 if not isinstance(ctx.file_hash, str):
                     ctx.file_hash = str(ctx.file_hash)
-                with content_hash_lock(ctx.file_hash, HASH_LOCK_DIR):
+                with content_hash_lock(ctx.file_hash, _hash_lock_dir()):
                     logger.info("Acquired content-hash lock for %s", ctx.file_hash)
                     existing_completed_report = self._get_existing_completed_report(ctx)
                     if existing_completed_report is not None and not retry:
@@ -186,7 +204,7 @@ class ReportImportService:
                     if sensitive_src is None:
                         raise ValueError("Could not set any source for file.")
                     ctx.sensitive_path = create_sensitive_copy(
-                        sensitive_src, SENSITIVE_REPORT_DIR
+                        sensitive_src, _sensitive_report_dir(), ctx
                     )
 
                     # create or retrieve RawPdfFile + update history
@@ -324,7 +342,7 @@ class ReportImportService:
             except FileNotFoundError:
                 return
             try:
-                path.unlink()
+                safe_unlink_file(path, missing_ok=False)
                 logger.info("Deleted duplicate %s after short-circuit: %s", label, path)
             except Exception as exc:
                 logger.warning(
@@ -341,6 +359,6 @@ class ReportImportService:
         )
         if (
             isinstance(original_path, Path)
-            and original_path.parent == IMPORT_REPORT_DIR
+            and original_path.parent.resolve() == _import_report_dir().resolve()
         ):
             _safe_unlink(original_path, label="import source")

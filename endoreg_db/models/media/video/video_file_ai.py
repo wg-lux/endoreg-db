@@ -2,19 +2,13 @@ import logging
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, cast
-import os
 import numpy as np
 from safetensors import safe_open
 
 from ...metadata import ModelMeta, VideoPredictionMeta
 from ...utils import TEST_RUN as GLOBAL_TEST_RUN
 
-# TODO is this needed?
-n = os.getenv("GLOBAL_N_TEST_FRAMES", 100)
-if not isinstance(n, int):
-    GLOBAL_N_TEST_FRAMES = 100
-else:
-    GLOBAL_N_TEST_FRAMES = n
+GLOBAL_N_TEST_FRAMES = 100
 
 if TYPE_CHECKING:
     from ...medical.hardware import EndoscopyProcessor

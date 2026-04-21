@@ -88,7 +88,10 @@ class ReportStreamViewTests(TestCase):
             fake_pdf_obj = SimpleNamespace(file=fake_file_field, processed_file=None)
 
             monkeypatches.setenv("SERVE_WITH_NGINX", "true")
-            monkeypatches.setenv("FRONTEND_ORIGIN", "http://frontend.test")
+            monkeypatches.setenv(
+                "DJANGO_CORS_ALLOWED_ORIGINS",
+                "http://frontend.test",
+            )
             monkeypatches.setenv("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
             monkeypatches.setattr(
                 view_module.RawPdfFile.objects, "get", lambda **kwargs: fake_pdf_obj
@@ -209,12 +212,13 @@ class ReportStreamViewTests(TestCase):
                 view_module.RawPdfFile.objects, "get", lambda **kwargs: fake_pdf_obj
             )
             response = self.client.get("/api/media/pdfs/123/stream/?type=raw")
+            body = b"".join(response.streaming_content)
         finally:
             monkeypatches.undo()
             fallback_path.unlink(missing_ok=True)
 
         assert response.status_code == 200
-        assert b"".join(response.streaming_content) == payload
+        assert body == payload
 
     def test_pdf_stream_recovers_processed_path_from_hash_lookup_when_field_name_is_stale(
         self,

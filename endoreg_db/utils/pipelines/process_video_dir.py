@@ -6,6 +6,7 @@ from django.core.management import call_command
 from django.core.exceptions import ObjectDoesNotExist
 from icecream import ic
 from tqdm import tqdm
+from endoreg_db.config.env import get_center_name
 from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.models import (
     AiModel,
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 # DEFAULT_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data/import/video_import"
 DEFAULT_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data/study_data"
-CENTER_NAME = os.environ.get("CENTER_NAME", "university_hospital_wuerzburg")
+CENTER_NAME = get_center_name("university_hospital_wuerzburg")
 ENDOSCOPY_PROCESSOR_NAME = os.environ.get("ENDOSCOPY_PROCESSOR_NAME", "olympus_cv_1500")
 MODEL_NAME = "image_multilabel_classification_colonoscopy_default"
 MODEL_WEIGHTS_PATH = "./tests/assets/colo_segmentation_RegNetX800MF_6.safetensors"

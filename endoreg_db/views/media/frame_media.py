@@ -1,6 +1,5 @@
 import logging
 import mimetypes
-import os
 from pathlib import Path
 
 from django.core.files import File
@@ -11,7 +10,7 @@ from endoreg_db.models import Frame, VideoFile
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.utils.paths import (
-    ensure_within_protected_root,
+    ensure_within_protected_media_root,
 )
 from endoreg_db.utils.storage_streaming import (
     add_cors_headers,
@@ -22,6 +21,7 @@ from endoreg_db.utils.nginx_accel import (
     build_nginx_accel_response_for_path,
     nginx_offload_enabled,
 )
+from endoreg_db.utils.cors import resolve_response_origin
 
 logger = logging.getLogger(__name__)
 
@@ -74,10 +74,12 @@ class FrameStreamView(APIView):
             raise Http404("Frame file not found on disk") from exc
 
         try:
-            ensure_within_protected_root(resolved_frame_path)
+            resolved_frame_path = ensure_within_protected_media_root(
+                resolved_frame_path
+            )
         except ValueError as exc:
             logger.warning(
-                "Rejected frame path outside protected data root for video %s: %s",
+                "Rejected frame path outside protected media root for video %s: %s",
                 getattr(video, "pk", None),
                 resolved_frame_path,
             )
@@ -87,7 +89,7 @@ class FrameStreamView(APIView):
         if frame_dir is None:
             raise Http404("Video frame directory is not configured")
         try:
-            resolved_frame_dir = frame_dir.resolve()
+            resolved_frame_dir = ensure_within_protected_media_root(frame_dir)
         except Exception as exc:
             raise Http404("Video frame directory path is invalid") from exc
 
@@ -224,7 +226,7 @@ class FrameStreamView(APIView):
         mime_type, _ = mimetypes.guess_type(str(frame_path))
         content_type = mime_type or "image/jpeg"
 
-        frontend_origin = os.environ.get("FRONTEND_ORIGIN", "http://localhost:8000")
+        frontend_origin = resolve_response_origin(request)
         if nginx_offload_enabled():
             nginx_response = self._serve_with_nginx(
                 frame_path,

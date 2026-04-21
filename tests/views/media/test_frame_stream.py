@@ -74,7 +74,10 @@ class FrameStreamViewTests(TestCase):
 
         monkeypatches = pytest.MonkeyPatch()
         monkeypatches.setenv("SERVE_WITH_NGINX", "true")
-        monkeypatches.setenv("FRONTEND_ORIGIN", "http://frontend.test")
+        monkeypatches.setenv(
+            "DJANGO_CORS_ALLOWED_ORIGINS",
+            "http://frontend.test",
+        )
         monkeypatches.setenv("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
         monkeypatches.setattr(
             frame_media_module.VideoFile,

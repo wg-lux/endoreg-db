@@ -127,7 +127,7 @@ def test_import_and_anonymize_locks_original_before_sensitive_copy(
         yield
         events.append(("lock_exit", Path(path)))
 
-    def fake_create_sensitive_copy(src, sensitive_root):
+    def fake_create_sensitive_copy(src, sensitive_root, ctx):
         events.append(("create_sensitive_copy", Path(src)))
         sensitive_path.parent.mkdir(parents=True, exist_ok=True)
         sensitive_path.write_bytes(src.read_bytes())
@@ -249,13 +249,15 @@ def test_import_and_anonymize_short_circuit_cleans_duplicate_staging(
     canonical_raw.write_bytes(b"canonical")
 
     monkeypatch.setattr(vis_module, "validate_directories", lambda: None, raising=True)
-    monkeypatch.setattr(vis_module, "IMPORT_VIDEO_DIR", import_dir, raising=True)
+    monkeypatch.setattr(
+        vis_module, "_video_import_dir", lambda: import_dir, raising=True
+    )
 
     @contextmanager
     def fake_file_lock(path):
         yield
 
-    def fake_create_sensitive_copy(src, sensitive_root):
+    def fake_create_sensitive_copy(src, sensitive_root, ctx):
         return staged_sensitive
 
     class DummyState:
@@ -324,7 +326,7 @@ def test_import_and_anonymize_acquires_content_hash_lock_before_staging(
         yield
         events.append(("hash_lock_exit", file_hash, Path(lock_root)))
 
-    def fake_create_sensitive_copy(src, sensitive_root):
+    def fake_create_sensitive_copy(src, sensitive_root, ctx):
         events.append(("create_sensitive_copy", Path(src)))
         sensitive_path.parent.mkdir(parents=True, exist_ok=True)
         sensitive_path.write_bytes(src.read_bytes())
@@ -465,7 +467,7 @@ def test_import_and_anonymize_duplicate_success_skips_storage_preflight_and_stag
             "storage preflight should be skipped for completed duplicates"
         )
 
-    def fail_create_sensitive_copy(src, root):
+    def fail_create_sensitive_copy(src, root, ctx):
         raise AssertionError(
             "sensitive copy should be skipped for completed duplicates"
         )
@@ -521,7 +523,9 @@ def test_same_content_imports_serialize_and_only_one_runs_heavy_work(
     state = {"has_success_history": False, "video": None}
 
     monkeypatch.setattr(vis_module, "validate_directories", lambda: None, raising=True)
-    monkeypatch.setattr(vis_module, "IMPORT_VIDEO_DIR", import_dir, raising=True)
+    monkeypatch.setattr(
+        vis_module, "_video_import_dir", lambda: import_dir, raising=True
+    )
 
     @contextmanager
     def fake_file_lock(path):
@@ -532,7 +536,7 @@ def test_same_content_imports_serialize_and_only_one_runs_heavy_work(
         with lock:
             yield
 
-    def fake_create_sensitive_copy(src, sensitive_dir):
+    def fake_create_sensitive_copy(src, sensitive_dir, ctx):
         staged = sensitive_root / src.name
         staged.write_bytes(src.read_bytes())
         create_calls.append(src.name)

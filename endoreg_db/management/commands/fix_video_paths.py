@@ -3,7 +3,6 @@ Django management command to fix video file paths in the database.
 """
 
 import logging
-import os
 from pathlib import Path
 
 from django.core.management.base import BaseCommand
@@ -11,6 +10,7 @@ from django.db import transaction
 
 from endoreg_db.models import VideoFile
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
+from endoreg_db.utils.paths import STORAGE_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ class Command(BaseCommand):
             "--storage-dir",
             type=str,
             default=None,
-            help="Path to the storage directory (default: $ENDOREG_STORAGE_DIR or ./storage)",
+            help=f"Path to the storage directory (default: {STORAGE_DIR})",
         )
 
     def handle(self, *args, **options):
@@ -52,12 +52,7 @@ class Command(BaseCommand):
         video_id = options.get("video_id")
 
         # Determine storage_dir from argument, env, or fallback
-        storage_dir = (
-            options.get("storage_dir")
-            or os.environ.get("ENDOREG_STORAGE_DIR")
-            or "./storage"
-        )
-        storage_dir = Path(storage_dir)
+        storage_dir = Path(options.get("storage_dir") or STORAGE_DIR)
 
         # Find all actual video files
         actual_files = {}

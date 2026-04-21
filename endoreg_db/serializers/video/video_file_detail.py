@@ -4,10 +4,6 @@ from pathlib import Path
 
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.serializers.video.video_file_brief import VideoBriefSerializer
-from endoreg_db.utils.media_urls import (
-    build_absolute_media_url,
-    build_video_stream_path,
-)
 from ...utils.video.calc_duration_seconds import _calc_duration_vf
 
 
@@ -25,13 +21,11 @@ class VideoDetailSerializer(VideoBriefSerializer):
     file = serializers.SerializerMethodField()
     full_path = serializers.SerializerMethodField()
     duration = serializers.SerializerMethodField()
-    video_url = serializers.SerializerMethodField()
 
     class Meta(VideoBriefSerializer.Meta):
         fields = VideoBriefSerializer.Meta.fields + [
             "file",
             "full_path",
-            "video_url",
             "patient_first_name",
             "patient_last_name",
             "patient_dob",
@@ -48,17 +42,6 @@ class VideoDetailSerializer(VideoBriefSerializer):
     def get_full_path(self, obj):
         f = obj.processed_file or obj.raw_file
         return str(Path(settings.MEDIA_ROOT) / f.name) if f else None
-
-    def get_video_url(self, obj):
-        """
-        Return the absolute URL for accessing the video streaming resource.
-
-        Returns:
-            str or None: The absolute URL to the video streaming endpoint if a request context is available; otherwise, None.
-        """
-        request = self.context.get("request")
-        # Use video streaming endpoint (VideoStreamView)
-        return build_absolute_media_url(request, build_video_stream_path(obj.pk))
 
     def get_duration(self, obj: VideoFile):
         """

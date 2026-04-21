@@ -22,7 +22,6 @@ def main() -> int:
     os.environ.setdefault("DJANGO_DEBUG", "1")
     os.environ.setdefault("LX_ANNOTATE_ENCRYPTED_DATA_DIR", "data")
     os.environ.setdefault("STORAGE_DIR", "data/storage")
-    os.environ.setdefault("IO_DIR", "data")
 
     try:
         import django

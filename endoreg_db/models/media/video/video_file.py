@@ -6,7 +6,6 @@ import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Union, cast
 
-from django.core.files import File
 from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.db.models import F
@@ -19,14 +18,15 @@ from endoreg_db.models.media.video.storage_mode import (
     coerce_video_storage_mode,
     get_default_video_storage_mode_value,
 )
-from endoreg_db.utils.video.calc_duration_seconds import _calc_duration_vf
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.utils.paths import (
     ANONYM_VIDEO_DIR,
     SENSITIVE_VIDEO_DIR,
     data_paths,
+    normalize_protected_media_relative_path,
     to_storage_relative,
 )
+from endoreg_db.utils.video.calc_duration_seconds import _calc_duration_vf
 from endoreg_db.utils.video.ffmpeg_wrapper import assemble_video_from_frames
 
 from ...label import Label, LabelVideoSegment
@@ -69,7 +69,9 @@ from .video_file_io import (
     _get_base_frame_dir,
     _get_frame_dir_path,
     _get_processed_file_path,
+    _get_processed_stream_path,
     _get_raw_file_path,
+    _get_raw_stream_path,
     _get_target_anonymized_video_path,
     _get_temp_anonymized_frame_dir,
     _set_frame_dir,
@@ -87,13 +89,7 @@ from .video_file_meta import (
 logger = logging.getLogger(__name__)  # Changed from "video_file"
 
 if TYPE_CHECKING:
-    from django.db.models.fields.files import FieldFile
-
-    from endoreg_db.models import (
-        FFMpegMeta,
-        Frame,
-        VideoState,
-    )
+    from endoreg_db.models import FFMpegMeta, Frame, VideoState
 
 
 class VideoQuerySet(models.QuerySet):
@@ -206,7 +202,7 @@ class VideoFile(models.Model):
             "filesystem-backed media root."
         ),
     )
-    streamable_relative_path = models.CharField(
+    raw_streamable_relative_path = models.CharField(
         max_length=512,
         blank=True,
         help_text=(
@@ -282,7 +278,7 @@ class VideoFile(models.Model):
     NO_FILE_ASSOCIATED = "Active file has no associated file."
 
     @property
-    def active_raw_file(self) -> File:
+    def active_raw_file(self) -> FieldFile:
         """Return the raw file if available, otherwise raise ValueError."""
         if self.has_raw:
             return self.raw_file
@@ -307,7 +303,7 @@ class VideoFile(models.Model):
             relative_path = (
                 self.processed_streamable_relative_path
                 if file_type == "processed"
-                else self.streamable_relative_path
+                else self.raw_streamable_relative_path
             )
             if not isinstance(relative_path, str) or not relative_path.strip():
                 return None
@@ -421,6 +417,8 @@ class VideoFile(models.Model):
     get_temp_anonymized_frame_dir = _get_temp_anonymized_frame_dir
     get_target_anonymized_video_path = _get_target_anonymized_video_path
     get_raw_file_path = _get_raw_file_path
+    get_raw_stream_path = _get_raw_stream_path
+    get_processed_stream_path = _get_processed_stream_path
     get_processed_file_path = _get_processed_file_path
 
     anonymize = _anonymize
@@ -570,61 +568,8 @@ class VideoFile(models.Model):
         video_file = video_file.initialize()
         return video_file
 
-    def delete(self, using=None, keep_parents=False) -> tuple[int, dict[str, int]]:
-        """
-        Delete the VideoFile instance, including associated files and frames.
-
-        Overrides the default delete method to ensure proper cleanup of related resources.
-        """
-        # Ensure frames are deleted before the main instance
-        _delete_frames(self)
-
-        # Call the original delete method to remove the instance from the database
-        try:
-            active_path = self.active_file_path
-            logger.info(f"Deleting VideoFile: {self.video_hash} - {active_path}")
-
-        except ValueError:
-            logger.info(
-                f"Deleting VideoFile: {self.video_hash} - No active file path found."
-            )
-            active_path = None
-
-        # Delete associated files if they exist
-        if active_path and active_path.exists():
-            active_path.unlink(missing_ok=True)
-
-        # Delete file storage
-        if self.raw_file and self.raw_file.storage.exists(self.raw_file.name):
-            self.raw_file.storage.delete(self.raw_file.name)
-        if self.processed_file and self.processed_file.storage.exists(
-            self.processed_file.name
-        ):
-            self.processed_file.storage.delete(self.processed_file.name)
-
-        # Use proper database connection
-        if using is None:
-            using = "default"
-
-        raw_file_path = self.get_raw_file_path()
-        if raw_file_path:
-            raw_file_path = Path(raw_file_path)
-            lock_path = raw_file_path.with_suffix(raw_file_path.suffix + ".lock")
-            if lock_path.exists():
-                try:
-                    lock_path.unlink()
-                    logger.info(f"Removed processing lock: {lock_path}")
-                except Exception as e:
-                    logger.warning(f"Could not remove processing lock {lock_path}: {e}")
-
-        try:
-            # Call parent delete with proper parameters
-            result = super().delete(using=using, keep_parents=keep_parents)
-            logger.info(f"VideoFile {self.video_hash} deleted successfully.")
-            return result
-        except Exception as e:
-            logger.error(f"Error deleting VideoFile {self.video_hash}: {e}")
-            raise
+    def delete(self, using=None, keep_parents=False):
+        return self.delete_with_file(using=using, keep_parents=keep_parents)
 
     def validate_metadata_annotation(
         self, extracted_data_dict: Optional[dict] = None
@@ -1045,3 +990,102 @@ class VideoFile(models.Model):
         except Exception as e:
             logger.error(f"Video cant be returned for known hash. {e}")
             raise
+
+    def get_raw_stream_relative_path(self) -> str | None:
+        relative_path = getattr(self, "raw_streamable_relative_path", "")
+        try:
+            normalized = normalize_protected_media_relative_path(relative_path)
+        except ValueError:
+            return None
+        return normalized
+
+    def get_processed_stream_relative_path(self) -> str | None:
+        relative_path = getattr(self, "processed_streamable_relative_path", "")
+        try:
+            normalized = normalize_protected_media_relative_path(relative_path)
+        except ValueError:
+            return None
+        return normalized
+
+    def get_stream_relative_path(self, file_type: str) -> str | None:
+        if file_type == "processed":
+            return self.get_processed_stream_relative_path()
+        return self.get_raw_stream_relative_path()
+
+    def resolve_video_stream_source(
+        self,
+        file_type: str,
+        *,
+        materialize_if_missing: bool = False,
+    ) -> tuple[FieldFile, Path | None]:
+        """
+        Returns:
+            (field_file, local_path_or_none)
+
+        - field_file is the canonical Django file field for metadata/name/storage access
+        - local_path_or_none is a concrete local file path when a streamable artifact or
+        local fallback file should be served directly from disk
+        """
+        if file_type == "processed":
+            field_file = getattr(self, "processed_file", None)
+            if not field_file or not getattr(field_file, "name", None):
+                raise FileNotFoundError("No processed file")
+
+            stream_path = self.get_processed_stream_path()
+            if stream_path is not None and stream_path.exists():
+                return field_file, stream_path
+
+            if materialize_if_missing:
+                sync_video_streamable_artifacts(
+                    self,
+                    include_raw=False,
+                    include_processed=True,
+                    save=True,
+                )
+                stream_path = self.get_processed_stream_path()
+                if stream_path is not None and stream_path.exists():
+                    return field_file, stream_path
+
+            local_path = self.get_processed_file_path()
+            if local_path is not None and local_path.exists():
+                return field_file, local_path
+
+            raise FileNotFoundError("Processed video file is not available")
+
+        field_file = self.active_raw_file
+        if not getattr(field_file, "name", None):
+            raise FileNotFoundError("No raw file")
+
+        stream_path = self.get_raw_stream_path()
+        if stream_path is not None and stream_path.exists():
+            return field_file, stream_path
+
+        if materialize_if_missing:
+            sync_video_streamable_artifacts(
+                self,
+                include_raw=True,
+                include_processed=False,
+                save=True,
+            )
+            stream_path = self.get_raw_stream_path()
+            if stream_path is not None and stream_path.exists():
+                return field_file, stream_path
+
+        local_path = self.get_raw_file_path()
+        if local_path is not None and local_path.exists():
+            return field_file, local_path
+
+        raise FileNotFoundError("Raw video file is not available")
+
+    def can_offload_stream_with_nginx(self, file_type: str) -> bool:
+        try:
+            storage_mode = coerce_video_storage_mode(
+                getattr(self, "storage_mode", None)
+            )
+        except ValueError:
+            return False
+
+        if storage_mode != VideoStorageMode.STREAMABLE:
+            return False
+
+        return self.get_stream_relative_path(file_type) is not None

@@ -2,27 +2,25 @@
 
 from __future__ import annotations
 
-import os
 import posixpath
 from pathlib import Path
 
 from django.http import HttpResponse, HttpResponseBase
 
+from endoreg_db.config.env import (
+    get_protected_media_url,
+    nginx_offload_enabled as env_nginx_offload_enabled,
+)
 from endoreg_db.utils.paths import to_protected_media_relative
 from endoreg_db.utils.storage_streaming import add_cors_headers
 
 
 def nginx_protected_url() -> str:
-    return os.environ.get("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
+    return get_protected_media_url()
 
 
 def nginx_offload_enabled() -> bool:
-    return os.environ.get("SERVE_WITH_NGINX", "false").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    return env_nginx_offload_enabled()
 
 
 def build_nginx_accel_response(

@@ -226,8 +226,8 @@ class RawPdfFile(models.Model):
 
         # Canonical raw report lookup order.
         raw_dirs = [
-            IMPORT_REPORT_DIR,  # General report directory
             SENSITIVE_REPORT_DIR,  # Files might be in sensitive dir
+            IMPORT_REPORT_DIR,  # General report directory
         ]
 
         # Check direct hash-based name in each directory

@@ -11,10 +11,15 @@ from endoreg_db.import_files.context import ImportContext
 from endoreg_db.import_files.file_storage.sensitive_meta_storage import (
     sensitive_meta_storage,
 )
-from endoreg_db.utils.paths import ANONYM_REPORT_DIR
+from endoreg_db.utils import paths as path_utils
+from endoreg_db.utils.file_operations import ensure_directory
 
 
 logger = logging.getLogger(__name__)
+
+
+def _processed_report_dir() -> Path:
+    return path_utils.EndoregPathsModel.from_environment().anonym_report
 
 
 class ReportAnonymizer:
@@ -54,8 +59,7 @@ class ReportAnonymizer:
             ctx.anonymized_path = None
         else:
             # Setup anonymized directory
-            anonymized_dir = ANONYM_REPORT_DIR
-            anonymized_dir.mkdir(parents=True, exist_ok=True)
+            anonymized_dir = ensure_directory(_processed_report_dir())
             # Generate output path for anonymized report
             pdf_hash = ctx.current_report.pdf_hash
             anonymized_output_path = anonymized_dir / f"{pdf_hash}.pdf"
@@ -78,11 +82,14 @@ class ReportAnonymizer:
                 extracted_metadata if isinstance(extracted_metadata, dict) else {}
             )
 
-            if ctx.anonymized_path:
-                logger.info(
-                    "DEBUG: after anonymizer, ctx.anonymized_path=%s (exists=%s)",
-                    ctx.anonymized_path,
-                    isinstance(ctx.anonymized_path, str),
+            anonymized_path = (
+                Path(ctx.anonymized_path)
+                if isinstance(ctx.anonymized_path, (str, Path))
+                else None
+            )
+            if anonymized_path is None or not anonymized_path.exists():
+                raise RuntimeError(
+                    "Report anonymization did not produce a readable anonymized PDF."
                 )
 
         if isinstance(ctx.original_text, str):

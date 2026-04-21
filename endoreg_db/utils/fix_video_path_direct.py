@@ -5,8 +5,10 @@ Direct fix for video file path issues without complex Django setup.
 
 import sqlite3
 from pathlib import Path
-import os
 import argparse
+
+from endoreg_db.config.env import BASE_DIR
+from endoreg_db.utils.paths import STORAGE_DIR
 
 
 def fix_video_paths_direct(db_path, storage_dir):
@@ -144,14 +146,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--db-path",
         type=str,
-        default=os.environ.get("ENDOREG_DB_PATH", "./db.sqlite3"),
-        help="Path to the SQLite database file (default: ./db.sqlite3 or $ENDOREG_DB_PATH)",
+        default=str(BASE_DIR / "dev_db.sqlite3"),
+        help=f"Path to the SQLite database file (default: {BASE_DIR / 'dev_db.sqlite3'})",
     )
     parser.add_argument(
         "--storage-dir",
         type=str,
-        default=os.environ.get("ENDOREG_STORAGE_DIR", "./storage"),
-        help="Path to the storage directory (default: ./storage or $ENDOREG_STORAGE_DIR)",
+        default=str(STORAGE_DIR),
+        help=f"Path to the storage directory (default: {STORAGE_DIR})",
     )
     args = parser.parse_args()
     fix_video_paths_direct(args.db_path, args.storage_dir)

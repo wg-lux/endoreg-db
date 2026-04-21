@@ -1,5 +1,4 @@
 import logging
-import os
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -18,7 +17,16 @@ from endoreg_db.import_files.file_storage.sensitive_meta_storage import (
     sensitive_meta_storage,
 )
 from endoreg_db.models import EndoscopyProcessor, VideoFile
-from endoreg_db.utils.paths import ANONYM_VIDEO_DIR
+from endoreg_db.utils import paths as path_utils
+from endoreg_db.utils.file_operations import (
+    atomic_move_file,
+    ensure_directory,
+    safe_unlink_file,
+)
+
+
+def _processed_video_dir() -> Path:
+    return path_utils.EndoregPathsModel.from_environment().anonym_video
 
 
 class VideoAnonymizer:
@@ -29,15 +37,14 @@ class VideoAnonymizer:
 
     def anonymize_video(self, ctx: ImportContext):
         # Setup anonymized directory
-        anonymized_dir = ANONYM_VIDEO_DIR
-        anonymized_dir.mkdir(parents=True, exist_ok=True)
+        anonymized_dir = ensure_directory(_processed_video_dir())
         assert ctx.current_video is not None
         # Generate output path for anonymized report
 
         video_hash = ctx.current_video.video_hash
         anonymized_output_path = anonymized_dir / f"{video_hash}.mp4"
         temp_output_path = _temp_media_path(anonymized_output_path)
-        temp_output_path.unlink(missing_ok=True)
+        safe_unlink_file(temp_output_path, missing_ok=True)
 
         self._frame_cleaning_class = FrameCleaner()
 
@@ -69,7 +76,7 @@ class VideoAnonymizer:
                 f"Video anonymization output is empty: {temp_result_path}"
             )
 
-        os.replace(temp_result_path, anonymized_output_path)
+        atomic_move_file(source=temp_result_path, destination=anonymized_output_path)
         ctx.anonymized_path = anonymized_output_path
         sm = LxSM()
         sm.safe_update(extracted_metadata)

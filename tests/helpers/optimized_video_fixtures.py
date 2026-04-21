@@ -182,8 +182,11 @@ def _create_segment_stub_video() -> VideoFile:
 
         load_endoscope_data()
         processor = get_default_processor()
+
+    from endoreg_db.utils.paths import data_paths
+
     suffix = uuid.uuid4().hex
-    frame_dir = f"tests/storage/frames/segment_stub_{suffix}"
+    frame_dir = (data_paths["frame"] / f"segment_stub_{suffix}").as_posix()
     raw_file_name = f"segment_stub_{suffix}.mp4"
 
     return VideoFile.objects.create(

@@ -16,7 +16,7 @@ from endoreg_db.services.tabular_import_formats import (
     normalize_document_row,
     resolve_document_template,
 )
-from endoreg_db.utils.paths import ensure_within_protected_root
+from endoreg_db.utils.paths import ensure_within_data_root
 
 TEXT_DOCUMENT_TYPES = ("cwd", "briefe", "radiologie")
 ANCHOR_DOCUMENT_TYPES = (
@@ -418,9 +418,7 @@ def convert_sap_ish_zip_to_preanonymized_drop(
     center_key: str | None = None,
 ) -> SapIshImportResult:
     archive_path = Path(zip_path).expanduser().resolve()
-    destination_dir = ensure_within_protected_root(
-        Path(output_dir).expanduser().resolve()
-    )
+    destination_dir = ensure_within_data_root(Path(output_dir).expanduser().resolve())
 
     if not archive_path.exists():
         raise FileNotFoundError(f"SAP IS-H zip not found: {archive_path}")

@@ -25,17 +25,17 @@ transfer gating, and cleanup semantics, see
 
 General
 - DJANGO_SETTINGS_MODULE: choose settings module (defaults used in manage.py/wsgi.py/pytest.ini).
-- LX_ANNOTATE_ENCRYPTED_DATA_DIR: canonical protected runtime root. `STORAGE_DIR` and `IO_DIR` must resolve inside this root.
+- LX_ANNOTATE_ENCRYPTED_DATA_DIR: canonical protected runtime root. `STORAGE_DIR` must resolve inside this root.
 - STORAGE_DIR: absolute path to protected managed media storage. Defaults to `${LX_ANNOTATE_ENCRYPTED_DATA_DIR}/storage`.
 - STATIC_URL, STATIC_ROOT, MEDIA_URL: override static/media paths if embedding.
-- IO_DIR: protected runtime IO/workflow root for imports, exports, manifests, quarantine, and logs. Defaults to `LX_ANNOTATE_ENCRYPTED_DATA_DIR`.
+
 - TIME_ZONE: defaults to Europe/Berlin.
 
 Path roles
 - `endoreg_db/data/`: package-owned seed and setup data shipped with the app. Use this for YAML/bootstrap content loaded by commands such as `load_base_db_data`.
 - `LX_ANNOTATE_ENCRYPTED_DATA_DIR`: single canonical protected runtime root. This is the top-level contract for deployment-owned data in this project.
 - `STORAGE_DIR`: protected runtime-managed media and managed artifacts such as documents, processed videos, frames, and model weights.
-- `IO_DIR`: protected runtime ingress/egress workspace for imports, exports, manifests, quarantine, and operational logs.
+
 
 Development (endoreg_db.config.settings.dev)
 - DEV_DB_ENGINE: default django.db.backends.sqlite3
@@ -162,7 +162,7 @@ fast instead of guessing center identity from mutable names or local defaults.
 For hub deployments, treat the following as required:
 
 - PostgreSQL or another durable multi-user production database. SQLite is not acceptable in hub mode.
-- Protected managed storage rooted under `LX_ANNOTATE_ENCRYPTED_DATA_DIR`, with `STORAGE_DIR` and `IO_DIR` inside that root.
+- Protected managed storage rooted under `LX_ANNOTATE_ENCRYPTED_DATA_DIR`, with `STORAGE_DIR` and inside that root.
 - Durable shared or object-backed storage semantics for managed media and upload artifacts. Node-local ephemeral disks are not sufficient for a multi-node hub.
 - Host-project encryption, backup, retention, and access-control controls around the managed storage root.
 - OIDC/session or token authentication configured for API access in production.
@@ -194,7 +194,7 @@ Center-scoped callers must only receive resources for their own center. The pack
 As an embedded app in a host project:
 - Add 'endoreg_db' to INSTALLED_APPS in the host settings.
 - Define `LX_ANNOTATE_ENCRYPTED_DATA_DIR` in the host environment.
-- Optionally override `STORAGE_DIR` and `IO_DIR`, but keep both inside `LX_ANNOTATE_ENCRYPTED_DATA_DIR`.
+- Optionally override `STORAGE_DIR`, but keep it inside `LX_ANNOTATE_ENCRYPTED_DATA_DIR`.
 - Run migrations in the host project (this app contributes its migrations).
 - Run the complete setup command: `python manage.py setup_endoreg_db`
 
@@ -269,5 +269,5 @@ python manage.py create_multilabel_model_meta --model_name image_multilabel_clas
 - Consider HSTS: set SECURE_HSTS_SECONDS (e.g., 31536000) only when ready; include subdomains/preload as appropriate.
 - For hub deployments, set `ENDOREG_DEPLOYMENT_ROLE=central_hub` and use PostgreSQL or another non-SQLite production database.
 - Use the transfer endpoints only in `central_hub` deployments that intentionally support node-to-node synchronization.
-- Keep `STORAGE_DIR` and `IO_DIR` inside `LX_ANNOTATE_ENCRYPTED_DATA_DIR`.
+- Keep `STORAGE_DIR` and inside `LX_ANNOTATE_ENCRYPTED_DATA_DIR`.
 - For remote ingest, provision authentication before exposing `/api/upload/`.

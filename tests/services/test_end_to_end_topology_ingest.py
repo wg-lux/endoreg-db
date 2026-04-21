@@ -18,11 +18,12 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
 ):
     unique_suffix = uuid.uuid4().hex[:8]
     protected_root_rel = f"data/tests/runtime/{unique_suffix}/protected"
+    data_root_rel = f"data/tests/runtime/{unique_suffix}/public"
 
     with monkeypatch.context() as scoped:
         scoped.setenv("LX_ANNOTATE_ENCRYPTED_DATA_DIR", protected_root_rel)
         scoped.setenv("STORAGE_DIR", f"{protected_root_rel}/storage")
-        scoped.setenv("IO_DIR", protected_root_rel)
+        scoped.setenv("DATA_DIR", data_root_rel)
 
         reloaded_paths = importlib.reload(paths_module)
 

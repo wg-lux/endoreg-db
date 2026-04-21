@@ -8,6 +8,7 @@ from pathlib import Path
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
+from endoreg_db.config.env import get_protected_media_root, get_protected_media_url
 from endoreg_db.services.environment_readiness import check_environment_readiness
 from endoreg_db.utils.file_operations import atomic_copy_file
 from endoreg_db.utils.paths import LOG_DIR, PROTECTED_DATA_ROOT, STORAGE_DIR
@@ -46,10 +47,8 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options) -> None:
-        protected_media_url = os.environ.get("NGINX_PROTECTED_MEDIA_URL", "").strip()
-        protected_media_root = Path(
-            os.environ.get("PROTECTED_MEDIA_ROOT", str(STORAGE_DIR))
-        ).resolve()
+        protected_media_url = get_protected_media_url()
+        protected_media_root = get_protected_media_root().resolve()
         current_gid = os.getgid()
         supplemental_gids = set(os.getgroups())
         media_gid = (

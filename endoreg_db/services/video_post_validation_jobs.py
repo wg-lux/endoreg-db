@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 import logging
-import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, asdict
 
+from endoreg_db.config.env import (
+    get_video_post_validation_job_max_workers,
+    get_video_post_validation_job_mode,
+)
+
 logger = logging.getLogger(__name__)
 
-_executor = ThreadPoolExecutor(
-    max_workers=max(
-        1, int(os.environ.get("VIDEO_POST_VALIDATION_JOB_MAX_WORKERS", "2"))
-    )
-)
+_executor = ThreadPoolExecutor(max_workers=get_video_post_validation_job_max_workers())
 
 
 @dataclass(frozen=True)
@@ -52,11 +52,7 @@ def dispatch_video_post_validation_rebuild(
     - `thread`: queue to process-local executor and return immediately
     - `inline`: run synchronously (useful in local debugging/tests)
     """
-    mode = (
-        str(os.environ.get("VIDEO_POST_VALIDATION_JOB_MODE", "celery")).strip().lower()
-    )
-    if mode not in {"celery", "thread", "inline"}:
-        mode = "celery"
+    mode = get_video_post_validation_job_mode()
 
     task_id = str(uuid.uuid4())
 
