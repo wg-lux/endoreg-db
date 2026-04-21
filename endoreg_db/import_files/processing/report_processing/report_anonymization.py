@@ -87,6 +87,17 @@ class ReportAnonymizer:
                 if isinstance(ctx.anonymized_path, (str, Path))
                 else None
             )
+            if anonymized_path is not None and anonymized_path.exists():
+                ctx.current_report.processed_file.name = path_utils.to_storage_relative(
+                    anonymized_path
+                )
+
+            update_fields = ["text", "anonymized_text"]
+            if getattr(ctx.current_report.processed_file, "name", None):
+                update_fields.append("processed_file")
+
+            ctx.current_report.save(update_fields=update_fields)
+
             if anonymized_path is None or not anonymized_path.exists():
                 raise RuntimeError(
                     "Report anonymization did not produce a readable anonymized PDF."
