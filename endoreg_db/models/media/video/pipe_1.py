@@ -32,7 +32,7 @@ def _pipe_1(
     Pipeline 1: Extract frames, text, predict, create segments, optionally delete frames.
     """
     success = False  # Initialize success flag
-    from endoreg_db.models import AiModel, LabelVideoSegment
+    from endoreg_db.models import AiModel, InformationSource, LabelVideoSegment
 
     from ...metadata import ModelMeta, VideoPredictionMeta
     from .video_file_segments import _convert_sequences_to_db_segments  # Added import
@@ -112,10 +112,12 @@ def _pipe_1(
                 )
             except Exception as e:
                 logger.error(f"Pipe 1 failed during prediction: {e}", exc_info=True)
+                transaction.set_rollback(True)
                 return False
 
             if sequences is None:
                 logger.error("Pipe 1 failed: Prediction pipeline returned None.")
+                transaction.set_rollback(True)
                 return False
             logger.info("Pipe 1: Prediction complete.")
 
@@ -144,6 +146,17 @@ def _pipe_1(
                     sequences=sequences,
                     video_prediction_meta=video_prediction_meta,
                 )
+                prediction_source = InformationSource.objects.get(name="prediction")
+                mislabeled_prediction_segments = LabelVideoSegment.objects.filter(
+                    video_file=video_file,
+                    prediction_meta=video_prediction_meta,
+                ).exclude(source=prediction_source)
+                if mislabeled_prediction_segments.exists():
+                    raise RuntimeError(
+                        "Pipe 1 failed: prediction LabelVideoSegments were created "
+                        "without the dedicated 'prediction' information source."
+                    )
+
                 video_file.sequences = sequences
                 video_file.save(update_fields=["sequences"])
                 state.lvs_created = True

@@ -48,6 +48,7 @@ def test_convert_sequences_creates_segments():
     )
     assert created.count() == 2
     assert all(segment.state is not None for segment in created)
+    assert {segment.source.name for segment in created} == {"prediction"}
 
 
 @pytest.mark.django_db
@@ -84,6 +85,7 @@ def test_convert_sequences_skips_single_frame_segments():
     segment = created.get()
     assert segment.start_frame_number == 10
     assert segment.end_frame_number == 12
+    assert segment.source.name == "prediction"
     assert segment.state is not None
 
 

@@ -26,6 +26,8 @@ def _convert_sequences_to_db_segments(
     Converts predicted sequences into LabelVideoSegment database objects
     and ensures their corresponding state objects are created.
     """
+    from endoreg_db.models import InformationSource
+
     from ...label import Label, LabelVideoSegment  # Local import for models
 
     logger.info(
@@ -40,6 +42,7 @@ def _convert_sequences_to_db_segments(
     state_error_count = 0
 
     processed_labels = set()
+    prediction_source, _ = InformationSource.objects.get_or_create(name="prediction")
 
     for label_name, sequence_list in sequences.items():
         if not sequence_list:
@@ -74,6 +77,7 @@ def _convert_sequences_to_db_segments(
                     label=label,
                     start_frame_number=start_frame,
                     end_frame_number=end_frame,
+                    source=prediction_source,
                     prediction_meta=video_prediction_meta,
                 )
             )

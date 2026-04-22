@@ -2,7 +2,7 @@ import subprocess
 
 import pytest
 
-from endoreg_db.utils.video.ffmpeg_wrapper import transcode_video
+from endoreg_db.utils.video.ffmpeg_wrapper import _build_encoder_args, transcode_video
 
 
 class FakePopen:
@@ -88,3 +88,28 @@ def test_transcode_video_force_cpu_uses_cpu_only_flags(monkeypatch, tmp_path):
     assert "-cq" not in captured["command"]
     assert "-gpu" not in captured["command"]
     assert "-rc" not in captured["command"]
+
+
+@pytest.mark.unit
+def test_build_encoder_args_nvenc_forces_yuv420p_format(monkeypatch):
+    def fake_get_preferred_encoder():
+        return {
+            "name": "h264_nvenc",
+            "preset_param": "-preset",
+            "preset_value": "p4",
+            "quality_param": "-cq",
+            "quality_value": "20",
+            "type": "nvenc",
+            "fallback_preset": "p1",
+        }
+
+    monkeypatch.setattr(
+        "endoreg_db.utils.video.ffmpeg_wrapper._get_preferred_encoder",
+        fake_get_preferred_encoder,
+    )
+
+    encoder_args, encoder_type = _build_encoder_args()
+
+    assert encoder_type == "nvenc"
+    assert "-vf" in encoder_args
+    assert encoder_args[encoder_args.index("-vf") + 1] == "format=yuv420p"
