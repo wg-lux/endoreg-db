@@ -10,7 +10,10 @@ from typing import Any, Dict, List, Optional, Tuple, cast
 import cv2
 from tqdm import tqdm
 
-from endoreg_db.config.env import get_ffmpeg_transcode_timeout_seconds
+from endoreg_db.config.env import (
+    get_ffmpeg_env_candidates,
+    get_ffmpeg_transcode_timeout_seconds,
+)
 
 logger = logging.getLogger("ffmpeg_wrapper")
 FFMPEG_TRANSCODE_TIMEOUT_SECONDS = get_ffmpeg_transcode_timeout_seconds()
@@ -24,11 +27,7 @@ _preferred_encoder = None
 def _resolve_ffmpeg_executable() -> Optional[str]:
     """Locate the ffmpeg executable using multiple discovery strategies."""
     # 1) Explicit overrides via env vars
-    env_candidates = [
-        os.environ.get("FFMPEG_EXECUTABLE"),
-        os.environ.get("FFMPEG_BINARY"),
-        os.environ.get("FFMPEG_PATH"),
-    ]
+    env_candidates = get_ffmpeg_env_candidates()
 
     # 2) Django settings overrides (if Django is configured)
     try:
@@ -81,6 +80,26 @@ def _resolve_ffmpeg_executable() -> Optional[str]:
     return None
 
 
+@lru_cache(maxsize=1)
+def _resolve_ffprobe_executable() -> Optional[str]:
+    """Locate ffprobe, preferring the same directory as the selected ffmpeg."""
+    ffmpeg_executable = _resolve_ffmpeg_executable()
+    if ffmpeg_executable:
+        ffprobe_sibling = Path(ffmpeg_executable).with_name("ffprobe")
+        if ffprobe_sibling.exists() and os.access(ffprobe_sibling, os.X_OK):
+            return str(ffprobe_sibling)
+
+    via_path = shutil.which("ffprobe")
+    if via_path:
+        return via_path
+
+    for fallback in (Path("/usr/bin/ffprobe"), Path("/usr/local/bin/ffprobe")):
+        if fallback.exists() and os.access(fallback, os.X_OK):
+            return str(fallback)
+
+    return None
+
+
 def _detect_nvenc_support() -> bool:
     """
     Detect if NVIDIA NVENC hardware acceleration is available.
@@ -88,10 +107,15 @@ def _detect_nvenc_support() -> bool:
     Returns:
         True if NVENC is available, False otherwise
     """
+    ffmpeg_executable = _resolve_ffmpeg_executable()
+    if not ffmpeg_executable:
+        logger.debug("NVENC detection skipped because ffmpeg is unavailable")
+        return False
+
     try:
         # Test NVENC availability with a minimal command (minimum size for NVENC)
         cmd = [
-            "ffmpeg",
+            ffmpeg_executable,
             "-f",
             "lavfi",
             "-i",
@@ -347,8 +371,15 @@ def get_stream_info(file_path: Path) -> Optional[Dict]:
         logger.error("File not found for ffprobe: %s", file_path)
         return None
 
+    ffprobe_executable = _resolve_ffprobe_executable()
+    if not ffprobe_executable:
+        logger.error(
+            "ffprobe command not found. Ensure FFmpeg is installed and in the system's PATH."
+        )
+        return None
+
     command = [
-        "ffprobe",
+        ffprobe_executable,
         "-v",
         "quiet",
         "-print_format",
@@ -467,6 +498,13 @@ def transcode_video(
         logger.error("Input file not found for transcoding: %s", input_path)
         return None
 
+    ffmpeg_executable = _resolve_ffmpeg_executable()
+    if not ffmpeg_executable:
+        logger.error(
+            "ffmpeg command not found. Ensure FFmpeg is installed and in the system's PATH."
+        )
+        return None
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Determine encoder configuration
@@ -497,7 +535,7 @@ def transcode_video(
 
     # Build complete command
     command = [
-        "ffmpeg",
+        ffmpeg_executable,
         "-i",
         str(input_path),
         *encoder_args,
@@ -595,6 +633,13 @@ def _transcode_video_fallback(
         Path to transcoded video or None if failed
     """
     try:
+        ffmpeg_executable = _resolve_ffmpeg_executable()
+        if not ffmpeg_executable:
+            logger.error(
+                "ffmpeg command not found. Ensure FFmpeg is installed and in the system's PATH."
+            )
+            return None
+
         # Build CPU encoder arguments without carrying over NVENC-only options.
         encoder_args, _ = _build_encoder_args(
             quality_mode,
@@ -604,7 +649,7 @@ def _transcode_video_fallback(
         )
 
         command = [
-            "ffmpeg",
+            ffmpeg_executable,
             "-i",
             str(input_path),
             *encoder_args,

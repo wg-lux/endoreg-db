@@ -29,6 +29,10 @@ def test_transcode_video_timeout_removes_partial_output(monkeypatch, tmp_path):
     output_path = tmp_path / "output.mp4"
     input_path.write_bytes(b"input")
     output_path.write_bytes(b"partial")
+    monkeypatch.setattr(
+        "endoreg_db.utils.video.ffmpeg_wrapper._resolve_ffmpeg_executable",
+        lambda: "/smart/bin/ffmpeg",
+    )
 
     created_processes = []
 
@@ -52,6 +56,10 @@ def test_transcode_video_force_cpu_uses_cpu_only_flags(monkeypatch, tmp_path):
     input_path = tmp_path / "input.mp4"
     output_path = tmp_path / "output.mp4"
     input_path.write_bytes(b"input")
+    monkeypatch.setattr(
+        "endoreg_db.utils.video.ffmpeg_wrapper._resolve_ffmpeg_executable",
+        lambda: "/smart/bin/ffmpeg",
+    )
 
     captured = {}
 
@@ -80,7 +88,7 @@ def test_transcode_video_force_cpu_uses_cpu_only_flags(monkeypatch, tmp_path):
     result = transcode_video(input_path, output_path, force_cpu=True)
 
     assert result == output_path
-    assert captured["command"][0] == "ffmpeg"
+    assert captured["command"][0] == "/smart/bin/ffmpeg"
     assert "-c:v" in captured["command"]
     codec_index = captured["command"].index("-c:v")
     assert captured["command"][codec_index + 1] == "libx264"
