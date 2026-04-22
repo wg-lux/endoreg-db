@@ -223,12 +223,12 @@ django_settings_module = "endoreg_db.config.settings.test"
 "tesseract" = ["setuptools"]
 [tool.uv.sources]
 endoreg-rust-backend = { path = "dist/endoreg_rust_backend-0.1.0-cp312-cp312-linux_x86_64.whl" }
-lx-dtypes = { workspace = true, editable = true }
+# lx-dtypes = { workspace = true, editable = true }
 
-[tool.uv.workspace]
-members = [
-    "lx-data-models",
-]
+# [tool.uv.workspace]
+# members = [
+#     "lx-data-models",
+# ]
 
 # [tool.uv.sources]
 # lx-anonymizer = { workspace = true }
