@@ -622,17 +622,10 @@ class VideoFile(models.Model):
         if not metadata_updated and self.sensitive_meta is None:
             return False
 
-        # After validation and metadata update, only the anonymized video should remain
-        from .video_file_io import _get_raw_file_path
+        # After validation and metadata update, only the anonymized video should remain.
+        from .video_file_io import _delete_raw_file_after_validation
 
-        raw_path = _get_raw_file_path(self)
-
-        if raw_path and raw_path.exists():
-            logger.info(f"Deleting raw video file after validation: {raw_path}")
-            raw_path.unlink(missing_ok=True)
-            # Clear the raw_file field in database (use delete() to avoid save issues)
-            if self.raw_file:
-                self.raw_file.delete(save=False)
+        if _delete_raw_file_after_validation(self):
             logger.info(
                 f"Raw video deleted for {self.video_hash}. Anonymized video preserved."
             )

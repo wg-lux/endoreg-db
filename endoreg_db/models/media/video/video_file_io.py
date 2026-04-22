@@ -150,6 +150,23 @@ def _get_processed_stream_path(
     return None
 
 
+def _delete_raw_file_after_validation(video: "VideoFile") -> bool:
+    """Delete only the raw video asset after metadata validation."""
+    raw_path = _get_raw_file_path(video)
+    raw_field = getattr(video, "raw_file", None)
+    deleted = False
+
+    if raw_field and raw_field.name:
+        deleted = delete_field_file(raw_field, missing_ok=True, save=False)
+
+    if raw_path is not None:
+        existed = raw_path.exists()
+        safe_unlink_file(raw_path, missing_ok=True)
+        deleted = deleted or existed
+
+    return deleted
+
+
 @contextmanager
 def _ensure_local_processed_file(video: "VideoFile") -> Iterator[Path]:
     """Yield a local path to the processed file, downloading if necessary."""
