@@ -5,6 +5,24 @@ import pytest
 from endoreg_db.utils.video.ffmpeg_wrapper import transcode_video
 
 
+class FakePopen:
+    def __init__(self, command, *, returncode=0, stderr="", timeout=False, **kwargs):
+        self.command = command
+        self.returncode = returncode
+        self.stderr = stderr
+        self.timeout = timeout
+        self.killed = False
+        self.kwargs = kwargs
+
+    def communicate(self, timeout=None):
+        if self.timeout and not self.killed:
+            raise subprocess.TimeoutExpired(cmd=self.command, timeout=timeout)
+        return "", self.stderr
+
+    def kill(self):
+        self.killed = True
+
+
 @pytest.mark.unit
 def test_transcode_video_timeout_removes_partial_output(monkeypatch, tmp_path):
     input_path = tmp_path / "input.mp4"
@@ -12,15 +30,21 @@ def test_transcode_video_timeout_removes_partial_output(monkeypatch, tmp_path):
     input_path.write_bytes(b"input")
     output_path.write_bytes(b"partial")
 
-    def fake_run(*args, **kwargs):
-        raise subprocess.TimeoutExpired(cmd=kwargs.get("args", args[0]), timeout=1)
+    created_processes = []
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    def fake_popen(command, **kwargs):
+        process = FakePopen(command, timeout=True, **kwargs)
+        created_processes.append(process)
+        return process
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
 
     result = transcode_video(input_path, output_path, force_cpu=True)
 
     assert result is None
     assert not output_path.exists()
+    assert created_processes
+    assert created_processes[0].killed
 
 
 @pytest.mark.unit
@@ -42,16 +66,16 @@ def test_transcode_video_force_cpu_uses_cpu_only_flags(monkeypatch, tmp_path):
             "fallback_preset": "p1",
         }
 
-    def fake_run(command, **kwargs):
+    def fake_popen(command, **kwargs):
         captured["command"] = command
         output_path.write_bytes(b"encoded")
-        return subprocess.CompletedProcess(command, 0, "", "")
+        return FakePopen(command, returncode=0, **kwargs)
 
     monkeypatch.setattr(
         "endoreg_db.utils.video.ffmpeg_wrapper._get_preferred_encoder",
         fake_get_preferred_encoder,
     )
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
 
     result = transcode_video(input_path, output_path, force_cpu=True)
 

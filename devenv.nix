@@ -16,8 +16,6 @@ let
   exportFramesSampleExportDir = "${exportFramesRootDir}/test_outputs";
   modelDir = "${dataDir}/models";
   confDir = "./conf"; # Define confDir here
-  lxAnonymizerApp = inputs.lx-anonymizer.packages.${pkgs.system}.lx-anonymizer-with-native;
-  lxAnonymizerSitePackages = "${lxAnonymizerApp}/lib/python3.12/site-packages";
 
   # Pin to specific Python 3.12 version to match pyproject.toml
   python = pkgs.python312; #known devenv issue with python3Packages since python3Full was deprecated
@@ -92,12 +90,11 @@ in
   dotenv.enable = true;
   dotenv.disableHint = true;
 
-  packages = runtimePackages ++ buildInputs ++ [ lxAnonymizerApp ];
+  packages = runtimePackages ++ buildInputs;
 
   env = {
     # include runtimePackages as well so runtime native libs (e.g. zlib) are on LD_LIBRARY_PATH
     LD_LIBRARY_PATH = lib.makeLibraryPath (buildInputs ++ runtimePackages) + ":/run/opengl-driver/lib:/run/opengl-driver-32/lib";
-    LX_ANONYMIZER_NIX_APP = lxAnonymizerApp;
     PYO3_PYTHON = "${python}/bin/python";
     UV_PYTHON = lib.mkForce "${python}/bin/python";
     UV_PYTHON_DOWNLOADS = "never";
@@ -249,24 +246,8 @@ in
   };
 
   enterShell = ''
-    # Clone or pull lx-anonymizer
-    LX_ANONYMIZER_DIR="lx-anonymizer"
-    LX_ANONYMIZER_REPO="https://github.com/wg-lux/lx-anonymizer"
-    LX_ANONYMIZER_BRANCH="prototype"
-
-    # if [ -d "$LX_ANONYMIZER_DIR" ]; then
-    #   echo "lx-anonymizer directory exists. Pulling latest changes from $LX_ANONYMIZER_BRANCH..."
-    #   (cd "$LX_ANONYMIZER_DIR" && git fetch origin && git checkout "$LX_ANONYMIZER_BRANCH" && git reset --hard "origin/$LX_ANONYMIZER_BRANCH")
-    # else
-    #   echo "lx-anonymizer directory does not exist. Cloning repository..."
-    #   git clone -b "$LX_ANONYMIZER_BRANCH" "$LX_ANONYMIZER_REPO" "$LX_ANONYMIZER_DIR"
-    # fi
 
     export SYNC_CMD="${SYNC_CMD}"
-
-    export PYTHONPATH="${lxAnonymizerSitePackages}${PYTHONPATH:+:$PYTHONPATH}"
-    echo "Using lx-anonymizer from ${lxAnonymizerApp}"
-
 
     # Ensure dependencies are synced using uv
     # Check if venv exists. If not, run sync verbosely. If it exists, sync quietly.
