@@ -28,7 +28,7 @@ DEFAULT_CACHE_LOCATION = "endoreg-default-cache"
 DEFAULT_CACHE_TIMEOUT_SECONDS = 60 * 30
 DEFAULT_DRF_THROTTLE_USER = "100/hour"
 DEFAULT_DRF_THROTTLE_ANON = "20/hour"
-DEFAULT_FFMPEG_TRANSCODE_TIMEOUT_SECONDS = 3600
+DEFAULT_FFMPEG_TRANSCODE_TIMEOUT_SECONDS = 200000
 DEFAULT_WATCHER_POLL_INTERVAL_SECONDS = 5.0
 DEFAULT_WATCHER_STABLE_AFTER_SECONDS = 10.0
 DEFAULT_VIDEO_POST_VALIDATION_JOB_MAX_WORKERS = 2
@@ -76,9 +76,7 @@ def build_protected_runtime_env(
         storage_dir = protected_root / "storage"
 
     data_dir = _resolve_candidate_path(
-        env_source.get(
-            DATA_DIR_ENV, str(default_data_root or (resolved_base_dir / "data"))
-        ),
+        env_source.get(DATA_DIR_ENV, str(default_data_root or (resolved_base_dir / "data"))),
         base_dir=resolved_base_dir,
     )
     protected_media_root = _resolve_candidate_path(
@@ -256,10 +254,7 @@ def get_center_name(default: str = "Default Center") -> str:
 def get_endoreg_deployment_role() -> str:
     role = env_str("ENDOREG_DEPLOYMENT_ROLE", "").strip().lower()
     if role and role not in ENDOREG_DEPLOYMENT_ROLE_VALUES:
-        raise ValueError(
-            "ENDOREG_DEPLOYMENT_ROLE must be one of: "
-            f"{', '.join(ENDOREG_DEPLOYMENT_ROLE_VALUES)}"
-        )
+        raise ValueError(f"ENDOREG_DEPLOYMENT_ROLE must be one of: {', '.join(ENDOREG_DEPLOYMENT_ROLE_VALUES)}")
     return role or "standalone"
 
 

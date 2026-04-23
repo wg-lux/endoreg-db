@@ -24,7 +24,17 @@ def create_sensitive_copy(src: Path, sensitive_root: Path, ctx: ImportContext) -
     dest = sensitive_root / src.name
     logger.info("Creating sensitive copy: %s -> %s", src, dest)
     if ctx.file_type == "video":
-        transcode_video(src, dest)
-        return dest
+        transcoded_path = transcode_video(src, dest)
+        if transcoded_path is None:
+            raise RuntimeError(
+                "Video transcode failed; refusing to continue with missing sensitive copy "
+                f"for {src}."
+            )
+        if not transcoded_path.exists() or transcoded_path.stat().st_size <= 0:
+            raise RuntimeError(
+                "Video transcode did not produce a usable sensitive copy "
+                f"at {transcoded_path}."
+            )
+        return transcoded_path
     atomic_copy_with_fallback(src, dest)
     return dest
