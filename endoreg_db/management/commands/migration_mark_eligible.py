@@ -73,6 +73,7 @@ class Command(BaseCommand):
         repaired_orphaned = 0
         now = timezone.now()
         for upload_job in qs.iterator():
+            source_exists = _source_file_exists(upload_job)
             update_fields = [
                 "cleanup_status",
                 "updated_at",
@@ -98,6 +99,7 @@ class Command(BaseCommand):
                         "Migration-created upload job abandoned during data recovery; "
                         "source artifact is eligible for cleanup."
                     )
+                    update_fields.append("error_detail")
                 upload_job.cleanup_status = UploadJob.CleanupStatus.ELIGIBLE
                 upload_job.save(update_fields=update_fields)
                 updated_eligible += 1
