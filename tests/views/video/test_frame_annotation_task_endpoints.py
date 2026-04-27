@@ -9,6 +9,7 @@ from endoreg_db.models import (
     ImageClassificationAnnotation,
     InformationSource,
     Label,
+    LabelVideoSegment,
     LabelSet,
     VideoFile,
 )
@@ -435,4 +436,85 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
         self.assertEqual(
             [task["dataset_bucket"] for task in response.data["tasks"]],
             ["positive", "negative", "unknown"],
+        )
+
+    def test_random_task_uses_ai_dataset_segment_distribution_filter(self):
+        dataset = AIDataSet.objects.create(
+            name="frame-task-video-dataset",
+            dataset_type=AIDataSet.DATASET_TYPE_VIDEO,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_VIDEO_SEGMENT_CLASSIFICATION,
+        )
+        target_annotation_1 = ImageClassificationAnnotation.objects.create(
+            frame=self.frame_1,
+            label=self.target_label,
+            value=True,
+            information_source=self.source,
+            annotator="dataset",
+        )
+        target_annotation_2 = ImageClassificationAnnotation.objects.create(
+            frame=self.frame_2,
+            label=self.target_label,
+            value=True,
+            information_source=self.source,
+            annotator="dataset",
+        )
+        prediction_source = InformationSource.objects.create(
+            name="prediction_annotation"
+        )
+        prediction_segment = LabelVideoSegment.objects.create(
+            video_file=self.video,
+            label=self.label,
+            source=prediction_source,
+            start_frame_number=self.frame_3.frame_number,
+            end_frame_number=self.frame_3.frame_number + 1,
+        )
+        dataset.image_annotations.add(target_annotation_1, target_annotation_2)
+        dataset.video_annotations.add(prediction_segment)
+
+        request = self.factory.get(
+            "/api/media/annotations/frames/random-task/",
+            {
+                "video_id": self.video.pk,
+                "label_group_id": self.label_set.pk,
+                "target_label": self.target_label.name,
+                "limit": 1,
+                "ai_dataset_name": dataset.name,
+                "ai_dataset_type": dataset.dataset_type,
+                "dataset_frame_filter": "segments",
+                "prediction_segments_only": "true",
+                "exclude_annotated": "false",
+            },
+        )
+
+        with patch(
+            "endoreg_db.views.video.ai.frame_annotations.random.randint",
+            return_value=0,
+        ):
+            response = self.random_task_view(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["ai_dataset_name"], dataset.name)
+        self.assertEqual(response.data["ai_dataset_type"], dataset.dataset_type)
+        self.assertEqual(response.data["selection_strategy"], "dataset_segments")
+        self.assertEqual(response.data["task"]["frame_id"], self.frame_3.pk)
+        self.assertEqual(
+            response.data["task"]["dataset_selection_label_id"],
+            self.label.pk,
+        )
+        self.assertEqual(
+            response.data["segment_bucket_counts"],
+            {str(self.label.pk): 1},
+        )
+        self.assertEqual(
+            response.data["selected_label_counts"],
+            {str(self.label.pk): 1},
+        )
+        distribution_by_label = {
+            item["label_id"]: item for item in response.data["label_distribution"]
+        }
+        self.assertEqual(distribution_by_label[self.label.pk]["segment_count"], 1)
+        self.assertEqual(distribution_by_label[self.label.pk]["total"], 1)
+        self.assertEqual(
+            distribution_by_label[self.target_label.pk]["frame_positive"],
+            2,
         )

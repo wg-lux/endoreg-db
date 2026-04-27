@@ -1142,6 +1142,8 @@ def _create_anonymized_record(
     instance: "SensitiveMeta",
     DEFAULT_ANONYMIZED=None,
     DEFAULT_ANONYMIZED_DATE=timezone.make_aware(datetime(1900, 1, 1)),
+    *,
+    preserve_identity: bool = True,
 ) -> None:
     """
     Create a SensitiveMeta instance with all sensitive fields set to anonymized defaults.
@@ -1154,6 +1156,12 @@ def _create_anonymized_record(
     """
 
     instance.refresh_from_db()
+    committed_identity = {
+        "patient_hash": instance.patient_hash,
+        "examination_hash": instance.examination_hash,
+        "pseudo_patient_id": instance.pseudo_patient_id,
+        "pseudo_examination_id": instance.pseudo_examination_id,
+    }
     patient_hash = instance.get_patient_hash()
     instance.get_patient_examination_hash()
 
@@ -1208,5 +1216,20 @@ def _create_anonymized_record(
         "center": pseudo_patient.center if pseudo_patient else instance.center,
     }
     sensitive_meta = update_sensitive_meta_from_dict(instance, anonymized_data)
+
+    if preserve_identity:
+        # The anonymized fields must not become the new case identity. Restore the
+        # validated hash/FK identity directly so SensitiveMeta.save() cannot
+        # recalculate it from anonymized placeholders.
+        update_fields = {
+            key: value for key, value in committed_identity.items() if value is not None
+        }
+        if update_fields:
+            sensitive_meta.__class__.objects.filter(pk=sensitive_meta.pk).update(
+                **update_fields
+            )
+            for key, value in update_fields.items():
+                setattr(sensitive_meta, key, value)
+        return
 
     sensitive_meta.save()

@@ -23,6 +23,7 @@ from .stats import (
     SensitiveMetaStatsView,
     GeneralStatsView,
 )
+from .audit_integrity import AuditLedgerIntegrityStatusView
 
 from .upload_views import (
     UploadFileView,
@@ -53,6 +54,7 @@ __all__ = [
     "VideoSegmentStatsView",
     "SensitiveMetaStatsView",
     "GeneralStatsView",
+    "AuditLedgerIntegrityStatusView",
     # Upload views
     "UploadFileView",
     "UploadStatusView",

@@ -25,7 +25,7 @@ from endoreg_db.services.report_materialization import (
     ensure_document_types,
     upsert_anonym_examination_report_from_pdf,
 )
-from endoreg_db.services.auto_case_resolution import auto_resolve_media_case
+from endoreg_db.services.validated_identity import commit_validated_media_identity
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.utils.operation_log import (
     record_operation,
@@ -305,6 +305,12 @@ class AnonymizationValidateView(APIView):
                         video.sensitive_meta.state.refresh_from_db()
                         video.sensitive_meta.state.mark_dob_verified()
                         video.sensitive_meta.state.mark_names_verified()
+                        auto_case_resolution = commit_validated_media_identity(
+                            media_type="video",
+                            media_obj=video,
+                            user=request.user,
+                            source="anonymization_validate",
+                        )
                         video.sensitive_meta.create_anonymized_record()
                     else:
                         return Response(
@@ -343,11 +349,6 @@ class AnonymizationValidateView(APIView):
                         status_before=status_before or STATUS_PROCESSING,
                         status_after=status_after or STATUS_ANONYMIZED,
                         meta=operation_meta,
-                    )
-
-                    auto_case_resolution = auto_resolve_media_case(
-                        media_type="video",
-                        media_obj=video,
                     )
 
                     return Response(
@@ -449,6 +450,12 @@ class AnonymizationValidateView(APIView):
                             state_obj.refresh_from_db()
                             state_obj.mark_dob_verified()
                             state_obj.mark_names_verified()
+                            auto_case_resolution = commit_validated_media_identity(
+                                media_type="pdf",
+                                media_obj=pdf,
+                                user=request.user,
+                                source="anonymization_validate",
+                            )
                             pdf.sensitive_meta.create_anonymized_record()
 
                             if pdf.state:
@@ -471,10 +478,6 @@ class AnonymizationValidateView(APIView):
                             document_type=document_type,
                         )
 
-                    auto_case_resolution = auto_resolve_media_case(
-                        media_type="pdf",
-                        media_obj=pdf,
-                    )
                     if (
                         auto_case_resolution.status == "linked"
                         and pdf.examination_id is not None

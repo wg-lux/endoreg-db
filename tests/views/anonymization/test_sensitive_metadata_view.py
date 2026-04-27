@@ -22,6 +22,7 @@ from endoreg_db.models import (
     VideoFile,
     Tag,
 )
+from endoreg_db.models.state.audit_ledger import AuditLedger, LedgerHead
 from endoreg_db.views.anonymization.validate import AnonymizationValidateView
 
 MINIMAL_PDF_BYTES = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
@@ -545,6 +546,11 @@ class TestSensitiveMetadataEndpoints:
         assert validation_response.status_code == status.HTTP_200_OK
 
         pdf.refresh_from_db()
+        identity_commit = AuditLedger.objects.filter(
+            object_type="SensitiveMeta",
+            object_pk=str(pdf.sensitive_meta_id),
+            action="identity_committed",
+        ).latest("ts")
         linked_patient_examination_id = validation_response.data["case_resolution"][
             "patient_examination_id"
         ]
@@ -561,6 +567,20 @@ class TestSensitiveMetadataEndpoints:
         assert pdf.anonym_examination_report_id is not None
         assert isinstance(pdf.raw_meta, dict)
         assert pdf.raw_meta["examination_hash"] == pdf.sensitive_meta.examination_hash
+        assert (
+            identity_commit.data["examination_hash"]
+            == pdf.sensitive_meta.examination_hash
+        )
+        assert (
+            identity_commit.data["linked_patient_examination_id"]
+            == linked_patient_examination_id
+        )
+        assert len(identity_commit.hash) == 64
+        assert len(identity_commit.prev_hash) == 64
+        assert AuditLedger.verify_chain() is True
+        ledger_head = LedgerHead.objects.get(pk=1)
+        assert ledger_head.current_hash == identity_commit.hash
+        assert ledger_head.last_entry_id == identity_commit.pk
         assert (
             pdf.raw_meta["pseudo_examination_id"]
             == pdf.sensitive_meta.pseudo_examination_id
@@ -586,6 +606,53 @@ class TestSensitiveMetadataEndpoints:
             read_payload["pseudo_examination"]["linked_patient_examination_id"]
             == linked_patient_examination_id
         )
+
+    def test_create_anonymized_record_preserves_validated_identity(
+        self, sensitive_meta
+    ):
+        committed_identity = {
+            "patient_hash": sensitive_meta.patient_hash,
+            "examination_hash": sensitive_meta.examination_hash,
+            "pseudo_patient_id": sensitive_meta.pseudo_patient_id,
+            "pseudo_examination_id": sensitive_meta.pseudo_examination_id,
+        }
+
+        sensitive_meta.create_anonymized_record()
+        sensitive_meta.refresh_from_db()
+
+        assert sensitive_meta.patient_hash == committed_identity["patient_hash"]
+        assert sensitive_meta.examination_hash == committed_identity["examination_hash"]
+        assert (
+            sensitive_meta.pseudo_patient_id == committed_identity["pseudo_patient_id"]
+        )
+        assert (
+            sensitive_meta.pseudo_examination_id
+            == committed_identity["pseudo_examination_id"]
+        )
+
+    def test_ledger_integrity_detects_tampering(self, user):
+        first = AuditLedger.append_identity_commit(
+            user=user,
+            object_type="SensitiveMeta",
+            object_pk="1",
+            data={"payload_hash": "first", "examination_hash": "exam-1"},
+        )
+        second = AuditLedger.append_identity_commit(
+            user=user,
+            object_type="SensitiveMeta",
+            object_pk="2",
+            data={"payload_hash": "second", "examination_hash": "exam-2"},
+        )
+
+        assert first is not None
+        assert second is not None
+        assert AuditLedger.verify_chain() is True
+
+        AuditLedger.objects.filter(pk=first.pk).update(
+            data={"payload_hash": "tampered", "examination_hash": "exam-1"}
+        )
+
+        assert AuditLedger.verify_chain() is False
 
     def test_patch_pdf_sensitive_metadata(self, client, pdf):
         response = client.patch(

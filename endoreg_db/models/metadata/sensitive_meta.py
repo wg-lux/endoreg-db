@@ -143,8 +143,6 @@ class SensitiveMeta(models.Model):
         # Delegate to logic function
         return logic.create_sensitive_meta_from_dict(cls, data)
 
-    # --- Methods related to pseudo-entities are now primarily handled within save logic ---
-
     def get_pseudo_examiner(self) -> "Examiner | None":
         """Returns the linked pseudo examiner, if one exists."""
         if self.pk:

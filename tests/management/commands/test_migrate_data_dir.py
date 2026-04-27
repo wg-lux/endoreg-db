@@ -9,12 +9,12 @@ from django.test import TestCase
 
 from endoreg_db.management.commands.migrate_data_dir import Command, MIGRATION_RULES
 from endoreg_db.models import Center, RawPdfFile, VideoFile
+from endoreg_db.models.media.video.storage_mode import VideoStorageMode
 from endoreg_db.utils.paths import (
     DOCUMENT_DIR,
     FRAME_DIR,
     IMPORT_ANONYMIZED_REPORT_DIR,
     IMPORT_ANONYMIZED_VIDEO_DIR,
-    INGEST_UPLOADS_DIR,
     MANIFEST_DIR,
     MANAGED_SENSITIVE_SIDECARS_DIR,
     RAW_FRAME_DIR,
@@ -159,15 +159,11 @@ class MigrateDataDirCommandTests(TestCase):
             (legacy_root / "frames").mkdir(parents=True)
             (legacy_root / "model_weights").mkdir(parents=True)
             (legacy_root / "documents").mkdir(parents=True)
-            (legacy_root / "upload_jobs" / "api" / "aa" / "job1").mkdir(parents=True)
             (legacy_root / "sensitive_sidecars").mkdir(parents=True)
             (legacy_root / "storage" / "raw_frames").mkdir(parents=True)
             (legacy_root / "storage" / "frames").mkdir(parents=True)
             (legacy_root / "storage" / "model_weights").mkdir(parents=True)
             (legacy_root / "storage" / "documents").mkdir(parents=True)
-            (legacy_root / "storage" / "upload_jobs" / "watcher" / "bb" / "job2").mkdir(
-                parents=True
-            )
             (legacy_root / "storage" / "sensitive_sidecars").mkdir(parents=True)
 
             (legacy_root / "raw_frames" / "frame_a.jpg").write_bytes(b"jpg")
@@ -176,9 +172,6 @@ class MigrateDataDirCommandTests(TestCase):
                 b"weights"
             )
             (legacy_root / "documents" / "doc_a.pdf").write_bytes(b"%PDF-1.4\n%%EOF\n")
-            (
-                legacy_root / "upload_jobs" / "api" / "aa" / "job1" / "upload_a.pdf"
-            ).write_bytes(b"%PDF-1.4\n%%EOF\n")
             (legacy_root / "sensitive_sidecars" / "meta_a.json").write_text(
                 "{}",
                 encoding="utf-8",
@@ -191,15 +184,6 @@ class MigrateDataDirCommandTests(TestCase):
             (legacy_root / "storage" / "documents" / "doc_b.pdf").write_bytes(
                 b"%PDF-1.4\n%%EOF\n"
             )
-            (
-                legacy_root
-                / "storage"
-                / "upload_jobs"
-                / "watcher"
-                / "bb"
-                / "job2"
-                / "upload_b.mp4"
-            ).write_bytes(b"\x00\x00\x00\x18ftypmp42")
             (legacy_root / "storage" / "sensitive_sidecars" / "meta_b.json").write_text(
                 "{}", encoding="utf-8"
             )
@@ -218,7 +202,7 @@ class MigrateDataDirCommandTests(TestCase):
 
             payload = json.loads(manifest_path.read_text(encoding="utf-8"))
             migrated = payload["migrated_entries"]
-            self.assertEqual(len(migrated), 12)
+            self.assertEqual(len(migrated), 10)
 
             destination_paths = {entry["destination_path"] for entry in migrated}
             self.assertTrue(
@@ -232,12 +216,6 @@ class MigrateDataDirCommandTests(TestCase):
             )
             self.assertTrue(
                 any(path.startswith(str(DOCUMENT_DIR)) for path in destination_paths)
-            )
-            self.assertTrue(
-                any(
-                    path.startswith(str(INGEST_UPLOADS_DIR))
-                    for path in destination_paths
-                )
             )
             self.assertTrue(
                 any(
@@ -331,3 +309,228 @@ class MigrateDataDirCommandTests(TestCase):
             finally:
                 video_destination.unlink(missing_ok=True)
                 report_destination.unlink(missing_ok=True)
+
+    def test_sync_db_skips_ambiguous_video_matches(self) -> None:
+        center = Center.objects.create(name="migration-ambiguous-video-center")
+        rule = next(
+            candidate
+            for candidate in MIGRATION_RULES
+            if candidate.legacy_relative == Path("import/anonymized_video_import")
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir_name:
+            temp_dir = Path(temp_dir_name)
+            source_path = (
+                temp_dir
+                / "legacy"
+                / "import"
+                / "anonymized_video_import"
+                / "stem-ambiguous.mp4"
+            )
+            source_path.parent.mkdir(parents=True, exist_ok=True)
+            source_path.write_bytes(b"\x00\x00\x00\x18ftypmp42ambiguous")
+            destination_path = IMPORT_ANONYMIZED_VIDEO_DIR / source_path.name
+
+            try:
+                destination_path.parent.mkdir(parents=True, exist_ok=True)
+                destination_path.write_bytes(source_path.read_bytes())
+
+                stem_hash = destination_path.stem
+
+                # Two distinct rows match different parts of the OR query.
+                video_by_hash = VideoFile.objects.create(
+                    center=center,
+                    video_hash=stem_hash,
+                    original_file_name="first.mp4",
+                )
+                video_by_processed_hash = VideoFile.objects.create(
+                    center=center,
+                    video_hash="distinct-video-hash",
+                    processed_video_hash=stem_hash,
+                    original_file_name="second.mp4",
+                )
+
+                synced = Command().sync_db(destination_path, source_path, rule)
+                self.assertFalse(synced)
+
+                video_by_hash.refresh_from_db()
+                video_by_processed_hash.refresh_from_db()
+                self.assertEqual(video_by_hash.processed_file.name, "")
+                self.assertEqual(video_by_processed_hash.processed_file.name, "")
+            finally:
+                destination_path.unlink(missing_ok=True)
+
+    def test_sync_db_returns_false_when_video_record_is_missing(self) -> None:
+        rule = next(
+            candidate
+            for candidate in MIGRATION_RULES
+            if candidate.legacy_relative == Path("import/anonymized_video_import")
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir_name:
+            temp_dir = Path(temp_dir_name)
+            source_path = (
+                temp_dir
+                / "legacy"
+                / "import"
+                / "anonymized_video_import"
+                / "missing-video.mp4"
+            )
+            source_path.parent.mkdir(parents=True, exist_ok=True)
+            source_path.write_bytes(b"\x00\x00\x00\x18ftypmp42missing")
+            destination_path = IMPORT_ANONYMIZED_VIDEO_DIR / source_path.name
+
+            try:
+                destination_path.parent.mkdir(parents=True, exist_ok=True)
+                destination_path.write_bytes(source_path.read_bytes())
+                self.assertFalse(Command().sync_db(destination_path, source_path, rule))
+            finally:
+                destination_path.unlink(missing_ok=True)
+
+    def test_sync_db_keeps_existing_processed_video_hash_on_mismatch(self) -> None:
+        center = Center.objects.create(name="migration-hash-mismatch-center")
+        rule = next(
+            candidate
+            for candidate in MIGRATION_RULES
+            if candidate.legacy_relative == Path("import/anonymized_video_import")
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir_name:
+            temp_dir = Path(temp_dir_name)
+            source_path = (
+                temp_dir
+                / "legacy"
+                / "import"
+                / "anonymized_video_import"
+                / "video-hash-stem.mp4"
+            )
+            source_path.parent.mkdir(parents=True, exist_ok=True)
+            source_path.write_bytes(b"\x00\x00\x00\x18ftypmp42new-content")
+            destination_path = IMPORT_ANONYMIZED_VIDEO_DIR / source_path.name
+
+            try:
+                destination_path.parent.mkdir(parents=True, exist_ok=True)
+                destination_path.write_bytes(source_path.read_bytes())
+                existing_processed_hash = "existing-processed-hash"
+                video = VideoFile.objects.create(
+                    center=center,
+                    video_hash=destination_path.stem,
+                    processed_video_hash=existing_processed_hash,
+                    original_file_name="legacy.mp4",
+                )
+
+                self.assertTrue(Command().sync_db(destination_path, source_path, rule))
+
+                video.refresh_from_db()
+                self.assertEqual(video.processed_video_hash, existing_processed_hash)
+                self.assertEqual(
+                    video.processed_file.name,
+                    to_storage_relative(destination_path),
+                )
+            finally:
+                destination_path.unlink(missing_ok=True)
+
+    def test_sync_db_updates_streamable_processed_path_and_storage_mode(self) -> None:
+        center = Center.objects.create(name="migration-streamable-center")
+        rule = next(
+            candidate
+            for candidate in MIGRATION_RULES
+            if candidate.legacy_relative == Path("streamable_videos/processed")
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir_name:
+            temp_dir = Path(temp_dir_name)
+            source_path = (
+                temp_dir
+                / "legacy"
+                / "streamable_videos"
+                / "processed"
+                / "streamable-stem.mp4"
+            )
+            source_path.parent.mkdir(parents=True, exist_ok=True)
+            source_path.write_bytes(b"\x00\x00\x00\x18ftypmp42streamable")
+            destination_path = rule.target_root / source_path.name
+
+            try:
+                destination_path.parent.mkdir(parents=True, exist_ok=True)
+                destination_path.write_bytes(source_path.read_bytes())
+                video = VideoFile.objects.create(
+                    center=center,
+                    video_hash=source_path.stem,
+                    original_file_name="streamable.mp4",
+                )
+
+                self.assertTrue(Command().sync_db(destination_path, source_path, rule))
+
+                video.refresh_from_db()
+                self.assertEqual(
+                    video.processed_streamable_relative_path,
+                    to_storage_relative(destination_path),
+                )
+                self.assertEqual(video.storage_mode, VideoStorageMode.STREAMABLE.value)
+            finally:
+                destination_path.unlink(missing_ok=True)
+
+    def test_migrate_data_dir_does_not_overwrite_existing_processed_video_destination(
+        self,
+    ) -> None:
+        center = Center.objects.create(name="migration-destination-collision-center")
+        rule = next(
+            candidate
+            for candidate in MIGRATION_RULES
+            if candidate.legacy_relative == Path("processed_videos_final")
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir_name:
+            temp_dir = Path(temp_dir_name)
+            legacy_root = temp_dir / "legacy"
+            primary_source = (
+                legacy_root / "processed_videos_final" / "collision-stem.mp4"
+            )
+            duplicate_source = (
+                legacy_root
+                / "storage"
+                / "processed_videos_final"
+                / "collision-stem.mp4"
+            )
+            primary_source.parent.mkdir(parents=True, exist_ok=True)
+            duplicate_source.parent.mkdir(parents=True, exist_ok=True)
+            primary_source.write_bytes(b"\x00\x00\x00\x18ftypmp42primary")
+            duplicate_source.write_bytes(b"\x00\x00\x00\x18ftypmp42duplicate")
+
+            destination_path = rule.target_root / primary_source.name
+            manifest_path = (
+                MANIFEST_DIR / "tests" / "migrate_data_dir_collision_manifest.json"
+            )
+            if manifest_path.exists():
+                manifest_path.unlink()
+
+            try:
+                video = VideoFile.objects.create(
+                    center=center,
+                    video_hash=destination_path.stem,
+                    original_file_name="collision.mp4",
+                )
+
+                call_command(
+                    "migrate_data_dir",
+                    str(legacy_root),
+                    "--manifest-path",
+                    str(manifest_path),
+                )
+
+                self.assertTrue(destination_path.exists())
+                self.assertEqual(
+                    destination_path.read_bytes(), primary_source.read_bytes()
+                )
+                payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+                reasons = {entry["reason"] for entry in payload["skipped_entries"]}
+                self.assertIn("destination_exists_and_synced", reasons)
+
+                video.refresh_from_db()
+                self.assertEqual(
+                    video.processed_file.name,
+                    to_storage_relative(destination_path),
+                )
+            finally:
+                destination_path.unlink(missing_ok=True)

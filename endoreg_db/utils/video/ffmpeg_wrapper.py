@@ -3,6 +3,7 @@ import logging
 import os
 import shutil
 import subprocess
+from enum import Enum
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Literal, cast
@@ -14,9 +15,28 @@ from endoreg_db.config.env import (
     get_ffmpeg_env_candidates,
     get_ffmpeg_transcode_timeout_seconds,
 )
+from endoreg_db.utils.file_operations import (
+    atomic_copy_file,
+    ensure_directory,
+    safe_unlink_file,
+)
 
 logger = logging.getLogger("ffmpeg_wrapper")
 FFMPEG_TRANSCODE_TIMEOUT_SECONDS = get_ffmpeg_transcode_timeout_seconds()
+
+
+class TimestampRepairMode(str, Enum):
+    NONE = "none"
+    GENERATE_PTS = "generate_pts"
+    IGNORE_DTS = "ignore_dts"
+    RESET_TO_ZERO = "reset_to_zero"
+
+
+_TIMESTAMP_REPAIR_SEQUENCE = (
+    TimestampRepairMode.GENERATE_PTS,
+    TimestampRepairMode.IGNORE_DTS,
+    TimestampRepairMode.RESET_TO_ZERO,
+)
 
 # Global hardware acceleration cache
 _nvenc_available = None
@@ -33,7 +53,11 @@ def _resolve_ffmpeg_executable() -> Optional[str]:
     try:
         from django.conf import settings
 
-        env_candidates.extend(getattr(settings, attr) for attr in ("FFMPEG_EXECUTABLE", "FFMPEG_BINARY", "FFMPEG_PATH") if hasattr(settings, attr))
+        env_candidates.extend(
+            getattr(settings, attr)
+            for attr in ("FFMPEG_EXECUTABLE", "FFMPEG_BINARY", "FFMPEG_PATH")
+            if hasattr(settings, attr)
+        )
     except Exception:
         # Django might not be configured for every consumer
         pass
@@ -125,7 +149,9 @@ def _detect_nvenc_support() -> bool:
             "-",
         ]
 
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15, check=False)
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=15, check=False
+        )
 
         if result.returncode == 0:
             logger.debug("NVENC h264 encoding test successful")
@@ -314,7 +340,9 @@ def check_ffmpeg_availability() -> Literal[True]:
         True if FFmpeg is available.
     """
     if not is_ffmpeg_available():
-        error_msg = "FFmpeg is not available. Please install it and ensure it's in your PATH."
+        error_msg = (
+            "FFmpeg is not available. Please install it and ensure it's in your PATH."
+        )
         logger.error(error_msg)
         raise FileNotFoundError(error_msg)
     # logger.info("FFmpeg is available.") # Caller can log if needed
@@ -326,9 +354,89 @@ def _delete_partial_output(output_path: Path, *, reason: str) -> None:
     if not output_path.exists():
         return
     try:
-        output_path.unlink()
+        safe_unlink_file(output_path, missing_ok=True)
     except OSError as e:
         logger.error("Failed to delete %s output file %s: %s", reason, output_path, e)
+
+
+def _transcode_output_is_valid(output_path: Path) -> bool:
+    if not output_path.exists():
+        logger.error("FFmpeg reported success but output is missing: %s", output_path)
+        return False
+    if output_path.stat().st_size <= 0:
+        logger.error("FFmpeg reported success but output is empty: %s", output_path)
+        return False
+    return True
+
+
+def _stderr_indicates_timestamp_fault(stderr_output: str) -> bool:
+    normalized = stderr_output.lower()
+    if not normalized:
+        return False
+    has_timestamp_signal = any(
+        pattern in normalized for pattern in ("timestamp", "pts", "dts")
+    )
+    has_fault_signal = any(
+        pattern in normalized
+        for pattern in (
+            "invalid",
+            "too large",
+            "out of range",
+            "non monotonically increasing",
+            "overflow",
+            "clipping",
+        )
+    )
+    return has_timestamp_signal and has_fault_signal
+
+
+def _timestamp_repair_input_args(mode: TimestampRepairMode) -> List[str]:
+    if mode == TimestampRepairMode.NONE:
+        return []
+    if mode == TimestampRepairMode.GENERATE_PTS:
+        return ["-fflags", "+genpts"]
+    if mode == TimestampRepairMode.IGNORE_DTS:
+        return ["-fflags", "+genpts+igndts", "-err_detect", "ignore_err"]
+    if mode == TimestampRepairMode.RESET_TO_ZERO:
+        return ["-fflags", "+genpts+igndts", "-err_detect", "ignore_err"]
+    raise ValueError(f"Unhandled timestamp repair mode: {mode}")
+
+
+def _timestamp_repair_output_args(mode: TimestampRepairMode) -> List[str]:
+    if mode == TimestampRepairMode.RESET_TO_ZERO:
+        return ["-avoid_negative_ts", "make_zero", "-muxdelay", "0"]
+    return []
+
+
+def _build_transcode_command(
+    *,
+    ffmpeg_executable: str,
+    input_path: Path,
+    output_path: Path,
+    encoder_args: List[str],
+    audio_codec: str,
+    audio_bitrate: str,
+    extra_args: Optional[List[str]],
+    timestamp_repair_mode: TimestampRepairMode,
+) -> List[str]:
+    command = [
+        ffmpeg_executable,
+        *_timestamp_repair_input_args(timestamp_repair_mode),
+        "-i",
+        str(input_path),
+        *encoder_args,
+        "-c:a",
+        audio_codec,
+        "-b:a",
+        audio_bitrate,
+        *_timestamp_repair_output_args(timestamp_repair_mode),
+        "-y",
+    ]
+
+    if extra_args:
+        command.extend(extra_args)
+    command.append(str(output_path))
+    return command
 
 
 def _run_ffmpeg_command(command: List[str]) -> Tuple[int, str]:
@@ -365,7 +473,9 @@ def get_stream_info(file_path: Path) -> Optional[Dict]:
 
     ffprobe_executable = _resolve_ffprobe_executable()
     if not ffprobe_executable:
-        logger.error("ffprobe command not found. Ensure FFmpeg is installed and in the system's PATH.")
+        logger.error(
+            "ffprobe command not found. Ensure FFmpeg is installed and in the system's PATH."
+        )
         return None
 
     command = [
@@ -412,7 +522,9 @@ def assemble_video_from_frames(  # Renamed from assemble_video
             if first_frame is None:
                 raise IOError(f"Could not read first frame: {frame_paths[0]}")
             height, width, _ = first_frame.shape
-            logger.info("Determined video dimensions from first frame: %dx%d", width, height)
+            logger.info(
+                "Determined video dimensions from first frame: %dx%d", width, height
+            )
         except Exception as e:
             logger.error(
                 "Error reading first frame to determine dimensions: %s",
@@ -422,14 +534,16 @@ def assemble_video_from_frames(  # Renamed from assemble_video
             return None
 
     fourcc = cv2.VideoWriter.fourcc(*"mp4v")
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    ensure_directory(output_path.parent)
     video_writer = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
 
     if not video_writer.isOpened():
         logger.error("Could not open video writer for path: %s", output_path)
         return None
 
-    logger.info("Assembling video %s from %d frames...", output_path.name, len(frame_paths))
+    logger.info(
+        "Assembling video %s from %d frames...", output_path.name, len(frame_paths)
+    )
     try:
         for frame_path in tqdm(frame_paths, desc=f"Assembling {output_path.name}"):
             frame = cv2.imread(str(frame_path))
@@ -438,7 +552,9 @@ def assemble_video_from_frames(  # Renamed from assemble_video
                 continue
             # Ensure frame dimensions match - resize if necessary (or log error)
             if frame.shape[1] != width or frame.shape[0] != height:
-                logger.warning(f"Frame {frame_path} has dimensions {frame.shape[1]}x{frame.shape[0]}, expected {width}x{height}. Resizing.")
+                logger.warning(
+                    f"Frame {frame_path} has dimensions {frame.shape[1]}x{frame.shape[0]}, expected {width}x{height}. Resizing."
+                )
                 frame = cv2.resize(frame, (width, height))
             video_writer.write(frame)
     finally:
@@ -484,10 +600,12 @@ def transcode_video(
 
     ffmpeg_executable = _resolve_ffmpeg_executable()
     if not ffmpeg_executable:
-        logger.error("ffmpeg command not found. Ensure FFmpeg is installed and in the system's PATH.")
+        logger.error(
+            "ffmpeg command not found. Ensure FFmpeg is installed and in the system's PATH."
+        )
         return None
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    ensure_directory(output_path.parent)
 
     # Determine encoder configuration
     if codec == "auto" or preset == "auto":
@@ -500,7 +618,9 @@ def transcode_video(
             )
         else:
             # Use automatic hardware detection
-            encoder_args, encoder_type = _build_encoder_args(quality_mode, fallback=False, custom_crf=crf)
+            encoder_args, encoder_type = _build_encoder_args(
+                quality_mode, fallback=False, custom_crf=crf
+            )
     else:
         # Manual codec/preset specification (backward compatibility)
         encoder_args = [
@@ -513,22 +633,16 @@ def transcode_video(
         ]
         encoder_type = "nvenc" if "nvenc" in codec else "cpu"
 
-    # Build complete command
-    command = [
-        ffmpeg_executable,
-        "-i",
-        str(input_path),
-        *encoder_args,
-        "-c:a",
-        audio_codec,
-        "-b:a",
-        audio_bitrate,
-        "-y",  # Overwrite output file if it exists
-    ]
-
-    if extra_args:
-        command.extend(extra_args)
-    command.append(str(output_path))
+    command = _build_transcode_command(
+        ffmpeg_executable=ffmpeg_executable,
+        input_path=input_path,
+        output_path=output_path,
+        encoder_args=encoder_args,
+        audio_codec=audio_codec,
+        audio_bitrate=audio_bitrate,
+        extra_args=extra_args,
+        timestamp_repair_mode=TimestampRepairMode.NONE,
+    )
 
     logger.info(
         "Starting transcoding: %s -> %s (using %s)",
@@ -542,6 +656,9 @@ def transcode_video(
         returncode, stderr_output = _run_ffmpeg_command(command)
 
         if returncode == 0:
+            if not _transcode_output_is_valid(output_path):
+                _delete_partial_output(output_path, reason="invalid successful")
+                return None
             logger.info("Transcoding finished successfully: %s", output_path)
             return output_path
         else:
@@ -551,6 +668,28 @@ def transcode_video(
                 returncode,
             )
             logger.error("FFmpeg stderr:\n%s", stderr_output)
+
+            if _stderr_indicates_timestamp_fault(stderr_output):
+                logger.warning(
+                    "FFmpeg reported corrupt timestamps for %s; "
+                    "retrying with timestamp repair.",
+                    input_path.name,
+                )
+                repaired_result = _transcode_video_with_timestamp_repair(
+                    ffmpeg_executable=ffmpeg_executable,
+                    input_path=input_path,
+                    output_path=output_path,
+                    encoder_args=encoder_args,
+                    encoder_type=encoder_type,
+                    audio_codec=audio_codec,
+                    audio_bitrate=audio_bitrate,
+                    extra_args=extra_args,
+                    quality_mode=quality_mode,
+                    custom_crf=crf,
+                    force_cpu=force_cpu,
+                )
+                if repaired_result is not None:
+                    return repaired_result
 
             # Try fallback to CPU if NVENC failed
             if encoder_type == "nvenc" and not force_cpu:
@@ -577,11 +716,155 @@ def transcode_video(
         return None
 
     except FileNotFoundError:
-        logger.error("ffmpeg command not found. Ensure FFmpeg is installed and in the system's PATH.")
+        logger.error(
+            "ffmpeg command not found. Ensure FFmpeg is installed and in the system's PATH."
+        )
         return None
     except Exception as e:
-        logger.error("Error during transcoding of %s: %s", input_path.name, e, exc_info=True)
+        logger.error(
+            "Error during transcoding of %s: %s", input_path.name, e, exc_info=True
+        )
         return None
+
+
+def _transcode_video_with_timestamp_repair(
+    *,
+    ffmpeg_executable: str,
+    input_path: Path,
+    output_path: Path,
+    encoder_args: List[str],
+    encoder_type: str,
+    audio_codec: str,
+    audio_bitrate: str,
+    extra_args: Optional[List[str]],
+    quality_mode: str,
+    custom_crf: Optional[int],
+    force_cpu: bool,
+) -> Optional[Path]:
+    for mode in _TIMESTAMP_REPAIR_SEQUENCE:
+        _delete_partial_output(
+            output_path,
+            reason=f"before timestamp repair {mode.value}",
+        )
+        command = _build_transcode_command(
+            ffmpeg_executable=ffmpeg_executable,
+            input_path=input_path,
+            output_path=output_path,
+            encoder_args=encoder_args,
+            audio_codec=audio_codec,
+            audio_bitrate=audio_bitrate,
+            extra_args=extra_args,
+            timestamp_repair_mode=mode,
+        )
+        logger.info(
+            "Retrying FFmpeg transcode for %s with timestamp repair mode %s.",
+            input_path.name,
+            mode.value,
+        )
+        logger.debug("Timestamp repair FFmpeg command: %s", " ".join(command))
+        try:
+            returncode, stderr_output = _run_ffmpeg_command(command)
+        except subprocess.TimeoutExpired:
+            logger.error(
+                "Timestamp repair transcode timed out for %s with mode %s after %ss.",
+                input_path.name,
+                mode.value,
+                FFMPEG_TRANSCODE_TIMEOUT_SECONDS,
+            )
+            _delete_partial_output(output_path, reason="timed-out timestamp repair")
+            continue
+
+        if returncode == 0:
+            if not _transcode_output_is_valid(output_path):
+                _delete_partial_output(
+                    output_path,
+                    reason=f"invalid timestamp repair {mode.value}",
+                )
+                continue
+            logger.info(
+                "Timestamp repair transcode succeeded for %s with mode %s.",
+                input_path.name,
+                mode.value,
+            )
+            return output_path
+
+        logger.warning(
+            "Timestamp repair mode %s failed for %s with return code %d.",
+            mode.value,
+            input_path.name,
+            returncode,
+        )
+        logger.debug("Timestamp repair stderr:\n%s", stderr_output)
+
+    if encoder_type == "nvenc" and not force_cpu:
+        logger.warning(
+            "Timestamp repair with NVENC failed for %s; trying CPU timestamp repair.",
+            input_path.name,
+        )
+        cpu_encoder_args, _ = _build_encoder_args(
+            quality_mode,
+            fallback=True,
+            custom_crf=custom_crf,
+            encoder_type_override="cpu",
+        )
+        for mode in _TIMESTAMP_REPAIR_SEQUENCE:
+            _delete_partial_output(
+                output_path,
+                reason=f"before CPU timestamp repair {mode.value}",
+            )
+            command = _build_transcode_command(
+                ffmpeg_executable=ffmpeg_executable,
+                input_path=input_path,
+                output_path=output_path,
+                encoder_args=cpu_encoder_args,
+                audio_codec=audio_codec,
+                audio_bitrate=audio_bitrate,
+                extra_args=extra_args,
+                timestamp_repair_mode=mode,
+            )
+            logger.info(
+                "Retrying CPU FFmpeg transcode for %s with timestamp repair mode %s.",
+                input_path.name,
+                mode.value,
+            )
+            try:
+                returncode, stderr_output = _run_ffmpeg_command(command)
+            except subprocess.TimeoutExpired:
+                logger.error(
+                    "CPU timestamp repair transcode timed out for %s with mode %s after %ss.",
+                    input_path.name,
+                    mode.value,
+                    FFMPEG_TRANSCODE_TIMEOUT_SECONDS,
+                )
+                _delete_partial_output(
+                    output_path,
+                    reason="timed-out CPU timestamp repair",
+                )
+                continue
+
+            if returncode == 0:
+                if not _transcode_output_is_valid(output_path):
+                    _delete_partial_output(
+                        output_path,
+                        reason=f"invalid CPU timestamp repair {mode.value}",
+                    )
+                    continue
+                logger.info(
+                    "CPU timestamp repair transcode succeeded for %s with mode %s.",
+                    input_path.name,
+                    mode.value,
+                )
+                return output_path
+            logger.warning(
+                "CPU timestamp repair mode %s failed for %s with return code %d.",
+                mode.value,
+                input_path.name,
+                returncode,
+            )
+            logger.debug("CPU timestamp repair stderr:\n%s", stderr_output)
+
+    _delete_partial_output(output_path, reason="failed timestamp repair")
+    return None
 
 
 def _transcode_video_fallback(
@@ -611,7 +894,9 @@ def _transcode_video_fallback(
     try:
         ffmpeg_executable = _resolve_ffmpeg_executable()
         if not ffmpeg_executable:
-            logger.error("ffmpeg command not found. Ensure FFmpeg is installed and in the system's PATH.")
+            logger.error(
+                "ffmpeg command not found. Ensure FFmpeg is installed and in the system's PATH."
+            )
             return None
 
         # Build CPU encoder arguments without carrying over NVENC-only options.
@@ -622,28 +907,28 @@ def _transcode_video_fallback(
             encoder_type_override="cpu",
         )
 
-        command = [
-            ffmpeg_executable,
-            "-i",
-            str(input_path),
-            *encoder_args,
-            "-c:a",
-            audio_codec,
-            "-b:a",
-            audio_bitrate,
-            "-y",
-        ]
+        command = _build_transcode_command(
+            ffmpeg_executable=ffmpeg_executable,
+            input_path=input_path,
+            output_path=output_path,
+            encoder_args=encoder_args,
+            audio_codec=audio_codec,
+            audio_bitrate=audio_bitrate,
+            extra_args=extra_args,
+            timestamp_repair_mode=TimestampRepairMode.NONE,
+        )
 
-        if extra_args:
-            command.extend(extra_args)
-        command.append(str(output_path))
-
-        logger.info("CPU fallback transcoding: %s -> %s", input_path.name, output_path.name)
+        logger.info(
+            "CPU fallback transcoding: %s -> %s", input_path.name, output_path.name
+        )
         logger.debug("Fallback FFmpeg command: %s", " ".join(command))
 
         returncode, stderr_output = _run_ffmpeg_command(command)
 
         if returncode == 0:
+            if not _transcode_output_is_valid(output_path):
+                _delete_partial_output(output_path, reason="invalid CPU fallback")
+                return None
             logger.info("CPU fallback transcoding successful: %s", output_path)
             return output_path
         else:
@@ -710,7 +995,9 @@ def transcode_videofile_if_required(
         )
         return None
 
-    video_stream = next((s for s in stream_info["streams"] if s.get("codec_type") == "video"), None)
+    video_stream = next(
+        (s for s in stream_info["streams"] if s.get("codec_type") == "video"), None
+    )
 
     if not video_stream:
         logger.error("No video stream found in %s.", input_path)
@@ -719,7 +1006,9 @@ def transcode_videofile_if_required(
     codec_name = video_stream.get("codec_name")
     pixel_format = video_stream.get("pix_fmt")
     # Check color range as well, default is usually 'tv' (limited)
-    color_range = video_stream.get("color_range", "tv")  # Default to tv if not specified
+    color_range = video_stream.get(
+        "color_range", "tv"
+    )  # Default to tv if not specified
 
     needs_transcoding = False
     transcode_reason = []
@@ -729,7 +1018,9 @@ def transcode_videofile_if_required(
         transcode_reason.append(reason)
         needs_transcoding = True
     # Check both pixel format and color range for yuv420p
-    if pixel_format != required_pixel_format or (pixel_format == "yuv420p" and color_range != "pc"):
+    if pixel_format != required_pixel_format or (
+        pixel_format == "yuv420p" and color_range != "pc"
+    ):
         reason = f"Pixel format/color range mismatch (pix_fmt: {pixel_format}, color_range: {color_range} != {required_pixel_format} with color_range=pc)"
         logger.info("%s for %s. Transcoding required.", reason, input_path.name)
         transcode_reason.append(reason)
@@ -743,7 +1034,9 @@ def transcode_videofile_if_required(
             "; ".join(transcode_reason),
         )
         # Ensure codec and pixel format are set in options if not already present
-        transcode_options.setdefault("codec", "libx264" if required_codec == "h264" else required_codec)
+        transcode_options.setdefault(
+            "codec", "libx264" if required_codec == "h264" else required_codec
+        )
         transcode_options.setdefault("extra_args", [])
 
         # Ensure pixel format and color range are correctly set in extra_args
@@ -766,8 +1059,7 @@ def transcode_videofile_if_required(
         if input_path != output_path:
             # Example: copy file if output path is different
             try:
-                output_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(input_path, output_path)
+                atomic_copy_file(source=input_path, destination=output_path)
                 logger.info(
                     "Copied %s to %s as it met requirements.",
                     input_path.name,
@@ -775,7 +1067,9 @@ def transcode_videofile_if_required(
                 )
                 return output_path
             except Exception as e:
-                logger.error("Failed to copy %s to %s: %s", input_path.name, output_path.name, e)
+                logger.error(
+                    "Failed to copy %s to %s: %s", input_path.name, output_path.name, e
+                )
                 return None
         return input_path  # Return original path if no copy needed
 
@@ -807,7 +1101,7 @@ def extract_frames(
         logger.error(error_msg)
         raise FileNotFoundError(error_msg)
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    ensure_directory(output_dir)
     output_pattern = output_dir / f"frame_%07d.{ext}"
 
     cmd = [
@@ -842,7 +1136,9 @@ def extract_frames(
         # Return empty list on error as frames were likely not created correctly
         return []
     except Exception as e:
-        logger.error("An unexpected error occurred during FFmpeg execution: %s", e, exc_info=True)
+        logger.error(
+            "An unexpected error occurred during FFmpeg execution: %s", e, exc_info=True
+        )
         return []
 
     # Collect paths of extracted frames
@@ -896,7 +1192,7 @@ def extract_frame_range(
         logger.error(error_msg)
         raise FileNotFoundError(error_msg)
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    ensure_directory(output_dir)
     # Use a consistent naming convention, matching extract_frames
     output_pattern = output_dir / f"frame_%07d.{ext}"
 
@@ -934,22 +1230,30 @@ def extract_frame_range(
         logger.error("FFmpeg stderr:\n%s", e.stderr)
         logger.error("FFmpeg stdout:\n%s", e.stdout)
         # Clean up potentially partially created files in the target directory within the expected range
-        logger.warning("Attempting cleanup of potentially incomplete frames in %s", output_dir)
+        logger.warning(
+            "Attempting cleanup of potentially incomplete frames in %s", output_dir
+        )
         for i in range(start_frame, end_frame):
             potential_file = output_dir / f"frame_{i:07d}.{ext}"
             if potential_file.exists():
                 try:
-                    potential_file.unlink()
+                    safe_unlink_file(potential_file, missing_ok=True)
                 except OSError as unlink_err:
                     logger.error(
                         "Failed to delete potential frame %s during cleanup: %s",
                         potential_file,
                         unlink_err,
                     )
-        raise RuntimeError(f"FFmpeg frame range extraction failed for {video_path}") from e
+        raise RuntimeError(
+            f"FFmpeg frame range extraction failed for {video_path}"
+        ) from e
     except Exception as e:
-        logger.error("An unexpected error occurred during FFmpeg execution: %s", e, exc_info=True)
-        raise RuntimeError(f"Unexpected error during FFmpeg frame range extraction for {video_path}") from e
+        logger.error(
+            "An unexpected error occurred during FFmpeg execution: %s", e, exc_info=True
+        )
+        raise RuntimeError(
+            f"Unexpected error during FFmpeg frame range extraction for {video_path}"
+        ) from e
 
     # Collect paths of extracted frames matching the pattern and expected range
     # FFmpeg might create files outside the exact range depending on version/flags,
@@ -961,7 +1265,9 @@ def extract_frame_range(
             extracted_files.append(frame_file)
         else:
             # This might happen if ffmpeg fails silently for some frames or if the video ends early.
-            logger.warning("Expected frame file %s not found after extraction.", frame_file)
+            logger.warning(
+                "Expected frame file %s not found after extraction.", frame_file
+            )
 
     logger.info(
         "Found %d extracted frame files in range [%d, %d) for video %s.",

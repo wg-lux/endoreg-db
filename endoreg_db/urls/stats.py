@@ -5,6 +5,7 @@ from endoreg_db.views import (
     VideoSegmentStatsView,
     SensitiveMetaStatsView,
     GeneralStatsView,
+    AuditLedgerIntegrityStatusView,
 )
 
 url_patterns = [
@@ -46,4 +47,12 @@ url_patterns = [
     # GET /api/stats/
     # Liefert allgemeine Übersichtsstatistiken für das Dashboard
     path("stats/", GeneralStatsView.as_view(), name="general_stats"),
+    # Audit ledger integrity status
+    # GET /api/audit-ledger/integrity/
+    # Returns cached background verification status; does not scan the chain.
+    path(
+        "audit-ledger/integrity/",
+        AuditLedgerIntegrityStatusView.as_view(),
+        name="audit_ledger_integrity",
+    ),
 ]

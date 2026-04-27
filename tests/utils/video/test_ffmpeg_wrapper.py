@@ -99,6 +99,61 @@ def test_transcode_video_force_cpu_uses_cpu_only_flags(monkeypatch, tmp_path):
 
 
 @pytest.mark.unit
+def test_transcode_video_retries_timestamp_repair(monkeypatch, tmp_path):
+    input_path = tmp_path / "input.mp4"
+    output_path = tmp_path / "output.mp4"
+    input_path.write_bytes(b"input")
+
+    commands = []
+
+    def fake_popen(command, **kwargs):
+        commands.append(command)
+        if len(commands) == 1:
+            return FakePopen(
+                command,
+                returncode=1,
+                stderr="invalid dts: timestamp too large and out of range",
+                **kwargs,
+            )
+        output_path.write_bytes(b"encoded")
+        return FakePopen(command, returncode=0, **kwargs)
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+
+    result = transcode_video(input_path, output_path, force_cpu=True)
+
+    assert result == output_path
+    assert len(commands) == 2
+    assert "-fflags" not in commands[0]
+    assert "-fflags" in commands[1]
+    assert commands[1][commands[1].index("-fflags") + 1] == "+genpts"
+
+
+@pytest.mark.unit
+def test_create_sensitive_copy_fails_when_video_transcode_fails(
+    monkeypatch,
+    tmp_path,
+):
+    from endoreg_db.import_files.file_storage.storage import create_sensitive_copy
+
+    input_path = tmp_path / "input.mp4"
+    sensitive_root = tmp_path / "sensitive"
+    input_path.write_bytes(b"input")
+
+    monkeypatch.setattr(
+        "endoreg_db.import_files.file_storage.storage.transcode_video",
+        lambda src, dest: None,
+    )
+
+    with pytest.raises(RuntimeError, match="Failed to create sensitive video copy"):
+        create_sensitive_copy(
+            input_path,
+            sensitive_root,
+            type("Ctx", (), {"file_type": "video"})(),
+        )
+
+
+@pytest.mark.unit
 def test_build_encoder_args_nvenc_forces_yuv420p_format(monkeypatch):
     def fake_get_preferred_encoder():
         return {

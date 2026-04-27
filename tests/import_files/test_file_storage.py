@@ -5,9 +5,7 @@ from endoreg_db.import_files.file_storage import storage
 
 
 @pytest.mark.unit
-def test_create_sensitive_copy_raises_when_video_transcode_fails(
-    monkeypatch, tmp_path
-):
+def test_create_sensitive_copy_raises_when_video_transcode_fails(monkeypatch, tmp_path):
     source = tmp_path / "input.mp4"
     sensitive_root = tmp_path / "sensitive"
     source.write_bytes(b"video")

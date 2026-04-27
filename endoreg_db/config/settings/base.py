@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import django_stubs_ext
+from kombu import Exchange, Queue
 
 from endoreg_db.config.env import (
     ENDOREG_DEPLOYMENT_ROLE_VALUES,
@@ -8,6 +9,11 @@ from endoreg_db.config.env import (
     build_default_cache_settings,
     get_asset_dir,
     get_celery_broker_url,
+    get_celery_default_queue,
+    get_celery_maintenance_queue,
+    get_celery_pipeline_queue,
+    celery_audit_ledger_integrity_beat_enabled,
+    get_celery_audit_ledger_integrity_interval_seconds,
     get_endoreg_deployment_role,
     get_hub_transfer_mtls_meta_key,
     get_hub_transfer_mtls_meta_value,
@@ -57,6 +63,60 @@ LOOKUP_REQUIREMENT_LEGACY_FALLBACK_ENABLED = (
 LX_DTYPES_HOST_MODELS_MODULE = get_lx_dtypes_host_models_module()
 LX_DTYPES_KB_REGISTRY = get_lx_dtypes_kb_registry()
 CELERY_BROKER_URL = get_celery_broker_url()
+CELERY_RESULT_BACKEND = None
+CELERY_TASK_IGNORE_RESULT = True
+CELERY_TASK_DEFAULT_QUEUE = get_celery_default_queue()
+CELERY_PIPELINE_QUEUE = get_celery_pipeline_queue()
+CELERY_MAINTENANCE_QUEUE = get_celery_maintenance_queue()
+CELERY_TASK_CREATE_MISSING_QUEUES = False
+CELERY_TASK_QUEUES = (
+    Queue(
+        CELERY_TASK_DEFAULT_QUEUE,
+        Exchange(CELERY_TASK_DEFAULT_QUEUE),
+        routing_key=CELERY_TASK_DEFAULT_QUEUE,
+    ),
+    Queue(
+        CELERY_PIPELINE_QUEUE,
+        Exchange(CELERY_PIPELINE_QUEUE),
+        routing_key=CELERY_PIPELINE_QUEUE,
+    ),
+    Queue(
+        CELERY_MAINTENANCE_QUEUE,
+        Exchange(CELERY_MAINTENANCE_QUEUE),
+        routing_key=CELERY_MAINTENANCE_QUEUE,
+    ),
+)
+CELERY_TASK_ROUTES = {
+    "endoreg_db.process_upload_job": {
+        "queue": CELERY_PIPELINE_QUEUE,
+        "routing_key": CELERY_PIPELINE_QUEUE,
+    },
+    "endoreg_db.video_post_validation_rebuild": {
+        "queue": CELERY_PIPELINE_QUEUE,
+        "routing_key": CELERY_PIPELINE_QUEUE,
+    },
+    "endoreg_db.refresh_audit_ledger_integrity_status": {
+        "queue": CELERY_MAINTENANCE_QUEUE,
+        "routing_key": CELERY_MAINTENANCE_QUEUE,
+    },
+}
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 60 * 60 * 6
+CELERY_TASK_SOFT_TIME_LIMIT = 60 * 60 * 5
+CELERY_TIMEZONE = get_time_zone()
+CELERY_ENABLE_UTC = True
+CELERY_BEAT_SCHEDULE = {}
+if celery_audit_ledger_integrity_beat_enabled():
+    CELERY_BEAT_SCHEDULE["audit-ledger-integrity-refresh"] = {
+        "task": "endoreg_db.refresh_audit_ledger_integrity_status",
+        "schedule": get_celery_audit_ledger_integrity_interval_seconds(),
+        "options": {
+            "queue": CELERY_MAINTENANCE_QUEUE,
+            "routing_key": CELERY_MAINTENANCE_QUEUE,
+            "expires": get_celery_audit_ledger_integrity_interval_seconds(),
+        },
+    }
 
 # Internationalization
 LANGUAGE_CODE = "de"
@@ -174,6 +234,21 @@ __all__ = [
     "LX_DTYPES_HOST_MODELS_MODULE",
     "LX_DTYPES_KB_REGISTRY",
     "CELERY_BROKER_URL",
+    "CELERY_RESULT_BACKEND",
+    "CELERY_TASK_IGNORE_RESULT",
+    "CELERY_TASK_DEFAULT_QUEUE",
+    "CELERY_PIPELINE_QUEUE",
+    "CELERY_MAINTENANCE_QUEUE",
+    "CELERY_TASK_CREATE_MISSING_QUEUES",
+    "CELERY_TASK_QUEUES",
+    "CELERY_TASK_ROUTES",
+    "CELERY_WORKER_PREFETCH_MULTIPLIER",
+    "CELERY_TASK_TRACK_STARTED",
+    "CELERY_TASK_TIME_LIMIT",
+    "CELERY_TASK_SOFT_TIME_LIMIT",
+    "CELERY_TIMEZONE",
+    "CELERY_ENABLE_UTC",
+    "CELERY_BEAT_SCHEDULE",
     "TEMPLATES",
     "TEST_LOGGER_NAMES",
     "REST_FRAMEWORK",

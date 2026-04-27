@@ -760,7 +760,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/62/59/e47bbd0542d0e6f4c
 
 [[package]]
 name = "endoreg-db"
-version = "0.9.5.9"
+version = "0.9.6.1"
 source = { editable = "." }
 dependencies = [
     { name = "celery" },
@@ -775,9 +775,11 @@ dependencies = [
     { name = "djangorestframework" },
     { name = "dotenv" },
     { name = "faker" },
+    { name = "ffprobe" },
     { name = "googlemaps" },
     { name = "gunicorn" },
     { name = "icecream" },
+    { name = "kombu" },
     { name = "librosa" },
     { name = "llvmlite" },
     { name = "lx-anonymizer", extra = ["llm", "ocr"] },
@@ -869,17 +871,18 @@ requires-dist = [
     { name = "djangorestframework-stubs", marker = "extra == 'dev'", specifier = ">=3.16.6" },
     { name = "dotenv", specifier = ">=0.9.9" },
     { name = "faker", specifier = ">=37.6.0" },
+    { name = "ffprobe", specifier = ">=0.5" },
     { name = "flake8", marker = "extra == 'dev'", specifier = ">=7.3.0" },
     { name = "furo", marker = "extra == 'docs'", specifier = ">=2025.9.25" },
     { name = "googlemaps", specifier = ">=4.10.0" },
     { name = "gunicorn", specifier = ">=23.0.0" },
     { name = "icecream", specifier = ">=2.1.4" },
+    { name = "kombu", specifier = ">=5.6.1" },
     { name = "librosa", specifier = "==0.11.0" },
     { name = "linkify-it-py", marker = "extra == 'docs'", specifier = ">=2.0.3" },
     { name = "llvmlite", specifier = ">=0.44.0" },
     { name = "lx-anonymizer", extras = ["llm", "ocr"], specifier = "==0.9.1.0" },
-    { name = "lx-dtypes" },
-    { name = "lx-dtypes", specifier = "==0.1.4" },
+    { name = "lx-dtypes", specifier = "==0.1.5" },
     { name = "moviepy", specifier = "==2.2.1" },
     { name = "mozilla-django-oidc", specifier = ">=4.0.1" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.16.0" },
@@ -978,6 +981,12 @@ sdist = { url = "https://files.pythonhosted.org/packages/64/27/022d4dbd4c20567b4
 wheels = [
     { url = "https://files.pythonhosted.org/packages/17/93/00c94d45f55c336434a15f98d906387e87ce28f9918e4444829a8fda432d/faker-38.2.0-py3-none-any.whl", hash = "sha256:35fe4a0a79dee0dc4103a6083ee9224941e7d3594811a50e3969e547b0d2ee65", size = 1980505, upload-time = "2025-11-19T16:37:30.208Z" },
 ]
+
+[[package]]
+name = "ffprobe"
+version = "0.5"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/95/9c/adf90d21108d41f611aa921defd2f2e56d3f92724e4b5aa41fae7a9972aa/ffprobe-0.5.zip", hash = "sha256:f7dc048df62c6ccc1c602c865a7f0976b2679200fd07ebdc34ce51e9a8205b76", size = 3530, upload-time = "2013-10-30T12:40:42.67Z" }
 
 [[package]]
 name = "filelock"
@@ -1532,7 +1541,7 @@ ocr = [
 
 [[package]]
 name = "lx-dtypes"
-version = "0.1.4"
+version = "0.1.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bibtexparser" },
@@ -1556,9 +1565,9 @@ dependencies = [
     { name = "scipy" },
     { name = "types-pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/12/5f/3a86523c77a47c60999c0fa45f389de8adf9da98c9cd081d12a76d6f7d64/lx_dtypes-0.1.4.tar.gz", hash = "sha256:3cbc8ab7db757095d8cfd8bd9b1b6b5be11f004f444a05890abed4089c6c295e", size = 1991832, upload-time = "2026-04-09T14:46:59.83Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/25/f7/eec7ce806e8c02238998064e89d639436157563ed8df2dde5d87519887c9/lx_dtypes-0.1.5.tar.gz", hash = "sha256:404b25091469cbc2ce573ef69a290b03381a6bea6f8db89f6a372401a0ca0d9f", size = 2124384, upload-time = "2026-04-24T12:35:26.723Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f7/76/fc26b134cd54dd73f7061cbc6270df854aec161bb2b7f39cacc96335a5ae/lx_dtypes-0.1.4-py3-none-any.whl", hash = "sha256:e9cd147edec7c184a31f920441cc46d7420cb4184ac0fbaaf25d0793f7597a65", size = 505385, upload-time = "2026-04-09T14:46:54.304Z" },
+    { url = "https://files.pythonhosted.org/packages/9e/cb/db16f76785c1606a9530dc0064c1ace7c11ae1686621e7e04758d1e9ec6c/lx_dtypes-0.1.5-py3-none-any.whl", hash = "sha256:c7048286a2fe16edeb7f8a42db2805c4429b799f6a9af2724ea59e7efd4cbb95", size = 514814, upload-time = "2026-04-24T12:35:19.813Z" },
 ]
 
 [[package]]

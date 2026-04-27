@@ -33,6 +33,10 @@ DEFAULT_WATCHER_POLL_INTERVAL_SECONDS = 5.0
 DEFAULT_WATCHER_STABLE_AFTER_SECONDS = 10.0
 DEFAULT_VIDEO_POST_VALIDATION_JOB_MAX_WORKERS = 2
 DEFAULT_VIDEO_POST_VALIDATION_JOB_MODE = "celery"
+DEFAULT_CELERY_DEFAULT_QUEUE = "default"
+DEFAULT_CELERY_PIPELINE_QUEUE = "pipeline"
+DEFAULT_CELERY_MAINTENANCE_QUEUE = "maintenance"
+DEFAULT_CELERY_AUDIT_LEDGER_INTEGRITY_INTERVAL_SECONDS = 300
 ENDOREG_DEPLOYMENT_ROLE_VALUES = (
     "standalone",
     "site_node",
@@ -76,7 +80,9 @@ def build_protected_runtime_env(
         storage_dir = protected_root / "storage"
 
     data_dir = _resolve_candidate_path(
-        env_source.get(DATA_DIR_ENV, str(default_data_root or (resolved_base_dir / "data"))),
+        env_source.get(
+            DATA_DIR_ENV, str(default_data_root or (resolved_base_dir / "data"))
+        ),
         base_dir=resolved_base_dir,
     )
     protected_media_root = _resolve_candidate_path(
@@ -254,7 +260,9 @@ def get_center_name(default: str = "Default Center") -> str:
 def get_endoreg_deployment_role() -> str:
     role = env_str("ENDOREG_DEPLOYMENT_ROLE", "").strip().lower()
     if role and role not in ENDOREG_DEPLOYMENT_ROLE_VALUES:
-        raise ValueError(f"ENDOREG_DEPLOYMENT_ROLE must be one of: {', '.join(ENDOREG_DEPLOYMENT_ROLE_VALUES)}")
+        raise ValueError(
+            f"ENDOREG_DEPLOYMENT_ROLE must be one of: {', '.join(ENDOREG_DEPLOYMENT_ROLE_VALUES)}"
+        )
     return role or "standalone"
 
 
@@ -314,6 +322,32 @@ def get_lx_dtypes_kb_registry() -> str:
 
 def get_celery_broker_url() -> str:
     return env_str("CELERY_BROKER_URL", "")
+
+
+def get_celery_default_queue() -> str:
+    return env_str("CELERY_DEFAULT_QUEUE", DEFAULT_CELERY_DEFAULT_QUEUE).strip()
+
+
+def get_celery_pipeline_queue() -> str:
+    return env_str("CELERY_PIPELINE_QUEUE", DEFAULT_CELERY_PIPELINE_QUEUE).strip()
+
+
+def get_celery_maintenance_queue() -> str:
+    return env_str("CELERY_MAINTENANCE_QUEUE", DEFAULT_CELERY_MAINTENANCE_QUEUE).strip()
+
+
+def celery_audit_ledger_integrity_beat_enabled() -> bool:
+    return env_bool("CELERY_BEAT_AUDIT_LEDGER_INTEGRITY_ENABLED", True)
+
+
+def get_celery_audit_ledger_integrity_interval_seconds() -> int:
+    return max(
+        60,
+        env_int(
+            "CELERY_BEAT_AUDIT_LEDGER_INTEGRITY_INTERVAL_SECONDS",
+            DEFAULT_CELERY_AUDIT_LEDGER_INTEGRITY_INTERVAL_SECONDS,
+        ),
+    )
 
 
 def get_time_zone() -> str:

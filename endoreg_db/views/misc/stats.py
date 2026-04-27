@@ -12,6 +12,7 @@ from ...models import (
     PatientExamination,
 )
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.services.audit_integrity import get_audit_ledger_integrity_status
 
 logger = logging.getLogger(__name__)
 
@@ -241,6 +242,7 @@ class GeneralStatsView(APIView):
                 "system_status": {
                     "videos_processed": videos_with_segments,
                     "processing_completion_percent": round(processing_completion, 1),
+                    "audit_ledger_integrity": get_audit_ledger_integrity_status(),
                 },
                 "status": "success",
             }

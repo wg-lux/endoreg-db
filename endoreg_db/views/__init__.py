@@ -181,6 +181,10 @@ _IMPORT_TARGETS: dict[str, tuple[str, str]] = {
     "ExaminationStatsView": ("endoreg_db.views.misc", "ExaminationStatsView"),
     "GenderViewSet": ("endoreg_db.views.misc", "GenderViewSet"),
     "GeneralStatsView": ("endoreg_db.views.misc", "GeneralStatsView"),
+    "AuditLedgerIntegrityStatusView": (
+        "endoreg_db.views.misc",
+        "AuditLedgerIntegrityStatusView",
+    ),
     "SensitiveMetaStatsView": ("endoreg_db.views.misc", "SensitiveMetaStatsView"),
     "UploadFileView": ("endoreg_db.views.misc", "UploadFileView"),
     "UploadStatusView": ("endoreg_db.views.misc", "UploadStatusView"),
@@ -278,6 +282,7 @@ __all__ = [
     "VideoSegmentStatsView",
     "SensitiveMetaStatsView",
     "GeneralStatsView",
+    "AuditLedgerIntegrityStatusView",
     "build_multilingual_response",
     "UploadFileView",
     "UploadStatusView",

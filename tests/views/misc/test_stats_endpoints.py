@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time
+from unittest.mock import patch
 from uuid import uuid4
 
+from django.core.cache import cache
 from django.test import TestCase
 
 from endoreg_db.models import (
@@ -14,6 +16,13 @@ from endoreg_db.models import (
     PatientExamination,
     SensitiveMeta,
     VideoFile,
+)
+from endoreg_db.models.state.audit_ledger import AuditLedger
+from endoreg_db.services.audit_integrity import (
+    AUDIT_LEDGER_INTEGRITY_CACHE_KEY,
+    AUDIT_LEDGER_INTEGRITY_LOCK_KEY,
+    refresh_audit_ledger_integrity_status,
+    refresh_audit_ledger_integrity_status_once,
 )
 
 
@@ -94,3 +103,80 @@ class StatsEndpointTests(TestCase):
         assert payload["status"] == "success"
         assert "overview" in payload
         assert "system_status" in payload
+        assert "audit_ledger_integrity" in payload["system_status"]
+
+    def test_audit_ledger_integrity_endpoint_returns_cached_status(self):
+        cache.set(
+            AUDIT_LEDGER_INTEGRITY_CACHE_KEY,
+            {
+                "status": "verified",
+                "verified": True,
+                "checked_at": "2026-01-01T00:00:00+00:00",
+                "entry_count": 1,
+                "error": None,
+                "ledger_head_hash": "a" * 64,
+                "last_entry_id": "entry-1",
+            },
+            timeout=None,
+        )
+
+        with patch(
+            "endoreg_db.models.state.audit_ledger.AuditLedger.verify_chain",
+            side_effect=AssertionError("request path must not verify full chain"),
+        ):
+            response = self.client.get("/api/audit-ledger/integrity/")
+
+        assert response.status_code == 200, response.content
+        payload = response.json()
+        assert payload["status"] == "verified"
+        assert payload["verified"] is True
+        assert payload["source"] == "cache"
+
+    def test_audit_ledger_integrity_refresh_detects_tampering(self):
+        first = AuditLedger.append_identity_commit(
+            object_type="SensitiveMeta",
+            object_pk="stats-1",
+            data={"payload_hash": "first", "examination_hash": "exam-1"},
+        )
+        assert first is not None
+
+        clean_status = refresh_audit_ledger_integrity_status()
+        assert clean_status["status"] == "verified"
+        assert clean_status["verified"] is True
+
+        AuditLedger.objects.filter(pk=first.pk).update(
+            data={"payload_hash": "tampered", "examination_hash": "exam-1"}
+        )
+
+        tampered_status = refresh_audit_ledger_integrity_status()
+        assert tampered_status["status"] == "failed"
+        assert tampered_status["verified"] is False
+
+        response = self.client.get("/api/audit-ledger/integrity/")
+        assert response.status_code == 200, response.content
+        assert response.json()["status"] == "failed"
+
+    def test_audit_ledger_integrity_refresh_skips_when_locked(self):
+        cache.set(
+            AUDIT_LEDGER_INTEGRITY_CACHE_KEY,
+            {
+                "status": "verified",
+                "verified": True,
+                "checked_at": "2026-01-01T00:00:00+00:00",
+                "entry_count": 1,
+                "error": None,
+                "ledger_head_hash": "b" * 64,
+                "last_entry_id": "entry-2",
+            },
+            timeout=None,
+        )
+        cache.set(AUDIT_LEDGER_INTEGRITY_LOCK_KEY, "locked", timeout=60)
+
+        with patch(
+            "endoreg_db.models.state.audit_ledger.AuditLedger.verify_chain",
+            side_effect=AssertionError("locked refresh must not verify full chain"),
+        ):
+            payload = refresh_audit_ledger_integrity_status_once()
+
+        assert payload["status"] == "verified"
+        assert payload["source"] == "skipped_locked"
