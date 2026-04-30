@@ -1,3 +1,7 @@
+import os
+import sys
+from pathlib import Path
+
 from django.apps import AppConfig
 from django.db.backends.signals import connection_created
 
@@ -21,6 +25,24 @@ class EndoregDbConfig(AppConfig):
         from endoreg_db.utils.paths import validate_runtime_storage_contract
 
         validate_runtime_storage_contract()
+        executable = Path(sys.argv[0]).name if sys.argv else ""
+        if (
+            "pytest" in executable
+            or executable == "py.test"
+            or "PYTEST_CURRENT_TEST" in os.environ
+            or len(sys.argv) < 2
+        ):
+            return
+        runtime_commands = {
+            "runserver",
+            "run_gunicorn",
+            "gunicorn",
+            "uvicorn",
+            "daphne",
+        }
+        if sys.argv[1] not in runtime_commands:
+            return
+
         from endoreg_db.services.reconciliation import (
             ReconciliationService,
             should_run_startup_reconciliation,

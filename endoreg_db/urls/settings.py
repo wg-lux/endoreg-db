@@ -10,6 +10,8 @@ from endoreg_db.views import (
     application_settings_model_training_options,
     application_settings_model_training_runs,
     application_settings_model_training_run_detail,
+    application_settings_video_dimension_backfill_runs,
+    application_settings_video_dimension_backfill_run_detail,
     application_settings_ai_dataset_export,
     application_settings_backup,
     application_settings_network_nodes,
@@ -63,6 +65,16 @@ urlpatterns = [
         "settings/application/model_training/runs/<str:run_id>/",
         application_settings_model_training_run_detail,
         name="application_settings_model_training_run_detail",
+    ),
+    path(
+        "settings/application/video_dimension_backfill/runs/",
+        application_settings_video_dimension_backfill_runs,
+        name="application_settings_video_dimension_backfill_runs",
+    ),
+    path(
+        "settings/application/video_dimension_backfill/runs/<str:run_id>/",
+        application_settings_video_dimension_backfill_run_detail,
+        name="application_settings_video_dimension_backfill_run_detail",
     ),
     path(
         "settings/application/ai_dataset_export/",

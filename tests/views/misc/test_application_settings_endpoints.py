@@ -110,6 +110,29 @@ class ApplicationSettingsEndpointTests(TestCase):
         assert response.status_code == 400, response.content
         assert "center" in response.json()["errors"]
 
+    def test_patch_application_settings_rejects_invalid_scalar_types(self):
+        response = self.client.patch(
+            "/api/settings/application/",
+            data={
+                "annotator_name": 123,
+                "report_template_name": ["template"],
+                "ai_dataset_name": {"name": "dataset"},
+                "ai_dataset_type": "invalid",
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400, response.content
+        errors = response.json()["errors"]
+        assert errors["annotator_name"] == "annotator_name must be a string."
+        assert errors["report_template_name"] == (
+            "report_template_name must be a string."
+        )
+        assert errors["ai_dataset_name"] == "ai_dataset_name must be a string."
+        assert errors["ai_dataset_type"] == (
+            "ai_dataset_type must be one of: image, video."
+        )
+
     def test_application_settings_dropdown_endpoints(self):
         centers_response = self.client.get(
             "/api/settings/application/dropdowns/centers/"
@@ -186,6 +209,18 @@ class ApplicationSettingsEndpointTests(TestCase):
             and entry["dataset_type"] == dataset.dataset_type
             for entry in response.json()
         )
+
+    def test_ai_dataset_export_rejects_missing_dataset_selection(self):
+        response = self.client.post(
+            "/api/settings/application/ai_dataset_export/",
+            data={"ai_dataset_name": "", "ai_dataset_type": "unknown"},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400, response.content
+        errors = response.json()["errors"]
+        assert "ai_dataset_name" in errors
+        assert "ai_dataset_type" in errors
 
     def test_model_training_options_endpoint_returns_backbones_and_image_datasets(self):
         image_dataset = AIDataSet.objects.create(
@@ -267,6 +302,71 @@ class ApplicationSettingsEndpointTests(TestCase):
         assert detail_payload["result"]["model_path"] == "/tmp/model.pth"
         assert "training finished" in detail_payload["stdout"]
 
+    def test_video_dimension_backfill_run_endpoints_create_and_report_run(self):
+        from endoreg_db.views.misc import application_settings as view_module
+
+        def fake_launch(run_id: str, *, command_kwargs: dict[str, object]) -> None:
+            view_module._store_video_dimension_backfill_run(
+                run_id,
+                status="completed",
+                started_at="2026-04-29T10:00:01Z",
+                finished_at="2026-04-29T10:00:30Z",
+                result={
+                    "count": 1,
+                    "summary": {"would_repair": 1},
+                    "items": [
+                        {
+                            "video_id": 123,
+                            "status": "would_repair",
+                            "source_dimensions": [1920, 1080],
+                            "processed_dimensions": [1440, 1080],
+                            "repaired": False,
+                            "detail": "",
+                        }
+                    ],
+                },
+                error=None,
+                stdout="",
+            )
+
+        original_launch = view_module._launch_video_dimension_backfill_run
+        try:
+            view_module._launch_video_dimension_backfill_run = fake_launch
+            create_response = self.client.post(
+                "/api/settings/application/video_dimension_backfill/runs/",
+                data={"dry_run": True, "limit": 5},
+                content_type="application/json",
+            )
+        finally:
+            view_module._launch_video_dimension_backfill_run = original_launch
+
+        assert create_response.status_code == 202, create_response.content
+        created_payload = create_response.json()
+        assert created_payload["dry_run"] is True
+        assert created_payload["limit"] == 5
+
+        detail_response = self.client.get(
+            "/api/settings/application/video_dimension_backfill/runs/"
+            f"{created_payload['run_id']}/"
+        )
+        assert detail_response.status_code == 200, detail_response.content
+        detail_payload = detail_response.json()
+        assert detail_payload["status"] == "completed"
+        assert detail_payload["result"]["summary"] == {"would_repair": 1}
+        assert detail_payload["result"]["items"][0]["video_id"] == 123
+
+    def test_video_dimension_backfill_run_rejects_bad_payload(self):
+        response = self.client.post(
+            "/api/settings/application/video_dimension_backfill/runs/",
+            data={"dry_run": "yes", "limit": 0},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400, response.content
+        errors = response.json()["errors"]
+        assert errors["dry_run"] == "dry_run must be a boolean."
+        assert errors["limit"] == "limit must be a positive integer."
+
     def test_train_image_multilabel_model_command_forwards_selected_backbone_and_feature_mode(
         self,
     ):
@@ -341,6 +441,25 @@ class ApplicationSettingsEndpointTests(TestCase):
         )
         assert response.status_code == 400, response.content
         assert "target_path" in response.json()["errors"]
+
+    def test_application_settings_backup_rejects_live_data_child_target(self):
+        from endoreg_db.views.misc import application_settings as view_module
+
+        with TemporaryDirectory() as storage_dir:
+            storage_path = Path(storage_dir)
+            original_sources = view_module._required_backup_sources
+            try:
+                view_module._required_backup_sources = lambda: [storage_path]
+                response = self.client.post(
+                    "/api/settings/application/backup/",
+                    data={"target_path": str(storage_path / "nested-backup")},
+                    content_type="application/json",
+                )
+            finally:
+                view_module._required_backup_sources = original_sources
+
+        assert response.status_code == 400, response.content
+        assert "live data roots" in response.json()["errors"]["target_path"]
 
     def test_network_node_settings_endpoints(self):
         list_response = self.client.get("/api/settings/application/network_nodes/")
@@ -417,3 +536,29 @@ class ApplicationSettingsEndpointTests(TestCase):
         )
         assert response.status_code == 400, response.content
         assert "node_key" in response.json()["errors"]
+
+    def test_network_node_create_rejects_duplicate_node_key_and_bad_types(self):
+        existing = NetworkNode.objects.create(
+            display_name="Existing Node",
+            role=NetworkNode.Role.SITE_NODE,
+            node_key="fixed-node-key",
+        )
+
+        response = self.client.post(
+            "/api/settings/application/network_nodes/",
+            data={
+                "display_name": "Duplicate Node",
+                "role": "not-a-role",
+                "node_key": existing.node_key,
+                "is_active": "yes",
+                "shared_secret": 123,
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400, response.content
+        errors = response.json()["errors"]
+        assert errors["role"] == "Invalid role."
+        assert errors["node_key"] == "node_key already exists."
+        assert errors["is_active"] == "is_active must be a boolean."
+        assert errors["shared_secret"] == "shared_secret must be a string."

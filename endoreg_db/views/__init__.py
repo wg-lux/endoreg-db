@@ -158,6 +158,14 @@ _IMPORT_TARGETS: dict[str, tuple[str, str]] = {
         "endoreg_db.views.misc",
         "application_settings_model_training_run_detail",
     ),
+    "application_settings_video_dimension_backfill_runs": (
+        "endoreg_db.views.misc",
+        "application_settings_video_dimension_backfill_runs",
+    ),
+    "application_settings_video_dimension_backfill_run_detail": (
+        "endoreg_db.views.misc",
+        "application_settings_video_dimension_backfill_run_detail",
+    ),
     "application_settings_ai_dataset_export": (
         "endoreg_db.views.misc",
         "application_settings_ai_dataset_export",
@@ -272,6 +280,8 @@ __all__ = [
     "application_settings_model_training_options",
     "application_settings_model_training_runs",
     "application_settings_model_training_run_detail",
+    "application_settings_video_dimension_backfill_runs",
+    "application_settings_video_dimension_backfill_run_detail",
     "application_settings_ai_dataset_export",
     "application_settings_network_nodes",
     "application_settings_network_node_detail",
@@ -315,9 +325,18 @@ __all__ = [
 ]
 
 _OPTIONAL_IMPORT_NAMES = set()
+_SUBMODULE_TARGETS = {
+    "report": "endoreg_db.views.report",
+}
 
 
 def __getattr__(name: str):
+    submodule_name = _SUBMODULE_TARGETS.get(name)
+    if submodule_name is not None:
+        module = import_module(submodule_name)
+        globals()[name] = module
+        return module
+
     target = _IMPORT_TARGETS.get(name)
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

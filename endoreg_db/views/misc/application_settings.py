@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 import threading
 import traceback
 from collections import Counter
@@ -25,10 +24,18 @@ from endoreg_db.models import (
     PatientExaminationReport,
 )
 from endoreg_db.services.hub import deployment_profile_payload
+from endoreg_db.services.video_dimension_backfill import (
+    VideoDimensionBackfillResult,
+    backfill_anonymized_video_dimensions,
+)
 from endoreg_db.utils.ai.model_training.config import (
     DEFAULT_LABELSET_VERSION_TO_TRAIN,
 )
-from endoreg_db.utils.file_operations import atomic_write_file
+from endoreg_db.utils.file_operations import (
+    atomic_copy_file,
+    atomic_write_file,
+    ensure_directory,
+)
 from endoreg_db.utils.defaults.set_default_center import (
     get_application_defaults,
     get_application_settings,
@@ -76,6 +83,8 @@ MODEL_TRAINING_FEATURE_MODE_OPTIONS: tuple[dict[str, str], ...] = (
 
 _MODEL_TRAINING_RUNS: dict[str, dict[str, Any]] = {}
 _MODEL_TRAINING_RUNS_LOCK = threading.Lock()
+_VIDEO_DIMENSION_BACKFILL_RUNS: dict[str, dict[str, Any]] = {}
+_VIDEO_DIMENSION_BACKFILL_RUNS_LOCK = threading.Lock()
 
 
 def _required_backup_sources() -> list[Path]:
@@ -123,6 +132,25 @@ def _backup_status_payload() -> dict[str, Any]:
     }
 
 
+def _copy_backup_source_tree(source_root: Path, destination_root: Path) -> int:
+    ensure_directory(destination_root)
+    copied_count = 0
+
+    for source_path in source_root.rglob("*"):
+        relative_path = source_path.relative_to(source_root)
+        destination_path = destination_root / relative_path
+        if source_path.is_dir():
+            ensure_directory(destination_path)
+            continue
+        if not source_path.is_file():
+            continue
+
+        atomic_copy_file(source=source_path, destination=destination_path)
+        copied_count += 1
+
+    return copied_count
+
+
 def _settings_payload(request) -> dict[str, Any]:
     settings_obj = get_application_settings()
     snapshot = get_application_defaults()
@@ -143,9 +171,9 @@ def _settings_payload(request) -> dict[str, Any]:
         "report_template_name": snapshot.report_template_name,
         "ai_dataset_name": snapshot.ai_dataset_name,
         "ai_dataset_type": snapshot.ai_dataset_type,
-        "updated_at": settings_obj.updated_at.isoformat()
-        if settings_obj.updated_at
-        else None,
+        "updated_at": (
+            settings_obj.updated_at.isoformat() if settings_obj.updated_at else None
+        ),
         "deployment_profile": deployment_profile_payload(),
         "backup_status": _backup_status_payload(),
     }
@@ -177,9 +205,9 @@ def _utcnow_iso() -> str:
     return datetime.utcnow().isoformat() + "Z"
 
 
-def _store_model_training_run(run_id: str, **updates: object) -> dict[str, Any]:
+def _store_model_training_run(run_key: str, **updates: object) -> dict[str, Any]:
     with _MODEL_TRAINING_RUNS_LOCK:
-        current = _MODEL_TRAINING_RUNS.setdefault(run_id, {})
+        current = _MODEL_TRAINING_RUNS.setdefault(run_key, {})
         current.update(updates)
         return dict(current)
 
@@ -187,6 +215,22 @@ def _store_model_training_run(run_id: str, **updates: object) -> dict[str, Any]:
 def _get_model_training_run(run_id: str) -> dict[str, Any] | None:
     with _MODEL_TRAINING_RUNS_LOCK:
         run = _MODEL_TRAINING_RUNS.get(run_id)
+        return dict(run) if run is not None else None
+
+
+def _store_video_dimension_backfill_run(
+    run_key: str,
+    **updates: object,
+) -> dict[str, Any]:
+    with _VIDEO_DIMENSION_BACKFILL_RUNS_LOCK:
+        current = _VIDEO_DIMENSION_BACKFILL_RUNS.setdefault(run_key, {})
+        current.update(updates)
+        return dict(current)
+
+
+def _get_video_dimension_backfill_run(run_id: str) -> dict[str, Any] | None:
+    with _VIDEO_DIMENSION_BACKFILL_RUNS_LOCK:
+        run = _VIDEO_DIMENSION_BACKFILL_RUNS.get(run_id)
         return dict(run) if run is not None else None
 
 
@@ -266,6 +310,84 @@ def _launch_model_training_run(run_id: str, *, command_kwargs: dict[str, Any]) -
     thread.start()
 
 
+def _video_dimension_backfill_item_payload(
+    result: VideoDimensionBackfillResult,
+) -> dict[str, Any]:
+    return {
+        "video_id": result.video_id,
+        "status": result.status,
+        "source_dimensions": list(result.source_dimensions),
+        "processed_dimensions": list(result.processed_dimensions),
+        "repaired": result.repaired,
+        "detail": result.detail,
+    }
+
+
+def _video_dimension_backfill_run_payload(run: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "run_id": run["run_id"],
+        "status": run["status"],
+        "dry_run": run["dry_run"],
+        "limit": run.get("limit"),
+        "created_at": run["created_at"],
+        "started_at": run.get("started_at"),
+        "finished_at": run.get("finished_at"),
+        "result": run.get("result"),
+        "error": run.get("error"),
+        "stdout": run.get("stdout", ""),
+    }
+
+
+def _execute_video_dimension_backfill_run(
+    run_id: str,
+    *,
+    command_kwargs: dict[str, Any],
+) -> None:
+    _store_video_dimension_backfill_run(
+        run_id,
+        status="running",
+        started_at=_utcnow_iso(),
+    )
+    try:
+        results = backfill_anonymized_video_dimensions(**command_kwargs)
+        items = [_video_dimension_backfill_item_payload(result) for result in results]
+        summary = Counter(item["status"] for item in items)
+        _store_video_dimension_backfill_run(
+            run_id,
+            status="completed",
+            finished_at=_utcnow_iso(),
+            result={
+                "count": len(items),
+                "summary": dict(summary),
+                "items": items,
+            },
+            error=None,
+            stdout="",
+        )
+    except Exception as exc:
+        _store_video_dimension_backfill_run(
+            run_id,
+            status="failed",
+            finished_at=_utcnow_iso(),
+            result=None,
+            error=str(exc),
+            stdout=traceback.format_exc(),
+        )
+
+
+def _launch_video_dimension_backfill_run(
+    run_id: str,
+    *,
+    command_kwargs: dict[str, Any],
+) -> None:
+    thread = threading.Thread(
+        target=_execute_video_dimension_backfill_run,
+        kwargs={"run_id": run_id, "command_kwargs": command_kwargs},
+        daemon=True,
+    )
+    thread.start()
+
+
 def _network_node_payload(node: NetworkNode) -> dict[str, Any]:
     owning_center = node.owning_center
     owning_center_id = owning_center.pk if owning_center is not None else None
@@ -283,9 +405,9 @@ def _network_node_payload(node: NetworkNode) -> dict[str, Any]:
         "base_url": node.base_url,
         "is_active": node.is_active,
         "owning_center_id": owning_center_id,
-        "owning_center_key": owning_center.center_key
-        if owning_center is not None
-        else None,
+        "owning_center_key": (
+            owning_center.center_key if owning_center is not None else None
+        ),
         "owning_center_name": owning_center.name if owning_center is not None else None,
         "has_shared_secret": bool(node.shared_secret_hash),
         "created_at": node.created_at.isoformat() if node.created_at else None,
@@ -394,9 +516,11 @@ def application_settings_detail(request):
 
     update_application_defaults(
         center=center_value if ("center_id" in data or "center_name" in data) else None,
-        processor=processor_value
-        if ("processor_id" in data or "processor_name" in data)
-        else None,
+        processor=(
+            processor_value
+            if ("processor_id" in data or "processor_name" in data)
+            else None
+        ),
         annotator_name=annotator_name,
         report_template_name=report_template_name,
         ai_dataset_name=ai_dataset_name,
@@ -567,6 +691,7 @@ def application_settings_model_training_runs(request):
     }
     run = _store_model_training_run(
         run_id,
+        run_id=run_id,
         status="queued",
         dataset_id=dataset.pk,
         dataset_name=dataset.name,
@@ -599,6 +724,64 @@ def application_settings_model_training_run_detail(request, run_id: str):
             status=status.HTTP_404_NOT_FOUND,
         )
     return Response(_model_training_run_payload(run), status=status.HTTP_200_OK)
+
+
+@api_view(["POST"])
+@permission_classes([EnvironmentAwarePermission])
+def application_settings_video_dimension_backfill_runs(request):
+    payload: dict[str, Any] = request.data or {}
+    dry_run = payload.get("dry_run", False)
+    limit = payload.get("limit")
+
+    errors: dict[str, str] = {}
+    if not isinstance(dry_run, bool):
+        errors["dry_run"] = "dry_run must be a boolean."
+    if limit in ("", None):
+        limit = None
+    elif not isinstance(limit, int) or limit <= 0:
+        errors["limit"] = "limit must be a positive integer."
+
+    if errors:
+        return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    run_id = uuid4().hex
+    command_kwargs = {
+        "dry_run": dry_run,
+        "limit": limit,
+    }
+    run = _store_video_dimension_backfill_run(
+        run_id,
+        run_id=run_id,
+        status="queued",
+        dry_run=dry_run,
+        limit=limit,
+        created_at=_utcnow_iso(),
+        started_at=None,
+        finished_at=None,
+        result=None,
+        error=None,
+        stdout="",
+    )
+    _launch_video_dimension_backfill_run(run_id, command_kwargs=command_kwargs)
+    return Response(
+        _video_dimension_backfill_run_payload(run),
+        status=status.HTTP_202_ACCEPTED,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([EnvironmentAwarePermission])
+def application_settings_video_dimension_backfill_run_detail(request, run_id: str):
+    run = _get_video_dimension_backfill_run(run_id)
+    if run is None:
+        return Response(
+            {"detail": "Video dimension backfill run not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    return Response(
+        _video_dimension_backfill_run_payload(run),
+        status=status.HTTP_200_OK,
+    )
 
 
 def _sanitize_export_token(value: str) -> str:
@@ -734,19 +917,21 @@ def application_settings_backup(request):
     backup_root = resolved_target_root / f"lx-annotate-backup-{timestamp}"
 
     try:
-        backup_root.mkdir(parents=True, exist_ok=False)
+        if backup_root.exists():
+            raise FileExistsError(backup_root)
+        ensure_directory(backup_root)
 
         copied_roots: list[dict[str, Any]] = []
         for entry in backup_status["source_roots"]:
             source_path = Path(entry["path"])
             destination = backup_root / entry["label"]
-            shutil.copytree(source_path, destination)
+            copied_count = _copy_backup_source_tree(source_path, destination)
             copied_roots.append(
                 {
                     "label": entry["label"],
                     "source_path": str(source_path),
                     "destination_path": str(destination),
-                    "file_count": entry["file_count"],
+                    "file_count": copied_count,
                 }
             )
 
@@ -755,9 +940,11 @@ def application_settings_backup(request):
             "target_root": str(backup_root),
             "copied_roots": copied_roots,
         }
-        (backup_root / "manifest.json").write_text(
-            json.dumps(manifest, indent=2, sort_keys=True),
-            encoding="utf-8",
+        manifest_bytes = json.dumps(manifest, indent=2, sort_keys=True).encode("utf-8")
+        atomic_write_file(
+            destination=backup_root / "manifest.json",
+            content=[manifest_bytes],
+            required_bytes=len(manifest_bytes),
         )
     except FileExistsError:
         return Response(
@@ -925,6 +1112,8 @@ __all__ = [
     "application_settings_model_training_options",
     "application_settings_model_training_runs",
     "application_settings_model_training_run_detail",
+    "application_settings_video_dimension_backfill_runs",
+    "application_settings_video_dimension_backfill_run_detail",
     "application_settings_ai_dataset_export",
     "application_settings_backup",
     "application_settings_network_nodes",
