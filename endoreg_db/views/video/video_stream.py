@@ -22,6 +22,7 @@ from endoreg_db.models.media.video.storage_mode import (
     VideoStorageMode,
     coerce_video_storage_mode,
 )
+from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.utils.cors import resolve_response_origin
 from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
 from endoreg_db.utils.nginx_accel import (
@@ -104,6 +105,27 @@ def _resolve_verified_streamable_path(
     return resolved_stream_path, None
 
 
+def _try_repair_streamable_artifact(video: VideoFile, file_type: str) -> str:
+    try:
+        sync_video_streamable_artifacts(
+            video,
+            include_raw=file_type == "raw",
+            include_processed=file_type == "processed",
+            save=True,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Could not repair streamable video artifact for id=%s type=%s: %s",
+            getattr(video, "pk", None),
+            file_type,
+            exc,
+            exc_info=True,
+        )
+        return "streamable_repair_failed"
+
+    return "streamable_repaired"
+
+
 class VideoStreamView(APIView):
     permission_classes = [EnvironmentAwarePermission, PolicyPermission]
 
@@ -146,6 +168,14 @@ class VideoStreamView(APIView):
             )
 
             if nginx_offload_enabled():
+                if resolved_stream_path is None:
+                    repair_state = _try_repair_streamable_artifact(video, file_type)
+                    stream_relative_path = video.get_stream_relative_path(file_type)
+                    resolved_stream_path, unresolved_state = (
+                        _resolve_verified_streamable_path(stream_relative_path)
+                    )
+                    stream_state = unresolved_state or repair_state
+
                 if resolved_stream_path is not None and stream_relative_path is not None:
                     content_type = (
                         mimetypes.guess_type(stream_relative_path)[0] or "video/mp4"

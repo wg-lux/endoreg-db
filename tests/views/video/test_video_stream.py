@@ -436,6 +436,63 @@ class VideoStreamViewTests(TestCase):
         assert not body.startswith(LX_ENCRYPTED_MAGIC)
         assert body == payload
 
+    def test_video_stream_repairs_encrypted_streamable_artifact_before_nginx_handoff(
+        self,
+    ):
+        from endoreg_db.views.video import video_stream as view_module
+
+        payload = b"\x00\x00\x00\x18ftypmp42"
+        fake_storage = FakeStorage(payload)
+        fake_field = StubFieldFile(fake_storage, "videos/test.mp4")
+        fake_video_obj = SimpleNamespace(
+            raw_file=fake_field,
+            active_raw_file=fake_field,
+            processed_file=fake_field,
+            storage_mode=view_module.VideoFile.StorageMode.FS_ENCRYPTED_STREAMABLE,
+            raw_streamable_relative_path="streamable_videos/raw/repaired.mp4",
+            processed_streamable_relative_path="streamable_videos/processed/repaired.mp4",
+        )
+        attach_video_stream_methods(fake_video_obj, view_module)
+
+        streamable_path = (
+            protected_media_root()
+            / fake_video_obj.processed_streamable_relative_path
+        )
+        streamable_path.parent.mkdir(parents=True, exist_ok=True)
+        streamable_path.write_bytes(LX_ENCRYPTED_MAGIC + b"ciphertext")
+
+        def fake_sync(video, *, include_raw, include_processed, save):  # noqa: ARG001
+            assert include_raw is False
+            assert include_processed is True
+            assert save is True
+            streamable_path.write_bytes(payload)
+            return ["processed_streamable_relative_path"]
+
+        monkeypatches = pytest.MonkeyPatch()
+        try:
+            monkeypatches.setenv("SERVE_WITH_NGINX", "true")
+            monkeypatches.setattr(
+                view_module,
+                "sync_video_streamable_artifacts",
+                fake_sync,
+            )
+            monkeypatches.setattr(
+                view_module.VideoStreamView,
+                "_get_video_or_404",
+                staticmethod(lambda pk: fake_video_obj),
+            )
+            response = self.client.get("/api/media/videos/123/stream/?type=processed")
+        finally:
+            monkeypatches.undo()
+            streamable_path.unlink(missing_ok=True)
+
+        assert response.status_code == 200
+        assert (
+            response["X-Accel-Redirect"]
+            == "/protected_media/streamable_videos/processed/repaired.mp4"
+        )
+        assert "X-Stream-State" not in response
+
     def test_video_stream_recovers_raw_path_when_field_name_is_stale(self):
         from endoreg_db.views.video import video_stream as view_module
 
