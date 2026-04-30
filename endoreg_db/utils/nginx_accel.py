@@ -11,7 +11,10 @@ from endoreg_db.config.env import (
     get_protected_media_url,
     nginx_offload_enabled as env_nginx_offload_enabled,
 )
-from endoreg_db.utils.paths import to_protected_media_relative
+from endoreg_db.utils.paths import (
+    normalize_protected_media_relative_path,
+    to_protected_media_relative,
+)
 from endoreg_db.utils.storage_streaming import add_cors_headers
 
 
@@ -33,11 +36,12 @@ def build_nginx_accel_response(
     buffering: str = "no",
     accept_ranges: bool = True,
 ) -> HttpResponseBase:
+    safe_relative_path = normalize_protected_media_relative_path(protected_relative_path)
     response: HttpResponseBase = HttpResponse()
     response["Content-Type"] = content_type
     response["X-Accel-Redirect"] = posixpath.join(
         nginx_protected_url().rstrip("/"),
-        protected_relative_path.lstrip("/"),
+        safe_relative_path,
     )
     response["X-Accel-Buffering"] = buffering
     if accept_ranges:

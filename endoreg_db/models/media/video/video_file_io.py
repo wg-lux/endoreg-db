@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Iterator, Optional
 from django.db import transaction
 
 from endoreg_db.utils import paths as path_utils
+from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
 from endoreg_db.utils.file_operations import safe_unlink_file
 from endoreg_db.utils.storage import delete_field_file, ensure_local_file, file_exists
 from endoreg_db.utils.storage_streaming import maybe_local_plaintext_path
@@ -18,12 +19,57 @@ if TYPE_CHECKING:
 logger = logging.getLogger("video_file")
 
 
+def _streamable_path_is_safe_plaintext(path: Path) -> bool:
+    try:
+        stat_result = path.stat()
+    except OSError as exc:
+        logger.warning(
+            "Refusing streamable video artifact that cannot be stated: path=%s error=%s",
+            path,
+            exc,
+        )
+        return False
+
+    if not path.is_file() or stat_result.st_size <= 0:
+        logger.warning(
+            "Refusing invalid streamable video artifact: path=%s size=%s",
+            path,
+            stat_result.st_size,
+        )
+        return False
+
+    try:
+        with path.open("rb") as handle:
+            starts_with_magic = (
+                handle.read(len(LX_ENCRYPTED_MAGIC)) == LX_ENCRYPTED_MAGIC
+            )
+    except OSError as exc:
+        logger.warning(
+            "Refusing unreadable streamable video artifact: path=%s error=%s",
+            path,
+            exc,
+        )
+        return False
+
+    if starts_with_magic:
+        logger.error(
+            "Refusing encrypted streamable video artifact: path=%s",
+            path,
+        )
+        return False
+
+    return True
+
+
 def _resolve_streamable_path(relative_path: str | None) -> Optional[Path]:
     if not relative_path:
         return None
 
     candidate = path_utils.resolve_existing_protected_media_path(relative_path)
-    return candidate if candidate and candidate.is_file() else None
+    if candidate is None:
+        return None
+
+    return candidate if _streamable_path_is_safe_plaintext(candidate) else None
 
 
 def _field_file_exists(field_file) -> bool:
