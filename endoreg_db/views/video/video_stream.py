@@ -17,6 +17,10 @@ from rest_framework.views import APIView
 
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models import VideoFile
+from endoreg_db.models.media.video.storage_mode import (
+    VideoStorageMode,
+    coerce_video_storage_mode,
+)
 from endoreg_db.utils.cors import resolve_response_origin
 from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
 from endoreg_db.utils.nginx_accel import (
@@ -37,11 +41,66 @@ logger = logging.getLogger(__name__)
 
 
 def _path_starts_with_encrypted_magic(path: Path) -> bool:
+    with path.open("rb") as handle:
+        return handle.read(len(LX_ENCRYPTED_MAGIC)) == LX_ENCRYPTED_MAGIC
+
+
+def _video_uses_streamable_mode(video: VideoFile) -> bool:
     try:
-        with path.open("rb") as handle:
-            return handle.read(len(LX_ENCRYPTED_MAGIC)) == LX_ENCRYPTED_MAGIC
-    except OSError:
+        return (
+            coerce_video_storage_mode(getattr(video, "storage_mode", None))
+            == VideoStorageMode.STREAMABLE
+        )
+    except ValueError:
         return False
+
+
+def _resolve_verified_streamable_path(
+    relative_path: str | None,
+) -> tuple[Path | None, str | None]:
+    if relative_path is None:
+        return None, "missing_streamable_artifact"
+
+    resolved_stream_path = resolve_existing_protected_media_path(relative_path)
+    if resolved_stream_path is None:
+        return None, "missing_streamable_artifact"
+
+    try:
+        stat_result = resolved_stream_path.stat()
+    except OSError as exc:
+        logger.warning(
+            "Refusing unreadable streamable video artifact: path=%s error=%s",
+            resolved_stream_path,
+            exc,
+        )
+        return None, "unreadable_streamable_artifact"
+
+    if not resolved_stream_path.is_file() or stat_result.st_size <= 0:
+        logger.warning(
+            "Refusing invalid streamable video artifact: path=%s size=%s",
+            resolved_stream_path,
+            stat_result.st_size,
+        )
+        return None, "invalid_streamable_artifact"
+
+    try:
+        starts_with_magic = _path_starts_with_encrypted_magic(resolved_stream_path)
+    except OSError as exc:
+        logger.warning(
+            "Refusing unreadable streamable video artifact: path=%s error=%s",
+            resolved_stream_path,
+            exc,
+        )
+        return None, "unreadable_streamable_artifact"
+
+    if starts_with_magic:
+        logger.error(
+            "Refusing streamable video artifact because it is encrypted: %s",
+            resolved_stream_path,
+        )
+        return None, "encrypted_streamable_artifact"
+
+    return resolved_stream_path, None
 
 
 class VideoStreamView(APIView):
@@ -78,35 +137,25 @@ class VideoStreamView(APIView):
         frontend_origin = resolve_response_origin(request)
         range_header = request.headers.get("Range") or request.META.get("HTTP_RANGE")
 
-        stream_relative_path = None
-        if video.can_offload_stream_with_nginx(file_type):
-            stream_relative_path = video.get_stream_relative_path(file_type)
-            if stream_relative_path is not None:
-                resolved_stream_path = resolve_existing_protected_media_path(
-                    stream_relative_path
-                )
-                if resolved_stream_path is None:
-                    response = HttpResponse(status=409)
-                    response["X-Stream-State"] = "missing_streamable_artifact"
-                    return add_cors_headers(response, frontend_origin)
-                if _path_starts_with_encrypted_magic(resolved_stream_path):
-                    logger.error(
-                        "Refusing nginx offload for encrypted streamable artifact: %s",
-                        resolved_stream_path,
-                    )
-                    stream_relative_path = None
+        stream_state = None
+        stream_relative_path = video.get_stream_relative_path(file_type)
+        if _video_uses_streamable_mode(video):
+            resolved_stream_path, stream_state = _resolve_verified_streamable_path(
+                stream_relative_path
+            )
 
-        if nginx_offload_enabled() and stream_relative_path is not None:
-            relative_path = video.get_stream_relative_path(file_type)
-            if relative_path is not None:
-                content_type = mimetypes.guess_type(relative_path)[0] or "video/mp4"
-                return build_nginx_accel_response(
-                    protected_relative_path=relative_path,
-                    content_type=content_type,
-                    filename=Path(relative_path).name,
-                    disposition="inline",
-                    frontend_origin=frontend_origin,
-                )
+            if nginx_offload_enabled():
+                if resolved_stream_path is not None and stream_relative_path is not None:
+                    content_type = (
+                        mimetypes.guess_type(stream_relative_path)[0] or "video/mp4"
+                    )
+                    return build_nginx_accel_response(
+                        protected_relative_path=stream_relative_path,
+                        content_type=content_type,
+                        filename=Path(stream_relative_path).name,
+                        disposition="inline",
+                        frontend_origin=frontend_origin,
+                    )
 
         try:
             field_file, local_path = video.resolve_video_stream_source(
@@ -177,5 +226,8 @@ class VideoStreamView(APIView):
                 disposition="inline",
                 filename=filename,
             )
+
+        if stream_state is not None:
+            response["X-Stream-State"] = stream_state
 
         return add_cors_headers(response, frontend_origin)

@@ -8,6 +8,7 @@ from typing import IO, Any
 import pytest
 from django.test import TestCase
 
+from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
 from endoreg_db.utils.paths import protected_media_root
 
 
@@ -64,6 +65,12 @@ class LocalStubFieldFile:
 
 
 def attach_video_stream_methods(fake_video_obj, view_module) -> None:
+    def streamable_path_is_safe_plaintext(path: Path) -> bool:
+        if not path.exists() or not path.is_file() or path.stat().st_size <= 0:
+            return False
+        with path.open("rb") as handle:
+            return handle.read(len(LX_ENCRYPTED_MAGIC)) != LX_ENCRYPTED_MAGIC
+
     def get_stream_relative_path(file_type: str) -> str | None:
         attr_name = (
             "processed_streamable_relative_path"
@@ -96,7 +103,7 @@ def attach_video_stream_methods(fake_video_obj, view_module) -> None:
         stream_relative_path = get_stream_relative_path(file_type)
         if stream_relative_path:
             stream_path = protected_media_root() / stream_relative_path
-            if stream_path.exists():
+            if streamable_path_is_safe_plaintext(stream_path):
                 return field_file, stream_path
 
         field_path = getattr(field_file, "path", None)
@@ -298,7 +305,7 @@ class VideoStreamViewTests(TestCase):
         assert response.status_code == 200
         assert "X-Accel-Redirect" not in response
 
-    def test_video_stream_returns_conflict_when_streamable_artifact_is_not_ready(self):
+    def test_video_stream_falls_back_when_streamable_artifact_is_not_ready(self):
         from endoreg_db.views.video import video_stream as view_module
 
         payload = b"\x00\x00\x00\x18ftypmp42"
@@ -321,11 +328,56 @@ class VideoStreamViewTests(TestCase):
                 staticmethod(lambda pk: fake_video_obj),
             )
             response = self.client.get("/api/media/videos/123/stream/?type=raw")
+            body = b"".join(response.streaming_content)
         finally:
             monkeypatches.undo()
 
-        assert response.status_code == 409
+        assert response.status_code == 200
         assert response["X-Stream-State"] == "missing_streamable_artifact"
+        assert body == payload
+
+    def test_video_stream_falls_back_when_streamable_artifact_is_encrypted(self):
+        from endoreg_db.views.video import video_stream as view_module
+
+        payload = b"\x00\x00\x00\x18ftypmp42plaintext-canonical"
+        fake_storage = FakeStorage(payload)
+        fake_field = StubFieldFile(fake_storage, "videos/test.mp4")
+        fake_video_obj = SimpleNamespace(
+            raw_file=fake_field,
+            active_raw_file=fake_field,
+            processed_file=fake_field,
+            storage_mode=view_module.VideoFile.StorageMode.FS_ENCRYPTED_STREAMABLE,
+            raw_streamable_relative_path="streamable_videos/raw/encrypted.mp4",
+            processed_streamable_relative_path="streamable_videos/processed/encrypted.mp4",
+        )
+        attach_video_stream_methods(fake_video_obj, view_module)
+
+        streamable_path = (
+            protected_media_root()
+            / fake_video_obj.raw_streamable_relative_path
+        )
+        streamable_path.parent.mkdir(parents=True, exist_ok=True)
+        streamable_path.write_bytes(LX_ENCRYPTED_MAGIC + b"ciphertext")
+
+        monkeypatches = pytest.MonkeyPatch()
+        try:
+            monkeypatches.setenv("SERVE_WITH_NGINX", "true")
+            monkeypatches.setattr(
+                view_module.VideoStreamView,
+                "_get_video_or_404",
+                staticmethod(lambda pk: fake_video_obj),
+            )
+            response = self.client.get("/api/media/videos/123/stream/?type=raw")
+            body = b"".join(response.streaming_content)
+        finally:
+            monkeypatches.undo()
+            streamable_path.unlink(missing_ok=True)
+
+        assert response.status_code == 200
+        assert "X-Accel-Redirect" not in response
+        assert response["X-Stream-State"] == "encrypted_streamable_artifact"
+        assert not body.startswith(LX_ENCRYPTED_MAGIC)
+        assert body == payload
 
     def test_video_stream_recovers_raw_path_when_field_name_is_stale(self):
         from endoreg_db.views.video import video_stream as view_module
