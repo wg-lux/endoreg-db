@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
 from endoreg_db.models import VideoFile
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
@@ -40,6 +40,10 @@ class Command(BaseCommand):
         video_ids = options.get("video_ids") or []
         processed_only = bool(options["processed_only"])
         raw_only = bool(options["raw_only"])
+        if processed_only and raw_only:
+            raise CommandError(
+                "--processed-only and --raw-only cannot be used together"
+            )
         dry_run = bool(options["dry_run"])
 
         include_raw = not processed_only

@@ -24,6 +24,12 @@ import django
 django.setup()
 
 from endoreg_db.models import VideoFile
+from endoreg_db.utils.storage import (
+    ensure_local_file,
+    field_file_is_readable,
+    file_exists,
+)
+from endoreg_db.utils.storage_streaming import field_file_size
 
 logger = logging.getLogger(__name__)
 
@@ -223,7 +229,8 @@ def test_django_video_access(video_id):
         "orm_accessible": False,
         "has_raw_file": False,
         "has_processed_file": False,
-        "active_file_path": None,
+        "active_file_attr": None,
+        "active_file_name": None,
         "file_size": 0,
         "errors": [],
     }
@@ -232,38 +239,26 @@ def test_django_video_access(video_id):
         video = VideoFile.objects.get(pk=video_id)
         access_result["orm_accessible"] = True
 
-        # Check raw file
-        if hasattr(video, "raw_file") and video.raw_file:
+        for attr, flag_name in (
+            ("processed_file", "has_processed_file"),
+            ("raw_file", "has_raw_file"),
+        ):
+            field_file = getattr(video, attr, None)
+            if not field_file or not getattr(field_file, "name", None):
+                continue
             try:
-                raw_path = video.raw_file.path
-                if Path(raw_path).exists():
-                    access_result["has_raw_file"] = True
-                    access_result["active_file_path"] = raw_path
-                    access_result["file_size"] = Path(raw_path).stat().st_size
+                if file_exists(field_file):
+                    access_result[flag_name] = True
+                    if access_result["active_file_attr"] is None:
+                        access_result["active_file_attr"] = attr
+                        access_result["active_file_name"] = field_file.name
+                        access_result["file_size"] = field_file_size(field_file)
+                    if not field_file_is_readable(field_file):
+                        access_result["errors"].append(
+                            f"{attr} exists but could not be materialized"
+                        )
             except Exception as e:
-                access_result["errors"].append(f"Raw file access error: {e}")
-
-        # Check processed file
-        if hasattr(video, "processed_file") and video.processed_file:
-            try:
-                processed_path = video.processed_file.path
-                if Path(processed_path).exists():
-                    access_result["has_processed_file"] = True
-                    if not access_result["active_file_path"]:
-                        access_result["active_file_path"] = processed_path
-                        access_result["file_size"] = Path(processed_path).stat().st_size
-            except Exception as e:
-                access_result["errors"].append(f"Processed file access error: {e}")
-
-        # Test video streaming methods
-        try:
-            if hasattr(video, "get_active_file_path"):
-                active_path = video.get_active_file_path()
-                if active_path and Path(active_path).exists():
-                    access_result["active_file_path"] = str(active_path)
-                    access_result["file_size"] = Path(active_path).stat().st_size
-        except Exception as e:
-            access_result["errors"].append(f"Active file path method error: {e}")
+                access_result["errors"].append(f"{attr} access error: {e}")
 
     except VideoFile.DoesNotExist:
         access_result["errors"].append(
@@ -303,7 +298,7 @@ def main():
 
     if django_result["orm_accessible"]:
         print("✅ Video found in database")
-        print(f"📁 Active file path: {django_result['active_file_path']}")
+        print(f"📁 Active storage object: {django_result['active_file_name']}")
         print(f"📏 File size: {django_result['file_size'] / (1024 * 1024):.1f} MB")
 
         if django_result["errors"]:
@@ -315,99 +310,101 @@ def main():
             print(f"❌ {error}")
         return
 
-    # Get video file path for further testing
-    video_path = django_result["active_file_path"]
-    if not video_path or not Path(video_path).exists():
-        print("❌ No valid video file path found")
+    active_file_attr = django_result["active_file_attr"]
+    if not active_file_attr:
+        print("❌ No valid video storage object found")
         return
 
-    print("\n2️⃣ Testing File System Access...")
-    file_path = Path(video_path)
-    print(f"📁 Path: {file_path}")
-    print(f"✅ File exists: {file_path.exists()}")
-    print(f"📏 Size: {file_path.stat().st_size / (1024 * 1024):.1f} MB")
-    print(f"🔑 Readable: {os.access(file_path, os.R_OK)}")
+    video = VideoFile.objects.get(pk=video_id)
+    active_field = getattr(video, active_file_attr)
+    with ensure_local_file(active_field) as video_path:
+        print("\n2️⃣ Testing Materialized File Access...")
+        file_path = Path(video_path)
+        print(f"📁 Local staging path: {file_path}")
+        print(f"✅ File exists: {file_path.exists()}")
+        print(f"📏 Size: {file_path.stat().st_size / (1024 * 1024):.1f} MB")
+        print(f"🔑 Readable: {os.access(file_path, os.R_OK)}")
 
-    # Check FFmpeg availability
-    print("\n3️⃣ Checking FFmpeg Availability...")
-    if not check_ffmpeg_available():
-        print("❌ FFmpeg not available - cannot perform detailed video analysis")
-        print("💡 Install FFmpeg: sudo apt-get install ffmpeg")
-        return
-    else:
-        print("✅ FFmpeg is available")
+        # Check FFmpeg availability
+        print("\n3️⃣ Checking FFmpeg Availability...")
+        if not check_ffmpeg_available():
+            print("❌ FFmpeg not available - cannot perform detailed video analysis")
+            print("💡 Install FFmpeg: sudo apt-get install ffmpeg")
+            return
+        else:
+            print("✅ FFmpeg is available")
 
-    # Analyze video with FFmpeg
-    print("\n4️⃣ Video Analysis with FFmpeg...")
-    analysis = analyze_video_with_ffmpeg(video_path)
+        # Analyze video with FFmpeg
+        print("\n4️⃣ Video Analysis with FFmpeg...")
+        analysis = analyze_video_with_ffmpeg(video_path)
 
-    if analysis["file_readable"]:
-        print("✅ File is readable by FFmpeg")
-        print(f"🎥 Has video stream: {analysis['has_video_stream']}")
-        print(f"🔊 Has audio stream: {analysis['has_audio_stream']}")
+        if analysis["file_readable"]:
+            print("✅ File is readable by FFmpeg")
+            print(f"🎥 Has video stream: {analysis['has_video_stream']}")
+            print(f"🔊 Has audio stream: {analysis['has_audio_stream']}")
+            print(
+                f"⏱️  Duration: {analysis['duration']:.2f}s"
+                if analysis["duration"]
+                else "⏱️  Duration: Unknown"
+            )
+            print(f"🎬 Codec: {analysis['codec'] or 'Unknown'}")
+            print(f"📐 Resolution: {analysis['resolution'] or 'Unknown'}")
+            print(f"🖼️  Frame count: {analysis['frame_count'] or 'Unknown'}")
+        else:
+            print("❌ File is NOT readable by FFmpeg")
+
+        if analysis["errors"]:
+            print("\n❌ Errors found:")
+            for error in analysis["errors"]:
+                print(f"   • {error}")
+
+        if analysis["warnings"]:
+            print("\n⚠️  Warnings:")
+            for warning in analysis["warnings"]:
+                print(f"   • {warning}")
+
+        # Test streaming compatibility
+        print("\n5️⃣ Testing Web Streaming Compatibility...")
+        compatibility = test_video_streaming_compatibility(video_path)
+
+        print(f"🌐 Web compatible: {compatibility['web_compatible']}")
+        print(f"📡 Streaming friendly: {compatibility['streaming_friendly']}")
+        print(f"🔄 Needs conversion: {compatibility['needs_conversion']}")
+
+        if compatibility["recommendations"]:
+            print("\n💡 Recommendations:")
+            for rec in compatibility["recommendations"]:
+                print(f"   • {rec}")
+
+        # Final diagnosis
+        print("\n6️⃣ DIAGNOSIS")
+        print("=" * 30)
+
+        if not analysis["file_readable"]:
+            print("🔴 CRITICAL: Video file is corrupted or unreadable")
+            print("📋 Action: Replace or re-encode the video file")
+        elif not analysis["has_video_stream"]:
+            print("🔴 CRITICAL: No video stream found")
+            print("📋 Action: Check if file is actually a video")
+        elif not compatibility["web_compatible"]:
+            print("🟡 WARNING: Video may not be web-compatible")
+            print("📋 Action: Consider re-encoding to H.264")
+        elif not compatibility["streaming_friendly"]:
+            print("🟡 WARNING: Video not optimized for streaming")
+            print("📋 Action: Re-encode with faststart flag")
+        else:
+            print("🟢 GOOD: Video appears to be valid and web-compatible")
+            print("📋 Issue likely in Django streaming view or network connection")
+
+        print("\n🔧 Suggested fixes for streaming issues:")
+        print("1. Check Django VideoStreamView implementation")
+        print("2. Verify file permissions (readable by web server)")
+        print("3. Test with a different video file")
+        print("4. Check browser developer tools for specific errors")
+        print("5. Consider re-encoding the video:")
         print(
-            f"⏱️  Duration: {analysis['duration']:.2f}s"
-            if analysis["duration"]
-            else "⏱️  Duration: Unknown"
+            f"   ffmpeg -i '{video_path}' -c:v libx264 -profile:v baseline -level 3.0 -movflags faststart output.mp4"
         )
-        print(f"🎬 Codec: {analysis['codec'] or 'Unknown'}")
-        print(f"📐 Resolution: {analysis['resolution'] or 'Unknown'}")
-        print(f"🖼️  Frame count: {analysis['frame_count'] or 'Unknown'}")
-    else:
-        print("❌ File is NOT readable by FFmpeg")
-
-    if analysis["errors"]:
-        print("\n❌ Errors found:")
-        for error in analysis["errors"]:
-            print(f"   • {error}")
-
-    if analysis["warnings"]:
-        print("\n⚠️  Warnings:")
-        for warning in analysis["warnings"]:
-            print(f"   • {warning}")
-
-    # Test streaming compatibility
-    print("\n5️⃣ Testing Web Streaming Compatibility...")
-    compatibility = test_video_streaming_compatibility(video_path)
-
-    print(f"🌐 Web compatible: {compatibility['web_compatible']}")
-    print(f"📡 Streaming friendly: {compatibility['streaming_friendly']}")
-    print(f"🔄 Needs conversion: {compatibility['needs_conversion']}")
-
-    if compatibility["recommendations"]:
-        print("\n💡 Recommendations:")
-        for rec in compatibility["recommendations"]:
-            print(f"   • {rec}")
-
-    # Final diagnosis
-    print("\n6️⃣ DIAGNOSIS")
-    print("=" * 30)
-
-    if not analysis["file_readable"]:
-        print("🔴 CRITICAL: Video file is corrupted or unreadable")
-        print("📋 Action: Replace or re-encode the video file")
-    elif not analysis["has_video_stream"]:
-        print("🔴 CRITICAL: No video stream found")
-        print("📋 Action: Check if file is actually a video")
-    elif not compatibility["web_compatible"]:
-        print("🟡 WARNING: Video may not be web-compatible")
-        print("📋 Action: Consider re-encoding to H.264")
-    elif not compatibility["streaming_friendly"]:
-        print("🟡 WARNING: Video not optimized for streaming")
-        print("📋 Action: Re-encode with faststart flag")
-    else:
-        print("🟢 GOOD: Video appears to be valid and web-compatible")
-        print("📋 Issue likely in Django streaming view or network connection")
-
-    print("\n🔧 Suggested fixes for streaming issues:")
-    print("1. Check Django VideoStreamView implementation")
-    print("2. Verify file permissions (readable by web server)")
-    print("3. Test with a different video file")
-    print("4. Check browser developer tools for specific errors")
-    print("5. Consider re-encoding the video:")
-    print(
-        f"   ffmpeg -i '{video_path}' -c:v libx264 -profile:v baseline -level 3.0 -movflags faststart output.mp4"
-    )
 
 
 if __name__ == "__main__":

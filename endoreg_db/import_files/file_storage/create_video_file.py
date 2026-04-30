@@ -11,6 +11,7 @@ from endoreg_db.models.state.processing_history.processing_history import (
 )
 from endoreg_db.import_files.file_storage.state_management import finalize_failure
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
+from endoreg_db.utils.storage import file_exists
 
 logger = logging.getLogger(__name__)
 
@@ -103,13 +104,8 @@ def create_or_retrieve_video_file(
         file_type,
     )
 
-    raw_path = None
-    try:
-        raw_path = video.get_raw_file_path()
-    except Exception:
-        raw_path = None
-
-    if raw_path is not None and raw_path.exists():
+    raw_file = getattr(video, "raw_file", None)
+    if raw_file is not None and file_exists(raw_file):
         try:
             sync_video_streamable_artifacts(
                 video,

@@ -17,7 +17,6 @@ from endoreg_db.services.streamable_media import (
 )
 from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.utils.paths import STORAGE_DIR
-from endoreg_db.utils.storage import ensure_local_file
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +38,7 @@ def _file_mode(path: Path) -> int:
 
 
 def _field_hash(field_file) -> str:
-    with ensure_local_file(field_file) as local_path:
-        return sha256_file(local_path)
+    return sha256_file(field_file)
 
 
 def _mark_video_lost(video: VideoFile, detail: str) -> None:

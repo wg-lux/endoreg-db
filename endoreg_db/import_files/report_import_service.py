@@ -9,6 +9,7 @@ from typing import Optional, Union
 from endoreg_db.import_files.context import content_hash_lock, file_lock
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.context.validate_directories import validate_directories
+from endoreg_db.import_files.file_storage.cleanup import safe_cleanup_staging_file
 from endoreg_db.import_files.file_storage.create_report_file import (
     create_or_retrieve_report_file,
 )
@@ -25,7 +26,7 @@ from endoreg_db.models.media import RawPdfFile
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
-from endoreg_db.utils.file_operations import safe_unlink_file, sha256_file
+from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.rust_backend import render_single_page_pdf as rust_render_pdf
 
@@ -33,7 +34,10 @@ logger = logging.getLogger(__name__)
 
 
 def _sensitive_report_dir() -> Path:
-    return path_utils.EndoregPathsModel.from_environment().sensitive_report
+    return (
+        path_utils.EndoregPathsModel.from_environment().transcoding
+        / "sensitive_reports"
+    )
 
 
 def _import_report_dir() -> Path:
@@ -147,13 +151,7 @@ class ReportImportService:
             return Path(tmp.name)
 
     def _cleanup_path(self, file_path: Path, log_prefix: str) -> None:
-        if not file_path.exists():
-            return
-        try:
-            safe_unlink_file(file_path, missing_ok=False)
-            logger.info("%s %s", log_prefix, file_path)
-        except OSError as exc:
-            logger.warning("%s failed for %s: %s", log_prefix, file_path, exc)
+        safe_cleanup_staging_file(file_path, label=log_prefix, missing_ok=False)
 
     def import_and_anonymize(
         self,
@@ -326,39 +324,25 @@ class ReportImportService:
 
     def _cleanup_duplicate_staging(self, ctx: ImportContext) -> None:
         """Remove duplicate staging files without touching canonical managed assets."""
-        current_report = ctx.current_report
-        raw_path = None
-        if current_report is not None:
-            raw_path = current_report.get_raw_file_path()
-            if isinstance(raw_path, str):
-                raw_path = Path(raw_path)
-
-        def _safe_unlink(path: Path | None, *, label: str) -> None:
-            if not isinstance(path, Path) or not path.exists():
-                return
-            try:
-                if raw_path is not None and path.resolve() == raw_path.resolve():
-                    return
-            except FileNotFoundError:
-                return
-            try:
-                safe_unlink_file(path, missing_ok=False)
-                logger.info("Deleted duplicate %s after short-circuit: %s", label, path)
-            except Exception as exc:
-                logger.warning(
-                    "Could not delete duplicate %s after short-circuit %s: %s",
-                    label,
-                    path,
-                    exc,
-                )
-
-        _safe_unlink(ctx.sensitive_path, label="sensitive copy")
+        import_report_dir = _import_report_dir().resolve()
+        sensitive_report_dir = _sensitive_report_dir().resolve()
+        safe_cleanup_staging_file(
+            ctx.sensitive_path,
+            label="duplicate report sensitive copy",
+            allowed_roots=[sensitive_report_dir],
+            missing_ok=False,
+        )
 
         original_path = (
             ctx.original_path if isinstance(ctx.original_path, Path) else None
         )
         if (
             isinstance(original_path, Path)
-            and original_path.parent.resolve() == _import_report_dir().resolve()
+            and original_path.parent.resolve() == import_report_dir
         ):
-            _safe_unlink(original_path, label="import source")
+            safe_cleanup_staging_file(
+                original_path,
+                label="duplicate report import source",
+                allowed_roots=[import_report_dir],
+                missing_ok=False,
+            )

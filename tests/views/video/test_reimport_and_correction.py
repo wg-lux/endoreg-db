@@ -38,6 +38,42 @@ def _context_path(path: Path):
     yield path
 
 
+def _patch_anonym_video_dir(module, monkeypatch, output_dir: Path):
+    monkeypatch.setattr(
+        module.path_utils.EndoregPathsModel,
+        "from_environment",
+        classmethod(
+            lambda cls: SimpleNamespace(anonym_video=output_dir, transcoding=output_dir)
+        ),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        module,
+        "_masked_output_path",
+        lambda video: output_dir / f"{video.video_hash}_masked.mp4",
+        raising=True,
+    )
+    monkeypatch.setattr(
+        module,
+        "_cleaned_output_path",
+        lambda video: output_dir / f"{video.video_hash}_cleaned.mp4",
+        raising=True,
+    )
+
+
+def _patch_processed_file_save(module, monkeypatch):
+    def _save_processed(video, output_path: Path) -> str:
+        video.processed_file.name = f"processed_videos_final/{output_path.name}"
+        return video.processed_file.name
+
+    monkeypatch.setattr(
+        module,
+        "update_processed_file",
+        _save_processed,
+        raising=True,
+    )
+
+
 class _FakeHistory:
     def __init__(self):
         self.running = False
@@ -219,7 +255,7 @@ def test_mask_replace_denied_cleans_part_and_preserves_processed_path(
         def __init__(self):
             self.mask_application = _FakeMaskApplication()
 
-    monkeypatch.setattr(module, "ANONYM_VIDEO_DIR", output_dir, raising=True)
+    _patch_anonym_video_dir(module, monkeypatch, output_dir)
     monkeypatch.setattr(
         module, "get_object_or_404", lambda *args, **kwargs: video, raising=True
     )
@@ -240,10 +276,10 @@ def test_mask_replace_denied_cleans_part_and_preserves_processed_path(
     stale_part = output_dir / f"{video.video_hash}_masked.part.mp4"
     stale_part.write_bytes(b"stale")
 
-    def _replace_fail(src, dst):
+    def _replace_fail(*, source, destination):
         raise PermissionError("replace denied")
 
-    monkeypatch.setattr(module.os, "replace", _replace_fail, raising=True)
+    monkeypatch.setattr(module, "atomic_move_file", _replace_fail, raising=True)
 
     response = module.VideoApplyMaskView.as_view()(
         factory.post(
@@ -292,7 +328,7 @@ def test_mask_overwrites_stale_part_and_updates_processed_file(tmp_path, monkeyp
         def __init__(self):
             self.mask_application = _FakeMaskApplication()
 
-    monkeypatch.setattr(module, "ANONYM_VIDEO_DIR", output_dir, raising=True)
+    _patch_anonym_video_dir(module, monkeypatch, output_dir)
     monkeypatch.setattr(
         module, "get_object_or_404", lambda *args, **kwargs: video, raising=True
     )
@@ -306,6 +342,7 @@ def test_mask_overwrites_stale_part_and_updates_processed_file(tmp_path, monkeyp
         lambda **kwargs: history,
         raising=False,
     )
+    _patch_processed_file_save(module, monkeypatch)
 
     stale_part = output_dir / f"{video.video_hash}_masked.part.mp4"
     stale_part.write_bytes(b"stale")
@@ -352,7 +389,7 @@ def test_remove_frames_replace_denied_keeps_existing_processed_path(
             output_video.write_bytes(b"cleaned")
             return True
 
-    monkeypatch.setattr(module, "ANONYM_VIDEO_DIR", output_dir, raising=True)
+    _patch_anonym_video_dir(module, monkeypatch, output_dir)
     monkeypatch.setattr(
         module, "get_object_or_404", lambda *args, **kwargs: video, raising=True
     )
@@ -373,9 +410,11 @@ def test_remove_frames_replace_denied_keeps_existing_processed_path(
         raising=True,
     )
     monkeypatch.setattr(
-        module.os,
-        "replace",
-        lambda src, dst: (_ for _ in ()).throw(PermissionError("replace denied")),
+        module,
+        "atomic_move_file",
+        lambda *, source, destination: (_ for _ in ()).throw(
+            PermissionError("replace denied")
+        ),
         raising=True,
     )
 

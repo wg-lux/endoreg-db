@@ -12,6 +12,7 @@ from endoreg_db.utils.file_operations import (
     safe_unlink_file,
 )
 from endoreg_db.utils.storage import delete_field_file
+from endoreg_db.utils.storage_streaming import field_file_size
 
 logger = logging.getLogger(__name__)
 
@@ -460,18 +461,18 @@ class Command(BaseCommand):
             try:
                 processed_field = getattr(video, "processed_file", None)
                 if processed_field and getattr(processed_field, "name", None):
-                    file_size = 0
                     try:
-                        processed_path = Path(processed_field.path)
+                        file_size = field_file_size(processed_field)
                     except Exception:
-                        processed_path = None
-                    if processed_path and processed_path.exists():
-                        file_size = processed_path.stat().st_size
+                        file_size = 0
 
                     if not self.dry_run:
-                        delete_field_file(processed_field, missing_ok=True, save=False)
-                        video.processed_file = None
-                        video.save(update_fields=["processed_file"])
+                        delete_field_file(
+                            video,
+                            "processed_file",
+                            missing_ok=True,
+                            save=True,
+                        )
 
                     total_freed += file_size
                     self.stdout.write(
@@ -607,17 +608,17 @@ class Command(BaseCommand):
         """
         processed_field = getattr(video, "processed_file", None)
         if processed_field and getattr(processed_field, "name", None):
-            file_size = 0
             try:
-                processed_path = Path(processed_field.path)
+                file_size = field_file_size(processed_field)
             except Exception:
-                processed_path = None
-            if processed_path and processed_path.exists():
-                file_size = processed_path.stat().st_size
+                file_size = 0
             if not self.dry_run:
-                delete_field_file(processed_field, missing_ok=True, save=False)
-                video.processed_file = None
-                video.save(update_fields=["processed_file"])
+                delete_field_file(
+                    video,
+                    "processed_file",
+                    missing_ok=True,
+                    save=True,
+                )
             self.stdout.write(
                 f"  Removed processed video {video.uuid}: {file_size / (1024**2):.1f} MB"
             )

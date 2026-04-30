@@ -73,9 +73,9 @@ class AnonymizationService:
             if pdf:
                 return {
                     "mediaType": "pdf",
-                    "anonymizationStatus": pdf.state.anonymization_status
-                    if pdf.state
-                    else "not_started",
+                    "anonymizationStatus": (
+                        pdf.state.anonymization_status if pdf.state else "not_started"
+                    ),
                     "fileExists": file_exists(pdf.file),
                     "hash": pdf.pdf_hash,
                 }
@@ -115,11 +115,11 @@ class AnonymizationService:
                         logger.info(f"VideoFile {file_id} already anonymized, skipping")
                         return "video"
 
-                    # Get file path
-                    file_path = vf.get_raw_file_path()
-                    if not file_path or not Path(file_path).exists():
+                    raw_file = vf.raw_file
+                    if not raw_file or not raw_file.name or not file_exists(raw_file):
                         logger.error(
-                            f"Raw file not found for VideoFile {file_id}: {file_path}"
+                            "Raw file not found for VideoFile %s in storage",
+                            file_id,
                         )
                         return None
 
@@ -140,11 +140,12 @@ class AnonymizationService:
 
                     # Use VideoImportService for anonymization
                     safe_processor_name = processor_name or "unknown_processor"
-                    self.video_service.import_and_anonymize(
-                        file_path=file_path,
-                        center_name=center_name,
-                        processor_name=safe_processor_name,
-                    )
+                    with ensure_local_file(raw_file) as file_path:
+                        self.video_service.import_and_anonymize(
+                            file_path=file_path,
+                            center_name=center_name,
+                            processor_name=safe_processor_name,
+                        )
 
                     logger.info(
                         f"Video anonymization completed for VideoFile ID: {file_id}"
@@ -257,9 +258,9 @@ class AnonymizationService:
                 {
                     "id": vf.pk,
                     "mediaType": "video",
-                    "anonymizationStatus": vf.state.anonymization_status
-                    if vf.state
-                    else "not_started",
+                    "anonymizationStatus": (
+                        vf.state.anonymization_status if vf.state else "not_started"
+                    ),
                     "createdAt": vf.date_created,
                     "updatedAt": vf.date_modified,
                 }
@@ -270,9 +271,9 @@ class AnonymizationService:
                 {
                     "id": pdf.pk,
                     "mediaType": "pdf",
-                    "anonymizationStatus": pdf.state.anonymization_status
-                    if pdf.state
-                    else "not_started",
+                    "anonymizationStatus": (
+                        pdf.state.anonymization_status if pdf.state else "not_started"
+                    ),
                     "createdAt": pdf.date_created,
                     "updatedAt": pdf.date_modified,
                 }

@@ -23,11 +23,13 @@ from endoreg_db.models.state.processing_history.processing_history import (
 from endoreg_db.models.state.raw_pdf import RawPdfState
 from endoreg_db.models.state.video import VideoState
 from endoreg_db.utils.file_operations import (
+    atomic_copy_file,
     atomic_move_file,
     safe_unlink_file,
     sha256_file,
 )
 from endoreg_db.utils.paths import data_paths
+from endoreg_db.utils.storage import file_exists, save_local_file
 
 logger = logging.getLogger(__name__)
 
@@ -138,14 +140,13 @@ class ReconciliationService:
 
         recovered = 0
         sensitive_dir = Path(data_paths["sensitive_video"])
-        storage_root = Path(data_paths["storage"])
         unresolved = []
         claimed_hashes: set[str] = set()
 
         for video in VideoFile.objects.filter(raw_file__isnull=False).exclude(
             raw_file=""
         ):
-            if video.get_raw_file_path() is None:
+            if not file_exists(getattr(video, "raw_file", None)):
                 unresolved.append(video)
 
         if not unresolved:
@@ -173,18 +174,13 @@ class ReconciliationService:
             if candidate is None:
                 continue
 
-            final_path = self._promote_video_raw_candidate(
+            final_path, relative_name = self._promote_video_raw_candidate(
                 video=video,
                 candidate=candidate,
                 sensitive_dir=sensitive_dir,
             )
             if final_path is None:
                 continue
-
-            try:
-                relative_name = str(final_path.relative_to(storage_root))
-            except ValueError:
-                relative_name = str(Path(sensitive_dir.name) / final_path.name)
 
             with transaction.atomic():
                 video.raw_file.name = relative_name
@@ -336,7 +332,7 @@ class ReconciliationService:
         video: VideoFile,
         candidate: Path,
         sensitive_dir: Path,
-    ) -> Path | None:
+    ) -> tuple[Path | None, str]:
         raw_name = (
             Path(video.raw_file.name).name
             if getattr(video.raw_file, "name", None)
@@ -348,9 +344,14 @@ class ReconciliationService:
             else (video.suffix or candidate.suffix or ".mp4")
         )
         canonical_path = sensitive_dir / f"{video.video_hash}{suffix}"
+        relative_name = str(Path(sensitive_dir.name) / canonical_path.name)
 
         if candidate == canonical_path:
-            return candidate
+            return self._store_raw_candidate(
+                video=video,
+                candidate=candidate,
+                relative_name=relative_name,
+            )
 
         if canonical_path.exists():
             logger.warning(
@@ -358,11 +359,71 @@ class ReconciliationService:
                 video.video_hash,
                 canonical_path,
             )
-            return None
+            return None, relative_name
+
+        raw_file = getattr(video, "raw_file", None)
+        if raw_file is not None and getattr(raw_file, "storage", None) is not None:
+            return self._store_raw_candidate(
+                video=video,
+                candidate=candidate,
+                relative_name=relative_name,
+            )
 
         canonical_path.parent.mkdir(parents=True, exist_ok=True)
         atomic_move_file(source=candidate, destination=canonical_path)
-        return canonical_path
+        return canonical_path, relative_name
+
+    def _store_raw_candidate(
+        self,
+        *,
+        video: VideoFile,
+        candidate: Path,
+        relative_name: str,
+    ) -> tuple[Path | None, str]:
+        raw_file = getattr(video, "raw_file", None)
+        storage = getattr(raw_file, "storage", None)
+        if raw_file is None or storage is None:
+            return candidate, relative_name
+
+        storage_path = None
+        try:
+            storage_path = Path(storage.path(relative_name)).resolve()
+        except Exception:
+            storage_path = None
+
+        repair_plaintext_file = getattr(storage, "repair_plaintext_file", None)
+        if storage_path is not None and candidate.resolve() == storage_path:
+            if callable(repair_plaintext_file):
+                repair_plaintext_file(relative_name)
+                raw_file.name = relative_name
+                return candidate, relative_name
+
+            temp_source = candidate.with_name(
+                f".{candidate.name}.reconcile-source.{os.getpid()}"
+            )
+            atomic_copy_file(source=candidate, destination=temp_source)
+            try:
+                save_local_file(
+                    raw_file,
+                    temp_source,
+                    name=relative_name,
+                    save=False,
+                    overwrite=True,
+                )
+            finally:
+                safe_unlink_file(temp_source, missing_ok=True)
+            return storage_path, relative_name
+
+        save_local_file(
+            raw_file,
+            candidate,
+            name=relative_name,
+            save=False,
+            overwrite=True,
+        )
+        safe_unlink_file(candidate, missing_ok=True)
+        raw_file.name = relative_name
+        return storage_path or candidate, relative_name
 
     def _build_content_hash_index(
         self, sensitive_dir: Path, target_hashes: set[str]

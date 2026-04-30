@@ -1,30 +1,32 @@
 import hashlib
-from pathlib import Path
-from datetime import datetime, date
-from endoreg_db.utils.file_operations import sha256_file
 import os
+from datetime import date, datetime
+from pathlib import Path
+import logging
+from django.db.models.fields.files import FieldFile
+from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.storage import ensure_local_file
+
+logger = logging.getLogger(__name__)
 
 SALT = os.getenv("DJANGO_SALT", "default_salt")
 DJANGO_NAME_SALT = os.environ.get("DJANGO_SALT", "default_salt")
 
 
-def get_video_hash(video_path):
-    """
-    Get the hash of a video file.
-    """
-    video_hash = sha256_file(video_path)
-
-    return video_hash
+def get_video_hash(video_file: Path | FieldFile) -> str:
+    """Semantic alias for sha256_file() used by video import workflows."""
+    return sha256_file(video_file)
 
 
-def get_pdf_hash(pdf_path: Path):
-    """
-    Get the hash of a pdf file.
-    """
+def get_pdf_hash(pdf_file: Path | FieldFile) -> str:
+    """Semantic alias for sha256_file() used by report import workflows."""
+    return sha256_file(pdf_file)
 
-    pdf_hash = sha256_file(pdf_path)
 
-    return pdf_hash
+def _sha256_field_file(field_file: FieldFile) -> str:
+    """Compatibility helper for callers that need a hash from Django storage."""
+    with ensure_local_file(field_file) as local_path:
+        return sha256_file(local_path)
 
 
 def _get_date_hash_string(date_obj: date) -> str:

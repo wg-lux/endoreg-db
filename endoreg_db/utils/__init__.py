@@ -39,7 +39,12 @@ from .paths import data_paths
 
 # pydantic_models
 from .pydantic_models import DbConfig
-from .storage import delete_field_file, ensure_local_file, save_local_file
+from .storage import (
+    delete_field_file,
+    ensure_local_file,
+    field_file_is_readable,
+    save_local_file,
+)
 from .storage import file_exists as storage_file_exists
 
 # validate_endo_roi
@@ -111,6 +116,7 @@ __all__ = [
     "extract_frames",  # Added
     "delete_field_file",
     "ensure_local_file",
+    "field_file_is_readable",
     "save_local_file",
     "storage_file_exists",
 ]

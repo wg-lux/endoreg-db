@@ -81,8 +81,16 @@ def test_cleanup_raw_assets_deletes_raw_paths_and_updates_state(tmp_path, monkey
             self.saved_update_fields = update_fields
 
     fake_state = _FakeState()
+    deleted_storage_names = []
+
+    class _FakeStorage:
+        def delete(self, name):
+            deleted_storage_names.append(name)
+            raw_file_path.unlink(missing_ok=True)
+
     fake_video = SimpleNamespace(
         state=fake_state,
+        raw_file=SimpleNamespace(storage=_FakeStorage()),
         get_or_create_state=lambda: fake_state,
     )
 
@@ -107,10 +115,11 @@ def test_cleanup_raw_assets_deletes_raw_paths_and_updates_state(tmp_path, monkey
 
     anonymize_module._cleanup_raw_assets(
         video_hash="hash-cleanup",
-        raw_file_path=raw_file_path,
+        raw_file_name="sensitive_videos/raw.mp4",
         raw_frame_dir=raw_frame_dir,
     )
 
+    assert deleted_storage_names == ["sensitive_videos/raw.mp4"]
     assert not raw_file_path.exists()
     assert not raw_frame_dir.exists()
     assert fake_queryset.filter_kwargs == {"video_hash": "hash-cleanup"}

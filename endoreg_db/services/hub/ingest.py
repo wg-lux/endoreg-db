@@ -7,7 +7,6 @@ import time
 from pathlib import Path
 from typing import Any, NotRequired, TypedDict, cast
 from datetime import timedelta
-from django.conf import settings
 from django.utils import timezone
 from django.contrib.auth.models import AnonymousUser
 from django.core.files import File
@@ -52,6 +51,7 @@ from endoreg_db.utils.paths import (
     QUARANTINE_DIR,
     to_storage_relative,
 )
+from endoreg_db.utils.storage import ensure_local_file
 
 
 STALE_UPLOAD_JOB_AGE = timedelta(hours=2)
@@ -76,6 +76,34 @@ def _opportunistic_reap_watcher_sources(
     except Exception as exc:
         logger.warning("Watcher source cleanup preflight failed: %s", exc)
         return 0
+
+
+def _cleanup_persisted_watcher_source(upload_job: UploadJob) -> bool:
+    if upload_job.ingest_mode != UploadJob.IngestMode.WATCHER:
+        return False
+    if upload_job.retention_policy != UploadJob.RetentionPolicy.DELETE_AFTER_SUCCESS:
+        return False
+    if not upload_job.source_file_persisted:
+        return False
+
+    update_fields = ["updated_at"]
+    if upload_job.source_file_delete_eligible_at is None:
+        upload_job.source_file_delete_eligible_at = timezone.now()
+        update_fields.append("source_file_delete_eligible_at")
+    if upload_job.cleanup_status != UploadJob.CleanupStatus.ELIGIBLE:
+        upload_job.cleanup_status = UploadJob.CleanupStatus.ELIGIBLE
+        update_fields.append("cleanup_status")
+    upload_job.save(update_fields=update_fields)
+
+    try:
+        return cleanup_upload_job_source(upload_job)
+    except Exception as exc:
+        logger.warning(
+            "Persisted watcher upload cleanup failed for %s: %s",
+            upload_job.id,
+            exc,
+        )
+        return False
 
 
 class UploadProvenance(TypedDict, total=False):
@@ -169,29 +197,6 @@ def record_active_learning_selection_provenance(
     if save:
         upload_job.save(update_fields=["processing_provenance", "updated_at"])
     return provenance
-
-
-def _resolve_job_file_path(job: UploadJob) -> Path:
-    candidate = Path(job.file.path)
-    if candidate.exists():
-        return candidate
-
-    file_name = str(getattr(job.file, "name", "") or "")
-    if file_name:
-        named_path = Path(file_name)
-        if named_path.is_absolute() and named_path.exists():
-            return named_path
-
-        legacy_candidate = (Path(settings.MEDIA_ROOT) / file_name).resolve()
-        if legacy_candidate.exists():
-            _update_upload_provenance(
-                job,
-                legacy_source_path=str(legacy_candidate),
-            )
-            job.save(update_fields=["processing_provenance", "updated_at"])
-            return legacy_candidate
-
-    return candidate
 
 
 def hub_mode_enabled() -> bool:
@@ -595,9 +600,9 @@ def create_or_reuse_upload_job(
                             upload_job_id=str(existing_job.id),
                             source_system=source_system,
                             request_user=created_by,
-                            center_key=source_center.center_key
-                            if source_center
-                            else None,
+                            center_key=(
+                                source_center.center_key if source_center else None
+                            ),
                             ingest_mode=ingest_mode,
                             idempotency_key=normalized_idempotency_key,
                         )
@@ -642,18 +647,20 @@ def create_or_reuse_upload_job(
                                 retention_policy=retention_policy,
                                 processing_provenance=processing_provenance,
                             ),
-                            created_by=created_by
-                            if getattr(created_by, "is_authenticated", False)
-                            else None,
+                            created_by=(
+                                created_by
+                                if getattr(created_by, "is_authenticated", False)
+                                else None
+                            ),
                         )
                         emit_hub_audit_event(
                             "hub.upload_job_created",
                             upload_job_id=str(job.id),
                             source_system=source_system,
                             request_user=created_by,
-                            center_key=source_center.center_key
-                            if source_center
-                            else None,
+                            center_key=(
+                                source_center.center_key if source_center else None
+                            ),
                             ingest_mode=ingest_mode,
                             content_hash=normalized_content_hash,
                             idempotency_key=normalized_idempotency_key,
@@ -668,13 +675,14 @@ def create_or_reuse_upload_job(
                         raise
 
             if invalid_job_id is not None:
-                UploadJob.objects.filter(pk=invalid_job_id).exclude(
-                    status__in=[UploadJob.Status.ERROR, UploadJob.Status.LOST]
-                ).update(
-                    status=UploadJob.Status.ERROR,
-                    error_detail=invalid_reason,
-                    updated_at=timezone.now(),
+                invalid_job = (
+                    UploadJob.objects.filter(pk=invalid_job_id)
+                    .exclude(status__in=[UploadJob.Status.ERROR, UploadJob.Status.LOST])
+                    .first()
                 )
+                if invalid_job is not None:
+                    invalid_job.mark_error(invalid_reason)
+                    _cleanup_persisted_watcher_source(invalid_job)
                 continue
         except OperationalError as exc:
             if not _is_retryable_db_lock_error(exc) or attempt == LOCK_RETRY_ATTEMPTS:
@@ -1182,52 +1190,44 @@ def process_upload_job(job_id: str) -> bool:
     provenance.setdefault("stored_upload_path", job.file.name)
     job.save(update_fields=["processing_provenance", "updated_at"])
 
-    file_path = _resolve_job_file_path(job)
     try:
-        if job.content_type == "application/pdf":
-            report = ReportImportService().import_and_anonymize(
-                file_path=file_path,
-                center_name=center.name,
-                retry=False,
-            )
-            sensitive_meta = (
-                report.sensitive_meta if isinstance(report, RawPdfFile) else None
-            )
-        else:
-            processor_name = _default_processor_name()
-            if not processor_name:
-                raise ObjectDoesNotExist("No default EndoscopyProcessor is configured")
+        with ensure_local_file(job.file) as file_path:
+            if job.content_type == "application/pdf":
+                report = ReportImportService().import_and_anonymize(
+                    file_path=file_path,
+                    center_name=center.name,
+                    retry=False,
+                )
+                sensitive_meta = (
+                    report.sensitive_meta if isinstance(report, RawPdfFile) else None
+                )
+            else:
+                processor_name = _default_processor_name()
+                if not processor_name:
+                    raise ObjectDoesNotExist(
+                        "No default EndoscopyProcessor is configured"
+                    )
 
-            video = VideoImportService().import_and_anonymize(
-                file_path=file_path,
-                center_name=center.name,
-                processor_name=processor_name,
-                retry=False,
-            )
-            sensitive_meta = (
-                video.sensitive_meta if isinstance(video, VideoFile) else None
-            )
+                video = VideoImportService().import_and_anonymize(
+                    file_path=file_path,
+                    center_name=center.name,
+                    processor_name=processor_name,
+                    retry=False,
+                )
+                sensitive_meta = (
+                    video.sensitive_meta if isinstance(video, VideoFile) else None
+                )
 
         job.mark_completed(sensitive_meta=sensitive_meta)
         return True
     except Exception as exc:
         logger.exception("Upload job processing failed for %s: %s", job_id, exc)
         job.mark_error(str(exc))
-        # Move the failed file to quarantine
-        try:
-            quarantine_path = QUARANTINE_DIR / file_path.name
-            atomic_move_file(source=file_path, destination=quarantine_path)
-            _update_upload_provenance(job, quarantined_path=str(quarantine_path))
-            job.save(update_fields=["processing_provenance", "updated_at"])
-            logger.warning(
-                "File %s moved to quarantine: %s", file_path, quarantine_path
-            )
-        except Exception as move_exc:
-            logger.error(
-                "Failed to move file %s to quarantine during error handling: %s",
-                file_path,
-                move_exc,
-            )
+        logger.warning(
+            "Upload job %s failed; retained canonical upload FieldFile %s instead of moving by filesystem path.",
+            job_id,
+            job.file.name,
+        )
         return False
 
 
@@ -1401,6 +1401,7 @@ def process_watcher_file(
                 watched_path,
                 move_exc,
             )
+        _cleanup_persisted_watcher_source(upload_job)
         raise
 
 
@@ -1563,4 +1564,5 @@ def process_preanonymized_watcher_file(
                     sidecar_path,
                     move_exc,
                 )
+        _cleanup_persisted_watcher_source(upload_job)
         raise

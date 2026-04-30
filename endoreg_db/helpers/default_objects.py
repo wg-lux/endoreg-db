@@ -1,5 +1,4 @@
 import random
-import shutil
 from datetime import date
 from logging import getLogger
 from pathlib import Path
@@ -8,7 +7,11 @@ from typing import Optional
 from django.conf import settings  # Import settings
 from django.core.files.storage import default_storage  # Import default storage
 from django.db.models.fields.files import FieldFile
-from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.file_operations import (
+    atomic_copy_file,
+    safe_unlink_file,
+    sha256_file,
+)
 from endoreg_db.models import (
     AiModel,
     Center,
@@ -297,7 +300,7 @@ def get_default_egd_pdf():
     temp_dir.mkdir(parents=True, exist_ok=True)
     temp_file_path = temp_dir / f"temp_{egd_path.name}"
 
-    shutil.copy(egd_path, temp_file_path)
+    atomic_copy_file(source=egd_path, destination=temp_file_path)
 
     pdf_file = None
     file_field: Optional[FieldFile] = None
@@ -316,9 +319,9 @@ def get_default_egd_pdf():
         file_field = pdf_file.file
         if not isinstance(file_field, FieldFile):
             raise RuntimeError("RawPdfFile.file did not return a FieldFile instance")
-        if not default_storage.exists(file_field.path):
+        if not default_storage.exists(file_field.name):
             raise RuntimeError(
-                f"report file does not exist in storage at {file_field.path}"
+                f"report file does not exist in storage at {file_field.name}"
             )
 
         # Check that the source temp file was deleted
@@ -348,20 +351,11 @@ def get_default_egd_pdf():
     except Exception as e:
         # Clean up temp file in case of error before deletion could occur
         if temp_file_path.exists():
-            temp_file_path.unlink()
+            safe_unlink_file(temp_file_path)
         raise e  # Re-raise the exception
 
-    # pdf_file.file.path might fail if storage doesn't support direct paths (like S3)
-    # Prefer using storage API for checks. Logging path if available.
     if file_field is not None:
-        try:
-            logger.info(
-                f"report file created: {file_field.name}, Path: {file_field.path}"
-            )
-        except NotImplementedError:
-            logger.info(
-                f"report file created: {file_field.name}, Path: (Not available from storage)"
-            )
+        logger.info("report file created: %s", file_field.name)
 
     return pdf_file
 

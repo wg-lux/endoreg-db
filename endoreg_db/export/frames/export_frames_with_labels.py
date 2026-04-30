@@ -33,6 +33,10 @@ from endoreg_db.utils.paths import (
     resolve_existing_protected_media_path,
 )
 from endoreg_db.utils.storage import ensure_local_file
+from endoreg_db.utils.storage_streaming import (
+    local_plaintext_path_from_name,
+    maybe_local_plaintext_path,
+)
 from endoreg_db.utils.video.ffmpeg_wrapper import (
     extract_frames as ffmpeg_extract_frames,
 )
@@ -100,7 +104,15 @@ def _resolve_video_source_path(video: VideoFile) -> Path | None:
     if not name:
         return None
 
-    return resolve_existing_protected_media_path(str(name))
+    local_path = maybe_local_plaintext_path(field_file)
+    if local_path is not None:
+        return local_path
+    return local_plaintext_path_from_name(
+        name,
+        resolver=resolve_existing_protected_media_path,
+        # The real resolver enforces the protected-media boundary.
+        require_protected_root=False,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1045,15 +1057,15 @@ def _annotation_to_row(
             "value": annotation.value,
             "float_value": annotation.float_value,
             "annotator": annotation.annotator,
-            "information_source_id": information_source.pk
-            if information_source
-            else None,
+            "information_source_id": (
+                information_source.pk if information_source else None
+            ),
             "information_source_name": (
                 information_source.name if information_source else None
             ),
-            "model_meta_id": annotation.model_meta.pk
-            if annotation.model_meta
-            else None,
+            "model_meta_id": (
+                annotation.model_meta.pk if annotation.model_meta else None
+            ),
             "date_created": (
                 annotation.date_created.isoformat() if annotation.date_created else None
             ),

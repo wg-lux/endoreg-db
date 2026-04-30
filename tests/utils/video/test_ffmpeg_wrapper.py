@@ -2,14 +2,23 @@ import subprocess
 
 import pytest
 
+from endoreg_db.utils.video import ffmpeg_wrapper
 from endoreg_db.utils.video.ffmpeg_wrapper import _build_encoder_args, transcode_video
 
 
 class FakePopen:
-    def __init__(self, command, *, returncode=0, stderr="", timeout=False, **kwargs):
+    def __init__(
+        self,
+        command,
+        *,
+        returncode=0,
+        stderr_output="",
+        timeout=False,
+        **kwargs,
+    ):
         self.command = command
         self.returncode = returncode
-        self.stderr = stderr
+        self.stderr = stderr_output
         self.timeout = timeout
         self.killed = False
         self.kwargs = kwargs
@@ -112,7 +121,7 @@ def test_transcode_video_retries_timestamp_repair(monkeypatch, tmp_path):
             return FakePopen(
                 command,
                 returncode=1,
-                stderr="invalid dts: timestamp too large and out of range",
+                stderr_output="invalid dts: timestamp too large and out of range",
                 **kwargs,
             )
         output_path.write_bytes(b"encoded")
@@ -145,7 +154,7 @@ def test_create_sensitive_copy_fails_when_video_transcode_fails(
         lambda src, dest: None,
     )
 
-    with pytest.raises(RuntimeError, match="Failed to create sensitive video copy"):
+    with pytest.raises(RuntimeError, match="Video transcode failed"):
         create_sensitive_copy(
             input_path,
             sensitive_root,
@@ -176,3 +185,73 @@ def test_build_encoder_args_nvenc_forces_yuv420p_format(monkeypatch):
     assert encoder_type == "nvenc"
     assert "-vf" in encoder_args
     assert encoder_args[encoder_args.index("-vf") + 1] == "format=yuv420p"
+
+
+@pytest.mark.unit
+def test_ffmpeg_timestamp_fault_detection_requires_timestamp_and_fault_signal():
+    assert ffmpeg_wrapper._stderr_indicates_timestamp_fault(
+        "Non monotonically increasing DTS in output stream"
+    )
+    assert ffmpeg_wrapper._stderr_indicates_timestamp_fault(
+        "PTS timestamp too large and out of range"
+    )
+    assert not ffmpeg_wrapper._stderr_indicates_timestamp_fault(
+        "Encoder failed without timing detail"
+    )
+    assert not ffmpeg_wrapper._stderr_indicates_timestamp_fault("")
+
+
+@pytest.mark.unit
+def test_update_or_append_ffmpeg_arg_replaces_appends_and_repairs_missing_value():
+    args = ["-pix_fmt", "yuvj420p"]
+
+    ffmpeg_wrapper._update_or_append_ffmpeg_arg(args, "-pix_fmt", "yuv420p")
+    ffmpeg_wrapper._update_or_append_ffmpeg_arg(args, "-color_range", "pc")
+    ffmpeg_wrapper._update_or_append_ffmpeg_arg(args, "-movflags", "faststart")
+
+    assert args == [
+        "-pix_fmt",
+        "yuv420p",
+        "-color_range",
+        "pc",
+        "-movflags",
+        "faststart",
+    ]
+
+
+@pytest.mark.unit
+def test_extract_frame_range_numbers_outputs_by_requested_frame(monkeypatch, tmp_path):
+    input_path = tmp_path / "input.mp4"
+    output_dir = tmp_path / "frames"
+    input_path.write_bytes(b"video")
+    captured = {}
+
+    monkeypatch.setattr(
+        "endoreg_db.utils.video.ffmpeg_wrapper._resolve_ffmpeg_executable",
+        lambda: "/smart/bin/ffmpeg",
+    )
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        output_dir.mkdir(parents=True, exist_ok=True)
+        for frame_number in range(10, 13):
+            (output_dir / f"frame_{frame_number:07d}.jpg").write_bytes(b"frame")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    result = ffmpeg_wrapper.extract_frame_range(
+        input_path,
+        output_dir,
+        start_frame=10,
+        end_frame=13,
+        quality=2,
+    )
+
+    assert [path.name for path in result] == [
+        "frame_0000010.jpg",
+        "frame_0000011.jpg",
+        "frame_0000012.jpg",
+    ]
+    assert "-start_number" in captured["command"]
+    assert captured["command"][captured["command"].index("-start_number") + 1] == "10"

@@ -16,6 +16,7 @@ def _test_video_create_from_file(test_case: "VideoFileModelTest"):
     video_path = test_case.non_anonym_video_path
     default_center = test_case.center
     video_file = None  # Initialize video_file to None
+    fp = None
 
     try:
         # Create the video file
@@ -32,13 +33,20 @@ def _test_video_create_from_file(test_case: "VideoFileModelTest"):
         )
         test_case.assertTrue(video_file.has_raw, "VideoFile should have a raw file.")
 
-        fp = video_file.active_file_path
-        test_case.assertIsNotNone(fp, "Active file path should not be None.")
-        db_video_file_exists = fp.exists()
-        logger.info(f"Created video file {fp} exists: {db_video_file_exists}")
-        test_case.assertTrue(
-            db_video_file_exists, f"Video file {fp} should exist in storage."
-        )
+        with video_file.ensure_local_raw_file() as local_path:
+            test_case.assertIsNotNone(
+                local_path, "Raw file should materialize to a local working path."
+            )
+            db_video_file_exists = local_path.exists()
+            logger.info(
+                "Created video file %s materialized locally: %s",
+                video_file.raw_file.name,
+                db_video_file_exists,
+            )
+            test_case.assertTrue(
+                db_video_file_exists,
+                f"Video file {video_file.raw_file.name} should exist in storage.",
+            )
 
     finally:
         # Cleanup: Delete the video file and its associated file from storage

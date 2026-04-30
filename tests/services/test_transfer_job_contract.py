@@ -94,14 +94,21 @@ class TransferJobContractTests(TestCase):
             TransferJob.ProcessingPolicy.PRESERVE_PROCESSING_STATE
         )
         transfer_job.processing_snapshot = {"sender_processing_success": True}
+        storage = SimpleNamespace(exists=lambda name: True)
 
         video = cast(
             VideoFile,
             SimpleNamespace(
                 pk=99,
                 video_hash="raw-hash",
-                raw_file=SimpleNamespace(name="sensitive_videos/raw.mp4"),
-                processed_file=SimpleNamespace(name="anonymized_videos/processed.mp4"),
+                raw_file=SimpleNamespace(
+                    name="sensitive_videos/raw.mp4",
+                    storage=storage,
+                ),
+                processed_file=SimpleNamespace(
+                    name="anonymized_videos/processed.mp4",
+                    storage=storage,
+                ),
                 get_processed_file_path=lambda: Path("/tmp/processed-final.mp4"),
             ),
         )

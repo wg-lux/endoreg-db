@@ -554,6 +554,34 @@ class HubTransferEndpointTests(TestCase):
         )
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_transfer_media_upload_requires_multipart_file(self):
+        processed_hash = self._sha256(b"processed-video")
+        payload = self._video_transfer_payload(
+            transfer_key="site-a__video__missing-media-file",
+            video_hash="hash-missing-media-file",
+            transfer_mode="metadata_and_processed_media",
+            sender_processing_success=True,
+            processed_video_hash=processed_hash,
+        )
+
+        create_response = self._secure_post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+        assert create_response.status_code == 201, create_response.content
+
+        upload_response = self._secure_post(
+            f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
+            data={"media_role": "processed"},
+            **self._auth_headers(),
+        )
+
+        assert upload_response.status_code == 400, upload_response.content
+        assert "multipart file upload is required" in str(upload_response.json())
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_processed_video_upload_preserves_sender_state(self):
         raw_hash = self._sha256(b"raw-video")
         processed_bytes = b"processed-video"

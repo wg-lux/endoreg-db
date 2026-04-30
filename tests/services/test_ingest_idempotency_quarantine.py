@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import threading
 import uuid
+from datetime import timedelta
 from pathlib import Path
 from unittest.mock import patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError
 from django.test import TransactionTestCase, override_settings
+from django.utils import timezone
 
 from endoreg_db.models import (
     Center,
@@ -330,6 +332,9 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
             upload_job.processing_provenance["quarantined_path"],
             str(quarantined_path),
         )
+        self.assertEqual(upload_job.cleanup_status, UploadJob.CleanupStatus.COMPLETED)
+        self.assertFalse(upload_job.source_file_persisted)
+        self.assertEqual(upload_job.file.name, "")
 
     def test_process_preanonymized_watcher_file_quarantines_on_failure(self):
         filename = "failed_preanonymized.mp4"
@@ -392,6 +397,63 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
             upload_job.processing_provenance["quarantined_sidecar_path"],
             str(quarantined_sidecar_path),
         )
+        self.assertEqual(upload_job.cleanup_status, UploadJob.CleanupStatus.COMPLETED)
+        self.assertFalse(upload_job.source_file_persisted)
+        self.assertEqual(upload_job.file.name, "")
+
+    def test_stale_watcher_job_reingest_cleans_old_persisted_upload_source(self):
+        filename = "stale_watcher_report.pdf"
+        watched_path = self._create_temp_file(filename, self.pdf_content)
+
+        stale_job, created = create_or_reuse_upload_job(
+            uploaded_file=SimpleUploadedFile(
+                name=filename,
+                content=self.pdf_content,
+                content_type="application/pdf",
+            ),
+            content_type="application/pdf",
+            source_center=self.center,
+            source_system="watcher",
+            content_hash="stale-hash",
+            idempotency_key="watcher:stale-hash:1:15",
+            ingest_mode=UploadJob.IngestMode.WATCHER,
+            storage_tier=UploadJob.StorageTier.UPLOAD_WATCHER,
+            retention_policy=UploadJob.RetentionPolicy.DELETE_AFTER_SUCCESS,
+            processing_provenance={
+                "entrypoint": "watcher",
+                "watched_path": str(watched_path),
+                "file_type": "report",
+            },
+        )
+        self.assertTrue(created)
+        stale_job.mark_processing()
+        UploadJob.objects.filter(pk=stale_job.pk).update(
+            updated_at=timezone.now() - timedelta(hours=3)
+        )
+
+        with (
+            patch(
+                "endoreg_db.services.hub.ingest.sha256_file",
+                return_value="stale-hash",
+            ),
+            patch(
+                "endoreg_db.services.hub.ingest.ReportImportService.import_and_anonymize",
+                return_value=RawPdfFile(center=self.center),
+            ),
+        ):
+            new_job = process_watcher_file(
+                file_path=watched_path,
+                file_type="report",
+                center=self.center,
+            )
+
+        stale_job.refresh_from_db()
+        new_job.refresh_from_db()
+        self.assertNotEqual(new_job.pk, stale_job.pk)
+        self.assertEqual(stale_job.status, UploadJob.Status.ERROR)
+        self.assertEqual(stale_job.cleanup_status, UploadJob.CleanupStatus.COMPLETED)
+        self.assertFalse(stale_job.source_file_persisted)
+        self.assertEqual(stale_job.file.name, "")
 
     def test_create_or_reuse_upload_job_concurrency(self):
         """

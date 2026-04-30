@@ -3,10 +3,11 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
+from typing import Callable, Iterator
 
 from django.http import HttpResponseBase, StreamingHttpResponse
 
+from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
 from endoreg_db.utils.paths import (
     ensure_within_protected_root,
     resolve_existing_protected_media_path,
@@ -118,12 +119,66 @@ def iter_file_path_bytes(
             remaining -= len(chunk)
 
 
-def maybe_local_plaintext_path(field_file) -> Path | None:
+def _path_starts_with_encryption_magic(path: Path) -> bool:
+    try:
+        with path.open("rb") as handle:
+            return handle.read(len(LX_ENCRYPTED_MAGIC)) == LX_ENCRYPTED_MAGIC
+    except OSError:
+        return False
+
+
+def field_file_has_decrypting_storage(field_file) -> bool:
     storage = getattr(field_file, "storage", None)
-    if storage is not None and (
+    return storage is not None and (
         hasattr(storage, "iter_decrypted_range")
         or hasattr(storage, "get_plaintext_size")
-    ):
+    )
+
+
+def field_file_is_local_encrypted_without_reader(field_file) -> bool:
+    if field_file_has_decrypting_storage(field_file):
+        return False
+
+    candidate: Path | None = None
+    try:
+        candidate = Path(field_file.path).resolve()
+    except (AttributeError, NotImplementedError, OSError, ValueError):
+        file_name = getattr(field_file, "name", None)
+        if file_name:
+            candidate = resolve_existing_protected_media_path(file_name)
+
+    if candidate is None or not candidate.exists():
+        return False
+    try:
+        ensure_within_protected_root(candidate)
+    except ValueError:
+        return False
+    return _path_starts_with_encryption_magic(candidate)
+
+
+def local_plaintext_path_from_name(
+    file_name: str | None,
+    *,
+    resolver: Callable[[str], Path | None] = resolve_existing_protected_media_path,
+    require_protected_root: bool = True,
+) -> Path | None:
+    if not file_name:
+        return None
+    candidate = resolver(file_name)
+    if candidate is None:
+        return None
+    if require_protected_root:
+        try:
+            ensure_within_protected_root(candidate)
+        except ValueError:
+            return None
+    if _path_starts_with_encryption_magic(candidate):
+        return None
+    return candidate
+
+
+def maybe_local_plaintext_path(field_file) -> Path | None:
+    if field_file_has_decrypting_storage(field_file):
         return None
 
     try:
@@ -133,21 +188,14 @@ def maybe_local_plaintext_path(field_file) -> Path | None:
                 ensure_within_protected_root(path)
             except ValueError:
                 return None
+            if _path_starts_with_encryption_magic(path):
+                return None
             return path
     except (AttributeError, NotImplementedError, OSError, ValueError):
         pass
 
     file_name = getattr(field_file, "name", None)
-    if not file_name:
-        return None
-    candidate = resolve_existing_protected_media_path(file_name)
-    if candidate is None:
-        return None
-    try:
-        ensure_within_protected_root(candidate)
-    except ValueError:
-        return None
-    return candidate
+    return local_plaintext_path_from_name(file_name)
 
 
 def build_partial_content_response(

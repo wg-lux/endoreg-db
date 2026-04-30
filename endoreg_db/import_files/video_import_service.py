@@ -11,6 +11,7 @@ from endoreg_db.import_files.context import (
     content_hash_lock,
     file_lock,
 )
+from endoreg_db.import_files.file_storage.cleanup import safe_cleanup_staging_file
 from endoreg_db.import_files.file_storage.state_management import (
     finalize_failure,
     finalize_video_success,
@@ -27,14 +28,26 @@ from endoreg_db.models import VideoFile
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
-from endoreg_db.import_files.processing.video_processing.video_anonymization import (
-    VideoAnonymizer,
-)
 from endoreg_db.utils import paths as path_utils
-from endoreg_db.utils.file_operations import safe_unlink_file
 
 logger = logging.getLogger(__name__)
 PIPELINE_STORAGE_MULTIPLIER = 2.5
+
+
+try:
+    from endoreg_db.import_files.processing.video_processing.video_anonymization import (
+        VideoAnonymizer,
+    )
+except ImportError as exc:  # pragma: no cover - exercised by dependency-light tests
+    _VIDEO_ANONYMIZER_IMPORT_ERROR = exc
+
+    class VideoAnonymizer:  # type: ignore[no-redef]
+        """Import-time placeholder so tests can monkeypatch VideoAnonymizer."""
+
+        def __init__(self, *args, **kwargs):
+            raise RuntimeError(
+                "Video anonymization dependencies are unavailable"
+            ) from _VIDEO_ANONYMIZER_IMPORT_ERROR
 
 
 def _storage_dir() -> Path:
@@ -42,7 +55,9 @@ def _storage_dir() -> Path:
 
 
 def _sensitive_video_dir() -> Path:
-    return path_utils.EndoregPathsModel.from_environment().sensitive_video
+    return (
+        path_utils.EndoregPathsModel.from_environment().transcoding / "sensitive_videos"
+    )
 
 
 def _video_import_dir() -> Path:
@@ -127,6 +142,7 @@ class VideoImportService:
                 existing_completed_video = self._get_existing_completed_video(ctx)
                 if existing_completed_video is not None and not retry:
                     ctx.current_video = existing_completed_video
+                    self._cleanup_duplicate_staging(ctx)
                     return existing_completed_video
 
                 self._ensure_pipeline_storage_budget(ctx.file_path)
@@ -274,39 +290,21 @@ class VideoImportService:
 
     def _cleanup_duplicate_staging(self, ctx: ImportContext) -> None:
         """Remove duplicate staging files without touching canonical managed assets."""
-        current_video = ctx.current_video
-        raw_path = None
-        if current_video is not None:
-            raw_path = current_video.get_raw_file_path()
-            if isinstance(raw_path, str):
-                raw_path = Path(raw_path)
-
-        def _safe_unlink(path: Path | None, *, label: str) -> None:
-            if not isinstance(path, Path) or not path.exists():
-                return
-            try:
-                if raw_path is not None and path.resolve() == raw_path.resolve():
-                    return
-            except FileNotFoundError:
-                return
-            try:
-                safe_unlink_file(path, missing_ok=False)
-                logger.info("Deleted duplicate %s after short-circuit: %s", label, path)
-            except Exception as exc:
-                logger.warning(
-                    "Could not delete duplicate %s after short-circuit %s: %s",
-                    label,
-                    path,
-                    exc,
-                )
-
-        _safe_unlink(ctx.sensitive_path, label="sensitive copy")
+        safe_cleanup_staging_file(
+            ctx.sensitive_path,
+            label="duplicate video sensitive copy",
+            missing_ok=False,
+        )
 
         original_path = (
             ctx.original_path if isinstance(ctx.original_path, Path) else None
         )
         if (
             isinstance(original_path, Path)
-            and original_path.parent == _video_import_dir()
+            and original_path.parent.resolve() == _video_import_dir().resolve()
         ):
-            _safe_unlink(original_path, label="import source")
+            safe_cleanup_staging_file(
+                original_path,
+                label="duplicate video import source",
+                missing_ok=False,
+            )

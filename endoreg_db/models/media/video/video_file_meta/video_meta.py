@@ -45,63 +45,73 @@ def _update_video_meta(video: "VideoFile", save_instance: bool = True):
         )
         return  # Graceful skip instead of FileNotFoundError
 
-    raw_video_path = video.get_raw_file_path()  # Use helper
-    if not raw_video_path or not raw_video_path.exists():
+    try:
+        raw_context = video.ensure_local_raw_file()
+    except (AttributeError, ValueError, FileNotFoundError):
         # DEFENSIVE: Log warning and skip instead of crashing production pipeline
         logger.warning(
-            f"Raw video file path {raw_video_path} does not exist for video {video.video_hash}. Skipping VideoMeta update - this typically happens after video processing when raw files are moved to processed location."
+            "Raw video file is not locally available for video %s. Skipping VideoMeta update.",
+            video.video_hash,
         )
-        return  # Graceful skip instead of FileNotFoundError that crashes production
+        return
 
     try:
-        vm = video.video_meta
-        if vm:
-            logger.info(
-                "Updating existing VideoMeta (PK: %s) for video %s.",
-                vm.pk,
-                video.video_hash,
-            )
-            vm.update_meta(
-                raw_video_path
-            )  # Assuming this method exists and raises on error
-            vm.save()
-        else:
-            if not video.center or not video.processor:
-                # Raise exception
-                raise ValueError(
-                    f"Cannot create VideoMeta for {video.video_hash}: Center or Processor is missing."
+        with raw_context as raw_video_path:
+            if not raw_video_path.exists():
+                # DEFENSIVE: Log warning and skip instead of crashing production pipeline
+                logger.warning(
+                    f"Raw video file path {raw_video_path} does not exist for video {video.video_hash}. Skipping VideoMeta update - this typically happens after video processing when raw files are moved to processed location."
                 )
+                return  # Graceful skip instead of FileNotFoundError that crashes production
 
-            logger.info("Creating new VideoMeta for video %s.", video.video_hash)
-            # Assuming create_from_file exists and raises on error
-            video.video_meta = VideoMeta.create_from_file(
-                video_path=raw_video_path,
-                center=video.center,
-                processor=video.processor,
-                save_instance=True,  # Let create_from_file handle saving
-            )
             vm = video.video_meta
-            assert vm is not None  # For type checker
-            logger.info(
-                "Created and linked VideoMeta (PK: %s) for video %s.",
-                vm.pk,
-                video.video_hash,
-            )
-
-        # Save the VideoFile instance itself if requested and if video_meta was linked/updated
-        update_fields = ["video_meta"]
-        update_fields.extend(_populate_video_fields_from_meta(video))
-
-        if save_instance:
-            # Ensure update_fields has unique values before saving
-            unique_update_fields = list(dict.fromkeys(update_fields))
-            if unique_update_fields:
-                video.save(update_fields=unique_update_fields)
+            if vm:
                 logger.info(
-                    "Saved video %s after VideoMeta update (Fields: %s).",
+                    "Updating existing VideoMeta (PK: %s) for video %s.",
+                    vm.pk,
                     video.video_hash,
-                    unique_update_fields,
                 )
+                vm.update_meta(
+                    raw_video_path
+                )  # Assuming this method exists and raises on error
+                vm.save()
+            else:
+                if not video.center or not video.processor:
+                    # Raise exception
+                    raise ValueError(
+                        f"Cannot create VideoMeta for {video.video_hash}: Center or Processor is missing."
+                    )
+
+                logger.info("Creating new VideoMeta for video %s.", video.video_hash)
+                # Assuming create_from_file exists and raises on error
+                video.video_meta = VideoMeta.create_from_file(
+                    video_path=raw_video_path,
+                    center=video.center,
+                    processor=video.processor,
+                    save_instance=True,  # Let create_from_file handle saving
+                )
+                vm = video.video_meta
+                assert vm is not None  # For type checker
+                logger.info(
+                    "Created and linked VideoMeta (PK: %s) for video %s.",
+                    vm.pk,
+                    video.video_hash,
+                )
+
+            # Save the VideoFile instance itself if requested and if video_meta was linked/updated
+            update_fields = ["video_meta"]
+            update_fields.extend(_populate_video_fields_from_meta(video))
+
+            if save_instance:
+                # Ensure update_fields has unique values before saving
+                unique_update_fields = list(dict.fromkeys(update_fields))
+                if unique_update_fields:
+                    video.save(update_fields=unique_update_fields)
+                    logger.info(
+                        "Saved video %s after VideoMeta update (Fields: %s).",
+                        video.video_hash,
+                        unique_update_fields,
+                    )
 
     except Exception as e:
         logger.error(

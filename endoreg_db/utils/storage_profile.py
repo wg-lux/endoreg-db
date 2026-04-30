@@ -40,7 +40,7 @@ PROFILE_POLICY_MAP: dict[StorageProfile, dict[PayloadKind, StoragePolicy]] = {
         PayloadKind.MANIFEST: StoragePolicy.APP_ENCRYPTED,
     },
     StorageProfile.FS_ENCRYPTED_STREAMING: {
-        PayloadKind.VIDEO_RAW: StoragePolicy.FS_STREAMABLE,
+        PayloadKind.VIDEO_RAW: StoragePolicy.APP_ENCRYPTED,
         PayloadKind.VIDEO_PROCESSED: StoragePolicy.FS_STREAMABLE,
         PayloadKind.REPORT_PDF: StoragePolicy.APP_ENCRYPTED,
         PayloadKind.METADATA: StoragePolicy.APP_ENCRYPTED,
@@ -48,7 +48,7 @@ PROFILE_POLICY_MAP: dict[StorageProfile, dict[PayloadKind, StoragePolicy]] = {
         PayloadKind.MANIFEST: StoragePolicy.APP_ENCRYPTED,
     },
     StorageProfile.HYBRID_DEFAULT: {
-        PayloadKind.VIDEO_RAW: StoragePolicy.FS_STREAMABLE,
+        PayloadKind.VIDEO_RAW: StoragePolicy.APP_ENCRYPTED,
         PayloadKind.VIDEO_PROCESSED: StoragePolicy.FS_STREAMABLE,
         PayloadKind.REPORT_PDF: StoragePolicy.APP_ENCRYPTED,
         PayloadKind.METADATA: StoragePolicy.APP_ENCRYPTED,

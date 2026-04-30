@@ -24,8 +24,10 @@ from endoreg_db.utils.paths import (
     SENSITIVE_VIDEO_DIR,
     data_paths,
     normalize_protected_media_relative_path,
-    to_storage_relative,
 )
+from endoreg_db.utils.file_operations import safe_unlink_file
+from endoreg_db.utils.storage import file_exists, save_local_file
+from endoreg_db.utils.storage_streaming import maybe_local_plaintext_path
 from endoreg_db.utils.video.calc_duration_seconds import _calc_duration_vf
 from endoreg_db.utils.video.ffmpeg_wrapper import assemble_video_from_frames
 
@@ -56,8 +58,6 @@ from .video_file_frames import (
     _get_frames,
     _initialize_frames,
 )
-
-# Update import aliases for clarity and to use as helpers
 from .video_file_frames._manage_frame_range import (
     _delete_frame_range as _delete_frame_range_helper,
 )
@@ -75,6 +75,8 @@ from .video_file_io import (
     _get_target_anonymized_video_path,
     _get_temp_anonymized_frame_dir,
     _set_frame_dir,
+    _ensure_local_raw_file,
+    _ensure_local_processed_file,
 )
 from .video_file_meta import (
     _get_crop_template,
@@ -83,6 +85,10 @@ from .video_file_meta import (
     _initialize_video_specs,
     _update_text_metadata,
     _update_video_meta,
+)
+from endoreg_db.utils.encryption.encrypted import (
+    LazyEncryptedStorage,
+    MAGIC as LX_ENCRYPTED_MAGIC,
 )
 
 # Configure logging
@@ -122,16 +128,21 @@ class VideoFile(models.Model):
 
     raw_file = models.FileField(
         upload_to=SENSITIVE_VIDEO_DIR.name,  # Use .name for relative path
+        storage=LazyEncryptedStorage(),
         validators=[FileExtensionValidator(allowed_extensions=["mp4"])],
         null=True,
         blank=True,
     )
     processed_file = models.FileField(
         upload_to=ANONYM_VIDEO_DIR.name,  # Use .name for relative path
+        storage=LazyEncryptedStorage(),
         validators=[FileExtensionValidator(allowed_extensions=["mp4"])],
         null=True,
         blank=True,
     )
+
+    ensure_local_raw_file = _ensure_local_raw_file
+    ensure_local_processed_file = _ensure_local_processed_file
     uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
 
     video_hash = models.CharField(
@@ -472,28 +483,25 @@ class VideoFile(models.Model):
     @property
     def active_file_path(self) -> Path:
         """
-        Return the filesystem path of the active video file.
+        Deprecated: encrypted/storage-backed files may not have a stable local path.
 
-        Returns:
-            Path: The path to the processed file if available, otherwise the raw file.
-
-        Raises:
-            ValueError: If neither a processed nor raw file is present.
+        Use ensure_local_raw_file() / ensure_local_processed_file() for external tools.
         """
-        active = self.active_file
-        if active is self.processed_file:
-            path = _get_processed_file_path(self)
-        elif active is self.raw_file:
-            path = _get_raw_file_path(self)
+        field_file = self.active_file
+        if self.is_processed:
+            path = self.get_processed_stream_path()
+            if path is None:
+                path = self.get_processed_file_path()
         else:
-            raise ValueError(
-                "No active file path available. VideoFile has neither raw nor processed file."
-            )
+            path = self.get_raw_stream_path()
+            if path is None:
+                path = self.get_raw_file_path()
 
         if path is None:
             raise ValueError(
-                "Active file path could not be resolved. VideoFile raw file is missing."
+                "Active file has no direct filesystem path. Use ensure_local_*_file()."
             )
+
         return path
 
     @property
@@ -654,7 +662,7 @@ class VideoFile(models.Model):
         self.update_video_meta(save_instance=False)
         try:
             # Only fall back to OpenCV when VideoMeta did not populate the core specs.
-            if self.get_raw_file_path() and (
+            if self.has_raw and (
                 self.fps is None
                 or self.width is None
                 or self.height is None
@@ -710,8 +718,12 @@ class VideoFile(models.Model):
         """
         Return a human-readable string summarizing the video's state, active file name, and UUID.
         """
-        active_path = self.active_file_path
-        file_name = active_path.name if active_path else "No file"
+        try:
+            active_file = self.active_file
+            active_name = getattr(active_file, "name", None)
+        except ValueError:
+            active_name = None
+        file_name = Path(active_name).name if active_name else "No file"
         state = (
             "Processed" if self.is_processed else ("Raw" if self.has_raw else "No File")
         )
@@ -829,6 +841,7 @@ class VideoFile(models.Model):
             VideoFile: A new VideoFile instance with the frames excluding those labeled as 'outside'.
         """
         video = instance
+        new_video_path: Path | None = None
 
         if not video:
             logger.warning(
@@ -871,10 +884,12 @@ class VideoFile(models.Model):
             assert video.width is not None
             assert video.height is not None
 
-            # Step 2: Reassemble the video with frames excluding the 'outside' labeled frames
-            output_video_path = (
-                data_paths["anonym_video"] / f"{video.video_hash}_filtered.mp4"
+            # Step 2: Reassemble into local staging, then save through FileField storage.
+            output_video_dir = (
+                Path(data_paths["transcoding"]) / "outside_frame_reassembly"
             )
+            output_video_dir.mkdir(parents=True, exist_ok=True)
+            output_video_path = output_video_dir / f"{video.video_hash}_filtered.mp4"
             fps = (
                 video.fps if video.fps else 30.0
             )  # Default to 30 FPS if fps is not set
@@ -884,7 +899,13 @@ class VideoFile(models.Model):
             if new_video_path is None:
                 raise AssertionError("Failed to assemble filtered video from frames.")
 
-            video.processed_file.name = to_storage_relative(new_video_path)
+            save_local_file(
+                video.processed_file,
+                new_video_path,
+                name=f"{video.video_hash}_filtered.mp4",
+                save=False,
+                overwrite=True,
+            )
             video.save(update_fields=["processed_file", "date_modified"])
             try:
                 sync_video_streamable_artifacts(
@@ -915,6 +936,14 @@ class VideoFile(models.Model):
                 exc_info=True,
             )
             return False
+        finally:
+            if new_video_path is not None:
+                logger.info(
+                    "Cleaning up staged outside-frame reassembly output for video %s: %s",
+                    video.video_hash,
+                    new_video_path,
+                )
+                safe_unlink_file(new_video_path, missing_ok=True)
 
     @classmethod
     def get_all_videos(cls) -> models.QuerySet["VideoFile"]:
@@ -1039,9 +1068,12 @@ class VideoFile(models.Model):
                 if stream_path is not None and stream_path.exists():
                     return field_file, stream_path
 
-            local_path = self.get_processed_file_path()
-            if local_path is not None and local_path.exists():
+            local_path = maybe_local_plaintext_path(field_file)
+            if local_path is not None:
                 return field_file, local_path
+
+            if file_exists(field_file):
+                return field_file, None
 
             raise FileNotFoundError("Processed video file is not available")
 
@@ -1064,9 +1096,12 @@ class VideoFile(models.Model):
             if stream_path is not None and stream_path.exists():
                 return field_file, stream_path
 
-        local_path = self.get_raw_file_path()
-        if local_path is not None and local_path.exists():
+        local_path = maybe_local_plaintext_path(field_file)
+        if local_path is not None:
             return field_file, local_path
+
+        if file_exists(field_file):
+            return field_file, None
 
         raise FileNotFoundError("Raw video file is not available")
 
@@ -1081,4 +1116,26 @@ class VideoFile(models.Model):
         if storage_mode != VideoStorageMode.STREAMABLE:
             return False
 
-        return self.get_stream_relative_path(file_type) is not None
+        stream_path = (
+            self.get_processed_stream_path()
+            if file_type == "processed"
+            else self.get_raw_stream_path()
+        )
+
+        if stream_path is None or not stream_path.exists():
+            return False
+
+        if self._is_encrypted_streamable_path(stream_path):
+            return False
+
+        return True
+
+    @staticmethod
+    def _is_encrypted_streamable_path(path: Path | None) -> bool:
+        if path is None:
+            return False
+        try:
+            with path.open("rb") as handle:
+                return handle.read(len(LX_ENCRYPTED_MAGIC)) == LX_ENCRYPTED_MAGIC
+        except OSError:
+            return False

@@ -1,10 +1,12 @@
 import logging
-import os
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from django.db import transaction
 
 from endoreg_db.models.media.video.video_file_io import _get_frame_dir_path
+from endoreg_db.utils.file_operations import safe_unlink_file
+from endoreg_db.utils.storage import materialize_video_file
 
 # Assuming ffmpeg_wrapper has or will have this function
 from endoreg_db.utils.video.ffmpeg_wrapper import (
@@ -15,6 +17,10 @@ if TYPE_CHECKING:
     from endoreg_db.models import VideoFile
 
 logger = logging.getLogger(__name__)
+
+
+def _raw_video_source_context(video: "VideoFile"):
+    return materialize_video_file(video, "raw")
 
 
 def _delete_frame_range(video: "VideoFile", start_frame: int, end_frame: int):
@@ -52,7 +58,7 @@ def _delete_frame_range(video: "VideoFile", start_frame: int, end_frame: int):
     for frame_path in paths_to_delete:
         try:
             if frame_path.exists():
-                os.remove(frame_path)
+                safe_unlink_file(frame_path)
                 deleted_count += 1
         except Exception as e:
             # Log warning but continue; DB state is already updated.
@@ -95,11 +101,11 @@ def _extract_frame_range(
             f"Raw video file not available for {video.video_hash}. Cannot extract frame range."
         )
 
-    raw_file_path = video.get_raw_file_path()
-    if not raw_file_path or not raw_file_path.exists():
-        raise FileNotFoundError(
-            f"Raw video file not found at {raw_file_path} for video {video.video_hash}. Cannot extract frame range."
-        )
+    with _raw_video_source_context(video) as source_path:
+        if not Path(source_path).exists():
+            raise FileNotFoundError(
+                f"Raw video file not found at {source_path} for video {video.video_hash}. Cannot extract frame range."
+            )
 
     frame_dir = _get_frame_dir_path(video)
     if not frame_dir:
@@ -153,9 +159,15 @@ def _extract_frame_range(
             video.video_hash,
             frame_dir,
         )
-        extracted_paths = ffmpeg_extract_frame_range(
-            raw_file_path, frame_dir, start_frame, end_frame, quality=quality, ext=ext
-        )
+        with _raw_video_source_context(video) as source_path:
+            extracted_paths = ffmpeg_extract_frame_range(
+                Path(source_path),
+                frame_dir,
+                start_frame,
+                end_frame,
+                quality=quality,
+                ext=ext,
+            )
 
         logger.info(
             "ffmpeg extraction process completed for video %s range [%d, %d). Found %d files.",
@@ -215,7 +227,7 @@ def _extract_frame_range(
         for potential_file in files_to_check:
             if potential_file.exists():
                 try:
-                    os.remove(potential_file)
+                    safe_unlink_file(potential_file)
                 except OSError as unlink_err:
                     logger.error(
                         "Failed to delete potential frame %s during cleanup: %s",

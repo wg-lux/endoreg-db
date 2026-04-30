@@ -8,6 +8,10 @@ import sys
 from datetime import datetime, date, timedelta
 from hashlib import sha256
 
+import pytest
+
+from endoreg_db.models.metadata import sensitive_meta_logic
+
 # Add the endoreg-db directory to the path
 # sys.path.insert(0, '/home/admin/test/lx-annotate/endoreg-db')
 
@@ -15,7 +19,7 @@ from hashlib import sha256
 def generate_random_dob():
     """Generates a random timezone-aware datetime between 1920-01-01 and 2000-12-31."""
     import random
-    import pytz
+    import pytz  # type: ignore
 
     start_date = date(1920, 1, 1)
     end_date = date(2000, 12, 31)
@@ -210,6 +214,43 @@ def test_name_processing():
     print(f"✅ Real names preserved: {first_name}, {last_name}")
     assert first_name == "Jane", "Real first name should be preserved"
     assert last_name == "Smith", "Real last name should be preserved"
+
+
+@pytest.mark.unit
+def test_sensitive_meta_logic_parse_any_date_prefers_german_and_iso_formats():
+    assert sensitive_meta_logic.parse_any_date("31.12.2024") == date(2024, 12, 31)
+    assert sensitive_meta_logic.parse_any_date("2024-12-31") == date(2024, 12, 31)
+    assert sensitive_meta_logic.parse_any_date("not a date") is None
+    assert sensitive_meta_logic.format_date_german(date(2024, 12, 31)) == "31.12.2024"
+    assert sensitive_meta_logic.format_date_iso(date(2024, 12, 31)) == "2024-12-31"
+
+
+@pytest.mark.unit
+def test_sensitive_meta_logic_hashes_validate_required_fields():
+    center = type("CenterStub", (), {"name": "center-a"})()
+    instance = type(
+        "SensitiveMetaStub",
+        (),
+        {
+            "patient_first_name": "Ada",
+            "patient_last_name": "Lovelace",
+            "patient_dob": date(1990, 1, 2),
+            "examination_date": date(2024, 3, 4),
+            "center": center,
+        },
+    )()
+
+    patient_hash = sensitive_meta_logic.calculate_patient_hash(instance, salt="salt")
+    examination_hash = sensitive_meta_logic.calculate_examination_hash(
+        instance,
+        salt="salt",
+    )
+
+    assert len(patient_hash) == 64
+    assert len(examination_hash) == 64
+    instance.center = None
+    with pytest.raises(ValueError, match="Center is required"):
+        sensitive_meta_logic.calculate_patient_hash(instance, salt="salt")
 
 
 if __name__ == "__main__":

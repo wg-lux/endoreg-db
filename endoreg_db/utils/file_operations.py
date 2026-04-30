@@ -7,6 +7,8 @@ import os
 import shutil
 from pathlib import Path
 from typing import Iterable
+from django.db.models.fields.files import FieldFile
+from endoreg_db.utils.storage import ensure_local_file
 
 from endoreg_db.utils.rust_backend import sha256_file_hex as rust_sha256_file_hex
 
@@ -28,17 +30,36 @@ def get_content_hash_filename(file: Path) -> tuple[str, str]:
     return new_file_name, uuid
 
 
-def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
+def sha256_file(path: Path | FieldFile, chunk_size: int = 1024 * 1024) -> str:
     """
-    Compute a SHA-256 hash of the file contents in a streaming manner.
+    Compute SHA-256 for either a real filesystem Path or a Django FieldFile.
 
-    Args:
-        path: Path to the file on disk.
-        chunk_size: Size of the chunks to read (default: 1MB).
-
-    Returns:
-        Hexadecimal SHA-256 digest (64 characters).
+    For FieldFile, this hashes the plaintext/decrypted local materialization,
+    not the encrypted storage blob. FieldFile-like test doubles are supported
+    through the same decrypted range reader used by streaming.
     """
+    if isinstance(path, FieldFile):
+        with ensure_local_file(path) as local_path:
+            return sha256_file(Path(local_path), chunk_size)
+    if hasattr(path, "storage") and getattr(path, "name", None):
+        from endoreg_db.utils.storage_streaming import (
+            field_file_size,
+            iter_field_file_bytes,
+        )
+
+        h = hashlib.sha256()
+        file_size = field_file_size(path)
+        if file_size <= 0:
+            return h.hexdigest()
+        for chunk in iter_field_file_bytes(
+            path,
+            start=0,
+            end=file_size - 1,
+            chunk_size=chunk_size,
+        ):
+            h.update(chunk)
+        return h.hexdigest()
+
     path_obj = Path(path)
 
     rust_digest = rust_sha256_file_hex(path_obj, chunk_size)
@@ -48,10 +69,7 @@ def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
     h = hashlib.sha256()
 
     with path_obj.open("rb") as f:
-        while True:
-            chunk = f.read(chunk_size)
-            if not chunk:
-                break
+        for chunk in iter(lambda: f.read(chunk_size), b""):
             h.update(chunk)
 
     return h.hexdigest()

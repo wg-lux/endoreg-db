@@ -24,10 +24,11 @@ class WhiteNoiseFileServingTest(TestCase):
         self.video_url = self.video_file.active_file_url
 
         self.assertIsNotNone(self.video_file, "VideoFile creation failed.")
-        self.assertTrue(
-            self.video_file.active_file_path.exists(),
-            f"Video file {self.video_file.active_file_path} does not exist.",
-        )
+        with self.video_file.ensure_local_raw_file() as local_path:
+            self.assertTrue(
+                local_path.exists(),
+                f"Video file {self.video_file.raw_file.name} does not exist.",
+            )
         self.pdf_file = get_default_egd_pdf()
         self.assertIsNotNone(self.pdf_file, "report file creation failed.")
         self.pdf_url = self.pdf_file.file_url

@@ -9,8 +9,6 @@ from typing import Any, Literal, NotRequired, TypedDict, cast
 from django.db import transaction
 from django.utils import timezone
 
-from endoreg_db.import_files.report_import_service import ReportImportService
-from endoreg_db.import_files.video_import_service import VideoImportService
 from endoreg_db.models import (
     Center,
     NetworkNode,
@@ -30,7 +28,7 @@ from endoreg_db.services.hub.audit import emit_hub_audit_event
 from endoreg_db.utils.file_operations import safe_unlink_file, sha256_file
 from endoreg_db.utils.hashs import get_pdf_hash
 from endoreg_db.utils.paths import TRANSCODING_DIR
-from endoreg_db.utils.storage import delete_field_file, save_local_file
+from endoreg_db.utils.storage import delete_field_file, file_exists, save_local_file
 from .ingest import _default_processor_name
 
 logger = logging.getLogger(__name__)
@@ -186,9 +184,9 @@ def create_or_reuse_transfer_job(
             if cleanup_policy == TransferJob.CleanupPolicy.RETAIN_ALL
             else TransferJob.CleanupStatus.DEFERRED
         ),
-        created_by=created_by
-        if getattr(created_by, "is_authenticated", False)
-        else None,
+        created_by=(
+            created_by if getattr(created_by, "is_authenticated", False) else None
+        ),
     )
     emit_hub_audit_event(
         "hub.transfer_job_created",
@@ -663,7 +661,14 @@ def _handle_video_processing_after_raw_upload(
     import_path: Path,
 ) -> TransferJob:
     sender_success = _sender_processing_success(transfer_job)
-    local_processed_present = video.get_processed_file_path() is not None
+    processed_file = getattr(video, "processed_file", None)
+    local_processed_present = file_exists(processed_file)
+    if (
+        not local_processed_present
+        and getattr(processed_file, "name", None)
+        and not hasattr(processed_file, "storage")
+    ):
+        local_processed_present = True
 
     if (
         transfer_job.processing_policy
@@ -742,6 +747,8 @@ def _handle_video_processing_after_raw_upload(
         )
 
     try:
+        from endoreg_db.import_files.video_import_service import VideoImportService
+
         VideoImportService().import_and_anonymize(
             file_path=import_path,
             center_name=video.center.name,
@@ -851,6 +858,8 @@ def _handle_report_processing_after_raw_upload(
         )
 
     try:
+        from endoreg_db.import_files.report_import_service import ReportImportService
+
         ReportImportService().import_and_anonymize(
             file_path=import_path,
             center_name=report.center.name if report.center is not None else "",
@@ -918,8 +927,8 @@ def _store_model_file(
     source_path: Path,
     stored_name: str,
 ) -> list[str]:
+    delete_field_file(instance, field_name, missing_ok=True, save=False)
     field_file = getattr(instance, field_name)
-    delete_field_file(field_file, missing_ok=True, save=False)
     save_local_file(field_file, source_path, name=stored_name, save=False)
     return [field_name]
 
@@ -1246,8 +1255,8 @@ def _decide_video_processing(
         file_hash=transfer_job.resource_hash,
         success=True,
     )
-    local_raw_present = video.get_raw_file_path() is not None
-    local_processed_present = video.get_processed_file_path() is not None
+    local_raw_present = file_exists(video.raw_file)
+    local_processed_present = file_exists(video.processed_file)
     sender_processing_success = _coerce_optional_bool(
         processing_snapshot.get("sender_processing_success")
     )
@@ -1297,8 +1306,8 @@ def _decide_report_processing(
         file_hash=transfer_job.resource_hash,
         success=True,
     )
-    local_raw_present = report.get_raw_file_path() is not None
-    local_processed_present = report.anonymized_file_path is not None
+    local_raw_present = file_exists(report.file)
+    local_processed_present = file_exists(report.processed_file)
 
     if local_history_success and (local_raw_present or local_processed_present):
         return (

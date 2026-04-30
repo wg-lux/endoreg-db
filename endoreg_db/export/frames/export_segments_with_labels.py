@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import csv
 import logging
-import tempfile
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TypedDict, cast, Literal
@@ -13,6 +13,17 @@ from django.db.models import QuerySet
 
 from endoreg_db.helpers.data_load_orchestrator import load_base_db_data
 from endoreg_db.models import ImageClassificationAnnotation, VideoFile
+from endoreg_db.utils.file_operations import (
+    atomic_move_file,
+    ensure_directory,
+    safe_rmtree,
+    safe_unlink_file,
+)
+from endoreg_db.utils.storage import ensure_local_file
+from endoreg_db.utils.storage_streaming import (
+    local_plaintext_path_from_name,
+    maybe_local_plaintext_path,
+)
 from endoreg_db.utils.video.ffmpeg_wrapper import (
     extract_frames as ffmpeg_extract_frames,
 )
@@ -64,6 +75,27 @@ class AnnotationRow(TypedDict):
 DEFAULT_TRANSCODE_FPS = 50.0
 DEFAULT_TRANSCODE_QUALITY = 2
 DEFAULT_TRANSCODE_EXT = "jpg"
+
+
+def _resolve_video_source_path(video: VideoFile) -> Path | None:
+    try:
+        field_file = video.active_file
+    except Exception:
+        return None
+
+    name = getattr(field_file, "name", None)
+    if not name:
+        return None
+
+    local_path = maybe_local_plaintext_path(field_file)
+    if local_path is not None:
+        return local_path
+    return local_plaintext_path_from_name(
+        name,
+        resolver=resolve_existing_protected_media_path,
+        # The real resolver enforces the protected-media boundary.
+        require_protected_root=False,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -431,13 +463,49 @@ def _transcode_video_to_frame_dir(
             )
             return
 
+    source_path = _resolve_video_source_path(video)
     try:
-        source_path = video.active_file_path
-    except ValueError as exc:
-        raise ValueError(f"active video path missing for {video.pk}") from exc
+        if source_path is None:
+            with ensure_local_file(video.active_file) as source_path_fallback:
+                _extract_and_move_transcoded_frames(
+                    video,
+                    source_path=source_path_fallback,
+                    frame_dir=frame_dir,
+                    frame_pks=frame_pks,
+                    fps=fps,
+                    quality=quality,
+                    ext=ext,
+                    overwrite=overwrite,
+                )
+                return
 
-    with tempfile.TemporaryDirectory(prefix="transcode_tmp_", dir=frame_dir) as tmp:
-        tmp_dir = Path(tmp)
+        _extract_and_move_transcoded_frames(
+            video,
+            source_path=source_path,
+            frame_dir=frame_dir,
+            frame_pks=frame_pks,
+            fps=fps,
+            quality=quality,
+            ext=ext,
+            overwrite=overwrite,
+        )
+    except (ValueError, FileNotFoundError, IOError) as exc:
+        raise ValueError(f"active video path missing for {video.pk}: {exc}") from exc
+
+
+def _extract_and_move_transcoded_frames(
+    video: VideoFile,
+    *,
+    source_path: Path,
+    frame_dir: Path,
+    frame_pks: set[int] | None,
+    fps: float,
+    quality: int,
+    ext: str,
+    overwrite: bool,
+) -> None:
+    tmp_dir = ensure_directory(frame_dir / f"transcode_tmp_{uuid.uuid4().hex}")
+    try:
         extracted_paths = ffmpeg_extract_frames(
             source_path,
             tmp_dir,
@@ -453,6 +521,8 @@ def _transcode_video_to_frame_dir(
             ext=ext,
             overwrite=overwrite,
         )
+    finally:
+        safe_rmtree(tmp_dir, missing_ok=True)
 
 
 def _move_extracted_frames_to_pk_names(
@@ -474,26 +544,26 @@ def _move_extracted_frames_to_pk_names(
     for extracted_path in sorted(extracted_paths):
         frame_number = _parse_extracted_frame_number(extracted_path)
         if frame_number is None:
-            extracted_path.unlink(missing_ok=True)
+            safe_unlink_file(extracted_path, missing_ok=True)
             continue
 
         frame = frames_by_number.get(frame_number)
         if frame is None:
             frame = frames_by_number.get(frame_number - 1)
         if frame is None:
-            extracted_path.unlink(missing_ok=True)
+            safe_unlink_file(extracted_path, missing_ok=True)
             continue
 
         if frame_pks is not None and frame.pk not in frame_pks:
-            extracted_path.unlink(missing_ok=True)
+            safe_unlink_file(extracted_path, missing_ok=True)
             continue
 
         target_path = frame_dir / _frame_pk_filename(frame.pk, ext)
         if target_path.exists() and not overwrite:
-            extracted_path.unlink(missing_ok=True)
+            safe_unlink_file(extracted_path, missing_ok=True)
             continue
 
-        extracted_path.replace(target_path)
+        atomic_move_file(source=extracted_path, destination=target_path)
 
 
 def _parse_extracted_frame_number(frame_path: Path) -> int | None:
@@ -587,15 +657,17 @@ def _annotation_to_row(
             "value": annotation.value,
             "float_value": annotation.float_value,
             "annotator": annotation.annotator,
-            "information_source_id": annotation.information_source.pk
-            if annotation.information_source
-            else None,
+            "information_source_id": (
+                annotation.information_source.pk
+                if annotation.information_source
+                else None
+            ),
             "information_source_name": (
                 information_source.name if information_source else None
             ),
-            "model_meta_id": annotation.model_meta.pk
-            if annotation.model_meta
-            else None,
+            "model_meta_id": (
+                annotation.model_meta.pk if annotation.model_meta else None
+            ),
             "date_created": (
                 annotation.date_created.isoformat() if annotation.date_created else None
             ),

@@ -19,12 +19,14 @@ from endoreg_db.utils.paths import (
     IMPORT_REPORT_DIR,
     SENSITIVE_REPORT_DIR,
 )
+from endoreg_db.utils.encryption.encrypted import LazyEncryptedStorage
 from endoreg_db.utils.storage import (
     delete_field_file,
     ensure_local_file,
     file_exists,
     save_local_file,
 )
+from endoreg_db.utils.storage_streaming import maybe_local_plaintext_path
 from endoreg_db.utils.storage_profile import (
     PayloadKind,
     StoragePolicy,
@@ -81,10 +83,12 @@ class RawPdfFile(models.Model):
     file = models.FileField(
         # Use the relative path from the specific REPORT_DIR
         upload_to=SENSITIVE_REPORT_DIR.name,
+        storage=LazyEncryptedStorage(),
         validators=[FileExtensionValidator(allowed_extensions=["pdf"])],
     )
     processed_file = models.FileField(
         upload_to=ANONYM_REPORT_DIR.name,
+        storage=LazyEncryptedStorage(),
         validators=[FileExtensionValidator(allowed_extensions=["pdf"])],
         null=True,
         blank=True,
@@ -157,18 +161,11 @@ class RawPdfFile(models.Model):
     @property
     def file_path(self) -> Path | None:
         """
-        Returns the file path of the stored report file if available; otherwise, returns None.
-        """
-        from django.db.models.fields.files import FieldFile
+        Deprecated: return a local plaintext path only when one is explicitly available.
 
-        # assert self.file has path attribute
-        assert isinstance(self.file, FieldFile)
-        if self.file and self.file.name:
-            try:
-                return Path(self.file.path)
-            except (ValueError, AttributeError, NotImplementedError):
-                return None
-        return None
+        Use ensure_local_file(self.file) for tooling that requires a real path.
+        """
+        return maybe_local_plaintext_path(self.file)
 
     def set_file_path(self, file_path: Path):
         """
@@ -183,14 +180,11 @@ class RawPdfFile(models.Model):
     @property
     def anonymized_file_path(self) -> Path | None:
         """
-        Returns the file path of the anonymized report file if available; otherwise, returns None.
+        Deprecated: return a local plaintext path only when one is explicitly available.
+
+        Use ensure_local_file(self.processed_file) for tooling that requires a real path.
         """
-        if self.processed_file and self.processed_file.name:
-            try:
-                return Path(self.processed_file.path)
-            except (ValueError, AttributeError, NotImplementedError):
-                return None
-        return None
+        return maybe_local_plaintext_path(self.processed_file)
 
     def set_anonymized_file_path(self, file_path: Path):
         """
@@ -215,14 +209,10 @@ class RawPdfFile(models.Model):
             Path to raw file if it exists, None otherwise
         """
         # Check if file field already points to a valid file
-        if self.file and self.file.name:
-            try:
-                file_path = Path(self.file.path)
-                if file_path.exists():
-                    logger.debug(f"Found raw report via file field: {file_path}")
-                    return file_path
-            except (ValueError, AttributeError, NotImplementedError):
-                pass
+        file_path = self.file_path
+        if file_path is not None and file_path.exists():
+            logger.debug("Found raw report via explicit local path: %s", file_path)
+            return file_path
 
         # Canonical raw report lookup order.
         raw_dirs = [
@@ -307,9 +297,9 @@ class RawPdfFile(models.Model):
             else None
         )
 
-        if delete_field_file(self.file, missing_ok=True, save=False):
+        if delete_field_file(self, "file", missing_ok=True, save=False):
             logger.info("Original file removed from storage: %s", primary_name)
-        if delete_field_file(self.processed_file, missing_ok=True, save=False):
+        if delete_field_file(self, "processed_file", missing_ok=True, save=False):
             logger.info("Anonymized file removed from storage: %s", anonymized_name)
 
         super().delete(*args, **kwargs)
@@ -380,9 +370,9 @@ class RawPdfFile(models.Model):
             f"Metadata for report {self.pk} validated and updated successfully."
         )
 
-        deleted_original = delete_field_file(self.file, missing_ok=True, save=False)
+        deleted_original = delete_field_file(self, "file", missing_ok=True, save=False)
         deleted_anonymized = delete_field_file(
-            self.processed_file, missing_ok=True, save=False
+            self, "processed_file", missing_ok=True, save=False
         )
         self.get_or_create_state().mark_anonymization_validated()
 

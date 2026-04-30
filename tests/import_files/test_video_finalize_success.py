@@ -12,6 +12,7 @@ from endoreg_db.utils import paths as paths_module
 def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
     tmp_path, monkeypatch
 ):
+    import endoreg_db.import_files.file_storage.cleanup as cleanup_module
     import endoreg_db.import_files.file_storage.state_management as state_management_module
 
     storage_root = paths_module.STORAGE_DIR / "pytest_finalize_video_success"
@@ -101,6 +102,12 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
         state_management_module,
         "get_stream_info",
         lambda path: {"streams": [{"codec_type": "video"}]},
+        raising=True,
+    )
+    monkeypatch.setattr(
+        cleanup_module,
+        "staging_cleanup_roots",
+        lambda: (sensitive_dir,),
         raising=True,
     )
 

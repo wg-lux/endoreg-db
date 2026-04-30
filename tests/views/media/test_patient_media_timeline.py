@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from uuid import uuid4
 
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -163,6 +164,37 @@ class PatientMediaTimelineViewTests(TestCase):
             expected_path = f"/api/media/videos/{video.pk}/frames/{frame_item['frame_number']}/stream/"
             assert frame_item["stream_url"].endswith(expected_path)
             assert frame_item["selection_source"] == "segment_priority"
+
+    def test_latest_only_full_report_exposes_raw_pdf_id_for_frontend_streams(self):
+        from endoreg_db.models import AnonymExaminationReport
+
+        raw_pdf = self._create_report(anonymized_text="")
+        full_report = AnonymExaminationReport.objects.create(
+            patient=self.patient,
+            patient_examination=self.patient_examination,
+            text="FULL REPORT TEXT",
+            date=date(2099, 1, 1),
+        )
+        raw_pdf.anonym_examination_report = full_report
+        raw_pdf.save(update_fields=["anonym_examination_report"])
+
+        response = self.client.get(
+            (
+                f"/api/media/patients/{self.patient.pk}/timeline/"
+                f"?patient_examination_id={self.patient_examination.pk}&latest_only=true"
+            )
+        )
+
+        assert response.status_code == 200, response.content
+        latest_report = response.json()["latest_report"]
+        assert latest_report["media_type"] == "full_report"
+        assert latest_report["id"] == full_report.pk
+        assert latest_report["raw_pdf_id"] == raw_pdf.pk
+        assert latest_report["anonymized_text"] == "FULL REPORT TEXT"
+        assert all(
+            f"/api/media/pdfs/{raw_pdf.pk}/stream/" in option["url"]
+            for option in latest_report["stream_options"]
+        )
 
     def test_latest_only_falls_back_to_latest_frame_rows_when_no_segments(self):
         self._create_report(anonymized_text="TEXT")

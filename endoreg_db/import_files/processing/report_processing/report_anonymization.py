@@ -4,7 +4,6 @@ import sys
 import importlib
 from pathlib import Path
 
-from lx_anonymizer import ReportReader
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta as LxSM
 
 from endoreg_db.import_files.context import ImportContext
@@ -19,7 +18,10 @@ logger = logging.getLogger(__name__)
 
 
 def _processed_report_dir() -> Path:
-    return path_utils.EndoregPathsModel.from_environment().anonym_report
+    return (
+        path_utils.EndoregPathsModel.from_environment().transcoding
+        / "anonymized_reports"
+    )
 
 
 class ReportAnonymizer:
@@ -65,8 +67,6 @@ class ReportAnonymizer:
             anonymized_output_path = anonymized_dir / f"{pdf_hash}.pdf"
             self._report_reader_class = self._instantiate_report_reader()
 
-            assert isinstance(self._report_reader_class, ReportReader)
-
             # Process with enhanced process_report method (returns 4-tuple now)
             (
                 ctx.original_text,
@@ -87,16 +87,6 @@ class ReportAnonymizer:
                 if isinstance(ctx.anonymized_path, (str, Path))
                 else None
             )
-            if anonymized_path is not None and anonymized_path.exists():
-                ctx.current_report.processed_file.name = path_utils.to_storage_relative(
-                    anonymized_path
-                )
-
-            update_fields = ["text", "anonymized_text"]
-            if getattr(ctx.current_report.processed_file, "name", None):
-                update_fields.append("processed_file")
-
-            ctx.current_report.save(update_fields=update_fields)
 
             if anonymized_path is None or not anonymized_path.exists():
                 raise RuntimeError(
@@ -116,13 +106,17 @@ class ReportAnonymizer:
         sensitive_meta_storage(sm, ctx.current_report)
         return ctx
 
-    def _instantiate_report_reader(self) -> ReportReader:
+    def _instantiate_report_reader(self) -> object:
         """
         Instantiate ReportReader with a compatibility workaround for broken
         lx_anonymizer builds that reference a missing module global
         `lx_anonymizer` in `report_reader.py`.
         """
         rr_mod = importlib.import_module("lx_anonymizer.report_reader")
+        report_reader_class = self._report_reader_class or getattr(
+            rr_mod,
+            "ReportReader",
+        )
         default_settings = getattr(rr_mod, "DEFAULT_SETTINGS", {}) or {}
         default_flags = default_settings.get("flags")
 
@@ -130,13 +124,13 @@ class ReportAnonymizer:
         # while resolving default flags from a malformed module expression.
         if default_flags is not None:
             try:
-                return ReportReader(flags=default_flags)
+                return report_reader_class(flags=default_flags)
             except Exception:
                 logger.exception(
                     "ReportReader(flags=DEFAULT_SETTINGS['flags']) failed; falling back to plain init."
                 )
 
-        return ReportReader()
+        return report_reader_class()
 
     def _ensure_report_reading_available(self) -> None:
         """
@@ -153,6 +147,7 @@ class ReportAnonymizer:
             logger.info("Successfully imported lx_anonymizer ReportReader module")
             self._report_reader_available = True
             self._report_reader_class = ReportReader
+            return
 
         except ImportError:
             # Optional: honor LX_ANONYMIZER_PATH=/abs/path/to/src
@@ -169,6 +164,7 @@ class ReportAnonymizer:
                     )
                     self._report_reader_available = True
                     self._report_reader_class = ReportReader
+                    return
                 except Exception as e:
                     logger.warning(
                         "Failed importing lx_anonymizer via LX_ANONYMIZER_PATH: %s", e

@@ -91,6 +91,8 @@ def test_create_video_without_outside_frames_uses_data_paths_output(
         captured["fps"] = fps
         captured["width"] = width
         captured["height"] = height
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"filtered-video")
         return output_path
 
     monkeypatch.setattr(video, "extract_frames", fake_extract_frames)
@@ -108,14 +110,26 @@ def test_create_video_without_outside_frames_uses_data_paths_output(
     assert ok is True
 
     expected_output_path = (
-        data_paths["anonym_video"] / f"{video.video_hash}_filtered.mp4"
+        data_paths["transcoding"]
+        / "outside_frame_reassembly"
+        / f"{video.video_hash}_filtered.mp4"
     )
     assert captured["output_path"] == expected_output_path
-    assert str(expected_output_path).startswith(str(data_paths["anonym_video"]))
+    assert str(expected_output_path).startswith(str(data_paths["transcoding"]))
     assert "/path/to/output" not in str(captured["output_path"])
 
     video.refresh_from_db()
-    assert video.processed_file.name == to_storage_relative(expected_output_path)
+    expected_storage_path = (
+        data_paths["anonym_video"] / f"{video.video_hash}_filtered.mp4"
+    )
+    assert video.processed_file.name == to_storage_relative(expected_storage_path)
+    assert not expected_output_path.exists()
+
+    stored_name = video.processed_file.name
+    assert VideoFile.create_video_without_outside_frames(video) is True
+    video.refresh_from_db()
+    assert video.processed_file.name == stored_name
+    assert not expected_output_path.exists()
 
 
 @pytest.mark.django_db
@@ -196,7 +210,11 @@ def test_create_video_without_outside_frames_forces_processed_frame_reextract(
     )
     monkeypatch.setattr(
         "endoreg_db.models.media.video.video_file.assemble_video_from_frames",
-        lambda frame_paths, output_path, fps, width=None, height=None: output_path,
+        lambda frame_paths, output_path, fps, width=None, height=None: (
+            output_path.parent.mkdir(parents=True, exist_ok=True),
+            output_path.write_bytes(b"filtered-video"),
+            output_path,
+        )[-1],
     )
 
     ok = VideoFile.create_video_without_outside_frames(video)

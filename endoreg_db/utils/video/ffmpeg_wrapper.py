@@ -1212,6 +1212,8 @@ def extract_frame_range(
         "-qscale:v",
         str(quality),
         "-copyts",  # Attempt to copy timestamps if needed, might not be accurate with select
+        "-start_number",
+        str(start_frame),
         str(output_pattern),
     ]
 

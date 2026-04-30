@@ -4,49 +4,15 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Type, Union
 
-from django.core.files import File
-
 from endoreg_db.utils.file_operations import get_content_hash_filename
 from endoreg_db.utils.hashs import get_pdf_hash
-from endoreg_db.utils.paths import (
-    IMPORT_REPORT_DIR,
-    STORAGE_DIR,
-    SENSITIVE_REPORT_DIR,
-    to_storage_relative,
-)
+from endoreg_db.utils.paths import IMPORT_REPORT_DIR, SENSITIVE_REPORT_DIR, STORAGE_DIR
+from endoreg_db.utils.storage import save_local_file
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.pdf import RawPdfFile
 
 logger = logging.getLogger("raw_pdf")
-
-
-def _canonical_managed_report_relative_path(
-    file_path: Path, *, canonical_filename: str
-) -> str | None:
-    resolved = file_path.resolve()
-    try:
-        relative_to_storage = resolved.relative_to(STORAGE_DIR.resolve())
-    except ValueError:
-        relative_to_storage = None
-
-    if relative_to_storage is not None and relative_to_storage.parts[:1] in (
-        ("sensitive_reports",),
-        ("report_import",),
-    ):
-        if resolved.name == canonical_filename:
-            return to_storage_relative(resolved)
-        return None
-
-    for managed_root in (SENSITIVE_REPORT_DIR, IMPORT_REPORT_DIR):
-        try:
-            resolved.relative_to(managed_root.resolve())
-        except ValueError:
-            continue
-        if resolved.name == canonical_filename:
-            return to_storage_relative(resolved)
-        return None
-    return None
 
 
 def _create_from_file(
@@ -115,36 +81,17 @@ def _create_from_file(
 
     # 5. Create New Record
     new_file_name, _uuid = get_content_hash_filename(file_path)
-    managed_relative_path = _canonical_managed_report_relative_path(
-        file_path,
-        canonical_filename=new_file_name,
-    )
-
     try:
-        if managed_relative_path is not None:
-            raw_pdf = cls_model(
-                pdf_hash=pdf_hash,
-                center=center,
-                **kwargs,
-            )
-            raw_pdf.file.name = managed_relative_path
-            if save:
-                raw_pdf.save()
-                logger.info(
-                    "Successfully attached managed RawPdfFile PK %s to %s",
-                    raw_pdf.pk,
-                    managed_relative_path,
-                )
-        else:
-            with file_path.open("rb") as f:
-                django_file = File(f, name=new_file_name)
-                raw_pdf = cls_model(
-                    pdf_hash=pdf_hash, center=center, file=django_file, **kwargs
-                )
+        raw_pdf = cls_model(
+            pdf_hash=pdf_hash,
+            center=center,
+            **kwargs,
+        )
+        save_local_file(raw_pdf.file, file_path, name=new_file_name, save=False)
 
-                if save:
-                    raw_pdf.save()
-                    logger.info(f"Successfully created RawPdfFile PK {raw_pdf.pk}")
+        if save:
+            raw_pdf.save()
+            logger.info(f"Successfully created RawPdfFile PK {raw_pdf.pk}")
 
         return raw_pdf
 

@@ -52,6 +52,8 @@ try:
 
     django.setup()
     from endoreg_db.models import VideoFile
+    from endoreg_db.utils.storage import field_file_is_readable, file_exists
+    from endoreg_db.utils.storage_streaming import field_file_size
 
     DJANGO_AVAILABLE = True
 except Exception as e:
@@ -137,16 +139,17 @@ def main():
             for attr in ["raw_file", "processed_file"]:
                 if hasattr(video_5, attr):
                     file_field = getattr(video_5, attr)
-                    if file_field:
+                    if file_field and getattr(file_field, "name", None):
                         try:
-                            file_path = Path(file_field.path)
-                            accessible, message = check_video_file_accessibility(
-                                file_path
-                            )
+                            accessible = file_exists(
+                                file_field
+                            ) and field_file_is_readable(file_field)
+                            size_mb = field_file_size(file_field) / (1024 * 1024)
+                            message = f"OK - {size_mb:.1f} MB"
                             status = "✅" if accessible else "❌"
-                            print(f"   {attr}: {status} {file_path} ({message})")
+                            print(f"   {attr}: {status} {file_field.name} ({message})")
                         except Exception as e:
-                            print(f"   {attr}: ❌ Error accessing path: {e}")
+                            print(f"   {attr}: ❌ Error accessing storage object: {e}")
                     else:
                         print(f"   {attr}: ❌ No file set")
 

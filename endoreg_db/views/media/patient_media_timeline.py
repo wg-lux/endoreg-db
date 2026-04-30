@@ -167,6 +167,22 @@ def _video_timestamp(video: VideoFile) -> tuple[datetime | None, str, bool]:
     return None, "missing_timestamp", False
 
 
+def _resolved_pdf_anonymized_text(pdf: RawPdfFile) -> str | None:
+    if isinstance(pdf.anonymized_text, str) and pdf.anonymized_text.strip():
+        return pdf.anonymized_text
+    full_report = getattr(pdf, "anonym_examination_report", None)
+    if full_report is not None and isinstance(full_report.text, str):
+        if full_report.text.strip():
+            return full_report.text
+    sensitive_meta = getattr(pdf, "sensitive_meta", None)
+    if sensitive_meta is not None and isinstance(sensitive_meta.anonymized_text, str):
+        if sensitive_meta.anonymized_text.strip():
+            return sensitive_meta.anonymized_text
+    if isinstance(pdf.text, str) and pdf.text.strip():
+        return pdf.text
+    return None
+
+
 class PatientMediaTimelineView(APIView):
     """
     Combined media timeline for a patient.
@@ -343,15 +359,7 @@ class PatientMediaTimelineView(APIView):
             direct_patient = getattr(pdf, "patient", None)
             pseudo_patient = getattr(sm, "pseudo_patient", None) if sm else None
             full_report = getattr(pdf, "anonym_examination_report", None)
-            resolved_anonymized_text = (
-                pdf.anonymized_text
-                if isinstance(pdf.anonymized_text, str) and pdf.anonymized_text
-                else (
-                    full_report.text
-                    if full_report is not None and isinstance(full_report.text, str)
-                    else None
-                )
-            )
+            resolved_anonymized_text = _resolved_pdf_anonymized_text(pdf)
             items.append(
                 {
                     "media_type": "pdf",

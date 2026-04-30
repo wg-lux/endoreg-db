@@ -3,11 +3,12 @@ Django management command to validate video file existence and accessibility.
 """
 
 import logging
-from pathlib import Path
 
 from django.core.management.base import BaseCommand
 
 from endoreg_db.models import VideoFile
+from endoreg_db.utils.storage import field_file_is_readable, file_exists
+from endoreg_db.utils.storage_streaming import field_file_size
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,7 @@ class Command(BaseCommand):
         """Validate video files and their accessibility."""
         verbose = options["verbose"]
         video_id = options.get("video_id")
-        fix_missing = options["fix_missing", False]
+        fix_missing = options.get("fix_missing", False)
 
         if verbose:
             self.stdout.write(self.style.SUCCESS("Starting video validation..."))
@@ -117,67 +118,45 @@ class Command(BaseCommand):
             "error": None,
         }
 
-        # Helper to check a file attribute
-        def _check_file_attr(obj, attr, path_getter=None, label=None):
+        def _check_field_file(obj, attr, label=None):
             if not hasattr(obj, attr):
                 return None
             file_field = getattr(obj, attr)
-            if not file_field:
+            if not file_field or not getattr(file_field, "name", None):
                 return None
+            label = label or attr.replace("_", " ").title()
+            info = video_info.copy()
+            info["path"] = str(file_field.name)
             try:
-                file_path = Path(path_getter(file_field) if path_getter else file_field)
-                info = video_info.copy()
-                info["path"] = str(file_path)
-                if not file_path.exists():
+                if not file_exists(file_field):
                     info["status"] = "missing"
                     info["error"] = (
-                        f"{label or attr.replace('_', ' ').title()} does not exist: {file_path}"
+                        f"{label} does not exist in storage: {file_field.name}"
                     )
                     return info
-                file_size = file_path.stat().st_size
+                file_size = field_file_size(file_field)
                 info["size_mb"] = file_size / (1024 * 1024)
                 if file_size == 0:
                     info["status"] = "corrupted"
-                    info["error"] = (
-                        f"{label or attr.replace('_', ' ').title()} exists but has zero size"
-                    )
+                    info["error"] = f"{label} exists but has zero size"
+                elif not field_file_is_readable(file_field):
+                    info["status"] = "corrupted"
+                    info["error"] = f"{label} exists but could not be materialized"
                 else:
                     info["status"] = "accessible"
                 return info
-            except (ValueError, OSError) as e:
+            except Exception as e:
                 info = video_info.copy()
-                info["path"] = str(getattr(file_field, "path", file_field))
+                info["path"] = str(getattr(file_field, "name", ""))
                 info["status"] = "corrupted"
-                info["error"] = (
-                    f"Cannot access {label or attr.replace('_', ' ').title()}: {e}"
-                )
+                info["error"] = f"Cannot access {label}: {e}"
                 return info
 
         # Try each file attribute in order of preference
-        result = None
-        # active_file_path: direct path string
-        result = _check_file_attr(video, "active_file_path", label="Active file path")
+        result = _check_field_file(video, "processed_file", label="Processed file")
         if result:
             return result
-        # active_file: Django FileField
-        result = _check_file_attr(
-            video, "active_file", path_getter=lambda f: f.path, label="Active file"
-        )
-        if result:
-            return result
-        # raw_file: Django FileField
-        result = _check_file_attr(
-            video, "raw_file", path_getter=lambda f: f.path, label="Raw file"
-        )
-        if result:
-            return result
-        # processed_file: Django FileField
-        result = _check_file_attr(
-            video,
-            "processed_file",
-            path_getter=lambda f: f.path,
-            label="Processed file",
-        )
+        result = _check_field_file(video, "raw_file", label="Raw file")
         if result:
             return result
 

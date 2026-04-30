@@ -6,6 +6,7 @@ with frame-level anonymization.
 """
 
 import os
+import importlib.util
 import threading
 import shutil
 import pytest
@@ -26,6 +27,24 @@ SKIP_EXPENSIVE_TESTS = os.environ.get("SKIP_EXPENSIVE_TESTS", "true").lower() ==
 logger = logging.getLogger(__name__)
 vis = VideoImportService()
 import_and_anonymize = vis.import_and_anonymize
+
+
+def _video_pipeline_ready() -> bool:
+    return (
+        importlib.util.find_spec("spacy.lang.de") is not None
+        and importlib.util.find_spec("de_core_news_sm") is not None
+    )
+
+
+def _allow_staging_cleanup_roots(monkeypatch, *roots: Path) -> None:
+    import endoreg_db.import_files.file_storage.cleanup as cleanup_module
+
+    monkeypatch.setattr(
+        cleanup_module,
+        "staging_cleanup_roots",
+        lambda: tuple(Path(root) for root in roots),
+        raising=True,
+    )
 
 
 class TestVideoImportService(TestCase):
@@ -60,6 +79,10 @@ class TestVideoImportService(TestCase):
         if SKIP_EXPENSIVE_TESTS:
             self.skipTest(
                 "Skipping expensive video import test (SKIP_EXPENSIVE_TESTS=true)"
+            )
+        if not _video_pipeline_ready():
+            self.skipTest(
+                "Skipping expensive video import test; German spaCy pipeline is unavailable."
             )
 
         # Create a temporary video file
@@ -252,6 +275,7 @@ def test_import_and_anonymize_short_circuit_cleans_duplicate_staging(
     monkeypatch.setattr(
         vis_module, "_video_import_dir", lambda: import_dir, raising=True
     )
+    _allow_staging_cleanup_roots(monkeypatch, import_dir, sensitive_dir)
 
     @contextmanager
     def fake_file_lock(path):
@@ -433,6 +457,10 @@ def test_import_and_anonymize_duplicate_success_skips_storage_preflight_and_stag
     events = []
 
     monkeypatch.setattr(vis_module, "validate_directories", lambda: None, raising=True)
+    monkeypatch.setattr(
+        vis_module, "_video_import_dir", lambda: source_path.parent, raising=True
+    )
+    _allow_staging_cleanup_roots(monkeypatch, source_path.parent)
 
     @contextmanager
     def fake_file_lock(path):
@@ -492,6 +520,142 @@ def test_import_and_anonymize_duplicate_success_skips_storage_preflight_and_stag
     assert result.pk == 1
     assert ("file_lock_enter", source_path) in events
     assert any(event[0] == "hash_lock_enter" for event in events)
+    assert not source_path.exists()
+
+
+@pytest.mark.unit
+def test_import_and_anonymize_completed_duplicate_removes_import_source(
+    monkeypatch, tmp_path
+):
+    import endoreg_db.import_files.video_import_service as vis_module
+
+    import_dir = tmp_path / "import"
+    source_path = import_dir / "completed-duplicate.mp4"
+    import_dir.mkdir(parents=True, exist_ok=True)
+    source_path.write_bytes(b"video")
+
+    monkeypatch.setattr(vis_module, "validate_directories", lambda: None, raising=True)
+    monkeypatch.setattr(
+        vis_module, "_video_import_dir", lambda: import_dir, raising=True
+    )
+    _allow_staging_cleanup_roots(monkeypatch, import_dir)
+
+    @contextmanager
+    def fake_file_lock(path):
+        yield
+
+    @contextmanager
+    def fake_hash_lock(file_hash, lock_root):
+        yield
+
+    class DummyVideo:
+        pk = 1
+
+        def get_raw_file_path(self):
+            return None
+
+    monkeypatch.setattr(vis_module, "file_lock", fake_file_lock, raising=True)
+    monkeypatch.setattr(vis_module, "content_hash_lock", fake_hash_lock, raising=True)
+    monkeypatch.setattr(
+        vis_module.ProcessingHistory,
+        "has_history_for_hash",
+        staticmethod(lambda file_hash, success: success),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        vis_module.VideoFile,
+        "get_video_by_content_hash",
+        staticmethod(lambda file_hash: DummyVideo()),
+        raising=True,
+    )
+
+    def fail_storage_budget(path):
+        raise AssertionError(
+            "storage preflight should be skipped for completed duplicates"
+        )
+
+    def fail_create_sensitive_copy(src, root, ctx):
+        raise AssertionError(
+            "sensitive copy should be skipped for completed duplicates"
+        )
+
+    monkeypatch.setattr(
+        VideoImportService,
+        "_ensure_pipeline_storage_budget",
+        fail_storage_budget,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        vis_module, "create_sensitive_copy", fail_create_sensitive_copy, raising=True
+    )
+
+    service = VideoImportService()
+    result = service.import_and_anonymize(
+        file_path=source_path,
+        center_name="university_hospital_wuerzburg",
+        processor_name="olympus_cv_1500",
+    )
+
+    assert result.pk == 1
+    assert not source_path.exists()
+
+
+@pytest.mark.unit
+def test_import_and_anonymize_completed_duplicate_keeps_external_source(
+    monkeypatch, tmp_path
+):
+    import endoreg_db.import_files.video_import_service as vis_module
+
+    import_dir = tmp_path / "import"
+    external_dir = tmp_path / "external"
+    source_path = external_dir / "completed-duplicate.mp4"
+    import_dir.mkdir(parents=True, exist_ok=True)
+    external_dir.mkdir(parents=True, exist_ok=True)
+    source_path.write_bytes(b"video")
+
+    monkeypatch.setattr(vis_module, "validate_directories", lambda: None, raising=True)
+    monkeypatch.setattr(
+        vis_module, "_video_import_dir", lambda: import_dir, raising=True
+    )
+
+    @contextmanager
+    def fake_file_lock(path):
+        yield
+
+    @contextmanager
+    def fake_hash_lock(file_hash, lock_root):
+        yield
+
+    class DummyVideo:
+        pk = 1
+
+        def get_raw_file_path(self):
+            return None
+
+    monkeypatch.setattr(vis_module, "file_lock", fake_file_lock, raising=True)
+    monkeypatch.setattr(vis_module, "content_hash_lock", fake_hash_lock, raising=True)
+    monkeypatch.setattr(
+        vis_module.ProcessingHistory,
+        "has_history_for_hash",
+        staticmethod(lambda file_hash, success: success),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        vis_module.VideoFile,
+        "get_video_by_content_hash",
+        staticmethod(lambda file_hash: DummyVideo()),
+        raising=True,
+    )
+
+    service = VideoImportService()
+    result = service.import_and_anonymize(
+        file_path=source_path,
+        center_name="university_hospital_wuerzburg",
+        processor_name="olympus_cv_1500",
+    )
+
+    assert result.pk == 1
+    assert source_path.exists()
 
 
 @pytest.mark.unit
@@ -526,6 +690,7 @@ def test_same_content_imports_serialize_and_only_one_runs_heavy_work(
     monkeypatch.setattr(
         vis_module, "_video_import_dir", lambda: import_dir, raising=True
     )
+    _allow_staging_cleanup_roots(monkeypatch, import_dir, sensitive_root)
 
     @contextmanager
     def fake_file_lock(path):

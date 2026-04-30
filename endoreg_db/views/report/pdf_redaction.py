@@ -23,7 +23,6 @@ from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.utils.media_urls import build_pdf_stream_path
 from endoreg_db.utils.operation_log import record_operation
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
-from endoreg_db.utils.storage import ensure_local_file
 
 logger = logging.getLogger(__name__)
 
@@ -59,17 +58,6 @@ def _sha256_uploaded_file(uploaded_file) -> str:
     finally:
         uploaded_file.seek(0)
     return digest.hexdigest()
-
-
-def _sha256_field_file(field_file) -> str | None:
-    if not field_file or not getattr(field_file, "name", ""):
-        return None
-    try:
-        with ensure_local_file(field_file) as local_path:
-            return sha256_file(local_path)
-    except Exception:
-        logger.exception("Failed to compute source sha256 for %s", field_file.name)
-        return None
 
 
 class PdfApplyRedactionsView(APIView):
@@ -162,14 +150,14 @@ class PdfApplyRedactionsView(APIView):
                     if source_type == PdfProcessingHistory.SOURCE_TYPE_RAW
                     else pdf.processed_file
                 )
-                source_sha256 = _sha256_field_file(source_field)
-                if source_sha256 is None:
+                if not source_field or not getattr(source_field, "name", None):
                     return Response(
                         {
                             "error": "source file is unavailable for the requested source_type."
                         },
                         status=status.HTTP_409_CONFLICT,
                     )
+                source_sha256 = sha256_file(source_field)
 
                 if client_source_sha256 and client_source_sha256 != source_sha256:
                     return Response(

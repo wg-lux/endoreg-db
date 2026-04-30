@@ -6,6 +6,7 @@ from typing import Optional, Union
 from django.db import transaction
 
 from endoreg_db.import_files.context.import_context import ImportContext
+from endoreg_db.import_files.file_storage.cleanup import safe_cleanup_staging_file
 from endoreg_db.models.media import RawPdfFile, VideoFile
 from endoreg_db.models.state import RawPdfState, VideoState
 from endoreg_db.models.state.processing_history.processing_history import (
@@ -20,6 +21,8 @@ from endoreg_db.utils.file_operations import (
     safe_unlink_file,
     sha256_file,
 )
+from endoreg_db.utils.storage import save_local_file
+from endoreg_db.utils.storage_profile import PayloadKind, requires_app_encrypted_storage
 from endoreg_db.utils.video.ffmpeg_wrapper import get_stream_info
 
 logger = logging.getLogger(__name__)
@@ -45,6 +48,43 @@ def _verify_final_video_output(path: Path) -> None:
     )
     if not has_video_stream:
         raise RuntimeError(f"Final anonymized video has no video stream: {path}")
+
+
+def _store_existing_final_file(
+    field_file,
+    final_path: Path,
+    *,
+    relative_name: str | None = None,
+) -> str:
+    """
+    Attach an already-written local file to a FileField without leaving plaintext.
+
+    When the field storage is encrypted and the file already occupies its target
+    storage path, encrypt it in place to preserve the canonical filename.
+    """
+    relative_name = relative_name or path_utils.to_storage_relative(final_path)
+    field_file.name = relative_name
+    storage = getattr(field_file, "storage", None)
+    repair_plaintext_file = getattr(storage, "repair_plaintext_file", None)
+    storage_path = None
+    try:
+        storage_path = Path(storage.path(relative_name)).resolve() if storage else None
+    except Exception:
+        storage_path = None
+    if (
+        callable(repair_plaintext_file)
+        and storage_path is not None
+        and final_path.resolve() == storage_path
+    ):
+        repair_plaintext_file(relative_name)
+        return relative_name
+    return save_local_file(
+        field_file,
+        final_path,
+        name=relative_name,
+        save=False,
+        overwrite=True,
+    )
 
 
 def _get_history_filename(ctx: ImportContext) -> str:
@@ -137,22 +177,34 @@ def finalize_report_success(
             expected_final_path,
         )
 
-        # If anonymizer already wrote to the final path, don't move
-        if src.resolve() == expected_final_path.resolve():
-            logger.info(
-                "Anonymizer output already at final path %s; skipping move.",
+        if not src.exists():
+            logger.error(
+                "Anonymized file %s does not exist; cannot finalize to %s",
+                src,
                 expected_final_path,
             )
-            final_path = expected_final_path
-        else:
-            # Only move if the source actually exists
-            if not src.exists():
-                logger.error(
-                    "Anonymized file %s does not exist; cannot move to %s",
+            final_path = None
+        elif requires_app_encrypted_storage(PayloadKind.REPORT_PDF):
+            relative_name = path_utils.to_storage_relative(expected_final_path)
+            saved_name = _store_existing_final_file(
+                instance.processed_file,
+                src,
+                relative_name=relative_name,
+            )
+            logger.info("Updated processed_file to %s", saved_name)
+            if src.resolve() != expected_final_path.resolve():
+                safe_cleanup_staging_file(
                     src,
+                    label="processed report staging output",
+                    missing_ok=True,
+                )
+        else:
+            if src.resolve() == expected_final_path.resolve():
+                logger.info(
+                    "Anonymizer output already at final path %s; skipping move.",
                     expected_final_path,
                 )
-                final_path = None
+                final_path = expected_final_path
             else:
                 if expected_final_path.exists():
                     safe_unlink_file(expected_final_path, missing_ok=True)
@@ -160,13 +212,12 @@ def finalize_report_success(
                 final_path = expected_final_path
                 logger.info("Moved anonymized report to %s", final_path)
 
-        # Update FileField if we have a final path
-        if final_path is not None:
-            relative_name = path_utils.to_storage_relative(final_path)
-            current_name = getattr(instance.processed_file, "name", None)
-            if current_name != relative_name:
-                instance.processed_file.name = relative_name
-                logger.info("Updated processed_file to %s", relative_name)
+            if final_path is not None:
+                relative_name = path_utils.to_storage_relative(final_path)
+                current_name = getattr(instance.processed_file, "name", None)
+                if current_name != relative_name:
+                    instance.processed_file.name = relative_name
+                    logger.info("Updated processed_file to %s", relative_name)
 
     # --- Update RawPdfState flags (mirrors _finalize_processing) ---
     state = _ensure_instance_state(instance)
@@ -188,29 +239,12 @@ def finalize_report_success(
 
         instance.save()
 
-    raw_path = instance.get_raw_file_path()
     if isinstance(ctx.sensitive_path, Path):
-        try:
-            same_raw = (
-                raw_path is not None
-                and ctx.sensitive_path.resolve() == raw_path.resolve()
-            )
-        except FileNotFoundError:
-            same_raw = False
-
-        if not same_raw and ctx.sensitive_path.exists():
-            try:
-                safe_unlink_file(ctx.sensitive_path, missing_ok=False)
-                logger.info(
-                    "Deleted temporary sensitive copy after successful import: %s",
-                    ctx.sensitive_path,
-                )
-            except Exception as e:
-                logger.warning(
-                    "Could not delete temporary sensitive copy %s: %s",
-                    ctx.sensitive_path,
-                    e,
-                )
+        safe_cleanup_staging_file(
+            ctx.sensitive_path,
+            label="report sensitive staging copy after success",
+            missing_ok=False,
+        )
 
     # --- ProcessingHistory entry ---
     try:
@@ -280,20 +314,35 @@ def finalize_video_success(
             # src might not exist anymore
             same_target = False
 
-        if same_target:
-            logger.info(
-                "Anonymizer output already at final video path %s; skipping move.",
+        if not src.exists():
+            logger.error(
+                "Anonymized video %s does not exist; cannot finalize to %s",
+                src,
                 expected_final_path,
             )
-            final_path = expected_final_path
-        else:
-            if not src.exists():
-                logger.error(
-                    "Anonymized video %s does not exist; cannot move to %s",
+            final_path = None
+        elif requires_app_encrypted_storage(PayloadKind.VIDEO_PROCESSED):
+            _verify_final_video_output(src)
+            relative_name = path_utils.to_storage_relative(expected_final_path)
+            saved_name = _store_existing_final_file(
+                instance.processed_file,
+                src,
+                relative_name=relative_name,
+            )
+            logger.info("Updated video processed_file to %s", saved_name)
+            if src.resolve() != expected_final_path.resolve():
+                safe_cleanup_staging_file(
                     src,
+                    label="processed video staging output",
+                    missing_ok=True,
+                )
+        else:
+            if same_target:
+                logger.info(
+                    "Anonymizer output already at final video path %s; skipping move.",
                     expected_final_path,
                 )
-                final_path = None
+                final_path = expected_final_path
             else:
                 if expected_final_path.exists():
                     try:
@@ -308,14 +357,13 @@ def finalize_video_success(
                 final_path = expected_final_path
                 logger.info("Moved anonymized video to %s", final_path)
 
-        # Update FileField if we have a final path
-        if final_path is not None:
-            _verify_final_video_output(final_path)
-            relative_name = path_utils.to_storage_relative(final_path)
-            current_name = getattr(instance.processed_file, "name", None)
-            if current_name != relative_name:
-                instance.processed_file.name = relative_name
-                logger.info("Updated video processed_file to %s", relative_name)
+            if final_path is not None:
+                _verify_final_video_output(final_path)
+                relative_name = path_utils.to_storage_relative(final_path)
+                current_name = getattr(instance.processed_file, "name", None)
+                if current_name != relative_name:
+                    instance.processed_file.name = relative_name
+                    logger.info("Updated video processed_file to %s", relative_name)
 
     if not nuke_transcoding_dir():
         logger.warning(
@@ -355,29 +403,12 @@ def finalize_video_success(
             exc,
         )
 
-    raw_path = instance.get_raw_file_path()
     if isinstance(ctx.sensitive_path, Path):
-        try:
-            same_raw = (
-                raw_path is not None
-                and ctx.sensitive_path.resolve() == raw_path.resolve()
-            )
-        except FileNotFoundError:
-            same_raw = False
-
-        if not same_raw and ctx.sensitive_path.exists():
-            try:
-                safe_unlink_file(ctx.sensitive_path, missing_ok=False)
-                logger.info(
-                    "Deleted temporary sensitive copy after successful import: %s",
-                    ctx.sensitive_path,
-                )
-            except Exception as e:
-                logger.warning(
-                    "Could not delete temporary sensitive copy %s: %s",
-                    ctx.sensitive_path,
-                    e,
-                )
+        safe_cleanup_staging_file(
+            ctx.sensitive_path,
+            label="video sensitive staging copy after success",
+            missing_ok=False,
+        )
 
     # --- ProcessingHistory entry ---
     try:
@@ -472,9 +503,11 @@ def delete_associated_files(ctx: ImportContext) -> None:
     # --- Delete anonymized file (best-effort) ---
     if isinstance(ctx.anonymized_path, Path):
         try:
-            if ctx.anonymized_path.exists():
-                safe_unlink_file(ctx.anonymized_path, missing_ok=False)
-                logger.info("Deleted anonymized file %s", ctx.anonymized_path)
+            safe_cleanup_staging_file(
+                ctx.anonymized_path,
+                label="failed anonymized staging output",
+                missing_ok=False,
+            )
         except Exception as e:
             logger.error(
                 "Error when unlinking anonymized path %s: %s",
@@ -494,9 +527,11 @@ def delete_associated_files(ctx: ImportContext) -> None:
     # --- Delete sensitive file (best-effort) ---
     if isinstance(ctx.sensitive_path, Path):
         try:
-            if ctx.sensitive_path.exists():
-                safe_unlink_file(ctx.sensitive_path, missing_ok=False)
-                logger.info("Deleted sensitive file %s", ctx.sensitive_path)
+            safe_cleanup_staging_file(
+                ctx.sensitive_path,
+                label="failed sensitive staging copy",
+                missing_ok=False,
+            )
         except Exception as e:
             logger.error(
                 "Error when unlinking sensitive path %s: %s",

@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Tuple, Union
 
 from django.core.exceptions import ObjectDoesNotExist
@@ -311,9 +312,12 @@ class LabelVideoSegment(models.Model):
         try:
             video_obj = self.get_video()
             label_name = self.label.name if self.label else "No Label"
-            active_path = video_obj.active_file_path
+            active_file = getattr(video_obj, "active_file", None)
+            active_name = getattr(active_file, "name", None)
             video_identifier = (
-                active_path.name if active_path else f"UUID {video_obj.video_hash}"
+                Path(active_name).name
+                if active_name
+                else f"UUID {video_obj.video_hash}"
             )
 
             str_repr = f"{video_identifier} Label - {label_name} - {self.start_frame_number} - {self.end_frame_number}"

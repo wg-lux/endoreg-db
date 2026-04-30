@@ -34,6 +34,10 @@ def _configure_test_path_env(protected_root: Path) -> None:
     os.environ["LX_ANNOTATE_STREAMABLE_VIDEO_PROCESSED_ROOT"] = str(
         streamable_root / "processed"
     )
+    os.environ.setdefault(
+        "LX_ANNOTATE_MASTER_KEY",
+        "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
+    )
 
 
 # Ensure the repository root is in the Python path before importing project code.
@@ -82,12 +86,10 @@ def disable_faker_logging():
 disable_faker_logging()
 
 # Performance optimization settings
-SKIP_EXPENSIVE_TESTS = (
-    os.environ.get("SKIP_EXPENSIVE_TESTS", "false").lower() == "false"
-)
-RUN_VIDEO_TESTS = os.environ.get("RUN_VIDEO_TESTS", "true").lower() == "true"
+SKIP_EXPENSIVE_TESTS = os.environ.get("SKIP_EXPENSIVE_TESTS", False)
+RUN_VIDEO_TESTS = os.environ.get("RUN_VIDEO_TESTS", True)
 MAX_MOCK_VIDEO_FRAMES = 2
-USE_STUB_MODEL_META = os.environ.get("USE_STUB_MODEL_META", "true").lower() == "true"
+USE_STUB_MODEL_META = os.environ.get("USE_STUB_MODEL_META", True)
 
 TEST_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 TEST_DATA_DIR.mkdir(parents=True, exist_ok=True)

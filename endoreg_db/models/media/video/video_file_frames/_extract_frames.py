@@ -1,7 +1,9 @@
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from endoreg_db.models.media.video.video_file_io import _get_frame_dir_path
+from endoreg_db.utils.storage import materialize_video_file
 from endoreg_db.utils.video.ffmpeg_wrapper import (
     extract_frames as ffmpeg_extract_frames,
 )
@@ -16,6 +18,13 @@ from django.db import transaction
 from endoreg_db.utils.rust_backend import parse_extracted_frame_numbers as rust_parse
 
 logger = logging.getLogger(__name__)
+
+
+def _video_source_context(video: "VideoFile", *, from_processed: bool):
+    return materialize_video_file(
+        video,
+        "processed" if from_processed else "raw",
+    )
 
 
 def _extract_frames(
@@ -50,22 +59,19 @@ def _extract_frames(
     from ._delete_frames import _delete_frames
 
     if from_processed:
-        raw_file_path = video.get_processed_file_path()
-        if not raw_file_path or not raw_file_path.exists():
-            raise FileNotFoundError(
-                f"Processed video file not found at {raw_file_path} for video {video.video_hash}. Cannot extract frames."
-            )
+        source_label = "Processed"
     else:
         # Pre-validation checks (outside any transaction)
         if not video.has_raw:
             raise FileNotFoundError(
                 f"Raw video file not available for {video.video_hash}. Cannot extract frames."
             )
+        source_label = "Raw"
 
-        raw_file_path = video.get_raw_file_path()
-        if not raw_file_path or not raw_file_path.exists():
+    with _video_source_context(video, from_processed=from_processed) as source_path:
+        if not Path(source_path).exists():
             raise FileNotFoundError(
-                f"Raw video file not found at {raw_file_path} for video {video.video_hash}. Cannot extract frames."
+                f"{source_label} video file not found at {source_path} for video {video.video_hash}. Cannot extract frames."
             )
 
     frame_dir = _get_frame_dir_path(video)
@@ -141,9 +147,10 @@ def _extract_frames(
             "Starting frame extraction for video %s to %s", video.video_hash, frame_dir
         )
         # Step 1: Perform the long-running frame extraction outside any transaction.
-        extracted_paths = ffmpeg_extract_frames(
-            raw_file_path, frame_dir, quality=quality, ext=ext
-        )
+        with _video_source_context(video, from_processed=from_processed) as source_path:
+            extracted_paths = ffmpeg_extract_frames(
+                Path(source_path), frame_dir, quality=quality, ext=ext
+            )
         if not extracted_paths:
             logger.warning(
                 "ffmpeg_extract_frames returned no paths for video %s. Check video duration and ffmpeg logs.",

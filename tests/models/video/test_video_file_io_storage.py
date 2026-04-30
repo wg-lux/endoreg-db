@@ -103,8 +103,8 @@ def video_with_files(
     finally:
         if video_pk and VideoFile.objects.filter(pk=video_pk).exists():
             remaining = VideoFile.objects.get(pk=video_pk)
-            delete_field_file(remaining.raw_file, save=False)
-            delete_field_file(remaining.processed_file, save=False)
+            delete_field_file(remaining, "raw_file", save=False)
+            delete_field_file(remaining, "processed_file", save=False)
             remaining.delete()
         else:
             if stored_raw:

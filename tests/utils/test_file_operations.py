@@ -1,0 +1,157 @@
+from __future__ import annotations
+
+import errno
+import json
+import logging
+from pathlib import Path
+
+import pytest
+
+from endoreg_db.utils import file_operations
+from endoreg_db.utils.file_operations import (
+    atomic_move_file,
+    atomic_write_file,
+    ensure_directory,
+    safe_rmtree,
+    safe_unlink_file,
+)
+
+
+def _file_operation_events(caplog) -> list[dict[str, object]]:
+    return [
+        json.loads(record.message)
+        for record in caplog.records
+        if record.name == "endoreg_db.utils.file_operations"
+        and record.message.startswith("{")
+    ]
+
+
+@pytest.mark.unit
+def test_atomic_write_file_replaces_destination_and_emits_json_log(caplog, tmp_path):
+    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
+    destination = tmp_path / "nested" / "payload.bin"
+
+    result = atomic_write_file(
+        destination=destination,
+        content=(chunk for chunk in (b"abc", b"def")),
+        required_bytes=6,
+        file_mode=0o600,
+    )
+
+    assert result == destination
+    assert destination.read_bytes() == b"abcdef"
+    assert oct(destination.stat().st_mode & 0o777) == "0o600"
+    assert list(destination.parent.glob("payload.bin.tmp.*")) == []
+    assert {
+        "event": "file_operation",
+        "operation": "write",
+        "status": "ok",
+        "destination": str(destination),
+        "bytes": 6,
+    } in _file_operation_events(caplog)
+
+
+@pytest.mark.unit
+def test_atomic_write_file_removes_partial_temp_file_on_generator_failure(
+    caplog, tmp_path
+):
+    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
+    destination = tmp_path / "payload.bin"
+
+    def failing_content():
+        yield b"partial"
+        raise RuntimeError("write source failed")
+
+    with pytest.raises(RuntimeError, match="write source failed"):
+        atomic_write_file(destination=destination, content=failing_content())
+
+    assert not destination.exists()
+    assert list(tmp_path.glob("payload.bin.tmp.*")) == []
+    events = _file_operation_events(caplog)
+    assert events[-1]["operation"] == "write"
+    assert events[-1]["status"] == "error"
+    assert events[-1]["destination"] == str(destination)
+    assert events[-1]["bytes"] == 7
+    assert "write source failed" in str(events[-1]["detail"])
+
+
+@pytest.mark.unit
+def test_atomic_move_file_falls_back_to_copy_then_unlink_on_cross_device_error(
+    caplog, monkeypatch, tmp_path
+):
+    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
+    source = tmp_path / "source.bin"
+    destination = tmp_path / "other" / "destination.bin"
+    source.write_bytes(b"move-me")
+    original_replace = file_operations.os.replace
+    calls = 0
+
+    def replace_with_first_call_cross_device(src: str | Path, dst: str | Path) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise OSError(errno.EXDEV, "Invalid cross-device link")
+        original_replace(src, dst)
+
+    monkeypatch.setattr(
+        file_operations.os, "replace", replace_with_first_call_cross_device
+    )
+
+    result = atomic_move_file(source=source, destination=destination)
+
+    assert result == destination
+    assert destination.read_bytes() == b"move-me"
+    assert not source.exists()
+    assert calls == 2
+    events = _file_operation_events(caplog)
+    assert any(
+        event["operation"] == "copy" and event["status"] == "ok" for event in events
+    )
+    assert any(
+        event["operation"] == "unlink" and event["status"] == "ok" for event in events
+    )
+    assert any(
+        event["operation"] == "move" and event["status"] == "ok" for event in events
+    )
+
+
+@pytest.mark.unit
+def test_safe_unlink_file_missing_required_path_logs_and_raises(caplog, tmp_path):
+    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
+    missing = tmp_path / "missing.bin"
+
+    with pytest.raises(FileNotFoundError):
+        safe_unlink_file(missing, missing_ok=False)
+
+    assert _file_operation_events(caplog)[-1] == {
+        "event": "file_operation",
+        "operation": "unlink",
+        "status": "error",
+        "source": str(missing),
+        "detail": "missing file",
+    }
+
+
+@pytest.mark.unit
+def test_ensure_directory_and_safe_rmtree_emit_structured_events(caplog, tmp_path):
+    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
+    target = tmp_path / "created" / "nested"
+
+    ensure_directory(target, dir_mode=0o700)
+    (target / "child.txt").write_text("payload")
+    safe_rmtree(target)
+
+    assert not target.exists()
+    events = _file_operation_events(caplog)
+    assert any(
+        event["operation"] == "mkdir"
+        and event["status"] == "ok"
+        and event["destination"] == str(target)
+        for event in events
+    )
+    assert any(
+        event["operation"] == "rmtree"
+        and event["status"] == "ok"
+        and event["source"] == str(target)
+        for event in events
+    )

@@ -20,6 +20,8 @@ from endoreg_db.utils.media_urls import (
     build_absolute_media_url,
     build_video_stream_path,
 )
+from endoreg_db.utils.storage import ensure_local_file
+from endoreg_db.utils.storage_streaming import maybe_local_plaintext_path
 
 if TYPE_CHECKING:
     from endoreg_db.models import VideoFile
@@ -109,24 +111,26 @@ class VideoFileSerializer(serializers.ModelSerializer):
                 obj.duration
             )  # If duration is stored in the database, return it directly.
 
-        # Dynamically extract duration if not stored
-        video_path = obj.active_file.path
         if cv2_mod is None:
             return None
 
-        cap = cv2_mod.VideoCapture(str(video_path))
         try:
-            if not cap.isOpened():
-                return None  # Error handling if video can't be opened
+            with ensure_local_file(obj.active_file) as video_path:
+                cap = cv2_mod.VideoCapture(str(video_path))
+                try:
+                    if not cap.isOpened():
+                        return None  # Error handling if video can't be opened
 
-            fps = cap.get(cv2_mod.CAP_PROP_FPS)
-            total_frames = cap.get(cv2_mod.CAP_PROP_FRAME_COUNT)
+                    fps = cap.get(cv2_mod.CAP_PROP_FPS)
+                    total_frames = cap.get(cv2_mod.CAP_PROP_FRAME_COUNT)
 
-            return (
-                round(total_frames / fps, 2) if fps > 0 else None
-            )  # Return duration in seconds
-        finally:
-            cap.release()
+                    return (
+                        round(total_frames / fps, 2) if fps > 0 else None
+                    )  # Return duration in seconds
+                finally:
+                    cap.release()
+        except Exception:
+            return None
 
     def get_file(self, obj: "VideoFile"):
         """
@@ -157,30 +161,14 @@ class VideoFileSerializer(serializers.ModelSerializer):
             return {"error": "No video file associated with this entry"}
 
         try:
-            # Use the active_file_path property which handles both processed and raw files
-            if hasattr(obj, "active_file_path") and obj.active_file_path:
-                full_path = obj.active_file_path
-                return (
-                    str(full_path)
-                    if full_path.exists()
-                    else {"error": f"file not found at: {full_path}"}
-                )
-            else:
-                # Fallback: construct path manually
-                file_name = getattr(obj.active_file, "name", None)
-                if not isinstance(file_name, str):
-                    return {"error": "Video file path is empty or invalid"}
-                video_relative_path = file_name.strip()
-                if not video_relative_path:
-                    return {"error": "Video file path is empty or invalid"}
-
-                # Construct the path using the file's actual path
-                full_path_str = str(obj.active_file.path)
-                return (
-                    full_path_str
-                    if Path(full_path_str).exists()
-                    else {"error": f"file not found at: {full_path_str}"}
-                )
+            local_path = maybe_local_plaintext_path(obj.active_file)
+            if local_path is None:
+                return {"error": "Local plaintext path unavailable; use video_url"}
+            return (
+                str(local_path)
+                if local_path.exists()
+                else {"error": f"file not found at: {local_path}"}
+            )
 
         except Exception as e:
             return {"error": f"Error constructing file path: {str(e)}"}

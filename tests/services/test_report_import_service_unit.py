@@ -91,7 +91,9 @@ class TestReportImportServiceUnit(unittest.TestCase):
             source_path = import_dir / "duplicate.pdf"
             source_path.write_bytes(b"%PDF-1.4\n%%EOF\n")
 
-            sensitive_path = base / "sensitive_copy.pdf"
+            sensitive_dir = base / "sensitive_reports"
+            sensitive_dir.mkdir(parents=True, exist_ok=True)
+            sensitive_path = sensitive_dir / "sensitive_copy.pdf"
             sensitive_path.write_bytes(b"%PDF-1.4\n%%EOF\n")
 
             ctx = ImportContext(
@@ -104,6 +106,9 @@ class TestReportImportServiceUnit(unittest.TestCase):
             with patch(
                 "endoreg_db.import_files.report_import_service._import_report_dir",
                 return_value=import_dir,
+            ), patch(
+                "endoreg_db.import_files.report_import_service._sensitive_report_dir",
+                return_value=sensitive_dir,
             ):
                 service._cleanup_duplicate_staging(ctx)
 

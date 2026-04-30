@@ -150,6 +150,36 @@ class MigrateDataDirCommandTests(TestCase):
                 )
             )
 
+    def test_dry_run_skips_raw_streamable_video_by_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir_name:
+            temp_dir = Path(temp_dir_name)
+            legacy_root = temp_dir / "legacy"
+            raw_streamable_dir = legacy_root / "streamable_videos" / "raw"
+            raw_streamable_dir.mkdir(parents=True)
+            (raw_streamable_dir / "raw.mp4").write_bytes(b"\x00\x00\x00\x18ftypmp42")
+
+            manifest_path = (
+                MANIFEST_DIR / "tests" / "migrate_data_dir_raw_streamable.json"
+            )
+            if manifest_path.exists():
+                manifest_path.unlink()
+
+            call_command(
+                "migrate_data_dir",
+                str(legacy_root),
+                "--dry-run",
+                "--manifest-path",
+                str(manifest_path),
+            )
+
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["migrated_entries"], [])
+            self.assertEqual(len(payload["skipped_entries"]), 1)
+            self.assertEqual(
+                payload["skipped_entries"][0]["reason"],
+                "raw_streamable_disabled_by_policy",
+            )
+
     def test_dry_run_includes_remaining_managed_storage_classes(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir_name:
             temp_dir = Path(temp_dir_name)
@@ -284,28 +314,30 @@ class MigrateDataDirCommandTests(TestCase):
                 self.assertTrue(
                     command.sync_db(report_destination, report_source, report_rule)
                 )
-                self.assertTrue(
+                self.assertFalse(
                     command.sync_db(video_destination, video_source, video_rule)
                 )
-                self.assertTrue(
+                self.assertFalse(
                     command.sync_db(report_destination, report_source, report_rule)
                 )
 
                 video.refresh_from_db()
                 report.refresh_from_db()
 
+                expected_video_processed_name = to_storage_relative(video_destination)
+                expected_report_processed_name = to_storage_relative(
+                    report_destination
+                )
+
                 self.assertEqual(
                     video.processed_file.name,
-                    to_storage_relative(video_destination),
+                    expected_video_processed_name,
                 )
                 self.assertEqual(
                     report.processed_file.name,
-                    to_storage_relative(report_destination),
+                    expected_report_processed_name,
                 )
-                self.assertEqual(
-                    report.file.name,
-                    to_storage_relative(report_destination),
-                )
+                self.assertFalse(report.file.name)
             finally:
                 video_destination.unlink(missing_ok=True)
                 report_destination.unlink(missing_ok=True)
@@ -423,9 +455,13 @@ class MigrateDataDirCommandTests(TestCase):
 
                 video.refresh_from_db()
                 self.assertEqual(video.processed_video_hash, existing_processed_hash)
+                expected_processed_name = video.processed_file.field.generate_filename(
+                    video,
+                    to_storage_relative(destination_path),
+                )
                 self.assertEqual(
                     video.processed_file.name,
-                    to_storage_relative(destination_path),
+                    expected_processed_name,
                 )
             finally:
                 destination_path.unlink(missing_ok=True)
@@ -468,6 +504,49 @@ class MigrateDataDirCommandTests(TestCase):
                     to_storage_relative(destination_path),
                 )
                 self.assertEqual(video.storage_mode, VideoStorageMode.STREAMABLE.value)
+            finally:
+                destination_path.unlink(missing_ok=True)
+
+    def test_sync_db_refuses_raw_streamable_path_when_policy_requires_app_encryption(
+        self,
+    ) -> None:
+        center = Center.objects.create(name="migration-raw-streamable-center")
+        rule = next(
+            candidate
+            for candidate in MIGRATION_RULES
+            if candidate.legacy_relative == Path("streamable_videos/raw")
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir_name:
+            temp_dir = Path(temp_dir_name)
+            source_path = (
+                temp_dir
+                / "legacy"
+                / "streamable_videos"
+                / "raw"
+                / "raw-streamable-stem.mp4"
+            )
+            source_path.parent.mkdir(parents=True, exist_ok=True)
+            source_path.write_bytes(b"\x00\x00\x00\x18ftypmp42raw-streamable")
+            destination_path = rule.target_root / source_path.name
+
+            try:
+                destination_path.parent.mkdir(parents=True, exist_ok=True)
+                destination_path.write_bytes(source_path.read_bytes())
+                video = VideoFile.objects.create(
+                    center=center,
+                    video_hash=source_path.stem,
+                    original_file_name="raw-streamable.mp4",
+                )
+
+                self.assertFalse(Command().sync_db(destination_path, source_path, rule))
+
+                video.refresh_from_db()
+                self.assertEqual(video.raw_streamable_relative_path, "")
+                self.assertNotEqual(
+                    video.storage_mode,
+                    VideoStorageMode.STREAMABLE.value,
+                )
             finally:
                 destination_path.unlink(missing_ok=True)
 
@@ -525,7 +604,75 @@ class MigrateDataDirCommandTests(TestCase):
                 )
                 payload = json.loads(manifest_path.read_text(encoding="utf-8"))
                 reasons = {entry["reason"] for entry in payload["skipped_entries"]}
-                self.assertIn("destination_exists_and_synced", reasons)
+                self.assertIn("destination_exists_hash_mismatch", reasons)
+
+                video.refresh_from_db()
+                self.assertEqual(
+                    video.processed_file.name,
+                    to_storage_relative(destination_path),
+                )
+            finally:
+                destination_path.unlink(missing_ok=True)
+
+    def test_migrate_data_dir_second_run_is_idempotent_for_valid_destination(
+        self,
+    ) -> None:
+        center = Center.objects.create(name="migration-idempotent-center")
+        rule = next(
+            candidate
+            for candidate in MIGRATION_RULES
+            if candidate.legacy_relative == Path("processed_videos_final")
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir_name:
+            temp_dir = Path(temp_dir_name)
+            legacy_root = temp_dir / "legacy"
+            source_path = legacy_root / "processed_videos_final" / "repeat-stem.mp4"
+            source_path.parent.mkdir(parents=True, exist_ok=True)
+            source_path.write_bytes(b"\x00\x00\x00\x18ftypmp42repeat")
+
+            destination_path = rule.target_root / source_path.name
+            manifest_one = (
+                MANIFEST_DIR / "tests" / "migrate_data_dir_idempotent_one.json"
+            )
+            manifest_two = (
+                MANIFEST_DIR / "tests" / "migrate_data_dir_idempotent_two.json"
+            )
+            for manifest_path in (manifest_one, manifest_two):
+                if manifest_path.exists():
+                    manifest_path.unlink()
+
+            try:
+                video = VideoFile.objects.create(
+                    center=center,
+                    video_hash=destination_path.stem,
+                    original_file_name="repeat.mp4",
+                )
+
+                call_command(
+                    "migrate_data_dir",
+                    str(legacy_root),
+                    "--manifest-path",
+                    str(manifest_one),
+                )
+                first_mtime_ns = destination_path.stat().st_mtime_ns
+
+                call_command(
+                    "migrate_data_dir",
+                    str(legacy_root),
+                    "--manifest-path",
+                    str(manifest_two),
+                )
+
+                second_mtime_ns = destination_path.stat().st_mtime_ns
+                second_payload = json.loads(manifest_two.read_text(encoding="utf-8"))
+                self.assertEqual(second_payload["migrated_entries"], [])
+                self.assertEqual(len(second_payload["skipped_entries"]), 1)
+                self.assertEqual(
+                    second_payload["skipped_entries"][0]["reason"],
+                    "destination_exists_unchanged",
+                )
+                self.assertEqual(first_mtime_ns, second_mtime_ns)
 
                 video.refresh_from_db()
                 self.assertEqual(

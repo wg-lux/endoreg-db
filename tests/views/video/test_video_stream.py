@@ -159,7 +159,9 @@ class VideoStreamViewTests(TestCase):
             )
             monkeypatches.setenv("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
             monkeypatches.setattr(
-                view_module.VideoFile.objects, "get", lambda **kwargs: fake_video_obj
+                view_module.VideoStreamView,
+                "_get_video_or_404",
+                staticmethod(lambda pk: fake_video_obj),
             )
 
             response = self.client.get("/api/media/videos/123/stream/?type=raw")
@@ -195,7 +197,9 @@ class VideoStreamViewTests(TestCase):
         monkeypatches = pytest.MonkeyPatch()
         try:
             monkeypatches.setattr(
-                view_module.VideoFile.objects, "get", lambda **kwargs: fake_video_obj
+                view_module.VideoStreamView,
+                "_get_video_or_404",
+                staticmethod(lambda pk: fake_video_obj),
             )
             response = self.client.get(
                 "/api/media/videos/123/stream/?type=processed",
@@ -235,7 +239,9 @@ class VideoStreamViewTests(TestCase):
 
             monkeypatches.setenv("SERVE_WITH_NGINX", "true")
             monkeypatches.setattr(
-                view_module.VideoFile.objects, "get", lambda **kwargs: fake_video_obj
+                view_module.VideoStreamView,
+                "_get_video_or_404",
+                staticmethod(lambda pk: fake_video_obj),
             )
 
             response = self.client.get("/api/media/videos/123/stream/?type=raw")
@@ -278,7 +284,9 @@ class VideoStreamViewTests(TestCase):
 
             monkeypatches.setenv("SERVE_WITH_NGINX", "true")
             monkeypatches.setattr(
-                view_module.VideoFile.objects, "get", lambda **kwargs: fake_video_obj
+                view_module.VideoStreamView,
+                "_get_video_or_404",
+                staticmethod(lambda pk: fake_video_obj),
             )
 
             response = self.client.get("/api/media/videos/123/stream/?type=raw")
@@ -308,7 +316,9 @@ class VideoStreamViewTests(TestCase):
         monkeypatches = pytest.MonkeyPatch()
         try:
             monkeypatches.setattr(
-                view_module.VideoFile.objects, "get", lambda **kwargs: fake_video_obj
+                view_module.VideoStreamView,
+                "_get_video_or_404",
+                staticmethod(lambda pk: fake_video_obj),
             )
             response = self.client.get("/api/media/videos/123/stream/?type=raw")
         finally:
@@ -340,7 +350,9 @@ class VideoStreamViewTests(TestCase):
         monkeypatches = pytest.MonkeyPatch()
         try:
             monkeypatches.setattr(
-                view_module.VideoFile.objects, "get", lambda **kwargs: fake_video_obj
+                view_module.VideoStreamView,
+                "_get_video_or_404",
+                staticmethod(lambda pk: fake_video_obj),
             )
             response = self.client.get("/api/media/videos/123/stream/?type=raw")
             body = b"".join(response.streaming_content)
@@ -377,7 +389,9 @@ class VideoStreamViewTests(TestCase):
         monkeypatches = pytest.MonkeyPatch()
         try:
             monkeypatches.setattr(
-                view_module.VideoFile.objects, "get", lambda **kwargs: fake_video_obj
+                view_module.VideoStreamView,
+                "_get_video_or_404",
+                staticmethod(lambda pk: fake_video_obj),
             )
             response = self.client.get("/api/media/videos/123/stream/?type=processed")
             body = b"".join(response.streaming_content)
@@ -420,7 +434,9 @@ class VideoStreamViewTests(TestCase):
             monkeypatches.setenv("PROTECTED_MEDIA_ROOT", str(protected_media_root_path))
             monkeypatches.setenv("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
             monkeypatches.setattr(
-                view_module.VideoFile.objects, "get", lambda **kwargs: fake_video_obj
+                view_module.VideoStreamView,
+                "_get_video_or_404",
+                staticmethod(lambda pk: fake_video_obj),
             )
 
             response = self.client.get("/api/media/videos/123/stream/?type=raw")
@@ -434,3 +450,34 @@ class VideoStreamViewTests(TestCase):
             response["X-Accel-Redirect"]
             == "/protected_media/streamable_videos/raw/test.mp4"
         )
+
+    def test_video_stream_invalid_range_returns_416_with_content_range(self):
+        from endoreg_db.views.video import video_stream as view_module
+
+        payload = b"\x00\x00\x00\x18ftypmp42"
+        fake_storage = FakeStorage(payload)
+        fake_field = StubFieldFile(fake_storage, "videos/test.mp4")
+        fake_video_obj = SimpleNamespace(
+            active_raw_file=fake_field,
+            processed_file=fake_field,
+            storage_mode=view_module.VideoFile.StorageMode.APP_ENCRYPTED,
+        )
+        attach_video_stream_methods(fake_video_obj, view_module)
+
+        monkeypatches = pytest.MonkeyPatch()
+        try:
+            monkeypatches.setattr(
+                view_module.VideoStreamView,
+                "_get_video_or_404",
+                staticmethod(lambda pk: fake_video_obj),
+            )
+            response = self.client.get(
+                "/api/media/videos/123/stream/?type=raw",
+                HTTP_RANGE="bytes=999-1000",
+            )
+        finally:
+            monkeypatches.undo()
+
+        assert response.status_code == 416
+        assert response["Content-Range"] == f"bytes */{len(payload)}"
+        assert response["Accept-Ranges"] == "bytes"

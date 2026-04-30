@@ -15,10 +15,12 @@ from endoreg_db.models import RawPdfFile
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.paths import to_storage_relative
+from endoreg_db.utils.paths import ANONYM_REPORT_DIR
 
 from endoreg_db.utils.storage_streaming import (
     add_cors_headers,
     build_partial_content_response,
+    field_file_is_local_encrypted_without_reader,
     field_file_size,
     iter_field_file_bytes,
     maybe_local_plaintext_path,
@@ -35,10 +37,6 @@ from endoreg_db.utils.cors import resolve_response_origin
 
 logger = logging.getLogger(__name__)
 
-# Compatibility alias for tests and legacy callers that patch imported path
-# constants; runtime path resolution still goes through path_utils helpers.
-ANONYM_REPORT_DIR = path_utils.ANONYM_REPORT_DIR
-
 if TYPE_CHECKING:
     from django.db.models.fields.files import FieldFile
 
@@ -49,6 +47,24 @@ def _processed_report_fallback_path(report: RawPdfFile) -> Path | None:
         / f"{report.pdf_hash}.pdf"
     )
     return path_utils.resolve_existing_protected_media_path(candidate)
+
+
+def _raw_report_fallback_path(report: RawPdfFile) -> Path | None:
+    pdf_hash = getattr(report, "pdf_hash", None)
+    if not pdf_hash:
+        return None
+
+    candidates = (
+        path_utils.EndoregPathsModel.from_environment().sensitive_report
+        / f"{pdf_hash}.pdf",
+        path_utils.EndoregPathsModel.from_environment().import_report
+        / f"{pdf_hash}.pdf",
+    )
+    for candidate in candidates:
+        resolved = path_utils.resolve_existing_protected_media_path(candidate)
+        if resolved is not None:
+            return resolved
+    return None
 
 
 def _pick_report_field_file(report: RawPdfFile, file_type: str):
@@ -69,7 +85,7 @@ def _pick_report_field_file(report: RawPdfFile, file_type: str):
     if field_file and getattr(field_file, "name", None):
         return field_file
 
-    raw_fallback_path = report.get_raw_file_path()
+    raw_fallback_path = _raw_report_fallback_path(report)
     if raw_fallback_path is not None and raw_fallback_path.exists():
         relative_name = to_storage_relative(raw_fallback_path)
         report.file.name = relative_name
@@ -89,7 +105,7 @@ def _recover_missing_report_field_path(
             return report.processed_file
         return None
 
-    raw_fallback_path = report.get_raw_file_path()
+    raw_fallback_path = _raw_report_fallback_path(report)
     if raw_fallback_path is not None and raw_fallback_path.exists():
         relative_name = to_storage_relative(raw_fallback_path)
         report.file.name = relative_name
@@ -205,6 +221,15 @@ class ReportStreamView(APIView):
             file_type = "raw"
 
         field_file = _pick_report_field_file(report, file_type)
+        if field_file_is_local_encrypted_without_reader(field_file):
+            logger.error(
+                "Refusing to stream encrypted report bytes without a decrypting "
+                "storage backend: id=%s type=%s path=%s",
+                report_id,
+                file_type,
+                getattr(field_file, "name", None),
+            )
+            raise Http404("Report file is not available")
         filename = Path(field_file.name).name
         content_type = mimetypes.guess_type(field_file.name)[0] or "application/pdf"
         recovered_from_fallback = False

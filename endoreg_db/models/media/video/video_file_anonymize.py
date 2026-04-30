@@ -1,5 +1,4 @@
 import logging
-import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple
 
@@ -7,9 +6,12 @@ import cv2
 from django.db import transaction
 from tqdm import tqdm
 
+from endoreg_db.import_files.file_storage.cleanup import safe_cleanup_staging_file
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.utils.hashs import get_video_hash
-from endoreg_db.utils.paths import STORAGE_DIR
+from endoreg_db.utils import paths as path_utils
+from endoreg_db.utils.file_operations import ensure_directory, safe_rmtree, safe_unlink_file
+from endoreg_db.utils.storage import save_local_file
 from endoreg_db.utils.validate_endo_roi import validate_endo_roi
 
 from ....utils.video.ffmpeg_wrapper import assemble_video_from_frames
@@ -361,10 +363,20 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> bool:
                 f"Failed to generate temporary anonymized frames for video {video.video_hash}."
             )
 
-        anonymized_video_path = video.get_target_anonymized_video_path()
-        anonymized_video_path.parent.mkdir(parents=True, exist_ok=True)
+        final_storage_path = video.get_target_anonymized_video_path()
+        anonymized_video_path = (
+            ensure_directory(
+                path_utils.EndoregPathsModel.from_environment().transcoding
+                / "legacy_anonymized_videos"
+            )
+            / final_storage_path.name
+        )
 
-        anonymized_video_path.unlink(missing_ok=True)
+        safe_cleanup_staging_file(
+            anonymized_video_path,
+            label="stale legacy anonymized video output",
+            missing_ok=True,
+        )
 
         fps = video.get_fps()
         if fps is None:
@@ -400,8 +412,18 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> bool:
             )
 
         video.processed_video_hash = new_processed_hash
-        video.processed_file.name = (
-            video.get_target_anonymized_video_path().relative_to(STORAGE_DIR).as_posix()
+        processed_relative_name = path_utils.to_storage_relative(final_storage_path)
+        save_local_file(
+            video.processed_file,
+            anonymized_video_path,
+            name=processed_relative_name,
+            save=False,
+            overwrite=True,
+        )
+        safe_cleanup_staging_file(
+            anonymized_video_path,
+            label="legacy anonymized video output after storage save",
+            missing_ok=True,
         )
 
         update_fields = [
@@ -411,7 +433,7 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> bool:
         ]
 
         if delete_original_raw:
-            original_raw_file_path_to_delete = video.get_raw_file_path()
+            original_raw_file_name_to_delete = getattr(video.raw_file, "name", "")
             original_raw_frame_dir_to_delete = video.get_frame_dir_path()
 
             video.raw_file.name = ""
@@ -421,7 +443,7 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> bool:
             transaction.on_commit(
                 lambda: _cleanup_raw_assets(
                     video_hash=video.video_hash,
-                    raw_file_path=original_raw_file_path_to_delete,
+                    raw_file_name=original_raw_file_name_to_delete,
                     raw_frame_dir=original_raw_frame_dir_to_delete,
                 )
             )
@@ -451,7 +473,11 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> bool:
                 video.video_hash,
                 anonymized_video_path,
             )
-            anonymized_video_path.unlink(missing_ok=True)
+            safe_cleanup_staging_file(
+                anonymized_video_path,
+                label="legacy anonymized video output after failure",
+                missing_ok=True,
+            )
         raise RuntimeError(f"Anonymization failed for video {video.video_hash}") from e
 
     finally:
@@ -461,11 +487,12 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> bool:
                 video.video_hash,
                 temp_anonym_frame_dir,
             )
-            shutil.rmtree(temp_anonym_frame_dir)
+            safe_rmtree(temp_anonym_frame_dir)
 
 
 def _cleanup_raw_assets(
     video_hash: "str",
+    raw_file_name: str = "",
     raw_file_path: Optional[Path] = None,
     raw_frame_dir: Optional[Path] = None,
 ):
@@ -499,18 +526,19 @@ def _cleanup_raw_assets(
             )
             video_file.get_or_create_state()
 
-        if raw_file_path and raw_file_path.exists():
-            logger.info("Deleting original raw video file: %s", raw_file_path)
-            raw_file_path.unlink()
-        elif raw_file_path:
-            logger.warning(
-                "Original raw video file %s not found for post-commit deletion.",
-                raw_file_path,
+        if raw_file_name:
+            logger.info(
+                "Deleting original raw video FieldFile through storage: %s",
+                raw_file_name,
             )
+            video_file.raw_file.storage.delete(raw_file_name)
+        elif raw_file_path and raw_file_path.exists():
+            logger.info("Deleting original raw video path: %s", raw_file_path)
+            safe_unlink_file(raw_file_path, missing_ok=True)
 
         if raw_frame_dir and raw_frame_dir.exists():
             logger.info("Deleting original raw frame directory: %s", raw_frame_dir)
-            shutil.rmtree(raw_frame_dir, ignore_errors=True)
+            safe_rmtree(raw_frame_dir)
         elif raw_frame_dir:
             logger.warning(
                 "Original raw frame directory %s not found for post-commit deletion.",

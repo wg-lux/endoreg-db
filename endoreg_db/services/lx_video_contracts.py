@@ -117,7 +117,14 @@ def build_lx_patient_video_file(
     strict_segments: bool = False,
     default_labelset_name: str | None = None,
 ) -> PatientVideoFile:
-    active_path = video.active_file_path
+    try:
+        active_file = video.active_file
+    except Exception as exc:
+        raise ValueError(f"Video {video.pk} has no active file") from exc
+    active_name = getattr(active_file, "name", None)
+    if not active_name:
+        raise ValueError(f"Video {video.pk} has no active file")
+    active_path = Path(active_name)
     lx_sensitive_meta = build_lx_sensitive_meta(video.sensitive_meta)
 
     patient_video_segments: dict[str, PVideoSegment] = {}
