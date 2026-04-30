@@ -394,6 +394,10 @@ def nginx_offload_enabled() -> bool:
     return env_bool("SERVE_WITH_NGINX", False)
 
 
+def raw_django_streaming_enabled() -> bool:
+    return env_bool("ENDOREG_ALLOW_RAW_DJANGO_STREAMING", False)
+
+
 def get_ffmpeg_transcode_timeout_seconds() -> int:
     return env_int(
         "FFMPEG_TRANSCODE_TIMEOUT_SECONDS",

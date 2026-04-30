@@ -16,6 +16,7 @@ from django.http import Http404, HttpResponse
 from rest_framework.views import APIView
 
 from endoreg_db.authz.permissions import PolicyPermission
+from endoreg_db.config.env import raw_django_streaming_enabled
 from endoreg_db.models import VideoFile
 from endoreg_db.models.media.video.storage_mode import (
     VideoStorageMode,
@@ -180,6 +181,22 @@ class VideoStreamView(APIView):
             )[0]
             or "video/mp4"
         )
+
+        if (
+            file_type == "raw"
+            and local_path is None
+            and not raw_django_streaming_enabled()
+        ):
+            logger.warning(
+                "Refusing raw Django video streaming fallback for id=%s; "
+                "streamable artifact is required",
+                getattr(video, "pk", None),
+            )
+            response = HttpResponse(status=409, content_type="text/plain")
+            response["X-Stream-State"] = (
+                stream_state or "raw_django_streaming_disabled"
+            )
+            return add_cors_headers(response, frontend_origin)
 
         try:
             file_size = (

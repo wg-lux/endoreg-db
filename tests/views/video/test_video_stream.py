@@ -327,13 +327,70 @@ class VideoStreamViewTests(TestCase):
                 "_get_video_or_404",
                 staticmethod(lambda pk: fake_video_obj),
             )
-            response = self.client.get("/api/media/videos/123/stream/?type=raw")
+            response = self.client.get("/api/media/videos/123/stream/?type=processed")
             body = b"".join(response.streaming_content)
         finally:
             monkeypatches.undo()
 
         assert response.status_code == 200
         assert response["X-Stream-State"] == "missing_streamable_artifact"
+        assert body == payload
+
+    def test_video_stream_rejects_raw_django_fallback_by_default(self):
+        from endoreg_db.views.video import video_stream as view_module
+
+        payload = b"\x00\x00\x00\x18ftypmp42"
+        fake_storage = FakeStorage(payload)
+        fake_field = StubFieldFile(fake_storage, "videos/test.mp4")
+        fake_video_obj = SimpleNamespace(
+            active_raw_file=fake_field,
+            processed_file=fake_field,
+            storage_mode=view_module.VideoFile.StorageMode.APP_ENCRYPTED,
+        )
+        attach_video_stream_methods(fake_video_obj, view_module)
+
+        monkeypatches = pytest.MonkeyPatch()
+        try:
+            monkeypatches.delenv("ENDOREG_ALLOW_RAW_DJANGO_STREAMING", raising=False)
+            monkeypatches.setattr(
+                view_module.VideoStreamView,
+                "_get_video_or_404",
+                staticmethod(lambda pk: fake_video_obj),
+            )
+            response = self.client.get("/api/media/videos/123/stream/?type=raw")
+        finally:
+            monkeypatches.undo()
+
+        assert response.status_code == 409
+        assert response["X-Stream-State"] == "raw_django_streaming_disabled"
+
+    def test_video_stream_allows_raw_django_fallback_when_explicitly_enabled(self):
+        from endoreg_db.views.video import video_stream as view_module
+
+        payload = b"\x00\x00\x00\x18ftypmp42"
+        fake_storage = FakeStorage(payload)
+        fake_field = StubFieldFile(fake_storage, "videos/test.mp4")
+        fake_video_obj = SimpleNamespace(
+            active_raw_file=fake_field,
+            processed_file=fake_field,
+            storage_mode=view_module.VideoFile.StorageMode.APP_ENCRYPTED,
+        )
+        attach_video_stream_methods(fake_video_obj, view_module)
+
+        monkeypatches = pytest.MonkeyPatch()
+        try:
+            monkeypatches.setenv("ENDOREG_ALLOW_RAW_DJANGO_STREAMING", "true")
+            monkeypatches.setattr(
+                view_module.VideoStreamView,
+                "_get_video_or_404",
+                staticmethod(lambda pk: fake_video_obj),
+            )
+            response = self.client.get("/api/media/videos/123/stream/?type=raw")
+            body = b"".join(response.streaming_content)
+        finally:
+            monkeypatches.undo()
+
+        assert response.status_code == 200
         assert body == payload
 
     def test_video_stream_falls_back_when_streamable_artifact_is_encrypted(self):
@@ -354,7 +411,7 @@ class VideoStreamViewTests(TestCase):
 
         streamable_path = (
             protected_media_root()
-            / fake_video_obj.raw_streamable_relative_path
+            / fake_video_obj.processed_streamable_relative_path
         )
         streamable_path.parent.mkdir(parents=True, exist_ok=True)
         streamable_path.write_bytes(LX_ENCRYPTED_MAGIC + b"ciphertext")
@@ -367,7 +424,7 @@ class VideoStreamViewTests(TestCase):
                 "_get_video_or_404",
                 staticmethod(lambda pk: fake_video_obj),
             )
-            response = self.client.get("/api/media/videos/123/stream/?type=raw")
+            response = self.client.get("/api/media/videos/123/stream/?type=processed")
             body = b"".join(response.streaming_content)
         finally:
             monkeypatches.undo()
@@ -524,7 +581,7 @@ class VideoStreamViewTests(TestCase):
                 staticmethod(lambda pk: fake_video_obj),
             )
             response = self.client.get(
-                "/api/media/videos/123/stream/?type=raw",
+                "/api/media/videos/123/stream/?type=processed",
                 HTTP_RANGE="bytes=999-1000",
             )
         finally:
