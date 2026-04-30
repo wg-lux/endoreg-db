@@ -1,5 +1,6 @@
 # Endoreg-db Agents.md
-
+## Tests
+Run tests from devenv shell -- pytest
 ## System Directive: Security And Storage Architecture
 
 You are acting as the Lead Security and Systems Architect for `endoreg_db` and
