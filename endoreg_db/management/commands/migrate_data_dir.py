@@ -684,18 +684,22 @@ class Command(BaseCommand):
                 destination_path=destination_path,
             )
             if video is not None:
+                processed_video_hash = getattr(video, "processed_video_hash", None)
+                processed_hash_mismatch = bool(
+                    processed_video_hash and processed_video_hash != content_hash
+                )
                 file_changed = self._store_file_field_if_needed(
                     instance=video,
                     field_name="processed_file",
                     relative_name=rel_path,
                     source_path=source_path,
                     payload_kind=PayloadKind.VIDEO_PROCESSED,
+                    force_upload_to=processed_hash_mismatch,
                 )
                 video_update_fields: dict[str, object] = {}
-                processed_video_hash = getattr(video, "processed_video_hash", None)
                 if not processed_video_hash:
                     video_update_fields["processed_video_hash"] = content_hash
-                elif processed_video_hash != content_hash:
+                elif processed_hash_mismatch:
                     logger.warning(
                         "Processed video hash mismatch during migration sync for "
                         "video=%s source=%s destination=%s existing=%s incoming=%s. "
@@ -872,12 +876,14 @@ class Command(BaseCommand):
         relative_name: str,
         source_path: Path,
         payload_kind: PayloadKind,
+        force_upload_to: bool = False,
     ) -> bool:
         field_file = getattr(instance, field_name)
         save_name, storage_name = cls._field_storage_names(
             instance=instance,
             field_file=field_file,
             relative_name=relative_name,
+            force_upload_to=force_upload_to,
         )
         current_name = getattr(field_file, "name", None)
         if requires_app_encrypted_storage(payload_kind):
@@ -905,6 +911,7 @@ class Command(BaseCommand):
         instance: object,
         field_file: object,
         relative_name: str,
+        force_upload_to: bool = False,
     ) -> tuple[str, str]:
         requested_name = Path(relative_name).as_posix()
         field = getattr(field_file, "field", None)
@@ -918,6 +925,20 @@ class Command(BaseCommand):
                 save_name = Path(requested_name).name
             elif requested_name.startswith(prefix):
                 save_name = requested_name[len(prefix) :]
+
+        if force_upload_to and field is not None:
+            try:
+                storage_name = field.generate_filename(instance, save_name)
+            except Exception as exc:
+                logger.warning(
+                    "Could not derive forced storage name for %s from %s: %s",
+                    field_file,
+                    save_name,
+                    exc,
+                )
+                storage_name = save_name
+            normalized_storage_name = Path(storage_name).as_posix()
+            return normalized_storage_name, normalized_storage_name
 
         if field is None or "/" in save_name or "\\" in save_name:
             return save_name, save_name

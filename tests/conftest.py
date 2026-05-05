@@ -1473,12 +1473,23 @@ def mock_storage(tmp_path, monkeypatch):
     from django.core.files.storage import FileSystemStorage
 
     monkeypatch.setattr(utils_module, "data_paths", fake_paths_model)
-    monkeypatch.setattr(report_create_module, "STORAGE_DIR", fake_paths_model.storage)
     monkeypatch.setattr(
-        report_create_module, "SENSITIVE_REPORT_DIR", fake_paths_model.sensitive_report
+        report_create_module,
+        "STORAGE_DIR",
+        fake_paths_model.storage,
+        raising=False,
     )
     monkeypatch.setattr(
-        report_create_module, "IMPORT_REPORT_DIR", fake_paths_model.import_report
+        report_create_module,
+        "SENSITIVE_REPORT_DIR",
+        fake_paths_model.sensitive_report,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        report_create_module,
+        "IMPORT_REPORT_DIR",
+        fake_paths_model.import_report,
+        raising=False,
     )
     monkeypatch.setattr(
         raw_pdf_module, "IMPORT_REPORT_DIR", fake_paths_model.import_report
@@ -1487,7 +1498,10 @@ def mock_storage(tmp_path, monkeypatch):
         raw_pdf_module, "SENSITIVE_REPORT_DIR", fake_paths_model.sensitive_report
     )
     monkeypatch.setattr(
-        report_stream_module, "ANONYM_REPORT_DIR", fake_paths_model.anonym_report
+        report_stream_module,
+        "ANONYM_REPORT_DIR",
+        fake_paths_model.anonym_report,
+        raising=False,
     )
     monkeypatch.setattr(
         video_create_module, "IMPORT_VIDEO_DIR", fake_paths_model.import_video

@@ -2,6 +2,7 @@ import logging
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 from django.db import transaction
+from django.db.models import Q
 
 from endoreg_db.helpers.download_segmentation_model import download_segmentation_model
 
@@ -19,7 +20,7 @@ if TYPE_CHECKING:
 def _pipe_1(
     video_file: "VideoFile",
     model_name: str,
-    model_meta_version: Optional[int] = None,
+    model_meta_version: Optional[int | str] = None,
     delete_frames_after: bool = False,
     ocr_frame_fraction: float = 0.001,
     ocr_cap: int = 10,
@@ -127,9 +128,16 @@ def _pipe_1(
             logger.info("Pipe 1: Set initial_prediction_completed state to True.")
 
             logger.info(f"Pipe 1: Sequences returned from prediction: {sequences}")
+            has_segment_ranges = any(
+                bool(sequence_list) for sequence_list in sequences.values()
+            )
             if not sequences:
                 logger.warning(
                     "Pipe 1: Prediction returned empty sequences dictionary. No LabelVideoSegments will be created."
+                )
+            elif not has_segment_ranges:
+                logger.warning(
+                    "Pipe 1: Prediction returned labels but no segment ranges. No LabelVideoSegments will be created."
                 )
 
             # 4. Create LabelVideoSegments
@@ -159,15 +167,48 @@ def _pipe_1(
 
                 video_file.sequences = sequences
                 video_file.save(update_fields=["sequences"])
-                state.lvs_created = True
+                current_prediction_segment_count = (
+                    LabelVideoSegment.objects.filter(
+                        video_file=video_file,
+                        prediction_meta=video_prediction_meta,
+                    )
+                    .filter(Q(source=prediction_source) | Q(source__isnull=True))
+                    .distinct()
+                    .count()
+                )
+                frontend_prediction_segment_count = (
+                    LabelVideoSegment.objects.filter(video_file=video_file)
+                    .filter(
+                        Q(prediction_meta__isnull=False) | Q(source=prediction_source)
+                    )
+                    .distinct()
+                    .count()
+                )
+                if has_segment_ranges and current_prediction_segment_count == 0:
+                    state.lvs_created = False
+                    state.save(update_fields=["lvs_created"])
+                    logger.error(
+                        "Pipe 1 failed: prediction returned segment ranges for video %s, "
+                        "but no prediction LabelVideoSegment rows were materialized for "
+                        "prediction meta %s. The frontend KI segment view loads only "
+                        "LabelVideoSegments with prediction_meta or source='prediction'.",
+                        video_file.video_hash,
+                        video_prediction_meta.pk,
+                    )
+                    return False
+
+                state.lvs_created = (
+                    frontend_prediction_segment_count > 0 or not has_segment_ranges
+                )
                 state.save(update_fields=["lvs_created"])
-                logger.info("Pipe 1: Set lvs_created state to True.")
-                logger.info("Pipe 1: LabelVideoSegment creation complete.")
-                lvs_count_after = LabelVideoSegment.objects.filter(
-                    video_file=video_file
-                ).count()
                 logger.info(
-                    f"Pipe 1: Found {lvs_count_after} LabelVideoSegments after conversion attempt."
+                    "Pipe 1: Set lvs_created state to %s.",
+                    state.lvs_created,
+                )
+                logger.info("Pipe 1: LabelVideoSegment creation complete.")
+                logger.info(
+                    "Pipe 1: Found %d prediction LabelVideoSegments for frontend loading after conversion attempt.",
+                    frontend_prediction_segment_count,
                 )
             except VideoPredictionMeta.DoesNotExist:
                 logger.error(

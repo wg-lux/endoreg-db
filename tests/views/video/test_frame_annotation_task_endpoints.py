@@ -16,6 +16,7 @@ from endoreg_db.models import (
 from endoreg_db.views.video.ai import (
     FrameAnnotationRandomTaskView,
     FrameAnnotationSkipView,
+    label_set_list,
 )
 
 
@@ -61,6 +62,24 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
             version=1,
         )
         self.label_set.labels.add(self.target_label, self.filter_label, self.label)
+
+    def test_label_set_list_returns_frame_annotation_label_groups(self):
+        request = self.factory.get("/api/media/videos/label-sets/list/")
+
+        response = label_set_list(request)
+
+        self.assertEqual(response.status_code, 200)
+        label_groups = list(response.data)
+        label_group = next(
+            group for group in label_groups if group["id"] == self.label_set.pk
+        )
+        self.assertEqual(label_group["name"], self.label_set.name)
+        self.assertEqual(label_group["version"], self.label_set.version)
+        self.assertEqual(label_group["label_count"], 3)
+        self.assertEqual(
+            [label["name"] for label in label_group["labels"]],
+            sorted([self.target_label.name, self.filter_label.name, self.label.name]),
+        )
 
     def test_random_task_returns_available_frame(self):
         request = self.factory.get(

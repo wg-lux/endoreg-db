@@ -90,6 +90,49 @@ def test_convert_sequences_skips_single_frame_segments():
 
 
 @pytest.mark.django_db
+def test_pipe_1_fails_when_prediction_ranges_do_not_materialize(monkeypatch):
+    center = Center.objects.create(
+        name="pipe-materialization-center", display_name="Pipe Materialization Center"
+    )
+    video = VideoFile.objects.create(center=center, video_hash="pipe-materialization")
+    state = video.get_or_create_state()
+
+    labelset = LabelSet.objects.create(name="pipe-materialization-set", version=1)
+    ai_model = AiModel.objects.create(name="pipe-materialization-model")
+    model_meta = ModelMeta.objects.create(
+        name="pipe-materialization-meta",
+        version="1",
+        model=ai_model,
+        labelset=labelset,
+    )
+    ai_model.active_meta = model_meta
+    ai_model.save(update_fields=["active_meta"])
+    VideoPredictionMeta.objects.create(model_meta=model_meta, video_file=video)
+
+    def mark_frames_extracted(**_kwargs):
+        state.frames_extracted = True
+        state.save(update_fields=["frames_extracted"])
+
+    monkeypatch.setattr(video, "refresh_from_db", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(video, "update_video_meta", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(video, "extract_frames", mark_frames_extracted)
+    monkeypatch.setattr(video, "update_text_metadata", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        video,
+        "predict_video",
+        lambda **_kwargs: {"missing-label": [(1, 5)]},
+    )
+
+    result = video.pipe_1(model_name=ai_model.name, delete_frames_after=False)
+
+    assert result is False
+    state.refresh_from_db()
+    assert state.initial_prediction_completed is True
+    assert state.lvs_created is False
+    assert LabelVideoSegment.objects.filter(video_file=video).count() == 0
+
+
+@pytest.mark.django_db
 def test_get_outside_helpers_return_expected_frames(tmp_path):
     center = Center.objects.create(name="outside-center", display_name="Outside Center")
     video = VideoFile.objects.create(center=center, video_hash="outside-hash")

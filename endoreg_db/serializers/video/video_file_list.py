@@ -4,7 +4,7 @@ import logging
 
 from rest_framework import serializers
 
-from endoreg_db.models import VideoFile
+from endoreg_db.models import ImageClassificationAnnotation, VideoFile
 from endoreg_db.serializers.label_video_segment.label_video_segment import (
     LabelVideoSegmentTimelineSerializer,
 )
@@ -27,6 +27,7 @@ class VideoFileListSerializer(serializers.ModelSerializer):
     assignedUser = serializers.SerializerMethodField()
     anonymized = serializers.SerializerMethodField()
     segment_annotations_validated = serializers.SerializerMethodField()
+    validated_annotators = serializers.SerializerMethodField()
     segments = LabelVideoSegmentTimelineSerializer(
         many=True, read_only=True, source="label_video_segments"
     )
@@ -40,6 +41,7 @@ class VideoFileListSerializer(serializers.ModelSerializer):
             "assignedUser",
             "anonymized",
             "segment_annotations_validated",
+            "validated_annotators",
             "segments",
             "export_segments_by_video",
         ]
@@ -128,3 +130,23 @@ class VideoFileListSerializer(serializers.ModelSerializer):
             return False
 
         return bool(getattr(state, "segment_annotations_validated", False))
+
+    def get_validated_annotators(self, obj: VideoFile) -> list[str]:
+        """
+        Return annotators that already have frame annotations on a validated video.
+
+        This is a dropdown hint for lx-annotate restart workflows: users should
+        see when another annotator's validated annotation track already exists.
+        """
+        if not self.get_segment_annotations_validated(obj):
+            return []
+
+        annotators = (
+            ImageClassificationAnnotation.objects.filter(frame__video=obj)
+            .exclude(annotator__isnull=True)
+            .exclude(annotator__exact="")
+            .order_by("annotator")
+            .values_list("annotator", flat=True)
+            .distinct()
+        )
+        return [annotator for annotator in annotators if annotator]

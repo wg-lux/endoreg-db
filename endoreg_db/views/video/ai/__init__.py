@@ -1,4 +1,12 @@
-from .label import label_list, add_label, delete_label, update_label
+from .label import (
+    add_label,
+    delete_label,
+    label_list,
+    label_set_list,
+    prediction_model_list,
+    rerun_prediction_segments,
+    update_label,
+)
 from .frame_annotations import (
     FrameAnnotationBulkUpsertView,
     FrameAnnotationRandomTaskView,
@@ -7,6 +15,9 @@ from .frame_annotations import (
 
 __all__ = [
     "label_list",
+    "label_set_list",
+    "prediction_model_list",
+    "rerun_prediction_segments",
     "add_label",
     "delete_label",
     "update_label",

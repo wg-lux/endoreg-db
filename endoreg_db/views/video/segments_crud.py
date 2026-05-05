@@ -187,6 +187,17 @@ def _query_param_as_bool(value, *, default: bool = False) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _requested_annotator_from_payload(request) -> str | None:
+    payload = getattr(request, "data", {})
+    if not isinstance(payload, Mapping):
+        return None
+    annotator = payload.get("annotator")
+    if annotator is None:
+        return None
+    normalized = str(annotator).strip()
+    return normalized or None
+
+
 def _segment_snapshot(segment: LabelVideoSegment) -> dict[str, Any]:
     model_meta = segment.get_model_meta()
     return {
@@ -947,6 +958,7 @@ def video_segment_validate(request, pk: int, segment_id: int):
         information_source_name = request.data.get(
             "information_source_name", "manual_annotation"
         )
+        annotation_annotator = _requested_annotator_from_payload(request)
 
         # Optional: update times (seconds) before validation
         start_time = request.data.get("start_time")
@@ -974,7 +986,7 @@ def video_segment_validate(request, pk: int, segment_id: int):
                 information_source_name=information_source_name,
             )
             try:
-                segment.generate_annotations()
+                segment.generate_annotations(annotator=annotation_annotator)
                 segment_id = segment.pk
             except Exception as exc:
                 logger.warning(
@@ -1005,6 +1017,7 @@ def video_segment_validate(request, pk: int, segment_id: int):
                         "video_id": video.pk,
                         "label": segment.label.name if segment.label else None,
                         "information_source": information_source_name,
+                        "annotator": annotation_annotator,
                     },
                 )
 
@@ -1082,6 +1095,7 @@ def video_segments_validate_bulk(request, pk: int):
     information_source_name = request.data.get(
         "information_source_name", "manual_annotation"
     )
+    annotation_annotator = _requested_annotator_from_payload(request)
     if notes:
         logger.info(f"Segment Validiert ${notes}")
     if not segment_ids:
@@ -1157,9 +1171,9 @@ def video_segments_validate_bulk(request, pk: int):
                         if is_validated
                         else str(None),
                     )
+                    segment_id = segment.pk
                     try:
-                        segment.generate_annotations()
-                        segment_id = segment.pk
+                        segment.generate_annotations(annotator=annotation_annotator)
                     except Exception as exc:
                         logger.warning(
                             "Failed to generate annotations while bulk validating segment %s: %s",
@@ -1191,6 +1205,7 @@ def video_segments_validate_bulk(request, pk: int):
                                 "video_id": pk,
                                 "bulk": True,
                                 "information_source": information_source_name,
+                                "annotator": annotation_annotator,
                             },
                         )
 

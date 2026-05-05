@@ -514,11 +514,11 @@ class LabelVideoSegment(models.Model):
         )
         return frames_without_annotation
 
-    def generate_annotations(self):
+    def generate_annotations(self, annotator: str | None = None):
         """
         Creates image classification annotations for all frames in the segment if the segment is linked to a prediction, avoiding duplicates.
 
-        Annotations are generated only if the segment has associated prediction metadata, model metadata, and label. Existing annotations for the same frame, label, model, and information source are not duplicated. Uses bulk creation for efficiency.
+        Annotations are generated only if the segment has associated prediction metadata, model metadata, and label. Existing annotations for the same frame, label, model, information source, and explicit annotator are not duplicated. Uses bulk creation for efficiency.
         """
 
         # TODO For annotations from the frontend this should not be an exit criterion
@@ -536,11 +536,17 @@ class LabelVideoSegment(models.Model):
             information_source, _ = InformationSource.objects.get_or_create(
                 name="prediction"
             )
+        normalized_annotator = None
+        if annotator is not None:
+            normalized_annotator = str(annotator).strip()
         try:
             model_meta = self.get_model_meta()
         except Exception as e:
             model_meta = None
-            return logger.warning(f"No exception found for {self.label.name} {e}")
+            label_name = (
+                self.label.name if self.label is not None else "<missing-label>"
+            )
+            return logger.warning(f"No exception found for {label_name} {e}")
         label = self.label
 
         if not model_meta or not label:
@@ -548,6 +554,7 @@ class LabelVideoSegment(models.Model):
                 "Missing model_meta or label for segment %s. Skipping annotation generation.",
                 self.pk,
             )
+            return
 
         frames_queryset = self.get_frames().only("id")
         if not isinstance(frames_queryset, models.QuerySet):
@@ -556,12 +563,18 @@ class LabelVideoSegment(models.Model):
             )
             return
 
+        existing_annotation_filters = {
+            "frame_id__in": frames_queryset.values("id"),
+            "label": label,
+            "model_meta": model_meta,
+            "information_source": information_source,
+        }
+        if normalized_annotator is not None:
+            existing_annotation_filters["annotator"] = normalized_annotator
+
         existing_annotation_frame_ids = set(
             ImageClassificationAnnotation.objects.filter(
-                frame_id__in=frames_queryset.values("id"),
-                label=label,
-                model_meta=model_meta,
-                information_source=information_source,
+                **existing_annotation_filters
             ).values_list("frame_id", flat=True)
         )
 
@@ -575,15 +588,16 @@ class LabelVideoSegment(models.Model):
             total=frames_to_annotate.count(),
             desc=f"Preparing annotations for segment {self.pk} ({label.name})",
         ):
-            annotations_to_create.append(
-                ImageClassificationAnnotation(
-                    frame=frame,
-                    label=label,
-                    model_meta=model_meta,
-                    value=True,
-                    information_source=information_source,
-                )
+            annotation = ImageClassificationAnnotation(
+                frame=frame,
+                label=label,
+                model_meta=model_meta,
+                value=True,
+                information_source=information_source,
             )
+            if normalized_annotator is not None:
+                annotation.annotator = normalized_annotator
+            annotations_to_create.append(annotation)
 
         if annotations_to_create:
             logger.info(

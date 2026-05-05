@@ -51,6 +51,9 @@ from endoreg_db.views.video.ai import (
     FrameAnnotationRandomTaskView,
     FrameAnnotationSkipView,
     label_list,
+    label_set_list,
+    prediction_model_list,
+    rerun_prediction_segments,
 )
 from endoreg_db.views.video.correction import (
     VideoApplyMaskView,
@@ -58,7 +61,6 @@ from endoreg_db.views.video.correction import (
     VideoRemoveFramesView,
 )
 from endoreg_db.views.video.video_metadata import VideoMetadataStatsView
-
 
 # Simplified Meta and Validation Endpoints
 
@@ -172,6 +174,21 @@ urlpatterns = [
         name="video-remove-frames",
     ),
     path("media/videos/labels/list/", label_list, name="get_lvs_list"),
+    path(
+        "media/videos/label-sets/list/",
+        label_set_list,
+        name="video-label-set-list",
+    ),
+    path(
+        "media/videos/prediction-models/list/",
+        prediction_model_list,
+        name="video-prediction-model-list",
+    ),
+    path(
+        "media/videos/<int:pk>/segments/rerun-predictions/",
+        rerun_prediction_segments,
+        name="video-segments-rerun-predictions",
+    ),
     path(
         "media/annotations/frames/bulk-upsert/",
         FrameAnnotationBulkUpsertView.as_view(),

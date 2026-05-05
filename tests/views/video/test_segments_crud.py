@@ -14,10 +14,12 @@ from endoreg_db.models import (
 )
 from endoreg_db.services.video_post_validation_jobs import JobDispatchResult
 from endoreg_db.serializers import LabelVideoSegmentSerializer
+from endoreg_db.serializers.video.video_file_list import VideoFileListSerializer
 from endoreg_db.views.video.segments_crud import (
     ensure_prediction_segment_annotations_for_video,
     import_prediction_segments_to_manual,
     video_segments_bulk_mutation,
+    video_segments_validate_bulk,
     video_segment_validate,
     video_segments_by_video,
 )
@@ -177,6 +179,54 @@ class LabelVideoSegmentSerializerTest(TestCase):
             # Verify data integrity just in case
             self.assertEqual(len(data["frames"]), 50)
             self.assertTrue(len(data["frames"][0]["all_classifications"]) > 0)
+
+    def test_video_list_serializer_exposes_validated_annotators_only_after_validation(
+        self,
+    ):
+        frames = [
+            Frame(video=self.video, frame_number=frame_number)
+            for frame_number in range(3)
+        ]
+        Frame.objects.bulk_create(frames)
+        saved_frames = list(Frame.objects.filter(video=self.video).order_by("id"))
+        ImageClassificationAnnotation.objects.bulk_create(
+            [
+                ImageClassificationAnnotation(
+                    frame=saved_frames[0],
+                    label=self.label_polyp,
+                    information_source=self.source,
+                    value=True,
+                    annotator="reviewer-two",
+                ),
+                ImageClassificationAnnotation(
+                    frame=saved_frames[1],
+                    label=self.label_polyp,
+                    information_source=self.source,
+                    value=True,
+                    annotator="reviewer-one",
+                ),
+                ImageClassificationAnnotation(
+                    frame=saved_frames[2],
+                    label=self.label_polyp,
+                    information_source=self.source,
+                    value=True,
+                    annotator="",
+                ),
+            ]
+        )
+
+        serializer = VideoFileListSerializer(self.video)
+        self.assertEqual(serializer.data["validated_annotators"], [])
+
+        state = self.video.get_or_create_state()
+        state.segment_annotations_validated = True
+        state.save(update_fields=["segment_annotations_validated", "date_modified"])
+
+        serializer = VideoFileListSerializer(self.video)
+        self.assertEqual(
+            serializer.data["validated_annotators"],
+            ["reviewer-one", "reviewer-two"],
+        )
 
 
 class PredictionSegmentAnnotationsRouteTest(TestCase):
@@ -422,6 +472,46 @@ class VideoSegmentValidateAsyncSafetyTest(TestCase):
             .values_list("frame__frame_number", flat=True)
         )
         self.assertEqual(after, before)
+
+    def test_bulk_validation_passes_explicit_annotator_to_annotation_generation(self):
+        request = self.factory.post(
+            f"/api/media/videos/{self.video.pk}/segments/validate-bulk/",
+            {
+                "segment_ids": [self.segment.pk],
+                "segments": [
+                    {
+                        "id": self.segment.pk,
+                        "start_time": self.segment.start_time,
+                        "end_time": self.segment.end_time,
+                    }
+                ],
+                "is_validated": True,
+                "information_source_name": "manual_annotation",
+                "annotator": "reviewer-two",
+            },
+            format="json",
+        )
+
+        with (
+            patch.object(LabelVideoSegment, "generate_annotations") as mock_generate,
+            patch(
+                "endoreg_db.views.video.segments_crud.dispatch_video_post_validation_rebuild",
+                return_value=JobDispatchResult(
+                    task_id="job-456",
+                    mode="thread",
+                    status="queued",
+                    video_id=self.video.pk,
+                ),
+            ),
+            patch(
+                "endoreg_db.views.video.segments_crud.record_operation",
+                return_value=None,
+            ),
+        ):
+            response = video_segments_validate_bulk(request, pk=self.video.pk)
+
+        self.assertEqual(response.status_code, 200)
+        mock_generate.assert_called_once_with(annotator="reviewer-two")
 
 
 class VideoSegmentsSourceKindFilterTest(TestCase):

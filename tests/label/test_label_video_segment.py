@@ -327,6 +327,39 @@ class LabelVideoSegmentModelTest(TestCase):
         ).count()
         self.assertEqual(idempotent_count, self.segment_frame_count)
 
+    def test_generate_annotations_is_scoped_by_explicit_annotator(self):
+        """Different annotators can restart annotation without reusing another user's lock."""
+        self.segment.generate_annotations(annotator="reviewer-one")
+        self.segment.generate_annotations(annotator="reviewer-two")
+
+        reviewer_one_count = ImageClassificationAnnotation.objects.filter(
+            frame__video=self.video_file,
+            label=self.segment.label,
+            model_meta=self.prediction_meta.model_meta,
+            information_source=self.source_prediction,
+            annotator="reviewer-one",
+        ).count()
+        reviewer_two_count = ImageClassificationAnnotation.objects.filter(
+            frame__video=self.video_file,
+            label=self.segment.label,
+            model_meta=self.prediction_meta.model_meta,
+            information_source=self.source_prediction,
+            annotator="reviewer-two",
+        ).count()
+
+        self.assertEqual(reviewer_one_count, self.segment_frame_count)
+        self.assertEqual(reviewer_two_count, self.segment_frame_count)
+
+        self.segment.generate_annotations(annotator="reviewer-two")
+        idempotent_count = ImageClassificationAnnotation.objects.filter(
+            frame__video=self.video_file,
+            label=self.segment.label,
+            model_meta=self.prediction_meta.model_meta,
+            information_source=self.source_prediction,
+            annotator="reviewer-two",
+        ).count()
+        self.assertEqual(idempotent_count, self.segment_frame_count)
+
     def test_get_annotations(self):
         """Test retrieving annotations associated with the segment."""
         self.assertEqual(self.segment.all_frame_annotations.count(), 0)

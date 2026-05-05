@@ -34,13 +34,10 @@ def sha256_file(path: Path | FieldFile, chunk_size: int = 1024 * 1024) -> str:
     """
     Compute SHA-256 for either a real filesystem Path or a Django FieldFile.
 
-    For FieldFile, this hashes the plaintext/decrypted local materialization,
-    not the encrypted storage blob. FieldFile-like test doubles are supported
-    through the same decrypted range reader used by streaming.
+    For FieldFile, this hashes the plaintext/decrypted content, not the
+    encrypted storage blob. FieldFile-like test doubles are supported through
+    the same decrypted range reader used by streaming.
     """
-    if isinstance(path, FieldFile):
-        with ensure_local_file(path) as local_path:
-            return sha256_file(Path(local_path), chunk_size)
     if hasattr(path, "storage") and getattr(path, "name", None):
         from endoreg_db.utils.storage_streaming import (
             field_file_size,
@@ -59,6 +56,10 @@ def sha256_file(path: Path | FieldFile, chunk_size: int = 1024 * 1024) -> str:
         ):
             h.update(chunk)
         return h.hexdigest()
+
+    if isinstance(path, FieldFile):
+        with ensure_local_file(path) as local_path:
+            return sha256_file(Path(local_path), chunk_size)
 
     path_obj = Path(path)
 

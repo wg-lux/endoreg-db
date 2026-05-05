@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import errno
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -14,7 +15,37 @@ from endoreg_db.utils.file_operations import (
     ensure_directory,
     safe_rmtree,
     safe_unlink_file,
+    sha256_file,
 )
+
+
+class _StreamingStorage:
+    def __init__(self, payload: bytes):
+        self.payload = payload
+        self.range_calls: list[tuple[str, int, int, int]] = []
+
+    def get_plaintext_size(self, name: str) -> int:
+        return len(self.payload)
+
+    def iter_decrypted_range(
+        self,
+        name: str,
+        *,
+        start: int,
+        end: int,
+        chunk_size: int,
+    ):
+        self.range_calls.append((name, start, end, chunk_size))
+        yield self.payload[start : end + 1]
+
+    def open(self, *args, **kwargs):
+        raise AssertionError("sha256_file should stream FieldFile bytes")
+
+
+class _StreamingFieldFile:
+    def __init__(self, payload: bytes, name: str = "processed/video.mp4"):
+        self.name = name
+        self.storage = _StreamingStorage(payload)
 
 
 def _file_operation_events(caplog) -> list[dict[str, object]]:
@@ -23,6 +54,19 @@ def _file_operation_events(caplog) -> list[dict[str, object]]:
         for record in caplog.records
         if record.name == "endoreg_db.utils.file_operations"
         and record.message.startswith("{")
+    ]
+
+
+@pytest.mark.unit
+def test_sha256_file_hashes_field_file_through_streaming_storage():
+    payload = b"streamed plaintext payload"
+    field_file = _StreamingFieldFile(payload)
+
+    digest = sha256_file(field_file)
+
+    assert digest == hashlib.sha256(payload).hexdigest()
+    assert field_file.storage.range_calls == [
+        ("processed/video.mp4", 0, len(payload) - 1, 1024 * 1024)
     ]
 
 
