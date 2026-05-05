@@ -17,6 +17,7 @@ from endoreg_db.serializers import LabelVideoSegmentSerializer
 from endoreg_db.views.video.segments_crud import (
     ensure_prediction_segment_annotations_for_video,
     import_prediction_segments_to_manual,
+    video_segments_bulk_mutation,
     video_segment_validate,
     video_segments_by_video,
 )
@@ -476,6 +477,188 @@ class VideoSegmentsSourceKindFilterTest(TestCase):
         self.assertEqual(response.data[0]["id"], self.prediction_segment.pk)
         self.assertEqual(response.data[0]["segment_origin"], "prediction")
         self.assertEqual(response.data[0]["source_name"], "prediction")
+
+
+class VideoSegmentsBulkMutationTest(TestCase):
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        self.center = Center.objects.create(name="Bulk Segment Center")
+        self.video = VideoFile.objects.create(
+            center=self.center,
+            video_hash="bulk-segments-video",
+            original_file_name="bulk_segments.mp4",
+            fps=25.0,
+            frame_count=200,
+        )
+        self.label_a = Label.objects.create(name="bulk-outside")
+        self.label_b = Label.objects.create(name="bulk-polyp")
+        self.manual_source = InformationSource.objects.create(name="manual_annotation")
+        self.update_segment = LabelVideoSegment.objects.create(
+            video_file=self.video,
+            label=self.label_a,
+            start_frame_number=10,
+            end_frame_number=20,
+            source=self.manual_source,
+        )
+        self.delete_segment = LabelVideoSegment.objects.create(
+            video_file=self.video,
+            label=self.label_b,
+            start_frame_number=30,
+            end_frame_number=40,
+            source=self.manual_source,
+        )
+        self.frames = [
+            Frame.objects.create(
+                video=self.video,
+                frame_number=frame_number,
+                relative_path=f"frame_{frame_number:07d}.jpg",
+            )
+            for frame_number in [*range(10, 20), *range(30, 40)]
+        ]
+        ImageClassificationAnnotation.objects.bulk_create(
+            [
+                ImageClassificationAnnotation(
+                    frame=frame,
+                    label=self.label_a if frame.frame_number < 20 else self.label_b,
+                    value=True,
+                    information_source=self.manual_source,
+                )
+                for frame in self.frames
+            ]
+        )
+        state = self.video.get_or_create_state()
+        state.segment_annotations_created = True
+        state.segment_annotations_validated = True
+        state.save(
+            update_fields=[
+                "segment_annotations_created",
+                "segment_annotations_validated",
+            ]
+        )
+
+    def test_bulk_mutation_defers_annotation_sync_and_marks_state_stale(self):
+        request = self.factory.post(
+            f"/api/media/videos/{self.video.pk}/segments/bulk/",
+            {
+                "defer_annotation_sync": True,
+                "creates": [
+                    {
+                        "client_id": -1,
+                        "label_id": self.label_a.pk,
+                        "start_time": 2.0,
+                        "end_time": 3.0,
+                        "export_segment": True,
+                    }
+                ],
+                "updates": [
+                    {
+                        "id": self.update_segment.pk,
+                        "label_id": self.label_b.pk,
+                        "start_time": 1.0,
+                        "end_time": 1.5,
+                        "export_segment": True,
+                    }
+                ],
+                "deletes": [self.delete_segment.pk],
+            },
+            format="json",
+        )
+
+        with patch(
+            "endoreg_db.views.video.segments_crud._sync_frame_annotations"
+        ) as sync:
+            response = video_segments_bulk_mutation(request, pk=self.video.pk)
+
+        self.assertEqual(response.status_code, 200)
+        sync.assert_not_called()
+        self.assertEqual(response.data["created_count"], 1)
+        self.assertEqual(response.data["updated_count"], 1)
+        self.assertEqual(response.data["deleted_count"], 1)
+        self.assertEqual(response.data["created"][0]["client_id"], -1)
+        self.assertEqual(
+            response.data["created"][0]["segment"]["label_id"], self.label_a.pk
+        )
+        self.assertEqual(response.data["deleted"], [self.delete_segment.pk])
+
+        created_id = response.data["created"][0]["segment"]["id"]
+        created_segment = LabelVideoSegment.objects.get(pk=created_id)
+        self.assertEqual(created_segment.start_frame_number, 50)
+        self.assertEqual(created_segment.end_frame_number, 75)
+        self.assertTrue(created_segment.export_segment)
+
+        self.update_segment.refresh_from_db()
+        self.assertEqual(self.update_segment.label_id, self.label_b.pk)
+        self.assertEqual(self.update_segment.start_frame_number, 25)
+        self.assertEqual(self.update_segment.end_frame_number, 38)
+        self.assertTrue(self.update_segment.export_segment)
+        self.assertFalse(
+            LabelVideoSegment.objects.filter(pk=self.delete_segment.pk).exists()
+        )
+        self.assertEqual(
+            ImageClassificationAnnotation.objects.filter(
+                frame__video=self.video,
+                frame__frame_number__gte=10,
+                frame__frame_number__lt=20,
+                label=self.label_a,
+                information_source=self.manual_source,
+            ).count(),
+            0,
+        )
+        self.assertEqual(
+            ImageClassificationAnnotation.objects.filter(
+                frame__video=self.video,
+                frame__frame_number__gte=30,
+                frame__frame_number__lt=40,
+                label=self.label_b,
+                information_source=self.manual_source,
+            ).count(),
+            0,
+        )
+
+        self.video.refresh_from_db()
+        state = self.video.get_or_create_state()
+        self.assertFalse(state.segment_annotations_created)
+        self.assertFalse(state.segment_annotations_validated)
+
+    def test_bulk_mutation_rolls_back_on_invalid_update(self):
+        request = self.factory.post(
+            f"/api/media/videos/{self.video.pk}/segments/bulk/",
+            {
+                "defer_annotation_sync": True,
+                "creates": [
+                    {
+                        "client_id": -1,
+                        "label_id": self.label_a.pk,
+                        "start_time": 4.0,
+                        "end_time": 5.0,
+                    }
+                ],
+                "updates": [
+                    {
+                        "id": self.update_segment.pk,
+                        "start_time": 2.0,
+                        "end_time": 1.0,
+                    }
+                ],
+                "deletes": [],
+            },
+            format="json",
+        )
+
+        response = video_segments_bulk_mutation(request, pk=self.video.pk)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            LabelVideoSegment.objects.filter(
+                video_file=self.video,
+                start_frame_number=100,
+                end_frame_number=125,
+            ).count(),
+            0,
+        )
+        self.update_segment.refresh_from_db()
+        self.assertEqual(self.update_segment.start_frame_number, 10)
+        self.assertEqual(self.update_segment.end_frame_number, 20)
 
 
 class ImportPredictionSegmentsToManualTest(TestCase):

@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Optional, Type, Union
 
 from endoreg_db.utils.file_operations import get_content_hash_filename
 from endoreg_db.utils.hashs import get_pdf_hash
-from endoreg_db.utils.paths import IMPORT_REPORT_DIR, SENSITIVE_REPORT_DIR, STORAGE_DIR
 from endoreg_db.utils.storage import save_local_file
 
 if TYPE_CHECKING:
@@ -69,7 +68,8 @@ def _create_from_file(
 
         # Check if the physical file is still present
         _file = existing_pdf_file.file
-        if _file and _file.storage.exists(_file.name):
+        file_name = _file.name if _file else None
+        if file_name and _file.storage.exists(file_name):
             logger.warning("File is present. Returning existing instance.")
             return existing_pdf_file
 

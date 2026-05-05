@@ -10,7 +10,11 @@ from endoreg_db.import_files.file_storage.cleanup import safe_cleanup_staging_fi
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.utils.hashs import get_video_hash
 from endoreg_db.utils import paths as path_utils
-from endoreg_db.utils.file_operations import ensure_directory, safe_rmtree, safe_unlink_file
+from endoreg_db.utils.file_operations import (
+    ensure_directory,
+    safe_rmtree,
+    safe_unlink_file,
+)
 from endoreg_db.utils.storage import save_local_file
 from endoreg_db.utils.validate_endo_roi import validate_endo_roi
 
@@ -524,7 +528,7 @@ def _cleanup_raw_assets(
                 "VideoState not found for VideoFile %s during post-commit cleanup.",
                 video_hash,
             )
-            video_file.get_or_create_state()
+        state = video_file.get_or_create_state()
 
         if raw_file_name:
             logger.info(
@@ -545,9 +549,9 @@ def _cleanup_raw_assets(
                 raw_frame_dir,
             )
 
-        if video_file.state.frames_extracted:
-            video_file.state.frames_extracted = False
-            video_file.state.save(update_fields=["frames_extracted"])
+        if state.frames_extracted:
+            state.frames_extracted = False
+            state.save(update_fields=["frames_extracted"])
             logger.info(
                 "Set state.frames_extracted=False for video %s after raw asset cleanup.",
                 video_hash,

@@ -487,7 +487,6 @@ class VideoFile(models.Model):
 
         Use ensure_local_raw_file() / ensure_local_processed_file() for external tools.
         """
-        field_file = self.active_file
         if self.is_processed:
             path = self.get_processed_stream_path()
             if path is None:

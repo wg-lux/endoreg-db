@@ -36,7 +36,9 @@ def build_nginx_accel_response(
     buffering: str = "no",
     accept_ranges: bool = True,
 ) -> HttpResponseBase:
-    safe_relative_path = normalize_protected_media_relative_path(protected_relative_path)
+    safe_relative_path = normalize_protected_media_relative_path(
+        protected_relative_path
+    )
     response: HttpResponseBase = HttpResponse()
     response["Content-Type"] = content_type
     response["X-Accel-Redirect"] = posixpath.join(

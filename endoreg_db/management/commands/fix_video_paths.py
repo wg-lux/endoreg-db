@@ -109,12 +109,11 @@ class Command(BaseCommand):
 
                     if hasattr(video, "raw_file") and video.raw_file:
                         try:
-                            current_exists = bool(
-                                video.raw_file
-                                and video.raw_file.name
-                                and video.raw_file.storage.exists(video.raw_file.name)
+                            current_path = video.raw_file.name
+                            current_path_exists = bool(
+                                current_path
+                                and video.raw_file.storage.exists(current_path)
                             )
-                            current_path_exists = current_path.exists()
                         except (ValueError, AttributeError, OSError):
                             current_path_exists = False
 

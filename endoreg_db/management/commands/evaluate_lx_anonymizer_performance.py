@@ -10,7 +10,7 @@ import time
 from argparse import ArgumentParser
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Iterable, Literal
+from typing import Any, Callable, Iterable, Literal, Mapping, cast
 
 from django.core.management.base import BaseCommand, CommandError
 
@@ -196,7 +196,9 @@ class Command(BaseCommand):
             raise CommandError("--limit must be >= 0")
 
         if options["load_reference_data"]:
-            from endoreg_db.helpers.data_load_orchestrator import load_all_reference_data
+            from endoreg_db.helpers.data_load_orchestrator import (
+                load_all_reference_data,
+            )
 
             load_all_reference_data()
 
@@ -231,10 +233,14 @@ class Command(BaseCommand):
                 run_results.append(result)
                 if not result.ok and not options["continue_on_error"]:
                     break
-            if run_results and not run_results[-1].ok and not options["continue_on_error"]:
+            if (
+                run_results
+                and not run_results[-1].ok
+                and not options["continue_on_error"]
+            ):
                 break
 
-        payload = {
+        payload: dict[str, object] = {
             "summary": self._summarize(run_results),
             "runs": [asdict(result) for result in run_results],
         }
@@ -412,19 +418,26 @@ class Command(BaseCommand):
         retry: bool,
         recorder: TimedCallRecorder,
     ) -> object:
+        result: object | None
         if media_type == "video":
-            service = VideoImportService()
-            service.anonymizer = TimedAnonymizer(service.anonymizer, recorder)
-            result = service.import_and_anonymize(
+            video_service = VideoImportService()
+            video_service.anonymizer = cast(
+                Any,
+                TimedAnonymizer(video_service.anonymizer, recorder),
+            )
+            result = video_service.import_and_anonymize(
                 file_path=staged_path,
                 center_name=center_name,
                 processor_name=processor_name,
                 retry=retry,
             )
         else:
-            service = ReportImportService()
-            service.anonymizer = TimedAnonymizer(service.anonymizer, recorder)
-            result = service.import_and_anonymize(
+            report_service = ReportImportService()
+            report_service.anonymizer = cast(
+                Any,
+                TimedAnonymizer(report_service.anonymizer, recorder),
+            )
+            result = report_service.import_and_anonymize(
                 file_path=staged_path,
                 center_name=center_name,
                 retry=retry,
@@ -470,7 +483,9 @@ class Command(BaseCommand):
             "total_runs": len(results),
             "ok_runs": len(ok_results),
             "failed_runs": len(failed_results),
-            "short_circuited_runs": sum(1 for result in ok_results if result.short_circuited),
+            "short_circuited_runs": sum(
+                1 for result in ok_results if result.short_circuited
+            ),
             "total_seconds": sum(total_durations),
             "import_seconds": Command._duration_stats(import_durations),
             "anonymizer_seconds": Command._duration_stats(anonymizer_durations),
@@ -500,7 +515,7 @@ class Command(BaseCommand):
         )
         return sorted_values[index]
 
-    def _write_json(self, destination: Path, payload: dict[str, object]) -> None:
+    def _write_json(self, destination: Path, payload: Mapping[str, object]) -> None:
         encoded = json.dumps(payload, indent=2, sort_keys=True).encode("utf-8")
         atomic_write_file(
             destination=destination,
@@ -522,7 +537,7 @@ class Command(BaseCommand):
             required_bytes=len(encoded),
         )
 
-    def _write_text_summary(self, payload: dict[str, object]) -> None:
+    def _write_text_summary(self, payload: Mapping[str, object]) -> None:
         summary = payload["summary"]
         assert isinstance(summary, dict)
         self.stdout.write(self.style.SUCCESS("lx_anonymizer evaluation complete"))

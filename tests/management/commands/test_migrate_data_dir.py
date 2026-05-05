@@ -325,9 +325,7 @@ class MigrateDataDirCommandTests(TestCase):
                 report.refresh_from_db()
 
                 expected_video_processed_name = to_storage_relative(video_destination)
-                expected_report_processed_name = to_storage_relative(
-                    report_destination
-                )
+                expected_report_processed_name = to_storage_relative(report_destination)
 
                 self.assertEqual(
                     video.processed_file.name,

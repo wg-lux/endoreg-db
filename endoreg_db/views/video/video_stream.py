@@ -176,7 +176,10 @@ class VideoStreamView(APIView):
                     )
                     stream_state = unresolved_state or repair_state
 
-                if resolved_stream_path is not None and stream_relative_path is not None:
+                if (
+                    resolved_stream_path is not None
+                    and stream_relative_path is not None
+                ):
                     content_type = (
                         mimetypes.guess_type(stream_relative_path)[0] or "video/mp4"
                     )
@@ -223,9 +226,7 @@ class VideoStreamView(APIView):
                 getattr(video, "pk", None),
             )
             response = HttpResponse(status=409, content_type="text/plain")
-            response["X-Stream-State"] = (
-                stream_state or "raw_django_streaming_disabled"
-            )
+            response["X-Stream-State"] = stream_state or "raw_django_streaming_disabled"
             return add_cors_headers(response, frontend_origin)
 
         try:

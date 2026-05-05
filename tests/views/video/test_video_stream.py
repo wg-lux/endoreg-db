@@ -410,8 +410,7 @@ class VideoStreamViewTests(TestCase):
         attach_video_stream_methods(fake_video_obj, view_module)
 
         streamable_path = (
-            protected_media_root()
-            / fake_video_obj.processed_streamable_relative_path
+            protected_media_root() / fake_video_obj.processed_streamable_relative_path
         )
         streamable_path.parent.mkdir(parents=True, exist_ok=True)
         streamable_path.write_bytes(LX_ENCRYPTED_MAGIC + b"ciphertext")
@@ -455,8 +454,7 @@ class VideoStreamViewTests(TestCase):
         attach_video_stream_methods(fake_video_obj, view_module)
 
         streamable_path = (
-            protected_media_root()
-            / fake_video_obj.processed_streamable_relative_path
+            protected_media_root() / fake_video_obj.processed_streamable_relative_path
         )
         streamable_path.parent.mkdir(parents=True, exist_ok=True)
         streamable_path.write_bytes(LX_ENCRYPTED_MAGIC + b"ciphertext")

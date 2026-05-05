@@ -15,7 +15,6 @@ from endoreg_db.models import RawPdfFile
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.paths import to_storage_relative
-from endoreg_db.utils.paths import ANONYM_REPORT_DIR
 
 from endoreg_db.utils.storage_streaming import (
     add_cors_headers,

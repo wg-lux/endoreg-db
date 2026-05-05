@@ -35,6 +35,7 @@ from endoreg_db.views.video import (
     export_annotated_data,
     video_segment_detail,
     video_segment_validate,
+    video_segments_bulk_mutation,
     video_segments_by_video,
     video_segments_stats,
     video_segments_validate_bulk,
@@ -202,6 +203,14 @@ urlpatterns = [
         "media/videos/<int:pk>/segments/",
         video_segments_by_video,
         name="video-segments-by-video",
+    ),
+    # Bulk Segment Mutation API
+    # POST /api/media/videos/<int:pk>/segments/bulk/
+    # Applies creates, updates, and deletes in one transaction.
+    path(
+        "media/videos/<int:pk>/segments/bulk/",
+        video_segments_bulk_mutation,
+        name="video-segments-bulk-mutation",
     ),
     # Segment Detail API
     # GET /api/media/videos/<int:pk>/segments/<int:segment_id>/

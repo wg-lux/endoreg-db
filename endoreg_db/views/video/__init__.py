@@ -18,6 +18,7 @@ from .export_annotated import export_annotated_data
 from .segments_crud import (
     video_segments_collection,
     video_segments_by_video,
+    video_segments_bulk_mutation,
     video_segment_detail,
     video_segments_stats,
     video_segment_validate,
@@ -48,6 +49,7 @@ __all__ = [
     "VideoExaminationViewSet",
     "video_segments_collection",
     "video_segments_by_video",
+    "video_segments_bulk_mutation",
     "video_segment_detail",
     "video_segments_stats",
     "video_segment_validate",

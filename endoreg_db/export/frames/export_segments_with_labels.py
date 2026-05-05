@@ -19,6 +19,7 @@ from endoreg_db.utils.file_operations import (
     safe_rmtree,
     safe_unlink_file,
 )
+from endoreg_db.utils.paths import resolve_existing_protected_media_path
 from endoreg_db.utils.storage import ensure_local_file
 from endoreg_db.utils.storage_streaming import (
     local_plaintext_path_from_name,

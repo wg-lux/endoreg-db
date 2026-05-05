@@ -209,8 +209,8 @@ def test_migrate_media_storage_rewrites_bad_streamable_object(
     video.save(update_fields=["processed_file"])
 
     paths = EndoregPathsModel.from_environment()
-    streamable_path = paths.storage / "streamable_videos" / "processed" / (
-        f"{video.video_hash}.mp4"
+    streamable_path = (
+        paths.storage / "streamable_videos" / "processed" / (f"{video.video_hash}.mp4")
     )
     streamable_path.parent.mkdir(parents=True, exist_ok=True)
     streamable_path.write_bytes(MAGIC + b"bad-streamable")
