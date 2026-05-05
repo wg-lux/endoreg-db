@@ -4,18 +4,16 @@ import logging
 import os
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Union, cast
+from typing import TYPE_CHECKING, Optional, Union
 
 from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.db.models import F
-from django.db.models.fields.files import FieldFile
-from django.urls import reverse
 
+from endoreg_db.config.env import DEFAULT_VIDEO_FPS
 from endoreg_db.models.media.video.storage_mode import (
     VIDEO_STORAGE_MODE_CHOICES,
     VideoStorageMode,
-    coerce_video_storage_mode,
     get_default_video_storage_mode_value,
 )
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
@@ -23,11 +21,9 @@ from endoreg_db.utils.paths import (
     ANONYM_VIDEO_DIR,
     SENSITIVE_VIDEO_DIR,
     data_paths,
-    normalize_protected_media_relative_path,
 )
-from endoreg_db.utils.file_operations import safe_unlink_file
-from endoreg_db.utils.storage import file_exists, save_local_file
-from endoreg_db.utils.storage_streaming import maybe_local_plaintext_path
+from endoreg_db.utils.file_operations import ensure_directory, safe_unlink_file
+from endoreg_db.utils.storage import save_local_file
 from endoreg_db.utils.video.calc_duration_seconds import _calc_duration_vf
 from endoreg_db.utils.video.ffmpeg_wrapper import assemble_video_from_frames
 
@@ -86,10 +82,29 @@ from .video_file_meta import (
     _update_text_metadata,
     _update_video_meta,
 )
-from endoreg_db.utils.encryption.encrypted import (
-    LazyEncryptedStorage,
-    MAGIC as LX_ENCRYPTED_MAGIC,
+from .video_file_queries import (
+    VideoQuerySet,
+    _check_hash_exists,
+    _get_all_videos,
+    _get_video_by_content_hash,
+    _get_video_by_pk,
 )
+from .video_file_streaming import (
+    _active_file,
+    _active_file_path,
+    _active_file_url,
+    _active_raw_file,
+    _active_raw_file_url,
+    _can_offload_stream_with_nginx,
+    _get_processed_stream_relative_path,
+    _get_raw_stream_relative_path,
+    _get_stream_relative_path,
+    _is_encrypted_streamable_path,
+    _protected_stream_url,
+    _resolve_video_stream_source,
+)
+from .video_file_time import _ensure_default_fps, _frame_number_to_s
+from endoreg_db.utils.encryption.encrypted import LazyEncryptedStorage
 
 # Configure logging
 logger = logging.getLogger(__name__)  # Changed from "video_file"
@@ -98,33 +113,12 @@ if TYPE_CHECKING:
     from endoreg_db.models import FFMpegMeta, Frame, VideoState
 
 
-class VideoQuerySet(models.QuerySet):
-    def next_after(self, last_id=None):
-        """
-        Return the next VideoFile instance with a primary key greater than the given last_id.
-
-        Parameters:
-            last_id (int or None): The primary key to start after. If None or invalid, returns the first instance.
-
-        Returns:
-            VideoFile or None: The next VideoFile instance, or None if not found.
-        """
-        if last_id is not None:
-            try:
-                last_id = int(last_id)
-            except (ValueError, TypeError):
-                return None
-        q = self if last_id is None else self.filter(pk__gt=last_id)
-        return q.order_by("pk").first()
-
-
 class VideoFile(models.Model):
     StorageMode = VideoStorageMode
 
     objects = VideoQuerySet.as_manager()
-    default_fps = 50.0
-    use_default_fps = False
-    _default_fps_persisted_ids = set()
+    default_fps = DEFAULT_VIDEO_FPS
+    use_default_fps = True
 
     raw_file = models.FileField(
         upload_to=SENSITIVE_VIDEO_DIR.name,  # Use .name for relative path
@@ -288,46 +282,9 @@ class VideoFile(models.Model):
     NO_ACTIVE_FILE = "Has no raw file"
     NO_FILE_ASSOCIATED = "Active file has no associated file."
 
-    @property
-    def active_raw_file(self) -> FieldFile:
-        """Return the raw file if available, otherwise raise ValueError."""
-        if self.has_raw:
-            return self.raw_file
-        raise ValueError(self.NO_ACTIVE_FILE)
-
-    def _protected_stream_url(self, *, file_type: str) -> str | None:
-        if self.pk is None:
-            return None
-        if file_type == "processed" and not self.is_processed:
-            return None
-        if file_type == "raw" and not self.has_raw:
-            return None
-
-        try:
-            storage_mode = coerce_video_storage_mode(
-                getattr(self, "storage_mode", None)
-            )
-        except ValueError:
-            return None
-
-        if storage_mode == VideoStorageMode.STREAMABLE:
-            relative_path = (
-                self.processed_streamable_relative_path
-                if file_type == "processed"
-                else self.raw_streamable_relative_path
-            )
-            if not isinstance(relative_path, str) or not relative_path.strip():
-                return None
-
-        url = reverse("api:video-stream", kwargs={"pk": self.pk})
-        if file_type == "processed":
-            return f"{url}?type=processed"
-        return url
-
-    @property
-    def active_raw_file_url(self) -> str | None:
-        """Return the URL of the active raw file, or raise ValueError if unavailable."""
-        return self._protected_stream_url(file_type="raw")
+    active_raw_file = property(_active_raw_file)
+    _protected_stream_url = _protected_stream_url
+    active_raw_file_url = property(_active_raw_file_url)
 
     # Pipeline Functions
     pipe_1 = _pipe_1
@@ -354,20 +311,7 @@ class VideoFile(models.Model):
     get_duration = _calc_duration_vf
     create_frame_object = _create_frame_object
     bulk_create_frames = _bulk_create_frames
-
-    def ensure_default_fps(self) -> float:
-        """
-        Persist a default FPS when missing, avoiding repeated updates per process.
-        """
-        if self.fps is not None:
-            return float(self.fps)
-
-        default_fps = float(self.default_fps)
-        self.fps = default_fps
-        if self.pk and self.pk not in self.__class__._default_fps_persisted_ids:
-            self.save(update_fields=["fps"])
-            self.__class__._default_fps_persisted_ids.add(self.pk)
-        return default_fps
+    ensure_default_fps = _ensure_default_fps
 
     # Define new methods that call the helper functions
     def extract_specific_frame_range(
@@ -439,12 +383,7 @@ class VideoFile(models.Model):
     predict_video = _predict_video_pipeline
     extract_text_from_frames = _extract_text_from_video_frames
 
-    @classmethod
-    def check_hash_exists(cls, video_hash: str) -> bool:
-        """
-        Checks if a VideoFile with the given raw video hash already exists.
-        """
-        return cls.objects.filter(video_hash=video_hash).exists()
+    check_hash_exists = classmethod(_check_hash_exists)
 
     @property
     def is_processed(self) -> bool:
@@ -457,60 +396,9 @@ class VideoFile(models.Model):
         """
         return bool(self.raw_file and self.raw_file.name)
 
-    @property
-    def active_file(self) -> FieldFile:
-        """
-        Return the active video file, preferring the processed file if available.
-
-        Returns:
-            File: The processed file if present; otherwise, the raw file.
-
-        Raises:
-            ValueError: If neither a processed nor a raw file is available.
-        """
-        processed = self.processed_file
-        if isinstance(processed, FieldFile) and processed.name:
-            return processed
-
-        raw = self.raw_file
-        if isinstance(raw, FieldFile) and raw.name:
-            return raw
-
-        raise ValueError(
-            "No active file available. VideoFile has neither raw nor processed file."
-        )
-
-    @property
-    def active_file_path(self) -> Path:
-        """
-        Deprecated: encrypted/storage-backed files may not have a stable local path.
-
-        Use ensure_local_raw_file() / ensure_local_processed_file() for external tools.
-        """
-        if self.is_processed:
-            path = self.get_processed_stream_path()
-            if path is None:
-                path = self.get_processed_file_path()
-        else:
-            path = self.get_raw_stream_path()
-            if path is None:
-                path = self.get_raw_file_path()
-
-        if path is None:
-            raise ValueError(
-                "Active file has no direct filesystem path. Use ensure_local_*_file()."
-            )
-
-        return path
-
-    @property
-    def active_file_url(self) -> str | None:
-        """Return the URL of the active video file, if available."""
-        if self.is_processed:
-            processed_url = self._protected_stream_url(file_type="processed")
-            if processed_url is not None:
-                return processed_url
-        return self._protected_stream_url(file_type="raw")
+    active_file = property(_active_file)
+    active_file_path = property(_active_file_path)
+    active_file_url = property(_active_file_url)
 
     @classmethod
     def create_from_file(
@@ -841,6 +729,8 @@ class VideoFile(models.Model):
         """
         video = instance
         new_video_path: Path | None = None
+        output_video_path: Path | None = None
+        completed = False
 
         if not video:
             logger.warning(
@@ -873,25 +763,20 @@ class VideoFile(models.Model):
             if frame_dir_path is None:
                 raise AssertionError("Frame directory path is not available.")
             frames: list[Path] = video.get_frame_paths()
-            fps = (
-                video.fps if video.fps else 120.0
-            )  # Default to 30 FPS if fps is not set
+            fps = video.get_fps() or DEFAULT_VIDEO_FPS
             assert censored is True
             if not frames:
                 raise AssertionError("No extracted frame files found for reassembly.")
-            assert fps is not None
+            if fps <= 0:
+                fps = DEFAULT_VIDEO_FPS
             assert video.width is not None
             assert video.height is not None
 
             # Step 2: Reassemble into local staging, then save through FileField storage.
-            output_video_dir = (
-                Path(data_paths["transcoding"]) / "outside_frame_reassembly"
+            transcoding_dir = ensure_directory(Path(data_paths["transcoding"]))
+            output_video_path = (
+                transcoding_dir / f"{video.video_hash}.outside_frame_reassembly.tmp.mp4"
             )
-            output_video_dir.mkdir(parents=True, exist_ok=True)
-            output_video_path = output_video_dir / f"{video.video_hash}_filtered.mp4"
-            fps = (
-                video.fps if video.fps else 30.0
-            )  # Default to 30 FPS if fps is not set
             new_video_path = assemble_video_from_frames(
                 frames, output_video_path, fps, width=video.width, height=video.height
             )
@@ -919,6 +804,7 @@ class VideoFile(models.Model):
                     video.pk,
                     exc,
                 )
+            completed = True
             return True
         except AssertionError as ae:
             logger.error(
@@ -936,22 +822,21 @@ class VideoFile(models.Model):
             )
             return False
         finally:
-            if new_video_path is not None:
+            if completed and new_video_path is not None:
                 logger.info(
                     "Cleaning up staged outside-frame reassembly output for video %s: %s",
                     video.video_hash,
                     new_video_path,
                 )
                 safe_unlink_file(new_video_path, missing_ok=True)
+            elif output_video_path is not None:
+                logger.warning(
+                    "Preserving staged outside-frame reassembly output for recovery for video %s: %s",
+                    video.video_hash,
+                    output_video_path,
+                )
 
-    @classmethod
-    def get_all_videos(cls) -> models.QuerySet["VideoFile"]:
-        """
-        Returns a queryset containing all VideoFile records.
-
-        This class method retrieves every VideoFile instance in the database without filtering.
-        """
-        return cast(models.QuerySet["VideoFile"], cls.objects.all())
+    get_all_videos = classmethod(_get_all_videos)
 
     def count_unmodified_others(self) -> int:
         """
@@ -968,173 +853,14 @@ class VideoFile(models.Model):
             .count()  # run a fast COUNT(*) on the filtered set
         )
 
-    def frame_number_to_s(self, frame_number: int) -> float:
-        """
-        Convert a frame number to its corresponding time in seconds based on the video's frames per second (FPS).
+    frame_number_to_s = _frame_number_to_s
 
-        Parameters:
-            frame_number (int): The frame number to convert.
+    get_video_by_pk = staticmethod(_get_video_by_pk)
+    get_video_by_content_hash = staticmethod(_get_video_by_content_hash)
 
-        Returns:
-            float: The time in seconds corresponding to the given frame number.
-
-        Raises:
-            ValueError: If the video's FPS is not set or is less than or equal to zero.
-        """
-        fps = self.fps
-        if fps is None or fps <= 0:
-            fps = self.get_fps()
-        if fps is None or fps <= 0:
-            raise ValueError("FPS must be set and greater than zero.")
-        return frame_number / fps
-
-    @staticmethod
-    def get_video_by_pk(pk: int) -> "VideoFile":
-        """
-        Retrieve a VideoFile instance by its primary key (ID).
-
-        Parameters:
-            video_id (int): The primary key of the VideoFile to retrieve.
-
-        Returns:
-            VideoFile: The VideoFile instance with the specified ID.
-
-        Raises:
-            VideoFile.DoesNotExist: If no VideoFile with the given ID exists.
-        """
-        return VideoFile.objects.get(pk=pk)
-
-    @staticmethod
-    def get_video_by_content_hash(hash: str) -> "VideoFile":
-        try:
-            return VideoFile.objects.get(video_hash=hash)
-        except Exception as e:
-            logger.error(f"Video cant be returned for known hash. {e}")
-            raise
-
-    def get_raw_stream_relative_path(self) -> str | None:
-        relative_path = getattr(self, "raw_streamable_relative_path", "")
-        try:
-            normalized = normalize_protected_media_relative_path(relative_path)
-        except ValueError:
-            return None
-        return normalized
-
-    def get_processed_stream_relative_path(self) -> str | None:
-        relative_path = getattr(self, "processed_streamable_relative_path", "")
-        try:
-            normalized = normalize_protected_media_relative_path(relative_path)
-        except ValueError:
-            return None
-        return normalized
-
-    def get_stream_relative_path(self, file_type: str) -> str | None:
-        if file_type == "processed":
-            return self.get_processed_stream_relative_path()
-        return self.get_raw_stream_relative_path()
-
-    def resolve_video_stream_source(
-        self,
-        file_type: str,
-        *,
-        materialize_if_missing: bool = False,
-    ) -> tuple[FieldFile, Path | None]:
-        """
-        Returns:
-            (field_file, local_path_or_none)
-
-        - field_file is the canonical Django file field for metadata/name/storage access
-        - local_path_or_none is a concrete local file path when a streamable artifact or
-        local fallback file should be served directly from disk
-        """
-        if file_type == "processed":
-            field_file = getattr(self, "processed_file", None)
-            if not field_file or not getattr(field_file, "name", None):
-                raise FileNotFoundError("No processed file")
-
-            stream_path = self.get_processed_stream_path()
-            if stream_path is not None and stream_path.exists():
-                return field_file, stream_path
-
-            if materialize_if_missing:
-                sync_video_streamable_artifacts(
-                    self,
-                    include_raw=False,
-                    include_processed=True,
-                    save=True,
-                )
-                stream_path = self.get_processed_stream_path()
-                if stream_path is not None and stream_path.exists():
-                    return field_file, stream_path
-
-            local_path = maybe_local_plaintext_path(field_file)
-            if local_path is not None:
-                return field_file, local_path
-
-            if file_exists(field_file):
-                return field_file, None
-
-            raise FileNotFoundError("Processed video file is not available")
-
-        field_file = self.active_raw_file
-        if not getattr(field_file, "name", None):
-            raise FileNotFoundError("No raw file")
-
-        stream_path = self.get_raw_stream_path()
-        if stream_path is not None and stream_path.exists():
-            return field_file, stream_path
-
-        if materialize_if_missing:
-            sync_video_streamable_artifacts(
-                self,
-                include_raw=True,
-                include_processed=False,
-                save=True,
-            )
-            stream_path = self.get_raw_stream_path()
-            if stream_path is not None and stream_path.exists():
-                return field_file, stream_path
-
-        local_path = maybe_local_plaintext_path(field_file)
-        if local_path is not None:
-            return field_file, local_path
-
-        if file_exists(field_file):
-            return field_file, None
-
-        raise FileNotFoundError("Raw video file is not available")
-
-    def can_offload_stream_with_nginx(self, file_type: str) -> bool:
-        try:
-            storage_mode = coerce_video_storage_mode(
-                getattr(self, "storage_mode", None)
-            )
-        except ValueError:
-            return False
-
-        if storage_mode != VideoStorageMode.STREAMABLE:
-            return False
-
-        stream_path = (
-            self.get_processed_stream_path()
-            if file_type == "processed"
-            else self.get_raw_stream_path()
-        )
-
-        if stream_path is None or not stream_path.exists():
-            return False
-
-        if self._is_encrypted_streamable_path(stream_path):
-            return False
-
-        return True
-
-    @staticmethod
-    def _is_encrypted_streamable_path(path: Path | None) -> bool:
-        if path is None:
-            return False
-        try:
-            with path.open("rb") as handle:
-                return handle.read(len(LX_ENCRYPTED_MAGIC)) == LX_ENCRYPTED_MAGIC
-        except OSError:
-            return False
+    get_raw_stream_relative_path = _get_raw_stream_relative_path
+    get_processed_stream_relative_path = _get_processed_stream_relative_path
+    get_stream_relative_path = _get_stream_relative_path
+    resolve_video_stream_source = _resolve_video_stream_source
+    can_offload_stream_with_nginx = _can_offload_stream_with_nginx
+    _is_encrypted_streamable_path = staticmethod(_is_encrypted_streamable_path)

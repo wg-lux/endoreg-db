@@ -29,6 +29,7 @@ DEFAULT_CACHE_TIMEOUT_SECONDS = 60 * 30
 DEFAULT_DRF_THROTTLE_USER = "100/hour"
 DEFAULT_DRF_THROTTLE_ANON = "20/hour"
 DEFAULT_FFMPEG_TRANSCODE_TIMEOUT_SECONDS = 8600
+DEFAULT_VIDEO_FPS = 50.0
 DEFAULT_WATCHER_POLL_INTERVAL_SECONDS = 5.0
 DEFAULT_WATCHER_STABLE_AFTER_SECONDS = 10.0
 DEFAULT_VIDEO_POST_VALIDATION_JOB_MAX_WORKERS = 2
@@ -411,6 +412,11 @@ def get_ffmpeg_env_candidates() -> list[str]:
         env_str("FFMPEG_BINARY", ""),
         env_str("FFMPEG_PATH", ""),
     ]
+
+
+def get_video_default_fps() -> float:
+    fps = env_float("VIDEO_DEFAULT_FPS", DEFAULT_VIDEO_FPS)
+    return fps if fps > 0 else DEFAULT_VIDEO_FPS
 
 
 def get_endoreg_storage_profile_name() -> str:

@@ -903,12 +903,6 @@ def video_segment_detail(request, pk, segment_id):
             )
 
 
-# ============================================================================
-# VIDEO SEGMENT VALIDATION ENDPOINTS (Modern Framework)
-# Migrated from /api/label-video-segment/*/validate/ (October 14, 2025)
-# ============================================================================
-
-
 @api_view(["POST"])
 @permission_classes([EnvironmentAwarePermission])
 def video_segment_validate(request, pk: int, segment_id: int):

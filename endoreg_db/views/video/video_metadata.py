@@ -1,5 +1,6 @@
 from endoreg_db.models import VideoFile
 from endoreg_db.services.lx_video_contracts import resolve_lx_anonymization_state
+from endoreg_db.config.env import DEFAULT_VIDEO_FPS
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from django.shortcuts import get_object_or_404
 from rest_framework import status
@@ -31,7 +32,7 @@ class VideoMetadataStatsView(APIView):
         # --- 1. Basic Specs (from VideoFile) ---
         # Use model fields, defaulting if None
         duration = video.duration if video.duration is not None else 0
-        fps = video.fps if video.fps is not None else 50
+        fps = video.fps if video.fps is not None else DEFAULT_VIDEO_FPS
 
         resolution = "BLANK"
         if video.width and video.height:

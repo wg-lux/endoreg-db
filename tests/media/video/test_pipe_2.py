@@ -1,6 +1,10 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
+
+from endoreg_db.config.env import DEFAULT_VIDEO_FPS
 
 if TYPE_CHECKING:
+    from endoreg_db.models import VideoFile
+
     from .test_video_file_extracted import VideoFileModelExtractedTest
 
 
@@ -36,10 +40,14 @@ def _test_pipe_2(test: "VideoFileModelExtractedTest"):
         )
         return  # Skip detailed assertions for mock
 
-    # Real VideoFile assertions - use type ignore to handle union type
+    video_file = cast("VideoFile", video_file)
+
+    # Real VideoFile assertions
     video_file.refresh_from_db()
     state = video_file.state
     test.assertIsNotNone(state, "VideoState should exist after pipe_2")
+    if state is None:
+        raise AssertionError("VideoState should exist after pipe_2")
     state.refresh_from_db()
 
     # Check Anonymized Video
@@ -52,6 +60,8 @@ def _test_pipe_2(test: "VideoFileModelExtractedTest"):
     )
     processed_path = video_file.get_processed_file_path()
     test.assertIsNotNone(processed_path, "Processed file path should be obtainable")
+    if processed_path is None:
+        raise AssertionError("Processed file path should be obtainable")
     test.assertTrue(
         processed_path.exists(),
         f"Processed video file should exist at {processed_path}",
@@ -135,12 +145,18 @@ def _test_pipe_2(test: "VideoFileModelExtractedTest"):
                     # Method 3: Duration * FPS calculation (least reliable, last resort)
                     if processed_frame_count is None:
                         duration = float(video_stream.get("duration", 0))
-                        fps_str = video_stream.get("r_frame_rate", "30/1")
+                        fps_str = video_stream.get(
+                            "r_frame_rate", f"{int(DEFAULT_VIDEO_FPS)}/1"
+                        )
                         if "/" in fps_str:
                             num, den = fps_str.split("/")
-                            fps = float(num) / float(den) if den != "0" else 30.0
+                            fps = (
+                                float(num) / float(den)
+                                if den != "0"
+                                else DEFAULT_VIDEO_FPS
+                            )
                         else:
-                            fps = float(fps_str) if fps_str else 30.0
+                            fps = float(fps_str) if fps_str else DEFAULT_VIDEO_FPS
 
                         processed_frame_count = (
                             int(duration * fps) if duration > 0 and fps > 0 else 0
@@ -184,12 +200,18 @@ def _test_pipe_2(test: "VideoFileModelExtractedTest"):
                             pass
 
                         duration = float(video_stream.get("duration", 0))
-                        fps_str = video_stream.get("r_frame_rate", "30/1")
+                        fps_str = video_stream.get(
+                            "r_frame_rate", f"{int(DEFAULT_VIDEO_FPS)}/1"
+                        )
                         if "/" in fps_str:
                             num, den = fps_str.split("/")
-                            fps_calc = float(num) / float(den) if den != "0" else 30.0
+                            fps_calc = (
+                                float(num) / float(den)
+                                if den != "0"
+                                else DEFAULT_VIDEO_FPS
+                            )
                         else:
-                            fps_calc = float(fps_str) if fps_str else 30.0
+                            fps_calc = float(fps_str) if fps_str else DEFAULT_VIDEO_FPS
                         calc_count = (
                             int(duration * fps_calc)
                             if duration > 0 and fps_calc > 0
@@ -254,7 +276,8 @@ def _test_pipe_2(test: "VideoFileModelExtractedTest"):
         video_file.has_raw, "VideoFile should not have raw file after pipe_2"
     )
     test.assertFalse(
-        bool(video_file.raw_file.name), "raw_file field name should be empty"
+        bool(getattr(video_file.raw_file, "name", "")),
+        "raw_file field name should be empty",
     )
     if original_raw_file_path:
         # In tests, the file cleanup might be asynchronous via transaction.on_commit()
@@ -284,6 +307,9 @@ def _test_pipe_2(test: "VideoFileModelExtractedTest"):
     )
     video_file.refresh_from_db()
     state = video_file.state
+    test.assertIsNotNone(state, "VideoState should exist after refresh")
+    if state is None:
+        raise AssertionError("VideoState should exist after refresh")
     # Check VideoState flags (Add these flags to VideoState model if they don't exist)
     test.assertTrue(
         state.anonymized, "State.is_anonymized should be True"

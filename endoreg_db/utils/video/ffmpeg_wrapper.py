@@ -1110,6 +1110,8 @@ def extract_frames(
         str(video_path),
         "-qscale:v",
         str(quality),  # Video quality scale
+        "-start_number",
+        "0",
     ]
 
     if fps is not None:

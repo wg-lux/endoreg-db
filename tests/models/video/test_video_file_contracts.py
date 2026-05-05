@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 import pytest
 from django.core.files.base import ContentFile
 
+from endoreg_db.config.env import DEFAULT_VIDEO_FPS
 from endoreg_db.models import Center, VideoFile
 from endoreg_db.models.media.video.storage_mode import VideoStorageMode
 
@@ -94,7 +95,11 @@ def test_video_file_protected_urls_require_streamable_paths(video_center: Center
     assert video.active_raw_file_url is None
 
     video.raw_streamable_relative_path = "streamable/raw/source.mp4"
-    raw_url = video.active_raw_file_url
+    with patch(
+        "endoreg_db.models.media.video.video_file_streaming.reverse",
+        return_value=f"/api/media/videos/{video.pk}/stream/",
+    ):
+        raw_url = video.active_raw_file_url
 
     assert raw_url is not None
     assert raw_url.endswith(f"/api/media/videos/{video.pk}/stream/")
@@ -112,8 +117,14 @@ def test_video_file_active_file_url_prefers_processed_stream(video_center: Cente
     video.raw_streamable_relative_path = "streamable/raw/source.mp4"
     video.processed_streamable_relative_path = "streamable/processed/source.mp4"
 
-    assert video.active_file_url is not None
-    assert video.active_file_url.endswith(
+    with patch(
+        "endoreg_db.models.media.video.video_file_streaming.reverse",
+        return_value=f"/api/media/videos/{video.pk}/stream/",
+    ):
+        active_file_url = video.active_file_url
+
+    assert active_file_url is not None
+    assert active_file_url.endswith(
         f"/api/media/videos/{video.pk}/stream/?type=processed"
     )
 
@@ -186,7 +197,7 @@ def test_video_file_resolve_raw_stream_source_materializes_when_requested(
     with (
         patch.object(video, "get_raw_stream_path", get_raw_stream_path),
         patch(
-            "endoreg_db.models.media.video.video_file.sync_video_streamable_artifacts",
+            "endoreg_db.models.media.video.video_file_streaming.sync_video_streamable_artifacts",
             Mock(),
         ) as sync_mock,
     ):
@@ -232,7 +243,6 @@ def test_video_file_get_or_create_state_persists_relation(video_center: Center):
 
 @pytest.mark.django_db
 def test_video_file_ensure_default_fps_persists_once(video_center: Center):
-    VideoFile._default_fps_persisted_ids.clear()
     video = VideoFile.objects.create(center=video_center, video_hash="default-fps")
 
     assert video.ensure_default_fps() == VideoFile.default_fps
@@ -241,6 +251,18 @@ def test_video_file_ensure_default_fps_persists_once(video_center: Center):
 
     with patch.object(video, "save", side_effect=AssertionError("must not save twice")):
         assert video.ensure_default_fps() == VideoFile.default_fps
+
+
+@pytest.mark.django_db
+def test_video_file_get_fps_defaults_to_50_when_missing(video_center: Center):
+    video = VideoFile.objects.create(center=video_center, video_hash="get-fps-default")
+
+    assert VideoFile.default_fps == DEFAULT_VIDEO_FPS
+    assert VideoFile.use_default_fps is True
+    assert video.get_fps() == DEFAULT_VIDEO_FPS
+
+    video.refresh_from_db()
+    assert video.fps == DEFAULT_VIDEO_FPS
 
 
 @pytest.mark.django_db

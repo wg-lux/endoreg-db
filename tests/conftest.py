@@ -51,6 +51,7 @@ _configure_test_path_env(TEST_PROTECTED_ROOT)
 
 from endoreg_db.models import AiModel, ModelMeta, ModelType
 from endoreg_db.models.label import LabelSet
+from endoreg_db.config.env import DEFAULT_VIDEO_FPS
 from endoreg_db.utils import paths as paths_module
 
 import pytest
@@ -581,11 +582,11 @@ def mock_video_file(base_db_data):
         processor=processor,
         raw_file="test_video.mp4",
         video_hash="mock_hash_" + str(uuid.uuid4())[:8],
-        fps=25.0,
+        fps=DEFAULT_VIDEO_FPS,
         width=1920,
         height=1080,
         duration=10.0,
-        frame_count=250,
+        frame_count=int(10.0 * DEFAULT_VIDEO_FPS),
         frames_initialized=True,
     )
 
@@ -841,7 +842,7 @@ def _apply_global_video_mocks(cache):
                     "color_range": "pc",
                     "width": 1920,
                     "height": 1080,
-                    "r_frame_rate": "30/1",
+                    "r_frame_rate": f"{int(DEFAULT_VIDEO_FPS)}/1",
                     "duration": "10.0",
                 }
             ]
@@ -1178,7 +1179,7 @@ def auto_mock_ffmpeg_for_video_tests(request, monkeypatch):
                         "color_range": "pc",
                         "width": 1920,
                         "height": 1080,
-                        "r_frame_rate": "30/1",
+                        "r_frame_rate": f"{int(DEFAULT_VIDEO_FPS)}/1",
                         "duration": "10.0",
                     }
                 ]
@@ -1289,7 +1290,7 @@ def smart_video_mocks(monkeypatch, cache):
                     "color_range": "pc",
                     "width": 1920,
                     "height": 1080,
-                    "r_frame_rate": "30/1",
+                    "r_frame_rate": f"{int(DEFAULT_VIDEO_FPS)}/1",
                     "duration": "10.0",
                 }
             ]

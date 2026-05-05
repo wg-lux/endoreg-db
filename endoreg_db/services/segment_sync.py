@@ -11,6 +11,8 @@ from typing import Any, Optional, cast
 from django.contrib.auth.models import User
 from django.db import transaction
 
+from endoreg_db.config.env import DEFAULT_VIDEO_FPS
+
 from ..models import VideoFile, Label, LabelVideoSegment, InformationSource
 from .segment_contracts import (
     SegmentAnnotationInput,
@@ -57,9 +59,12 @@ def create_user_segment_from_annotation(
         fps = video_file.get_fps()
         if not fps or fps <= 0:
             logger.warning(
-                f"Invalid FPS ({fps}) for video {video_id}, using default 25"
+                "Invalid FPS (%s) for video %s, using default %.1f",
+                fps,
+                video_id,
+                DEFAULT_VIDEO_FPS,
             )
-            fps = 25.0
+            fps = DEFAULT_VIDEO_FPS
 
         start_frame_number, end_frame_number = annotation_input.to_frame_range(fps)
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from django.core.management.base import BaseCommand
 
 from endoreg_db.services.media_integrity import reconcile_media_integrity
@@ -11,8 +13,80 @@ class Command(BaseCommand):
         "discrepancies, and mark unrecoverable records as LOST."
     )
 
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--dry-run",
+            action="store_true",
+            help="Report planned reconciliation actions without mutating database or files.",
+        )
+        parser.add_argument(
+            "--json",
+            action="store_true",
+            help="Write the reconciliation summary as JSON.",
+        )
+        parser.add_argument(
+            "--video-id",
+            action="append",
+            type=int,
+            default=[],
+            help="Limit reconciliation to a video id. May be provided multiple times.",
+        )
+        parser.add_argument(
+            "--check-frames",
+            action="store_true",
+            help="Classify frame DB/cache integrity for each selected video.",
+        )
+        parser.add_argument(
+            "--repair-frames",
+            action="store_true",
+            help="Repair explicitly safe frame cache issues.",
+        )
+        parser.add_argument(
+            "--repair-frame",
+            action="append",
+            type=int,
+            default=[],
+            help="Explicitly repair one frame number, even when the cache is missing. May be provided multiple times.",
+        )
+        parser.add_argument(
+            "--check-ffmpeg-meta",
+            action="store_true",
+            help="Probe and report ffmpeg metadata/FPS provenance.",
+        )
+        parser.add_argument(
+            "--repair-ffmpeg-meta",
+            action="store_true",
+            help="Backfill missing ffmpeg metadata from an explicit probe source.",
+        )
+        parser.add_argument(
+            "--check-streamable-probe",
+            action="store_true",
+            help="Run ffprobe against streamable artifacts and verify canonical media before repair.",
+        )
+        parser.add_argument(
+            "--cleanup-stale-artifacts",
+            action="store_true",
+            help="Remove stale temporary media artifacts through the existing reconciliation cleanup.",
+        )
+
     def handle(self, *args, **options) -> None:
-        summary = reconcile_media_integrity()
+        summary = reconcile_media_integrity(
+            dry_run=bool(options["dry_run"]),
+            video_ids=list(options["video_id"] or ()),
+            check_frames=bool(options["check_frames"] or options["repair_frames"]),
+            repair_frames=bool(options["repair_frames"]),
+            repair_frame_numbers=list(options["repair_frame"] or ()),
+            check_ffmpeg_meta=bool(
+                options["check_ffmpeg_meta"] or options["repair_ffmpeg_meta"]
+            ),
+            repair_ffmpeg_meta=bool(options["repair_ffmpeg_meta"]),
+            check_streamable_probe=bool(options["check_streamable_probe"]),
+            cleanup_stale_artifacts=bool(options["cleanup_stale_artifacts"]),
+        )
+        summary.dry_run = bool(options["dry_run"])
+        if options["json"]:
+            self.stdout.write(json.dumps(summary.as_dict(), indent=2, sort_keys=True))
+            return
         self.stdout.write(
             self.style.SUCCESS(
                 "media integrity reconciliation complete: "

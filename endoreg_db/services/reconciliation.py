@@ -102,7 +102,7 @@ class ReconciliationService:
                     logger.warning("Removed stale lock file: %s", lock_path)
         return removed
 
-    def cleanup_orphaned_artifacts(self) -> int:
+    def cleanup_orphaned_artifacts(self, *, dry_run: bool = False) -> int:
         """Remove stale temporary and partial artifacts from media directories."""
 
         removed = 0
@@ -124,9 +124,13 @@ class ReconciliationService:
                     continue
                 if not self._is_stale(path, self.artifact_stale_seconds):
                     continue
-                safe_unlink_file(path, missing_ok=True)
+                if not dry_run:
+                    safe_unlink_file(path, missing_ok=True)
                 removed += 1
-                logger.warning("Removed orphaned startup artifact: %s", path)
+                if dry_run:
+                    logger.warning("Would remove orphaned startup artifact: %s", path)
+                else:
+                    logger.warning("Removed orphaned startup artifact: %s", path)
         return removed
 
     def relink_broken_video_raw_files(self) -> int:
@@ -274,11 +278,8 @@ class ReconciliationService:
         sensitive_dir: Path,
         hashed_candidates: dict[str, list[Path]],
     ) -> Path | None:
-        raw_name = (
-            Path(video.raw_file.name).name
-            if getattr(video.raw_file, "name", None)
-            else None
-        )
+        raw_file_name = getattr(video.raw_file, "name", None)
+        raw_name = Path(raw_file_name).name if raw_file_name else None
         suffix = Path(raw_name).suffix if raw_name else (video.suffix or ".mp4")
         canonical_path = (
             sensitive_dir / f"{video.video_hash}{suffix}" if suffix else None
@@ -333,11 +334,8 @@ class ReconciliationService:
         candidate: Path,
         sensitive_dir: Path,
     ) -> tuple[Path | None, str]:
-        raw_name = (
-            Path(video.raw_file.name).name
-            if getattr(video.raw_file, "name", None)
-            else None
-        )
+        raw_file_name = getattr(video.raw_file, "name", None)
+        raw_name = Path(raw_file_name).name if raw_file_name else None
         suffix = (
             Path(raw_name).suffix
             if raw_name

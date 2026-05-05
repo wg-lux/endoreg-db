@@ -33,6 +33,7 @@ from endoreg_db.config.env import (
     get_static_root,
     get_static_url,
     get_time_zone,
+    get_video_default_fps,
     run_video_tests_enabled,
 )
 
@@ -172,6 +173,7 @@ PROTECTED_MEDIA_ROOT = get_protected_media_root()
 # the legacy public /media/ path.
 MEDIA_URL = get_media_url()
 MEDIA_ROOT = get_media_root()
+VIDEO_DEFAULT_FPS = get_video_default_fps()
 
 # Caching: provide a default LocMem cache with explicit TIMEOUT for consistency
 CACHES = build_default_cache_settings()

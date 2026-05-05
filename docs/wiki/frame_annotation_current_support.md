@@ -82,6 +82,15 @@ The frontend currently uses:
 
 It does not depend on Label Studio webhook routes.
 
+## Frame Image Availability
+
+Frame image files are served through the media frame stream endpoint. Missing
+single-frame files are recreated through on-demand range extraction; the request
+path does not fall back to full video extraction.
+
+Stable frame paths and extraction completeness rules are documented in
+`docs/video_frame_extraction_contract.md`.
+
 ## Removed Legacy Piece
 
 The Label Studio webhook endpoint was removed from `endoreg_db`:

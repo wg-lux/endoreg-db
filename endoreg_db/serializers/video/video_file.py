@@ -16,6 +16,7 @@ except ImportError:
 from django.conf import settings
 from rest_framework.exceptions import ValidationError
 
+from endoreg_db.config.env import DEFAULT_VIDEO_FPS
 from endoreg_db.utils.media_urls import (
     build_absolute_media_url,
     build_video_stream_path,
@@ -215,9 +216,14 @@ class VideoFileSerializer(serializers.ModelSerializer):
             # Strict by default — only use fallback if explicitly enabled and > 0
             if (
                 bool(getattr(settings, "VIDEO_ALLOW_FPS_FALLBACK", False))
-                and float(cast(Any, getattr(settings, "VIDEO_DEFAULT_FPS", 0))) > 0
+                and float(
+                    cast(Any, getattr(settings, "VIDEO_DEFAULT_FPS", DEFAULT_VIDEO_FPS))
+                )
+                > 0
             ):
-                fps = float(cast(Any, getattr(settings, "VIDEO_DEFAULT_FPS", 0)))
+                fps = float(
+                    cast(Any, getattr(settings, "VIDEO_DEFAULT_FPS", DEFAULT_VIDEO_FPS))
+                )
             else:
                 raise ValidationError(
                     {

@@ -11,6 +11,8 @@ Primary pages for setup/dataloader/hub/frame-annotation behavior:
 - `docs/wiki/dataloader_yaml_authoring.md`
 - `docs/wiki/dataloader_layers_and_naming.md`
 - `docs/wiki/frame_annotation_current_support.md`
+- `docs/annotation_export_guide.md`
+- `docs/video_frame_extraction_contract.md`
 - `docs/wiki/hub_ingest_current_state.md`
 - `docs/wiki/hub_ingest_gap_closure.md`
 - `docs/wiki/README.md`

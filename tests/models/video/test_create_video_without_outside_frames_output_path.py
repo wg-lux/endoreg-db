@@ -3,7 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from endoreg_db.models import Center, EndoscopyProcessor, VideoFile
+from endoreg_db.config.env import DEFAULT_VIDEO_FPS
+from endoreg_db.models import Center, EndoscopyProcessor, Frame, VideoFile
 from endoreg_db.utils.paths import data_paths, to_storage_relative
 
 
@@ -61,19 +62,41 @@ def test_create_video_without_outside_frames_uses_data_paths_output(
         center=center,
         processor=processor,
         video_hash=f"outside-path-{uuid.uuid4().hex}",
-        fps=25.0,
+        fps=None,
         width=1920,
         height=1080,
         frame_dir=str(frame_dir),
     )
 
-    fake_frames = [frame_dir / "frame_0000001.jpg", frame_dir / "frame_0000002.jpg"]
-    for path in fake_frames:
-        path.write_bytes(b"frame")
+    fake_frames: list[Path] = []
 
     captured: dict[str, object] = {}
 
     def fake_extract_frames(*args, **kwargs):  # noqa: ARG001
+        fake_frames.clear()
+        for frame_number in range(2):
+            frame_path = frame_dir / f"frame_{frame_number:07d}.jpg"
+            frame_path.write_bytes(b"frame")
+            fake_frames.append(frame_path)
+            Frame.objects.update_or_create(
+                video=video,
+                frame_number=frame_number,
+                defaults={
+                    "relative_path": frame_path.name,
+                    "is_extracted": True,
+                },
+            )
+        state = video.get_or_create_state()
+        state.frames_initialized = True
+        state.frame_count = len(fake_frames)
+        state.frames_extracted = True
+        state.save(
+            update_fields=[
+                "frames_initialized",
+                "frame_count",
+                "frames_extracted",
+            ]
+        )
         return True
 
     def fake_censor_outside_frames(_video):
@@ -111,10 +134,10 @@ def test_create_video_without_outside_frames_uses_data_paths_output(
 
     expected_output_path = (
         data_paths["transcoding"]
-        / "outside_frame_reassembly"
-        / f"{video.video_hash}_filtered.mp4"
+        / f"{video.video_hash}.outside_frame_reassembly.tmp.mp4"
     )
     assert captured["output_path"] == expected_output_path
+    assert captured["fps"] == DEFAULT_VIDEO_FPS
     assert str(expected_output_path).startswith(str(data_paths["transcoding"]))
     assert "/path/to/output" not in str(captured["output_path"])
 
@@ -200,6 +223,30 @@ def test_create_video_without_outside_frames_forces_processed_frame_reextract(
 
     def fake_extract_frames(*args, **kwargs):
         extracted_calls.append(kwargs)
+        fake_frames.clear()
+        for frame_number in range(2):
+            frame_path = frame_dir / f"frame_{frame_number:07d}.jpg"
+            frame_path.write_bytes(b"frame")
+            fake_frames.append(frame_path)
+            Frame.objects.update_or_create(
+                video=video,
+                frame_number=frame_number,
+                defaults={
+                    "relative_path": frame_path.name,
+                    "is_extracted": True,
+                },
+            )
+        state = video.get_or_create_state()
+        state.frames_initialized = True
+        state.frame_count = len(fake_frames)
+        state.frames_extracted = True
+        state.save(
+            update_fields=[
+                "frames_initialized",
+                "frame_count",
+                "frames_extracted",
+            ]
+        )
         return True
 
     monkeypatch.setattr(video, "extract_frames", fake_extract_frames)
@@ -229,3 +276,20 @@ def test_create_video_without_outside_frames_forces_processed_frame_reextract(
             "from_processed": True,
         }
     ]
+    assert [path.name for path in fake_frames] == [
+        "frame_0000000.jpg",
+        "frame_0000001.jpg",
+    ]
+
+    video.refresh_from_db()
+    state = video.get_or_create_state()
+    state.refresh_from_db()
+    assert state.frames_extracted is True
+    assert state.frames_initialized is True
+    assert state.frame_count == 2
+    assert list(
+        Frame.objects.filter(video=video, is_extracted=True)
+        .order_by("frame_number")
+        .values_list("relative_path", flat=True)
+    ) == ["frame_0000000.jpg", "frame_0000001.jpg"]
+    assert all(path.is_file() for path in fake_frames)

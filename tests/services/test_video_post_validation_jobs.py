@@ -1,10 +1,28 @@
 from __future__ import annotations
 
 import types
+import uuid
 from unittest.mock import Mock
 
+import pytest
 
+from endoreg_db.models import Center, Frame, VideoFile
 from endoreg_db.services import video_post_validation_jobs as jobs
+
+
+def _create_video_for_post_validation(tmp_path):
+    center = Center.objects.create(
+        name=f"post-validation-center-{uuid.uuid4().hex[:8]}",
+        display_name="Post Validation Center",
+    )
+    frame_dir = tmp_path / f"frames-{uuid.uuid4().hex[:8]}"
+    frame_dir.mkdir(parents=True, exist_ok=True)
+    return VideoFile.objects.create(
+        center=center,
+        video_hash=f"post-validation-{uuid.uuid4().hex}",
+        frame_count=2,
+        frame_dir=str(frame_dir),
+    )
 
 
 def test_dispatch_video_post_validation_rebuild_inline(monkeypatch):
@@ -102,3 +120,86 @@ def test_dispatch_video_post_validation_rebuild_celery_falls_back_to_thread(
     assert "fn" in submitted
     submitted["fn"]()
     runner.assert_called_once_with(321, only_validated=False)
+
+
+@pytest.mark.django_db
+def test_run_video_post_validation_rebuild_accepts_stable_extracted_frames(
+    monkeypatch,
+    tmp_path,
+):
+    video = _create_video_for_post_validation(tmp_path)
+
+    def fake_create_video_without_outside_frames(video_obj, *, only_validated=False):
+        frame_dir = video_obj.get_frame_dir_path()
+        assert frame_dir is not None
+        for frame_number in range(2):
+            relative_path = f"frame_{frame_number:07d}.jpg"
+            (frame_dir / relative_path).write_bytes(b"frame")
+            Frame.objects.update_or_create(
+                video=video_obj,
+                frame_number=frame_number,
+                defaults={
+                    "relative_path": relative_path,
+                    "is_extracted": True,
+                },
+            )
+        state = video_obj.get_or_create_state()
+        state.frames_initialized = True
+        state.frame_count = 2
+        state.frames_extracted = True
+        state.save(
+            update_fields=[
+                "frames_initialized",
+                "frame_count",
+                "frames_extracted",
+            ]
+        )
+        return True
+
+    monkeypatch.setattr(
+        VideoFile,
+        "create_video_without_outside_frames",
+        fake_create_video_without_outside_frames,
+    )
+
+    assert jobs._run_video_post_validation_rebuild(video.pk) is True
+
+
+@pytest.mark.django_db
+def test_run_video_post_validation_rebuild_rejects_missing_extracted_frame_file(
+    monkeypatch,
+    tmp_path,
+):
+    video = _create_video_for_post_validation(tmp_path)
+
+    def fake_create_video_without_outside_frames(video_obj, *, only_validated=False):
+        for frame_number in range(2):
+            Frame.objects.update_or_create(
+                video=video_obj,
+                frame_number=frame_number,
+                defaults={
+                    "relative_path": f"frame_{frame_number:07d}.jpg",
+                    "is_extracted": True,
+                },
+            )
+        state = video_obj.get_or_create_state()
+        state.frames_initialized = True
+        state.frame_count = 2
+        state.frames_extracted = True
+        state.save(
+            update_fields=[
+                "frames_initialized",
+                "frame_count",
+                "frames_extracted",
+            ]
+        )
+        return True
+
+    monkeypatch.setattr(
+        VideoFile,
+        "create_video_without_outside_frames",
+        fake_create_video_without_outside_frames,
+    )
+
+    with pytest.raises(RuntimeError, match="non-recreatable"):
+        jobs._run_video_post_validation_rebuild(video.pk)

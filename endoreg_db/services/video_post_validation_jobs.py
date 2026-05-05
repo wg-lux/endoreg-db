@@ -15,6 +15,66 @@ logger = logging.getLogger(__name__)
 _executor = ThreadPoolExecutor(max_workers=get_video_post_validation_job_max_workers())
 
 
+def _verify_extracted_frame_contract(video) -> None:
+    """Fail if post-validation rebuild did not leave stable frames available."""
+    from endoreg_db.models import Frame
+
+    state = video.get_or_create_state()
+    if not state.frames_extracted:
+        raise RuntimeError(
+            f"Post-validation rebuild for video {video.pk} did not leave extracted frames available."
+        )
+
+    expected_count = video.frame_count or state.frame_count
+    if expected_count is None:
+        expected_count = Frame.objects.filter(video=video).count()
+    expected_count = int(expected_count or 0)
+    if expected_count <= 0:
+        raise RuntimeError(
+            f"Post-validation rebuild for video {video.pk} has no stable frame count."
+        )
+
+    frame_dir = video.get_frame_dir_path()
+    if frame_dir is None:
+        raise RuntimeError(
+            f"Post-validation rebuild for video {video.pk} has no frame directory."
+        )
+
+    frames = list(
+        Frame.objects.filter(
+            video=video,
+            frame_number__gte=0,
+            frame_number__lt=expected_count,
+        ).only("frame_number", "relative_path", "is_extracted")
+    )
+    if len(frames) != expected_count:
+        raise RuntimeError(
+            "Post-validation rebuild left frames in a non-recreatable state: "
+            "did not preserve exact Frame DB rows for "
+            f"video {video.pk}: expected={expected_count}, actual={len(frames)}"
+        )
+
+    missing_files: list[int] = []
+    unstable_rows: list[tuple[int, str]] = []
+    unextracted_rows: list[int] = []
+    for frame in frames:
+        expected_relative_path = f"frame_{frame.frame_number:07d}.jpg"
+        if frame.relative_path != expected_relative_path:
+            unstable_rows.append((frame.frame_number, frame.relative_path))
+        if not frame.is_extracted:
+            unextracted_rows.append(frame.frame_number)
+        if not (frame_dir / expected_relative_path).is_file():
+            missing_files.append(frame.frame_number)
+
+    if missing_files or unstable_rows or unextracted_rows:
+        raise RuntimeError(
+            "Post-validation rebuild left frames in a non-recreatable state for "
+            f"video {video.pk}: missing_files={missing_files[:10]}, "
+            f"unstable_rows={unstable_rows[:10]}, "
+            f"unextracted_rows={unextracted_rows[:10]}"
+        )
+
+
 @dataclass(frozen=True)
 class JobDispatchResult:
     task_id: str
@@ -32,11 +92,15 @@ def _run_video_post_validation_rebuild(
     from endoreg_db.models import VideoFile
 
     video = VideoFile.objects.get(pk=video_id)
-    return bool(
+    rebuilt = bool(
         VideoFile.create_video_without_outside_frames(
             video, only_validated=only_validated
         )
     )
+    if rebuilt:
+        video.refresh_from_db()
+        _verify_extracted_frame_contract(video)
+    return rebuilt
 
 
 def dispatch_video_post_validation_rebuild(

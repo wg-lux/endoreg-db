@@ -3,6 +3,7 @@ from django.test import TestCase
 from django.contrib.auth.models import User
 from unittest.mock import Mock, patch
 
+from endoreg_db.config.env import DEFAULT_VIDEO_FPS
 from endoreg_db.models import VideoFile, Label, LabelVideoSegment, InformationSource
 from endoreg_db.services.segment_contracts import parse_segment_annotation_input
 from endoreg_db.services.segment_sync import create_user_segment_from_annotation
@@ -87,6 +88,39 @@ class TestSegmentAnnotationFlow(TestCase):
 
                 # Verify user source was set
                 mock_segment.save.assert_called_once()
+
+    def test_create_user_segment_defaults_invalid_fps_to_50(self):
+        self.video.get_fps.return_value = 0
+        annotation_data = {
+            "type": "segment",
+            "videoId": 1,
+            "startTime": 10.0,
+            "endTime": 15.0,
+            "text": "polyp",
+            "metadata": {},
+        }
+
+        mock_segment = Mock(spec=LabelVideoSegment)
+        mock_segment.id = 123
+        mock_segment.source = self.user_source
+        mock_segment.save = Mock()
+
+        with patch.object(
+            LabelVideoSegment, "create_from_video", return_value=mock_segment
+        ):
+            with patch.object(Label.objects, "filter") as mock_label_filter:
+                mock_label_filter.return_value.first.return_value = self.label
+
+                result = create_user_segment_from_annotation(annotation_data, self.user)
+
+                self.assertIsNotNone(result)
+                LabelVideoSegment.create_from_video.assert_called_once_with(
+                    source=self.video,
+                    prediction_meta=None,
+                    label=self.label,
+                    start_frame_number=int(10.0 * DEFAULT_VIDEO_FPS),
+                    end_frame_number=int(15.0 * DEFAULT_VIDEO_FPS),
+                )
 
     def test_create_user_segment_from_updated_annotation(self):
         """Test creating a user segment when updating an existing annotation"""

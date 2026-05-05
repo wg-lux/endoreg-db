@@ -17,6 +17,7 @@ from django.conf import settings
 from django.core.files.base import ContentFile
 from django.db import models
 
+from endoreg_db.config.env import DEFAULT_VIDEO_FPS
 from endoreg_db.models import (
     Center,
     EndoscopyProcessor,
@@ -88,15 +89,14 @@ def _cache_pop(key: str) -> None:
 
 def _segment_payload_from_video(video: VideoFile) -> Dict[str, Any]:
     """Capture immutable info so stub videos can be rebuilt after DB flush."""
+    raw_file_name = getattr(video.raw_file, "name", None) or ""
 
     return {
         "pk": video.pk,
         "video_hash": video.video_hash,
         "original_file_name": video.original_file_name or "segment_stub.mp4",
-        "raw_file_name": os.path.basename(video.raw_file.name)
-        if video.raw_file
-        else "",
-        "fps": float(video.fps or 25.0),
+        "raw_file_name": os.path.basename(raw_file_name),
+        "fps": float(video.fps or DEFAULT_VIDEO_FPS),
         "frame_count": int(video.frame_count or 0),
         "duration": float(video.duration or 0.0),
         "width": int(video.width or 0),
@@ -194,8 +194,8 @@ def _create_segment_stub_video() -> VideoFile:
         center=center,
         processor=processor,
         original_file_name=f"segment_stub_{suffix}.mp4",
-        fps=25.0,
-        frame_count=900,
+        fps=DEFAULT_VIDEO_FPS,
+        frame_count=int(36.0 * DEFAULT_VIDEO_FPS),
         duration=36.0,
         width=1920,
         height=1080,
@@ -351,7 +351,7 @@ class MockVideoFile:
         if self._video_meta is None:
             self._video_meta = MagicMock(spec=VideoMeta)
             self._video_meta.duration = 120.0
-            self._video_meta.fps = 25.0
+            self._video_meta.fps = DEFAULT_VIDEO_FPS
             self._video_meta.width = 1920
             self._video_meta.height = 1080
         return self._video_meta

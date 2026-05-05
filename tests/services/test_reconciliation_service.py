@@ -149,6 +149,44 @@ def test_cleanup_removes_stale_part_files(monkeypatch, tmp_path):
 
 
 @pytest.mark.unit
+def test_startup_reconciliation_delegates_recovery_to_media_integrity(monkeypatch):
+    import endoreg_db.services.reconciliation as reconciliation_module
+
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        ReconciliationService,
+        "clear_stale_lock_files",
+        lambda self: calls.append("locks") or 0,
+    )
+    monkeypatch.setattr(
+        ReconciliationService,
+        "relink_broken_video_raw_files",
+        lambda self: calls.append("raw") or 0,
+    )
+    monkeypatch.setattr(
+        ReconciliationService,
+        "cleanup_orphaned_artifacts",
+        lambda self: calls.append("cleanup") or 0,
+    )
+    monkeypatch.setattr(
+        ReconciliationService,
+        "reset_incomplete_processing_states",
+        lambda self: calls.append("states") or 0,
+    )
+    monkeypatch.setattr(
+        reconciliation_module,
+        "reconcile_media_integrity",
+        lambda: calls.append("media_integrity"),
+        raising=True,
+    )
+
+    ReconciliationService().run()
+
+    assert calls == ["locks", "raw", "cleanup", "states", "media_integrity"]
+
+
+@pytest.mark.unit
 def test_reconciliation_relinks_broken_raw_file_to_canonical_name(
     monkeypatch, tmp_path
 ):

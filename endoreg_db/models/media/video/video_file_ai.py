@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, cast
 import numpy as np
 from safetensors import safe_open
 
+from endoreg_db.config.env import DEFAULT_VIDEO_FPS
+
 from ...metadata import ModelMeta, VideoPredictionMeta
 from ...utils import TEST_RUN as GLOBAL_TEST_RUN
 
@@ -705,10 +707,11 @@ def _predict_video_pipeline(
         fps = video.get_fps()  # Use Meta helper
         if not fps:
             logger.warning(
-                "Video FPS is unknown for %s. Smoothing/sequence calculations might be inaccurate. Using default 30 FPS.",
+                "Video FPS is unknown for %s. Smoothing/sequence calculations might be inaccurate. Using default %.1f FPS.",
                 video.video_hash,
+                DEFAULT_VIDEO_FPS,
             )
-            fps = 30  # Default FPS if unknown
+            fps = DEFAULT_VIDEO_FPS
 
         fps = int(fps)
         smooth_merged_predictions = {}

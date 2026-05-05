@@ -255,3 +255,38 @@ def test_extract_frame_range_numbers_outputs_by_requested_frame(monkeypatch, tmp
     ]
     assert "-start_number" in captured["command"]
     assert captured["command"][captured["command"].index("-start_number") + 1] == "10"
+
+
+@pytest.mark.unit
+def test_extract_frames_numbers_full_extraction_from_zero(monkeypatch, tmp_path):
+    input_path = tmp_path / "input.mp4"
+    output_dir = tmp_path / "frames"
+    input_path.write_bytes(b"video")
+    captured = {}
+
+    monkeypatch.setattr(
+        "endoreg_db.utils.video.ffmpeg_wrapper._resolve_ffmpeg_executable",
+        lambda: "/smart/bin/ffmpeg",
+    )
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        output_dir.mkdir(parents=True, exist_ok=True)
+        for frame_number in range(2):
+            (output_dir / f"frame_{frame_number:07d}.jpg").write_bytes(b"frame")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    result = ffmpeg_wrapper.extract_frames(
+        input_path,
+        output_dir,
+        quality=2,
+    )
+
+    assert [path.name for path in result] == [
+        "frame_0000000.jpg",
+        "frame_0000001.jpg",
+    ]
+    assert "-start_number" in captured["command"]
+    assert captured["command"][captured["command"].index("-start_number") + 1] == "0"
