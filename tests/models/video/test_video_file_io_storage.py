@@ -123,6 +123,8 @@ def test_delete_with_file_removes_stored_assets(video_with_files: VideoFile):
         video.delete_with_file()
 
     assert pk_value is not None
+    assert raw_name is not None
+    assert processed_name is not None
     assert not default_storage.exists(raw_name)
     assert not default_storage.exists(processed_name)
     assert not VideoFile.objects.filter(pk=pk_value).exists()
@@ -148,6 +150,8 @@ def test_delete_with_file_handles_pathless_storage(video_with_files: VideoFile):
         video.delete_with_file()
 
     assert pk_value is not None
+    assert raw_name is not None
+    assert processed_name is not None
     assert not default_storage.exists(raw_name)
     assert not default_storage.exists(processed_name)
     assert not VideoFile.objects.filter(pk=pk_value).exists()
