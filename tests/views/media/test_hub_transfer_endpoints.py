@@ -22,6 +22,7 @@ from endoreg_db.models.state.processing_history.processing_history import (
 from tests.helpers.data_loader import load_gender_data
 
 
+@override_settings(ENDOREG_ENABLE_HUB_TRANSFERS=True)
 class HubTransferEndpointTests(TestCase):
     @classmethod
     def setUpTestData(cls):
@@ -201,6 +202,10 @@ class HubTransferEndpointTests(TestCase):
             },
         }
 
+    @override_settings(
+        ENDOREG_DEPLOYMENT_ROLE="central_hub",
+        ENDOREG_ENABLE_HUB_TRANSFERS=False,
+    )
     def test_transfer_endpoints_return_404_when_feature_flag_is_disabled(self):
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__disabled",

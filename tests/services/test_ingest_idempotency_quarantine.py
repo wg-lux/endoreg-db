@@ -174,7 +174,11 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
         self.assertEqual(UploadJob.objects.count(), 2)
         job.refresh_from_db()
         self.assertEqual(job.status, UploadJob.Status.LOST)
-        self.assertIn("Associated media record was deleted", job.error_detail)
+        self.assertIn("media integrity check", job.error_detail)
+        self.assertEqual(
+            job.processing_provenance["media_integrity_status"],
+            "media_record_missing",
+        )
         self.assertEqual(job_reingest.status, UploadJob.Status.PENDING)
 
     def test_create_or_reuse_upload_job_handles_orphaned_job_by_idempotency_key(self):
@@ -220,7 +224,11 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
         self.assertEqual(UploadJob.objects.count(), 2)
         job.refresh_from_db()
         self.assertEqual(job.status, UploadJob.Status.LOST)
-        self.assertIn("Associated media record was deleted", job.error_detail)
+        self.assertIn("media integrity check", job.error_detail)
+        self.assertEqual(
+            job.processing_provenance["media_integrity_status"],
+            "media_record_missing",
+        )
         self.assertEqual(job_reingest.status, UploadJob.Status.PENDING)
 
     def test_process_upload_job_quarantines_on_failure(self):

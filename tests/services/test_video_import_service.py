@@ -489,6 +489,12 @@ def test_import_and_anonymize_duplicate_success_skips_storage_preflight_and_stag
         staticmethod(lambda file_hash: DummyVideo()),
         raising=True,
     )
+    monkeypatch.setattr(
+        vis_module,
+        "check_video_media_integrity",
+        lambda *args, **kwargs: SimpleNamespace(ok=True, reason="ok"),
+        raising=True,
+    )
 
     def fail_storage_budget(path):
         raise AssertionError(
@@ -566,6 +572,12 @@ def test_import_and_anonymize_completed_duplicate_removes_import_source(
         vis_module.VideoFile,
         "get_video_by_content_hash",
         staticmethod(lambda file_hash: DummyVideo()),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        vis_module,
+        "check_video_media_integrity",
+        lambda *args, **kwargs: SimpleNamespace(ok=True, reason="ok"),
         raising=True,
     )
 
@@ -646,6 +658,12 @@ def test_import_and_anonymize_completed_duplicate_keeps_external_source(
         staticmethod(lambda file_hash: DummyVideo()),
         raising=True,
     )
+    monkeypatch.setattr(
+        vis_module,
+        "check_video_media_integrity",
+        lambda *args, **kwargs: SimpleNamespace(ok=True, reason="ok"),
+        raising=True,
+    )
 
     service = VideoImportService()
     result = service.import_and_anonymize(
@@ -655,6 +673,69 @@ def test_import_and_anonymize_completed_duplicate_keeps_external_source(
     )
 
     assert result.pk == 1
+    assert source_path.exists()
+
+
+@pytest.mark.unit
+def test_import_and_anonymize_success_history_missing_media_fails_before_staging(
+    monkeypatch, tmp_path
+):
+    import endoreg_db.import_files.video_import_service as vis_module
+    from endoreg_db.services.hub.media_integrity import MediaIntegrityError
+
+    import_dir = tmp_path / "import"
+    source_path = import_dir / "missing-media-success-history.mp4"
+    import_dir.mkdir(parents=True, exist_ok=True)
+    source_path.write_bytes(b"video")
+
+    monkeypatch.setattr(vis_module, "validate_directories", lambda: None, raising=True)
+    monkeypatch.setattr(
+        vis_module, "_video_import_dir", lambda: import_dir, raising=True
+    )
+
+    @contextmanager
+    def fake_file_lock(path):
+        yield
+
+    @contextmanager
+    def fake_hash_lock(file_hash, lock_root):
+        yield
+
+    monkeypatch.setattr(vis_module, "file_lock", fake_file_lock, raising=True)
+    monkeypatch.setattr(vis_module, "content_hash_lock", fake_hash_lock, raising=True)
+    monkeypatch.setattr(
+        vis_module.ProcessingHistory,
+        "has_history_for_hash",
+        staticmethod(lambda file_hash, success: success),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        vis_module.VideoFile,
+        "get_video_by_content_hash",
+        staticmethod(lambda file_hash: None),
+        raising=True,
+    )
+
+    def fail_storage_budget(path):
+        raise AssertionError(
+            "storage preflight should be skipped when media integrity fails"
+        )
+
+    monkeypatch.setattr(
+        VideoImportService,
+        "_ensure_pipeline_storage_budget",
+        fail_storage_budget,
+        raising=True,
+    )
+
+    service = VideoImportService()
+    with pytest.raises(MediaIntegrityError, match="No VideoFile"):
+        service.import_and_anonymize(
+            file_path=source_path,
+            center_name="university_hospital_wuerzburg",
+            processor_name="olympus_cv_1500",
+        )
+
     assert source_path.exists()
 
 

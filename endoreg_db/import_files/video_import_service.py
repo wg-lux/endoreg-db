@@ -28,6 +28,11 @@ from endoreg_db.models import VideoFile
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
+from endoreg_db.services.hub.media_integrity import (
+    MediaIntegrityError,
+    MediaIntegrityExpectation,
+    check_video_media_integrity,
+)
 from endoreg_db.utils import paths as path_utils
 
 logger = logging.getLogger(__name__)
@@ -248,12 +253,19 @@ class VideoImportService:
             return None
 
         existing_video = VideoFile.get_video_by_content_hash(file_hash)
-        if existing_video is None:
-            logger.warning(
-                "Successful processing history exists for %s but no VideoFile was found.",
+        integrity_result = check_video_media_integrity(
+            existing_video,
+            expectation=MediaIntegrityExpectation.RAW_WATCHER_VIDEO,
+            content_hash=file_hash,
+        )
+        if not integrity_result.ok:
+            logger.error(
+                "Successful processing history exists for %s but media integrity "
+                "failed before staging: %s",
                 file_hash,
+                integrity_result.reason,
             )
-            return None
+            raise MediaIntegrityError(integrity_result)
 
         logger.info(
             "VideoFile already has successful processing history (file_hash=%s) - short-circuiting before staging",

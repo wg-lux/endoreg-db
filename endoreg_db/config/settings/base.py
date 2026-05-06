@@ -14,6 +14,7 @@ from endoreg_db.config.env import (
     get_celery_pipeline_queue,
     celery_audit_ledger_integrity_beat_enabled,
     get_celery_audit_ledger_integrity_interval_seconds,
+    get_enable_hub_transfers,
     get_endoreg_deployment_role,
     get_hub_transfer_mtls_meta_key,
     get_hub_transfer_mtls_meta_value,
@@ -46,6 +47,7 @@ BASE_DIR = Path(__file__).parent.parent.parent.resolve()
 ASSET_DIR = get_asset_dir()
 RUN_VIDEO_TESTS = run_video_tests_enabled()
 ENDOREG_DEPLOYMENT_ROLE = get_endoreg_deployment_role()
+ENDOREG_ENABLE_HUB_TRANSFERS = get_enable_hub_transfers()
 ENDOREG_HUB_TRANSFER_REQUIRE_SECURE_TRANSPORT = (
     get_hub_transfer_require_secure_transport()
 )
@@ -223,6 +225,7 @@ __all__ = [
     "ASSET_DIR",
     "RUN_VIDEO_TESTS",
     "ENDOREG_DEPLOYMENT_ROLE",
+    "ENDOREG_ENABLE_HUB_TRANSFERS",
     "ENDOREG_DEPLOYMENT_ROLE_VALUES",
     "ENDOREG_HUB_TRANSFER_REQUIRE_SECURE_TRANSPORT",
     "ENDOREG_HUB_TRANSFER_REQUIRE_MTLS",

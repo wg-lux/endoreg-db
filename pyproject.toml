@@ -14,7 +14,7 @@ maintainers = [
 ]
 name = "endoreg_db"
 readme = "README.md"
-version = "0.9.7.7"
+version = "0.9.8.1"
 
 
 classifiers = [
@@ -104,6 +104,7 @@ dev = [
   "pytest-cov>=6.1.1",
   "pytest-django>=4.11.1",
   "pytest-env>=1.1.5",
+  "pytest-xdist>=3.6.1",
   "ruff>=0.14.0",
   "django-stubs>=5.2.8",
   "djangorestframework-stubs>=3.16.6",

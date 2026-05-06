@@ -12,6 +12,7 @@ from endoreg_db.import_files.file_storage import create_video_file
 from endoreg_db.models import Center, EndoscopyProcessor
 from endoreg_db.models.state.processing_history import ProcessingHistory
 from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.storage import save_local_file
 
 
 def _configure_storage_layout(mock_paths, test_suffix: str) -> tuple[Path, Path, Path]:
@@ -185,6 +186,19 @@ def test_create_from_file_duplicate_with_existing_file(
     raw1 = v1.get_raw_file_path()
     assert raw1 is not None
     assert raw1.exists()
+
+    processed_src = import_dir / "processed_test_dup.mp4"
+    processed_src.write_bytes(b"processed-duplicate-video")
+    processed_hash = sha256_file(processed_src)
+    save_local_file(
+        v1.processed_file,
+        processed_src,
+        name=f"{processed_hash}.mp4",
+        save=False,
+    )
+    v1.processed_video_hash = processed_hash
+    v1.save(update_fields=["processed_file", "processed_video_hash"])
+    v1.get_or_create_state().mark_anonymization_validated()
 
     # Second call: should reuse existing instance
     ctx2 = ImportContext(

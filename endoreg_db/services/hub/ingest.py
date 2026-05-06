@@ -34,6 +34,10 @@ from endoreg_db.services.hub.deployment import (
     hub_mode_enabled as _deployment_hub_mode_enabled,
     local_study_server_mode_enabled,
 )
+from endoreg_db.services.hub.media_integrity import (
+    MediaIntegrityResult,
+    check_upload_job_media_integrity,
+)
 from endoreg_db.services.hub.payloads import PreanonymizedIngestPayload
 from endoreg_db.services.hub.payloads import LocalStudyServerPreanonymizedIngestPayload
 from endoreg_db.services.report_import import ReportImportService
@@ -133,6 +137,10 @@ class UploadProvenance(TypedDict, total=False):
     stored_upload_path: str
     quarantined_path: str
     quarantined_sidecar_path: str
+    media_integrity_status: str
+    media_integrity_reason: str
+    media_integrity_missing_artifacts: list[str]
+    previous_upload_job_id: str
     custom_marker: NotRequired[str]
 
 
@@ -502,40 +510,23 @@ def resolve_api_upload_context(
 
 
 def _upload_job_has_usable_media(upload_job: UploadJob) -> bool:
-    content_hash = (upload_job.content_hash or "").strip()
-    if not content_hash:
-        return False
+    return check_upload_job_media_integrity(upload_job).ok
 
-    if upload_job.content_type == "application/pdf":
-        report = (
-            RawPdfFile.objects.select_related("state")
-            .filter(pdf_hash=content_hash)
-            .first()
-        )
-        if report is None:
-            return False
-        processed_file = getattr(report, "processed_file", None)
-        if not processed_file or not processed_file.name:
-            return False
-        if not processed_file.storage.exists(processed_file.name):
-            return False
-        state = getattr(report, "state", None) or report.get_or_create_state()
-        return bool(getattr(state, "anonymization_validated", False))
 
-    video = (
-        VideoFile.objects.select_related("state")
-        .filter(video_hash=content_hash)
-        .first()
-    )
-    if video is None:
-        return False
-    processed_file = getattr(video, "processed_file", None)
-    if not processed_file or not processed_file.name:
-        return False
-    if not processed_file.storage.exists(processed_file.name):
-        return False
-    state = getattr(video, "state", None) or video.get_or_create_state()
-    return bool(getattr(state, "anonymization_validated", False))
+def _media_integrity_provenance(
+    result: MediaIntegrityResult,
+    *,
+    previous_upload_job_id: uuid.UUID | str | None = None,
+) -> dict[str, object]:
+    provenance: dict[str, object] = {
+        "media_integrity_status": result.status.value,
+        "media_integrity_reason": result.reason,
+    }
+    if result.missing_artifacts:
+        provenance["media_integrity_missing_artifacts"] = list(result.missing_artifacts)
+    if previous_upload_job_id is not None:
+        provenance["previous_upload_job_id"] = str(previous_upload_job_id)
+    return provenance
 
 
 def create_or_reuse_upload_job(
@@ -557,6 +548,8 @@ def create_or_reuse_upload_job(
     allow_completed_reuse_without_media: bool = False,
 ) -> tuple[UploadJob, bool]:
     upload_job_manager = cast(Any, getattr(UploadJob, "objects"))
+    base_processing_provenance = _upload_provenance(processing_provenance)
+    reingest_provenance_updates: dict[str, object] = {}
     normalized_content_hash = (content_hash or "").strip()
     if not normalized_content_hash:
         normalized_content_hash = _compute_uploaded_file_content_hash(uploaded_file)
@@ -593,6 +586,7 @@ def create_or_reuse_upload_job(
             invalid_job_id: uuid.UUID | None = None
             invalid_reason: str | None = None
             invalid_status: str = UploadJob.Status.ERROR
+            invalid_integrity_result: MediaIntegrityResult | None = None
             with transaction.atomic():
                 existing_job = _matching_active_job()
                 if existing_job is not None:
@@ -614,13 +608,17 @@ def create_or_reuse_upload_job(
                                 "state. Forcing re-ingest."
                             )
                     elif existing_job.status == UploadJob.Status.ANONYMIZED:
-                        if (
-                            allow_completed_reuse_without_media
-                            or _upload_job_has_usable_media(existing_job)
-                        ):
+                        integrity_result = check_upload_job_media_integrity(
+                            existing_job
+                        )
+                        if integrity_result.ok:
                             is_valid_reuse = True
                         else:
-                            invalid_reason = "Associated media record was deleted. Forcing re-ingest."
+                            invalid_integrity_result = integrity_result
+                            invalid_reason = (
+                                "Completed upload job failed media integrity check: "
+                                f"{integrity_result.reason} Forcing re-ingest."
+                            )
                             invalid_status = UploadJob.Status.LOST
                     else:
                         invalid_reason = (
@@ -679,7 +677,13 @@ def create_or_reuse_upload_job(
                                 storage_class=storage_class,
                                 storage_tier=storage_tier,
                                 retention_policy=retention_policy,
-                                processing_provenance=processing_provenance,
+                                processing_provenance=cast(
+                                    UploadProvenance,
+                                    {
+                                        **base_processing_provenance,
+                                        **reingest_provenance_updates,
+                                    },
+                                ),
                             ),
                             created_by=(
                                 created_by
@@ -715,6 +719,38 @@ def create_or_reuse_upload_job(
                     .first()
                 )
                 if invalid_job is not None:
+                    if invalid_integrity_result is not None:
+                        provenance_updates = _media_integrity_provenance(
+                            invalid_integrity_result
+                        )
+                        _update_upload_provenance(invalid_job, **provenance_updates)
+                        invalid_job.save(
+                            update_fields=["processing_provenance", "updated_at"]
+                        )
+                        emit_hub_audit_event(
+                            "hub.upload_job_media_integrity_failed",
+                            upload_job_id=str(invalid_job.id),
+                            source_system=invalid_job.source_system,
+                            request_user=created_by,
+                            center_key=(
+                                invalid_job.source_center.center_key
+                                if invalid_job.source_center
+                                else None
+                            ),
+                            ingest_mode=invalid_job.ingest_mode,
+                            content_hash=invalid_job.content_hash,
+                            media_integrity_status=(
+                                invalid_integrity_result.status.value
+                            ),
+                            media_integrity_reason=invalid_integrity_result.reason,
+                            missing_artifacts=list(
+                                invalid_integrity_result.missing_artifacts
+                            ),
+                        )
+                        reingest_provenance_updates = _media_integrity_provenance(
+                            invalid_integrity_result,
+                            previous_upload_job_id=invalid_job.id,
+                        )
                     if invalid_status == UploadJob.Status.LOST:
                         invalid_job.mark_lost(invalid_reason)
                     else:
@@ -775,7 +811,6 @@ def create_or_reuse_watcher_upload_job(
                 "content_hash": file_hash,
                 **(processing_provenance or {}),
             },
-            allow_completed_reuse_without_media=True,
         )
 
 

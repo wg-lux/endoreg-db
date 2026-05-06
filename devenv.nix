@@ -68,6 +68,9 @@ let
   ];
   
   SYNC_CMD = "uv sync --extra dev --extra docs";
+  FAST_TEST_MARKER = "not (expensive or video or pipeline or ai or slow or ffmpeg)";
+  HEAVY_TEST_MARKER = "expensive or video or pipeline or ai or slow or ffmpeg";
+  COVERAGE_ARGS = "--cov=./endoreg_db/models --cov=./endoreg_db/data --cov=./endoreg_db/factories --cov=./endoreg_db/serializers --cov=./endoreg_db/utils --cov=./endoreg_db/views --cov=endoreg_db.services.audit_integrity --cov=endoreg_db.tasks --cov-report=term:skip-covered";
 
   _module.args.buildInputs = baseBuildInputs;
 
@@ -236,6 +239,55 @@ in
         echo "Removing uv lock file: uv.lock"
         rm -f uv.lock
         echo "Environment cleaned. Re-enter the shell (e.g., 'exit' then 'devenv up') to trigger uv sync."
+      '';
+    };
+    "test:fast" = {
+      description = "Run the fast PR pytest lane without coverage or heavy media/AI tests";
+      exec = ''
+        export SKIP_EXPENSIVE_TESTS=true
+        export RUN_VIDEO_TESTS=false
+        export USE_STUB_MODEL_META=true
+        export TEST_DB_REUSE=true
+        pytest -q --no-cov -o log_cli=false --log-level=WARNING -m '${FAST_TEST_MARKER}' -n auto --dist=loadscope
+      '';
+    };
+    "test:heavy" = {
+      description = "Run heavy media, video, AI, pipeline, FFmpeg, and slow tests without coverage";
+      exec = ''
+        export SKIP_EXPENSIVE_TESTS=false
+        export RUN_VIDEO_TESTS=true
+        export USE_STUB_MODEL_META=true
+        export TEST_DB_REUSE=true
+        pytest -q --no-cov -o log_cli=false --log-level=WARNING -m '${HEAVY_TEST_MARKER}' -n auto --dist=loadscope
+      '';
+    };
+    "test:full" = {
+      description = "Run the full pytest suite with the repository coverage profile";
+      exec = ''
+        export SKIP_EXPENSIVE_TESTS=false
+        export RUN_VIDEO_TESTS=true
+        export USE_STUB_MODEL_META=true
+        export TEST_DB_REUSE=true
+        pytest -q -o log_cli=false --log-level=WARNING -n auto --dist=loadscope ${COVERAGE_ARGS}
+      '';
+    };
+    "test:clean" = {
+      description = "Remove pytest worker runtimes, temp directories, and test SQLite files";
+      exec = ''
+        python - <<'PY'
+        from pathlib import Path
+
+        from endoreg_db.utils.file_operations import safe_rmtree, safe_unlink_file
+
+        root = Path("data/tests")
+        for path in (root / "workers", root / "tmp"):
+            safe_rmtree(path, missing_ok=True)
+
+        db_root = root / "db"
+        for pattern in ("test_db*.sqlite3", "test_db*.sqlite3-wal", "test_db*.sqlite3-shm"):
+            for path in db_root.glob(pattern):
+                safe_unlink_file(path, missing_ok=True)
+        PY
       '';
     };
   

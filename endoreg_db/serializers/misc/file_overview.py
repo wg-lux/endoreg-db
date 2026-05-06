@@ -1,12 +1,17 @@
+import re
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from rest_framework import serializers
 
+from endoreg_db.models import UploadJob
 from endoreg_db.models.media import RawPdfFile, VideoFile
 from endoreg_db.models.state.anonymization import AnonymizationState
 
 if TYPE_CHECKING:
     pass
+
+PATH_PATTERN = re.compile(r"([A-Za-z]:\\[^\s]+|/[^\s]+)")
 
 
 class FileOverviewSerializer(serializers.Serializer):
@@ -18,6 +23,53 @@ class FileOverviewSerializer(serializers.Serializer):
     createdAt = serializers.DateTimeField(read_only=True)
     sensitiveMetaId = serializers.IntegerField(read_only=True, allow_null=True)
     fileSize = serializers.IntegerField(read_only=True, required=False)
+    uploadJob = serializers.DictField(read_only=True, allow_null=True, required=False)
+
+    def _datetime_value(self, value):
+        return value.isoformat() if value else None
+
+    def _safe_original_filename(self, upload_job: UploadJob) -> str:
+        if not upload_job.original_filename:
+            return ""
+        normalized_name = str(upload_job.original_filename).replace("\\", "/")
+        return Path(normalized_name).name
+
+    def _safe_error_detail(self, upload_job: UploadJob) -> str:
+        if upload_job.status not in {UploadJob.Status.ERROR, UploadJob.Status.LOST}:
+            return ""
+
+        detail = " ".join(str(upload_job.error_detail or "").split())
+        detail = PATH_PATTERN.sub("[path]", detail)
+        if len(detail) > 240:
+            return f"{detail[:237]}..."
+        return detail
+
+    def _upload_job_summary(self, instance):
+        upload_job = getattr(instance, "_overview_upload_job", None)
+        if upload_job is None:
+            return None
+
+        source_center = getattr(upload_job, "source_center", None)
+        summary = {
+            "id": str(upload_job.id),
+            "status": upload_job.status,
+            "ingestMode": upload_job.ingest_mode,
+            "sourceSystem": upload_job.source_system,
+            "sourceCenterKey": (
+                source_center.center_key if source_center is not None else None
+            ),
+            "originalFilename": self._safe_original_filename(upload_job),
+            "sourceFilePersisted": upload_job.source_file_persisted,
+            "cleanupStatus": upload_job.cleanup_status,
+            "createdAt": self._datetime_value(upload_job.created_at),
+            "updatedAt": self._datetime_value(upload_job.updated_at),
+        }
+
+        error_detail = self._safe_error_detail(upload_job)
+        if error_detail:
+            summary["errorDetail"] = error_detail
+
+        return summary
 
     def to_representation(self, instance):
         # 1. Extract Type-Specific Data
@@ -78,4 +130,5 @@ class FileOverviewSerializer(serializers.Serializer):
             "createdAt": created_at,
             "sensitiveMetaId": sensitive_meta.pk if sensitive_meta else None,
             "fileSize": file_size,
+            "uploadJob": self._upload_job_summary(instance),
         }

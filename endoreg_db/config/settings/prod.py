@@ -4,6 +4,7 @@ from pathlib import Path
 from .base import *  # noqa: F401,F403
 from .base import (
     BASE_DIR,
+    ENDOREG_ENABLE_HUB_TRANSFERS,
     ENDOREG_DEPLOYMENT_ROLE,
     REST_FRAMEWORK,
 )
@@ -213,3 +214,9 @@ if ENDOREG_DEPLOYMENT_ROLE == "central_hub":
             "ENDOREG_HUB_TRANSFER_MTLS_META_KEY and "
             "ENDOREG_HUB_TRANSFER_MTLS_META_VALUE in production"
         )
+
+if ENDOREG_ENABLE_HUB_TRANSFERS and ENDOREG_DEPLOYMENT_ROLE != "central_hub":
+    raise ValueError(
+        "ENDOREG_ENABLE_HUB_TRANSFERS=true requires "
+        "ENDOREG_DEPLOYMENT_ROLE=central_hub in production"
+    )

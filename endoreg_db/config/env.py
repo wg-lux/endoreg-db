@@ -268,6 +268,10 @@ def get_endoreg_deployment_role() -> str:
     return role or "standalone"
 
 
+def get_enable_hub_transfers() -> bool:
+    return env_bool("ENDOREG_ENABLE_HUB_TRANSFERS", False)
+
+
 def get_hub_transfer_require_secure_transport() -> bool:
     return env_bool("ENDOREG_HUB_TRANSFER_REQUIRE_SECURE_TRANSPORT", True)
 
@@ -537,6 +541,7 @@ def snapshot() -> Dict[str, Any]:
         "RUN_VIDEO_TESTS",
         "SKIP_EXPENSIVE_TESTS",
         "ENDOREG_DEPLOYMENT_ROLE",
+        "ENDOREG_ENABLE_HUB_TRANSFERS",
         "CACHE_LOCATION",
         "CACHE_TIMEOUT",
         "DRF_THROTTLE_USER",

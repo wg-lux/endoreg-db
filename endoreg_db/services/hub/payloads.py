@@ -141,6 +141,10 @@ class UploadProvenancePayload(BaseModel):
     stored_upload_path: str | None = None
     quarantined_path: str | None = None
     quarantined_sidecar_path: str | None = None
+    media_integrity_status: str | None = None
+    media_integrity_reason: str | None = None
+    media_integrity_missing_artifacts: list[str] | None = None
+    previous_upload_job_id: str | None = None
     custom_marker: str | None = None
     legacy_source_path: str | None = None
     migrated_destination_path: str | None = None

@@ -16,7 +16,12 @@ __all__ = [
     "get_deployment_role",
     "hub_mode_enabled",
     "local_study_server_mode_enabled",
+    "MediaIntegrityError",
+    "MediaIntegrityExpectation",
+    "MediaIntegrityResult",
+    "MediaIntegrityStatus",
     "PreanonymizedIngestPayload",
+    "check_upload_job_media_integrity",
     "process_preanonymized_watcher_file",
     "process_upload_job",
     "process_watcher_file",
@@ -74,6 +79,14 @@ _EXPORTS = {
     "attach_transfer_media": (".transfers", "attach_transfer_media"),
     "authenticate_network_node": (".transfers", "authenticate_network_node"),
     "create_or_reuse_transfer_job": (".transfers", "create_or_reuse_transfer_job"),
+    "MediaIntegrityError": (".media_integrity", "MediaIntegrityError"),
+    "MediaIntegrityExpectation": (".media_integrity", "MediaIntegrityExpectation"),
+    "MediaIntegrityResult": (".media_integrity", "MediaIntegrityResult"),
+    "MediaIntegrityStatus": (".media_integrity", "MediaIntegrityStatus"),
+    "check_upload_job_media_integrity": (
+        ".media_integrity",
+        "check_upload_job_media_integrity",
+    ),
 }
 
 

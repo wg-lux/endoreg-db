@@ -19,15 +19,14 @@ from endoreg_db.services.report_import import ReportImportService
 from endoreg_db.services.report_materialization import (
     upsert_anonym_examination_report_from_pdf,
 )
+from endoreg_db.utils.file_operations import atomic_write_file, safe_unlink_file
 from tests.helpers.default_objects import get_default_center, get_default_processor
 
 # Environment-based test control (mirror video tests)
 SKIP_EXPENSIVE_TESTS = os.environ.get("SKIP_EXPENSIVE_TESTS", "true").lower() == "true"
+pytestmark = pytest.mark.expensive
 
 logger = logging.getLogger(__name__)
-
-ris = ReportImportService()
-import_and_anonymize = ris.import_and_anonymize
 
 MINIMAL_report_BYTES = b"""%report-1.4
 1 0 obj
@@ -105,7 +104,7 @@ class TestReportImportService(TestCase):
         # Create a temporary report file
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             pdf_path = Path(tmp.name)
-        pdf_path.write_bytes(MINIMAL_report_BYTES)
+        atomic_write_file(destination=pdf_path, content=(MINIMAL_report_BYTES,))
 
         try:
             service = ReportImportService()
@@ -128,8 +127,7 @@ class TestReportImportService(TestCase):
                 self.assertIsNotNone(pdf_file.state)
 
         finally:
-            if pdf_path.exists():
-                pdf_path.unlink()
+            safe_unlink_file(pdf_path, missing_ok=True)
 
     @pytest.mark.integration
     def test_imported_raw_pdf_can_link_to_anonym_examination_report(self):
@@ -148,7 +146,10 @@ class TestReportImportService(TestCase):
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             pdf_path = Path(tmp.name)
-        pdf_path.write_bytes(MINIMAL_report_BYTES + b"\n%report-link-check\n")
+        atomic_write_file(
+            destination=pdf_path,
+            content=(MINIMAL_report_BYTES + b"\n%report-link-check\n",),
+        )
 
         try:
             service = ReportImportService()
@@ -187,5 +188,4 @@ class TestReportImportService(TestCase):
             self.assertEqual(report_obj.type.name, "report_draft")
 
         finally:
-            if pdf_path.exists():
-                pdf_path.unlink()
+            safe_unlink_file(pdf_path, missing_ok=True)
