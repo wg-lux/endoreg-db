@@ -192,11 +192,6 @@ storage/*
 .vscode/extensions.json
 batch_inference_top3.py
 endoreg_db/data/model_training/
-endoreg_db/migrations/0002_operationlog.py
-endoreg_db/migrations/0003_delete_operationlog.py
-endoreg_db/migrations/0004_operationlog.py
-endoreg_db/migrations/0005_delete_operationlog.py
-endoreg_db/migrations/0006_frame_old_examination_id_operationlog.py
 lx-anonymizer/
 lx-report-generator/
 lx-terminology-editor/
