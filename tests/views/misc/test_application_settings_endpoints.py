@@ -8,6 +8,7 @@ from uuid import uuid4
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.test import TestCase
+from django.test.utils import override_settings
 
 from endoreg_db.models import AIDataSet, Center, EndoscopyProcessor, NetworkNode
 
@@ -221,6 +222,68 @@ class ApplicationSettingsEndpointTests(TestCase):
         errors = response.json()["errors"]
         assert "ai_dataset_name" in errors
         assert "ai_dataset_type" in errors
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="local_study_server")
+    def test_dataset_export_rejects_unprivileged_all_centers_scope(self):
+        user_model = get_user_model()
+        user = user_model.objects.create_user(username="dataset-scope-user")
+        self.client.force_login(user)
+        dataset = AIDataSet.objects.create(
+            name=f"dataset-scope-{uuid4().hex[:8]}",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+
+        response = self.client.post(
+            "/api/settings/application/ai_dataset_export/",
+            data={
+                "ai_dataset_name": dataset.name,
+                "ai_dataset_type": dataset.dataset_type,
+                "all_centers": True,
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 403, response.content
+        assert "all_centers" in response.json()["error"]
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="local_study_server")
+    def test_dataset_export_passes_resolved_scope_to_standard_export(self):
+        user_model = get_user_model()
+        user = user_model.objects.create_user(
+            username="dataset-scope-staff",
+            is_staff=True,
+        )
+        self.client.force_login(user)
+        dataset = AIDataSet.objects.create(
+            name=f"dataset-scoped-export-{uuid4().hex[:8]}",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+
+        with patch.object(
+            AIDataSet,
+            "export_to_standardized_structure",
+            return_value={"summary": {}},
+        ) as exporter:
+            response = self.client.post(
+                "/api/settings/application/ai_dataset_export/",
+                data={
+                    "ai_dataset_name": dataset.name,
+                    "ai_dataset_type": dataset.dataset_type,
+                    "center_key": self.center.center_key,
+                    "only_validated": "true",
+                    "all_centers": "false",
+                },
+                content_type="application/json",
+            )
+
+        assert response.status_code == 201, response.content
+        assert exporter.call_args.kwargs == {
+            "center_key": self.center.center_key,
+            "all_centers": False,
+            "only_validated": True,
+        }
 
     def test_model_training_options_endpoint_returns_backbones_and_image_datasets(self):
         image_dataset = AIDataSet.objects.create(

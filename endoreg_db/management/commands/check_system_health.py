@@ -3,17 +3,37 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
+import time
 from pathlib import Path
 
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
+from django.db.utils import OperationalError, ProgrammingError
 
-from endoreg_db.config.env import get_protected_media_root, get_protected_media_url
+from endoreg_db.config.env import (
+    env_int,
+    get_protected_media_root,
+    get_protected_media_url,
+)
+from endoreg_db.models import UploadJob
+from endoreg_db.services.audit_integrity import get_audit_ledger_integrity_status
 from endoreg_db.services.environment_readiness import check_environment_readiness
-from endoreg_db.utils.file_operations import atomic_copy_file
-from endoreg_db.utils.paths import LOG_DIR, PROTECTED_DATA_ROOT, STORAGE_DIR
+from endoreg_db.services.hub.deployment import (
+    get_deployment_role,
+    transfer_api_enabled,
+)
+from endoreg_db.utils.file_operations import atomic_write_file
+from endoreg_db.utils.paths import (
+    LOG_DIR,
+    PROTECTED_DATA_ROOT,
+    QUARANTINE_DIR,
+    STORAGE_DIR,
+)
 
 SECRET_KEY_FINGERPRINT_FILE = LOG_DIR / ".secret_key_fingerprint"
+DEFAULT_MIN_FREE_BYTES = 1024 * 1024 * 1024
+DEFAULT_QUARANTINE_MAX_AGE_DAYS = 30
 
 
 def _secret_key_fingerprint() -> str:
@@ -31,6 +51,86 @@ def _path_within(root: Path, candidate: Path) -> bool:
     except ValueError:
         return False
     return True
+
+
+def _quarantine_stats(now: float) -> dict[str, int | float | None | str]:
+    if not QUARANTINE_DIR.exists():
+        return {
+            "path": str(QUARANTINE_DIR),
+            "count": 0,
+            "bytes": 0,
+            "oldest_age_seconds": None,
+        }
+
+    file_count = 0
+    total_bytes = 0
+    oldest_mtime: float | None = None
+    for path in QUARANTINE_DIR.rglob("*"):
+        if not path.is_file():
+            continue
+        stat_result = path.stat()
+        file_count += 1
+        total_bytes += stat_result.st_size
+        if oldest_mtime is None or stat_result.st_mtime < oldest_mtime:
+            oldest_mtime = stat_result.st_mtime
+
+    return {
+        "path": str(QUARANTINE_DIR),
+        "count": file_count,
+        "bytes": total_bytes,
+        "oldest_age_seconds": None if oldest_mtime is None else now - oldest_mtime,
+    }
+
+
+def _upload_job_failure_stats() -> dict[str, int | str | None]:
+    try:
+        return {
+            "failed": UploadJob.objects.filter(status=UploadJob.Status.ERROR).count(),
+            "lost": UploadJob.objects.filter(status=UploadJob.Status.LOST).count(),
+            "error": None,
+        }
+    except (OperationalError, ProgrammingError) as exc:
+        return {
+            "failed": None,
+            "lost": None,
+            "error": str(exc),
+        }
+
+
+def _audit_ledger_integrity_status() -> dict[str, object]:
+    try:
+        return get_audit_ledger_integrity_status()
+    except (OperationalError, ProgrammingError) as exc:
+        return {
+            "status": "error",
+            "verified": False,
+            "checked_at": None,
+            "entry_count": None,
+            "error": str(exc),
+            "source": "health_check",
+        }
+
+
+def _storage_free_stats() -> dict[str, int | float | str | None]:
+    try:
+        usage = shutil.disk_usage(STORAGE_DIR)
+    except OSError as exc:
+        return {
+            "path": str(STORAGE_DIR.resolve()),
+            "total_bytes": None,
+            "used_bytes": None,
+            "free_bytes": None,
+            "free_ratio": 0.0,
+            "error": str(exc),
+        }
+    return {
+        "path": str(STORAGE_DIR.resolve()),
+        "total_bytes": usage.total,
+        "used_bytes": usage.used,
+        "free_bytes": usage.free,
+        "free_ratio": usage.free / usage.total if usage.total else 0.0,
+        "error": None,
+    }
 
 
 class Command(BaseCommand):
@@ -62,17 +162,30 @@ class Command(BaseCommand):
                 encoding="utf-8"
             ).strip()
         else:
-            SECRET_KEY_FINGERPRINT_FILE.parent.mkdir(parents=True, exist_ok=True)
-            temp_file = SECRET_KEY_FINGERPRINT_FILE.with_suffix(".tmp")
-            temp_file.write_text(secret_fingerprint, encoding="utf-8")
-            atomic_copy_file(
-                source=temp_file,
+            atomic_write_file(
                 destination=SECRET_KEY_FINGERPRINT_FILE,
-                preserve_metadata=False,
+                content=[secret_fingerprint.encode("utf-8")],
                 file_mode=0o640,
                 dir_mode=0o750,
             )
-            temp_file.unlink(missing_ok=True)
+
+        deployment_role = get_deployment_role()
+        local_study_server = deployment_role == "local_study_server"
+        now = time.time()
+        min_free_bytes = env_int(
+            "ENDOREG_HEALTH_MIN_FREE_BYTES",
+            DEFAULT_MIN_FREE_BYTES,
+        )
+        max_quarantine_age_days = env_int(
+            "ENDOREG_HEALTH_QUARANTINE_MAX_AGE_DAYS",
+            DEFAULT_QUARANTINE_MAX_AGE_DAYS,
+        )
+        quarantine = _quarantine_stats(now)
+        upload_jobs = _upload_job_failure_stats()
+        storage_free = _storage_free_stats()
+        audit_ledger_integrity = _audit_ledger_integrity_status()
+        oldest_age_seconds = quarantine["oldest_age_seconds"]
+        max_quarantine_age_seconds = max_quarantine_age_days * 24 * 60 * 60
 
         checks = {
             "protected_media_url_reachable": protected_media_url == "/protected_media/",
@@ -88,6 +201,35 @@ class Command(BaseCommand):
                 not previous_fingerprint or previous_fingerprint == secret_fingerprint
             ),
         }
+        if local_study_server:
+            checks.update(
+                {
+                    "local_study_server_transfer_api_disabled": (
+                        not transfer_api_enabled()
+                    ),
+                    "local_study_server_no_failed_upload_jobs": (
+                        upload_jobs["failed"] == 0
+                    ),
+                    "local_study_server_no_lost_upload_jobs": (
+                        upload_jobs["lost"] == 0
+                    ),
+                    "local_study_server_storage_free_above_threshold": (
+                        storage_free["free_bytes"] is not None
+                        and int(storage_free["free_bytes"]) >= min_free_bytes
+                    ),
+                    "local_study_server_quarantine_age_under_threshold": (
+                        oldest_age_seconds is None
+                        or (
+                            isinstance(oldest_age_seconds, (int, float))
+                            and oldest_age_seconds <= max_quarantine_age_seconds
+                        )
+                    ),
+                    "local_study_server_audit_ledger_integrity_verified": (
+                        audit_ledger_integrity.get("status") == "verified"
+                        and audit_ledger_integrity.get("verified") is True
+                    ),
+                }
+            )
         readiness_issues = check_environment_readiness()
         payload = {
             "checks": checks,
@@ -104,6 +246,17 @@ class Command(BaseCommand):
             "protected_media_url": protected_media_url,
             "storage_root": str(STORAGE_DIR.resolve()),
             "secret_key_fingerprint": secret_fingerprint,
+            "deployment_role": deployment_role,
+            "local_study_server": {
+                "enabled": local_study_server,
+                "transfer_api_enabled": transfer_api_enabled(),
+                "audit_ledger_integrity": audit_ledger_integrity,
+                "quarantine": quarantine,
+                "upload_jobs": upload_jobs,
+                "storage_free": storage_free,
+                "min_free_bytes": min_free_bytes,
+                "max_quarantine_age_days": max_quarantine_age_days,
+            },
         }
 
         if options["json"]:

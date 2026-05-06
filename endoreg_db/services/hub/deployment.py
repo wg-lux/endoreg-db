@@ -5,6 +5,7 @@ from django.conf import settings
 VALID_DEPLOYMENT_ROLES = (
     "standalone",
     "site_node",
+    "local_study_server",
     "central_hub",
 )
 
@@ -19,6 +20,10 @@ def get_deployment_role() -> str:
 
 def hub_mode_enabled() -> bool:
     return get_deployment_role() == "central_hub"
+
+
+def local_study_server_mode_enabled() -> bool:
+    return get_deployment_role() == "local_study_server"
 
 
 def transfer_api_enabled() -> bool:
@@ -50,5 +55,6 @@ __all__ = [
     "deployment_profile_payload",
     "get_deployment_role",
     "hub_mode_enabled",
+    "local_study_server_mode_enabled",
     "transfer_api_enabled",
 ]

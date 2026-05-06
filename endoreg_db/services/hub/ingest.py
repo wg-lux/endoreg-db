@@ -32,8 +32,10 @@ from endoreg_db.services.hub.cleanup import (
 from endoreg_db.services.auto_case_resolution import auto_resolve_media_case
 from endoreg_db.services.hub.deployment import (
     hub_mode_enabled as _deployment_hub_mode_enabled,
+    local_study_server_mode_enabled,
 )
 from endoreg_db.services.hub.payloads import PreanonymizedIngestPayload
+from endoreg_db.services.hub.payloads import LocalStudyServerPreanonymizedIngestPayload
 from endoreg_db.services.report_import import ReportImportService
 from endoreg_db.services.video_import import VideoImportService
 from endoreg_db.utils.defaults.set_default_center import (
@@ -43,6 +45,7 @@ from endoreg_db.utils.defaults.set_default_center import (
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_move_file,
+    ensure_directory,
     safe_unlink_file,
     sha256_file,
 )
@@ -201,6 +204,10 @@ def record_active_learning_selection_provenance(
 
 def hub_mode_enabled() -> bool:
     return _deployment_hub_mode_enabled()
+
+
+def strict_center_upload_mode_enabled() -> bool:
+    return hub_mode_enabled() or local_study_server_mode_enabled()
 
 
 def _normalized_upload_provenance(
@@ -368,7 +375,8 @@ def resolve_api_upload_context(
     normalized_center_key = (center_key or "").strip()
     normalized_center_name = (center_name or "").strip()
     hub_mode = hub_mode_enabled()
-    if hub_mode and not (
+    strict_center_mode = strict_center_upload_mode_enabled()
+    if strict_center_mode and not (
         user
         and not isinstance(user, AnonymousUser)
         and getattr(user, "is_authenticated", False)
@@ -376,8 +384,11 @@ def resolve_api_upload_context(
         return (
             None,
             None,
-            "Authentication is required for hub-mode API uploads.",
-            {"hub_mode": hub_mode},
+            "Authentication is required for center-scoped API uploads.",
+            {
+                "hub_mode": hub_mode,
+                "local_study_server": local_study_server_mode_enabled(),
+            },
         )
 
     declared_center, center_resolution_error = resolve_declared_upload_center(
@@ -385,22 +396,36 @@ def resolve_api_upload_context(
         center_name=normalized_center_name,
     )
     if center_resolution_error:
-        return None, None, center_resolution_error, {"hub_mode": hub_mode}
+        return (
+            None,
+            None,
+            center_resolution_error,
+            {
+                "hub_mode": hub_mode,
+                "local_study_server": local_study_server_mode_enabled(),
+            },
+        )
 
-    if hub_mode:
+    if strict_center_mode:
         if not normalized_center_key:
             return (
                 None,
                 None,
-                "center_key is required for hub-mode API uploads.",
-                {"hub_mode": hub_mode},
+                "center_key is required for center-scoped API uploads.",
+                {
+                    "hub_mode": hub_mode,
+                    "local_study_server": local_study_server_mode_enabled(),
+                },
             )
         if declared_center is None:
             return (
                 None,
                 None,
-                "center_key is required for hub-mode API uploads.",
-                {"hub_mode": hub_mode},
+                "center_key is required for center-scoped API uploads.",
+                {
+                    "hub_mode": hub_mode,
+                    "local_study_server": local_study_server_mode_enabled(),
+                },
             )
 
     allowed_center_id = resolve_allowed_center_id(user)
@@ -409,7 +434,10 @@ def resolve_api_upload_context(
             None,
             allowed_center_id,
             "You do not have access to upload jobs.",
-            {"hub_mode": hub_mode},
+            {
+                "hub_mode": hub_mode,
+                "local_study_server": local_study_server_mode_enabled(),
+            },
         )
     if (
         allowed_center_id is not None
@@ -421,12 +449,15 @@ def resolve_api_upload_context(
             None,
             allowed_center_id,
             "Upload center is outside the authenticated scope",
-            {"hub_mode": hub_mode},
+            {
+                "hub_mode": hub_mode,
+                "local_study_server": local_study_server_mode_enabled(),
+            },
         )
 
     source_center = (
         declared_center
-        if hub_mode
+        if strict_center_mode
         else resolve_upload_center(
             user=user,
             center_key=normalized_center_key,
@@ -462,6 +493,7 @@ def resolve_api_upload_context(
         None,
         {
             "hub_mode": hub_mode,
+            "local_study_server": local_study_server_mode_enabled(),
             "declared_center_key": normalized_center_key or None,
             "declared_center_name": normalized_center_name or None,
             "resolved_center_key": source_center.center_key if source_center else None,
@@ -560,6 +592,7 @@ def create_or_reuse_upload_job(
         try:
             invalid_job_id: uuid.UUID | None = None
             invalid_reason: str | None = None
+            invalid_status: str = UploadJob.Status.ERROR
             with transaction.atomic():
                 existing_job = _matching_active_job()
                 if existing_job is not None:
@@ -588,6 +621,7 @@ def create_or_reuse_upload_job(
                             is_valid_reuse = True
                         else:
                             invalid_reason = "Associated media record was deleted. Forcing re-ingest."
+                            invalid_status = UploadJob.Status.LOST
                     else:
                         invalid_reason = (
                             "Previous job was incomplete or invalid for reuse. "
@@ -681,7 +715,10 @@ def create_or_reuse_upload_job(
                     .first()
                 )
                 if invalid_job is not None:
-                    invalid_job.mark_error(invalid_reason)
+                    if invalid_status == UploadJob.Status.LOST:
+                        invalid_job.mark_lost(invalid_reason)
+                    else:
+                        invalid_job.mark_error(invalid_reason)
                     _cleanup_persisted_watcher_source(invalid_job)
                 continue
         except OperationalError as exc:
@@ -752,9 +789,13 @@ def _default_processor_name() -> str | None:
 
 def _load_preanonymized_sidecar(
     file_path: Path,
+    *,
+    strict: bool = False,
 ) -> tuple[PreanonymizedIngestPayload | None, Path | None]:
     sidecar_path = file_path.with_suffix(".json")
     if not sidecar_path.exists():
+        if strict:
+            raise ValueError(f"Preanonymized sidecar is required: {sidecar_path}")
         return None, None
 
     payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
@@ -763,10 +804,51 @@ def _load_preanonymized_sidecar(
             f"Preanonymized sidecar must contain a JSON object: {sidecar_path}"
         )
     try:
-        return PreanonymizedIngestPayload.model_validate(payload), sidecar_path
+        model_cls = (
+            LocalStudyServerPreanonymizedIngestPayload
+            if strict
+            else PreanonymizedIngestPayload
+        )
+        return model_cls.model_validate(payload), sidecar_path
     except ValidationError as exc:
         raise ValueError(
             f"Invalid preanonymized sidecar payload: {sidecar_path}"
+        ) from exc
+
+
+def _quarantine_preanonymized_drop(
+    *,
+    media_path: Path,
+    sidecar_path: Path | None,
+    upload_job: UploadJob | None = None,
+) -> None:
+    updates: dict[str, str] = {}
+    if media_path.exists():
+        quarantine_path = QUARANTINE_DIR / media_path.name
+        if quarantine_path.exists():
+            quarantine_path = QUARANTINE_DIR / f"{uuid.uuid4().hex}_{media_path.name}"
+        atomic_move_file(source=media_path, destination=quarantine_path)
+        updates["quarantined_path"] = str(quarantine_path)
+    if sidecar_path is not None and sidecar_path.exists():
+        quarantine_sidecar_path = QUARANTINE_DIR / sidecar_path.name
+        if quarantine_sidecar_path.exists():
+            quarantine_sidecar_path = (
+                QUARANTINE_DIR / f"{uuid.uuid4().hex}_{sidecar_path.name}"
+            )
+        atomic_move_file(source=sidecar_path, destination=quarantine_sidecar_path)
+        updates["quarantined_sidecar_path"] = str(quarantine_sidecar_path)
+    if upload_job is not None and updates:
+        _update_upload_provenance(upload_job, **updates)
+        upload_job.save(update_fields=["processing_provenance", "updated_at"])
+
+
+def _validate_local_preanonymized_drop_path(watched_path: Path) -> None:
+    drop_root = path_utils.WATCHER_PREANONYMIZED_DROP_DIR.resolve()
+    try:
+        watched_path.resolve().relative_to(drop_root)
+    except ValueError as exc:
+        raise ValueError(
+            f"Preanonymized watcher file must remain inside {drop_root}"
         ) from exc
 
 
@@ -776,7 +858,7 @@ def _persist_preanonymized_file(
     target_path: Path,
     delete_source: bool,
 ) -> None:
-    target_path.parent.mkdir(parents=True, exist_ok=True)
+    ensure_directory(target_path.parent)
     if source_path.resolve() == target_path.resolve():
         return
     if target_path.exists():
@@ -1294,6 +1376,11 @@ def process_watcher_file(
     watched_path = Path(file_path)
     if not watched_path.exists():
         raise FileNotFoundError(f"Watcher file not found: {watched_path}")
+    if local_study_server_mode_enabled():
+        raise ValueError(
+            "Raw watcher ingestion is disabled for local_study_server; "
+            "use preanonymized_import with a validated sidecar."
+        )
 
     _opportunistic_reap_watcher_sources()
 
@@ -1433,9 +1520,72 @@ def process_preanonymized_watcher_file(
             f"Unsupported preanonymized watcher file suffix: {watched_path.suffix}"
         )
 
-    source_center = center or resolve_default_center()
-    if source_center is None:
-        raise ObjectDoesNotExist("No center is configured for watcher ingestion")
+    strict_local = local_study_server_mode_enabled()
+    sidecar_path = watched_path.with_suffix(".json")
+    try:
+        if strict_local:
+            _validate_local_preanonymized_drop_path(watched_path)
+        metadata_payload, loaded_sidecar_path = _load_preanonymized_sidecar(
+            watched_path,
+            strict=strict_local,
+        )
+        sidecar_path = loaded_sidecar_path or sidecar_path
+        if strict_local:
+            assert metadata_payload is not None
+            declared_hash = (metadata_payload.file_sha256 or "").strip().lower()
+            actual_hash = sha256_file(watched_path)
+            if declared_hash != actual_hash:
+                raise ValueError(
+                    "Preanonymized sidecar file_sha256 does not match media file"
+                )
+
+        if strict_local:
+            assert metadata_payload is not None
+            source_center, center_error = resolve_declared_upload_center(
+                center_key=metadata_payload.center_key,
+                center_name=None,
+            )
+            if center_error:
+                raise ValueError(center_error)
+            if source_center is None:
+                raise ObjectDoesNotExist(
+                    "No center is configured for preanonymized watcher ingestion"
+                )
+            if center is not None and center.pk != source_center.pk:
+                raise ValueError(
+                    "Declared sidecar center_key does not match watcher center"
+                )
+        else:
+            declared_center = None
+            if metadata_payload is not None:
+                declared_center, center_error = resolve_declared_upload_center(
+                    center_key=metadata_payload.center_key,
+                    center_name=metadata_payload.center_name,
+                )
+                if center_error:
+                    raise ValueError(center_error)
+            source_center = center or declared_center or resolve_default_center()
+            if source_center is None:
+                raise ObjectDoesNotExist(
+                    "No center is configured for watcher ingestion"
+                )
+    except Exception as exc:
+        if strict_local:
+            _quarantine_preanonymized_drop(
+                media_path=watched_path,
+                sidecar_path=sidecar_path,
+            )
+            emit_hub_audit_event(
+                "hub.preanonymized_drop_rejected",
+                source_system=source_system,
+                request_user=None,
+                hub_mode=hub_mode_enabled(),
+                watched_path=str(watched_path),
+                sidecar_path=str(sidecar_path),
+                reason=str(exc),
+            )
+        raise
+
     emit_hub_audit_event(
         "hub.center_resolved",
         source_system=source_system,
@@ -1447,7 +1597,6 @@ def process_preanonymized_watcher_file(
         allowed_center_id=None,
     )
 
-    metadata_payload, sidecar_path = _load_preanonymized_sidecar(watched_path)
     upload_job, created = create_or_reuse_watcher_upload_job(
         file_path=watched_path,
         content_type=content_type,
@@ -1518,6 +1667,16 @@ def process_preanonymized_watcher_file(
         upload_job.save(update_fields=["processing_provenance", "updated_at"])
         upload_job.mark_completed(sensitive_meta=sensitive_meta)
         cleanup_upload_job_source(upload_job)
+        emit_hub_audit_event(
+            "hub.preanonymized_drop_accepted",
+            upload_job_id=str(upload_job.id),
+            source_system=source_system,
+            request_user=None,
+            center_key=source_center.center_key,
+            watched_path=str(watched_path),
+            sidecar_path=str(sidecar_path) if sidecar_path is not None else None,
+            content_hash=upload_job.content_hash,
+        )
         return upload_job
     except Exception as exc:
         logger.exception(
@@ -1526,6 +1685,16 @@ def process_preanonymized_watcher_file(
             exc,
         )
         upload_job.mark_error(str(exc))
+        emit_hub_audit_event(
+            "hub.preanonymized_drop_rejected",
+            upload_job_id=str(upload_job.id),
+            source_system=source_system,
+            request_user=None,
+            center_key=source_center.center_key,
+            watched_path=str(watched_path),
+            sidecar_path=str(sidecar_path) if sidecar_path is not None else None,
+            reason=str(exc),
+        )
         # Move the failed file to quarantine
         try:
             quarantine_path = QUARANTINE_DIR / watched_path.name

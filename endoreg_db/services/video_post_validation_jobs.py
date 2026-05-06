@@ -212,6 +212,8 @@ def _run_video_post_validation_rebuild(
             return False
 
         video.refresh_from_db()
+        state = video.get_or_create_state()
+        state.mark_outside_segments_removed()
         _verify_extracted_frame_contract(video)
         if history is not None:
             output_file = getattr(getattr(video, "processed_file", None), "name", "")

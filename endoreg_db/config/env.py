@@ -41,6 +41,7 @@ DEFAULT_CELERY_AUDIT_LEDGER_INTEGRITY_INTERVAL_SECONDS = 300
 ENDOREG_DEPLOYMENT_ROLE_VALUES = (
     "standalone",
     "site_node",
+    "local_study_server",
     "central_hub",
 )
 

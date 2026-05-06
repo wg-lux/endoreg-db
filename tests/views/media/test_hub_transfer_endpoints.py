@@ -219,6 +219,25 @@ class HubTransferEndpointTests(TestCase):
             transfer_key="site-a__video__disabled"
         ).exists()
 
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="local_study_server")
+    def test_transfer_endpoints_return_404_in_local_study_server(self):
+        payload = self._video_transfer_payload(
+            transfer_key="site-a__video__local-study-disabled",
+            video_hash="hash-local-disabled",
+        )
+
+        response = self._secure_post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        assert response.status_code == 404, response.content
+        assert not TransferJob.objects.filter(
+            transfer_key="site-a__video__local-study-disabled"
+        ).exists()
+
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfer_registration_creates_placeholder_video_and_waits_for_media(self):
         payload = self._video_transfer_payload(
