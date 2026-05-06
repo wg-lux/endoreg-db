@@ -6,6 +6,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from django.db import models, transaction
+from django.utils import timezone
 
 from endoreg_db.models.state.anonymization import AnonymizationState
 
@@ -71,6 +72,37 @@ class VideoState(models.Model):
         default=False,
         help_text="True if the anonymization process has been validated and confirmed.",
     )
+    outside_segments_removed = models.BooleanField(
+        default=False,
+        help_text=(
+            "True if outside-labelled segments have been removed or blackened in "
+            "the managed processed artifact."
+        ),
+    )
+    ready_for_export = models.BooleanField(
+        default=False,
+        help_text=(
+            "True if the managed processed artifact passed explicit clinical "
+            "ready-for-export validation."
+        ),
+    )
+    ready_for_export_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Server-side timestamp for the ready-for-export promotion.",
+    )
+    ready_for_export_by = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Authenticated user or service that promoted this video.",
+    )
+    processed_file_sha256 = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="SHA-256 digest of the processed artifact at promotion time.",
+    )
 
     processing_started = models.BooleanField(
         default=False,
@@ -131,6 +163,11 @@ class VideoState(models.Model):
             self.was_created = False
             self.sensitive_meta_processed = False
             self.anonymization_validated = False
+            self.outside_segments_removed = False
+            self.ready_for_export = False
+            self.ready_for_export_at = None
+            self.ready_for_export_by = ""
+            self.processed_file_sha256 = ""
             self.frames_extracted = False
             self.save()
 
@@ -148,8 +185,85 @@ class VideoState(models.Model):
             save (bool): If True, persist the change to the database immediately.
         """
         self.anonymization_validated = True
+        self.ready_for_export = False
+        self.ready_for_export_at = None
+        self.ready_for_export_by = ""
+        self.processed_file_sha256 = ""
         if save:
-            self.save(update_fields=["anonymization_validated", "date_modified"])
+            self.save(
+                update_fields=[
+                    "anonymization_validated",
+                    "ready_for_export",
+                    "ready_for_export_at",
+                    "ready_for_export_by",
+                    "processed_file_sha256",
+                    "date_modified",
+                ]
+            )
+
+    def mark_outside_segments_removed(self, *, save: bool = True) -> None:
+        self.outside_segments_removed = True
+        self.ready_for_export = False
+        self.ready_for_export_at = None
+        self.ready_for_export_by = ""
+        self.processed_file_sha256 = ""
+        if save:
+            self.save(
+                update_fields=[
+                    "outside_segments_removed",
+                    "ready_for_export",
+                    "ready_for_export_at",
+                    "ready_for_export_by",
+                    "processed_file_sha256",
+                    "date_modified",
+                ]
+            )
+
+    def clear_export_readiness(
+        self,
+        *,
+        clear_outside_segments_removed: bool = False,
+        save: bool = True,
+    ) -> None:
+        if clear_outside_segments_removed:
+            self.outside_segments_removed = False
+        self.ready_for_export = False
+        self.ready_for_export_at = None
+        self.ready_for_export_by = ""
+        self.processed_file_sha256 = ""
+        if save:
+            update_fields = [
+                "ready_for_export",
+                "ready_for_export_at",
+                "ready_for_export_by",
+                "processed_file_sha256",
+                "date_modified",
+            ]
+            if clear_outside_segments_removed:
+                update_fields.insert(0, "outside_segments_removed")
+            self.save(update_fields=update_fields)
+
+    def mark_ready_for_export(
+        self,
+        *,
+        processed_file_sha256: str,
+        ready_for_export_by: str,
+        save: bool = True,
+    ) -> None:
+        self.ready_for_export = True
+        self.ready_for_export_at = timezone.now()
+        self.ready_for_export_by = ready_for_export_by
+        self.processed_file_sha256 = processed_file_sha256
+        if save:
+            self.save(
+                update_fields=[
+                    "ready_for_export",
+                    "ready_for_export_at",
+                    "ready_for_export_by",
+                    "processed_file_sha256",
+                    "date_modified",
+                ]
+            )
 
     def mark_frames_extracted(self, *, save: bool = True) -> None:
         """
@@ -181,7 +295,22 @@ class VideoState(models.Model):
         """
         with transaction.atomic():
             self.anonymized = True
-            self.save(update_fields=["anonymized", "date_modified"])
+            self.outside_segments_removed = False
+            self.ready_for_export = False
+            self.ready_for_export_at = None
+            self.ready_for_export_by = ""
+            self.processed_file_sha256 = ""
+            self.save(
+                update_fields=[
+                    "anonymized",
+                    "outside_segments_removed",
+                    "ready_for_export",
+                    "ready_for_export_at",
+                    "ready_for_export_by",
+                    "processed_file_sha256",
+                    "date_modified",
+                ]
+            )
 
     def mark_initial_prediction_completed(self, *, save: bool = True) -> None:
         """

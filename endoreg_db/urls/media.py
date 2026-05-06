@@ -1,6 +1,7 @@
 from django.urls import path
 
 from endoreg_db.views.media.frame_media import FrameStreamView
+from endoreg_db.views.media.export_ready import VideoMarkReadyForExportView
 from endoreg_db.views.media.hub import (
     HubTransferCreateView,
     HubTransferMediaUploadView,
@@ -114,6 +115,11 @@ urlpatterns = [
         "media/videos/<int:pk>/reimport/",
         VideoReimportView.as_view(),
         name="video-reimport",
+    ),
+    path(
+        "media/videos/<int:pk>/mark-ready-for-export/",
+        VideoMarkReadyForExportView.as_view(),
+        name="video-mark-ready-for-export",
     ),
     path(
         "media/videos/export-annotated/",

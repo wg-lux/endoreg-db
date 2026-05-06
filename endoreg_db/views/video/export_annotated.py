@@ -8,22 +8,92 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
+from endoreg_db.models import Center
 from endoreg_db.export.frames.export_frames_with_labels import (
     annotation_exporter_client,
     export_config,
     export_job_failed_error,
 )
+from endoreg_db.services.hub import (
+    local_study_server_mode_enabled,
+    resolve_allowed_center_id,
+)
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
+
+_BOOLEAN_PAYLOAD_KEYS = {
+    "only_true",
+    "load_base_data",
+    "export_videos",
+    "export_frames",
+    "use_export_flags",
+    "all_centers",
+    "only_validated",
+    "transcode_frames",
+    "transcode_overwrite",
+    "use_frame_pk_paths",
+}
+
+
+def _payload_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def _api_export_scope_error(request, config: export_config) -> tuple[str, int] | None:
+    center_key = str(config.center_key or "").strip()
+    all_centers = bool(config.all_centers)
+    local_study_server = local_study_server_mode_enabled()
+    user = getattr(request, "user", None)
+    authenticated = bool(user and getattr(user, "is_authenticated", False))
+    privileged = bool(
+        authenticated
+        and (getattr(user, "is_staff", False) or getattr(user, "is_superuser", False))
+    )
+
+    if local_study_server and not authenticated:
+        return "Authentication is required for local_study_server exports.", 403
+    if center_key and all_centers:
+        return "Export scope must use center_key or all_centers, not both.", 400
+    if local_study_server and not (bool(center_key) ^ all_centers):
+        return (
+            "local_study_server exports require exactly one center scope: "
+            "center_key or all_centers.",
+            400,
+        )
+    if all_centers and local_study_server and not privileged:
+        return "all_centers export requires staff or superuser privileges.", 403
+    if local_study_server and not bool(config.only_validated):
+        return "local_study_server exports require only_validated=true.", 400
+
+    if center_key:
+        center = Center.objects.filter(center_key=center_key).first()
+        if center is None:
+            return f"Unknown center_key: {center_key}", 400
+        allowed_center_id = resolve_allowed_center_id(user)
+        if allowed_center_id == -1:
+            return "You do not have access to export center data.", 403
+        if allowed_center_id is not None and center.id != allowed_center_id:
+            return "Export center is outside the authenticated scope.", 403
+
+    return None
 
 
 @api_view(["POST"])
 @permission_classes([EnvironmentAwarePermission])
 def export_annotated_data(request):
     payload: dict[str, Any] = request.data or {}
-
     config_path = payload.get("config_path")
     if config_path:
-        config = export_config.from_yaml(config_path)
+        try:
+            config = export_config.from_yaml(config_path)
+        except (FileNotFoundError, ValueError) as exc:
+            return Response(
+                {"success": False, "error": str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
     else:
         output_dir = payload.get("output_dir")
         output_path = payload.get("output_path")
@@ -49,6 +119,9 @@ def export_annotated_data(request):
         "export_videos",
         "export_frames",
         "use_export_flags",
+        "center_key",
+        "all_centers",
+        "only_validated",
         "segment_ids",
         "transcode_frames",
         "transcode_fps",
@@ -58,18 +131,28 @@ def export_annotated_data(request):
         "use_frame_pk_paths",
     ):
         if key in payload and payload[key] is not None:
-            updates[key] = payload[key]
+            if key in _BOOLEAN_PAYLOAD_KEYS:
+                updates[key] = _payload_bool(payload[key])
+            elif key == "center_key":
+                updates[key] = str(payload[key]).strip() or None
+            else:
+                updates[key] = payload[key]
 
     if not config_path:
-        if "export_videos" not in updates:
-            updates["export_videos"] = True
         if "export_frames" not in updates:
             updates["export_frames"] = True
         if "use_export_flags" not in updates and "segment_ids" not in updates:
             updates["use_export_flags"] = True
+        if "export_videos" not in updates:
+            updates["export_videos"] = False
 
     if updates:
         config = replace(config, **updates)
+
+    scope_error = _api_export_scope_error(request, config)
+    if scope_error is not None:
+        error_message, status_code = scope_error
+        return Response({"success": False, "error": error_message}, status=status_code)
 
     client = annotation_exporter_client()
     try:

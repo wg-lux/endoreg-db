@@ -193,7 +193,7 @@ def test_video_post_validation_task_delegates_to_runner():
         )
 
     assert result is True
-    runner.assert_called_once_with(42, only_validated=True)
+    runner.assert_called_once_with(42, only_validated=True, history_id=None)
 
 
 def test_upload_processing_task_delegates_to_hub_service():

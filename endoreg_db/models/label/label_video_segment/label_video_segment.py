@@ -261,6 +261,20 @@ class LabelVideoSegment(models.Model):
             # `defaults={}` ensures we do not re-fetch the just-saved object.
             # This logic is now encapsulated in get_or_create_state
             self.get_or_create_state()
+            video = getattr(self, "video_file", None)
+            if video is not None:
+                video.get_or_create_state().clear_export_readiness(
+                    clear_outside_segments_removed=True
+                )
+
+    def delete(self, *args, **kwargs):
+        video = getattr(self, "video_file", None)
+        result = super().delete(*args, **kwargs)
+        if video is not None:
+            video.get_or_create_state().clear_export_readiness(
+                clear_outside_segments_removed=True
+            )
+        return result
 
     def get_or_create_state(self) -> Tuple["LabelVideoSegmentState", bool]:
         """

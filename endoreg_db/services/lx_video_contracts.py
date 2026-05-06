@@ -118,13 +118,13 @@ def build_lx_patient_video_file(
     default_labelset_name: str | None = None,
 ) -> PatientVideoFile:
     try:
-        active_file = video.active_file
+        processed_file = video.processed_file
     except Exception as exc:
-        raise ValueError(f"Video {video.pk} has no active file") from exc
-    active_name = getattr(active_file, "name", None)
-    if not active_name:
-        raise ValueError(f"Video {video.pk} has no active file")
-    active_path = Path(active_name)
+        raise ValueError(f"Video {video.pk} has no processed file") from exc
+    processed_name = getattr(processed_file, "name", None)
+    if not processed_name:
+        raise ValueError(f"Video {video.pk} has no processed file")
+    processed_path = Path(processed_name)
     lx_sensitive_meta = build_lx_sensitive_meta(video.sensitive_meta)
 
     patient_video_segments: dict[str, PVideoSegment] = {}
@@ -156,8 +156,8 @@ def build_lx_patient_video_file(
             str(video.examination_id) if video.examination_id is not None else None
         ),
         "fnd": {
-            "file": str(active_path),
-            "dir": str(Path(active_path).parent),
+            "file": str(processed_path),
+            "dir": str(Path(processed_path).parent),
             "files": [],
             "dirs": [],
         },

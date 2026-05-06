@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, time
+from datetime import date, datetime, time
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
@@ -34,6 +34,10 @@ class PreanonymizedIngestPayload(BaseModel):
     center_name: str | None = None
 
     source_system: str | None = None
+    file_sha256: str | None = None
+    human_anonymization_validated: bool | None = None
+    validated_by: str | None = None
+    validated_at: datetime | None = None
     source_document_type: str | None = None
     original_document_id: str | None = None
     original_document_version: str | None = None
@@ -56,6 +60,8 @@ class PreanonymizedIngestPayload(BaseModel):
         "center_key",
         "center_name",
         "source_system",
+        "file_sha256",
+        "validated_by",
         "source_document_type",
         "original_document_id",
         "original_document_version",
@@ -68,6 +74,43 @@ class PreanonymizedIngestPayload(BaseModel):
         if isinstance(value, str):
             stripped = value.strip()
             return stripped or None
+        return value
+
+    @field_validator("file_sha256")
+    @classmethod
+    def _validate_optional_sha256(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().lower()
+        if len(normalized) != 64 or any(
+            ch not in "0123456789abcdef" for ch in normalized
+        ):
+            raise ValueError("file_sha256 must be a 64-character SHA-256 hex digest")
+        return normalized
+
+
+class LocalStudyServerPreanonymizedIngestPayload(PreanonymizedIngestPayload):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    center_key: str
+    source_system: str
+    file_sha256: str
+    human_anonymization_validated: bool
+    validated_by: str
+    validated_at: datetime
+
+    @field_validator("human_anonymization_validated")
+    @classmethod
+    def _require_human_validation(cls, value: bool) -> bool:
+        if value is not True:
+            raise ValueError("human_anonymization_validated must be true")
+        return value
+
+    @field_validator("validated_at")
+    @classmethod
+    def _require_timezone_aware_validated_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("validated_at must be timezone-aware ISO 8601")
         return value
 
 
@@ -83,6 +126,7 @@ class UploadProvenancePayload(BaseModel):
     storage_tier: str | None = None
     retention_policy: str | None = None
     hub_mode: bool | None = None
+    local_study_server: bool | None = None
     declared_center_key: str | None = None
     declared_center_name: str | None = None
     resolved_center_key: str | None = None
@@ -157,6 +201,7 @@ def validate_transfer_provenance_payload(value: Any) -> dict[str, Any]:
 
 
 __all__ = [
+    "LocalStudyServerPreanonymizedIngestPayload",
     "PreanonymizedIngestPayload",
     "TransferCaseResolutionPayload",
     "TransferMediaUploadPayload",

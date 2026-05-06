@@ -1,11 +1,20 @@
 import os
+from pathlib import Path
 
 from .base import *  # noqa: F401,F403
 from .base import (
     BASE_DIR,
     ENDOREG_DEPLOYMENT_ROLE,
+    REST_FRAMEWORK,
 )
-from endoreg_db.config.env import env_bool, env_str
+from endoreg_db.config.env import (
+    BASE_DIR as ENV_BASE_DIR,
+    PROTECTED_MEDIA_ROOT_ENV,
+    PROTECTED_ROOT_ENV,
+    STORAGE_DIR_ENV,
+    env_bool,
+    env_str,
+)
 from . import keycloak as KEYCLOAK
 
 pytest_active = "PYTEST_CURRENT_TEST" in os.environ
@@ -51,10 +60,14 @@ else:
             "DB_NAME must be set when using a non-sqlite database engine in production"
         )
 
-# require prod db in central-hub mode
-if ENDOREG_DEPLOYMENT_ROLE == "central_hub" and DB_ENGINE.endswith("sqlite3"):
+_ROLE_REQUIRES_PRODUCTION_DB = {"central_hub", "local_study_server"}
+
+# require production DB in central-hub and local-study-server modes
+if ENDOREG_DEPLOYMENT_ROLE in _ROLE_REQUIRES_PRODUCTION_DB and DB_ENGINE.endswith(
+    "sqlite3"
+):
     raise ValueError(
-        "ENDOREG_DEPLOYMENT_ROLE=central_hub requires a non-SQLite production database. "
+        f"ENDOREG_DEPLOYMENT_ROLE={ENDOREG_DEPLOYMENT_ROLE} requires a non-SQLite production database. "
         "Use PostgreSQL or another durable multi-user database engine."
     )
 
@@ -129,6 +142,53 @@ OIDC_OP_LOGOUT_ENDPOINT = KEYCLOAK.OIDC_OP_LOGOUT_ENDPOINT
 OIDC_STORE_ID_TOKEN = KEYCLOAK.OIDC_STORE_ID_TOKEN
 OIDC_LOGOUT_REDIRECT_URL = KEYCLOAK.OIDC_LOGOUT_REDIRECT_URL
 OIDC_AUTH_REQUEST_EXTRA_PARAMS = {}
+
+
+def _path_within(root: Path, candidate: Path) -> bool:
+    try:
+        candidate.resolve().relative_to(root.resolve())
+    except ValueError:
+        return False
+    return True
+
+
+def _required_env_path(env_key: str) -> Path:
+    value = os.environ.get(env_key, "").strip()
+    if not value:
+        raise ValueError(
+            f"ENDOREG_DEPLOYMENT_ROLE=local_study_server requires {env_key} to be set."
+        )
+    return Path(value).resolve()
+
+
+if ENDOREG_DEPLOYMENT_ROLE == "local_study_server":
+    default_runtime_root = (ENV_BASE_DIR / "data").resolve()
+    protected_runtime_root = _required_env_path(PROTECTED_ROOT_ENV)
+    storage_root = _required_env_path(STORAGE_DIR_ENV)
+    protected_media_root = _required_env_path(PROTECTED_MEDIA_ROOT_ENV)
+
+    if protected_runtime_root == default_runtime_root:
+        raise ValueError(
+            "ENDOREG_DEPLOYMENT_ROLE=local_study_server requires an explicit "
+            f"{PROTECTED_ROOT_ENV} outside the repository data directory."
+        )
+    if not _path_within(protected_runtime_root, storage_root):
+        raise ValueError(
+            "ENDOREG_DEPLOYMENT_ROLE=local_study_server requires STORAGE_DIR "
+            f"inside {PROTECTED_ROOT_ENV}."
+        )
+    if not _path_within(protected_runtime_root, protected_media_root):
+        raise ValueError(
+            "ENDOREG_DEPLOYMENT_ROLE=local_study_server requires "
+            f"{PROTECTED_MEDIA_ROOT_ENV} inside {PROTECTED_ROOT_ENV}."
+        )
+    if "rest_framework.permissions.AllowAny" in REST_FRAMEWORK.get(
+        "DEFAULT_PERMISSION_CLASSES",
+        (),
+    ):
+        raise ValueError(
+            "ENDOREG_DEPLOYMENT_ROLE=local_study_server requires authenticated API access."
+        )
 
 if ENDOREG_DEPLOYMENT_ROLE == "central_hub":
     if not bool(globals().get("ENDOREG_HUB_TRANSFER_REQUIRE_SECURE_TRANSPORT", True)):

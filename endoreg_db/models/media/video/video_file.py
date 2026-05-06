@@ -655,7 +655,20 @@ class VideoFile(models.Model):
 
         Overrides the default save method to persist changes to the VideoFile model.
         """
+        previous_processed_name = None
+        if self.pk:
+            previous_processed_name = (
+                VideoFile.objects.filter(pk=self.pk)
+                .values_list("processed_file", flat=True)
+                .first()
+            )
+        current_processed_name = getattr(self.processed_file, "name", None) or ""
         super().save(*args, **kwargs)
+        if self.pk and previous_processed_name is not None:
+            if str(previous_processed_name or "") != str(current_processed_name):
+                self.get_or_create_state().clear_export_readiness(
+                    clear_outside_segments_removed=True
+                )
 
     def get_or_create_state(self) -> "VideoState":
         """Ensure this video has a persisted ``VideoState`` and return it."""
