@@ -512,7 +512,7 @@ def _attach_video_transfer_media(
         _record_media_upload(
             transfer_job=transfer_job,
             media_role=media_role,
-            stored_name=video.raw_file.name,
+            stored_name=_stored_field_name(video.raw_file),
             content_hash=actual_hash,
             uploaded_name=upload_name,
         )
@@ -558,7 +558,7 @@ def _attach_video_transfer_media(
     _record_media_upload(
         transfer_job=transfer_job,
         media_role=media_role,
-        stored_name=video.processed_file.name,
+        stored_name=_stored_field_name(video.processed_file),
         content_hash=actual_hash,
         uploaded_name=upload_name,
     )
@@ -606,7 +606,7 @@ def _attach_report_transfer_media(
         _record_media_upload(
             transfer_job=transfer_job,
             media_role=media_role,
-            stored_name=report.file.name,
+            stored_name=_stored_field_name(report.file),
             content_hash=actual_hash,
             uploaded_name=upload_name,
         )
@@ -636,7 +636,7 @@ def _attach_report_transfer_media(
     _record_media_upload(
         transfer_job=transfer_job,
         media_role=media_role,
-        stored_name=report.processed_file.name,
+        stored_name=_stored_field_name(report.processed_file),
         content_hash=actual_hash,
         uploaded_name=upload_name,
     )
@@ -931,6 +931,13 @@ def _store_model_file(
     field_file = getattr(instance, field_name)
     save_local_file(field_file, source_path, name=stored_name, save=False)
     return [field_name]
+
+
+def _stored_field_name(field_file: object) -> str:
+    stored_name = getattr(field_file, "name", None)
+    if not isinstance(stored_name, str) or not stored_name:
+        raise RuntimeError("Stored media field is missing a storage name")
+    return stored_name
 
 
 def _write_uploaded_file_to_temp(*, uploaded_file, default_suffix: str) -> Path:

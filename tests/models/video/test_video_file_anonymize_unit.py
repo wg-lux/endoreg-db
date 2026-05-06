@@ -1,3 +1,4 @@
+import cv2
 import numpy as np
 import pytest
 from types import SimpleNamespace
@@ -25,7 +26,7 @@ def test_create_anonymized_frame_files_masks_outside_frames(tmp_path, monkeypatc
         relative_name = f"frame_{frame_number:07d}.jpg"
         path = frame_dir / relative_name
         image = np.full((4, 4, 3), intensity, dtype=np.uint8)
-        anonymize_module.cv2.imwrite(path.as_posix(), image)
+        cv2.imwrite(path.as_posix(), image)
         Frame.objects.create(
             video=video,
             frame_number=frame_number,
@@ -53,12 +54,8 @@ def test_create_anonymized_frame_files_masks_outside_frames(tmp_path, monkeypatc
     assert len(generated) == len(frame_specs)
     assert all(path.parent == anonymized_dir for path in generated)
 
-    inside_image = anonymize_module.cv2.imread(
-        (anonymized_dir / "frame_0000000.jpg").as_posix()
-    )
-    outside_image = anonymize_module.cv2.imread(
-        (anonymized_dir / "frame_0000001.jpg").as_posix()
-    )
+    inside_image = cv2.imread((anonymized_dir / "frame_0000000.jpg").as_posix())
+    outside_image = cv2.imread((anonymized_dir / "frame_0000001.jpg").as_posix())
 
     assert inside_image is not None and inside_image.mean() > 0
     assert outside_image is not None and np.all(outside_image == 5)

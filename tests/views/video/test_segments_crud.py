@@ -1,4 +1,7 @@
+import os
+import types
 from django.test import TestCase
+from django.urls import resolve
 from rest_framework.test import APIRequestFactory
 from unittest.mock import patch
 
@@ -13,11 +16,13 @@ from endoreg_db.models import (
     Center,
 )
 from endoreg_db.services.video_post_validation_jobs import JobDispatchResult
+from endoreg_db.services import video_post_validation_jobs as post_validation_jobs
 from endoreg_db.serializers import LabelVideoSegmentSerializer
 from endoreg_db.serializers.video.video_file_list import VideoFileListSerializer
 from endoreg_db.views.video.segments_crud import (
     ensure_prediction_segment_annotations_for_video,
     import_prediction_segments_to_manual,
+    video_segments_blacken_outside,
     video_segments_bulk_mutation,
     video_segments_validate_bulk,
     video_segment_validate,
@@ -512,6 +517,224 @@ class VideoSegmentValidateAsyncSafetyTest(TestCase):
 
         self.assertEqual(response.status_code, 200)
         mock_generate.assert_called_once_with(annotator="reviewer-two")
+
+
+class VideoSegmentsBlackenOutsideRouteTest(TestCase):
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        self.center = Center.objects.create(name="Blacken Outside Center")
+        self.video = VideoFile.objects.create(
+            center=self.center,
+            video_hash="blacken-outside-video",
+            original_file_name="blacken_outside.mp4",
+            fps=25.0,
+            frame_count=100,
+        )
+        self.outside_label, _ = Label.objects.get_or_create(name="outside")
+
+    def test_route_is_registered(self):
+        match = resolve(f"/api/media/videos/{self.video.pk}/segments/blacken-outside/")
+
+        self.assertEqual(match.url_name, "video-segments-blacken-outside")
+
+    def test_no_outside_segments_returns_noop(self):
+        request = self.factory.post(
+            f"/api/media/videos/{self.video.pk}/segments/blacken-outside/",
+            {"only_validated": False},
+            format="json",
+        )
+
+        with patch(
+            "endoreg_db.views.video.segments_crud.dispatch_video_post_validation_rebuild",
+            side_effect=AssertionError("noop must not dispatch"),
+        ):
+            response = video_segments_blacken_outside(request, pk=self.video.pk)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "noop")
+        self.assertEqual(response.data["outside_segment_count"], 0)
+        self.assertEqual(response.data["video_id"], self.video.pk)
+        self.assertFalse(response.data["only_validated"])
+
+    def test_outside_segments_dispatch_rebuild(self):
+        LabelVideoSegment.objects.create(
+            video_file=self.video,
+            label=self.outside_label,
+            start_frame_number=10,
+            end_frame_number=20,
+        )
+        request = self.factory.post(
+            f"/api/media/videos/{self.video.pk}/segments/blacken-outside/",
+            {"only_validated": False},
+            format="json",
+        )
+
+        with patch(
+            "endoreg_db.views.video.segments_crud.dispatch_video_post_validation_rebuild",
+            return_value=JobDispatchResult(
+                task_id="blacken-job",
+                mode="thread",
+                status="queued",
+                video_id=self.video.pk,
+            ),
+        ) as mock_dispatch:
+            response = video_segments_blacken_outside(request, pk=self.video.pk)
+
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.data["status"], "queued")
+        self.assertEqual(response.data["outside_segment_count"], 1)
+        mock_dispatch.assert_called_once_with(
+            video_id=self.video.pk,
+            only_validated=False,
+        )
+
+    def test_active_non_blackening_reprocessing_returns_busy(self):
+        LabelVideoSegment.objects.create(
+            video_file=self.video,
+            label=self.outside_label,
+            start_frame_number=10,
+            end_frame_number=20,
+        )
+        request = self.factory.post(
+            f"/api/media/videos/{self.video.pk}/segments/blacken-outside/",
+            {"only_validated": False},
+            format="json",
+        )
+
+        with patch(
+            "endoreg_db.views.video.segments_crud.dispatch_video_post_validation_rebuild",
+            return_value=JobDispatchResult(
+                task_id="other-reprocessing-task",
+                mode="thread",
+                status="busy",
+                video_id=self.video.pk,
+                history_id=123,
+            ),
+        ):
+            response = video_segments_blacken_outside(request, pk=self.video.pk)
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["status"], "busy")
+        self.assertEqual(response.data["operation"], "blacken_outside")
+        self.assertEqual(response.data["post_processing_job"]["status"], "busy")
+
+    def test_dispatch_error_returns_error_response(self):
+        LabelVideoSegment.objects.create(
+            video_file=self.video,
+            label=self.outside_label,
+            start_frame_number=10,
+            end_frame_number=20,
+        )
+        request = self.factory.post(
+            f"/api/media/videos/{self.video.pk}/segments/blacken-outside/",
+            {"only_validated": False},
+            format="json",
+        )
+
+        with patch(
+            "endoreg_db.views.video.segments_crud.dispatch_video_post_validation_rebuild",
+            side_effect=RuntimeError("inline rebuild failed"),
+        ):
+            response = video_segments_blacken_outside(request, pk=self.video.pk)
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.data["status"], "failed")
+        self.assertEqual(response.data["operation"], "blacken_outside")
+        self.assertIn("inline rebuild failed", response.data["error"])
+
+    def test_repeated_call_returns_already_queued(self):
+        LabelVideoSegment.objects.create(
+            video_file=self.video,
+            label=self.outside_label,
+            start_frame_number=10,
+            end_frame_number=20,
+        )
+        submitted = []
+
+        def fake_submit(fn):
+            submitted.append(fn)
+            return types.SimpleNamespace()
+
+        with (
+            patch.dict(
+                os.environ,
+                {"VIDEO_POST_VALIDATION_JOB_MODE": "thread"},
+            ),
+            patch.object(post_validation_jobs._executor, "submit", fake_submit),
+        ):
+            first = video_segments_blacken_outside(
+                self.factory.post(
+                    f"/api/media/videos/{self.video.pk}/segments/blacken-outside/",
+                    {"only_validated": False},
+                    format="json",
+                ),
+                pk=self.video.pk,
+            )
+            second = video_segments_blacken_outside(
+                self.factory.post(
+                    f"/api/media/videos/{self.video.pk}/segments/blacken-outside/",
+                    {"only_validated": False},
+                    format="json",
+                ),
+                pk=self.video.pk,
+            )
+
+        self.assertEqual(first.status_code, 202)
+        self.assertEqual(first.data["status"], "queued")
+        self.assertEqual(second.status_code, 202)
+        self.assertEqual(second.data["status"], "already_queued")
+        self.assertEqual(len(submitted), 1)
+
+    def test_only_validated_counts_only_validated_outside_segments(self):
+        segment = LabelVideoSegment.objects.create(
+            video_file=self.video,
+            label=self.outside_label,
+            start_frame_number=10,
+            end_frame_number=20,
+        )
+
+        request = self.factory.post(
+            f"/api/media/videos/{self.video.pk}/segments/blacken-outside/",
+            {"only_validated": True},
+            format="json",
+        )
+        with patch(
+            "endoreg_db.views.video.segments_crud.dispatch_video_post_validation_rebuild",
+            side_effect=AssertionError("unvalidated segment must not dispatch"),
+        ):
+            response = video_segments_blacken_outside(request, pk=self.video.pk)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "noop")
+        self.assertEqual(response.data["outside_segment_count"], 0)
+
+        segment.mark_validated(
+            is_validated=True,
+            information_source_name="manual_annotation",
+        )
+        request = self.factory.post(
+            f"/api/media/videos/{self.video.pk}/segments/blacken-outside/",
+            {"only_validated": True},
+            format="json",
+        )
+        with patch(
+            "endoreg_db.views.video.segments_crud.dispatch_video_post_validation_rebuild",
+            return_value=JobDispatchResult(
+                task_id="validated-blacken-job",
+                mode="thread",
+                status="queued",
+                video_id=self.video.pk,
+            ),
+        ) as mock_dispatch:
+            response = video_segments_blacken_outside(request, pk=self.video.pk)
+
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.data["status"], "queued")
+        self.assertEqual(response.data["outside_segment_count"], 1)
+        mock_dispatch.assert_called_once_with(
+            video_id=self.video.pk,
+            only_validated=True,
+        )
 
 
 class VideoSegmentsSourceKindFilterTest(TestCase):

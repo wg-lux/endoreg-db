@@ -2,7 +2,6 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple
 
-import cv2
 from django.db import transaction
 from tqdm import tqdm
 
@@ -143,6 +142,7 @@ def _create_anonymized_frame_files(
 def _censor_outside_frames(
     video: "VideoFile",
     outside_label_name: str = "outside",
+    only_validated: bool = False,
     censor_color: Tuple[int, int, int] = (0, 0, 0),
 ) -> bool:
     """
@@ -164,7 +164,11 @@ def _censor_outside_frames(
             f"Frames not extracted for video {video.video_hash}. Cannot censor."
         )
 
-    outside_frames = _get_outside_frames(video, outside_label_name)
+    outside_frames = _get_outside_frames(
+        video,
+        outside_label_name,
+        only_validated=only_validated,
+    )
     if not outside_frames:
         logger.info(
             "No 'outside' frames found to censor for video %s.", video.video_hash
@@ -190,20 +194,14 @@ def _censor_outside_frames(
                 )
                 continue
 
-            img = cv2.imread(str(frame_path))
-            if img is None:
-                logger.warning(
-                    "Could not read frame %s for censoring. Skipping.", frame_path
-                )
-                continue
-
-            img[:] = censor_color
-            success = cv2.imwrite(str(frame_path), img)
-            if success:
-                censored_count += 1
-            else:
-                logger.error("Failed to write censored frame back to %s.", frame_path)
-                error_count += 1
+            anonymize_frame(
+                raw_frame_path=frame_path,
+                target_frame_path=frame_path,
+                endo_roi={},
+                all_black=True,
+                censor_color=censor_color,
+            )
+            censored_count += 1
 
         except Exception as e:
             logger.error(

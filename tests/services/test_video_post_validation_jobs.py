@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import types
 import uuid
+from datetime import timedelta
 from unittest.mock import Mock
 
 import pytest
+from django.utils import timezone
 
-from endoreg_db.models import Center, Frame, VideoFile
+from endoreg_db.models import Center, Frame, VideoFile, VideoProcessingHistory
 from endoreg_db.services import video_post_validation_jobs as jobs
 
 
@@ -25,20 +27,29 @@ def _create_video_for_post_validation(tmp_path):
     )
 
 
-def test_dispatch_video_post_validation_rebuild_inline(monkeypatch):
+@pytest.mark.django_db
+def test_dispatch_video_post_validation_rebuild_inline(monkeypatch, tmp_path):
+    video = _create_video_for_post_validation(tmp_path)
     runner = Mock(return_value=True)
     monkeypatch.setattr(jobs, "_run_video_post_validation_rebuild", runner)
     monkeypatch.setenv("VIDEO_POST_VALIDATION_JOB_MODE", "inline")
 
-    result = jobs.dispatch_video_post_validation_rebuild(video_id=123)
+    result = jobs.dispatch_video_post_validation_rebuild(video_id=video.pk)
 
     assert result.mode == "inline"
     assert result.status == "completed"
-    assert result.video_id == 123
-    runner.assert_called_once_with(123, only_validated=False)
+    assert result.video_id == video.pk
+    assert result.history_id is not None
+    runner.assert_called_once_with(
+        video.pk,
+        only_validated=False,
+        history_id=result.history_id,
+    )
 
 
-def test_dispatch_video_post_validation_rebuild_thread(monkeypatch):
+@pytest.mark.django_db
+def test_dispatch_video_post_validation_rebuild_thread(monkeypatch, tmp_path):
+    video = _create_video_for_post_validation(tmp_path)
     runner = Mock(return_value=True)
     monkeypatch.setattr(jobs, "_run_video_post_validation_rebuild", runner)
     monkeypatch.setenv("VIDEO_POST_VALIDATION_JOB_MODE", "thread")
@@ -56,18 +67,25 @@ def test_dispatch_video_post_validation_rebuild_thread(monkeypatch):
 
     monkeypatch.setattr(jobs._executor, "submit", _fake_submit)
 
-    result = jobs.dispatch_video_post_validation_rebuild(video_id=456)
+    result = jobs.dispatch_video_post_validation_rebuild(video_id=video.pk)
     assert result.mode == "thread"
     assert result.status == "queued"
-    assert result.video_id == 456
+    assert result.video_id == video.pk
+    assert result.history_id is not None
     assert "fn" in submitted
 
     # Execute the captured callable to verify background payload works.
     submitted["fn"]()
-    runner.assert_called_once_with(456, only_validated=False)
+    runner.assert_called_once_with(
+        video.pk,
+        only_validated=False,
+        history_id=result.history_id,
+    )
 
 
-def test_dispatch_video_post_validation_rebuild_celery(monkeypatch):
+@pytest.mark.django_db
+def test_dispatch_video_post_validation_rebuild_celery(monkeypatch, tmp_path):
+    video = _create_video_for_post_validation(tmp_path)
     monkeypatch.setenv("VIDEO_POST_VALIDATION_JOB_MODE", "celery")
 
     fake_async_result = types.SimpleNamespace(id="celery-task-xyz")
@@ -78,18 +96,28 @@ def test_dispatch_video_post_validation_rebuild_celery(monkeypatch):
         raising=False,
     )
 
-    result = jobs.dispatch_video_post_validation_rebuild(video_id=789)
+    result = jobs.dispatch_video_post_validation_rebuild(video_id=video.pk)
 
     assert result.mode == "celery"
     assert result.status == "queued"
     assert result.task_id == "celery-task-xyz"
-    assert result.video_id == 789
-    fake_task.delay.assert_called_once_with(789, only_validated=False)
+    assert result.video_id == video.pk
+    assert result.history_id is not None
+    fake_task.delay.assert_called_once_with(
+        video.pk,
+        only_validated=False,
+        history_id=result.history_id,
+    )
+    history = VideoProcessingHistory.objects.get(pk=result.history_id)
+    assert history.task_id == "celery-task-xyz"
 
 
+@pytest.mark.django_db
 def test_dispatch_video_post_validation_rebuild_celery_falls_back_to_thread(
     monkeypatch,
+    tmp_path,
 ):
+    video = _create_video_for_post_validation(tmp_path)
     monkeypatch.setenv("VIDEO_POST_VALIDATION_JOB_MODE", "celery")
 
     class _BrokenTask:
@@ -112,14 +140,128 @@ def test_dispatch_video_post_validation_rebuild_celery_falls_back_to_thread(
 
     monkeypatch.setattr(jobs._executor, "submit", _fake_submit)
 
-    result = jobs.dispatch_video_post_validation_rebuild(video_id=321)
+    result = jobs.dispatch_video_post_validation_rebuild(video_id=video.pk)
 
     assert result.mode == "thread"
     assert result.status == "queued"
-    assert result.video_id == 321
+    assert result.video_id == video.pk
+    assert result.history_id is not None
     assert "fn" in submitted
     submitted["fn"]()
-    runner.assert_called_once_with(321, only_validated=False)
+    runner.assert_called_once_with(
+        video.pk,
+        only_validated=False,
+        history_id=result.history_id,
+    )
+
+
+@pytest.mark.django_db
+def test_dispatch_video_post_validation_rebuild_reuses_active_history(
+    monkeypatch,
+    tmp_path,
+):
+    video = _create_video_for_post_validation(tmp_path)
+    monkeypatch.setenv("VIDEO_POST_VALIDATION_JOB_MODE", "thread")
+
+    submitted = []
+    monkeypatch.setattr(
+        jobs._executor,
+        "submit",
+        lambda fn: submitted.append(fn) or types.SimpleNamespace(),
+    )
+
+    first = jobs.dispatch_video_post_validation_rebuild(video_id=video.pk)
+    second = jobs.dispatch_video_post_validation_rebuild(video_id=video.pk)
+
+    assert first.status == "queued"
+    assert second.status == "already_queued"
+    assert second.history_id == first.history_id
+    assert len(submitted) == 1
+
+
+@pytest.mark.django_db
+def test_dispatch_video_post_validation_rebuild_returns_busy_for_other_reprocessing(
+    monkeypatch,
+    tmp_path,
+):
+    video = _create_video_for_post_validation(tmp_path)
+    monkeypatch.setenv("VIDEO_POST_VALIDATION_JOB_MODE", "thread")
+    other_history = VideoProcessingHistory.objects.create(
+        video=video,
+        operation=VideoProcessingHistory.OPERATION_REPROCESSING,
+        status=VideoProcessingHistory.STATUS_PENDING,
+        task_id="other-reprocessing-task",
+        config={"kind": "mask_video"},
+    )
+    submit = Mock(side_effect=AssertionError("busy video must not dispatch"))
+    monkeypatch.setattr(jobs._executor, "submit", submit)
+
+    result = jobs.dispatch_video_post_validation_rebuild(video_id=video.pk)
+
+    assert result.status == "busy"
+    assert result.history_id == other_history.pk
+    assert result.task_id == "other-reprocessing-task"
+    submit.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_dispatch_video_post_validation_rebuild_expires_stale_history(
+    monkeypatch,
+    tmp_path,
+):
+    video = _create_video_for_post_validation(tmp_path)
+    monkeypatch.setenv("VIDEO_POST_VALIDATION_JOB_MODE", "thread")
+    stale_history = VideoProcessingHistory.objects.create(
+        video=video,
+        operation=VideoProcessingHistory.OPERATION_REPROCESSING,
+        status=VideoProcessingHistory.STATUS_PENDING,
+        task_id="stale-task",
+        config=jobs._blackening_history_config(only_validated=False),
+    )
+    VideoProcessingHistory.objects.filter(pk=stale_history.pk).update(
+        created_at=timezone.now() - jobs.STALE_REBUILD_TIMEOUT - timedelta(minutes=1)
+    )
+    monkeypatch.setattr(
+        jobs._executor,
+        "submit",
+        lambda fn: types.SimpleNamespace(),
+    )
+
+    result = jobs.dispatch_video_post_validation_rebuild(video_id=video.pk)
+
+    stale_history.refresh_from_db()
+    assert stale_history.status == VideoProcessingHistory.STATUS_FAILURE
+    assert result.status == "queued"
+    assert result.history_id != stale_history.pk
+
+
+@pytest.mark.django_db
+def test_dispatch_video_post_validation_rebuild_does_not_expire_stale_running_history(
+    monkeypatch,
+    tmp_path,
+):
+    video = _create_video_for_post_validation(tmp_path)
+    monkeypatch.setenv("VIDEO_POST_VALIDATION_JOB_MODE", "thread")
+    running_history = VideoProcessingHistory.objects.create(
+        video=video,
+        operation=VideoProcessingHistory.OPERATION_REPROCESSING,
+        status=VideoProcessingHistory.STATUS_RUNNING,
+        task_id="running-blackening-task",
+        config=jobs._blackening_history_config(only_validated=False),
+    )
+    VideoProcessingHistory.objects.filter(pk=running_history.pk).update(
+        created_at=timezone.now() - jobs.STALE_REBUILD_TIMEOUT - timedelta(minutes=1)
+    )
+    submit = Mock(side_effect=AssertionError("running job must not dispatch"))
+    monkeypatch.setattr(jobs._executor, "submit", submit)
+
+    result = jobs.dispatch_video_post_validation_rebuild(video_id=video.pk)
+
+    running_history.refresh_from_db()
+    assert running_history.status == VideoProcessingHistory.STATUS_RUNNING
+    assert result.status == "already_queued"
+    assert result.history_id == running_history.pk
+    submit.assert_not_called()
 
 
 @pytest.mark.django_db
@@ -162,7 +304,18 @@ def test_run_video_post_validation_rebuild_accepts_stable_extracted_frames(
         fake_create_video_without_outside_frames,
     )
 
-    assert jobs._run_video_post_validation_rebuild(video.pk) is True
+    history = VideoProcessingHistory.objects.create(
+        video=video,
+        operation=VideoProcessingHistory.OPERATION_REPROCESSING,
+        status=VideoProcessingHistory.STATUS_PENDING,
+        config=jobs._blackening_history_config(only_validated=False),
+    )
+
+    assert (
+        jobs._run_video_post_validation_rebuild(video.pk, history_id=history.pk) is True
+    )
+    history.refresh_from_db()
+    assert history.status == VideoProcessingHistory.STATUS_SUCCESS
 
 
 @pytest.mark.django_db
@@ -201,5 +354,14 @@ def test_run_video_post_validation_rebuild_rejects_missing_extracted_frame_file(
         fake_create_video_without_outside_frames,
     )
 
+    history = VideoProcessingHistory.objects.create(
+        video=video,
+        operation=VideoProcessingHistory.OPERATION_REPROCESSING,
+        status=VideoProcessingHistory.STATUS_PENDING,
+        config=jobs._blackening_history_config(only_validated=False),
+    )
+
     with pytest.raises(RuntimeError, match="non-recreatable"):
-        jobs._run_video_post_validation_rebuild(video.pk)
+        jobs._run_video_post_validation_rebuild(video.pk, history_id=history.pk)
+    history.refresh_from_db()
+    assert history.status == VideoProcessingHistory.STATUS_FAILURE

@@ -4,7 +4,12 @@ import logging
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, asdict
+from datetime import timedelta
 
+from django.db import transaction
+from django.utils import timezone
+
+from endoreg_db.models import VideoFile, VideoProcessingHistory
 from endoreg_db.config.env import (
     get_video_post_validation_job_max_workers,
     get_video_post_validation_job_mode,
@@ -13,6 +18,16 @@ from endoreg_db.config.env import (
 logger = logging.getLogger(__name__)
 
 _executor = ThreadPoolExecutor(max_workers=get_video_post_validation_job_max_workers())
+OUTSIDE_FRAME_BLACKENING_KIND = "outside_frame_blackening"
+ACTIVE_REBUILD_STATUSES = (
+    VideoProcessingHistory.STATUS_PENDING,
+    VideoProcessingHistory.STATUS_RUNNING,
+)
+STALE_REBUILD_STATUSES = (VideoProcessingHistory.STATUS_PENDING,)
+STALE_REBUILD_TIMEOUT = timedelta(hours=1)
+RESERVATION_CREATED = "created"
+RESERVATION_ALREADY_QUEUED = "already_queued"
+RESERVATION_BUSY = "busy"
 
 
 def _verify_extracted_frame_contract(video) -> None:
@@ -81,26 +96,134 @@ class JobDispatchResult:
     mode: str
     status: str
     video_id: int
+    history_id: int | None = None
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
 
 
-def _run_video_post_validation_rebuild(
-    video_id: int, *, only_validated: bool = False
-) -> bool:
-    from endoreg_db.models import VideoFile
+def _blackening_history_config(*, only_validated: bool) -> dict[str, object]:
+    return {
+        "kind": OUTSIDE_FRAME_BLACKENING_KIND,
+        "only_validated": bool(only_validated),
+    }
 
-    video = VideoFile.objects.get(pk=video_id)
-    rebuilt = bool(
-        VideoFile.create_video_without_outside_frames(
-            video, only_validated=only_validated
+
+def _is_outside_frame_blackening_history(history: VideoProcessingHistory) -> bool:
+    config = history.config if isinstance(history.config, dict) else {}
+    return config.get("kind") == OUTSIDE_FRAME_BLACKENING_KIND
+
+
+def _active_reprocessing_histories(video: VideoFile):
+    return VideoProcessingHistory.objects.filter(
+        video=video,
+        operation=VideoProcessingHistory.OPERATION_REPROCESSING,
+        status__in=ACTIVE_REBUILD_STATUSES,
+    ).order_by("created_at")
+
+
+def _expire_stale_blackening_histories(video: VideoFile) -> None:
+    stale_before = timezone.now() - STALE_REBUILD_TIMEOUT
+    stale_histories = VideoProcessingHistory.objects.filter(
+        video=video,
+        operation=VideoProcessingHistory.OPERATION_REPROCESSING,
+        status__in=STALE_REBUILD_STATUSES,
+        created_at__lt=stale_before,
+    ).order_by("created_at")
+    for history in stale_histories:
+        if _is_outside_frame_blackening_history(history):
+            history.mark_failure(
+                f"Outside-frame blackening job exceeded {STALE_REBUILD_TIMEOUT}."
+            )
+
+
+def _reserve_blackening_history(
+    *,
+    video: VideoFile,
+    task_id: str,
+    only_validated: bool,
+) -> tuple[VideoProcessingHistory, str]:
+    with transaction.atomic():
+        locked_video = VideoFile.objects.select_for_update().get(pk=video.pk)
+        _expire_stale_blackening_histories(locked_video)
+        outside_history: VideoProcessingHistory | None = None
+        active_histories = _active_reprocessing_histories(
+            locked_video
+        ).select_for_update()
+        for history in active_histories:
+            if _is_outside_frame_blackening_history(history):
+                if outside_history is None:
+                    outside_history = history
+                continue
+            return history, RESERVATION_BUSY
+
+        if outside_history is not None:
+            return outside_history, RESERVATION_ALREADY_QUEUED
+
+        history = VideoProcessingHistory.objects.create(
+            video=locked_video,
+            operation=VideoProcessingHistory.OPERATION_REPROCESSING,
+            status=VideoProcessingHistory.STATUS_PENDING,
+            task_id=task_id,
+            config=_blackening_history_config(only_validated=only_validated),
         )
-    )
-    if rebuilt:
+        return history, RESERVATION_CREATED
+
+
+def _set_history_task_id(history: VideoProcessingHistory, task_id: str) -> None:
+    if history.task_id == task_id:
+        return
+    history.task_id = task_id
+    history.save(update_fields=["task_id"])
+
+
+def _get_processing_history(
+    history_id: int | None,
+) -> VideoProcessingHistory | None:
+    if history_id is None:
+        return None
+    try:
+        return VideoProcessingHistory.objects.get(pk=history_id)
+    except VideoProcessingHistory.DoesNotExist:
+        logger.warning("VideoProcessingHistory %s not found.", history_id)
+        return None
+
+
+def _run_video_post_validation_rebuild(
+    video_id: int,
+    *,
+    only_validated: bool = False,
+    history_id: int | None = None,
+) -> bool:
+    history = _get_processing_history(history_id)
+    if history is not None:
+        history.mark_running()
+
+    try:
+        video = VideoFile.objects.get(pk=video_id)
+        rebuilt = bool(
+            VideoFile.create_video_without_outside_frames(
+                video, only_validated=only_validated
+            )
+        )
+        if not rebuilt:
+            if history is not None:
+                history.mark_failure("Outside-frame blackening rebuild returned false.")
+            return False
+
         video.refresh_from_db()
         _verify_extracted_frame_contract(video)
-    return rebuilt
+        if history is not None:
+            output_file = getattr(getattr(video, "processed_file", None), "name", "")
+            history.mark_success(
+                output_file=output_file,
+                details="Outside-frame blackening rebuild completed.",
+            )
+        return True
+    except Exception as exc:
+        if history is not None:
+            history.mark_failure(str(exc))
+        raise
 
 
 def dispatch_video_post_validation_rebuild(
@@ -117,16 +240,44 @@ def dispatch_video_post_validation_rebuild(
     - `inline`: run synchronously (useful in local debugging/tests)
     """
     mode = get_video_post_validation_job_mode()
-
     task_id = str(uuid.uuid4())
+    video = VideoFile.objects.get(pk=video_id)
+    history, reservation_status = _reserve_blackening_history(
+        video=video,
+        task_id=task_id,
+        only_validated=only_validated,
+    )
+
+    if reservation_status == RESERVATION_BUSY:
+        return JobDispatchResult(
+            task_id=history.task_id or "",
+            mode=mode,
+            status="busy",
+            video_id=int(video_id),
+            history_id=history.pk,
+        )
+
+    if reservation_status == RESERVATION_ALREADY_QUEUED:
+        return JobDispatchResult(
+            task_id=history.task_id or "",
+            mode=mode,
+            status="already_queued",
+            video_id=int(video_id),
+            history_id=history.pk,
+        )
 
     if mode == "inline":
-        _run_video_post_validation_rebuild(video_id, only_validated=only_validated)
+        rebuilt = _run_video_post_validation_rebuild(
+            video_id,
+            only_validated=only_validated,
+            history_id=history.pk,
+        )
         return JobDispatchResult(
             task_id=task_id,
             mode=mode,
-            status="completed",
+            status="completed" if rebuilt else "failed",
             video_id=int(video_id),
+            history_id=history.pk,
         )
 
     if mode == "celery":
@@ -134,13 +285,17 @@ def dispatch_video_post_validation_rebuild(
             from endoreg_db.tasks import run_video_post_validation_rebuild_task
 
             async_result = run_video_post_validation_rebuild_task.delay(
-                int(video_id), only_validated=bool(only_validated)
+                int(video_id),
+                only_validated=bool(only_validated),
+                history_id=history.pk,
             )
+            _set_history_task_id(history, str(async_result.id))
             return JobDispatchResult(
                 task_id=str(async_result.id),
                 mode=mode,
                 status="queued",
                 video_id=int(video_id),
+                history_id=history.pk,
             )
         except Exception:
             logger.exception(
@@ -151,7 +306,11 @@ def dispatch_video_post_validation_rebuild(
 
     def _job():
         try:
-            _run_video_post_validation_rebuild(video_id, only_validated=only_validated)
+            _run_video_post_validation_rebuild(
+                video_id,
+                only_validated=only_validated,
+                history_id=history.pk,
+            )
         except Exception:
             logger.exception(
                 "Async post-validation rebuild failed for video %s (task_id=%s)",
@@ -159,10 +318,15 @@ def dispatch_video_post_validation_rebuild(
                 task_id,
             )
 
-    _executor.submit(_job)
+    try:
+        _executor.submit(_job)
+    except Exception as exc:
+        history.mark_failure(str(exc))
+        raise
     return JobDispatchResult(
         task_id=task_id,
         mode=mode,
         status="queued",
         video_id=int(video_id),
+        history_id=history.pk,
     )

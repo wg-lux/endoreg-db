@@ -160,7 +160,9 @@ def _sequences_to_label_video_segments(
 
 
 def _get_outside_segments(
-    video: "VideoFile", outside_label_name: str = "outside"
+    video: "VideoFile",
+    outside_label_name: str = "outside",
+    only_validated: bool = False,
 ) -> "QuerySet[LabelVideoSegment]":
     """Gets LabelVideoSegments marked with the 'outside' label."""
     from ...label import Label, LabelVideoSegment  # Local import for models
@@ -169,7 +171,12 @@ def _get_outside_segments(
         outside_label = Label.objects.get(name__iexact=outside_label_name)
         # FIX: Use direct filter instead of relying on 'label_video_segments' related name
         # which might not exist or might be named differently (e.g. labelvideosegment_set)
-        return LabelVideoSegment.objects.filter(video_file=video, label=outside_label)
+        segments = LabelVideoSegment.objects.filter(
+            video_file=video, label=outside_label
+        )
+        if only_validated:
+            segments = segments.filter(state__is_validated=True)
+        return segments
     except Label.DoesNotExist:
         logger.warning("Label '%s' not found in the database.", outside_label_name)
         return LabelVideoSegment.objects.none()
@@ -185,12 +192,18 @@ def _get_outside_segments(
 
 
 def _get_outside_frame_numbers(
-    video: "VideoFile", outside_label_name: str = "outside"
+    video: "VideoFile",
+    outside_label_name: str = "outside",
+    only_validated: bool = False,
 ) -> Set[int]:
     """
     Gets a set of frame numbers corresponding to segments labeled as 'outside'.
     """
-    outside_segments = _get_outside_segments(video, outside_label_name)
+    outside_segments = _get_outside_segments(
+        video,
+        outside_label_name,
+        only_validated=only_validated,
+    )
     frame_numbers: set[int] = set()
     for segment in outside_segments:
         frame_numbers.update(
@@ -213,7 +226,9 @@ def _get_outside_frame_numbers(
 
 
 def _get_outside_frames(
-    video: "VideoFile", outside_label_name: str = "outside"
+    video: "VideoFile",
+    outside_label_name: str = "outside",
+    only_validated: bool = False,
 ) -> "QuerySet[Frame]":
     """
     Gets a QuerySet of all unique Frame objects that fall within any segment
@@ -221,7 +236,11 @@ def _get_outside_frames(
     """
     from ..frame import Frame  # Local import
 
-    outside_segments = _get_outside_segments(video, outside_label_name)
+    outside_segments = _get_outside_segments(
+        video,
+        outside_label_name,
+        only_validated=only_validated,
+    )
     if not outside_segments.exists():
         return Frame.objects.none()
 
@@ -250,12 +269,18 @@ def _get_outside_frames(
 
 
 def _get_outside_frame_paths(
-    video: "VideoFile", outside_label_name: str = "outside"
+    video: "VideoFile",
+    outside_label_name: str = "outside",
+    only_validated: bool = False,
 ) -> List["Path"]:
     """Gets the file paths of frames that fall within 'outside' segments."""
     from pathlib import Path  # Local import
 
-    frames = _get_outside_frames(video, outside_label_name=outside_label_name)
+    frames = _get_outside_frames(
+        video,
+        outside_label_name=outside_label_name,
+        only_validated=only_validated,
+    )
     frame_paths = []
     for frame in frames:
         try:

@@ -143,7 +143,7 @@ def test_get_outside_helpers_return_expected_frames(tmp_path):
     label_type = LabelType.objects.create(name="video")
     outside_label = Label.objects.create(name="outside", label_type=label_type)
 
-    LabelVideoSegment.objects.create(
+    first_segment = LabelVideoSegment.objects.create(
         video_file=video, label=outside_label, start_frame_number=1, end_frame_number=3
     )
     LabelVideoSegment.objects.create(
@@ -160,3 +160,25 @@ def test_get_outside_helpers_return_expected_frames(tmp_path):
 
     frames_qs = segments_module._get_outside_frames(video)
     assert list(frames_qs.values_list("frame_number", flat=True)) == [1, 2, 5]
+
+    first_segment.mark_validated(
+        is_validated=True,
+        information_source_name="manual_annotation",
+    )
+    validated_numbers = segments_module._get_outside_frame_numbers(
+        video,
+        only_validated=True,
+    )
+    assert validated_numbers == {1, 2, 3}
+
+    validated_frames_qs = segments_module._get_outside_frames(
+        video,
+        only_validated=True,
+    )
+    assert list(validated_frames_qs.values_list("frame_number", flat=True)) == [1, 2]
+
+    validated_paths = segments_module._get_outside_frame_paths(
+        video,
+        only_validated=True,
+    )
+    assert [path.name for path in validated_paths] == ["frame_1.jpg", "frame_2.jpg"]

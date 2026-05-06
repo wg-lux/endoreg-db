@@ -222,19 +222,22 @@ def sync_video_streamable_artifacts(
     processed_storage_policy = resolve_storage_policy(PayloadKind.VIDEO_PROCESSED)
     synced_raw = False
     synced_processed = False
+    raw_file = getattr(video, "raw_file", None)
+    raw_file_name = getattr(raw_file, "name", None)
     if (
         raw_storage_policy == StoragePolicy.FS_STREAMABLE
         and include_raw
-        and getattr(video, "raw_file", None)
-        and getattr(video.raw_file, "name", None)
+        and raw_file
+        and isinstance(raw_file_name, str)
+        and raw_file_name
     ):
         target_path = _video_streamable_target(
             video,
             processed=False,
-            suffix=Path(video.raw_file.name).suffix or ".mp4",
+            suffix=Path(raw_file_name).suffix or ".mp4",
         )
         relative_path, synced_raw = _sync_one_streamable(
-            video_field_file=video.raw_file,
+            video_field_file=raw_file,
             target_path=target_path,
             current_relative_path=video.raw_streamable_relative_path,
             expected_hash=(getattr(video, "video_hash", "") or "").strip(),
@@ -244,11 +247,7 @@ def sync_video_streamable_artifacts(
         if synced_raw and video.raw_streamable_relative_path != relative_path:
             video.raw_streamable_relative_path = relative_path
             update_fields.append("raw_streamable_relative_path")
-    elif (
-        include_raw
-        and getattr(video, "raw_file", None)
-        and getattr(video.raw_file, "name", None)
-    ):
+    elif include_raw and raw_file and isinstance(raw_file_name, str) and raw_file_name:
         logger.info(
             "Skipping raw streamable artifact sync for video %s because "
             "ENDOREG_STORAGE_PROFILE routes raw video to %s.",
@@ -259,19 +258,22 @@ def sync_video_streamable_artifacts(
             video.raw_streamable_relative_path = ""
             update_fields.append("raw_streamable_relative_path")
         synced_raw = False
+    processed_file = getattr(video, "processed_file", None)
+    processed_file_name = getattr(processed_file, "name", None)
     if (
         processed_storage_policy == StoragePolicy.FS_STREAMABLE
         and include_processed
-        and getattr(video, "processed_file", None)
-        and getattr(video.processed_file, "name", None)
+        and processed_file
+        and isinstance(processed_file_name, str)
+        and processed_file_name
     ):
         target_path = _video_streamable_target(
             video,
             processed=True,
-            suffix=Path(video.processed_file.name).suffix or ".mp4",
+            suffix=Path(processed_file_name).suffix or ".mp4",
         )
         relative_path, synced_processed = _sync_one_streamable(
-            video_field_file=video.processed_file,
+            video_field_file=processed_file,
             target_path=target_path,
             current_relative_path=video.processed_streamable_relative_path,
             expected_hash=(getattr(video, "processed_video_hash", "") or "").strip(),
@@ -286,8 +288,9 @@ def sync_video_streamable_artifacts(
             update_fields.append("processed_streamable_relative_path")
     elif (
         include_processed
-        and getattr(video, "processed_file", None)
-        and getattr(video.processed_file, "name", None)
+        and processed_file
+        and isinstance(processed_file_name, str)
+        and processed_file_name
     ):
         logger.info(
             "Skipping processed streamable artifact sync for video %s because "

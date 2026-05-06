@@ -5,7 +5,7 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Literal
+from typing import Any, Iterable, Literal, Protocol, cast
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import models
@@ -41,6 +41,11 @@ ACTIONABLE_STATUSES = {
     "would_sync_streamable",
 }
 REPORTABLE_STATUSES = ACTIONABLE_STATUSES | {"failed"}
+
+
+class _StorageBackedFile(Protocol):
+    name: str
+    storage: Any
 
 
 @dataclass(frozen=True)
@@ -119,8 +124,17 @@ def _path_starts_with_magic(path: Path) -> bool:
         return handle.read(len(LX_ENCRYPTED_MAGIC)) == LX_ENCRYPTED_MAGIC
 
 
+def _as_storage_backed_file(field_file: object) -> _StorageBackedFile | None:
+    name = getattr(field_file, "name", None)
+    if not isinstance(name, str) or not name:
+        return None
+    if getattr(field_file, "storage", None) is None:
+        return None
+    return cast(_StorageBackedFile, field_file)
+
+
 def _field_file_has_name(field_file: object) -> bool:
-    return bool(field_file and getattr(field_file, "name", None))
+    return _as_storage_backed_file(field_file) is not None
 
 
 def _has_date_modified(instance: models.Model) -> bool:
@@ -135,55 +149,59 @@ def _update_fields(instance: models.Model, *field_names: str) -> list[str]:
 
 
 def _safe_field_storage_path(field_file: object) -> Path | None:
-    if not _field_file_has_name(field_file):
-        return None
-    storage = getattr(field_file, "storage", None)
-    if storage is None:
+    named_file = _as_storage_backed_file(field_file)
+    if named_file is None:
         return None
     try:
-        return Path(storage.path(field_file.name)).resolve()
+        return Path(named_file.storage.path(named_file.name)).resolve()
     except (AttributeError, NotImplementedError, OSError, ValueError):
         return None
 
 
 def _field_storage_exists(field_file: object) -> bool:
-    if not _field_file_has_name(field_file):
+    named_file = _as_storage_backed_file(field_file)
+    if named_file is None:
         return False
     try:
-        return bool(field_file.storage.exists(field_file.name))
+        return bool(named_file.storage.exists(named_file.name))
     except Exception:
         return False
 
 
 def _field_is_repairable_plaintext(field_file: object) -> bool:
-    if not _field_file_has_name(field_file):
+    named_file = _as_storage_backed_file(field_file)
+    if named_file is None:
         return False
-    storage = getattr(field_file, "storage", None)
+    storage = named_file.storage
     if storage is None or not hasattr(storage, "is_encrypted"):
         return False
     try:
-        return bool(storage.exists(field_file.name)) and not storage.is_encrypted(
-            field_file.name
+        return bool(storage.exists(named_file.name)) and not storage.is_encrypted(
+            named_file.name
         )
     except Exception:
         return False
 
 
 def _repair_plaintext_field_file(field_file: object) -> bool:
-    storage = getattr(field_file, "storage", None)
+    named_file = _as_storage_backed_file(field_file)
+    if named_file is None:
+        raise RuntimeError("FieldFile has no storage name")
+    storage = named_file.storage
     if storage is None or not hasattr(storage, "repair_plaintext_file"):
         raise RuntimeError("FieldFile storage does not support plaintext repair")
-    return bool(storage.repair_plaintext_file(field_file.name))
+    return bool(storage.repair_plaintext_file(named_file.name))
 
 
 def _field_is_encrypted_at_rest(field_file: object) -> bool:
-    if not _field_file_has_name(field_file):
+    named_file = _as_storage_backed_file(field_file)
+    if named_file is None:
         return False
-    storage = getattr(field_file, "storage", None)
+    storage = named_file.storage
     if storage is None or not hasattr(storage, "is_encrypted"):
         return False
     try:
-        return bool(storage.is_encrypted(field_file.name))
+        return bool(storage.is_encrypted(named_file.name))
     except Exception:
         return False
 
@@ -452,7 +470,7 @@ class Command(BaseCommand):
             if not plan.actionable
             and (plan.object_kind, plan.object_pk) not in selected_keys
         ]
-        iteration = {
+        iteration: dict[str, Any] = {
             "changed": 0,
             "cleanup_deleted": 0,
             "failed": 0,
@@ -549,16 +567,15 @@ class Command(BaseCommand):
     ) -> RecordPlan:
         field_plans: list[FieldPlan] = []
         if object_kind == "video":
+            video = cast(VideoFile, instance)
             if includes["raw"]:
-                field_plans.append(self._plan_field(instance, self.video_raw_spec))
+                field_plans.append(self._plan_field(video, self.video_raw_spec))
             if includes["processed"]:
-                field_plans.append(
-                    self._plan_field(instance, self.video_processed_spec)
-                )
+                field_plans.append(self._plan_field(video, self.video_processed_spec))
             if includes["streamable"]:
                 field_plans.append(
                     self._plan_streamable_video(
-                        instance,
+                        video,
                         include_raw=includes["raw"],
                         include_processed=includes["processed"],
                     )
@@ -884,8 +901,9 @@ class Command(BaseCommand):
                 return results
 
         if record_plan.object_kind == "video" and includes["streamable"]:
+            video = cast(VideoFile, instance)
             result = self._execute_streamable(
-                instance,
+                video,
                 include_raw=includes["raw"],
                 include_processed=includes["processed"],
                 apply=apply,

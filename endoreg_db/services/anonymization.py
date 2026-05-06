@@ -231,16 +231,16 @@ class AnonymizationService:
     def validate(file_id: int) -> None | Literal["video"] | Literal["pdf"]:
         vf = VideoFile.objects.select_related("state").filter(pk=file_id).first()
         if vf:
-            state = vf.state or vf.get_or_create_state()
-            if hasattr(state, "mark_anonymization_validated"):
-                state.mark_anonymization_validated()
+            video_state = vf.state or vf.get_or_create_state()
+            if hasattr(video_state, "mark_anonymization_validated"):
+                video_state.mark_anonymization_validated()
             return "video"
 
         pdf = RawPdfFile.objects.select_related("state").filter(pk=file_id).first()
         if pdf:
-            state = pdf.state or pdf.get_or_create_state()
-            if hasattr(state, "mark_anonymization_validated"):
-                state.mark_anonymization_validated()
+            pdf_state = pdf.state or pdf.get_or_create_state()
+            if hasattr(pdf_state, "mark_anonymization_validated"):
+                pdf_state.mark_anonymization_validated()
             return "pdf"
 
         return None

@@ -271,6 +271,94 @@ def _mark_segment_annotations_stale(video: VideoFile) -> None:
     )
 
 
+@api_view(["POST"])
+@permission_classes([EnvironmentAwarePermission])
+def video_segments_blacken_outside(request, pk: int):
+    """
+    POST /api/media/videos/<pk>/segments/blacken-outside/
+
+    Explicitly rebuild the processed video with frames from "outside" segments
+    blackened. Body:
+        {
+            "only_validated": false
+        }
+    """
+    video = get_object_or_404(VideoFile, pk=pk)
+    only_validated = _query_param_as_bool(
+        request.data.get("only_validated"),
+        default=False,
+    )
+    outside_segments = LabelVideoSegment.objects.filter(
+        video_file=video,
+        label__name__iexact="outside",
+    )
+    if only_validated:
+        outside_segments = outside_segments.filter(state__is_validated=True)
+    outside_segment_count = outside_segments.count()
+
+    if outside_segment_count == 0:
+        return Response(
+            {
+                "message": "No matching outside segments found",
+                "status": "noop",
+                "video_id": video.pk,
+                "outside_segment_count": 0,
+                "only_validated": only_validated,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    try:
+        post_processing_job = dispatch_video_post_validation_rebuild(
+            video_id=video.pk,
+            only_validated=only_validated,
+        )
+    except Exception as exc:
+        logger.exception(
+            "Outside-frame blackening dispatch failed for video %s.", video.pk
+        )
+        return Response(
+            {
+                "message": "Outside-frame blackening failed",
+                "status": "failed",
+                "operation": "blacken_outside",
+                "video_id": video.pk,
+                "outside_segment_count": outside_segment_count,
+                "only_validated": only_validated,
+                "error": str(exc),
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    message_by_status = {
+        "already_queued": "Outside-frame blackening already queued",
+        "busy": "Video reprocessing is already running",
+        "completed": "Outside-frame blackening completed",
+        "failed": "Outside-frame blackening failed",
+    }
+    response_status: int = status.HTTP_202_ACCEPTED
+    if post_processing_job.status == "busy":
+        response_status = status.HTTP_409_CONFLICT
+    elif post_processing_job.status == "failed":
+        response_status = status.HTTP_500_INTERNAL_SERVER_ERROR
+
+    return Response(
+        {
+            "message": message_by_status.get(
+                post_processing_job.status,
+                "Outside-frame blackening queued",
+            ),
+            "status": post_processing_job.status,
+            "operation": "blacken_outside",
+            "video_id": video.pk,
+            "outside_segment_count": outside_segment_count,
+            "only_validated": only_validated,
+            "post_processing_job": post_processing_job.to_dict(),
+        },
+        status=response_status,
+    )
+
+
 @api_view(["GET"])
 @permission_classes([EnvironmentAwarePermission])
 def video_segments_stats(request):

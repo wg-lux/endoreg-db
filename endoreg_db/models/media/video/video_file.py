@@ -758,7 +758,10 @@ class VideoFile(models.Model):
             assert extracted is True
         try:
             # Step 1: Get the "outside" labeled frames
-            censored = _censor_outside_frames(video)
+            censored = _censor_outside_frames(
+                video,
+                only_validated=only_validated,
+            )
             frame_dir_path = instance.get_frame_dir_path()
             if frame_dir_path is None:
                 raise AssertionError("Frame directory path is not available.")

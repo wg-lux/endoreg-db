@@ -14,7 +14,7 @@ import logging
 import shutil
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import ContextManager, Iterator, Optional
+from typing import Any, ContextManager, Iterator, Optional, cast
 
 from django.core.files import File
 from django.db.models.fields.files import FieldFile
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 _DEFAULT_CHUNK_SIZE = 1024 * 1024  # 1 MiB
 
 
-def _has_field_file(field_file: Optional[FieldFile]) -> bool:
+def _has_field_file(field_file: object | None) -> bool:
     return bool(field_file and getattr(field_file, "name", None))
 
 
@@ -158,12 +158,12 @@ def delete_field_file(
     field_file = getattr(target, field_name, None) if field_name else target
     if not _has_field_file(field_file):
         return False
-    assert field_file is not None
+    field_file = cast(FieldFile, field_file)
     try:
         if field_name:
             field_file.delete(save=False)
             if save:
-                instance = getattr(field_file, "instance", target)
+                instance = cast(Any, getattr(field_file, "instance", target))
                 instance.save(update_fields=[field_name])
         else:
             field_file.delete(save=save)

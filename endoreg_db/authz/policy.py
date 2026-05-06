@@ -93,6 +93,7 @@ ROUTE_RESOURCE = {
     "video-metadata": "video",
     "video-apply-mask": "video",
     "video-remove-frames": "video",
+    "video-segments-blacken-outside": "video",
     "get_lvs_list": "video",
     # report + sensitive metadata endpoints expose patient-linked data.
     "pdf-list": "patient",

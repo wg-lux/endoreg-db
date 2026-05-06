@@ -99,7 +99,8 @@ def test_create_video_without_outside_frames_uses_data_paths_output(
         )
         return True
 
-    def fake_censor_outside_frames(_video):
+    def fake_censor_outside_frames(_video, **kwargs):
+        captured["only_validated"] = kwargs.get("only_validated")
         return True
 
     def fake_assemble_video_from_frames(
@@ -138,6 +139,7 @@ def test_create_video_without_outside_frames_uses_data_paths_output(
     )
     assert captured["output_path"] == expected_output_path
     assert captured["fps"] == DEFAULT_VIDEO_FPS
+    assert captured["only_validated"] is False
     assert str(expected_output_path).startswith(str(data_paths["transcoding"]))
     assert "/path/to/output" not in str(captured["output_path"])
 
@@ -253,7 +255,7 @@ def test_create_video_without_outside_frames_forces_processed_frame_reextract(
     monkeypatch.setattr(video, "get_frame_paths", lambda: fake_frames)
     monkeypatch.setattr(
         "endoreg_db.models.media.video.video_file._censor_outside_frames",
-        lambda _video: True,
+        lambda _video, **kwargs: True,
     )
     monkeypatch.setattr(
         "endoreg_db.models.media.video.video_file.assemble_video_from_frames",

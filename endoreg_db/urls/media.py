@@ -35,6 +35,7 @@ from endoreg_db.views.video import (
     export_annotated_data,
     video_segment_detail,
     video_segment_validate,
+    video_segments_blacken_outside,
     video_segments_bulk_mutation,
     video_segments_by_video,
     video_segments_stats,
@@ -220,6 +221,14 @@ urlpatterns = [
         "media/videos/<int:pk>/segments/",
         video_segments_by_video,
         name="video-segments-by-video",
+    ),
+    # Outside-Frame Blackening API
+    # POST /api/media/videos/<int:pk>/segments/blacken-outside/
+    # Re-runs processed video rebuild with "outside" segments blackened.
+    path(
+        "media/videos/<int:pk>/segments/blacken-outside/",
+        video_segments_blacken_outside,
+        name="video-segments-blacken-outside",
     ),
     # Bulk Segment Mutation API
     # POST /api/media/videos/<int:pk>/segments/bulk/
