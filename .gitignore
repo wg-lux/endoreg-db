@@ -13,6 +13,11 @@ staticfiles/
 .ansible/
 .lx-data-models/
 /lx-data-models/*
+.lx-report-generator/
+/lx-report-generator/*
+.lx-terminology-editor/
+/lx-terminology-editor/*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
