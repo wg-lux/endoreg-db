@@ -1,5 +1,6 @@
 import logging
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, cast
 import numpy as np
@@ -17,6 +18,51 @@ if TYPE_CHECKING:
     from .video_file import VideoFile
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class VideoFrameScoreResult:
+    """Frame-indexed multilabel scores produced by the existing video scorer."""
+
+    labels: List[str]
+    frame_scores: List[List[float]]
+    device: str
+    frame_count: int
+
+
+def _frame_score_result_from_merged_predictions(
+    merged_predictions: Dict[str, Any],
+    labels: List[str],
+    *,
+    device: str,
+) -> VideoFrameScoreResult:
+    columns = []
+    for label in labels:
+        values = merged_predictions.get(label)
+        if values is None:
+            columns.append(np.asarray([], dtype=float))
+        else:
+            columns.append(np.asarray(values, dtype=float).reshape(-1))
+
+    if not columns:
+        return VideoFrameScoreResult(
+            labels=labels,
+            frame_scores=[],
+            device=device,
+            frame_count=0,
+        )
+
+    frame_count = min((len(column) for column in columns), default=0)
+    frame_scores = [
+        [float(column[frame_index]) for column in columns]
+        for frame_index in range(frame_count)
+    ]
+    return VideoFrameScoreResult(
+        labels=labels,
+        frame_scores=frame_scores,
+        device=device,
+        frame_count=frame_count,
+    )
 
 
 def _is_stub_weights_file(weights_path: Path) -> bool:
@@ -307,7 +353,8 @@ def _predict_video_pipeline(
     binarize_threshold: float = 0.5,
     test_run: bool = False,
     n_test_frames: int = 10,
-) -> Dict[str, List[Tuple[int, int]]]:  # Changed return type to non-optional
+    return_frame_scores: bool = False,
+) -> Dict[str, List[Tuple[int, int]]] | VideoFrameScoreResult:
     """
     Executes the video prediction pipeline using an AI model.
     Requires frames to be extracted. Raises exceptions on failure.
@@ -419,12 +466,46 @@ def _predict_video_pipeline(
         # Raise exception
         raise RuntimeError("Failed to get or create VideoPredictionMeta") from e
 
+    label_names = _resolve_label_names(model_meta)
+    if not label_names:
+        raise ValueError(
+            f"Label set '{getattr(model_meta.labelset, 'name', 'unknown')}' has no labels configured."
+        )
+
+    outputs_hint = _infer_output_classes(weights_path)
+
+    network_labels = label_names
+    if outputs_hint and outputs_hint != len(label_names):
+        if outputs_hint == len(LEGACY_CLASS_LABELS):
+            network_labels = LEGACY_CLASS_LABELS
+            logger.info(
+                "Detected legacy multilabel checkpoint with %d classes; using legacy label ordering.",
+                outputs_hint,
+            )
+        else:
+            logger.warning(
+                "Weights %s expect %d outputs while label set '%s' defines %d labels.",
+                weights_path.name,
+                outputs_hint,
+                getattr(model_meta.labelset, "name", "unknown"),
+                len(label_names),
+            )
+
+    label_mapping = _build_label_mapping(network_labels, label_names)
+
     if _is_stub_weights_file(weights_path):
         logger.info(
             "Detected stub weights at %s for video %s; skipping model inference and returning empty predictions.",
             weights_path,
             video.video_hash,
         )
+        if return_frame_scores:
+            return VideoFrameScoreResult(
+                labels=label_names,
+                frame_scores=[],
+                device="stub",
+                frame_count=0,
+            )
         return {}
 
     # --- Dataset Preparation ---
@@ -479,33 +560,6 @@ def _predict_video_pipeline(
             raise ValueError(
                 f"Not enough frames ({len(paths)}) for test run (required {n_test_frames}) for video {video.video_hash}."
             )
-
-    label_names = _resolve_label_names(model_meta)
-    if not label_names:
-        raise ValueError(
-            f"Label set '{getattr(model_meta.labelset, 'name', 'unknown')}' has no labels configured."
-        )
-
-    outputs_hint = _infer_output_classes(weights_path)
-
-    network_labels = label_names
-    if outputs_hint and outputs_hint != len(label_names):
-        if outputs_hint == len(LEGACY_CLASS_LABELS):
-            network_labels = LEGACY_CLASS_LABELS
-            logger.info(
-                "Detected legacy multilabel checkpoint with %d classes; using legacy label ordering.",
-                outputs_hint,
-            )
-        else:
-            logger.warning(
-                "Weights %s expect %d outputs while label set '%s' defines %d labels.",
-                weights_path.name,
-                outputs_hint,
-                getattr(model_meta.labelset, "name", "unknown"),
-                len(label_names),
-            )
-
-    label_mapping = _build_label_mapping(network_labels, label_names)
 
     load_kwargs: Dict[str, Any] = {}
     if weights_path.suffix.lower() == ".safetensors":
@@ -666,6 +720,7 @@ def _predict_video_pipeline(
                         pass
                     try:
                         # Move model to CPU and retry inference
+                        device = torch.device("cpu")
                         _ = ai_model_instance.cpu()
                         classifier = Classifier(ai_model_instance, verbose=True)
                         predictions = classifier.pipe(string_paths, crops)
@@ -703,6 +758,18 @@ def _predict_video_pipeline(
             ]
 
         merged_predictions = concat_pred_dicts(readable_predictions)
+        frame_score_result = _frame_score_result_from_merged_predictions(
+            merged_predictions,
+            label_names,
+            device=str(device),
+        )
+        if return_frame_scores:
+            logger.info(
+                "Returning %d frame-score rows for temporal inference on video %s.",
+                frame_score_result.frame_count,
+                video.video_hash,
+            )
+            return frame_score_result
 
         fps = video.get_fps()  # Use Meta helper
         if not fps:

@@ -17,6 +17,11 @@ from endoreg_db.models import (
     VideoFile,
 )
 from endoreg_db.serializers.label_video_segment.label import LabelSerializer
+from endoreg_db.services.video_temporal_inference import (
+    TemporalInferenceConfigError,
+    dispatch_video_temporal_inference,
+    extract_temporal_options,
+)
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 # from rest_framework.permissions import IsAuthenticated
@@ -224,48 +229,70 @@ def rerun_prediction_segments(request, pk: int) -> Response:
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    deleted_prediction_segments = 0
-    if replace_prediction_segments:
-        old_prediction_segments = _prediction_segments_for_video(video)
-        deleted_prediction_segments = old_prediction_segments.count()
-        old_prediction_segments.delete()
-
-    state = video.get_or_create_state()
-    state.initial_prediction_completed = False
-    state.lvs_created = False
-    state.save(update_fields=["initial_prediction_completed", "lvs_created"])
-
-    success = video.pipe_1(
-        model_name=model_meta.model.name,
-        model_meta_version=model_meta.version,
-        delete_frames_after=delete_frames_after,
-        ocr_frame_fraction=ocr_frame_fraction,
-        ocr_cap=ocr_cap,
-    )
-
-    prediction_segments_count = _prediction_segments_for_video(video).count()
-    if not success:
+    test_run = _as_bool(payload.get("test_run"), default=False)
+    try:
+        n_test_frames = int(payload.get("n_test_frames") or 10)
+    except (TypeError, ValueError):
         return Response(
             {
-                "success": False,
-                "error": "Prediction rerun failed during pipe_1.",
-                "video_id": video.pk,
-                "model_meta": _serialize_model_meta(model_meta),
-                "deleted_prediction_segments": deleted_prediction_segments,
-                "prediction_segments_count": prediction_segments_count,
+                "error": "Invalid test run options.",
+                "error_type": "invalid_options",
             },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        dispatch_result = dispatch_video_temporal_inference(
+            video_id=video.pk,
+            model_meta_id=model_meta.pk,
+            replace_prediction_segments=replace_prediction_segments,
+            delete_frames_after=delete_frames_after,
+            ocr_frame_fraction=ocr_frame_fraction,
+            ocr_cap=ocr_cap,
+            temporal_options=extract_temporal_options(payload),
+            test_run=test_run,
+            n_test_frames=n_test_frames,
+        )
+    except TemporalInferenceConfigError as exc:
+        return Response(
+            {"error": str(exc), "error_type": "invalid_temporal_options"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    except Exception as exc:
+        logger.exception("Could not dispatch temporal inference for video %s", pk)
+        return Response(
+            {"error": str(exc), "error_type": "prediction_dispatch_failed"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
+    prediction_segments_count = (
+        dispatch_result.prediction_segments_count
+        if dispatch_result.prediction_segments_count is not None
+        else _prediction_segments_for_video(video).count()
+    )
+    response_status = status.HTTP_202_ACCEPTED
+    if dispatch_result.status == "completed":
+        response_status = status.HTTP_200_OK
+    elif dispatch_result.status == "failed":
+        response_status = status.HTTP_500_INTERNAL_SERVER_ERROR
+
     return Response(
         {
-            "success": True,
+            "success": dispatch_result.status
+            in {"queued", "already_queued", "completed"},
+            "status": dispatch_result.status,
             "video_id": video.pk,
             "model_meta": _serialize_model_meta(model_meta),
-            "deleted_prediction_segments": deleted_prediction_segments,
+            "job": {
+                "task_id": dispatch_result.task_id,
+                "history_id": dispatch_result.history_id,
+                "mode": dispatch_result.mode,
+                "queue": dispatch_result.queue,
+            },
+            "deleted_prediction_segments": dispatch_result.deleted_prediction_segments,
             "prediction_segments_count": prediction_segments_count,
         },
-        status=status.HTTP_200_OK,
+        status=response_status,
     )
 
 

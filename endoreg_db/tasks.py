@@ -22,6 +22,37 @@ def run_video_post_validation_rebuild_task(
     )
 
 
+@shared_task(name="endoreg_db.video_temporal_inference")
+def run_video_temporal_inference_task(
+    video_id: int,
+    model_meta_id: int,
+    history_id: int | None = None,
+    replace_prediction_segments: bool = True,
+    delete_frames_after: bool = True,
+    ocr_frame_fraction: float = 0.001,
+    ocr_cap: int = 10,
+    temporal_options: dict[str, Any] | None = None,
+    test_run: bool = False,
+    n_test_frames: int = 10,
+) -> bool:
+    from endoreg_db.services.video_temporal_inference import (
+        _run_video_temporal_inference,
+    )
+
+    return _run_video_temporal_inference(
+        int(video_id),
+        model_meta_id=int(model_meta_id),
+        history_id=int(history_id) if history_id is not None else None,
+        replace_prediction_segments=bool(replace_prediction_segments),
+        delete_frames_after=bool(delete_frames_after),
+        ocr_frame_fraction=float(ocr_frame_fraction),
+        ocr_cap=int(ocr_cap),
+        temporal_options=temporal_options or {},
+        test_run=bool(test_run),
+        n_test_frames=int(n_test_frames),
+    )
+
+
 @shared_task(name="endoreg_db.process_upload_job")
 def process_upload_job(job_id: str) -> bool:
     from endoreg_db.services.hub import process_upload_job as _process_upload_job
