@@ -7,6 +7,7 @@ from endoreg_db.views import (
     application_settings_annotators_dropdown,
     application_settings_report_templates_dropdown,
     application_settings_ai_datasets_dropdown,
+    application_settings_ai_dataset_frame_bucket_distribution,
     application_settings_model_training_options,
     application_settings_model_training_runs,
     application_settings_model_training_run_detail,
@@ -18,7 +19,6 @@ from endoreg_db.views import (
     application_settings_network_node_detail,
     application_settings_network_node_roles_dropdown,
 )
-
 
 urlpatterns = [
     path(
@@ -50,6 +50,11 @@ urlpatterns = [
         "settings/application/dropdowns/ai_datasets/",
         application_settings_ai_datasets_dropdown,
         name="application_settings_ai_datasets_dropdown",
+    ),
+    path(
+        "settings/application/ai_datasets/<int:pk>/frame_bucket_distribution/",
+        application_settings_ai_dataset_frame_bucket_distribution,
+        name="application_settings_ai_dataset_frame_bucket_distribution",
     ),
     path(
         "settings/application/model_training/options/",

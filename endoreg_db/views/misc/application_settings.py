@@ -20,6 +20,8 @@ from endoreg_db.models import (
     Center,
     EndoscopyProcessor,
     ImageClassificationAnnotation,
+    Label,
+    LabelSet,
     NetworkNode,
     PatientExaminationReport,
 )
@@ -47,7 +49,6 @@ from endoreg_db.utils.defaults.set_default_center import (
 )
 from endoreg_db.utils.paths import EXPORT_DIR, PROTECTED_DATA_ROOT, STORAGE_DIR
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
-
 
 MODEL_TRAINING_BACKBONE_OPTIONS: tuple[dict[str, str], ...] = (
     {
@@ -203,6 +204,79 @@ def _application_settings_ai_dataset_entries() -> list[dict[str, Any]]:
             }
         )
     return entries
+
+
+def _resolve_label_set_for_distribution(
+    raw_value: object,
+) -> tuple[LabelSet | None, Response | None]:
+    if raw_value in {None, ""}:
+        return None, None
+    try:
+        label_group_id = int(raw_value)
+    except (TypeError, ValueError):
+        return None, Response(
+            {"errors": {"label_group_id": "label_group_id must be an integer."}},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    label_set = LabelSet.objects.filter(pk=label_group_id).first()
+    if label_set is None:
+        return None, Response(
+            {
+                "errors": {
+                    "label_group_id": f"Unknown label_group_id: {label_group_id}."
+                }
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    return label_set, None
+
+
+def _resolve_target_label_for_distribution(
+    *,
+    label_set: LabelSet | None,
+    target_label_id_raw: object,
+    target_label_name_raw: object,
+) -> tuple[Label | None, Response | None]:
+    if target_label_id_raw in {None, ""} and target_label_name_raw in {None, ""}:
+        return None, None
+
+    labels = Label.objects.all()
+    if label_set is not None:
+        labels = labels.filter(label_sets=label_set)
+
+    if target_label_id_raw not in {None, ""}:
+        try:
+            target_label_id = int(target_label_id_raw)
+        except (TypeError, ValueError):
+            return None, Response(
+                {"errors": {"target_label_id": "target_label_id must be an integer."}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        label = labels.filter(pk=target_label_id).first()
+        if label is None:
+            return None, Response(
+                {
+                    "errors": {
+                        "target_label_id": f"Unknown target_label_id: {target_label_id}."
+                    }
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return label, None
+
+    target_label_name = str(target_label_name_raw or "").strip()
+    if not target_label_name:
+        return None, None
+    label = labels.filter(name=target_label_name).first()
+    if label is None:
+        label = labels.filter(name__iexact=target_label_name).first()
+    if label is None:
+        return None, Response(
+            {"errors": {"target_label": f"Unknown target_label: {target_label_name}."}},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    return label, None
 
 
 def _utcnow_iso() -> str:
@@ -591,6 +665,45 @@ def application_settings_ai_datasets_dropdown(request):
         _application_settings_ai_dataset_entries(),
         status=status.HTTP_200_OK,
     )
+
+
+@api_view(["GET"])
+@permission_classes([EnvironmentAwarePermission])
+def application_settings_ai_dataset_frame_bucket_distribution(request, pk: int):
+    dataset = AIDataSet.objects.filter(pk=pk).first()
+    if dataset is None:
+        return Response(
+            {"detail": f"AIDataSet {pk} was not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    label_set, error = _resolve_label_set_for_distribution(
+        request.query_params.get(
+            "label_group_id",
+            request.query_params.get("label_set_id"),
+        )
+    )
+    if error is not None:
+        return error
+
+    target_label, error = _resolve_target_label_for_distribution(
+        label_set=label_set,
+        target_label_id_raw=request.query_params.get("target_label_id"),
+        target_label_name_raw=request.query_params.get("target_label"),
+    )
+    if error is not None:
+        return error
+
+    prediction_segments_only = _payload_bool(
+        request.query_params.get("prediction_segments_only"),
+        default=True,
+    )
+    distribution = dataset.build_frame_bucket_distribution(
+        label_set=label_set,
+        target_label=target_label,
+        prediction_segments_only=prediction_segments_only,
+    )
+    return Response(distribution.model_dump(mode="json"), status=status.HTTP_200_OK)
 
 
 @api_view(["GET"])
@@ -1189,6 +1302,7 @@ __all__ = [
     "application_settings_annotators_dropdown",
     "application_settings_report_templates_dropdown",
     "application_settings_ai_datasets_dropdown",
+    "application_settings_ai_dataset_frame_bucket_distribution",
     "application_settings_model_training_options",
     "application_settings_model_training_runs",
     "application_settings_model_training_run_detail",

@@ -1,10 +1,9 @@
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.apps import apps
 from django.db.models import Min, Max, Count, fields
 from django.utils.timezone import is_aware, make_naive
 import datetime
 import os
-from openpyxl import Workbook  # type: ignore[import-untyped]
 import csv
 
 
@@ -22,6 +21,12 @@ class Command(BaseCommand):
                 "Starting database content summarization for endoreg_db models..."
             )
         )
+        try:
+            from openpyxl import Workbook  # type: ignore[import-untyped]
+        except ImportError as exc:
+            raise CommandError(
+                "openpyxl is required to export the database summary workbook."
+            ) from exc
 
         try:
             app_config = apps.get_app_config("endoreg_db")

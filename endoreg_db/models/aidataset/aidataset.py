@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from datetime import datetime
+from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -17,6 +19,7 @@ if TYPE_CHECKING:
     from endoreg_db.models import (
         ImageClassificationAnnotation,
         Label,
+        LabelSet,
         LabelVideoSegment,
         VideoFile,
     )
@@ -135,6 +138,74 @@ class AIDataSetExportPayload(BaseModel):
 AIDataSetExportPayload.model_rebuild()
 
 
+class AIDataSetTargetFrameBucket(str, Enum):
+    POSITIVE = "positive"
+    NEGATIVE = "negative"
+    UNKNOWN = "unknown"
+
+    def __str__(self) -> str:
+        return self.value
+
+
+class AIDataSetFrameBucketCount(BaseModel):
+    bucket: AIDataSetTargetFrameBucket
+    frame_count: int = 0
+
+
+class AIDataSetLabelDistributionEntry(BaseModel):
+    label_id: int
+    label_name: str
+    frame_positive: int = 0
+    frame_negative: int = 0
+    segment_count: int = 0
+    total: int = 0
+
+
+class AIDataSetLabelFrameBucketCount(BaseModel):
+    label_id: int
+    label_name: str
+    frame_count: int = 0
+
+
+class AIDataSetFrameBucketSummary(BaseModel):
+    image_annotation_count: int = 0
+    video_annotation_count: int = 0
+    annotation_frame_count: int = 0
+    segment_frame_count: int = 0
+    merged_frame_count: int = 0
+    video_count: int = 0
+    label_count: int = 0
+
+
+class AIDataSetFrameBucketDistribution(BaseModel):
+    schema_version: str = "1.0"
+    dataset_id: int
+    name: str | None = None
+    dataset_type: str
+    ai_model_type: str
+    is_active: bool
+    updated_at: datetime
+    label_group_id: int | None = None
+    label_group_name: str | None = None
+    target_label_id: int | None = None
+    target_label_name: str | None = None
+    prediction_segments_only: bool = True
+    summary: AIDataSetFrameBucketSummary
+    target_buckets: list[AIDataSetFrameBucketCount] = Field(default_factory=list)
+    label_distribution: list[AIDataSetLabelDistributionEntry] = Field(
+        default_factory=list
+    )
+    annotation_frame_buckets: list[AIDataSetLabelFrameBucketCount] = Field(
+        default_factory=list
+    )
+    segment_frame_buckets: list[AIDataSetLabelFrameBucketCount] = Field(
+        default_factory=list
+    )
+    merged_frame_buckets: list[AIDataSetLabelFrameBucketCount] = Field(
+        default_factory=list
+    )
+
+
 class AIDataSet(models.Model):
     """
     Aggregates persisted frame annotations and video-segment annotations for AI usage.
@@ -238,6 +309,49 @@ class AIDataSet(models.Model):
             return list(objects)
         return list(objects)
 
+    @staticmethod
+    def _label_allowed_by_set(label_id: int | None, label_set: LabelSet | None) -> bool:
+        if label_id is None:
+            return False
+        if label_set is None:
+            return True
+        return label_set.labels.filter(pk=label_id).exists()
+
+    @staticmethod
+    def _serialize_label_frame_buckets(
+        buckets: dict[int, set[int]],
+        *,
+        label_names_by_id: dict[int, str],
+    ) -> list[dict[str, Any]]:
+        return [
+            {
+                "label_id": label_id,
+                "label_name": label_names_by_id.get(label_id, f"Label {label_id}"),
+                "frame_count": len(frame_ids),
+            }
+            for label_id, frame_ids in sorted(
+                buckets.items(),
+                key=lambda item: (
+                    -len(item[1]),
+                    label_names_by_id.get(item[0], ""),
+                    item[0],
+                ),
+            )
+            if frame_ids
+        ]
+
+    @staticmethod
+    def _merge_label_frame_buckets(
+        *bucket_maps: dict[int, set[int]],
+    ) -> dict[int, set[int]]:
+        merged: dict[int, set[int]] = defaultdict(set)
+        for bucket_map in bucket_maps:
+            for label_id, frame_ids in bucket_map.items():
+                merged[label_id].update(frame_ids)
+        return {
+            label_id: frame_ids for label_id, frame_ids in merged.items() if frame_ids
+        }
+
     def get_image_annotations_queryset(self):
         return self.image_annotations
 
@@ -311,9 +425,11 @@ class AIDataSet(models.Model):
         candidates: Sequence[AIDataSetActiveLearningCandidate | dict[str, Any]],
     ) -> list[AIDataSetActiveLearningCandidate]:
         return [
-            candidate
-            if isinstance(candidate, AIDataSetActiveLearningCandidate)
-            else AIDataSetActiveLearningCandidate.model_validate(candidate)
+            (
+                candidate
+                if isinstance(candidate, AIDataSetActiveLearningCandidate)
+                else AIDataSetActiveLearningCandidate.model_validate(candidate)
+            )
             for candidate in candidates
         ]
 
@@ -409,201 +525,27 @@ class AIDataSet(models.Model):
     ) -> AIDataSetActiveLearningSelection:
         resolved_config = config or AIDataSetActiveLearningConfig()
         normalized_candidates = cls._coerce_active_learning_candidates(candidates)
-        if not normalized_candidates:
-            return AIDataSetActiveLearningSelection(
-                config=resolved_config,
-                candidate_count=0,
-                segment_count=0,
-            )
-
-        probs = np.asarray(
-            [candidate.probs for candidate in normalized_candidates],
-            dtype=np.float64,
+        reference_embeddings = (
+            None
+            if labeled_embeddings is None
+            else np.asarray(labeled_embeddings, dtype=np.float64).tolist()
         )
-        embeddings = np.asarray(
-            [candidate.embedding for candidate in normalized_candidates],
-            dtype=np.float64,
-        )
-        if probs.ndim != 2 or embeddings.ndim != 2:
-            raise ValueError(
-                "Active learning candidates must contain 2D probs and embeddings."
-            )
-        if probs.shape[0] != embeddings.shape[0]:
-            raise ValueError("Active learning probabilities and embeddings must align.")
-
-        candidate_count, num_labels = probs.shape
-        if num_labels == 0:
-            raise ValueError(
-                "Active learning candidates must contain at least one label."
-            )
-
-        if class_frequencies is None:
-            frequencies = np.ones(num_labels, dtype=np.float64)
-        else:
-            frequencies = np.asarray(class_frequencies, dtype=np.float64)
-            if frequencies.shape != (num_labels,):
-                raise ValueError(
-                    "class_frequencies must match the number of model output labels."
-                )
-
-        if labeled_embeddings is None:
-            reference_embeddings = np.empty((0, embeddings.shape[1]), dtype=np.float64)
-        else:
-            reference_embeddings = np.asarray(labeled_embeddings, dtype=np.float64)
-            if reference_embeddings.ndim == 1:
-                reference_embeddings = reference_embeddings[None, :]
-            if (
-                reference_embeddings.ndim != 2
-                or reference_embeddings.shape[1] != embeddings.shape[1]
-            ):
-                raise ValueError(
-                    "labeled_embeddings must be empty or shaped [N, embedding_dim]."
-                )
-
-        label_weights = cls._make_label_weights(
-            frequencies,
-            max_weight=resolved_config.max_label_weight,
-        )
-        uncertainties = (cls._binary_entropy(probs) * label_weights[None, :]).sum(
-            axis=1
-        ) / np.clip(label_weights.sum(), 1e-8, None)
-        normalized_uncertainties = cls._normalize_nonconstant(uncertainties)
-
-        diversities = np.asarray(
-            [
-                cls._cosine_distance_to_set(embedding, reference_embeddings)
-                for embedding in embeddings
-            ],
-            dtype=np.float64,
-        )
-        normalized_diversities = cls._normalize_nonconstant(diversities)
-
-        rarity_weights = cls._make_label_weights(
-            frequencies,
-            max_weight=resolved_config.max_rarity_boost,
-        )
-        rarity = (probs * rarity_weights[None, :]).sum(axis=1) / np.clip(
-            probs.sum(axis=1),
-            1e-8,
-            None,
-        )
-        rarity = np.clip(rarity, 0.5, resolved_config.max_rarity_boost)
-
-        quality_scores = np.asarray(
-            [
-                1.0
-                if candidate.quality_score is None
-                else float(candidate.quality_score)
-                for candidate in normalized_candidates
-            ],
-            dtype=np.float64,
-        )
-        quality_scores = np.clip(quality_scores, 0.0, 1.0)
-        quality_gate = np.where(
-            quality_scores >= resolved_config.min_quality_score,
-            quality_scores,
-            0.0,
+        frequencies = (
+            None
+            if class_frequencies is None
+            else np.asarray(class_frequencies, dtype=np.float64).tolist()
         )
 
-        frame_scores = (
-            normalized_uncertainties * normalized_diversities * rarity * quality_gate
+        from lx_ai_core.active_learning import select_active_learning_candidates
+
+        selection = select_active_learning_candidates(
+            [candidate.model_dump(mode="json") for candidate in normalized_candidates],
+            labeled_embeddings=reference_embeddings,
+            class_frequencies=frequencies,
+            config=resolved_config.model_dump(mode="json"),
         )
-
-        segment_ids = cls._build_segment_ids(
-            normalized_candidates,
-            segment_gap_frames=resolved_config.segment_gap_frames,
-        )
-        scored_candidates: list[dict[str, Any]] = []
-        segments: dict[int, list[dict[str, Any]]] = {}
-
-        for idx, candidate in enumerate(normalized_candidates):
-            scored = {
-                "sample_index": candidate.sample_index,
-                "frame_id": candidate.frame_id,
-                "video_id": candidate.video_id,
-                "frame_number": candidate.frame_number,
-                "timestamp": candidate.timestamp,
-                "segment_id": segment_ids[idx],
-                "probs": probs[idx].tolist(),
-                "embedding": embeddings[idx],
-                "quality_score": candidate.quality_score,
-                "uncertainty": float(normalized_uncertainties[idx]),
-                "diversity": float(normalized_diversities[idx]),
-                "rarity": float(rarity[idx]),
-                "quality_gate": float(quality_gate[idx]),
-                "frame_score": float(frame_scores[idx]),
-                "picked": False,
-            }
-            scored_candidates.append(scored)
-            segments.setdefault(segment_ids[idx], []).append(scored)
-
-        segment_ranking = sorted(
-            segments.items(),
-            key=lambda item: max(candidate["frame_score"] for candidate in item[1]),
-            reverse=True,
-        )
-
-        selected: list[dict[str, Any]] = []
-        selected_embeddings: list[np.ndarray] = []
-        selected_frames_by_video: dict[int, list[int]] = {}
-        segment_pick_counts: dict[int, int] = {segment_id: 0 for segment_id in segments}
-
-        while len(selected) < resolved_config.budget:
-            made_progress = False
-            for segment_id, segment_candidates in segment_ranking:
-                if len(selected) >= resolved_config.budget:
-                    break
-                if (
-                    segment_pick_counts[segment_id]
-                    >= resolved_config.max_samples_per_segment
-                ):
-                    continue
-
-                pick = cls._pick_segment_candidate(
-                    segment_candidates,
-                    selected_embeddings=selected_embeddings,
-                    selected_frames_by_video=selected_frames_by_video,
-                    temporal_spacing_frames=resolved_config.temporal_spacing_frames,
-                )
-                if pick is None:
-                    continue
-
-                pick["picked"] = True
-                segment_pick_counts[segment_id] += 1
-                selected.append(pick)
-                selected_embeddings.append(pick["embedding"])
-                selected_frames_by_video.setdefault(pick["video_id"], []).append(
-                    pick["frame_number"]
-                )
-                made_progress = True
-
-            if not made_progress:
-                break
-
-        selected_candidates = [
-            AIDataSetScoredActiveLearningCandidate.model_validate(
-                {
-                    key: value
-                    for key, value in candidate.items()
-                    if key != "embedding" and key != "picked"
-                }
-            )
-            for candidate in selected
-        ]
-
-        return AIDataSetActiveLearningSelection(
-            config=resolved_config,
-            candidate_count=candidate_count,
-            segment_count=len(segments),
-            selected_sample_indices=[
-                candidate.sample_index for candidate in selected_candidates
-            ],
-            selected_frame_ids=[
-                candidate.frame_id
-                for candidate in selected_candidates
-                if candidate.frame_id is not None
-            ],
-            selected_candidates=selected_candidates,
+        return AIDataSetActiveLearningSelection.model_validate(
+            selection.model_dump(mode="json")
         )
 
     @classmethod
@@ -665,8 +607,10 @@ class AIDataSet(models.Model):
 
     def add_frame_annotations(
         self,
-        annotations: Iterable[ImageClassificationAnnotation]
-        | QuerySet[ImageClassificationAnnotation],
+        annotations: (
+            Iterable[ImageClassificationAnnotation]
+            | QuerySet[ImageClassificationAnnotation]
+        ),
     ) -> int:
         annotation_list = self._coerce_objects(annotations)
         if not annotation_list:
@@ -755,6 +699,284 @@ class AIDataSet(models.Model):
         return VideoFile.objects.filter(
             pk__in=set(image_video_ids).union(set(segment_video_ids))
         ).distinct()
+
+    def _build_target_frame_buckets(
+        self,
+        *,
+        target_label: Label | None,
+    ) -> dict[AIDataSetTargetFrameBucket, set[int]]:
+        if self.dataset_type != self.DATASET_TYPE_IMAGE or target_label is None:
+            return {}
+
+        annotations = self.image_annotations.select_related("frame", "label").filter(
+            frame__isnull=False,
+            frame__is_extracted=True,
+        )
+        if not annotations.exists():
+            return {}
+
+        frame_ids_by_bucket: dict[AIDataSetTargetFrameBucket, set[int]] = {
+            AIDataSetTargetFrameBucket.POSITIVE: set(),
+            AIDataSetTargetFrameBucket.NEGATIVE: set(),
+            AIDataSetTargetFrameBucket.UNKNOWN: set(),
+        }
+        seen_frame_ids: set[int] = set()
+        target_values_by_frame_id: dict[int, list[bool]] = defaultdict(list)
+
+        for annotation in annotations.iterator():
+            seen_frame_ids.add(annotation.frame_id)
+            if annotation.label_id == target_label.id:
+                target_values_by_frame_id[annotation.frame_id].append(
+                    bool(annotation.value)
+                )
+
+        for frame_id in seen_frame_ids:
+            target_values = target_values_by_frame_id.get(frame_id, [])
+            if any(target_values):
+                frame_ids_by_bucket[AIDataSetTargetFrameBucket.POSITIVE].add(frame_id)
+            elif target_values:
+                frame_ids_by_bucket[AIDataSetTargetFrameBucket.NEGATIVE].add(frame_id)
+            else:
+                frame_ids_by_bucket[AIDataSetTargetFrameBucket.UNKNOWN].add(frame_id)
+
+        return frame_ids_by_bucket
+
+    def _build_label_distribution(
+        self,
+        *,
+        label_set: LabelSet | None,
+    ) -> dict[int, dict[str, Any]]:
+        distribution: dict[int, dict[str, Any]] = {}
+
+        def ensure_label(label: Label | None) -> dict[str, Any] | None:
+            if label is None or not self._label_allowed_by_set(label.pk, label_set):
+                return None
+            return distribution.setdefault(
+                label.pk,
+                {
+                    "label_id": label.pk,
+                    "label_name": label.name,
+                    "frame_positive": 0,
+                    "frame_negative": 0,
+                    "segment_count": 0,
+                    "total": 0,
+                },
+            )
+
+        for annotation in (
+            self.image_annotations.select_related("label")
+            .filter(label__isnull=False, frame__is_extracted=True)
+            .iterator()
+        ):
+            entry = ensure_label(annotation.label)
+            if entry is None:
+                continue
+            if annotation.value:
+                entry["frame_positive"] += 1
+            else:
+                entry["frame_negative"] += 1
+            entry["total"] += 1
+
+        for segment in (
+            self.video_annotations.select_related("label")
+            .filter(label__isnull=False)
+            .iterator()
+        ):
+            entry = ensure_label(segment.label)
+            if entry is None:
+                continue
+            entry["segment_count"] += 1
+            entry["total"] += 1
+
+        return distribution
+
+    def _build_annotation_frame_buckets(
+        self,
+        *,
+        label_set: LabelSet | None,
+    ) -> dict[int, set[int]]:
+        buckets: dict[int, set[int]] = defaultdict(set)
+        annotations = self.image_annotations.select_related("label").filter(
+            label__isnull=False,
+            value=True,
+            frame__isnull=False,
+            frame__is_extracted=True,
+        )
+
+        for annotation in annotations.iterator():
+            if not self._label_allowed_by_set(annotation.label_id, label_set):
+                continue
+            buckets[annotation.label_id].add(annotation.frame_id)
+
+        return {
+            label_id: frame_ids for label_id, frame_ids in buckets.items() if frame_ids
+        }
+
+    def _build_segment_frame_buckets(
+        self,
+        *,
+        label_set: LabelSet | None,
+        prediction_segments_only: bool,
+    ) -> dict[int, set[int]]:
+        from endoreg_db.models import Frame
+        from endoreg_db.models.state.frame_annotation import is_prediction_segment
+
+        buckets: dict[int, set[int]] = defaultdict(set)
+        segments = (
+            self.video_annotations.select_related("label", "source")
+            .filter(
+                label__isnull=False,
+                video_file_id__isnull=False,
+                start_frame_number__isnull=False,
+                end_frame_number__isnull=False,
+            )
+            .order_by("video_file_id", "start_frame_number", "end_frame_number")
+        )
+        segments_by_video_id: dict[int, list[Any]] = defaultdict(list)
+
+        for segment in segments.iterator():
+            if prediction_segments_only and not is_prediction_segment(segment):
+                continue
+            if not self._label_allowed_by_set(segment.label_id, label_set):
+                continue
+            if segment.start_frame_number >= segment.end_frame_number:
+                continue
+            segments_by_video_id[segment.video_file_id].append(segment)
+
+        for video_id, video_segments in segments_by_video_id.items():
+            min_start = min(segment.start_frame_number for segment in video_segments)
+            max_end = max(segment.end_frame_number for segment in video_segments)
+            frame_rows = Frame.objects.filter(
+                video_id=video_id,
+                frame_number__gte=min_start,
+                frame_number__lt=max_end,
+                is_extracted=True,
+            ).values_list("id", "frame_number")
+            frame_ids_by_number = {
+                frame_number: frame_id for frame_id, frame_number in frame_rows
+            }
+
+            for segment in video_segments:
+                for frame_number, frame_id in frame_ids_by_number.items():
+                    if (
+                        segment.start_frame_number
+                        <= frame_number
+                        < segment.end_frame_number
+                    ):
+                        buckets[segment.label_id].add(frame_id)
+
+        return {
+            label_id: frame_ids for label_id, frame_ids in buckets.items() if frame_ids
+        }
+
+    def build_frame_bucket_distribution(
+        self,
+        *,
+        label_set: LabelSet | None = None,
+        target_label: Label | None = None,
+        prediction_segments_only: bool = True,
+    ) -> AIDataSetFrameBucketDistribution:
+        """
+        Return validated frame-bucket counts used by dataset-aware annotation flows.
+        """
+        from endoreg_db.models import Label
+
+        target_buckets = self._build_target_frame_buckets(target_label=target_label)
+        label_distribution = self._build_label_distribution(label_set=label_set)
+        annotation_frame_buckets = self._build_annotation_frame_buckets(
+            label_set=label_set
+        )
+        segment_frame_buckets = self._build_segment_frame_buckets(
+            label_set=label_set,
+            prediction_segments_only=prediction_segments_only,
+        )
+        merged_frame_buckets = self._merge_label_frame_buckets(
+            annotation_frame_buckets,
+            segment_frame_buckets,
+        )
+
+        label_ids = set(label_distribution)
+        label_ids.update(annotation_frame_buckets)
+        label_ids.update(segment_frame_buckets)
+        label_ids.update(merged_frame_buckets)
+        label_names_by_id = {
+            row["id"]: row["name"]
+            for row in Label.objects.filter(id__in=label_ids).values("id", "name")
+        }
+        for label_id, entry in label_distribution.items():
+            label_names_by_id.setdefault(label_id, entry["label_name"])
+
+        annotation_frame_ids = (
+            set().union(*annotation_frame_buckets.values())
+            if annotation_frame_buckets
+            else set()
+        )
+        segment_frame_ids = (
+            set().union(*segment_frame_buckets.values())
+            if segment_frame_buckets
+            else set()
+        )
+        merged_frame_ids = (
+            set().union(*merged_frame_buckets.values())
+            if merged_frame_buckets
+            else set()
+        )
+
+        return AIDataSetFrameBucketDistribution.model_validate(
+            {
+                "dataset_id": self.pk,
+                "name": self.name,
+                "dataset_type": self.dataset_type,
+                "ai_model_type": self.ai_model_type,
+                "is_active": self.is_active,
+                "updated_at": self.updated_at,
+                "label_group_id": label_set.pk if label_set is not None else None,
+                "label_group_name": label_set.name if label_set is not None else None,
+                "target_label_id": (
+                    target_label.pk if target_label is not None else None
+                ),
+                "target_label_name": (
+                    target_label.name if target_label is not None else None
+                ),
+                "prediction_segments_only": prediction_segments_only,
+                "summary": {
+                    "image_annotation_count": self.image_annotations.count(),
+                    "video_annotation_count": self.video_annotations.count(),
+                    "annotation_frame_count": len(annotation_frame_ids),
+                    "segment_frame_count": len(segment_frame_ids),
+                    "merged_frame_count": len(merged_frame_ids),
+                    "video_count": self.get_related_videos_queryset().count(),
+                    "label_count": len(label_ids),
+                },
+                "target_buckets": [
+                    {
+                        "bucket": bucket,
+                        "frame_count": len(target_buckets.get(bucket, set())),
+                    }
+                    for bucket in AIDataSetTargetFrameBucket
+                ],
+                "label_distribution": sorted(
+                    label_distribution.values(),
+                    key=lambda item: (
+                        -item["total"],
+                        item["label_name"],
+                        item["label_id"],
+                    ),
+                ),
+                "annotation_frame_buckets": self._serialize_label_frame_buckets(
+                    annotation_frame_buckets,
+                    label_names_by_id=label_names_by_id,
+                ),
+                "segment_frame_buckets": self._serialize_label_frame_buckets(
+                    segment_frame_buckets,
+                    label_names_by_id=label_names_by_id,
+                ),
+                "merged_frame_buckets": self._serialize_label_frame_buckets(
+                    merged_frame_buckets,
+                    label_names_by_id=label_names_by_id,
+                ),
+            }
+        )
 
     def _build_frame_annotation_export(
         self,

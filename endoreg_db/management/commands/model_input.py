@@ -8,12 +8,6 @@ from endoreg_db.models import AIDataSet
 from endoreg_db.utils.ai.data_loader_for_model_input import (
     build_dataset_for_training,
 )
-from endoreg_db.utils.ai.model_training.config import (
-    TrainingConfig,
-)
-from endoreg_db.utils.ai.model_training.trainer_gastronet_multilabel import (
-    train_gastronet_multilabel,
-)
 
 
 class Command(BaseCommand):
@@ -154,6 +148,17 @@ class Command(BaseCommand):
             return
 
         # ---- Training ----
+        try:
+            from endoreg_db.utils.ai.model_training.config import TrainingConfig
+            from endoreg_db.utils.ai.model_training.trainer_gastronet_multilabel import (
+                train_gastronet_multilabel,
+            )
+        except ImportError as exc:
+            raise CommandError(
+                "Training dependencies are not available. Install the AI training "
+                "dependencies before running model_input."
+            ) from exc
+
         cfg = TrainingConfig(
             dataset_id=dataset.id,
             backbone_checkpoint=backbone_ckpt,

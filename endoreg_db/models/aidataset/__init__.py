@@ -3,6 +3,7 @@ from .aidataset import (
     AIDataSetActiveLearningCandidate,
     AIDataSetActiveLearningConfig,
     AIDataSetActiveLearningSelection,
+    AIDataSetFrameBucketDistribution,
     AIDataSetScoredActiveLearningCandidate,
 )
 
@@ -11,5 +12,6 @@ __all__ = [
     "AIDataSetActiveLearningCandidate",
     "AIDataSetActiveLearningConfig",
     "AIDataSetActiveLearningSelection",
+    "AIDataSetFrameBucketDistribution",
     "AIDataSetScoredActiveLearningCandidate",
 ]

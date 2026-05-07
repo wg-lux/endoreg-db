@@ -5,19 +5,25 @@ import json
 from django.core.management.base import BaseCommand, CommandError
 
 from endoreg_db.models import AIDataSet
-from endoreg_db.utils.ai.model_training.config import (
-    DEFAULT_LABELSET_VERSION_TO_TRAIN,
-    TrainingConfig,
-)
-from endoreg_db.utils.ai.model_training.trainer_gastronet_multilabel import (
-    train_gastronet_multilabel,
-)
+
+try:
+    from endoreg_db.utils.ai.model_training.config import TrainingConfig
+    from endoreg_db.utils.ai.model_training.trainer_gastronet_multilabel import (
+        train_gastronet_multilabel,
+    )
+except ImportError:
+    TrainingConfig = None  # type: ignore[assignment]
+    train_gastronet_multilabel = None  # type: ignore[assignment]
 
 
 class Command(BaseCommand):
     help = "Train / fine-tune the image multi-label model on a given AIDataSet."
 
     def add_arguments(self, parser):
+        from endoreg_db.utils.ai.model_training.config import (
+            DEFAULT_LABELSET_VERSION_TO_TRAIN,
+        )
+
         parser.add_argument(
             "--dataset-id",
             type=int,
@@ -130,6 +136,12 @@ class Command(BaseCommand):
                 f"treat_unlabeled_as_negative={treat_unlabeled_as_negative}"
             )
         )
+        if TrainingConfig is None or train_gastronet_multilabel is None:
+            raise CommandError(
+                "Training dependencies are not available. Install the AI training "
+                "dependencies before running train_image_multilabel_model."
+            )
+
         config = TrainingConfig(
             dataset_id=dataset.id,
             labelset_version_to_train=labelset_version,

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import io
 import json
 import random
 from pathlib import Path
@@ -14,6 +16,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 
 
 from endoreg_db.models import AIDataSet
+from endoreg_db.utils.file_operations import atomic_write_file
 from endoreg_db.utils.ai.data_loader_for_model_input import build_dataset_for_training
 from endoreg_db.utils.ai.model_training.config import (
     TrainingConfig,
@@ -29,6 +32,15 @@ from endoreg_db.utils.ai.model_training.metrics import compute_metrics
 from endoreg_db.utils.ai.model_training.model_backbones import (
     create_multilabel_model,
 )
+from lx_ai_core import ModelSpec
+from lx_ai_core.training import (
+    TrainingArtifact,
+    TrainingArtifactKind,
+    TrainingDatasetManifest,
+    TrainingResult,
+    TrainingSample,
+    TrainingStatus,
+)
 
 # ---------------------------------------------------------------------
 # HELPER: FILTER LABELS BY LABELSET VERSION
@@ -39,6 +51,21 @@ class TrainingHistory(TypedDict):
     train_loss: list[float]
     val_loss: list[float]
     test_loss: float | None
+
+
+def _write_bytes_atomic(destination: Path, payload: bytes) -> tuple[str, int]:
+    checksum = hashlib.sha256(payload).hexdigest()
+    atomic_write_file(
+        destination=destination,
+        content=[payload],
+        required_bytes=len(payload),
+    )
+    return checksum, len(payload)
+
+
+def _write_json_atomic(destination: Path, payload: Any) -> tuple[str, int]:
+    data = json.dumps(payload, indent=2, sort_keys=True).encode("utf-8") + b"\n"
+    return _write_bytes_atomic(destination, data)
 
 
 def filter_labels_by_labelset_version(
@@ -97,32 +124,32 @@ def filter_labels_by_labelset_version(
 
 
 # ---------------------------------------------------------------------
-# GROUP-WISE SPLIT BY old_examination_id
+# GROUP-WISE SPLIT BY video_id
 # ---------------------------------------------------------------------
 
 
-def groupwise_split_indices_by_examination(
+def groupwise_split_indices_by_video(
     frame_ids: Sequence[int],
-    old_examination_ids: Sequence[Optional[int]],
+    video_ids: Sequence[Optional[int]],
     val_split: float,
     test_split: float,
     seed: int = 42,
 ) -> Tuple[List[int], List[int], List[int]]:
     """
-    Split sample indices into train / val / test based on old_examination_id.
+    Split sample indices into train / val / test based on video_id.
 
-    All frames sharing the same old_examination_id go into the same split.
-    If old_examination_id is None, we treat each frame as its own group.
+    All frames from the same video go into the same split. If video_id is None,
+    we treat each frame as its own group.
 
     Returns:
         train_indices, val_indices, test_indices
     """
-    assert len(frame_ids) == len(old_examination_ids)
+    assert len(frame_ids) == len(video_ids)
 
     # 1) Build mapping: group_id -> list of sample indices
     groups: Dict[object, List[int]] = {}
-    for idx, (fid, exam_id) in enumerate(zip(frame_ids, old_examination_ids)):
-        group_key = exam_id if exam_id is not None else f"no_exam_{fid}"
+    for idx, (fid, video_id) in enumerate(zip(frame_ids, video_ids)):
+        group_key = video_id if video_id is not None else f"no_video_{fid}"
         groups.setdefault(group_key, []).append(idx)
 
     group_ids = list(groups.keys())
@@ -155,7 +182,7 @@ def groupwise_split_indices_by_examination(
     test_indices.sort()
 
     print(
-        f"[TRAIN] Group-wise split by old_examination_id: "
+        f"[TRAIN] Group-wise split by video_id: "
         f"#groups={n_groups}, train_groups={len(train_group_ids)}, "
         f"val_groups={len(val_group_ids)}, test_groups={len(test_group_ids)}"
     )
@@ -177,7 +204,7 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
       2. Filter labels by LabelSet.version == config.labelset_version_to_train.
       3. Optionally convert unlabeled → negative (Option A).
       4. Compute dataset statistics (positives per label, etc.).
-      5. Group-wise split by old_examination_id into train/val/test.
+      5. Group-wise split by video_id into train/val/test.
       6. Wrap in PyTorch Dataset + DataLoaders.
       7. Build GastroNet-ResNet50 backbone + new head.
       8. Train with focal loss + class weights (+ mask).
@@ -196,7 +223,7 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
     labels = data["labels"]  # list[Label]
     labelset = data["labelset"]
     frame_ids: List[int] = data.get("frame_ids", [])
-    old_exam_ids: List[Optional[int]] = data.get("old_examination_ids", [])
+    video_ids: List[Optional[int]] = data.get("video_ids", [])
 
     num_samples_raw = len(image_paths)
     num_labels_raw = len(labels)
@@ -324,15 +351,15 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
         print(f"    [{idx}] = {int(c)}")
 
     # ------------------------------------------------------------------
-    # 4. Group-wise split by old_examination_id (train/val/test)
+    # 4. Group-wise split by video_id (train/val/test)
     # ------------------------------------------------------------------
-    if not frame_ids or not old_exam_ids:
+    if not frame_ids or not video_ids:
         frame_ids = list(range(len(image_paths)))
-        old_exam_ids = [None] * len(image_paths)
+        video_ids = [None] * len(image_paths)
 
-    train_indices, val_indices, test_indices = groupwise_split_indices_by_examination(
+    train_indices, val_indices, test_indices = groupwise_split_indices_by_video(
         frame_ids=frame_ids,
-        old_examination_ids=old_exam_ids,
+        video_ids=video_ids,
         val_split=config.val_split,
         test_split=config.test_split,
         seed=config.random_seed,
@@ -732,9 +759,59 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
         )
 
     model_path = RUNS_DIR / f"{run_name}.pth"
+    manifest_path = RUNS_DIR / f"{run_name}_training_manifest.json"
     meta_path = RUNS_DIR / f"{run_name}_meta.json"
+    training_result_path = RUNS_DIR / f"{run_name}_training_result.json"
 
-    torch.save(model.state_dict(), model_path)
+    positive_per_label = (labels_tensor * masks_tensor).sum(dim=0)
+    known_per_label = masks_tensor.sum(dim=0).clamp(min=1.0)
+    class_frequencies = (positive_per_label / known_per_label).cpu().tolist()
+    label_names = [lbl.name for lbl in labels]
+    manifest = TrainingDatasetManifest(
+        dataset_id=dataset_obj.id,
+        name=dataset_obj.name,
+        modality="frame",
+        task_kind="multilabel_classification",
+        labels=label_names,
+        samples=[
+            TrainingSample(
+                sample_index=index,
+                path=image_paths[index],
+                labels=labels_arr[index],
+                label_mask=masks_arr[index],
+                group_id=(
+                    f"video:{video_ids[index]}"
+                    if video_ids[index] is not None
+                    else f"frame:{frame_ids[index]}"
+                ),
+                frame_id=frame_ids[index] if frame_ids else None,
+                video_id=video_ids[index] if video_ids else None,
+                metadata={"video_id": video_ids[index]},
+            )
+            for index in range(len(image_paths))
+        ],
+        class_frequencies=class_frequencies,
+        provenance={
+            "source": "endoreg_db.AIDataSet",
+            "dataset_id": dataset_obj.id,
+            "labelset_id": labelset.id,
+            "labelset_name": labelset.name,
+            "labelset_version": labelset.version,
+            "treat_unlabeled_as_negative": config.treat_unlabeled_as_negative,
+        },
+    )
+    manifest_payload = manifest.model_dump(mode="json")
+    manifest_checksum, manifest_bytes = _write_json_atomic(
+        manifest_path,
+        manifest_payload,
+    )
+
+    model_buffer = io.BytesIO()
+    torch.save(model.state_dict(), model_buffer)
+    model_checksum, model_bytes = _write_bytes_atomic(
+        model_path,
+        model_buffer.getvalue(),
+    )
 
     meta = {
         "config": {
@@ -765,14 +842,73 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
         "used_label_indices_original": kept_indices,
         "history": history,
     }
-    with meta_path.open("w", encoding="utf-8") as f:
-        json.dump(meta, f, indent=2)
+    meta_checksum, meta_bytes = _write_json_atomic(meta_path, meta)
 
+    model_spec = ModelSpec(
+        name=run_name,
+        version=str(config.labelset_version_to_train),
+        modality="frame",
+        task_kind="multilabel_classification",
+        artifact_path=model_path,
+        labels=label_names,
+        parameters={
+            "backbone_name": config.backbone_name,
+            "freeze_backbone": config.freeze_backbone,
+            "labelset_version_to_train": config.labelset_version_to_train,
+            "state_dict_format": "torch",
+        },
+    )
+    training_result = TrainingResult(
+        status=TrainingStatus.SUCCESS,
+        request_id=f"endoreg-db-aidataset-{config.dataset_id}-{run_name}",
+        model_spec=model_spec,
+        dataset_id=dataset_obj.id,
+        sample_count=len(image_paths),
+        artifacts=[
+            TrainingArtifact(
+                kind=TrainingArtifactKind.CHECKPOINT,
+                path=model_path,
+                checksum_sha256=model_checksum,
+                bytes=model_bytes,
+                metadata={"format": "torch_state_dict"},
+            ),
+            TrainingArtifact(
+                kind=TrainingArtifactKind.MANIFEST,
+                path=manifest_path,
+                checksum_sha256=manifest_checksum,
+                bytes=manifest_bytes,
+                metadata={"format": "json"},
+            ),
+            TrainingArtifact(
+                kind=TrainingArtifactKind.METADATA,
+                path=meta_path,
+                checksum_sha256=meta_checksum,
+                bytes=meta_bytes,
+                metadata={"format": "json"},
+            ),
+        ],
+        metrics={
+            "history": history,
+            "validation": val_metrics,
+            "test": test_metrics,
+            "test_loss": test_loss,
+            "class_weights": class_weights.detach().cpu().tolist(),
+        },
+        details="image multilabel training completed",
+    )
+    training_result_payload = training_result.model_dump(mode="json")
+    _write_json_atomic(training_result_path, training_result_payload)
+
+    print("[TRAIN] Saved training manifest to:", manifest_path)
     print("[TRAIN] Saved model to:", model_path)
     print("[TRAIN] Saved metadata to:", meta_path)
+    print("[TRAIN] Saved lx-ai-core training result to:", training_result_path)
 
     return {
         "model_path": str(model_path),
+        "manifest_path": str(manifest_path),
         "meta_path": str(meta_path),
+        "training_result_path": str(training_result_path),
+        "training_result": training_result_payload,
         "history": history,
     }

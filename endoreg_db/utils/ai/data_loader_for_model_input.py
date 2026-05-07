@@ -46,9 +46,9 @@ class ImageMultilabelDataset(TypedDict):
     labels: List[Label]
     labelset: LabelSet
 
-    # New: keep track of which DB rows were used, and their legacy exam ids
+    # New: keep track of which DB rows were used, and their video grouping ids
     frame_ids: List[int]  # Frame.pk for each sample
-    old_examination_ids: List[Optional[int]]  # may be None if not set
+    video_ids: List[int]  # Frame.video_id for each sample
 
 
 def _infer_labelset_from_annotations(
@@ -168,7 +168,7 @@ def build_image_multilabel_dataset_from_db(
 
     # New: id tracking for splitting / logging
     frame_ids: List[int] = []
-    old_examination_ids: List[Optional[int]] = []
+    video_ids: List[int] = []
 
     # Cache frames to avoid repeated DB hits
     frame_obj_by_id: Dict[int, Frame] = {}
@@ -182,9 +182,9 @@ def build_image_multilabel_dataset_from_db(
             frame = frame_annotations[0].frame
             frame_obj_by_id[frame_id] = frame
 
-            # New: remember DB ids for this sample
+        # New: remember DB ids for this sample
         frame_ids.append(frame_id)
-        old_examination_ids.append(getattr(frame, "old_examination_id", None))
+        video_ids.append(frame.video_id)
 
         # Start with unknown for all labels
         vec: List[Optional[int]] = [None] * num_labels
@@ -213,7 +213,7 @@ def build_image_multilabel_dataset_from_db(
         labels=labels_in_order,
         labelset=labelset,
         frame_ids=frame_ids,
-        old_examination_ids=old_examination_ids,
+        video_ids=video_ids,
     )
 
 

@@ -211,6 +211,29 @@ class ApplicationSettingsEndpointTests(TestCase):
             for entry in response.json()
         )
 
+    def test_ai_dataset_frame_bucket_distribution_endpoint(self):
+        dataset = AIDataSet.objects.create(
+            name=f"dataset-buckets-{uuid4().hex[:8]}",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+
+        response = self.client.get(
+            f"/api/settings/application/ai_datasets/{dataset.pk}/frame_bucket_distribution/",
+            {"prediction_segments_only": "false"},
+        )
+
+        assert response.status_code == 200, response.content
+        payload = response.json()
+        assert payload["dataset_id"] == dataset.pk
+        assert payload["prediction_segments_only"] is False
+        assert payload["target_buckets"] == [
+            {"bucket": "positive", "frame_count": 0},
+            {"bucket": "negative", "frame_count": 0},
+            {"bucket": "unknown", "frame_count": 0},
+        ]
+        assert payload["summary"]["merged_frame_count"] == 0
+
     def test_ai_dataset_export_rejects_missing_dataset_selection(self):
         response = self.client.post(
             "/api/settings/application/ai_dataset_export/",
