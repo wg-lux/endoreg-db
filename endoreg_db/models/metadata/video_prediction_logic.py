@@ -142,7 +142,9 @@ def create_video_segments_for_label_logic(
     from ..other import InformationSource
 
     video_obj = instance.get_video()
-    information_source, _ = InformationSource.objects.get_or_create(name="prediction")
+    information_source, _ = InformationSource.objects.get_or_create_by_name(
+        "prediction"
+    )
 
     segments_to_create = []
     for start_frame, end_frame in segments:

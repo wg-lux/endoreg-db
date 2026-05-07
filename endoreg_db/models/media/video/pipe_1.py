@@ -184,7 +184,9 @@ def _pipe_1(
                     sequences=sequences,
                     video_prediction_meta=video_prediction_meta,
                 )
-                prediction_source = InformationSource.objects.get(name="prediction")
+                prediction_source, _ = InformationSource.objects.get_or_create_by_name(
+                    "prediction"
+                )
                 mislabeled_prediction_segments = LabelVideoSegment.objects.filter(
                     video_file=video_file,
                     prediction_meta=video_prediction_meta,

@@ -63,7 +63,7 @@ def get_information_source_prediction():
     from .data_load_orchestrator import load_information_source
 
     load_information_source()
-    source = InformationSource.objects.get(name="prediction")
+    source = InformationSource.objects.resolve_by_name("prediction")
     if not isinstance(source, InformationSource):
         raise ValueError("No InformationSource found in the database.")
     return source

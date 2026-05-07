@@ -55,7 +55,7 @@ def get_information_source_prediction():
     from .data_loader import load_information_source_data
 
     load_information_source_data()
-    source = InformationSource.objects.get(name="prediction")
+    source = InformationSource.objects.resolve_by_name("prediction")
     assert isinstance(source, InformationSource), (
         "No InformationSource found in the database."
     )

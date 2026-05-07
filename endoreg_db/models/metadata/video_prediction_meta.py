@@ -233,7 +233,7 @@ class VideoPredictionMeta(models.Model):
         from endoreg_db.models import InformationSource
 
         video_obj = self.get_video()
-        information_source, _ = InformationSource.objects.get_or_create(
+        information_source, _ = InformationSource.objects.get_or_create_by_name(
             name="prediction"
         )
 

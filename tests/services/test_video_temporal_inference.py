@@ -16,6 +16,7 @@ from endoreg_db.models import (
     LabelVideoSegment,
     ModelMeta,
     VideoFile,
+    VideoPredictionMeta,
     VideoProcessingHistory,
 )
 from endoreg_db.models.media.video.video_file_ai import VideoFrameScoreResult
@@ -280,3 +281,93 @@ def test_run_video_temporal_inference_materializes_lx_core_segments(
     assert history.status == VideoProcessingHistory.STATUS_SUCCESS
     assert history.config["result"]["score_vectors_stored"] is False
     assert history.config["result"]["deleted_prediction_segments"] == 1
+
+
+@pytest.mark.django_db
+def test_run_video_temporal_inference_fails_when_current_meta_materializes_nothing(
+    monkeypatch,
+    tmp_path,
+):
+    video = _create_video(tmp_path)
+    model_meta, label_a, label_b = _create_model_meta()
+    prediction_source, _ = InformationSource.objects.get_or_create_by_name(
+        "prediction"
+    )
+    LabelVideoSegment.objects.create(
+        video_file=video,
+        label=label_b,
+        start_frame_number=0,
+        end_frame_number=2,
+        source=prediction_source,
+    )
+    history = VideoProcessingHistory.objects.create(
+        video=video,
+        operation=VideoProcessingHistory.OPERATION_AI_TEMPORAL_INFERENCE,
+        status=VideoProcessingHistory.STATUS_PENDING,
+        config={"kind": jobs.TEMPORAL_INFERENCE_KIND},
+    )
+
+    monkeypatch.setattr(VideoFile, "update_video_meta", lambda self: None)
+    monkeypatch.setattr(
+        VideoFile,
+        "extract_frames",
+        lambda self, overwrite=False: True,
+    )
+    monkeypatch.setattr(
+        VideoFile,
+        "update_text_metadata",
+        lambda self, **kwargs: True,
+    )
+    monkeypatch.setattr(jobs, "_has_extracted_frame_files", lambda video_obj: True)
+    monkeypatch.setattr(
+        VideoFile,
+        "predict_video",
+        lambda self, **kwargs: VideoFrameScoreResult(
+            labels=[label_a.name],
+            frame_scores=[[0.8], [0.9], [0.7], [0.1]],
+            device="cpu",
+            frame_count=4,
+        ),
+    )
+    monkeypatch.setattr(
+        jobs,
+        "_run_lx_ai_core_temporal_inference",
+        lambda **kwargs: types.SimpleNamespace(
+            temporal_segments=[
+                types.SimpleNamespace(
+                    label=f"missing-{uuid.uuid4().hex[:8]}",
+                    start_frame=0,
+                    end_frame=2,
+                )
+            ],
+            backend="torch",
+            device="cpu",
+            duration_ms=1.5,
+            provenance={"local_only": True},
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="no LabelVideoSegment rows"):
+        jobs._run_video_temporal_inference(
+            video.pk,
+            model_meta_id=model_meta.pk,
+            history_id=history.pk,
+            replace_prediction_segments=False,
+            delete_frames_after=False,
+        )
+
+    prediction_meta = VideoPredictionMeta.objects.get(
+        video_file=video,
+        model_meta=model_meta,
+    )
+    assert not LabelVideoSegment.objects.filter(
+        video_file=video,
+        prediction_meta=prediction_meta,
+    ).exists()
+
+    state = video.get_or_create_state()
+    state.refresh_from_db()
+    assert state.initial_prediction_completed is True
+    assert state.lvs_created is False
+    history.refresh_from_db()
+    assert history.status == VideoProcessingHistory.STATUS_FAILURE

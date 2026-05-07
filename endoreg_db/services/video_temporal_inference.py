@@ -98,6 +98,17 @@ def _prediction_segments_for_video(video: VideoFile):
     )
 
 
+def _prediction_segments_for_meta(
+    *,
+    video: VideoFile,
+    prediction_meta: VideoPredictionMeta,
+):
+    return LabelVideoSegment.objects.filter(
+        video_file=video,
+        prediction_meta=prediction_meta,
+    )
+
+
 def _has_extracted_frame_files(video: VideoFile) -> bool:
     frame_dir = video.get_frame_dir_path()
     return bool(frame_dir and frame_dir.exists() and any(frame_dir.glob("frame_*.jpg")))
@@ -511,18 +522,37 @@ def _run_video_temporal_inference(
             deleted_prediction_segments = old_prediction_segments.count()
             old_prediction_segments.delete()
 
-        before_count = _prediction_segments_for_video(video).count()
+        has_segment_ranges = any(bool(ranges) for ranges in sequences.values())
+        before_count = _prediction_segments_for_meta(
+            video=video,
+            prediction_meta=video_prediction_meta,
+        ).count()
         _convert_sequences_to_db_segments(
             video=video,
             sequences=sequences,
             video_prediction_meta=video_prediction_meta,
         )
-        after_count = _prediction_segments_for_video(video).count()
+        current_prediction_segment_count = _prediction_segments_for_meta(
+            video=video,
+            prediction_meta=video_prediction_meta,
+        ).count()
+
+        if has_segment_ranges and current_prediction_segment_count == 0:
+            mark_frame_prediction_completed(video)
+            mark_prediction_segments_created(video, created=False)
+            raise RuntimeError(
+                "Temporal inference returned segment ranges, but no "
+                "LabelVideoSegment rows were materialized for prediction meta "
+                f"{video_prediction_meta.pk}."
+            )
 
         video.sequences = sequences
         video.save(update_fields=["sequences"])
         mark_frame_prediction_completed(video)
-        mark_prediction_segments_created(video, created=True)
+        mark_prediction_segments_created(
+            video,
+            created=current_prediction_segment_count > 0 or not has_segment_ranges,
+        )
 
         if history is not None:
             history.config = {
@@ -536,8 +566,11 @@ def _run_video_temporal_inference(
                     "score_frame_count": score_result.frame_count,
                     "score_label_count": len(score_result.labels),
                     "temporal_segment_count": len(inference_result.temporal_segments),
-                    "materialized_segment_count": after_count,
-                    "created_segment_count": max(after_count - before_count, 0),
+                    "materialized_segment_count": current_prediction_segment_count,
+                    "created_segment_count": max(
+                        current_prediction_segment_count - before_count,
+                        0,
+                    ),
                     "deleted_prediction_segments": deleted_prediction_segments,
                     "score_vectors_stored": False,
                 },

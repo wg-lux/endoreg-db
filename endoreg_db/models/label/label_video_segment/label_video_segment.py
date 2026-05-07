@@ -560,7 +560,7 @@ class LabelVideoSegment(models.Model):
 
         information_source = self.source
         if not information_source:
-            information_source, _ = InformationSource.objects.get_or_create(
+            information_source, _ = InformationSource.objects.get_or_create_by_name(
                 name="prediction"
             )
         normalized_annotator = None

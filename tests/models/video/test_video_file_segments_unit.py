@@ -1,5 +1,6 @@
 import pytest
 
+import endoreg_db.models.media.video.pipe_1 as pipe_1_module
 import endoreg_db.models.media.video.video_file_segments as segments_module
 from endoreg_db.models import (
     AiModel,
@@ -117,6 +118,9 @@ def test_pipe_1_fails_when_prediction_ranges_do_not_materialize(monkeypatch):
     monkeypatch.setattr(video, "update_video_meta", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(video, "extract_frames", mark_frames_extracted)
     monkeypatch.setattr(video, "update_text_metadata", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        pipe_1_module, "_has_extracted_frame_files", lambda _video: True
+    )
     monkeypatch.setattr(
         video,
         "predict_video",
