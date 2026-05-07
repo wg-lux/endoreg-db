@@ -262,6 +262,8 @@ export const endpoints = {
     annotatorsDropdown: 'settings/application/dropdowns/annotators/',
     reportTemplatesDropdown: 'settings/application/dropdowns/report_templates/',
     aiDatasetsDropdown: 'settings/application/dropdowns/ai_datasets/',
+    ai_dataset_frame_bucket_distribution: (dataset_id: Id) =>
+      `settings/application/ai_datasets/${dataset_id}/frame_bucket_distribution/`,
     networkNodeRolesDropdown:
       'settings/application/dropdowns/network_node_roles/',
     modelTrainingOptions: 'settings/application/model_training/options/',
@@ -410,6 +412,7 @@ under `/api/`.
 | `patient-generate-pseudonym` | `/api/patients/{pk}/pseudonym/` |
 | `application_settings_detail` | `/api/settings/application/` |
 | `application_settings_ai_dataset_export` | `/api/settings/application/ai_dataset_export/` |
+| `application_settings_ai_dataset_frame_bucket_distribution` | `/api/settings/application/ai_datasets/{param}/frame_bucket_distribution/` |
 | `application_settings_backup` | `/api/settings/application/backup/` |
 | `application_settings_ai_datasets_dropdown` | `/api/settings/application/dropdowns/ai_datasets/` |
 | `application_settings_annotators_dropdown` | `/api/settings/application/dropdowns/annotators/` |

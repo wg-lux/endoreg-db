@@ -52,7 +52,7 @@ urlpatterns = [
         name="application_settings_ai_datasets_dropdown",
     ),
     path(
-        "settings/application/ai_datasets/<int:pk>/frame_bucket_distribution/",
+        "settings/application/ai_datasets/<str:param>/frame_bucket_distribution/",
         application_settings_ai_dataset_frame_bucket_distribution,
         name="application_settings_ai_dataset_frame_bucket_distribution",
     ),

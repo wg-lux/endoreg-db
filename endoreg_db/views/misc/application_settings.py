@@ -206,6 +206,17 @@ def _application_settings_ai_dataset_entries() -> list[dict[str, Any]]:
     return entries
 
 
+def _resolve_ai_dataset_param(param: object) -> AIDataSet | None:
+    normalized = str(param or "").strip()
+    if not normalized:
+        return None
+    if normalized.isdecimal():
+        dataset = AIDataSet.objects.filter(pk=int(normalized)).first()
+        if dataset is not None:
+            return dataset
+    return AIDataSet.objects.filter(name=normalized).order_by("pk").first()
+
+
 def _resolve_label_set_for_distribution(
     raw_value: object,
 ) -> tuple[LabelSet | None, Response | None]:
@@ -669,11 +680,11 @@ def application_settings_ai_datasets_dropdown(request):
 
 @api_view(["GET"])
 @permission_classes([EnvironmentAwarePermission])
-def application_settings_ai_dataset_frame_bucket_distribution(request, pk: int):
-    dataset = AIDataSet.objects.filter(pk=pk).first()
+def application_settings_ai_dataset_frame_bucket_distribution(request, param: str):
+    dataset = _resolve_ai_dataset_param(param)
     if dataset is None:
         return Response(
-            {"detail": f"AIDataSet {pk} was not found."},
+            {"detail": f"AIDataSet {param} was not found."},
             status=status.HTTP_404_NOT_FOUND,
         )
 
