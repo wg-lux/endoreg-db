@@ -34,8 +34,11 @@ DEFAULT_WATCHER_POLL_INTERVAL_SECONDS = 5.0
 DEFAULT_WATCHER_STABLE_AFTER_SECONDS = 10.0
 DEFAULT_VIDEO_POST_VALIDATION_JOB_MAX_WORKERS = 2
 DEFAULT_VIDEO_POST_VALIDATION_JOB_MODE = "celery"
+DEFAULT_VIDEO_TEMPORAL_INFERENCE_JOB_MODE = "celery"
 DEFAULT_CELERY_DEFAULT_QUEUE = "default"
 DEFAULT_CELERY_PIPELINE_QUEUE = "pipeline"
+DEFAULT_CELERY_FRAME_EXTRACTION_QUEUE = "frame_extraction"
+DEFAULT_CELERY_INFERENCE_QUEUE = "inference"
 DEFAULT_CELERY_MAINTENANCE_QUEUE = "maintenance"
 DEFAULT_CELERY_AUDIT_LEDGER_INTEGRITY_INTERVAL_SECONDS = 300
 ENDOREG_DEPLOYMENT_ROLE_VALUES = (
@@ -338,8 +341,33 @@ def get_celery_pipeline_queue() -> str:
     return env_str("CELERY_PIPELINE_QUEUE", DEFAULT_CELERY_PIPELINE_QUEUE).strip()
 
 
+def get_celery_frame_extraction_queue() -> str:
+    return env_str(
+        "CELERY_FRAME_EXTRACTION_QUEUE",
+        DEFAULT_CELERY_FRAME_EXTRACTION_QUEUE,
+    ).strip()
+
+
+def get_celery_inference_queue() -> str:
+    return env_str("CELERY_INFERENCE_QUEUE", DEFAULT_CELERY_INFERENCE_QUEUE).strip()
+
+
 def get_celery_maintenance_queue() -> str:
     return env_str("CELERY_MAINTENANCE_QUEUE", DEFAULT_CELERY_MAINTENANCE_QUEUE).strip()
+
+
+def celery_broker_url_uses_secure_transport(broker_url: str | None = None) -> bool:
+    raw_url = broker_url if broker_url is not None else get_celery_broker_url()
+    scheme = raw_url.split(":", 1)[0].strip().lower()
+    return scheme in {"amqps", "rediss"}
+
+
+def celery_broker_secure_transport_confirmed() -> bool:
+    return env_bool("CELERY_BROKER_SECURE_TRANSPORT_CONFIRMED", False)
+
+
+def celery_frame_extraction_requires_secure_transport() -> bool:
+    return env_bool("CELERY_FRAME_EXTRACTION_REQUIRE_SECURE_TRANSPORT", False)
 
 
 def celery_audit_ledger_integrity_beat_enabled() -> bool:
@@ -471,6 +499,20 @@ def get_video_post_validation_job_mode() -> str:
     )
     if mode not in {"celery", "thread", "inline"}:
         return DEFAULT_VIDEO_POST_VALIDATION_JOB_MODE
+    return mode
+
+
+def get_video_temporal_inference_job_mode() -> str:
+    mode = (
+        env_str(
+            "VIDEO_TEMPORAL_INFERENCE_JOB_MODE",
+            DEFAULT_VIDEO_TEMPORAL_INFERENCE_JOB_MODE,
+        )
+        .strip()
+        .lower()
+    )
+    if mode not in {"celery", "thread", "inline"}:
+        return DEFAULT_VIDEO_TEMPORAL_INFERENCE_JOB_MODE
     return mode
 
 

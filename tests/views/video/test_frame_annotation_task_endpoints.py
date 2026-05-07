@@ -38,16 +38,19 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
             video=self.video,
             frame_number=10,
             relative_path="frame_0000010.jpg",
+            is_extracted=True,
         )
         self.frame_2 = Frame.objects.create(
             video=self.video,
             frame_number=11,
             relative_path="frame_0000011.jpg",
+            is_extracted=True,
         )
         self.frame_3 = Frame.objects.create(
             video=self.video,
             frame_number=12,
             relative_path="frame_0000012.jpg",
+            is_extracted=True,
         )
         self.source = InformationSource.objects.create(name="manual_annotation")
         self.prediction_source = InformationSource.objects.create(
@@ -91,7 +94,7 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
         )
 
         with patch(
-            "endoreg_db.views.video.ai.frame_annotations.random.randint",
+            "endoreg_db.models.state.frame_annotation.random.randint",
             return_value=0,
         ):
             response = self.random_task_view(request)
@@ -137,7 +140,7 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
         )
 
         with patch(
-            "endoreg_db.views.video.ai.frame_annotations.random.randint",
+            "endoreg_db.models.state.frame_annotation.random.randint",
             return_value=0,
         ):
             response = self.random_task_view(request)
@@ -196,7 +199,7 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
         )
 
         with patch(
-            "endoreg_db.views.video.ai.frame_annotations.random.randint",
+            "endoreg_db.models.state.frame_annotation.random.randint",
             return_value=0,
         ):
             response = self.random_task_view(request)
@@ -374,7 +377,7 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
         )
 
         with patch(
-            "endoreg_db.views.video.ai.frame_annotations.random.randint",
+            "endoreg_db.models.state.frame_annotation.random.randint",
             return_value=0,
         ):
             response = self.random_task_view(request)
@@ -439,7 +442,7 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
         )
 
         with patch(
-            "endoreg_db.views.video.ai.frame_annotations.random.randint",
+            "endoreg_db.models.state.frame_annotation.random.randint",
             return_value=0,
         ):
             response = self.random_task_view(request)
@@ -506,7 +509,7 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
         )
 
         with patch(
-            "endoreg_db.views.video.ai.frame_annotations.random.randint",
+            "endoreg_db.models.state.frame_annotation.random.randint",
             return_value=0,
         ):
             response = self.random_task_view(request)

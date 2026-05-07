@@ -10,7 +10,19 @@ from django.db import transaction
 from django.utils import timezone
 
 from endoreg_db.models import VideoFile, VideoProcessingHistory
+from endoreg_db.models.state.video_segment_validation import (
+    _blackening_history_config,
+    _is_outside_frame_blackening_history,
+    _resolve_blackening_run_config,
+    mark_post_validation_complete,
+    mark_post_validation_incomplete,
+)
 from endoreg_db.config.env import (
+    celery_broker_secure_transport_confirmed,
+    celery_broker_url_uses_secure_transport,
+    celery_frame_extraction_requires_secure_transport,
+    get_celery_broker_url,
+    get_celery_frame_extraction_queue,
     get_video_post_validation_job_max_workers,
     get_video_post_validation_job_mode,
 )
@@ -18,7 +30,6 @@ from endoreg_db.config.env import (
 logger = logging.getLogger(__name__)
 
 _executor = ThreadPoolExecutor(max_workers=get_video_post_validation_job_max_workers())
-OUTSIDE_FRAME_BLACKENING_KIND = "outside_frame_blackening"
 ACTIVE_REBUILD_STATUSES = (
     VideoProcessingHistory.STATUS_PENDING,
     VideoProcessingHistory.STATUS_RUNNING,
@@ -90,6 +101,50 @@ def _verify_extracted_frame_contract(video) -> None:
         )
 
 
+def _verify_outside_frames_blackened(
+    video: VideoFile,
+    *,
+    only_validated: bool = False,
+    tolerance: int = 8,
+) -> None:
+    """Fail if any metadata-targeted outside frame is missing or visibly non-black."""
+    from endoreg_db.models.media.video.video_file_segments import _get_outside_frames
+
+    outside_frames = list(
+        _get_outside_frames(video, only_validated=only_validated).only(
+            "frame_number",
+            "relative_path",
+        )
+    )
+    if not outside_frames:
+        return
+
+    import cv2
+
+    missing_files: list[int] = []
+    unreadable_files: list[int] = []
+    non_black_frames: list[int] = []
+    for frame in outside_frames:
+        frame_path = frame.file_path
+        if not frame_path.is_file():
+            missing_files.append(frame.frame_number)
+            continue
+        image = cv2.imread(frame_path.as_posix())
+        if image is None:
+            unreadable_files.append(frame.frame_number)
+            continue
+        if int(image.max()) > tolerance:
+            non_black_frames.append(frame.frame_number)
+
+    if missing_files or unreadable_files or non_black_frames:
+        raise RuntimeError(
+            "Post-validation rebuild did not leave outside frames blackened for "
+            f"video {video.pk}: missing_files={missing_files[:10]}, "
+            f"unreadable_files={unreadable_files[:10]}, "
+            f"non_black_frames={non_black_frames[:10]}"
+        )
+
+
 @dataclass(frozen=True)
 class JobDispatchResult:
     task_id: str
@@ -102,16 +157,18 @@ class JobDispatchResult:
         return asdict(self)
 
 
-def _blackening_history_config(*, only_validated: bool) -> dict[str, object]:
-    return {
-        "kind": OUTSIDE_FRAME_BLACKENING_KIND,
-        "only_validated": bool(only_validated),
-    }
-
-
-def _is_outside_frame_blackening_history(history: VideoProcessingHistory) -> bool:
-    config = history.config if isinstance(history.config, dict) else {}
-    return config.get("kind") == OUTSIDE_FRAME_BLACKENING_KIND
+def _ensure_frame_extraction_broker_transport_allowed() -> None:
+    if not celery_frame_extraction_requires_secure_transport():
+        return
+    if celery_broker_secure_transport_confirmed():
+        return
+    broker_url = get_celery_broker_url()
+    if celery_broker_url_uses_secure_transport(broker_url):
+        return
+    raise RuntimeError(
+        "Frame extraction Celery dispatch requires secure broker transport "
+        "or CELERY_BROKER_SECURE_TRANSPORT_CONFIRMED=1."
+    )
 
 
 def _active_reprocessing_histories(video: VideoFile):
@@ -142,6 +199,7 @@ def _reserve_blackening_history(
     video: VideoFile,
     task_id: str,
     only_validated: bool,
+    queue: str,
 ) -> tuple[VideoProcessingHistory, str]:
     with transaction.atomic():
         locked_video = VideoFile.objects.select_for_update().get(pk=video.pk)
@@ -165,7 +223,10 @@ def _reserve_blackening_history(
             operation=VideoProcessingHistory.OPERATION_REPROCESSING,
             status=VideoProcessingHistory.STATUS_PENDING,
             task_id=task_id,
-            config=_blackening_history_config(only_validated=only_validated),
+            config=_blackening_history_config(
+                only_validated=only_validated,
+                queue=queue,
+            ),
         )
         return history, RESERVATION_CREATED
 
@@ -199,22 +260,32 @@ def _run_video_post_validation_rebuild(
     if history is not None:
         history.mark_running()
 
+    video: VideoFile | None = None
     try:
+        run_config = _resolve_blackening_run_config(
+            history=history,
+            only_validated=only_validated,
+        )
         video = VideoFile.objects.get(pk=video_id)
+        mark_post_validation_incomplete(video)
         rebuilt = bool(
             VideoFile.create_video_without_outside_frames(
-                video, only_validated=only_validated
+                video, only_validated=run_config.only_validated
             )
         )
         if not rebuilt:
+            mark_post_validation_incomplete(video)
             if history is not None:
                 history.mark_failure("Outside-frame blackening rebuild returned false.")
             return False
 
         video.refresh_from_db()
-        state = video.get_or_create_state()
-        state.mark_outside_segments_removed()
         _verify_extracted_frame_contract(video)
+        _verify_outside_frames_blackened(
+            video,
+            only_validated=run_config.only_validated,
+        )
+        mark_post_validation_complete(video)
         if history is not None:
             output_file = getattr(getattr(video, "processed_file", None), "name", "")
             history.mark_success(
@@ -223,6 +294,8 @@ def _run_video_post_validation_rebuild(
             )
         return True
     except Exception as exc:
+        if video is not None:
+            mark_post_validation_incomplete(video)
         if history is not None:
             history.mark_failure(str(exc))
         raise
@@ -243,11 +316,13 @@ def dispatch_video_post_validation_rebuild(
     """
     mode = get_video_post_validation_job_mode()
     task_id = str(uuid.uuid4())
+    frame_extraction_queue = get_celery_frame_extraction_queue()
     video = VideoFile.objects.get(pk=video_id)
     history, reservation_status = _reserve_blackening_history(
         video=video,
         task_id=task_id,
         only_validated=only_validated,
+        queue=frame_extraction_queue,
     )
 
     if reservation_status == RESERVATION_BUSY:
@@ -286,10 +361,15 @@ def dispatch_video_post_validation_rebuild(
         try:
             from endoreg_db.tasks import run_video_post_validation_rebuild_task
 
-            async_result = run_video_post_validation_rebuild_task.delay(
-                int(video_id),
-                only_validated=bool(only_validated),
-                history_id=history.pk,
+            _ensure_frame_extraction_broker_transport_allowed()
+            async_result = run_video_post_validation_rebuild_task.apply_async(
+                args=(int(video_id),),
+                kwargs={
+                    "only_validated": bool(only_validated),
+                    "history_id": history.pk,
+                },
+                queue=frame_extraction_queue,
+                routing_key=frame_extraction_queue,
             )
             _set_history_task_id(history, str(async_result.id))
             return JobDispatchResult(
@@ -299,12 +379,19 @@ def dispatch_video_post_validation_rebuild(
                 video_id=int(video_id),
                 history_id=history.pk,
             )
-        except Exception:
+        except Exception as exc:
             logger.exception(
-                "Celery dispatch failed for video %s. Falling back to thread mode.",
+                "Celery dispatch failed for video %s.",
                 video_id,
             )
-            mode = "thread"
+            history.mark_failure(str(exc))
+            return JobDispatchResult(
+                task_id=task_id,
+                mode=mode,
+                status="failed",
+                video_id=int(video_id),
+                history_id=history.pk,
+            )
 
     def _job():
         try:

@@ -10,6 +10,8 @@ from endoreg_db.config.env import (
     get_asset_dir,
     get_celery_broker_url,
     get_celery_default_queue,
+    get_celery_frame_extraction_queue,
+    get_celery_inference_queue,
     get_celery_maintenance_queue,
     get_celery_pipeline_queue,
     celery_audit_ledger_integrity_beat_enabled,
@@ -70,6 +72,8 @@ CELERY_RESULT_BACKEND = None
 CELERY_TASK_IGNORE_RESULT = True
 CELERY_TASK_DEFAULT_QUEUE = get_celery_default_queue()
 CELERY_PIPELINE_QUEUE = get_celery_pipeline_queue()
+CELERY_FRAME_EXTRACTION_QUEUE = get_celery_frame_extraction_queue()
+CELERY_INFERENCE_QUEUE = get_celery_inference_queue()
 CELERY_MAINTENANCE_QUEUE = get_celery_maintenance_queue()
 CELERY_TASK_CREATE_MISSING_QUEUES = False
 CELERY_TASK_QUEUES = (
@@ -84,6 +88,16 @@ CELERY_TASK_QUEUES = (
         routing_key=CELERY_PIPELINE_QUEUE,
     ),
     Queue(
+        CELERY_FRAME_EXTRACTION_QUEUE,
+        Exchange(CELERY_FRAME_EXTRACTION_QUEUE),
+        routing_key=CELERY_FRAME_EXTRACTION_QUEUE,
+    ),
+    Queue(
+        CELERY_INFERENCE_QUEUE,
+        Exchange(CELERY_INFERENCE_QUEUE),
+        routing_key=CELERY_INFERENCE_QUEUE,
+    ),
+    Queue(
         CELERY_MAINTENANCE_QUEUE,
         Exchange(CELERY_MAINTENANCE_QUEUE),
         routing_key=CELERY_MAINTENANCE_QUEUE,
@@ -95,8 +109,12 @@ CELERY_TASK_ROUTES = {
         "routing_key": CELERY_PIPELINE_QUEUE,
     },
     "endoreg_db.video_post_validation_rebuild": {
-        "queue": CELERY_PIPELINE_QUEUE,
-        "routing_key": CELERY_PIPELINE_QUEUE,
+        "queue": CELERY_FRAME_EXTRACTION_QUEUE,
+        "routing_key": CELERY_FRAME_EXTRACTION_QUEUE,
+    },
+    "endoreg_db.video_temporal_inference": {
+        "queue": CELERY_INFERENCE_QUEUE,
+        "routing_key": CELERY_INFERENCE_QUEUE,
     },
     "endoreg_db.refresh_audit_ledger_integrity_status": {
         "queue": CELERY_MAINTENANCE_QUEUE,
@@ -243,6 +261,8 @@ __all__ = [
     "CELERY_TASK_IGNORE_RESULT",
     "CELERY_TASK_DEFAULT_QUEUE",
     "CELERY_PIPELINE_QUEUE",
+    "CELERY_FRAME_EXTRACTION_QUEUE",
+    "CELERY_INFERENCE_QUEUE",
     "CELERY_MAINTENANCE_QUEUE",
     "CELERY_TASK_CREATE_MISSING_QUEUES",
     "CELERY_TASK_QUEUES",

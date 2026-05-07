@@ -707,17 +707,13 @@ class VideoFile(models.Model):
             QuerySet: A queryset of LabelVideoSegment instances labeled as "outside". Returns an empty queryset if the label does not exist or an error occurs.
         """
         try:
-            outside_label = Label.objects.get(name__iexact="outside")
-            segments = self.label_video_segments.filter(label=outside_label)
+            segments = self.label_video_segments.filter(label__name__iexact="outside")
 
             if only_validated:
                 # Filter based on the is_validated field in the related state object
                 segments = segments.filter(state__is_validated=True)
 
             return segments
-        except Label.DoesNotExist:
-            logger.warning("Outside label not found in the database.")
-            return self.label_video_segments.none()
         except Exception as e:
             logger.error(
                 "Error getting outside segments for video %s: %s",

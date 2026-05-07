@@ -14,6 +14,7 @@ from endoreg_db.models import (
     ImageClassificationAnnotation,
     InformationSource,
     Center,
+    VideoProcessingHistory,
 )
 from endoreg_db.services.video_post_validation_jobs import JobDispatchResult
 from endoreg_db.services import video_post_validation_jobs as post_validation_jobs
@@ -225,12 +226,40 @@ class LabelVideoSegmentSerializerTest(TestCase):
 
         state = self.video.get_or_create_state()
         state.segment_annotations_validated = True
-        state.save(update_fields=["segment_annotations_validated", "date_modified"])
+        state.outside_segments_removed = True
+        state.save(
+            update_fields=[
+                "segment_annotations_validated",
+                "outside_segments_removed",
+                "date_modified",
+            ]
+        )
 
         serializer = VideoFileListSerializer(self.video)
         self.assertEqual(
             serializer.data["validated_annotators"],
             ["reviewer-one", "reviewer-two"],
+        )
+
+    def test_video_list_serializer_requires_outside_cleanup_for_final_validation(self):
+        state = self.video.get_or_create_state()
+        state.segment_annotations_created = True
+        state.segment_annotations_validated = True
+        state.outside_segments_removed = False
+        state.save(
+            update_fields=[
+                "segment_annotations_created",
+                "segment_annotations_validated",
+                "outside_segments_removed",
+                "date_modified",
+            ]
+        )
+
+        serializer = VideoFileListSerializer(self.video)
+
+        self.assertFalse(serializer.data["segment_annotations_validated"])
+        self.assertEqual(
+            serializer.data["segment_annotation_status"], "cleanup_required"
         )
 
 
@@ -498,16 +527,6 @@ class VideoSegmentValidateAsyncSafetyTest(TestCase):
         )
 
         with (
-            patch.object(LabelVideoSegment, "generate_annotations") as mock_generate,
-            patch(
-                "endoreg_db.views.video.segments_crud.dispatch_video_post_validation_rebuild",
-                return_value=JobDispatchResult(
-                    task_id="job-456",
-                    mode="thread",
-                    status="queued",
-                    video_id=self.video.pk,
-                ),
-            ),
             patch(
                 "endoreg_db.views.video.segments_crud.record_operation",
                 return_value=None,
@@ -516,7 +535,127 @@ class VideoSegmentValidateAsyncSafetyTest(TestCase):
             response = video_segments_validate_bulk(request, pk=self.video.pk)
 
         self.assertEqual(response.status_code, 200)
-        mock_generate.assert_called_once_with(annotator="reviewer-two")
+        self.assertEqual(response.data["post_processing_job"]["status"], "noop")
+        self.assertEqual(response.data["segment_annotation_status"], "validated")
+        state = self.video.get_or_create_state()
+        state.refresh_from_db()
+        self.assertTrue(state.segment_annotations_validated)
+        self.assertTrue(state.outside_segments_removed)
+        self.assertEqual(
+            ImageClassificationAnnotation.objects.filter(
+                frame__video=self.video,
+                label=self.label,
+                information_source=self.manual_source,
+                model_meta__isnull=True,
+                annotator="reviewer-two",
+            ).count(),
+            3,
+        )
+
+    def test_bulk_validation_queues_cleanup_before_final_validation(self):
+        outside_label, _ = Label.objects.get_or_create(name="outside")
+        outside_segment = LabelVideoSegment.objects.create(
+            video_file=self.video,
+            label=outside_label,
+            start_frame_number=10,
+            end_frame_number=13,
+            source=self.segment_source,
+        )
+        request = self.factory.post(
+            f"/api/media/videos/{self.video.pk}/segments/validate-bulk/",
+            {
+                "segment_ids": [outside_segment.pk],
+                "segments": [
+                    {
+                        "id": outside_segment.pk,
+                        "start_time": outside_segment.start_time,
+                        "end_time": outside_segment.end_time,
+                    }
+                ],
+                "is_validated": True,
+                "information_source_name": "manual_annotation",
+                "annotator": "reviewer-two",
+            },
+            format="json",
+        )
+
+        submitted = []
+        with (
+            patch.dict(os.environ, {"VIDEO_POST_VALIDATION_JOB_MODE": "thread"}),
+            patch.object(
+                post_validation_jobs._executor,
+                "submit",
+                lambda fn: submitted.append(fn) or types.SimpleNamespace(),
+            ),
+            patch(
+                "endoreg_db.views.video.segments_crud.record_operation",
+                return_value=None,
+            ),
+        ):
+            response = video_segments_validate_bulk(request, pk=self.video.pk)
+
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.data["post_processing_job"]["status"], "queued")
+        self.assertEqual(response.data["segment_annotation_status"], "cleanup_queued")
+        self.assertEqual(len(submitted), 1)
+        state = self.video.get_or_create_state()
+        state.refresh_from_db()
+        self.assertTrue(state.segment_annotations_created)
+        self.assertFalse(state.segment_annotations_validated)
+        self.assertFalse(state.outside_segments_removed)
+        history = VideoProcessingHistory.objects.get(
+            pk=response.data["post_processing_job"]["history_id"]
+        )
+        self.assertEqual(history.status, VideoProcessingHistory.STATUS_PENDING)
+
+    def test_bulk_validation_rejects_incomplete_frame_annotations(self):
+        missing_frame_segment = LabelVideoSegment.objects.create(
+            video_file=self.video,
+            label=self.label,
+            start_frame_number=90,
+            end_frame_number=93,
+            source=self.segment_source,
+        )
+        request = self.factory.post(
+            f"/api/media/videos/{self.video.pk}/segments/validate-bulk/",
+            {
+                "segment_ids": [missing_frame_segment.pk],
+                "segments": [
+                    {
+                        "id": missing_frame_segment.pk,
+                        "start_time": missing_frame_segment.start_time,
+                        "end_time": missing_frame_segment.end_time,
+                    }
+                ],
+                "is_validated": True,
+                "information_source_name": "manual_annotation",
+            },
+            format="json",
+        )
+
+        with (
+            patch(
+                "endoreg_db.views.video.segments_crud.dispatch_video_post_validation_rebuild",
+                side_effect=AssertionError("incomplete annotations must not dispatch"),
+            ),
+            patch(
+                "endoreg_db.views.video.segments_crud.record_operation",
+                return_value=None,
+            ),
+        ):
+            response = video_segments_validate_bulk(request, pk=self.video.pk)
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(
+            response.data["error"],
+            "Segment validation did not create complete frame annotations.",
+        )
+        self.assertEqual(
+            response.data["annotation_errors"][0]["reason"], "missing_frames"
+        )
+        state = self.video.get_or_create_state()
+        state.refresh_from_db()
+        self.assertFalse(state.segment_annotations_validated)
 
 
 class VideoSegmentsBlackenOutsideRouteTest(TestCase):

@@ -8,6 +8,9 @@ from endoreg_db.models import (
     InformationSource,
     LabelVideoSegment,
 )
+from endoreg_db.models.state.frame_annotation import (
+    segment_derived_external_annotation_id,
+)
 
 
 def ensure_segment_annotations(
@@ -187,6 +190,13 @@ def ensure_prediction_segment_annotations(
                     value=True,
                     information_source=information_source,
                     model_meta_id=model_meta_id,
+                    external_annotation_id=segment_derived_external_annotation_id(
+                        segment_id=segment.pk,
+                        frame_id=frame_id,
+                        label_id=label.pk,
+                        information_source_id=information_source.pk,
+                        model_meta_id=model_meta_id,
+                    ),
                 )
                 for frame_id in missing_frame_ids
             ],

@@ -13,7 +13,7 @@ import uuid
 from collections.abc import Mapping
 from typing import Any
 
-from django.db import models, transaction
+from django.db import transaction
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from rest_framework import status
@@ -28,11 +28,22 @@ from endoreg_db.models import (
     LabelVideoSegment,
     VideoFile,
 )
+from endoreg_db.models.state.video_segment_validation import (
+    mark_segment_annotations_complete_without_cleanup,
+    mark_segment_annotations_pending_cleanup,
+    mark_segment_annotations_stale,
+    resolve_segment_annotation_status,
+)
+from endoreg_db.models.state.frame_annotation import (
+    delete_frame_annotations_for_segment as _delete_frame_annotations_for_segment,
+    sync_frame_annotations_for_segment as _sync_frame_annotations,
+)
 from endoreg_db.services.segment_annotations import (
     ensure_prediction_segment_annotations,
     ensure_segment_annotations,
 )
 from endoreg_db.services.video_post_validation_jobs import (
+    JobDispatchResult,
     dispatch_video_post_validation_rebuild,
 )
 from endoreg_db.serializers.label_video_segment.label_video_segment import (
@@ -63,114 +74,6 @@ def _filter_segments_by_origin(queryset, source_kind: str | None):
     if normalized == "manual":
         return queryset.exclude(_prediction_segment_query()).distinct()
     return queryset
-
-
-def _segment_annotation_filters(
-    *,
-    video: VideoFile,
-    start_frame_number: int,
-    end_frame_number: int,
-    label: Label | None,
-    information_source_id: int | None,
-    model_meta_id: int | None,
-) -> dict:
-    if label is None:
-        return {}
-
-    filters: dict[str, object] = {
-        "frame__video": video,
-        "frame__frame_number__gte": start_frame_number,
-        "frame__frame_number__lt": end_frame_number,
-        "label": label,
-    }
-
-    if information_source_id is None:
-        filters["information_source__isnull"] = True
-    else:
-        filters["information_source_id"] = information_source_id
-
-    if model_meta_id is None:
-        filters["model_meta__isnull"] = True
-    else:
-        filters["model_meta_id"] = model_meta_id
-
-    return filters
-
-
-def _delete_frame_annotations_for_segment(
-    *,
-    video: VideoFile,
-    start_frame_number: int,
-    end_frame_number: int,
-    label: Label | None,
-    information_source_id: int | None,
-    model_meta_id: int | None,
-) -> int:
-    filters = _segment_annotation_filters(
-        video=video,
-        start_frame_number=start_frame_number,
-        end_frame_number=end_frame_number,
-        label=label,
-        information_source_id=information_source_id,
-        model_meta_id=model_meta_id,
-    )
-    if not filters:
-        return 0
-    deleted, _ = ImageClassificationAnnotation.objects.filter(**filters).delete()
-    return deleted
-
-
-def _sync_frame_annotations(
-    *,
-    segment: LabelVideoSegment,
-    old_snapshot: dict | None = None,
-) -> None:
-    if old_snapshot:
-        _delete_frame_annotations_for_segment(
-            video=old_snapshot["video"],
-            start_frame_number=old_snapshot["start_frame_number"],
-            end_frame_number=old_snapshot["end_frame_number"],
-            label=old_snapshot["label"],
-            information_source_id=old_snapshot["information_source_id"],
-            model_meta_id=old_snapshot["model_meta_id"],
-        )
-
-    if segment.label is None:
-        return
-
-    info_source_id = segment.source_id
-    model_meta = segment.get_model_meta()
-    model_meta_id = model_meta.pk if model_meta else None
-
-    frames_queryset = segment.get_frames().only("id")
-    if not isinstance(frames_queryset, models.QuerySet):
-        return
-
-    existing_frame_ids = set(
-        ImageClassificationAnnotation.objects.filter(
-            frame_id__in=frames_queryset.values("id"),
-            label=segment.label,
-            information_source_id=info_source_id,
-            model_meta_id=model_meta_id,
-        ).values_list("frame_id", flat=True)
-    )
-
-    annotations_to_create = []
-    for frame in frames_queryset.exclude(id__in=existing_frame_ids).iterator():
-        annotations_to_create.append(
-            ImageClassificationAnnotation(
-                frame=frame,
-                label=segment.label,
-                value=True,
-                information_source_id=info_source_id,
-                model_meta_id=model_meta_id,
-            )
-        )
-
-    if annotations_to_create:
-        ImageClassificationAnnotation.objects.bulk_create(
-            annotations_to_create, ignore_conflicts=True
-        )
 
 
 def _normalize_int_list(value):
@@ -258,27 +161,89 @@ def _bulk_item_validation_error(
     return DRFValidationError(bulk_errors)
 
 
-def _mark_segment_annotations_stale(video: VideoFile) -> None:
-    state = video.get_or_create_state()
-    state.segment_annotations_created = False
-    state.segment_annotations_validated = False
-    state.outside_segments_removed = False
-    state.ready_for_export = False
-    state.ready_for_export_at = None
-    state.ready_for_export_by = ""
-    state.processed_file_sha256 = ""
-    state.save(
-        update_fields=[
-            "segment_annotations_created",
-            "segment_annotations_validated",
-            "outside_segments_removed",
-            "ready_for_export",
-            "ready_for_export_at",
-            "ready_for_export_by",
-            "processed_file_sha256",
-            "date_modified",
+def _normalized_annotator(annotator: str | None) -> str | None:
+    if annotator is None:
+        return None
+    normalized = str(annotator).strip()
+    return normalized or None
+
+
+def _segment_annotation_integrity_errors(
+    segments: list[LabelVideoSegment],
+    *,
+    annotator: str | None,
+) -> list[dict[str, object]]:
+    normalized_annotator = _normalized_annotator(annotator)
+    errors: list[dict[str, object]] = []
+    for segment in segments:
+        label = segment.label
+        if label is None:
+            errors.append({"segment_id": segment.pk, "reason": "missing_label"})
+            continue
+        information_source = segment.source
+        if information_source is None:
+            errors.append(
+                {"segment_id": segment.pk, "reason": "missing_information_source"}
+            )
+            continue
+        frames = list(segment.get_frames().only("id", "frame_number"))
+        if not frames:
+            errors.append({"segment_id": segment.pk, "reason": "missing_frames"})
+            continue
+        try:
+            model_meta = segment.get_model_meta()
+        except Exception:
+            model_meta = None
+
+        filters: dict[str, object] = {
+            "frame_id__in": [frame.pk for frame in frames],
+            "label": label,
+            "information_source": information_source,
+        }
+        if model_meta is None:
+            filters["model_meta__isnull"] = True
+        else:
+            filters["model_meta"] = model_meta
+        if normalized_annotator is not None:
+            filters["annotator"] = normalized_annotator
+
+        annotated_frame_ids = set(
+            ImageClassificationAnnotation.objects.filter(**filters).values_list(
+                "frame_id",
+                flat=True,
+            )
+        )
+        missing_frame_numbers = [
+            frame.frame_number
+            for frame in frames
+            if frame.pk not in annotated_frame_ids
         ]
-    )
+        if missing_frame_numbers:
+            errors.append(
+                {
+                    "segment_id": segment.pk,
+                    "reason": "missing_frame_annotations",
+                    "missing_frame_numbers": missing_frame_numbers[:10],
+                    "missing_count": len(missing_frame_numbers),
+                }
+            )
+    return errors
+
+
+def _has_outside_cleanup_targets(video: VideoFile) -> bool:
+    from endoreg_db.models.media.video.video_file_segments import _get_outside_frames
+
+    return _get_outside_frames(video, only_validated=False).exists()
+
+
+def _bulk_validation_response_status(post_processing_status: str | None) -> int:
+    if post_processing_status in {"queued", "already_queued"}:
+        return status.HTTP_202_ACCEPTED
+    if post_processing_status == "busy":
+        return status.HTTP_409_CONFLICT
+    if post_processing_status == "failed":
+        return status.HTTP_503_SERVICE_UNAVAILABLE
+    return status.HTTP_200_OK
 
 
 @api_view(["POST"])
@@ -540,14 +505,13 @@ def video_segments_by_video(request, pk):
         )
 
         if label_name:
-            try:
-                label = Label.objects.get(name=label_name)
-                queryset = queryset.filter(label=label)
-            except Label.DoesNotExist:
+            label = Label.objects.resolve_by_name(label_name)
+            if label is None:
                 return Response(
                     {"error": f'Label "{label_name}" not found'},
                     status=status.HTTP_404_NOT_FOUND,
                 )
+            queryset = queryset.filter(label=label)
 
         queryset = _filter_segments_by_origin(queryset, source_kind)
 
@@ -776,7 +740,7 @@ def video_segments_bulk_mutation(request, pk: int):
                 deleted_segment_ids.append(segment_id)
 
             if defer_annotation_sync:
-                _mark_segment_annotations_stale(video)
+                mark_segment_annotations_stale(video)
 
     except DRFValidationError as exc:
         return Response(
@@ -1115,7 +1079,8 @@ def video_segment_validate(request, pk: int, segment_id: int):
 
             transaction.on_commit(_log_after_commit)
 
-            """status_after = STATUS_VALIDATED if is_validated else STATUS_UNVALIDATED
+            """
+            status_after = STATUS_VALIDATED if is_validated else STATUS_UNVALIDATED
 
             record_operation(
                 request,
@@ -1224,6 +1189,7 @@ def video_segments_validate_bulk(request, pk: int):
 
         updated_count = 0
         failed_ids = []
+        annotation_generation_errors: list[dict[str, object]] = []
 
         with transaction.atomic():
             for segment in segments:
@@ -1264,14 +1230,22 @@ def video_segments_validate_bulk(request, pk: int):
                         else str(None),
                     )
                     segment_id = segment.pk
-                    try:
-                        segment.generate_annotations(annotator=annotation_annotator)
-                    except Exception as exc:
-                        logger.warning(
-                            "Failed to generate annotations while bulk validating segment %s: %s",
-                            segment.pk,
-                            exc,
-                        )
+                    if is_validated:
+                        try:
+                            segment.generate_annotations(annotator=annotation_annotator)
+                        except Exception as exc:
+                            logger.warning(
+                                "Failed to generate annotations while bulk validating segment %s: %s",
+                                segment.pk,
+                                exc,
+                            )
+                            annotation_generation_errors.append(
+                                {
+                                    "segment_id": segment.pk,
+                                    "reason": "annotation_generation_failed",
+                                    "detail": str(exc),
+                                }
+                            )
                     updated_count += 1
 
                     #
@@ -1324,22 +1298,67 @@ def video_segments_validate_bulk(request, pk: int):
                     failed_ids.append(segment.pk)
 
         logger.info(f"Bulk validated {updated_count} segments in video {pk}")
-        post_processing_job = None
+        post_processing_job: JobDispatchResult | None = None
+        response_status: int = status.HTTP_200_OK
 
         if is_validated and not failed_ids and updated_count == len(segment_ids):
-            state = video.get_or_create_state()
-            state.segment_annotations_created = True
-            state.segment_annotations_validated = True
-            state.save(
-                update_fields=[
-                    "segment_annotations_created",
-                    "segment_annotations_validated",
-                    "date_modified",
-                ]
+            annotation_integrity_errors = annotation_generation_errors
+            annotation_integrity_errors.extend(
+                _segment_annotation_integrity_errors(
+                    segments,
+                    annotator=annotation_annotator,
+                )
             )
-            post_processing_job = dispatch_video_post_validation_rebuild(
-                video_id=video.pk
-            )
+            if annotation_integrity_errors:
+                mark_segment_annotations_stale(video)
+                return Response(
+                    {
+                        "error": "Segment validation did not create complete frame annotations.",
+                        "video_id": pk,
+                        "updated_count": updated_count,
+                        "requested_count": len(segment_ids),
+                        "annotation_errors": annotation_integrity_errors,
+                        "segment_annotation_status": resolve_segment_annotation_status(
+                            video
+                        ),
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            if _has_outside_cleanup_targets(video):
+                mark_segment_annotations_pending_cleanup(video)
+                try:
+                    post_processing_job = dispatch_video_post_validation_rebuild(
+                        video_id=video.pk
+                    )
+                except Exception as exc:
+                    logger.exception(
+                        "Post-validation cleanup dispatch failed for video %s.",
+                        video.pk,
+                    )
+                    return Response(
+                        {
+                            "error": "Post-validation cleanup dispatch failed.",
+                            "detail": str(exc),
+                            "video_id": pk,
+                            "segment_annotation_status": resolve_segment_annotation_status(
+                                video
+                            ),
+                        },
+                        status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    )
+                response_status = _bulk_validation_response_status(
+                    post_processing_job.status
+                )
+            else:
+                mark_segment_annotations_complete_without_cleanup(video)
+                post_processing_job = JobDispatchResult(
+                    task_id="",
+                    mode="noop",
+                    status="noop",
+                    video_id=int(video.pk),
+                    history_id=None,
+                )
 
         response_data = {
             "message": f"Bulk validation completed. {updated_count} segments updated.",
@@ -1347,17 +1366,23 @@ def video_segments_validate_bulk(request, pk: int):
             "requested_count": len(segment_ids),
             "is_validated": is_validated,
             "video_id": pk,
+            "segment_annotation_status": resolve_segment_annotation_status(video),
         }
         if post_processing_job is not None:
-            response_data["post_processing_job"] = post_processing_job.to_dict()
+            response_data["post_processing_job"] = (
+                post_processing_job.to_dict()
+                if hasattr(post_processing_job, "to_dict")
+                else post_processing_job
+            )
 
         if failed_ids:
             response_data["failed_ids"] = failed_ids
             response_data["warning"] = (
                 f"{len(failed_ids)} segments could not be validated"
             )
+            response_status = status.HTTP_409_CONFLICT
 
-        return Response(response_data, status=status.HTTP_200_OK)
+        return Response(response_data, status=response_status)
 
     except Exception as e:
         logger.error(f"Error in bulk validation for video {pk}: {e}")

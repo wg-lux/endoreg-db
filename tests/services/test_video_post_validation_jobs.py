@@ -8,7 +8,16 @@ from unittest.mock import Mock
 import pytest
 from django.utils import timezone
 
-from endoreg_db.models import Center, Frame, VideoFile, VideoProcessingHistory
+from endoreg_db.models import (
+    Center,
+    Frame,
+    ImageClassificationAnnotation,
+    InformationSource,
+    Label,
+    VideoFile,
+    VideoProcessingHistory,
+)
+from endoreg_db.models.state import video_segment_validation as segment_state
 from endoreg_db.services import video_post_validation_jobs as jobs
 
 
@@ -89,7 +98,7 @@ def test_dispatch_video_post_validation_rebuild_celery(monkeypatch, tmp_path):
     monkeypatch.setenv("VIDEO_POST_VALIDATION_JOB_MODE", "celery")
 
     fake_async_result = types.SimpleNamespace(id="celery-task-xyz")
-    fake_task = types.SimpleNamespace(delay=Mock(return_value=fake_async_result))
+    fake_task = types.SimpleNamespace(apply_async=Mock(return_value=fake_async_result))
     monkeypatch.setattr(
         "endoreg_db.tasks.run_video_post_validation_rebuild_task",
         fake_task,
@@ -103,17 +112,22 @@ def test_dispatch_video_post_validation_rebuild_celery(monkeypatch, tmp_path):
     assert result.task_id == "celery-task-xyz"
     assert result.video_id == video.pk
     assert result.history_id is not None
-    fake_task.delay.assert_called_once_with(
-        video.pk,
-        only_validated=False,
-        history_id=result.history_id,
+    fake_task.apply_async.assert_called_once_with(
+        args=(video.pk,),
+        kwargs={
+            "only_validated": False,
+            "history_id": result.history_id,
+        },
+        queue=jobs.get_celery_frame_extraction_queue(),
+        routing_key=jobs.get_celery_frame_extraction_queue(),
     )
     history = VideoProcessingHistory.objects.get(pk=result.history_id)
     assert history.task_id == "celery-task-xyz"
+    assert history.config["queue"] == jobs.get_celery_frame_extraction_queue()
 
 
 @pytest.mark.django_db
-def test_dispatch_video_post_validation_rebuild_celery_falls_back_to_thread(
+def test_dispatch_video_post_validation_rebuild_celery_failure_does_not_fall_back_to_thread(
     monkeypatch,
     tmp_path,
 ):
@@ -121,7 +135,7 @@ def test_dispatch_video_post_validation_rebuild_celery_falls_back_to_thread(
     monkeypatch.setenv("VIDEO_POST_VALIDATION_JOB_MODE", "celery")
 
     class _BrokenTask:
-        def delay(self, *args, **kwargs):
+        def apply_async(self, *args, **kwargs):
             raise RuntimeError("broker unavailable")
 
     monkeypatch.setattr(
@@ -130,29 +144,85 @@ def test_dispatch_video_post_validation_rebuild_celery_falls_back_to_thread(
         raising=False,
     )
 
-    runner = Mock(return_value=True)
+    runner = Mock(side_effect=AssertionError("must not run in web process"))
+    submit = Mock(side_effect=AssertionError("must not submit thread fallback"))
     monkeypatch.setattr(jobs, "_run_video_post_validation_rebuild", runner)
-    submitted = {}
-
-    def _fake_submit(fn):
-        submitted["fn"] = fn
-        return types.SimpleNamespace()
-
-    monkeypatch.setattr(jobs._executor, "submit", _fake_submit)
+    monkeypatch.setattr(jobs._executor, "submit", submit)
 
     result = jobs.dispatch_video_post_validation_rebuild(video_id=video.pk)
 
-    assert result.mode == "thread"
-    assert result.status == "queued"
+    assert result.mode == "celery"
+    assert result.status == "failed"
     assert result.video_id == video.pk
     assert result.history_id is not None
-    assert "fn" in submitted
-    submitted["fn"]()
-    runner.assert_called_once_with(
-        video.pk,
-        only_validated=False,
-        history_id=result.history_id,
+    runner.assert_not_called()
+    submit.assert_not_called()
+    history = VideoProcessingHistory.objects.get(pk=result.history_id)
+    assert history.status == VideoProcessingHistory.STATUS_FAILURE
+    assert "broker unavailable" in history.details
+
+
+@pytest.mark.django_db
+def test_dispatch_video_post_validation_rebuild_celery_fails_without_required_secure_transport(
+    monkeypatch,
+    tmp_path,
+):
+    video = _create_video_for_post_validation(tmp_path)
+    monkeypatch.setenv("VIDEO_POST_VALIDATION_JOB_MODE", "celery")
+    monkeypatch.setenv("CELERY_FRAME_EXTRACTION_REQUIRE_SECURE_TRANSPORT", "1")
+    monkeypatch.setenv("CELERY_BROKER_URL", "redis://broker.local/0")
+    monkeypatch.delenv("CELERY_BROKER_SECURE_TRANSPORT_CONFIRMED", raising=False)
+
+    fake_task = types.SimpleNamespace(
+        apply_async=Mock(
+            side_effect=AssertionError("insecure broker must not dispatch")
+        )
     )
+    monkeypatch.setattr(
+        "endoreg_db.tasks.run_video_post_validation_rebuild_task",
+        fake_task,
+        raising=False,
+    )
+
+    result = jobs.dispatch_video_post_validation_rebuild(video_id=video.pk)
+
+    assert result.mode == "celery"
+    assert result.status == "failed"
+    fake_task.apply_async.assert_not_called()
+    history = VideoProcessingHistory.objects.get(pk=result.history_id)
+    assert history.status == VideoProcessingHistory.STATUS_FAILURE
+    assert "secure broker transport" in history.details
+
+
+def test_blackening_history_config_schema_accepts_valid_config(monkeypatch):
+    monkeypatch.setenv("CELERY_FRAME_EXTRACTION_QUEUE", "frame_extraction_hi")
+
+    config = segment_state._blackening_history_config(only_validated=True)
+    parsed = segment_state._parse_blackening_history_config(config)
+
+    assert parsed is not None
+    assert parsed.kind == segment_state.OUTSIDE_FRAME_BLACKENING_KIND
+    assert parsed.only_validated is True
+    assert parsed.queue == "frame_extraction_hi"
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        {
+            "kind": segment_state.OUTSIDE_FRAME_BLACKENING_KIND,
+            "only_validated": "yes",
+        },
+        {
+            "kind": segment_state.OUTSIDE_FRAME_BLACKENING_KIND,
+            "only_validated": False,
+            "queue": "",
+        },
+    ],
+)
+def test_blackening_history_config_schema_rejects_invalid_config(config):
+    with pytest.raises(segment_state.OutsideFrameBlackeningConfigError):
+        segment_state._parse_blackening_history_config(config)
 
 
 @pytest.mark.django_db
@@ -216,7 +286,7 @@ def test_dispatch_video_post_validation_rebuild_expires_stale_history(
         operation=VideoProcessingHistory.OPERATION_REPROCESSING,
         status=VideoProcessingHistory.STATUS_PENDING,
         task_id="stale-task",
-        config=jobs._blackening_history_config(only_validated=False),
+        config=segment_state._blackening_history_config(only_validated=False),
     )
     VideoProcessingHistory.objects.filter(pk=stale_history.pk).update(
         created_at=timezone.now() - jobs.STALE_REBUILD_TIMEOUT - timedelta(minutes=1)
@@ -247,7 +317,7 @@ def test_dispatch_video_post_validation_rebuild_does_not_expire_stale_running_hi
         operation=VideoProcessingHistory.OPERATION_REPROCESSING,
         status=VideoProcessingHistory.STATUS_RUNNING,
         task_id="running-blackening-task",
-        config=jobs._blackening_history_config(only_validated=False),
+        config=segment_state._blackening_history_config(only_validated=False),
     )
     VideoProcessingHistory.objects.filter(pk=running_history.pk).update(
         created_at=timezone.now() - jobs.STALE_REBUILD_TIMEOUT - timedelta(minutes=1)
@@ -308,7 +378,7 @@ def test_run_video_post_validation_rebuild_accepts_stable_extracted_frames(
         video=video,
         operation=VideoProcessingHistory.OPERATION_REPROCESSING,
         status=VideoProcessingHistory.STATUS_PENDING,
-        config=jobs._blackening_history_config(only_validated=False),
+        config=segment_state._blackening_history_config(only_validated=False),
     )
 
     assert (
@@ -316,6 +386,10 @@ def test_run_video_post_validation_rebuild_accepts_stable_extracted_frames(
     )
     history.refresh_from_db()
     assert history.status == VideoProcessingHistory.STATUS_SUCCESS
+    video.refresh_from_db()
+    state = video.get_or_create_state()
+    assert state.outside_segments_removed is True
+    assert state.segment_annotations_validated is True
 
 
 @pytest.mark.django_db
@@ -358,10 +432,61 @@ def test_run_video_post_validation_rebuild_rejects_missing_extracted_frame_file(
         video=video,
         operation=VideoProcessingHistory.OPERATION_REPROCESSING,
         status=VideoProcessingHistory.STATUS_PENDING,
-        config=jobs._blackening_history_config(only_validated=False),
+        config=segment_state._blackening_history_config(only_validated=False),
     )
 
     with pytest.raises(RuntimeError, match="non-recreatable"):
         jobs._run_video_post_validation_rebuild(video.pk, history_id=history.pk)
     history.refresh_from_db()
     assert history.status == VideoProcessingHistory.STATUS_FAILURE
+    video.refresh_from_db()
+    state = video.get_or_create_state()
+    assert state.outside_segments_removed is False
+    assert state.segment_annotations_validated is False
+
+
+@pytest.mark.django_db
+def test_outside_blackening_verification_uses_frame_annotation_targets(tmp_path):
+    video = _create_video_for_post_validation(tmp_path)
+    frame_dir = video.get_frame_dir_path()
+    assert frame_dir is not None
+
+    import cv2
+    import numpy as np
+
+    black_path = frame_dir / "frame_0000000.jpg"
+    white_path = frame_dir / "frame_0000001.jpg"
+    cv2.imwrite(black_path.as_posix(), np.zeros((4, 4, 3), dtype=np.uint8))
+    cv2.imwrite(white_path.as_posix(), np.full((4, 4, 3), 255, dtype=np.uint8))
+
+    black_frame = Frame.objects.create(
+        video=video,
+        frame_number=0,
+        relative_path=black_path.name,
+        is_extracted=True,
+    )
+    white_frame = Frame.objects.create(
+        video=video,
+        frame_number=1,
+        relative_path=white_path.name,
+        is_extracted=True,
+    )
+    outside_label, _ = Label.objects.get_or_create(name="outside")
+    source, _ = InformationSource.objects.get_or_create(name="manual_annotation")
+    ImageClassificationAnnotation.objects.create(
+        frame=black_frame,
+        label=outside_label,
+        information_source=source,
+        value=True,
+    )
+
+    jobs._verify_outside_frames_blackened(video)
+
+    ImageClassificationAnnotation.objects.create(
+        frame=white_frame,
+        label=outside_label,
+        information_source=source,
+        value=True,
+    )
+    with pytest.raises(RuntimeError, match="outside frames blackened"):
+        jobs._verify_outside_frames_blackened(video)

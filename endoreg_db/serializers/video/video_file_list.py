@@ -4,7 +4,13 @@ import logging
 
 from rest_framework import serializers
 
-from endoreg_db.models import ImageClassificationAnnotation, VideoFile
+from endoreg_db.models import VideoFile
+from endoreg_db.models.state.frame_annotation import validated_annotators_for_video
+from endoreg_db.models.state.video_segment_validation import (
+    post_validation_rebuild_summary,
+    resolve_segment_annotation_status,
+    segment_annotations_are_final,
+)
 from endoreg_db.serializers.label_video_segment.label_video_segment import (
     LabelVideoSegmentTimelineSerializer,
 )
@@ -27,6 +33,9 @@ class VideoFileListSerializer(serializers.ModelSerializer):
     assignedUser = serializers.SerializerMethodField()
     anonymized = serializers.SerializerMethodField()
     segment_annotations_validated = serializers.SerializerMethodField()
+    segment_annotation_status = serializers.SerializerMethodField()
+    outside_segments_removed = serializers.SerializerMethodField()
+    post_validation_rebuild = serializers.SerializerMethodField()
     validated_annotators = serializers.SerializerMethodField()
     segments = LabelVideoSegmentTimelineSerializer(
         many=True, read_only=True, source="label_video_segments"
@@ -41,6 +50,9 @@ class VideoFileListSerializer(serializers.ModelSerializer):
             "assignedUser",
             "anonymized",
             "segment_annotations_validated",
+            "segment_annotation_status",
+            "outside_segments_removed",
+            "post_validation_rebuild",
             "validated_annotators",
             "segments",
             "export_segments_by_video",
@@ -125,11 +137,43 @@ class VideoFileListSerializer(serializers.ModelSerializer):
             - Never raises.
             - Returns False if state does not exist or cannot be loaded.
         """
+        try:
+            return bool(segment_annotations_are_final(obj))
+        except Exception as exc:
+            logger.warning(
+                "VideoFileListSerializer: unable to resolve final segment annotation status for VideoFile(id=%s): %s",
+                getattr(obj, "id", "unknown"),
+                exc,
+            )
+            return False
+
+    def get_segment_annotation_status(self, obj: VideoFile) -> str:
+        try:
+            return resolve_segment_annotation_status(obj)
+        except Exception as exc:
+            logger.warning(
+                "VideoFileListSerializer: unable to resolve segment annotation status for VideoFile(id=%s): %s",
+                getattr(obj, "id", "unknown"),
+                exc,
+            )
+            return "not_started"
+
+    def get_outside_segments_removed(self, obj: VideoFile) -> bool:
         state = self._get_video_state(obj)
         if not state:
             return False
+        return bool(getattr(state, "outside_segments_removed", False))
 
-        return bool(getattr(state, "segment_annotations_validated", False))
+    def get_post_validation_rebuild(self, obj: VideoFile) -> dict | None:
+        try:
+            return post_validation_rebuild_summary(obj)
+        except Exception as exc:
+            logger.warning(
+                "VideoFileListSerializer: unable to load post-validation rebuild summary for VideoFile(id=%s): %s",
+                getattr(obj, "id", "unknown"),
+                exc,
+            )
+            return None
 
     def get_validated_annotators(self, obj: VideoFile) -> list[str]:
         """
@@ -141,12 +185,4 @@ class VideoFileListSerializer(serializers.ModelSerializer):
         if not self.get_segment_annotations_validated(obj):
             return []
 
-        annotators = (
-            ImageClassificationAnnotation.objects.filter(frame__video=obj)
-            .exclude(annotator__isnull=True)
-            .exclude(annotator__exact="")
-            .order_by("annotator")
-            .values_list("annotator", flat=True)
-            .distinct()
-        )
-        return [annotator for annotator in annotators if annotator]
+        return validated_annotators_for_video(obj)

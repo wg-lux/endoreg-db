@@ -5,6 +5,10 @@ from django.db import transaction
 from django.db.models import Q
 
 from endoreg_db.helpers.download_segmentation_model import download_segmentation_model
+from endoreg_db.models.state.frame_annotation import (
+    mark_frame_prediction_completed,
+    mark_prediction_segments_created,
+)
 
 # Added imports
 
@@ -15,6 +19,11 @@ if TYPE_CHECKING:
     from endoreg_db.models import VideoFile
 
     # --- Pipeline 1 ---
+
+
+def _has_extracted_frame_files(video_file: "VideoFile") -> bool:
+    frame_dir = video_file.get_frame_dir_path()
+    return bool(frame_dir and frame_dir.exists() and any(frame_dir.glob("frame_*.jpg")))
 
 
 def _pipe_1(
@@ -53,6 +62,28 @@ def _pipe_1(
         video_file.update_text_metadata(
             ocr_frame_fraction=ocr_frame_fraction, cap=ocr_cap, overwrite=False
         )
+        if not _has_extracted_frame_files(video_file):
+            logger.warning(
+                "Pipe 1: Frame cache for video %s disappeared before prediction. "
+                "Re-extracting derived frames from canonical raw media.",
+                video_file.video_hash,
+            )
+            try:
+                video_file.extract_frames(overwrite=True)
+            except Exception as e:
+                logger.error(
+                    "Pipe 1 failed: could not restore frame cache for video %s: %s",
+                    video_file.video_hash,
+                    e,
+                    exc_info=True,
+                )
+                return False
+            if not _has_extracted_frame_files(video_file):
+                logger.error(
+                    "Pipe 1 failed: frame cache for video %s is still empty after re-extraction.",
+                    video_file.video_hash,
+                )
+                return False
         with transaction.atomic():
             state = video_file.get_or_create_state()
             if not state.frames_extracted:
@@ -123,8 +154,7 @@ def _pipe_1(
             logger.info("Pipe 1: Prediction complete.")
 
             # --- Set and Save State ---
-            state.initial_prediction_completed = True
-            state.save(update_fields=["initial_prediction_completed"])
+            mark_frame_prediction_completed(video_file)
             logger.info("Pipe 1: Set initial_prediction_completed state to True.")
 
             logger.info(f"Pipe 1: Sequences returned from prediction: {sequences}")
@@ -185,8 +215,7 @@ def _pipe_1(
                     .count()
                 )
                 if has_segment_ranges and current_prediction_segment_count == 0:
-                    state.lvs_created = False
-                    state.save(update_fields=["lvs_created"])
+                    mark_prediction_segments_created(video_file, created=False)
                     logger.error(
                         "Pipe 1 failed: prediction returned segment ranges for video %s, "
                         "but no prediction LabelVideoSegment rows were materialized for "
@@ -197,13 +226,13 @@ def _pipe_1(
                     )
                     return False
 
-                state.lvs_created = (
+                lvs_created = (
                     frontend_prediction_segment_count > 0 or not has_segment_ranges
                 )
-                state.save(update_fields=["lvs_created"])
+                mark_prediction_segments_created(video_file, created=lvs_created)
                 logger.info(
                     "Pipe 1: Set lvs_created state to %s.",
-                    state.lvs_created,
+                    lvs_created,
                 )
                 logger.info("Pipe 1: LabelVideoSegment creation complete.")
                 logger.info(
@@ -252,7 +281,12 @@ def _test_after_pipe_1(
     try:
         # 1. Create 'outside' LabelVideoSegments
         try:
-            outside_label = Label.objects.get(name__iexact="outside")
+            outside_label = Label.objects.resolve_by_name(
+                "outside",
+                case_insensitive=True,
+            )
+            if outside_label is None:
+                raise Label.DoesNotExist("outside")
             logger.info(
                 f"Creating 'outside' annotation segment [{start_frame}-{end_frame}]"
             )

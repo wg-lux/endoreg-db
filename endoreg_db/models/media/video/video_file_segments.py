@@ -50,11 +50,17 @@ def _convert_sequences_to_db_segments(
 
         processed_labels.add(label_name)
 
-        try:
-            label = Label.objects.get(name=label_name)  # require pre-existing label
-        except Exception as e:
+        label = None
+        model_meta = getattr(video_prediction_meta, "model_meta", None)
+        labelset = getattr(model_meta, "labelset", None)
+        if labelset is not None:
+            label = labelset.labels.filter(name=label_name).order_by("pk").first()
+        if label is None:
+            label = Label.objects.resolve_by_name(label_name)
+        if label is None:
             logger.error(
-                "Could not get or create Label '%s': %s", label_name, e, exc_info=True
+                "Could not get Label '%s' while converting prediction sequences",
+                label_name,
             )
             error_count += len(sequence_list)
             continue
@@ -68,6 +74,16 @@ def _convert_sequences_to_db_segments(
                     start_frame,
                     end_frame,
                 )
+                skipped_count += 1
+                continue
+
+            if LabelVideoSegment.objects.filter(
+                video_file=video,
+                label=label,
+                prediction_meta=video_prediction_meta,
+                start_frame_number=start_frame,
+                end_frame_number=end_frame,
+            ).exists():
                 skipped_count += 1
                 continue
 
@@ -165,21 +181,18 @@ def _get_outside_segments(
     only_validated: bool = False,
 ) -> "QuerySet[LabelVideoSegment]":
     """Gets LabelVideoSegments marked with the 'outside' label."""
-    from ...label import Label, LabelVideoSegment  # Local import for models
+    from ...label import LabelVideoSegment  # Local import for models
 
     try:
-        outside_label = Label.objects.get(name__iexact=outside_label_name)
         # FIX: Use direct filter instead of relying on 'label_video_segments' related name
         # which might not exist or might be named differently (e.g. labelvideosegment_set)
         segments = LabelVideoSegment.objects.filter(
-            video_file=video, label=outside_label
+            video_file=video,
+            label__name__iexact=outside_label_name,
         )
         if only_validated:
             segments = segments.filter(state__is_validated=True)
         return segments
-    except Label.DoesNotExist:
-        logger.warning("Label '%s' not found in the database.", outside_label_name)
-        return LabelVideoSegment.objects.none()
     except Exception as e:
         logger.error(
             "Error getting '%s' segments for video %s: %s",
@@ -241,8 +254,6 @@ def _get_outside_frames(
         outside_label_name,
         only_validated=only_validated,
     )
-    if not outside_segments.exists():
-        return Frame.objects.none()
 
     q_objects: Q | None = None
     for segment in outside_segments:
@@ -254,7 +265,15 @@ def _get_outside_frames(
         q_objects = clause if q_objects is None else q_objects | clause
 
     if q_objects is None:
-        return Frame.objects.none()
+        q_objects = Q(
+            image_classification_annotations__label__name__iexact=outside_label_name,
+            image_classification_annotations__value=True,
+        )
+    else:
+        q_objects = q_objects | Q(
+            image_classification_annotations__label__name__iexact=outside_label_name,
+            image_classification_annotations__value=True,
+        )
 
     try:
         return video.frames.filter(q_objects).distinct().order_by("frame_number")
