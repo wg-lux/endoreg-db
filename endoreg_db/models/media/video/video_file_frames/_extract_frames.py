@@ -334,6 +334,7 @@ def _extract_frames(
     staged_frame_dir = _get_staged_extraction_dir(frame_dir, str(video.video_hash))
     replaced_frame_dir: Path | None = None
     installed_new_cache = False
+    corrected_frame_count: int | None = None
 
     try:
         logger.info(
@@ -378,12 +379,30 @@ def _extract_frames(
             if extracted_frame_number_set != expected_frame_numbers:
                 missing = sorted(expected_frame_numbers - extracted_frame_number_set)
                 extra = sorted(extracted_frame_number_set - expected_frame_numbers)
-                raise RuntimeError(
-                    "Extracted frame set does not match expected video frame count "
-                    f"for {video.video_hash}: expected={expected_count}, "
-                    f"actual={len(extracted_frame_number_set)}, "
-                    f"missing_sample={missing[:10]}, extra_sample={extra[:10]}"
+                has_single_trailing_extra = (
+                    not missing
+                    and len(extra) == 1
+                    and extra[0] == expected_count
+                    and len(extracted_frame_number_set) == expected_count + 1
                 )
+                if has_single_trailing_extra:
+                    previous_expected_count = expected_count
+                    corrected_frame_count = len(extracted_frame_number_set)
+                    expected_count = corrected_frame_count
+                    logger.warning(
+                        "Correcting decoded frame count for video %s from %d to %d "
+                        "after FFmpeg extracted one trailing frame beyond metadata.",
+                        video.video_hash,
+                        previous_expected_count,
+                        corrected_frame_count,
+                    )
+                else:
+                    raise RuntimeError(
+                        "Extracted frame set does not match expected video frame count "
+                        f"for {video.video_hash}: expected={expected_count}, "
+                        f"actual={len(extracted_frame_number_set)}, "
+                        f"missing_sample={missing[:10]}, extra_sample={extra[:10]}"
+                    )
 
         if frame_dir.exists():
             replaced_frame_dir = _get_staged_replacement_dir(frame_dir)
@@ -425,6 +444,12 @@ def _extract_frames(
                     )
                     raise
             state.refresh_from_db()
+            if (
+                corrected_frame_count is not None
+                and video.frame_count != corrected_frame_count
+            ):
+                video.frame_count = corrected_frame_count
+                video.save(update_fields=["frame_count"])
             if not state.frames_initialized:
                 state.frames_initialized = True
             if state.frame_count != len(extracted_frame_numbers):

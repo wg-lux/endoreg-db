@@ -36,6 +36,7 @@ from endoreg_db.utils.storage_streaming import (
     build_partial_content_response,
     build_partial_content_response_from_path,
     field_file_size,
+    maybe_local_plaintext_path,
     parse_byte_range,
 )
 
@@ -126,6 +127,15 @@ def _try_repair_streamable_artifact(video: VideoFile, file_type: str) -> str:
     return "streamable_repaired"
 
 
+def _field_file_for_stream(video: VideoFile, file_type: str):
+    if file_type == "processed":
+        return getattr(video, "processed_file", None)
+    try:
+        return getattr(video, "active_raw_file", None)
+    except (FileNotFoundError, ValueError):
+        return None
+
+
 class VideoStreamView(APIView):
     permission_classes = [EnvironmentAwarePermission, PolicyPermission]
 
@@ -197,13 +207,20 @@ class VideoStreamView(APIView):
                 materialize_if_missing=False,
             )
         except (FileNotFoundError, ValueError) as exc:
-            logger.warning(
-                "Video stream source unavailable for id=%s type=%s: %s",
-                getattr(video, "pk", None),
-                file_type,
-                exc,
+            field_file = _field_file_for_stream(video, file_type)
+            local_path = (
+                maybe_local_plaintext_path(field_file)
+                if field_file is not None
+                else None
             )
-            raise Http404("Video file is not available") from exc
+            if local_path is None:
+                logger.warning(
+                    "Video stream source unavailable for id=%s type=%s: %s",
+                    getattr(video, "pk", None),
+                    file_type,
+                    exc,
+                )
+                raise Http404("Video file is not available") from exc
 
         filename = (
             local_path.name if local_path is not None else Path(field_file.name).name

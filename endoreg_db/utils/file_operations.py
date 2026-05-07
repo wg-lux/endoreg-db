@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import shutil
+import time
 from pathlib import Path
 from typing import Iterable
 from django.db.models.fields.files import FieldFile
@@ -301,6 +302,45 @@ def atomic_write_file(
         bytes=bytes_written,
     )
     return destination
+
+
+def ensure_file_mtime_after(path: Path, *, previous_mtime_ns: int) -> None:
+    """
+    Ensure a rewritten file has an mtime later than a previously observed value.
+    """
+    target = Path(path)
+    try:
+        stat_result = target.stat()
+        if stat_result.st_mtime_ns > previous_mtime_ns:
+            _emit_file_operation_event(
+                operation="mtime",
+                status="ok",
+                source=target,
+                detail="mtime already advanced",
+                previous_mtime_ns=previous_mtime_ns,
+                current_mtime_ns=stat_result.st_mtime_ns,
+            )
+            return
+
+        new_mtime_ns = max(previous_mtime_ns + 1, time.time_ns())
+        os.utime(target, ns=(stat_result.st_atime_ns, new_mtime_ns))
+    except Exception as exc:
+        _emit_file_operation_event(
+            operation="mtime",
+            status="error",
+            source=target,
+            detail=str(exc),
+            previous_mtime_ns=previous_mtime_ns,
+        )
+        raise
+
+    _emit_file_operation_event(
+        operation="mtime",
+        status="ok",
+        source=target,
+        previous_mtime_ns=previous_mtime_ns,
+        current_mtime_ns=new_mtime_ns,
+    )
 
 
 def safe_unlink_file(path: Path, *, missing_ok: bool = True) -> None:

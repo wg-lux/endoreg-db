@@ -4,9 +4,11 @@ import json
 import logging
 import hashlib
 import time
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, NotRequired, TypedDict, cast
+from typing import Any, Iterator, NotRequired, TypedDict, cast
 from datetime import timedelta
+from django.conf import settings
 from django.utils import timezone
 from django.contrib.auth.models import AnonymousUser
 from django.core.files import File
@@ -58,7 +60,7 @@ from endoreg_db.utils.paths import (
     QUARANTINE_DIR,
     to_storage_relative,
 )
-from endoreg_db.utils.storage import ensure_local_file
+from endoreg_db.utils.storage import delete_field_file, ensure_local_file
 
 
 STALE_UPLOAD_JOB_AGE = timedelta(hours=2)
@@ -513,6 +515,52 @@ def _upload_job_has_usable_media(upload_job: UploadJob) -> bool:
     return check_upload_job_media_integrity(upload_job).ok
 
 
+def _safe_existing_media_root_path(storage_name: str | None) -> Path | None:
+    if not storage_name:
+        return None
+    media_root = Path(getattr(settings, "MEDIA_ROOT", "") or "")
+    if not media_root:
+        return None
+    media_root = media_root.resolve()
+    candidate = (media_root / storage_name).resolve()
+    try:
+        candidate.relative_to(media_root)
+    except ValueError:
+        return None
+    return candidate if candidate.is_file() else None
+
+
+@contextmanager
+def _ensure_upload_job_local_file(
+    job: UploadJob,
+) -> Iterator[Path]:
+    try:
+        with ensure_local_file(job.file) as file_path:
+            yield Path(file_path)
+            return
+    except OSError as storage_exc:
+        fallback_path = _safe_existing_media_root_path(job.file.name)
+        if fallback_path is None:
+            raise storage_exc
+        fallback_hash = sha256_file(fallback_path)
+        if job.content_hash:
+            if fallback_hash != job.content_hash:
+                raise IOError(
+                    "Fallback upload source failed content-hash verification"
+                ) from storage_exc
+        else:
+            job.content_hash = fallback_hash
+            job.save(update_fields=["content_hash", "updated_at"])
+        logger.warning(
+            "Using verified MEDIA_ROOT fallback for upload job %s because storage "
+            "could not materialize %s: %s",
+            job.id,
+            job.file.name,
+            storage_exc,
+        )
+        yield fallback_path
+
+
 def _media_integrity_provenance(
     result: MediaIntegrityResult,
     *,
@@ -875,6 +923,43 @@ def _quarantine_preanonymized_drop(
     if upload_job is not None and updates:
         _update_upload_provenance(upload_job, **updates)
         upload_job.save(update_fields=["processing_provenance", "updated_at"])
+
+
+def _quarantine_upload_job_file(
+    upload_job: UploadJob,
+    *,
+    local_path: Path,
+) -> Path | None:
+    if not local_path.exists() or not local_path.is_file():
+        return None
+
+    ensure_directory(QUARANTINE_DIR)
+    original_name = (
+        upload_job.original_filename
+        or Path(getattr(upload_job.file, "name", "")).name
+        or local_path.name
+    )
+    quarantine_path = QUARANTINE_DIR / original_name
+    if quarantine_path.exists():
+        quarantine_path = QUARANTINE_DIR / f"{uuid.uuid4().hex}_{original_name}"
+
+    atomic_copy_file(source=local_path, destination=quarantine_path)
+    delete_field_file(upload_job, "file", missing_ok=True, save=False)
+    safe_unlink_file(local_path, missing_ok=True)
+    upload_job.file.name = ""
+    upload_job.source_file_persisted = False
+    upload_job.cleanup_status = UploadJob.CleanupStatus.COMPLETED
+    _update_upload_provenance(upload_job, quarantined_path=str(quarantine_path))
+    upload_job.save(
+        update_fields=[
+            "file",
+            "source_file_persisted",
+            "cleanup_status",
+            "processing_provenance",
+            "updated_at",
+        ]
+    )
+    return quarantine_path
 
 
 def _validate_local_preanonymized_drop_path(watched_path: Path) -> None:
@@ -1308,43 +1393,53 @@ def process_upload_job(job_id: str) -> bool:
     job.save(update_fields=["processing_provenance", "updated_at"])
 
     try:
-        with ensure_local_file(job.file) as file_path:
-            if job.content_type == "application/pdf":
-                report = ReportImportService().import_and_anonymize(
-                    file_path=file_path,
-                    center_name=center.name,
-                    retry=False,
-                )
-                sensitive_meta = (
-                    report.sensitive_meta if isinstance(report, RawPdfFile) else None
-                )
-            else:
-                processor_name = _default_processor_name()
-                if not processor_name:
-                    raise ObjectDoesNotExist(
-                        "No default EndoscopyProcessor is configured"
+        with _ensure_upload_job_local_file(job) as file_path:
+            try:
+                if job.content_type == "application/pdf":
+                    report = ReportImportService().import_and_anonymize(
+                        file_path=file_path,
+                        center_name=center.name,
+                        retry=False,
                     )
+                    sensitive_meta = (
+                        report.sensitive_meta
+                        if isinstance(report, RawPdfFile)
+                        else None
+                    )
+                else:
+                    processor_name = _default_processor_name()
+                    if not processor_name:
+                        raise ObjectDoesNotExist(
+                            "No default EndoscopyProcessor is configured"
+                        )
 
-                video = VideoImportService().import_and_anonymize(
-                    file_path=file_path,
-                    center_name=center.name,
-                    processor_name=processor_name,
-                    retry=False,
+                    video = VideoImportService().import_and_anonymize(
+                        file_path=file_path,
+                        center_name=center.name,
+                        processor_name=processor_name,
+                        retry=False,
+                    )
+                    sensitive_meta = (
+                        video.sensitive_meta if isinstance(video, VideoFile) else None
+                    )
+            except Exception:
+                quarantine_path = _quarantine_upload_job_file(
+                    job,
+                    local_path=Path(file_path),
                 )
-                sensitive_meta = (
-                    video.sensitive_meta if isinstance(video, VideoFile) else None
-                )
+                if quarantine_path is not None:
+                    logger.warning(
+                        "Upload job %s failed; source quarantined at %s.",
+                        job_id,
+                        quarantine_path,
+                    )
+                raise
 
         job.mark_completed(sensitive_meta=sensitive_meta)
         return True
     except Exception as exc:
         logger.exception("Upload job processing failed for %s: %s", job_id, exc)
         job.mark_error(str(exc))
-        logger.warning(
-            "Upload job %s failed; retained canonical upload FieldFile %s instead of moving by filesystem path.",
-            job_id,
-            job.file.name,
-        )
         return False
 
 

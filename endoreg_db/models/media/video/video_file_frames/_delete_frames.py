@@ -37,23 +37,14 @@ def _delete_frames(video: "VideoFile") -> str:
     error_messages = []
     state_updated = False
     db_updated = False
-    staged_directories: list[tuple[str, str]] = []
+    cleanup_directories: list[Path] = []
 
     frame_dir = _get_frame_dir_path(video)
     if frame_dir and frame_dir.exists():
-        try:
-            staged_frame_dir = frame_dir.with_name(
-                _get_staged_deletion_path(frame_dir.name)
-            )
-            atomic_move_path(source=frame_dir, destination=staged_frame_dir)
-            staged_directories.append((str(frame_dir), str(staged_frame_dir)))
-            msg = f"Staged frame directory for deletion: {frame_dir}"
-            logger.info(msg)
-            deleted_messages.append(msg)
-        except Exception as e:
-            msg = f"Error staging frame directory {frame_dir} for deletion: {e}"
-            logger.error(msg, exc_info=True)
-            error_messages.append(msg)
+        cleanup_directories.append(frame_dir)
+        msg = f"Scheduled frame directory for deletion: {frame_dir}"
+        logger.info(msg)
+        deleted_messages.append(msg)
     elif frame_dir:
         msg = f"Frame directory not found, skipping deletion: {frame_dir}"
         logger.debug(msg)
@@ -65,15 +56,9 @@ def _delete_frames(video: "VideoFile") -> str:
     try:
         temp_anonym_frame_dir = _get_temp_anonymized_frame_dir(video)
         if temp_anonym_frame_dir and temp_anonym_frame_dir.exists():
-            staged_temp_dir = temp_anonym_frame_dir.with_name(
-                _get_staged_deletion_path(temp_anonym_frame_dir.name)
-            )
-            atomic_move_path(source=temp_anonym_frame_dir, destination=staged_temp_dir)
-            staged_directories.append(
-                (str(temp_anonym_frame_dir), str(staged_temp_dir))
-            )
+            cleanup_directories.append(temp_anonym_frame_dir)
             msg = (
-                "Staged temporary anonymized frame directory for deletion: "
+                "Scheduled temporary anonymized frame directory for deletion: "
                 f"{temp_anonym_frame_dir}"
             )
             logger.info(msg)
@@ -125,20 +110,6 @@ def _delete_frames(video: "VideoFile") -> str:
             ) from db_err
 
     except Exception as state_e:
-        for original_path_str, staged_path_str in reversed(staged_directories):
-            original_path = Path(original_path_str)
-            staged_path = Path(staged_path_str)
-            if not staged_path.exists():
-                continue
-            try:
-                atomic_move_path(source=staged_path, destination=original_path)
-            except Exception as restore_exc:
-                restore_msg = (
-                    "Failed to restore staged frame directory "
-                    f"{staged_path} -> {original_path}: {restore_exc}"
-                )
-                logger.error(restore_msg, exc_info=True)
-                error_messages.append(restore_msg)
         msg = (
             f"Failed to update state after deleting frame files for video %s: {state_e}"
         )
@@ -150,13 +121,31 @@ def _delete_frames(video: "VideoFile") -> str:
     else:
 
         def _finalize_directory_cleanup() -> None:
-            for _, staged_path_str in staged_directories:
-                staged_path = Path(staged_path_str)
-                if not staged_path.exists():
+            for original_path in cleanup_directories:
+                if not original_path.exists():
                     continue
+                staged_path = original_path.with_name(
+                    _get_staged_deletion_path(original_path.name)
+                )
                 try:
+                    atomic_move_path(source=original_path, destination=staged_path)
                     safe_rmtree(staged_path, missing_ok=True)
                 except Exception as cleanup_exc:
+                    if staged_path.exists() and not original_path.exists():
+                        try:
+                            atomic_move_path(
+                                source=staged_path,
+                                destination=original_path,
+                            )
+                        except Exception as restore_exc:
+                            logger.error(
+                                "Failed to restore staged frame directory "
+                                "%s -> %s after cleanup failure: %s",
+                                staged_path,
+                                original_path,
+                                restore_exc,
+                                exc_info=True,
+                            )
                     logger.error(
                         "Failed to finalize staged frame directory cleanup for %s: %s",
                         staged_path,

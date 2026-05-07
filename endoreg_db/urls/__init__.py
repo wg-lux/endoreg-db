@@ -3,9 +3,9 @@ import logging
 from pathlib import Path
 from typing import cast
 from django.conf import settings as django_settings
-from django.conf.urls.static import static
 from django.urls import URLResolver, URLPattern, include, path
 from rest_framework.routers import DefaultRouter
+from endoreg_db.utils.django_static import static
 
 logger = logging.getLogger(__name__)
 

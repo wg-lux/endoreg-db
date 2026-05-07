@@ -2,7 +2,7 @@
 from django.urls import include, path
 from django.http import HttpResponse
 from django.conf import settings
-from django.conf.urls.static import static
+from endoreg_db.utils.django_static import static
 
 # Import raw API urlpatterns (no prefix) from your API urls package
 from endoreg_db.urls import urlpatterns as api_urlpatterns

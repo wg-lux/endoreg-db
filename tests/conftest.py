@@ -64,7 +64,6 @@ from endoreg_db.utils.file_operations import (
 )
 
 import pytest
-from django.core.files.base import ContentFile
 from django.db.backends.signals import connection_created
 from django.test import override_settings
 
@@ -351,25 +350,23 @@ def _load_base_db_data_impl(cache):
     for managed_stub_name in managed_stub_names:
         cleanup_managed_stub_weight_collisions(managed_stub_name)
 
-    if loaded_flag and center_available:
-        return True
-
     if loaded_flag and not center_available:
         db_cache.invalidate("base_data_loaded")
 
     # Load all required base data once
-    load_base_db_data()
-    load_gender_data()
-    load_disease_data()
-    load_event_data()
-    load_information_source_data()
-    load_examination_data()
-    load_center_data()
-    load_endoscope_data()
-    load_ai_model_label_data()
-    load_ai_model_data()
-    if not SKIP_EXPENSIVE_TESTS and not USE_STUB_MODEL_META:
-        load_default_ai_model()
+    if not (loaded_flag and center_available):
+        load_base_db_data()
+        load_gender_data()
+        load_disease_data()
+        load_event_data()
+        load_information_source_data()
+        load_examination_data()
+        load_center_data()
+        load_endoscope_data()
+        load_ai_model_label_data()
+        load_ai_model_data()
+        if not SKIP_EXPENSIVE_TESTS and not USE_STUB_MODEL_META:
+            load_default_ai_model()
 
     # Ensure AI models have proper metadata for testing with smart caching
     try:
@@ -423,9 +420,20 @@ def _load_base_db_data_impl(cache):
             weights_name = f"model_weights/{suffix}"
             cleanup_managed_stub_weight_collisions(weights_name)
             if meta.weights:
+                existing_name = meta.weights.name
+                is_stub_weight = "stub" in Path(existing_name).name.lower()
+                if is_stub_weight and not default_storage.exists(existing_name):
+                    atomic_write_file(
+                        destination=Path(default_storage.path(existing_name)),
+                        content=[b"stub-weights"],
+                        required_bytes=len(b"stub-weights"),
+                    )
                 return
-            if not default_storage.exists(weights_name):
-                default_storage.save(weights_name, ContentFile(b"stub-weights"))
+            atomic_write_file(
+                destination=Path(default_storage.path(weights_name)),
+                content=[b"stub-weights"],
+                required_bytes=len(b"stub-weights"),
+            )
             meta.weights.name = weights_name
             meta.save(update_fields=["weights"])
             cleanup_managed_stub_weight_collisions(weights_name)
@@ -1069,9 +1077,9 @@ def mock_ffmpeg(monkeypatch):
 
         # Keep mocked frame extraction minimal to speed up video-oriented tests.
         frame_paths = []
-        for i in range(1, MAX_MOCK_VIDEO_FRAMES + 1):
-            frame_path = output_dir / f"frame_{i:04d}.jpg"
-            atomic_write_file(destination=frame_path, content=(b"",))
+        for i in range(MAX_MOCK_VIDEO_FRAMES):
+            frame_path = output_dir / f"frame_{i:07d}.jpg"
+            atomic_write_file(destination=frame_path, content=(b"mock-frame",))
             frame_paths.append(frame_path)
 
         return frame_paths
@@ -1188,9 +1196,13 @@ def auto_mock_ffmpeg_for_video_tests(request, monkeypatch):
     Automatically apply FFmpeg mocking for video-related tests to prevent failures.
     This ensures video tests can run without requiring working FFmpeg installation.
     """
+    nodeid = request.node.nodeid.lower()
+    if "tests/utils/video/test_ffmpeg_wrapper.py" in nodeid:
+        return
+
     # Check if this is a video test
     is_video_test = (
-        "video" in request.node.nodeid.lower() or "Video" in str(request.cls)
+        "video" in nodeid or "Video" in str(request.cls)
         if request.cls
         else False or any(mark.name == "video" for mark in request.node.iter_markers())
     )
@@ -1205,9 +1217,9 @@ def auto_mock_ffmpeg_for_video_tests(request, monkeypatch):
 
             # Create mock frame files
             frame_paths = []
-            for i in range(1, MAX_MOCK_VIDEO_FRAMES + 1):
-                frame_path = output_dir / f"frame_{i:04d}.jpg"
-                atomic_write_file(destination=frame_path, content=(b"",))
+            for i in range(MAX_MOCK_VIDEO_FRAMES):
+                frame_path = output_dir / f"frame_{i:07d}.jpg"
+                atomic_write_file(destination=frame_path, content=(b"mock-frame",))
                 frame_paths.append(frame_path)
 
             return frame_paths
@@ -1225,6 +1237,7 @@ def auto_mock_ffmpeg_for_video_tests(request, monkeypatch):
                         "height": 1080,
                         "r_frame_rate": f"{int(DEFAULT_VIDEO_FPS)}/1",
                         "duration": "10.0",
+                        "nb_frames": str(MAX_MOCK_VIDEO_FRAMES),
                     }
                 ]
             }

@@ -192,6 +192,7 @@ def _censor_outside_frames(
                 logger.warning(
                     "Frame file %s not found for censoring. Skipping.", frame_path
                 )
+                error_count += 1
                 continue
 
             anonymize_frame(

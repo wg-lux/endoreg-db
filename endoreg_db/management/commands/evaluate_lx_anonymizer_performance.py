@@ -30,7 +30,8 @@ logger = logging.getLogger(__name__)
 MediaType = Literal["video", "report"]
 
 VIDEO_EXTENSIONS = {".avi", ".m4v", ".mkv", ".mov", ".mp4", ".mpg", ".mpeg"}
-REPORT_EXTENSIONS = {".pdf", ".txt"}
+REPORT_EXTENSIONS = {".pdf"}
+REPORT_BYPASS_EXTENSIONS = {".txt"}
 
 
 @dataclass
@@ -104,7 +105,10 @@ class Command(BaseCommand):
         parser.add_argument(
             "paths",
             nargs="*",
-            help="Files or directories to evaluate. Directories are scanned for media files.",
+            help=(
+                "Files or directories to evaluate. Directories are scanned for "
+                "media files. Report performance evaluation only accepts PDFs."
+            ),
         )
         parser.add_argument(
             "--input-dir",
@@ -292,11 +296,18 @@ class Command(BaseCommand):
 
     @staticmethod
     def _media_type_for_path(path: Path, forced_media_type: str) -> MediaType | None:
+        suffix = path.suffix.lower()
+        if suffix in REPORT_BYPASS_EXTENSIONS:
+            if forced_media_type == "report":
+                raise CommandError(
+                    "Text report inputs bypass lx_anonymizer in the report import "
+                    f"pipeline and cannot be used for performance evaluation: {path}"
+                )
+            return None
         if forced_media_type == "video":
             return "video"
         if forced_media_type == "report":
             return "report"
-        suffix = path.suffix.lower()
         if suffix in VIDEO_EXTENSIONS:
             return "video"
         if suffix in REPORT_EXTENSIONS:

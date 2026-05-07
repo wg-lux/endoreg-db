@@ -122,6 +122,22 @@ def _get_processed_file_path(video: "VideoFile") -> Optional[Path]:
     if not (video.is_processed and processed_field and processed_field.name):
         return None
 
+    if hasattr(video, "processed_streamable_relative_path"):
+        try:
+            stream_path = _get_processed_stream_path(
+                video,
+                materialize_if_missing=True,
+            )
+        except AttributeError as exc:
+            logger.debug(
+                "Could not materialize processed stream path for %s: %s",
+                getattr(video, "video_hash", "<unknown>"),
+                exc,
+            )
+        else:
+            if stream_path is not None:
+                return stream_path
+
     return maybe_local_plaintext_path(processed_field)
 
 

@@ -3,7 +3,7 @@ from django.contrib import admin
 from django.urls import path, include
 from django.http import HttpResponse
 from django.conf import settings
-from django.conf.urls.static import static
+from endoreg_db.utils.django_static import static
 
 
 def public_home(_request):

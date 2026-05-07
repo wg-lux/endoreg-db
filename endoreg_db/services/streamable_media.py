@@ -6,9 +6,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.file_operations import (
     atomic_move_path,
     atomic_write_file,
+    ensure_file_mtime_after,
     safe_unlink_file,
     sha256_file,
 )
@@ -61,6 +63,8 @@ def _streamable_processed_video_root() -> Path:
 STREAMABLE_VIDEO_ROOT = _streamable_video_root()
 STREAMABLE_RAW_VIDEO_ROOT = _streamable_raw_video_root()
 STREAMABLE_PROCESSED_VIDEO_ROOT = _streamable_processed_video_root()
+_DEFAULT_STREAMABLE_RAW_VIDEO_ROOT_FN = _streamable_raw_video_root
+_DEFAULT_STREAMABLE_PROCESSED_VIDEO_ROOT_FN = _streamable_processed_video_root
 STREAMABLE_DIRECTORY_MODE = 0o750
 STREAMABLE_FILE_MODE = 0o640
 
@@ -68,15 +72,29 @@ STREAMABLE_FILE_MODE = 0o640
 def _streamable_relative_path(target_path: Path) -> str:
     resolved_target = Path(target_path).resolve()
 
+    storage_roots = (
+        Path(path_utils.STORAGE_DIR).resolve(),
+        path_utils.EndoregPathsModel.from_environment().storage.resolve(),
+    )
+    for storage_root in dict.fromkeys(storage_roots):
+        try:
+            return resolved_target.relative_to(storage_root).as_posix()
+        except ValueError:
+            continue
+
+    try:
+        storage_relative = to_storage_relative(resolved_target)
+        if not Path(storage_relative).is_absolute():
+            return storage_relative
+    except ValueError:
+        pass
+
     try:
         return to_protected_media_relative(resolved_target)
-    except ValueError:
-        try:
-            return to_storage_relative(resolved_target)
-        except ValueError as storage_exc:
-            raise ValueError(
-                f"Could not derive streamable relative path for {resolved_target}"
-            ) from storage_exc
+    except ValueError as protected_exc:
+        raise ValueError(
+            f"Could not derive streamable relative path for {resolved_target}"
+        ) from protected_exc
 
 
 def _is_encrypted_file(path: Path) -> bool:
@@ -155,6 +173,21 @@ def _materialize_streamable_target(
         raise
 
 
+def _configured_streamable_raw_video_root() -> Path:
+    if _streamable_raw_video_root is not _DEFAULT_STREAMABLE_RAW_VIDEO_ROOT_FN:
+        return Path(_streamable_raw_video_root()).resolve()
+    return Path(STREAMABLE_RAW_VIDEO_ROOT).resolve()
+
+
+def _configured_streamable_processed_video_root() -> Path:
+    if (
+        _streamable_processed_video_root
+        is not _DEFAULT_STREAMABLE_PROCESSED_VIDEO_ROOT_FN
+    ):
+        return Path(_streamable_processed_video_root()).resolve()
+    return Path(STREAMABLE_PROCESSED_VIDEO_ROOT).resolve()
+
+
 def _video_streamable_target(
     video: "VideoFile", *, processed: bool, suffix: str
 ) -> Path:
@@ -164,9 +197,9 @@ def _video_streamable_target(
         else video.video_hash
     )
     root = (
-        _streamable_processed_video_root()
+        _configured_streamable_processed_video_root()
         if processed
-        else _streamable_raw_video_root()
+        else _configured_streamable_raw_video_root()
     )
     return root / f"{stem}{suffix}"
 
@@ -202,11 +235,20 @@ def _sync_one_streamable(
     if not save:
         return relative_path, False
 
+    previous_mtime_ns = None
+    if target_path.exists():
+        previous_mtime_ns = target_path.stat().st_mtime_ns
+
     materialized_path = _materialize_streamable_target(
         video_field_file,
         target_path,
         expected_hash=expected_hash,
     )
+    if previous_mtime_ns is not None:
+        ensure_file_mtime_after(
+            materialized_path,
+            previous_mtime_ns=previous_mtime_ns,
+        )
     return _streamable_relative_path(materialized_path), True
 
 

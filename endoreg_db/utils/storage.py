@@ -17,6 +17,7 @@ from tempfile import NamedTemporaryFile
 from typing import Any, ContextManager, Iterator, Optional, cast
 
 from django.core.files import File
+from django.conf import settings
 from django.db.models.fields.files import FieldFile
 from endoreg_db.utils.encryption.encryption import MAGIC as LX_ENCRYPTED_MAGIC
 
@@ -40,7 +41,7 @@ def _resolve_local_path(field_file: FieldFile) -> Optional[Path]:
     try:
         path = Path(field_file.path)
     except (NotImplementedError, AttributeError, ValueError):
-        return None
+        return _resolve_media_root_fallback(field_file)
     if path.exists():
         try:
             with path.open("rb") as handle:
@@ -50,7 +51,42 @@ def _resolve_local_path(field_file: FieldFile) -> Optional[Path]:
                     )
         except OSError:
             raise
+        return path
+
+    fallback_path = _resolve_media_root_fallback(field_file)
+    if fallback_path is not None:
+        return fallback_path
     return path
+
+
+def _resolve_media_root_fallback(field_file: FieldFile) -> Optional[Path]:
+    file_name = getattr(field_file, "name", None)
+    if not file_name:
+        return None
+    relative_name = Path(str(file_name))
+    if relative_name.is_absolute():
+        return None
+
+    media_root = Path(getattr(settings, "MEDIA_ROOT", "") or "")
+    if not media_root:
+        return None
+
+    try:
+        resolved_root = media_root.resolve()
+        candidate = (resolved_root / relative_name).resolve()
+        candidate.relative_to(resolved_root)
+    except ValueError:
+        return None
+
+    if not candidate.exists():
+        return None
+
+    with candidate.open("rb") as handle:
+        if handle.read(len(LX_ENCRYPTED_MAGIC)) == LX_ENCRYPTED_MAGIC:
+            raise IOError(
+                f"{field_file.name} is encrypted but storage has no decrypting reader"
+            )
+    return candidate
 
 
 def file_exists(field_file: Optional[FieldFile]) -> bool:
