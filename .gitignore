@@ -152,6 +152,7 @@ celerybeat.pid
 # Environments
 .env
 .venv
+conf/db_pwd
 env/
 venv/
 ENV/

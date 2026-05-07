@@ -244,7 +244,7 @@ def _make_temporary_anonymized_frames(
         )
 
     temp_anonym_frame_dir = video.get_temp_anonymized_frame_dir()
-    temp_anonym_frame_dir.mkdir(parents=True, exist_ok=True)
+    ensure_directory(temp_anonym_frame_dir)
     logger.info(
         "Creating temporary anonymized frames for video %s in %s",
         video.video_hash,

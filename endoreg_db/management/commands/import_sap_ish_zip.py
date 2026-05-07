@@ -12,6 +12,7 @@ from endoreg_db.services.hub.ingest import (
 )
 
 from endoreg_db.services.sap_ish_import import convert_sap_ish_zip_to_preanonymized_drop
+from endoreg_db.utils.file_operations import atomic_write_file, ensure_directory
 from endoreg_db.utils.paths import (
     SAP_IMPORT_DROP_DIR,
     WATCHER_PREANONYMIZED_DROP_DIR,
@@ -183,7 +184,7 @@ class Command(BaseCommand):
                 stem=f"{zip_path.stem}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}",
             )
         )
-        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        ensure_directory(manifest_path.parent)
         manifest = {
             "command": "import_sap_ish_zip",
             "created_at": datetime.now(timezone.utc).isoformat(),
@@ -204,8 +205,8 @@ class Command(BaseCommand):
             "matched_source_files": [str(path) for path in result.matched_source_files],
             "skipped_source_files": [str(path) for path in result.skipped_source_files],
         }
-        manifest_path.write_text(
-            json.dumps(manifest, indent=2, sort_keys=True),
-            encoding="utf-8",
+        atomic_write_file(
+            destination=manifest_path,
+            content=[json.dumps(manifest, indent=2, sort_keys=True).encode("utf-8")],
         )
         self.stdout.write(f"Manifest written to {manifest_path}")

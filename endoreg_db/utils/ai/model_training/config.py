@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 from django.conf import settings
+from endoreg_db.utils.file_operations import ensure_directory
 
 
 # ---------------------------------------------------------------------
@@ -23,7 +24,7 @@ CHECKPOINTS_DIR = TRAINING_ROOT / "checkpoints"
 RUNS_DIR = TRAINING_ROOT / "runs"
 
 for d in (TRAINING_ROOT, CHECKPOINTS_DIR, RUNS_DIR):
-    d.mkdir(parents=True, exist_ok=True)
+    ensure_directory(d)
 
 # Which LabelSet.version we train on (for label filtering)
 DEFAULT_LABELSET_VERSION_TO_TRAIN: int = 2

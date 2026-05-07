@@ -7,6 +7,7 @@ from tqdm import tqdm
 
 from scripts.ntx_data.utils.datamodels import ReadoutData
 from scripts.ntx_data.utils.utils import processed_data_dir
+from endoreg_db.utils.file_operations import atomic_write_file
 
 post_code_distances_cache_path = processed_data_dir / "post_code_distances_cache copy.json"
 readout_data_path = processed_data_dir / "readout_data.jsonl"
@@ -67,10 +68,13 @@ for readout_data in tqdm(readout_data_list):
 
 # dump to jsonl, csv, excel
 
-with open(readout_df_jsonl_export_path, "w", encoding="utf-8") as f:
-    for readout_data in tqdm(readout_data_list):
-        f.write(readout_data.model_dump_json())
-        f.write("\n")
+atomic_write_file(
+    destination=readout_df_jsonl_export_path,
+    content=(
+        f"{readout_data.model_dump_json()}\n".encode("utf-8")
+        for readout_data in tqdm(readout_data_list)
+    ),
+)
 ic(f"Exported readout data with distances to {readout_df_jsonl_export_path}.")
 
 # create dataframe

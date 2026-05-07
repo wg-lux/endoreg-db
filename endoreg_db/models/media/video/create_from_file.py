@@ -12,6 +12,7 @@ from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_move_file,
     ensure_disk_capacity,
+    ensure_directory,
 )
 from endoreg_db.utils.paths import (
     IMPORT_VIDEO_DIR,
@@ -221,12 +222,12 @@ def _create_from_file(
 
         resolved_video_dir = _get_path(data_paths, "sensitive_video", video_dir)
         staging_video_dir = Path(resolved_video_dir)
-        staging_video_dir.mkdir(parents=True, exist_ok=True)
+        ensure_directory(staging_video_dir)
 
         storage_root_default = staging_video_dir.parent
         resolved_storage_root = _get_path(data_paths, "storage", storage_root_default)
         storage_root = Path(resolved_storage_root)
-        storage_root.mkdir(parents=True, exist_ok=True)
+        ensure_directory(storage_root)
 
         check_storage_capacity(file_path, storage_root)
 
@@ -234,7 +235,7 @@ def _create_from_file(
 
         # This is a local staging path only. It is not the canonical final storage path.
         temp_output_path = _temp_media_path(staging_video_dir / storage_name, "part")
-        temp_output_path.parent.mkdir(parents=True, exist_ok=True)
+        ensure_directory(temp_output_path.parent)
 
         _safe_unlink_local(temp_output_path, label="stale temp output")
 

@@ -11,7 +11,11 @@ from django.core.files.base import File
 from django.core.files.storage import FileSystemStorage, Storage
 from django.utils.deconstruct import deconstructible
 
-from endoreg_db.utils.file_operations import atomic_move_file, safe_unlink_file
+from endoreg_db.utils.file_operations import (
+    atomic_move_file,
+    ensure_directory,
+    safe_unlink_file,
+)
 
 from .encryption import (
     DEFAULT_CHUNK_SIZE,
@@ -124,7 +128,7 @@ class EncryptedStorage(FileSystemStorage):
     def _save(self, name: str, content) -> str:
         clean_name = self.get_available_name(name)
         full_path = Path(self.path(clean_name))
-        full_path.parent.mkdir(parents=True, exist_ok=True)
+        ensure_directory(full_path.parent)
 
         fd, tmp_path_str = tempfile.mkstemp(
             prefix=f".{full_path.name}.",

@@ -1,6 +1,8 @@
 import yaml
 from pathlib import Path
 
+from endoreg_db.utils.file_operations import atomic_write_file, ensure_directory
+
 # get this files path
 file_path = Path(__file__)
 module_root = file_path.parent.parent
@@ -36,10 +38,23 @@ def collect_center_names():
     ]
 
     # Write the data to separate YAML files
-    with open(fist_name_dir / "first_names.yaml", "w", encoding="utf-8") as first_file:
-        yaml.dump(first_names_data, first_file, allow_unicode=True, sort_keys=False)
-
-    with open(last_name_dir / "last_names.yaml", "w", encoding="utf-8") as last_file:
-        yaml.dump(last_names_data, last_file, allow_unicode=True, sort_keys=False)
+    ensure_directory(fist_name_dir)
+    ensure_directory(last_name_dir)
+    atomic_write_file(
+        destination=fist_name_dir / "first_names.yaml",
+        content=[
+            yaml.dump(first_names_data, allow_unicode=True, sort_keys=False).encode(
+                "utf-8"
+            )
+        ],
+    )
+    atomic_write_file(
+        destination=last_name_dir / "last_names.yaml",
+        content=[
+            yaml.dump(last_names_data, allow_unicode=True, sort_keys=False).encode(
+                "utf-8"
+            )
+        ],
+    )
 
     # print("Generated first_names.yaml and last_names.yaml successfully.")

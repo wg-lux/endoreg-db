@@ -6,6 +6,7 @@ import yaml
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import OperationalError, connection, transaction
 
+from endoreg_db.utils.file_operations import atomic_write_file, ensure_directory
 from endoreg_db.utils.paths import LOG_DIR
 
 _WARNING_LOG_PATH = None
@@ -15,7 +16,7 @@ def _get_warning_log_path():
     """Return the path used for warning logs, creating it on first access."""
     global _WARNING_LOG_PATH
     if _WARNING_LOG_PATH is None:
-        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        ensure_directory(LOG_DIR)
         timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
         _WARNING_LOG_PATH = LOG_DIR / f"dataloader_warnings_{timestamp}.log"
     return _WARNING_LOG_PATH
@@ -30,8 +31,14 @@ def _record_warning(command, message, verbose, context):
         command.stdout.write(command.style.WARNING(full_message))
 
     log_path = _get_warning_log_path()
-    with open(log_path, "a", encoding="utf-8") as log_file:
-        log_file.write(f"{datetime.now(UTC).isoformat()}Z {full_message}\n")
+    existing = log_path.read_bytes() if log_path.exists() else b""
+    atomic_write_file(
+        destination=log_path,
+        content=[
+            existing,
+            f"{datetime.now(UTC).isoformat()}Z {full_message}\n".encode("utf-8"),
+        ],
+    )
 
 
 def load_model_data_from_yaml(command, model_name, metadata, verbose):

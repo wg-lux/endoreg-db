@@ -3,6 +3,8 @@ This module contains the Classifier class for making predictions using a trained
 """
 
 import json
+from pathlib import Path
+
 import torch
 from torch.utils.data import DataLoader
 from torch import nn
@@ -11,6 +13,7 @@ from tqdm import tqdm
 from icecream import ic
 from .inference_dataset import InferenceDataset
 from .postprocess import concat_pred_dicts, make_smooth_preds, find_true_pred_sequences
+from endoreg_db.utils.file_operations import atomic_write_file
 
 sample_config = {
     # mean and std for normalization
@@ -186,8 +189,10 @@ class Classifier:
 
         json_dict = self.get_prediction_dict(predictions, paths)
 
-        with open(json_target_path, "w", encoding="utf-8") as f:
-            json.dump(json_dict, f)
+        atomic_write_file(
+            destination=Path(json_target_path),
+            content=[json.dumps(json_dict).encode("utf-8")],
+        )
 
         if self.verbose:
             ic(f"Saved predictions to {json_target_path}")

@@ -5,6 +5,7 @@ from tqdm import tqdm
 
 from scripts.ntx_data.utils.datamodels import LabData, ReadoutData
 from scripts.ntx_data.utils.utils import processed_data_dir
+from endoreg_db.utils.file_operations import atomic_write_file
 
 lab_data_path = processed_data_dir / "lab_df_with_transplant_id.jsonl"
 readout_data_path = processed_data_dir / "readout_with_distances.jsonl"
@@ -149,10 +150,12 @@ summary_df = pd.DataFrame(records)
 merged_df = pd.merge(readout_df, summary_df, on="transplant_id", how="left")
 
 # write summary to jsonl
-with open(readout_df_jsonl_export_path, "w", encoding="utf-8") as f:
-    for _, row in merged_df.iterrows():
-        f.write(row.to_json())
-        f.write("\n")
+atomic_write_file(
+    destination=readout_df_jsonl_export_path,
+    content=(
+        f"{row.to_json()}\n".encode("utf-8") for _, row in merged_df.iterrows()
+    ),
+)
 
 # export to excel and csv
 merged_df.to_excel(readout_df_excel_export_path, index=False)

@@ -376,7 +376,7 @@ class VideoApplyMaskView(APIView):
                 )
             output_path = _masked_output_path(video)
             temp_output_path = _part_output_path(output_path)
-            output_path.parent.mkdir(parents=True, exist_ok=True)
+            ensure_directory(output_path.parent)
             safe_unlink_file(temp_output_path, missing_ok=True)
 
             # Load or create mask config against current lx_anonymizer API.
@@ -547,7 +547,7 @@ class VideoRemoveFramesView(APIView):
                 )
             output_path = _cleaned_output_path(video)
             temp_output_path = _part_output_path(output_path)
-            output_path.parent.mkdir(parents=True, exist_ok=True)
+            ensure_directory(output_path.parent)
             safe_unlink_file(temp_output_path, missing_ok=True)
 
             # Remove frames using the current streaming removal API.

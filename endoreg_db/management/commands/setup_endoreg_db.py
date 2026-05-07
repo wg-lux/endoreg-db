@@ -3,10 +3,13 @@ Django management command to perform complete setup for EndoReg DB when used as 
 This command ensures all necessary data and configurations are initialized.
 """
 
+from pathlib import Path
+
 from django.core.management import call_command
 from django.core.management.base import BaseCommand
 
 from endoreg_db.models import ModelMeta
+from endoreg_db.utils.file_operations import atomic_copy_file, ensure_directory
 
 
 class Command(BaseCommand):
@@ -346,20 +349,19 @@ class Command(BaseCommand):
                 weights_path = ""
                 if weights_file:
                     # If we have weights, set up the relative path
-                    from pathlib import Path
-
                     from endoreg_db.utils.paths import STORAGE_DIR
 
                     try:
                         weights_path = str(Path(weights_file).relative_to(STORAGE_DIR))
                     except ValueError:
                         # If file is not in storage dir, copy it there
-                        import shutil
-
                         weights_dir = STORAGE_DIR / "model_weights"
-                        weights_dir.mkdir(parents=True, exist_ok=True)
+                        ensure_directory(weights_dir)
                         dest_path = weights_dir / Path(weights_file).name
-                        shutil.copy2(weights_file, dest_path)
+                        atomic_copy_file(
+                            source=Path(weights_file),
+                            destination=dest_path,
+                        )
                         weights_path = str(dest_path.relative_to(STORAGE_DIR))
                         self.stdout.write(f"    Copied weights to: {dest_path}")
 
@@ -399,8 +401,6 @@ class Command(BaseCommand):
                         )
                         weights_file = self._find_model_weights_file()
                         if weights_file:
-                            from pathlib import Path
-
                             from endoreg_db.utils.paths import STORAGE_DIR
 
                             try:
@@ -409,12 +409,13 @@ class Command(BaseCommand):
                                 )
                             except ValueError:
                                 # Copy weights to storage if not already there
-                                import shutil
-
                                 weights_dir = STORAGE_DIR / "model_weights"
-                                weights_dir.mkdir(parents=True, exist_ok=True)
+                                ensure_directory(weights_dir)
                                 dest_path = weights_dir / Path(weights_file).name
-                                shutil.copy2(weights_file, dest_path)
+                                atomic_copy_file(
+                                    source=Path(weights_file),
+                                    destination=dest_path,
+                                )
                                 weights_path = str(dest_path.relative_to(STORAGE_DIR))
                                 self.stdout.write(
                                     f"      Copied weights to: {dest_path}"

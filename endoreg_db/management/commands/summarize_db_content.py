@@ -3,8 +3,11 @@ from django.apps import apps
 from django.db.models import Min, Max, Count, fields
 from django.utils.timezone import is_aware, make_naive
 import datetime
-import os
 import csv
+from io import BytesIO, StringIO
+from pathlib import Path
+
+from endoreg_db.utils.file_operations import atomic_write_file, ensure_directory
 
 
 class Command(BaseCommand):
@@ -38,13 +41,13 @@ class Command(BaseCommand):
             )
             return
 
-        data_dir = os.path.join(app_config.path, "data")
-        if not os.path.exists(data_dir):
-            os.makedirs(data_dir)
+        data_dir = Path(app_config.path) / "data"
+        if not data_dir.exists():
+            ensure_directory(data_dir)
             self.stdout.write(self.style.SUCCESS(f"Created directory: {data_dir}"))
 
-        excel_file_path = os.path.join(data_dir, "db_summary.xlsx")
-        csv_file_path = os.path.join(data_dir, "db_summary.csv")
+        excel_file_path = data_dir / "db_summary.xlsx"
+        csv_file_path = data_dir / "db_summary.csv"
 
         # --- Excel Setup ---
         wb = Workbook()
@@ -67,17 +70,26 @@ class Command(BaseCommand):
                 self.style.WARNING("No models found in the 'endoreg_db' app.")
             )
             try:
-                wb.save(excel_file_path)  # wb will only have headers
+                excel_buffer = BytesIO()
+                wb.save(excel_buffer)  # wb will only have headers
+                atomic_write_file(
+                    destination=excel_file_path,
+                    content=[excel_buffer.getvalue()],
+                )
                 self.stdout.write(
                     self.style.SUCCESS(
                         f"Empty summary report saved to {excel_file_path}"
                     )
                 )
-                with open(csv_file_path, "w", newline="") as f:
-                    writer = csv.writer(f)
-                    writer.writerows(
-                        csv_data_for_file
-                    )  # csv_data_for_file will only contain headers
+                csv_buffer = StringIO(newline="")
+                writer = csv.writer(csv_buffer)
+                writer.writerows(
+                    csv_data_for_file
+                )  # csv_data_for_file will only contain headers
+                atomic_write_file(
+                    destination=csv_file_path,
+                    content=[csv_buffer.getvalue().encode("utf-8")],
+                )
                 self.stdout.write(
                     self.style.SUCCESS(f"Empty summary report saved to {csv_file_path}")
                 )
@@ -256,7 +268,12 @@ class Command(BaseCommand):
 
         # --- Save Excel File ---
         try:
-            wb.save(excel_file_path)
+            excel_buffer = BytesIO()
+            wb.save(excel_buffer)
+            atomic_write_file(
+                destination=excel_file_path,
+                content=[excel_buffer.getvalue()],
+            )
             self.stdout.write(
                 self.style.SUCCESS(
                     f"\nDatabase summary report saved to {excel_file_path}"
@@ -268,9 +285,13 @@ class Command(BaseCommand):
 
         # --- Save CSV File ---
         try:
-            with open(csv_file_path, "w", newline="") as f:
-                writer = csv.writer(f)
-                writer.writerows(csv_data_for_file)
+            csv_buffer = StringIO(newline="")
+            writer = csv.writer(csv_buffer)
+            writer.writerows(csv_data_for_file)
+            atomic_write_file(
+                destination=csv_file_path,
+                content=[csv_buffer.getvalue().encode("utf-8")],
+            )
             self.stdout.write(
                 self.style.SUCCESS(f"Database summary report saved to {csv_file_path}")
             )

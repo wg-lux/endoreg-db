@@ -3,12 +3,17 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
-import tempfile
+import uuid
 from pathlib import Path
 from typing import Any
 
 from endoreg_db.config.env import get_report_pdf_renderer_bin
-from endoreg_db.utils.file_operations import safe_unlink_file
+from endoreg_db.utils.file_operations import (
+    atomic_move_file,
+    atomic_write_file,
+    ensure_directory,
+    safe_unlink_file,
+)
 
 from endoreg_db.models import PatientExamination, PatientExaminationReport
 
@@ -98,18 +103,20 @@ def render_pdf_with_rust_renderer(
             "report_pdf_renderer binary not configured or found in PATH"
         )
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with tempfile.NamedTemporaryFile(
-        "w", suffix=".json", delete=False, encoding="utf-8"
-    ) as tmp:
-        json.dump(payload, tmp, ensure_ascii=False)
-        tmp.flush()
-        input_path = Path(tmp.name)
+    ensure_directory(output_path.parent)
+    unique_suffix = uuid.uuid4().hex
+    input_path = output_path.with_name(f".{output_path.name}.{unique_suffix}.json")
+    temp_output_path = output_path.with_name(
+        f".{output_path.name}.{unique_suffix}.tmp"
+    )
+    atomic_write_file(
+        destination=input_path,
+        content=[json.dumps(payload, ensure_ascii=False).encode("utf-8")],
+    )
 
     try:
         proc = subprocess.run(
-            [binary, "--input", str(input_path), "--output", str(output_path)],
+            [binary, "--input", str(input_path), "--output", str(temp_output_path)],
             check=False,
             capture_output=True,
             text=True,
@@ -119,15 +126,17 @@ def render_pdf_with_rust_renderer(
             raise ReportPdfRendererError(
                 f"renderer failed with exit code {proc.returncode}: {proc.stderr.strip() or proc.stdout.strip()}"
             )
-        if not output_path.exists():
+        if not temp_output_path.exists():
             raise ReportPdfRendererError(
                 "renderer completed without producing output pdf"
             )
+        atomic_move_file(source=temp_output_path, destination=output_path)
         return output_path
     except subprocess.TimeoutExpired as exc:
         raise ReportPdfRendererError("renderer timed out") from exc
     finally:
         try:
             safe_unlink_file(input_path, missing_ok=True)
+            safe_unlink_file(temp_output_path, missing_ok=True)
         except Exception:
             pass

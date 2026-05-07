@@ -25,7 +25,11 @@ from endoreg_db.models.state.processing_history.processing_history import (
 from endoreg_db.models.metadata import sensitive_meta_logic
 from endoreg_db.services.auto_case_resolution import auto_resolve_media_case
 from endoreg_db.services.hub.audit import emit_hub_audit_event
-from endoreg_db.utils.file_operations import safe_unlink_file, sha256_file
+from endoreg_db.utils.file_operations import (
+    ensure_directory,
+    safe_unlink_file,
+    sha256_file,
+)
 from endoreg_db.utils.hashs import get_pdf_hash
 from endoreg_db.utils.paths import TRANSCODING_DIR
 from endoreg_db.utils.storage import delete_field_file, file_exists, save_local_file
@@ -941,7 +945,7 @@ def _stored_field_name(field_file: object) -> str:
 
 
 def _write_uploaded_file_to_temp(*, uploaded_file, default_suffix: str) -> Path:
-    TRANSCODING_DIR.mkdir(parents=True, exist_ok=True)
+    ensure_directory(TRANSCODING_DIR)
     upload_name = Path(str(getattr(uploaded_file, "name", "") or "upload")).name
     suffix = _normalized_suffix(upload_name, default_suffix)
     with NamedTemporaryFile(

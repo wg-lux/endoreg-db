@@ -1,5 +1,6 @@
 from pathlib import Path
-import shutil
+
+from endoreg_db.utils.file_operations import ensure_directory, safe_rmtree
 
 
 def extract_selected_frames(
@@ -28,8 +29,8 @@ def extract_selected_frames(
     """
     # Optional: Clean up old frames before extraction
     if output_dir.exists():
-        shutil.rmtree(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+        safe_rmtree(output_dir)
+    ensure_directory(output_dir)
 
     for frame_number in frame_numbers:
         # Convert frame number to timestamp in seconds

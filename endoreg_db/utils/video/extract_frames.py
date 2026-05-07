@@ -16,6 +16,7 @@ from django.core.files import File
 from endoreg_db.utils.rust_backend import (
     build_frame_records as rust_build_frame_records,
 )
+from endoreg_db.utils.file_operations import ensure_directory
 
 from .ffmpeg_wrapper import extract_frames as ffmpeg_extract_frames
 
@@ -42,7 +43,7 @@ def extract_frames(
 ) -> List[Path]:
     """Extracts frames from a video file using ffmpeg_wrapper."""
     # Ensure output directory exists
-    output_dir.mkdir(parents=True, exist_ok=True)
+    ensure_directory(output_dir)
     return ffmpeg_extract_frames(video_path, output_dir, quality, ext, fps)
 
 

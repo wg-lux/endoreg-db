@@ -25,6 +25,7 @@ from endoreg_db.models.state.video import VideoState
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_move_file,
+    ensure_directory,
     safe_unlink_file,
     sha256_file,
 )
@@ -367,7 +368,7 @@ class ReconciliationService:
                 relative_name=relative_name,
             )
 
-        canonical_path.parent.mkdir(parents=True, exist_ok=True)
+        ensure_directory(canonical_path.parent)
         atomic_move_file(source=candidate, destination=canonical_path)
         return canonical_path, relative_name
 

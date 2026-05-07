@@ -1,4 +1,3 @@
-import shutil
 from logging import getLogger
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable, Optional, Type
@@ -11,6 +10,7 @@ from huggingface_hub import hf_hub_download
 from ..administration.ai.ai_model import AiModel
 from ..label.label_set import LabelSet
 from ..utils import STORAGE_DIR, WEIGHTS_DIR
+from endoreg_db.utils.file_operations import atomic_copy_file, ensure_directory
 
 logger = getLogger("ai_model")
 
@@ -137,15 +137,15 @@ def create_from_file_logic(
         Path(WEIGHTS_DIR.relative_to(STORAGE_DIR))
         / f"{meta_name}_v{target_version}_{weights_filename}"
     )
-    # Full path for shutil.copy
+    # Full path for the managed copy
     full_dest_path = STORAGE_DIR / relative_dest_path
 
     # Ensure the destination directory exists
-    full_dest_path.parent.mkdir(parents=True, exist_ok=True)
+    ensure_directory(full_dest_path.parent)
 
     # Copy the file
     try:
-        shutil.copy(source_weights_path, full_dest_path)
+        atomic_copy_file(source=source_weights_path, destination=full_dest_path)
         logger.info(f"Copied weights from {source_weights_path} to {full_dest_path}")
     except Exception as e:
         raise IOError(f"Failed to copy weights file: {e}") from e
