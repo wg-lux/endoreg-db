@@ -137,7 +137,10 @@ def get_default_gender() -> Gender:
     Returns:
         The Gender instance with the name "unknown".
     """
-    return Gender.objects.get(name=DEFAULT_GENDER)
+    gender = Gender.objects.resolve_by_name(DEFAULT_GENDER)
+    if gender is None:
+        raise Gender.DoesNotExist(DEFAULT_GENDER)
+    return gender
 
 
 def get_gender_m_or_f() -> Gender:
@@ -145,7 +148,10 @@ def get_gender_m_or_f() -> Gender:
     Returns a randomly selected Gender object representing either male or female.
     """
     gender_name = random.choice(["male", "female"])
-    return Gender.objects.get(name=gender_name)
+    gender = Gender.objects.resolve_by_name(gender_name)
+    if gender is None:
+        raise Gender.DoesNotExist(gender_name)
+    return gender
 
 
 def get_random_gender() -> Gender:
@@ -153,7 +159,10 @@ def get_random_gender() -> Gender:
     Returns a randomly selected Gender object from the available default genders.
     """
     gender_name = random.choice(DEFAULT_GENDERS)
-    return Gender.objects.get(name=gender_name)  # Fetch and return the Gender object
+    gender = Gender.objects.resolve_by_name(gender_name)
+    if gender is None:
+        raise Gender.DoesNotExist(gender_name)
+    return gender
 
 
 def get_default_processor() -> EndoscopyProcessor:
@@ -203,9 +212,14 @@ def generate_patient(**kwargs) -> Patient:
         if randomize:
             gender = get_random_gender()
         else:
-            gender = Gender.objects.get(name=DEFAULT_PATIENT_GENDER_NAME)
+            gender = Gender.objects.resolve_by_name(DEFAULT_PATIENT_GENDER_NAME)
+            if gender is None:
+                raise Gender.DoesNotExist(DEFAULT_PATIENT_GENDER_NAME)
     elif not isinstance(gender, Gender):
-        gender = Gender.objects.get(name=gender)
+        gender_obj = Gender.objects.resolve_by_name(gender)
+        if gender_obj is None:
+            raise Gender.DoesNotExist(gender)
+        gender = gender_obj
 
     first_name = kwargs.get("first_name")
     last_name = kwargs.get("last_name")

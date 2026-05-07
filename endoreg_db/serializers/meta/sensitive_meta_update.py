@@ -61,11 +61,9 @@ class SensitiveMetaUpdateSerializer(serializers.ModelSerializer):
         Raises a validation error if no matching Gender is found.
         """
         if value:
-            try:
-                Gender.objects.get(name=value)
-                return value
-            except Gender.DoesNotExist:
+            if Gender.objects.resolve_by_name(value) is None:
                 raise serializers.ValidationError(f"Gender '{value}' does not exist.")
+            return value
         return value
 
     def validate(self, data):
@@ -118,14 +116,13 @@ class SensitiveMetaUpdateSerializer(serializers.ModelSerializer):
         # Extract and handle gender update
         patient_gender_name = validated_data.pop("patient_gender_name", None)
         if patient_gender_name:
-            try:
-                gender = Gender.objects.get(name=patient_gender_name)
-                instance.patient_gender = gender
-            except Gender.DoesNotExist:
+            gender = Gender.objects.resolve_by_name(patient_gender_name)
+            if gender is None:
                 logger.error(f"Gender '{patient_gender_name}' not found during update")
                 raise serializers.ValidationError(
                     f"Gender '{patient_gender_name}' does not exist."
                 )
+            instance.patient_gender = gender
 
         # Update regular fields using the model's update_from_dict method
         if validated_data:

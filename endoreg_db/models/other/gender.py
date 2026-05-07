@@ -8,7 +8,28 @@ if TYPE_CHECKING:
 
 class GenderManager(models.Manager):
     def get_by_natural_key(self, name):
-        return self.get(name=name)
+        gender = self.resolve_by_name(name)
+        if gender is None:
+            raise self.model.DoesNotExist(
+                f"{self.model._meta.object_name} matching query does not exist."
+            )
+        return gender
+
+    def resolve_by_name(self, name: str, *, case_insensitive: bool = True):
+        normalized_name = str(name).strip()
+        lookup = (
+            {"name__iexact": normalized_name}
+            if case_insensitive
+            else {"name": normalized_name}
+        )
+        return self.filter(**lookup).order_by("pk").first()
+
+    def get_or_create_by_name(self, name: str, *, defaults: dict | None = None):
+        normalized_name = str(name).strip()
+        gender = self.resolve_by_name(normalized_name)
+        if gender is not None:
+            return gender, False
+        return self.create(name=normalized_name, **(defaults or {})), True
 
 
 class Gender(models.Model):

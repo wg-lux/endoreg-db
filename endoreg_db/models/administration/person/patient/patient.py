@@ -121,7 +121,9 @@ class Patient(Person):
 
         # Ensure gender is a Gender object
         if isinstance(gender, str):
-            gender_obj = Gender.objects.get(name=gender)
+            gender_obj = Gender.objects.resolve_by_name(gender)
+            if gender_obj is None:
+                raise ValueError(f"Gender '{gender}' not found in database.")
         elif isinstance(gender, Gender):
             gender_obj = gender
         else:
@@ -255,7 +257,9 @@ class Patient(Person):
         selected_gender = random.choices(gender_names, probabilities)[0]
 
         # Fetch the corresponding Gender object from the database
-        gender_obj = Gender.objects.get(name=selected_gender)
+        gender_obj = Gender.objects.resolve_by_name(selected_gender)
+        if gender_obj is None:
+            raise ValueError(f"Gender '{selected_gender}' not found in database.")
 
         return gender_obj
 
