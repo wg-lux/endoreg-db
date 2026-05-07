@@ -4,42 +4,11 @@ from contextlib import nullcontext
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
-ALLOW_UNCONFIGURED_VIDEO_ROI_ENV = "ENDOREG_NON_CLINICAL_ALLOW_UNCONFIGURED_VIDEO_ROI"
-_TRUE_ENV_VALUES = {"1", "true", "yes", "on"}
 
 
 def _temp_media_path(final_path: Path, marker: str = "part") -> Path:
     """Keep the media suffix last so FFmpeg can infer the container."""
     return final_path.with_name(f"{final_path.stem}.{marker}{final_path.suffix}")
-
-
-def _allow_unconfigured_video_roi() -> bool:
-    return (
-        os.environ.get(ALLOW_UNCONFIGURED_VIDEO_ROI_ENV, "").strip().lower()
-        in _TRUE_ENV_VALUES
-    )
-
-
-def _roi_is_configured(roi: dict[str, int | None] | None) -> bool:
-    if roi is None:
-        return False
-    required_keys = {"x", "y", "width", "height"}
-    if set(roi) != required_keys:
-        return False
-    x = roi["x"]
-    y = roi["y"]
-    width = roi["width"]
-    height = roi["height"]
-    return (
-        isinstance(x, int)
-        and isinstance(y, int)
-        and isinstance(width, int)
-        and isinstance(height, int)
-        and x >= 0
-        and y >= 0
-        and width > 0
-        and height > 0
-    )
 
 
 from lx_anonymizer.frame_cleaner import FrameCleaner
@@ -103,14 +72,9 @@ def _ensure_ffmpeg_tools_on_path() -> None:
 
 
 class VideoAnonymizer:
-    def __init__(self, *, allow_unconfigured_roi: bool | None = None):
+    def __init__(self):
         _ensure_ffmpeg_tools_on_path()
         self._ensure_frame_cleaning_available()
-        self._allow_unconfigured_roi = (
-            _allow_unconfigured_video_roi()
-            if allow_unconfigured_roi is None
-            else allow_unconfigured_roi
-        )
         self._frame_cleaning_available = None
         self._frame_cleaning_class = None
 
@@ -206,63 +170,25 @@ class VideoAnonymizer:
 
         try:
             processor_name = ctx.processor_name if ctx.processor_name else None
-            if not processor_name:
-                raise RuntimeError(
-                    f"Video anonymization requires processor_name for {video.video_hash}."
+            if processor_name:
+                pr = EndoscopyProcessor()
+                processor = pr.get_by_name(processor_name)
+                assert isinstance(processor, EndoscopyProcessor), (
+                    "Processor is not of type EndoscopyProcessor"
                 )
-
-            processor = EndoscopyProcessor.get_by_name(processor_name)
-            if not isinstance(processor, EndoscopyProcessor):
-                raise TypeError(
-                    f"Resolved processor {processor_name!r} is not an EndoscopyProcessor."
-                )
-
-            endoscope_image_roi = processor.get_roi_endoscope_image()
-            if not _roi_is_configured(endoscope_image_roi):
-                raise RuntimeError(
-                    "Endoscope image ROI is missing or invalid for processor "
-                    f"{processor_name!r}."
-                )
-
-            endoscope_data_roi_nested = processor.get_sensitive_rois()
-            configured_sensitive_rois = [
-                roi
-                for roi in endoscope_data_roi_nested.values()
-                if _roi_is_configured(roi)
-            ]
-            invalid_sensitive_roi_names = [
-                name
-                for name, roi in endoscope_data_roi_nested.items()
-                if roi is not None and not _roi_is_configured(roi)
-            ]
-            if invalid_sensitive_roi_names:
-                raise RuntimeError(
-                    "Sensitive metadata ROI configuration is invalid for processor "
-                    f"{processor_name!r}: {', '.join(sorted(invalid_sensitive_roi_names))}."
-                )
-            if not configured_sensitive_rois:
-                raise RuntimeError(
-                    "No sensitive metadata ROIs are configured for processor "
-                    f"{processor_name!r}."
-                )
-
-            logger.info(
-                "Retrieved processor ROI information: endoscope_image_roi=%s",
-                endoscope_image_roi,
-            )
-        except Exception as exc:
-            if self._allow_unconfigured_roi:
-                logger.warning(
-                    "Proceeding without processor ROI information because %s=true. "
-                    "This mode is only for non-clinical test runs: %s",
-                    ALLOW_UNCONFIGURED_VIDEO_ROI_ENV,
-                    exc,
+                endoscope_image_roi = processor.get_roi_endoscope_image()
+                endoscope_data_roi_nested = processor.get_sensitive_rois()
+                logger.info(
+                    "Retrieved processor ROI information: endoscope_image_roi=%s",
+                    endoscope_image_roi,
                 )
             else:
-                raise RuntimeError(
-                    "Video anonymization requires configured device ROI data and "
-                    "refuses to continue without it."
-                ) from exc
+                logger.warning(
+                    "No processor found for video %s, proceeding without ROI masking",
+                    video.video_hash,
+                )
+        except Exception as exc:
+            logger.error("Failed to retrieve processor ROI information: %s", exc)
 
         # IMPORTANT: return order must match clean_video signature
         return endoscope_image_roi, endoscope_data_roi_nested

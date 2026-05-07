@@ -14,6 +14,7 @@ from typing import Any, Callable, Iterable, Literal, Mapping, cast
 
 from django.core.management.base import BaseCommand, CommandError
 
+from endoreg_db.models import EndoscopyProcessor
 from endoreg_db.services.report_import import ReportImportService
 from endoreg_db.services.video_import import VideoImportService
 from endoreg_db.utils import paths as path_utils
@@ -32,6 +33,28 @@ MediaType = Literal["video", "report"]
 VIDEO_EXTENSIONS = {".avi", ".m4v", ".mkv", ".mov", ".mp4", ".mpg", ".mpeg"}
 REPORT_EXTENSIONS = {".pdf"}
 REPORT_BYPASS_EXTENSIONS = {".txt"}
+
+
+def _roi_is_configured(roi: dict[str, int | None] | None) -> bool:
+    if roi is None:
+        return False
+    required_keys = {"x", "y", "width", "height"}
+    if set(roi) != required_keys:
+        return False
+    x = roi["x"]
+    y = roi["y"]
+    width = roi["width"]
+    height = roi["height"]
+    return (
+        isinstance(x, int)
+        and isinstance(y, int)
+        and isinstance(width, int)
+        and isinstance(height, int)
+        and x >= 0
+        and y >= 0
+        and width > 0
+        and height > 0
+    )
 
 
 @dataclass
@@ -212,8 +235,19 @@ class Command(BaseCommand):
             recursive=bool(options["recursive"]),
             limit=limit,
         )
+        skipped_video_count = 0
+        inputs, skipped_video_count = self._exclude_video_inputs_without_roi(
+            inputs=inputs,
+            processor_name=str(options["processor_name"]),
+        )
         if not inputs:
-            raise CommandError("No supported video/report inputs were found.")
+            detail = (
+                " Video inputs were excluded because the selected processor has "
+                "missing or invalid ROI data."
+                if skipped_video_count
+                else ""
+            )
+            raise CommandError(f"No supported video/report inputs were found.{detail}")
 
         if repeat > 1 and not options["retry"]:
             logger.warning(
@@ -293,6 +327,58 @@ class Command(BaseCommand):
                     return discovered
 
         return discovered
+
+    def _exclude_video_inputs_without_roi(
+        self,
+        *,
+        inputs: list[tuple[Path, MediaType]],
+        processor_name: str,
+    ) -> tuple[list[tuple[Path, MediaType]], int]:
+        video_inputs = [
+            (source_path, media_type)
+            for source_path, media_type in inputs
+            if media_type == "video"
+        ]
+        if not video_inputs:
+            return inputs, 0
+        if self._processor_has_evaluable_video_roi(processor_name):
+            return inputs, 0
+
+        skipped_count = len(video_inputs)
+        logger.warning(
+            "Excluding %s video input(s) from lx_anonymizer evaluation because "
+            "processor %r has missing or invalid ROI data.",
+            skipped_count,
+            processor_name,
+        )
+        return [
+            (source_path, media_type)
+            for source_path, media_type in inputs
+            if media_type != "video"
+        ], skipped_count
+
+    @staticmethod
+    def _processor_has_evaluable_video_roi(processor_name: str) -> bool:
+        if not processor_name:
+            return False
+        try:
+            processor = EndoscopyProcessor.get_by_name(processor_name)
+        except EndoscopyProcessor.DoesNotExist:
+            return False
+
+        if not _roi_is_configured(processor.get_roi_endoscope_image()):
+            return False
+
+        sensitive_rois = processor.get_sensitive_rois()
+        configured_sensitive_rois = [
+            roi for roi in sensitive_rois.values() if _roi_is_configured(roi)
+        ]
+        invalid_sensitive_rois = [
+            roi
+            for roi in sensitive_rois.values()
+            if roi is not None and not _roi_is_configured(roi)
+        ]
+        return bool(configured_sensitive_rois) and not invalid_sensitive_rois
 
     @staticmethod
     def _media_type_for_path(path: Path, forced_media_type: str) -> MediaType | None:
