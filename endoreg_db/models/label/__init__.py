@@ -1,4 +1,5 @@
 from .annotation import (
+    FrameBoxAnnotation,
     ImageClassificationAnnotation,
 )
 from .label import Label
@@ -18,6 +19,7 @@ __all__ = [
     "VideoSegmentationLabel",
     "VideoSegmentationLabelSet",
     "LabelVideoSegment",
+    "FrameBoxAnnotation",
     "ImageClassificationAnnotation",
     "VideoSegmentationAnnotation",
 ]

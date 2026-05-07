@@ -36,6 +36,7 @@ from .administration import (
 
 ####### Label ########
 from .label import (
+    FrameBoxAnnotation,
     ImageClassificationAnnotation,
     Label,
     LabelSet,
@@ -204,6 +205,7 @@ __all__ = [
     "VideoSegmentationLabel",
     "VideoSegmentationLabelSet",
     "LabelVideoSegment",
+    "FrameBoxAnnotation",
     "ImageClassificationAnnotation",
     "VideoSegmentationAnnotation",
     ####### Media ########

@@ -34,6 +34,7 @@ MANUAL_ANNOTATION_INFORMATION_SOURCE_NAMES = {
     "default_annotation",
     "frame_annotation_frontend",
     "human_annotation",
+    "lx_anonymizer_evaluation",
     "manual_annotation",
 }
 
