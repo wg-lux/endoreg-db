@@ -39,8 +39,11 @@ DEFAULT_CELERY_DEFAULT_QUEUE = "default"
 DEFAULT_CELERY_PIPELINE_QUEUE = "pipeline"
 DEFAULT_CELERY_FRAME_EXTRACTION_QUEUE = "frame_extraction"
 DEFAULT_CELERY_INFERENCE_QUEUE = "inference"
+DEFAULT_CELERY_TRAINING_QUEUE = "model_training"
 DEFAULT_CELERY_MAINTENANCE_QUEUE = "maintenance"
 DEFAULT_CELERY_AUDIT_LEDGER_INTEGRITY_INTERVAL_SECONDS = 300
+DEFAULT_MODEL_TRAINING_JOB_MODE = "celery"
+DEFAULT_MODEL_TRAINING_STAGING_ROOT = "/mnt/fast-nvme-cache/endoreg-training"
 ENDOREG_DEPLOYMENT_ROLE_VALUES = (
     "standalone",
     "site_node",
@@ -352,6 +355,10 @@ def get_celery_inference_queue() -> str:
     return env_str("CELERY_INFERENCE_QUEUE", DEFAULT_CELERY_INFERENCE_QUEUE).strip()
 
 
+def get_celery_training_queue() -> str:
+    return env_str("CELERY_TRAINING_QUEUE", DEFAULT_CELERY_TRAINING_QUEUE).strip()
+
+
 def get_celery_maintenance_queue() -> str:
     return env_str("CELERY_MAINTENANCE_QUEUE", DEFAULT_CELERY_MAINTENANCE_QUEUE).strip()
 
@@ -516,6 +523,24 @@ def get_video_temporal_inference_job_mode() -> str:
     return mode
 
 
+def get_model_training_job_mode() -> str:
+    mode = (
+        env_str("MODEL_TRAINING_JOB_MODE", DEFAULT_MODEL_TRAINING_JOB_MODE)
+        .strip()
+        .lower()
+    )
+    if mode not in {"celery", "thread", "inline"}:
+        return DEFAULT_MODEL_TRAINING_JOB_MODE
+    return mode
+
+
+def get_model_training_staging_root() -> Path:
+    return env_path(
+        "MODEL_TRAINING_STAGING_ROOT",
+        DEFAULT_MODEL_TRAINING_STAGING_ROOT,
+    )
+
+
 def get_cache_location() -> str:
     return env_str("CACHE_LOCATION", DEFAULT_CACHE_LOCATION)
 
@@ -584,6 +609,9 @@ def snapshot() -> Dict[str, Any]:
         "SKIP_EXPENSIVE_TESTS",
         "ENDOREG_DEPLOYMENT_ROLE",
         "ENDOREG_ENABLE_HUB_TRANSFERS",
+        "CELERY_TRAINING_QUEUE",
+        "MODEL_TRAINING_JOB_MODE",
+        "MODEL_TRAINING_STAGING_ROOT",
         "CACHE_LOCATION",
         "CACHE_TIMEOUT",
         "DRF_THROTTLE_USER",

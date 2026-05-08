@@ -14,6 +14,7 @@ from endoreg_db.config.env import (
     get_celery_inference_queue,
     get_celery_maintenance_queue,
     get_celery_pipeline_queue,
+    get_celery_training_queue,
     celery_audit_ledger_integrity_beat_enabled,
     get_celery_audit_ledger_integrity_interval_seconds,
     get_enable_hub_transfers,
@@ -31,6 +32,8 @@ from endoreg_db.config.env import (
     get_lx_dtypes_kb_registry,
     get_media_root,
     get_media_url,
+    get_model_training_job_mode,
+    get_model_training_staging_root,
     get_protected_media_root,
     get_protected_media_url,
     get_static_root,
@@ -74,8 +77,12 @@ CELERY_TASK_DEFAULT_QUEUE = get_celery_default_queue()
 CELERY_PIPELINE_QUEUE = get_celery_pipeline_queue()
 CELERY_FRAME_EXTRACTION_QUEUE = get_celery_frame_extraction_queue()
 CELERY_INFERENCE_QUEUE = get_celery_inference_queue()
+CELERY_TRAINING_QUEUE = get_celery_training_queue()
 CELERY_MAINTENANCE_QUEUE = get_celery_maintenance_queue()
+MODEL_TRAINING_JOB_MODE = get_model_training_job_mode()
+MODEL_TRAINING_STAGING_ROOT = get_model_training_staging_root()
 CELERY_TASK_CREATE_MISSING_QUEUES = False
+CELERY_BROKER_TRANSPORT_OPTIONS = {"visibility_timeout": 60 * 60 * 25}
 CELERY_TASK_QUEUES = (
     Queue(
         CELERY_TASK_DEFAULT_QUEUE,
@@ -98,6 +105,11 @@ CELERY_TASK_QUEUES = (
         routing_key=CELERY_INFERENCE_QUEUE,
     ),
     Queue(
+        CELERY_TRAINING_QUEUE,
+        Exchange(CELERY_TRAINING_QUEUE),
+        routing_key=CELERY_TRAINING_QUEUE,
+    ),
+    Queue(
         CELERY_MAINTENANCE_QUEUE,
         Exchange(CELERY_MAINTENANCE_QUEUE),
         routing_key=CELERY_MAINTENANCE_QUEUE,
@@ -115,6 +127,10 @@ CELERY_TASK_ROUTES = {
     "endoreg_db.video_temporal_inference": {
         "queue": CELERY_INFERENCE_QUEUE,
         "routing_key": CELERY_INFERENCE_QUEUE,
+    },
+    "endoreg_db.model_training": {
+        "queue": CELERY_TRAINING_QUEUE,
+        "routing_key": CELERY_TRAINING_QUEUE,
     },
     "endoreg_db.refresh_audit_ledger_integrity_status": {
         "queue": CELERY_MAINTENANCE_QUEUE,
@@ -263,8 +279,12 @@ __all__ = [
     "CELERY_PIPELINE_QUEUE",
     "CELERY_FRAME_EXTRACTION_QUEUE",
     "CELERY_INFERENCE_QUEUE",
+    "CELERY_TRAINING_QUEUE",
     "CELERY_MAINTENANCE_QUEUE",
+    "MODEL_TRAINING_JOB_MODE",
+    "MODEL_TRAINING_STAGING_ROOT",
     "CELERY_TASK_CREATE_MISSING_QUEUES",
+    "CELERY_BROKER_TRANSPORT_OPTIONS",
     "CELERY_TASK_QUEUES",
     "CELERY_TASK_ROUTES",
     "CELERY_WORKER_PREFETCH_MULTIPLIER",

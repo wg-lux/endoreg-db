@@ -4,13 +4,11 @@ import json
 import threading
 import traceback
 from collections import Counter
-from datetime import datetime, timedelta
-from io import StringIO
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
-from django.core.management import call_command
 from django.http import FileResponse
 from django.utils import timezone
 from rest_framework import status
@@ -33,6 +31,14 @@ from endoreg_db.services.hub import (
     deployment_profile_payload,
     local_study_server_mode_enabled,
     resolve_allowed_center_id,
+)
+from endoreg_db.services.model_training_jobs import (
+    MODEL_TRAINING_LOST_TIMEOUT,  # noqa: F401
+    MODEL_TRAINING_SERVER_INSTANCE_ID as _MODEL_TRAINING_SERVER_INSTANCE_ID,
+    _execute_model_training_run,  # noqa: F401
+    _launch_model_training_run,
+    _mark_lost_model_training_runs,
+    _model_training_run_payload,
 )
 from endoreg_db.services.video_dimension_backfill import (
     VideoDimensionBackfillResult,
@@ -134,8 +140,6 @@ AI_DATASET_FRAME_FORMAT_STRATEGIES = {
     "crop_to_endoscope_roi",
 }
 
-_MODEL_TRAINING_SERVER_INSTANCE_ID = uuid4().hex
-MODEL_TRAINING_LOST_TIMEOUT = timedelta(hours=12)
 _VIDEO_DIMENSION_BACKFILL_RUNS: dict[str, dict[str, Any]] = {}
 _VIDEO_DIMENSION_BACKFILL_RUNS_LOCK = threading.Lock()
 
@@ -384,12 +388,12 @@ def _payload_bool_field(
     )
 
 
-def s, try_payload_strategy_field(
+def _payload_strategy_field(
     payload: dict[str, Any],
     field_name: str,
     *,
     default: str,
-) -> AIFrameFormatStrategy:
+) -> tuple[str, Response | None]:
     raw_value = payload.get(field_name, default)
     if not isinstance(raw_value, str):
         return (
@@ -509,177 +513,6 @@ def _coerce_local_training_path(
     if "://" in normalized or normalized.startswith("//"):
         return None, f"{field_name} must be a local path."
     return str(Path(normalized).expanduser().resolve()), None
-
-
-def _mark_lost_model_training_runs() -> None:
-    now = timezone.now()
-    stale_before = now - MODEL_TRAINING_LOST_TIMEOUT
-    AIModelTrainingRun.objects.filter(
-        status__in=[
-            AIModelTrainingRun.STATUS_QUEUED,
-            AIModelTrainingRun.STATUS_RUNNING,
-        ],
-        updated_at__lt=stale_before,
-    ).exclude(server_instance_id=_MODEL_TRAINING_SERVER_INSTANCE_ID).update(
-        status=AIModelTrainingRun.STATUS_LOST,
-        finished_at=now,
-        error=(
-            "Training run remained queued/running without an update after "
-            "backend process ownership changed. Marked LOST so the result is "
-            "not silently hidden."
-        ),
-    )
-
-
-def _parse_model_training_result(output: str) -> dict[str, Any] | None:
-    for line in reversed(output.splitlines()):
-        stripped = line.strip()
-        if not stripped.startswith("{"):
-            continue
-        try:
-            parsed = json.loads(stripped)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(parsed, dict):
-            return parsed
-    return None
-
-
-def _model_training_artifact_paths(result: dict[str, Any] | None) -> dict[str, str]:
-    if not result:
-        return {}
-    paths: dict[str, str] = {}
-    for key in (
-        "model_path",
-        "manifest_path",
-        "meta_path",
-        "training_result_path",
-        "checkpoint_path",
-        "onnx_path",
-    ):
-        value = result.get(key)
-        if isinstance(value, str) and value:
-            paths[key] = value
-    training_result = result.get("training_result")
-    if isinstance(training_result, dict):
-        for artifact in training_result.get("artifacts", []):
-            if not isinstance(artifact, dict):
-                continue
-            kind = str(artifact.get("kind") or "").strip().lower()
-            path = artifact.get("path")
-            if kind and isinstance(path, str) and path:
-                paths[f"{kind}_path"] = path
-    return paths
-
-
-def _model_training_run_payload(run: AIModelTrainingRun) -> dict[str, Any]:
-    request_payload = run.request_payload or {}
-    training_target = request_payload.get("training_target")
-    if training_target not in {
-        MODEL_TRAINING_TARGET_IMAGE_MULTILABEL,
-        MODEL_TRAINING_TARGET_PHI_REGION_DETECTOR,
-    }:
-        training_target = (
-            MODEL_TRAINING_TARGET_PHI_REGION_DETECTOR
-            if run.ai_model_type == MODEL_TRAINING_TARGET_PHI_REGION_DETECTOR
-            else MODEL_TRAINING_TARGET_IMAGE_MULTILABEL
-        )
-
-    return {
-        "run_id": run.run_key,
-        "training_target": training_target,
-        "status": run.status,
-        "dataset_id": run.dataset_id,
-        "dataset_name": run.dataset_name,
-        "dataset_type": run.dataset_type,
-        "ai_model_type": run.ai_model_type,
-        "backbone_name": run.backbone_name,
-        "feature_mode": run.feature_mode,
-        "freeze_backbone": run.freeze_backbone,
-        "epochs": run.epochs,
-        "batch_size": run.batch_size,
-        "labelset_version": run.labelset_version,
-        "treat_unlabeled_as_negative": run.treat_unlabeled_as_negative,
-        "backbone_checkpoint": run.backbone_checkpoint,
-        "created_at": _isoformat(run.created_at),
-        "started_at": _isoformat(run.started_at),
-        "finished_at": _isoformat(run.finished_at),
-        "result": run.result,
-        "artifact_paths": run.artifact_paths,
-        "error": run.error or None,
-        "stdout": run.stdout,
-        "stderr": run.stderr,
-    }
-
-
-def _execute_model_training_run(
-    run_id: str,
-    *,
-    command_kwargs: dict[str, Any],
-) -> None:
-    run_uuid = _coerce_uuid(run_id)
-    if run_uuid is None:
-        return
-    AIModelTrainingRun.objects.filter(run_id=run_uuid).update(
-        status=AIModelTrainingRun.STATUS_RUNNING,
-        started_at=timezone.now(),
-        server_instance_id=_MODEL_TRAINING_SERVER_INSTANCE_ID,
-    )
-    stdout = StringIO()
-    stderr = StringIO()
-    try:
-        command_name = str(
-            command_kwargs.get("_command_name") or "train_image_multilabel_model"
-        )
-        command_options = {
-            key: value
-            for key, value in command_kwargs.items()
-            if not key.startswith("_")
-        }
-        call_command(
-            command_name,
-            stdout=stdout,
-            stderr=stderr,
-            **command_options,
-        )
-        output = stdout.getvalue()
-        error_output = stderr.getvalue()
-        result = _parse_model_training_result(output)
-        artifact_paths = _model_training_artifact_paths(result)
-        AIModelTrainingRun.objects.filter(run_id=run_uuid).update(
-            status=AIModelTrainingRun.STATUS_COMPLETED,
-            finished_at=timezone.now(),
-            stdout=output,
-            stderr=error_output,
-            result=result,
-            artifact_paths=artifact_paths,
-            error="",
-        )
-    except Exception as exc:
-        output = stdout.getvalue()
-        error_output = stderr.getvalue()
-        trace = traceback.format_exc()
-        combined_output = "\n".join(
-            chunk for chunk in (output, error_output, trace) if chunk
-        ).strip()
-        AIModelTrainingRun.objects.filter(run_id=run_uuid).update(
-            status=AIModelTrainingRun.STATUS_FAILED,
-            finished_at=timezone.now(),
-            stdout=combined_output,
-            stderr=error_output,
-            error=str(exc),
-            result=None,
-            artifact_paths={},
-        )
-
-
-def _launch_model_training_run(run_id: str, *, command_kwargs: dict[str, Any]) -> None:
-    thread = threading.Thread(
-        target=_execute_model_training_run,
-        kwargs={"run_id": run_id, "command_kwargs": command_kwargs},
-        daemon=True,
-    )
-    thread.start()
 
 
 def _create_phi_region_detector_training_run(payload: dict[str, Any]) -> Response:
@@ -1261,6 +1094,7 @@ def application_settings_model_training_options(request):
                 "labelset_version": DEFAULT_LABELSET_VERSION_TO_TRAIN,
                 "backbone_name": "gastro_rn50",
                 "feature_mode": "freeze_backbone",
+                "device": "auto",
                 "treat_unlabeled_as_negative": True,
                 "backbone_checkpoint": None,
             },
@@ -1306,6 +1140,7 @@ def application_settings_model_training_runs(request):
         "labelset_version",
         DEFAULT_LABELSET_VERSION_TO_TRAIN,
     )
+    device = str(payload.get("device", "auto") or "auto").strip() or "auto"
     treat_unlabeled_as_negative = payload.get("treat_unlabeled_as_negative", True)
 
     errors: dict[str, str] = {}
@@ -1361,6 +1196,7 @@ def application_settings_model_training_runs(request):
         "epochs": epochs,
         "batch_size": batch_size,
         "labelset_version": labelset_version,
+        "device": device,
         "freeze_backbone": freeze_backbone,
         "treat_unlabeled_as_negative": treat_unlabeled_as_negative,
     }

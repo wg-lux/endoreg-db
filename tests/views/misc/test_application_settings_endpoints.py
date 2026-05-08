@@ -21,6 +21,7 @@ from endoreg_db.models import (
     LabelSet,
     NetworkNode,
 )
+from endoreg_db.services import model_training_jobs
 from endoreg_db.views.misc import application_settings as view_module
 
 
@@ -484,7 +485,10 @@ class ApplicationSettingsEndpointTests(TestCase):
 
         from endoreg_db.views.misc import application_settings as view_module
 
+        captured_kwargs: dict[str, object] = {}
+
         def fake_launch(run_id: str, *, command_kwargs: dict[str, object]) -> None:
+            captured_kwargs.update(command_kwargs)
             run = AIModelTrainingRun.objects.get(run_id=run_id)
             run.status = AIModelTrainingRun.STATUS_COMPLETED
             run.started_at = timezone.now()
@@ -524,6 +528,7 @@ class ApplicationSettingsEndpointTests(TestCase):
                     "epochs": 3,
                     "batch_size": 8,
                     "labelset_version": 2,
+                    "device": "cpu",
                     "treat_unlabeled_as_negative": False,
                 },
                 content_type="application/json",
@@ -537,6 +542,7 @@ class ApplicationSettingsEndpointTests(TestCase):
         assert created_payload["backbone_name"] == "resnet50_imagenet"
         assert created_payload["feature_mode"] == "fine_tune_backbone"
         assert created_payload["freeze_backbone"] is False
+        assert captured_kwargs["device"] == "cpu"
         assert AIModelTrainingRun.objects.filter(
             run_id=created_payload["run_id"]
         ).exists()
@@ -670,7 +676,11 @@ class ApplicationSettingsEndpointTests(TestCase):
             server_instance_id=view_module._MODEL_TRAINING_SERVER_INSTANCE_ID,
         )
 
-        with patch.object(view_module, "call_command") as mocked_call_command:
+        with (
+            TemporaryDirectory() as staging_root,
+            override_settings(MODEL_TRAINING_STAGING_ROOT=Path(staging_root)),
+            patch.object(model_training_jobs, "call_command") as mocked_call_command,
+        ):
 
             def fake_call_command(*args, **kwargs):
                 kwargs["stdout"].write(
@@ -680,7 +690,7 @@ class ApplicationSettingsEndpointTests(TestCase):
                 )
 
             mocked_call_command.side_effect = fake_call_command
-            view_module._execute_model_training_run(
+            model_training_jobs._execute_model_training_run(
                 run.run_key,
                 command_kwargs={"dataset_id": dataset.pk},
             )
@@ -713,7 +723,11 @@ class ApplicationSettingsEndpointTests(TestCase):
             server_instance_id=view_module._MODEL_TRAINING_SERVER_INSTANCE_ID,
         )
 
-        with patch.object(view_module, "call_command") as mocked_call_command:
+        with (
+            TemporaryDirectory() as staging_root,
+            override_settings(MODEL_TRAINING_STAGING_ROOT=Path(staging_root)),
+            patch.object(model_training_jobs, "call_command") as mocked_call_command,
+        ):
 
             def fake_call_command(*args, **kwargs):
                 kwargs["stdout"].write("training started")
@@ -721,7 +735,7 @@ class ApplicationSettingsEndpointTests(TestCase):
                 raise RuntimeError("boom")
 
             mocked_call_command.side_effect = fake_call_command
-            view_module._execute_model_training_run(
+            model_training_jobs._execute_model_training_run(
                 run.run_key,
                 command_kwargs={"dataset_id": dataset.pk},
             )
@@ -892,6 +906,7 @@ class ApplicationSettingsEndpointTests(TestCase):
                 epochs=4,
                 batch_size=16,
                 labelset_version=3,
+                device="cpu",
                 treat_unlabeled_as_negative=False,
             )
 
@@ -902,6 +917,7 @@ class ApplicationSettingsEndpointTests(TestCase):
         assert config.num_epochs == 4
         assert config.batch_size == 16
         assert config.labelset_version_to_train == 3
+        assert config.device == "cpu"
         assert config.treat_unlabeled_as_negative is False
 
     def test_application_settings_backup_endpoint(self):

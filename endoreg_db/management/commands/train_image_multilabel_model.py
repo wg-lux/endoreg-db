@@ -65,6 +65,12 @@ class Command(BaseCommand):
             help="Only train labels belonging to this LabelSet.version.",
         )
         parser.add_argument(
+            "--device",
+            type=str,
+            default="auto",
+            help="Training device: auto, cpu, cuda, or a torch device string.",
+        )
+        parser.add_argument(
             "--freeze-backbone",
             dest="freeze_backbone",
             action="store_true",
@@ -98,6 +104,7 @@ class Command(BaseCommand):
         epochs = int(options["epochs"])
         batch_size = int(options["batch_size"])
         labelset_version = int(options["labelset_version"])
+        device = str(options["device"] or "auto").strip() or "auto"
         freeze_backbone = bool(options["freeze_backbone"])
         treat_unlabeled_as_negative = bool(options["treat_unlabeled_as_negative"])
 
@@ -133,6 +140,7 @@ class Command(BaseCommand):
                 f"epochs={epochs}, "
                 f"batch_size={batch_size}, "
                 f"labelset_version={labelset_version}, "
+                f"device={device!r}, "
                 f"treat_unlabeled_as_negative={treat_unlabeled_as_negative}"
             )
         )
@@ -148,6 +156,7 @@ class Command(BaseCommand):
             backbone_checkpoint=backbone_checkpoint,
             num_epochs=epochs,
             batch_size=batch_size,
+            device=device,
             backbone_name=backbone_name,
             freeze_backbone=freeze_backbone,
             treat_unlabeled_as_negative=treat_unlabeled_as_negative,

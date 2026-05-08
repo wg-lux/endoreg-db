@@ -1,0 +1,410 @@
+from __future__ import annotations
+
+import json
+import threading
+import traceback
+from collections import defaultdict
+from datetime import timedelta
+from io import StringIO
+from pathlib import Path
+from typing import Any
+from uuid import UUID, uuid4
+
+from django.conf import settings
+from django.core.management import call_command
+from django.utils import timezone
+
+from endoreg_db.models import AIDataSet, AIModelTrainingRun, Frame
+from endoreg_db.models.media.video.video_file_frames._manage_frame_range import (
+    extract_frame_range_to_directory,
+)
+from endoreg_db.utils.file_operations import ensure_directory, safe_rmtree
+
+MODEL_TRAINING_TARGET_IMAGE_MULTILABEL = "image_multilabel"
+MODEL_TRAINING_TARGET_PHI_REGION_DETECTOR = "phi_region_detector"
+MODEL_TRAINING_SERVER_INSTANCE_ID = uuid4().hex
+MODEL_TRAINING_LOST_TIMEOUT = timedelta(hours=25)
+DEFAULT_MODEL_TRAINING_STAGING_ROOT = Path(
+    "/mnt/fast-nvme-cache/endoreg-training"
+)
+
+
+def _coerce_uuid(value: str) -> UUID | None:
+    try:
+        return UUID(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_model_training_result(output: str) -> dict[str, Any] | None:
+    for line in reversed(output.splitlines()):
+        stripped = line.strip()
+        if not stripped.startswith("{"):
+            continue
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return None
+
+
+def _model_training_artifact_paths(result: dict[str, Any] | None) -> dict[str, str]:
+    if not result:
+        return {}
+    paths: dict[str, str] = {}
+    for key in (
+        "model_path",
+        "manifest_path",
+        "meta_path",
+        "training_result_path",
+        "checkpoint_path",
+        "onnx_path",
+    ):
+        value = result.get(key)
+        if isinstance(value, str) and value:
+            paths[key] = value
+    training_result = result.get("training_result")
+    if isinstance(training_result, dict):
+        for artifact in training_result.get("artifacts", []):
+            if not isinstance(artifact, dict):
+                continue
+            kind = str(artifact.get("kind") or "").strip().lower()
+            path = artifact.get("path")
+            if kind and isinstance(path, str) and path:
+                paths[f"{kind}_path"] = path
+    return paths
+
+
+def _model_training_staging_root() -> Path:
+    return Path(
+        getattr(
+            settings,
+            "MODEL_TRAINING_STAGING_ROOT",
+            DEFAULT_MODEL_TRAINING_STAGING_ROOT,
+        )
+    )
+
+
+def _create_run_staging_dir(run_id: str) -> Path:
+    root = ensure_directory(_model_training_staging_root(), dir_mode=0o750)
+    staging_dir = root / f"run-{run_id}-{uuid4().hex}"
+    return ensure_directory(staging_dir, dir_mode=0o750)
+
+
+def _consecutive_ranges(frame_numbers: list[int]) -> list[tuple[int, int]]:
+    if not frame_numbers:
+        return []
+    ranges: list[tuple[int, int]] = []
+    start = previous = frame_numbers[0]
+    for frame_number in frame_numbers[1:]:
+        if frame_number == previous + 1:
+            previous = frame_number
+            continue
+        ranges.append((start, previous + 1))
+        start = previous = frame_number
+    ranges.append((start, previous + 1))
+    return ranges
+
+
+def _assert_processed_video_training_ready(video) -> None:
+    state = video.get_or_create_state()
+    missing_flags = [
+        field_name
+        for field_name in (
+            "sensitive_meta_processed",
+            "anonymized",
+            "anonymization_validated",
+            "outside_segments_removed",
+        )
+        if not bool(getattr(state, field_name, False))
+    ]
+    if missing_flags:
+        raise RuntimeError(
+            "Cannot materialize training frames from processed video "
+            f"{video.video_hash}: missing readiness flags={missing_flags}."
+        )
+    if not bool(getattr(video, "is_processed", False)):
+        raise FileNotFoundError(
+            "Cannot materialize training frames from processed video "
+            f"{video.video_hash}: processed file is not available."
+        )
+
+
+def _expected_frame_relative_path(frame_number: int, ext: str = "jpg") -> str:
+    return f"frame_{frame_number:07d}.{ext}"
+
+
+def _materialize_missing_multilabel_frames(dataset_id: int) -> dict[str, Any]:
+    dataset = AIDataSet.objects.get(id=dataset_id)
+    if dataset.dataset_type != AIDataSet.DATASET_TYPE_IMAGE:
+        raise ValueError("Training frame materialization requires an image AIDataSet.")
+    if dataset.ai_model_type != AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL:
+        raise ValueError(
+            "Training frame materialization requires an image_multilabel_classification AIDataSet."
+        )
+
+    annotations = (
+        dataset.image_annotations.select_related("frame__video")
+        .filter(frame__isnull=False)
+        .order_by("frame__video_id", "frame__frame_number", "frame_id")
+    )
+    frames_by_video: dict[int, dict[int, Frame]] = defaultdict(dict)
+    for annotation in annotations:
+        frame = annotation.frame
+        frames_by_video[frame.video_id][frame.frame_number] = frame
+
+    materialized_count = 0
+    existing_count = 0
+    video_count = 0
+    for frame_by_number in frames_by_video.values():
+        missing_numbers: list[int] = []
+        video = None
+        for frame_number, frame in sorted(frame_by_number.items()):
+            video = frame.video
+            if frame.file_path.is_file():
+                existing_count += 1
+                if not frame.is_extracted:
+                    frame.is_extracted = True
+                    frame.save(update_fields=["is_extracted"])
+                continue
+            missing_numbers.append(frame_number)
+
+        if video is None or not missing_numbers:
+            continue
+
+        video_count += 1
+        _assert_processed_video_training_ready(video)
+        frame_dir = video.get_frame_dir_path()
+        if frame_dir is None:
+            raise ValueError(
+                f"Cannot determine frame directory path for video {video.video_hash}."
+            )
+        ensure_directory(frame_dir, dir_mode=0o750)
+
+        for start_frame, end_frame in _consecutive_ranges(missing_numbers):
+            extract_frame_range_to_directory(
+                video,
+                output_dir=frame_dir,
+                start_frame=start_frame,
+                end_frame=end_frame,
+                ext="jpg",
+                from_processed=True,
+            )
+
+        materialized_frame_ids: list[int] = []
+        for frame_number in missing_numbers:
+            frame = frame_by_number[frame_number]
+            expected_relative_path = _expected_frame_relative_path(frame_number)
+            update_fields: list[str] = []
+            if frame.relative_path != expected_relative_path:
+                frame.relative_path = expected_relative_path
+                update_fields.append("relative_path")
+            if not frame.is_extracted:
+                frame.is_extracted = True
+                update_fields.append("is_extracted")
+            if update_fields:
+                frame.save(update_fields=update_fields)
+            if not frame.file_path.is_file():
+                raise RuntimeError(
+                    "Processed-video frame extraction did not create required "
+                    f"training frame {frame_number} for video {video.video_hash}."
+                )
+            materialized_frame_ids.append(frame.pk)
+
+        if materialized_frame_ids:
+            Frame.objects.filter(pk__in=materialized_frame_ids).update(
+                is_extracted=True
+            )
+            materialized_count += len(materialized_frame_ids)
+
+    return {
+        "dataset_id": dataset_id,
+        "existing_frame_count": existing_count,
+        "materialized_frame_count": materialized_count,
+        "materialized_video_count": video_count,
+    }
+
+
+def prepare_model_training_inputs(command_kwargs: dict[str, Any]) -> dict[str, Any]:
+    command_name = str(
+        command_kwargs.get("_command_name") or "train_image_multilabel_model"
+    )
+    if command_name != "train_image_multilabel_model":
+        return {"prepared": False, "reason": "not_image_multilabel"}
+
+    dataset_id = command_kwargs.get("dataset_id")
+    if dataset_id is None:
+        return {"prepared": False, "reason": "missing_dataset_id"}
+    return {
+        "prepared": True,
+        **_materialize_missing_multilabel_frames(int(dataset_id)),
+    }
+
+
+def _mark_lost_model_training_runs() -> None:
+    now = timezone.now()
+    stale_before = now - MODEL_TRAINING_LOST_TIMEOUT
+    AIModelTrainingRun.objects.filter(
+        status__in=[
+            AIModelTrainingRun.STATUS_QUEUED,
+            AIModelTrainingRun.STATUS_RUNNING,
+        ],
+        updated_at__lt=stale_before,
+    ).exclude(server_instance_id=MODEL_TRAINING_SERVER_INSTANCE_ID).update(
+        status=AIModelTrainingRun.STATUS_LOST,
+        finished_at=now,
+        error=(
+            "Training run remained queued/running without an update after "
+            "backend process ownership changed. Marked LOST so the result is "
+            "not silently hidden."
+        ),
+    )
+
+
+def _model_training_run_payload(run: AIModelTrainingRun) -> dict[str, Any]:
+    request_payload = run.request_payload or {}
+    training_target = request_payload.get("training_target")
+    if training_target not in {
+        MODEL_TRAINING_TARGET_IMAGE_MULTILABEL,
+        MODEL_TRAINING_TARGET_PHI_REGION_DETECTOR,
+    }:
+        training_target = (
+            MODEL_TRAINING_TARGET_PHI_REGION_DETECTOR
+            if run.ai_model_type == MODEL_TRAINING_TARGET_PHI_REGION_DETECTOR
+            else MODEL_TRAINING_TARGET_IMAGE_MULTILABEL
+        )
+
+    return {
+        "run_id": run.run_key,
+        "training_target": training_target,
+        "status": run.status,
+        "dataset_id": run.dataset_id,
+        "dataset_name": run.dataset_name,
+        "dataset_type": run.dataset_type,
+        "ai_model_type": run.ai_model_type,
+        "backbone_name": run.backbone_name,
+        "feature_mode": run.feature_mode,
+        "freeze_backbone": run.freeze_backbone,
+        "epochs": run.epochs,
+        "batch_size": run.batch_size,
+        "labelset_version": run.labelset_version,
+        "treat_unlabeled_as_negative": run.treat_unlabeled_as_negative,
+        "backbone_checkpoint": run.backbone_checkpoint,
+        "created_at": _isoformat(run.created_at),
+        "started_at": _isoformat(run.started_at),
+        "finished_at": _isoformat(run.finished_at),
+        "result": run.result,
+        "artifact_paths": run.artifact_paths,
+        "error": run.error or None,
+        "stdout": run.stdout,
+        "stderr": run.stderr,
+    }
+
+
+def _isoformat(value) -> str | None:
+    if value is None:
+        return None
+    return value.isoformat().replace("+00:00", "Z")
+
+
+def _execute_model_training_run(
+    run_id: str,
+    *,
+    command_kwargs: dict[str, Any],
+    raise_on_error: bool = False,
+) -> None:
+    run_uuid = _coerce_uuid(run_id)
+    if run_uuid is None:
+        return
+
+    AIModelTrainingRun.objects.filter(run_id=run_uuid).update(
+        status=AIModelTrainingRun.STATUS_RUNNING,
+        started_at=timezone.now(),
+        server_instance_id=MODEL_TRAINING_SERVER_INSTANCE_ID,
+    )
+    staging_dir: Path | None = None
+    stdout = StringIO()
+    stderr = StringIO()
+    try:
+        staging_dir = _create_run_staging_dir(run_id)
+        preparation = prepare_model_training_inputs(command_kwargs)
+        stdout.write(f"[TRAINING_JOB] input_preparation={json.dumps(preparation)}\n")
+        command_name = str(
+            command_kwargs.get("_command_name") or "train_image_multilabel_model"
+        )
+        command_options = {
+            key: value
+            for key, value in command_kwargs.items()
+            if not key.startswith("_")
+        }
+        call_command(
+            command_name,
+            stdout=stdout,
+            stderr=stderr,
+            **command_options,
+        )
+        output = stdout.getvalue()
+        error_output = stderr.getvalue()
+        result = _parse_model_training_result(output)
+        artifact_paths = _model_training_artifact_paths(result)
+        AIModelTrainingRun.objects.filter(run_id=run_uuid).update(
+            status=AIModelTrainingRun.STATUS_COMPLETED,
+            finished_at=timezone.now(),
+            stdout=output,
+            stderr=error_output,
+            result=result,
+            artifact_paths=artifact_paths,
+            error="",
+        )
+    except Exception as exc:
+        output = stdout.getvalue()
+        error_output = stderr.getvalue()
+        trace = traceback.format_exc()
+        combined_output = "\n".join(
+            chunk for chunk in (output, error_output, trace) if chunk
+        ).strip()
+        AIModelTrainingRun.objects.filter(run_id=run_uuid).update(
+            status=AIModelTrainingRun.STATUS_FAILED,
+            finished_at=timezone.now(),
+            stdout=combined_output,
+            stderr=error_output,
+            error=str(exc),
+            result=None,
+            artifact_paths={},
+        )
+        if raise_on_error:
+            raise
+    finally:
+        if staging_dir is not None:
+            safe_rmtree(staging_dir, missing_ok=True)
+
+
+def _launch_model_training_run(
+    run_id: str,
+    *,
+    command_kwargs: dict[str, Any],
+) -> None:
+    mode = str(getattr(settings, "MODEL_TRAINING_JOB_MODE", "celery")).lower()
+    if mode == "celery":
+        from endoreg_db.tasks import run_model_training_task
+
+        run_model_training_task.apply_async(
+            args=[run_id, command_kwargs],
+            queue=getattr(settings, "CELERY_TRAINING_QUEUE", "model_training"),
+            routing_key=getattr(settings, "CELERY_TRAINING_QUEUE", "model_training"),
+        )
+        return
+    if mode == "inline":
+        _execute_model_training_run(run_id, command_kwargs=command_kwargs)
+        return
+    if mode != "thread":
+        mode = "thread"
+
+    thread = threading.Thread(
+        target=_execute_model_training_run,
+        kwargs={"run_id": run_id, "command_kwargs": command_kwargs},
+        daemon=True,
+    )
+    thread.start()

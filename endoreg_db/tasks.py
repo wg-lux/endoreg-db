@@ -67,6 +67,30 @@ def run_video_temporal_inference_task(
     )
 
 
+@shared_task(
+    name="endoreg_db.model_training",
+    bind=True,
+    acks_late=True,
+    reject_on_worker_lost=True,
+    track_started=True,
+    time_limit=60 * 60 * 24,
+    soft_time_limit=60 * 60 * 24 - 300,
+)
+def run_model_training_task(
+    _task,
+    run_id: str,
+    command_kwargs: dict[str, Any],
+) -> bool:
+    from endoreg_db.services.model_training_jobs import _execute_model_training_run
+
+    _execute_model_training_run(
+        str(run_id),
+        command_kwargs=command_kwargs,
+        raise_on_error=True,
+    )
+    return True
+
+
 @shared_task(name="endoreg_db.process_upload_job")
 def process_upload_job(job_id: str) -> bool:
     from endoreg_db.services.hub import process_upload_job as _process_upload_job

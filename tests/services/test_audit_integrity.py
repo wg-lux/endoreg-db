@@ -18,6 +18,7 @@ from endoreg_db.services.audit_integrity import (
 from endoreg_db.tasks import (
     process_upload_job,
     refresh_audit_ledger_integrity_status_task,
+    run_model_training_task,
     run_video_post_validation_rebuild_task,
     run_video_temporal_inference_task,
 )
@@ -44,6 +45,8 @@ def test_celery_beat_routes_integrity_to_separate_queue():
     assert beat_entry["options"]["queue"] == settings.CELERY_MAINTENANCE_QUEUE
     assert settings.CELERY_FRAME_EXTRACTION_QUEUE in queue_names
     assert settings.CELERY_INFERENCE_QUEUE in queue_names
+    assert settings.CELERY_TRAINING_QUEUE in queue_names
+    assert settings.CELERY_BROKER_TRANSPORT_OPTIONS["visibility_timeout"] == 90000
     assert (
         settings.CELERY_TASK_ROUTES["endoreg_db.process_upload_job"]["queue"]
         == settings.CELERY_PIPELINE_QUEUE
@@ -55,6 +58,10 @@ def test_celery_beat_routes_integrity_to_separate_queue():
     assert (
         settings.CELERY_TASK_ROUTES["endoreg_db.video_temporal_inference"]["queue"]
         == settings.CELERY_INFERENCE_QUEUE
+    )
+    assert (
+        settings.CELERY_TASK_ROUTES["endoreg_db.model_training"]["queue"]
+        == settings.CELERY_TRAINING_QUEUE
     )
 
 
@@ -234,6 +241,24 @@ def test_video_temporal_inference_task_delegates_to_runner():
         temporal_options={"temporal_model": "markov"},
         test_run=True,
         n_test_frames=12,
+    )
+
+
+def test_model_training_task_delegates_to_runner():
+    with patch(
+        "endoreg_db.services.model_training_jobs._execute_model_training_run",
+        return_value=None,
+    ) as runner:
+        result = run_model_training_task.run(
+            "run-1",
+            {"dataset_id": 42},
+        )
+
+    assert result is True
+    runner.assert_called_once_with(
+        "run-1",
+        command_kwargs={"dataset_id": 42},
+        raise_on_error=True,
     )
 
 
