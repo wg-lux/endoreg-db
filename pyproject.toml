@@ -74,7 +74,7 @@ dependencies = [
     "python-magic>=0.4.27",
     "python-jose[cryptography]>=3.5.0",
     "mozilla-django-oidc>=4.0.1",
-    "lx-anonymizer[llm,ocr]==0.9.1.2",
+    "lx-anonymizer[llm,ocr]==0.9.1.3",
     "googlemaps>=4.10.0",
     "numba>=0.63.1",
     "ziglang>=0.15.2",
@@ -82,6 +82,7 @@ dependencies = [
     "lx-dtypes==0.1.5",
     "ffprobe>=0.5",
     "kombu>=5.6.1",
+    "lx-ai-core[torch]==0.0.1",
 ]
 
 
@@ -125,8 +126,7 @@ docs = [
 ]
 
 [dependency-groups]
-# Local development bridge only. Keep lx-ai-core out of project.dependencies so
-# published endoreg-db artifacts do not require an unpublished AI package.
+# Local training/runtime extras. The base package is also a project dependency.
 ai-local = [
   "lx-ai-core[torch]",
 ]
@@ -236,8 +236,9 @@ django_settings_module = "endoreg_db.config.settings.test"
 "tesseract" = ["setuptools"]
 [tool.uv.sources]
 endoreg-rust-backend = { path = "dist/endoreg_rust_backend-0.1.0-cp312-cp312-linux_x86_64.whl" }
-# Sibling checkout used by local devenv/uv workflows.
-lx-ai-core = { path = "../lx-ai-core", editable = true }
+# Optional sibling checkout for local lx-ai-core development. Keep the local
+# package version compatible with the project dependency before enabling.
+# lx-ai-core = { path = "../lx-ai-core", editable = true }
 # lx-dtypes = { workspace = true, editable = true }
 
 # [tool.uv.workspace]
