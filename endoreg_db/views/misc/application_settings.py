@@ -40,6 +40,7 @@ from endoreg_db.services.video_dimension_backfill import (
 )
 from endoreg_db.utils.ai.model_training.config import (
     DEFAULT_LABELSET_VERSION_TO_TRAIN,
+    TRAINING_ROOT,
 )
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
@@ -88,6 +89,43 @@ MODEL_TRAINING_FEATURE_MODE_OPTIONS: tuple[dict[str, str], ...] = (
         "value": "fine_tune_backbone",
         "label": "Fine-Tune Backbone",
         "description": "Update the full model including the backbone.",
+    },
+)
+
+MODEL_TRAINING_TARGET_IMAGE_MULTILABEL = "image_multilabel"
+MODEL_TRAINING_TARGET_PHI_REGION_DETECTOR = "phi_region_detector"
+
+MODEL_TRAINING_TARGET_OPTIONS: tuple[dict[str, str], ...] = (
+    {
+        "value": MODEL_TRAINING_TARGET_IMAGE_MULTILABEL,
+        "label": "Image Multilabel Model",
+        "description": "Train the current frame-level multilabel classifier.",
+    },
+    {
+        "value": MODEL_TRAINING_TARGET_PHI_REGION_DETECTOR,
+        "label": "PHI Region Detector",
+        "description": (
+            "Train lx-anonymizer's custom ONNX PHI-region detector from a "
+            "YOLO detection dataset."
+        ),
+    },
+)
+
+PHI_REGION_DETECTOR_BASE_MODEL_OPTIONS: tuple[dict[str, str], ...] = (
+    {
+        "value": "yolov8n.pt",
+        "label": "YOLOv8 Nano",
+        "description": "Fast baseline for small PHI text regions and CPU-friendly tests.",
+    },
+    {
+        "value": "yolov8s.pt",
+        "label": "YOLOv8 Small",
+        "description": "Higher capacity while still practical on a single workstation GPU.",
+    },
+    {
+        "value": "yolov8m.pt",
+        "label": "YOLOv8 Medium",
+        "description": "Larger detector for production-quality experiments.",
     },
 )
 
@@ -346,12 +384,12 @@ def _payload_bool_field(
     )
 
 
-def _payload_strategy_field(
+def s, try_payload_strategy_field(
     payload: dict[str, Any],
     field_name: str,
     *,
     default: str,
-) -> tuple[str, Response | None]:
+) -> AIFrameFormatStrategy:
     raw_value = payload.get(field_name, default)
     if not isinstance(raw_value, str):
         return (
@@ -451,6 +489,28 @@ def _coerce_uuid(value: str) -> UUID | None:
         return None
 
 
+def _coerce_local_training_path(
+    value: object,
+    *,
+    field_name: str,
+    required: bool = True,
+) -> tuple[str | None, str | None]:
+    if value in (None, ""):
+        if required:
+            return None, f"{field_name} is required."
+        return None, None
+    if not isinstance(value, str):
+        return None, f"{field_name} must be a string."
+    normalized = value.strip()
+    if not normalized:
+        if required:
+            return None, f"{field_name} is required."
+        return None, None
+    if "://" in normalized or normalized.startswith("//"):
+        return None, f"{field_name} must be a local path."
+    return str(Path(normalized).expanduser().resolve()), None
+
+
 def _mark_lost_model_training_runs() -> None:
     now = timezone.now()
     stale_before = now - MODEL_TRAINING_LOST_TIMEOUT
@@ -489,7 +549,14 @@ def _model_training_artifact_paths(result: dict[str, Any] | None) -> dict[str, s
     if not result:
         return {}
     paths: dict[str, str] = {}
-    for key in ("model_path", "manifest_path", "meta_path", "training_result_path"):
+    for key in (
+        "model_path",
+        "manifest_path",
+        "meta_path",
+        "training_result_path",
+        "checkpoint_path",
+        "onnx_path",
+    ):
         value = result.get(key)
         if isinstance(value, str) and value:
             paths[key] = value
@@ -506,11 +573,26 @@ def _model_training_artifact_paths(result: dict[str, Any] | None) -> dict[str, s
 
 
 def _model_training_run_payload(run: AIModelTrainingRun) -> dict[str, Any]:
+    request_payload = run.request_payload or {}
+    training_target = request_payload.get("training_target")
+    if training_target not in {
+        MODEL_TRAINING_TARGET_IMAGE_MULTILABEL,
+        MODEL_TRAINING_TARGET_PHI_REGION_DETECTOR,
+    }:
+        training_target = (
+            MODEL_TRAINING_TARGET_PHI_REGION_DETECTOR
+            if run.ai_model_type == MODEL_TRAINING_TARGET_PHI_REGION_DETECTOR
+            else MODEL_TRAINING_TARGET_IMAGE_MULTILABEL
+        )
+
     return {
         "run_id": run.run_key,
+        "training_target": training_target,
         "status": run.status,
         "dataset_id": run.dataset_id,
         "dataset_name": run.dataset_name,
+        "dataset_type": run.dataset_type,
+        "ai_model_type": run.ai_model_type,
         "backbone_name": run.backbone_name,
         "feature_mode": run.feature_mode,
         "freeze_backbone": run.freeze_backbone,
@@ -546,11 +628,19 @@ def _execute_model_training_run(
     stdout = StringIO()
     stderr = StringIO()
     try:
+        command_name = str(
+            command_kwargs.get("_command_name") or "train_image_multilabel_model"
+        )
+        command_options = {
+            key: value
+            for key, value in command_kwargs.items()
+            if not key.startswith("_")
+        }
         call_command(
-            "train_image_multilabel_model",
+            command_name,
             stdout=stdout,
             stderr=stderr,
-            **command_kwargs,
+            **command_options,
         )
         output = stdout.getvalue()
         error_output = stderr.getvalue()
@@ -590,6 +680,111 @@ def _launch_model_training_run(run_id: str, *, command_kwargs: dict[str, Any]) -
         daemon=True,
     )
     thread.start()
+
+
+def _create_phi_region_detector_training_run(payload: dict[str, Any]) -> Response:
+    dataset_yaml, dataset_yaml_error = _coerce_local_training_path(
+        payload.get("dataset_yaml"),
+        field_name="dataset_yaml",
+    )
+    output_dir, output_dir_error = _coerce_local_training_path(
+        payload.get("output_dir"),
+        field_name="output_dir",
+        required=False,
+    )
+    if output_dir is None:
+        output_dir = str((TRAINING_ROOT / "phi_region_detector").resolve())
+
+    base_model = str(payload.get("base_model", "yolov8n.pt") or "").strip()
+    run_name_raw = payload.get("run_name")
+    run_name = (
+        str(run_name_raw).strip()
+        if isinstance(run_name_raw, str) and str(run_name_raw).strip()
+        else None
+    )
+    epochs = payload.get("epochs", 50)
+    batch_size = payload.get("batch_size", 16)
+    input_size = payload.get("input_size", 640)
+    device = str(payload.get("device", "auto") or "auto").strip() or "auto"
+    workers = payload.get("workers", 4)
+    patience = payload.get("patience", 25)
+    export_onnx = payload.get("export_onnx", True)
+    confidence_threshold = payload.get("confidence_threshold", 0.35)
+    nms_threshold = payload.get("nms_threshold", 0.45)
+    class_ids = str(payload.get("class_ids", "") or "").strip()
+
+    errors: dict[str, str] = {}
+    if dataset_yaml_error:
+        errors["dataset_yaml"] = dataset_yaml_error
+    if output_dir_error:
+        errors["output_dir"] = output_dir_error
+    if not base_model:
+        errors["base_model"] = "base_model is required."
+    if not isinstance(epochs, int) or epochs <= 0:
+        errors["epochs"] = "epochs must be a positive integer."
+    if not isinstance(batch_size, int) or batch_size <= 0:
+        errors["batch_size"] = "batch_size must be a positive integer."
+    if not isinstance(input_size, int) or input_size < 32:
+        errors["input_size"] = "input_size must be an integer >= 32."
+    if not isinstance(workers, int) or workers < 0:
+        errors["workers"] = "workers must be an integer >= 0."
+    if not isinstance(patience, int) or patience < 0:
+        errors["patience"] = "patience must be an integer >= 0."
+    if not isinstance(export_onnx, bool):
+        errors["export_onnx"] = "export_onnx must be a boolean."
+    if not isinstance(confidence_threshold, (int, float)) or not (
+        0.0 <= float(confidence_threshold) <= 1.0
+    ):
+        errors["confidence_threshold"] = "confidence_threshold must be between 0 and 1."
+    if not isinstance(nms_threshold, (int, float)) or not (
+        0.0 <= float(nms_threshold) <= 1.0
+    ):
+        errors["nms_threshold"] = "nms_threshold must be between 0 and 1."
+
+    if errors:
+        return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    command_kwargs = {
+        "_command_name": "train_phi_region_detector",
+        "dataset_yaml": dataset_yaml,
+        "output_dir": output_dir,
+        "base_model": base_model,
+        "run_name": run_name,
+        "epochs": epochs,
+        "batch_size": batch_size,
+        "input_size": input_size,
+        "device": device,
+        "workers": workers,
+        "patience": patience,
+        "export_onnx": export_onnx,
+        "confidence_threshold": float(confidence_threshold),
+        "nms_threshold": float(nms_threshold),
+        "class_ids": class_ids,
+    }
+    run = AIModelTrainingRun.objects.create(
+        dataset=None,
+        dataset_name=Path(dataset_yaml).name
+        if dataset_yaml
+        else "PHI detector dataset",
+        dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+        ai_model_type=MODEL_TRAINING_TARGET_PHI_REGION_DETECTOR,
+        backbone_name=base_model,
+        feature_mode="yolo_onnx_detector",
+        freeze_backbone=False,
+        epochs=epochs,
+        batch_size=batch_size,
+        labelset_version=1,
+        treat_unlabeled_as_negative=False,
+        request_payload={
+            **payload,
+            "training_target": MODEL_TRAINING_TARGET_PHI_REGION_DETECTOR,
+        },
+        command_kwargs=command_kwargs,
+        status=AIModelTrainingRun.STATUS_QUEUED,
+        server_instance_id=_MODEL_TRAINING_SERVER_INSTANCE_ID,
+    )
+    _launch_model_training_run(run.run_key, command_kwargs=command_kwargs)
+    return Response(_model_training_run_payload(run), status=status.HTTP_202_ACCEPTED)
 
 
 def _video_dimension_backfill_item_payload(
@@ -1030,6 +1225,7 @@ def application_settings_ai_dataset_training_manifest(request, param: str):
 def application_settings_model_training_options(request):
     return Response(
         {
+            "training_targets": list(MODEL_TRAINING_TARGET_OPTIONS),
             "ai_datasets": [
                 entry
                 for entry in _application_settings_ai_dataset_entries()
@@ -1038,6 +1234,27 @@ def application_settings_model_training_options(request):
             ],
             "backbones": list(MODEL_TRAINING_BACKBONE_OPTIONS),
             "feature_modes": list(MODEL_TRAINING_FEATURE_MODE_OPTIONS),
+            "phi_region_detector": {
+                "base_models": list(PHI_REGION_DETECTOR_BASE_MODEL_OPTIONS),
+                "defaults": {
+                    "base_model": "yolov8n.pt",
+                    "dataset_yaml": "",
+                    "output_dir": str(
+                        (TRAINING_ROOT / "phi_region_detector").resolve()
+                    ),
+                    "run_name": "",
+                    "epochs": 50,
+                    "batch_size": 16,
+                    "input_size": 640,
+                    "device": "auto",
+                    "workers": 4,
+                    "patience": 25,
+                    "export_onnx": True,
+                    "confidence_threshold": 0.35,
+                    "nms_threshold": 0.45,
+                    "class_ids": "",
+                },
+            },
             "defaults": {
                 "epochs": 10,
                 "batch_size": 32,
@@ -1068,6 +1285,16 @@ def application_settings_model_training_runs(request):
         )
 
     payload: dict[str, Any] = request.data or {}
+    training_target = str(
+        payload.get("training_target", MODEL_TRAINING_TARGET_IMAGE_MULTILABEL) or ""
+    ).strip()
+    if training_target == MODEL_TRAINING_TARGET_PHI_REGION_DETECTOR:
+        return _create_phi_region_detector_training_run(payload)
+    if training_target != MODEL_TRAINING_TARGET_IMAGE_MULTILABEL:
+        return Response(
+            {"errors": {"training_target": "Unsupported training_target."}},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     dataset_id = payload.get("dataset_id")
     backbone_name = str(payload.get("backbone_name", "gastro_rn50") or "").strip()
@@ -1127,6 +1354,7 @@ def application_settings_model_training_runs(request):
 
     freeze_backbone = feature_mode == "freeze_backbone"
     command_kwargs = {
+        "_command_name": "train_image_multilabel_model",
         "dataset_id": dataset.pk,
         "backbone_name": backbone_name,
         "backbone_checkpoint": backbone_checkpoint,

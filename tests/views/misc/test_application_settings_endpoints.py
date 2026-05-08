@@ -465,6 +465,11 @@ class ApplicationSettingsEndpointTests(TestCase):
         assert response.status_code == 200, response.content
         payload = response.json()
         assert any(entry["id"] == image_dataset.pk for entry in payload["ai_datasets"])
+        assert any(
+            option["value"] == "phi_region_detector"
+            for option in payload["training_targets"]
+        )
+        assert payload["phi_region_detector"]["defaults"]["input_size"] == 640
         assert any(option["value"] == "gastro_rn50" for option in payload["backbones"])
         assert any(
             option["value"] == "freeze_backbone" for option in payload["feature_modes"]
@@ -555,6 +560,94 @@ class ApplicationSettingsEndpointTests(TestCase):
             for entry in list_response.json()
         )
 
+    def test_phi_region_detector_training_run_endpoints_create_run(self):
+        dataset_yaml = Path("/tmp/phi-region-detector-dataset.yaml")
+
+        from endoreg_db.views.misc import application_settings as view_module
+
+        captured_kwargs: dict[str, object] = {}
+
+        def fake_launch(run_id: str, *, command_kwargs: dict[str, object]) -> None:
+            captured_kwargs.update(command_kwargs)
+            run = AIModelTrainingRun.objects.get(run_id=run_id)
+            run.status = AIModelTrainingRun.STATUS_COMPLETED
+            run.started_at = timezone.now()
+            run.finished_at = timezone.now()
+            run.stdout = (
+                "phi training finished\n"
+                '{"model_path": "/tmp/phi.onnx", '
+                '"checkpoint_path": "/tmp/best.pt", '
+                '"meta_path": "/tmp/phi.json"}'
+            )
+            run.result = {
+                "model_path": "/tmp/phi.onnx",
+                "checkpoint_path": "/tmp/best.pt",
+                "meta_path": "/tmp/phi.json",
+            }
+            run.artifact_paths = {
+                "model_path": "/tmp/phi.onnx",
+                "checkpoint_path": "/tmp/best.pt",
+                "meta_path": "/tmp/phi.json",
+            }
+            run.error = ""
+            run.save(
+                update_fields=[
+                    "status",
+                    "started_at",
+                    "finished_at",
+                    "stdout",
+                    "result",
+                    "artifact_paths",
+                    "error",
+                    "updated_at",
+                ]
+            )
+
+        original_launch = view_module._launch_model_training_run
+        try:
+            view_module._launch_model_training_run = fake_launch
+            create_response = self.client.post(
+                "/api/settings/application/model_training/runs/",
+                data={
+                    "training_target": "phi_region_detector",
+                    "dataset_yaml": str(dataset_yaml),
+                    "output_dir": "/tmp/phi-runs",
+                    "base_model": "yolov8s.pt",
+                    "run_name": "phi-smoke",
+                    "epochs": 2,
+                    "batch_size": 4,
+                    "input_size": 512,
+                    "device": "cpu",
+                    "workers": 0,
+                    "patience": 3,
+                    "export_onnx": True,
+                    "confidence_threshold": 0.4,
+                    "nms_threshold": 0.5,
+                    "class_ids": "0",
+                },
+                content_type="application/json",
+            )
+        finally:
+            view_module._launch_model_training_run = original_launch
+
+        assert create_response.status_code == 202, create_response.content
+        created_payload = create_response.json()
+        assert created_payload["training_target"] == "phi_region_detector"
+        assert created_payload["dataset_name"] == dataset_yaml.name
+        assert created_payload["backbone_name"] == "yolov8s.pt"
+        assert created_payload["feature_mode"] == "yolo_onnx_detector"
+        assert captured_kwargs["_command_name"] == "train_phi_region_detector"
+        assert captured_kwargs["dataset_yaml"] == str(dataset_yaml)
+        assert captured_kwargs["input_size"] == 512
+
+        detail_response = self.client.get(
+            f"/api/settings/application/model_training/runs/{created_payload['run_id']}/"
+        )
+        assert detail_response.status_code == 200, detail_response.content
+        detail_payload = detail_response.json()
+        assert detail_payload["artifact_paths"]["checkpoint_path"] == "/tmp/best.pt"
+        assert detail_payload["result"]["model_path"] == "/tmp/phi.onnx"
+
     def test_model_training_run_execution_parses_stdout_json_result(self):
         dataset = AIDataSet.objects.create(
             name=f"train-parse-{uuid4().hex[:8]}",
@@ -592,6 +685,7 @@ class ApplicationSettingsEndpointTests(TestCase):
                 command_kwargs={"dataset_id": dataset.pk},
             )
 
+        assert mocked_call_command.call_args.args[0] == "train_image_multilabel_model"
         run.refresh_from_db()
         assert run.status == AIModelTrainingRun.STATUS_COMPLETED
         assert run.result["model_path"] == "/tmp/model.pth"
