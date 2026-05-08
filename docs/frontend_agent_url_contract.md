@@ -257,6 +257,8 @@ export const endpoints = {
   settings: {
     application: 'settings/application/',
     aiDatasetExport: 'settings/application/ai_dataset_export/',
+    ai_dataset_export_download: (artifact_id: Id) =>
+      `settings/application/ai_dataset_export/${artifact_id}/download/`,
     backup: 'settings/application/backup/',
     centersDropdown: 'settings/application/dropdowns/centers/',
     processorsDropdown: 'settings/application/dropdowns/processors/',
@@ -265,6 +267,8 @@ export const endpoints = {
     aiDatasetsDropdown: 'settings/application/dropdowns/ai_datasets/',
     ai_dataset_frame_bucket_distribution: (dataset_id: Id) =>
       `settings/application/ai_datasets/${dataset_id}/frame_bucket_distribution/`,
+    ai_dataset_training_manifest: (dataset_id: Id) =>
+      `settings/application/ai_datasets/${dataset_id}/training_manifest/`,
     networkNodeRolesDropdown:
       'settings/application/dropdowns/network_node_roles/',
     modelTrainingOptions: 'settings/application/model_training/options/',
@@ -414,7 +418,9 @@ under `/api/`.
 | `patient-generate-pseudonym` | `/api/patients/{pk}/pseudonym/` |
 | `application_settings_detail` | `/api/settings/application/` |
 | `application_settings_ai_dataset_export` | `/api/settings/application/ai_dataset_export/` |
+| `application_settings_ai_dataset_export_download` | `/api/settings/application/ai_dataset_export/{artifact_id}/download/` |
 | `application_settings_ai_dataset_frame_bucket_distribution` | `/api/settings/application/ai_datasets/{param}/frame_bucket_distribution/` |
+| `application_settings_ai_dataset_training_manifest` | `/api/settings/application/ai_datasets/{param}/training_manifest/` |
 | `application_settings_backup` | `/api/settings/application/backup/` |
 | `application_settings_ai_datasets_dropdown` | `/api/settings/application/dropdowns/ai_datasets/` |
 | `application_settings_annotators_dropdown` | `/api/settings/application/dropdowns/annotators/` |

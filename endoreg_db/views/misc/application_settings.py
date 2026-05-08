@@ -4,19 +4,23 @@ import json
 import threading
 import traceback
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import StringIO
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from django.core.management import call_command
+from django.http import FileResponse
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
 from endoreg_db.models import (
     AIDataSet,
+    AIDataSetExportArtifact,
+    AIModelTrainingRun,
     Center,
     EndoscopyProcessor,
     ImageClassificationAnnotation,
@@ -41,6 +45,7 @@ from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_write_file,
     ensure_directory,
+    sha256_file,
 )
 from endoreg_db.utils.defaults.set_default_center import (
     get_application_defaults,
@@ -86,10 +91,39 @@ MODEL_TRAINING_FEATURE_MODE_OPTIONS: tuple[dict[str, str], ...] = (
     },
 )
 
-_MODEL_TRAINING_RUNS: dict[str, dict[str, Any]] = {}
-_MODEL_TRAINING_RUNS_LOCK = threading.Lock()
+AI_DATASET_FRAME_FORMAT_STRATEGIES = {
+    "preserve_dimensions_black_mask",
+    "crop_to_endoscope_roi",
+}
+
+_MODEL_TRAINING_SERVER_INSTANCE_ID = uuid4().hex
+MODEL_TRAINING_LOST_TIMEOUT = timedelta(hours=12)
 _VIDEO_DIMENSION_BACKFILL_RUNS: dict[str, dict[str, Any]] = {}
 _VIDEO_DIMENSION_BACKFILL_RUNS_LOCK = threading.Lock()
+
+
+def _integer_param_error(field_name: str) -> Response:
+    return Response(
+        {"errors": {field_name: f"{field_name} must be an integer."}},
+        status=status.HTTP_400_BAD_REQUEST,
+    )
+
+
+def _parse_optional_integer_param(
+    raw_value: object,
+    *,
+    field_name: str,
+) -> tuple[int | None, Response | None]:
+    if raw_value in (None, ""):
+        return None, None
+    if isinstance(raw_value, bool) or not isinstance(
+        raw_value, (str, bytes, bytearray, int)
+    ):
+        return None, _integer_param_error(field_name)
+    try:
+        return int(raw_value), None
+    except ValueError:
+        return None, _integer_param_error(field_name)
 
 
 def _required_backup_sources() -> list[Path]:
@@ -220,15 +254,14 @@ def _resolve_ai_dataset_param(param: object) -> AIDataSet | None:
 def _resolve_label_set_for_distribution(
     raw_value: object,
 ) -> tuple[LabelSet | None, Response | None]:
-    if raw_value in {None, ""}:
+    label_group_id, error = _parse_optional_integer_param(
+        raw_value,
+        field_name="label_group_id",
+    )
+    if error is not None:
+        return None, error
+    if label_group_id is None:
         return None, None
-    try:
-        label_group_id = int(raw_value)
-    except (TypeError, ValueError):
-        return None, Response(
-            {"errors": {"label_group_id": "label_group_id must be an integer."}},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
 
     label_set = LabelSet.objects.filter(pk=label_group_id).first()
     if label_set is None:
@@ -256,14 +289,13 @@ def _resolve_target_label_for_distribution(
     if label_set is not None:
         labels = labels.filter(label_sets=label_set)
 
-    if target_label_id_raw not in {None, ""}:
-        try:
-            target_label_id = int(target_label_id_raw)
-        except (TypeError, ValueError):
-            return None, Response(
-                {"errors": {"target_label_id": "target_label_id must be an integer."}},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+    target_label_id, error = _parse_optional_integer_param(
+        target_label_id_raw,
+        field_name="target_label_id",
+    )
+    if error is not None:
+        return None, error
+    if target_label_id is not None:
         label = labels.filter(pk=target_label_id).first()
         if label is None:
             return None, Response(
@@ -290,21 +322,104 @@ def _resolve_target_label_for_distribution(
     return label, None
 
 
+def _payload_bool_field(
+    payload: dict[str, Any],
+    field_name: str,
+    *,
+    default: bool,
+) -> tuple[bool, Response | None]:
+    raw_value = payload.get(field_name, default)
+    if isinstance(raw_value, bool):
+        return raw_value, None
+    if isinstance(raw_value, str):
+        normalized = raw_value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True, None
+        if normalized in {"0", "false", "no", "off"}:
+            return False, None
+    return (
+        default,
+        Response(
+            {"errors": {field_name: f"{field_name} must be a boolean."}},
+            status=status.HTTP_400_BAD_REQUEST,
+        ),
+    )
+
+
+def _payload_strategy_field(
+    payload: dict[str, Any],
+    field_name: str,
+    *,
+    default: str,
+) -> tuple[str, Response | None]:
+    raw_value = payload.get(field_name, default)
+    if not isinstance(raw_value, str):
+        return (
+            default,
+            Response(
+                {"errors": {field_name: f"{field_name} must be a string."}},
+                status=status.HTTP_400_BAD_REQUEST,
+            ),
+        )
+    normalized = raw_value.strip() or default
+    if normalized not in AI_DATASET_FRAME_FORMAT_STRATEGIES:
+        allowed = ", ".join(sorted(AI_DATASET_FRAME_FORMAT_STRATEGIES))
+        return (
+            default,
+            Response(
+                {"errors": {field_name: f"{field_name} must be one of: {allowed}."}},
+                status=status.HTTP_400_BAD_REQUEST,
+            ),
+        )
+    return normalized, None
+
+
+def _payload_information_source_names(
+    raw_value: object,
+) -> tuple[list[str] | None, Response | None]:
+    if raw_value in (None, ""):
+        return None, None
+    if isinstance(raw_value, str):
+        names = [name.strip() for name in raw_value.split(",") if name.strip()]
+        return names or None, None
+    if isinstance(raw_value, list):
+        names: list[str] = []
+        for item in raw_value:
+            if not isinstance(item, str):
+                return (
+                    None,
+                    Response(
+                        {
+                            "errors": {
+                                "information_source_names": (
+                                    "information_source_names entries must be strings."
+                                )
+                            }
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    ),
+                )
+            stripped = item.strip()
+            if stripped:
+                names.append(stripped)
+        return names or None, None
+    return (
+        None,
+        Response(
+            {
+                "errors": {
+                    "information_source_names": (
+                        "information_source_names must be a string or list of strings."
+                    )
+                }
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        ),
+    )
+
+
 def _utcnow_iso() -> str:
     return datetime.utcnow().isoformat() + "Z"
-
-
-def _store_model_training_run(run_key: str, **updates: object) -> dict[str, Any]:
-    with _MODEL_TRAINING_RUNS_LOCK:
-        current = _MODEL_TRAINING_RUNS.setdefault(run_key, {})
-        current.update(updates)
-        return dict(current)
-
-
-def _get_model_training_run(run_id: str) -> dict[str, Any] | None:
-    with _MODEL_TRAINING_RUNS_LOCK:
-        run = _MODEL_TRAINING_RUNS.get(run_id)
-        return dict(run) if run is not None else None
 
 
 def _store_video_dimension_backfill_run(
@@ -323,26 +438,95 @@ def _get_video_dimension_backfill_run(run_id: str) -> dict[str, Any] | None:
         return dict(run) if run is not None else None
 
 
-def _model_training_run_payload(run: dict[str, Any]) -> dict[str, Any]:
+def _isoformat(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return value.isoformat().replace("+00:00", "Z")
+
+
+def _coerce_uuid(value: str) -> UUID | None:
+    try:
+        return UUID(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _mark_lost_model_training_runs() -> None:
+    now = timezone.now()
+    stale_before = now - MODEL_TRAINING_LOST_TIMEOUT
+    AIModelTrainingRun.objects.filter(
+        status__in=[
+            AIModelTrainingRun.STATUS_QUEUED,
+            AIModelTrainingRun.STATUS_RUNNING,
+        ],
+        updated_at__lt=stale_before,
+    ).exclude(server_instance_id=_MODEL_TRAINING_SERVER_INSTANCE_ID).update(
+        status=AIModelTrainingRun.STATUS_LOST,
+        finished_at=now,
+        error=(
+            "Training run remained queued/running without an update after "
+            "backend process ownership changed. Marked LOST so the result is "
+            "not silently hidden."
+        ),
+    )
+
+
+def _parse_model_training_result(output: str) -> dict[str, Any] | None:
+    for line in reversed(output.splitlines()):
+        stripped = line.strip()
+        if not stripped.startswith("{"):
+            continue
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return None
+
+
+def _model_training_artifact_paths(result: dict[str, Any] | None) -> dict[str, str]:
+    if not result:
+        return {}
+    paths: dict[str, str] = {}
+    for key in ("model_path", "manifest_path", "meta_path", "training_result_path"):
+        value = result.get(key)
+        if isinstance(value, str) and value:
+            paths[key] = value
+    training_result = result.get("training_result")
+    if isinstance(training_result, dict):
+        for artifact in training_result.get("artifacts", []):
+            if not isinstance(artifact, dict):
+                continue
+            kind = str(artifact.get("kind") or "").strip().lower()
+            path = artifact.get("path")
+            if kind and isinstance(path, str) and path:
+                paths[f"{kind}_path"] = path
+    return paths
+
+
+def _model_training_run_payload(run: AIModelTrainingRun) -> dict[str, Any]:
     return {
-        "run_id": run["run_id"],
-        "status": run["status"],
-        "dataset_id": run["dataset_id"],
-        "dataset_name": run.get("dataset_name"),
-        "backbone_name": run["backbone_name"],
-        "feature_mode": run["feature_mode"],
-        "freeze_backbone": run["freeze_backbone"],
-        "epochs": run["epochs"],
-        "batch_size": run["batch_size"],
-        "labelset_version": run["labelset_version"],
-        "treat_unlabeled_as_negative": run["treat_unlabeled_as_negative"],
-        "backbone_checkpoint": run.get("backbone_checkpoint"),
-        "created_at": run["created_at"],
-        "started_at": run.get("started_at"),
-        "finished_at": run.get("finished_at"),
-        "result": run.get("result"),
-        "error": run.get("error"),
-        "stdout": run.get("stdout", ""),
+        "run_id": run.run_key,
+        "status": run.status,
+        "dataset_id": run.dataset_id,
+        "dataset_name": run.dataset_name,
+        "backbone_name": run.backbone_name,
+        "feature_mode": run.feature_mode,
+        "freeze_backbone": run.freeze_backbone,
+        "epochs": run.epochs,
+        "batch_size": run.batch_size,
+        "labelset_version": run.labelset_version,
+        "treat_unlabeled_as_negative": run.treat_unlabeled_as_negative,
+        "backbone_checkpoint": run.backbone_checkpoint,
+        "created_at": _isoformat(run.created_at),
+        "started_at": _isoformat(run.started_at),
+        "finished_at": _isoformat(run.finished_at),
+        "result": run.result,
+        "artifact_paths": run.artifact_paths,
+        "error": run.error or None,
+        "stdout": run.stdout,
+        "stderr": run.stderr,
     }
 
 
@@ -351,11 +535,18 @@ def _execute_model_training_run(
     *,
     command_kwargs: dict[str, Any],
 ) -> None:
-    _store_model_training_run(run_id, status="running", started_at=_utcnow_iso())
+    run_uuid = _coerce_uuid(run_id)
+    if run_uuid is None:
+        return
+    AIModelTrainingRun.objects.filter(run_id=run_uuid).update(
+        status=AIModelTrainingRun.STATUS_RUNNING,
+        started_at=timezone.now(),
+        server_instance_id=_MODEL_TRAINING_SERVER_INSTANCE_ID,
+    )
     stdout = StringIO()
     stderr = StringIO()
     try:
-        result = call_command(
+        call_command(
             "train_image_multilabel_model",
             stdout=stdout,
             stderr=stderr,
@@ -363,15 +554,16 @@ def _execute_model_training_run(
         )
         output = stdout.getvalue()
         error_output = stderr.getvalue()
-        if error_output:
-            output = f"{output}\n{error_output}".strip()
-        _store_model_training_run(
-            run_id,
-            status="completed",
-            finished_at=_utcnow_iso(),
+        result = _parse_model_training_result(output)
+        artifact_paths = _model_training_artifact_paths(result)
+        AIModelTrainingRun.objects.filter(run_id=run_uuid).update(
+            status=AIModelTrainingRun.STATUS_COMPLETED,
+            finished_at=timezone.now(),
             stdout=output,
+            stderr=error_output,
             result=result,
-            error=None,
+            artifact_paths=artifact_paths,
+            error="",
         )
     except Exception as exc:
         output = stdout.getvalue()
@@ -380,13 +572,14 @@ def _execute_model_training_run(
         combined_output = "\n".join(
             chunk for chunk in (output, error_output, trace) if chunk
         ).strip()
-        _store_model_training_run(
-            run_id,
-            status="failed",
-            finished_at=_utcnow_iso(),
+        AIModelTrainingRun.objects.filter(run_id=run_uuid).update(
+            status=AIModelTrainingRun.STATUS_FAILED,
+            finished_at=timezone.now(),
             stdout=combined_output,
+            stderr=error_output,
             error=str(exc),
             result=None,
+            artifact_paths={},
         )
 
 
@@ -717,6 +910,121 @@ def application_settings_ai_dataset_frame_bucket_distribution(request, param: st
     return Response(distribution.model_dump(mode="json"), status=status.HTTP_200_OK)
 
 
+@api_view(["POST"])
+@permission_classes([EnvironmentAwarePermission])
+def application_settings_ai_dataset_training_manifest(request, param: str):
+    dataset = _resolve_ai_dataset_param(param)
+    if dataset is None:
+        return Response(
+            {"detail": f"AIDataSet {param} was not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    payload: dict[str, Any] = request.data or {}
+    label_set_id, error = _parse_optional_integer_param(
+        payload.get("label_set_id"),
+        field_name="label_set_id",
+    )
+    if error is not None:
+        return error
+
+    label_set = None
+    if label_set_id is not None:
+        label_set = LabelSet.objects.filter(pk=label_set_id).first()
+        if label_set is None:
+            return Response(
+                {"errors": {"label_set_id": f"Unknown label_set_id: {label_set_id}."}},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+    treat_unlabeled_as_negative, error = _payload_bool_field(
+        payload,
+        "treat_unlabeled_as_negative",
+        default=False,
+    )
+    if error is not None:
+        return error
+    include_file_paths, error = _payload_bool_field(
+        payload,
+        "include_file_paths",
+        default=False,
+    )
+    if error is not None:
+        return error
+    check_frame_format, error = _payload_bool_field(
+        payload,
+        "check_frame_format",
+        default=True,
+    )
+    if error is not None:
+        return error
+
+    preprocessing_strategy, error = _payload_strategy_field(
+        payload,
+        "preprocessing_strategy",
+        default="preserve_dimensions_black_mask",
+    )
+    if error is not None:
+        return error
+    recommended_model_input_strategy, error = _payload_strategy_field(
+        payload,
+        "recommended_model_input_strategy",
+        default="crop_to_endoscope_roi",
+    )
+    if error is not None:
+        return error
+
+    information_source_names, error = _payload_information_source_names(
+        payload.get("information_source_names")
+    )
+    if error is not None:
+        return error
+
+    try:
+        manifest = dataset.build_frame_multilabel_training_manifest(
+            label_set=label_set,
+            treat_unlabeled_as_negative=treat_unlabeled_as_negative,
+            include_file_paths=include_file_paths,
+            check_frame_format=check_frame_format,
+            preprocessing_strategy=preprocessing_strategy,
+            recommended_model_input_strategy=recommended_model_input_strategy,
+            information_source_names=information_source_names,
+        )
+    except ValueError as exc:
+        return Response(
+            {"errors": {"manifest": str(exc)}},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    manifest_payload = manifest.model_dump(mode="json")
+    return Response(
+        {
+            "dataset_id": dataset.pk,
+            "dataset_name": dataset.name,
+            "dataset_type": dataset.dataset_type,
+            "ai_model_type": dataset.ai_model_type,
+            "config": {
+                "label_set_id": label_set.pk if label_set is not None else None,
+                "treat_unlabeled_as_negative": treat_unlabeled_as_negative,
+                "include_file_paths": include_file_paths,
+                "check_frame_format": check_frame_format,
+                "preprocessing_strategy": preprocessing_strategy,
+                "recommended_model_input_strategy": recommended_model_input_strategy,
+                "information_source_names": information_source_names,
+            },
+            "summary": {
+                "label_count": len(manifest.labels),
+                "sample_count": len(manifest.samples),
+                "class_frequencies": manifest.class_frequencies,
+                "frame_format": manifest.frame_format.model_dump(mode="json"),
+            },
+            "manifest": manifest_payload,
+            "lx_ai_core_manifest": manifest.to_lx_ai_core_dict(),
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
 @api_view(["GET"])
 @permission_classes([EnvironmentAwarePermission])
 def application_settings_model_training_options(request):
@@ -744,9 +1052,21 @@ def application_settings_model_training_options(request):
     )
 
 
-@api_view(["POST"])
+@api_view(["GET", "POST"])
 @permission_classes([EnvironmentAwarePermission])
 def application_settings_model_training_runs(request):
+    _mark_lost_model_training_runs()
+
+    if request.method == "GET":
+        runs = AIModelTrainingRun.objects.select_related("dataset").order_by(
+            "-created_at",
+            "-id",
+        )[:25]
+        return Response(
+            [_model_training_run_payload(run) for run in runs],
+            status=status.HTTP_200_OK,
+        )
+
     payload: dict[str, Any] = request.data or {}
 
     dataset_id = payload.get("dataset_id")
@@ -806,7 +1126,6 @@ def application_settings_model_training_runs(request):
         return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
 
     freeze_backbone = feature_mode == "freeze_backbone"
-    run_id = uuid4().hex
     command_kwargs = {
         "dataset_id": dataset.pk,
         "backbone_name": backbone_name,
@@ -817,12 +1136,11 @@ def application_settings_model_training_runs(request):
         "freeze_backbone": freeze_backbone,
         "treat_unlabeled_as_negative": treat_unlabeled_as_negative,
     }
-    run = _store_model_training_run(
-        run_id,
-        run_id=run_id,
-        status="queued",
-        dataset_id=dataset.pk,
+    run = AIModelTrainingRun.objects.create(
+        dataset=dataset,
         dataset_name=dataset.name,
+        dataset_type=dataset.dataset_type,
+        ai_model_type=dataset.ai_model_type,
         backbone_name=backbone_name,
         feature_mode=feature_mode,
         freeze_backbone=freeze_backbone,
@@ -831,21 +1149,27 @@ def application_settings_model_training_runs(request):
         labelset_version=labelset_version,
         treat_unlabeled_as_negative=treat_unlabeled_as_negative,
         backbone_checkpoint=backbone_checkpoint,
-        created_at=_utcnow_iso(),
-        started_at=None,
-        finished_at=None,
-        result=None,
-        error=None,
-        stdout="",
+        request_payload=payload,
+        command_kwargs=command_kwargs,
+        status=AIModelTrainingRun.STATUS_QUEUED,
+        server_instance_id=_MODEL_TRAINING_SERVER_INSTANCE_ID,
     )
-    _launch_model_training_run(run_id, command_kwargs=command_kwargs)
+    _launch_model_training_run(run.run_key, command_kwargs=command_kwargs)
     return Response(_model_training_run_payload(run), status=status.HTTP_202_ACCEPTED)
 
 
 @api_view(["GET"])
 @permission_classes([EnvironmentAwarePermission])
 def application_settings_model_training_run_detail(request, run_id: str):
-    run = _get_model_training_run(run_id)
+    _mark_lost_model_training_runs()
+    run_uuid = _coerce_uuid(run_id)
+    run = (
+        AIModelTrainingRun.objects.select_related("dataset")
+        .filter(run_id=run_uuid)
+        .first()
+        if run_uuid is not None
+        else None
+    )
     if run is None:
         return Response(
             {"detail": "Training run not found."},
@@ -984,11 +1308,25 @@ def _dataset_export_scope_error(
     return None
 
 
-@api_view(["POST"])
-@permission_classes([EnvironmentAwarePermission])
-def application_settings_ai_dataset_export(request):
-    payload: dict[str, Any] = request.data or {}
+def _resolve_ai_dataset_export_dataset(
+    payload: dict[str, Any],
+) -> tuple[AIDataSet | None, Response | None]:
     settings_obj = get_application_settings()
+    normalized_dataset_id, dataset_id_error = _parse_optional_integer_param(
+        payload.get("dataset_id"),
+        field_name="dataset_id",
+    )
+
+    if dataset_id_error is not None:
+        return None, dataset_id_error
+    if normalized_dataset_id is not None:
+        dataset = AIDataSet.objects.filter(pk=normalized_dataset_id).first()
+        if dataset is None:
+            return None, Response(
+                {"errors": {"dataset_id": "AIDataSet not found."}},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return dataset, None
 
     dataset_name = payload.get("ai_dataset_name", settings_obj.ai_dataset_name)
     dataset_type = payload.get("ai_dataset_type", settings_obj.ai_dataset_type)
@@ -1002,15 +1340,16 @@ def application_settings_ai_dataset_export(request):
     }:
         errors["ai_dataset_type"] = "ai_dataset_type must be one of: image, video."
     if errors:
-        return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
+        return None, Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
 
-    dataset = (
-        AIDataSet.objects.filter(name=dataset_name.strip(), dataset_type=dataset_type)
-        .order_by("-updated_at", "-pk")
-        .first()
+    matches = list(
+        AIDataSet.objects.filter(
+            name=dataset_name.strip(),
+            dataset_type=dataset_type,
+        ).order_by("-updated_at", "-pk")[:2]
     )
-    if dataset is None:
-        return Response(
+    if not matches:
+        return None, Response(
             {
                 "errors": {
                     "ai_dataset_name": (
@@ -1021,6 +1360,56 @@ def application_settings_ai_dataset_export(request):
             },
             status=status.HTTP_404_NOT_FOUND,
         )
+    if len(matches) > 1:
+        return None, Response(
+            {
+                "errors": {
+                    "ai_dataset_name": (
+                        "Multiple AIDataSet rows match this name/type. "
+                        "Export by dataset_id to avoid selecting the wrong dataset."
+                    )
+                }
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
+    return matches[0], None
+
+
+def _ai_dataset_export_download_url(artifact: AIDataSetExportArtifact) -> str:
+    return (
+        f"/api/settings/application/ai_dataset_export/{artifact.artifact_key}/download/"
+    )
+
+
+def _ai_dataset_export_payload(artifact: AIDataSetExportArtifact) -> dict[str, Any]:
+    return {
+        "success": artifact.status == AIDataSetExportArtifact.STATUS_COMPLETED,
+        "artifact_id": artifact.artifact_key,
+        "dataset_id": artifact.dataset_id,
+        "dataset_name": artifact.dataset_name,
+        "dataset_type": artifact.dataset_type,
+        "output_path": artifact.output_path,
+        "download_url": (
+            _ai_dataset_export_download_url(artifact)
+            if artifact.status == AIDataSetExportArtifact.STATUS_COMPLETED
+            else None
+        ),
+        "sha256": artifact.sha256,
+        "byte_size": artifact.byte_size,
+        "summary": artifact.summary,
+        "status": artifact.status,
+        "error": artifact.error or None,
+    }
+
+
+@api_view(["POST"])
+@permission_classes([EnvironmentAwarePermission])
+def application_settings_ai_dataset_export(request):
+    payload: dict[str, Any] = request.data or {}
+    dataset, dataset_error = _resolve_ai_dataset_export_dataset(payload)
+    if dataset_error is not None:
+        return dataset_error
+    assert dataset is not None
 
     center_key = str(payload.get("center_key") or "").strip() or None
     all_centers = _payload_bool(payload.get("all_centers"), default=False)
@@ -1035,43 +1424,133 @@ def application_settings_ai_dataset_export(request):
         error_message, status_code = scope_error
         return Response({"success": False, "error": error_message}, status=status_code)
 
+    artifact = AIDataSetExportArtifact.objects.create(
+        dataset=dataset,
+        dataset_name=dataset.name,
+        dataset_type=dataset.dataset_type,
+        ai_model_type=dataset.ai_model_type,
+        request_payload=payload,
+        center_key=center_key,
+        all_centers=all_centers,
+        only_validated=only_validated,
+        status=AIDataSetExportArtifact.STATUS_RUNNING,
+    )
+
     export_dir = EXPORT_DIR / "ai_datasets"
     timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
     file_name = (
         f"{_sanitize_export_token(dataset.name or 'dataset')}"
         f"_{_sanitize_export_token(dataset.dataset_type)}"
-        f"_{timestamp}.json"
+        f"_{timestamp}_{artifact.artifact_key}.json"
     )
     output_path = export_dir / file_name
 
-    export_payload = dataset.export_to_standardized_structure(
-        center_key=center_key,
-        all_centers=all_centers,
-        only_validated=only_validated,
-    )
-    json_bytes = json.dumps(
-        export_payload,
-        indent=2,
-        sort_keys=True,
-        ensure_ascii=True,
-    ).encode("utf-8")
-    atomic_write_file(
-        destination=output_path,
-        content=[json_bytes],
-        required_bytes=len(json_bytes),
-    )
+    try:
+        export_payload = dataset.export_to_standardized_structure(
+            center_key=center_key,
+            all_centers=all_centers,
+            only_validated=only_validated,
+        )
+        json_bytes = json.dumps(
+            export_payload,
+            indent=2,
+            sort_keys=True,
+            ensure_ascii=True,
+        ).encode("utf-8")
+        atomic_write_file(
+            destination=output_path,
+            content=[json_bytes],
+            required_bytes=len(json_bytes),
+        )
+        artifact.status = AIDataSetExportArtifact.STATUS_COMPLETED
+        artifact.output_path = str(output_path)
+        artifact.download_filename = file_name
+        artifact.sha256 = sha256_file(output_path)
+        artifact.byte_size = len(json_bytes)
+        artifact.summary = export_payload.get("summary", {})
+        artifact.error = ""
+        artifact.finished_at = timezone.now()
+        artifact.save(
+            update_fields=[
+                "status",
+                "output_path",
+                "download_filename",
+                "sha256",
+                "byte_size",
+                "summary",
+                "error",
+                "finished_at",
+                "updated_at",
+            ]
+        )
+    except Exception as exc:
+        artifact.status = AIDataSetExportArtifact.STATUS_FAILED
+        artifact.error = str(exc)
+        artifact.finished_at = timezone.now()
+        artifact.save(update_fields=["status", "error", "finished_at", "updated_at"])
+        return Response(
+            _ai_dataset_export_payload(artifact),
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
     return Response(
-        {
-            "success": True,
-            "dataset_id": dataset.pk,
-            "dataset_name": dataset.name,
-            "dataset_type": dataset.dataset_type,
-            "output_path": str(output_path),
-            "summary": export_payload.get("summary", {}),
-        },
+        _ai_dataset_export_payload(artifact),
         status=status.HTTP_201_CREATED,
     )
+
+
+@api_view(["GET"])
+@permission_classes([EnvironmentAwarePermission])
+def application_settings_ai_dataset_export_download(request, artifact_id: str):
+    artifact_uuid = _coerce_uuid(artifact_id)
+    artifact = (
+        AIDataSetExportArtifact.objects.filter(artifact_id=artifact_uuid).first()
+        if artifact_uuid is not None
+        else None
+    )
+    if artifact is None:
+        return Response(
+            {"detail": "AI dataset export artifact not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    if artifact.status != AIDataSetExportArtifact.STATUS_COMPLETED:
+        return Response(
+            _ai_dataset_export_payload(artifact),
+            status=status.HTTP_409_CONFLICT,
+        )
+
+    output_path = Path(artifact.output_path)
+    try:
+        output_path.resolve().relative_to(EXPORT_DIR.resolve())
+    except ValueError:
+        artifact.status = AIDataSetExportArtifact.STATUS_FAILED
+        artifact.error = "Export artifact path is outside the configured export root."
+        artifact.finished_at = timezone.now()
+        artifact.save(update_fields=["status", "error", "finished_at", "updated_at"])
+        return Response(
+            _ai_dataset_export_payload(artifact),
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    if not output_path.is_file():
+        artifact.status = AIDataSetExportArtifact.STATUS_FAILED
+        artifact.error = "Export artifact file is missing from disk."
+        artifact.finished_at = timezone.now()
+        artifact.save(update_fields=["status", "error", "finished_at", "updated_at"])
+        return Response(
+            _ai_dataset_export_payload(artifact),
+            status=status.HTTP_410_GONE,
+        )
+
+    response = FileResponse(
+        output_path.open("rb"),
+        as_attachment=True,
+        filename=artifact.download_filename or output_path.name,
+        content_type="application/json",
+    )
+    response["X-Content-SHA256"] = artifact.sha256
+    response["X-Content-Length"] = str(artifact.byte_size)
+    return response
 
 
 @api_view(["POST"])
@@ -1314,6 +1793,7 @@ __all__ = [
     "application_settings_report_templates_dropdown",
     "application_settings_ai_datasets_dropdown",
     "application_settings_ai_dataset_frame_bucket_distribution",
+    "application_settings_ai_dataset_training_manifest",
     "application_settings_model_training_options",
     "application_settings_model_training_runs",
     "application_settings_model_training_run_detail",

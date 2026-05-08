@@ -153,6 +153,8 @@ from .report import (
 # AI dataset model
 from .aidataset import (
     AIDataSet,
+    AIDataSetExportArtifact,
+    AIModelTrainingRun,
 )
 from .hub import TransferJob, UploadJob
 
@@ -319,4 +321,6 @@ __all__ = [
     "RawPdfState",
     ###### AIDATASET ######
     "AIDataSet",
+    "AIDataSetExportArtifact",
+    "AIModelTrainingRun",
 ]

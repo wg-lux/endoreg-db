@@ -32,15 +32,6 @@ from endoreg_db.utils.ai.model_training.metrics import compute_metrics
 from endoreg_db.utils.ai.model_training.model_backbones import (
     create_multilabel_model,
 )
-from lx_ai_core import ModelSpec
-from lx_ai_core.training import (
-    TrainingArtifact,
-    TrainingArtifactKind,
-    TrainingDatasetManifest,
-    TrainingResult,
-    TrainingSample,
-    TrainingStatus,
-)
 
 # ---------------------------------------------------------------------
 # HELPER: FILTER LABELS BY LABELSET VERSION
@@ -51,6 +42,37 @@ class TrainingHistory(TypedDict):
     train_loss: list[float]
     val_loss: list[float]
     test_loss: float | None
+
+
+def _load_lx_ai_training_contracts() -> tuple[Any, ...]:
+    try:
+        from lx_ai_core import ModelSpec
+        from lx_ai_core.training import (
+            TrainingArtifact,
+            TrainingArtifactKind,
+            TrainingDatasetManifest,
+            TrainingResult,
+            TrainingSample,
+            TrainingStatus,
+        )
+    except ModuleNotFoundError as exc:
+        if exc.name != "lx_ai_core":
+            raise
+        raise RuntimeError(
+            "lx-ai-core is required to run GastroNet multilabel training. "
+            "Install lx-ai-core in the training environment before invoking "
+            "train_gastronet_multilabel."
+        ) from exc
+
+    return (
+        ModelSpec,
+        TrainingArtifact,
+        TrainingArtifactKind,
+        TrainingDatasetManifest,
+        TrainingResult,
+        TrainingSample,
+        TrainingStatus,
+    )
 
 
 def _write_bytes_atomic(destination: Path, payload: bytes) -> tuple[str, int]:
@@ -767,6 +789,15 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
     known_per_label = masks_tensor.sum(dim=0).clamp(min=1.0)
     class_frequencies = (positive_per_label / known_per_label).cpu().tolist()
     label_names = [lbl.name for lbl in labels]
+    (
+        ModelSpec,
+        TrainingArtifact,
+        TrainingArtifactKind,
+        TrainingDatasetManifest,
+        TrainingResult,
+        TrainingSample,
+        TrainingStatus,
+    ) = _load_lx_ai_training_contracts()
     manifest = TrainingDatasetManifest(
         dataset_id=dataset_obj.id,
         name=dataset_obj.name,

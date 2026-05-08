@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -9,8 +10,18 @@ from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.test import TestCase
 from django.test.utils import override_settings
+from django.utils import timezone
 
-from endoreg_db.models import AIDataSet, Center, EndoscopyProcessor, NetworkNode
+from endoreg_db.models import (
+    AIDataSet,
+    AIDataSetExportArtifact,
+    AIModelTrainingRun,
+    Center,
+    EndoscopyProcessor,
+    LabelSet,
+    NetworkNode,
+)
+from endoreg_db.views.misc import application_settings as view_module
 
 
 class ApplicationSettingsEndpointTests(TestCase):
@@ -181,19 +192,30 @@ class ApplicationSettingsEndpointTests(TestCase):
         response = self.client.post(
             "/api/settings/application/ai_dataset_export/",
             data={
-                "ai_dataset_name": dataset.name,
-                "ai_dataset_type": dataset.dataset_type,
+                "dataset_id": dataset.pk,
             },
             content_type="application/json",
         )
         assert response.status_code == 201, response.content
         payload = response.json()
         assert payload["success"] is True
+        assert payload["artifact_id"]
         assert payload["dataset_id"] == dataset.pk
+        assert payload["download_url"].endswith(f"/{payload['artifact_id']}/download/")
+        assert payload["sha256"]
+        assert payload["byte_size"] > 0
         output_path = Path(payload["output_path"])
         assert output_path.exists()
         exported = output_path.read_text(encoding="utf-8")
         assert dataset.name in exported
+        artifact = AIDataSetExportArtifact.objects.get(
+            artifact_id=payload["artifact_id"]
+        )
+        assert artifact.status == AIDataSetExportArtifact.STATUS_COMPLETED
+
+        download_response = self.client.get(payload["download_url"])
+        assert download_response.status_code == 200, download_response.content
+        assert download_response["X-Content-SHA256"] == payload["sha256"]
 
     def test_ai_dataset_dropdown_includes_existing_datasets(self):
         dataset = AIDataSet.objects.create(
@@ -250,6 +272,87 @@ class ApplicationSettingsEndpointTests(TestCase):
         payload = response.json()
         assert payload["dataset_id"] == dataset.pk
 
+    def test_ai_dataset_training_manifest_endpoint_passes_config(self):
+        dataset = AIDataSet.objects.create(
+            name=f"dataset-manifest-{uuid4().hex[:8]}",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+        label_set = LabelSet.objects.create(
+            name=f"manifest-label-set-{uuid4().hex[:8]}",
+            version=1,
+        )
+
+        class StubFrameFormat:
+            def model_dump(self, **kwargs):
+                return {
+                    "status": "not_checked",
+                    "preprocessing_strategy": "crop_to_endoscope_roi",
+                }
+
+        class StubManifest:
+            labels = [object(), object()]
+            samples = [object()]
+            class_frequencies = [0.0, 1.0]
+            frame_format = StubFrameFormat()
+
+            def model_dump(self, **kwargs):
+                return {"schema_version": "1.0", "labels": ["a", "b"]}
+
+            def to_lx_ai_core_dict(self):
+                return {"schema_version": "1.0", "labels": ["a", "b"]}
+
+        with patch.object(
+            AIDataSet,
+            "build_frame_multilabel_training_manifest",
+            return_value=StubManifest(),
+        ) as builder:
+            response = self.client.post(
+                f"/api/settings/application/ai_datasets/{dataset.pk}/training_manifest/",
+                data={
+                    "label_set_id": label_set.pk,
+                    "treat_unlabeled_as_negative": True,
+                    "include_file_paths": False,
+                    "check_frame_format": False,
+                    "preprocessing_strategy": "crop_to_endoscope_roi",
+                    "recommended_model_input_strategy": "crop_to_endoscope_roi",
+                    "information_source_names": ["manual_annotation"],
+                },
+                content_type="application/json",
+            )
+
+        assert response.status_code == 200, response.content
+        builder.assert_called_once()
+        assert builder.call_args.kwargs == {
+            "label_set": label_set,
+            "treat_unlabeled_as_negative": True,
+            "include_file_paths": False,
+            "check_frame_format": False,
+            "preprocessing_strategy": "crop_to_endoscope_roi",
+            "recommended_model_input_strategy": "crop_to_endoscope_roi",
+            "information_source_names": ["manual_annotation"],
+        }
+        payload = response.json()
+        assert payload["dataset_id"] == dataset.pk
+        assert payload["summary"]["sample_count"] == 1
+        assert payload["config"]["label_set_id"] == label_set.pk
+
+    def test_ai_dataset_training_manifest_endpoint_rejects_invalid_strategy(self):
+        dataset = AIDataSet.objects.create(
+            name=f"dataset-manifest-invalid-{uuid4().hex[:8]}",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+
+        response = self.client.post(
+            f"/api/settings/application/ai_datasets/{dataset.pk}/training_manifest/",
+            data={"preprocessing_strategy": "black_box"},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400, response.content
+        assert "preprocessing_strategy" in response.json()["errors"]
+
     def test_ai_dataset_export_rejects_missing_dataset_selection(self):
         response = self.client.post(
             "/api/settings/application/ai_dataset_export/",
@@ -261,6 +364,27 @@ class ApplicationSettingsEndpointTests(TestCase):
         errors = response.json()["errors"]
         assert "ai_dataset_name" in errors
         assert "ai_dataset_type" in errors
+
+    def test_ai_dataset_export_rejects_ambiguous_name_type_fallback(self):
+        dataset_name = f"dataset-duplicate-{uuid4().hex[:8]}"
+        for _ in range(2):
+            AIDataSet.objects.create(
+                name=dataset_name,
+                dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+                ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+            )
+
+        response = self.client.post(
+            "/api/settings/application/ai_dataset_export/",
+            data={
+                "ai_dataset_name": dataset_name,
+                "ai_dataset_type": AIDataSet.DATASET_TYPE_IMAGE,
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 409, response.content
+        assert "Multiple AIDataSet" in response.json()["errors"]["ai_dataset_name"]
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="local_study_server")
     def test_dataset_export_rejects_unprivileged_all_centers_scope(self):
@@ -356,17 +480,31 @@ class ApplicationSettingsEndpointTests(TestCase):
         from endoreg_db.views.misc import application_settings as view_module
 
         def fake_launch(run_id: str, *, command_kwargs: dict[str, object]) -> None:
-            view_module._store_model_training_run(
-                run_id,
-                status="completed",
-                started_at="2026-04-17T10:00:01Z",
-                finished_at="2026-04-17T10:00:30Z",
-                stdout="training finished",
-                result={
-                    "model_path": "/tmp/model.pth",
-                    "meta_path": "/tmp/meta.json",
-                },
-                error=None,
+            run = AIModelTrainingRun.objects.get(run_id=run_id)
+            run.status = AIModelTrainingRun.STATUS_COMPLETED
+            run.started_at = timezone.now()
+            run.finished_at = timezone.now()
+            run.stdout = 'training finished\n{"model_path": "/tmp/model.pth", "meta_path": "/tmp/meta.json"}'
+            run.result = {
+                "model_path": "/tmp/model.pth",
+                "meta_path": "/tmp/meta.json",
+            }
+            run.artifact_paths = {
+                "model_path": "/tmp/model.pth",
+                "meta_path": "/tmp/meta.json",
+            }
+            run.error = ""
+            run.save(
+                update_fields=[
+                    "status",
+                    "started_at",
+                    "finished_at",
+                    "stdout",
+                    "result",
+                    "artifact_paths",
+                    "error",
+                    "updated_at",
+                ]
             )
 
         original_launch = view_module._launch_model_training_run
@@ -394,6 +532,9 @@ class ApplicationSettingsEndpointTests(TestCase):
         assert created_payload["backbone_name"] == "resnet50_imagenet"
         assert created_payload["feature_mode"] == "fine_tune_backbone"
         assert created_payload["freeze_backbone"] is False
+        assert AIModelTrainingRun.objects.filter(
+            run_id=created_payload["run_id"]
+        ).exists()
 
         detail_response = self.client.get(
             f"/api/settings/application/model_training/runs/{created_payload['run_id']}/"
@@ -402,7 +543,171 @@ class ApplicationSettingsEndpointTests(TestCase):
         detail_payload = detail_response.json()
         assert detail_payload["status"] == "completed"
         assert detail_payload["result"]["model_path"] == "/tmp/model.pth"
+        assert detail_payload["artifact_paths"]["meta_path"] == "/tmp/meta.json"
         assert "training finished" in detail_payload["stdout"]
+
+        list_response = self.client.get(
+            "/api/settings/application/model_training/runs/"
+        )
+        assert list_response.status_code == 200, list_response.content
+        assert any(
+            entry["run_id"] == created_payload["run_id"]
+            for entry in list_response.json()
+        )
+
+    def test_model_training_run_execution_parses_stdout_json_result(self):
+        dataset = AIDataSet.objects.create(
+            name=f"train-parse-{uuid4().hex[:8]}",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+        run = AIModelTrainingRun.objects.create(
+            dataset=dataset,
+            dataset_name=dataset.name,
+            dataset_type=dataset.dataset_type,
+            ai_model_type=dataset.ai_model_type,
+            backbone_name="gastro_rn50",
+            feature_mode="freeze_backbone",
+            freeze_backbone=True,
+            epochs=1,
+            batch_size=1,
+            labelset_version=2,
+            treat_unlabeled_as_negative=True,
+            command_kwargs={"dataset_id": dataset.pk},
+            server_instance_id=view_module._MODEL_TRAINING_SERVER_INSTANCE_ID,
+        )
+
+        with patch.object(view_module, "call_command") as mocked_call_command:
+
+            def fake_call_command(*args, **kwargs):
+                kwargs["stdout"].write(
+                    'log line\n{"model_path": "/tmp/model.pth", '
+                    '"manifest_path": "/tmp/manifest.json", '
+                    '"meta_path": "/tmp/meta.json"}\n'
+                )
+
+            mocked_call_command.side_effect = fake_call_command
+            view_module._execute_model_training_run(
+                run.run_key,
+                command_kwargs={"dataset_id": dataset.pk},
+            )
+
+        run.refresh_from_db()
+        assert run.status == AIModelTrainingRun.STATUS_COMPLETED
+        assert run.result["model_path"] == "/tmp/model.pth"
+        assert run.artifact_paths["manifest_path"] == "/tmp/manifest.json"
+
+    def test_model_training_run_execution_stores_failure_logs(self):
+        dataset = AIDataSet.objects.create(
+            name=f"train-fail-{uuid4().hex[:8]}",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+        run = AIModelTrainingRun.objects.create(
+            dataset=dataset,
+            dataset_name=dataset.name,
+            dataset_type=dataset.dataset_type,
+            ai_model_type=dataset.ai_model_type,
+            backbone_name="gastro_rn50",
+            feature_mode="freeze_backbone",
+            freeze_backbone=True,
+            epochs=1,
+            batch_size=1,
+            labelset_version=2,
+            treat_unlabeled_as_negative=True,
+            command_kwargs={"dataset_id": dataset.pk},
+            server_instance_id=view_module._MODEL_TRAINING_SERVER_INSTANCE_ID,
+        )
+
+        with patch.object(view_module, "call_command") as mocked_call_command:
+
+            def fake_call_command(*args, **kwargs):
+                kwargs["stdout"].write("training started")
+                kwargs["stderr"].write("stderr detail")
+                raise RuntimeError("boom")
+
+            mocked_call_command.side_effect = fake_call_command
+            view_module._execute_model_training_run(
+                run.run_key,
+                command_kwargs={"dataset_id": dataset.pk},
+            )
+
+        run.refresh_from_db()
+        assert run.status == AIModelTrainingRun.STATUS_FAILED
+        assert run.error == "boom"
+        assert "training started" in run.stdout
+        assert "stderr detail" in run.stdout
+
+    def test_model_training_run_keeps_fresh_other_process_run_active(self):
+        dataset = AIDataSet.objects.create(
+            name=f"train-active-{uuid4().hex[:8]}",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+        run = AIModelTrainingRun.objects.create(
+            dataset=dataset,
+            dataset_name=dataset.name,
+            dataset_type=dataset.dataset_type,
+            ai_model_type=dataset.ai_model_type,
+            backbone_name="gastro_rn50",
+            feature_mode="freeze_backbone",
+            freeze_backbone=True,
+            epochs=1,
+            batch_size=1,
+            labelset_version=2,
+            treat_unlabeled_as_negative=True,
+            status=AIModelTrainingRun.STATUS_RUNNING,
+            server_instance_id="old-process",
+        )
+
+        response = self.client.get(
+            f"/api/settings/application/model_training/runs/{run.run_key}/"
+        )
+
+        assert response.status_code == 200, response.content
+        payload = response.json()
+        assert payload["status"] == "running"
+
+        run.refresh_from_db()
+        assert run.status == AIModelTrainingRun.STATUS_RUNNING
+
+    def test_model_training_run_marks_stale_other_process_runs_lost(self):
+        dataset = AIDataSet.objects.create(
+            name=f"train-lost-{uuid4().hex[:8]}",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+        run = AIModelTrainingRun.objects.create(
+            dataset=dataset,
+            dataset_name=dataset.name,
+            dataset_type=dataset.dataset_type,
+            ai_model_type=dataset.ai_model_type,
+            backbone_name="gastro_rn50",
+            feature_mode="freeze_backbone",
+            freeze_backbone=True,
+            epochs=1,
+            batch_size=1,
+            labelset_version=2,
+            treat_unlabeled_as_negative=True,
+            status=AIModelTrainingRun.STATUS_RUNNING,
+            server_instance_id="old-process",
+        )
+        AIModelTrainingRun.objects.filter(pk=run.pk).update(
+            updated_at=(
+                timezone.now()
+                - view_module.MODEL_TRAINING_LOST_TIMEOUT
+                - timedelta(minutes=1)
+            )
+        )
+
+        response = self.client.get(
+            f"/api/settings/application/model_training/runs/{run.run_key}/"
+        )
+
+        assert response.status_code == 200, response.content
+        payload = response.json()
+        assert payload["status"] == "lost"
+        assert "LOST" in payload["error"]
 
     def test_video_dimension_backfill_run_endpoints_create_and_report_run(self):
         from endoreg_db.views.misc import application_settings as view_module
