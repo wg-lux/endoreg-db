@@ -140,3 +140,24 @@ class TransferJobContractTests(TestCase):
             "existing processed artifact"
             in save_state.call_args.kwargs["status_detail"]
         )
+
+    def test_apply_video_state_payload_preserves_outside_segments_removed(self) -> None:
+        video = VideoFile.objects.create(
+            center=self.center,
+            video_hash="transfer-outside-segments-state",
+        )
+        state = video.get_or_create_state()
+
+        transfers._apply_video_state_payload(
+            state,
+            {
+                "anonymized": True,
+                "anonymization_validated": True,
+                "outside_segments_removed": True,
+            },
+        )
+
+        state.refresh_from_db()
+        assert state.anonymized is True
+        assert state.anonymization_validated is True
+        assert state.outside_segments_removed is True

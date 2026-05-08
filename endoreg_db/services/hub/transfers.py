@@ -1093,6 +1093,7 @@ def _apply_video_state_payload(
         "sensitive_meta_processed",
         "anonymized",
         "anonymization_validated",
+        "outside_segments_removed",
         "processing_started",
         "segment_annotations_created",
         "segment_annotations_validated",

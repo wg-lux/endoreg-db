@@ -9,7 +9,7 @@ from endoreg_db.models.media.video.video_file_io import (
     _get_frame_dir_path,
     _get_temp_anonymized_frame_dir,
 )
-from endoreg_db.utils.file_operations import atomic_move_path, safe_rmtree
+from endoreg_db.utils.file_operations import atomic_move_path, safe_rmtree, safe_unlink_file
 
 if TYPE_CHECKING:
     from endoreg_db.models import VideoFile, VideoState
@@ -21,6 +21,40 @@ __all__ = ["_delete_frames"]
 
 def _get_staged_deletion_path(path: str) -> str:
     return f"{path}.pending_delete.{uuid.uuid4().hex}"
+
+
+def _dataset_backed_frame_ids_with_files(video: "VideoFile") -> tuple[set[int], set[Path]]:
+    from endoreg_db.models.media.frame import Frame
+
+    frame_ids: set[int] = set()
+    frame_paths: set[Path] = set()
+    frames = (
+        Frame.objects.filter(
+            video=video,
+            image_classification_annotations__image_ai_datasets__isnull=False,
+        )
+        .distinct()
+        .select_related("video")
+    )
+    for frame in frames:
+        frame_path = frame.file_path
+        if not frame_path.is_file():
+            continue
+        frame_ids.add(frame.pk)
+        frame_paths.add(frame_path.resolve())
+    return frame_ids, frame_paths
+
+
+def _delete_non_dataset_frame_files(frame_dir: Path, preserved_paths: set[Path]) -> int:
+    deleted_count = 0
+    for frame_path in frame_dir.rglob("*"):
+        if not frame_path.is_file():
+            continue
+        if frame_path.resolve() in preserved_paths:
+            continue
+        safe_unlink_file(frame_path, missing_ok=True)
+        deleted_count += 1
+    return deleted_count
 
 
 @transaction.atomic
@@ -38,11 +72,18 @@ def _delete_frames(video: "VideoFile") -> str:
     state_updated = False
     db_updated = False
     cleanup_directories: list[Path] = []
+    dataset_frame_ids, dataset_frame_paths = _dataset_backed_frame_ids_with_files(video)
 
     frame_dir = _get_frame_dir_path(video)
     if frame_dir and frame_dir.exists():
-        cleanup_directories.append(frame_dir)
-        msg = f"Scheduled frame directory for deletion: {frame_dir}"
+        if dataset_frame_paths:
+            msg = (
+                "Preserving dataset-backed frame files while deleting other frame "
+                f"files in directory: {frame_dir}"
+            )
+        else:
+            cleanup_directories.append(frame_dir)
+            msg = f"Scheduled frame directory for deletion: {frame_dir}"
         logger.info(msg)
         deleted_messages.append(msg)
     elif frame_dir:
@@ -90,9 +131,21 @@ def _delete_frames(video: "VideoFile") -> str:
             state_updated = True
 
         try:
-            update_count = Frame.objects.filter(video=video, is_extracted=True).update(
-                is_extracted=False
-            )
+            extracted_frames = Frame.objects.filter(video=video, is_extracted=True)
+            if dataset_frame_ids:
+                update_count = extracted_frames.exclude(
+                    pk__in=dataset_frame_ids
+                ).update(is_extracted=False)
+                preserved_count = Frame.objects.filter(
+                    pk__in=dataset_frame_ids
+                ).update(is_extracted=True)
+                logger.info(
+                    "Preserved %d dataset-backed extracted Frame objects for video %s.",
+                    preserved_count,
+                    video.video_hash,
+                )
+            else:
+                update_count = extracted_frames.update(is_extracted=False)
             if update_count > 0:
                 logger.info(
                     "Marked %d Frame objects as is_extracted=False for video %s.",
@@ -121,6 +174,24 @@ def _delete_frames(video: "VideoFile") -> str:
     else:
 
         def _finalize_directory_cleanup() -> None:
+            if frame_dir and frame_dir.exists() and dataset_frame_paths:
+                try:
+                    deleted_count = _delete_non_dataset_frame_files(
+                        frame_dir,
+                        dataset_frame_paths,
+                    )
+                    logger.info(
+                        "Deleted %d non-dataset frame files for video %s while preserving dataset-backed frames.",
+                        deleted_count,
+                        video.video_hash,
+                    )
+                except Exception as cleanup_exc:
+                    logger.error(
+                        "Failed to delete non-dataset frame files for %s: %s",
+                        frame_dir,
+                        cleanup_exc,
+                        exc_info=True,
+                    )
             for original_path in cleanup_directories:
                 if not original_path.exists():
                     continue
