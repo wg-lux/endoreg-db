@@ -51,12 +51,12 @@ def _as_bool(value: Any, default: bool = False) -> bool:
 def _annotation_scope_filter(
     *,
     frame_id: int,
-    information_source_id: int,
+    information_source_name: str,
     annotator: str,
 ) -> Q:
     return Q(
         frame_id=frame_id,
-        information_source_id=information_source_id,
+        information_source__name=information_source_name,
         annotator=annotator,
     )
 
@@ -274,7 +274,7 @@ class FrameBoxAnnotationView(APIView):
         resolved_annotator = resolve_request_annotator(request, annotator)
         deleted_count, _ = FrameBoxAnnotation.objects.filter(
             frame=frame,
-            information_source=source,
+            information_source__name=source.name,
             annotator=resolved_annotator,
         ).delete()
         return Response(
@@ -444,7 +444,7 @@ class FrameBoxAnnotationView(APIView):
             )
             scope_filter |= _annotation_scope_filter(
                 frame_id=item["frame_id"],
-                information_source_id=source_by_name[source_name].id,
+                information_source_name=source_name,
                 annotator=self._item_annotator(item, fallback_annotator),
             )
         FrameBoxAnnotation.objects.filter(scope_filter).delete()

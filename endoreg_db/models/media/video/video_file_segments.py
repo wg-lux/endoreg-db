@@ -42,9 +42,7 @@ def _convert_sequences_to_db_segments(
     state_error_count = 0
 
     processed_labels = set()
-    prediction_source, _ = InformationSource.objects.get_or_create_by_name(
-        "prediction"
-    )
+    prediction_source, _ = InformationSource.objects.get_or_create_by_name("prediction")
 
     for label_name, sequence_list in sequences.items():
         if not sequence_list:

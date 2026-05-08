@@ -106,9 +106,7 @@ def render_pdf_with_rust_renderer(
     ensure_directory(output_path.parent)
     unique_suffix = uuid.uuid4().hex
     input_path = output_path.with_name(f".{output_path.name}.{unique_suffix}.json")
-    temp_output_path = output_path.with_name(
-        f".{output_path.name}.{unique_suffix}.tmp"
-    )
+    temp_output_path = output_path.with_name(f".{output_path.name}.{unique_suffix}.tmp")
     atomic_write_file(
         destination=input_path,
         content=[json.dumps(payload, ensure_ascii=False).encode("utf-8")],

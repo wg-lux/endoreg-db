@@ -290,9 +290,7 @@ def test_run_video_temporal_inference_fails_when_current_meta_materializes_nothi
 ):
     video = _create_video(tmp_path)
     model_meta, label_a, label_b = _create_model_meta()
-    prediction_source, _ = InformationSource.objects.get_or_create_by_name(
-        "prediction"
-    )
+    prediction_source, _ = InformationSource.objects.get_or_create_by_name("prediction")
     LabelVideoSegment.objects.create(
         video_file=video,
         label=label_b,

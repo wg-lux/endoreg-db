@@ -207,6 +207,7 @@ export const endpoints = {
     frameAnnotationsRandomTask: 'media/annotations/frames/random-task/',
     frameAnnotationsBulkUpsert: 'media/annotations/frames/bulk-upsert/',
     frameAnnotationsSkip: 'media/annotations/frames/skip/',
+    frameAnnotationsBoxes: 'media/annotations/frames/boxes/',
 
     segmentsStats: 'media/videos/segments/stats/',
     videoSegments: (pk: Id) => `media/videos/${pk}/segments/`,
@@ -334,6 +335,7 @@ under `/api/`.
 | `reset_processing_status` | `/api/media-management/reset-status/{file_id}/` |
 | `media_management_status` | `/api/media-management/status/` |
 | `frame-annotations-bulk-upsert` | `/api/media/annotations/frames/bulk-upsert/` |
+| `frame-box-annotations` | `/api/media/annotations/frames/boxes/` |
 | `frame-annotations-random-task` | `/api/media/annotations/frames/random-task/` |
 | `frame-annotations-skip` | `/api/media/annotations/frames/skip/` |
 | `hub-transfer-create` | `/api/media/hub/transfers/` |
