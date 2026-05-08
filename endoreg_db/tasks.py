@@ -5,8 +5,15 @@ from typing import Any
 from celery import shared_task
 
 
-@shared_task(name="endoreg_db.video_post_validation_rebuild")
+@shared_task(
+    name="endoreg_db.video_post_validation_rebuild",
+    bind=True,
+    acks_late=True,
+    reject_on_worker_lost=True,
+    track_started=True,
+)
 def run_video_post_validation_rebuild_task(
+    _task,
     video_id: int,
     only_validated: bool = False,
     history_id: int | None = None,
@@ -22,8 +29,15 @@ def run_video_post_validation_rebuild_task(
     )
 
 
-@shared_task(name="endoreg_db.video_temporal_inference")
+@shared_task(
+    name="endoreg_db.video_temporal_inference",
+    bind=True,
+    acks_late=True,
+    reject_on_worker_lost=True,
+    track_started=True,
+)
 def run_video_temporal_inference_task(
+    _task,
     video_id: int,
     model_meta_id: int,
     history_id: int | None = None,

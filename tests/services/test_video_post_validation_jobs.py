@@ -305,12 +305,32 @@ def test_dispatch_video_post_validation_rebuild_expires_stale_history(
     assert result.history_id != stale_history.pk
 
 
-@pytest.mark.django_db
-def test_dispatch_video_post_validation_rebuild_does_not_expire_stale_running_history(
+@pytest.mark.django_db(transaction=True)
+def test_dispatch_video_post_validation_rebuild_expires_stale_running_history_and_rolls_back_frames(
     monkeypatch,
     tmp_path,
 ):
     video = _create_video_for_post_validation(tmp_path)
+    frame_dir = video.get_frame_dir_path()
+    assert frame_dir is not None
+    (frame_dir / "frame_0000000.jpg").write_bytes(b"partial")
+    Frame.objects.create(
+        video=video,
+        frame_number=0,
+        relative_path="frame_0000000.jpg",
+        is_extracted=True,
+    )
+    state = video.get_or_create_state()
+    state.frames_initialized = True
+    state.frame_count = 1
+    state.frames_extracted = True
+    state.save(
+        update_fields=[
+            "frames_initialized",
+            "frame_count",
+            "frames_extracted",
+        ]
+    )
     monkeypatch.setenv("VIDEO_POST_VALIDATION_JOB_MODE", "thread")
     running_history = VideoProcessingHistory.objects.create(
         video=video,
@@ -320,18 +340,82 @@ def test_dispatch_video_post_validation_rebuild_does_not_expire_stale_running_hi
         config=segment_state._blackening_history_config(only_validated=False),
     )
     VideoProcessingHistory.objects.filter(pk=running_history.pk).update(
-        created_at=timezone.now() - jobs.STALE_REBUILD_TIMEOUT - timedelta(minutes=1)
+        created_at=timezone.now()
+        - jobs.STALE_REBUILD_RUNNING_TIMEOUT
+        - timedelta(minutes=1)
     )
-    submit = Mock(side_effect=AssertionError("running job must not dispatch"))
-    monkeypatch.setattr(jobs._executor, "submit", submit)
+    monkeypatch.setattr(
+        jobs._executor,
+        "submit",
+        lambda fn: types.SimpleNamespace(),
+    )
 
     result = jobs.dispatch_video_post_validation_rebuild(video_id=video.pk)
 
     running_history.refresh_from_db()
-    assert running_history.status == VideoProcessingHistory.STATUS_RUNNING
-    assert result.status == "already_queued"
-    assert result.history_id == running_history.pk
-    submit.assert_not_called()
+    assert running_history.status == VideoProcessingHistory.STATUS_FAILURE
+    assert result.status == "queued"
+    assert result.history_id != running_history.pk
+    assert not frame_dir.exists()
+    state.refresh_from_db()
+    assert state.frames_extracted is False
+    assert not Frame.objects.filter(video=video, is_extracted=True).exists()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_run_video_post_validation_rebuild_rolls_back_frames_when_rebuild_returns_false(
+    monkeypatch,
+    tmp_path,
+):
+    video = _create_video_for_post_validation(tmp_path)
+    frame_dir = video.get_frame_dir_path()
+    assert frame_dir is not None
+
+    def fake_create_video_without_outside_frames(video_obj, *, only_validated=False):
+        (frame_dir / "frame_0000000.jpg").write_bytes(b"blackened")
+        Frame.objects.create(
+            video=video_obj,
+            frame_number=0,
+            relative_path="frame_0000000.jpg",
+            is_extracted=True,
+        )
+        state = video_obj.get_or_create_state()
+        state.frames_initialized = True
+        state.frame_count = 1
+        state.frames_extracted = True
+        state.save(
+            update_fields=[
+                "frames_initialized",
+                "frame_count",
+                "frames_extracted",
+            ]
+        )
+        return False
+
+    monkeypatch.setattr(
+        VideoFile,
+        "create_video_without_outside_frames",
+        fake_create_video_without_outside_frames,
+    )
+    history = VideoProcessingHistory.objects.create(
+        video=video,
+        operation=VideoProcessingHistory.OPERATION_REPROCESSING,
+        status=VideoProcessingHistory.STATUS_PENDING,
+        config=segment_state._blackening_history_config(only_validated=False),
+    )
+
+    assert (
+        jobs._run_video_post_validation_rebuild(video.pk, history_id=history.pk)
+        is False
+    )
+
+    history.refresh_from_db()
+    assert history.status == VideoProcessingHistory.STATUS_FAILURE
+    assert not frame_dir.exists()
+    state = video.get_or_create_state()
+    state.refresh_from_db()
+    assert state.frames_extracted is False
+    assert not Frame.objects.filter(video=video, is_extracted=True).exists()
 
 
 @pytest.mark.django_db

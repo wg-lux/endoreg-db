@@ -897,6 +897,7 @@ class Command(BaseCommand):
                 source_path,
                 name=save_name,
                 save=False,
+                overwrite=True,
             )
             return True
 

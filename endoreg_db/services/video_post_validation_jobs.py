@@ -26,6 +26,7 @@ from endoreg_db.config.env import (
     get_video_post_validation_job_max_workers,
     get_video_post_validation_job_mode,
 )
+from endoreg_db.services.video_task_cleanup import rollback_video_frame_artifacts
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,7 @@ ACTIVE_REBUILD_STATUSES = (
 )
 STALE_REBUILD_STATUSES = (VideoProcessingHistory.STATUS_PENDING,)
 STALE_REBUILD_TIMEOUT = timedelta(hours=1)
+STALE_REBUILD_RUNNING_TIMEOUT = timedelta(hours=7)
 RESERVATION_CREATED = "created"
 RESERVATION_ALREADY_QUEUED = "already_queued"
 RESERVATION_BUSY = "busy"
@@ -180,18 +182,35 @@ def _active_reprocessing_histories(video: VideoFile):
 
 
 def _expire_stale_blackening_histories(video: VideoFile) -> None:
-    stale_before = timezone.now() - STALE_REBUILD_TIMEOUT
-    stale_histories = VideoProcessingHistory.objects.filter(
+    pending_stale_before = timezone.now() - STALE_REBUILD_TIMEOUT
+    pending_histories = VideoProcessingHistory.objects.filter(
         video=video,
         operation=VideoProcessingHistory.OPERATION_REPROCESSING,
         status__in=STALE_REBUILD_STATUSES,
-        created_at__lt=stale_before,
+        created_at__lt=pending_stale_before,
     ).order_by("created_at")
-    for history in stale_histories:
+    for history in pending_histories:
         if _is_outside_frame_blackening_history(history):
             history.mark_failure(
                 f"Outside-frame blackening job exceeded {STALE_REBUILD_TIMEOUT}."
             )
+
+    running_stale_before = timezone.now() - STALE_REBUILD_RUNNING_TIMEOUT
+    running_histories = VideoProcessingHistory.objects.filter(
+        video=video,
+        operation=VideoProcessingHistory.OPERATION_REPROCESSING,
+        status=VideoProcessingHistory.STATUS_RUNNING,
+        created_at__lt=running_stale_before,
+    ).order_by("created_at")
+    for history in running_histories:
+        if not _is_outside_frame_blackening_history(history):
+            continue
+        reason = (
+            "Outside-frame blackening job was still running after "
+            f"{STALE_REBUILD_RUNNING_TIMEOUT}; rolling back extracted frames."
+        )
+        rollback_video_frame_artifacts(video, reason=reason)
+        history.mark_failure(reason)
 
 
 def _reserve_blackening_history(
@@ -258,6 +277,17 @@ def _run_video_post_validation_rebuild(
 ) -> bool:
     history = _get_processing_history(history_id)
     if history is not None:
+        if history.status == VideoProcessingHistory.STATUS_SUCCESS:
+            return True
+        if history.status == VideoProcessingHistory.STATUS_RUNNING:
+            history_video = VideoFile.objects.get(pk=video_id)
+            rollback_video_frame_artifacts(
+                history_video,
+                reason=(
+                    "Restarting post-validation rebuild for a previously running "
+                    f"history {history.pk}."
+                ),
+            )
         history.mark_running()
 
     video: VideoFile | None = None
@@ -275,6 +305,10 @@ def _run_video_post_validation_rebuild(
         )
         if not rebuilt:
             mark_post_validation_incomplete(video)
+            rollback_video_frame_artifacts(
+                video,
+                reason="Post-validation rebuild returned false.",
+            )
             if history is not None:
                 history.mark_failure("Outside-frame blackening rebuild returned false.")
             return False
@@ -296,6 +330,17 @@ def _run_video_post_validation_rebuild(
     except Exception as exc:
         if video is not None:
             mark_post_validation_incomplete(video)
+            try:
+                rollback_video_frame_artifacts(
+                    video,
+                    reason=f"Post-validation rebuild failed: {exc}",
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to rollback frame artifacts after post-validation "
+                    "rebuild failure for video %s.",
+                    video.pk,
+                )
         if history is not None:
             history.mark_failure(str(exc))
         raise

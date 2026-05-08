@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import types
 import uuid
+from datetime import timedelta
 from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
+from django.utils import timezone
 
 from endoreg_db.models import (
     AiModel,
@@ -15,6 +17,7 @@ from endoreg_db.models import (
     LabelSet,
     LabelVideoSegment,
     ModelMeta,
+    Frame,
     VideoFile,
     VideoPredictionMeta,
     VideoProcessingHistory,
@@ -162,6 +165,75 @@ def test_dispatch_video_temporal_inference_busy_for_reprocessing(monkeypatch, tm
     )
 
     assert result.status == "busy"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_dispatch_video_temporal_inference_expires_stale_running_history_and_rolls_back_frames(
+    monkeypatch,
+    tmp_path,
+):
+    video = _create_video(tmp_path)
+    model_meta, _label_a, _label_b = _create_model_meta()
+    frame_dir = video.get_frame_dir_path()
+    assert frame_dir is not None
+    (frame_dir / "frame_0000000.jpg").write_bytes(b"partial")
+    Frame.objects.create(
+        video=video,
+        frame_number=0,
+        relative_path="frame_0000000.jpg",
+        is_extracted=True,
+    )
+    state = video.get_or_create_state()
+    state.frames_initialized = True
+    state.frame_count = 1
+    state.frames_extracted = True
+    state.save(
+        update_fields=[
+            "frames_initialized",
+            "frame_count",
+            "frames_extracted",
+        ]
+    )
+    monkeypatch.setenv("VIDEO_TEMPORAL_INFERENCE_JOB_MODE", "thread")
+    stale_history = VideoProcessingHistory.objects.create(
+        video=video,
+        operation=VideoProcessingHistory.OPERATION_AI_TEMPORAL_INFERENCE,
+        status=VideoProcessingHistory.STATUS_RUNNING,
+        task_id="stale-temporal-task",
+        config=jobs._temporal_history_config(
+            model_meta_id=model_meta.pk,
+            replace_prediction_segments=True,
+            delete_frames_after=True,
+            ocr_frame_fraction=0.001,
+            ocr_cap=10,
+            temporal_options={},
+            queue="inference",
+        ),
+    )
+    VideoProcessingHistory.objects.filter(pk=stale_history.pk).update(
+        created_at=timezone.now()
+        - jobs.STALE_TEMPORAL_RUNNING_TIMEOUT
+        - timedelta(minutes=1)
+    )
+    monkeypatch.setattr(
+        jobs._executor,
+        "submit",
+        lambda fn: types.SimpleNamespace(),
+    )
+
+    result = jobs.dispatch_video_temporal_inference(
+        video_id=video.pk,
+        model_meta_id=model_meta.pk,
+    )
+
+    stale_history.refresh_from_db()
+    assert stale_history.status == VideoProcessingHistory.STATUS_FAILURE
+    assert result.status == "queued"
+    assert result.history_id != stale_history.pk
+    assert not frame_dir.exists()
+    state.refresh_from_db()
+    assert state.frames_extracted is False
+    assert not Frame.objects.filter(video=video, is_extracted=True).exists()
 
 
 @pytest.mark.django_db
@@ -350,22 +422,147 @@ def test_run_video_temporal_inference_fails_when_current_meta_materializes_nothi
             video.pk,
             model_meta_id=model_meta.pk,
             history_id=history.pk,
-            replace_prediction_segments=False,
             delete_frames_after=False,
         )
 
-    prediction_meta = VideoPredictionMeta.objects.get(
+    assert not VideoPredictionMeta.objects.filter(
         video_file=video,
         model_meta=model_meta,
-    )
-    assert not LabelVideoSegment.objects.filter(
+    ).exists()
+    assert LabelVideoSegment.objects.filter(
         video_file=video,
-        prediction_meta=prediction_meta,
+        source=prediction_source,
     ).exists()
 
     state = video.get_or_create_state()
     state.refresh_from_db()
-    assert state.initial_prediction_completed is True
+    assert state.initial_prediction_completed is False
     assert state.lvs_created is False
     history.refresh_from_db()
     assert history.status == VideoProcessingHistory.STATUS_FAILURE
+
+
+@pytest.mark.django_db(transaction=True)
+def test_run_video_temporal_inference_rolls_back_frames_on_failure(
+    monkeypatch,
+    tmp_path,
+):
+    video = _create_video(tmp_path)
+    model_meta, _label_a, _label_b = _create_model_meta()
+    frame_dir = video.get_frame_dir_path()
+    assert frame_dir is not None
+    history = VideoProcessingHistory.objects.create(
+        video=video,
+        operation=VideoProcessingHistory.OPERATION_AI_TEMPORAL_INFERENCE,
+        status=VideoProcessingHistory.STATUS_PENDING,
+        config={"kind": jobs.TEMPORAL_INFERENCE_KIND},
+    )
+
+    monkeypatch.setattr(VideoFile, "update_video_meta", lambda self: None)
+
+    def fake_extract_frames(self, overwrite=False):
+        frame_dir.mkdir(parents=True, exist_ok=True)
+        (frame_dir / "frame_0000000.jpg").write_bytes(b"frame")
+        Frame.objects.update_or_create(
+            video=self,
+            frame_number=0,
+            defaults={
+                "relative_path": "frame_0000000.jpg",
+                "is_extracted": True,
+            },
+        )
+        state = self.get_or_create_state()
+        state.frames_initialized = True
+        state.frame_count = 1
+        state.frames_extracted = True
+        state.save(
+            update_fields=[
+                "frames_initialized",
+                "frame_count",
+                "frames_extracted",
+            ]
+        )
+        return True
+
+    monkeypatch.setattr(VideoFile, "extract_frames", fake_extract_frames)
+    monkeypatch.setattr(
+        VideoFile,
+        "update_text_metadata",
+        lambda self, **kwargs: True,
+    )
+    monkeypatch.setattr(jobs, "_has_extracted_frame_files", lambda video_obj: True)
+    monkeypatch.setattr(
+        VideoFile,
+        "predict_video",
+        lambda self, **kwargs: (_ for _ in ()).throw(RuntimeError("prediction failed")),
+    )
+
+    with pytest.raises(RuntimeError, match="prediction failed"):
+        jobs._run_video_temporal_inference(
+            video.pk,
+            model_meta_id=model_meta.pk,
+            history_id=history.pk,
+            delete_frames_after=True,
+        )
+
+    history.refresh_from_db()
+    assert history.status == VideoProcessingHistory.STATUS_FAILURE
+    assert not frame_dir.exists()
+    state = video.get_or_create_state()
+    state.refresh_from_db()
+    assert state.frames_extracted is False
+    assert not Frame.objects.filter(video=video, is_extracted=True).exists()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_run_video_temporal_inference_cleans_frames_for_redelivered_success(
+    tmp_path,
+):
+    video = _create_video(tmp_path)
+    model_meta, _label_a, _label_b = _create_model_meta()
+    frame_dir = video.get_frame_dir_path()
+    assert frame_dir is not None
+    (frame_dir / "frame_0000000.jpg").write_bytes(b"frame")
+    Frame.objects.create(
+        video=video,
+        frame_number=0,
+        relative_path="frame_0000000.jpg",
+        is_extracted=True,
+    )
+    state = video.get_or_create_state()
+    state.frames_initialized = True
+    state.frame_count = 1
+    state.frames_extracted = True
+    state.save(
+        update_fields=[
+            "frames_initialized",
+            "frame_count",
+            "frames_extracted",
+        ]
+    )
+    history = VideoProcessingHistory.objects.create(
+        video=video,
+        operation=VideoProcessingHistory.OPERATION_AI_TEMPORAL_INFERENCE,
+        status=VideoProcessingHistory.STATUS_SUCCESS,
+        config=jobs._temporal_history_config(
+            model_meta_id=model_meta.pk,
+            replace_prediction_segments=True,
+            delete_frames_after=True,
+            ocr_frame_fraction=0.001,
+            ocr_cap=10,
+            temporal_options={},
+            queue="inference",
+        ),
+    )
+
+    assert jobs._run_video_temporal_inference(
+        video.pk,
+        model_meta_id=model_meta.pk,
+        history_id=history.pk,
+        delete_frames_after=True,
+    )
+
+    assert not frame_dir.exists()
+    state.refresh_from_db()
+    assert state.frames_extracted is False
+    assert not Frame.objects.filter(video=video, is_extracted=True).exists()

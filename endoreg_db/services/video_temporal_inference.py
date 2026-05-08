@@ -5,10 +5,12 @@ import uuid
 from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
+from datetime import timedelta
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any
 
 from django.db import transaction
+from django.utils import timezone
 
 from endoreg_db.config.env import (
     DEFAULT_VIDEO_FPS,
@@ -31,6 +33,7 @@ from endoreg_db.models.state.frame_annotation import (
     mark_frame_prediction_reset,
     mark_prediction_segments_created,
 )
+from endoreg_db.services.video_task_cleanup import rollback_video_frame_artifacts
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +42,8 @@ ACTIVE_INFERENCE_STATUSES = (
     VideoProcessingHistory.STATUS_PENDING,
     VideoProcessingHistory.STATUS_RUNNING,
 )
+STALE_TEMPORAL_PENDING_TIMEOUT = timedelta(hours=1)
+STALE_TEMPORAL_RUNNING_TIMEOUT = timedelta(hours=7)
 TEMPORAL_OPTION_KEYS = frozenset(
     {
         "temporal_model",
@@ -313,26 +318,33 @@ def _run_lx_ai_core_temporal_inference(
     lx_options: Mapping[str, Any],
     request_id: str,
 ):
-    from lx_ai_core import InferenceRequest, ModelSpec
+    from lx_ai_core import (
+        BackendName,
+        InferenceInput,
+        InferenceRequest,
+        Modality,
+        ModelSpec,
+        TaskKind,
+    )
     from lx_ai_core.runtime import run_inference
 
     request = InferenceRequest(
         model_spec=ModelSpec(
             name=model_meta.name,
             version=str(model_meta.version),
-            modality="video",
-            task_kind="temporal_multilabel_segmentation",
-            backend="torch",
+            modality=Modality.VIDEO,
+            task_kind=TaskKind.TEMPORAL_MULTILABEL_SEGMENTATION,
+            backend=BackendName.TORCH,
             labels=list(score_result.labels),
             parameters={"model_meta_id": model_meta.pk},
         ),
-        inputs={
-            "frame_scores": score_result.frame_scores,
-            "metadata": {
+        inputs=InferenceInput(
+            frame_scores=score_result.frame_scores,
+            metadata={
                 "frame_count": score_result.frame_count,
                 "score_device": score_result.device,
             },
-        },
+        ),
         options=dict(lx_options),
         request_id=request_id,
     )
@@ -380,6 +392,43 @@ def _temporal_history_config(
     }
 
 
+def _history_delete_frames_after(history: VideoProcessingHistory) -> bool:
+    config = history.config if isinstance(history.config, Mapping) else {}
+    return bool(config.get("delete_frames_after", True))
+
+
+def _expire_stale_temporal_inference_histories(video: VideoFile) -> None:
+    pending_stale_before = timezone.now() - STALE_TEMPORAL_PENDING_TIMEOUT
+    pending_histories = VideoProcessingHistory.objects.filter(
+        video=video,
+        operation=VideoProcessingHistory.OPERATION_AI_TEMPORAL_INFERENCE,
+        status=VideoProcessingHistory.STATUS_PENDING,
+        config__kind=TEMPORAL_INFERENCE_KIND,
+        created_at__lt=pending_stale_before,
+    ).order_by("created_at")
+    for history in pending_histories:
+        history.mark_failure(
+            f"Temporal inference job exceeded {STALE_TEMPORAL_PENDING_TIMEOUT} while pending."
+        )
+
+    running_stale_before = timezone.now() - STALE_TEMPORAL_RUNNING_TIMEOUT
+    running_histories = VideoProcessingHistory.objects.filter(
+        video=video,
+        operation=VideoProcessingHistory.OPERATION_AI_TEMPORAL_INFERENCE,
+        status=VideoProcessingHistory.STATUS_RUNNING,
+        config__kind=TEMPORAL_INFERENCE_KIND,
+        created_at__lt=running_stale_before,
+    ).order_by("created_at")
+    for history in running_histories:
+        reason = (
+            "Temporal inference job was still running after "
+            f"{STALE_TEMPORAL_RUNNING_TIMEOUT}; rolling back extracted frames."
+        )
+        if _history_delete_frames_after(history):
+            rollback_video_frame_artifacts(video, reason=reason)
+        history.mark_failure(reason)
+
+
 def _reserve_temporal_inference_history(
     *,
     video: VideoFile,
@@ -394,6 +443,7 @@ def _reserve_temporal_inference_history(
 ) -> tuple[VideoProcessingHistory, str]:
     with transaction.atomic():
         locked_video = VideoFile.objects.select_for_update().get(pk=video.pk)
+        _expire_stale_temporal_inference_histories(locked_video)
         active_reprocessing = VideoProcessingHistory.objects.filter(
             video=locked_video,
             operation=VideoProcessingHistory.OPERATION_REPROCESSING,
@@ -461,10 +511,33 @@ def _run_video_temporal_inference(
 ) -> bool:
     history = _get_processing_history(history_id)
     if history is not None:
+        if history.status == VideoProcessingHistory.STATUS_SUCCESS:
+            if delete_frames_after or _history_delete_frames_after(history):
+                history_video = VideoFile.objects.get(pk=video_id)
+                rollback_video_frame_artifacts(
+                    history_video,
+                    reason=(
+                        "Completing frame cleanup for an already successful "
+                        f"temporal inference history {history.pk}."
+                    ),
+                )
+            return True
+        if history.status == VideoProcessingHistory.STATUS_RUNNING and (
+            delete_frames_after or _history_delete_frames_after(history)
+        ):
+            history_video = VideoFile.objects.get(pk=video_id)
+            rollback_video_frame_artifacts(
+                history_video,
+                reason=(
+                    "Restarting temporal inference for a previously running "
+                    f"history {history.pk}."
+                ),
+            )
         history.mark_running()
 
     video: VideoFile | None = None
     success = False
+    frames_touched = False
     deleted_prediction_segments = 0
     try:
         video = VideoFile.objects.get(pk=video_id)
@@ -480,6 +553,7 @@ def _run_video_temporal_inference(
         mark_frame_prediction_reset(video)
         video.refresh_from_db()
         video.update_video_meta()
+        frames_touched = True
         video.extract_frames(overwrite=False)
         video.update_text_metadata(
             ocr_frame_fraction=ocr_frame_fraction,
@@ -487,6 +561,7 @@ def _run_video_temporal_inference(
             overwrite=False,
         )
         if not _has_extracted_frame_files(video):
+            frames_touched = True
             video.extract_frames(overwrite=True)
         if not _has_extracted_frame_files(video):
             raise RuntimeError(
@@ -512,77 +587,90 @@ def _run_video_temporal_inference(
             request_id=request_id,
         )
         sequences = _segments_to_sequences(inference_result.temporal_segments)
-        video_prediction_meta, _ = VideoPredictionMeta.objects.get_or_create(
-            video_file=video,
-            model_meta=model_meta,
-        )
-
-        if replace_prediction_segments:
-            old_prediction_segments = _prediction_segments_for_video(video)
-            deleted_prediction_segments = old_prediction_segments.count()
-            old_prediction_segments.delete()
-
         has_segment_ranges = any(bool(ranges) for ranges in sequences.values())
-        before_count = _prediction_segments_for_meta(
-            video=video,
-            prediction_meta=video_prediction_meta,
-        ).count()
-        _convert_sequences_to_db_segments(
-            video=video,
-            sequences=sequences,
-            video_prediction_meta=video_prediction_meta,
-        )
-        current_prediction_segment_count = _prediction_segments_for_meta(
-            video=video,
-            prediction_meta=video_prediction_meta,
-        ).count()
-
-        if has_segment_ranges and current_prediction_segment_count == 0:
-            mark_frame_prediction_completed(video)
-            mark_prediction_segments_created(video, created=False)
-            raise RuntimeError(
-                "Temporal inference returned segment ranges, but no "
-                "LabelVideoSegment rows were materialized for prediction meta "
-                f"{video_prediction_meta.pk}."
+        with transaction.atomic():
+            video_prediction_meta, _ = VideoPredictionMeta.objects.get_or_create(
+                video_file=video,
+                model_meta=model_meta,
             )
 
-        video.sequences = sequences
-        video.save(update_fields=["sequences"])
-        mark_frame_prediction_completed(video)
-        mark_prediction_segments_created(
-            video,
-            created=current_prediction_segment_count > 0 or not has_segment_ranges,
-        )
+            if replace_prediction_segments:
+                old_prediction_segments = _prediction_segments_for_video(video)
+                deleted_prediction_segments = old_prediction_segments.count()
+                old_prediction_segments.delete()
 
-        if history is not None:
-            history.config = {
-                **(history.config or {}),
-                "temporal_options": normalized_temporal_options,
-                "result": {
-                    "backend": inference_result.backend,
-                    "device": inference_result.device,
-                    "duration_ms": inference_result.duration_ms,
-                    "provenance": inference_result.provenance,
-                    "score_frame_count": score_result.frame_count,
-                    "score_label_count": len(score_result.labels),
-                    "temporal_segment_count": len(inference_result.temporal_segments),
-                    "materialized_segment_count": current_prediction_segment_count,
-                    "created_segment_count": max(
-                        current_prediction_segment_count - before_count,
-                        0,
-                    ),
-                    "deleted_prediction_segments": deleted_prediction_segments,
-                    "score_vectors_stored": False,
-                },
-            }
-            history.save(update_fields=["config"])
-            history.mark_success(details="Temporal inference completed.")
+            before_count = _prediction_segments_for_meta(
+                video=video,
+                prediction_meta=video_prediction_meta,
+            ).count()
+            _convert_sequences_to_db_segments(
+                video=video,
+                sequences=sequences,
+                video_prediction_meta=video_prediction_meta,
+            )
+            current_prediction_segment_count = _prediction_segments_for_meta(
+                video=video,
+                prediction_meta=video_prediction_meta,
+            ).count()
+
+            if has_segment_ranges and current_prediction_segment_count == 0:
+                raise RuntimeError(
+                    "Temporal inference returned segment ranges, but no "
+                    "LabelVideoSegment rows were materialized for prediction meta "
+                    f"{video_prediction_meta.pk}."
+                )
+
+            video.sequences = sequences
+            video.save(update_fields=["sequences"])
+            mark_frame_prediction_completed(video)
+            mark_prediction_segments_created(
+                video,
+                created=current_prediction_segment_count > 0 or not has_segment_ranges,
+            )
+
+            if history is not None:
+                history.config = {
+                    **(history.config or {}),
+                    "temporal_options": normalized_temporal_options,
+                    "result": {
+                        "backend": inference_result.backend,
+                        "device": inference_result.device,
+                        "duration_ms": inference_result.duration_ms,
+                        "provenance": inference_result.provenance,
+                        "score_frame_count": score_result.frame_count,
+                        "score_label_count": len(score_result.labels),
+                        "temporal_segment_count": len(
+                            inference_result.temporal_segments
+                        ),
+                        "materialized_segment_count": current_prediction_segment_count,
+                        "created_segment_count": max(
+                            current_prediction_segment_count - before_count,
+                            0,
+                        ),
+                        "deleted_prediction_segments": deleted_prediction_segments,
+                        "score_vectors_stored": False,
+                    },
+                }
+                history.save(update_fields=["config"])
+                history.mark_success(details="Temporal inference completed.")
 
         success = True
         return True
     except Exception as exc:
         if history is not None:
             history.mark_failure(str(exc))
+        if video is not None and delete_frames_after and frames_touched:
+            try:
+                rollback_video_frame_artifacts(
+                    video,
+                    reason=f"Temporal inference failed: {exc}",
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to rollback frame artifacts after temporal inference "
+                    "failure for video %s.",
+                    video.pk,
+                )
         raise
     finally:
         if video is not None and delete_frames_after and success:
