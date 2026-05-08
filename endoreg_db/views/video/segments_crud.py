@@ -262,20 +262,10 @@ def _mark_segment_annotations_stale(video: VideoFile) -> None:
     state = video.get_or_create_state()
     state.segment_annotations_created = False
     state.segment_annotations_validated = False
-    state.outside_segments_removed = False
-    state.ready_for_export = False
-    state.ready_for_export_at = None
-    state.ready_for_export_by = ""
-    state.processed_file_sha256 = ""
     state.save(
         update_fields=[
             "segment_annotations_created",
             "segment_annotations_validated",
-            "outside_segments_removed",
-            "ready_for_export",
-            "ready_for_export_at",
-            "ready_for_export_by",
-            "processed_file_sha256",
             "date_modified",
         ]
     )

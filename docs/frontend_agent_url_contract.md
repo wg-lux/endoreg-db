@@ -191,7 +191,6 @@ export const endpoints = {
     videoStream: (pk: Id) => `media/videos/${pk}/stream/`,
     videoFrameStream: (pk: Id, frameNumber: Id) => `media/videos/${pk}/frames/${frameNumber}/stream/`,
     videoReimport: (pk: Id) => `media/videos/${pk}/reimport/`,
-    videoMarkReadyForExport: (pk: Id) => `media/videos/${pk}/mark-ready-for-export/`,
     exportAnnotated: 'media/videos/export-annotated/',
 
     videoCorrection: (pk: Id) => `media/videos/video-correction/${pk}`,
@@ -366,7 +365,6 @@ under `/api/`.
 | `video-segment-ensure-prediction-annotations` | `/api/media/videos/{pk}/ensure-prediction-segment-annotations/` |
 | `video-segment-ensure-annotations` | `/api/media/videos/{pk}/ensure-segment-annotations/` |
 | `video-fps` | `/api/media/videos/{pk}/fps/` |
-| `video-mark-ready-for-export` | `/api/media/videos/{pk}/mark-ready-for-export/` |
 | `video-metadata` | `/api/media/videos/{pk}/metadata/` |
 | `video-reimport` | `/api/media/videos/{pk}/reimport/` |
 | `video-remove-frames` | `/api/media/videos/{pk}/remove-frames/` |

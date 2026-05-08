@@ -49,17 +49,6 @@ class Command(BaseCommand):
         parser.add_argument("--video-id", type=int, help="Filter by video id.")
         parser.add_argument("--label-id", type=int, help="Filter by label id.")
         parser.add_argument(
-            "--center-key",
-            type=str,
-            help="Filter export to one center_key.",
-        )
-        parser.add_argument(
-            "--all-centers",
-            action="store_true",
-            default=None,
-            help="Explicitly export all centers.",
-        )
-        parser.add_argument(
             "--information-source-name",
             type=str,
             help="Filter by information source name.",
@@ -144,20 +133,6 @@ class Command(BaseCommand):
             nargs="+",
             type=int,
             help="Export only annotations from these segment IDs.",
-        )
-        validated_group = parser.add_mutually_exclusive_group()
-        validated_group.add_argument(
-            "--only-validated",
-            action="store_true",
-            default=None,
-            help="Export only human anonymization validated media.",
-        )
-        validated_group.add_argument(
-            "--include-unvalidated",
-            action="store_false",
-            dest="only_validated",
-            default=None,
-            help="Allow table rows from unvalidated media. Media-backed exports still fail if validation is missing.",
         )
 
         transcode_group = parser.add_mutually_exclusive_group()
@@ -260,8 +235,6 @@ class Command(BaseCommand):
             # "output_format",  <-- Removed, handled manually above due to name mismatch
             "video_id",
             "label_id",
-            "center_key",
-            "all_centers",
             "information_source_name",
             "only_true",
             "limit",
@@ -270,7 +243,6 @@ class Command(BaseCommand):
             "export_frames",
             "use_export_flags",
             "segment_ids",
-            "only_validated",
             "transcode_frames",
             "transcode_fps",
             "transcode_quality",

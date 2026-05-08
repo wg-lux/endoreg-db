@@ -23,11 +23,7 @@ from endoreg_db.models import (
     NetworkNode,
     PatientExaminationReport,
 )
-from endoreg_db.services.hub import (
-    deployment_profile_payload,
-    local_study_server_mode_enabled,
-    resolve_allowed_center_id,
-)
+from endoreg_db.services.hub import deployment_profile_payload
 from endoreg_db.services.video_dimension_backfill import (
     VideoDimensionBackfillResult,
     backfill_anonymized_video_dimensions,
@@ -801,65 +797,6 @@ def _sanitize_export_token(value: str) -> str:
     return collapsed or "dataset"
 
 
-def _payload_bool(value: Any, *, default: bool = False) -> bool:
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        normalized = value.strip().lower()
-        if normalized in {"1", "true", "yes", "on"}:
-            return True
-        if normalized in {"0", "false", "no", "off", ""}:
-            return False
-    return bool(value)
-
-
-def _dataset_export_scope_error(
-    request,
-    *,
-    center_key: str | None,
-    all_centers: bool,
-    only_validated: bool,
-) -> tuple[str, int] | None:
-    if center_key and all_centers:
-        return "Export scope must use center_key or all_centers, not both.", 400
-
-    local_study_server = local_study_server_mode_enabled()
-    if not local_study_server:
-        return None
-
-    user = getattr(request, "user", None)
-    authenticated = bool(user and getattr(user, "is_authenticated", False))
-    privileged = bool(
-        authenticated
-        and (getattr(user, "is_staff", False) or getattr(user, "is_superuser", False))
-    )
-    if not authenticated:
-        return "Authentication is required for local_study_server exports.", 403
-    if not (bool(center_key) ^ all_centers):
-        return (
-            "local_study_server exports require exactly one center scope: "
-            "center_key or all_centers.",
-            400,
-        )
-    if all_centers and not privileged:
-        return "all_centers export requires staff or superuser privileges.", 403
-    if not only_validated:
-        return "local_study_server exports require only_validated=true.", 400
-    if center_key:
-        center = Center.objects.filter(center_key=center_key).first()
-        if center is None:
-            return f"Unknown center_key: {center_key}", 400
-        allowed_center_id = resolve_allowed_center_id(user)
-        if allowed_center_id == -1:
-            return "You do not have access to export center data.", 403
-        if allowed_center_id is not None and center.id != allowed_center_id:
-            return "Export center is outside the authenticated scope.", 403
-
-    return None
-
-
 @api_view(["POST"])
 @permission_classes([EnvironmentAwarePermission])
 def application_settings_ai_dataset_export(request):
@@ -898,19 +835,6 @@ def application_settings_ai_dataset_export(request):
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    center_key = str(payload.get("center_key") or "").strip() or None
-    all_centers = _payload_bool(payload.get("all_centers"), default=False)
-    only_validated = _payload_bool(payload.get("only_validated"), default=True)
-    scope_error = _dataset_export_scope_error(
-        request,
-        center_key=center_key,
-        all_centers=all_centers,
-        only_validated=only_validated,
-    )
-    if scope_error is not None:
-        error_message, status_code = scope_error
-        return Response({"success": False, "error": error_message}, status=status_code)
-
     export_dir = EXPORT_DIR / "ai_datasets"
     timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
     file_name = (
@@ -920,11 +844,7 @@ def application_settings_ai_dataset_export(request):
     )
     output_path = export_dir / file_name
 
-    export_payload = dataset.export_to_standardized_structure(
-        center_key=center_key,
-        all_centers=all_centers,
-        only_validated=only_validated,
-    )
+    export_payload = dataset.export_to_standardized_structure()
     json_bytes = json.dumps(
         export_payload,
         indent=2,

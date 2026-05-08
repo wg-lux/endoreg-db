@@ -23,6 +23,7 @@ from endoreg_db.serializers.hub import UploadJobStatusSerializer
 from endoreg_db.services.hub import (
     create_or_reuse_upload_job,
     resolve_api_upload_context,
+    hub_mode_enabled,
     start_upload_job_processing,
     resolve_allowed_center_id,
 )
@@ -137,7 +138,10 @@ class UploadFileView(APIView):
             if center_resolution_error:
                 status_code = (
                     status.HTTP_403_FORBIDDEN
-                    if "Authentication is required" in center_resolution_error
+                    if (
+                        hub_mode_enabled()
+                        and "Authentication is required" in center_resolution_error
+                    )
                     or "outside the authenticated scope" in center_resolution_error
                     or "do not have access" in center_resolution_error
                     else status.HTTP_400_BAD_REQUEST

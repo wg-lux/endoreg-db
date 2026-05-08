@@ -44,11 +44,7 @@ def _create_video(
         state=state,
         original_file_name=f"{video_hash}.mp4",
     )
-    video.processed_file.save(
-        f"{video_hash}_processed.mp4",
-        ContentFile(b"processed-video-bytes"),
-        save=True,
-    )
+    video.raw_file.save(f"{video_hash}.mp4", ContentFile(b"video-bytes"), save=True)
     return video
 
 
@@ -193,9 +189,7 @@ def test_build_lx_patient_video_file_skips_invalid_segments(base_db_data) -> Non
     assert lx_video.anonymization_state.value == "validated"
     assert lx_video.patient == str(patient.pk)
     assert lx_video.patient_examination == str(patient_examination.pk)
-    sensitive_meta = lx_video.sensitive_meta
-    assert sensitive_meta is not None
-    assert sensitive_meta.first_name == "Valid"
+    assert lx_video.sensitive_meta.first_name == "Valid"
     assert len(lx_video.patient_video_segments) == 1
     only_segment = next(iter(lx_video.patient_video_segments.values()))
     assert valid_segment.label is not None

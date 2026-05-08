@@ -91,11 +91,6 @@ class TestEnvironment(TestCase):
                 env_module.get_endoreg_deployment_role(),
                 "central_hub",
             )
-            os.environ["ENDOREG_DEPLOYMENT_ROLE"] = "local_study_server"
-            self.assertEqual(
-                env_module.get_endoreg_deployment_role(),
-                "local_study_server",
-            )
 
             os.environ["ENDOREG_DEPLOYMENT_ROLE"] = "invalid-role"
             with self.assertRaises(ValueError):

@@ -15,7 +15,6 @@ __all__ = [
     "deployment_profile_payload",
     "get_deployment_role",
     "hub_mode_enabled",
-    "local_study_server_mode_enabled",
     "PreanonymizedIngestPayload",
     "process_preanonymized_watcher_file",
     "process_upload_job",
@@ -35,10 +34,6 @@ _EXPORTS = {
     "deployment_profile_payload": (".deployment", "deployment_profile_payload"),
     "get_deployment_role": (".deployment", "get_deployment_role"),
     "transfer_api_enabled": (".deployment", "transfer_api_enabled"),
-    "local_study_server_mode_enabled": (
-        ".deployment",
-        "local_study_server_mode_enabled",
-    ),
     "reap_upload_job_sources": (".cleanup", "reap_upload_job_sources"),
     "assert_environment_readiness": (
         "..environment_readiness",

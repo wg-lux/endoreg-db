@@ -137,30 +137,6 @@ def test_prod_settings_accept_site_node_role() -> None:
     assert payload["endoreg_hub_transfer_require_mtls"] is False
 
 
-def test_prod_settings_accept_local_study_server_role() -> None:
-    protected_root = "/tmp/endoreg-local-study-server-contract/protected"
-    result = _run_prod_settings_probe(
-        {
-            "DJANGO_DEBUG": "false",
-            "DJANGO_SECRET_KEY": "x" * 64,
-            "DJANGO_ALLOWED_HOSTS": "study.example.org",
-            "DB_ENGINE": "django.db.backends.postgresql",
-            "DB_NAME": "endoreg_study",
-            "OIDC_RP_CLIENT_ID": "endoregdb-api",
-            "OIDC_RP_CLIENT_SECRET": "test-secret",
-            "ENDOREG_DEPLOYMENT_ROLE": "local_study_server",
-            "LX_ANNOTATE_ENCRYPTED_DATA_DIR": protected_root,
-            "STORAGE_DIR": f"{protected_root}/storage",
-            "PROTECTED_MEDIA_ROOT": f"{protected_root}/storage",
-        }
-    )
-
-    assert result.returncode == 0, result.stderr
-    payload = json.loads(result.stdout.strip().splitlines()[-1])
-    assert payload["endoreg_deployment_role"] == "local_study_server"
-    assert payload["endoreg_hub_transfer_require_mtls"] is False
-
-
 def test_prod_settings_refuse_central_hub_without_mtls_requirement() -> None:
     result = _run_prod_settings_probe(
         {
@@ -223,32 +199,5 @@ def test_prod_settings_refuse_sqlite_when_central_hub_role_is_enabled() -> None:
     assert result.returncode != 0
     assert (
         "ENDOREG_DEPLOYMENT_ROLE=central_hub requires a non-SQLite production database"
-        in result.stderr
-    )
-
-
-def test_prod_settings_refuse_sqlite_when_local_study_server_role_is_enabled() -> None:
-    protected_root = "/tmp/endoreg-local-study-server-contract/protected"
-    result = _run_prod_settings_probe(
-        {
-            "DJANGO_DEBUG": "false",
-            "DJANGO_SECRET_KEY": "x" * 64,
-            "DJANGO_ALLOWED_HOSTS": "study.example.org",
-            "DB_ENGINE": "django.db.backends.sqlite3",
-            "DB_NAME": str(
-                REPO_ROOT / "data" / "tests" / "deployment_contract.sqlite3"
-            ),
-            "OIDC_RP_CLIENT_ID": "endoregdb-api",
-            "OIDC_RP_CLIENT_SECRET": "test-secret",
-            "ENDOREG_DEPLOYMENT_ROLE": "local_study_server",
-            "LX_ANNOTATE_ENCRYPTED_DATA_DIR": protected_root,
-            "STORAGE_DIR": f"{protected_root}/storage",
-            "PROTECTED_MEDIA_ROOT": f"{protected_root}/storage",
-        }
-    )
-
-    assert result.returncode != 0
-    assert (
-        "ENDOREG_DEPLOYMENT_ROLE=local_study_server requires a non-SQLite production database"
         in result.stderr
     )

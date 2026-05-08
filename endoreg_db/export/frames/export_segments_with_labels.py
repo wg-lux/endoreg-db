@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import csv
-import io
 import logging
 import uuid
 from dataclasses import dataclass
@@ -10,28 +9,17 @@ from typing import Any, TypedDict, cast, Literal
 
 import yaml
 import json
-from django.db.models import Q, QuerySet
+from django.db.models import QuerySet
 
 from endoreg_db.helpers.data_load_orchestrator import load_base_db_data
-from endoreg_db.models import (
-    ImageClassificationAnnotation,
-    LabelVideoSegment,
-    VideoFile,
-    Frame,
-)
+from endoreg_db.models import ImageClassificationAnnotation, VideoFile
 from endoreg_db.utils.file_operations import (
-    atomic_copy_file,
     atomic_move_file,
-    atomic_write_file,
     ensure_directory,
     safe_rmtree,
     safe_unlink_file,
 )
-from endoreg_db.utils.paths import (
-    ensure_within_protected_media_root,
-    normalize_protected_media_relative_path,
-    resolve_existing_protected_media_path,
-)
+from endoreg_db.utils.paths import resolve_existing_protected_media_path
 from endoreg_db.utils.storage import ensure_local_file
 from endoreg_db.utils.storage_streaming import (
     local_plaintext_path_from_name,
@@ -91,10 +79,6 @@ DEFAULT_TRANSCODE_EXT = "jpg"
 
 
 def _resolve_video_source_path(video: VideoFile) -> Path | None:
-    """
-    Prefer the central protected-media path resolution used by streaming.
-    Fall back to storage-backed downloads (ensure_local_file) elsewhere.
-    """
     try:
         field_file = video.active_file
     except Exception:
@@ -118,7 +102,6 @@ def _resolve_video_source_path(video: VideoFile) -> Path | None:
 @dataclass(frozen=True, slots=True)
 class export_config:
     output_path: Path | str
-    output_dir: Path | str | None = None
     output_format: Literal["csv", "json"] = "csv"
     video_id: int | None = None
     label_id: int | None = None
@@ -126,16 +109,12 @@ class export_config:
     only_true: bool | None = None
     limit: int | None = None
     load_base_data: bool = False
-    export_videos: bool = False
-    export_frames: bool = False
     transcode_frames: bool = False
     transcode_fps: float = DEFAULT_TRANSCODE_FPS
     transcode_quality: int = DEFAULT_TRANSCODE_QUALITY
     transcode_ext: str = DEFAULT_TRANSCODE_EXT
     transcode_overwrite: bool = False
     use_frame_pk_paths: bool | None = None
-    use_export_flags: bool = False
-    segment_ids: list[int] | None = None
 
     @classmethod
     def from_yaml(cls, config_path: Path | str) -> "export_config":
@@ -145,7 +124,6 @@ class export_config:
             raise ValueError("export config must include output_path")
         return cls(
             output_path=output_path,
-            output_dir=config_data.get("output_dir"),
             output_format=config_data.get("output_format", "csv"),
             video_id=config_data.get("video_id"),
             label_id=config_data.get("label_id"),
@@ -153,8 +131,6 @@ class export_config:
             only_true=config_data.get("only_true"),
             limit=config_data.get("limit"),
             load_base_data=config_data.get("load_base_data", False),
-            export_videos=config_data.get("export_videos", False),
-            export_frames=config_data.get("export_frames", False),
             transcode_frames=config_data.get("transcode_frames", False),
             transcode_fps=config_data.get("transcode_fps", DEFAULT_TRANSCODE_FPS),
             transcode_quality=config_data.get(
@@ -163,8 +139,6 @@ class export_config:
             transcode_ext=config_data.get("transcode_ext", DEFAULT_TRANSCODE_EXT),
             transcode_overwrite=config_data.get("transcode_overwrite", False),
             use_frame_pk_paths=config_data.get("use_frame_pk_paths"),
-            use_export_flags=config_data.get("use_export_flags", False),
-            segment_ids=config_data.get("segment_ids"),
         )
 
 
@@ -173,10 +147,6 @@ class export_result:
     output_path: Path
     row_count: int
     success: bool
-    exported_video_count: int = 0
-    exported_frame_count: int = 0
-    video_output_dir: Path | None = None
-    frame_output_dir: Path | None = None
 
 
 class export_job_failed_error(RuntimeError):
@@ -190,8 +160,7 @@ class annotation_exporter_client:
         self._logger = logger or logging.getLogger(__name__)
 
     def run_export(self, config: export_config) -> export_result:
-        output_path = _resolve_output_path(config)
-        output_dir = _resolve_output_dir(config, output_path)
+        output_path = Path(config.output_path)
         self._logger.info(
             "Starting annotation export to %s (transcode_frames=%s, limit=%s)",
             output_path,
@@ -221,8 +190,6 @@ class annotation_exporter_client:
                     only_true=config.only_true,
                     limit=config.limit,
                     load_base_data=load_base_data,
-                    use_export_flags=config.use_export_flags,
-                    segment_ids=config.segment_ids,
                     transcode_frames=config.transcode_frames,
                     transcode_fps=config.transcode_fps,
                     transcode_quality=config.transcode_quality,
@@ -239,8 +206,6 @@ class annotation_exporter_client:
                     only_true=config.only_true,
                     limit=config.limit,
                     load_base_data=load_base_data,
-                    use_export_flags=config.use_export_flags,
-                    segment_ids=config.segment_ids,
                     transcode_frames=config.transcode_frames,
                     transcode_fps=config.transcode_fps,
                     transcode_quality=config.transcode_quality,
@@ -248,40 +213,6 @@ class annotation_exporter_client:
                     transcode_overwrite=config.transcode_overwrite,
                     use_frame_pk_paths=config.use_frame_pk_paths,
                 )
-
-            exported_video_count = 0
-            exported_frame_count = 0
-            video_output_dir = None
-            frame_output_dir = None
-
-            if config.export_videos or config.export_frames:
-                annotations = _build_annotations_queryset()
-                annotations = _apply_filters(
-                    annotations,
-                    video_id=config.video_id,
-                    label_id=config.label_id,
-                    information_source_name=config.information_source_name,
-                    only_true=config.only_true,
-                )
-                if config.limit is not None:
-                    annotations = annotations[: config.limit]
-
-                export_result_data = _export_media_assets(
-                    annotations,
-                    output_dir=output_dir,
-                    export_videos=config.export_videos,
-                    export_frames=config.export_frames,
-                    transcode_frames=config.transcode_frames,
-                    transcode_fps=config.transcode_fps,
-                    transcode_quality=config.transcode_quality,
-                    transcode_ext=config.transcode_ext,
-                    transcode_overwrite=config.transcode_overwrite,
-                    use_frame_pk_paths=config.use_frame_pk_paths,
-                )
-                exported_video_count = export_result_data["exported_video_count"]
-                exported_frame_count = export_result_data["exported_frame_count"]
-                video_output_dir = export_result_data["video_output_dir"]
-                frame_output_dir = export_result_data["frame_output_dir"]
 
             self._logger.info(
                 "Annotation export completed successfully: %s", exported_path
@@ -290,10 +221,6 @@ class annotation_exporter_client:
                 output_path=Path(exported_path),
                 row_count=row_count,
                 success=True,
-                exported_video_count=exported_video_count,
-                exported_frame_count=exported_frame_count,
-                video_output_dir=video_output_dir,
-                frame_output_dir=frame_output_dir,
             )
         except (FileNotFoundError, ValueError, RuntimeError) as exc:
             self._logger.error(
@@ -340,10 +267,6 @@ def export_frames_with_labels_from_yaml(config_path: Path | str) -> Path:
         only_true=config_data.get("only_true"),
         limit=config_data.get("limit"),
         load_base_data=config_data.get("load_base_data", False),
-        export_videos=config_data.get("export_videos", False),
-        export_frames=config_data.get("export_frames", False),
-        use_export_flags=config_data.get("use_export_flags", False),
-        segment_ids=config_data.get("segment_ids"),
         transcode_frames=config_data.get("transcode_frames", False),
         transcode_fps=config_data.get("transcode_fps", DEFAULT_TRANSCODE_FPS),
         transcode_quality=config_data.get(
@@ -365,10 +288,6 @@ def export_frames_with_labels_to_csv(
     only_true: bool | None = None,
     limit: int | None = None,
     load_base_data: bool = False,
-    export_videos: bool = False,
-    export_frames: bool = False,
-    use_export_flags: bool = False,
-    segment_ids: list[int] | None = None,
     transcode_frames: bool = False,
     transcode_fps: float = DEFAULT_TRANSCODE_FPS,
     transcode_quality: int = DEFAULT_TRANSCODE_QUALITY,
@@ -380,7 +299,7 @@ def export_frames_with_labels_to_csv(
         load_base_db_data()
 
     output_file = Path(output_path)
-    ensure_directory(output_file.parent)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
 
     if annotations is None:
         annotations = _build_annotations_queryset()
@@ -390,8 +309,6 @@ def export_frames_with_labels_to_csv(
         label_id=label_id,
         information_source_name=information_source_name,
         only_true=only_true,
-        use_export_flags=use_export_flags,
-        segment_ids=segment_ids,
     )
     if limit is not None:
         annotations = annotations[:limit]
@@ -408,22 +325,17 @@ def export_frames_with_labels_to_csv(
             overwrite=transcode_overwrite,
         )
 
-    rows = [
-        _annotation_to_row(
-            annotation,
-            use_frame_pk_paths=use_frame_pk_paths,
-            frame_ext=transcode_ext,
-        )
-        for annotation in annotations.iterator()
-    ]
-    csv_buffer = io.StringIO()
-    writer = csv.DictWriter(csv_buffer, fieldnames=DEFAULT_FIELDNAMES)
-    writer.writeheader()
-    writer.writerows(rows)
-    atomic_write_file(
-        destination=output_file,
-        content=[csv_buffer.getvalue().encode("utf-8")],
-    )
+    with output_file.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=DEFAULT_FIELDNAMES)
+        writer.writeheader()
+        for annotation in annotations.iterator():
+            writer.writerow(
+                _annotation_to_row(
+                    annotation,
+                    use_frame_pk_paths=use_frame_pk_paths,
+                    frame_ext=transcode_ext,
+                )
+            )
 
     return output_file
 
@@ -438,10 +350,6 @@ def export_frames_with_labels_to_json(
     only_true: bool | None = None,
     limit: int | None = None,
     load_base_data: bool = False,
-    export_videos: bool = False,
-    export_frames: bool = False,
-    use_export_flags: bool = False,
-    segment_ids: list[int] | None = None,
     transcode_frames: bool = False,
     transcode_fps: float = DEFAULT_TRANSCODE_FPS,
     transcode_quality: int = DEFAULT_TRANSCODE_QUALITY,
@@ -453,7 +361,7 @@ def export_frames_with_labels_to_json(
         load_base_db_data()
 
     output_file = Path(output_path)
-    ensure_directory(output_file.parent)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
 
     if annotations is None:
         annotations = _build_annotations_queryset()
@@ -464,8 +372,6 @@ def export_frames_with_labels_to_json(
         label_id=label_id,
         information_source_name=information_source_name,
         only_true=only_true,
-        use_export_flags=use_export_flags,
-        segment_ids=segment_ids,
     )
 
     if limit is not None:
@@ -493,244 +399,12 @@ def export_frames_with_labels_to_json(
             )
         )
 
-    atomic_write_file(
-        destination=output_file,
-        content=[json.dumps(rows, indent=2, ensure_ascii=False).encode("utf-8")],
+    output_file.write_text(
+        json.dumps(rows, indent=2, ensure_ascii=False),
+        encoding="utf-8",
     )
 
     return output_file
-
-
-def _resolve_output_path(config: export_config) -> Path:
-    output_path = Path(config.output_path)
-    output_dir = config.output_dir
-    if output_dir:
-        base_dir = Path(output_dir)
-        if not output_path.is_absolute():
-            return base_dir / output_path
-    return output_path
-
-
-def _resolve_output_dir(config: export_config, output_path: Path) -> Path:
-    if config.output_dir:
-        return Path(config.output_dir)
-    return output_path.parent
-
-
-class ExportAssetResult(TypedDict):
-    exported_video_count: int
-    exported_frame_count: int
-    video_output_dir: Path | None
-    frame_output_dir: Path | None
-
-
-def _export_media_assets(
-    annotations: QuerySet[ImageClassificationAnnotation],
-    *,
-    output_dir: Path,
-    export_videos: bool,
-    export_frames: bool,
-    transcode_frames: bool,
-    transcode_fps: float,
-    transcode_quality: int,
-    transcode_ext: str,
-    transcode_overwrite: bool,
-    use_frame_pk_paths: bool | None,
-) -> ExportAssetResult:
-    ensure_directory(output_dir)
-    video_output_dir = output_dir / "videos" if export_videos else None
-    frame_output_dir = output_dir / "frames" if export_frames else None
-
-    if export_videos and video_output_dir:
-        ensure_directory(video_output_dir)
-    if export_frames and frame_output_dir:
-        ensure_directory(frame_output_dir)
-
-    if use_frame_pk_paths is None:
-        use_frame_pk_paths = transcode_frames
-
-    exported_video_count = 0
-    exported_frame_count = 0
-
-    if export_videos:
-        exported_video_count = _export_videos_from_annotations(
-            annotations,
-            output_dir=video_output_dir,
-        )
-
-    if export_frames:
-        exported_frame_count = _export_frames_from_annotations(
-            annotations,
-            output_dir=frame_output_dir,
-            use_frame_pk_paths=use_frame_pk_paths,
-            frame_ext=transcode_ext,
-        )
-
-    return {
-        "exported_video_count": exported_video_count,
-        "exported_frame_count": exported_frame_count,
-        "video_output_dir": video_output_dir,
-        "frame_output_dir": frame_output_dir,
-    }
-
-
-def _export_videos_from_annotations(
-    annotations: QuerySet[ImageClassificationAnnotation],
-    *,
-    output_dir: Path | None,
-) -> int:
-    if output_dir is None:
-        return 0
-
-    video_ids = (
-        annotations.values_list("frame__video_id", flat=True)
-        .distinct()
-        .order_by("frame__video_id")
-    )
-    videos = VideoFile.objects.filter(pk__in=video_ids)
-    exported_count = 0
-
-    for video in videos:
-        try:
-            source_path = _resolve_video_source_path(video)
-            if source_path is not None:
-                suffix = source_path.suffix or ".mp4"
-                video_hash = video.video_hash or "unknown"
-                target_path = output_dir / f"video_{video.pk}_{video_hash}{suffix}"
-                try:
-                    atomic_copy_file(source=source_path, destination=target_path)
-                    exported_count += 1
-                    continue
-                except OSError as exc:
-                    logger.warning(
-                        "Failed to export video %s from %s: %s",
-                        video.pk,
-                        source_path,
-                        exc,
-                    )
-
-            # Fallback: attempt to download via Django storage backend.
-            with ensure_local_file(video.active_file) as source_path_fallback:
-                suffix = source_path_fallback.suffix or ".mp4"
-                video_hash = video.video_hash or "unknown"
-                target_path = output_dir / f"video_{video.pk}_{video_hash}{suffix}"
-                try:
-                    atomic_copy_file(
-                        source=source_path_fallback,
-                        destination=target_path,
-                    )
-                    exported_count += 1
-                except OSError as exc:
-                    logger.warning(
-                        "Failed to export video %s from %s: %s",
-                        video.pk,
-                        source_path_fallback,
-                        exc,
-                    )
-        except (ValueError, FileNotFoundError, IOError) as exc:
-            logger.warning("Skipping video %s: %s", video.pk, exc)
-
-    return exported_count
-
-
-def _export_frames_from_annotations(
-    annotations: QuerySet[ImageClassificationAnnotation],
-    *,
-    output_dir: Path | None,
-    use_frame_pk_paths: bool,
-    frame_ext: str,
-) -> int:
-    if output_dir is None:
-        return 0
-
-    exported_count = 0
-    copied_frames: set[tuple[int, str]] = set()
-
-    for annotation in annotations.iterator():
-        frame = annotation.frame
-        if frame is None:
-            continue
-        video = frame.video
-        if video is None:
-            continue
-
-        frame_relative_path = (
-            _frame_pk_filename(frame.pk, frame_ext)
-            if use_frame_pk_paths
-            else frame.relative_path
-        )
-        if not frame_relative_path:
-            continue
-        try:
-            frame_relative_path = normalize_protected_media_relative_path(
-                frame_relative_path
-            )
-        except ValueError as exc:
-            logger.warning(
-                "Skipping frame %s with unsafe relative path %r: %s",
-                frame.pk,
-                frame_relative_path,
-                exc,
-            )
-            continue
-
-        frame_key = (video.pk, frame_relative_path)
-        if frame_key in copied_frames:
-            continue
-
-        source_path = _resolve_frame_source_path(
-            frame,
-            frame_relative_path=frame_relative_path,
-            use_frame_pk_paths=use_frame_pk_paths,
-            frame_ext=frame_ext,
-        )
-        if source_path is None or not source_path.exists():
-            logger.warning(
-                "Frame source missing for video %s frame %s",
-                video.pk,
-                frame.pk,
-            )
-            continue
-
-        target_dir = output_dir / f"video_{video.pk}"
-        target_path = target_dir / frame_relative_path
-        ensure_directory(target_path.parent)
-        try:
-            atomic_copy_file(source=source_path, destination=target_path)
-            exported_count += 1
-            copied_frames.add(frame_key)
-        except OSError as exc:
-            logger.warning(
-                "Failed to export frame %s from %s: %s",
-                frame.pk,
-                source_path,
-                exc,
-            )
-
-    return exported_count
-
-
-def _resolve_frame_source_path(
-    frame: "Frame",
-    *,
-    frame_relative_path: str,
-    use_frame_pk_paths: bool,
-    frame_ext: str,
-) -> Path | None:
-    video = frame.video
-    if not video:
-        return None
-
-    if use_frame_pk_paths:
-        frame_dir = video.get_frame_dir_path()
-        if frame_dir is None:
-            return None
-        pk_path = frame_dir / frame_relative_path
-        resolved_pk_path = resolve_existing_protected_media_path(pk_path)
-        if resolved_pk_path is not None:
-            return resolved_pk_path
-
-    return resolve_existing_protected_media_path(frame.file_path)
 
 
 def transcode_videos_for_annotations(
@@ -777,9 +451,8 @@ def _transcode_video_to_frame_dir(
     frame_dir = video.get_frame_dir_path()
     if not frame_dir:
         raise ValueError(f"frame dir not available for video {video.pk}")
-    frame_dir = ensure_within_protected_media_root(frame_dir)
 
-    ensure_directory(frame_dir)
+    frame_dir.mkdir(parents=True, exist_ok=True)
 
     if frame_pks and not overwrite:
         expected_names = {_frame_pk_filename(pk, ext) for pk in frame_pks}
@@ -791,8 +464,8 @@ def _transcode_video_to_frame_dir(
             )
             return
 
+    source_path = _resolve_video_source_path(video)
     try:
-        source_path = _resolve_video_source_path(video)
         if source_path is None:
             with ensure_local_file(video.active_file) as source_path_fallback:
                 _extract_and_move_transcoded_frames(
@@ -922,8 +595,6 @@ def _apply_filters(
     label_id: int | None,
     information_source_name: str | None,
     only_true: bool | None,
-    use_export_flags: bool = False,
-    segment_ids: list[int] | None = None,
 ) -> QuerySet[ImageClassificationAnnotation]:
     if video_id is not None:
         annotations = annotations.filter(frame__video_id=video_id)
@@ -935,13 +606,6 @@ def _apply_filters(
         )
     if only_true is not None:
         annotations = annotations.filter(value=only_true)
-    if use_export_flags or segment_ids:
-        annotations = _filter_annotations_by_segments(
-            annotations,
-            video_id=video_id,
-            segment_ids=segment_ids,
-            use_export_flags=use_export_flags,
-        )
     return annotations
 
 
@@ -953,8 +617,6 @@ def _count_annotations_for_config(config: export_config) -> int:
         label_id=config.label_id,
         information_source_name=config.information_source_name,
         only_true=config.only_true,
-        use_export_flags=config.use_export_flags,
-        segment_ids=config.segment_ids,
     )
     if config.limit is None:
         return annotations.count()
@@ -962,64 +624,6 @@ def _count_annotations_for_config(config: export_config) -> int:
         return 0
     total = annotations.count()
     return min(total, config.limit)
-
-
-def _filter_annotations_by_segments(
-    annotations: QuerySet[ImageClassificationAnnotation],
-    *,
-    video_id: int | None,
-    segment_ids: list[int] | None,
-    use_export_flags: bool,
-) -> QuerySet[ImageClassificationAnnotation]:
-    segments = LabelVideoSegment.objects.select_related(
-        "video_file",
-        "label",
-        "source",
-        "prediction_meta",
-    )
-    if video_id is not None:
-        segments = segments.filter(video_file_id=video_id)
-
-    if segment_ids:
-        segments = segments.filter(pk__in=segment_ids)
-    elif use_export_flags:
-        segments = segments.filter(
-            Q(export_segment=True) | Q(video_file__export_segments_by_video=True)
-        )
-
-    segment_list = list(segments)
-    if not segment_list:
-        return annotations.none()
-
-    segment_filter = Q()
-    for segment in segment_list:
-        if segment.label is None:
-            continue
-
-        seg_filter = Q(
-            frame__video=segment.video_file,
-            frame__frame_number__gte=segment.start_frame_number,
-            frame__frame_number__lt=segment.end_frame_number,
-            label=segment.label,
-        )
-
-        if segment.source_id is None:
-            seg_filter &= Q(information_source__isnull=True)
-        else:
-            seg_filter &= Q(information_source_id=segment.source_id)
-
-        model_meta = segment.get_model_meta()
-        if model_meta is None:
-            seg_filter &= Q(model_meta__isnull=True)
-        else:
-            seg_filter &= Q(model_meta_id=model_meta.pk)
-
-        segment_filter |= seg_filter
-
-    if not segment_filter:
-        return annotations.none()
-
-    return annotations.filter(segment_filter)
 
 
 def _annotation_to_row(
@@ -1031,9 +635,6 @@ def _annotation_to_row(
     frame = annotation.frame
     video = frame.video if frame else None
     information_source = annotation.information_source
-
-    if information_source is None:
-        raise ValueError("Information Source is None.")
 
     frame_relative_path = None
     if frame:
@@ -1058,7 +659,9 @@ def _annotation_to_row(
             "float_value": annotation.float_value,
             "annotator": annotation.annotator,
             "information_source_id": (
-                information_source.pk if information_source else None
+                annotation.information_source.pk
+                if annotation.information_source
+                else None
             ),
             "information_source_name": (
                 information_source.name if information_source else None

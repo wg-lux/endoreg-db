@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 import json
-import hashlib
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
 
-import pytest
-from django.test import TestCase, override_settings
+from django.test import TestCase
 
 from endoreg_db.models import Center, Gender, PatientExternalID, RawPdfFile, UploadJob
 from endoreg_db.services.hub import process_preanonymized_watcher_file
@@ -82,101 +79,6 @@ class PreanonymizedWatcherIngestTests(TestCase):
         assert upload_job.source_file_delete_eligible_at is not None
         assert upload_job.source_file_persisted is False
         assert upload_job.file.name == ""
-
-    @override_settings(ENDOREG_DEPLOYMENT_ROLE="local_study_server")
-    def test_local_study_server_requires_validated_sidecar(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir_name:
-            temp_dir = Path(temp_dir_name)
-            drop_dir = temp_dir / "preanonymized_import"
-            quarantine_dir = temp_dir / "quarantine"
-            drop_dir.mkdir()
-            quarantine_dir.mkdir()
-            report_path = drop_dir / "incoming.pdf"
-            report_bytes = b"%PDF-1.4\n%%EOF\n"
-            report_path.write_bytes(report_bytes)
-            sidecar_path = report_path.with_suffix(".json")
-            sidecar_path.write_text(
-                json.dumps(
-                    {
-                        "center_key": self.center.center_key,
-                        "source_system": "lx-annotate",
-                        "file_sha256": hashlib.sha256(report_bytes).hexdigest(),
-                        "human_anonymization_validated": True,
-                        "validated_by": "operator-1",
-                        "validated_at": "2026-05-06T12:00:00+02:00",
-                        "anonymized_text": "already anonymized",
-                    }
-                ),
-                encoding="utf-8",
-            )
-
-            with (
-                patch(
-                    "endoreg_db.services.hub.ingest.path_utils.WATCHER_PREANONYMIZED_DROP_DIR",
-                    drop_dir,
-                ),
-                patch("endoreg_db.services.hub.ingest.QUARANTINE_DIR", quarantine_dir),
-            ):
-                upload_job = process_preanonymized_watcher_file(file_path=report_path)
-
-            upload_job.refresh_from_db()
-            report = RawPdfFile.objects.get()
-
-        assert upload_job.status == UploadJob.Status.ANONYMIZED
-        assert (
-            upload_job.processing_provenance["source_center_key"]
-            == self.center.center_key
-        )
-        assert (
-            upload_job.processing_provenance["sidecar_payload"][
-                "human_anonymization_validated"
-            ]
-            is True
-        )
-        assert report.get_or_create_state().anonymization_validated is True
-
-    @override_settings(ENDOREG_DEPLOYMENT_ROLE="local_study_server")
-    def test_local_study_server_hash_mismatch_quarantines_media_and_sidecar(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir_name:
-            temp_dir = Path(temp_dir_name)
-            drop_dir = temp_dir / "preanonymized_import"
-            quarantine_dir = temp_dir / "quarantine"
-            drop_dir.mkdir()
-            quarantine_dir.mkdir()
-            report_path = drop_dir / "incoming.pdf"
-            report_path.write_bytes(b"%PDF-1.4\n%%EOF\n")
-            sidecar_path = report_path.with_suffix(".json")
-            sidecar_path.write_text(
-                json.dumps(
-                    {
-                        "center_key": self.center.center_key,
-                        "source_system": "lx-annotate",
-                        "file_sha256": "0" * 64,
-                        "human_anonymization_validated": True,
-                        "validated_by": "operator-1",
-                        "validated_at": "2026-05-06T12:00:00+02:00",
-                    }
-                ),
-                encoding="utf-8",
-            )
-
-            with (
-                patch(
-                    "endoreg_db.services.hub.ingest.path_utils.WATCHER_PREANONYMIZED_DROP_DIR",
-                    drop_dir,
-                ),
-                patch("endoreg_db.services.hub.ingest.QUARANTINE_DIR", quarantine_dir),
-                pytest.raises(ValueError, match="file_sha256 does not match"),
-            ):
-                process_preanonymized_watcher_file(file_path=report_path)
-
-            assert not report_path.exists()
-            assert not sidecar_path.exists()
-            assert (quarantine_dir / "incoming.pdf").exists()
-            assert (quarantine_dir / "incoming.json").exists()
-            assert UploadJob.objects.count() == 0
 
     def test_process_preanonymized_report_normalizes_sensitive_meta_strings(
         self,

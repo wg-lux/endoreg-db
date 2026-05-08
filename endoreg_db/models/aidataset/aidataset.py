@@ -9,8 +9,6 @@ from django.db import models
 from lx_dtypes.models.ledger.p_video.Pydantic import PatientVideoFile
 from pydantic import BaseModel, ConfigDict, Field
 
-from endoreg_db.services.hub.deployment import local_study_server_mode_enabled
-
 if TYPE_CHECKING:
     from django.db.models import QuerySet
 
@@ -802,12 +800,7 @@ class AIDataSet(models.Model):
             }
         )
 
-    def _build_patient_videos_export(
-        self,
-        *,
-        video_annotations: Sequence[LabelVideoSegment] | None = None,
-        videos: QuerySet[VideoFile] | None = None,
-    ) -> dict[str, PatientVideoFile]:
+    def _build_patient_videos_export(self) -> dict[str, PatientVideoFile]:
         from endoreg_db.services.lx_video_contracts import (
             build_lx_p_video_segment,
             build_lx_patient_video_file,
@@ -816,31 +809,21 @@ class AIDataSet(models.Model):
         patient_videos: dict[str, PatientVideoFile] = {}
         segment_lists_by_video_id: dict[int, list[LabelVideoSegment]] = {}
 
-        if video_annotations is None:
-            video_annotations = list(
-                self.video_annotations.select_related(
-                    "label",
-                    "source",
-                    "video_file",
-                    "prediction_meta__model_meta__labelset",
-                    "video_file__ai_model_meta__labelset",
-                ).order_by(
-                    "video_file_id",
-                    "start_frame_number",
-                    "end_frame_number",
-                    "pk",
-                )
-            )
-
-        for segment in video_annotations:
+        for segment in self.video_annotations.select_related(
+            "label",
+            "source",
+            "video_file",
+            "prediction_meta__model_meta__labelset",
+            "video_file__ai_model_meta__labelset",
+        ).order_by("video_file_id", "start_frame_number", "end_frame_number", "pk"):
             segment_lists_by_video_id.setdefault(segment.video_file_id, []).append(
                 segment
             )
 
-        if videos is None:
-            videos = self.get_related_videos_queryset()
-
-        for video in videos.select_related("sensitive_meta", "state"):
+        for video in self.get_related_videos_queryset().select_related(
+            "sensitive_meta",
+            "state",
+        ):
             patient_video = build_lx_patient_video_file(video, include_segments=False)
             attached_segments = segment_lists_by_video_id.get(video.pk, [])
             if attached_segments:
@@ -853,128 +836,32 @@ class AIDataSet(models.Model):
 
         return patient_videos
 
-    @staticmethod
-    def _validate_export_scope(
-        *,
-        center_key: str | None,
-        all_centers: bool,
-        only_validated: bool,
-    ) -> str:
-        normalized_center_key = (center_key or "").strip()
-        if normalized_center_key and all_centers:
-            raise ValueError(
-                "Export scope must use center_key or all_centers, not both"
-            )
-
-        if normalized_center_key:
-            from endoreg_db.models import Center
-
-            if not Center.objects.filter(center_key=normalized_center_key).exists():
-                raise ValueError(f"Unknown center_key: {normalized_center_key}")
-
-        if local_study_server_mode_enabled():
-            if not (bool(normalized_center_key) ^ bool(all_centers)):
-                raise ValueError(
-                    "local_study_server exports require exactly one center scope: "
-                    "center_key or all_centers"
-                )
-            if not only_validated:
-                raise ValueError(
-                    "local_study_server exports require only_validated=true"
-                )
-
-        return normalized_center_key
-
-    def build_export_payload(
-        self,
-        *,
-        center_key: str | None = None,
-        all_centers: bool = False,
-        only_validated: bool = False,
-    ) -> AIDataSetExportPayload:
+    def build_export_payload(self) -> AIDataSetExportPayload:
         if self.pk is None:
             raise ValueError("AIDataSet must be saved before it can be exported.")
 
-        normalized_center_key = self._validate_export_scope(
-            center_key=center_key,
-            all_centers=all_centers,
-            only_validated=only_validated,
-        )
-        image_annotations_qs = self.image_annotations.select_related(
-            "frame__video",
-            "label",
-            "information_source",
-        )
-        video_annotations_qs = self.video_annotations.select_related(
-            "label",
-            "source",
-            "video_file",
-            "prediction_meta__model_meta__labelset",
-            "video_file__ai_model_meta__labelset",
-        )
-
-        if normalized_center_key and not all_centers:
-            image_annotations_qs = image_annotations_qs.filter(
-                frame__video__center__center_key=normalized_center_key
-            )
-            video_annotations_qs = video_annotations_qs.filter(
-                video_file__center__center_key=normalized_center_key
-            )
-        if only_validated:
-            image_annotations_qs = image_annotations_qs.filter(
-                frame__video__state__anonymization_validated=True
-            )
-            video_annotations_qs = video_annotations_qs.filter(
-                video_file__state__anonymization_validated=True
-            )
-            if local_study_server_mode_enabled():
-                image_annotations_qs = image_annotations_qs.filter(
-                    frame__video__state__outside_segments_removed=True,
-                    frame__video__state__ready_for_export=True,
-                ).exclude(frame__video__state__processed_file_sha256="")
-                video_annotations_qs = video_annotations_qs.filter(
-                    video_file__state__outside_segments_removed=True,
-                    video_file__state__ready_for_export=True,
-                ).exclude(video_file__state__processed_file_sha256="")
-
         image_annotations = list(
-            image_annotations_qs.order_by(
-                "frame__video_id",
-                "frame__frame_number",
-                "label__name",
-                "pk",
-            )
+            self.image_annotations.select_related(
+                "frame__video",
+                "label",
+                "information_source",
+            ).order_by("frame__video_id", "frame__frame_number", "label__name", "pk")
         )
         video_annotations = list(
-            video_annotations_qs.order_by(
-                "video_file_id",
-                "start_frame_number",
-                "end_frame_number",
-                "pk",
-            )
+            self.video_annotations.select_related(
+                "label",
+                "source",
+                "video_file",
+                "prediction_meta__model_meta__labelset",
+                "video_file__ai_model_meta__labelset",
+            ).order_by("video_file_id", "start_frame_number", "end_frame_number", "pk")
         )
 
         frame_exports = [
             self._build_frame_annotation_export(annotation)
             for annotation in image_annotations
         ]
-        related_video_ids = {
-            annotation.frame.video_id
-            for annotation in image_annotations
-            if annotation.frame_id is not None and annotation.frame.video_id is not None
-        }
-        related_video_ids.update(
-            segment.video_file_id
-            for segment in video_annotations
-            if segment.video_file_id is not None
-        )
-        related_videos = self.get_related_videos_queryset().filter(
-            pk__in=related_video_ids
-        )
-        patient_videos = self._build_patient_videos_export(
-            video_annotations=video_annotations,
-            videos=related_videos,
-        )
+        patient_videos = self._build_patient_videos_export()
 
         label_ids = {
             annotation.label_id
@@ -1015,21 +902,11 @@ class AIDataSet(models.Model):
             }
         )
 
-    def export_to_standardized_structure(
-        self,
-        *,
-        center_key: str | None = None,
-        all_centers: bool = False,
-        only_validated: bool = False,
-    ) -> dict[str, Any]:
+    def export_to_standardized_structure(self) -> dict[str, Any]:
         """
         Return a validated JSON-serializable export payload.
         """
-        return self.build_export_payload(
-            center_key=center_key,
-            all_centers=all_centers,
-            only_validated=only_validated,
-        ).model_dump(mode="json")
+        return self.build_export_payload().model_dump(mode="json")
 
     def __str__(self) -> str:
         if self.name:

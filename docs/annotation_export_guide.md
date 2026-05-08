@@ -48,39 +48,6 @@ Segment create/update/delete already keeps ICA rows in sync for the current API
 flow. For older data or imported segments, run the idempotent ensure step before
 export.
 
-## EndoregDB Callers
-
-For an endoreg-db caller, prefer the in-process exporter instead of shelling out:
-
-```python
-from pathlib import Path
-
-from endoreg_db.export.frames.export_frames_with_labels import (
-    annotation_exporter_client,
-    export_config,
-)
-
-config = export_config(
-    output_dir=Path("/data/endoreg-training/gastronet_run_001"),
-    output_path="annotations.csv",
-    output_format="csv",
-    load_base_data=True,
-    use_export_flags=True,
-    information_source_name="manual_annotation",
-    export_frames=True,
-    export_videos=False,
-    transcode_frames=False,
-    use_frame_pk_paths=False,
-    only_validated=True,
-)
-
-result = annotation_exporter_client().run_export(config)
-
-annotation_table = result.output_path
-frame_dir = result.frame_output_dir
-
-```
-
 ## Ensure Segment Annotations
 
 CLI examples:

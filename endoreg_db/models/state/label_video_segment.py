@@ -27,15 +27,6 @@ class LabelVideoSegmentState(AbstractState):
         verbose_name = "Label Video Segment State"
         verbose_name_plural = "Label Video Segment States"
 
-    def save(self, *args, **kwargs):
-        super().save(*args, **kwargs)
-        origin = getattr(self, "origin", None)
-        video = getattr(origin, "video_file", None) if origin is not None else None
-        if video is not None:
-            video.get_or_create_state().clear_export_readiness(
-                clear_outside_segments_removed=True
-            )
-
     if TYPE_CHECKING:
         from endoreg_db.models import LabelVideoSegment
 
