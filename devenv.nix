@@ -199,7 +199,7 @@ in
     '';
     
     env-setup.exec = ''
-    # Ensure runtimePackages are included in the library path here too
+    # Ensure runtimePackages are included in the library path
     export LD_LIBRARY_PATH="${
       with pkgs;
       lib.makeLibraryPath (buildInputs ++ runtimePackages)
@@ -222,7 +222,11 @@ in
       uv run make -C docs linkcheck
     '';
     uvsnc.exec = ''
-      ${SYNC_CMD}
+      sync_cmd="${SYNC_CMD}"
+      if [ -d "../lx-ai-core" ]; then
+        sync_cmd="$sync_cmd --group ai-local"
+      fi
+      $sync_cmd
     '';
   };
 
@@ -300,6 +304,9 @@ in
   enterShell = ''
 
     export SYNC_CMD="${SYNC_CMD}"
+    if [ -d "../lx-ai-core" ]; then
+      export SYNC_CMD="$SYNC_CMD --group ai-local"
+    fi
 
     # Ensure dependencies are synced using uv
     # Check if venv exists. If not, run sync verbosely. If it exists, sync quietly.

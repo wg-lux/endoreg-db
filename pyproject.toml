@@ -124,6 +124,13 @@ docs = [
   "furo>=2025.9.25",
 ]
 
+[dependency-groups]
+# Local development bridge only. Keep lx-ai-core out of project.dependencies so
+# published endoreg-db artifacts do not require an unpublished AI package.
+ai-local = [
+  "lx-ai-core[torch]",
+]
+
 [build-system]
 build-backend = "maturin"
 requires = ["maturin>=1.7,<2"]
@@ -156,6 +163,8 @@ exclude = [
   "docs/handoff_report_pdf_renderer.md",
   "htmlcov",
   "htmlcov/**",
+  "lx-ai-core",
+  "lx-ai-core/**",
   "lx-data-models",
   "lx-data-models/**",
   "storage",
@@ -227,7 +236,8 @@ django_settings_module = "endoreg_db.config.settings.test"
 "tesseract" = ["setuptools"]
 [tool.uv.sources]
 endoreg-rust-backend = { path = "dist/endoreg_rust_backend-0.1.0-cp312-cp312-linux_x86_64.whl" }
-lx-ai-core = { path = "lx-ai-core", editable = true }
+# Sibling checkout used by local devenv/uv workflows.
+lx-ai-core = { path = "../lx-ai-core", editable = true }
 # lx-dtypes = { workspace = true, editable = true }
 
 # [tool.uv.workspace]

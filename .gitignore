@@ -204,6 +204,7 @@ endoreg_db/migrations/0004_operationlog.py
 endoreg_db/migrations/0005_delete_operationlog.py
 endoreg_db/migrations/0006_frame_old_examination_id_operationlog.py
 lx-anonymizer/
+lx-ai-core/
 lx-report-generator/
 lx-terminology-editor/
 tools/report_pdf_renderer_rust/
