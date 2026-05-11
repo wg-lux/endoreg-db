@@ -1,8 +1,11 @@
+import importlib
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import cv2
 import pytest
 
+from endoreg_db.models.media.video.video_file_meta import get_fps as get_fps_module
 from endoreg_db.models.media.video.video_file_meta.get_fps import _get_fps
 
 
@@ -21,6 +24,12 @@ def _build_video(
         save=MagicMock(),
         ensure_default_fps=MagicMock(return_value=50.0),
     )
+
+
+def test_get_fps_module_imports_when_cv2_video_capture_is_unavailable(monkeypatch):
+    monkeypatch.delattr(cv2, "VideoCapture", raising=False)
+
+    importlib.reload(get_fps_module)
 
 
 def test_get_fps_prefers_file_based_value_over_cached_field():

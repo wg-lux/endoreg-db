@@ -810,7 +810,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/62/59/e47bbd0542d0e6f4c
 
 [[package]]
 name = "endoreg-db"
-version = "0.9.8.4"
+version = "0.9.8.5"
 source = { editable = "." }
 dependencies = [
     { name = "celery" },
@@ -839,7 +839,7 @@ dependencies = [
     { name = "mozilla-django-oidc" },
     { name = "numba" },
     { name = "numpy" },
-    { name = "opencv-python" },
+    { name = "opencv-python-headless" },
     { name = "openpyxl" },
     { name = "optimum" },
     { name = "pandas" },
@@ -947,7 +947,7 @@ requires-dist = [
     { name = "myst-parser", marker = "extra == 'docs'", specifier = ">=4.0.1" },
     { name = "numba", specifier = ">=0.63.1" },
     { name = "numpy", specifier = ">=2.2.3" },
-    { name = "opencv-python", specifier = ">=4.11.0.86" },
+    { name = "opencv-python-headless", specifier = ">=4.11.0.86" },
     { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "optimum", specifier = "==1.26.1" },
     { name = "pandas", specifier = ">=2.2.3" },

@@ -142,6 +142,7 @@ from .other import (
 from .state import (
     AnonymizationState,
     LabelVideoSegmentState,
+    ProcessingHistory,
     RawPdfState,
     SensitiveMetaState,
     VideoState,
@@ -222,6 +223,7 @@ __all__ = [
     "ReportReaderFlag",
     "VideoMetadata",
     "VideoProcessingHistory",
+    "ProcessingHistory",
     "PatientExaminationReport",
     "TransferJob",
     "UploadJob",

@@ -14,7 +14,7 @@ maintainers = [
 ]
 name = "endoreg_db"
 readme = "README.md"
-version = "0.9.8.4"
+version = "0.9.8.5"
 
 
 classifiers = [
@@ -33,7 +33,7 @@ dependencies = [
     "faker>=37.6.0",
     "icecream>=2.1.4",
     "numpy>=2.2.3",
-    "opencv-python>=4.11.0.86",
+    "opencv-python-headless>=4.11.0.86",
     "pandas>=2.2.3",
     "pillow>=11.3.0",
     "pydantic>=2.10.6",
