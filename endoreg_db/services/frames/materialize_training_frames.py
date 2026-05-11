@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-
+from typing import cast
 from endoreg_db.export.frames.export_frames_with_labels import (
     DEFAULT_TRANSCODE_FPS,
     _frame_pk_filename,
@@ -49,7 +49,7 @@ def materialize_frames_for_annotation_ids(
 
     transcode_videos_for_annotations(
         annotations,
-        fps=fps,
+        fps=cast(float, fps),
         quality=2,
         ext=ext,
         overwrite=overwrite,
@@ -68,9 +68,7 @@ def materialize_frames_for_annotation_ids(
             continue
 
         expected_path = (
-            output_root
-            / f"video_{video.pk}"
-            / _frame_pk_filename(frame.pk, ext)
+            output_root / f"video_{video.pk}" / _frame_pk_filename(frame.pk, ext)
         )
 
         if not expected_path.exists():
