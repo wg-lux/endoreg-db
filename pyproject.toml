@@ -14,7 +14,7 @@ maintainers = [
 ]
 name = "endoreg_db"
 readme = "README.md"
-version = "0.9.8.5"
+version = "0.9.8.6"
 
 
 classifiers = [
@@ -79,7 +79,7 @@ dependencies = [
     "numba>=0.63.1",
     "ziglang>=0.15.2",
     "twine>=6.2.0",
-    "lx-dtypes==0.1.5",
+    "lx-dtypes==0.1.6",
     "ffprobe>=0.5",
     "kombu>=5.6.1",
     "lx-ai-core[torch]==0.0.1",
