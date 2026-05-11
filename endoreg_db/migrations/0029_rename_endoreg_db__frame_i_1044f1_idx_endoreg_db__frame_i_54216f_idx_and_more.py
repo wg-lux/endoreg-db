@@ -4,7 +4,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("endoreg_db", "0028_ai_operation_artifacts"),
     ]

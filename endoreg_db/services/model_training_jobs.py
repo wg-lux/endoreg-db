@@ -24,9 +24,7 @@ MODEL_TRAINING_TARGET_IMAGE_MULTILABEL = "image_multilabel"
 MODEL_TRAINING_TARGET_PHI_REGION_DETECTOR = "phi_region_detector"
 MODEL_TRAINING_SERVER_INSTANCE_ID = uuid4().hex
 MODEL_TRAINING_LOST_TIMEOUT = timedelta(hours=25)
-DEFAULT_MODEL_TRAINING_STAGING_ROOT = Path(
-    "/mnt/fast-nvme-cache/endoreg-training"
-)
+DEFAULT_MODEL_TRAINING_STAGING_ROOT = Path("/mnt/fast-nvme-cache/endoreg-training")
 
 
 def _coerce_uuid(value: str) -> UUID | None:

@@ -9,7 +9,11 @@ from endoreg_db.models.media.video.video_file_io import (
     _get_frame_dir_path,
     _get_temp_anonymized_frame_dir,
 )
-from endoreg_db.utils.file_operations import atomic_move_path, safe_rmtree, safe_unlink_file
+from endoreg_db.utils.file_operations import (
+    atomic_move_path,
+    safe_rmtree,
+    safe_unlink_file,
+)
 
 if TYPE_CHECKING:
     from endoreg_db.models import VideoFile, VideoState
@@ -23,7 +27,9 @@ def _get_staged_deletion_path(path: str) -> str:
     return f"{path}.pending_delete.{uuid.uuid4().hex}"
 
 
-def _dataset_backed_frame_ids_with_files(video: "VideoFile") -> tuple[set[int], set[Path]]:
+def _dataset_backed_frame_ids_with_files(
+    video: "VideoFile",
+) -> tuple[set[int], set[Path]]:
     from endoreg_db.models.media.frame import Frame
 
     frame_ids: set[int] = set()
@@ -136,9 +142,9 @@ def _delete_frames(video: "VideoFile") -> str:
                 update_count = extracted_frames.exclude(
                     pk__in=dataset_frame_ids
                 ).update(is_extracted=False)
-                preserved_count = Frame.objects.filter(
-                    pk__in=dataset_frame_ids
-                ).update(is_extracted=True)
+                preserved_count = Frame.objects.filter(pk__in=dataset_frame_ids).update(
+                    is_extracted=True
+                )
                 logger.info(
                     "Preserved %d dataset-backed extracted Frame objects for video %s.",
                     preserved_count,

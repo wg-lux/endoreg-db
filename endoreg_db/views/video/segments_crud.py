@@ -246,6 +246,19 @@ def _bulk_validation_response_status(post_processing_status: str | None) -> int:
     return status.HTTP_200_OK
 
 
+def _segment_validation_state_payload(video: VideoFile) -> dict[str, object]:
+    state = video.get_or_create_state()
+    return {
+        "segment_annotation_status": resolve_segment_annotation_status(video),
+        "segment_annotations_validated": bool(
+            getattr(state, "segment_annotations_validated", False)
+        ),
+        "outside_segments_removed": bool(
+            getattr(state, "outside_segments_removed", False)
+        ),
+    }
+
+
 @api_view(["POST"])
 @permission_classes([EnvironmentAwarePermission])
 def video_segments_blacken_outside(request, pk: int):
@@ -1318,9 +1331,7 @@ def video_segments_validate_bulk(request, pk: int):
                         "updated_count": updated_count,
                         "requested_count": len(segment_ids),
                         "annotation_errors": annotation_integrity_errors,
-                        "segment_annotation_status": resolve_segment_annotation_status(
-                            video
-                        ),
+                        **_segment_validation_state_payload(video),
                     },
                     status=status.HTTP_409_CONFLICT,
                 )
@@ -1341,9 +1352,7 @@ def video_segments_validate_bulk(request, pk: int):
                             "error": "Post-validation cleanup dispatch failed.",
                             "detail": str(exc),
                             "video_id": pk,
-                            "segment_annotation_status": resolve_segment_annotation_status(
-                                video
-                            ),
+                            **_segment_validation_state_payload(video),
                         },
                         status=status.HTTP_503_SERVICE_UNAVAILABLE,
                     )
@@ -1366,7 +1375,7 @@ def video_segments_validate_bulk(request, pk: int):
             "requested_count": len(segment_ids),
             "is_validated": is_validated,
             "video_id": pk,
-            "segment_annotation_status": resolve_segment_annotation_status(video),
+            **_segment_validation_state_payload(video),
         }
         if post_processing_job is not None:
             response_data["post_processing_job"] = (

@@ -9,6 +9,7 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 from django.test.utils import override_settings
 
+from endoreg_db.models import Center, VideoFile, VideoState
 from endoreg_db.utils.file_operations import atomic_write_file
 
 
@@ -113,3 +114,35 @@ class ExportAnnotatedContractTests(TestCase):
         assert config.export_videos is False
         assert config.only_validated is True
         assert config.transcode_frames is False
+
+    def test_video_specific_export_rejects_non_final_segment_cleanup(self):
+        center = Center.objects.create(name="Export Segment Cleanup Center")
+        state = VideoState.objects.create(
+            anonymization_validated=True,
+            outside_segments_removed=True,
+            segment_annotations_created=True,
+            segment_annotations_validated=False,
+        )
+        video = VideoFile.objects.create(
+            center=center,
+            state=state,
+            video_hash="export-segment-cleanup-video",
+            original_file_name="export-segment-cleanup.mp4",
+        )
+
+        with patch(
+            "endoreg_db.views.video.export_annotated.annotation_exporter_client",
+        ) as client_factory:
+            response = self.client.post(
+                "/api/media/videos/export-annotated/",
+                data={
+                    "output_dir": "data/export",
+                    "video_id": video.pk,
+                    "use_export_flags": False,
+                },
+                content_type="application/json",
+            )
+
+        assert response.status_code == 409, response.content
+        client_factory.assert_not_called()
+        assert "cleanup_required" in response.json()["error"]

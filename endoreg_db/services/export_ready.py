@@ -10,6 +10,10 @@ from django.db.utils import OperationalError, ProgrammingError
 
 from endoreg_db.models import Center, VideoFile
 from endoreg_db.models.state.audit_ledger import AuditLedger
+from endoreg_db.models.state.video_segment_validation import (
+    resolve_segment_annotation_status,
+    segment_annotations_are_final,
+)
 from endoreg_db.services.hub import resolve_allowed_center_id
 from endoreg_db.services.hub.audit import emit_hub_audit_event
 from endoreg_db.utils.file_operations import sha256_file
@@ -129,6 +133,12 @@ def _verify_state(video: VideoFile) -> None:
     if not getattr(state, "outside_segments_removed", False):
         raise ReadyForExportError(
             "Outside segments have not been removed from the processed artifact.",
+            status_code=409,
+        )
+    if not segment_annotations_are_final(video):
+        segment_status = resolve_segment_annotation_status(video)
+        raise ReadyForExportError(
+            f"Segment annotation cleanup is not complete: {segment_status}.",
             status_code=409,
         )
 
