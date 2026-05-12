@@ -982,7 +982,7 @@ requires-dist = [
     { name = "linkify-it-py", marker = "extra == 'docs'", specifier = ">=2.0.3" },
     { name = "llvmlite", specifier = ">=0.44.0" },
     { name = "lx-ai-core", extras = ["torch"], marker = "extra == 'ai'", specifier = "==0.0.1" },
-    { name = "lx-anonymizer", extras = ["llm", "ocr"], specifier = "==0.9.1.4" },
+    { name = "lx-anonymizer", extras = ["llm", "ocr"], specifier = "==0.9.1.5" },
     { name = "lx-dtypes", specifier = "==0.1.6" },
     { name = "moviepy", specifier = "==2.2.1" },
     { name = "mozilla-django-oidc", specifier = ">=4.0.1" },
@@ -1659,7 +1659,7 @@ torch = [
 
 [[package]]
 name = "lx-anonymizer"
-version = "0.9.1.4"
+version = "0.9.1.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
@@ -1688,9 +1688,9 @@ dependencies = [
     { name = "ultralytics" },
     { name = "ziglang" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fc/fd/3f26737fe335f6175b9021c1b9ba6f59a53bd103d039792e81cd35df8bbb/lx_anonymizer-0.9.1.4.tar.gz", hash = "sha256:69907b2fd515dbe461afc3206b042a0065208d63432f899c6552c8e32ff018a0", size = 1578760, upload-time = "2026-05-12T08:30:28.821Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/11/f2/b3ba76588d89de25c0417af715e1940155e6436a235c5080378efea3bfbb/lx_anonymizer-0.9.1.5.tar.gz", hash = "sha256:1725ed2a50a900784d75d10cf0be7a1900677f920adee9e093581202f4581394", size = 1538935, upload-time = "2026-05-12T09:31:42.359Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7b/ec/9ab2bedb49c88ea0de88de4fed7aac1b6cc3564d3f2dd9f87270dcc5c187/lx_anonymizer-0.9.1.4-cp312-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:0654079910fddbb7b3c40def1851ccc09e155c3feb202fcc97cf717179d169a5", size = 1408515, upload-time = "2026-05-12T08:30:26.542Z" },
+    { url = "https://files.pythonhosted.org/packages/13/01/78f755f64f243d64a3dea619ed720e48e6d1276e771823fe0b3248b84649/lx_anonymizer-0.9.1.5-cp312-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:8acb915b5d2d4242e6028b7a0357b4290d92b912d4fc6e8d60cfc4b882b363b4", size = 1409374, upload-time = "2026-05-12T09:31:39.851Z" },
 ]
 
 [package.optional-dependencies]
