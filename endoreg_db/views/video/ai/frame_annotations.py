@@ -14,6 +14,7 @@ from endoreg_db.models import (
     Label,
     LabelSet,
     ModelMeta,
+    VideoFile,
 )
 from endoreg_db.models.state.frame_annotation import (
     DEFAULT_FRAME_INFORMATION_SOURCE_NAME,
@@ -27,6 +28,9 @@ from endoreg_db.models.state.frame_annotation import (
     resolve_ai_dataset_for_queue,
     resolve_frame_information_source_name,
     resolve_request_annotator,
+)
+from endoreg_db.services.frame_retention import (
+    prune_unused_validated_outside_frames,
 )
 from endoreg_db.serializers.label_video_segment.frame_annotation_bulk import (
     FrameAnnotationBulkItemSerializer,
@@ -189,8 +193,17 @@ def _build_bulk_upsert_response(
         "status": "success",
         "upserted_count": len(annotations_to_upsert),
     }
+    target_video_id = requested_video_id
+    if target_video_id is None and len(set(frame_video_by_id.values())) == 1:
+        target_video_id = next(iter(frame_video_by_id.values()))
     if requested_video_id is not None:
         response_data["video_id"] = requested_video_id
+    if target_video_id is not None:
+        target_video = VideoFile.objects.filter(pk=target_video_id).first()
+        if target_video is not None:
+            response_data["pruned_unused_frames"] = (
+                prune_unused_validated_outside_frames(target_video)
+            )
 
     return Response(response_data, status=status.HTTP_200_OK)
 
@@ -614,5 +627,8 @@ class FrameAnnotationSkipView(APIView):
         }
         if queue_result.tasks:
             response_data["next_task"] = queue_result.tasks[0]
+        response_data["pruned_unused_frames"] = prune_unused_validated_outside_frames(
+            frame.video
+        )
 
         return Response(response_data, status=status.HTTP_200_OK)

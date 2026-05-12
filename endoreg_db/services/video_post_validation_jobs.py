@@ -26,6 +26,9 @@ from endoreg_db.config.env import (
     get_video_post_validation_job_max_workers,
     get_video_post_validation_job_mode,
 )
+from endoreg_db.services.frame_retention import (
+    prune_unused_validated_outside_frames,
+)
 from endoreg_db.services.video_task_cleanup import rollback_video_frame_artifacts
 
 logger = logging.getLogger(__name__)
@@ -320,6 +323,7 @@ def _run_video_post_validation_rebuild(
             only_validated=run_config.only_validated,
         )
         mark_post_validation_complete(video)
+        prune_unused_validated_outside_frames(video)
         if history is not None:
             output_file = getattr(getattr(video, "processed_file", None), "name", "")
             history.mark_success(
