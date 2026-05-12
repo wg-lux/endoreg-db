@@ -9,6 +9,19 @@ from django.core.management.base import BaseCommand, CommandError
 from endoreg_db.models import AIDataSet
 
 
+def train_gastronet_multilabel(config):
+    try:
+        from endoreg_db.utils.ai.model_training.trainer_gastronet_multilabel import (
+            train_gastronet_multilabel as _train_gastronet_multilabel,
+        )
+    except ImportError as exc:
+        raise CommandError(
+            "Training dependencies are not available. Install the AI training "
+            "dependencies before running train_image_multilabel_model."
+        ) from exc
+    return _train_gastronet_multilabel(config)
+
+
 class Command(BaseCommand):
     help = "Train / fine-tune the image multi-label model on a given AIDataSet."
 
@@ -139,9 +152,6 @@ class Command(BaseCommand):
         )
         try:
             from endoreg_db.utils.ai.model_training.config import TrainingConfig
-            from endoreg_db.utils.ai.model_training.trainer_gastronet_multilabel import (
-                train_gastronet_multilabel,
-            )
         except ImportError as exc:
             raise CommandError(
                 "Training dependencies are not available. Install the AI training "

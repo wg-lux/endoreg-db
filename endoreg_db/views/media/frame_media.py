@@ -166,22 +166,10 @@ class FrameStreamView(APIView):
             frame_number=frame_number_int,
         )
 
-        try:
-            pending_response = self._ensure_frame_file_available(frame=frame)
-            if pending_response is not None:
-                return pending_response
-            frame_path = frame.file_path
-        except Exception as exc:
-            if isinstance(exc, Http404):
-                raise
-            logger.error(
-                "Failed to resolve frame path for frame %s (video %s): %s",
-                frame_number_int,
-                video_id_int,
-                exc,
-                exc_info=True,
-            )
-            raise Http404("Frame file path could not be resolved")
+        pending_response = self._ensure_frame_file_available(frame=frame)
+        if pending_response is not None:
+            return pending_response
+        frame_path = frame.file_path
 
         if not frame_path.exists() or not frame_path.is_file():
             raise Http404("Frame file not found on disk")
