@@ -1,4 +1,9 @@
-from .video import VideoFile, VideoMetadata, VideoProcessingHistory
+from .video import (
+    FrameExtractionRequest,
+    VideoFile,
+    VideoMetadata,
+    VideoProcessingHistory,
+)
 from .frame import Frame
 from .pdf import (
     RawPdfFile,
@@ -13,6 +18,7 @@ from .pdf import (
 __all__ = [
     "VideoFile",
     "Frame",
+    "FrameExtractionRequest",
     "RawPdfFile",
     "PdfProcessingHistory",
     "DocumentType",

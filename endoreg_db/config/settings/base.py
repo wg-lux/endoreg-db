@@ -116,6 +116,10 @@ CELERY_TASK_QUEUES = (
     ),
 )
 CELERY_TASK_ROUTES = {
+    "endoreg_db.frame_extraction_request": {
+        "queue": CELERY_FRAME_EXTRACTION_QUEUE,
+        "routing_key": CELERY_FRAME_EXTRACTION_QUEUE,
+    },
     "endoreg_db.process_upload_job": {
         "queue": CELERY_PIPELINE_QUEUE,
         "routing_key": CELERY_PIPELINE_QUEUE,

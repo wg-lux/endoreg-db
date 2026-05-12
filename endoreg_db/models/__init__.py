@@ -52,6 +52,7 @@ from .media import (
     AnonymExaminationReport,
     AnonymHistologyReport,
     DocumentType,
+    FrameExtractionRequest,
     Frame,
     PdfProcessingHistory,
     RawPdfFile,
@@ -214,6 +215,7 @@ __all__ = [
     ####### Media ########
     "VideoFile",
     "Frame",
+    "FrameExtractionRequest",
     "RawPdfFile",
     "PdfProcessingHistory",
     "DocumentType",

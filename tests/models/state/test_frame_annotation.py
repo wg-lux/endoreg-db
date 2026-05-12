@@ -23,6 +23,7 @@ from endoreg_db.models.state.frame_annotation import (
     mark_frame_prediction_reset,
     mark_prediction_segments_created,
     resolve_frame_annotation_status,
+    resolve_ai_dataset_for_queue,
     segment_derived_external_annotation_id,
 )
 
@@ -347,3 +348,79 @@ class FrameAnnotationStateTest(TestCase):
             result.segment_bucket_counts,
             {str(self.segment_label.pk): 1},
         )
+
+    def test_phi_dataset_queue_requires_video_raw_file(self):
+        dataset = AIDataSet.objects.create(
+            name="phi-frame-dataset",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type="phi_region_detector",
+        )
+        raw_video = VideoFile.objects.create(
+            center=self.center,
+            video_hash="frame-state-video-raw",
+            original_file_name="frame_state_raw.mp4",
+            fps=25.0,
+            frame_count=2,
+        )
+        raw_video.raw_file.name = "sensitive_videos/phi-raw.mp4"
+        raw_video.save(update_fields=["raw_file"])
+        raw_frame = Frame.objects.create(
+            video=raw_video,
+            frame_number=0,
+            relative_path="frame_0000000.jpg",
+            is_extracted=True,
+        )
+        rawless_frame = Frame.objects.create(
+            video=self.video,
+            frame_number=5,
+            relative_path="frame_0000005.jpg",
+            is_extracted=True,
+        )
+        dataset.image_annotations.add(
+            ImageClassificationAnnotation.objects.create(
+                frame=raw_frame,
+                label=self.target_label,
+                value=True,
+                information_source=self.manual_source,
+                annotator="dataset",
+            ),
+            ImageClassificationAnnotation.objects.create(
+                frame=rawless_frame,
+                label=self.target_label,
+                value=True,
+                information_source=self.manual_source,
+                annotator="dataset",
+            ),
+        )
+
+        spec = FrameAnnotationQueueSpec(
+            limit=10,
+            information_source_name=self.manual_source.name,
+            ai_dataset=dataset,
+            sampling_strategy=FrameSamplingStrategy.NONE,
+            exclude_annotated=False,
+        )
+
+        with patch(
+            "endoreg_db.models.state.frame_annotation.random.randint",
+            return_value=0,
+        ):
+            result = build_frame_task_queue(spec)
+
+        frame_ids = {task["frame_id"] for task in result.tasks}
+        self.assertIn(raw_frame.pk, frame_ids)
+        self.assertNotIn(rawless_frame.pk, frame_ids)
+
+    def test_resolve_ai_dataset_for_queue_falls_back_to_first_dataset(self):
+        dataset = AIDataSet.objects.create(
+            name="default-frame-dataset",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+
+        resolved = resolve_ai_dataset_for_queue(
+            dataset_name_raw=None,
+            dataset_type_raw=None,
+        )
+
+        self.assertEqual(resolved, dataset)

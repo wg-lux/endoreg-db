@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_FRAME_INFORMATION_SOURCE_NAME = "manual_annotation"
 SEGMENT_DERIVED_EXTERNAL_ANNOTATION_PREFIX = "segment-derived:v1"
+PHI_REGION_DATASET_MODEL_TYPE = "phi_region_detector"
 
 PREDICTION_INFORMATION_SOURCE_NAMES = {
     "prediction",
@@ -173,6 +174,15 @@ def resolve_ai_dataset_for_queue(
     if dataset_type:
         dataset_qs = dataset_qs.filter(dataset_type=dataset_type)
     return dataset_qs.order_by("-updated_at", "-pk").first()
+
+
+def ai_dataset_requires_raw_frames(dataset: AIDataSet | None) -> bool:
+    if dataset is None:
+        return False
+    return (
+        str(getattr(dataset, "ai_model_type", "") or "").strip().lower()
+        == PHI_REGION_DATASET_MODEL_TYPE
+    )
 
 
 def mark_frame_prediction_reset(video: VideoFile) -> None:
@@ -344,6 +354,7 @@ def _build_frame_task_queryset(
     annotator: str,
     exclude_annotated: bool,
     target_label_id: int | None,
+    require_raw_video: bool = False,
     exclude_frame_ids: set[int] | None = None,
     candidate_frame_ids: set[int] | None = None,
 ) -> QuerySet[Frame]:
@@ -352,6 +363,10 @@ def _build_frame_task_queryset(
     frames_qs = Frame.objects.select_related("video").filter(is_extracted=True)
     if video_id is not None:
         frames_qs = frames_qs.filter(video_id=video_id)
+    if require_raw_video:
+        frames_qs = frames_qs.exclude(video__raw_file__isnull=True).exclude(
+            video__raw_file__exact=""
+        )
     if candidate_frame_ids is not None:
         if not candidate_frame_ids:
             return frames_qs.none()
@@ -394,6 +409,7 @@ def _pick_random_frame(
         annotator=spec.annotator,
         exclude_annotated=spec.exclude_annotated,
         target_label_id=spec.target_label.id if spec.target_label is not None else None,
+        require_raw_video=ai_dataset_requires_raw_frames(spec.ai_dataset),
         exclude_frame_ids=exclude_frame_ids,
         candidate_frame_ids=candidate_frame_ids,
     )

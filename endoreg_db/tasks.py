@@ -6,6 +6,28 @@ from celery import shared_task
 
 
 @shared_task(
+    name="endoreg_db.frame_extraction_request",
+    bind=True,
+    acks_late=True,
+    reject_on_worker_lost=True,
+    track_started=True,
+)
+def run_frame_extraction_request_task(
+    _task,
+    request_id: int,
+    video_id: int,
+    frame_number: int,
+) -> bool:
+    from endoreg_db.services.frame_extraction_jobs import run_frame_extraction_request
+
+    return run_frame_extraction_request(
+        request_id=int(request_id),
+        video_id=int(video_id),
+        frame_number=int(frame_number),
+    )
+
+
+@shared_task(
     name="endoreg_db.video_post_validation_rebuild",
     bind=True,
     acks_late=True,

@@ -20,6 +20,7 @@ from endoreg_db.models.state.frame_annotation import (
     FrameAnnotationQueueSpec,
     SUPPORTED_FRAME_SAMPLING_STRATEGIES,
     SUPPORTED_FRAME_TASK_MODES,
+    ai_dataset_requires_raw_frames,
     build_frame_task_queue,
     normalize_frame_sampling_strategy,
     normalize_frame_task_mode,
@@ -486,6 +487,10 @@ class FrameAnnotationRandomTaskView(APIView):
             if ai_dataset is not None:
                 details["ai_dataset_name"] = ai_dataset.name
                 details["ai_dataset_type"] = ai_dataset.dataset_type
+                details["ai_dataset_model_type"] = ai_dataset.ai_model_type
+                details["raw_video_required"] = ai_dataset_requires_raw_frames(
+                    ai_dataset
+                )
             return Response(
                 {
                     "error": "No frame task available.",

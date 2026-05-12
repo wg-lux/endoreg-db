@@ -4,10 +4,17 @@ from pathlib import Path
 
 from django.core.files import File
 from django.http import Http404, HttpResponse, HttpResponseBase
+from rest_framework import status
+from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from endoreg_db.models import Frame, VideoFile
 from endoreg_db.authz.permissions import PolicyPermission
+from endoreg_db.services.frame_extraction_jobs import (
+    REQUEST_STATUS_FAILED,
+    get_or_create_frame_record,
+    request_frame_extraction,
+)
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.utils.paths import (
     ensure_within_protected_media_root,
@@ -58,10 +65,6 @@ class FrameStreamView(APIView):
             )
             return None
 
-    @staticmethod
-    def _expected_relative_path(frame_number: int) -> str:
-        return f"frame_{frame_number:07d}.jpg"
-
     def _assert_video_access_allowed(self, *, request, video: VideoFile) -> None:
         # Streaming access is centralized via RBAC permissions.
         self.check_object_permissions(request, video)
@@ -106,28 +109,7 @@ class FrameStreamView(APIView):
 
         return resolved_frame_path
 
-    def _get_or_create_frame_record(
-        self, *, video: VideoFile, frame_number: int
-    ) -> Frame:
-        frame = (
-            Frame.objects.select_related("video")
-            .filter(video=video, frame_number=frame_number)
-            .first()
-        )
-        if frame is not None:
-            return frame
-
-        frame, _created = Frame.objects.get_or_create(
-            video=video,
-            frame_number=frame_number,
-            defaults={
-                "relative_path": self._expected_relative_path(frame_number),
-                "is_extracted": False,
-            },
-        )
-        return frame
-
-    def _ensure_frame_file_available(self, *, frame: Frame) -> None:
+    def _ensure_frame_file_available(self, *, frame: Frame) -> Response | None:
         frame_path = frame.file_path
         if frame_path.exists() and frame_path.is_file():
             if not frame.is_extracted:
@@ -135,44 +117,26 @@ class FrameStreamView(APIView):
                     is_extracted=True
                 )
                 frame.is_extracted = True
-            return
+            return None
 
-        video = frame.video
-        frame_number = int(frame.frame_number)
-        logger.info(
-            "Frame file missing for video %s frame %s. Attempting on-demand extraction.",
-            video.pk,
-            frame_number,
+        dispatch_result = request_frame_extraction(
+            video=frame.video,
+            frame_number=int(frame.frame_number),
         )
-
-        extraction_error = None
-        try:
-            video.extract_specific_frame_range(
-                start_frame=frame_number,
-                end_frame=frame_number + 1,
-                overwrite=False,
-            )
-        except Exception as exc:
-            extraction_error = exc
-            logger.warning(
-                "Range extraction failed for video %s frame %s: %s. Not attempting full extraction in request path.",
-                video.pk,
-                frame_number,
-                exc,
-                exc_info=True,
-            )
-            raise Http404("Frame could not be extracted on demand") from exc
-
-        frame.refresh_from_db()
-        frame_path = frame.file_path
-        if not frame_path.exists() or not frame_path.is_file():
-            if extraction_error is not None:
-                logger.error(
-                    "On-demand extraction returned without creating frame file for video %s frame %s.",
-                    video.pk,
-                    frame_number,
-                )
-            raise Http404("Frame file not found after on-demand extraction")
+        payload = {
+            "status": (
+                "frame_extraction_failed"
+                if dispatch_result.status == REQUEST_STATUS_FAILED
+                else "frame_extraction_pending"
+            ),
+            "video_id": int(frame.video_id),
+            "frame_number": int(frame.frame_number),
+            "request_id": int(dispatch_result.request_id),
+            "task_id": dispatch_result.task_id,
+        }
+        if dispatch_result.status == REQUEST_STATUS_FAILED:
+            return Response(payload, status=status.HTTP_409_CONFLICT)
+        return Response(payload, status=status.HTTP_202_ACCEPTED)
 
     def get(self, request, video_id=None, frame_number=None):
         if video_id is None or frame_number is None:
@@ -197,13 +161,15 @@ class FrameStreamView(APIView):
                 f"Frame {frame_number_int} out of range for video {video_id_int}"
             )
 
-        frame = self._get_or_create_frame_record(
+        frame = get_or_create_frame_record(
             video=video,
             frame_number=frame_number_int,
         )
 
         try:
-            self._ensure_frame_file_available(frame=frame)
+            pending_response = self._ensure_frame_file_available(frame=frame)
+            if pending_response is not None:
+                return pending_response
             frame_path = frame.file_path
         except Exception as exc:
             if isinstance(exc, Http404):

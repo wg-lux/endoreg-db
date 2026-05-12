@@ -10,7 +10,7 @@ import pytest
 from django.test import TestCase
 from rest_framework.test import APIRequestFactory
 
-from endoreg_db.models import Center, Frame, VideoFile
+from endoreg_db.models import Center, Frame, FrameExtractionRequest, VideoFile
 from endoreg_db.utils.paths import protected_media_root
 
 
@@ -43,7 +43,7 @@ class FrameStreamViewTests(TestCase):
     def tearDown(self):
         shutil.rmtree(self.frame_dir, ignore_errors=True)
 
-    def test_frame_stream_on_demand_extract_and_nginx_offload(self):
+    def test_frame_stream_serves_existing_frame_and_nginx_offload(self):
         module_path = (
             Path(__file__).resolve().parents[3]
             / "endoreg_db"
@@ -59,18 +59,9 @@ class FrameStreamViewTests(TestCase):
         spec.loader.exec_module(frame_media_module)
 
         target_path = self.frame.file_path
-        assert not target_path.exists()
-        calls: list[tuple[int, int, bool]] = []
-
-        def _fake_extract_specific_frame_range(
-            video_self, start_frame, end_frame, overwrite=False, **kwargs
-        ):
-            calls.append((start_frame, end_frame, overwrite))
-            assert video_self.pk == self.video.pk
-            target_path.parent.mkdir(parents=True, exist_ok=True)
-            target_path.write_bytes(b"\xff\xd8\xff\xdbfakejpg")
-            Frame.objects.filter(pk=self.frame.pk).update(is_extracted=True)
-            return True
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_bytes(b"\xff\xd8\xff\xdbfakejpg")
+        Frame.objects.filter(pk=self.frame.pk).update(is_extracted=True)
 
         monkeypatches = pytest.MonkeyPatch()
         monkeypatches.setenv("SERVE_WITH_NGINX", "true")
@@ -79,20 +70,6 @@ class FrameStreamViewTests(TestCase):
             "http://frontend.test",
         )
         monkeypatches.setenv("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
-        monkeypatches.setattr(
-            frame_media_module.VideoFile,
-            "extract_specific_frame_range",
-            _fake_extract_specific_frame_range,
-        )
-        monkeypatches.setattr(
-            frame_media_module.VideoFile,
-            "extract_frames",
-            lambda *args, **kwargs: (_ for _ in ()).throw(
-                AssertionError(
-                    "full extraction fallback should not be used in this test"
-                )
-            ),
-        )
         try:
             factory = APIRequestFactory()
             req = factory.get(
@@ -109,7 +86,6 @@ class FrameStreamViewTests(TestCase):
             body = getattr(resp, "data", None) or getattr(resp, "content", b"")
             raise AssertionError(f"Expected 200, got {resp.status_code}. body={body!r}")
         assert resp.status_code == 200
-        assert calls == [(7, 8, False)]
         self.frame.refresh_from_db()
         assert self.frame.is_extracted is True
         assert target_path.exists()
@@ -119,6 +95,93 @@ class FrameStreamViewTests(TestCase):
         assert "frame_0000007.jpg" in resp["Content-Disposition"]
         assert resp["X-Accel-Buffering"] == "no"
         assert resp["Access-Control-Allow-Origin"] == "http://frontend.test"
+
+    def test_frame_stream_queues_async_extraction_when_frame_missing(self):
+        module_path = (
+            Path(__file__).resolve().parents[3]
+            / "endoreg_db"
+            / "views"
+            / "media"
+            / "frame_media.py"
+        )
+        spec = importlib.util.spec_from_file_location(
+            "test_frame_media_pending_module", module_path
+        )
+        assert spec is not None and spec.loader is not None
+        frame_media_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(frame_media_module)
+
+        monkeypatches = pytest.MonkeyPatch()
+        monkeypatches.setattr(
+            frame_media_module,
+            "request_frame_extraction",
+            lambda **kwargs: frame_media_module.FrameExtractionDispatchResult(
+                request_id=17,
+                task_id="task-17",
+                status="queued",
+                video_id=self.video.pk,
+                frame_number=self.frame.frame_number,
+            ),
+        )
+        try:
+            factory = APIRequestFactory()
+            req = factory.get(
+                f"/api/media/videos/{self.video.pk}/frames/{self.frame.frame_number}/stream/"
+            )
+            view = frame_media_module.FrameStreamView.as_view()
+            resp = view(
+                req, video_id=self.video.pk, frame_number=self.frame.frame_number
+            )
+        finally:
+            monkeypatches.undo()
+
+        assert resp.status_code == 202
+        assert resp.data["status"] == "frame_extraction_pending"
+        assert resp.data["request_id"] == 17
+        assert resp.data["task_id"] == "task-17"
+
+    def test_frame_stream_reports_failed_extraction_request(self):
+        module_path = (
+            Path(__file__).resolve().parents[3]
+            / "endoreg_db"
+            / "views"
+            / "media"
+            / "frame_media.py"
+        )
+        spec = importlib.util.spec_from_file_location(
+            "test_frame_media_failed_module", module_path
+        )
+        assert spec is not None and spec.loader is not None
+        frame_media_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(frame_media_module)
+
+        monkeypatches = pytest.MonkeyPatch()
+        monkeypatches.setattr(
+            frame_media_module,
+            "request_frame_extraction",
+            lambda **kwargs: frame_media_module.FrameExtractionDispatchResult(
+                request_id=18,
+                task_id="task-18",
+                status="failed",
+                video_id=self.video.pk,
+                frame_number=self.frame.frame_number,
+            ),
+        )
+        try:
+            factory = APIRequestFactory()
+            req = factory.get(
+                f"/api/media/videos/{self.video.pk}/frames/{self.frame.frame_number}/stream/"
+            )
+            view = frame_media_module.FrameStreamView.as_view()
+            resp = view(
+                req, video_id=self.video.pk, frame_number=self.frame.frame_number
+            )
+        finally:
+            monkeypatches.undo()
+
+        assert resp.status_code == 409
+        assert resp.data["status"] == "frame_extraction_failed"
+        assert resp.data["request_id"] == 18
 
     def test_frame_stream_rejects_out_of_range_frame_number(self):
         factory = APIRequestFactory()
@@ -181,46 +244,23 @@ class FrameStreamViewTests(TestCase):
 
         assert resp.status_code in {401, 403}
 
-    def test_frame_stream_does_not_fallback_to_full_extraction(self):
-        module_path = (
-            Path(__file__).resolve().parents[3]
-            / "endoreg_db"
-            / "views"
-            / "media"
-            / "frame_media.py"
+    def test_frame_stream_does_not_create_duplicate_request_rows_for_same_frame(self):
+        request = FrameExtractionRequest.objects.create(
+            video=self.video,
+            frame_number=self.frame.frame_number,
+            status=FrameExtractionRequest.STATUS_PENDING,
+            task_id="existing-task",
         )
-        spec = importlib.util.spec_from_file_location(
-            "test_frame_media_no_full_fallback", module_path
+        factory = APIRequestFactory()
+        req = factory.get(
+            f"/api/media/videos/{self.video.pk}/frames/{self.frame.frame_number}/stream/"
         )
-        assert spec is not None and spec.loader is not None
-        frame_media_module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(frame_media_module)
+        from endoreg_db.views.media.frame_media import FrameStreamView
 
-        monkeypatches = pytest.MonkeyPatch()
-        monkeypatches.setattr(
-            frame_media_module.VideoFile,
-            "extract_specific_frame_range",
-            lambda *args, **kwargs: (_ for _ in ()).throw(
-                RuntimeError("range extraction failed")
-            ),
-        )
-        monkeypatches.setattr(
-            frame_media_module.VideoFile,
-            "extract_frames",
-            lambda *args, **kwargs: (_ for _ in ()).throw(
-                AssertionError("full extraction fallback must not be called")
-            ),
-        )
-        try:
-            factory = APIRequestFactory()
-            req = factory.get(
-                f"/api/media/videos/{self.video.pk}/frames/{self.frame.frame_number}/stream/"
-            )
-            view = frame_media_module.FrameStreamView.as_view()
-            resp = view(
-                req, video_id=self.video.pk, frame_number=self.frame.frame_number
-            )
-        finally:
-            monkeypatches.undo()
+        view = FrameStreamView.as_view()
+        resp = view(req, video_id=self.video.pk, frame_number=self.frame.frame_number)
 
-        assert resp.status_code == 404
+        assert resp.status_code == 202
+        assert FrameExtractionRequest.objects.count() == 1
+        request.refresh_from_db()
+        assert request.task_id == "existing-task"
