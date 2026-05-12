@@ -1,19 +1,12 @@
 # endoreg_db/management/commands/train_image_multilabel_model.py
 
 from __future__ import annotations
+
 import json
+
 from django.core.management.base import BaseCommand, CommandError
 
 from endoreg_db.models import AIDataSet
-
-try:
-    from endoreg_db.utils.ai.model_training.config import TrainingConfig
-    from endoreg_db.utils.ai.model_training.trainer_gastronet_multilabel import (
-        train_gastronet_multilabel,
-    )
-except ImportError:
-    TrainingConfig = None  # type: ignore[assignment]
-    train_gastronet_multilabel = None  # type: ignore[assignment]
 
 
 class Command(BaseCommand):
@@ -144,11 +137,16 @@ class Command(BaseCommand):
                 f"treat_unlabeled_as_negative={treat_unlabeled_as_negative}"
             )
         )
-        if TrainingConfig is None or train_gastronet_multilabel is None:
+        try:
+            from endoreg_db.utils.ai.model_training.config import TrainingConfig
+            from endoreg_db.utils.ai.model_training.trainer_gastronet_multilabel import (
+                train_gastronet_multilabel,
+            )
+        except ImportError as exc:
             raise CommandError(
                 "Training dependencies are not available. Install the AI training "
                 "dependencies before running train_image_multilabel_model."
-            )
+            ) from exc
 
         config = TrainingConfig(
             dataset_id=dataset.id,

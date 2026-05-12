@@ -6,7 +6,7 @@ import traceback
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 from uuid import UUID, uuid4
 
 from django.http import FileResponse
@@ -139,6 +139,10 @@ AI_DATASET_FRAME_FORMAT_STRATEGIES = {
     "preserve_dimensions_black_mask",
     "crop_to_endoscope_roi",
 }
+AIDataSetFrameFormatStrategy = Literal[
+    "preserve_dimensions_black_mask",
+    "crop_to_endoscope_roi",
+]
 
 _VIDEO_DIMENSION_BACKFILL_RUNS: dict[str, dict[str, Any]] = {}
 _VIDEO_DIMENSION_BACKFILL_RUNS_LOCK = threading.Lock()
@@ -392,8 +396,8 @@ def _payload_strategy_field(
     payload: dict[str, Any],
     field_name: str,
     *,
-    default: str,
-) -> tuple[str, Response | None]:
+    default: AIDataSetFrameFormatStrategy,
+) -> tuple[AIDataSetFrameFormatStrategy, Response | None]:
     raw_value = payload.get(field_name, default)
     if not isinstance(raw_value, str):
         return (
@@ -403,7 +407,7 @@ def _payload_strategy_field(
                 status=status.HTTP_400_BAD_REQUEST,
             ),
         )
-    normalized = raw_value.strip() or default
+    normalized = cast(AIDataSetFrameFormatStrategy, raw_value.strip() or default)
     if normalized not in AI_DATASET_FRAME_FORMAT_STRATEGIES:
         allowed = ", ".join(sorted(AI_DATASET_FRAME_FORMAT_STRATEGIES))
         return (
@@ -425,7 +429,7 @@ def _payload_information_source_names(
         names = [name.strip() for name in raw_value.split(",") if name.strip()]
         return names or None, None
     if isinstance(raw_value, list):
-        names: list[str] = []
+        normalized_names: list[str] = []
         for item in raw_value:
             if not isinstance(item, str):
                 return (
@@ -443,8 +447,8 @@ def _payload_information_source_names(
                 )
             stripped = item.strip()
             if stripped:
-                names.append(stripped)
-        return names or None, None
+                normalized_names.append(stripped)
+        return normalized_names or None, None
     return (
         None,
         Response(

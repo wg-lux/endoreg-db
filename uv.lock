@@ -867,7 +867,6 @@ dependencies = [
     { name = "kombu" },
     { name = "librosa" },
     { name = "llvmlite" },
-    { name = "lx-ai-core", extra = ["torch"] },
     { name = "lx-anonymizer", extra = ["llm", "ocr"] },
     { name = "lx-dtypes" },
     { name = "moviepy" },
@@ -910,6 +909,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+ai = [
+    { name = "lx-ai-core", extra = ["torch"] },
+]
 dev = [
     { name = "black" },
     { name = "build" },
@@ -979,7 +981,7 @@ requires-dist = [
     { name = "librosa", specifier = "==0.11.0" },
     { name = "linkify-it-py", marker = "extra == 'docs'", specifier = ">=2.0.3" },
     { name = "llvmlite", specifier = ">=0.44.0" },
-    { name = "lx-ai-core", extras = ["torch"], specifier = "==0.0.1" },
+    { name = "lx-ai-core", extras = ["torch"], marker = "extra == 'ai'", specifier = "==0.0.1" },
     { name = "lx-anonymizer", extras = ["llm", "ocr"], specifier = "==0.9.1.4" },
     { name = "lx-dtypes", specifier = "==0.1.6" },
     { name = "moviepy", specifier = "==2.2.1" },
@@ -1038,10 +1040,10 @@ requires-dist = [
     { name = "whitenoise", specifier = ">=6.10.0" },
     { name = "ziglang", specifier = ">=0.15.2" },
 ]
-provides-extras = ["dev", "docs"]
+provides-extras = ["dev", "docs", "ai"]
 
 [package.metadata.requires-dev]
-ai-local = [{ name = "lx-ai-core", extras = ["torch"] }]
+ai-local = [{ name = "lx-ai-core", extras = ["torch"], specifier = "==0.0.1" }]
 cpu-runtime = [{ name = "onnxruntime", specifier = ">=1.25.1" }]
 gpu-runtime = [{ name = "onnxruntime-gpu", specifier = ">=1.26.0" }]
 

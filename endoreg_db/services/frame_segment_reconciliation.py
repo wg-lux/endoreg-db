@@ -264,8 +264,10 @@ def _existing_annotations_for_segment(
         "information_source", "frame", "label"
     ).filter(
         frame_id__in=frame_ids,
-        label_id=segment.label_id,
     )
+    if segment.label_id is None:
+        return []
+    queryset = queryset.filter(label_id=segment.label_id)
     if model_meta_id is None:
         queryset = queryset.filter(model_meta__isnull=True)
     else:

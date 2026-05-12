@@ -39,6 +39,18 @@ def _coerce_relative_path(value: object) -> str | None:
     return path.as_posix()
 
 
+def _validate_lx_ai_core_training_manifest(payload: dict[str, Any]) -> dict[str, Any]:
+    try:
+        from lx_ai_core.training import TrainingDatasetManifest
+    except ModuleNotFoundError as exc:
+        if exc.name != "lx_ai_core":
+            raise
+        return payload
+
+    TrainingDatasetManifest.model_validate(payload)
+    return payload
+
+
 class AITrainingLabel(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -218,7 +230,7 @@ class AITrainingDatasetManifest(BaseModel):
             "frame_format",
             self.frame_format.model_dump(mode="json"),
         )
-        return {
+        payload = {
             "schema_version": self.schema_version,
             "dataset_id": self.dataset_id,
             "name": self.name,
@@ -229,6 +241,7 @@ class AITrainingDatasetManifest(BaseModel):
             "class_frequencies": self.class_frequencies,
             "provenance": provenance,
         }
+        return _validate_lx_ai_core_training_manifest(payload)
 
 
 AITrainingDatasetManifest.model_rebuild()

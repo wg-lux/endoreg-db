@@ -91,6 +91,15 @@ class TemporalInferenceDispatchResult:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class TemporalInferenceResultPayload:
+    temporal_segments: Sequence[Any]
+    backend: str
+    device: str
+    duration_ms: float | None
+    provenance: Mapping[str, Any]
+
+
 def extract_temporal_options(payload: Mapping[str, Any]) -> dict[str, Any]:
     return {key: payload[key] for key in TEMPORAL_OPTION_KEYS if key in payload}
 
@@ -351,6 +360,62 @@ def _run_lx_ai_core_temporal_inference(
     return run_inference(request)
 
 
+def _coerce_lx_temporal_inference_result(
+    result: Any,
+) -> TemporalInferenceResultPayload:
+    temporal_segments = getattr(result, "temporal_segments", None)
+    if temporal_segments is None or isinstance(
+        temporal_segments,
+        (str, bytes, bytearray),
+    ):
+        raise RuntimeError("lx-ai-core temporal inference returned no segment list.")
+
+    try:
+        normalized_segments = list(temporal_segments)
+    except TypeError as exc:
+        raise RuntimeError(
+            "lx-ai-core temporal inference returned a non-iterable segment list."
+        ) from exc
+    for index, segment in enumerate(normalized_segments):
+        for field_name in ("label", "start_frame", "end_frame"):
+            if not hasattr(segment, field_name):
+                raise RuntimeError(
+                    f"lx-ai-core temporal segment {index} is missing {field_name!r}."
+                )
+        try:
+            int(getattr(segment, "start_frame"))
+            int(getattr(segment, "end_frame"))
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                "lx-ai-core temporal segment "
+                f"{index} contains non-integer frame bounds."
+            ) from exc
+
+    backend = getattr(result, "backend", None)
+    device = getattr(result, "device", None)
+    duration_ms = getattr(result, "duration_ms", None)
+    provenance = getattr(result, "provenance", {})
+    if not isinstance(provenance, Mapping):
+        raise RuntimeError(
+            "lx-ai-core temporal inference provenance must be a mapping."
+        )
+    if duration_ms is not None:
+        try:
+            duration_ms = float(duration_ms)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                "lx-ai-core temporal inference duration_ms must be numeric."
+            ) from exc
+
+    return TemporalInferenceResultPayload(
+        temporal_segments=normalized_segments,
+        backend=str(backend or "unknown"),
+        device=str(device or "unknown"),
+        duration_ms=duration_ms,
+        provenance=dict(provenance),
+    )
+
+
 def _segments_to_sequences(segments: Sequence[Any]) -> dict[str, list[tuple[int, int]]]:
     sequences: dict[str, list[tuple[int, int]]] = {}
     for segment in segments:
@@ -580,11 +645,13 @@ def _run_video_temporal_inference(
         request_id = (
             f"video-{video.pk}-temporal-{history.pk if history else uuid.uuid4()}"
         )
-        inference_result = _run_lx_ai_core_temporal_inference(
-            model_meta=model_meta,
-            score_result=score_result,
-            lx_options=lx_options,
-            request_id=request_id,
+        inference_result = _coerce_lx_temporal_inference_result(
+            _run_lx_ai_core_temporal_inference(
+                model_meta=model_meta,
+                score_result=score_result,
+                lx_options=lx_options,
+                request_id=request_id,
+            )
         )
         sequences = _segments_to_sequences(inference_result.temporal_segments)
         has_segment_ranges = any(bool(ranges) for ranges in sequences.values())

@@ -4,6 +4,7 @@ from tempfile import TemporaryDirectory
 
 from django.test import TestCase
 from PIL import Image
+import pytest
 
 from endoreg_db.models import (
     AIDataSet,
@@ -145,6 +146,19 @@ class AIDataSetTrainingManifestTests(TestCase):
             payload["provenance"]["frame_format"]["recommended_model_input_strategy"]
             == "crop_to_endoscope_roi"
         )
+
+    def test_export_lx_ai_core_training_manifest_matches_installed_contract(self):
+        pytest.importorskip("lx_ai_core.training")
+        from lx_ai_core.training import TrainingDatasetManifest
+
+        payload = self.dataset.export_lx_ai_core_training_manifest(
+            label_set=self.label_set,
+            check_frame_format=False,
+        )
+
+        manifest = TrainingDatasetManifest.model_validate(payload)
+        assert manifest.dataset_id == self.dataset.pk
+        assert manifest.labels == ["blood", "polyp"]
 
     def test_build_frame_multilabel_training_manifest_checks_frame_format(self):
         with TemporaryDirectory() as frame_dir:

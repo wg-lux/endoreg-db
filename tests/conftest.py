@@ -421,6 +421,8 @@ def _load_base_db_data_impl(cache):
             cleanup_managed_stub_weight_collisions(weights_name)
             if meta.weights:
                 existing_name = meta.weights.name
+                if not existing_name:
+                    return
                 is_stub_weight = "stub" in Path(existing_name).name.lower()
                 if is_stub_weight and not default_storage.exists(existing_name):
                     atomic_write_file(

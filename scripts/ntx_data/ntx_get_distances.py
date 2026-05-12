@@ -8,7 +8,7 @@ import time
 from statistics import mean, median
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-import googlemaps
+import googlemaps  # type: ignore[import-untyped]
 import pandas as pd
 from icecream import ic
 

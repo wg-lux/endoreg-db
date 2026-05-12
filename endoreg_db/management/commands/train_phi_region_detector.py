@@ -11,8 +11,8 @@ try:
         train_phi_region_detector,
     )
 except ImportError:
-    PhiRegionDetectorTrainingConfig = None  # type: ignore[assignment]
-    train_phi_region_detector = None  # type: ignore[assignment]
+    PhiRegionDetectorTrainingConfig = None
+    train_phi_region_detector = None
 
 
 class Command(BaseCommand):

@@ -91,6 +91,36 @@ def test_build_lx_temporal_options_rejects_invalid_model():
         jobs.build_lx_temporal_options({"temporal_model": "unknown"}, fps=25.0)
 
 
+def test_coerce_lx_temporal_inference_result_rejects_missing_segments():
+    with pytest.raises(RuntimeError, match="returned no segment list"):
+        jobs._coerce_lx_temporal_inference_result(
+            types.SimpleNamespace(
+                backend="torch",
+                device="cpu",
+                duration_ms=1.0,
+                provenance={},
+            )
+        )
+
+
+def test_coerce_lx_temporal_inference_result_rejects_malformed_segment():
+    with pytest.raises(RuntimeError, match="missing 'end_frame'"):
+        jobs._coerce_lx_temporal_inference_result(
+            types.SimpleNamespace(
+                temporal_segments=[
+                    types.SimpleNamespace(
+                        label="polyp",
+                        start_frame=0,
+                    )
+                ],
+                backend="torch",
+                device="cpu",
+                duration_ms=1.0,
+                provenance={},
+            )
+        )
+
+
 @pytest.mark.django_db
 def test_dispatch_video_temporal_inference_uses_inference_queue(monkeypatch, tmp_path):
     video = _create_video(tmp_path)

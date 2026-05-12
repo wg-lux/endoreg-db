@@ -1,4 +1,5 @@
-from typing import List
+from datetime import date, datetime, timedelta
+from typing import TypedDict, cast
 
 import pandas as pd
 from tqdm import tqdm
@@ -12,7 +13,7 @@ readout_data_path = processed_data_dir / "readout_with_distances.jsonl"
 readout_df_excel_export_path = processed_data_dir / "readout_with_distances_and_lab_counts.xlsx"
 readout_df_csv_export_path = processed_data_dir / "readout_with_distances_and_lab_counts.csv"
 readout_df_jsonl_export_path = processed_data_dir / "readout_with_distances_and_lab_counts.jsonl"
-readout_data_list: List[ReadoutData] = []
+readout_data_list: list[ReadoutData] = []
 
 lab_value_name = "Creatinin"
 fu_years = [i for i in range(1, 21)]  # 1 to 20 years
@@ -22,12 +23,12 @@ with open(readout_data_path, "r", encoding="utf-8") as f:
         readout_data_list.append(ReadoutData.model_validate_json(line))
 
 with open(lab_data_path, "r", encoding="utf-8") as f:
-    lab_data_list: List[LabData] = []
+    lab_data_list: list[LabData] = []
     for line in tqdm(f):
         lab_data_list.append(LabData.model_validate_json(line))
 
 # create dictionary: {patient_id_ntx: List[LabData]}
-lab_data_by_patient_id_ntx = {}
+lab_data_by_patient_id_ntx: dict[str | None, list[LabData]] = {}
 for lab_data in tqdm(lab_data_list):
     if lab_data.test_name != lab_value_name:
         continue
@@ -43,20 +44,32 @@ for lab_data in tqdm(lab_data_list):
 # a dictionary with transplant_ids, transplant_dates and lab counts per follow-up year (empty at first)
 # then, we create another loop over the lab_data_list to fill in the lab counts per follow-up year
 
-from datetime import datetime, timedelta
-
 # dt_format = "1949-04-09T00:00:00"  # ISO format
 dt_format = "%Y-%m-%dT%H:%M:%S"  # ISO format
 
 
-def create_fu_years_dict(transplant_date: str, fu_years: List[int]) -> dict:
+class FollowUpYearWindow(TypedDict):
+    start_date: date
+    end_date: date
+
+
+class TransplantLabSummary(TypedDict):
+    transplant_date: str
+    fu_years: dict[str, FollowUpYearWindow]
+    labs_by_fu_year: dict[str, list[LabData]]
+
+
+def create_fu_years_dict(
+    transplant_date: str,
+    fu_years: list[int],
+) -> dict[str, FollowUpYearWindow]:
     # transplant_date is ISO format string "YYYY-MM-DD"
     if not transplant_date:
         return {}
 
     transplant_date_dt = datetime.strptime(transplant_date, dt_format).date()
 
-    fu_years_dict = {}
+    fu_years_dict: dict[str, FollowUpYearWindow] = {}
     for year in fu_years:
         year_start_date = transplant_date_dt + timedelta(days=365 * (year - 1))
         year_end_date = transplant_date_dt + timedelta(days=365 * year) - timedelta(days=1)
@@ -81,7 +94,7 @@ def create_fu_years_dict(transplant_date: str, fu_years: List[int]) -> dict:
 # }
 # }
 
-summary_dict = {}
+summary_dict: dict[str, TransplantLabSummary] = {}
 
 for readout_data in tqdm(readout_data_list):
     transplant_id = readout_data.transplant_id
@@ -102,7 +115,9 @@ for lab_data in tqdm(lab_data_list):
         continue
 
     transplant_id = lab_data.transplant_id
-    transplant_lab_summary = summary_dict.get(transplant_id, None)
+    if transplant_id is None:
+        continue
+    transplant_lab_summary = summary_dict.get(transplant_id)
     if not transplant_lab_summary:
         continue
 
@@ -123,17 +138,17 @@ for lab_data in tqdm(lab_data_list):
             break
 
 # export
-records = []
+records: list[dict[str, object]] = []
 for key, value in summary_dict.items():
-    record = {
+    record: dict[str, object] = {
         "transplant_id": key,
         "transplant_date": value["transplant_date"],
     }
 
     for year in fu_years:
-        labs = value["labs_by_fu_year"][str(year)]
+        labs = cast(list[LabData], value["labs_by_fu_year"][str(year)])
         record[f"lab_count_year_{year}"] = len(labs)
-        record[f"unique_case_ids_year_{year}"] = len(set([lab.case_id_ukw for lab in labs]))
+        record[f"unique_case_ids_year_{year}"] = len({lab.case_id_ukw for lab in labs})
 
     records.append(record)
 
