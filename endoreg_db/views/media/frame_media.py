@@ -11,6 +11,7 @@ from rest_framework.views import APIView
 from endoreg_db.models import Frame, VideoFile
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.services.frame_extraction_jobs import (
+    FrameExtractionDispatchResult,
     REQUEST_STATUS_FAILED,
     get_or_create_frame_record,
     request_frame_extraction,
@@ -119,7 +120,7 @@ class FrameStreamView(APIView):
                 frame.is_extracted = True
             return None
 
-        dispatch_result = request_frame_extraction(
+        dispatch_result: FrameExtractionDispatchResult = request_frame_extraction(
             video=frame.video,
             frame_number=int(frame.frame_number),
         )
@@ -181,6 +182,7 @@ class FrameStreamView(APIView):
         content_type = mime_type or "image/jpeg"
 
         frontend_origin = resolve_response_origin(request)
+
         if nginx_offload_enabled():
             nginx_response = self._serve_with_nginx(
                 frame_path,
