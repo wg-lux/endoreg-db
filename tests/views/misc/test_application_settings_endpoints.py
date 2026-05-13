@@ -234,6 +234,30 @@ class ApplicationSettingsEndpointTests(TestCase):
             for entry in response.json()
         )
 
+    def test_ai_dataset_dropdown_post_returns_current_duplicate_name_count(self):
+        dataset_name = f"dataset-duplicate-{uuid4().hex[:8]}"
+        AIDataSet.objects.create(
+            name=dataset_name,
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+
+        response = self.client.post(
+            "/api/settings/application/dropdowns/ai_datasets/",
+            data={
+                "name": dataset_name,
+                "dataset_type": AIDataSet.DATASET_TYPE_IMAGE,
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 201, response.content
+        payload = response.json()
+        assert payload["value"] == dataset_name
+        assert payload["dataset_type"] == AIDataSet.DATASET_TYPE_IMAGE
+        assert payload["ai_model_type"] == AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL
+        assert payload["name_count"] == 2
+
     def test_ai_dataset_frame_bucket_distribution_endpoint(self):
         dataset = AIDataSet.objects.create(
             name=f"dataset-buckets-{uuid4().hex[:8]}",

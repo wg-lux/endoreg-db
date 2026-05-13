@@ -122,6 +122,21 @@ class AIDataSetTrainingManifestTests(TestCase):
         assert manifest.samples[1].labels == [0.0, 0.0]
         assert manifest.samples[1].label_mask == [1, 1]
         assert manifest.provenance["treat_unlabeled_as_negative"] is True
+        assert manifest.provenance["frame_source_mode"] == (
+            "selected_frame_materialization"
+        )
+        assert manifest.provenance["source_video_kind_by_video_uuid"] == {
+            str(self.video.uuid): "extracted_frame_cache"
+        }
+        assert manifest.provenance["frame_ids"] == [
+            self.frames[0].pk,
+            self.frames[1].pk,
+        ]
+        assert manifest.provenance["frame_numbers"] == [0, 1]
+        assert manifest.provenance["frame_numbers_by_video_uuid"] == {
+            str(self.video.uuid): [0, 1]
+        }
+        assert manifest.provenance["materialization_timestamp"]
 
     def test_export_lx_ai_core_training_manifest_uses_relative_path_by_default(self):
         payload = self.dataset.export_lx_ai_core_training_manifest(

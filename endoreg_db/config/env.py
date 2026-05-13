@@ -14,7 +14,6 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Mapping, MutableMapping, Optional
 
-
 DJANGO_SETTINGS_MODULE_ENV = "DJANGO_SETTINGS_MODULE"
 PROTECTED_ROOT_ENV = "LX_ANNOTATE_ENCRYPTED_DATA_DIR"
 STORAGE_DIR_ENV = "STORAGE_DIR"
@@ -35,6 +34,7 @@ DEFAULT_WATCHER_STABLE_AFTER_SECONDS = 10.0
 DEFAULT_VIDEO_POST_VALIDATION_JOB_MAX_WORKERS = 2
 DEFAULT_VIDEO_POST_VALIDATION_JOB_MODE = "celery"
 DEFAULT_VIDEO_TEMPORAL_INFERENCE_JOB_MODE = "celery"
+DEFAULT_VIDEO_TEMPORAL_INFERENCE_FRAME_SOURCE_MODE = "stream"
 DEFAULT_CELERY_DEFAULT_QUEUE = "default"
 DEFAULT_CELERY_PIPELINE_QUEUE = "pipeline"
 DEFAULT_CELERY_FRAME_EXTRACTION_QUEUE = "frame_extraction"
@@ -520,6 +520,20 @@ def get_video_temporal_inference_job_mode() -> str:
     )
     if mode not in {"celery", "thread", "inline"}:
         return DEFAULT_VIDEO_TEMPORAL_INFERENCE_JOB_MODE
+    return mode
+
+
+def get_video_temporal_inference_frame_source_mode() -> str:
+    mode = (
+        env_str(
+            "VIDEO_TEMPORAL_INFERENCE_FRAME_SOURCE_MODE",
+            DEFAULT_VIDEO_TEMPORAL_INFERENCE_FRAME_SOURCE_MODE,
+        )
+        .strip()
+        .lower()
+    )
+    if mode not in {"cache", "stream", "auto"}:
+        return DEFAULT_VIDEO_TEMPORAL_INFERENCE_FRAME_SOURCE_MODE
     return mode
 
 

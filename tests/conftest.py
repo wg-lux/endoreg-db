@@ -7,7 +7,6 @@ Includes session-scoped fixtures for video files and database optimization.
 
 import logging
 import os
-import posixpath
 import sys
 from pathlib import Path
 
@@ -61,6 +60,10 @@ from endoreg_db.utils.file_operations import (
     ensure_directory,
     safe_rmtree,
     safe_unlink_file,
+)
+from tests.helpers.model_weights import (
+    cleanup_managed_stub_weight_collisions,
+    ensure_managed_stub_weights,
 )
 
 import pytest
@@ -277,8 +280,6 @@ def _load_base_db_data_impl(cache):
         DEFAULT_SEGMENTATION_MODEL_NAME,
     )
 
-    from django.core.files.storage import default_storage
-
     from tests.helpers.data_loader import (
         load_ai_model_data,
         load_ai_model_label_data,
@@ -292,51 +293,6 @@ def _load_base_db_data_impl(cache):
         load_gender_data,
         load_information_source_data,
     )
-
-    def cleanup_managed_stub_weight_collisions(weights_name: str) -> None:
-        """
-        Remove orphaned storage collision variants for managed stub weights.
-
-        This only deletes files when all of the following are true:
-        - the file is a collision variant of the managed stub name
-        - no ModelMeta currently references it
-        - the file content exactly matches the tiny stub payload
-        """
-        directory = posixpath.dirname(weights_name)
-        filename = posixpath.basename(weights_name)
-        stem = Path(filename).stem
-        suffix = Path(filename).suffix
-
-        try:
-            _, files = default_storage.listdir(directory)
-        except Exception:
-            return
-
-        referenced_names = set(
-            ModelMeta.objects.exclude(weights="")
-            .filter(weights__startswith=f"{directory}/")
-            .values_list("weights", flat=True)
-        )
-
-        for candidate_name in files:
-            if candidate_name == filename:
-                continue
-            if not candidate_name.startswith(f"{stem}_") or not candidate_name.endswith(
-                suffix
-            ):
-                continue
-
-            candidate_path = posixpath.join(directory, candidate_name)
-            if candidate_path in referenced_names:
-                continue
-
-            try:
-                with default_storage.open(candidate_path, "rb") as handle:
-                    if handle.read() != b"stub-weights":
-                        continue
-                default_storage.delete(candidate_path)
-            except Exception:
-                continue
 
     db_cache = cache.namespace("db")
     loaded_flag = db_cache.get("base_data_loaded")
@@ -415,31 +371,6 @@ def _load_base_db_data_impl(cache):
             defaults={"model_type": model_type},
         )
 
-        def ensure_stub_weights(meta: ModelMeta, *, suffix: str) -> None:
-            """Attach lightweight stub weights to the provided ModelMeta if missing."""
-            weights_name = f"model_weights/{suffix}"
-            cleanup_managed_stub_weight_collisions(weights_name)
-            if meta.weights:
-                existing_name = meta.weights.name
-                if not existing_name:
-                    return
-                is_stub_weight = "stub" in Path(existing_name).name.lower()
-                if is_stub_weight and not default_storage.exists(existing_name):
-                    atomic_write_file(
-                        destination=Path(default_storage.path(existing_name)),
-                        content=[b"stub-weights"],
-                        required_bytes=len(b"stub-weights"),
-                    )
-                return
-            atomic_write_file(
-                destination=Path(default_storage.path(weights_name)),
-                content=[b"stub-weights"],
-                required_bytes=len(b"stub-weights"),
-            )
-            meta.weights.name = weights_name
-            meta.save(update_fields=["weights"])
-            cleanup_managed_stub_weight_collisions(weights_name)
-
         metadata_qs = ai_model.metadata_versions.all()
         if not metadata_qs.exists():
             model_meta = ModelMeta.objects.create(
@@ -449,7 +380,7 @@ def _load_base_db_data_impl(cache):
                 labelset=labelset,
                 description="Stub model meta for fast tests",
             )
-            ensure_stub_weights(
+            ensure_managed_stub_weights(
                 model_meta,
                 suffix=f"{DEFAULT_SEGMENTATION_MODEL_NAME}_stub.safetensors",
             )
@@ -457,7 +388,7 @@ def _load_base_db_data_impl(cache):
             ai_model.save(update_fields=["active_meta"])
         else:
             for meta in metadata_qs:
-                ensure_stub_weights(
+                ensure_managed_stub_weights(
                     meta,
                     suffix=f"{meta.name}_v{meta.version}_stub.safetensors",
                 )
@@ -480,7 +411,7 @@ def _load_base_db_data_impl(cache):
                 labelset=labelset,
                 description="Stub alt model meta for fast tests",
             )
-            ensure_stub_weights(
+            ensure_managed_stub_weights(
                 model_meta_alt,
                 suffix="test_segmentation_model_stub.safetensors",
             )
@@ -488,7 +419,7 @@ def _load_base_db_data_impl(cache):
             ai_model_alt.save(update_fields=["active_meta"])
         else:
             for meta in metadata_alt_qs:
-                ensure_stub_weights(
+                ensure_managed_stub_weights(
                     meta,
                     suffix=f"{meta.name}_v{meta.version}_stub.safetensors",
                 )

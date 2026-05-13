@@ -9,6 +9,7 @@ import uuid
 
 import numpy as np
 from django.db import models
+from django.utils import timezone
 from lx_dtypes.models.ledger.p_video.Pydantic import PatientVideoFile
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -642,18 +643,22 @@ class AIDataSet(models.Model):
 
         quality_scores = np.asarray(
             [
-                1.0
-                if candidate.quality_score is None
-                else float(candidate.quality_score)
+                (
+                    1.0
+                    if candidate.quality_score is None
+                    else float(candidate.quality_score)
+                )
                 for candidate in normalized_candidates
             ],
             dtype=np.float64,
         )
         quality_gate = np.asarray(
             [
-                min(max(score, 0.0), 1.0)
-                if score >= resolved_config.min_quality_score
-                else 0.0
+                (
+                    min(max(score, 0.0), 1.0)
+                    if score >= resolved_config.min_quality_score
+                    else 0.0
+                )
                 for score in quality_scores
             ],
             dtype=np.float64,
@@ -1284,6 +1289,21 @@ class AIDataSet(models.Model):
             preprocessing_strategy=preprocessing_strategy,
             recommended_model_input_strategy=recommended_model_input_strategy,
         )
+        frame_ids_for_provenance: list[int] = []
+        frame_numbers_for_provenance: list[int] = []
+        frame_numbers_by_video_uuid: dict[str, list[int]] = defaultdict(list)
+        source_video_kind_by_video_uuid: dict[str, str] = {}
+        for frame in frames_for_manifest:
+            if frame.pk is not None:
+                frame_ids_for_provenance.append(int(frame.pk))
+            frame_numbers_for_provenance.append(int(frame.frame_number))
+            video_uuid = str(frame.video.uuid)
+            frame_numbers_by_video_uuid[video_uuid].append(int(frame.frame_number))
+            source_video_kind_by_video_uuid[video_uuid] = (
+                "processed"
+                if getattr(frame.video, "is_processed", False)
+                else "extracted_frame_cache"
+            )
 
         positive_counts = [0.0] * len(training_labels)
         known_counts = [0.0] * len(training_labels)
@@ -1295,9 +1315,11 @@ class AIDataSet(models.Model):
                     known_counts[label_index] += 1.0
                     positive_counts[label_index] += float(value)
         class_frequencies = [
-            positive_counts[index] / known_counts[index]
-            if known_counts[index] > 0.0
-            else 0.0
+            (
+                positive_counts[index] / known_counts[index]
+                if known_counts[index] > 0.0
+                else 0.0
+            )
             for index in range(len(training_labels))
         ]
 
@@ -1319,6 +1341,17 @@ class AIDataSet(models.Model):
                 "include_file_paths": include_file_paths,
                 "check_frame_format": check_frame_format,
                 "information_source_names": normalized_source_names,
+                "frame_source_mode": "selected_frame_materialization",
+                "source_video_kind": (
+                    "processed"
+                    if set(source_video_kind_by_video_uuid.values()) == {"processed"}
+                    else "mixed_or_frame_cache"
+                ),
+                "source_video_kind_by_video_uuid": source_video_kind_by_video_uuid,
+                "frame_ids": frame_ids_for_provenance,
+                "frame_numbers": frame_numbers_for_provenance,
+                "frame_numbers_by_video_uuid": dict(frame_numbers_by_video_uuid),
+                "materialization_timestamp": timezone.now().isoformat(),
             },
         )
 

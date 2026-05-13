@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from datetime import timedelta
 from importlib.metadata import PackageNotFoundError, version
-from typing import Any
+from typing import Any, cast
 
 from django.db import transaction
 from django.utils import timezone
@@ -16,6 +16,7 @@ from endoreg_db.config.env import (
     DEFAULT_VIDEO_FPS,
     get_celery_inference_queue,
     get_video_temporal_inference_job_mode,
+    get_video_temporal_inference_frame_source_mode,
 )
 from endoreg_db.models import (
     LabelVideoSegment,
@@ -24,7 +25,10 @@ from endoreg_db.models import (
     VideoPredictionMeta,
     VideoProcessingHistory,
 )
-from endoreg_db.models.media.video.video_file_ai import VideoFrameScoreResult
+from endoreg_db.models.media.video.video_file_ai import (
+    FrameSourceMode,
+    VideoFrameScoreResult,
+)
 from endoreg_db.models.media.video.video_file_segments import (
     _convert_sequences_to_db_segments,
 )
@@ -67,6 +71,7 @@ TEMPORAL_OPTION_KEYS = frozenset(
     }
 )
 SUPPORTED_TEMPORAL_MODELS = {"hysteresis", "markov", "viterbi"}
+SUPPORTED_FRAME_SOURCE_MODES = {"cache", "stream", "auto"}
 
 _executor = ThreadPoolExecutor(max_workers=1)
 
@@ -126,6 +131,30 @@ def _prediction_segments_for_meta(
 def _has_extracted_frame_files(video: VideoFile) -> bool:
     frame_dir = video.get_frame_dir_path()
     return bool(frame_dir and frame_dir.exists() and any(frame_dir.glob("frame_*.jpg")))
+
+
+def _normalize_temporal_frame_source_mode(
+    value: str | None = None,
+) -> FrameSourceMode:
+    configured = (
+        value if value is not None else get_video_temporal_inference_frame_source_mode()
+    )
+    normalized = str(configured or "stream").strip().lower()
+    if normalized not in SUPPORTED_FRAME_SOURCE_MODES:
+        supported = ", ".join(sorted(SUPPORTED_FRAME_SOURCE_MODES))
+        raise TemporalInferenceConfigError(
+            f"frame_source_mode must be one of: {supported}."
+        )
+    return cast(FrameSourceMode, normalized)
+
+
+def _resolve_temporal_frame_source_mode(
+    video: VideoFile,
+    requested_frame_source_mode: FrameSourceMode,
+) -> FrameSourceMode:
+    if requested_frame_source_mode == "auto":
+        return "cache" if _has_extracted_frame_files(video) else "stream"
+    return requested_frame_source_mode
 
 
 def _coerce_bool(value: Any, *, default: bool = False) -> bool:
@@ -337,6 +366,15 @@ def _run_lx_ai_core_temporal_inference(
     )
     from lx_ai_core.runtime import run_inference
 
+    metadata = {
+        "frame_count": score_result.frame_count,
+        "score_device": score_result.device,
+    }
+    if score_result.frame_numbers is not None:
+        metadata["frame_numbers"] = list(score_result.frame_numbers)
+    if score_result.timestamps is not None:
+        metadata["timestamps"] = list(score_result.timestamps)
+
     request = InferenceRequest(
         model_spec=ModelSpec(
             name=model_meta.name,
@@ -349,10 +387,7 @@ def _run_lx_ai_core_temporal_inference(
         ),
         inputs=InferenceInput(
             frame_scores=score_result.frame_scores,
-            metadata={
-                "frame_count": score_result.frame_count,
-                "score_device": score_result.device,
-            },
+            metadata=metadata,
         ),
         options=dict(lx_options),
         request_id=request_id,
@@ -443,6 +478,7 @@ def _temporal_history_config(
     ocr_cap: int,
     temporal_options: Mapping[str, Any],
     queue: str,
+    frame_source_mode: str = "stream",
 ) -> dict[str, Any]:
     return {
         "kind": TEMPORAL_INFERENCE_KIND,
@@ -452,6 +488,7 @@ def _temporal_history_config(
         "ocr_frame_fraction": float(ocr_frame_fraction),
         "ocr_cap": int(ocr_cap),
         "queue": queue,
+        "frame_source_mode": frame_source_mode,
         "lx_ai_core_version": _lx_ai_core_version(),
         "temporal_options": dict(temporal_options),
     }
@@ -460,6 +497,36 @@ def _temporal_history_config(
 def _history_delete_frames_after(history: VideoProcessingHistory) -> bool:
     config = history.config if isinstance(history.config, Mapping) else {}
     return bool(config.get("delete_frames_after", True))
+
+
+def _history_cleanup_frame_source_mode(
+    history: VideoProcessingHistory,
+) -> str | None:
+    config = history.config if isinstance(history.config, Mapping) else {}
+    result = config.get("result") if isinstance(config.get("result"), Mapping) else {}
+    for source in (result, config):
+        for key in ("resolved_frame_source_mode", "frame_source_mode"):
+            if source is not None:
+                value = source.get(key)
+                if value is None:
+                    continue
+            normalized = str(value).strip().lower()
+            if normalized:
+                return normalized
+    return None
+
+
+def _history_should_cleanup_frames(
+    history: VideoProcessingHistory,
+    *,
+    delete_frames_after: bool,
+) -> bool:
+    if not (delete_frames_after or _history_delete_frames_after(history)):
+        return False
+    mode = _history_cleanup_frame_source_mode(history)
+    if mode is None:
+        return True
+    return mode == "cache"
 
 
 def _expire_stale_temporal_inference_histories(video: VideoFile) -> None:
@@ -489,7 +556,7 @@ def _expire_stale_temporal_inference_histories(video: VideoFile) -> None:
             "Temporal inference job was still running after "
             f"{STALE_TEMPORAL_RUNNING_TIMEOUT}; rolling back extracted frames."
         )
-        if _history_delete_frames_after(history):
+        if _history_should_cleanup_frames(history, delete_frames_after=False):
             rollback_video_frame_artifacts(video, reason=reason)
         history.mark_failure(reason)
 
@@ -505,6 +572,7 @@ def _reserve_temporal_inference_history(
     ocr_cap: int,
     temporal_options: Mapping[str, Any],
     queue: str,
+    frame_source_mode: str,
 ) -> tuple[VideoProcessingHistory, str]:
     with transaction.atomic():
         locked_video = VideoFile.objects.select_for_update().get(pk=video.pk)
@@ -539,6 +607,7 @@ def _reserve_temporal_inference_history(
                 ocr_cap=ocr_cap,
                 temporal_options=temporal_options,
                 queue=queue,
+                frame_source_mode=frame_source_mode,
             ),
         )
         return history, "created"
@@ -573,11 +642,23 @@ def _run_video_temporal_inference(
     temporal_options: Mapping[str, Any] | None = None,
     test_run: bool = False,
     n_test_frames: int = 10,
+    frame_source_mode: str | None = None,
 ) -> bool:
     history = _get_processing_history(history_id)
+    history_config = (
+        history.config
+        if history is not None and isinstance(history.config, Mapping)
+        else {}
+    )
+    requested_frame_source_mode = _normalize_temporal_frame_source_mode(
+        frame_source_mode or history_config.get("frame_source_mode")
+    )
     if history is not None:
         if history.status == VideoProcessingHistory.STATUS_SUCCESS:
-            if delete_frames_after or _history_delete_frames_after(history):
+            if _history_should_cleanup_frames(
+                history,
+                delete_frames_after=delete_frames_after,
+            ):
                 history_video = VideoFile.objects.get(pk=video_id)
                 rollback_video_frame_artifacts(
                     history_video,
@@ -588,7 +669,10 @@ def _run_video_temporal_inference(
                 )
             return True
         if history.status == VideoProcessingHistory.STATUS_RUNNING and (
-            delete_frames_after or _history_delete_frames_after(history)
+            _history_should_cleanup_frames(
+                history,
+                delete_frames_after=delete_frames_after,
+            )
         ):
             history_video = VideoFile.objects.get(pk=video_id)
             rollback_video_frame_artifacts(
@@ -618,26 +702,40 @@ def _run_video_temporal_inference(
         mark_frame_prediction_reset(video)
         video.refresh_from_db()
         video.update_video_meta()
-        frames_touched = True
-        video.extract_frames(overwrite=False)
-        video.update_text_metadata(
-            ocr_frame_fraction=ocr_frame_fraction,
-            cap=ocr_cap,
-            overwrite=False,
+        resolved_frame_source_mode = _resolve_temporal_frame_source_mode(
+            video,
+            requested_frame_source_mode,
         )
-        if not _has_extracted_frame_files(video):
+        if history is not None:
+            history.config = {
+                **(history.config or {}),
+                "frame_source_mode": requested_frame_source_mode,
+                "requested_frame_source_mode": requested_frame_source_mode,
+                "resolved_frame_source_mode": resolved_frame_source_mode,
+            }
+            history.save(update_fields=["config"])
+        if resolved_frame_source_mode == "cache":
             frames_touched = True
-            video.extract_frames(overwrite=True)
-        if not _has_extracted_frame_files(video):
-            raise RuntimeError(
-                f"Frame cache for video {video.pk} is empty after extraction."
+            video.extract_frames(overwrite=False)
+            video.update_text_metadata(
+                ocr_frame_fraction=ocr_frame_fraction,
+                cap=ocr_cap,
+                overwrite=False,
             )
-
+            if not _has_extracted_frame_files(video):
+                frames_touched = True
+                video.extract_frames(overwrite=True)
+            if not _has_extracted_frame_files(video):
+                raise RuntimeError(
+                    f"Frame cache for video {video.pk} is empty after extraction."
+                )
         score_result = video.predict_video(
             model_meta=model_meta,
             test_run=test_run,
             n_test_frames=n_test_frames,
             return_frame_scores=True,
+            frame_source_mode=resolved_frame_source_mode,
+            frame_source_file_type="raw",
         )
         if not isinstance(score_result, VideoFrameScoreResult):
             raise RuntimeError("Video prediction did not return frame scores.")
@@ -698,6 +796,9 @@ def _run_video_temporal_inference(
             if history is not None:
                 history.config = {
                     **(history.config or {}),
+                    "frame_source_mode": resolved_frame_source_mode,
+                    "requested_frame_source_mode": requested_frame_source_mode,
+                    "resolved_frame_source_mode": resolved_frame_source_mode,
                     "temporal_options": normalized_temporal_options,
                     "result": {
                         "backend": inference_result.backend,
@@ -706,6 +807,18 @@ def _run_video_temporal_inference(
                         "provenance": inference_result.provenance,
                         "score_frame_count": score_result.frame_count,
                         "score_label_count": len(score_result.labels),
+                        "score_frame_numbers_present": (
+                            score_result.frame_numbers is not None
+                        ),
+                        "score_timestamps_present": score_result.timestamps is not None,
+                        "frame_source_mode": resolved_frame_source_mode,
+                        "requested_frame_source_mode": requested_frame_source_mode,
+                        "resolved_frame_source_mode": resolved_frame_source_mode,
+                        "source_video_kind": (
+                            "frame_cache"
+                            if resolved_frame_source_mode == "cache"
+                            else "raw"
+                        ),
                         "temporal_segment_count": len(
                             inference_result.temporal_segments
                         ),
@@ -740,7 +853,7 @@ def _run_video_temporal_inference(
                 )
         raise
     finally:
-        if video is not None and delete_frames_after and success:
+        if video is not None and delete_frames_after and success and frames_touched:
             try:
                 video.delete_frames()
             except Exception:
@@ -763,6 +876,7 @@ def dispatch_video_temporal_inference(
     n_test_frames: int = 10,
 ) -> TemporalInferenceDispatchResult:
     mode = get_video_temporal_inference_job_mode()
+    frame_source_mode = _normalize_temporal_frame_source_mode()
     task_id = str(uuid.uuid4())
     queue = get_celery_inference_queue()
     video = VideoFile.objects.get(pk=video_id)
@@ -782,6 +896,7 @@ def dispatch_video_temporal_inference(
         ocr_cap=ocr_cap,
         temporal_options=normalized_temporal_options,
         queue=queue,
+        frame_source_mode=frame_source_mode,
     )
 
     if reservation_status in {"busy", "already_queued"}:
@@ -809,6 +924,7 @@ def dispatch_video_temporal_inference(
             temporal_options=temporal_options or {},
             test_run=test_run,
             n_test_frames=n_test_frames,
+            frame_source_mode=frame_source_mode,
         )
         history.refresh_from_db()
         result = (history.config or {}).get("result") or {}
@@ -839,6 +955,7 @@ def dispatch_video_temporal_inference(
                     "temporal_options": dict(temporal_options or {}),
                     "test_run": bool(test_run),
                     "n_test_frames": int(n_test_frames),
+                    "frame_source_mode": frame_source_mode,
                 },
                 queue=queue,
                 routing_key=queue,
@@ -881,6 +998,7 @@ def dispatch_video_temporal_inference(
                 temporal_options=temporal_options or {},
                 test_run=test_run,
                 n_test_frames=n_test_frames,
+                frame_source_mode=frame_source_mode,
             )
         except Exception:
             logger.exception(

@@ -22,6 +22,7 @@ from endoreg_db.models import (
     RawPdfFile,
 )
 from endoreg_db.utils import create_mock_patient_name
+from .model_weights import ensure_managed_stub_weights
 
 logger = getLogger("default_objects")
 
@@ -85,13 +86,22 @@ def get_latest_segmentation_model(
     ai_model = AiModel.objects.filter(name=model_name).first()
     if ai_model is not None:
         try:
-            return ai_model.get_latest_version()
+            latest_meta = ai_model.get_latest_version()
+            ensure_managed_stub_weights(
+                latest_meta,
+                suffix=f"{model_name}_stub.safetensors",
+            )
+            return latest_meta
         except ValueError:
             pass
 
     load_default_ai_model()  # Fallback to management command in case metadata is missing
     ai_model = AiModel.objects.get(name=model_name)
     latest_meta = ai_model.get_latest_version()
+    ensure_managed_stub_weights(
+        latest_meta,
+        suffix=f"{model_name}_stub.safetensors",
+    )
     return latest_meta
 
 

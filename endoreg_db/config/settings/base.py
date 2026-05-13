@@ -40,6 +40,7 @@ from endoreg_db.config.env import (
     get_static_url,
     get_time_zone,
     get_video_default_fps,
+    get_video_temporal_inference_frame_source_mode,
     run_video_tests_enabled,
 )
 
@@ -81,6 +82,9 @@ CELERY_TRAINING_QUEUE = get_celery_training_queue()
 CELERY_MAINTENANCE_QUEUE = get_celery_maintenance_queue()
 MODEL_TRAINING_JOB_MODE = get_model_training_job_mode()
 MODEL_TRAINING_STAGING_ROOT = get_model_training_staging_root()
+VIDEO_TEMPORAL_INFERENCE_FRAME_SOURCE_MODE = (
+    get_video_temporal_inference_frame_source_mode()
+)
 CELERY_TASK_CREATE_MISSING_QUEUES = False
 CELERY_BROKER_TRANSPORT_OPTIONS = {"visibility_timeout": 60 * 60 * 25}
 CELERY_TASK_QUEUES = (

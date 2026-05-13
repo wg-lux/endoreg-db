@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import logging
@@ -410,18 +411,77 @@ def safe_rmtree(path: Path, *, missing_ok: bool = True) -> None:
             detail="missing path",
         )
         raise FileNotFoundError(target)
-    try:
-        shutil.rmtree(target)
-    except Exception as exc:
-        _emit_file_operation_event(
-            operation="rmtree",
-            status="error",
-            source=target,
-            detail=str(exc),
-        )
-        raise
-    _emit_file_operation_event(
-        operation="rmtree",
-        status="ok",
-        source=target,
-    )
+    max_attempts = 6
+    for attempt in range(1, max_attempts + 1):
+        try:
+            shutil.rmtree(target)
+        except FileNotFoundError as exc:
+            if not target.exists():
+                _emit_file_operation_event(
+                    operation="rmtree",
+                    status="ok",
+                    source=target,
+                    detail="removed concurrently",
+                    attempts=attempt,
+                )
+                return
+            if attempt < max_attempts:
+                _emit_file_operation_event(
+                    operation="rmtree",
+                    status="retry",
+                    source=target,
+                    detail=str(exc),
+                    attempt=attempt,
+                )
+                time.sleep(min(0.05 * (2 ** (attempt - 1)), 0.5))
+                continue
+            _emit_file_operation_event(
+                operation="rmtree",
+                status="error",
+                source=target,
+                detail=str(exc),
+            )
+            raise
+        except OSError as exc:
+            if not target.exists():
+                _emit_file_operation_event(
+                    operation="rmtree",
+                    status="ok",
+                    source=target,
+                    detail="removed concurrently",
+                    attempts=attempt,
+                )
+                return
+            if exc.errno == errno.ENOTEMPTY and attempt < max_attempts:
+                _emit_file_operation_event(
+                    operation="rmtree",
+                    status="retry",
+                    source=target,
+                    detail=str(exc),
+                    attempt=attempt,
+                )
+                time.sleep(min(0.05 * (2 ** (attempt - 1)), 0.5))
+                continue
+            _emit_file_operation_event(
+                operation="rmtree",
+                status="error",
+                source=target,
+                detail=str(exc),
+            )
+            raise
+        except Exception as exc:
+            _emit_file_operation_event(
+                operation="rmtree",
+                status="error",
+                source=target,
+                detail=str(exc),
+            )
+            raise
+        else:
+            _emit_file_operation_event(
+                operation="rmtree",
+                status="ok",
+                source=target,
+                attempts=attempt,
+            )
+            return

@@ -199,3 +199,35 @@ def test_ensure_directory_and_safe_rmtree_emit_structured_events(caplog, tmp_pat
         and event["source"] == str(target)
         for event in events
     )
+
+
+@pytest.mark.unit
+def test_safe_rmtree_retries_directory_not_empty_race(monkeypatch, caplog, tmp_path):
+    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
+    target = tmp_path / "racy"
+    ensure_directory(target)
+    atomic_write_file(destination=target / "child.txt", content=(b"payload",))
+    original_rmtree = file_operations.shutil.rmtree
+    calls = 0
+
+    def racy_rmtree(path):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise OSError(errno.ENOTEMPTY, "Directory not empty", str(path))
+        return original_rmtree(path)
+
+    monkeypatch.setattr(file_operations.shutil, "rmtree", racy_rmtree)
+
+    safe_rmtree(target)
+
+    assert calls == 2
+    assert not target.exists()
+    events = _file_operation_events(caplog)
+    assert any(
+        event["operation"] == "rmtree" and event["status"] == "retry"
+        for event in events
+    )
+    assert any(
+        event["operation"] == "rmtree" and event["status"] == "ok" for event in events
+    )

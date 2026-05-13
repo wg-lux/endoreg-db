@@ -70,23 +70,27 @@ def run_video_temporal_inference_task(
     temporal_options: dict[str, Any] | None = None,
     test_run: bool = False,
     n_test_frames: int = 10,
+    frame_source_mode: str | None = None,
 ) -> bool:
     from endoreg_db.services.video_temporal_inference import (
         _run_video_temporal_inference,
     )
 
-    return _run_video_temporal_inference(
-        int(video_id),
-        model_meta_id=int(model_meta_id),
-        history_id=int(history_id) if history_id is not None else None,
-        replace_prediction_segments=bool(replace_prediction_segments),
-        delete_frames_after=bool(delete_frames_after),
-        ocr_frame_fraction=float(ocr_frame_fraction),
-        ocr_cap=int(ocr_cap),
-        temporal_options=temporal_options or {},
-        test_run=bool(test_run),
-        n_test_frames=int(n_test_frames),
-    )
+    kwargs: dict[str, Any] = {
+        "model_meta_id": int(model_meta_id),
+        "history_id": int(history_id) if history_id is not None else None,
+        "replace_prediction_segments": bool(replace_prediction_segments),
+        "delete_frames_after": bool(delete_frames_after),
+        "ocr_frame_fraction": float(ocr_frame_fraction),
+        "ocr_cap": int(ocr_cap),
+        "temporal_options": temporal_options or {},
+        "test_run": bool(test_run),
+        "n_test_frames": int(n_test_frames),
+    }
+    if frame_source_mode is not None:
+        kwargs["frame_source_mode"] = frame_source_mode
+
+    return _run_video_temporal_inference(int(video_id), **kwargs)
 
 
 @shared_task(
