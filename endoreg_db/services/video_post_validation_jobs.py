@@ -5,11 +5,13 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, asdict
 from datetime import timedelta
+from pathlib import Path
 
 from django.db import transaction
 from django.utils import timezone
 
 from endoreg_db.models import VideoFile, VideoProcessingHistory
+from endoreg_db.models.media.video.video_file import _merge_outside_frame_intervals
 from endoreg_db.models.state.video_segment_validation import (
     _blackening_history_config,
     _is_outside_frame_blackening_history,
@@ -29,6 +31,10 @@ from endoreg_db.config.env import (
 from endoreg_db.services.frame_retention import (
     prune_unused_validated_outside_frames,
 )
+from endoreg_db.services.video_temporal_inference import (
+    dispatch_deferred_temporal_inference_after_rebuild,
+    fail_deferred_temporal_inference_for_rebuild,
+)
 from endoreg_db.services.video_task_cleanup import rollback_video_frame_artifacts
 
 logger = logging.getLogger(__name__)
@@ -46,64 +52,91 @@ RESERVATION_ALREADY_QUEUED = "already_queued"
 RESERVATION_BUSY = "busy"
 
 
-def _verify_extracted_frame_contract(video) -> None:
-    """Fail if post-validation rebuild did not leave stable frames available."""
-    from endoreg_db.models import Frame
+def _capture_frame(video_path: Path, frame_number: int):
+    import cv2
 
-    state = video.get_or_create_state()
-    if not state.frames_extracted:
-        raise RuntimeError(
-            f"Post-validation rebuild for video {video.pk} did not leave extracted frames available."
+    capture = cv2.VideoCapture(video_path.as_posix())
+    try:
+        if not capture.isOpened():
+            raise RuntimeError(
+                f"Could not open rebuilt video for sampling: {video_path}"
+            )
+        if not capture.set(cv2.CAP_PROP_POS_FRAMES, float(frame_number)):
+            raise RuntimeError(
+                f"Could not seek rebuilt video to frame {frame_number}: {video_path}"
+            )
+        ok, frame = capture.read()
+        if not ok or frame is None:
+            raise RuntimeError(
+                f"Could not decode rebuilt video frame {frame_number}: {video_path}"
+            )
+        return frame
+    finally:
+        capture.release()
+
+
+def _verify_processed_video_contract(
+    video: VideoFile,
+    *,
+    only_validated: bool = False,
+    tolerance: int = 8,
+) -> None:
+    with video.ensure_local_processed_file() as processed_path:
+        if not processed_path.is_file():
+            raise RuntimeError(
+                f"Post-validation rebuild for video {video.pk} did not leave a processed file."
+            )
+        if processed_path.stat().st_size <= 0:
+            raise RuntimeError(
+                f"Post-validation rebuild for video {video.pk} produced an empty processed file."
+            )
+
+        from endoreg_db.utils.video.ffmpeg_wrapper import get_stream_info
+
+        probe_data = get_stream_info(processed_path)
+        streams = probe_data.get("streams", []) if isinstance(probe_data, dict) else []
+        has_video_stream = any(
+            isinstance(stream, dict) and stream.get("codec_type") == "video"
+            for stream in streams
         )
+        if not has_video_stream:
+            raise RuntimeError(
+                f"Post-validation rebuild for video {video.pk} produced no probeable video stream."
+            )
 
-    expected_count = video.frame_count or state.frame_count
-    if expected_count is None:
-        expected_count = Frame.objects.filter(video=video).count()
-    expected_count = int(expected_count or 0)
-    if expected_count <= 0:
-        raise RuntimeError(
-            f"Post-validation rebuild for video {video.pk} has no stable frame count."
+        intervals = _merge_outside_frame_intervals(
+            video,
+            only_validated=only_validated,
         )
+        if not intervals:
+            return
 
-    frame_dir = video.get_frame_dir_path()
-    if frame_dir is None:
-        raise RuntimeError(
-            f"Post-validation rebuild for video {video.pk} has no frame directory."
-        )
+        inside_sample_frames = sorted({start for start, _end in intervals})
+        outside_sample_frames: list[int] = []
+        previous_end = -1
+        for start_frame, _end_frame in intervals:
+            candidate = max(previous_end + 1, 0)
+            if candidate < start_frame:
+                outside_sample_frames.append(candidate)
+            previous_end = _end_frame
+            if outside_sample_frames:
+                break
 
-    frames = list(
-        Frame.objects.filter(
-            video=video,
-            frame_number__gte=0,
-            frame_number__lt=expected_count,
-        ).only("frame_number", "relative_path", "is_extracted")
-    )
-    if len(frames) != expected_count:
-        raise RuntimeError(
-            "Post-validation rebuild left frames in a non-recreatable state: "
-            "did not preserve exact Frame DB rows for "
-            f"video {video.pk}: expected={expected_count}, actual={len(frames)}"
-        )
+        for frame_number in inside_sample_frames[:3]:
+            frame = _capture_frame(processed_path, frame_number)
+            if int(frame.max()) > tolerance:
+                raise RuntimeError(
+                    "Post-validation rebuild did not leave outside frames blackened for "
+                    f"video {video.pk}: frame_number={frame_number}"
+                )
 
-    missing_files: list[int] = []
-    unstable_rows: list[tuple[int, str]] = []
-    unextracted_rows: list[int] = []
-    for frame in frames:
-        expected_relative_path = f"frame_{frame.frame_number:07d}.jpg"
-        if frame.relative_path != expected_relative_path:
-            unstable_rows.append((frame.frame_number, frame.relative_path))
-        if not frame.is_extracted:
-            unextracted_rows.append(frame.frame_number)
-        if not (frame_dir / expected_relative_path).is_file():
-            missing_files.append(frame.frame_number)
-
-    if missing_files or unstable_rows or unextracted_rows:
-        raise RuntimeError(
-            "Post-validation rebuild left frames in a non-recreatable state for "
-            f"video {video.pk}: missing_files={missing_files[:10]}, "
-            f"unstable_rows={unstable_rows[:10]}, "
-            f"unextracted_rows={unextracted_rows[:10]}"
-        )
+        for frame_number in outside_sample_frames[:3]:
+            frame = _capture_frame(processed_path, frame_number)
+            if int(frame.max()) <= tolerance:
+                raise RuntimeError(
+                    "Post-validation rebuild unexpectedly blackened non-outside frames for "
+                    f"video {video.pk}: frame_number={frame_number}"
+                )
 
 
 def _verify_outside_frames_blackened(
@@ -194,8 +227,15 @@ def _expire_stale_blackening_histories(video: VideoFile) -> None:
     ).order_by("created_at")
     for history in pending_histories:
         if _is_outside_frame_blackening_history(history):
-            history.mark_failure(
-                f"Outside-frame blackening job exceeded {STALE_REBUILD_TIMEOUT}."
+            reason = f"Outside-frame blackening job exceeded {STALE_REBUILD_TIMEOUT}."
+            history.mark_failure(reason)
+            fail_deferred_temporal_inference_for_rebuild(
+                video_id=video.pk,
+                rebuild_history_id=history.pk,
+                reason=(
+                    "Temporal inference was not queued because the required "
+                    f"frame rebuild failed: {reason}"
+                ),
             )
 
     running_stale_before = timezone.now() - STALE_REBUILD_RUNNING_TIMEOUT
@@ -214,6 +254,14 @@ def _expire_stale_blackening_histories(video: VideoFile) -> None:
         )
         rollback_video_frame_artifacts(video, reason=reason)
         history.mark_failure(reason)
+        fail_deferred_temporal_inference_for_rebuild(
+            video_id=video.pk,
+            rebuild_history_id=history.pk,
+            reason=(
+                "Temporal inference was not queued because the required "
+                f"frame rebuild failed: {reason}"
+            ),
+        )
 
 
 def _reserve_blackening_history(
@@ -300,6 +348,12 @@ def _run_video_post_validation_rebuild(
             only_validated=only_validated,
         )
         video = VideoFile.objects.get(pk=video_id)
+        has_applicable_outside_segments = bool(
+            _merge_outside_frame_intervals(
+                video,
+                only_validated=run_config.only_validated,
+            )
+        )
         mark_post_validation_incomplete(video)
         rebuilt = bool(
             VideoFile.create_video_without_outside_frames(
@@ -313,12 +367,20 @@ def _run_video_post_validation_rebuild(
                 reason="Post-validation rebuild returned false.",
             )
             if history is not None:
-                history.mark_failure("Outside-frame blackening rebuild returned false.")
+                reason = "Outside-frame blackening rebuild returned false."
+                history.mark_failure(reason)
+                fail_deferred_temporal_inference_for_rebuild(
+                    video_id=video.pk,
+                    rebuild_history_id=history.pk,
+                    reason=(
+                        "Temporal inference was not queued because the required "
+                        f"frame rebuild failed: {reason}"
+                    ),
+                )
             return False
 
         video.refresh_from_db()
-        _verify_extracted_frame_contract(video)
-        _verify_outside_frames_blackened(
+        _verify_processed_video_contract(
             video,
             only_validated=run_config.only_validated,
         )
@@ -328,8 +390,23 @@ def _run_video_post_validation_rebuild(
             output_file = getattr(getattr(video, "processed_file", None), "name", "")
             history.mark_success(
                 output_file=output_file,
-                details="Outside-frame blackening rebuild completed.",
+                details=(
+                    "Outside-frame blackening rebuild completed."
+                    if has_applicable_outside_segments
+                    else "Outside-frame blackening rebuild completed with no applicable intervals."
+                ),
             )
+            try:
+                dispatch_deferred_temporal_inference_after_rebuild(
+                    video_id=video.pk,
+                    rebuild_history_id=history.pk,
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to dispatch deferred temporal inference after "
+                    "post-validation rebuild for video %s.",
+                    video.pk,
+                )
         return True
     except Exception as exc:
         if video is not None:
@@ -347,6 +424,14 @@ def _run_video_post_validation_rebuild(
                 )
         if history is not None:
             history.mark_failure(str(exc))
+            fail_deferred_temporal_inference_for_rebuild(
+                video_id=video_id,
+                rebuild_history_id=history.pk,
+                reason=(
+                    "Temporal inference was not queued because the required "
+                    f"frame rebuild failed: {exc}"
+                ),
+            )
         raise
 
 

@@ -23,9 +23,10 @@ from endoreg_db.utils.paths import (
     data_paths,
 )
 from endoreg_db.utils.file_operations import ensure_directory, safe_unlink_file
+from endoreg_db.utils.hashs import get_video_hash
 from endoreg_db.utils.storage import save_local_file
 from endoreg_db.utils.video.calc_duration_seconds import _calc_duration_vf
-from endoreg_db.utils.video.ffmpeg_wrapper import assemble_video_from_frames
+from endoreg_db.utils.video.ffmpeg_wrapper import blacken_video_frame_intervals
 
 from ...label import Label, LabelVideoSegment
 from ...state import VideoState
@@ -37,10 +38,10 @@ from .pipe_2 import _pipe_2
 from .video_file_ai import _extract_text_from_video_frames, _predict_video_pipeline
 from .video_file_anonymize import (
     _anonymize,
-    _censor_outside_frames,
     _cleanup_raw_assets,
     _create_anonymized_frame_files,
 )
+from .video_file_segments import _get_outside_segments
 from .video_file_frames import (
     _bulk_create_frames,
     _create_frame_object,
@@ -111,6 +112,62 @@ logger = logging.getLogger(__name__)  # Changed from "video_file"
 
 if TYPE_CHECKING:
     from endoreg_db.models import FFMpegMeta, Frame, VideoState
+
+
+def _merge_outside_frame_intervals(
+    video: "VideoFile",
+    *,
+    only_validated: bool = False,
+) -> list[tuple[int, int]]:
+    """
+    Return sorted, merged half-open frame intervals that must be blackened.
+
+    LabelVideoSegment ranges in this codebase are [start_frame_number,
+    end_frame_number). Frame-level outside annotations are represented as
+    one-frame intervals.
+    """
+    intervals: list[tuple[int, int]] = []
+    for segment in _get_outside_segments(video, only_validated=only_validated):
+        start_frame = int(getattr(segment, "start_frame_number", -1))
+        end_frame = int(getattr(segment, "end_frame_number", -1))
+        if start_frame < 0 or end_frame <= start_frame:
+            logger.warning(
+                "Skipping invalid outside segment for video %s: start=%s end=%s",
+                video.video_hash,
+                start_frame,
+                end_frame,
+            )
+            continue
+        intervals.append((start_frame, end_frame))
+
+    from endoreg_db.models import ImageClassificationAnnotation
+
+    annotated_frame_numbers = (
+        ImageClassificationAnnotation.objects.filter(
+            frame__video=video,
+            frame__frame_number__gte=0,
+            label__name__iexact="outside",
+            value=True,
+        )
+        .values_list("frame__frame_number", flat=True)
+        .distinct()
+    )
+    for frame_number in annotated_frame_numbers.iterator():
+        start_frame = int(frame_number)
+        intervals.append((start_frame, start_frame + 1))
+
+    if not intervals:
+        return []
+
+    intervals.sort()
+    merged: list[tuple[int, int]] = [intervals[0]]
+    for start_frame, end_frame in intervals[1:]:
+        previous_start, previous_end = merged[-1]
+        if start_frame <= previous_end:
+            merged[-1] = (previous_start, max(previous_end, end_frame))
+        else:
+            merged.append((start_frame, end_frame))
+    return merged
 
 
 class VideoFile(models.Model):
@@ -737,90 +794,95 @@ class VideoFile(models.Model):
             VideoFile: A new VideoFile instance with the frames excluding those labeled as 'outside'.
         """
         video = instance
-        new_video_path: Path | None = None
-        output_video_path: Path | None = None
-        completed = False
+        staged_output_path: Path | None = None
+        replace_completed = False
 
-        if not video:
+        if not video or not video.is_processed:
             logger.warning(
                 "No processed video file available for VideoFile %s.",
                 instance.video_hash,
             )
             return False
-        try:
-            extracted = video.extract_frames(
-                quality=2,
-                overwrite=True,
-                ext="jpg",
-                verbose=False,
-                from_processed=True,
-            )
-            assert extracted is True
-        except AssertionError:
-            extracted = video.extract_frames(
-                quality=2,
-                overwrite=True,
-                ext="jpg",
-                verbose=False,
-                from_processed=True,
-            )
-            assert extracted is True
-        try:
-            # Step 1: Get the "outside" labeled frames
-            censored = _censor_outside_frames(
-                video,
-                only_validated=only_validated,
-            )
-            frame_dir_path = instance.get_frame_dir_path()
-            if frame_dir_path is None:
-                raise AssertionError("Frame directory path is not available.")
-            frames: list[Path] = video.get_frame_paths()
-            fps = video.get_fps() or DEFAULT_VIDEO_FPS
-            assert censored is True
-            if not frames:
-                raise AssertionError("No extracted frame files found for reassembly.")
-            if fps <= 0:
-                fps = DEFAULT_VIDEO_FPS
-            assert video.width is not None
-            assert video.height is not None
 
-            # Step 2: Reassemble into local staging, then save through FileField storage.
-            transcoding_dir = ensure_directory(Path(data_paths["transcoding"]))
-            output_video_path = (
-                transcoding_dir / f"{video.video_hash}.outside_frame_reassembly.tmp.mp4"
+        intervals = _merge_outside_frame_intervals(
+            video,
+            only_validated=only_validated,
+        )
+        if not intervals:
+            logger.info(
+                "No applicable outside segments found for video %s. Skipping rebuild.",
+                video.video_hash,
             )
-            new_video_path = assemble_video_from_frames(
-                frames, output_video_path, fps, width=video.width, height=video.height
-            )
-            if new_video_path is None:
-                raise AssertionError("Failed to assemble filtered video from frames.")
-
-            save_local_file(
-                video.processed_file,
-                new_video_path,
-                name=f"{video.video_hash}_filtered.mp4",
-                save=False,
-                overwrite=True,
-            )
-            video.save(update_fields=["processed_file", "date_modified"])
-            try:
-                sync_video_streamable_artifacts(
-                    video,
-                    include_raw=False,
-                    include_processed=True,
-                    save=True,
-                )
-            except Exception as exc:
-                logger.warning(
-                    "Could not synchronize processed streamable artifact for video %s: %s",
-                    video.pk,
-                    exc,
-                )
-            completed = True
             return True
+
+        try:
+            with video.ensure_local_processed_file() as processed_path:
+                transcoding_dir = ensure_directory(Path(data_paths["transcoding"]))
+                staged_output_path = (
+                    transcoding_dir
+                    / f"{video.video_hash}.outside_frame_blackening.staged.mp4"
+                )
+                safe_unlink_file(staged_output_path, missing_ok=True)
+                rebuilt_path = blacken_video_frame_intervals(
+                    processed_path,
+                    staged_output_path,
+                    intervals=intervals,
+                )
+                if rebuilt_path is None:
+                    raise AssertionError(
+                        "Failed to rebuild processed video with FFmpeg."
+                    )
+
+                new_processed_hash = get_video_hash(rebuilt_path)
+                if (
+                    type(video)
+                    .objects.filter(processed_video_hash=new_processed_hash)
+                    .exclude(pk=video.pk)
+                    .exists()
+                ):
+                    raise ValueError(
+                        "Processed video hash already exists for another video."
+                    )
+
+                target_name = str(
+                    getattr(video.processed_file, "name", "")
+                    or f"{video.video_hash}_filtered.mp4"
+                )
+                save_local_file(
+                    video.processed_file,
+                    rebuilt_path,
+                    name=target_name,
+                    save=False,
+                    overwrite=True,
+                )
+                video.processed_video_hash = new_processed_hash
+                video.save(
+                    update_fields=[
+                        "processed_file",
+                        "processed_video_hash",
+                        "date_modified",
+                    ]
+                )
+                try:
+                    sync_video_streamable_artifacts(
+                        video,
+                        include_raw=False,
+                        include_processed=True,
+                        save=True,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Could not synchronize processed streamable artifact for video %s: %s",
+                        video.pk,
+                        exc,
+                    )
+                replace_completed = True
+                return True
         except AssertionError as ae:
             logger.error(
-                f"Assertion error while creating video without 'outside' frames for VideoFile {video.video_hash}: {ae}",
+                "Assertion error while streaming outside-frame rebuild for VideoFile %s: %s",
+                video.video_hash,
+                ae,
                 exc_info=True,
             )
             return False
@@ -829,24 +891,27 @@ class VideoFile(models.Model):
             return False
         except Exception as e:
             logger.error(
-                f"Error creating video without 'outside' frames for VideoFile {video.video_hash}: {e}",
+                "Error creating video without 'outside' frames for VideoFile %s: %s",
+                video.video_hash,
+                e,
                 exc_info=True,
             )
             return False
         finally:
-            if completed and new_video_path is not None:
-                logger.info(
-                    "Cleaning up staged outside-frame reassembly output for video %s: %s",
-                    video.video_hash,
-                    new_video_path,
-                )
-                safe_unlink_file(new_video_path, missing_ok=True)
-            elif output_video_path is not None:
-                logger.warning(
-                    "Preserving staged outside-frame reassembly output for recovery for video %s: %s",
-                    video.video_hash,
-                    output_video_path,
-                )
+            if staged_output_path is not None:
+                if replace_completed:
+                    logger.info(
+                        "Cleaning up staged outside-frame rebuild output for video %s: %s",
+                        video.video_hash,
+                        staged_output_path,
+                    )
+                else:
+                    logger.warning(
+                        "Cleaning failed staged outside-frame rebuild output for video %s: %s",
+                        video.video_hash,
+                        staged_output_path,
+                    )
+                safe_unlink_file(staged_output_path, missing_ok=True)
 
     get_all_videos = classmethod(_get_all_videos)
 

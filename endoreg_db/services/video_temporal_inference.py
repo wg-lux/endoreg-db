@@ -4,7 +4,7 @@ import logging
 import uuid
 from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import timedelta
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any, cast
@@ -37,11 +37,16 @@ from endoreg_db.models.state.frame_annotation import (
     mark_frame_prediction_reset,
     mark_prediction_segments_created,
 )
+from endoreg_db.models.state.video_segment_validation import (
+    _is_outside_frame_blackening_history,
+)
 from endoreg_db.services.video_task_cleanup import rollback_video_frame_artifacts
 
 logger = logging.getLogger(__name__)
 
 TEMPORAL_INFERENCE_KIND = "lx_ai_core_temporal_inference"
+TEMPORAL_INFERENCE_DEFERRED_REASON_REPROCESSING = "video_reprocessing_active"
+TEMPORAL_INFERENCE_STATUS_PENDING_AFTER_REBUILD = "pending_after_rebuild"
 ACTIVE_INFERENCE_STATUSES = (
     VideoProcessingHistory.STATUS_PENDING,
     VideoProcessingHistory.STATUS_RUNNING,
@@ -91,9 +96,52 @@ class TemporalInferenceDispatchResult:
     history_id: int | None = None
     deleted_prediction_segments: int | None = None
     prediction_segments_count: int | None = None
+    reason: str | None = None
+    message: str | None = None
+    blocked_by_history_id: int | None = None
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
+
+
+@dataclass(frozen=True)
+class TemporalInferenceHistoryConfig:
+    model_meta_id: int
+    replace_prediction_segments: bool
+    delete_frames_after: bool
+    ocr_frame_fraction: float
+    ocr_cap: int
+    temporal_options: Mapping[str, Any]
+    raw_temporal_options: Mapping[str, Any]
+    queue: str
+    frame_source_mode: FrameSourceMode
+    test_run: bool
+    n_test_frames: int
+    deferred_reason: str | None = None
+    blocked_by_history_id: int | None = None
+    kind: str = TEMPORAL_INFERENCE_KIND
+
+    def to_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "kind": self.kind,
+            "model_meta_id": int(self.model_meta_id),
+            "replace_prediction_segments": bool(self.replace_prediction_segments),
+            "delete_frames_after": bool(self.delete_frames_after),
+            "ocr_frame_fraction": float(self.ocr_frame_fraction),
+            "ocr_cap": int(self.ocr_cap),
+            "queue": self.queue,
+            "frame_source_mode": self.frame_source_mode,
+            "test_run": bool(self.test_run),
+            "n_test_frames": int(self.n_test_frames),
+            "lx_ai_core_version": _lx_ai_core_version(),
+            "temporal_options": dict(self.temporal_options),
+            "raw_temporal_options": dict(self.raw_temporal_options),
+        }
+        if self.deferred_reason:
+            payload["deferred_reason"] = self.deferred_reason
+        if self.blocked_by_history_id is not None:
+            payload["blocked_by_history_id"] = int(self.blocked_by_history_id)
+        return payload
 
 
 @dataclass(frozen=True)
@@ -477,21 +525,155 @@ def _temporal_history_config(
     ocr_frame_fraction: float,
     ocr_cap: int,
     temporal_options: Mapping[str, Any],
+    raw_temporal_options: Mapping[str, Any] | None = None,
     queue: str,
     frame_source_mode: str = "stream",
+    test_run: bool = False,
+    n_test_frames: int = 10,
+    deferred_reason: str | None = None,
+    blocked_by_history_id: int | None = None,
+) -> dict[str, Any]:
+    return TemporalInferenceHistoryConfig(
+        model_meta_id=int(model_meta_id),
+        replace_prediction_segments=bool(replace_prediction_segments),
+        delete_frames_after=bool(delete_frames_after),
+        ocr_frame_fraction=float(ocr_frame_fraction),
+        ocr_cap=int(ocr_cap),
+        temporal_options=dict(temporal_options),
+        raw_temporal_options=dict(raw_temporal_options or {}),
+        queue=str(queue),
+        frame_source_mode=_normalize_temporal_frame_source_mode(frame_source_mode),
+        test_run=bool(test_run),
+        n_test_frames=int(n_test_frames),
+        deferred_reason=deferred_reason,
+        blocked_by_history_id=blocked_by_history_id,
+    ).to_dict()
+
+
+def _coerce_int_config(value: Any, *, name: str, default: int | None = None) -> int:
+    if value is None:
+        if default is None:
+            raise TemporalInferenceConfigError(f"{name} is required.")
+        return int(default)
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise TemporalInferenceConfigError(f"{name} must be an integer.") from exc
+
+
+def _mapping_config(value: Any, *, name: str) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if not isinstance(value, Mapping):
+        raise TemporalInferenceConfigError(f"{name} must be a mapping.")
+    return dict(value)
+
+
+def _parse_temporal_history_config(
+    config: object,
+) -> TemporalInferenceHistoryConfig | None:
+    if not isinstance(config, Mapping):
+        return None
+    if config.get("kind") != TEMPORAL_INFERENCE_KIND:
+        return None
+
+    queue = str(config.get("queue") or get_celery_inference_queue()).strip()
+    if not queue:
+        raise TemporalInferenceConfigError("queue must not be empty.")
+
+    blocked_by_history_id = config.get("blocked_by_history_id")
+    parsed_blocked_by_history_id = (
+        _coerce_int_config(
+            blocked_by_history_id,
+            name="blocked_by_history_id",
+        )
+        if blocked_by_history_id is not None
+        else None
+    )
+    deferred_reason = config.get("deferred_reason")
+    if deferred_reason is not None:
+        deferred_reason = str(deferred_reason).strip() or None
+
+    return TemporalInferenceHistoryConfig(
+        model_meta_id=_coerce_int_config(
+            config.get("model_meta_id"), name="model_meta_id"
+        ),
+        replace_prediction_segments=_coerce_bool(
+            config.get("replace_prediction_segments"),
+            default=True,
+        ),
+        delete_frames_after=_coerce_bool(
+            config.get("delete_frames_after"),
+            default=True,
+        ),
+        ocr_frame_fraction=_coerce_float(
+            config.get("ocr_frame_fraction"),
+            name="ocr_frame_fraction",
+            default=0.001,
+        ),
+        ocr_cap=_coerce_int_config(config.get("ocr_cap"), name="ocr_cap", default=10),
+        temporal_options=_mapping_config(
+            config.get("temporal_options"),
+            name="temporal_options",
+        ),
+        raw_temporal_options=_mapping_config(
+            config.get("raw_temporal_options"),
+            name="raw_temporal_options",
+        ),
+        queue=queue,
+        frame_source_mode=_normalize_temporal_frame_source_mode(
+            config.get("frame_source_mode")
+        ),
+        test_run=_coerce_bool(config.get("test_run"), default=False),
+        n_test_frames=_coerce_int_config(
+            config.get("n_test_frames"),
+            name="n_test_frames",
+            default=10,
+        ),
+        deferred_reason=deferred_reason,
+        blocked_by_history_id=parsed_blocked_by_history_id,
+    )
+
+
+def _is_deferred_temporal_inference_history(
+    history: VideoProcessingHistory,
+) -> bool:
+    try:
+        parsed_config = _parse_temporal_history_config(history.config)
+    except TemporalInferenceConfigError:
+        config = history.config if isinstance(history.config, Mapping) else {}
+        return (
+            config.get("deferred_reason")
+            == TEMPORAL_INFERENCE_DEFERRED_REASON_REPROCESSING
+        )
+    return (
+        parsed_config is not None
+        and parsed_config.deferred_reason
+        == TEMPORAL_INFERENCE_DEFERRED_REASON_REPROCESSING
+    )
+
+
+def _temporal_request_signature(
+    config: TemporalInferenceHistoryConfig,
 ) -> dict[str, Any]:
     return {
-        "kind": TEMPORAL_INFERENCE_KIND,
-        "model_meta_id": int(model_meta_id),
-        "replace_prediction_segments": bool(replace_prediction_segments),
-        "delete_frames_after": bool(delete_frames_after),
-        "ocr_frame_fraction": float(ocr_frame_fraction),
-        "ocr_cap": int(ocr_cap),
-        "queue": queue,
-        "frame_source_mode": frame_source_mode,
-        "lx_ai_core_version": _lx_ai_core_version(),
-        "temporal_options": dict(temporal_options),
+        "model_meta_id": config.model_meta_id,
+        "replace_prediction_segments": config.replace_prediction_segments,
+        "delete_frames_after": config.delete_frames_after,
+        "ocr_frame_fraction": config.ocr_frame_fraction,
+        "ocr_cap": config.ocr_cap,
+        "raw_temporal_options": dict(config.raw_temporal_options),
+        "frame_source_mode": config.frame_source_mode,
+        "test_run": config.test_run,
+        "n_test_frames": config.n_test_frames,
     }
+
+
+def _mark_history_cancelled(history: VideoProcessingHistory, reason: str) -> None:
+    history.status = VideoProcessingHistory.STATUS_CANCELLED
+    history.completed_at = timezone.now()
+    history.details = reason
+    history.save(update_fields=["status", "completed_at", "details"])
 
 
 def _history_delete_frames_after(history: VideoProcessingHistory) -> bool:
@@ -539,6 +721,8 @@ def _expire_stale_temporal_inference_histories(video: VideoFile) -> None:
         created_at__lt=pending_stale_before,
     ).order_by("created_at")
     for history in pending_histories:
+        if _is_deferred_temporal_inference_history(history):
+            continue
         history.mark_failure(
             f"Temporal inference job exceeded {STALE_TEMPORAL_PENDING_TIMEOUT} while pending."
         )
@@ -564,51 +748,146 @@ def _expire_stale_temporal_inference_histories(video: VideoFile) -> None:
 def _reserve_temporal_inference_history(
     *,
     video: VideoFile,
-    model_meta_id: int,
+    dispatch_config: TemporalInferenceHistoryConfig,
     task_id: str,
-    replace_prediction_segments: bool,
-    delete_frames_after: bool,
-    ocr_frame_fraction: float,
-    ocr_cap: int,
-    temporal_options: Mapping[str, Any],
-    queue: str,
-    frame_source_mode: str,
 ) -> tuple[VideoProcessingHistory, str]:
     with transaction.atomic():
         locked_video = VideoFile.objects.select_for_update().get(pk=video.pk)
         _expire_stale_temporal_inference_histories(locked_video)
-        active_reprocessing = VideoProcessingHistory.objects.filter(
-            video=locked_video,
-            operation=VideoProcessingHistory.OPERATION_REPROCESSING,
-            status__in=ACTIVE_INFERENCE_STATUSES,
-        ).order_by("created_at")
-        if active_reprocessing.exists():
-            return active_reprocessing.first(), "busy"  # type: ignore[return-value]
 
-        active_inference = VideoProcessingHistory.objects.filter(
-            video=locked_video,
-            operation=VideoProcessingHistory.OPERATION_AI_TEMPORAL_INFERENCE,
-            status__in=ACTIVE_INFERENCE_STATUSES,
-            config__kind=TEMPORAL_INFERENCE_KIND,
-        ).order_by("created_at")
-        if active_inference.exists():
-            return active_inference.first(), "already_queued"  # type: ignore[return-value]
+        outside_rebuild_history: VideoProcessingHistory | None = None
+        active_reprocessing = (
+            VideoProcessingHistory.objects.filter(
+                video=locked_video,
+                operation=VideoProcessingHistory.OPERATION_REPROCESSING,
+                status__in=ACTIVE_INFERENCE_STATUSES,
+            )
+            .order_by("created_at")
+            .select_for_update()
+        )
+        for history in active_reprocessing:
+            if _is_outside_frame_blackening_history(history):
+                if outside_rebuild_history is None:
+                    outside_rebuild_history = history
+                continue
+            return history, "busy"
+
+        if outside_rebuild_history is not None:
+            active_inference = (
+                VideoProcessingHistory.objects.filter(
+                    video=locked_video,
+                    operation=VideoProcessingHistory.OPERATION_AI_TEMPORAL_INFERENCE,
+                    status__in=ACTIVE_INFERENCE_STATUSES,
+                    config__kind=TEMPORAL_INFERENCE_KIND,
+                )
+                .order_by("created_at")
+                .select_for_update()
+            )
+            for history in active_inference:
+                if _is_deferred_temporal_inference_history(history):
+                    continue
+                return history, "already_queued"
+
+            deferred_config = TemporalInferenceHistoryConfig(
+                model_meta_id=dispatch_config.model_meta_id,
+                replace_prediction_segments=dispatch_config.replace_prediction_segments,
+                delete_frames_after=dispatch_config.delete_frames_after,
+                ocr_frame_fraction=dispatch_config.ocr_frame_fraction,
+                ocr_cap=dispatch_config.ocr_cap,
+                temporal_options=dispatch_config.temporal_options,
+                raw_temporal_options=dispatch_config.raw_temporal_options,
+                queue=dispatch_config.queue,
+                frame_source_mode=dispatch_config.frame_source_mode,
+                test_run=dispatch_config.test_run,
+                n_test_frames=dispatch_config.n_test_frames,
+                deferred_reason=TEMPORAL_INFERENCE_DEFERRED_REASON_REPROCESSING,
+                blocked_by_history_id=outside_rebuild_history.pk,
+            )
+            desired_signature = _temporal_request_signature(deferred_config)
+            pending_deferred_histories = (
+                VideoProcessingHistory.objects.filter(
+                    video=locked_video,
+                    operation=VideoProcessingHistory.OPERATION_AI_TEMPORAL_INFERENCE,
+                    status=VideoProcessingHistory.STATUS_PENDING,
+                    config__kind=TEMPORAL_INFERENCE_KIND,
+                    config__deferred_reason=TEMPORAL_INFERENCE_DEFERRED_REASON_REPROCESSING,
+                )
+                .order_by("-created_at")
+                .select_for_update()
+            )
+            latest_deferred: VideoProcessingHistory | None = None
+            for pending_history in pending_deferred_histories:
+                if latest_deferred is None:
+                    latest_deferred = pending_history
+                    continue
+                _mark_history_cancelled(
+                    pending_history,
+                    "Superseded by a newer pending temporal inference request.",
+                )
+
+            if latest_deferred is not None:
+                try:
+                    existing_config = _parse_temporal_history_config(
+                        latest_deferred.config
+                    )
+                except TemporalInferenceConfigError:
+                    existing_config = None
+                if (
+                    existing_config is not None
+                    and _temporal_request_signature(existing_config)
+                    == desired_signature
+                ):
+                    updated_config = deferred_config.to_dict()
+                    if latest_deferred.config != updated_config:
+                        latest_deferred.config = updated_config
+                        latest_deferred.save(update_fields=["config"])
+                    return (
+                        latest_deferred,
+                        TEMPORAL_INFERENCE_STATUS_PENDING_AFTER_REBUILD,
+                    )
+                _mark_history_cancelled(
+                    latest_deferred,
+                    "Superseded by a newer pending temporal inference request.",
+                )
+
+            deferred_history = VideoProcessingHistory.objects.create(
+                video=locked_video,
+                operation=VideoProcessingHistory.OPERATION_AI_TEMPORAL_INFERENCE,
+                status=VideoProcessingHistory.STATUS_PENDING,
+                task_id="",
+                config=deferred_config.to_dict(),
+                details="Temporal inference is pending until frame rebuild finishes.",
+            )
+            return (
+                deferred_history,
+                TEMPORAL_INFERENCE_STATUS_PENDING_AFTER_REBUILD,
+            )
+
+        active_inference = (
+            VideoProcessingHistory.objects.filter(
+                video=locked_video,
+                operation=VideoProcessingHistory.OPERATION_AI_TEMPORAL_INFERENCE,
+                status__in=ACTIVE_INFERENCE_STATUSES,
+                config__kind=TEMPORAL_INFERENCE_KIND,
+            )
+            .order_by("created_at")
+            .select_for_update()
+        )
+        for history in active_inference:
+            if _is_deferred_temporal_inference_history(history):
+                _mark_history_cancelled(
+                    history,
+                    "Superseded by an immediate temporal inference request.",
+                )
+                continue
+            return history, "already_queued"
 
         history = VideoProcessingHistory.objects.create(
             video=locked_video,
             operation=VideoProcessingHistory.OPERATION_AI_TEMPORAL_INFERENCE,
             status=VideoProcessingHistory.STATUS_PENDING,
             task_id=task_id,
-            config=_temporal_history_config(
-                model_meta_id=model_meta_id,
-                replace_prediction_segments=replace_prediction_segments,
-                delete_frames_after=delete_frames_after,
-                ocr_frame_fraction=ocr_frame_fraction,
-                ocr_cap=ocr_cap,
-                temporal_options=temporal_options,
-                queue=queue,
-                frame_source_mode=frame_source_mode,
-            ),
+            config=dispatch_config.to_dict(),
         )
         return history, "created"
 
@@ -628,6 +907,247 @@ def _get_processing_history(history_id: int | None) -> VideoProcessingHistory | 
     except VideoProcessingHistory.DoesNotExist:
         logger.warning("VideoProcessingHistory %s not found.", history_id)
         return None
+
+
+def _released_temporal_config(
+    config: TemporalInferenceHistoryConfig,
+) -> TemporalInferenceHistoryConfig:
+    return replace(config, deferred_reason=None, blocked_by_history_id=None)
+
+
+def _mark_deferred_history_released(
+    history: VideoProcessingHistory,
+    config: TemporalInferenceHistoryConfig,
+) -> TemporalInferenceHistoryConfig:
+    released_config = _released_temporal_config(config)
+    payload = released_config.to_dict()
+    if config.blocked_by_history_id is not None:
+        payload["released_after_rebuild_history_id"] = int(config.blocked_by_history_id)
+    payload["released_at"] = timezone.now().isoformat()
+    history.config = payload
+    history.details = "Temporal inference queued after frame rebuild completed."
+    history.save(update_fields=["config", "details"])
+    return released_config
+
+
+def _dispatch_temporal_inference_history(
+    *,
+    video_id: int,
+    history: VideoProcessingHistory,
+    dispatch_config: TemporalInferenceHistoryConfig,
+    task_id: str,
+    mode: str,
+) -> TemporalInferenceDispatchResult:
+    video = VideoFile.objects.get(pk=video_id)
+    mark_frame_prediction_reset(video)
+
+    if mode == "inline":
+        _set_history_task_id(history, task_id)
+        completed = _run_video_temporal_inference(
+            video_id,
+            model_meta_id=dispatch_config.model_meta_id,
+            history_id=history.pk,
+            replace_prediction_segments=dispatch_config.replace_prediction_segments,
+            delete_frames_after=dispatch_config.delete_frames_after,
+            ocr_frame_fraction=dispatch_config.ocr_frame_fraction,
+            ocr_cap=dispatch_config.ocr_cap,
+            temporal_options=dispatch_config.raw_temporal_options,
+            test_run=dispatch_config.test_run,
+            n_test_frames=dispatch_config.n_test_frames,
+            frame_source_mode=dispatch_config.frame_source_mode,
+        )
+        history.refresh_from_db()
+        result = (history.config or {}).get("result") or {}
+        return TemporalInferenceDispatchResult(
+            task_id=task_id,
+            mode=mode,
+            status="completed" if completed else "failed",
+            video_id=int(video_id),
+            model_meta_id=int(dispatch_config.model_meta_id),
+            queue=dispatch_config.queue,
+            history_id=history.pk,
+            deleted_prediction_segments=result.get("deleted_prediction_segments"),
+            prediction_segments_count=result.get("materialized_segment_count"),
+        )
+
+    if mode == "celery":
+        try:
+            from endoreg_db.tasks import run_video_temporal_inference_task
+
+            async_result = run_video_temporal_inference_task.apply_async(
+                args=(int(video_id), int(dispatch_config.model_meta_id)),
+                kwargs={
+                    "history_id": history.pk,
+                    "replace_prediction_segments": bool(
+                        dispatch_config.replace_prediction_segments
+                    ),
+                    "delete_frames_after": bool(dispatch_config.delete_frames_after),
+                    "ocr_frame_fraction": float(dispatch_config.ocr_frame_fraction),
+                    "ocr_cap": int(dispatch_config.ocr_cap),
+                    "temporal_options": dict(dispatch_config.raw_temporal_options),
+                    "test_run": bool(dispatch_config.test_run),
+                    "n_test_frames": int(dispatch_config.n_test_frames),
+                    "frame_source_mode": dispatch_config.frame_source_mode,
+                },
+                queue=dispatch_config.queue,
+                routing_key=dispatch_config.queue,
+            )
+            _set_history_task_id(history, str(async_result.id))
+            return TemporalInferenceDispatchResult(
+                task_id=str(async_result.id),
+                mode=mode,
+                status="queued",
+                video_id=int(video_id),
+                model_meta_id=int(dispatch_config.model_meta_id),
+                queue=dispatch_config.queue,
+                history_id=history.pk,
+            )
+        except Exception as exc:
+            logger.exception(
+                "Celery temporal inference dispatch failed for video %s.", video_id
+            )
+            history.mark_failure(str(exc))
+            return TemporalInferenceDispatchResult(
+                task_id=task_id,
+                mode=mode,
+                status="failed",
+                video_id=int(video_id),
+                model_meta_id=int(dispatch_config.model_meta_id),
+                queue=dispatch_config.queue,
+                history_id=history.pk,
+            )
+
+    _set_history_task_id(history, task_id)
+
+    def _job() -> None:
+        try:
+            _run_video_temporal_inference(
+                video_id,
+                model_meta_id=dispatch_config.model_meta_id,
+                history_id=history.pk,
+                replace_prediction_segments=dispatch_config.replace_prediction_segments,
+                delete_frames_after=dispatch_config.delete_frames_after,
+                ocr_frame_fraction=dispatch_config.ocr_frame_fraction,
+                ocr_cap=dispatch_config.ocr_cap,
+                temporal_options=dispatch_config.raw_temporal_options,
+                test_run=dispatch_config.test_run,
+                n_test_frames=dispatch_config.n_test_frames,
+                frame_source_mode=dispatch_config.frame_source_mode,
+            )
+        except Exception:
+            logger.exception(
+                "Async temporal inference failed for video %s (task_id=%s).",
+                video_id,
+                task_id,
+            )
+
+    try:
+        _executor.submit(_job)
+    except Exception as exc:
+        history.mark_failure(str(exc))
+        raise
+
+    return TemporalInferenceDispatchResult(
+        task_id=task_id,
+        mode=mode,
+        status="queued",
+        video_id=int(video_id),
+        model_meta_id=int(dispatch_config.model_meta_id),
+        queue=dispatch_config.queue,
+        history_id=history.pk,
+    )
+
+
+def fail_deferred_temporal_inference_for_rebuild(
+    *,
+    video_id: int,
+    rebuild_history_id: int | None,
+    reason: str,
+) -> None:
+    histories = VideoProcessingHistory.objects.filter(
+        video_id=int(video_id),
+        operation=VideoProcessingHistory.OPERATION_AI_TEMPORAL_INFERENCE,
+        status=VideoProcessingHistory.STATUS_PENDING,
+        config__kind=TEMPORAL_INFERENCE_KIND,
+        config__deferred_reason=TEMPORAL_INFERENCE_DEFERRED_REASON_REPROCESSING,
+    )
+    if rebuild_history_id is not None:
+        histories = histories.filter(
+            config__blocked_by_history_id=int(rebuild_history_id)
+        )
+
+    with transaction.atomic():
+        for history in histories.select_for_update():
+            history.mark_failure(reason)
+
+
+def dispatch_deferred_temporal_inference_after_rebuild(
+    *,
+    video_id: int,
+    rebuild_history_id: int | None,
+) -> TemporalInferenceDispatchResult | None:
+    mode = get_video_temporal_inference_job_mode()
+    task_id = str(uuid.uuid4())
+    history: VideoProcessingHistory | None = None
+    dispatch_config: TemporalInferenceHistoryConfig | None = None
+
+    with transaction.atomic():
+        histories = VideoProcessingHistory.objects.filter(
+            video_id=int(video_id),
+            operation=VideoProcessingHistory.OPERATION_AI_TEMPORAL_INFERENCE,
+            status=VideoProcessingHistory.STATUS_PENDING,
+            config__kind=TEMPORAL_INFERENCE_KIND,
+            config__deferred_reason=TEMPORAL_INFERENCE_DEFERRED_REASON_REPROCESSING,
+        )
+        if rebuild_history_id is not None:
+            histories = histories.filter(
+                config__blocked_by_history_id=int(rebuild_history_id)
+            )
+        histories = histories.order_by("-created_at").select_for_update()
+
+        for candidate in histories:
+            if history is None:
+                history = candidate
+                continue
+            _mark_history_cancelled(
+                candidate,
+                "Superseded by a newer pending temporal inference request.",
+            )
+
+        if history is None:
+            return None
+
+        try:
+            parsed_config = _parse_temporal_history_config(history.config)
+            if parsed_config is None:
+                raise TemporalInferenceConfigError(
+                    f"VideoProcessingHistory {history.pk} is not a temporal inference job."
+                )
+            dispatch_config = _mark_deferred_history_released(history, parsed_config)
+        except TemporalInferenceConfigError as exc:
+            history.mark_failure(str(exc))
+            return TemporalInferenceDispatchResult(
+                task_id=history.task_id or "",
+                mode=mode,
+                status="failed",
+                video_id=int(video_id),
+                model_meta_id=0,
+                queue=get_celery_inference_queue(),
+                history_id=history.pk,
+                reason="invalid_temporal_inference_history",
+                message=str(exc),
+                blocked_by_history_id=rebuild_history_id,
+            )
+
+    assert history is not None
+    assert dispatch_config is not None
+    return _dispatch_temporal_inference_history(
+        video_id=int(video_id),
+        history=history,
+        dispatch_config=dispatch_config,
+        task_id=task_id,
+        mode=mode,
+    )
 
 
 def _run_video_temporal_inference(
@@ -885,21 +1405,59 @@ def dispatch_video_temporal_inference(
         temporal_options,
         fps=fps,
     )
+    dispatch_config = TemporalInferenceHistoryConfig(
+        model_meta_id=int(model_meta_id),
+        replace_prediction_segments=bool(replace_prediction_segments),
+        delete_frames_after=bool(delete_frames_after),
+        ocr_frame_fraction=float(ocr_frame_fraction),
+        ocr_cap=int(ocr_cap),
+        temporal_options=normalized_temporal_options,
+        raw_temporal_options=dict(temporal_options or {}),
+        queue=queue,
+        frame_source_mode=frame_source_mode,
+        test_run=bool(test_run),
+        n_test_frames=int(n_test_frames),
+    )
 
     history, reservation_status = _reserve_temporal_inference_history(
         video=video,
-        model_meta_id=model_meta_id,
+        dispatch_config=dispatch_config,
         task_id=task_id,
-        replace_prediction_segments=replace_prediction_segments,
-        delete_frames_after=delete_frames_after,
-        ocr_frame_fraction=ocr_frame_fraction,
-        ocr_cap=ocr_cap,
-        temporal_options=normalized_temporal_options,
-        queue=queue,
-        frame_source_mode=frame_source_mode,
     )
 
-    if reservation_status in {"busy", "already_queued"}:
+    if reservation_status == "busy":
+        return TemporalInferenceDispatchResult(
+            task_id=history.task_id or "",
+            mode=mode,
+            status=reservation_status,
+            video_id=int(video_id),
+            model_meta_id=int(model_meta_id),
+            queue=str((history.config or {}).get("queue") or queue),
+            history_id=history.pk,
+            reason=TEMPORAL_INFERENCE_DEFERRED_REASON_REPROCESSING,
+            message="Video reprocessing is active. Prediction was not queued.",
+            blocked_by_history_id=history.pk,
+        )
+
+    if reservation_status == TEMPORAL_INFERENCE_STATUS_PENDING_AFTER_REBUILD:
+        return TemporalInferenceDispatchResult(
+            task_id=history.task_id or "",
+            mode=mode,
+            status=reservation_status,
+            video_id=int(video_id),
+            model_meta_id=int(model_meta_id),
+            queue=str((history.config or {}).get("queue") or queue),
+            history_id=history.pk,
+            reason=TEMPORAL_INFERENCE_DEFERRED_REASON_REPROCESSING,
+            message="Prediction will start after frame rebuild finishes.",
+            blocked_by_history_id=(
+                int((history.config or {}).get("blocked_by_history_id"))
+                if (history.config or {}).get("blocked_by_history_id") is not None
+                else None
+            ),
+        )
+
+    if reservation_status == "already_queued":
         return TemporalInferenceDispatchResult(
             task_id=history.task_id or "",
             mode=mode,
@@ -910,115 +1468,10 @@ def dispatch_video_temporal_inference(
             history_id=history.pk,
         )
 
-    mark_frame_prediction_reset(video)
-
-    if mode == "inline":
-        completed = _run_video_temporal_inference(
-            video_id,
-            model_meta_id=model_meta_id,
-            history_id=history.pk,
-            replace_prediction_segments=replace_prediction_segments,
-            delete_frames_after=delete_frames_after,
-            ocr_frame_fraction=ocr_frame_fraction,
-            ocr_cap=ocr_cap,
-            temporal_options=temporal_options or {},
-            test_run=test_run,
-            n_test_frames=n_test_frames,
-            frame_source_mode=frame_source_mode,
-        )
-        history.refresh_from_db()
-        result = (history.config or {}).get("result") or {}
-        return TemporalInferenceDispatchResult(
-            task_id=task_id,
-            mode=mode,
-            status="completed" if completed else "failed",
-            video_id=int(video_id),
-            model_meta_id=int(model_meta_id),
-            queue=queue,
-            history_id=history.pk,
-            deleted_prediction_segments=result.get("deleted_prediction_segments"),
-            prediction_segments_count=result.get("materialized_segment_count"),
-        )
-
-    if mode == "celery":
-        try:
-            from endoreg_db.tasks import run_video_temporal_inference_task
-
-            async_result = run_video_temporal_inference_task.apply_async(
-                args=(int(video_id), int(model_meta_id)),
-                kwargs={
-                    "history_id": history.pk,
-                    "replace_prediction_segments": bool(replace_prediction_segments),
-                    "delete_frames_after": bool(delete_frames_after),
-                    "ocr_frame_fraction": float(ocr_frame_fraction),
-                    "ocr_cap": int(ocr_cap),
-                    "temporal_options": dict(temporal_options or {}),
-                    "test_run": bool(test_run),
-                    "n_test_frames": int(n_test_frames),
-                    "frame_source_mode": frame_source_mode,
-                },
-                queue=queue,
-                routing_key=queue,
-            )
-            _set_history_task_id(history, str(async_result.id))
-            return TemporalInferenceDispatchResult(
-                task_id=str(async_result.id),
-                mode=mode,
-                status="queued",
-                video_id=int(video_id),
-                model_meta_id=int(model_meta_id),
-                queue=queue,
-                history_id=history.pk,
-            )
-        except Exception as exc:
-            logger.exception(
-                "Celery temporal inference dispatch failed for video %s.", video_id
-            )
-            history.mark_failure(str(exc))
-            return TemporalInferenceDispatchResult(
-                task_id=task_id,
-                mode=mode,
-                status="failed",
-                video_id=int(video_id),
-                model_meta_id=int(model_meta_id),
-                queue=queue,
-                history_id=history.pk,
-            )
-
-    def _job() -> None:
-        try:
-            _run_video_temporal_inference(
-                video_id,
-                model_meta_id=model_meta_id,
-                history_id=history.pk,
-                replace_prediction_segments=replace_prediction_segments,
-                delete_frames_after=delete_frames_after,
-                ocr_frame_fraction=ocr_frame_fraction,
-                ocr_cap=ocr_cap,
-                temporal_options=temporal_options or {},
-                test_run=test_run,
-                n_test_frames=n_test_frames,
-                frame_source_mode=frame_source_mode,
-            )
-        except Exception:
-            logger.exception(
-                "Async temporal inference failed for video %s (task_id=%s).",
-                video_id,
-                task_id,
-            )
-
-    try:
-        _executor.submit(_job)
-    except Exception as exc:
-        history.mark_failure(str(exc))
-        raise
-
-    return TemporalInferenceDispatchResult(
+    return _dispatch_temporal_inference_history(
+        video_id=int(video_id),
+        history=history,
+        dispatch_config=dispatch_config,
         task_id=task_id,
         mode=mode,
-        status="queued",
-        video_id=int(video_id),
-        model_meta_id=int(model_meta_id),
-        queue=queue,
-        history_id=history.pk,
     )

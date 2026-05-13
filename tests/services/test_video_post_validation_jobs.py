@@ -19,6 +19,7 @@ from endoreg_db.models import (
 )
 from endoreg_db.models.state import video_segment_validation as segment_state
 from endoreg_db.services import video_post_validation_jobs as jobs
+from endoreg_db.services import video_temporal_inference as temporal_jobs
 
 
 def _create_video_for_post_validation(tmp_path):
@@ -28,12 +29,15 @@ def _create_video_for_post_validation(tmp_path):
     )
     frame_dir = tmp_path / f"frames-{uuid.uuid4().hex[:8]}"
     frame_dir.mkdir(parents=True, exist_ok=True)
-    return VideoFile.objects.create(
+    video = VideoFile.objects.create(
         center=center,
         video_hash=f"post-validation-{uuid.uuid4().hex}",
         frame_count=2,
         frame_dir=str(frame_dir),
     )
+    video.processed_file.name = f"anonym_videos/{video.video_hash}.mp4"
+    video.save(update_fields=["processed_file"])
+    return video
 
 
 @pytest.mark.django_db
@@ -419,44 +423,57 @@ def test_run_video_post_validation_rebuild_rolls_back_frames_when_rebuild_return
 
 
 @pytest.mark.django_db
-def test_run_video_post_validation_rebuild_accepts_stable_extracted_frames(
+def test_run_video_post_validation_rebuild_accepts_valid_processed_output(
     monkeypatch,
     tmp_path,
 ):
     video = _create_video_for_post_validation(tmp_path)
+    outside_label, _ = Label.objects.get_or_create(name="outside")
+    source, _ = InformationSource.objects.get_or_create(name="manual_annotation")
+    black_frame = Frame.objects.create(
+        video=video,
+        frame_number=0,
+        relative_path="frame_0000000.jpg",
+        is_extracted=False,
+    )
+    ImageClassificationAnnotation.objects.create(
+        frame=black_frame,
+        label=outside_label,
+        information_source=source,
+        value=True,
+    )
 
     def fake_create_video_without_outside_frames(video_obj, *, only_validated=False):
-        frame_dir = video_obj.get_frame_dir_path()
-        assert frame_dir is not None
-        for frame_number in range(2):
-            relative_path = f"frame_{frame_number:07d}.jpg"
-            (frame_dir / relative_path).write_bytes(b"frame")
-            Frame.objects.update_or_create(
-                video=video_obj,
-                frame_number=frame_number,
-                defaults={
-                    "relative_path": relative_path,
-                    "is_extracted": True,
-                },
-            )
-        state = video_obj.get_or_create_state()
-        state.frames_initialized = True
-        state.frame_count = 2
-        state.frames_extracted = True
-        state.save(
-            update_fields=[
-                "frames_initialized",
-                "frame_count",
-                "frames_extracted",
-            ]
-        )
         return True
+
+    class _Context:
+        def __enter__(self):
+            path = tmp_path / "rebuilt.mp4"
+            path.write_bytes(b"video")
+            return path
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
 
     monkeypatch.setattr(
         VideoFile,
         "create_video_without_outside_frames",
         fake_create_video_without_outside_frames,
     )
+    monkeypatch.setattr(
+        VideoFile, "ensure_local_processed_file", lambda self: _Context()
+    )
+    monkeypatch.setattr(
+        "endoreg_db.utils.video.ffmpeg_wrapper.get_stream_info",
+        lambda _path: {"streams": [{"codec_type": "video"}]},
+    )
+    sampled_frame_numbers = []
+
+    def fake_capture_frame(_path, frame_number):
+        sampled_frame_numbers.append(frame_number)
+        return __import__("numpy").zeros((4, 4, 3), dtype="uint8")
+
+    monkeypatch.setattr(jobs, "_capture_frame", fake_capture_frame)
 
     history = VideoProcessingHistory.objects.create(
         video=video,
@@ -468,6 +485,7 @@ def test_run_video_post_validation_rebuild_accepts_stable_extracted_frames(
     assert (
         jobs._run_video_post_validation_rebuild(video.pk, history_id=history.pk) is True
     )
+    assert sampled_frame_numbers == [0]
     history.refresh_from_db()
     assert history.status == VideoProcessingHistory.STATUS_SUCCESS
     video.refresh_from_db()
@@ -477,39 +495,175 @@ def test_run_video_post_validation_rebuild_accepts_stable_extracted_frames(
 
 
 @pytest.mark.django_db
-def test_run_video_post_validation_rebuild_rejects_missing_extracted_frame_file(
+def test_run_video_post_validation_rebuild_queues_deferred_temporal_inference(
     monkeypatch,
     tmp_path,
 ):
     video = _create_video_for_post_validation(tmp_path)
 
     def fake_create_video_without_outside_frames(video_obj, *, only_validated=False):
-        for frame_number in range(2):
-            Frame.objects.update_or_create(
-                video=video_obj,
-                frame_number=frame_number,
-                defaults={
-                    "relative_path": f"frame_{frame_number:07d}.jpg",
-                    "is_extracted": True,
-                },
-            )
-        state = video_obj.get_or_create_state()
-        state.frames_initialized = True
-        state.frame_count = 2
-        state.frames_extracted = True
-        state.save(
-            update_fields=[
-                "frames_initialized",
-                "frame_count",
-                "frames_extracted",
-            ]
-        )
         return True
+
+    class _Context:
+        def __enter__(self):
+            path = tmp_path / "rebuilt.mp4"
+            path.write_bytes(b"video")
+            return path
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    submitted = []
+    monkeypatch.setenv("VIDEO_TEMPORAL_INFERENCE_JOB_MODE", "thread")
+    monkeypatch.setattr(
+        VideoFile,
+        "create_video_without_outside_frames",
+        fake_create_video_without_outside_frames,
+    )
+    monkeypatch.setattr(
+        VideoFile, "ensure_local_processed_file", lambda self: _Context()
+    )
+    monkeypatch.setattr(
+        "endoreg_db.utils.video.ffmpeg_wrapper.get_stream_info",
+        lambda _path: {"streams": [{"codec_type": "video"}]},
+    )
+    monkeypatch.setattr(
+        temporal_jobs._executor,
+        "submit",
+        lambda fn: submitted.append(fn) or types.SimpleNamespace(),
+    )
+
+    rebuild_history = VideoProcessingHistory.objects.create(
+        video=video,
+        operation=VideoProcessingHistory.OPERATION_REPROCESSING,
+        status=VideoProcessingHistory.STATUS_PENDING,
+        config=segment_state._blackening_history_config(only_validated=False),
+    )
+    deferred_history = VideoProcessingHistory.objects.create(
+        video=video,
+        operation=VideoProcessingHistory.OPERATION_AI_TEMPORAL_INFERENCE,
+        status=VideoProcessingHistory.STATUS_PENDING,
+        task_id="",
+        config=temporal_jobs._temporal_history_config(
+            model_meta_id=123,
+            replace_prediction_segments=True,
+            delete_frames_after=True,
+            ocr_frame_fraction=0.001,
+            ocr_cap=10,
+            temporal_options={"temporal_model": "markov"},
+            raw_temporal_options={"temporal_model": "markov"},
+            queue="inference",
+            frame_source_mode="stream",
+            deferred_reason=temporal_jobs.TEMPORAL_INFERENCE_DEFERRED_REASON_REPROCESSING,
+            blocked_by_history_id=rebuild_history.pk,
+        ),
+    )
+
+    assert (
+        jobs._run_video_post_validation_rebuild(
+            video.pk,
+            history_id=rebuild_history.pk,
+        )
+        is True
+    )
+
+    rebuild_history.refresh_from_db()
+    deferred_history.refresh_from_db()
+    assert rebuild_history.status == VideoProcessingHistory.STATUS_SUCCESS
+    assert deferred_history.status == VideoProcessingHistory.STATUS_PENDING
+    assert deferred_history.task_id
+    assert "deferred_reason" not in deferred_history.config
+    assert (
+        deferred_history.config["released_after_rebuild_history_id"]
+        == rebuild_history.pk
+    )
+    assert len(submitted) == 1
+
+
+@pytest.mark.django_db
+def test_run_video_post_validation_rebuild_failure_fails_deferred_temporal_inference(
+    monkeypatch,
+    tmp_path,
+):
+    video = _create_video_for_post_validation(tmp_path)
+
+    def fake_create_video_without_outside_frames(video_obj, *, only_validated=False):
+        return False
 
     monkeypatch.setattr(
         VideoFile,
         "create_video_without_outside_frames",
         fake_create_video_without_outside_frames,
+    )
+    rebuild_history = VideoProcessingHistory.objects.create(
+        video=video,
+        operation=VideoProcessingHistory.OPERATION_REPROCESSING,
+        status=VideoProcessingHistory.STATUS_PENDING,
+        config=segment_state._blackening_history_config(only_validated=False),
+    )
+    deferred_history = VideoProcessingHistory.objects.create(
+        video=video,
+        operation=VideoProcessingHistory.OPERATION_AI_TEMPORAL_INFERENCE,
+        status=VideoProcessingHistory.STATUS_PENDING,
+        task_id="",
+        config=temporal_jobs._temporal_history_config(
+            model_meta_id=123,
+            replace_prediction_segments=True,
+            delete_frames_after=True,
+            ocr_frame_fraction=0.001,
+            ocr_cap=10,
+            temporal_options={},
+            raw_temporal_options={},
+            queue="inference",
+            frame_source_mode="stream",
+            deferred_reason=temporal_jobs.TEMPORAL_INFERENCE_DEFERRED_REASON_REPROCESSING,
+            blocked_by_history_id=rebuild_history.pk,
+        ),
+    )
+
+    assert (
+        jobs._run_video_post_validation_rebuild(
+            video.pk,
+            history_id=rebuild_history.pk,
+        )
+        is False
+    )
+
+    deferred_history.refresh_from_db()
+    assert deferred_history.status == VideoProcessingHistory.STATUS_FAILURE
+    assert "required frame rebuild failed" in deferred_history.details
+
+
+@pytest.mark.django_db
+def test_run_video_post_validation_rebuild_rejects_processed_output_without_video_stream(
+    monkeypatch,
+    tmp_path,
+):
+    video = _create_video_for_post_validation(tmp_path)
+
+    def fake_create_video_without_outside_frames(video_obj, *, only_validated=False):
+        return True
+
+    class _Context:
+        def __enter__(self):
+            path = tmp_path / "rebuilt.mp4"
+            path.write_bytes(b"video")
+            return path
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(
+        VideoFile,
+        "create_video_without_outside_frames",
+        fake_create_video_without_outside_frames,
+    )
+    monkeypatch.setattr(
+        VideoFile, "ensure_local_processed_file", lambda self: _Context()
+    )
+    monkeypatch.setattr(
+        "endoreg_db.utils.video.ffmpeg_wrapper.get_stream_info",
+        lambda _path: {"streams": [{"codec_type": "audio"}]},
     )
 
     history = VideoProcessingHistory.objects.create(
@@ -519,7 +673,7 @@ def test_run_video_post_validation_rebuild_rejects_missing_extracted_frame_file(
         config=segment_state._blackening_history_config(only_validated=False),
     )
 
-    with pytest.raises(RuntimeError, match="non-recreatable"):
+    with pytest.raises(RuntimeError, match="no probeable video stream"):
         jobs._run_video_post_validation_rebuild(video.pk, history_id=history.pk)
     history.refresh_from_db()
     assert history.status == VideoProcessingHistory.STATUS_FAILURE

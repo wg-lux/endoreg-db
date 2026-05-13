@@ -179,10 +179,60 @@ def test_dispatch_video_temporal_inference_reuses_active_history(monkeypatch, tm
 
 
 @pytest.mark.django_db
-def test_dispatch_video_temporal_inference_busy_for_reprocessing(monkeypatch, tmp_path):
+def test_dispatch_video_temporal_inference_defers_for_blackening_rebuild(
+    monkeypatch,
+    tmp_path,
+):
     video = _create_video(tmp_path)
     model_meta, _label_a, _label_b = _create_model_meta()
     monkeypatch.setenv("VIDEO_TEMPORAL_INFERENCE_JOB_MODE", "thread")
+    submitted = Mock(side_effect=AssertionError("deferred inference must not queue"))
+    monkeypatch.setattr(jobs._executor, "submit", submitted)
+    rebuild_history = VideoProcessingHistory.objects.create(
+        video=video,
+        operation=VideoProcessingHistory.OPERATION_REPROCESSING,
+        status=VideoProcessingHistory.STATUS_PENDING,
+        config={"kind": "outside_frame_blackening"},
+    )
+
+    result = jobs.dispatch_video_temporal_inference(
+        video_id=video.pk,
+        model_meta_id=model_meta.pk,
+        temporal_options={"temporal_model": "markov"},
+        delete_frames_after=False,
+    )
+
+    assert result.status == jobs.TEMPORAL_INFERENCE_STATUS_PENDING_AFTER_REBUILD
+    assert result.task_id == ""
+    assert result.reason == jobs.TEMPORAL_INFERENCE_DEFERRED_REASON_REPROCESSING
+    assert result.blocked_by_history_id == rebuild_history.pk
+    submitted.assert_not_called()
+    history = VideoProcessingHistory.objects.get(pk=result.history_id)
+    assert history.operation == VideoProcessingHistory.OPERATION_AI_TEMPORAL_INFERENCE
+    assert history.status == VideoProcessingHistory.STATUS_PENDING
+    assert history.task_id == ""
+    assert (
+        history.config["deferred_reason"]
+        == jobs.TEMPORAL_INFERENCE_DEFERRED_REASON_REPROCESSING
+    )
+    assert history.config["blocked_by_history_id"] == rebuild_history.pk
+    assert history.config["raw_temporal_options"] == {"temporal_model": "markov"}
+    assert history.config["delete_frames_after"] is False
+
+
+@pytest.mark.django_db
+def test_dispatch_video_temporal_inference_reuses_same_deferred_request(
+    monkeypatch,
+    tmp_path,
+):
+    video = _create_video(tmp_path)
+    model_meta, _label_a, _label_b = _create_model_meta()
+    monkeypatch.setenv("VIDEO_TEMPORAL_INFERENCE_JOB_MODE", "thread")
+    monkeypatch.setattr(
+        jobs._executor,
+        "submit",
+        Mock(side_effect=AssertionError("deferred inference must not queue")),
+    )
     VideoProcessingHistory.objects.create(
         video=video,
         operation=VideoProcessingHistory.OPERATION_REPROCESSING,
@@ -193,9 +243,98 @@ def test_dispatch_video_temporal_inference_busy_for_reprocessing(monkeypatch, tm
     result = jobs.dispatch_video_temporal_inference(
         video_id=video.pk,
         model_meta_id=model_meta.pk,
+        temporal_options={"temporal_model": "markov"},
+    )
+    second = jobs.dispatch_video_temporal_inference(
+        video_id=video.pk,
+        model_meta_id=model_meta.pk,
+        temporal_options={"temporal_model": "markov"},
+    )
+
+    assert result.status == jobs.TEMPORAL_INFERENCE_STATUS_PENDING_AFTER_REBUILD
+    assert second.status == jobs.TEMPORAL_INFERENCE_STATUS_PENDING_AFTER_REBUILD
+    assert second.history_id == result.history_id
+    assert (
+        VideoProcessingHistory.objects.filter(
+            video=video,
+            operation=VideoProcessingHistory.OPERATION_AI_TEMPORAL_INFERENCE,
+        ).count()
+        == 1
+    )
+
+
+@pytest.mark.django_db
+def test_dispatch_video_temporal_inference_latest_deferred_request_wins(
+    monkeypatch,
+    tmp_path,
+):
+    video = _create_video(tmp_path)
+    model_meta, _label_a, _label_b = _create_model_meta()
+    monkeypatch.setenv("VIDEO_TEMPORAL_INFERENCE_JOB_MODE", "thread")
+    monkeypatch.setattr(
+        jobs._executor,
+        "submit",
+        Mock(side_effect=AssertionError("deferred inference must not queue")),
+    )
+    VideoProcessingHistory.objects.create(
+        video=video,
+        operation=VideoProcessingHistory.OPERATION_REPROCESSING,
+        status=VideoProcessingHistory.STATUS_PENDING,
+        config={"kind": "outside_frame_blackening"},
+    )
+
+    first = jobs.dispatch_video_temporal_inference(
+        video_id=video.pk,
+        model_meta_id=model_meta.pk,
+        temporal_options={"temporal_model": "markov"},
+    )
+    second = jobs.dispatch_video_temporal_inference(
+        video_id=video.pk,
+        model_meta_id=model_meta.pk,
+        temporal_options={"temporal_model": "hysteresis"},
+    )
+
+    assert first.status == jobs.TEMPORAL_INFERENCE_STATUS_PENDING_AFTER_REBUILD
+    assert second.status == jobs.TEMPORAL_INFERENCE_STATUS_PENDING_AFTER_REBUILD
+    assert second.history_id != first.history_id
+    old_history = VideoProcessingHistory.objects.get(pk=first.history_id)
+    new_history = VideoProcessingHistory.objects.get(pk=second.history_id)
+    assert old_history.status == VideoProcessingHistory.STATUS_CANCELLED
+    assert new_history.status == VideoProcessingHistory.STATUS_PENDING
+    assert new_history.config["raw_temporal_options"] == {
+        "temporal_model": "hysteresis"
+    }
+
+
+@pytest.mark.django_db
+def test_dispatch_video_temporal_inference_busy_for_non_blackening_reprocessing(
+    monkeypatch,
+    tmp_path,
+):
+    video = _create_video(tmp_path)
+    model_meta, _label_a, _label_b = _create_model_meta()
+    monkeypatch.setenv("VIDEO_TEMPORAL_INFERENCE_JOB_MODE", "thread")
+    reprocessing_history = VideoProcessingHistory.objects.create(
+        video=video,
+        operation=VideoProcessingHistory.OPERATION_REPROCESSING,
+        status=VideoProcessingHistory.STATUS_PENDING,
+        config={"kind": "other_reprocessing"},
+    )
+
+    result = jobs.dispatch_video_temporal_inference(
+        video_id=video.pk,
+        model_meta_id=model_meta.pk,
     )
 
     assert result.status == "busy"
+    assert result.blocked_by_history_id == reprocessing_history.pk
+    assert (
+        VideoProcessingHistory.objects.filter(
+            video=video,
+            operation=VideoProcessingHistory.OPERATION_AI_TEMPORAL_INFERENCE,
+        ).count()
+        == 0
+    )
 
 
 @pytest.mark.django_db(transaction=True)

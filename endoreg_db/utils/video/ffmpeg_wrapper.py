@@ -3,10 +3,12 @@ import logging
 import os
 import shutil
 import subprocess
+import tempfile
+import uuid
 from enum import Enum
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Literal, cast
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Literal, cast
 
 import cv2
 from tqdm import tqdm
@@ -17,6 +19,7 @@ from endoreg_db.config.env import (
 )
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
+    atomic_write_file,
     ensure_directory,
     safe_unlink_file,
 )
@@ -972,6 +975,152 @@ def _update_or_append_ffmpeg_arg(args: List[str], key: str, value: str) -> None:
             value,
         )
         args[value_index] = value
+
+
+def _normalize_blacken_intervals(
+    intervals: Iterable[tuple[int, int]],
+) -> list[tuple[int, int]]:
+    normalized_intervals: list[tuple[int, int]] = []
+    for start_frame, end_frame in intervals:
+        start = int(start_frame)
+        end = int(end_frame)
+        if start < 0 or end <= start:
+            raise ValueError(
+                "Blackening intervals must be half-open ranges with "
+                f"0 <= start < end: start={start} end={end}"
+            )
+        normalized_intervals.append((start, end))
+    if not normalized_intervals:
+        raise ValueError("At least one interval is required to build a filter.")
+    return normalized_intervals
+
+
+def _build_blacken_filter_expression(
+    intervals: Iterable[tuple[int, int]],
+) -> str:
+    normalized_intervals = _normalize_blacken_intervals(intervals)
+    enable_expression = "+".join(
+        f"(gte(n\\,{start_frame})*lt(n\\,{end_frame}))"
+        for start_frame, end_frame in normalized_intervals
+    )
+    return f"drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill:enable='{enable_expression}'"
+
+
+def _blacken_filter_args(
+    intervals: Iterable[tuple[int, int]],
+    *,
+    inline_threshold: int = 120,
+    script_dir: Path | None = None,
+) -> tuple[list[str], Path | None]:
+    normalized_intervals = _normalize_blacken_intervals(intervals)
+    filter_expression = _build_blacken_filter_expression(normalized_intervals)
+    if len(normalized_intervals) <= inline_threshold:
+        return ["-vf", filter_expression], None
+
+    target_dir = ensure_directory(Path(script_dir or tempfile.gettempdir()))
+    script_path = target_dir / f"outside-blackening-{uuid.uuid4().hex}.ffmpeg-filter"
+    script_content = f"{filter_expression}\n".encode("utf-8")
+    atomic_write_file(
+        destination=script_path,
+        content=[script_content],
+        required_bytes=len(script_content),
+    )
+    return ["-filter_script:v", str(script_path)], script_path
+
+
+def blacken_video_frame_intervals(
+    input_path: Path,
+    output_path: Path,
+    *,
+    intervals: Iterable[tuple[int, int]],
+    quality_mode: str = "balanced",
+    force_cpu: bool = False,
+) -> Optional[Path]:
+    if not input_path.exists():
+        logger.error("Input file not found for outside blackening: %s", input_path)
+        return None
+
+    normalized_intervals = _normalize_blacken_intervals(intervals)
+
+    ffmpeg_executable = _resolve_ffmpeg_executable()
+    if not ffmpeg_executable:
+        logger.error(
+            "ffmpeg command not found. Ensure FFmpeg is installed and in the system's PATH."
+        )
+        return None
+
+    ensure_directory(output_path.parent)
+
+    encoder_args, _encoder_type = _build_encoder_args(
+        quality_mode,
+        fallback=False,
+        custom_crf=None,
+        encoder_type_override="cpu" if force_cpu else None,
+    )
+    if "-vf" in encoder_args:
+        vf_index = encoder_args.index("-vf")
+        del encoder_args[vf_index : vf_index + 2]
+
+    filter_args, filter_script_path = _blacken_filter_args(
+        normalized_intervals,
+        script_dir=output_path.parent,
+    )
+    extra_args = [
+        "-map",
+        "0:v:0",
+        "-map",
+        "0:a?",
+        *filter_args,
+        "-c:a",
+        "copy",
+        "-movflags",
+        "+faststart",
+    ]
+    _update_or_append_ffmpeg_arg(encoder_args, "-pix_fmt", "yuv420p")
+
+    command = [
+        ffmpeg_executable,
+        "-i",
+        str(input_path),
+        *encoder_args,
+        *extra_args,
+        "-y",
+        str(output_path),
+    ]
+
+    logger.info(
+        "Starting streamed outside-frame blackening: %s -> %s",
+        input_path.name,
+        output_path.name,
+    )
+    logger.debug("Outside blackening FFmpeg command: %s", " ".join(command))
+
+    try:
+        returncode, stderr_output = _run_ffmpeg_command(command)
+        if returncode != 0:
+            logger.error(
+                "FFmpeg outside blackening failed for %s with return code %d.",
+                input_path.name,
+                returncode,
+            )
+            logger.error("FFmpeg stderr:\n%s", stderr_output)
+            _delete_partial_output(output_path, reason="incomplete outside blackening")
+            return None
+        if not _transcode_output_is_valid(output_path):
+            _delete_partial_output(output_path, reason="invalid outside blackening")
+            return None
+        return output_path
+    except subprocess.TimeoutExpired:
+        logger.error(
+            "FFmpeg outside blackening timed out for %s after %ss.",
+            input_path.name,
+            FFMPEG_TRANSCODE_TIMEOUT_SECONDS,
+        )
+        _delete_partial_output(output_path, reason="timed-out outside blackening")
+        return None
+    finally:
+        if filter_script_path is not None:
+            safe_unlink_file(filter_script_path, missing_ok=True)
 
 
 def transcode_videofile_if_required(

@@ -1,4 +1,5 @@
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -290,3 +291,111 @@ def test_extract_frames_numbers_full_extraction_from_zero(monkeypatch, tmp_path)
     ]
     assert "-start_number" in captured["command"]
     assert captured["command"][captured["command"].index("-start_number") + 1] == "0"
+
+
+@pytest.mark.unit
+def test_build_blacken_filter_expression_uses_frame_counter_ranges():
+    expression = ffmpeg_wrapper._build_blacken_filter_expression(
+        [(120, 240), (800, 900)]
+    )
+
+    assert "drawbox=" in expression
+    assert "(gte(n\\,120)*lt(n\\,240))+(gte(n\\,800)*lt(n\\,900))" in expression
+
+
+@pytest.mark.unit
+def test_blacken_filter_args_switches_to_script_for_large_interval_sets(tmp_path):
+    intervals = [(index * 10, index * 10 + 1) for index in range(121)]
+
+    args, script_path = ffmpeg_wrapper._blacken_filter_args(
+        intervals,
+        inline_threshold=120,
+        script_dir=tmp_path,
+    )
+
+    assert args[0] == "-filter_script:v"
+    assert script_path is not None
+    assert script_path.exists()
+    assert script_path.parent == tmp_path
+    assert "(gte(n\\,0)*lt(n\\,1))" in script_path.read_text(encoding="utf-8")
+    script_path.unlink(missing_ok=True)
+
+
+@pytest.mark.unit
+def test_blacken_video_frame_intervals_maps_audio_and_filter(monkeypatch, tmp_path):
+    input_path = tmp_path / "input.mp4"
+    output_path = tmp_path / "output.mp4"
+    input_path.write_bytes(b"video")
+    captured = {}
+
+    monkeypatch.setattr(
+        "endoreg_db.utils.video.ffmpeg_wrapper._resolve_ffmpeg_executable",
+        lambda: "/smart/bin/ffmpeg",
+    )
+
+    def fake_popen(command, **kwargs):
+        captured["command"] = command
+        output_path.write_bytes(b"encoded")
+        return FakePopen(command, returncode=0, **kwargs)
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+
+    result = ffmpeg_wrapper.blacken_video_frame_intervals(
+        input_path,
+        output_path,
+        intervals=[(10, 20)],
+        force_cpu=True,
+    )
+
+    assert result == output_path
+    assert "-map" in captured["command"]
+    assert captured["command"].count("-map") == 2
+    assert "0:v:0" in captured["command"]
+    assert "0:a?" in captured["command"]
+    assert "-c:a" in captured["command"]
+    assert captured["command"][captured["command"].index("-c:a") + 1] == "copy"
+    assert "-vf" in captured["command"]
+    assert (
+        "(gte(n\\,10)*lt(n\\,20))"
+        in captured["command"][captured["command"].index("-vf") + 1]
+    )
+
+
+@pytest.mark.unit
+def test_blacken_video_frame_intervals_uses_video_filter_script_for_large_interval_sets(
+    monkeypatch,
+    tmp_path,
+):
+    input_path = tmp_path / "input.mp4"
+    output_path = tmp_path / "output.mp4"
+    input_path.write_bytes(b"video")
+    intervals = [(index * 10, index * 10 + 1) for index in range(121)]
+    captured = {}
+
+    monkeypatch.setattr(
+        "endoreg_db.utils.video.ffmpeg_wrapper._resolve_ffmpeg_executable",
+        lambda: "/smart/bin/ffmpeg",
+    )
+
+    def fake_popen(command, **kwargs):
+        captured["command"] = command
+        output_path.write_bytes(b"encoded")
+        return FakePopen(command, returncode=0, **kwargs)
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+
+    result = ffmpeg_wrapper.blacken_video_frame_intervals(
+        input_path,
+        output_path,
+        intervals=intervals,
+        force_cpu=True,
+    )
+
+    assert result == output_path
+    assert "-filter_script:v" in captured["command"]
+    assert "-filter_complex_script" not in captured["command"]
+    script_path = Path(
+        captured["command"][captured["command"].index("-filter_script:v") + 1]
+    )
+    assert script_path.parent == tmp_path
+    assert not script_path.exists()

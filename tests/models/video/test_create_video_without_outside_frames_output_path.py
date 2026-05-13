@@ -1,23 +1,27 @@
 import uuid
-from pathlib import Path
 
 import pytest
 
-from endoreg_db.config.env import DEFAULT_VIDEO_FPS
-from endoreg_db.models import Center, EndoscopyProcessor, Frame, VideoFile
+from endoreg_db.models import (
+    Center,
+    EndoscopyProcessor,
+    Frame,
+    ImageClassificationAnnotation,
+    InformationSource,
+    Label,
+    LabelVideoSegment,
+    VideoFile,
+)
 from endoreg_db.utils.paths import data_paths, to_storage_relative
 
 
-@pytest.mark.django_db
-def test_create_video_without_outside_frames_uses_data_paths_output(
-    monkeypatch, tmp_path
-):
+def _create_video(tmp_path):
     center = Center.objects.create(
-        name=f"outside-path-center-{uuid.uuid4().hex[:8]}",
-        display_name="Outside Path Center",
+        name=f"outside-stream-center-{uuid.uuid4().hex[:8]}",
+        display_name="Outside Stream Center",
     )
     processor = EndoscopyProcessor.objects.create(
-        name=f"outside-path-processor-{uuid.uuid4().hex[:8]}",
+        name=f"outside-stream-processor-{uuid.uuid4().hex[:8]}",
         image_width=1920,
         image_height=1080,
         endoscope_image_x=0,
@@ -54,244 +58,231 @@ def test_create_video_without_outside_frames_uses_data_paths_output(
         endoscope_sn_height=50,
     )
     processor.centers.add(center)
-
-    frame_dir = tmp_path / "frames"
-    frame_dir.mkdir(parents=True, exist_ok=True)
-
     video = VideoFile.objects.create(
         center=center,
         processor=processor,
-        video_hash=f"outside-path-{uuid.uuid4().hex}",
-        fps=None,
+        video_hash=f"outside-stream-{uuid.uuid4().hex}",
+        fps=25.0,
         width=1920,
         height=1080,
-        frame_dir=str(frame_dir),
+        processed_video_hash="old-hash",
+    )
+    processed_dir = tmp_path / "processed"
+    processed_dir.mkdir(parents=True, exist_ok=True)
+    processed_path = processed_dir / "input.mp4"
+    processed_path.write_bytes(b"processed-input")
+    video.processed_file.name = to_storage_relative(
+        data_paths["anonym_video"] / f"{video.video_hash}_filtered.mp4"
+    )
+    video.save(update_fields=["processed_file", "processed_video_hash"])
+    return video, processed_path
+
+
+@pytest.mark.django_db
+def test_create_video_without_outside_frames_uses_streamed_rebuild(
+    monkeypatch, tmp_path
+):
+    video, processed_path = _create_video(tmp_path)
+    outside_label, _ = Label.objects.get_or_create(name="outside")
+    LabelVideoSegment.objects.create(
+        video_file=video,
+        label=outside_label,
+        start_frame_number=10,
+        end_frame_number=20,
     )
 
-    fake_frames: list[Path] = []
+    captured = {}
 
-    captured: dict[str, object] = {}
+    class _Context:
+        def __enter__(self):
+            return processed_path
 
-    def fake_extract_frames(*args, **kwargs):  # noqa: ARG001
-        fake_frames.clear()
-        for frame_number in range(2):
-            frame_path = frame_dir / f"frame_{frame_number:07d}.jpg"
-            frame_path.write_bytes(b"frame")
-            fake_frames.append(frame_path)
-            Frame.objects.update_or_create(
-                video=video,
-                frame_number=frame_number,
-                defaults={
-                    "relative_path": frame_path.name,
-                    "is_extracted": True,
-                },
-            )
-        state = video.get_or_create_state()
-        state.frames_initialized = True
-        state.frame_count = len(fake_frames)
-        state.frames_extracted = True
-        state.save(
-            update_fields=[
-                "frames_initialized",
-                "frame_count",
-                "frames_extracted",
-            ]
-        )
-        return True
+        def __exit__(self, exc_type, exc, tb):
+            return False
 
-    def fake_censor_outside_frames(_video, **kwargs):
-        captured["only_validated"] = kwargs.get("only_validated")
-        return True
+    monkeypatch.setattr(video, "ensure_local_processed_file", lambda: _Context())
 
-    def fake_assemble_video_from_frames(
-        frame_paths: list[Path],
-        output_path: Path,
-        fps: float,
-        width: int | None = None,
-        height: int | None = None,
-    ) -> Path:
-        captured["frame_paths"] = frame_paths
+    def fake_blacken_video_frame_intervals(
+        input_path,
+        output_path,
+        *,
+        intervals,
+        quality_mode="balanced",
+        force_cpu=False,
+    ):
+        captured["input_path"] = input_path
         captured["output_path"] = output_path
-        captured["fps"] = fps
-        captured["width"] = width
-        captured["height"] = height
+        captured["intervals"] = intervals
+        captured["quality_mode"] = quality_mode
+        captured["force_cpu"] = force_cpu
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(b"filtered-video")
         return output_path
 
-    monkeypatch.setattr(video, "extract_frames", fake_extract_frames)
-    monkeypatch.setattr(video, "get_frame_paths", lambda: fake_frames)
     monkeypatch.setattr(
-        "endoreg_db.models.media.video.video_file._censor_outside_frames",
-        fake_censor_outside_frames,
+        "endoreg_db.models.media.video.video_file.blacken_video_frame_intervals",
+        fake_blacken_video_frame_intervals,
     )
     monkeypatch.setattr(
-        "endoreg_db.models.media.video.video_file.assemble_video_from_frames",
-        fake_assemble_video_from_frames,
+        "endoreg_db.models.media.video.video_file.get_video_hash",
+        lambda path: "new-processed-hash",
+    )
+    streamable_sync = []
+    monkeypatch.setattr(
+        "endoreg_db.models.media.video.video_file.sync_video_streamable_artifacts",
+        lambda *args, **kwargs: streamable_sync.append((args, kwargs)),
     )
 
     ok = VideoFile.create_video_without_outside_frames(video)
-    assert ok is True
 
+    assert ok is True
     expected_output_path = (
         data_paths["transcoding"]
-        / f"{video.video_hash}.outside_frame_reassembly.tmp.mp4"
+        / f"{video.video_hash}.outside_frame_blackening.staged.mp4"
     )
+    assert captured["input_path"] == processed_path
     assert captured["output_path"] == expected_output_path
-    assert captured["fps"] == DEFAULT_VIDEO_FPS
-    assert captured["only_validated"] is False
-    assert str(expected_output_path).startswith(str(data_paths["transcoding"]))
-    assert "/path/to/output" not in str(captured["output_path"])
+    assert captured["intervals"] == [(10, 20)]
+    assert captured["quality_mode"] == "balanced"
+    assert captured["force_cpu"] is False
+    assert not expected_output_path.exists()
 
     video.refresh_from_db()
-    expected_storage_path = (
+    assert video.processed_video_hash == "new-processed-hash"
+    assert video.processed_file.name == to_storage_relative(
         data_paths["anonym_video"] / f"{video.video_hash}_filtered.mp4"
     )
-    assert video.processed_file.name == to_storage_relative(expected_storage_path)
-    assert not expected_output_path.exists()
-
-    stored_name = video.processed_file.name
-    assert VideoFile.create_video_without_outside_frames(video) is True
-    video.refresh_from_db()
-    assert video.processed_file.name == stored_name
-    assert not expected_output_path.exists()
+    assert len(streamable_sync) == 1
 
 
 @pytest.mark.django_db
-def test_create_video_without_outside_frames_forces_processed_frame_reextract(
+def test_create_video_without_outside_frames_merges_adjacent_intervals_and_noops_when_empty(
     monkeypatch, tmp_path
 ):
-    center = Center.objects.create(
-        name=f"outside-reextract-center-{uuid.uuid4().hex[:8]}",
-        display_name="Outside Reextract Center",
+    video, processed_path = _create_video(tmp_path)
+    outside_label, _ = Label.objects.get_or_create(name="outside")
+    LabelVideoSegment.objects.create(
+        video_file=video,
+        label=outside_label,
+        start_frame_number=10,
+        end_frame_number=20,
     )
-    processor = EndoscopyProcessor.objects.create(
-        name=f"outside-reextract-processor-{uuid.uuid4().hex[:8]}",
-        image_width=1920,
-        image_height=1080,
-        endoscope_image_x=0,
-        endoscope_image_y=0,
-        endoscope_image_width=1920,
-        endoscope_image_height=1080,
-        examination_date_x=0,
-        examination_date_y=0,
-        examination_date_width=100,
-        examination_date_height=50,
-        examination_time_x=0,
-        examination_time_y=0,
-        examination_time_width=100,
-        examination_time_height=50,
-        patient_first_name_x=0,
-        patient_first_name_y=0,
-        patient_first_name_width=100,
-        patient_first_name_height=50,
-        patient_last_name_x=0,
-        patient_last_name_y=0,
-        patient_last_name_width=100,
-        patient_last_name_height=50,
-        patient_dob_x=0,
-        patient_dob_y=0,
-        patient_dob_width=100,
-        patient_dob_height=50,
-        endoscope_type_x=0,
-        endoscope_type_y=0,
-        endoscope_type_width=100,
-        endoscope_type_height=50,
-        endoscope_sn_x=0,
-        endoscope_sn_y=0,
-        endoscope_sn_width=100,
-        endoscope_sn_height=50,
+    LabelVideoSegment.objects.create(
+        video_file=video,
+        label=outside_label,
+        start_frame_number=20,
+        end_frame_number=30,
     )
-    processor.centers.add(center)
-
-    frame_dir = tmp_path / "frames"
-    frame_dir.mkdir(parents=True, exist_ok=True)
-
-    video = VideoFile.objects.create(
-        center=center,
-        processor=processor,
-        video_hash=f"outside-reextract-{uuid.uuid4().hex}",
-        fps=25.0,
-        width=1920,
-        height=1080,
-        frame_dir=str(frame_dir),
+    LabelVideoSegment.objects.create(
+        video_file=video,
+        label=outside_label,
+        start_frame_number=100,
+        end_frame_number=110,
     )
 
-    fake_frames = [frame_dir / "frame_0000001.jpg", frame_dir / "frame_0000002.jpg"]
-    for path in fake_frames:
-        path.write_bytes(b"frame")
+    class _Context:
+        def __enter__(self):
+            return processed_path
 
-    extracted_calls: list[dict[str, object]] = []
+        def __exit__(self, exc_type, exc, tb):
+            return False
 
-    def fake_extract_frames(*args, **kwargs):
-        extracted_calls.append(kwargs)
-        fake_frames.clear()
-        for frame_number in range(2):
-            frame_path = frame_dir / f"frame_{frame_number:07d}.jpg"
-            frame_path.write_bytes(b"frame")
-            fake_frames.append(frame_path)
-            Frame.objects.update_or_create(
-                video=video,
-                frame_number=frame_number,
-                defaults={
-                    "relative_path": frame_path.name,
-                    "is_extracted": True,
-                },
-            )
-        state = video.get_or_create_state()
-        state.frames_initialized = True
-        state.frame_count = len(fake_frames)
-        state.frames_extracted = True
-        state.save(
-            update_fields=[
-                "frames_initialized",
-                "frame_count",
-                "frames_extracted",
-            ]
-        )
-        return True
+    monkeypatch.setattr(video, "ensure_local_processed_file", lambda: _Context())
 
-    monkeypatch.setattr(video, "extract_frames", fake_extract_frames)
-    monkeypatch.setattr(video, "get_frame_paths", lambda: fake_frames)
+    calls = []
+
+    def fake_blacken_video_frame_intervals(
+        input_path,
+        output_path,
+        *,
+        intervals,
+        quality_mode="balanced",
+        force_cpu=False,
+    ):
+        calls.append(intervals)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"filtered-video")
+        return output_path
+
     monkeypatch.setattr(
-        "endoreg_db.models.media.video.video_file._censor_outside_frames",
-        lambda _video, **kwargs: True,
+        "endoreg_db.models.media.video.video_file.blacken_video_frame_intervals",
+        fake_blacken_video_frame_intervals,
     )
     monkeypatch.setattr(
-        "endoreg_db.models.media.video.video_file.assemble_video_from_frames",
-        lambda frame_paths, output_path, fps, width=None, height=None: (
-            output_path.parent.mkdir(parents=True, exist_ok=True),
-            output_path.write_bytes(b"filtered-video"),
-            output_path,
-        )[-1],
+        "endoreg_db.models.media.video.video_file.get_video_hash",
+        lambda path: "merged-hash",
+    )
+    monkeypatch.setattr(
+        "endoreg_db.models.media.video.video_file.sync_video_streamable_artifacts",
+        lambda *args, **kwargs: None,
     )
 
-    ok = VideoFile.create_video_without_outside_frames(video)
+    assert VideoFile.create_video_without_outside_frames(video) is True
+    assert calls == [[(10, 30), (100, 110)]]
 
-    assert ok is True
-    assert extracted_calls == [
-        {
-            "quality": 2,
-            "overwrite": True,
-            "ext": "jpg",
-            "verbose": False,
-            "from_processed": True,
-        }
-    ]
-    assert [path.name for path in fake_frames] == [
-        "frame_0000000.jpg",
-        "frame_0000001.jpg",
-    ]
+    LabelVideoSegment.objects.all().delete()
+    calls.clear()
+    assert VideoFile.create_video_without_outside_frames(video) is True
+    assert calls == []
 
-    video.refresh_from_db()
-    state = video.get_or_create_state()
-    state.refresh_from_db()
-    assert state.frames_extracted is True
-    assert state.frames_initialized is True
-    assert state.frame_count == 2
-    assert list(
-        Frame.objects.filter(video=video, is_extracted=True)
-        .order_by("frame_number")
-        .values_list("relative_path", flat=True)
-    ) == ["frame_0000000.jpg", "frame_0000001.jpg"]
-    assert all(path.is_file() for path in fake_frames)
+
+@pytest.mark.django_db
+def test_create_video_without_outside_frames_includes_frame_level_outside_annotations(
+    monkeypatch,
+    tmp_path,
+):
+    video, processed_path = _create_video(tmp_path)
+    outside_label, _ = Label.objects.get_or_create(name="outside")
+    source, _ = InformationSource.objects.get_or_create(name="manual_annotation")
+    outside_frame = Frame.objects.create(
+        video=video,
+        frame_number=44,
+        relative_path="frame_0000044.jpg",
+        is_extracted=False,
+    )
+    ImageClassificationAnnotation.objects.create(
+        frame=outside_frame,
+        label=outside_label,
+        information_source=source,
+        value=True,
+    )
+
+    class _Context:
+        def __enter__(self):
+            return processed_path
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(video, "ensure_local_processed_file", lambda: _Context())
+
+    calls = []
+
+    def fake_blacken_video_frame_intervals(
+        input_path,
+        output_path,
+        *,
+        intervals,
+        quality_mode="balanced",
+        force_cpu=False,
+    ):
+        calls.append(intervals)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"filtered-video")
+        return output_path
+
+    monkeypatch.setattr(
+        "endoreg_db.models.media.video.video_file.blacken_video_frame_intervals",
+        fake_blacken_video_frame_intervals,
+    )
+    monkeypatch.setattr(
+        "endoreg_db.models.media.video.video_file.get_video_hash",
+        lambda path: "annotation-hash",
+    )
+    monkeypatch.setattr(
+        "endoreg_db.models.media.video.video_file.sync_video_streamable_artifacts",
+        lambda *args, **kwargs: None,
+    )
+
+    assert VideoFile.create_video_without_outside_frames(video) is True
+    assert calls == [[(44, 45)]]
