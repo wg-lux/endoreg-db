@@ -18,6 +18,7 @@ from endoreg_db.models import (
 )
 from endoreg_db.serializers.label_video_segment.label import LabelSerializer
 from endoreg_db.services.video_temporal_inference import (
+    TEMPORAL_INFERENCE_STATUS_PENDING_AFTER_REBUILD,
     TemporalInferenceConfigError,
     dispatch_video_temporal_inference,
     extract_temporal_options,
@@ -273,25 +274,42 @@ def rerun_prediction_segments(request, pk: int) -> Response:
     response_status = status.HTTP_202_ACCEPTED
     if dispatch_result.status == "completed":
         response_status = status.HTTP_200_OK
+    elif dispatch_result.status == "busy":
+        response_status = status.HTTP_409_CONFLICT
     elif dispatch_result.status == "failed":
         response_status = status.HTTP_500_INTERNAL_SERVER_ERROR
 
-    return Response(
-        {
-            "success": dispatch_result.status
-            in {"queued", "already_queued", "completed"},
-            "status": dispatch_result.status,
-            "video_id": video.pk,
-            "model_meta": _serialize_model_meta(model_meta),
-            "job": {
-                "task_id": dispatch_result.task_id,
-                "history_id": dispatch_result.history_id,
-                "mode": dispatch_result.mode,
-                "queue": dispatch_result.queue,
-            },
-            "deleted_prediction_segments": dispatch_result.deleted_prediction_segments,
-            "prediction_segments_count": prediction_segments_count,
+    queued_statuses = {"queued", "already_queued", "completed"}
+    pending_after_rebuild = (
+        dispatch_result.status == TEMPORAL_INFERENCE_STATUS_PENDING_AFTER_REBUILD
+    )
+    response_payload = {
+        "success": dispatch_result.status in queued_statuses or pending_after_rebuild,
+        "status": dispatch_result.status,
+        "queued": dispatch_result.status in queued_statuses,
+        "pending": pending_after_rebuild,
+        "video_id": video.pk,
+        "model_meta": _serialize_model_meta(model_meta),
+        "job": {
+            "task_id": dispatch_result.task_id,
+            "history_id": dispatch_result.history_id,
+            "mode": dispatch_result.mode,
+            "queue": dispatch_result.queue,
         },
+        "deleted_prediction_segments": dispatch_result.deleted_prediction_segments,
+        "prediction_segments_count": prediction_segments_count,
+    }
+    if dispatch_result.reason:
+        response_payload["reason"] = dispatch_result.reason
+    if dispatch_result.message:
+        response_payload["message"] = dispatch_result.message
+    if dispatch_result.blocked_by_history_id is not None:
+        response_payload["blocked_by_history_id"] = (
+            dispatch_result.blocked_by_history_id
+        )
+
+    return Response(
+        response_payload,
         status=response_status,
     )
 
