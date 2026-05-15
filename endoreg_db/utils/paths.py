@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterable
+from enum import StrEnum
 from logging import getLogger
 from pathlib import Path
 from typing import ClassVar
@@ -28,51 +29,8 @@ from endoreg_db.config.env import (
     env_path,
 )
 
-"""
-<protected_root>/                  # usually BASE_DIR/data
-├── storage/                       # protected storage root
-│   ├── upload_jobs/
-│   │   ├── api/
-│   │   ├── watcher/
-│   │   └── preanonymized/
-│   ├── documents/
-│   ├── temp/
-│   ├── sensitive_videos/
-│   ├── sensitive_reports/
-│   ├── processed_videos_final/
-│   ├── processed_reports_final/
-│   ├── raw_frames/
-│   ├── frames/
-│   ├── model_weights/
-│   ├── sensitive_sidecars/
-│   └── test/
-│
-└── ... possibly same as data root if configured that way
-
-
-<data_root>/                       # usually BASE_DIR/data
-├── import/
-│   ├── video_import/
-│   ├── report_import/
-│   ├── preanonymized_import/
-│   ├── anonymized_video_import/
-│   ├── anonymized_report_import/
-│   ├── model_weights/
-│   └── frames/
-├── export/
-│   ├── video_export/
-│   ├── report_export/
-│   ├── model_weights/
-│   └── frames/
-├── logs/
-├── quarantine/
-│   └── failed/
-├── migration_staging/
-│   └── manifests/
-├── sap_import/
-├── sap_import_processed/
-└── sap_import_failed/
-"""
+# Directory topology is split between a protected storage root and a data root.
+# Watcher intake lives under data/import; managed media lives under storage.
 
 logger = getLogger(__name__)
 
@@ -104,6 +62,45 @@ MIGRATION_STAGING_DIR_NAME = "migration_staging"
 MANIFEST_DIR_NAME = "manifests"
 
 
+class StorageTier(StrEnum):
+    UPLOAD_API = "upload_api"
+    UPLOAD_WATCHER = "upload_watcher"
+    UPLOAD_PREANONYMIZED = "upload_preanonymized"
+    INGEST_UPLOADS = "ingest_uploads"
+    INGEST_PREANONYMIZED = "ingest_preanonymized"
+    MANAGED_ANONYMIZED_VIDEOS = "managed_anonymized_videos"
+    MANAGED_ANONYMIZED_REPORTS = "managed_anonymized_reports"
+    MANAGED_SENSITIVE_SIDECARS = "managed_sensitive_sidecars"
+    WATCHER_VIDEO_DROP = "watcher_video_drop"
+    WATCHER_REPORT_DROP = "watcher_report_drop"
+    WATCHER_PREANONYMIZED_DROP = "watcher_preanonymized_drop"
+    SAP_IMPORT_DROP = "sap_import_drop"
+    SAP_IMPORT_PROCESSED = "sap_import_processed"
+    SAP_IMPORT_FAILED = "sap_import_failed"
+    MANIFEST = "manifest"
+    MIGRATION_STAGING = "migration_staging"
+    STAGING_MIGRATION = "staging_migration"
+    QUARANTINE = "quarantine"
+    QUARANTINE_FAILED = "quarantine_failed"
+
+
+PROTECTED_STORAGE_TIERS: frozenset[StorageTier] = frozenset(
+    {
+        StorageTier.UPLOAD_API,
+        StorageTier.UPLOAD_WATCHER,
+        StorageTier.UPLOAD_PREANONYMIZED,
+        StorageTier.INGEST_UPLOADS,
+        StorageTier.MANAGED_ANONYMIZED_VIDEOS,
+        StorageTier.MANAGED_ANONYMIZED_REPORTS,
+        StorageTier.MANAGED_SENSITIVE_SIDECARS,
+    }
+)
+STORAGE_TIER_FIELDS: dict[StorageTier, str] = {
+    tier: "manifest_dir" if tier == StorageTier.MANIFEST else tier.value
+    for tier in StorageTier
+}
+
+
 def _resolve_env_path(raw_value: str) -> Path:
     candidate = Path(raw_value)
     if candidate.is_absolute():
@@ -112,11 +109,48 @@ def _resolve_env_path(raw_value: str) -> Path:
 
 
 def _is_relative_to(path: Path, root: Path) -> bool:
-    try:
-        path.relative_to(root)
-    except ValueError:
-        return False
-    return True
+    return path.is_relative_to(root)
+
+
+def _dedupe_paths(paths: Iterable[Path]) -> list[Path]:
+    deduped: list[Path] = []
+    for path in paths:
+        if path not in deduped:
+            deduped.append(path)
+    return deduped
+
+
+def _ensure_directory(path: Path) -> Path:
+    from endoreg_db.utils.file_operations import ensure_directory
+
+    return ensure_directory(path)
+
+
+def _legacy_test_roots(*roots: Path) -> list[Path]:
+    if not TEST_PATH_COMPAT_ENABLED:
+        return []
+    return [root.resolve() for root in roots]
+
+
+def _ensure_within_roots(
+    path: str | Path,
+    *,
+    roots: Iterable[Path],
+    label: str,
+) -> Path:
+    resolved_path = Path(path).resolve()
+    root_list = _dedupe_paths(root.resolve() for root in roots)
+    for root in root_list:
+        if resolved_path.is_relative_to(root):
+            return resolved_path
+    raise ValueError(f"Path {resolved_path} is outside {label} {root_list[0]}")
+
+
+def _relative_to_any(path: Path, roots: Iterable[Path]) -> str | None:
+    for root in _dedupe_paths(root.resolve() for root in roots):
+        if path.is_relative_to(root):
+            return path.relative_to(root).as_posix()
+    return None
 
 
 def _test_path_compat_enabled() -> bool:
@@ -176,54 +210,35 @@ def _resolve_protected_subdir(
 
 
 def ensure_within_protected_root(path: str | Path) -> Path:
-    resolved_path = Path(path).resolve()
     current_protected_root = (
         EndoregPathsModel.from_environment().protected_root.resolve()
     )
-    protected_roots = [current_protected_root]
-    if TEST_PATH_COMPAT_ENABLED:
-        legacy_test_roots = [
-            TEST_PROTECTED_ROOT.resolve(),
-            (BASE_DIR / "data" / "tests" / "storage").resolve(),
-        ]
-        for legacy_root in legacy_test_roots:
-            if legacy_root not in protected_roots:
-                protected_roots.append(legacy_root)
-
-    for protected_root in protected_roots:
-        try:
-            resolved_path.relative_to(protected_root)
-            return resolved_path
-        except ValueError:
-            continue
-
-    protected_root = current_protected_root
-    raise ValueError(
-        f"Path {resolved_path} is outside protected data root {protected_root}"
+    return _ensure_within_roots(
+        path,
+        roots=[
+            current_protected_root,
+            *_legacy_test_roots(
+                TEST_PROTECTED_ROOT,
+                BASE_DIR / "data" / "tests" / "storage",
+            ),
+        ],
+        label="protected data root",
     )
 
 
 def ensure_within_data_root(path: str | Path) -> Path:
-    resolved_path = Path(path).resolve()
     current_data_root = EndoregPathsModel.from_environment().data.resolve()
-    data_roots = [current_data_root]
-    if TEST_PATH_COMPAT_ENABLED:
-        legacy_test_roots = [
-            TEST_DATA_ROOT.resolve(),
-            (BASE_DIR / "data" / "tests" / "storage").resolve(),
-        ]
-        for legacy_root in legacy_test_roots:
-            if legacy_root not in data_roots:
-                data_roots.append(legacy_root)
-
-    for data_root in data_roots:
-        try:
-            resolved_path.relative_to(data_root)
-            return resolved_path
-        except ValueError:
-            continue
-
-    raise ValueError(f"Path {resolved_path} is outside data root {current_data_root}")
+    return _ensure_within_roots(
+        path,
+        roots=[
+            current_data_root,
+            *_legacy_test_roots(
+                TEST_DATA_ROOT,
+                BASE_DIR / "data" / "tests" / "storage",
+            ),
+        ],
+        label="data root",
+    )
 
 
 def _resolve_protected_media_root() -> Path:
@@ -252,15 +267,11 @@ def normalize_protected_media_relative_path(relative_path: str | Path) -> str:
 
 
 def ensure_within_protected_media_root(path: str | Path) -> Path:
-    resolved_path = Path(path).resolve()
-    protected_media_root = _resolve_protected_media_root()
-    try:
-        resolved_path.relative_to(protected_media_root)
-    except ValueError as exc:
-        raise ValueError(
-            f"Path {resolved_path} is outside protected media root {protected_media_root}"
-        ) from exc
-    return resolved_path
+    return _ensure_within_roots(
+        path,
+        roots=[_resolve_protected_media_root()],
+        label="protected media root",
+    )
 
 
 def to_protected_media_relative(path: str | Path) -> str:
@@ -355,54 +366,7 @@ class EndoregPathsModel(FilesAndDirsModel):
     staging_migration: Path
     test: Path
 
-    # If any directory names change, please ensure continued support by changing the values  in key: value.
-    legacy_key_map: ClassVar[dict[str, str]] = {
-        "data": "data",
-        "storage": "storage",
-        "import": "import_dir",
-        "import_video": "import_video",
-        "import_report": "import_report",
-        "import_preanonymized": "import_preanonymized",
-        "import_anonymized_video": "import_anonymized_video",
-        "import_anonymized_report": "import_anonymized_report",
-        "sensitive_video": "sensitive_video",
-        "sensitive_report": "sensitive_report",
-        "anonym_video": "anonym_video",
-        "anonym_report": "anonym_report",
-        "import_frame": "import_frame",
-        "raw_frame": "raw_frame",
-        "weights": "weights",
-        "weights_import": "weights_import",
-        "export": "export_dir",
-        "report_export": "report_export",
-        "video_export": "video_export",
-        "frame_export": "frame_export",
-        "weights_export": "weights_export",
-        "transcoding": "transcoding",
-        "frame": "frame",
-        "documents": "documents",
-        "logs": "logs",
-        "quarantine": "quarantine",
-        "migration_staging": "migration_staging",
-        "manifest_dir": "manifest_dir",
-        "upload_api": "upload_api",
-        "upload_watcher": "upload_watcher",
-        "upload_preanonymized": "upload_preanonymized",
-        "watcher_video_drop": "watcher_video_drop",
-        "watcher_report_drop": "watcher_report_drop",
-        "watcher_preanonymized_drop": "watcher_preanonymized_drop",
-        "sap_import_drop": "sap_import_drop",
-        "sap_import_processed": "sap_import_processed",
-        "sap_import_failed": "sap_import_failed",
-        "ingest_uploads": "ingest_uploads",
-        "ingest_preanonymized": "ingest_preanonymized",
-        "managed_anonymized_videos": "managed_anonymized_videos",
-        "managed_anonymized_reports": "managed_anonymized_reports",
-        "managed_sensitive_sidecars": "managed_sensitive_sidecars",
-        "quarantine_failed": "quarantine_failed",
-        "staging_migration": "staging_migration",
-        "test": "test",
-    }
+    legacy_key_map: ClassVar[dict[str, str]] = {}
 
     @classmethod
     def from_environment(cls) -> "EndoregPathsModel":
@@ -413,126 +377,74 @@ class EndoregPathsModel(FilesAndDirsModel):
             default_path=protected_root / "storage",
             protected_root=protected_root,
         )
-        export_dir = data_dir / EXPORT_DIR_NAME
         import_dir = data_dir / IMPORT_DIR_NAME
-        logs_dir = data_dir / LOG_DIR_NAME
-        quarantine_dir = data_dir / QUARANTINE_DIR_NAME
         migration_staging_dir = data_dir / MIGRATION_STAGING_DIR_NAME
-        manifest_dir = migration_staging_dir / MANIFEST_DIR_NAME
-        upload_api_dir = storage_dir / "upload_jobs" / "api"
-        upload_watcher_dir = storage_dir / "upload_jobs" / "watcher"
-        upload_preanonymized_dir = storage_dir / "upload_jobs" / "preanonymized"
-        ingest_uploads_dir = storage_dir / "upload_jobs"
-        ingest_preanonymized_dir = import_dir / PREANONYMIZED_IMPORT_DIR_NAME
-        managed_sensitive_sidecars_dir = storage_dir / "sensitive_sidecars"
-        quarantine_failed_dir = quarantine_dir / "failed"
-        watcher_video_drop_dir = import_dir / IMPORT_VIDEO_DIR_NAME
-        watcher_report_drop_dir = import_dir / REPORT_IMPORT_DIR_NAME
-        watcher_preanonymized_drop_dir = import_dir / PREANONYMIZED_IMPORT_DIR_NAME
-        sap_import_drop_dir = import_dir / "sap_import"
-        sap_import_processed_dir = import_dir / "sap_import_processed"
-        sap_import_failed_dir = import_dir / "sap_import_failed"
+        export_dir = data_dir / EXPORT_DIR_NAME
+        quarantine_dir = data_dir / QUARANTINE_DIR_NAME
+        upload_jobs_dir = storage_dir / "upload_jobs"
 
-        instance = cls(
-            dir=storage_dir,
-            dirs=[
-                protected_root,
-                data_dir,
-                storage_dir,
-                import_dir,
-                export_dir,
-                logs_dir,
-                quarantine_dir,
-                migration_staging_dir,
-                manifest_dir,
-                upload_api_dir,
-                upload_watcher_dir,
-                upload_preanonymized_dir,
-                ingest_uploads_dir,
-                ingest_preanonymized_dir,
-                managed_sensitive_sidecars_dir,
-                quarantine_failed_dir,
-                watcher_video_drop_dir,
-                watcher_report_drop_dir,
-                watcher_preanonymized_drop_dir,
-                sap_import_drop_dir,
-                sap_import_processed_dir,
-                sap_import_failed_dir,
-                import_dir / IMPORT_VIDEO_DIR_NAME,
-                import_dir / REPORT_IMPORT_DIR_NAME,
-                import_dir / PREANONYMIZED_IMPORT_DIR_NAME,
-                import_dir / ANONYMIZED_VIDEO_IMPORT_DIR_NAME,
-                import_dir / ANONYMIZED_REPORT_IMPORT_DIR_NAME,
-                export_dir / VIDEO_EXPORT_DIR_NAME,
-                export_dir / REPORT_EXPORT_DIR_NAME,
-                storage_dir / "documents",
-                storage_dir / "temp",
-                storage_dir / SENSITIVE_VIDEO_DIR_NAME,
-                storage_dir / SENSITIVE_REPORT_DIR_NAME,
-                storage_dir / ANONYM_VIDEO_DIR_NAME,
-                storage_dir / ANONYM_REPORT_DIR_NAME,
-                storage_dir / RAW_FRAME_DIR_NAME,
-                storage_dir / FRAME_DIR_NAME,
-                storage_dir / WEIGHTS_DIR_NAME,
-                import_dir / WEIGHTS_DIR_NAME,
-                export_dir / WEIGHTS_DIR_NAME,
-                import_dir / FRAME_DIR_NAME,
-                export_dir / FRAME_DIR_NAME,
-                storage_dir / "test",
-            ],
-            protected_root=protected_root,
-            storage=storage_dir,
-            data=data_dir,
-            import_dir=import_dir,
-            export_dir=export_dir,
-            import_video=import_dir / IMPORT_VIDEO_DIR_NAME,
-            import_report=import_dir / REPORT_IMPORT_DIR_NAME,
-            import_preanonymized=import_dir / PREANONYMIZED_IMPORT_DIR_NAME,
-            import_anonymized_video=import_dir / ANONYMIZED_VIDEO_IMPORT_DIR_NAME,
-            import_anonymized_report=import_dir / ANONYMIZED_REPORT_IMPORT_DIR_NAME,
-            video_export=export_dir / VIDEO_EXPORT_DIR_NAME,
-            report_export=export_dir / REPORT_EXPORT_DIR_NAME,
-            documents=storage_dir / "documents",
-            transcoding=storage_dir / "temp",
-            sensitive_video=storage_dir / SENSITIVE_VIDEO_DIR_NAME,
-            sensitive_report=storage_dir / SENSITIVE_REPORT_DIR_NAME,
-            anonym_video=storage_dir / ANONYM_VIDEO_DIR_NAME,
-            anonym_report=storage_dir / ANONYM_REPORT_DIR_NAME,
-            raw_frame=storage_dir / RAW_FRAME_DIR_NAME,
-            frame=storage_dir / FRAME_DIR_NAME,
-            weights=storage_dir / WEIGHTS_DIR_NAME,
-            weights_import=import_dir / WEIGHTS_DIR_NAME,
-            weights_export=export_dir / WEIGHTS_DIR_NAME,
-            import_frame=import_dir / FRAME_DIR_NAME,
-            frame_export=export_dir / FRAME_DIR_NAME,
-            logs=logs_dir,
-            quarantine=quarantine_dir,
-            migration_staging=migration_staging_dir,
-            manifest_dir=manifest_dir,
-            upload_api=upload_api_dir,
-            upload_watcher=upload_watcher_dir,
-            upload_preanonymized=upload_preanonymized_dir,
-            watcher_video_drop=watcher_video_drop_dir,
-            watcher_report_drop=watcher_report_drop_dir,
-            watcher_preanonymized_drop=watcher_preanonymized_drop_dir,
-            sap_import_drop=sap_import_drop_dir,
-            sap_import_processed=sap_import_processed_dir,
-            sap_import_failed=sap_import_failed_dir,
-            ingest_uploads=ingest_uploads_dir,
-            ingest_preanonymized=ingest_preanonymized_dir,
-            managed_anonymized_videos=storage_dir / ANONYM_VIDEO_DIR_NAME,
-            managed_anonymized_reports=storage_dir / ANONYM_REPORT_DIR_NAME,
-            managed_sensitive_sidecars=managed_sensitive_sidecars_dir,
-            quarantine_failed=quarantine_failed_dir,
-            staging_migration=migration_staging_dir,
-            test=storage_dir / "test",
+        path_values = {
+            "protected_root": protected_root,
+            "storage": storage_dir,
+            "data": data_dir,
+            "import_dir": import_dir,
+            "export_dir": export_dir,
+            "import_video": import_dir / IMPORT_VIDEO_DIR_NAME,
+            "import_report": import_dir / REPORT_IMPORT_DIR_NAME,
+            "import_preanonymized": import_dir / PREANONYMIZED_IMPORT_DIR_NAME,
+            "import_anonymized_video": import_dir / ANONYMIZED_VIDEO_IMPORT_DIR_NAME,
+            "import_anonymized_report": import_dir / ANONYMIZED_REPORT_IMPORT_DIR_NAME,
+            "video_export": export_dir / VIDEO_EXPORT_DIR_NAME,
+            "report_export": export_dir / REPORT_EXPORT_DIR_NAME,
+            "documents": storage_dir / "documents",
+            "transcoding": storage_dir / "temp",
+            "sensitive_video": storage_dir / SENSITIVE_VIDEO_DIR_NAME,
+            "sensitive_report": storage_dir / SENSITIVE_REPORT_DIR_NAME,
+            "anonym_video": storage_dir / ANONYM_VIDEO_DIR_NAME,
+            "anonym_report": storage_dir / ANONYM_REPORT_DIR_NAME,
+            "raw_frame": storage_dir / RAW_FRAME_DIR_NAME,
+            "frame": storage_dir / FRAME_DIR_NAME,
+            "weights": storage_dir / WEIGHTS_DIR_NAME,
+            "weights_import": import_dir / WEIGHTS_DIR_NAME,
+            "weights_export": export_dir / WEIGHTS_DIR_NAME,
+            "import_frame": import_dir / FRAME_DIR_NAME,
+            "frame_export": export_dir / FRAME_DIR_NAME,
+            "logs": data_dir / LOG_DIR_NAME,
+            "quarantine": quarantine_dir,
+            "migration_staging": migration_staging_dir,
+            "manifest_dir": migration_staging_dir / MANIFEST_DIR_NAME,
+            "upload_api": upload_jobs_dir / "api",
+            "upload_watcher": upload_jobs_dir / "watcher",
+            "upload_preanonymized": upload_jobs_dir / "preanonymized",
+            "watcher_video_drop": import_dir / IMPORT_VIDEO_DIR_NAME,
+            "watcher_report_drop": import_dir / REPORT_IMPORT_DIR_NAME,
+            "watcher_preanonymized_drop": import_dir / PREANONYMIZED_IMPORT_DIR_NAME,
+            "sap_import_drop": import_dir / "sap_import",
+            "sap_import_processed": import_dir / "sap_import_processed",
+            "sap_import_failed": import_dir / "sap_import_failed",
+            "ingest_uploads": upload_jobs_dir,
+            "ingest_preanonymized": import_dir / PREANONYMIZED_IMPORT_DIR_NAME,
+            "managed_anonymized_videos": storage_dir / ANONYM_VIDEO_DIR_NAME,
+            "managed_anonymized_reports": storage_dir / ANONYM_REPORT_DIR_NAME,
+            "managed_sensitive_sidecars": storage_dir / "sensitive_sidecars",
+            "quarantine_failed": quarantine_dir / "failed",
+            "staging_migration": migration_staging_dir,
+            "test": storage_dir / "test",
+        }
+
+        instance = cls.model_validate(
+            {
+                "dir": storage_dir,
+                "dirs": _dedupe_paths(path_values.values()),
+                **path_values,
+            }
         )
         instance.ensure_directories()
         return instance
 
     def ensure_directories(self) -> None:
         for path in self.dirs:
-            path.mkdir(parents=True, exist_ok=True)
+            _ensure_directory(path)
 
     def as_dict(self) -> dict[str, Path]:
         return {key: self[key] for key in self.legacy_key_map}
@@ -557,70 +469,68 @@ class EndoregPathsModel(FilesAndDirsModel):
         return (self[key] for key in self.legacy_key_map)
 
 
+LEGACY_KEY_EXCLUDE_FIELDS = {"protected_root"}
+LEGACY_KEY_OVERRIDES = {"import_dir": "import", "export_dir": "export"}
+PATH_EXPORT_EXCLUDE_FIELDS = {"test"}
+PATH_EXPORT_OVERRIDES = {
+    "protected_root": "PROTECTED_DATA_ROOT",
+    "documents": "DOCUMENT_DIR",
+    "import_frame": "FRAME_IMPORT_DIR",
+    "logs": "LOG_DIR",
+}
+
+
+def _path_model_field_names() -> tuple[str, ...]:
+    return tuple(
+        field_name
+        for field_name in EndoregPathsModel.__annotations__
+        if field_name != "legacy_key_map"
+    )
+
+
+def _build_legacy_key_map(field_names: Iterable[str]) -> dict[str, str]:
+    return {
+        LEGACY_KEY_OVERRIDES.get(field_name, field_name): field_name
+        for field_name in field_names
+        if field_name not in LEGACY_KEY_EXCLUDE_FIELDS
+    }
+
+
+def _default_export_name(field_name: str) -> str:
+    base_name = field_name.removesuffix("_dir")
+    return f"{base_name.upper()}_DIR"
+
+
+def _build_path_exports(field_names: Iterable[str]) -> dict[str, str]:
+    return {
+        PATH_EXPORT_OVERRIDES.get(
+            field_name, _default_export_name(field_name)
+        ): field_name
+        for field_name in field_names
+        if field_name not in PATH_EXPORT_EXCLUDE_FIELDS
+    }
+
+
 EndoregPathsModel.model_rebuild()
+PATH_MODEL_FIELDS = _path_model_field_names()
+LEGACY_KEY_MAP = _build_legacy_key_map(PATH_MODEL_FIELDS)
+PATH_EXPORTS = _build_path_exports(PATH_MODEL_FIELDS)
+EndoregPathsModel.legacy_key_map = LEGACY_KEY_MAP
+
+
+def rebind_path_exports(model: EndoregPathsModel) -> None:
+    for export_name, field_name in PATH_EXPORTS.items():
+        globals()[export_name] = getattr(model, field_name)
+
 
 data_paths_model = EndoregPathsModel.from_environment()
 data_paths = data_paths_model
+rebind_path_exports(data_paths_model)
 
-PROTECTED_DATA_ROOT = data_paths_model.protected_root
-DATA_DIR = data_paths_model.data
-STORAGE_DIR = data_paths_model.storage
-
-IMPORT_DIR = data_paths_model.import_dir
-EXPORT_DIR = data_paths_model.export_dir
-
-IMPORT_VIDEO_DIR = data_paths_model.import_video
-IMPORT_REPORT_DIR = data_paths_model.import_report
-IMPORT_PREANONYMIZED_DIR = data_paths_model.import_preanonymized
-IMPORT_ANONYMIZED_VIDEO_DIR = data_paths_model.import_anonymized_video
-IMPORT_ANONYMIZED_REPORT_DIR = data_paths_model.import_anonymized_report
-
-VIDEO_EXPORT_DIR = data_paths_model.video_export
-REPORT_EXPORT_DIR = data_paths_model.report_export
-
-DOCUMENT_DIR = data_paths_model.documents
-TRANSCODING_DIR = data_paths_model.transcoding
-
-ANONYM_VIDEO_DIR = data_paths_model.anonym_video
-SENSITIVE_VIDEO_DIR = data_paths_model.sensitive_video
-ANONYM_REPORT_DIR = data_paths_model.anonym_report
-SENSITIVE_REPORT_DIR = data_paths_model.sensitive_report
-
-FRAME_DIR = data_paths_model.frame
-WEIGHTS_DIR = data_paths_model.weights
-RAW_FRAME_DIR = data_paths_model.raw_frame
-
-WEIGHTS_IMPORT_DIR = data_paths_model.weights_import
-WEIGHTS_EXPORT_DIR = data_paths_model.weights_export
-
-FRAME_IMPORT_DIR = data_paths_model.import_frame
-FRAME_EXPORT_DIR = data_paths_model.frame_export
-
-LOG_DIR = data_paths_model.logs
-QUARANTINE_DIR = data_paths_model.quarantine
-MIGRATION_STAGING_DIR = data_paths_model.migration_staging
-MANIFEST_DIR = data_paths_model.manifest_dir
-UPLOAD_API_DIR = data_paths_model.upload_api
-UPLOAD_WATCHER_DIR = data_paths_model.upload_watcher
-UPLOAD_PREANONYMIZED_DIR = data_paths_model.upload_preanonymized
-WATCHER_VIDEO_DROP_DIR = data_paths_model.watcher_video_drop
-WATCHER_REPORT_DROP_DIR = data_paths_model.watcher_report_drop
-WATCHER_PREANONYMIZED_DROP_DIR = data_paths_model.watcher_preanonymized_drop
-SAP_IMPORT_DROP_DIR = data_paths_model.sap_import_drop
-SAP_IMPORT_PROCESSED_DIR = data_paths_model.sap_import_processed
-SAP_IMPORT_FAILED_DIR = data_paths_model.sap_import_failed
-INGEST_UPLOADS_DIR = data_paths_model.ingest_uploads
-INGEST_PREANONYMIZED_DIR = data_paths_model.ingest_preanonymized
-MANAGED_ANONYMIZED_VIDEOS_DIR = data_paths_model.managed_anonymized_videos
-MANAGED_ANONYMIZED_REPORTS_DIR = data_paths_model.managed_anonymized_reports
-MANAGED_SENSITIVE_SIDECARS_DIR = data_paths_model.managed_sensitive_sidecars
-QUARANTINE_FAILED_DIR = data_paths_model.quarantine_failed
-STAGING_MIGRATION_DIR = data_paths_model.staging_migration
-
-logger.debug("Protected data root: %s", PROTECTED_DATA_ROOT.resolve())
-logger.debug("Data directory: %s", DATA_DIR.resolve())
-logger.debug("Encrypted storage directory: %s", STORAGE_DIR.resolve())
-logger.debug("Export directory: %s", EXPORT_DIR.resolve())
+logger.debug("Protected data root: %s", data_paths_model.protected_root.resolve())
+logger.debug("Data directory: %s", data_paths_model.data.resolve())
+logger.debug("Encrypted storage directory: %s", data_paths_model.storage.resolve())
+logger.debug("Export directory: %s", data_paths_model.export_dir.resolve())
 
 
 def to_storage_relative(path: str | Path) -> str:
@@ -634,35 +544,20 @@ def to_storage_relative(path: str | Path) -> str:
     original_path = str(path)
     resolved_path = Path(path).resolve()
     current_paths = EndoregPathsModel.from_environment()
-    current_storage_root = current_paths.storage.resolve()
-    storage_roots = [current_storage_root]
-    if TEST_PATH_COMPAT_ENABLED:
-        legacy_storage_root = (BASE_DIR / "data" / "tests" / "storage").resolve()
-        if legacy_storage_root not in storage_roots:
-            storage_roots.append(legacy_storage_root)
+    legacy_storage = BASE_DIR / "data" / "tests" / "storage"
+    relative_path = _relative_to_any(
+        resolved_path,
+        [current_paths.storage, *_legacy_test_roots(legacy_storage)],
+    )
+    if relative_path is not None:
+        return relative_path
 
-    for storage_root in storage_roots:
-        try:
-            relative_path = resolved_path.relative_to(storage_root)
-            return relative_path.as_posix()
-        except ValueError:
-            continue
-
-    data_roots = [current_paths.data.resolve()]
-    if TEST_PATH_COMPAT_ENABLED:
-        legacy_data_roots = [
-            TEST_DATA_ROOT.resolve(),
-            (BASE_DIR / "data" / "tests" / "storage").resolve(),
-        ]
-        for data_root in legacy_data_roots:
-            if data_root not in data_roots:
-                data_roots.append(data_root)
-
-    for data_root in data_roots:
-        try:
-            return resolved_path.relative_to(data_root).as_posix()
-        except ValueError:
-            continue
+    relative_path = _relative_to_any(
+        resolved_path,
+        [current_paths.data, *_legacy_test_roots(TEST_DATA_ROOT, legacy_storage)],
+    )
+    if relative_path is not None:
+        return relative_path
 
     ensure_within_protected_root(resolved_path)
     return original_path
@@ -676,39 +571,25 @@ def to_protected_relative(path: str | Path) -> str:
     )
 
 
-def get_storage_tier_root(tier: str) -> Path:
-    current_paths = EndoregPathsModel.from_environment()
-    mapping = {
-        "upload_api": current_paths.upload_api,
-        "upload_watcher": current_paths.upload_watcher,
-        "upload_preanonymized": current_paths.upload_preanonymized,
-        "ingest_uploads": current_paths.ingest_uploads,
-        "ingest_preanonymized": current_paths.ingest_preanonymized,
-        "managed_anonymized_videos": current_paths.managed_anonymized_videos,
-        "managed_anonymized_reports": current_paths.managed_anonymized_reports,
-        "managed_sensitive_sidecars": current_paths.managed_sensitive_sidecars,
-        "watcher_video_drop": current_paths.watcher_video_drop,
-        "watcher_report_drop": current_paths.watcher_report_drop,
-        "watcher_preanonymized_drop": current_paths.watcher_preanonymized_drop,
-        "sap_import_drop": current_paths.sap_import_drop,
-        "sap_import_processed": current_paths.sap_import_processed,
-        "sap_import_failed": current_paths.sap_import_failed,
-        "manifest": current_paths.manifest_dir,
-        "migration_staging": current_paths.migration_staging,
-        "staging_migration": current_paths.staging_migration,
-        "quarantine": current_paths.quarantine,
-        "quarantine_failed": current_paths.quarantine_failed,
-    }
+def _coerce_storage_tier(tier: str | StorageTier) -> StorageTier:
+    raw_value = getattr(tier, "value", tier)
     try:
-        return mapping[tier]
-    except KeyError as exc:
+        return StorageTier(str(raw_value))
+    except ValueError as exc:
         raise KeyError(f"Unknown storage tier: {tier}") from exc
+
+
+def get_storage_tier_root(tier: str | StorageTier) -> Path:
+    tier_key = _coerce_storage_tier(tier)
+    current_paths = EndoregPathsModel.from_environment()
+    return getattr(current_paths, STORAGE_TIER_FIELDS[tier_key])
 
 
 def validate_runtime_storage_contract() -> None:
     protected_root_env = os.environ.get(PROTECTED_ROOT_ENV, "").strip()
     django_env = os.environ.get("DJANGO_ENV", "").strip().lower()
     is_production = django_env == "production"
+    current_paths = EndoregPathsModel.from_environment()
 
     if not protected_root_env:
         raise RuntimeError(
@@ -716,26 +597,26 @@ def validate_runtime_storage_contract() -> None:
         )
 
     protected_paths_to_validate = {
-        "protected_root": PROTECTED_DATA_ROOT,
-        "storage": STORAGE_DIR,
-        "upload_api": UPLOAD_API_DIR,
-        "upload_watcher": UPLOAD_WATCHER_DIR,
-        "upload_preanonymized": UPLOAD_PREANONYMIZED_DIR,
+        "protected_root": current_paths.protected_root,
+        "storage": current_paths.storage,
+        "upload_api": current_paths.upload_api,
+        "upload_watcher": current_paths.upload_watcher,
+        "upload_preanonymized": current_paths.upload_preanonymized,
     }
     public_paths_to_validate = {
-        "data_root": DATA_DIR,
-        "import": IMPORT_DIR,
-        "export": EXPORT_DIR,
-        "logs": LOG_DIR,
-        "quarantine": QUARANTINE_DIR,
-        "migration_staging": MIGRATION_STAGING_DIR,
-        "manifest": MANIFEST_DIR,
-        "watcher_video_drop": WATCHER_VIDEO_DROP_DIR,
-        "watcher_report_drop": WATCHER_REPORT_DROP_DIR,
-        "watcher_preanonymized_drop": WATCHER_PREANONYMIZED_DROP_DIR,
-        "sap_import_drop": SAP_IMPORT_DROP_DIR,
-        "sap_import_processed": SAP_IMPORT_PROCESSED_DIR,
-        "sap_import_failed": SAP_IMPORT_FAILED_DIR,
+        "data_root": current_paths.data,
+        "import": current_paths.import_dir,
+        "export": current_paths.export_dir,
+        "logs": current_paths.logs,
+        "quarantine": current_paths.quarantine,
+        "migration_staging": current_paths.migration_staging,
+        "manifest": current_paths.manifest_dir,
+        "watcher_video_drop": current_paths.watcher_video_drop,
+        "watcher_report_drop": current_paths.watcher_report_drop,
+        "watcher_preanonymized_drop": current_paths.watcher_preanonymized_drop,
+        "sap_import_drop": current_paths.sap_import_drop,
+        "sap_import_processed": current_paths.sap_import_processed,
+        "sap_import_failed": current_paths.sap_import_failed,
     }
     for label, path in protected_paths_to_validate.items():
         try:
@@ -758,7 +639,7 @@ def validate_runtime_storage_contract() -> None:
     }.items():
         if not path.exists():
             if TEST_PATH_COMPAT_ENABLED:
-                path.mkdir(parents=True, exist_ok=True)
+                _ensure_directory(path)
                 continue
             raise RuntimeError(
                 f"Runtime storage path does not exist for {label}: {path}"
@@ -773,24 +654,21 @@ def validate_runtime_storage_contract() -> None:
             )
 
 
-def resolve_storage_tier_path(tier: str, *parts: str | Path) -> Path:
-    root = get_storage_tier_root(tier)
+def resolve_storage_tier_path(tier: str | StorageTier, *parts: str | Path) -> Path:
+    tier_key = _coerce_storage_tier(tier)
+    root = get_storage_tier_root(tier_key)
     candidate = root.joinpath(*[str(part) for part in parts]).resolve()
-    protected_tiers = {
-        "upload_api",
-        "upload_watcher",
-        "upload_preanonymized",
-        "ingest_uploads",
-        "managed_anonymized_videos",
-        "managed_anonymized_reports",
-        "managed_sensitive_sidecars",
-    }
-    if tier in protected_tiers:
+    if tier_key in PROTECTED_STORAGE_TIERS:
         return ensure_within_protected_root(candidate)
     return ensure_within_data_root(candidate)
 
 
-def build_upload_job_relative_path(*, tier: str, filename: str, key: str) -> str:
+def build_upload_job_relative_path(
+    *,
+    tier: str | StorageTier,
+    filename: str,
+    key: str,
+) -> str:
     sanitized_name = Path(filename).name or "upload.bin"
     current_storage_root = EndoregPathsModel.from_environment().storage.resolve()
     relative_path = resolve_storage_tier_path(
