@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 from django.conf import settings
+from endoreg_db.config.env import get_data_dir
 from endoreg_db.utils.file_operations import ensure_directory
 
 
@@ -14,17 +15,18 @@ from endoreg_db.utils.file_operations import ensure_directory
 # PATHS
 # ---------------------------------------------------------------------
 
-# Base project directory (e.g. /home/admin/dev/endoreg-db)
 BASE_DIR = Path(getattr(settings, "BASE_DIR", Path(__file__).resolve().parents[4]))
 
-# All training artifacts go here:
-#   /home/admin/dev/endoreg-db/data/model_training/
-TRAINING_ROOT = BASE_DIR / "data" / "model_training"
+# All training artifacts go under the runtime DATA_DIR, not the installed
+# package/wheel location.
+TRAINING_ROOT = (get_data_dir() / "model_training").resolve()
 CHECKPOINTS_DIR = TRAINING_ROOT / "checkpoints"
 RUNS_DIR = TRAINING_ROOT / "runs"
 
-for d in (TRAINING_ROOT, CHECKPOINTS_DIR, RUNS_DIR):
-    ensure_directory(d)
+
+def ensure_training_directories() -> None:
+    for directory in (TRAINING_ROOT, CHECKPOINTS_DIR, RUNS_DIR):
+        ensure_directory(directory)
 
 # Which LabelSet.version we train on (for label filtering)
 DEFAULT_LABELSET_VERSION_TO_TRAIN: int = 2

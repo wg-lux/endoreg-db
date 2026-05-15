@@ -21,6 +21,7 @@ from endoreg_db.utils.ai.data_loader_for_model_input import build_dataset_for_tr
 from endoreg_db.utils.ai.model_training.config import (
     TrainingConfig,
     RUNS_DIR,
+    ensure_training_directories,
 )
 from endoreg_db.utils.ai.model_training.dataset import EndoMultiLabelDataset
 from endoreg_db.utils.ai.model_training.losses import (
@@ -233,6 +234,8 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
       9. LR schedule: warm-up + cosine decay (if enabled).
      10. Save model + metadata in model_training/runs.
     """
+    ensure_training_directories()
+
     # ------------------------------------------------------------------
     # 1. Load dataset from DB
     # ------------------------------------------------------------------
