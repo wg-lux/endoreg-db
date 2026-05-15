@@ -4,7 +4,7 @@ import logging
 import os
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Optional, Sequence, Union
 
 from django.core.validators import FileExtensionValidator
 from django.db import models
@@ -782,13 +782,17 @@ class VideoFile(models.Model):
 
     @classmethod
     def create_video_without_outside_frames(
-        cls, instance: "VideoFile", only_validated: bool = False
+        cls,
+        instance: "VideoFile",
+        only_validated: bool = False,
+        outside_intervals: Sequence[tuple[int, int]] | None = None,
     ) -> bool:
         """
         Creates a new video by excluding frames that belong to 'outside' segments.
 
         Parameters:
             only_validated (bool): If True, only validated segments are considered for frame exclusion.
+            outside_intervals: Precomputed half-open frame ranges to blacken.
 
         Returns:
             VideoFile: A new VideoFile instance with the frames excluding those labeled as 'outside'.
@@ -804,9 +808,13 @@ class VideoFile(models.Model):
             )
             return False
 
-        intervals = _merge_outside_frame_intervals(
-            video,
-            only_validated=only_validated,
+        intervals = (
+            list(outside_intervals)
+            if outside_intervals is not None
+            else _merge_outside_frame_intervals(
+                video,
+                only_validated=only_validated,
+            )
         )
         if not intervals:
             logger.info(

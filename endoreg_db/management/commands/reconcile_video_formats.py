@@ -1,0 +1,170 @@
+from __future__ import annotations
+
+import json
+
+from django.core.management.base import BaseCommand, CommandError
+
+from endoreg_db.config.env import env_int
+from endoreg_db.services.video_format_reconciliation import (
+    DEFAULT_MIN_FREE_BYTES,
+    VIDEO_EXTENSIONS,
+    reconcile_video_formats,
+)
+
+
+class Command(BaseCommand):
+    help = (
+        "Audit managed video files for the filewatcher-standard format "
+        "and optionally repair non-compliant MP4 files in place."
+    )
+
+    def add_arguments(self, parser) -> None:
+        parser.add_argument(
+            "--root",
+            action="append",
+            default=[],
+            help=(
+                "Managed media root to scan. May be provided multiple times. "
+                "When omitted, default protected/data video roots are scanned."
+            ),
+        )
+        parser.add_argument(
+            "--include-default-roots",
+            action="store_true",
+            help="Scan default managed roots in addition to explicit --root values.",
+        )
+        parser.add_argument(
+            "--no-default-roots",
+            action="store_true",
+            help="Do not scan default managed roots.",
+        )
+        parser.add_argument(
+            "--extension",
+            action="append",
+            default=[],
+            help=(
+                "Video extension to include, for example .mp4. May be provided "
+                "multiple times. Defaults to common video extensions."
+            ),
+        )
+        parser.add_argument(
+            "--dry-run",
+            action="store_true",
+            help="Report planned repair actions without mutating files.",
+        )
+        parser.add_argument(
+            "--repair",
+            action="store_true",
+            help="Attempt repair for non-compliant files.",
+        )
+        parser.add_argument(
+            "--in-place",
+            action="store_true",
+            help=(
+                "Allow in-place replacement of non-compliant MP4 files after "
+                "successful transcode and verification."
+            ),
+        )
+        parser.add_argument(
+            "--allow-unmanaged-root",
+            action="store_true",
+            help=(
+                "Allow scanning roots outside the configured protected/data roots. "
+                "Intended for one-off operator diagnostics, not recurring services."
+            ),
+        )
+        parser.add_argument(
+            "--include-compliant",
+            action="store_true",
+            help="Include compliant files in the JSON report.",
+        )
+        parser.add_argument(
+            "--max-files",
+            type=int,
+            default=None,
+            help="Stop after checking this many video files.",
+        )
+        parser.add_argument(
+            "--min-free-bytes",
+            type=int,
+            default=env_int(
+                "ENDOREG_VIDEO_FORMAT_MIN_FREE_BYTES",
+                DEFAULT_MIN_FREE_BYTES,
+            ),
+            help="Minimum free bytes required before each repair.",
+        )
+        parser.add_argument(
+            "--force-cpu",
+            action="store_true",
+            help="Force CPU H.264 encoding instead of automatic NVENC selection.",
+        )
+        parser.add_argument(
+            "--fail-on-non-compliant",
+            action="store_true",
+            help="Exit non-zero when non-compliant, invalid, skipped, or failed files remain.",
+        )
+        parser.add_argument(
+            "--json",
+            action="store_true",
+            help="Emit the summary as JSON.",
+        )
+
+    def handle(self, *args, **options) -> None:
+        repair = bool(options["repair"])
+        dry_run = bool(options["dry_run"])
+        in_place = bool(options["in_place"])
+
+        if repair and not in_place and not dry_run:
+            raise CommandError(
+                "Repair is intentionally disabled unless --in-place or --dry-run "
+                "is supplied. Re-run with --dry-run first, then --repair --in-place."
+            )
+
+        explicit_roots = list(options["root"] or [])
+        include_default_roots = (
+            bool(options["include_default_roots"]) or not explicit_roots
+        )
+        if options["no_default_roots"]:
+            include_default_roots = False
+        if not include_default_roots and not explicit_roots:
+            raise CommandError("No scan roots selected.")
+
+        extensions = tuple(options["extension"] or VIDEO_EXTENSIONS)
+        summary = reconcile_video_formats(
+            roots=explicit_roots,
+            include_default_roots=include_default_roots,
+            dry_run=dry_run,
+            repair=repair,
+            in_place=in_place,
+            allow_unmanaged_roots=bool(options["allow_unmanaged_root"]),
+            include_compliant=bool(options["include_compliant"]),
+            max_files=options["max_files"],
+            min_free_bytes=int(options["min_free_bytes"]),
+            force_cpu=bool(options["force_cpu"]),
+            extensions=extensions,
+        )
+
+        payload = summary.as_dict()
+        if options["json"]:
+            self.stdout.write(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            self.stdout.write(
+                self.style.SUCCESS(
+                    "video format reconciliation complete: "
+                    f"checked={summary.checked_files} "
+                    f"compliant={summary.compliant_files} "
+                    f"non_compliant={summary.non_compliant_files} "
+                    f"invalid={summary.invalid_files} "
+                    f"repaired={summary.repaired_files} "
+                    f"repair_failed={summary.repair_failed_files} "
+                    f"skipped={summary.skipped_files}"
+                )
+            )
+
+        unresolved = (
+            summary.non_compliant_files + summary.invalid_files - summary.repaired_files
+        )
+        if options["fail_on_non_compliant"] and unresolved > 0:
+            raise CommandError(
+                f"Video format reconciliation found {unresolved} issues."
+            )

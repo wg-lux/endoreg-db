@@ -227,6 +227,60 @@ def test_create_video_without_outside_frames_merges_adjacent_intervals_and_noops
 
 
 @pytest.mark.django_db
+def test_create_video_without_outside_frames_uses_supplied_intervals(
+    monkeypatch,
+    tmp_path,
+):
+    video, processed_path = _create_video(tmp_path)
+
+    class _Context:
+        def __enter__(self):
+            return processed_path
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(video, "ensure_local_processed_file", lambda: _Context())
+
+    calls = []
+
+    def fake_blacken_video_frame_intervals(
+        input_path,
+        output_path,
+        *,
+        intervals,
+        quality_mode="balanced",
+        force_cpu=False,
+    ):
+        calls.append(intervals)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"filtered-video")
+        return output_path
+
+    monkeypatch.setattr(
+        "endoreg_db.models.media.video.video_file.blacken_video_frame_intervals",
+        fake_blacken_video_frame_intervals,
+    )
+    monkeypatch.setattr(
+        "endoreg_db.models.media.video.video_file.get_video_hash",
+        lambda path: "supplied-interval-hash",
+    )
+    monkeypatch.setattr(
+        "endoreg_db.models.media.video.video_file.sync_video_streamable_artifacts",
+        lambda *args, **kwargs: None,
+    )
+
+    assert (
+        VideoFile.create_video_without_outside_frames(
+            video,
+            outside_intervals=[(5, 6), (10, 12)],
+        )
+        is True
+    )
+    assert calls == [[(5, 6), (10, 12)]]
+
+
+@pytest.mark.django_db
 def test_create_video_without_outside_frames_includes_frame_level_outside_annotations(
     monkeypatch,
     tmp_path,

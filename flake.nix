@@ -30,6 +30,13 @@
     let
       systems = [ "x86_64-linux" "aarch64-linux" ];
     in
+    {
+      nixosModules = {
+        default = self.nixosModules.video-format-reconciliation;
+        video-format-reconciliation = import ./nix/nixos/video-format-reconciliation.nix;
+      };
+    }
+    //
     flake-utils.lib.eachSystem systems (
       system:
       let
@@ -65,9 +72,7 @@
 
         resolvedUvDeps = pythonSet.resolveVirtualEnv workspace.deps.default;
 
-        base = pkgs.callPackage ./package.nix {
-          inherit pkgs;
-        };
+        base = pkgs.callPackage ./package.nix { };
         server_env = pkgs.python312.withPackages (_: [ base ]);
         server = pkgs.writeShellApplication {
           name = "endoreg-db-server";

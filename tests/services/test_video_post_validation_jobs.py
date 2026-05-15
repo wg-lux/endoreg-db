@@ -391,7 +391,9 @@ def test_run_video_post_validation_rebuild_rolls_back_frames_when_rebuild_return
     frame_dir = video.get_frame_dir_path()
     assert frame_dir is not None
 
-    def fake_create_video_without_outside_frames(video_obj, *, only_validated=False):
+    def fake_create_video_without_outside_frames(
+        video_obj, *, only_validated=False, outside_intervals=None
+    ):
         (frame_dir / "frame_0000000.jpg").write_bytes(b"blackened")
         Frame.objects.create(
             video=video_obj,
@@ -459,7 +461,10 @@ def test_run_video_post_validation_rebuild_accepts_valid_processed_output(
         value=True,
     )
 
-    def fake_create_video_without_outside_frames(video_obj, *, only_validated=False):
+    def fake_create_video_without_outside_frames(
+        video_obj, *, only_validated=False, outside_intervals=None
+    ):
+        assert outside_intervals == [(0, 1)]
         return True
 
     class _Context:
@@ -511,13 +516,68 @@ def test_run_video_post_validation_rebuild_accepts_valid_processed_output(
 
 
 @pytest.mark.django_db
+def test_run_video_post_validation_rebuild_reuses_merged_intervals(
+    monkeypatch,
+    tmp_path,
+):
+    video = _create_video_for_post_validation(tmp_path)
+    merged_intervals = [(10, 20), (40, 50)]
+    merge_calls = []
+    create_calls = []
+    verify_calls = []
+
+    def fake_merge(video_obj, *, only_validated=False):
+        merge_calls.append((video_obj.pk, only_validated))
+        return list(merged_intervals)
+
+    def fake_create_video_without_outside_frames(
+        video_obj, *, only_validated=False, outside_intervals=None
+    ):
+        create_calls.append((only_validated, outside_intervals))
+        return True
+
+    def fake_verify_processed_video_contract(
+        video_obj, *, only_validated=False, outside_intervals=None, tolerance=8
+    ):
+        verify_calls.append((only_validated, outside_intervals, tolerance))
+
+    monkeypatch.setattr(jobs, "_merge_outside_frame_intervals", fake_merge)
+    monkeypatch.setattr(
+        VideoFile,
+        "create_video_without_outside_frames",
+        fake_create_video_without_outside_frames,
+    )
+    monkeypatch.setattr(
+        jobs,
+        "_verify_processed_video_contract",
+        fake_verify_processed_video_contract,
+    )
+
+    history = VideoProcessingHistory.objects.create(
+        video=video,
+        operation=VideoProcessingHistory.OPERATION_REPROCESSING,
+        status=VideoProcessingHistory.STATUS_PENDING,
+        config=segment_state._blackening_history_config(only_validated=False),
+    )
+
+    assert (
+        jobs._run_video_post_validation_rebuild(video.pk, history_id=history.pk) is True
+    )
+    assert merge_calls == [(video.pk, False)]
+    assert create_calls == [(False, merged_intervals)]
+    assert verify_calls == [(False, merged_intervals, 8)]
+
+
+@pytest.mark.django_db
 def test_run_video_post_validation_rebuild_queues_deferred_temporal_inference(
     monkeypatch,
     tmp_path,
 ):
     video = _create_video_for_post_validation(tmp_path)
 
-    def fake_create_video_without_outside_frames(video_obj, *, only_validated=False):
+    def fake_create_video_without_outside_frames(
+        video_obj, *, only_validated=False, outside_intervals=None
+    ):
         return True
 
     class _Context:
@@ -603,7 +663,9 @@ def test_run_video_post_validation_rebuild_failure_fails_deferred_temporal_infer
 ):
     video = _create_video_for_post_validation(tmp_path)
 
-    def fake_create_video_without_outside_frames(video_obj, *, only_validated=False):
+    def fake_create_video_without_outside_frames(
+        video_obj, *, only_validated=False, outside_intervals=None
+    ):
         return False
 
     monkeypatch.setattr(
@@ -657,7 +719,9 @@ def test_run_video_post_validation_rebuild_rejects_processed_output_without_vide
 ):
     video = _create_video_for_post_validation(tmp_path)
 
-    def fake_create_video_without_outside_frames(video_obj, *, only_validated=False):
+    def fake_create_video_without_outside_frames(
+        video_obj, *, only_validated=False, outside_intervals=None
+    ):
         return True
 
     class _Context:

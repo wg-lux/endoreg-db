@@ -992,18 +992,33 @@ def _normalize_blacken_intervals(
         normalized_intervals.append((start, end))
     if not normalized_intervals:
         raise ValueError("At least one interval is required to build a filter.")
-    return normalized_intervals
+
+    normalized_intervals.sort()
+    merged_intervals: list[tuple[int, int]] = [normalized_intervals[0]]
+    for start_frame, end_frame in normalized_intervals[1:]:
+        previous_start, previous_end = merged_intervals[-1]
+        if start_frame <= previous_end:
+            merged_intervals[-1] = (previous_start, max(previous_end, end_frame))
+        else:
+            merged_intervals.append((start_frame, end_frame))
+    return merged_intervals
+
+
+def _build_blacken_filter_expression_from_normalized(
+    normalized_intervals: list[tuple[int, int]],
+) -> str:
+    enable_expression = "+".join(
+        f"(gte(n\\,{start_frame})*lt(n\\,{end_frame}))"
+        for start_frame, end_frame in normalized_intervals
+    )
+    return f"drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill:enable='{enable_expression}'"
 
 
 def _build_blacken_filter_expression(
     intervals: Iterable[tuple[int, int]],
 ) -> str:
     normalized_intervals = _normalize_blacken_intervals(intervals)
-    enable_expression = "+".join(
-        f"(gte(n\\,{start_frame})*lt(n\\,{end_frame}))"
-        for start_frame, end_frame in normalized_intervals
-    )
-    return f"drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill:enable='{enable_expression}'"
+    return _build_blacken_filter_expression_from_normalized(normalized_intervals)
 
 
 def _blacken_filter_args(
@@ -1013,7 +1028,22 @@ def _blacken_filter_args(
     script_dir: Path | None = None,
 ) -> tuple[list[str], Path | None]:
     normalized_intervals = _normalize_blacken_intervals(intervals)
-    filter_expression = _build_blacken_filter_expression(normalized_intervals)
+    return _blacken_filter_args_from_normalized(
+        normalized_intervals,
+        inline_threshold=inline_threshold,
+        script_dir=script_dir,
+    )
+
+
+def _blacken_filter_args_from_normalized(
+    normalized_intervals: list[tuple[int, int]],
+    *,
+    inline_threshold: int = 120,
+    script_dir: Path | None = None,
+) -> tuple[list[str], Path | None]:
+    filter_expression = _build_blacken_filter_expression_from_normalized(
+        normalized_intervals
+    )
     if len(normalized_intervals) <= inline_threshold:
         return ["-vf", filter_expression], None
 
@@ -1061,7 +1091,7 @@ def blacken_video_frame_intervals(
         vf_index = encoder_args.index("-vf")
         del encoder_args[vf_index : vf_index + 2]
 
-    filter_args, filter_script_path = _blacken_filter_args(
+    filter_args, filter_script_path = _blacken_filter_args_from_normalized(
         normalized_intervals,
         script_dir=output_path.parent,
     )

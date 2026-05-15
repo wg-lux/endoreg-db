@@ -304,6 +304,15 @@ def test_build_blacken_filter_expression_uses_frame_counter_ranges():
 
 
 @pytest.mark.unit
+def test_normalize_blacken_intervals_sorts_and_merges_ranges():
+    intervals = [(40, 50), (10, 20), (15, 30), (30, 31), (80, 90)]
+
+    normalized = ffmpeg_wrapper._normalize_blacken_intervals(intervals)
+
+    assert normalized == [(10, 31), (40, 50), (80, 90)]
+
+
+@pytest.mark.unit
 def test_blacken_filter_args_switches_to_script_for_large_interval_sets(tmp_path):
     intervals = [(index * 10, index * 10 + 1) for index in range(121)]
 

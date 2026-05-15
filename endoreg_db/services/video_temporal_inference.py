@@ -1440,21 +1440,22 @@ def dispatch_video_temporal_inference(
         )
 
     if reservation_status == TEMPORAL_INFERENCE_STATUS_PENDING_AFTER_REBUILD:
+        deferred_config = _parse_temporal_history_config(history.config)
+        if deferred_config is None:
+            raise TemporalInferenceConfigError(
+                f"VideoProcessingHistory {history.pk} is not a temporal inference job."
+            )
         return TemporalInferenceDispatchResult(
             task_id=history.task_id or "",
             mode=mode,
             status=reservation_status,
             video_id=int(video_id),
-            model_meta_id=int(model_meta_id),
-            queue=str((history.config or {}).get("queue") or queue),
+            model_meta_id=deferred_config.model_meta_id,
+            queue=deferred_config.queue,
             history_id=history.pk,
             reason=TEMPORAL_INFERENCE_DEFERRED_REASON_REPROCESSING,
             message="Prediction will start after frame rebuild finishes.",
-            blocked_by_history_id=(
-                int((history.config or {}).get("blocked_by_history_id"))
-                if (history.config or {}).get("blocked_by_history_id") is not None
-                else None
-            ),
+            blocked_by_history_id=deferred_config.blocked_by_history_id,
         )
 
     if reservation_status == "already_queued":

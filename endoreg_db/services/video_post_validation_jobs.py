@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, asdict
 from datetime import timedelta
@@ -79,6 +80,7 @@ def _verify_processed_video_contract(
     video: VideoFile,
     *,
     only_validated: bool = False,
+    outside_intervals: Sequence[tuple[int, int]] | None = None,
     tolerance: int = 8,
 ) -> None:
     with video.ensure_local_processed_file() as processed_path:
@@ -104,9 +106,13 @@ def _verify_processed_video_contract(
                 f"Post-validation rebuild for video {video.pk} produced no probeable video stream."
             )
 
-        intervals = _merge_outside_frame_intervals(
-            video,
-            only_validated=only_validated,
+        intervals = (
+            list(outside_intervals)
+            if outside_intervals is not None
+            else _merge_outside_frame_intervals(
+                video,
+                only_validated=only_validated,
+            )
         )
         if not intervals:
             return
@@ -349,16 +355,17 @@ def _run_video_post_validation_rebuild(
             only_validated=only_validated,
         )
         video = VideoFile.objects.get(pk=video_id)
-        has_applicable_outside_segments = bool(
-            _merge_outside_frame_intervals(
-                video,
-                only_validated=run_config.only_validated,
-            )
+        outside_intervals = _merge_outside_frame_intervals(
+            video,
+            only_validated=run_config.only_validated,
         )
+        has_applicable_outside_segments = bool(outside_intervals)
         mark_post_validation_incomplete(video)
         rebuilt = bool(
             VideoFile.create_video_without_outside_frames(
-                video, only_validated=run_config.only_validated
+                video,
+                only_validated=run_config.only_validated,
+                outside_intervals=outside_intervals,
             )
         )
         if not rebuilt:
@@ -384,6 +391,7 @@ def _run_video_post_validation_rebuild(
         _verify_processed_video_contract(
             video,
             only_validated=run_config.only_validated,
+            outside_intervals=outside_intervals,
         )
         mark_post_validation_complete(video)
         prune_unused_validated_outside_frames(video)
