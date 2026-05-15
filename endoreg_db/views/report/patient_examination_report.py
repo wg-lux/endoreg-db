@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import random
 from copy import deepcopy
+from typing import Any
 
 from django.db import transaction
 from django.db.models import Q
@@ -21,15 +22,20 @@ from endoreg_db.models import (
     PatientFinding,
 )
 from endoreg_db.serializers.report import (
+    PatientExaminationReportMakeReportSerializer,
     PatientExaminationReportSerializer,
     PatientExaminationReportSubmissionSerializer,
 )
 from endoreg_db.services.report_history import get_patient_examination_history_context
-from endoreg_db.services.report_persistence import save_report_submission
+from endoreg_db.services.report_persistence import (
+    persist_report_pdf_artifact,
+    save_report_submission,
+)
 from endoreg_db.utils.media_urls import (
     build_absolute_media_url,
     build_patient_timeline_path,
     build_pdf_stream_path,
+    build_video_frame_stream_path,
 )
 
 
@@ -112,6 +118,240 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
             # Prevent broad report listing for non-privileged users without explicit scoping.
             queryset = queryset.none()
         return queryset.order_by("-updated_at", "-id")
+
+    @staticmethod
+    def _prediction_segment_query() -> Q:
+        return Q(prediction_meta__isnull=False) | Q(source__name="prediction")
+
+    def _build_persisted_artifacts_payload(
+        self,
+        *,
+        request,
+        patient_examination: PatientExamination,
+        persisted_report_artifact_id: int | None,
+        persisted_pdf_artifact_id: int | None,
+    ) -> dict[str, Any] | None:
+        if not persisted_pdf_artifact_id and not persisted_report_artifact_id:
+            return None
+
+        patient_id = getattr(patient_examination, "patient_id", None)
+        pdf_id = persisted_pdf_artifact_id
+        return {
+            "full_report_id": persisted_report_artifact_id,
+            "pdf_id": persisted_pdf_artifact_id,
+            "pdf_view_url": (
+                build_absolute_media_url(
+                    request,
+                    build_pdf_stream_path(pdf_id, file_type="processed"),
+                )
+                if pdf_id is not None
+                else None
+            ),
+            "pdf_download_url": (
+                build_absolute_media_url(
+                    request,
+                    build_pdf_stream_path(
+                        pdf_id,
+                        file_type="raw",
+                        download=True,
+                    ),
+                )
+                if pdf_id is not None
+                else None
+            ),
+            "patient_timeline_url": (
+                build_absolute_media_url(
+                    request,
+                    build_patient_timeline_path(patient_id),
+                )
+                if patient_id is not None
+                else None
+            ),
+        }
+
+    def _patient_examination_segments(self, patient_examination: PatientExamination):
+        segment_filter = Q(video_file__examination_id=patient_examination.id)
+        video_id = getattr(patient_examination, "video_id", None)
+        if video_id is not None:
+            segment_filter |= Q(video_file_id=video_id)
+
+        return (
+            LabelVideoSegment.objects.select_related("video_file", "label", "source")
+            .prefetch_related("patient_findings__finding")
+            .filter(segment_filter)
+            .distinct()
+            .order_by("video_file_id", "start_frame_number", "id")
+        )
+
+    def _resolve_report_for_export(
+        self,
+        *,
+        patient_examination: PatientExamination,
+        report_id: int | None,
+    ) -> PatientExaminationReport | None:
+        queryset = self._apply_center_scope(
+            PatientExaminationReport.objects.select_related(
+                "patient_examination__patient"
+            )
+        ).filter(patient_examination=patient_examination)
+
+        if report_id is not None:
+            return queryset.filter(pk=report_id).first()
+
+        return queryset.filter(is_active=True).order_by("-updated_at", "-id").first()
+
+    def _selected_frame_for_export(
+        self,
+        *,
+        segment: LabelVideoSegment,
+        selection: dict[str, Any],
+    ) -> Frame | None:
+        stored_frame_number = selection.get("frame_number")
+        try:
+            selected_frame_number = int(stored_frame_number)
+        except (TypeError, ValueError):
+            selected_frame_number = None
+
+        frame_qs = segment.get_frames().filter(is_extracted=True).order_by(
+            "frame_number"
+        )
+        if selected_frame_number is not None:
+            selected = frame_qs.filter(frame_number=selected_frame_number).first()
+            if selected is not None:
+                return selected
+
+        midpoint = self._segment_midpoint_frame(segment)
+        return frame_qs.filter(frame_number__gte=midpoint).first() or frame_qs.first()
+
+    @staticmethod
+    def _frame_caption(
+        *,
+        segment: LabelVideoSegment,
+        frame: Frame,
+        patient_finding: PatientFinding | None,
+    ) -> str:
+        parts = [
+            getattr(segment.label, "name", None) or "prediction",
+            f"frame {frame.frame_number}",
+        ]
+        if frame.timestamp is not None:
+            parts.append(f"{frame.timestamp:.1f}s")
+        if patient_finding is not None and patient_finding.finding is not None:
+            parts.append(getattr(patient_finding.finding, "name", None))
+        return " | ".join(part for part in parts if part)
+
+    def _collect_report_export_frames(
+        self,
+        *,
+        patient_examination: PatientExamination,
+        report: PatientExaminationReport,
+        max_frames: int,
+    ) -> tuple[list[str], list[str], list[dict[str, Any]], list[str]]:
+        selection_map = self._get_segment_selection_map(report)
+        selected_segment_ids: list[int] = []
+        for key in selection_map:
+            try:
+                selected_segment_ids.append(int(key))
+            except (TypeError, ValueError):
+                continue
+
+        segments = self._patient_examination_segments(patient_examination)
+        if selected_segment_ids:
+            segments = segments.filter(pk__in=selected_segment_ids)
+        else:
+            prediction_segments = segments.filter(self._prediction_segment_query())
+            segments = prediction_segments if prediction_segments.exists() else segments
+
+        frame_paths: list[str] = []
+        captions: list[str] = []
+        details: list[dict[str, Any]] = []
+        warnings: list[str] = []
+
+        for segment in segments[:max_frames]:
+            selection = selection_map.get(str(segment.pk), {})
+            if not isinstance(selection, dict):
+                selection = {}
+
+            frame = self._selected_frame_for_export(
+                segment=segment,
+                selection=selection,
+            )
+            if frame is None:
+                warnings.append(f"No extracted frame found for segment {segment.pk}.")
+                continue
+
+            frame_path = frame.file_path
+            if not frame_path.is_file():
+                warnings.append(f"Frame file missing for frame {frame.pk}.")
+                continue
+
+            patient_finding = (
+                segment.patient_findings.filter(
+                    patient_examination=patient_examination,
+                    is_active=True,
+                )
+                .select_related("finding")
+                .order_by("-updated_at", "-id")
+                .first()
+            )
+            caption = self._frame_caption(
+                segment=segment,
+                frame=frame,
+                patient_finding=patient_finding,
+            )
+            frame_paths.append(str(frame_path))
+            captions.append(caption)
+            details.append(
+                {
+                    "segment_id": segment.pk,
+                    "video_id": segment.video_file_id,
+                    "frame_id": frame.pk,
+                    "frame_number": frame.frame_number,
+                    "label_name": getattr(segment.label, "name", None),
+                    "finding_name": (
+                        getattr(patient_finding.finding, "name", None)
+                        if patient_finding is not None
+                        and patient_finding.finding is not None
+                        else None
+                    ),
+                    "stream_url": build_absolute_media_url(
+                        self.request,
+                        build_video_frame_stream_path(
+                            segment.video_file_id,
+                            frame.frame_number,
+                        ),
+                    ),
+                    "caption": caption,
+                }
+            )
+
+        return frame_paths, captions, details, warnings
+
+    @staticmethod
+    def _build_report_export_blocks(
+        *,
+        report: PatientExaminationReport,
+        frame_details: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        blocks: list[dict[str, Any]] = []
+        if report.rendered_text:
+            blocks.append({"type": "paragraph", "text": report.rendered_text})
+        else:
+            blocks.append({"type": "paragraph", "text": "No report text available."})
+
+        if frame_details:
+            blocks.append(
+                {
+                    "type": "sentence_group",
+                    "section_title": "AI prediction frames",
+                    "variables": {},
+                    "sentences": [
+                        {"template": str(detail["caption"]), "enabled": True}
+                        for detail in frame_details
+                    ],
+                }
+            )
+        return blocks
 
     def _get_or_create_selection_report(
         self,
@@ -461,43 +701,12 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
             history_limit=payload.get("history_limit", 5),
         )
 
-        persisted_artifacts = None
-        if result.persisted_pdf_artifact_id or result.persisted_report_artifact_id:
-            patient_examination = result.report.patient_examination
-            patient_id = getattr(patient_examination, "patient_id", None)
-            pdf_id = result.persisted_pdf_artifact_id
-            persisted_artifacts = {
-                "full_report_id": result.persisted_report_artifact_id,
-                "pdf_id": result.persisted_pdf_artifact_id,
-                "pdf_view_url": (
-                    build_absolute_media_url(
-                        request,
-                        build_pdf_stream_path(pdf_id, file_type="processed"),
-                    )
-                    if pdf_id is not None
-                    else None
-                ),
-                "pdf_download_url": (
-                    build_absolute_media_url(
-                        request,
-                        build_pdf_stream_path(
-                            pdf_id,
-                            file_type="raw",
-                            download=True,
-                        ),
-                    )
-                    if pdf_id is not None
-                    else None
-                ),
-                "patient_timeline_url": (
-                    build_absolute_media_url(
-                        request,
-                        build_patient_timeline_path(patient_id),
-                    )
-                    if patient_id is not None
-                    else None
-                ),
-            }
+        persisted_artifacts = self._build_persisted_artifacts_payload(
+            request=request,
+            patient_examination=result.report.patient_examination,
+            persisted_report_artifact_id=result.persisted_report_artifact_id,
+            persisted_pdf_artifact_id=result.persisted_pdf_artifact_id,
+        )
 
         response_data = {
             "report": PatientExaminationReportSerializer(result.report).data,
@@ -511,6 +720,107 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
         return Response(
             response_data,
             status=status.HTTP_201_CREATED if result.created else status.HTTP_200_OK,
+        )
+
+    @action(detail=False, methods=["post"], url_path="make-report")
+    def make_report(self, request):
+        payload_serializer = PatientExaminationReportMakeReportSerializer(
+            data=request.data
+        )
+        payload_serializer.is_valid(raise_exception=True)
+        payload = payload_serializer.validated_data
+
+        patient_examination = self._get_scoped_patient_examination(
+            payload["patient_examination_id"]
+        )
+        report = self._resolve_report_for_export(
+            patient_examination=patient_examination,
+            report_id=payload.get("report_id"),
+        )
+        if report is None:
+            return Response(
+                {"detail": "No report found for this patient examination."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        user = (
+            request.user
+            if getattr(request, "user", None) and request.user.is_authenticated
+            else None
+        )
+        if report.status != PatientExaminationReport.Status.FINAL:
+            report.status = PatientExaminationReport.Status.FINAL
+            report.finalized_at = timezone.now()
+            report.finalized_by = user
+            report.updated_by = user
+            report.save(
+                update_fields=[
+                    "status",
+                    "finalized_at",
+                    "finalized_by",
+                    "updated_by",
+                    "updated_at",
+                ]
+            )
+
+        (
+            frame_paths,
+            frame_captions,
+            frame_details,
+            frame_warnings,
+        ) = self._collect_report_export_frames(
+            patient_examination=patient_examination,
+            report=report,
+            max_frames=payload["max_frames"],
+        )
+        section_blocks = self._build_report_export_blocks(
+            report=report,
+            frame_details=frame_details,
+        )
+
+        try:
+            (
+                persisted_report_artifact_id,
+                persisted_pdf_artifact_id,
+            ) = persist_report_pdf_artifact(
+                report,
+                patient_examination,
+                rendered_text=report.rendered_text,
+                section_blocks=section_blocks,
+                frame_image_paths=frame_paths,
+                frame_captions=frame_captions,
+                patient_identity=payload["patient"],
+                strict_renderer=True,
+            )
+        except Exception as exc:
+            return Response(
+                {
+                    "detail": (
+                        "PDF report generation failed "
+                        f"({type(exc).__name__})."
+                    )
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        persisted_artifacts = self._build_persisted_artifacts_payload(
+            request=request,
+            patient_examination=patient_examination,
+            persisted_report_artifact_id=persisted_report_artifact_id,
+            persisted_pdf_artifact_id=persisted_pdf_artifact_id,
+        )
+
+        return Response(
+            {
+                "report": PatientExaminationReportSerializer(report).data,
+                "warnings": frame_warnings,
+                "included_frame_count": len(frame_details),
+                "included_frames": frame_details,
+                "persisted_report_artifact_id": persisted_report_artifact_id,
+                "persisted_pdf_artifact_id": persisted_pdf_artifact_id,
+                "persisted_artifacts": persisted_artifacts,
+            },
+            status=status.HTTP_200_OK,
         )
 
     @action(detail=False, methods=["get", "patch"], url_path="segment-frame-selector")

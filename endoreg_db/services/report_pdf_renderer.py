@@ -37,14 +37,20 @@ def build_report_template_pdf_payload(
     report: PatientExaminationReport,
     patient_examination: PatientExamination,
     frame_image_paths: list[str] | None = None,
+    frame_captions: list[str] | None = None,
     section_blocks: list[dict[str, Any]] | None = None,
     assets_root: str | None = None,
+    patient_identity: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     patient = patient_examination.patient
+    identity = patient_identity or {}
+    first_name = str(identity.get("first_name") or getattr(patient, "first_name", ""))
+    last_name = str(identity.get("last_name") or getattr(patient, "last_name", ""))
+    dob = identity.get("dob", getattr(patient, "dob", None))
     header = {
         "center_name": getattr(getattr(patient, "center", None), "name", None),
-        "patient_label": f"{getattr(patient, 'first_name', '')} {getattr(patient, 'last_name', '')}".strip()
-        or None,
+        "patient_label": f"{first_name} {last_name}".strip() or None,
+        "patient_birth_date": str(dob or "") or None,
         "examination_date": str(getattr(patient_examination, "date_start", None) or "")
         or None,
         "report_version": str(getattr(report, "version", "")) or None,
@@ -78,7 +84,9 @@ def build_report_template_pdf_payload(
                 "title": "Frames",
                 "columns": 3,
                 "image_paths": frame_image_paths,
-                "captions": [f"frame {i + 1}" for i in range(len(frame_image_paths))],
+                "captions": frame_captions
+                if frame_captions
+                else [f"frame {i + 1}" for i in range(len(frame_image_paths))],
             }
         )
 

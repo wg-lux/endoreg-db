@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from types import SimpleNamespace
 
 import pytest
@@ -11,12 +12,16 @@ from endoreg_db.models import (
     Center,
     Examination,
     Frame,
+    InformationSource,
     LabelVideoSegment,
     Patient,
     PatientExamination,
     PatientExaminationReport,
+    RawPdfFile,
     VideoFile,
 )
+from endoreg_db.utils.file_operations import atomic_write_file, safe_rmtree
+from endoreg_db.utils.paths import protected_media_root
 
 User = get_user_model()
 
@@ -363,3 +368,141 @@ def test_report_list_scoping_for_non_privileged_user_scaffold():
     - assert list endpoint only returns center A reports (or none without explicit filter)
     """
     raise NotImplementedError
+
+
+class PatientExaminationReportMakeReportTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="report-export-staff",
+            password="pw",
+            is_staff=True,
+        )
+        self.client.force_login(self.user)
+
+        self.center = Center.objects.create(name="Export Report Center")
+        self.patient = Patient.objects.create(
+            first_name="Pseudo",
+            last_name="Patient",
+            center=self.center,
+            is_real_person=False,
+            patient_hash="export-report-patient-hash",
+        )
+        self.examination = Examination.objects.create(name="export_report_exam")
+        self.patient_examination = PatientExamination.objects.create(
+            patient=self.patient,
+            examination=self.examination,
+            date_start="2026-02-25",
+            hash="export-report-pe-hash",
+        )
+        self.video = VideoFile.objects.create(
+            center=self.center,
+            video_hash=f"export-report-video-{uuid.uuid4().hex}",
+            examination=self.patient_examination,
+            patient=self.patient,
+            fps=25.0,
+            frame_count=100,
+            original_file_name="export-report.mp4",
+        )
+        self.frame_dir = (
+            protected_media_root() / f"pytest_report_export_{uuid.uuid4().hex}"
+        )
+        self.video.frame_dir = str(self.frame_dir)
+        self.video.save(update_fields=["frame_dir"])
+
+        self.prediction_source = InformationSource.objects.create(name="prediction")
+        self.segment = LabelVideoSegment.objects.create(
+            video_file=self.video,
+            source=self.prediction_source,
+            start_frame_number=10,
+            end_frame_number=20,
+        )
+        self.frame = Frame.objects.create(
+            video=self.video,
+            frame_number=12,
+            relative_path="frame_0000012.jpg",
+            timestamp=0.48,
+            is_extracted=True,
+        )
+        atomic_write_file(
+            destination=self.frame.file_path,
+            content=[b"fake frame bytes"],
+        )
+        self.report = PatientExaminationReport.objects.create(
+            patient_examination=self.patient_examination,
+            template_name="star_upper_gi_main",
+            title="Exportable report",
+            status=PatientExaminationReport.Status.DRAFT,
+            rendered_text="AI prediction based report text.",
+            editor_payload={
+                "report_segment_frame_selections": {
+                    str(self.segment.pk): {
+                        "segment_id": self.segment.pk,
+                        "video_id": self.video.pk,
+                        "frame_id": self.frame.pk,
+                        "frame_number": self.frame.frame_number,
+                    }
+                }
+            },
+            created_by=self.user,
+            updated_by=self.user,
+        )
+
+    def tearDown(self):
+        safe_rmtree(self.frame_dir, missing_ok=True)
+
+    def test_make_report_renders_selected_prediction_frame_with_patient_identity(self):
+        from endoreg_db.services import report_pdf_renderer as renderer_module
+
+        captured_payload: dict = {}
+
+        def fake_render_pdf(payload, *, output_path, timeout_seconds=20):
+            captured_payload.update(payload)
+            atomic_write_file(
+                destination=output_path,
+                content=[b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF\n"],
+            )
+            return output_path
+
+        monkeypatches = pytest.MonkeyPatch()
+        monkeypatches.setattr(
+            renderer_module,
+            "render_pdf_with_rust_renderer",
+            fake_render_pdf,
+        )
+        try:
+            resp = self.client.post(
+                "/api/patient-examination-reports/make-report/",
+                data=json.dumps(
+                    {
+                        "patient_examination_id": self.patient_examination.id,
+                        "report_id": self.report.id,
+                        "patient": {
+                            "first_name": "Ada",
+                            "last_name": "Lovelace",
+                            "dob": "1815-12-10",
+                        },
+                    }
+                ),
+                content_type="application/json",
+            )
+        finally:
+            monkeypatches.undo()
+
+        assert resp.status_code == 200, resp.content
+        data = resp.json()
+        self.report.refresh_from_db()
+
+        assert self.report.status == PatientExaminationReport.Status.FINAL
+        assert data["included_frame_count"] == 1
+        assert data["persisted_pdf_artifact_id"]
+        assert data["persisted_artifacts"]["pdf_view_url"]
+        assert RawPdfFile.objects.filter(pk=data["persisted_pdf_artifact_id"]).exists()
+
+        assert captured_payload["header"]["patient_label"] == "Ada Lovelace"
+        assert captured_payload["header"]["patient_birth_date"] == "1815-12-10"
+        image_grid = next(
+            block for block in captured_payload["blocks"] if block["type"] == "image_grid"
+        )
+        assert image_grid["image_paths"] == [str(self.frame.file_path)]
+        assert "frame 12" in image_grid["captions"][0]
+        assert "AI prediction based report text." in captured_payload["blocks"][0]["text"]

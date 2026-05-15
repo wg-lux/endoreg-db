@@ -204,6 +204,11 @@ def persist_report_pdf_artifact(
     patient_examination: PatientExamination,
     *,
     rendered_text: str = "",
+    section_blocks: list[dict[str, Any]] | None = None,
+    frame_image_paths: list[str] | None = None,
+    frame_captions: list[str] | None = None,
+    patient_identity: dict[str, Any] | None = None,
+    strict_renderer: bool = False,
 ) -> tuple[int | None, int | None]:
     """
     Create/update linked full-report + pdf media artifacts for a persisted report.
@@ -240,14 +245,18 @@ def persist_report_pdf_artifact(
         payload = build_report_template_pdf_payload(
             report=report,
             patient_examination=patient_examination,
-            section_blocks=None,
-            frame_image_paths=None,
+            section_blocks=section_blocks,
+            frame_image_paths=frame_image_paths,
+            frame_captions=frame_captions,
+            patient_identity=patient_identity,
         )
         with tempfile.TemporaryDirectory(prefix="endoreg_report_pdf_") as tmp_dir:
             out_path = Path(tmp_dir) / "report.pdf"
             render_pdf_with_rust_renderer(payload, output_path=out_path)
             pdf_bytes = out_path.read_bytes()
     except Exception:
+        if strict_renderer:
+            raise
         pdf_bytes = _render_minimal_pdf_bytes(
             title=report_title,
             body_text=pdf_body,
