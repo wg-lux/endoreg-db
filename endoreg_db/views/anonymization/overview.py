@@ -123,7 +123,9 @@ class AnonymizationOverviewView(ListAPIView):
             )
         )
         # 2) RawPdfFile queryset - only fields that exist on RawPdfFile
-        qs_pdf = RawPdfFile.objects.select_related("sensitive_meta").only(
+        qs_pdf = RawPdfFile.objects.select_related(
+            "sensitive_meta", "anonym_examination_report__type"
+        ).only(
             "id",
             "file",
             "date_created",
@@ -131,6 +133,14 @@ class AnonymizationOverviewView(ListAPIView):
             "anonymized_text",
             "pdf_hash",
             "sensitive_meta",
+            "raw_meta",
+            "anonym_examination_report",
+            "anonym_examination_report__type",
+            "anonym_examination_report__type__name",
+            "sensitive_meta__patient_hash",
+            "sensitive_meta__examination_hash",
+            "sensitive_meta__pseudo_patient",
+            "sensitive_meta__pseudo_examination",
         )
 
         combined = list(qs_video) + list(qs_pdf)

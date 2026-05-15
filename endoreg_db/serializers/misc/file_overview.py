@@ -4,6 +4,8 @@ from typing import TYPE_CHECKING
 
 from rest_framework import serializers
 
+from lx_dtypes.models.contracts import DocumentType as DocumentTypeContract
+
 from endoreg_db.models import UploadJob
 from endoreg_db.models.media import RawPdfFile, VideoFile
 from endoreg_db.models.state.anonymization import AnonymizationState
@@ -12,6 +14,7 @@ if TYPE_CHECKING:
     pass
 
 PATH_PATTERN = re.compile(r"([A-Za-z]:\\[^\s]+|/[^\s]+)")
+DOCUMENT_TYPE_VALUES = {document_type.value for document_type in DocumentTypeContract}
 
 
 class FileOverviewSerializer(serializers.Serializer):
@@ -24,6 +27,21 @@ class FileOverviewSerializer(serializers.Serializer):
     sensitiveMetaId = serializers.IntegerField(read_only=True, allow_null=True)
     fileSize = serializers.IntegerField(read_only=True, required=False)
     uploadJob = serializers.DictField(read_only=True, allow_null=True, required=False)
+    documentType = serializers.CharField(
+        read_only=True, allow_null=True, required=False
+    )
+    patientHashDisplay = serializers.CharField(
+        read_only=True, allow_null=True, required=False
+    )
+    examinationHashDisplay = serializers.CharField(
+        read_only=True, allow_null=True, required=False
+    )
+    pseudoPatientId = serializers.IntegerField(
+        read_only=True, allow_null=True, required=False
+    )
+    pseudoExaminationId = serializers.IntegerField(
+        read_only=True, allow_null=True, required=False
+    )
 
     def _datetime_value(self, value):
         return value.isoformat() if value else None
@@ -71,6 +89,29 @@ class FileOverviewSerializer(serializers.Serializer):
 
         return summary
 
+    def _hash_display(self, value: str | None) -> str | None:
+        return f"...{value[-8:]}" if value else None
+
+    def _pdf_document_type(self, instance: RawPdfFile) -> str | None:
+        report = getattr(instance, "anonym_examination_report", None)
+        report_type = getattr(report, "type", None) if report is not None else None
+        report_type_name = getattr(report_type, "name", None)
+        if (
+            isinstance(report_type_name, str)
+            and report_type_name in DOCUMENT_TYPE_VALUES
+        ):
+            return report_type_name
+
+        raw_meta = instance.raw_meta if isinstance(instance.raw_meta, dict) else {}
+        raw_document_type = raw_meta.get("document_type")
+        if (
+            isinstance(raw_document_type, str)
+            and raw_document_type in DOCUMENT_TYPE_VALUES
+        ):
+            return raw_document_type
+
+        return None
+
     def to_representation(self, instance):
         # 1. Extract Type-Specific Data
         if isinstance(instance, VideoFile):
@@ -84,6 +125,7 @@ class FileOverviewSerializer(serializers.Serializer):
             # Use the state relation optimized in the View
             state_obj = instance.state
             sensitive_meta = instance.sensitive_meta
+            document_type = None
             try:
                 file_size = instance.raw_file.size if instance.raw_file else 0
             except Exception:
@@ -97,6 +139,7 @@ class FileOverviewSerializer(serializers.Serializer):
             created_at = instance.date_created
             state_obj = instance.state
             sensitive_meta = instance.sensitive_meta
+            document_type = self._pdf_document_type(instance)
             try:
                 file_size = instance.file.size if instance.file else 0
             except Exception:
@@ -131,4 +174,21 @@ class FileOverviewSerializer(serializers.Serializer):
             "sensitiveMetaId": sensitive_meta.pk if sensitive_meta else None,
             "fileSize": file_size,
             "uploadJob": self._upload_job_summary(instance),
+            "documentType": document_type,
+            "patientHashDisplay": (
+                self._hash_display(sensitive_meta.patient_hash)
+                if sensitive_meta
+                else None
+            ),
+            "examinationHashDisplay": (
+                self._hash_display(sensitive_meta.examination_hash)
+                if sensitive_meta
+                else None
+            ),
+            "pseudoPatientId": (
+                sensitive_meta.pseudo_patient_id if sensitive_meta else None
+            ),
+            "pseudoExaminationId": (
+                sensitive_meta.pseudo_examination_id if sensitive_meta else None
+            ),
         }

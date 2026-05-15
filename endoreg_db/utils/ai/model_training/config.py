@@ -28,6 +28,7 @@ def ensure_training_directories() -> None:
     for directory in (TRAINING_ROOT, CHECKPOINTS_DIR, RUNS_DIR):
         ensure_directory(directory)
 
+
 # Which LabelSet.version we train on (for label filtering)
 DEFAULT_LABELSET_VERSION_TO_TRAIN: int = 2
 
