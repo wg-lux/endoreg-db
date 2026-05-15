@@ -7,6 +7,7 @@ from endoreg_db.views import (
     application_settings_annotators_dropdown,
     application_settings_report_templates_dropdown,
     application_settings_ai_datasets_dropdown,
+    application_settings_ai_dataset_attachments,
     application_settings_ai_dataset_frame_bucket_distribution,
     application_settings_ai_dataset_training_manifest,
     application_settings_model_training_options,
@@ -52,6 +53,11 @@ urlpatterns = [
         "settings/application/dropdowns/ai_datasets/",
         application_settings_ai_datasets_dropdown,
         name="application_settings_ai_datasets_dropdown",
+    ),
+    path(
+        "settings/application/ai_datasets/<int:dataset_id>/attachments/",
+        application_settings_ai_dataset_attachments,
+        name="application_settings_ai_dataset_attachments",
     ),
     path(
         "settings/application/ai_datasets/<str:param>/frame_bucket_distribution/",

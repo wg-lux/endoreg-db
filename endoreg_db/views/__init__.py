@@ -146,6 +146,10 @@ _IMPORT_TARGETS: dict[str, tuple[str, str]] = {
         "endoreg_db.views.misc",
         "application_settings_ai_datasets_dropdown",
     ),
+    "application_settings_ai_dataset_attachments": (
+        "endoreg_db.views.misc",
+        "application_settings_ai_dataset_attachments",
+    ),
     "application_settings_ai_dataset_frame_bucket_distribution": (
         "endoreg_db.views.misc",
         "application_settings_ai_dataset_frame_bucket_distribution",
@@ -289,6 +293,7 @@ __all__ = [
     "application_settings_annotators_dropdown",
     "application_settings_report_templates_dropdown",
     "application_settings_ai_datasets_dropdown",
+    "application_settings_ai_dataset_attachments",
     "application_settings_ai_dataset_frame_bucket_distribution",
     "application_settings_ai_dataset_training_manifest",
     "application_settings_model_training_options",

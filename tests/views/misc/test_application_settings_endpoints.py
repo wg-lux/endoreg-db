@@ -18,8 +18,14 @@ from endoreg_db.models import (
     AIModelTrainingRun,
     Center,
     EndoscopyProcessor,
+    Frame,
+    ImageClassificationAnnotation,
+    InformationSource,
+    Label,
+    LabelVideoSegment,
     LabelSet,
     NetworkNode,
+    VideoFile,
 )
 from endoreg_db.services import model_training_jobs
 from endoreg_db.views.misc import application_settings as view_module
@@ -82,6 +88,12 @@ class ApplicationSettingsEndpointTests(TestCase):
         }
 
     def test_patch_application_settings_with_valid_ids(self):
+        dataset = AIDataSet.objects.create(
+            name=f"dataset-settings-{uuid4().hex[:8]}",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+
         response = self.client.patch(
             "/api/settings/application/",
             data={
@@ -89,8 +101,7 @@ class ApplicationSettingsEndpointTests(TestCase):
                 "processor_id": self.processor.pk,
                 "annotator_name": "annotator_a",
                 "report_template_name": "template_a",
-                "ai_dataset_name": "dataset_a",
-                "ai_dataset_type": "image",
+                "ai_dataset_id": dataset.pk,
             },
             content_type="application/json",
         )
@@ -100,8 +111,135 @@ class ApplicationSettingsEndpointTests(TestCase):
         assert payload["processor_id"] == self.processor.pk
         assert payload["annotator_name"] == "annotator_a"
         assert payload["report_template_name"] == "template_a"
-        assert payload["ai_dataset_name"] == "dataset_a"
-        assert payload["ai_dataset_type"] == "image"
+        assert payload["ai_dataset_id"] == dataset.pk
+        assert payload["ai_dataset_name"] == dataset.name
+        assert payload["ai_dataset_type"] == dataset.dataset_type
+
+    def test_ai_dataset_attachment_endpoint_attaches_existing_rows_idempotently(self):
+        dataset = AIDataSet.objects.create(
+            name=f"dataset-attach-{uuid4().hex[:8]}",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+        video = VideoFile.objects.create(
+            center=self.center,
+            video_hash=f"attachment-video-{uuid4().hex[:8]}",
+            original_file_name="attachment.mp4",
+            fps=25.0,
+            frame_count=10,
+        )
+        frame = Frame.objects.create(
+            video=video,
+            frame_number=1,
+            relative_path="frame_0000001.jpg",
+            is_extracted=True,
+        )
+        label = Label.objects.create(name=f"attachment-label-{uuid4().hex[:8]}")
+        source = InformationSource.objects.create(
+            name=f"attachment-source-{uuid4().hex[:8]}"
+        )
+        annotation = ImageClassificationAnnotation.objects.create(
+            frame=frame,
+            label=label,
+            value=True,
+            information_source=source,
+            annotator="alice",
+        )
+        segment = LabelVideoSegment.objects.create(
+            video_file=video,
+            label=label,
+            start_frame_number=0,
+            end_frame_number=5,
+            source=source,
+        )
+
+        payload = {
+            "video_id": video.pk,
+            "frame_annotation_ids": [annotation.pk],
+            "segment_ids": [segment.pk],
+            "include_frame_annotations": True,
+            "include_video_annotations": True,
+            "information_source_names": [source.name],
+        }
+        first_response = self.client.post(
+            f"/api/settings/application/ai_datasets/{dataset.pk}/attachments/",
+            data=payload,
+            content_type="application/json",
+        )
+        second_response = self.client.post(
+            f"/api/settings/application/ai_datasets/{dataset.pk}/attachments/",
+            data=payload,
+            content_type="application/json",
+        )
+
+        assert first_response.status_code == 200, first_response.content
+        assert second_response.status_code == 200, second_response.content
+        response_payload = second_response.json()
+        assert response_payload["dataset_id"] == dataset.pk
+        assert response_payload["frame_annotation_count"] == 1
+        assert response_payload["video_annotation_count"] == 1
+        assert response_payload["attached_frame_annotation_ids"] == [annotation.pk]
+        assert response_payload["attached_segment_ids"] == [segment.pk]
+        assert dataset.image_annotations.filter(pk=annotation.pk).exists()
+        assert dataset.video_annotations.filter(pk=segment.pk).exists()
+
+    def test_ai_dataset_attachment_endpoint_attaches_all_existing_rows(self):
+        dataset = AIDataSet.objects.create(
+            name=f"dataset-attach-all-{uuid4().hex[:8]}",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+        video = VideoFile.objects.create(
+            center=self.center,
+            video_hash=f"attachment-all-video-{uuid4().hex[:8]}",
+            original_file_name="attachment-all.mp4",
+            fps=25.0,
+            frame_count=10,
+        )
+        frame = Frame.objects.create(
+            video=video,
+            frame_number=1,
+            relative_path="frame_0000001.jpg",
+            is_extracted=True,
+        )
+        label = Label.objects.create(name=f"attachment-all-label-{uuid4().hex[:8]}")
+        source = InformationSource.objects.create(
+            name=f"attachment-all-source-{uuid4().hex[:8]}"
+        )
+        annotation = ImageClassificationAnnotation.objects.create(
+            frame=frame,
+            label=label,
+            value=True,
+            information_source=source,
+            annotator="alice",
+        )
+        segment = LabelVideoSegment.objects.create(
+            video_file=video,
+            label=label,
+            start_frame_number=0,
+            end_frame_number=5,
+            source=source,
+        )
+
+        response = self.client.post(
+            f"/api/settings/application/ai_datasets/{dataset.pk}/attachments/",
+            data={
+                "include_all_annotations": True,
+                "include_frame_annotations": True,
+                "include_video_annotations": True,
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200, response.content
+        response_payload = response.json()
+        assert response_payload["dataset_id"] == dataset.pk
+        assert response_payload["frame_annotation_count"] == 1
+        assert response_payload["video_annotation_count"] == 1
+        assert response_payload["attached_frame_annotation_count"] == 1
+        assert response_payload["attached_segment_count"] == 1
+        assert dataset.image_annotations.filter(pk=annotation.pk).exists()
+        assert dataset.video_annotations.filter(pk=segment.pk).exists()
 
     def test_get_application_settings_uses_authenticated_username_as_fallback(self):
         user_model = get_user_model()

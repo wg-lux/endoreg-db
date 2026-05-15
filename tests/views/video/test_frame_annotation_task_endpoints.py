@@ -14,6 +14,7 @@ from endoreg_db.models import (
     VideoFile,
 )
 from endoreg_db.views.video.ai import (
+    FrameAnnotationBulkUpsertView,
     FrameAnnotationRandomTaskView,
     FrameAnnotationSkipView,
     label_set_list,
@@ -23,6 +24,7 @@ from endoreg_db.views.video.ai import (
 class FrameAnnotationTaskEndpointsTest(TestCase):
     def setUp(self):
         self.factory = APIRequestFactory()
+        self.bulk_upsert_view = FrameAnnotationBulkUpsertView.as_view()
         self.random_task_view = FrameAnnotationRandomTaskView.as_view()
         self.skip_view = FrameAnnotationSkipView.as_view()
 
@@ -187,6 +189,53 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data["error"], "Unknown frame_id.")
+
+    def test_bulk_upsert_attaches_annotations_to_exact_ai_dataset(self):
+        dataset = AIDataSet.objects.create(
+            name="bulk-upsert-dataset",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+        other_dataset = AIDataSet.objects.create(
+            name=dataset.name,
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+        request = self.factory.post(
+            "/api/media/annotations/frames/bulk-upsert/",
+            {
+                "video_id": self.video.pk,
+                "ai_dataset_id": dataset.pk,
+                "annotations": [
+                    {
+                        "frame_id": self.frame_1.pk,
+                        "label_id": self.label.pk,
+                        "value": True,
+                        "information_source_name": self.source.name,
+                        "annotator": "alice",
+                    }
+                ],
+            },
+            format="json",
+        )
+
+        response = self.bulk_upsert_view(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["ai_dataset_id"], dataset.pk)
+        annotation = ImageClassificationAnnotation.objects.get(
+            frame=self.frame_1,
+            label=self.label,
+            information_source=self.source,
+            annotator="alice",
+        )
+        self.assertEqual(
+            response.data["attached_frame_annotation_ids"], [annotation.pk]
+        )
+        self.assertTrue(dataset.image_annotations.filter(pk=annotation.pk).exists())
+        self.assertFalse(
+            other_dataset.image_annotations.filter(pk=annotation.pk).exists()
+        )
 
     def test_random_task_filtered_mode_requires_filter_label(self):
         request = self.factory.get(

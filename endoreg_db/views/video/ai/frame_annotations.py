@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from endoreg_db.models import (
+    AIDataSet,
     Frame,
     ImageClassificationAnnotation,
     InformationSource,
@@ -44,7 +45,27 @@ def _build_bulk_upsert_response(
     annotation_items: list[dict[str, Any]],
     requested_video_id: int | None,
     fallback_annotator: str,
+    ai_dataset_id_raw: Any = None,
 ) -> Response:
+    ai_dataset: AIDataSet | None = None
+    if ai_dataset_id_raw not in (None, ""):
+        try:
+            ai_dataset_id = int(ai_dataset_id_raw)
+        except (TypeError, ValueError):
+            return Response(
+                {"error": "ai_dataset_id must be an integer."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        ai_dataset = AIDataSet.objects.filter(pk=ai_dataset_id).first()
+        if ai_dataset is None:
+            return Response(
+                {
+                    "error": "AIDataSet not found.",
+                    "details": {"ai_dataset_id": ai_dataset_id},
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
     serializer = FrameAnnotationBulkItemSerializer(data=annotation_items, many=True)
     if not serializer.is_valid():
         return Response(
@@ -182,6 +203,44 @@ def _build_bulk_upsert_response(
                     "date_modified",
                 ],
             )
+            attached_frame_annotation_ids: list[int] = []
+            if ai_dataset is not None:
+                annotation_keys = {
+                    (
+                        annotation.frame_id,
+                        annotation.label_id,
+                        annotation.information_source_id,
+                        annotation.annotator,
+                    )
+                    for annotation in annotations_to_upsert
+                }
+                source_ids = {
+                    annotation.information_source_id
+                    for annotation in annotations_to_upsert
+                }
+                annotators = {
+                    annotation.annotator for annotation in annotations_to_upsert
+                }
+                persisted_annotations = [
+                    annotation
+                    for annotation in ImageClassificationAnnotation.objects.filter(
+                        frame_id__in=frame_ids,
+                        label_id__in=label_ids,
+                        information_source_id__in=source_ids,
+                        annotator__in=annotators,
+                    )
+                    if (
+                        annotation.frame_id,
+                        annotation.label_id,
+                        annotation.information_source_id,
+                        annotation.annotator,
+                    )
+                    in annotation_keys
+                ]
+                ai_dataset.add_frame_annotations(persisted_annotations)
+                attached_frame_annotation_ids = [
+                    annotation.pk for annotation in persisted_annotations
+                ]
     except Exception as exc:
         logger.error("Bulk frame annotation upsert failed: %s", exc, exc_info=True)
         return Response(
@@ -193,6 +252,14 @@ def _build_bulk_upsert_response(
         "status": "success",
         "upserted_count": len(annotations_to_upsert),
     }
+    if ai_dataset is not None:
+        response_data["ai_dataset_id"] = ai_dataset.pk
+        response_data["attached_frame_annotation_ids"] = sorted(
+            attached_frame_annotation_ids
+        )
+        response_data["dataset_frame_annotation_count"] = (
+            ai_dataset.image_annotations.count()
+        )
     target_video_id = requested_video_id
     if target_video_id is None and len(set(frame_video_by_id.values())) == 1:
         target_video_id = next(iter(frame_video_by_id.values()))
@@ -357,6 +424,9 @@ class FrameAnnotationBulkUpsertView(APIView):
             annotation_items=annotation_items,
             requested_video_id=requested_video_id,
             fallback_annotator=fallback_annotator,
+            ai_dataset_id_raw=(
+                payload.get("ai_dataset_id") if isinstance(payload, dict) else None
+            ),
         )
 
 

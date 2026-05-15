@@ -6,7 +6,7 @@ import traceback
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Callable, Literal, cast
 from uuid import UUID, uuid4
 
 from django.db import transaction
@@ -25,8 +25,10 @@ from endoreg_db.models import (
     ImageClassificationAnnotation,
     Label,
     LabelSet,
+    LabelVideoSegment,
     NetworkNode,
     PatientExaminationReport,
+    VideoFile,
 )
 from endoreg_db.services.hub import (
     deployment_profile_payload,
@@ -263,8 +265,12 @@ def _settings_payload(request) -> dict[str, Any]:
         "processor_name": snapshot.processor_name,
         "annotator_name": annotator_name,
         "report_template_name": snapshot.report_template_name,
+        "ai_dataset_id": snapshot.ai_dataset_id,
         "ai_dataset_name": snapshot.ai_dataset_name,
         "ai_dataset_type": snapshot.ai_dataset_type,
+        "center_key": (
+            settings_obj.center.center_key if settings_obj.center is not None else None
+        ),
         "updated_at": (
             settings_obj.updated_at.isoformat() if settings_obj.updated_at else None
         ),
@@ -490,6 +496,65 @@ def _payload_information_source_names(
     )
 
 
+def _payload_integer_list(
+    raw_value: object,
+    *,
+    field_name: str,
+) -> tuple[list[int], Response | None]:
+    if raw_value in (None, ""):
+        return [], None
+    if not isinstance(raw_value, list):
+        return (
+            [],
+            Response(
+                {"errors": {field_name: f"{field_name} must be a list."}},
+                status=status.HTTP_400_BAD_REQUEST,
+            ),
+        )
+
+    values: list[int] = []
+    for item in raw_value:
+        if isinstance(item, bool):
+            return (
+                [],
+                Response(
+                    {"errors": {field_name: f"{field_name} entries must be integers."}},
+                    status=status.HTTP_400_BAD_REQUEST,
+                ),
+            )
+        try:
+            values.append(int(item))
+        except (TypeError, ValueError):
+            return (
+                [],
+                Response(
+                    {"errors": {field_name: f"{field_name} entries must be integers."}},
+                    status=status.HTTP_400_BAD_REQUEST,
+                ),
+            )
+    return values, None
+
+
+def _attach_queryset_in_batches(
+    add_objects: Callable[[list[Any]], int],
+    queryset,
+    *,
+    batch_size: int = 1000,
+) -> int:
+    attached_count = 0
+    batch: list[Any] = []
+    for item in queryset.order_by("pk").iterator(chunk_size=batch_size):
+        batch.append(item)
+        if len(batch) >= batch_size:
+            add_objects(batch)
+            attached_count += len(batch)
+            batch = []
+    if batch:
+        add_objects(batch)
+        attached_count += len(batch)
+    return attached_count
+
+
 def _utcnow_iso() -> str:
     return datetime.utcnow().isoformat() + "Z"
 
@@ -626,9 +691,9 @@ def _create_phi_region_detector_training_run(payload: dict[str, Any]) -> Respons
     }
     run = AIModelTrainingRun.objects.create(
         dataset=None,
-        dataset_name=Path(dataset_yaml).name
-        if dataset_yaml
-        else "PHI detector dataset",
+        dataset_name=(
+            Path(dataset_yaml).name if dataset_yaml else "PHI detector dataset"
+        ),
         dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
         ai_model_type=MODEL_TRAINING_TARGET_PHI_REGION_DETECTOR,
         backbone_name=base_model,
@@ -796,6 +861,9 @@ def application_settings_detail(request):
     processor_value = data.get("processor_id", data.get("processor_name"))
     annotator_name = data.get("annotator_name")
     report_template_name = data.get("report_template_name")
+    ai_dataset_id_provided = "ai_dataset_id" in data
+    ai_dataset_id_raw = data.get("ai_dataset_id")
+    ai_dataset: AIDataSet | None = None
     ai_dataset_name = data.get("ai_dataset_name")
     ai_dataset_type = data.get("ai_dataset_type")
 
@@ -835,6 +903,23 @@ def application_settings_detail(request):
         if processor_value in ("", 0):
             processor_value = None
 
+    if ai_dataset_id_provided:
+        ai_dataset_id, ai_dataset_id_error = _parse_optional_integer_param(
+            ai_dataset_id_raw,
+            field_name="ai_dataset_id",
+        )
+        if ai_dataset_id_error is not None:
+            return ai_dataset_id_error
+        if ai_dataset_id is not None:
+            ai_dataset = AIDataSet.objects.filter(pk=ai_dataset_id).first()
+            if ai_dataset is None:
+                errors["ai_dataset_id"] = "AIDataSet not found."
+            else:
+                if "ai_dataset_name" not in data:
+                    ai_dataset_name = ai_dataset.name
+                if "ai_dataset_type" not in data:
+                    ai_dataset_type = ai_dataset.dataset_type
+
     if annotator_name is not None and not isinstance(annotator_name, str):
         errors["annotator_name"] = "annotator_name must be a string."
     if report_template_name is not None and not isinstance(report_template_name, str):
@@ -854,25 +939,30 @@ def application_settings_detail(request):
     if errors:
         return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
 
-    update_application_defaults(
-        center=center_value if ("center_id" in data or "center_name" in data) else None,
-        processor=(
+    update_kwargs: dict[str, Any] = {
+        "center": (
+            center_value if ("center_id" in data or "center_name" in data) else None
+        ),
+        "processor": (
             processor_value
             if ("processor_id" in data or "processor_name" in data)
             else None
         ),
-        annotator_name=annotator_name,
-        report_template_name=report_template_name,
-        ai_dataset_name=ai_dataset_name,
-        ai_dataset_type=ai_dataset_type,
-    )
+        "annotator_name": annotator_name,
+        "report_template_name": report_template_name,
+        "ai_dataset_name": ai_dataset_name,
+        "ai_dataset_type": ai_dataset_type,
+    }
+    if ai_dataset_id_provided:
+        update_kwargs["ai_dataset"] = ai_dataset
+    update_application_defaults(**update_kwargs)
     return Response(_settings_payload(request), status=status.HTTP_200_OK)
 
 
 @api_view(["GET"])
 @permission_classes([EnvironmentAwarePermission])
 def application_settings_centers_dropdown(request):
-    centers = Center.objects.order_by("name").values("id", "name")
+    centers = Center.objects.order_by("name").values("id", "name", "center_key")
     return Response(list(centers), status=status.HTTP_200_OK)
 
 
@@ -1002,6 +1092,211 @@ def application_settings_ai_datasets_dropdown(request):
 
     return Response(
         _application_settings_ai_dataset_entries(),
+        status=status.HTTP_200_OK,
+    )
+
+
+@api_view(["POST"])
+@permission_classes([EnvironmentAwarePermission])
+def application_settings_ai_dataset_attachments(request, dataset_id: int):
+    dataset = AIDataSet.objects.filter(pk=dataset_id).first()
+    if dataset is None:
+        return Response(
+            {"errors": {"dataset_id": "AIDataSet not found."}},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    payload: dict[str, Any] = request.data if isinstance(request.data, dict) else {}
+
+    video_id, video_id_error = _parse_optional_integer_param(
+        payload.get("video_id"),
+        field_name="video_id",
+    )
+    if video_id_error is not None:
+        return video_id_error
+
+    frame_annotation_ids, frame_ids_error = _payload_integer_list(
+        payload.get("frame_annotation_ids"),
+        field_name="frame_annotation_ids",
+    )
+    if frame_ids_error is not None:
+        return frame_ids_error
+
+    segment_ids, segment_ids_error = _payload_integer_list(
+        payload.get("segment_ids"),
+        field_name="segment_ids",
+    )
+    if segment_ids_error is not None:
+        return segment_ids_error
+
+    include_frame_annotations, include_frame_error = _payload_bool_field(
+        payload,
+        "include_frame_annotations",
+        default=False,
+    )
+    if include_frame_error is not None:
+        return include_frame_error
+
+    include_video_annotations, include_video_error = _payload_bool_field(
+        payload,
+        "include_video_annotations",
+        default=False,
+    )
+    if include_video_error is not None:
+        return include_video_error
+
+    include_all_annotations, include_all_error = _payload_bool_field(
+        payload,
+        "include_all_annotations",
+        default=False,
+    )
+    if include_all_error is not None:
+        return include_all_error
+
+    information_source_names, source_names_error = _payload_information_source_names(
+        payload.get("information_source_names")
+    )
+    if source_names_error is not None:
+        return source_names_error
+
+    if include_all_annotations:
+        if video_id is not None or frame_annotation_ids or segment_ids:
+            return Response(
+                {
+                    "errors": {
+                        "include_all_annotations": (
+                            "include_all_annotations cannot be combined with "
+                            "video_id, frame_annotation_ids, or segment_ids."
+                        )
+                    }
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not include_frame_annotations and not include_video_annotations:
+            return Response(
+                {
+                    "errors": {
+                        "include_all_annotations": (
+                            "At least one annotation type must be selected."
+                        )
+                    }
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    explicit_frame_annotations: list[ImageClassificationAnnotation] = []
+    explicit_segments: list[LabelVideoSegment] = []
+    video_frame_annotations: list[ImageClassificationAnnotation] = []
+    video_segments: list[LabelVideoSegment] = []
+
+    if frame_annotation_ids:
+        frame_annotations = ImageClassificationAnnotation.objects.filter(
+            pk__in=frame_annotation_ids
+        )
+        found_ids = set(frame_annotations.values_list("pk", flat=True))
+        missing_ids = sorted(set(frame_annotation_ids) - found_ids)
+        if missing_ids:
+            return Response(
+                {"errors": {"frame_annotation_ids": f"Unknown IDs: {missing_ids}."}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        explicit_frame_annotations = list(frame_annotations)
+
+    if segment_ids:
+        segments = LabelVideoSegment.objects.filter(pk__in=segment_ids)
+        found_ids = set(segments.values_list("pk", flat=True))
+        missing_ids = sorted(set(segment_ids) - found_ids)
+        if missing_ids:
+            return Response(
+                {"errors": {"segment_ids": f"Unknown IDs: {missing_ids}."}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        explicit_segments = list(segments)
+
+    if video_id is not None:
+        if not VideoFile.objects.filter(pk=video_id).exists():
+            return Response(
+                {"errors": {"video_id": "VideoFile not found."}},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if include_frame_annotations:
+            frame_annotations = ImageClassificationAnnotation.objects.filter(
+                frame__video_id=video_id
+            )
+            if information_source_names:
+                frame_annotations = frame_annotations.filter(
+                    information_source__name__in=information_source_names
+                )
+            video_frame_annotations = list(frame_annotations)
+        if include_video_annotations:
+            segments = LabelVideoSegment.objects.filter(video_file_id=video_id)
+            if information_source_names:
+                segments = segments.filter(source__name__in=information_source_names)
+            video_segments = list(segments)
+
+    attached_frame_annotation_ids: set[int] = set()
+    attached_segment_ids: set[int] = set()
+    attached_frame_annotation_count = 0
+    attached_segment_count = 0
+
+    with transaction.atomic():
+        if include_all_annotations:
+            if include_frame_annotations:
+                all_frame_annotations = ImageClassificationAnnotation.objects.all()
+                if information_source_names:
+                    all_frame_annotations = all_frame_annotations.filter(
+                        information_source__name__in=information_source_names
+                    )
+                attached_frame_annotation_count += _attach_queryset_in_batches(
+                    dataset.add_frame_annotations,
+                    all_frame_annotations,
+                )
+            if include_video_annotations:
+                all_segments = LabelVideoSegment.objects.all()
+                if information_source_names:
+                    all_segments = all_segments.filter(
+                        source__name__in=information_source_names
+                    )
+                attached_segment_count += _attach_queryset_in_batches(
+                    dataset.add_video_annotations,
+                    all_segments,
+                )
+        if explicit_frame_annotations:
+            dataset.add_frame_annotations(explicit_frame_annotations)
+            attached_frame_annotation_ids.update(
+                annotation.pk for annotation in explicit_frame_annotations
+            )
+            attached_frame_annotation_count += len(explicit_frame_annotations)
+        if explicit_segments:
+            dataset.add_video_annotations(explicit_segments)
+            attached_segment_ids.update(segment.pk for segment in explicit_segments)
+            attached_segment_count += len(explicit_segments)
+        if video_id is not None:
+            attached_frame_annotation_ids.update(
+                annotation.pk for annotation in video_frame_annotations
+            )
+            attached_segment_ids.update(segment.pk for segment in video_segments)
+            attached_frame_annotation_count += len(video_frame_annotations)
+            attached_segment_count += len(video_segments)
+            dataset.attach_video(
+                video_id,
+                include_frame_annotations=include_frame_annotations,
+                include_video_annotations=include_video_annotations,
+                information_source_names=information_source_names,
+            )
+
+    return Response(
+        {
+            "dataset_id": dataset.pk,
+            "video_id": video_id,
+            "frame_annotation_count": dataset.image_annotations.count(),
+            "video_annotation_count": dataset.video_annotations.count(),
+            "attached_frame_annotation_ids": sorted(attached_frame_annotation_ids),
+            "attached_segment_ids": sorted(attached_segment_ids),
+            "attached_frame_annotation_count": attached_frame_annotation_count,
+            "attached_segment_count": attached_segment_count,
+        },
         status=status.HTTP_200_OK,
     )
 
@@ -1972,6 +2267,7 @@ __all__ = [
     "application_settings_annotators_dropdown",
     "application_settings_report_templates_dropdown",
     "application_settings_ai_datasets_dropdown",
+    "application_settings_ai_dataset_attachments",
     "application_settings_ai_dataset_frame_bucket_distribution",
     "application_settings_ai_dataset_training_manifest",
     "application_settings_model_training_options",

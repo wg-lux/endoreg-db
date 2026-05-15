@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 # Adjust imports based on your actual project structure
 from endoreg_db.models import (
+    AIDataSet,
     VideoFile,
     Label,
     LabelVideoSegment,
@@ -1241,6 +1242,52 @@ class VideoSegmentsBulkMutationTest(TestCase):
         state = self.video.get_or_create_state()
         self.assertFalse(state.segment_annotations_created)
         self.assertFalse(state.segment_annotations_validated)
+
+    def test_bulk_mutation_attaches_created_and_updated_segments_to_ai_dataset(self):
+        dataset = AIDataSet.objects.create(
+            name="bulk-segment-dataset",
+            dataset_type=AIDataSet.DATASET_TYPE_VIDEO,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_VIDEO_SEGMENT_CLASSIFICATION,
+        )
+        request = self.factory.post(
+            f"/api/media/videos/{self.video.pk}/segments/bulk/",
+            {
+                "ai_dataset_id": dataset.pk,
+                "defer_annotation_sync": True,
+                "creates": [
+                    {
+                        "client_id": -1,
+                        "label_id": self.label_a.pk,
+                        "start_time": 2.0,
+                        "end_time": 3.0,
+                    }
+                ],
+                "updates": [
+                    {
+                        "id": self.update_segment.pk,
+                        "label_id": self.label_b.pk,
+                        "start_time": 1.0,
+                        "end_time": 1.5,
+                    }
+                ],
+                "deletes": [],
+            },
+            format="json",
+        )
+
+        response = video_segments_bulk_mutation(request, pk=self.video.pk)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["ai_dataset_id"], dataset.pk)
+        created_id = response.data["created"][0]["segment"]["id"]
+        self.assertEqual(
+            response.data["attached_segment_ids"],
+            sorted([created_id, self.update_segment.pk]),
+        )
+        self.assertTrue(dataset.video_annotations.filter(pk=created_id).exists())
+        self.assertTrue(
+            dataset.video_annotations.filter(pk=self.update_segment.pk).exists()
+        )
 
     def test_bulk_mutation_rolls_back_on_invalid_update(self):
         request = self.factory.post(

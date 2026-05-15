@@ -22,6 +22,7 @@ from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.response import Response
 
 from endoreg_db.models import (
+    AIDataSet,
     ImageClassificationAnnotation,
     InformationSource,
     Label,
@@ -59,7 +60,6 @@ from endoreg_db.utils.operation_log import (
     STATUS_UNVALIDATED,
 )
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -88,6 +88,38 @@ def _query_param_as_bool(value, *, default: bool = False) -> bool:
     if value is None:
         return default
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _resolve_optional_ai_dataset(
+    payload: Mapping[str, Any],
+) -> tuple[AIDataSet | None, Response | None]:
+    raw_value = payload.get("ai_dataset_id")
+    if raw_value in (None, ""):
+        return None, None
+    try:
+        dataset_id = int(raw_value)
+    except (TypeError, ValueError):
+        return (
+            None,
+            Response(
+                {"error": "ai_dataset_id must be an integer."},
+                status=status.HTTP_400_BAD_REQUEST,
+            ),
+        )
+
+    dataset = AIDataSet.objects.filter(pk=dataset_id).first()
+    if dataset is None:
+        return (
+            None,
+            Response(
+                {
+                    "error": "AIDataSet not found.",
+                    "details": {"ai_dataset_id": dataset_id},
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            ),
+        )
+    return dataset, None
 
 
 def _requested_annotator_from_payload(request) -> str | None:
@@ -409,12 +441,20 @@ def video_segments_collection(request):
     if request.method == "POST":
         logger.info(f"Creating new video segment with data: {request.data}")
 
+        data = request.data.copy()
+        ai_dataset, ai_dataset_error = _resolve_optional_ai_dataset(data)
+        if ai_dataset_error is not None:
+            return ai_dataset_error
+        data.pop("ai_dataset_id", None)
+
         with transaction.atomic():
-            serializer = LabelVideoSegmentSerializer(data=request.data)
+            serializer = LabelVideoSegmentSerializer(data=data)
             if serializer.is_valid():
                 try:
                     segment = serializer.save()
                     _sync_frame_annotations(segment=segment)
+                    if ai_dataset is not None:
+                        ai_dataset.add_video_annotations([segment])
                     logger.info(f"Successfully created video segment {segment.pk}")
                     return Response(
                         LabelVideoSegmentSerializer(segment).data,
@@ -544,6 +584,10 @@ def video_segments_by_video(request, pk):
 
         # Automatically set video_id to pk
         data = request.data.copy()
+        ai_dataset, ai_dataset_error = _resolve_optional_ai_dataset(data)
+        if ai_dataset_error is not None:
+            return ai_dataset_error
+        data.pop("ai_dataset_id", None)
         data["video_id"] = pk
 
         with transaction.atomic():
@@ -552,6 +596,8 @@ def video_segments_by_video(request, pk):
                 try:
                     segment = serializer.save()
                     _sync_frame_annotations(segment=segment)
+                    if ai_dataset is not None:
+                        ai_dataset.add_video_annotations([segment])
                     logger.info(
                         f"Successfully created segment {segment.pk} for video {pk}"
                     )
@@ -622,6 +668,10 @@ def video_segments_bulk_mutation(request, pk: int):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    ai_dataset, ai_dataset_error = _resolve_optional_ai_dataset(request.data)
+    if ai_dataset_error is not None:
+        return ai_dataset_error
+
     if not creates and not updates and not deletes:
         return Response(
             {"error": "At least one create, update, or delete is required."},
@@ -629,8 +679,10 @@ def video_segments_bulk_mutation(request, pk: int):
         )
 
     created_segments: list[dict[str, Any]] = []
+    created_segment_objects: list[LabelVideoSegment] = []
     updated_segments: list[LabelVideoSegment] = []
     deleted_segment_ids: list[int] = []
+    attached_segment_ids: list[int] = []
 
     try:
         with transaction.atomic():
@@ -658,6 +710,7 @@ def video_segments_bulk_mutation(request, pk: int):
                 segment = serializer.save()
                 if not defer_annotation_sync:
                     _sync_frame_annotations(segment=segment)
+                created_segment_objects.append(segment)
                 created_segments.append(
                     {
                         "client_id": client_id,
@@ -755,6 +808,11 @@ def video_segments_bulk_mutation(request, pk: int):
             if defer_annotation_sync:
                 mark_segment_annotations_stale(video)
 
+            if ai_dataset is not None:
+                segments_to_attach = [*created_segment_objects, *updated_segments]
+                ai_dataset.add_video_annotations(segments_to_attach)
+                attached_segment_ids = [segment.pk for segment in segments_to_attach]
+
     except DRFValidationError as exc:
         return Response(
             {"error": "Invalid bulk segment payload", "details": exc.detail},
@@ -773,6 +831,11 @@ def video_segments_bulk_mutation(request, pk: int):
             "updated_count": len(updated_segments),
             "deleted_count": len(deleted_segment_ids),
             "defer_annotation_sync": defer_annotation_sync,
+            "ai_dataset_id": ai_dataset.pk if ai_dataset is not None else None,
+            "attached_segment_ids": sorted(attached_segment_ids),
+            "dataset_video_annotation_count": (
+                ai_dataset.video_annotations.count() if ai_dataset is not None else 0
+            ),
         },
         status=status.HTTP_200_OK,
     )
@@ -913,6 +976,12 @@ def video_segment_detail(request, pk, segment_id):
             f"Updating segment {segment_id} for video {pk} with data: {request.data}"
         )
 
+        data = request.data.copy()
+        ai_dataset, ai_dataset_error = _resolve_optional_ai_dataset(data)
+        if ai_dataset_error is not None:
+            return ai_dataset_error
+        data.pop("ai_dataset_id", None)
+
         with transaction.atomic():
             old_model_meta = segment.get_model_meta()
             old_snapshot = {
@@ -923,9 +992,7 @@ def video_segment_detail(request, pk, segment_id):
                 "information_source_id": segment.source_id,
                 "model_meta_id": old_model_meta.pk if old_model_meta else None,
             }
-            serializer = LabelVideoSegmentSerializer(
-                segment, data=request.data, partial=True
-            )
+            serializer = LabelVideoSegmentSerializer(segment, data=data, partial=True)
             if serializer.is_valid():
                 try:
                     segment = serializer.save()
@@ -933,6 +1000,8 @@ def video_segment_detail(request, pk, segment_id):
                         segment=segment,
                         old_snapshot=old_snapshot,
                     )
+                    if ai_dataset is not None:
+                        ai_dataset.add_video_annotations([segment])
                     logger.info(f"Successfully updated segment {segment_id}")
                     return Response(LabelVideoSegmentSerializer(segment).data)
                 except Exception as e:
@@ -1238,9 +1307,9 @@ def video_segments_validate_bulk(request, pk: int):
                     # 2) mark as validated + update information source + notes
                     segment.mark_validated(
                         is_validated=is_validated,
-                        information_source_name=str(information_source_name)
-                        if is_validated
-                        else str(None),
+                        information_source_name=(
+                            str(information_source_name) if is_validated else str(None)
+                        ),
                     )
                     segment_id = segment.pk
                     if is_validated:
