@@ -519,6 +519,58 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
         self.assertEqual(response.data["ai_dataset_type"], dataset.dataset_type)
         self.assertEqual(response.data["selection_strategy"], "dataset_segments")
 
+    def test_random_task_uses_explicit_ai_dataset_id(self):
+        stale_dataset = AIDataSet.objects.create(
+            name="duplicate-frame-task-dataset",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+        selected_dataset = AIDataSet.objects.create(
+            name=stale_dataset.name,
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+        stale_annotation = ImageClassificationAnnotation.objects.create(
+            frame=self.frame_1,
+            label=self.target_label,
+            value=True,
+            information_source=self.source,
+            annotator="dataset",
+        )
+        selected_annotation = ImageClassificationAnnotation.objects.create(
+            frame=self.frame_2,
+            label=self.target_label,
+            value=True,
+            information_source=self.source,
+            annotator="dataset",
+        )
+        stale_dataset.image_annotations.add(stale_annotation)
+        selected_dataset.image_annotations.add(selected_annotation)
+
+        request = self.factory.get(
+            "/api/media/annotations/frames/random-task/",
+            {
+                "video_id": self.video.pk,
+                "label_group_id": self.label_set.pk,
+                "target_label": self.target_label.name,
+                "limit": 1,
+                "ai_dataset_id": selected_dataset.pk,
+                "ai_dataset_name": stale_dataset.name,
+                "ai_dataset_type": stale_dataset.dataset_type,
+                "exclude_annotated": "false",
+            },
+        )
+
+        with patch(
+            "endoreg_db.models.state.frame_annotation.random.randint",
+            return_value=0,
+        ):
+            response = self.random_task_view(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["ai_dataset_id"], selected_dataset.pk)
+        self.assertEqual(response.data["task"]["frame_id"], self.frame_2.pk)
+
     def test_random_task_phi_dataset_reports_raw_video_requirement_when_no_raw_frame_matches(
         self,
     ):

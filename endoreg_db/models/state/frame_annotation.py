@@ -149,9 +149,20 @@ def resolve_ai_dataset_for_queue(
     *,
     dataset_name_raw: object,
     dataset_type_raw: object,
+    dataset_id_raw: object = None,
 ) -> AIDataSet | None:
     from endoreg_db.models import AIDataSet
     from endoreg_db.utils.defaults.set_default_center import get_application_settings
+
+    if dataset_id_raw not in (None, ""):
+        try:
+            dataset_id = int(dataset_id_raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("ai_dataset_id must be an integer.") from exc
+        dataset = AIDataSet.objects.filter(pk=dataset_id).first()
+        if dataset is None:
+            raise ValueError("Unknown ai_dataset_id.")
+        return dataset
 
     settings_obj = get_application_settings()
     dataset_name = (
@@ -646,6 +657,36 @@ def _build_annotation_frame_buckets(
     return {label_id: frame_ids for label_id, frame_ids in buckets.items() if frame_ids}
 
 
+def _build_dataset_candidate_frame_ids(
+    *,
+    dataset: AIDataSet | None,
+    label_set: LabelSet | None,
+    only_prediction_segments: bool,
+) -> set[int] | None:
+    if dataset is None:
+        return None
+
+    frame_ids: set[int] = set()
+    annotations = dataset.image_annotations.select_related("label").filter(
+        label__isnull=False,
+        frame__isnull=False,
+        frame__is_extracted=True,
+    )
+    for annotation in annotations.iterator():
+        if _label_allowed_by_set(annotation.label_id, label_set):
+            frame_ids.add(annotation.frame_id)
+
+    segment_frame_buckets = _build_segment_frame_buckets(
+        dataset=dataset,
+        label_set=label_set,
+        only_prediction_segments=only_prediction_segments,
+    )
+    for segment_frame_ids in segment_frame_buckets.values():
+        frame_ids.update(segment_frame_ids)
+
+    return frame_ids
+
+
 def _merge_frame_buckets(*bucket_maps: dict[int, set[int]]) -> dict[int, set[int]]:
     merged: dict[int, set[int]] = defaultdict(set)
     for bucket_map in bucket_maps:
@@ -840,6 +881,11 @@ def build_frame_task_queue(
         segment_frame_buckets,
         annotation_frame_buckets,
     )
+    dataset_candidate_frame_ids = _build_dataset_candidate_frame_ids(
+        dataset=spec.ai_dataset,
+        label_set=spec.label_set,
+        only_prediction_segments=spec.prediction_segments_only,
+    )
 
     tasks: list[dict[str, Any]] = []
     excluded_ids: set[int] = set(spec.exclude_frame_ids)
@@ -919,11 +965,15 @@ def build_frame_task_queue(
             spec=spec,
             exclude_frame_ids=excluded_ids,
             candidate_frame_ids=(
-                set().union(*dataset_buckets.values()) if dataset_buckets else None
+                dataset_candidate_frame_ids
+                if dataset_candidate_frame_ids is not None
+                else set().union(*dataset_buckets.values())
+                if dataset_buckets
+                else None
             ),
         )
         if frame is None:
-            if dataset_buckets:
+            if dataset_buckets and dataset_candidate_frame_ids is None:
                 frame = _pick_random_frame(
                     spec=spec,
                     exclude_frame_ids=excluded_ids,

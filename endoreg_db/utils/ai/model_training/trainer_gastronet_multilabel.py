@@ -240,7 +240,10 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
     # 1. Load dataset from DB
     # ------------------------------------------------------------------
     dataset_obj = AIDataSet.objects.get(id=config.dataset_id)
-    data = build_dataset_for_training(dataset_obj)
+    data = build_dataset_for_training(
+        dataset_obj,
+        annotation_source_scope=config.annotation_source_scope,
+    )
 
     image_paths: List[str] = data["image_paths"]
     label_vectors: List[List[Optional[int]]] = data["label_vectors"]

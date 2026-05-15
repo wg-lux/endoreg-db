@@ -7,6 +7,11 @@ import json
 from django.core.management.base import BaseCommand, CommandError
 
 from endoreg_db.models import AIDataSet
+from endoreg_db.utils.ai.multilabel_dataset_builder import (
+    ANNOTATION_SOURCE_SCOPE_ALL,
+    VALID_ANNOTATION_SOURCE_SCOPES,
+    normalize_annotation_source_scope,
+)
 
 
 def train_gastronet_multilabel(config):
@@ -35,6 +40,16 @@ class Command(BaseCommand):
             type=int,
             required=True,
             help="Primary key of the AIDataSet to use for training.",
+        )
+        parser.add_argument(
+            "--annotation-source-scope",
+            type=str,
+            default=ANNOTATION_SOURCE_SCOPE_ALL,
+            choices=sorted(VALID_ANNOTATION_SOURCE_SCOPES),
+            help=(
+                "Annotation sources within the AIDataSet to use: all, "
+                "frame_only, or segment_only."
+            ),
         )
         parser.add_argument(
             "--backbone-name",
@@ -105,6 +120,12 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         dataset_id = options["dataset_id"]
+        try:
+            annotation_source_scope = normalize_annotation_source_scope(
+                options.get("annotation_source_scope")
+            )
+        except ValueError as exc:
+            raise CommandError(str(exc)) from exc
         backbone_name = str(options["backbone_name"]).strip()
         backbone_checkpoint = options["backbone_checkpoint"]
         epochs = int(options["epochs"])
@@ -147,6 +168,7 @@ class Command(BaseCommand):
                 f"batch_size={batch_size}, "
                 f"labelset_version={labelset_version}, "
                 f"device={device!r}, "
+                f"annotation_source_scope={annotation_source_scope!r}, "
                 f"treat_unlabeled_as_negative={treat_unlabeled_as_negative}"
             )
         )
@@ -160,6 +182,7 @@ class Command(BaseCommand):
 
         config = TrainingConfig(
             dataset_id=dataset.id,
+            annotation_source_scope=annotation_source_scope,
             labelset_version_to_train=labelset_version,
             backbone_checkpoint=backbone_checkpoint,
             num_epochs=epochs,

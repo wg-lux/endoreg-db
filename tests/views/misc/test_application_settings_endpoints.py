@@ -553,6 +553,7 @@ class ApplicationSettingsEndpointTests(TestCase):
                     "batch_size": 8,
                     "labelset_version": 2,
                     "device": "cpu",
+                    "annotation_source_scope": "segment_only",
                     "treat_unlabeled_as_negative": False,
                 },
                 content_type="application/json",
@@ -566,7 +567,9 @@ class ApplicationSettingsEndpointTests(TestCase):
         assert created_payload["backbone_name"] == "resnet50_imagenet"
         assert created_payload["feature_mode"] == "fine_tune_backbone"
         assert created_payload["freeze_backbone"] is False
+        assert created_payload["annotation_source_scope"] == "segment_only"
         assert captured_kwargs["device"] == "cpu"
+        assert captured_kwargs["annotation_source_scope"] == "segment_only"
         assert AIModelTrainingRun.objects.filter(
             run_id=created_payload["run_id"]
         ).exists()
@@ -577,6 +580,7 @@ class ApplicationSettingsEndpointTests(TestCase):
         assert detail_response.status_code == 200, detail_response.content
         detail_payload = detail_response.json()
         assert detail_payload["status"] == "completed"
+        assert detail_payload["annotation_source_scope"] == "segment_only"
         assert detail_payload["result"]["model_path"] == "/tmp/model.pth"
         assert detail_payload["artifact_paths"]["meta_path"] == "/tmp/meta.json"
         assert "training finished" in detail_payload["stdout"]
@@ -585,10 +589,83 @@ class ApplicationSettingsEndpointTests(TestCase):
             "/api/settings/application/model_training/runs/"
         )
         assert list_response.status_code == 200, list_response.content
-        assert any(
-            entry["run_id"] == created_payload["run_id"]
+        listed_payload = next(
+            entry
             for entry in list_response.json()
+            if entry["run_id"] == created_payload["run_id"]
         )
+        assert listed_payload["annotation_source_scope"] == "segment_only"
+
+    def test_model_training_run_endpoint_defaults_annotation_source_scope_to_all(
+        self,
+    ):
+        dataset = AIDataSet.objects.create(
+            name=f"train-run-default-scope-{uuid4().hex[:8]}",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+
+        from endoreg_db.views.misc import application_settings as view_module
+
+        captured_kwargs: dict[str, object] = {}
+
+        def fake_launch(run_id: str, *, command_kwargs: dict[str, object]) -> None:
+            captured_kwargs.update(command_kwargs)
+
+        original_launch = view_module._launch_model_training_run
+        try:
+            view_module._launch_model_training_run = fake_launch
+            create_response = self.client.post(
+                "/api/settings/application/model_training/runs/",
+                data={
+                    "dataset_id": dataset.pk,
+                    "backbone_name": "resnet50_imagenet",
+                    "feature_mode": "freeze_backbone",
+                    "epochs": 3,
+                    "batch_size": 8,
+                    "labelset_version": 2,
+                },
+                content_type="application/json",
+            )
+        finally:
+            view_module._launch_model_training_run = original_launch
+
+        assert create_response.status_code == 202, create_response.content
+        created_payload = create_response.json()
+        assert created_payload["annotation_source_scope"] == "all"
+        assert captured_kwargs["annotation_source_scope"] == "all"
+
+        detail_response = self.client.get(
+            f"/api/settings/application/model_training/runs/{created_payload['run_id']}/"
+        )
+        assert detail_response.status_code == 200, detail_response.content
+        assert detail_response.json()["annotation_source_scope"] == "all"
+
+    def test_model_training_run_endpoint_rejects_invalid_annotation_source_scope(
+        self,
+    ):
+        dataset = AIDataSet.objects.create(
+            name=f"train-run-invalid-scope-{uuid4().hex[:8]}",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+
+        response = self.client.post(
+            "/api/settings/application/model_training/runs/",
+            data={
+                "dataset_id": dataset.pk,
+                "backbone_name": "resnet50_imagenet",
+                "feature_mode": "fine_tune_backbone",
+                "epochs": 3,
+                "batch_size": 8,
+                "labelset_version": 2,
+                "annotation_source_scope": "everything",
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400, response.content
+        assert "annotation_source_scope" in response.json()["errors"]
 
     def test_phi_region_detector_training_run_endpoints_create_run(self):
         dataset_yaml = Path("/tmp/phi-region-detector-dataset.yaml")
@@ -931,6 +1008,7 @@ class ApplicationSettingsEndpointTests(TestCase):
                 batch_size=16,
                 labelset_version=3,
                 device="cpu",
+                annotation_source_scope="frame_only",
                 treat_unlabeled_as_negative=False,
             )
 
@@ -942,6 +1020,7 @@ class ApplicationSettingsEndpointTests(TestCase):
         assert config.batch_size == 16
         assert config.labelset_version_to_train == 3
         assert config.device == "cpu"
+        assert config.annotation_source_scope == "frame_only"
         assert config.treat_unlabeled_as_negative is False
 
     def test_application_settings_backup_endpoint(self):

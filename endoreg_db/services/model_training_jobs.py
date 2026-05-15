@@ -14,9 +14,16 @@ from django.conf import settings
 from django.core.management import call_command
 from django.utils import timezone
 
-from endoreg_db.models import AIDataSet, AIModelTrainingRun, Frame
+from endoreg_db.models import AIDataSet, AIModelTrainingRun, Frame, LabelVideoSegment
 from endoreg_db.models.media.video.video_file_frames._manage_frame_range import (
     extract_frame_range_to_directory,
+)
+from endoreg_db.utils.ai.multilabel_dataset_builder import (
+    ANNOTATION_SOURCE_SCOPE_ALL,
+    AnnotationSourceScope,
+    normalize_annotation_source_scope,
+    uses_frame_annotations,
+    uses_segment_annotations,
 )
 from endoreg_db.utils.file_operations import ensure_directory, safe_rmtree
 
@@ -134,8 +141,82 @@ def _expected_frame_relative_path(frame_number: int, ext: str = "jpg") -> str:
     return f"frame_{frame_number:07d}.{ext}"
 
 
-def _materialize_missing_multilabel_frames(dataset_id: int) -> dict[str, Any]:
+def _merge_frame_intervals(
+    intervals: list[tuple[int, int]],
+) -> list[tuple[int, int]]:
+    if not intervals:
+        return []
+    intervals.sort()
+    merged: list[tuple[int, int]] = [intervals[0]]
+    for start_frame, end_frame in intervals[1:]:
+        previous_start, previous_end = merged[-1]
+        if start_frame <= previous_end:
+            merged[-1] = (previous_start, max(previous_end, end_frame))
+        else:
+            merged.append((start_frame, end_frame))
+    return merged
+
+
+def _frame_interval_query(intervals: list[tuple[int, int]]) -> Any:
+    from django.db.models import Q
+
+    frame_query = Q()
+    for start_frame, end_frame in intervals:
+        frame_query |= Q(frame_number__gte=start_frame, frame_number__lt=end_frame)
+    return frame_query
+
+
+def _add_segment_training_frames(
+    *,
+    frames_by_video: dict[int, dict[int, Frame]],
+    segments: list[LabelVideoSegment],
+) -> None:
+    segments_by_video: dict[int, list[LabelVideoSegment]] = defaultdict(list)
+    for segment in segments:
+        if segment.start_frame_number >= segment.end_frame_number:
+            continue
+        segments_by_video[segment.video_file_id].append(segment)
+
+    for video_id, video_segments in segments_by_video.items():
+        intervals = _merge_frame_intervals(
+            [
+                (int(segment.start_frame_number), int(segment.end_frame_number))
+                for segment in video_segments
+            ]
+        )
+        if not intervals:
+            continue
+
+        frames_qs = Frame.objects.select_related("video").filter(video_id=video_id)
+        if len(intervals) <= 120:
+            frames_qs = frames_qs.filter(_frame_interval_query(intervals))
+        else:
+            frames_qs = frames_qs.filter(
+                frame_number__gte=intervals[0][0],
+                frame_number__lt=max(
+                    end_frame for _start_frame, end_frame in intervals
+                ),
+            )
+
+        frame_by_number = frames_by_video.setdefault(int(video_id), {})
+        for frame in frames_qs.order_by("frame_number", "pk"):
+            frame_number = int(frame.frame_number)
+            if any(
+                start_frame <= frame_number < end_frame
+                for start_frame, end_frame in intervals
+            ):
+                frame_by_number[frame_number] = frame
+
+
+def _materialize_missing_multilabel_frames(
+    dataset_id: int,
+    *,
+    annotation_source_scope: str | None = ANNOTATION_SOURCE_SCOPE_ALL,
+) -> dict[str, Any]:
     dataset = AIDataSet.objects.get(id=dataset_id)
+    source_scope: AnnotationSourceScope = normalize_annotation_source_scope(
+        annotation_source_scope
+    )
     if dataset.dataset_type != AIDataSet.DATASET_TYPE_IMAGE:
         raise ValueError("Training frame materialization requires an image AIDataSet.")
     if dataset.ai_model_type != AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL:
@@ -143,15 +224,33 @@ def _materialize_missing_multilabel_frames(dataset_id: int) -> dict[str, Any]:
             "Training frame materialization requires an image_multilabel_classification AIDataSet."
         )
 
-    annotations = (
-        dataset.image_annotations.select_related("frame__video")
-        .filter(frame__isnull=False)
-        .order_by("frame__video_id", "frame__frame_number", "frame_id")
-    )
     frames_by_video: dict[int, dict[int, Frame]] = defaultdict(dict)
-    for annotation in annotations:
-        frame = annotation.frame
-        frames_by_video[frame.video_id][frame.frame_number] = frame
+
+    if uses_frame_annotations(source_scope):
+        annotations = (
+            dataset.image_annotations.select_related("frame__video")
+            .filter(frame__isnull=False)
+            .order_by("frame__video_id", "frame__frame_number", "frame_id")
+        )
+        for annotation in annotations:
+            frame = annotation.frame
+            frames_by_video[frame.video_id][frame.frame_number] = frame
+
+    if uses_segment_annotations(source_scope):
+        video_segments = list(
+            dataset.video_annotations.select_related("video_file", "label")
+            .filter(
+                label__isnull=False,
+                video_file_id__isnull=False,
+                start_frame_number__isnull=False,
+                end_frame_number__isnull=False,
+            )
+            .order_by("video_file_id", "start_frame_number", "end_frame_number", "pk")
+        )
+        _add_segment_training_frames(
+            frames_by_video=frames_by_video,
+            segments=video_segments,
+        )
 
     materialized_count = 0
     existing_count = 0
@@ -219,6 +318,7 @@ def _materialize_missing_multilabel_frames(dataset_id: int) -> dict[str, Any]:
 
     return {
         "dataset_id": dataset_id,
+        "annotation_source_scope": source_scope,
         "existing_frame_count": existing_count,
         "materialized_frame_count": materialized_count,
         "materialized_video_count": video_count,
@@ -235,9 +335,15 @@ def prepare_model_training_inputs(command_kwargs: dict[str, Any]) -> dict[str, A
     dataset_id = command_kwargs.get("dataset_id")
     if dataset_id is None:
         return {"prepared": False, "reason": "missing_dataset_id"}
+    annotation_source_scope: AnnotationSourceScope = normalize_annotation_source_scope(
+        command_kwargs.get("annotation_source_scope")
+    )
     return {
         "prepared": True,
-        **_materialize_missing_multilabel_frames(int(dataset_id)),
+        **_materialize_missing_multilabel_frames(
+            int(dataset_id),
+            annotation_source_scope=annotation_source_scope,
+        ),
     }
 
 
@@ -263,6 +369,7 @@ def _mark_lost_model_training_runs() -> None:
 
 def _model_training_run_payload(run: AIModelTrainingRun) -> dict[str, Any]:
     request_payload = run.request_payload or {}
+    command_kwargs = run.command_kwargs or {}
     training_target = request_payload.get("training_target")
     if training_target not in {
         MODEL_TRAINING_TARGET_IMAGE_MULTILABEL,
@@ -274,9 +381,17 @@ def _model_training_run_payload(run: AIModelTrainingRun) -> dict[str, Any]:
             else MODEL_TRAINING_TARGET_IMAGE_MULTILABEL
         )
 
+    annotation_source_scope = None
+    if training_target == MODEL_TRAINING_TARGET_IMAGE_MULTILABEL:
+        annotation_source_scope = normalize_annotation_source_scope(
+            request_payload.get("annotation_source_scope")
+            or command_kwargs.get("annotation_source_scope")
+        )
+
     return {
         "run_id": run.run_key,
         "training_target": training_target,
+        "annotation_source_scope": annotation_source_scope,
         "status": run.status,
         "dataset_id": run.dataset_id,
         "dataset_name": run.dataset_name,

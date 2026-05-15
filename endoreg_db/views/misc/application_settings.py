@@ -49,6 +49,10 @@ from endoreg_db.utils.ai.model_training.config import (
     DEFAULT_LABELSET_VERSION_TO_TRAIN,
     TRAINING_ROOT,
 )
+from endoreg_db.utils.ai.multilabel_dataset_builder import (
+    ANNOTATION_SOURCE_SCOPE_ALL,
+    normalize_annotation_source_scope,
+)
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_write_file,
@@ -1245,8 +1249,16 @@ def application_settings_model_training_runs(request):
     )
     device = str(payload.get("device", "auto") or "auto").strip() or "auto"
     treat_unlabeled_as_negative = payload.get("treat_unlabeled_as_negative", True)
+    annotation_source_scope = ANNOTATION_SOURCE_SCOPE_ALL
 
     errors: dict[str, str] = {}
+    try:
+        annotation_source_scope = normalize_annotation_source_scope(
+            payload.get("annotation_source_scope")
+        )
+    except ValueError as exc:
+        errors["annotation_source_scope"] = str(exc)
+
     if not isinstance(dataset_id, int):
         errors["dataset_id"] = "dataset_id must be an integer."
     if backbone_name not in {
@@ -1301,6 +1313,7 @@ def application_settings_model_training_runs(request):
         "labelset_version": labelset_version,
         "device": device,
         "freeze_backbone": freeze_backbone,
+        "annotation_source_scope": annotation_source_scope,
         "treat_unlabeled_as_negative": treat_unlabeled_as_negative,
     }
     run = AIModelTrainingRun.objects.create(

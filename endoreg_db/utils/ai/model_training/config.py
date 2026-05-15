@@ -8,6 +8,10 @@ from typing import Optional
 
 from django.conf import settings
 from endoreg_db.config.env import get_data_dir
+from endoreg_db.utils.ai.multilabel_dataset_builder import (
+    ANNOTATION_SOURCE_SCOPE_ALL,
+    AnnotationSourceScope,
+)
 from endoreg_db.utils.file_operations import ensure_directory
 
 
@@ -61,6 +65,7 @@ class TrainingConfig:
 
     # --- WHAT TO TRAIN ON -------------------------------------------------
     dataset_id: int
+    annotation_source_scope: AnnotationSourceScope = ANNOTATION_SOURCE_SCOPE_ALL
 
     # Train only on labels belonging to ANY LabelSet with this version.
     labelset_version_to_train: int = DEFAULT_LABELSET_VERSION_TO_TRAIN

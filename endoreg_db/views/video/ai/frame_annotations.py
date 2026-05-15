@@ -461,10 +461,17 @@ class FrameAnnotationRandomTaskView(APIView):
         only_prediction_segments = _as_bool(
             request.query_params.get("prediction_segments_only"), default=True
         )
-        ai_dataset = resolve_ai_dataset_for_queue(
-            dataset_name_raw=request.query_params.get("ai_dataset_name"),
-            dataset_type_raw=request.query_params.get("ai_dataset_type"),
-        )
+        try:
+            ai_dataset = resolve_ai_dataset_for_queue(
+                dataset_id_raw=request.query_params.get("ai_dataset_id"),
+                dataset_name_raw=request.query_params.get("ai_dataset_name"),
+                dataset_type_raw=request.query_params.get("ai_dataset_type"),
+            )
+        except ValueError as exc:
+            return Response(
+                {"error": str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         queue_spec = FrameAnnotationQueueSpec(
             limit=limit,
             task_mode=task_mode,
@@ -498,6 +505,7 @@ class FrameAnnotationRandomTaskView(APIView):
             if filter_label is not None:
                 details["filter_label"] = filter_label.name
             if ai_dataset is not None:
+                details["ai_dataset_id"] = ai_dataset.id
                 details["ai_dataset_name"] = ai_dataset.name
                 details["ai_dataset_type"] = ai_dataset.dataset_type
                 details["ai_dataset_model_type"] = ai_dataset.ai_model_type
@@ -529,6 +537,7 @@ class FrameAnnotationRandomTaskView(APIView):
         if filter_label is not None:
             response_data["filter_label"] = filter_label.name
         if ai_dataset is not None:
+            response_data["ai_dataset_id"] = ai_dataset.id
             response_data["ai_dataset_name"] = ai_dataset.name
             response_data["ai_dataset_type"] = ai_dataset.dataset_type
             response_data["label_distribution"] = queue_result.label_distribution

@@ -424,3 +424,56 @@ class FrameAnnotationStateTest(TestCase):
         )
 
         self.assertEqual(resolved, dataset)
+
+    def test_resolve_ai_dataset_for_queue_prefers_explicit_dataset_id(self):
+        older_dataset = AIDataSet.objects.create(
+            name="duplicate-frame-dataset",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+        selected_dataset = AIDataSet.objects.create(
+            name=older_dataset.name,
+            dataset_type=AIDataSet.DATASET_TYPE_VIDEO,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_VIDEO_SEGMENT_CLASSIFICATION,
+        )
+
+        resolved = resolve_ai_dataset_for_queue(
+            dataset_id_raw=selected_dataset.pk,
+            dataset_name_raw=older_dataset.name,
+            dataset_type_raw=older_dataset.dataset_type,
+        )
+
+        self.assertEqual(resolved, selected_dataset)
+
+    def test_selected_ai_dataset_limits_random_queue_to_dataset_frames(self):
+        dataset = AIDataSet.objects.create(
+            name="selected-frame-dataset",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+        dataset.image_annotations.create(
+            frame=self.frames[0],
+            label=self.target_label,
+            value=True,
+            information_source=self.manual_source,
+            annotator="dataset",
+        )
+
+        spec = FrameAnnotationQueueSpec(
+            limit=4,
+            label_set=self.label_set,
+            information_source_name=self.manual_source.name,
+            ai_dataset=dataset,
+            sampling_strategy=FrameSamplingStrategy.NONE,
+            exclude_annotated=False,
+        )
+
+        with patch(
+            "endoreg_db.models.state.frame_annotation.random.randint",
+            return_value=0,
+        ):
+            result = build_frame_task_queue(spec)
+
+        self.assertEqual(
+            [task["frame_id"] for task in result.tasks], [self.frames[0].pk]
+        )
