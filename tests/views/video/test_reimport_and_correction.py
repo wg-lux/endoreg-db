@@ -184,6 +184,7 @@ def test_reimport_uses_retry_true_and_refreshes_video(tmp_path, monkeypatch):
     raw_path.write_bytes(b"raw")
     video = _FakeVideo(raw_path)
     service_calls = []
+    prediction_calls = []
 
     class _FakeVideoModel:
         DoesNotExist = LookupError
@@ -213,6 +214,13 @@ def test_reimport_uses_retry_true_and_refreshes_video(tmp_path, monkeypatch):
         lambda field_file: _context_path(raw_path),
         raising=True,
     )
+    monkeypatch.setattr(
+        module,
+        "_dispatch_prediction_refresh",
+        lambda target_video, payload: prediction_calls.append((target_video, payload))
+        or {"status": "queued", "queued": True, "history_id": 123},
+        raising=True,
+    )
 
     view = module.VideoReimportView()
     view.video_service = _FakeService()
@@ -222,8 +230,12 @@ def test_reimport_uses_retry_true_and_refreshes_video(tmp_path, monkeypatch):
     assert response.status_code == 200
     assert service_calls[0]["retry"] is True
     assert service_calls[0]["file_path"] == raw_path
-    assert video.pipe_1_called is True
+    assert video.pipe_1_called is False
+    assert video.initialize_specs_called is True
+    assert video.initialize_frames_called is True
     assert video.refreshed is True
+    assert prediction_calls == [(video, {})]
+    assert response.data["prediction_refresh"]["queued"] is True
 
 
 @pytest.mark.django_db
