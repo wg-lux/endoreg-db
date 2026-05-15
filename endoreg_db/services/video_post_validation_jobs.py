@@ -298,6 +298,7 @@ def _reserve_blackening_history(
                 queue=queue,
             ),
         )
+        mark_post_validation_incomplete(locked_video)
         return history, RESERVATION_CREATED
 
 

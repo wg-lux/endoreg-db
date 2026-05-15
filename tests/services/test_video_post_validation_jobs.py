@@ -136,6 +136,18 @@ def test_dispatch_video_post_validation_rebuild_celery_failure_does_not_fall_bac
     tmp_path,
 ):
     video = _create_video_for_post_validation(tmp_path)
+    state = video.get_or_create_state()
+    state.segment_annotations_created = True
+    state.segment_annotations_validated = True
+    state.outside_segments_removed = True
+    state.save(
+        update_fields=[
+            "segment_annotations_created",
+            "segment_annotations_validated",
+            "outside_segments_removed",
+            "date_modified",
+        ]
+    )
     monkeypatch.setenv("VIDEO_POST_VALIDATION_JOB_MODE", "celery")
 
     class _BrokenTask:
@@ -164,6 +176,10 @@ def test_dispatch_video_post_validation_rebuild_celery_failure_does_not_fall_bac
     history = VideoProcessingHistory.objects.get(pk=result.history_id)
     assert history.status == VideoProcessingHistory.STATUS_FAILURE
     assert "broker unavailable" in history.details
+    state.refresh_from_db()
+    assert state.segment_annotations_validated is False
+    assert state.outside_segments_removed is False
+    assert segment_state.resolve_segment_annotation_status(video) == "cleanup_failed"
 
 
 @pytest.mark.django_db

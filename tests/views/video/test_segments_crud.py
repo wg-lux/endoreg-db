@@ -851,6 +851,61 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
         self.assertEqual(response.data["operation"], "blacken_outside")
         self.assertIn("inline rebuild failed", response.data["error"])
 
+    def test_dispatch_failure_clears_stale_final_flags_and_serializes_failed(self):
+        LabelVideoSegment.objects.create(
+            video_file=self.video,
+            label=self.outside_label,
+            start_frame_number=10,
+            end_frame_number=20,
+        )
+        state = self.video.get_or_create_state()
+        state.segment_annotations_created = True
+        state.segment_annotations_validated = True
+        state.outside_segments_removed = True
+        state.save(
+            update_fields=[
+                "segment_annotations_created",
+                "segment_annotations_validated",
+                "outside_segments_removed",
+                "date_modified",
+            ]
+        )
+
+        class BrokenTask:
+            def apply_async(self, *args, **kwargs):
+                raise RuntimeError("broker unavailable")
+
+        request = self.factory.post(
+            f"/api/media/videos/{self.video.pk}/segments/blacken-outside/",
+            {"only_validated": False},
+            format="json",
+        )
+
+        with (
+            patch.dict(os.environ, {"VIDEO_POST_VALIDATION_JOB_MODE": "celery"}),
+            patch(
+                "endoreg_db.tasks.run_video_post_validation_rebuild_task", BrokenTask()
+            ),
+        ):
+            response = video_segments_blacken_outside(request, pk=self.video.pk)
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.data["status"], "failed")
+        self.assertEqual(response.data["post_processing_job"]["status"], "failed")
+        state.refresh_from_db()
+        self.assertFalse(state.segment_annotations_validated)
+        self.assertFalse(state.outside_segments_removed)
+
+        self.video.refresh_from_db()
+        serialized = VideoFileListSerializer(self.video).data
+        self.assertEqual(serialized["segment_annotation_status"], "cleanup_failed")
+        self.assertFalse(serialized["segment_annotations_validated"])
+        self.assertFalse(serialized["outside_segments_removed"])
+        self.assertEqual(
+            serialized["post_validation_rebuild"]["status"],
+            VideoProcessingHistory.STATUS_FAILURE,
+        )
+
     def test_repeated_call_returns_already_queued(self):
         LabelVideoSegment.objects.create(
             video_file=self.video,

@@ -187,12 +187,13 @@ def _segment_status_for_history(
 
 
 def resolve_segment_annotation_status(video: VideoFile) -> str:
+    latest_history = latest_post_validation_rebuild(video)
+    history_status = _segment_status_for_history(latest_history)
+    if history_status is not None:
+        return history_status.value
+
     state = getattr(video, "state", None)
     if state is None:
-        latest_history = latest_post_validation_rebuild(video)
-        history_status = _segment_status_for_history(latest_history)
-        if history_status is not None:
-            return history_status.value
         return SegmentAnnotationStatus.NOT_STARTED.value
 
     segment_annotations_created = bool(
@@ -202,11 +203,6 @@ def resolve_segment_annotation_status(video: VideoFile) -> str:
     outside_segments_removed = bool(getattr(state, "outside_segments_removed", False))
     if raw_segment_validated and outside_segments_removed:
         return SegmentAnnotationStatus.VALIDATED.value
-
-    latest_history = latest_post_validation_rebuild(video)
-    history_status = _segment_status_for_history(latest_history)
-    if history_status is not None:
-        return history_status.value
 
     if raw_segment_validated or segment_annotations_created:
         return SegmentAnnotationStatus.CLEANUP_REQUIRED.value

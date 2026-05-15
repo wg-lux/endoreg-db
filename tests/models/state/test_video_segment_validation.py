@@ -55,7 +55,7 @@ def _blackening_history(video: VideoFile, *, status: str) -> VideoProcessingHist
                 "outside_segments_removed": True,
             },
             VideoProcessingHistory.STATUS_FAILURE,
-            SegmentAnnotationStatus.VALIDATED.value,
+            SegmentAnnotationStatus.CLEANUP_FAILED.value,
         ),
     ],
 )
