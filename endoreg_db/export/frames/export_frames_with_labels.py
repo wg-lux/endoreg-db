@@ -42,6 +42,7 @@ from endoreg_db.utils.storage_streaming import (
 )
 from endoreg_db.utils.video.ffmpeg_wrapper import (
     extract_frames as ffmpeg_extract_frames,
+    extract_selected_frames as ffmpeg_extract_selected_frames,
 )
 
 logger = logging.getLogger(__name__)
@@ -1103,6 +1104,84 @@ def _extract_and_move_transcoded_frames(
 ) -> None:
     tmp_dir = ensure_directory(frame_dir / f"transcode_tmp_{uuid.uuid4().hex}")
     try:
+        if frame_pks is not None:
+            requested_frames = list(
+                video.frames.only("pk", "frame_number")
+                .filter(pk__in=frame_pks)
+                .order_by("frame_number", "pk")
+            )
+
+            total_db_frames = video.frames.count()
+            requested_count = len(requested_frames)
+            requested_ratio = (
+                requested_count / total_db_frames if total_db_frames else 1.0
+            )
+
+            logger.info(
+                "Frame materialization plan for video %s: requested=%s total_db_frames=%s ratio=%.4f",
+                video.pk,
+                requested_count,
+                total_db_frames,
+                requested_ratio,
+            )
+
+            # Use selective extraction when requested frames are sparse.
+            # If most frames are requested, the old full extraction can be faster.
+            use_selective = (
+                requested_count > 0
+                and total_db_frames > 0
+                and requested_ratio < 0.80
+            )
+
+            if use_selective:
+                try:
+                    selected_paths = ffmpeg_extract_selected_frames(
+                        source_path,
+                        tmp_dir,
+                        frame_numbers=[
+                            int(frame.frame_number) for frame in requested_frames
+                        ],
+                        quality=quality,
+                        ext=ext,
+                        fps=fps,
+                    )
+
+                    kept = 0
+                    skipped_existing = 0
+
+                    for frame in requested_frames:
+                        extracted_path = selected_paths.get(int(frame.frame_number))
+                        if extracted_path is None:
+                            raise FileNotFoundError(
+                                f"Selective extraction missing frame_number={frame.frame_number} "
+                                f"for video={video.pk}, frame={frame.pk}"
+                            )
+
+                        target_path = frame_dir / _frame_pk_filename(frame.pk, ext)
+
+                        if target_path.exists() and not overwrite:
+                            safe_unlink_file(extracted_path, missing_ok=True)
+                            skipped_existing += 1
+                            continue
+
+                        atomic_move_file(source=extracted_path, destination=target_path)
+                        kept += 1
+
+                    logger.info(
+                        "Selective frame extraction finished for video %s: kept=%s skipped_existing=%s",
+                        video.pk,
+                        kept,
+                        skipped_existing,
+                    )
+                    return
+
+                except Exception:
+                    logger.warning(
+                        "Selective extraction failed for video %s; falling back to full extraction.",
+                        video.pk,
+                        exc_info=True,
+                    )
+
         extracted_paths = ffmpeg_extract_frames(
             source_path,
             tmp_dir,

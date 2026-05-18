@@ -1147,6 +1147,121 @@ def extract_frames(
     extracted_files = sorted(output_dir.glob(f"frame_*.{ext}"))
     return extracted_files
 
+def extract_selected_frames(
+    video_path: Path,
+    output_dir: Path,
+    *,
+    frame_numbers: list[int],
+    quality: int,
+    ext: str = "jpg",
+    fps: Optional[float] = None,
+    batch_size: int = 300,
+) -> dict[int, Path]:
+    """
+    Extract only selected sampled frame numbers from a video.
+
+    This is an optimized extraction path for training/materialization jobs.
+
+    Meaning:
+    - Old extraction writes every sampled frame into a temp folder.
+    - This function writes only requested frame numbers into temp folders.
+    - The final frame_<Frame.pk>.jpg naming is still handled by caller code.
+    """
+    ffmpeg_executable = _resolve_ffmpeg_executable()
+    if not ffmpeg_executable:
+        error_msg = (
+            "ffmpeg command not found. Ensure FFmpeg is installed and in the PATH."
+        )
+        logger.error(error_msg)
+        raise FileNotFoundError(error_msg)
+
+    ensure_directory(output_dir)
+
+    unique_numbers = sorted({int(n) for n in frame_numbers if int(n) >= 0})
+    if not unique_numbers:
+        return {}
+
+    selected: dict[int, Path] = {}
+
+    print(
+        "[FFMPEG SELECTIVE EXTRACTION] enabled: extracting only requested DB frame numbers. "
+        "This avoids writing all temporary video frames.",
+        flush=True,
+    )
+    print(
+        f"[FFMPEG SELECTIVE EXTRACTION] video={video_path} "
+        f"requested_frames={len(unique_numbers)} fps={fps} batch_size={batch_size}",
+        flush=True,
+    )
+
+    for batch_start in range(0, len(unique_numbers), batch_size):
+        batch = unique_numbers[batch_start : batch_start + batch_size]
+        batch_index = batch_start // batch_size
+        batch_dir = ensure_directory(output_dir / f"selected_batch_{batch_index:05d}")
+        output_pattern = batch_dir / f"frame_%07d.{ext}"
+
+        # select filter uses n = frame index after previous filters.
+        # This matches the old code path where extracted filenames were parsed
+        # as frame numbers after fps sampling.
+        select_expr = "+".join(f"eq(n\\,{n})" for n in batch)
+
+        filters: list[str] = []
+        if fps is not None:
+            filters.append(f"fps={fps}")
+        filters.append(f"select={select_expr}")
+
+        cmd = [
+            ffmpeg_executable,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            str(video_path),
+            "-vf",
+            ",".join(filters),
+            "-vsync",
+            "0",
+            "-qscale:v",
+            str(quality),
+            "-start_number",
+            "0",
+            str(output_pattern),
+        ]
+
+        print(
+            f"[FFMPEG SELECTIVE EXTRACTION] batch={batch_index + 1} "
+            f"requested_in_batch={len(batch)}",
+            flush=True,
+        )
+
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+
+        if result.returncode != 0:
+            print(
+                "[FFMPEG SELECTIVE EXTRACTION] failed. "
+                "Caller should fall back to old full-video extraction.",
+                flush=True,
+            )
+            logger.error("Selective FFmpeg extraction failed:\n%s", result.stderr)
+            raise RuntimeError(f"Selective FFmpeg extraction failed for {video_path}")
+
+        extracted_files = sorted(batch_dir.glob(f"frame_*.{ext}"))
+
+        if len(extracted_files) != len(batch):
+            raise RuntimeError(
+                "Selective FFmpeg extraction count mismatch for "
+                f"{video_path}: requested={len(batch)}, extracted={len(extracted_files)}"
+            )
+
+        for frame_number, extracted_path in zip(batch, extracted_files):
+            selected[frame_number] = extracted_path
+
+    print(
+        f"[FFMPEG SELECTIVE EXTRACTION] finished: extracted={len(selected)} requested frames",
+        flush=True,
+    )
+
+    return selected
 
 def extract_frame_range(
     video_path: Path,
@@ -1291,5 +1406,6 @@ __all__ = [
     "transcode_video",
     "transcode_videofile_if_required",
     "extract_frames",
-    "extract_frame_range",  # Add new function to __all__
+    "extract_frame_range",
+    "extract_selected_frames",  # Add new function to __all__
 ]
