@@ -207,13 +207,16 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
         selection: dict[str, Any],
     ) -> Frame | None:
         stored_frame_number = selection.get("frame_number")
-        try:
-            selected_frame_number = int(stored_frame_number)
-        except (TypeError, ValueError):
+        if stored_frame_number:
+            try:
+                selected_frame_number = int(stored_frame_number)
+            except (TypeError, ValueError):
+                selected_frame_number = None
+        else:
             selected_frame_number = None
 
-        frame_qs = segment.get_frames().filter(is_extracted=True).order_by(
-            "frame_number"
+        frame_qs = (
+            segment.get_frames().filter(is_extracted=True).order_by("frame_number")
         )
         if selected_frame_number is not None:
             selected = frame_qs.filter(frame_number=selected_frame_number).first()
@@ -794,12 +797,7 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
             )
         except Exception as exc:
             return Response(
-                {
-                    "detail": (
-                        "PDF report generation failed "
-                        f"({type(exc).__name__})."
-                    )
-                },
+                {"detail": (f"PDF report generation failed ({type(exc).__name__}).")},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 

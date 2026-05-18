@@ -501,8 +501,12 @@ class PatientExaminationReportMakeReportTests(TestCase):
         assert captured_payload["header"]["patient_label"] == "Ada Lovelace"
         assert captured_payload["header"]["patient_birth_date"] == "1815-12-10"
         image_grid = next(
-            block for block in captured_payload["blocks"] if block["type"] == "image_grid"
+            block
+            for block in captured_payload["blocks"]
+            if block["type"] == "image_grid"
         )
         assert image_grid["image_paths"] == [str(self.frame.file_path)]
         assert "frame 12" in image_grid["captions"][0]
-        assert "AI prediction based report text." in captured_payload["blocks"][0]["text"]
+        assert (
+            "AI prediction based report text." in captured_payload["blocks"][0]["text"]
+        )

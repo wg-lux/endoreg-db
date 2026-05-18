@@ -133,6 +133,7 @@ export const endpoints = {
     patientExaminationReportsByPatientExamination: (patientExaminationId: Id) =>
       `patient-examination-reports/?patient_examination_id=${patientExaminationId}`,
     saveReportSubmission: 'patient-examination-reports/save-submission/',
+    makeReport: 'patient-examination-reports/make-report/',
     segmentFrameSelectorBase: 'patient-examination-reports/segment-frame-selector/',
     segmentFrameSelector: (patientExaminationId: Id, reportId?: Id) =>
       reportId == null
@@ -269,6 +270,8 @@ export const endpoints = {
       `settings/application/ai_datasets/${dataset_id}/frame_bucket_distribution/`,
     ai_dataset_training_manifest: (dataset_id: Id) =>
       `settings/application/ai_datasets/${dataset_id}/training_manifest/`,
+    ai_dataset_attachments: (dataset_id: Id) =>
+      `settings/application/ai_datasets/${dataset_id}/attachments/`,
     networkNodeRolesDropdown:
       'settings/application/dropdowns/network_node_roles/',
     modelTrainingOptions: 'settings/application/model_training/options/',
@@ -393,6 +396,7 @@ under `/api/`.
 | `video-frame-stream` | `/api/media/videos/{video_id}/frames/{frame_number}/stream/` |
 | `patientexaminationreport-list` | `/api/patient-examination-reports/` |
 | `patientexaminationreport-history-context` | `/api/patient-examination-reports/history-context/` |
+| `patientexaminationreport-make-report` | `/api/patient-examination-reports/make-report/` |
 | `patientexaminationreport-save-submission` | `/api/patient-examination-reports/save-submission/` |
 | `patientexaminationreport-segment-frame-selector` | `/api/patient-examination-reports/segment-frame-selector/` |
 | `patientexaminationreport-detail` | `/api/patient-examination-reports/{pk}/` |
@@ -419,6 +423,7 @@ under `/api/`.
 | `application_settings_detail` | `/api/settings/application/` |
 | `application_settings_ai_dataset_export` | `/api/settings/application/ai_dataset_export/` |
 | `application_settings_ai_dataset_export_download` | `/api/settings/application/ai_dataset_export/{artifact_id}/download/` |
+| `application_settings_ai_dataset_attachments` | `/api/settings/application/ai_datasets/{param}/attachments/` |
 | `application_settings_ai_dataset_frame_bucket_distribution` | `/api/settings/application/ai_datasets/{param}/frame_bucket_distribution/` |
 | `application_settings_ai_dataset_training_manifest` | `/api/settings/application/ai_datasets/{param}/training_manifest/` |
 | `application_settings_backup` | `/api/settings/application/backup/` |
