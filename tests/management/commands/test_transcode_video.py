@@ -19,7 +19,7 @@ def test_transcode_video_command_transcodes_input_dir(monkeypatch, tmp_path):
     input_dir.mkdir()
     (input_dir / "clip.mp4").write_bytes(b"raw-video")
 
-    def fake_transcode_videofile_if_required(
+    def fake_transcode_video(
         input_path: Path,
         output_path: Path,
         **kwargs,
@@ -29,13 +29,25 @@ def test_transcode_video_command_transcodes_input_dir(monkeypatch, tmp_path):
 
     monkeypatch.setattr(
         video_transcoding.ffmpeg_wrapper,
-        "transcode_videofile_if_required",
-        fake_transcode_videofile_if_required,
+        "transcode_video",
+        fake_transcode_video,
     )
     monkeypatch.setattr(
         video_transcoding,
         "classify_video_format",
         lambda path: SimpleNamespace(compliant=True, reasons=[], error=""),
+    )
+    monkeypatch.setattr(
+        video_transcoding.ffmpeg_wrapper,
+        "get_stream_info",
+        lambda path: {
+            "streams": [
+                {
+                    "codec_type": "video",
+                    "avg_frame_rate": "50/1",
+                }
+            ]
+        },
     )
 
     stdout = StringIO()
@@ -54,6 +66,7 @@ def test_transcode_video_command_transcodes_input_dir(monkeypatch, tmp_path):
     assert payload["scanned_files"] == 1
     assert payload["transcoded_files"] == 1
     assert payload["failed_files"] == 0
+    assert payload["target_fps"] == 50.0
     assert (output_dir / "clip.mp4").read_bytes() == b"standardized-video"
 
 

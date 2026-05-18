@@ -2,15 +2,16 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Iterable
 from uuid import uuid4
 
+from endoreg_db.config.env import get_video_default_fps
 from endoreg_db.services.video_format_reconciliation import (
     REQUIRED_COLOR_RANGE,
-    REQUIRED_CODEC,
     REQUIRED_PIXEL_FORMAT,
     VIDEO_EXTENSIONS,
     classify_video_format,
@@ -78,6 +79,7 @@ class VideoTranscodeSummary:
     transcoded_files: int = 0
     skipped_files: int = 0
     failed_files: int = 0
+    target_fps: float = 0.0
     reports: list[VideoTranscodeReport] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
@@ -92,6 +94,7 @@ class VideoTranscodeSummary:
             "transcoded_files": self.transcoded_files,
             "skipped_files": self.skipped_files,
             "failed_files": self.failed_files,
+            "target_fps": self.target_fps,
             "reports": [report.as_dict() for report in self.reports],
         }
 
@@ -107,6 +110,7 @@ def transcode_video_directory(
     allow_unmanaged_output: bool = False,
     force_cpu: bool = False,
     quality_mode: str = "balanced",
+    target_fps: float | None = None,
     extensions: Iterable[str] = VIDEO_EXTENSIONS,
 ) -> VideoTranscodeSummary:
     """
@@ -123,6 +127,7 @@ def transcode_video_directory(
     output_root = Path(output_dir).expanduser().resolve()
     normalized_extensions = frozenset(_normalize_extension(ext) for ext in extensions)
     normalized_quality_mode = _normalize_quality_mode(quality_mode)
+    normalized_target_fps = _normalize_target_fps(target_fps)
 
     if not allow_unmanaged_output:
         _validate_managed_output_dir(output_root)
@@ -147,6 +152,7 @@ def transcode_video_directory(
         dry_run=dry_run,
         recursive=recursive,
         overwrite=overwrite,
+        target_fps=normalized_target_fps,
         scanned_files=len(sources),
     )
 
@@ -167,6 +173,7 @@ def transcode_video_directory(
             dry_run=dry_run,
             force_cpu=force_cpu,
             quality_mode=normalized_quality_mode,
+            target_fps=normalized_target_fps,
         )
         summary.reports.append(report)
         if report.status == VideoTranscodeStatus.PLANNED:
@@ -190,6 +197,7 @@ def _transcode_one(
     dry_run: bool,
     force_cpu: bool,
     quality_mode: str,
+    target_fps: float,
 ) -> VideoTranscodeReport:
     bytes_before = _file_size(source)
     report = VideoTranscodeReport(
@@ -228,6 +236,7 @@ def _transcode_one(
                 "staging_path": str(staging_path),
                 "quality_mode": quality_mode,
                 "force_cpu": force_cpu,
+                "target_fps": target_fps,
             },
         )
         result = _run_system_transcode(
@@ -235,6 +244,7 @@ def _transcode_one(
             staging_path=staging_path,
             quality_mode=quality_mode,
             force_cpu=force_cpu,
+            target_fps=target_fps,
         )
         if result is None:
             raise RuntimeError("ffmpeg transcode did not produce an output")
@@ -245,6 +255,7 @@ def _transcode_one(
 
         _verify_output_file(staging_path)
         _verify_standard_video(staging_path)
+        _verify_target_fps(staging_path, target_fps=target_fps)
 
         file_mode = source.stat().st_mode & 0o777
         atomic_move_file(
@@ -277,17 +288,8 @@ def _run_system_transcode(
     staging_path: Path,
     quality_mode: str,
     force_cpu: bool,
+    target_fps: float,
 ) -> Path | None:
-    if source.suffix.lower() == ".mp4":
-        return ffmpeg_wrapper.transcode_videofile_if_required(
-            input_path=source,
-            output_path=staging_path,
-            required_codec=REQUIRED_CODEC,
-            required_pixel_format=REQUIRED_PIXEL_FORMAT,
-            quality_mode=quality_mode,
-            force_cpu=force_cpu,
-        )
-
     return ffmpeg_wrapper.transcode_video(
         input_path=source,
         output_path=staging_path,
@@ -298,6 +300,8 @@ def _run_system_transcode(
             REQUIRED_PIXEL_FORMAT,
             "-color_range",
             REQUIRED_COLOR_RANGE,
+            "-r",
+            _format_fps_arg(target_fps),
         ],
     )
 
@@ -365,6 +369,34 @@ def _verify_standard_video(path: Path) -> None:
     raise RuntimeError(f"Transcoded output is not system-standard video: {reason_text}")
 
 
+def _verify_target_fps(path: Path, *, target_fps: float) -> None:
+    stream_info = ffmpeg_wrapper.get_stream_info(path)
+    if not stream_info or "streams" not in stream_info:
+        raise RuntimeError(f"Could not verify output fps for {path}")
+
+    video_stream = next(
+        (
+            stream
+            for stream in stream_info["streams"]
+            if stream.get("codec_type") == "video"
+        ),
+        None,
+    )
+    if video_stream is None:
+        raise RuntimeError(f"Could not verify output fps for {path}: no video stream")
+
+    probed_fps = _parse_frame_rate(
+        video_stream.get("avg_frame_rate") or video_stream.get("r_frame_rate")
+    )
+    if probed_fps is None:
+        raise RuntimeError(f"Could not verify output fps for {path}: missing fps")
+    if not math.isclose(probed_fps, target_fps, rel_tol=0.001, abs_tol=0.01):
+        raise RuntimeError(
+            f"Transcoded output fps mismatch for {path}: "
+            f"{probed_fps:g} != {target_fps:g}"
+        )
+
+
 def _validate_input_dir(input_root: Path) -> None:
     if not input_root.exists():
         raise ValueError(f"input_dir does not exist: {input_root}")
@@ -417,6 +449,58 @@ def _normalize_quality_mode(quality_mode: str) -> str:
         allowed = ", ".join(sorted(SUPPORTED_QUALITY_MODES))
         raise ValueError(f"quality_mode must be one of: {allowed}")
     return normalized
+
+
+def _normalize_target_fps(target_fps: float | None) -> float:
+    if target_fps is None:
+        target_fps = _default_target_fps()
+    try:
+        fps = float(target_fps)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("target_fps must be a positive finite number.") from exc
+    if not math.isfinite(fps) or fps <= 0:
+        raise ValueError("target_fps must be a positive finite number.")
+    return fps
+
+
+def _default_target_fps() -> float:
+    try:
+        from django.conf import settings
+
+        configured = getattr(settings, "VIDEO_DEFAULT_FPS", None)
+        if configured is not None:
+            return float(configured)
+    except Exception:
+        pass
+    return float(get_video_default_fps())
+
+
+def _format_fps_arg(fps: float) -> str:
+    return str(int(fps)) if float(fps).is_integer() else f"{fps:g}"
+
+
+def _parse_frame_rate(value: object) -> float | None:
+    if value is None:
+        return None
+    raw_value = str(value).strip()
+    if not raw_value or raw_value == "0/0":
+        return None
+    if "/" in raw_value:
+        numerator_text, denominator_text = raw_value.split("/", 1)
+        try:
+            numerator = float(numerator_text)
+            denominator = float(denominator_text)
+        except ValueError:
+            return None
+        if denominator == 0:
+            return None
+        fps = numerator / denominator
+    else:
+        try:
+            fps = float(raw_value)
+        except ValueError:
+            return None
+    return fps if math.isfinite(fps) and fps > 0 else None
 
 
 def _is_transient_name(name: str) -> bool:
