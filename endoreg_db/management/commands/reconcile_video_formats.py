@@ -25,7 +25,7 @@ class Command(BaseCommand):
             default=[],
             help=(
                 "Managed media root to scan. May be provided multiple times. "
-                "When omitted, default protected/data video roots are scanned."
+                "When omitted, default canonical storage video roots are scanned."
             ),
         )
         parser.add_argument(
@@ -37,6 +37,14 @@ class Command(BaseCommand):
             "--no-default-roots",
             action="store_true",
             help="Do not scan default managed roots.",
+        )
+        parser.add_argument(
+            "--include-legacy-roots",
+            action="store_true",
+            help=(
+                "Also scan top-level legacy compatibility roots under DATA_DIR. "
+                "Legacy roots are audit-only and repair is always skipped."
+            ),
         )
         parser.add_argument(
             "--extension",
@@ -126,13 +134,19 @@ class Command(BaseCommand):
         )
         if options["no_default_roots"]:
             include_default_roots = False
-        if not include_default_roots and not explicit_roots:
+        include_legacy_roots = bool(options["include_legacy_roots"])
+        if (
+            not include_default_roots
+            and not explicit_roots
+            and not include_legacy_roots
+        ):
             raise CommandError("No scan roots selected.")
 
         extensions = tuple(options["extension"] or VIDEO_EXTENSIONS)
         summary = reconcile_video_formats(
             roots=explicit_roots,
             include_default_roots=include_default_roots,
+            include_legacy_roots=include_legacy_roots,
             dry_run=dry_run,
             repair=repair,
             in_place=in_place,

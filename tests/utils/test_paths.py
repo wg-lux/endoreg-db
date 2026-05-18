@@ -105,6 +105,8 @@ def test_paths_module_resolves_relative_env_paths(monkeypatch):
     assert reloaded.STORAGE_DIR == expected_storage
     assert reloaded.DATA_DIR == expected_data
     assert reloaded.LOG_DIR == expected_data / "logs"
+    assert reloaded.QUARANTINE_DIR == expected_data / "quarantine"
+    assert reloaded.MIGRATION_STAGING_DIR == expected_data / "migration_staging"
     assert reloaded.UPLOAD_API_DIR == expected_storage / "upload_jobs" / "api"
     assert reloaded.SAP_IMPORT_DROP_DIR == expected_data / "import" / "sap_import"
     assert reloaded.IMPORT_VIDEO_DIR == expected_data / "import" / "video_import"
@@ -120,7 +122,22 @@ def test_paths_module_resolves_relative_env_paths(monkeypatch):
         reloaded.IMPORT_ANONYMIZED_REPORT_DIR
         == expected_data / "import" / "anonymized_report_import"
     )
+    assert reloaded.EXPORT_DIR == expected_data / "export"
+    assert reloaded.SENSITIVE_VIDEO_DIR == expected_storage / "sensitive_videos"
+    assert reloaded.SENSITIVE_REPORT_DIR == expected_storage / "sensitive_reports"
     assert reloaded.ANONYM_VIDEO_DIR == expected_storage / "processed_videos_final"
+    assert reloaded.ANONYM_REPORT_DIR == expected_storage / "processed_reports_final"
+    assert reloaded.RAW_FRAME_DIR == expected_storage / "raw_frames"
+    assert reloaded.FRAME_DIR == expected_storage / "frames"
+    assert reloaded.WEIGHTS_DIR == expected_storage / "model_weights"
+    assert (
+        reloaded.MANAGED_ANONYMIZED_VIDEOS_DIR
+        == expected_storage / "processed_videos_final"
+    )
+    assert (
+        reloaded.MANAGED_ANONYMIZED_REPORTS_DIR
+        == expected_storage / "processed_reports_final"
+    )
 
     for path in (
         reloaded.PROTECTED_DATA_ROOT,

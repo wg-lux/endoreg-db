@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from django.core.files.base import ContentFile
 
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.file_storage.create_report_file import (
@@ -18,6 +19,7 @@ from endoreg_db.import_files.file_storage.state_management import (
 )
 from endoreg_db.models import Center, EndoscopyProcessor, VideoFile
 from endoreg_db.models.media.video import create_from_file as video_create_module
+from endoreg_db.utils import paths as paths_module
 from endoreg_db.utils.encryption.encrypted import MAGIC
 from endoreg_db.utils.file_operations import sha256_file
 
@@ -47,6 +49,8 @@ def test_report_import_persists_raw_pdf_as_encrypted_bytes(tmp_path, base_db_dat
     assert processed is False
     assert needs_processing is True
     stored_path = Path(report.file.path)
+    assert report.file.name.startswith(f"{paths_module.SENSITIVE_REPORT_DIR.name}/")
+    assert stored_path.is_relative_to(paths_module.SENSITIVE_REPORT_DIR)
     assert stored_path.read_bytes().startswith(MAGIC)
     with report.file.open("rb") as stored:
         assert stored.read() == plaintext
@@ -89,11 +93,24 @@ def test_video_import_persists_raw_video_as_encrypted_bytes(
     assert processed is False
     assert needs_processing is True
     stored_path = Path(video.raw_file.path)
+    assert video.raw_file.name.startswith(f"{paths_module.SENSITIVE_VIDEO_DIR.name}/")
+    assert stored_path.is_relative_to(paths_module.SENSITIVE_VIDEO_DIR)
     assert stored_path.read_bytes().startswith(MAGIC)
     with video.raw_file.open("rb") as stored:
         assert stored.read() == plaintext
     assert sha256_file(source) == sha256_file(video.raw_file)
     assert not list(stored_path.parent.glob("*.part.*"))
+
+    video.processed_file.save(
+        "processed-video.mp4",
+        ContentFile(b"\x00\x00\x00\x20ftypmp42processed"),
+        save=False,
+    )
+    processed_path = Path(video.processed_file.path)
+    assert video.processed_file.name.startswith(
+        f"{paths_module.ANONYM_VIDEO_DIR.name}/"
+    )
+    assert processed_path.is_relative_to(paths_module.ANONYM_VIDEO_DIR)
 
 
 def test_report_finalize_persists_processed_pdf_as_encrypted_bytes(
@@ -117,6 +134,10 @@ def test_report_finalize_persists_processed_pdf_as_encrypted_bytes(
     report.refresh_from_db()
 
     stored_path = Path(report.processed_file.path)
+    assert report.processed_file.name.startswith(
+        f"{paths_module.ANONYM_REPORT_DIR.name}/"
+    )
+    assert stored_path.is_relative_to(paths_module.ANONYM_REPORT_DIR)
     assert stored_path.read_bytes().startswith(MAGIC)
     with report.processed_file.open("rb") as stored:
         assert stored.read() == processed_plaintext

@@ -27,11 +27,9 @@ from endoreg_db.utils.hashs import get_video_hash
 from endoreg_db.utils.storage import save_local_file
 from endoreg_db.utils.video.calc_duration_seconds import _calc_duration_vf
 from endoreg_db.utils.video.ffmpeg_wrapper import blacken_video_frame_intervals
-
+from endoreg_db.utils.encryption.encrypted import LazyEncryptedStorage
 from ...label import Label, LabelVideoSegment
 from ...state import VideoState
-
-# --- Import model-specific function modules ---
 from .create_from_file import _create_from_file
 from .pipe_1 import _pipe_1, _test_after_pipe_1
 from .pipe_2 import _pipe_2
@@ -105,7 +103,6 @@ from .video_file_streaming import (
     _resolve_video_stream_source,
 )
 from .video_file_time import _ensure_default_fps, _frame_number_to_s
-from endoreg_db.utils.encryption.encrypted import LazyEncryptedStorage
 
 # Configure logging
 logger = logging.getLogger(__name__)  # Changed from "video_file"

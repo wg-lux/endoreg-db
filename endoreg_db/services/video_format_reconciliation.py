@@ -42,6 +42,7 @@ REQUIRED_CODEC = "h264"
 REQUIRED_PIXEL_FORMAT = "yuv420p"
 REQUIRED_COLOR_RANGE = "pc"
 DEFAULT_MIN_FREE_BYTES = 20 * 1024 * 1024 * 1024
+LEGACY_ROOT_READ_ONLY = "legacy_root_read_only"
 
 
 class VideoFormatStatus(StrEnum):
@@ -109,6 +110,7 @@ class VideoFormatSummary:
     dry_run: bool = False
     repair: bool = False
     in_place: bool = False
+    include_legacy_roots: bool = False
     checked_files: int = 0
     compliant_files: int = 0
     non_compliant_files: int = 0
@@ -124,6 +126,7 @@ class VideoFormatSummary:
             "dry_run": self.dry_run,
             "repair": self.repair,
             "in_place": self.in_place,
+            "include_legacy_roots": self.include_legacy_roots,
             "checked_files": self.checked_files,
             "compliant_files": self.compliant_files,
             "non_compliant_files": self.non_compliant_files,
@@ -143,6 +146,14 @@ def default_managed_video_roots() -> tuple[Path, ...]:
             paths.sensitive_video,
             paths.anonym_video,
             paths.storage / "streamable_videos",
+        )
+    )
+
+
+def legacy_compatibility_video_roots() -> tuple[Path, ...]:
+    paths = EndoregPathsModel.from_environment()
+    return _dedupe_paths(
+        (
             paths.data / SENSITIVE_VIDEO_DIR_NAME,
             paths.data / ANONYM_VIDEO_DIR_NAME,
             paths.data / "streamable_videos",
@@ -154,6 +165,7 @@ def reconcile_video_formats(
     *,
     roots: Iterable[str | Path] | None = None,
     include_default_roots: bool = True,
+    include_legacy_roots: bool = False,
     dry_run: bool = False,
     repair: bool = False,
     in_place: bool = False,
@@ -164,12 +176,22 @@ def reconcile_video_formats(
     force_cpu: bool = False,
     extensions: Iterable[str] = VIDEO_EXTENSIONS,
 ) -> VideoFormatSummary:
-    scan_roots = _select_roots(roots, include_default_roots=include_default_roots)
+    scan_roots = _select_roots(
+        roots,
+        include_default_roots=include_default_roots,
+        include_legacy_roots=include_legacy_roots,
+    )
     if not scan_roots:
         raise ValueError("At least one video format reconciliation root is required.")
 
+    legacy_roots = legacy_compatibility_video_roots()
     normalized_extensions = frozenset(_normalize_extension(ext) for ext in extensions)
-    summary = VideoFormatSummary(dry_run=dry_run, repair=repair, in_place=in_place)
+    summary = VideoFormatSummary(
+        dry_run=dry_run,
+        repair=repair,
+        in_place=in_place,
+        include_legacy_roots=include_legacy_roots,
+    )
     remaining = max_files
 
     for root in scan_roots:
@@ -227,13 +249,16 @@ def reconcile_video_formats(
                 summary.non_compliant_files += 1
 
             if repair:
-                report = _repair_file(
-                    report,
-                    dry_run=dry_run,
-                    in_place=in_place,
-                    min_free_bytes=min_free_bytes,
-                    force_cpu=force_cpu,
-                )
+                if _path_is_under_any(candidate, legacy_roots):
+                    report = _skip_legacy_repair(report)
+                else:
+                    report = _repair_file(
+                        report,
+                        dry_run=dry_run,
+                        in_place=in_place,
+                        min_free_bytes=min_free_bytes,
+                        force_cpu=force_cpu,
+                    )
                 if report.status == VideoFormatStatus.REPAIRED:
                     summary.repaired_files += 1
                 elif report.status == VideoFormatStatus.REPAIR_FAILED:
@@ -395,6 +420,20 @@ def _repair_file(
     return report
 
 
+def _skip_legacy_repair(report: VideoFormatFileReport) -> VideoFormatFileReport:
+    report.status = VideoFormatStatus.SKIPPED
+    report.action = VideoFormatAction.SKIP_REPAIR
+    report.error = LEGACY_ROOT_READ_ONLY
+    _emit_video_format_event(
+        "repair_skipped",
+        {
+            "path": report.path,
+            "reason": report.error,
+        },
+    )
+    return report
+
+
 def _format_mismatch_reasons(
     path: Path,
     report: VideoFormatFileReport,
@@ -450,10 +489,13 @@ def _select_roots(
     roots: Iterable[str | Path] | None,
     *,
     include_default_roots: bool,
+    include_legacy_roots: bool,
 ) -> tuple[Path, ...]:
     selected: list[Path] = []
     if include_default_roots:
         selected.extend(default_managed_video_roots())
+    if include_legacy_roots:
+        selected.extend(legacy_compatibility_video_roots())
     if roots:
         selected.extend(Path(root) for root in roots)
     return _dedupe_paths(selected)
@@ -484,6 +526,17 @@ def _dedupe_paths(paths: Iterable[Path]) -> tuple[Path, ...]:
         if resolved not in deduped:
             deduped.append(resolved)
     return tuple(deduped)
+
+
+def _path_is_under_any(path: Path, roots: Iterable[Path]) -> bool:
+    resolved_path = Path(path).expanduser().resolve()
+    for root in roots:
+        try:
+            resolved_path.relative_to(Path(root).expanduser().resolve())
+        except ValueError:
+            continue
+        return True
+    return False
 
 
 def _normalize_extension(extension: str) -> str:

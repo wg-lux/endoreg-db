@@ -16,8 +16,10 @@ from endoreg_db.utils.paths import (
     IMPORT_ANONYMIZED_REPORT_DIR,
     IMPORT_ANONYMIZED_VIDEO_DIR,
     MANIFEST_DIR,
+    MANAGED_ANONYMIZED_VIDEOS_DIR,
     MANAGED_SENSITIVE_SIDECARS_DIR,
     RAW_FRAME_DIR,
+    SENSITIVE_VIDEO_DIR,
     WEIGHTS_DIR,
     to_storage_relative,
 )
@@ -253,6 +255,51 @@ class MigrateDataDirCommandTests(TestCase):
                     for path in destination_paths
                 )
             )
+
+    def test_dry_run_maps_legacy_top_level_media_dirs_to_canonical_storage(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir_name:
+            temp_dir = Path(temp_dir_name)
+            legacy_root = temp_dir / "legacy"
+            legacy_sources = {
+                Path("sensitive_videos/raw.mp4"): SENSITIVE_VIDEO_DIR,
+                Path("processed_videos_final/processed.mp4"): (
+                    MANAGED_ANONYMIZED_VIDEOS_DIR
+                ),
+                Path("frames/frame.jpg"): FRAME_DIR,
+                Path("model_weights/weights.safetensors"): WEIGHTS_DIR,
+            }
+            for relative_path in legacy_sources:
+                source_path = legacy_root / relative_path
+                source_path.parent.mkdir(parents=True, exist_ok=True)
+                source_path.write_bytes(b"migration-source")
+
+            manifest_path = (
+                MANIFEST_DIR / "tests" / "migrate_data_dir_top_level_media_mapping.json"
+            )
+            if manifest_path.exists():
+                manifest_path.unlink()
+
+            call_command(
+                "migrate_data_dir",
+                str(legacy_root),
+                "--dry-run",
+                "--manifest-path",
+                str(manifest_path),
+            )
+
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+            migrated_by_source = {
+                Path(entry["source_path"]).relative_to(legacy_root): entry
+                for entry in payload["migrated_entries"]
+            }
+
+            self.assertEqual(set(migrated_by_source), set(legacy_sources))
+            for relative_path, target_root in legacy_sources.items():
+                entry = migrated_by_source[relative_path]
+                self.assertEqual(entry["storage_class"], "managed")
+                self.assertTrue(entry["destination_path"].startswith(str(target_root)))
 
     def test_sync_db_links_anonymized_import_assets_by_canonical_filename_stem(
         self,
