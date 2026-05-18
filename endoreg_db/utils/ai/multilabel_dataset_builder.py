@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Literal, Optional, TypedDict, cast
+from typing import Dict, Final, List, Literal, Optional, TypedDict, cast
 
 from django.db import models
 
@@ -32,12 +32,12 @@ from endoreg_db.models import (
     LabelVideoSegment,
 )
 
-ANNOTATION_SOURCE_SCOPE_ALL = "all"
-ANNOTATION_SOURCE_SCOPE_FRAME_ONLY = "frame_only"
-ANNOTATION_SOURCE_SCOPE_SEGMENT_ONLY = "segment_only"
-
 AnnotationSourceScope = Literal["all", "frame_only", "segment_only"]
-VALID_ANNOTATION_SOURCE_SCOPES = frozenset(
+ANNOTATION_SOURCE_SCOPE_ALL: Final[AnnotationSourceScope] = "all"
+ANNOTATION_SOURCE_SCOPE_FRAME_ONLY: Final[AnnotationSourceScope] = "frame_only"
+ANNOTATION_SOURCE_SCOPE_SEGMENT_ONLY: Final[AnnotationSourceScope] = "segment_only"
+
+VALID_ANNOTATION_SOURCE_SCOPES: Final[frozenset[AnnotationSourceScope]] = frozenset(
     {
         ANNOTATION_SOURCE_SCOPE_ALL,
         ANNOTATION_SOURCE_SCOPE_FRAME_ONLY,

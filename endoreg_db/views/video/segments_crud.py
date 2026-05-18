@@ -97,7 +97,7 @@ def _resolve_optional_ai_dataset(
     if raw_value in (None, ""):
         return None, None
     try:
-        dataset_id = int(raw_value)
+        dataset_id = int(str(raw_value).strip())
     except (TypeError, ValueError):
         return (
             None,

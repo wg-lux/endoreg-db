@@ -156,7 +156,7 @@ def resolve_ai_dataset_for_queue(
 
     if dataset_id_raw not in (None, ""):
         try:
-            dataset_id = int(dataset_id_raw)
+            dataset_id = int(str(dataset_id_raw).strip())
         except (TypeError, ValueError) as exc:
             raise ValueError("ai_dataset_id must be an integer.") from exc
         dataset = AIDataSet.objects.filter(pk=dataset_id).first()
