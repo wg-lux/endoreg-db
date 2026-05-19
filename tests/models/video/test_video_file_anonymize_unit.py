@@ -144,7 +144,10 @@ def test_anonymize_uses_streamed_mask_without_full_frame_extraction(
     monkeypatch.setattr(
         anonymize_module.path_utils.EndoregPathsModel,
         "from_environment",
-        lambda: SimpleNamespace(transcoding=transcoding_dir),
+        lambda: SimpleNamespace(
+            anonym_video=tmp_path / "anonymized",
+            transcoding=transcoding_dir,
+        ),
     )
     monkeypatch.setattr(
         anonymize_module,
