@@ -240,6 +240,8 @@ class TransferJobCreateSerializer(serializers.Serializer):
     ) -> AnonymizationState:
         if not isinstance(video_state_payload, dict):
             return AnonymizationState.NOT_STARTED
+        if bool(video_state_payload.get("processing_error")):
+            return AnonymizationState.FAILED
         if bool(video_state_payload.get("anonymization_validated")):
             return AnonymizationState.VALIDATED
         if bool(video_state_payload.get("sensitive_meta_processed")):
@@ -252,8 +254,6 @@ class TransferJobCreateSerializer(serializers.Serializer):
             video_state_payload.get("frames_extracted")
         ):
             return AnonymizationState.EXTRACTING_FRAMES
-        if bool(video_state_payload.get("processing_error")):
-            return AnonymizationState.FAILED
         if bool(video_state_payload.get("processing_started")):
             return AnonymizationState.STARTED
         if bool(video_state_payload.get("anonymized")):

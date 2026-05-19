@@ -8,8 +8,13 @@ from unittest.mock import patch
 from django.test import TestCase
 
 from endoreg_db.models import Center, NetworkNode, TransferJob, VideoFile
+from endoreg_db.models.state.anonymization import AnonymizationState
+from endoreg_db.serializers.hub.transfer_job import TransferJobCreateSerializer
 from endoreg_db.services.hub import transfers
-from endoreg_db.services.hub.transfers import create_or_reuse_transfer_job
+from endoreg_db.services.hub.transfers import (
+    authenticate_network_node,
+    create_or_reuse_transfer_job,
+)
 
 
 class TransferJobContractTests(TestCase):
@@ -84,6 +89,33 @@ class TransferJobContractTests(TestCase):
 
         assert retain_all.cleanup_status == TransferJob.CleanupStatus.NOT_REQUESTED
         assert delete_after_apply.cleanup_status == TransferJob.CleanupStatus.DEFERRED
+
+    def test_authenticate_network_node_rejects_missing_shared_secret_hash(self) -> None:
+        with patch("endoreg_db.services.hub.audit.logger.info") as audit_log:
+            authenticated_node = authenticate_network_node(
+                source_node_key=self.source_node.node_key,
+                provided_node_key=self.source_node.node_key,
+                provided_secret="request-secret",
+            )
+
+        assert authenticated_node is None
+        audit_log.assert_called_once()
+        log_body = audit_log.call_args.args[0]
+        assert "hub.transfer_node_auth_failed" in log_body
+        assert "missing_shared_secret_hash" in log_body
+        assert "request-secret" not in log_body
+
+    def test_authenticate_network_node_accepts_valid_shared_secret(self) -> None:
+        self.source_node.set_shared_secret("request-secret")
+        self.source_node.save(update_fields=["shared_secret_hash"])
+
+        authenticated_node = authenticate_network_node(
+            source_node_key=self.source_node.node_key,
+            provided_node_key=self.source_node.node_key,
+            provided_secret="request-secret",
+        )
+
+        assert authenticated_node == self.source_node
 
     def test_raw_upload_transfer_preserves_existing_processed_artifact(self) -> None:
         transfer_job = self._create_transfer(
@@ -161,3 +193,15 @@ class TransferJobContractTests(TestCase):
         assert state.anonymized is True
         assert state.anonymization_validated is True
         assert state.outside_segments_removed is True
+
+    def test_video_processing_error_overrides_transfer_eligible_state(self) -> None:
+        resolved = TransferJobCreateSerializer._resolve_video_anonymization_status(
+            {
+                "anonymized": True,
+                "anonymization_validated": True,
+                "sensitive_meta_processed": True,
+                "processing_error": True,
+            }
+        )
+
+        assert resolved == AnonymizationState.FAILED

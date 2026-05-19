@@ -33,6 +33,7 @@ from endoreg_db.utils.file_operations import (
 from endoreg_db.utils.hashs import get_pdf_hash
 from endoreg_db.utils.paths import TRANSCODING_DIR
 from endoreg_db.utils.storage import delete_field_file, file_exists, save_local_file
+from endoreg_db.utils.structured_logging import hash_identifier
 from .ingest import _default_processor_name
 
 logger = logging.getLogger(__name__)
@@ -215,20 +216,70 @@ def authenticate_network_node(
         node_key=source_node_key, is_active=True
     ).first()
     if source_node is None:
+        _log_transfer_node_auth_failure(
+            reason="unknown_or_inactive_source_node",
+            source_node_key=source_node_key,
+            provided_node_key=provided_node_key,
+        )
         return None
 
     normalized_key = str(provided_node_key or "").strip()
     normalized_secret = str(provided_secret or "").strip()
 
     if normalized_key != source_node.node_key:
+        _log_transfer_node_auth_failure(
+            reason="node_key_mismatch",
+            source_node_key=source_node.node_key,
+            provided_node_key=normalized_key,
+            source_node_id=source_node.id,
+            source_node_role=source_node.role,
+        )
         return None
 
-    if source_node.shared_secret_hash:
-        if not source_node.check_shared_secret(normalized_secret):
-            return None
-        return source_node
+    if not str(source_node.shared_secret_hash or "").strip():
+        _log_transfer_node_auth_failure(
+            reason="missing_shared_secret_hash",
+            source_node_key=source_node.node_key,
+            provided_node_key=normalized_key,
+            source_node_id=source_node.id,
+            source_node_role=source_node.role,
+        )
+        return None
 
+    if not source_node.check_shared_secret(normalized_secret):
+        _log_transfer_node_auth_failure(
+            reason="shared_secret_mismatch",
+            source_node_key=source_node.node_key,
+            provided_node_key=normalized_key,
+            source_node_id=source_node.id,
+            source_node_role=source_node.role,
+        )
+        return None
     return source_node
+
+
+def _log_transfer_node_auth_failure(
+    *,
+    reason: str,
+    source_node_key: str,
+    provided_node_key: str | None,
+    source_node_id: int | None = None,
+    source_node_role: str | None = None,
+) -> None:
+    normalized_provided_node_key = str(provided_node_key or "").strip()
+    emit_hub_audit_event(
+        "hub.transfer_node_auth_failed",
+        reason=reason,
+        source_node_key=source_node_key,
+        provided_node_key_present=bool(normalized_provided_node_key),
+        provided_node_key_sha256=(
+            hash_identifier(normalized_provided_node_key)
+            if normalized_provided_node_key
+            else None
+        ),
+        source_node_id=source_node_id,
+        source_node_role=source_node_role,
+    )
 
 
 def apply_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
@@ -1094,6 +1145,7 @@ def _apply_video_state_payload(
         "anonymized",
         "anonymization_validated",
         "outside_segments_removed",
+        "processing_error",
         "processing_started",
         "segment_annotations_created",
         "segment_annotations_validated",

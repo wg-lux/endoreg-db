@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from django.conf import settings
 from django.http import Http404
 from django.utils.decorators import method_decorator
@@ -24,6 +26,10 @@ from endoreg_db.services.hub import (
     resolve_allowed_center_id,
     transfer_api_enabled,
 )
+from endoreg_db.utils.structured_logging import emit_structured_event, hash_identifier
+
+
+logger = logging.getLogger(__name__)
 
 
 def _assert_transfer_api_enabled() -> None:
@@ -35,6 +41,50 @@ def _node_header(request, header_name: str) -> str:
     return str(request.headers.get(header_name, "") or "").strip()
 
 
+def _safe_request_context(request) -> dict[str, object]:
+    remote_addr = str(request.META.get("REMOTE_ADDR", "") or "").strip()
+    return {
+        "request_method": str(getattr(request, "method", "") or ""),
+        "remote_addr_sha256": hash_identifier(remote_addr) if remote_addr else None,
+    }
+
+
+def _validation_error_fields(errors, prefix: str = "") -> list[str]:
+    if isinstance(errors, dict):
+        fields: list[str] = []
+        for key, value in errors.items():
+            path = f"{prefix}.{key}" if prefix else str(key)
+            fields.extend(_validation_error_fields(value, path))
+        return fields
+    if isinstance(errors, list):
+        fields = []
+        for item in errors:
+            if isinstance(item, (dict, list)):
+                fields.extend(_validation_error_fields(item, prefix))
+        return fields or [prefix or "non_field_errors"]
+    return [prefix or "non_field_errors"]
+
+
+def _log_transfer_validation_failure(
+    request,
+    *,
+    event: str,
+    errors,
+    transfer_key: str | None = None,
+    transfer_job: TransferJob | None = None,
+) -> None:
+    payload: dict[str, object] = {
+        **_safe_request_context(request),
+        "error_fields": sorted(set(_validation_error_fields(errors))),
+    }
+    if transfer_key:
+        payload["transfer_key_sha256"] = hash_identifier(transfer_key)
+    if transfer_job is not None:
+        payload["transfer_job_id"] = str(transfer_job.pk)
+        payload["resource_kind"] = transfer_job.resource_kind
+    emit_structured_event(logger, event, level=logging.WARNING, **payload)
+
+
 def _assert_secure_transfer_transport(request) -> None:
     if not bool(
         getattr(settings, "ENDOREG_HUB_TRANSFER_REQUIRE_SECURE_TRANSPORT", True)
@@ -42,6 +92,13 @@ def _assert_secure_transfer_transport(request) -> None:
         return
     if request.is_secure():
         return
+    emit_structured_event(
+        logger,
+        "hub.transfer_secure_transport_failed",
+        level=logging.WARNING,
+        reason="insecure_request",
+        **_safe_request_context(request),
+    )
     raise PermissionDenied("Hub transfer requires HTTPS or equivalent secure transport")
 
 
@@ -56,6 +113,21 @@ def _assert_transfer_mtls(request) -> None:
     ).strip()
     actual_value = str(request.META.get(meta_key, "") or "").strip()
     if not meta_key or not expected_value or actual_value != expected_value:
+        reason = (
+            "mtls_proxy_metadata_not_configured"
+            if not meta_key or not expected_value
+            else "mtls_proxy_verification_failed"
+        )
+        emit_structured_event(
+            logger,
+            "hub.transfer_mtls_check_failed",
+            level=logging.WARNING,
+            reason=reason,
+            mtls_meta_key_configured=bool(meta_key),
+            mtls_expected_value_configured=bool(expected_value),
+            mtls_actual_value_present=bool(actual_value),
+            **_safe_request_context(request),
+        )
         raise PermissionDenied(
             "Hub transfer requires proxy-verified mutual TLS client authentication"
         )
@@ -99,7 +171,13 @@ class HubTransferCreateView(APIView):
             data=request.data,
             context={"request": request},
         )
-        serializer.is_valid(raise_exception=True)
+        if not serializer.is_valid():
+            _log_transfer_validation_failure(
+                request,
+                event="hub.transfer_create_validation_failed",
+                errors=serializer.errors,
+            )
+            raise ValidationError(serializer.errors)
         data = serializer.validated_data
         _enforce_transfer_node_auth(request, data["source_node"].node_key)
         _assert_transfer_center_scope(
@@ -187,17 +265,31 @@ class HubTransferMediaUploadView(APIView):
 
         uploaded_file = request.FILES.get("file")
         if uploaded_file is None:
-            raise ValidationError({"file": "A multipart file upload is required"})
+            errors = {"file": "A multipart file upload is required"}
+            _log_transfer_validation_failure(
+                request,
+                event="hub.transfer_media_upload_validation_failed",
+                errors=errors,
+                transfer_key=transfer_key,
+                transfer_job=transfer_job,
+            )
+            raise ValidationError(errors)
 
         media_role = str(request.data.get("media_role", "") or "").strip().lower()
         if media_role not in {"processed"}:
-            raise ValidationError(
-                {
-                    "media_role": (
-                        "Only anonymized processed media may be uploaded for transfers."
-                    )
-                }
+            errors = {
+                "media_role": (
+                    "Only anonymized processed media may be uploaded for transfers."
+                )
+            }
+            _log_transfer_validation_failure(
+                request,
+                event="hub.transfer_media_upload_validation_failed",
+                errors=errors,
+                transfer_key=transfer_key,
+                transfer_job=transfer_job,
             )
+            raise ValidationError(errors)
 
         try:
             transfer_job = attach_transfer_media(
@@ -206,6 +298,13 @@ class HubTransferMediaUploadView(APIView):
                 media_role=media_role,
             )
         except ValueError as exc:
+            _log_transfer_validation_failure(
+                request,
+                event="hub.transfer_media_upload_validation_failed",
+                errors={"detail": exc},
+                transfer_key=transfer_key,
+                transfer_job=transfer_job,
+            )
             raise ValidationError({"detail": str(exc)}) from exc
 
         serializer = TransferJobStatusSerializer(transfer_job)
