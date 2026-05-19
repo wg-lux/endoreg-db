@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import errno
 import hashlib
-import json
 import logging
 from pathlib import Path
 
@@ -50,10 +49,10 @@ class _StreamingFieldFile:
 
 def _file_operation_events(caplog) -> list[dict[str, object]]:
     return [
-        json.loads(record.message)
+        record.structured_event
         for record in caplog.records
         if record.name == "endoreg_db.utils.file_operations"
-        and record.message.startswith("{")
+        and getattr(record, "structured_event", {}).get("event") == "file_operation"
     ]
 
 
@@ -90,9 +89,10 @@ def test_atomic_write_file_replaces_destination_and_emits_json_log(caplog, tmp_p
         "event": "file_operation",
         "operation": "write",
         "status": "ok",
-        "destination": str(destination),
+        "destination_path": file_operations.path_reference(destination),
         "bytes": 6,
     } in _file_operation_events(caplog)
+    assert str(destination) not in caplog.text
 
 
 @pytest.mark.unit
@@ -114,7 +114,7 @@ def test_atomic_write_file_removes_partial_temp_file_on_generator_failure(
     events = _file_operation_events(caplog)
     assert events[-1]["operation"] == "write"
     assert events[-1]["status"] == "error"
-    assert events[-1]["destination"] == str(destination)
+    assert events[-1]["destination_path"] == file_operations.path_reference(destination)
     assert events[-1]["bytes"] == 7
     assert "write source failed" in str(events[-1]["detail"])
 
@@ -171,7 +171,7 @@ def test_safe_unlink_file_missing_required_path_logs_and_raises(caplog, tmp_path
         "event": "file_operation",
         "operation": "unlink",
         "status": "error",
-        "source": str(missing),
+        "source_path": file_operations.path_reference(missing),
         "detail": "missing file",
     }
 
@@ -190,13 +190,13 @@ def test_ensure_directory_and_safe_rmtree_emit_structured_events(caplog, tmp_pat
     assert any(
         event["operation"] == "mkdir"
         and event["status"] == "ok"
-        and event["destination"] == str(target)
+        and event["destination_path"] == file_operations.path_reference(target)
         for event in events
     )
     assert any(
         event["operation"] == "rmtree"
         and event["status"] == "ok"
-        and event["source"] == str(target)
+        and event["source_path"] == file_operations.path_reference(target)
         for event in events
     )
 

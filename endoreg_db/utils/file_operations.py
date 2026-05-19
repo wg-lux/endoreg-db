@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import errno
 import hashlib
-import json
 import logging
 import os
 import shutil
@@ -13,6 +12,7 @@ from django.db.models.fields.files import FieldFile
 from endoreg_db.utils.storage import ensure_local_file
 
 from endoreg_db.utils.rust_backend import sha256_file_hex as rust_sha256_file_hex
+from endoreg_db.utils.structured_logging import emit_structured_event, path_reference
 
 logger = logging.getLogger(__name__)
 
@@ -116,18 +116,17 @@ def _emit_file_operation_event(
     **extra: object,
 ) -> None:
     payload: dict[str, object] = {
-        "event": "file_operation",
         "operation": operation,
         "status": status,
     }
     if source is not None:
-        payload["source"] = str(source)
+        payload["source_path"] = path_reference(source)
     if destination is not None:
-        payload["destination"] = str(destination)
+        payload["destination_path"] = path_reference(destination)
     if detail:
         payload["detail"] = detail
     payload.update(extra)
-    logger.info(json.dumps(payload, sort_keys=True))
+    emit_structured_event(logger, "file_operation", **payload)
 
 
 def ensure_disk_capacity(
