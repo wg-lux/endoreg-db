@@ -1,23 +1,14 @@
-import sys
-import os
 import django
-from typing import List
+import os
+import sys
+from pathlib import Path
 
-# Add the project root directory (containing 'endoreg_db' and 'tests') to the path
-project_root = os.path.abspath('../../')
-print(f"--- Adding to sys.path: {project_root}") # DEBUG LINE
-sys.path.insert(0, project_root)
-# print(f"--- Current sys.path: {sys.path}") # Optional: print the whole path
+project_root = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(project_root))
 
 DJANGO_SETTINGS_MODULE = "doc_settings"
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", DJANGO_SETTINGS_MODULE)
-
-print("--- Running django.setup()...") # DEBUG LINE
-try:
-    django.setup()
-    print("--- django.setup() finished successfully.") # DEBUG LINE
-except Exception as e:
-    print(f"--- django.setup() FAILED: {e}") # DEBUG LINE
+django.setup()
 
 # Configuration file for the Sphinx documentation builder.
 #
@@ -35,20 +26,20 @@ author = 'AG-Lux'
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
-    'sphinx.ext.autodoc',  # Core extension for pulling docstrings
-    'sphinx.ext.napoleon', # If using Google or NumPy style docstrings
-    'sphinx.ext.viewcode', # Adds links to source code
-    'sphinx.ext.intersphinx', # Link to other projects' docs (e.g., Python, Django)
+    'sphinx.ext.autodoc',
+    'sphinx.ext.napoleon',
+    'sphinx.ext.viewcode',
+    'sphinx.ext.intersphinx',
 ]
 
 autodoc_typehints = "description"
-autoclass_content = "class" # Or 'class' if 'init' causes issues
+autoclass_content = "class"
 
 autodoc_default_options = {
     'members': True,
-    'undoc-members': False, # Adjust as needed
+    'undoc-members': False,
     'show-inheritance': True,
-    'no-value': True,  # Add this line
+    'no-value': True,
 }
 
 # Example intersphinx mapping
@@ -58,7 +49,7 @@ intersphinx_mapping = {
 }
 
 templates_path = ['_templates']
-exclude_patterns:List[str] = []
+exclude_patterns = []
 
 
 
