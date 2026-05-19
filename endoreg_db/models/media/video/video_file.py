@@ -21,6 +21,7 @@ from endoreg_db.utils.paths import (
     ANONYM_VIDEO_DIR,
     SENSITIVE_VIDEO_DIR,
     data_paths,
+    to_storage_relative,
 )
 from endoreg_db.utils.file_operations import ensure_directory, safe_unlink_file
 from endoreg_db.utils.hashs import get_video_hash
@@ -797,6 +798,10 @@ class VideoFile(models.Model):
         video = instance
         staged_output_path: Path | None = None
         replace_completed = False
+        from endoreg_db.services.media_operation_gate import (
+            MediaOperationDeferred,
+            defer_if_video_media_busy,
+        )
 
         if not video or not video.is_processed:
             logger.warning(
@@ -849,10 +854,12 @@ class VideoFile(models.Model):
                         "Processed video hash already exists for another video."
                     )
 
-                target_name = str(
-                    getattr(video.processed_file, "name", "")
-                    or f"{video.video_hash}_filtered.mp4"
+                defer_if_video_media_busy(video_id=video.pk)
+                target_path = (
+                    Path(ANONYM_VIDEO_DIR)
+                    / f"{video.video_hash}.post_validation.{new_processed_hash}.mp4"
                 )
+                target_name = to_storage_relative(target_path)
                 save_local_file(
                     video.processed_file,
                     rebuilt_path,
@@ -894,6 +901,8 @@ class VideoFile(models.Model):
         except Label.DoesNotExist:
             logger.warning("Outside label not found in the database.")
             return False
+        except MediaOperationDeferred:
+            raise
         except Exception as e:
             logger.error(
                 "Error creating video without 'outside' frames for VideoFile %s: %s",

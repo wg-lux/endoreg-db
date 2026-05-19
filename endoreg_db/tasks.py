@@ -40,15 +40,24 @@ def run_video_post_validation_rebuild_task(
     only_validated: bool = False,
     history_id: int | None = None,
 ) -> bool:
+    from endoreg_db.config.env import get_video_post_validation_dispatch_delay_seconds
+    from endoreg_db.services.media_operation_gate import MediaOperationDeferred
     from endoreg_db.services.video_post_validation_jobs import (
         _run_video_post_validation_rebuild,
     )
 
-    return _run_video_post_validation_rebuild(
-        int(video_id),
-        only_validated=bool(only_validated),
-        history_id=int(history_id) if history_id is not None else None,
-    )
+    try:
+        return _run_video_post_validation_rebuild(
+            int(video_id),
+            only_validated=bool(only_validated),
+            history_id=int(history_id) if history_id is not None else None,
+        )
+    except MediaOperationDeferred as exc:
+        raise _task.retry(
+            exc=exc,
+            countdown=get_video_post_validation_dispatch_delay_seconds(),
+            max_retries=20,
+        ) from exc
 
 
 @shared_task(

@@ -33,11 +33,15 @@ DEFAULT_WATCHER_POLL_INTERVAL_SECONDS = 5.0
 DEFAULT_WATCHER_STABLE_AFTER_SECONDS = 10.0
 DEFAULT_VIDEO_POST_VALIDATION_JOB_MAX_WORKERS = 2
 DEFAULT_VIDEO_POST_VALIDATION_JOB_MODE = "celery"
+DEFAULT_VIDEO_POST_VALIDATION_DISPATCH_DELAY_SECONDS = 60
+DEFAULT_MEDIA_OPERATION_STREAM_LEASE_SECONDS = 120
+DEFAULT_MEDIA_OPERATION_SEGMENT_UPDATE_GRACE_SECONDS = 75
 DEFAULT_VIDEO_TEMPORAL_INFERENCE_JOB_MODE = "celery"
 DEFAULT_VIDEO_TEMPORAL_INFERENCE_FRAME_SOURCE_MODE = "stream"
 DEFAULT_CELERY_DEFAULT_QUEUE = "default"
 DEFAULT_CELERY_PIPELINE_QUEUE = "pipeline"
 DEFAULT_CELERY_FRAME_EXTRACTION_QUEUE = "frame_extraction"
+DEFAULT_CELERY_FFMPEG_MEDIA_QUEUE = "ffmpeg_media"
 DEFAULT_CELERY_INFERENCE_QUEUE = "inference"
 DEFAULT_CELERY_TRAINING_QUEUE = "model_training"
 DEFAULT_CELERY_MAINTENANCE_QUEUE = "maintenance"
@@ -351,6 +355,13 @@ def get_celery_frame_extraction_queue() -> str:
     ).strip()
 
 
+def get_celery_ffmpeg_media_queue() -> str:
+    return env_str(
+        "CELERY_FFMPEG_MEDIA_QUEUE",
+        DEFAULT_CELERY_FFMPEG_MEDIA_QUEUE,
+    ).strip()
+
+
 def get_celery_inference_queue() -> str:
     return env_str("CELERY_INFERENCE_QUEUE", DEFAULT_CELERY_INFERENCE_QUEUE).strip()
 
@@ -375,6 +386,13 @@ def celery_broker_secure_transport_confirmed() -> bool:
 
 def celery_frame_extraction_requires_secure_transport() -> bool:
     return env_bool("CELERY_FRAME_EXTRACTION_REQUIRE_SECURE_TRANSPORT", False)
+
+
+def celery_ffmpeg_media_requires_secure_transport() -> bool:
+    return env_bool(
+        "CELERY_FFMPEG_MEDIA_REQUIRE_SECURE_TRANSPORT",
+        celery_frame_extraction_requires_secure_transport(),
+    )
 
 
 def celery_audit_ledger_integrity_beat_enabled() -> bool:
@@ -507,6 +525,36 @@ def get_video_post_validation_job_mode() -> str:
     if mode not in {"celery", "thread", "inline"}:
         return DEFAULT_VIDEO_POST_VALIDATION_JOB_MODE
     return mode
+
+
+def get_video_post_validation_dispatch_delay_seconds() -> int:
+    return max(
+        0,
+        env_int(
+            "VIDEO_POST_VALIDATION_DISPATCH_DELAY_SECONDS",
+            DEFAULT_VIDEO_POST_VALIDATION_DISPATCH_DELAY_SECONDS,
+        ),
+    )
+
+
+def get_media_operation_stream_lease_seconds() -> int:
+    return max(
+        1,
+        env_int(
+            "MEDIA_OPERATION_STREAM_LEASE_SECONDS",
+            DEFAULT_MEDIA_OPERATION_STREAM_LEASE_SECONDS,
+        ),
+    )
+
+
+def get_media_operation_segment_update_grace_seconds() -> int:
+    return max(
+        1,
+        env_int(
+            "MEDIA_OPERATION_SEGMENT_UPDATE_GRACE_SECONDS",
+            DEFAULT_MEDIA_OPERATION_SEGMENT_UPDATE_GRACE_SECONDS,
+        ),
+    )
 
 
 def get_video_temporal_inference_job_mode() -> str:

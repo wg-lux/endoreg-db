@@ -23,14 +23,19 @@ from endoreg_db.models.state.video_segment_validation import (
 from endoreg_db.config.env import (
     celery_broker_secure_transport_confirmed,
     celery_broker_url_uses_secure_transport,
-    celery_frame_extraction_requires_secure_transport,
+    celery_ffmpeg_media_requires_secure_transport,
     get_celery_broker_url,
-    get_celery_frame_extraction_queue,
+    get_celery_ffmpeg_media_queue,
+    get_video_post_validation_dispatch_delay_seconds,
     get_video_post_validation_job_max_workers,
     get_video_post_validation_job_mode,
 )
 from endoreg_db.services.frame_retention import (
     prune_unused_validated_outside_frames,
+)
+from endoreg_db.services.media_operation_gate import (
+    MediaOperationDeferred,
+    defer_if_video_media_busy,
 )
 from endoreg_db.services.video_temporal_inference import (
     dispatch_deferred_temporal_inference_after_rebuild,
@@ -196,13 +201,47 @@ class JobDispatchResult:
     status: str
     video_id: int
     history_id: int | None = None
+    validation_status: str | None = None
 
     def to_dict(self) -> dict[str, object]:
-        return asdict(self)
+        data = asdict(self)
+        if data["validation_status"] is None:
+            data["validation_status"] = _validation_status_for_job_status(self.status)
+        return data
 
 
-def _ensure_frame_extraction_broker_transport_allowed() -> None:
-    if not celery_frame_extraction_requires_secure_transport():
+def _validation_status_for_job_status(job_status: str) -> str:
+    if job_status in {"queued", "already_queued"}:
+        return "scheduled"
+    if job_status == "busy":
+        return "running"
+    if job_status in {"completed", "noop"}:
+        return "completed"
+    if job_status == "failed":
+        return "failed"
+    return "scheduled"
+
+
+def _job_dispatch_result(
+    *,
+    task_id: str,
+    mode: str,
+    status: str,
+    video_id: int,
+    history_id: int | None = None,
+) -> JobDispatchResult:
+    return JobDispatchResult(
+        task_id=task_id,
+        mode=mode,
+        status=status,
+        video_id=int(video_id),
+        history_id=history_id,
+        validation_status=_validation_status_for_job_status(status),
+    )
+
+
+def _ensure_ffmpeg_media_broker_transport_allowed() -> None:
+    if not celery_ffmpeg_media_requires_secure_transport():
         return
     if celery_broker_secure_transport_confirmed():
         return
@@ -210,7 +249,7 @@ def _ensure_frame_extraction_broker_transport_allowed() -> None:
     if celery_broker_url_uses_secure_transport(broker_url):
         return
     raise RuntimeError(
-        "Frame extraction Celery dispatch requires secure broker transport "
+        "FFmpeg media Celery dispatch requires secure broker transport "
         "or CELERY_BROKER_SECURE_TRANSPORT_CONFIRMED=1."
     )
 
@@ -337,6 +376,7 @@ def _run_video_post_validation_rebuild(
     if history is not None:
         if history.status == VideoProcessingHistory.STATUS_SUCCESS:
             return True
+        defer_if_video_media_busy(video_id=video_id, history=history)
         if history.status == VideoProcessingHistory.STATUS_RUNNING:
             history_video = VideoFile.objects.get(pk=video_id)
             rollback_video_frame_artifacts(
@@ -417,6 +457,8 @@ def _run_video_post_validation_rebuild(
                     video.pk,
                 )
         return True
+    except MediaOperationDeferred:
+        raise
     except Exception as exc:
         if video is not None:
             mark_post_validation_incomplete(video)
@@ -459,17 +501,17 @@ def dispatch_video_post_validation_rebuild(
     """
     mode = get_video_post_validation_job_mode()
     task_id = str(uuid.uuid4())
-    frame_extraction_queue = get_celery_frame_extraction_queue()
+    ffmpeg_media_queue = get_celery_ffmpeg_media_queue()
     video = VideoFile.objects.get(pk=video_id)
     history, reservation_status = _reserve_blackening_history(
         video=video,
         task_id=task_id,
         only_validated=only_validated,
-        queue=frame_extraction_queue,
+        queue=ffmpeg_media_queue,
     )
 
     if reservation_status == RESERVATION_BUSY:
-        return JobDispatchResult(
+        return _job_dispatch_result(
             task_id=history.task_id or "",
             mode=mode,
             status="busy",
@@ -478,7 +520,7 @@ def dispatch_video_post_validation_rebuild(
         )
 
     if reservation_status == RESERVATION_ALREADY_QUEUED:
-        return JobDispatchResult(
+        return _job_dispatch_result(
             task_id=history.task_id or "",
             mode=mode,
             status="already_queued",
@@ -492,7 +534,7 @@ def dispatch_video_post_validation_rebuild(
             only_validated=only_validated,
             history_id=history.pk,
         )
-        return JobDispatchResult(
+        return _job_dispatch_result(
             task_id=task_id,
             mode=mode,
             status="completed" if rebuilt else "failed",
@@ -504,18 +546,20 @@ def dispatch_video_post_validation_rebuild(
         try:
             from endoreg_db.tasks import run_video_post_validation_rebuild_task
 
-            _ensure_frame_extraction_broker_transport_allowed()
+            _ensure_ffmpeg_media_broker_transport_allowed()
+            countdown = get_video_post_validation_dispatch_delay_seconds()
             async_result = run_video_post_validation_rebuild_task.apply_async(
                 args=(int(video_id),),
                 kwargs={
                     "only_validated": bool(only_validated),
                     "history_id": history.pk,
                 },
-                queue=frame_extraction_queue,
-                routing_key=frame_extraction_queue,
+                queue=ffmpeg_media_queue,
+                routing_key=ffmpeg_media_queue,
+                countdown=countdown,
             )
             _set_history_task_id(history, str(async_result.id))
-            return JobDispatchResult(
+            return _job_dispatch_result(
                 task_id=str(async_result.id),
                 mode=mode,
                 status="queued",
@@ -528,7 +572,7 @@ def dispatch_video_post_validation_rebuild(
                 video_id,
             )
             history.mark_failure(str(exc))
-            return JobDispatchResult(
+            return _job_dispatch_result(
                 task_id=task_id,
                 mode=mode,
                 status="failed",
@@ -555,7 +599,7 @@ def dispatch_video_post_validation_rebuild(
     except Exception as exc:
         history.mark_failure(str(exc))
         raise
-    return JobDispatchResult(
+    return _job_dispatch_result(
         task_id=task_id,
         mode=mode,
         status="queued",

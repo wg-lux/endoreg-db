@@ -44,6 +44,7 @@ def test_celery_beat_routes_integrity_to_separate_queue():
     assert beat_entry["task"] == "endoreg_db.refresh_audit_ledger_integrity_status"
     assert beat_entry["options"]["queue"] == settings.CELERY_MAINTENANCE_QUEUE
     assert settings.CELERY_FRAME_EXTRACTION_QUEUE in queue_names
+    assert settings.CELERY_FFMPEG_MEDIA_QUEUE in queue_names
     assert settings.CELERY_INFERENCE_QUEUE in queue_names
     assert settings.CELERY_TRAINING_QUEUE in queue_names
     assert settings.CELERY_BROKER_TRANSPORT_OPTIONS["visibility_timeout"] == 90000
@@ -53,7 +54,7 @@ def test_celery_beat_routes_integrity_to_separate_queue():
     )
     assert (
         settings.CELERY_TASK_ROUTES["endoreg_db.video_post_validation_rebuild"]["queue"]
-        == settings.CELERY_FRAME_EXTRACTION_QUEUE
+        == settings.CELERY_FFMPEG_MEDIA_QUEUE
     )
     assert (
         settings.CELERY_TASK_ROUTES["endoreg_db.video_temporal_inference"]["queue"]

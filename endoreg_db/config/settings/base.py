@@ -10,6 +10,7 @@ from endoreg_db.config.env import (
     get_asset_dir,
     get_celery_broker_url,
     get_celery_default_queue,
+    get_celery_ffmpeg_media_queue,
     get_celery_frame_extraction_queue,
     get_celery_inference_queue,
     get_celery_maintenance_queue,
@@ -77,6 +78,7 @@ CELERY_TASK_IGNORE_RESULT = True
 CELERY_TASK_DEFAULT_QUEUE = get_celery_default_queue()
 CELERY_PIPELINE_QUEUE = get_celery_pipeline_queue()
 CELERY_FRAME_EXTRACTION_QUEUE = get_celery_frame_extraction_queue()
+CELERY_FFMPEG_MEDIA_QUEUE = get_celery_ffmpeg_media_queue()
 CELERY_INFERENCE_QUEUE = get_celery_inference_queue()
 CELERY_TRAINING_QUEUE = get_celery_training_queue()
 CELERY_MAINTENANCE_QUEUE = get_celery_maintenance_queue()
@@ -104,6 +106,11 @@ CELERY_TASK_QUEUES = (
         routing_key=CELERY_FRAME_EXTRACTION_QUEUE,
     ),
     Queue(
+        CELERY_FFMPEG_MEDIA_QUEUE,
+        Exchange(CELERY_FFMPEG_MEDIA_QUEUE),
+        routing_key=CELERY_FFMPEG_MEDIA_QUEUE,
+    ),
+    Queue(
         CELERY_INFERENCE_QUEUE,
         Exchange(CELERY_INFERENCE_QUEUE),
         routing_key=CELERY_INFERENCE_QUEUE,
@@ -129,8 +136,8 @@ CELERY_TASK_ROUTES = {
         "routing_key": CELERY_PIPELINE_QUEUE,
     },
     "endoreg_db.video_post_validation_rebuild": {
-        "queue": CELERY_FRAME_EXTRACTION_QUEUE,
-        "routing_key": CELERY_FRAME_EXTRACTION_QUEUE,
+        "queue": CELERY_FFMPEG_MEDIA_QUEUE,
+        "routing_key": CELERY_FFMPEG_MEDIA_QUEUE,
     },
     "endoreg_db.video_temporal_inference": {
         "queue": CELERY_INFERENCE_QUEUE,
@@ -286,6 +293,7 @@ __all__ = [
     "CELERY_TASK_DEFAULT_QUEUE",
     "CELERY_PIPELINE_QUEUE",
     "CELERY_FRAME_EXTRACTION_QUEUE",
+    "CELERY_FFMPEG_MEDIA_QUEUE",
     "CELERY_INFERENCE_QUEUE",
     "CELERY_TRAINING_QUEUE",
     "CELERY_MAINTENANCE_QUEUE",

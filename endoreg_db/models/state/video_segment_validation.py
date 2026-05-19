@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
-from endoreg_db.config.env import get_celery_frame_extraction_queue
+from endoreg_db.config.env import get_celery_ffmpeg_media_queue
 
 if TYPE_CHECKING:
     from endoreg_db.models import VideoFile, VideoProcessingHistory
@@ -82,7 +82,7 @@ def _parse_blackening_history_config(
         )
 
     queue = _validate_blackening_queue(
-        config.get("queue", get_celery_frame_extraction_queue())
+        config.get("queue", get_celery_ffmpeg_media_queue())
     )
     return OutsideFrameBlackeningConfig(
         only_validated=only_validated,
@@ -95,7 +95,7 @@ def _blackening_history_config(
     only_validated: bool,
     queue: str | None = None,
 ) -> dict[str, object]:
-    resolved_queue = queue if queue is not None else get_celery_frame_extraction_queue()
+    resolved_queue = queue if queue is not None else get_celery_ffmpeg_media_queue()
     return OutsideFrameBlackeningConfig(
         only_validated=bool(only_validated),
         queue=_validate_blackening_queue(resolved_queue),

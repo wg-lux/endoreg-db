@@ -43,6 +43,9 @@ from endoreg_db.services.segment_annotations import (
     ensure_prediction_segment_annotations,
     ensure_segment_annotations,
 )
+from endoreg_db.services.media_operation_gate import (
+    create_segment_update_lease_on_commit,
+)
 from endoreg_db.services.video_post_validation_jobs import (
     JobDispatchResult,
     dispatch_video_post_validation_rebuild,
@@ -278,6 +281,20 @@ def _bulk_validation_response_status(post_processing_status: str | None) -> int:
     return status.HTTP_200_OK
 
 
+def _validation_status_from_job(post_processing_job: JobDispatchResult | None) -> str:
+    if post_processing_job is None:
+        return "completed"
+    if post_processing_job.validation_status:
+        return post_processing_job.validation_status
+    if post_processing_job.status in {"queued", "already_queued"}:
+        return "scheduled"
+    if post_processing_job.status == "busy":
+        return "running"
+    if post_processing_job.status == "failed":
+        return "failed"
+    return "completed"
+
+
 def _segment_validation_state_payload(video: VideoFile) -> dict[str, object]:
     state = video.get_or_create_state()
     return {
@@ -324,6 +341,7 @@ def video_segments_blacken_outside(request, pk: int):
                 "video_id": video.pk,
                 "outside_segment_count": 0,
                 "only_validated": only_validated,
+                "validation_status": "completed",
             },
             status=status.HTTP_200_OK,
         )
@@ -345,6 +363,7 @@ def video_segments_blacken_outside(request, pk: int):
                 "video_id": video.pk,
                 "outside_segment_count": outside_segment_count,
                 "only_validated": only_validated,
+                "validation_status": "failed",
                 "error": str(exc),
             },
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -373,6 +392,7 @@ def video_segments_blacken_outside(request, pk: int):
             "video_id": video.pk,
             "outside_segment_count": outside_segment_count,
             "only_validated": only_validated,
+            "validation_status": _validation_status_from_job(post_processing_job),
             "post_processing_job": post_processing_job.to_dict(),
         },
         status=response_status,
@@ -1160,6 +1180,7 @@ def video_segment_validate(request, pk: int, segment_id: int):
                 )
 
             transaction.on_commit(_log_after_commit)
+            create_segment_update_lease_on_commit(video)
 
             """
             status_after = STATUS_VALIDATED if is_validated else STATUS_UNVALIDATED
@@ -1178,6 +1199,7 @@ def video_segment_validate(request, pk: int, segment_id: int):
                 },
             )"""
         post_processing_job = dispatch_video_post_validation_rebuild(video_id=video.pk)
+        response_status = _bulk_validation_response_status(post_processing_job.status)
 
         logger.info(f"Validated segment {segment_id} in video {pk}: {is_validated}")
 
@@ -1190,9 +1212,10 @@ def video_segment_validate(request, pk: int, segment_id: int):
                 "video_id": video.pk,
                 "start_frame": segment.start_frame_number,
                 "end_frame": segment.end_frame_number,
+                "validation_status": _validation_status_from_job(post_processing_job),
                 "post_processing_job": post_processing_job.to_dict(),
             },
-            status=status.HTTP_200_OK,
+            status=response_status,
         )
 
     except Exception as e:
@@ -1379,6 +1402,8 @@ def video_segments_validate_bulk(request, pk: int):
                     logger.error(f"Error validating segment {segment.pk}: {e}")
                     failed_ids.append(segment.pk)
 
+            create_segment_update_lease_on_commit(video)
+
         logger.info(f"Bulk validated {updated_count} segments in video {pk}")
         post_processing_job: JobDispatchResult | None = None
         response_status: int = status.HTTP_200_OK
@@ -1436,6 +1461,7 @@ def video_segments_validate_bulk(request, pk: int):
                     status="noop",
                     video_id=int(video.pk),
                     history_id=None,
+                    validation_status="completed",
                 )
 
         response_data = {
@@ -1447,6 +1473,9 @@ def video_segments_validate_bulk(request, pk: int):
             **_segment_validation_state_payload(video),
         }
         if post_processing_job is not None:
+            response_data["validation_status"] = _validation_status_from_job(
+                post_processing_job
+            )
             response_data["post_processing_job"] = (
                 post_processing_job.to_dict()
                 if hasattr(post_processing_job, "to_dict")
@@ -1591,10 +1620,12 @@ def video_segments_validation_status(request, pk: int):
                 except Exception as e:
                     logger.error(f"Error validating segment {segment.pk}: {e}")
                     failed_count += 1
+            create_segment_update_lease_on_commit(video)
 
         logger.info(f"Completed validation for {updated_count} segments in video {pk}")
         logger.info("Queueing outside-frame rebuild job")
         post_processing_job = dispatch_video_post_validation_rebuild(video_id=video.pk)
+        response_status = _bulk_validation_response_status(post_processing_job.status)
         return Response(
             {
                 "message": f"Video segment validation completed for video {pk}",
@@ -1603,9 +1634,10 @@ def video_segments_validation_status(request, pk: int):
                 "updated_count": updated_count,
                 "failed_count": failed_count,
                 "label_filter": label_name,
+                "validation_status": _validation_status_from_job(post_processing_job),
                 "post_processing_job": post_processing_job.to_dict(),
             },
-            status=status.HTTP_200_OK,
+            status=response_status,
         )
 
 

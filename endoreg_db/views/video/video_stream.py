@@ -23,6 +23,11 @@ from endoreg_db.models.media.video.storage_mode import (
     coerce_video_storage_mode,
 )
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
+from endoreg_db.services.media_operation_gate import (
+    create_video_stream_lease,
+    release_media_operation_lease,
+    wrap_iterator_with_media_lease,
+)
 from endoreg_db.utils.cors import resolve_response_origin
 from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
 from endoreg_db.utils.nginx_accel import (
@@ -193,13 +198,24 @@ class VideoStreamView(APIView):
                     content_type = (
                         mimetypes.guess_type(stream_relative_path)[0] or "video/mp4"
                     )
-                    return build_nginx_accel_response(
-                        protected_relative_path=stream_relative_path,
-                        content_type=content_type,
-                        filename=Path(stream_relative_path).name,
-                        disposition="inline",
-                        frontend_origin=frontend_origin,
+                    stream_lease = create_video_stream_lease(
+                        video,
+                        file_type=file_type,
                     )
+                    try:
+                        response = build_nginx_accel_response(
+                            protected_relative_path=stream_relative_path,
+                            content_type=content_type,
+                            filename=Path(stream_relative_path).name,
+                            disposition="inline",
+                            frontend_origin=frontend_origin,
+                        )
+                    except Exception:
+                        release_media_operation_lease(stream_lease)
+                        raise
+                    if stream_lease is not None:
+                        response["X-Media-Operation-Lease"] = str(stream_lease.token)
+                    return response
 
         try:
             field_file, local_path = video.resolve_video_stream_source(
@@ -291,6 +307,14 @@ class VideoStreamView(APIView):
                 disposition="inline",
                 filename=filename,
             )
+
+        stream_lease = create_video_stream_lease(video, file_type=file_type)
+        if stream_lease is not None:
+            response.streaming_content = wrap_iterator_with_media_lease(
+                response.streaming_content,
+                stream_lease,
+            )
+            response["X-Media-Operation-Lease"] = str(stream_lease.token)
 
         if stream_state is not None:
             response["X-Stream-State"] = stream_state

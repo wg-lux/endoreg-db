@@ -491,7 +491,8 @@ class VideoSegmentValidateAsyncSafetyTest(TestCase):
                 request, pk=self.video.pk, segment_id=self.segment.pk
             )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.data["validation_status"], "scheduled")
         self.assertEqual(response.data["post_processing_job"]["status"], "queued")
         self.assertEqual(
             response.data["post_processing_job"]["video_id"], self.video.pk
@@ -537,6 +538,7 @@ class VideoSegmentValidateAsyncSafetyTest(TestCase):
             response = video_segments_validate_bulk(request, pk=self.video.pk)
 
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["validation_status"], "completed")
         self.assertEqual(response.data["post_processing_job"]["status"], "noop")
         self.assertEqual(response.data["segment_annotation_status"], "validated")
         self.assertTrue(response.data["segment_annotations_validated"])
@@ -599,6 +601,7 @@ class VideoSegmentValidateAsyncSafetyTest(TestCase):
             response = video_segments_validate_bulk(request, pk=self.video.pk)
 
         self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.data["validation_status"], "scheduled")
         self.assertEqual(response.data["post_processing_job"]["status"], "queued")
         self.assertEqual(response.data["segment_annotation_status"], "cleanup_queued")
         self.assertFalse(response.data["segment_annotations_validated"])
@@ -672,6 +675,7 @@ class VideoSegmentValidateAsyncSafetyTest(TestCase):
             response = video_segments_validate_bulk(request, pk=self.video.pk)
 
         self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.data["validation_status"], "failed")
         self.assertEqual(response.data["post_processing_job"]["status"], "failed")
         self.assertEqual(response.data["segment_annotation_status"], "cleanup_failed")
         self.assertFalse(response.data["segment_annotations_validated"])
@@ -762,6 +766,7 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["status"], "noop")
+        self.assertEqual(response.data["validation_status"], "completed")
         self.assertEqual(response.data["outside_segment_count"], 0)
         self.assertEqual(response.data["video_id"], self.video.pk)
         self.assertFalse(response.data["only_validated"])
@@ -792,6 +797,7 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
 
         self.assertEqual(response.status_code, 202)
         self.assertEqual(response.data["status"], "queued")
+        self.assertEqual(response.data["validation_status"], "scheduled")
         self.assertEqual(response.data["outside_segment_count"], 1)
         mock_dispatch.assert_called_once_with(
             video_id=self.video.pk,
@@ -825,6 +831,7 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
 
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.data["status"], "busy")
+        self.assertEqual(response.data["validation_status"], "running")
         self.assertEqual(response.data["operation"], "blacken_outside")
         self.assertEqual(response.data["post_processing_job"]["status"], "busy")
 
@@ -892,6 +899,7 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
 
         self.assertEqual(response.status_code, 500)
         self.assertEqual(response.data["status"], "failed")
+        self.assertEqual(response.data["validation_status"], "failed")
         self.assertEqual(response.data["post_processing_job"]["status"], "failed")
         state.refresh_from_db()
         self.assertFalse(state.segment_annotations_validated)
@@ -946,8 +954,10 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
 
         self.assertEqual(first.status_code, 202)
         self.assertEqual(first.data["status"], "queued")
+        self.assertEqual(first.data["validation_status"], "scheduled")
         self.assertEqual(second.status_code, 202)
         self.assertEqual(second.data["status"], "already_queued")
+        self.assertEqual(second.data["validation_status"], "scheduled")
         self.assertEqual(len(submitted), 1)
 
     def test_failed_cleanup_can_be_requeued(self):
@@ -989,6 +999,7 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
 
         self.assertEqual(response.status_code, 202)
         self.assertEqual(response.data["status"], "queued")
+        self.assertEqual(response.data["validation_status"], "scheduled")
         self.assertEqual(len(submitted), 1)
         self.assertNotEqual(
             response.data["post_processing_job"]["history_id"],
@@ -1016,6 +1027,7 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["status"], "noop")
+        self.assertEqual(response.data["validation_status"], "completed")
         self.assertEqual(response.data["outside_segment_count"], 0)
 
         segment.mark_validated(
@@ -1040,6 +1052,7 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
 
         self.assertEqual(response.status_code, 202)
         self.assertEqual(response.data["status"], "queued")
+        self.assertEqual(response.data["validation_status"], "scheduled")
         self.assertEqual(response.data["outside_segment_count"], 1)
         mock_dispatch.assert_called_once_with(
             video_id=self.video.pk,

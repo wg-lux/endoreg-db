@@ -18,6 +18,10 @@ from endoreg_db.models import (
     VideoProcessingHistory,
 )
 from endoreg_db.models.state import video_segment_validation as segment_state
+from endoreg_db.services.media_operation_gate import (
+    MediaOperationDeferred,
+    create_video_stream_lease,
+)
 from endoreg_db.services import video_post_validation_jobs as jobs
 from endoreg_db.services import video_temporal_inference as temporal_jobs
 
@@ -51,6 +55,7 @@ def test_dispatch_video_post_validation_rebuild_inline(monkeypatch, tmp_path):
 
     assert result.mode == "inline"
     assert result.status == "completed"
+    assert result.validation_status == "completed"
     assert result.video_id == video.pk
     assert result.history_id is not None
     runner.assert_called_once_with(
@@ -83,6 +88,7 @@ def test_dispatch_video_post_validation_rebuild_thread(monkeypatch, tmp_path):
     result = jobs.dispatch_video_post_validation_rebuild(video_id=video.pk)
     assert result.mode == "thread"
     assert result.status == "queued"
+    assert result.validation_status == "scheduled"
     assert result.video_id == video.pk
     assert result.history_id is not None
     assert "fn" in submitted
@@ -113,6 +119,7 @@ def test_dispatch_video_post_validation_rebuild_celery(monkeypatch, tmp_path):
 
     assert result.mode == "celery"
     assert result.status == "queued"
+    assert result.validation_status == "scheduled"
     assert result.task_id == "celery-task-xyz"
     assert result.video_id == video.pk
     assert result.history_id is not None
@@ -122,12 +129,13 @@ def test_dispatch_video_post_validation_rebuild_celery(monkeypatch, tmp_path):
             "only_validated": False,
             "history_id": result.history_id,
         },
-        queue=jobs.get_celery_frame_extraction_queue(),
-        routing_key=jobs.get_celery_frame_extraction_queue(),
+        queue=jobs.get_celery_ffmpeg_media_queue(),
+        routing_key=jobs.get_celery_ffmpeg_media_queue(),
+        countdown=jobs.get_video_post_validation_dispatch_delay_seconds(),
     )
     history = VideoProcessingHistory.objects.get(pk=result.history_id)
     assert history.task_id == "celery-task-xyz"
-    assert history.config["queue"] == jobs.get_celery_frame_extraction_queue()
+    assert history.config["queue"] == jobs.get_celery_ffmpeg_media_queue()
 
 
 @pytest.mark.django_db
@@ -189,7 +197,7 @@ def test_dispatch_video_post_validation_rebuild_celery_fails_without_required_se
 ):
     video = _create_video_for_post_validation(tmp_path)
     monkeypatch.setenv("VIDEO_POST_VALIDATION_JOB_MODE", "celery")
-    monkeypatch.setenv("CELERY_FRAME_EXTRACTION_REQUIRE_SECURE_TRANSPORT", "1")
+    monkeypatch.setenv("CELERY_FFMPEG_MEDIA_REQUIRE_SECURE_TRANSPORT", "1")
     monkeypatch.setenv("CELERY_BROKER_URL", "redis://broker.local/0")
     monkeypatch.delenv("CELERY_BROKER_SECURE_TRANSPORT_CONFIRMED", raising=False)
 
@@ -215,7 +223,7 @@ def test_dispatch_video_post_validation_rebuild_celery_fails_without_required_se
 
 
 def test_blackening_history_config_schema_accepts_valid_config(monkeypatch):
-    monkeypatch.setenv("CELERY_FRAME_EXTRACTION_QUEUE", "frame_extraction_hi")
+    monkeypatch.setenv("CELERY_FFMPEG_MEDIA_QUEUE", "ffmpeg_media_hi")
 
     config = segment_state._blackening_history_config(only_validated=True)
     parsed = segment_state._parse_blackening_history_config(config)
@@ -223,7 +231,7 @@ def test_blackening_history_config_schema_accepts_valid_config(monkeypatch):
     assert parsed is not None
     assert parsed.kind == segment_state.OUTSIDE_FRAME_BLACKENING_KIND
     assert parsed.only_validated is True
-    assert parsed.queue == "frame_extraction_hi"
+    assert parsed.queue == "ffmpeg_media_hi"
 
 
 @pytest.mark.parametrize(
@@ -438,6 +446,31 @@ def test_run_video_post_validation_rebuild_rolls_back_frames_when_rebuild_return
     state.refresh_from_db()
     assert state.frames_extracted is False
     assert not Frame.objects.filter(video=video, is_extracted=True).exists()
+
+
+@pytest.mark.django_db
+def test_run_video_post_validation_rebuild_defers_when_stream_lease_active(
+    monkeypatch,
+    tmp_path,
+):
+    video = _create_video_for_post_validation(tmp_path)
+    create_video_stream_lease(video, file_type="processed", ttl_seconds=120)
+    rebuild = Mock(side_effect=AssertionError("must not rebuild during stream"))
+    monkeypatch.setattr(VideoFile, "create_video_without_outside_frames", rebuild)
+    history = VideoProcessingHistory.objects.create(
+        video=video,
+        operation=VideoProcessingHistory.OPERATION_REPROCESSING,
+        status=VideoProcessingHistory.STATUS_PENDING,
+        config=segment_state._blackening_history_config(only_validated=False),
+    )
+
+    with pytest.raises(MediaOperationDeferred):
+        jobs._run_video_post_validation_rebuild(video.pk, history_id=history.pk)
+
+    rebuild.assert_not_called()
+    history.refresh_from_db()
+    assert history.status == VideoProcessingHistory.STATUS_PENDING
+    assert "media operation leases are active" in history.details
 
 
 @pytest.mark.django_db

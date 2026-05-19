@@ -4,6 +4,7 @@ from .video import (
     VideoMetadata,
     VideoProcessingHistory,
 )
+from .operation_lease import MediaOperationLease
 from .frame import Frame
 from .pdf import (
     RawPdfFile,
@@ -28,4 +29,5 @@ __all__ = [
     "ReportReaderFlag",
     "VideoMetadata",
     "VideoProcessingHistory",
+    "MediaOperationLease",
 ]

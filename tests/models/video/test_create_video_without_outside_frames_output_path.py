@@ -12,6 +12,10 @@ from endoreg_db.models import (
     LabelVideoSegment,
     VideoFile,
 )
+from endoreg_db.services.media_operation_gate import (
+    MediaOperationDeferred,
+    create_video_stream_lease,
+)
 from endoreg_db.utils.paths import data_paths, to_storage_relative
 
 
@@ -150,9 +154,63 @@ def test_create_video_without_outside_frames_uses_streamed_rebuild(
     video.refresh_from_db()
     assert video.processed_video_hash == "new-processed-hash"
     assert video.processed_file.name == to_storage_relative(
-        data_paths["anonym_video"] / f"{video.video_hash}_filtered.mp4"
+        data_paths["anonym_video"]
+        / f"{video.video_hash}.post_validation.new-processed-hash.mp4"
     )
     assert len(streamable_sync) == 1
+
+
+@pytest.mark.django_db
+def test_create_video_without_outside_frames_defers_swap_when_stream_active(
+    monkeypatch, tmp_path
+):
+    video, processed_path = _create_video(tmp_path)
+    original_processed_name = video.processed_file.name
+    outside_label, _ = Label.objects.get_or_create(name="outside")
+    LabelVideoSegment.objects.create(
+        video_file=video,
+        label=outside_label,
+        start_frame_number=10,
+        end_frame_number=20,
+    )
+    create_video_stream_lease(video, file_type="processed", ttl_seconds=120)
+
+    class _Context:
+        def __enter__(self):
+            return processed_path
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(video, "ensure_local_processed_file", lambda: _Context())
+
+    def fake_blacken_video_frame_intervals(input_path, output_path, *, intervals):
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"filtered-video")
+        return output_path
+
+    monkeypatch.setattr(
+        "endoreg_db.models.media.video.video_file.blacken_video_frame_intervals",
+        fake_blacken_video_frame_intervals,
+    )
+    monkeypatch.setattr(
+        "endoreg_db.models.media.video.video_file.get_video_hash",
+        lambda path: "new-processed-hash",
+    )
+
+    def fail_save_local_file(*args, **kwargs):
+        raise AssertionError("must not swap active stream artifact")
+
+    monkeypatch.setattr(
+        "endoreg_db.models.media.video.video_file.save_local_file",
+        fail_save_local_file,
+    )
+    with pytest.raises(MediaOperationDeferred):
+        VideoFile.create_video_without_outside_frames(video)
+
+    video.refresh_from_db()
+    assert video.processed_video_hash == "old-hash"
+    assert video.processed_file.name == original_processed_name
 
 
 @pytest.mark.django_db

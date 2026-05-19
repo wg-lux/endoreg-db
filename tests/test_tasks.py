@@ -4,9 +4,11 @@ import ast
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from django.conf import settings
 
 from endoreg_db import tasks
+from endoreg_db.services.media_operation_gate import MediaOperationDeferred
 
 
 def _current_task(task):
@@ -85,6 +87,34 @@ def test_video_post_validation_rebuild_task_delegates_with_normalized_args() -> 
 
     assert result is True
     runner.assert_called_once_with(42, only_validated=True, history_id=7)
+
+
+def test_video_post_validation_rebuild_task_retries_when_media_busy() -> None:
+    deferred = MediaOperationDeferred("active stream")
+    retry_exc = RuntimeError("retry requested")
+    current_task = _current_task(tasks.run_video_post_validation_rebuild_task)
+
+    with (
+        patch(
+            "endoreg_db.services.video_post_validation_jobs."
+            "_run_video_post_validation_rebuild",
+            side_effect=deferred,
+        ) as runner,
+        patch(
+            "endoreg_db.config.env.get_video_post_validation_dispatch_delay_seconds",
+            return_value=17,
+        ),
+        patch.object(current_task, "retry", side_effect=retry_exc) as retry,
+        pytest.raises(RuntimeError, match="retry requested"),
+    ):
+        tasks.run_video_post_validation_rebuild_task.run(
+            "42",
+            only_validated=1,
+            history_id="7",
+        )
+
+    runner.assert_called_once_with(42, only_validated=True, history_id=7)
+    retry.assert_called_once_with(exc=deferred, countdown=17, max_retries=20)
 
 
 def test_video_temporal_inference_task_delegates_with_bounded_defaults() -> None:
