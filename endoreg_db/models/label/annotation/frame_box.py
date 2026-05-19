@@ -77,6 +77,10 @@ class FrameBoxAnnotation(models.Model):
             models.Index(fields=["frame", "label"]),
             models.Index(fields=["frame", "information_source", "annotator"]),
             models.Index(fields=["external_annotation_id"]),
+            models.Index(
+                fields=["label", "date_created"],
+                name="frame_box_label_time_idx",
+            ),
         ]
         constraints = [
             CheckConstraint(condition=Q(x__gte=0), name="frame_box_x_non_negative"),

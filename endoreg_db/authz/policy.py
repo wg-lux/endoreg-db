@@ -107,6 +107,7 @@ ROUTE_RESOURCE = {
     "pdf-sensitive-metadata-verify": "patient",
     "sensitive-metadata-list": "patient",
     "pdf-sensitive-metadata-list": "patient",
+    "media-anonymization-metrics": "anonymization",
     "anonymization_items_overview": "anonymization",
     # Add more mappings as your API grows
 }

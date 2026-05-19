@@ -15,6 +15,12 @@ from .pdf import (
     ReportReaderFlag,
     AnonymHistologyReport,
 )
+from .anonymization_metrics import (
+    AnonymizationFieldMetric,
+    AnonymizationMetricField,
+    AnonymizationMetricMediaType,
+    AnonymizationValidationMetric,
+)
 
 __all__ = [
     "VideoFile",
@@ -30,4 +36,8 @@ __all__ = [
     "VideoMetadata",
     "VideoProcessingHistory",
     "MediaOperationLease",
+    "AnonymizationFieldMetric",
+    "AnonymizationMetricField",
+    "AnonymizationMetricMediaType",
+    "AnonymizationValidationMetric",
 ]

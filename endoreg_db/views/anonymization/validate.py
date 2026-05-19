@@ -19,6 +19,10 @@ from endoreg_db.models.metadata import SensitiveMeta
 from endoreg_db.serializers.anonymization import (
     SensitiveMetaValidateSerializer,
 )
+from endoreg_db.services.anonymization_metrics import (
+    capture_sensitive_meta_metric_values,
+    record_validation_metrics,
+)
 from endoreg_db.services.report_materialization import (
     DOCUMENT_TYPE_VALUES,
     build_report_context_from_validation,
@@ -215,6 +219,29 @@ def _apply_validation_tags(
     sensitive_meta.tags.set(tag_objects)
 
 
+def _validated_pdf_document_type(
+    payload: Dict[str, Any],
+) -> tuple[str, DocumentTypeContract] | Response:
+    document_type_name = payload.get("document_type")
+    if not isinstance(document_type_name, str) or not document_type_name:
+        return Response(
+            {
+                "error": "document_type is required for pdf validation.",
+                "allowed_document_types": DOCUMENT_TYPE_VALUES,
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if document_type_name not in DOCUMENT_TYPE_VALUES:
+        return Response(
+            {
+                "error": f"Unsupported document_type '{document_type_name}'.",
+                "allowed_document_types": DOCUMENT_TYPE_VALUES,
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    return document_type_name, DocumentTypeContract(document_type_name)
+
+
 class AnonymizationValidateView(APIView):
     """
     POST /api/anonymization/<int:file_id>/validate/
@@ -272,10 +299,30 @@ class AnonymizationValidateView(APIView):
                 )
                 # TODO: The state for video will be none when no state is set and the state for pdf will always be none. After status needs to be inferred after calling the sensitive meta state update functions
                 if video is not None:
+                    video_state = video.get_or_create_state()
+                    video_meta = video.meta if isinstance(video.meta, dict) else {}
+                    if getattr(video_state, "processing_error", False) or (
+                        video_meta.get("integrity_status") == "lost"
+                    ):
+                        return Response(
+                            {
+                                "error": (
+                                    "Video is marked failed/lost by media integrity."
+                                )
+                            },
+                            status=status.HTTP_409_CONFLICT,
+                        )
+                    status_before = _state_status_value(video.state)
+                    before_values = capture_sensitive_meta_metric_values(
+                        sensitive_meta=video.sensitive_meta,
+                        media_obj=video,
+                        media_type="video",
+                    )
                     prepared_payload = self._prepare_payload(payload, video)
                     try:
                         ok = video.validate_metadata_annotation(prepared_payload)
                     except Exception:  # pragma: no cover - defensive safety net
+                        transaction.set_rollback(True)
                         logger.exception("Video validation crashed for id=%s", file_id)
                         return Response(
                             {
@@ -285,6 +332,7 @@ class AnonymizationValidateView(APIView):
                         )
 
                     if not ok:
+                        transaction.set_rollback(True)
                         return Response(
                             {"error": "Video validation failed."},
                             status=status.HTTP_400_BAD_REQUEST,
@@ -313,13 +361,11 @@ class AnonymizationValidateView(APIView):
                         )
                         video.sensitive_meta.create_anonymized_record()
                     else:
+                        transaction.set_rollback(True)
                         return Response(
                             {"message": "Video not validated, failed to create State."},
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         )
-
-                    # Capture status prior to final state mutation for accurate logging.
-                    status_before = _state_status_value(video.state)
 
                     if video.state is not None:
                         video.state.anonymized = True
@@ -338,6 +384,20 @@ class AnonymizationValidateView(APIView):
                         logger.exception(
                             "Failed to read video anonymization_status after validation"
                         )
+
+                    metric_payload = dict(prepared_payload)
+                    metric_payload["no_more_names_confirmed"] = payload.get(
+                        "no_more_names_confirmed"
+                    )
+                    record_validation_metrics(
+                        request=request,
+                        media_obj=video,
+                        media_type="video",
+                        payload=metric_payload,
+                        before_values=before_values,
+                        status_before=status_before or STATUS_PROCESSING,
+                        status_after=status_after or STATUS_ANONYMIZED,
+                    )
 
                     # --- write operation log ---
                     # TODO: update the function call bases on the status , once merged
@@ -385,11 +445,22 @@ class AnonymizationValidateView(APIView):
                     .first()
                 )
                 if pdf is not None:
+                    document_type_result = _validated_pdf_document_type(payload)
+                    if isinstance(document_type_result, Response):
+                        return document_type_result
+                    document_type_name, document_type = document_type_result
+
                     status_before = _state_status_value(pdf.state)
+                    before_values = capture_sensitive_meta_metric_values(
+                        sensitive_meta=pdf.sensitive_meta,
+                        media_obj=pdf,
+                        media_type="pdf",
+                    )
                     prepared_payload = self._prepare_payload(payload, pdf)
                     try:
                         ok = pdf.validate_metadata_annotation(prepared_payload)
                     except Exception:  # pragma: no cover - defensive safety net
+                        transaction.set_rollback(True)
                         logger.exception("report validation crashed for id=%s", file_id)
                         return Response(
                             {
@@ -406,34 +477,12 @@ class AnonymizationValidateView(APIView):
                         logger.error("%s", e)
 
                     if not ok:
+                        transaction.set_rollback(True)
                         return Response(
                             {"error": "report validation failed."},
                             status=status.HTTP_400_BAD_REQUEST,
                         )
                     else:
-                        document_type_name = payload.get("document_type")
-                        if (
-                            not isinstance(document_type_name, str)
-                            or not document_type_name
-                        ):
-                            return Response(
-                                {
-                                    "error": "document_type is required for pdf validation.",
-                                    "allowed_document_types": DOCUMENT_TYPE_VALUES,
-                                },
-                                status=status.HTTP_400_BAD_REQUEST,
-                            )
-                        if document_type_name not in DOCUMENT_TYPE_VALUES:
-                            return Response(
-                                {
-                                    "error": (
-                                        f"Unsupported document_type '{document_type_name}'."
-                                    ),
-                                    "allowed_document_types": DOCUMENT_TYPE_VALUES,
-                                },
-                                status=status.HTTP_400_BAD_REQUEST,
-                            )
-                        document_type = DocumentTypeContract(document_type_name)
                         # this is here for tests!
                         if pdf.sensitive_meta is None:
                             sm = SensitiveMeta.objects.create(center=pdf.center)
@@ -464,6 +513,7 @@ class AnonymizationValidateView(APIView):
 
                             state_obj.save()
                         else:
+                            transaction.set_rollback(True)
                             return Response(
                                 {
                                     "message": "report not validated, failed to create State."
@@ -499,6 +549,20 @@ class AnonymizationValidateView(APIView):
                         logger.exception(
                             "Failed to read pdf anonymization_status after validation"
                         )
+
+                    metric_payload = dict(prepared_payload)
+                    metric_payload["no_more_names_confirmed"] = payload.get(
+                        "no_more_names_confirmed"
+                    )
+                    record_validation_metrics(
+                        request=request,
+                        media_obj=pdf,
+                        media_type="pdf",
+                        payload=metric_payload,
+                        before_values=before_values,
+                        status_before=status_before or STATUS_PROCESSING,
+                        status_after=status_after or STATUS_ANONYMIZED,
+                    )
 
                     # --- NEW: write operation log ---
                     record_operation(
@@ -564,6 +628,7 @@ class AnonymizationValidateView(APIView):
 
         # never send file_type to validators
         prepared.pop("file_type", None)
+        prepared.pop("no_more_names_confirmed", None)
 
         # center_name from file.center if not already set
         center = getattr(file_obj, "center", None)

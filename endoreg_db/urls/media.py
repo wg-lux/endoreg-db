@@ -8,6 +8,7 @@ from endoreg_db.views.media.hub import (
     HubTransferStatusView,
 )
 from endoreg_db.views.media.patient_media_timeline import PatientMediaTimelineView
+from endoreg_db.views.media.anonymization_metrics import AnonymizationMetricsView
 from endoreg_db.views.media.pdf_media import (
     PdfMediaView,  # Alias to avoid conflict with legacy pdf.reportMediaView
 )
@@ -87,6 +88,11 @@ urlpatterns = [
         "media/patients/<int:patient_id>/timeline/",
         PatientMediaTimelineView.as_view(),
         name="patient-media-timeline",
+    ),
+    path(
+        "media/anonymization/metrics/",
+        AnonymizationMetricsView.as_view(),
+        name="media-anonymization-metrics",
     ),
     path(
         "media/sensitive-media-id/<int:pk>/<str:media_type>/",

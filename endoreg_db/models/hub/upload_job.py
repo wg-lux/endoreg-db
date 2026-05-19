@@ -1,3 +1,4 @@
+import logging
 import uuid
 from typing import TYPE_CHECKING
 
@@ -8,6 +9,14 @@ from django.utils import timezone
 
 from endoreg_db.services.hub.payloads import validate_upload_provenance_payload
 from endoreg_db.utils.paths import EndoregPathsModel, build_upload_job_relative_path
+from endoreg_db.utils.structured_logging import (
+    emit_structured_event,
+    hash_identifier,
+    safe_log_value,
+)
+
+
+logger = logging.getLogger(__name__)
 
 
 def _sync_upload_job_storage_location(instance: "UploadJob") -> None:
@@ -220,6 +229,20 @@ class UploadJob(models.Model):
         ordering = ["-created_at"]
         verbose_name = "Upload Job"
         verbose_name_plural = "Upload Jobs"
+        indexes = [
+            models.Index(
+                fields=["status", "created_at"],
+                name="upload_job_status_time_idx",
+            ),
+            models.Index(
+                fields=["source_center", "created_at"],
+                name="upload_job_center_time_idx",
+            ),
+            models.Index(
+                fields=["source_system", "created_at"],
+                name="upload_job_source_time_idx",
+            ),
+        ]
         constraints = [
             models.UniqueConstraint(
                 fields=["source_center", "content_type", "content_hash"],
@@ -316,3 +339,14 @@ class UploadJob(models.Model):
         self.status = self.Status.LOST
         self.error_detail = error_detail
         self.save(update_fields=["status", "error_detail", "updated_at"])
+        emit_structured_event(
+            logger,
+            "media.integrity_lost",
+            level=logging.ERROR,
+            media_type="upload_job",
+            upload_job_id=str(self.pk),
+            content_hash_sha256=(
+                hash_identifier(self.content_hash) if self.content_hash else None
+            ),
+            detail=safe_log_value(error_detail),
+        )

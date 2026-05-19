@@ -312,6 +312,18 @@ class VideoFile(models.Model):
         @property
         def frames(self) -> models.Manager[Frame]: ...
 
+    class Meta:
+        indexes = [
+            models.Index(
+                fields=["uploaded_at"],
+                name="video_file_uploaded_at_idx",
+            ),
+            models.Index(
+                fields=["center", "uploaded_at"],
+                name="video_file_center_time_idx",
+            ),
+        ]
+
     @property
     def ffmpeg_meta(self) -> "FFMpegMeta":
         """
@@ -535,6 +547,14 @@ class VideoFile(models.Model):
         **IMPORTANT:** Only the raw video is deleted. The processed (anonymized)
         video is preserved as the final validated output.
         """
+        state = self.get_or_create_state()
+        meta = self.meta if isinstance(self.meta, dict) else {}
+        if getattr(state, "processing_error", False) or (
+            meta.get("integrity_status") == "lost"
+        ):
+            raise ValueError(
+                f"Video {self.video_hash} is marked failed/lost and cannot be validated."
+            )
 
         # CRITICAL FIX: update metadata (which may extract frames) BEFORE deleting raw video.
         # Accept empty dicts for compatibility with tests/workflows that provide no-op updates.

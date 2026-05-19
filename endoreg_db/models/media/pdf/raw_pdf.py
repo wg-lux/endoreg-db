@@ -126,6 +126,18 @@ class RawPdfFile(models.Model):
     )
     anonymized_text = models.TextField(blank=True, null=True)
 
+    class Meta:
+        indexes = [
+            models.Index(
+                fields=["date_created"],
+                name="raw_pdf_date_created_idx",
+            ),
+            models.Index(
+                fields=["center", "date_created"],
+                name="raw_pdf_center_time_idx",
+            ),
+        ]
+
     # Type hinting is needed, improve and use correct django types
     if TYPE_CHECKING:
         from endoreg_db.models import (
