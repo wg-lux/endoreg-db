@@ -50,10 +50,10 @@ class _MaskApplication:
     default_mask_config = {
         "image_width": 1920,
         "image_height": 1080,
-        "endoscope_image_x": 550,
-        "endoscope_image_y": 0,
-        "endoscope_image_width": 1350,
-        "endoscope_image_height": 1080,
+        "x": 550,
+        "y": 0,
+        "width": 1350,
+        "height": 1080,
     }
 
     def __init__(self):
@@ -61,12 +61,12 @@ class _MaskApplication:
 
     def create_mask_config_from_roi(self, roi):
         return {
+            "x": roi["x"],
+            "y": roi["y"],
+            "width": roi["width"],
+            "height": roi["height"],
             "image_width": roi["image_width"],
             "image_height": roi["image_height"],
-            "endoscope_image_x": roi["x"],
-            "endoscope_image_y": roi["y"],
-            "endoscope_image_width": roi["width"],
-            "endoscope_image_height": roi["height"],
         }
 
     def mask_video_streaming(self, **kwargs):
@@ -109,7 +109,8 @@ def test_backfill_fixes_cropped_processed_video(monkeypatch, tmp_path):
     assert video.processed_video_hash == "new-hash"
     assert video.saved_update_fields == ["processed_video_hash", "date_modified"]
     assert mask_application.calls[0]["mode"] == service.PRESERVE_DIMENSIONS_MODE
-    assert mask_application.calls[0]["mask_config"]["endoscope_image_x"] == 550
+    assert mask_application.calls[0]["mask_config"]["x"] == 550
+    assert mask_application.calls[0]["mask_config"]["image_width"] == 1920
 
 
 def test_backfill_dry_run_reports_without_mutation(monkeypatch, tmp_path):

@@ -139,6 +139,8 @@ def _normalize_custom_roi(roi: Any) -> dict[str, Any] | None:
             "y": roi.get("endoscope_y"),
             "width": roi.get("endoscope_width"),
             "height": roi.get("endoscope_height"),
+            "image_width": roi.get("image_width"),
+            "image_height": roi.get("image_height"),
         }
     return roi
 

@@ -39,13 +39,13 @@ def _roi_is_configured(roi: dict[str, int | None] | None) -> bool:
     if roi is None:
         return False
     required_keys = {"x", "y", "width", "height"}
-    if set(roi) != required_keys:
+    if not required_keys.issubset(roi):
         return False
     x = roi["x"]
     y = roi["y"]
     width = roi["width"]
     height = roi["height"]
-    return (
+    coordinates_are_valid = (
         isinstance(x, int)
         and isinstance(y, int)
         and isinstance(width, int)
@@ -55,6 +55,17 @@ def _roi_is_configured(roi: dict[str, int | None] | None) -> bool:
         and width > 0
         and height > 0
     )
+    if not coordinates_are_valid:
+        return False
+
+    image_width = roi.get("image_width")
+    image_height = roi.get("image_height")
+    image_dimensions_are_valid = (
+        image_width is None or isinstance(image_width, int) and image_width > 0
+    ) and (
+        image_height is None or isinstance(image_height, int) and image_height > 0
+    )
+    return image_dimensions_are_valid
 
 
 @dataclass

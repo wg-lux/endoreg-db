@@ -4,7 +4,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from endoreg_db.models import Center, Frame, FrameBoxAnnotation, VideoFile
+from endoreg_db.models import (
+    Center,
+    EndoscopyProcessor,
+    Frame,
+    FrameBoxAnnotation,
+    VideoFile,
+)
 from endoreg_db.import_files.processing.video_processing import video_anonymization
 
 RealVideoAnonymizer = video_anonymization.VideoAnonymizer
@@ -85,6 +91,64 @@ def test_get_processor_roi_info_returns_none_for_unknown_processor():
 
     assert endoscope_roi is None
     assert sensitive_rois is None
+
+
+@pytest.mark.django_db
+def test_get_processor_roi_info_returns_canonical_mask_roi_with_source_dimensions():
+    center = Center.objects.create(
+        name="roi-dimensions-center",
+        display_name="ROI Dimensions Center",
+    )
+    video = VideoFile.objects.create(center=center, video_hash="roi-dimensions-hash")
+    processor = EndoscopyProcessor.objects.create(
+        name="roi_dimensions_processor",
+        image_width=1920,
+        image_height=1080,
+        endoscope_image_x=550,
+        endoscope_image_y=0,
+        endoscope_image_width=1350,
+        endoscope_image_height=1080,
+        examination_date_x=100,
+        examination_date_y=10,
+        examination_date_width=200,
+        examination_date_height=40,
+        patient_first_name_x=100,
+        patient_first_name_y=60,
+        patient_first_name_width=200,
+        patient_first_name_height=40,
+        patient_last_name_x=320,
+        patient_last_name_y=60,
+        patient_last_name_width=240,
+        patient_last_name_height=40,
+        patient_dob_x=100,
+        patient_dob_y=110,
+        patient_dob_width=160,
+        patient_dob_height=40,
+    )
+    processor.centers.add(center)
+    ctx = SimpleNamespace(
+        current_video=video,
+        processor_name="roi_dimensions_processor",
+    )
+    anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
+
+    endoscope_roi, sensitive_rois = anonymizer._get_processor_roi_info(ctx)
+
+    assert endoscope_roi == {
+        "x": 550,
+        "y": 0,
+        "width": 1350,
+        "height": 1080,
+        "image_width": 1920,
+        "image_height": 1080,
+    }
+    assert "endoscope_image_x" not in endoscope_roi
+    assert sensitive_rois["examination_date"] == {
+        "x": 100,
+        "y": 10,
+        "width": 200,
+        "height": 40,
+    }
 
 
 def _phi_observation(frame_number: int = 5) -> dict:

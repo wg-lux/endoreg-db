@@ -1021,6 +1021,89 @@ def _build_blacken_filter_expression(
     return _build_blacken_filter_expression_from_normalized(normalized_intervals)
 
 
+def _normalize_video_roi(endo_roi: Dict[str, Any]) -> tuple[int, int, int, int]:
+    try:
+        x = int(endo_roi["x"])
+        y = int(endo_roi["y"])
+        width = int(endo_roi["width"])
+        height = int(endo_roi["height"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(
+            "Endoscope ROI must define integer x, y, width, and height."
+        ) from exc
+
+    if x < 0 or y < 0 or width <= 0 or height <= 0:
+        raise ValueError(
+            "Endoscope ROI must satisfy x >= 0, y >= 0, width > 0, and height > 0."
+        )
+    return x, y, width, height
+
+
+def _build_roi_mask_filter_expressions(endo_roi: Dict[str, Any]) -> list[str]:
+    """Build drawbox filters that keep the ROI visible and blacken the rest."""
+
+    x, y, width, height = _normalize_video_roi(endo_roi)
+    right = x + width
+    bottom = y + height
+    filters: list[str] = []
+
+    if y > 0:
+        filters.append(f"drawbox=x=0:y=0:w=iw:h={y}:color=black:t=fill")
+    if x > 0:
+        filters.append(
+            f"drawbox=x=0:y={y}:w={x}:h={height}:color=black:t=fill"
+        )
+    filters.append(
+        "drawbox="
+        f"x={right}:y={y}:w=max(0\\,iw-{right}):h={height}:"
+        "color=black:t=fill"
+    )
+    filters.append(
+        "drawbox="
+        f"x=0:y={bottom}:w=iw:h=max(0\\,ih-{bottom}):"
+        "color=black:t=fill"
+    )
+    return filters
+
+
+def _build_roi_mask_and_blacken_filter_expression(
+    *,
+    endo_roi: Dict[str, Any],
+    intervals: Iterable[tuple[int, int]] = (),
+) -> str:
+    filter_parts = _build_roi_mask_filter_expressions(endo_roi)
+    interval_list = list(intervals)
+    if interval_list:
+        filter_parts.append(_build_blacken_filter_expression(interval_list))
+    return ",".join(filter_parts)
+
+
+def _roi_mask_and_blacken_filter_args(
+    *,
+    endo_roi: Dict[str, Any],
+    intervals: Iterable[tuple[int, int]] = (),
+    inline_threshold: int = 120,
+    script_dir: Path | None = None,
+) -> tuple[list[str], Path | None]:
+    interval_list = list(intervals)
+    filter_expression = _build_roi_mask_and_blacken_filter_expression(
+        endo_roi=endo_roi,
+        intervals=interval_list,
+    )
+    if len(interval_list) <= inline_threshold:
+        return ["-vf", filter_expression], None
+
+    target_dir = ensure_directory(Path(script_dir or tempfile.gettempdir()))
+    script_path = target_dir / f"roi-mask-blackening-{uuid.uuid4().hex}.ffmpeg-filter"
+    script_content = f"{filter_expression}\n".encode("utf-8")
+    atomic_write_file(
+        destination=script_path,
+        content=[script_content],
+        required_bytes=len(script_content),
+    )
+    return ["-filter_script:v", str(script_path)], script_path
+
+
 def _blacken_filter_args(
     intervals: Iterable[tuple[int, int]],
     *,
@@ -1147,6 +1230,106 @@ def blacken_video_frame_intervals(
             FFMPEG_TRANSCODE_TIMEOUT_SECONDS,
         )
         _delete_partial_output(output_path, reason="timed-out outside blackening")
+        return None
+    finally:
+        if filter_script_path is not None:
+            safe_unlink_file(filter_script_path, missing_ok=True)
+
+
+def mask_video_to_roi_and_blacken_intervals(
+    input_path: Path,
+    output_path: Path,
+    *,
+    endo_roi: Dict[str, Any],
+    intervals: Iterable[tuple[int, int]] = (),
+    quality_mode: str = "balanced",
+    force_cpu: bool = False,
+) -> Optional[Path]:
+    if not input_path.exists():
+        logger.error("Input file not found for ROI masking: %s", input_path)
+        return None
+
+    raw_interval_list = list(intervals)
+    interval_list = (
+        _normalize_blacken_intervals(raw_interval_list) if raw_interval_list else []
+    )
+
+    ffmpeg_executable = _resolve_ffmpeg_executable()
+    if not ffmpeg_executable:
+        logger.error(
+            "ffmpeg command not found. Ensure FFmpeg is installed and in the system's PATH."
+        )
+        return None
+
+    ensure_directory(output_path.parent)
+
+    encoder_args, _encoder_type = _build_encoder_args(
+        quality_mode,
+        fallback=False,
+        custom_crf=None,
+        encoder_type_override="cpu" if force_cpu else None,
+    )
+    if "-vf" in encoder_args:
+        vf_index = encoder_args.index("-vf")
+        del encoder_args[vf_index : vf_index + 2]
+
+    filter_args, filter_script_path = _roi_mask_and_blacken_filter_args(
+        endo_roi=endo_roi,
+        intervals=interval_list,
+        script_dir=output_path.parent,
+    )
+    extra_args = [
+        "-map",
+        "0:v:0",
+        "-map",
+        "0:a?",
+        *filter_args,
+        "-c:a",
+        "copy",
+        "-movflags",
+        "+faststart",
+    ]
+    _update_or_append_ffmpeg_arg(encoder_args, "-pix_fmt", "yuv420p")
+
+    command = [
+        ffmpeg_executable,
+        "-i",
+        str(input_path),
+        *encoder_args,
+        *extra_args,
+        "-y",
+        str(output_path),
+    ]
+
+    logger.info(
+        "Starting streamed ROI masking: %s -> %s",
+        input_path.name,
+        output_path.name,
+    )
+    logger.debug("ROI masking FFmpeg command: %s", " ".join(command))
+
+    try:
+        returncode, stderr_output = _run_ffmpeg_command(command)
+        if returncode != 0:
+            logger.error(
+                "FFmpeg ROI masking failed for %s with return code %d.",
+                input_path.name,
+                returncode,
+            )
+            logger.error("FFmpeg stderr:\n%s", stderr_output)
+            _delete_partial_output(output_path, reason="incomplete ROI masking")
+            return None
+        if not _transcode_output_is_valid(output_path):
+            _delete_partial_output(output_path, reason="invalid ROI masking")
+            return None
+        return output_path
+    except subprocess.TimeoutExpired:
+        logger.error(
+            "FFmpeg ROI masking timed out for %s after %ss.",
+            input_path.name,
+            FFMPEG_TRANSCODE_TIMEOUT_SECONDS,
+        )
+        _delete_partial_output(output_path, reason="timed-out ROI masking")
         return None
     finally:
         if filter_script_path is not None:
@@ -1469,6 +1652,8 @@ __all__ = [
     "assemble_video_from_frames",  # Updated name
     "transcode_video",
     "transcode_videofile_if_required",
+    "blacken_video_frame_intervals",
+    "mask_video_to_roi_and_blacken_intervals",
     "extract_frames",
     "extract_frame_range",  # Add new function to __all__
 ]
