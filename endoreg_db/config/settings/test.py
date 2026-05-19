@@ -108,4 +108,5 @@ if env_str("TEST_DISABLE_MIGRATIONS", "false").lower() == "true":
 
 INSTALLED_APPS = BASE_INSTALLED_APPS + [
     "django.contrib.admin",
+    "django_extensions",
 ]
