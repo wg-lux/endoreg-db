@@ -845,7 +845,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/62/59/e47bbd0542d0e6f4c
 
 [[package]]
 name = "endoreg-db"
-version = "0.9.9.7"
+version = "0.9.9.8"
 source = { editable = "." }
 dependencies = [
     { name = "celery" },
@@ -867,7 +867,7 @@ dependencies = [
     { name = "kombu" },
     { name = "librosa" },
     { name = "llvmlite" },
-    { name = "lx-anonymizer", extra = ["llm", "ocr"] },
+    { name = "lx-anonymizer", extra = ["gpu", "llm", "ocr"] },
     { name = "lx-dtypes" },
     { name = "moviepy" },
     { name = "mozilla-django-oidc" },
@@ -983,7 +983,7 @@ requires-dist = [
     { name = "linkify-it-py", marker = "extra == 'docs'", specifier = ">=2.0.3" },
     { name = "llvmlite", specifier = ">=0.44.0" },
     { name = "lx-ai-core", extras = ["torch"], marker = "extra == 'ai'", specifier = "==0.0.1" },
-    { name = "lx-anonymizer", extras = ["llm", "ocr"], specifier = "==0.9.1.5" },
+    { name = "lx-anonymizer", extras = ["llm", "ocr", "gpu"], specifier = "==0.9.1.7" },
     { name = "lx-dtypes", specifier = "==0.1.6" },
     { name = "moviepy", specifier = "==2.2.1" },
     { name = "mozilla-django-oidc", specifier = ">=4.0.1" },
@@ -1661,7 +1661,7 @@ torch = [
 
 [[package]]
 name = "lx-anonymizer"
-version = "0.9.1.5"
+version = "0.9.1.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
@@ -1669,6 +1669,7 @@ dependencies = [
     { name = "faker" },
     { name = "gender-guesser" },
     { name = "numpy" },
+    { name = "onnxruntime" },
     { name = "opencv-python-headless" },
     { name = "pdfplumber" },
     { name = "pillow" },
@@ -1690,12 +1691,15 @@ dependencies = [
     { name = "ultralytics" },
     { name = "ziglang" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/11/f2/b3ba76588d89de25c0417af715e1940155e6436a235c5080378efea3bfbb/lx_anonymizer-0.9.1.5.tar.gz", hash = "sha256:1725ed2a50a900784d75d10cf0be7a1900677f920adee9e093581202f4581394", size = 1538935, upload-time = "2026-05-12T09:31:42.359Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e5/b4/e2f72b8288691cb5e94e86e39b8e7acf45b10c71bdce22cdf387e1d5c0fe/lx_anonymizer-0.9.1.7.tar.gz", hash = "sha256:baa49babd0623524dbf0b094f1287f89c6b4b32207002b4223facbab6f2da4a9", size = 1540658, upload-time = "2026-05-19T13:49:30.802Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/13/01/78f755f64f243d64a3dea619ed720e48e6d1276e771823fe0b3248b84649/lx_anonymizer-0.9.1.5-cp312-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:8acb915b5d2d4242e6028b7a0357b4290d92b912d4fc6e8d60cfc4b882b363b4", size = 1409374, upload-time = "2026-05-12T09:31:39.851Z" },
+    { url = "https://files.pythonhosted.org/packages/ac/29/2862f60ff189ad9d259beb7c1142cff3f84b86d39fe4b4bdd37f4bc16de3/lx_anonymizer-0.9.1.7-cp312-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:808f66009c9c0102ec9d4f04694f2022f48aa6a53b8422e71f94d181fe732469", size = 1410929, upload-time = "2026-05-19T13:49:28.436Z" },
 ]
 
 [package.optional-dependencies]
+gpu = [
+    { name = "onnxruntime-gpu" },
+]
 llm = [
     { name = "tiktoken" },
 ]
