@@ -12,10 +12,14 @@ from endoreg_db.config.env import (
     BASE_DIR as ENV_BASE_DIR,
     PROTECTED_MEDIA_ROOT_ENV,
     PROTECTED_ROOT_ENV,
+    SECURE_PROXY_SSL_HEADER_NAME_ENV,
+    SECURE_PROXY_SSL_HEADER_VALUE_ENV,
     STORAGE_DIR_ENV,
     env_bool,
     env_str,
+    get_secure_proxy_ssl_header,
 )
+from endoreg_db.utils.structured_logging import build_production_logging_config
 from . import keycloak as KEYCLOAK
 
 pytest_active = "PYTEST_CURRENT_TEST" in os.environ
@@ -95,13 +99,31 @@ if not DB_ENGINE.endswith("sqlite3"):
 DATABASES = {"default": _db_config}
 
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+
+LOGGING = build_production_logging_config(
+    root_level=env_str("DJANGO_LOG_LEVEL", "INFO"),
+    django_level=env_str("DJANGO_DJANGO_LOG_LEVEL", "INFO"),
+    app_level=env_str("ENDOREG_LOG_LEVEL", env_str("DJANGO_LOG_LEVEL", "INFO")),
+)
+
 # Enforce HTTPS by default in production. Override via env only with strong justification.
 SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", True)
+SECURE_PROXY_SSL_HEADER = get_secure_proxy_ssl_header()
 SESSION_COOKIE_SECURE = env_bool("SESSION_COOKIE_SECURE", True)
 CSRF_COOKIE_SECURE = env_bool("CSRF_COOKIE_SECURE", True)
 SECURE_HSTS_SECONDS = int(env_str("SECURE_HSTS_SECONDS", "31536000"))
 SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool("SECURE_HSTS_INCLUDE_SUBDOMAINS", True)
 SECURE_HSTS_PRELOAD = env_bool("SECURE_HSTS_PRELOAD", True)
+
+if (
+    env_bool("DJANGO_REQUIRE_SECURE_PROXY_SSL_HEADER", False)
+    and SECURE_PROXY_SSL_HEADER is None
+):
+    raise ValueError(
+        "DJANGO_REQUIRE_SECURE_PROXY_SSL_HEADER=true requires "
+        f"{SECURE_PROXY_SSL_HEADER_NAME_ENV}=HTTP_X_FORWARDED_PROTO and "
+        f"{SECURE_PROXY_SSL_HEADER_VALUE_ENV}=https"
+    )
 
 # Production must wire the same authz stack as development, but without any
 # debug shortcuts. Browser users authenticate via OIDC session login, and API
@@ -196,6 +218,12 @@ if ENDOREG_DEPLOYMENT_ROLE == "central_hub":
         raise ValueError(
             "ENDOREG_DEPLOYMENT_ROLE=central_hub requires "
             "ENDOREG_HUB_TRANSFER_REQUIRE_SECURE_TRANSPORT=true in production"
+        )
+    if SECURE_PROXY_SSL_HEADER is None:
+        raise ValueError(
+            "ENDOREG_DEPLOYMENT_ROLE=central_hub requires "
+            f"{SECURE_PROXY_SSL_HEADER_NAME_ENV}=HTTP_X_FORWARDED_PROTO and "
+            f"{SECURE_PROXY_SSL_HEADER_VALUE_ENV}=https in production"
         )
     if not bool(globals().get("ENDOREG_HUB_TRANSFER_REQUIRE_MTLS", False)):
         raise ValueError(

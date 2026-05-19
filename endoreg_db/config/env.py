@@ -48,6 +48,8 @@ DEFAULT_CELERY_MAINTENANCE_QUEUE = "maintenance"
 DEFAULT_CELERY_AUDIT_LEDGER_INTEGRITY_INTERVAL_SECONDS = 300
 DEFAULT_MODEL_TRAINING_JOB_MODE = "celery"
 DEFAULT_MODEL_TRAINING_STAGING_ROOT = "/mnt/fast-nvme-cache/endoreg-training"
+SECURE_PROXY_SSL_HEADER_NAME_ENV = "DJANGO_SECURE_PROXY_SSL_HEADER_NAME"
+SECURE_PROXY_SSL_HEADER_VALUE_ENV = "DJANGO_SECURE_PROXY_SSL_HEADER_VALUE"
 ENDOREG_DEPLOYMENT_ROLE_VALUES = (
     "standalone",
     "site_node",
@@ -255,6 +257,32 @@ def env_path(key: str, default_relative: str) -> Path:
 def env_list(key: str, default: str = "", *, separator: str = ",") -> list[str]:
     raw_value = env_str(key, default)
     return [item.strip() for item in raw_value.split(separator) if item.strip()]
+
+
+def get_secure_proxy_ssl_header() -> tuple[str, str] | None:
+    raw_name = env_str(SECURE_PROXY_SSL_HEADER_NAME_ENV, "").strip()
+    raw_value = env_str(SECURE_PROXY_SSL_HEADER_VALUE_ENV, "").strip()
+    if not raw_name and not raw_value:
+        return None
+    if not raw_name or not raw_value:
+        raise ValueError(
+            f"{SECURE_PROXY_SSL_HEADER_NAME_ENV} and "
+            f"{SECURE_PROXY_SSL_HEADER_VALUE_ENV} must be set together"
+        )
+
+    header_name = raw_name.upper().replace("-", "_")
+    if header_name == "X_FORWARDED_PROTO":
+        header_name = "HTTP_X_FORWARDED_PROTO"
+    if header_name != "HTTP_X_FORWARDED_PROTO":
+        raise ValueError(
+            f"{SECURE_PROXY_SSL_HEADER_NAME_ENV} must be "
+            "HTTP_X_FORWARDED_PROTO"
+        )
+
+    secure_value = raw_value.lower()
+    if secure_value != "https":
+        raise ValueError(f"{SECURE_PROXY_SSL_HEADER_VALUE_ENV} must be https")
+    return (header_name, secure_value)
 
 
 def get_asset_dir() -> Path:
