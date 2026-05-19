@@ -18,10 +18,17 @@ from endoreg_db.utils.file_operations import (
 from endoreg_db.utils.storage import save_local_file
 from endoreg_db.utils.validate_endo_roi import validate_endo_roi
 
-from ....utils.video.ffmpeg_wrapper import assemble_video_from_frames
+from ....utils.video.ffmpeg_wrapper import (
+    assemble_video_from_frames,
+    mask_video_to_roi_and_blacken_intervals,
+)
 from ...utils import anonymize_frame  # Import from models.utils
 from .video_file_frames._extract_frames import validate_video_frame_cache
-from .video_file_segments import _get_outside_frame_numbers, _get_outside_frames
+from .video_file_segments import (
+    _get_outside_frame_numbers,
+    _get_outside_frames,
+    _get_outside_segments,
+)
 
 if TYPE_CHECKING:
     from django.db.models import QuerySet
@@ -401,10 +408,216 @@ def _make_temporary_anonymized_frames(
     return temp_anonym_frame_dir, generated_frame_paths
 
 
-@transaction.atomic
+def _merge_half_open_intervals(
+    intervals: list[tuple[int, int]],
+) -> list[tuple[int, int]]:
+    if not intervals:
+        return []
+    intervals.sort()
+    merged: list[tuple[int, int]] = [intervals[0]]
+    for start_frame, end_frame in intervals[1:]:
+        previous_start, previous_end = merged[-1]
+        if start_frame <= previous_end:
+            merged[-1] = (previous_start, max(previous_end, end_frame))
+        else:
+            merged.append((start_frame, end_frame))
+    return merged
+
+
+def _outside_blackening_intervals(video: "VideoFile") -> list[tuple[int, int]]:
+    intervals: list[tuple[int, int]] = []
+    for segment in _get_outside_segments(video, only_validated=False):
+        start_frame = int(getattr(segment, "start_frame_number", -1))
+        end_frame = int(getattr(segment, "end_frame_number", -1))
+        if start_frame < 0 or end_frame <= start_frame:
+            logger.warning(
+                "Skipping invalid outside segment for video %s: start=%s end=%s",
+                video.video_hash,
+                start_frame,
+                end_frame,
+            )
+            continue
+        intervals.append((start_frame, end_frame))
+
+    from endoreg_db.models import ImageClassificationAnnotation
+
+    annotated_frame_numbers = (
+        ImageClassificationAnnotation.objects.filter(
+            frame__video=video,
+            frame__frame_number__gte=0,
+            label__name__iexact="outside",
+            value=True,
+        )
+        .values_list("frame__frame_number", flat=True)
+        .distinct()
+    )
+    for frame_number in annotated_frame_numbers.iterator():
+        start_frame = int(frame_number)
+        intervals.append((start_frame, start_frame + 1))
+
+    return _merge_half_open_intervals(intervals)
+
+
 def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> bool:
     """
-    Performs full anonymization of a video by censoring frames, assembling a processed video file, updating database records, and optionally deleting original raw assets.
+    Stream a raw video through FFmpeg ROI masking instead of materializing every
+    frame. File-backed frames are reserved for explicit frame workflows such as
+    training materialization, exports, and direct frame annotation.
+    """
+    state = video.get_or_create_state()
+
+    if _video_has_integrity_failure(video):
+        detail = _video_integrity_failure_detail(video) or "integrity failure"
+        raise ValueError(
+            f"Video {video.video_hash} is marked failed/lost and cannot be anonymized: {detail}"
+        )
+
+    if state.anonymized:
+        logger.info(
+            "Video %s is already marked as anonymized in state. Skipping.",
+            video.video_hash,
+        )
+        return True
+    if not video.has_raw:
+        raise FileNotFoundError(
+            f"Raw file is missing for video {video.video_hash}, cannot anonymize."
+        )
+    if not video.sensitive_meta or not video.sensitive_meta.is_verified:
+        raise ValueError(
+            f"Sensitive metadata for video {video.video_hash} is not validated. Cannot anonymize."
+        )
+
+    endo_roi = video.get_endo_roi()
+    if not validate_endo_roi(endo_roi_dict=endo_roi):
+        raise ValueError(f"Endoscope ROI is not valid for video {video.video_hash}")
+    assert endo_roi is not None
+
+    final_storage_path = video.get_target_anonymized_video_path()
+    anonymized_video_path = (
+        ensure_directory(
+            path_utils.EndoregPathsModel.from_environment().transcoding
+            / "legacy_anonymized_videos"
+        )
+        / final_storage_path.name
+    )
+    safe_cleanup_staging_file(
+        anonymized_video_path,
+        label="stale streamed anonymized video output",
+        missing_ok=True,
+    )
+
+    outside_intervals = _outside_blackening_intervals(video)
+    logger.info(
+        "Starting streamed anonymization for video %s with %d outside intervals.",
+        video.video_hash,
+        len(outside_intervals),
+    )
+
+    try:
+        with video.ensure_local_raw_file() as raw_path:
+            streamed_path = mask_video_to_roi_and_blacken_intervals(
+                Path(raw_path),
+                anonymized_video_path,
+                endo_roi=endo_roi,
+                intervals=outside_intervals,
+            )
+        if streamed_path is None:
+            raise RuntimeError(
+                f"FFmpeg streamed anonymization failed for video {video.video_hash}."
+            )
+        if not anonymized_video_path.exists():
+            raise RuntimeError(
+                f"Processed video file not found after streamed anonymization for {video.video_hash}: {anonymized_video_path}"
+            )
+
+        new_processed_hash = get_video_hash(anonymized_video_path)
+        if (
+            type(video)
+            .objects.filter(processed_video_hash=new_processed_hash)
+            .exclude(pk=video.pk)
+            .exists()
+        ):
+            raise ValueError(
+                f"Processed video hash {new_processed_hash} already exists for another video (Video: {video.video_hash})."
+            )
+
+        original_raw_file_name_to_delete = ""
+        original_raw_frame_dir_to_delete = None
+
+        with transaction.atomic():
+            video.processed_video_hash = new_processed_hash
+            processed_relative_name = path_utils.to_storage_relative(final_storage_path)
+            save_local_file(
+                video.processed_file,
+                anonymized_video_path,
+                name=processed_relative_name,
+                save=False,
+                overwrite=True,
+            )
+
+            update_fields = [
+                "processed_video_hash",
+                "processed_file",
+            ]
+
+            if delete_original_raw:
+                original_raw_file_name_to_delete = getattr(video.raw_file, "name", "")
+                original_raw_frame_dir_to_delete = video.get_frame_dir_path()
+                video.raw_file.name = ""
+                update_fields.append("raw_file")
+                transaction.on_commit(
+                    lambda: _cleanup_raw_assets(
+                        video_hash=video.video_hash,
+                        raw_file_name=original_raw_file_name_to_delete,
+                        raw_frame_dir=original_raw_frame_dir_to_delete,
+                    )
+                )
+
+            transaction.on_commit(
+                lambda: sync_video_streamable_artifacts(
+                    video,
+                    include_raw=not delete_original_raw,
+                    include_processed=True,
+                    save=True,
+                )
+            )
+
+            video.save(update_fields=update_fields)
+            assert video.state is not None
+            video.state.mark_anonymized(save=True)
+
+        safe_cleanup_staging_file(
+            anonymized_video_path,
+            label="streamed anonymized video output after storage save",
+            missing_ok=True,
+        )
+        video.refresh_from_db()
+        return True
+
+    except Exception as e:
+        logger.error(
+            "Streamed anonymization failed for video %s: %s",
+            video.video_hash,
+            e,
+            exc_info=True,
+        )
+        safe_cleanup_staging_file(
+            anonymized_video_path,
+            label="streamed anonymized video output after failure",
+            missing_ok=True,
+        )
+        raise RuntimeError(f"Anonymization failed for video {video.video_hash}") from e
+
+
+@transaction.atomic
+def _anonymize_from_frame_cache(
+    video: "VideoFile", delete_original_raw: bool = True
+) -> bool:
+    """
+    Legacy full-frame anonymization path.
+
+    This remains available for workflows that explicitly require file-backed
+    frames, but the default VideoFile.anonymize path uses streamed FFmpeg masking.
 
     Raises:
         ValueError: If required preconditions are not met (e.g., frames not extracted, sensitive metadata not validated).
