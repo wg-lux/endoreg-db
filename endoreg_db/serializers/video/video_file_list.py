@@ -32,6 +32,8 @@ class VideoFileListSerializer(serializers.ModelSerializer):
     status = serializers.SerializerMethodField()
     assignedUser = serializers.SerializerMethodField()
     anonymized = serializers.SerializerMethodField()
+    integrity_status = serializers.SerializerMethodField()
+    integrity_error = serializers.SerializerMethodField()
     segment_annotations_validated = serializers.SerializerMethodField()
     segment_annotation_status = serializers.SerializerMethodField()
     outside_segments_removed = serializers.SerializerMethodField()
@@ -49,6 +51,8 @@ class VideoFileListSerializer(serializers.ModelSerializer):
             "status",
             "assignedUser",
             "anonymized",
+            "integrity_status",
+            "integrity_error",
             "segment_annotations_validated",
             "segment_annotation_status",
             "outside_segments_removed",
@@ -81,10 +85,10 @@ class VideoFileListSerializer(serializers.ModelSerializer):
     # --- public serializer fields ----------------------------------------
     def get_status(
         self, obj: VideoFile
-    ) -> Literal["completed", "in_progress", "available"]:
+    ) -> Literal["completed", "in_progress", "available", "failed"]:
         """
         Determine the processing status of a video file as 'completed',
-        'in_progress', or 'available'.
+        'in_progress', 'failed', or 'available'.
 
         Contract:
             - Never raises.
@@ -93,9 +97,15 @@ class VideoFileListSerializer(serializers.ModelSerializer):
         state = self._get_video_state(obj)
 
         if not state:
+            if self.get_integrity_status(obj) == "lost":
+                return "failed"
             return "available"
 
         # Use getattr with defaults to tolerate partially populated state objects
+        if getattr(state, "processing_error", False) or self.get_integrity_status(
+            obj
+        ) == "lost":
+            return "failed"
         anonymized = getattr(state, "anonymized", False)
         frames_extracted = getattr(state, "frames_extracted", False)
 
@@ -125,9 +135,29 @@ class VideoFileListSerializer(serializers.ModelSerializer):
         state = self._get_video_state(obj)
         if not state:
             return False
+        if getattr(state, "processing_error", False) or self.get_integrity_status(
+            obj
+        ) == "lost":
+            return False
 
         # getattr to be robust against partially/populated state
         return bool(getattr(state, "anonymized", False))
+
+    def get_integrity_status(self, obj: VideoFile) -> str:
+        payload_obj = getattr(obj, "meta", None)
+        payload = payload_obj if isinstance(payload_obj, dict) else {}
+        status = str(payload.get("integrity_status") or "").strip()
+        if status:
+            return status
+        state = self._get_video_state(obj)
+        if state and getattr(state, "processing_error", False):
+            return "lost"
+        return ""
+
+    def get_integrity_error(self, obj: VideoFile) -> str:
+        payload_obj = getattr(obj, "meta", None)
+        payload = payload_obj if isinstance(payload_obj, dict) else {}
+        return str(payload.get("integrity_error") or "").strip()
 
     def get_segment_annotations_validated(self, obj: VideoFile) -> bool:
         """

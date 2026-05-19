@@ -125,6 +125,11 @@ def _verify_processed_path(processed_file) -> Path:
 
 def _verify_state(video: VideoFile) -> None:
     state = video.get_or_create_state()
+    if getattr(state, "processing_error", False):
+        raise ReadyForExportError(
+            "Video is marked failed/lost by media integrity.",
+            status_code=409,
+        )
     if not getattr(state, "anonymization_validated", False):
         raise ReadyForExportError(
             "Human anonymization validation is not complete.",

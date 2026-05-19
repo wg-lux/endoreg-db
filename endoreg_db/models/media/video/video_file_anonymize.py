@@ -1,3 +1,4 @@
+import json
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple
@@ -19,6 +20,7 @@ from endoreg_db.utils.validate_endo_roi import validate_endo_roi
 
 from ....utils.video.ffmpeg_wrapper import assemble_video_from_frames
 from ...utils import anonymize_frame  # Import from models.utils
+from .video_file_frames._extract_frames import validate_video_frame_cache
 from .video_file_segments import _get_outside_frame_numbers, _get_outside_frames
 
 if TYPE_CHECKING:
@@ -28,6 +30,86 @@ if TYPE_CHECKING:
     from .video_file import VideoFile
 
 logger = logging.getLogger(__name__)
+
+
+def _video_integrity_failure_detail(video: "VideoFile") -> str:
+    payload = video.meta if isinstance(video.meta, dict) else {}
+    detail = str(payload.get("integrity_error") or "").strip()
+    if detail:
+        return detail
+    if bool(getattr(getattr(video, "state", None), "processing_error", False)):
+        return "video state is marked failed/lost"
+    return ""
+
+
+def _video_has_integrity_failure(video: "VideoFile") -> bool:
+    payload = video.meta if isinstance(video.meta, dict) else {}
+    return payload.get("integrity_status") == "lost" or bool(
+        getattr(getattr(video, "state", None), "processing_error", False)
+    )
+
+
+def _record_frame_cache_mismatch(video: "VideoFile", detail: str) -> None:
+    state = video.get_or_create_state()
+    if state.frames_extracted:
+        state.mark_frames_not_extracted(save=True)
+    try:
+        from endoreg_db.services.media_integrity import mark_video_integrity_lost
+
+        mark_video_integrity_lost(video, detail)
+    except Exception as exc:
+        logger.error(
+            "Failed to mark video %s integrity lost after frame cache mismatch: %s",
+            video.video_hash,
+            exc,
+            exc_info=True,
+        )
+
+
+def _ensure_valid_frame_cache_for_frame_anonymization(video: "VideoFile") -> None:
+    validation = validate_video_frame_cache(video)
+    if validation.valid:
+        return
+
+    logger.warning(
+        json.dumps(
+            {
+                "event": "frame_anonymization_cache_preflight",
+                "video_hash": str(video.video_hash),
+                "status": "invalid",
+                **validation.as_log_payload(),
+            },
+            sort_keys=True,
+            default=str,
+        )
+    )
+    try:
+        if not video.extract_frames(overwrite=False):
+            raise RuntimeError("frame cache repair returned false")
+    except Exception as exc:
+        detail = f"frame cache repair before anonymization failed: {exc}"
+        _record_frame_cache_mismatch(video, detail)
+        raise RuntimeError(detail) from exc
+
+    validation = validate_video_frame_cache(video)
+    if validation.valid:
+        return
+
+    detail = "frame cache remains invalid after repair before anonymization"
+    _record_frame_cache_mismatch(video, detail)
+    logger.error(
+        json.dumps(
+            {
+                "event": "frame_anonymization_cache_preflight",
+                "video_hash": str(video.video_hash),
+                "status": "invalid_after_repair",
+                **validation.as_log_payload(),
+            },
+            sort_keys=True,
+            default=str,
+        )
+    )
+    raise RuntimeError(detail)
 
 
 def _create_anonymized_frame_files(
@@ -289,6 +371,8 @@ def _make_temporary_anonymized_frames(
                 f"Frame extraction failed for video {video.video_hash}, cannot create anonymized frames."
             ) from extract_e
 
+    _ensure_valid_frame_cache_for_frame_anonymization(video)
+
     all_frames = video.get_frames()
     if not all_frames.exists():
         raise FileNotFoundError(
@@ -331,6 +415,12 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> bool:
         bool: True if anonymization completes successfully.
     """
     state = video.get_or_create_state()
+
+    if _video_has_integrity_failure(video):
+        detail = _video_integrity_failure_detail(video) or "integrity failure"
+        raise ValueError(
+            f"Video {video.video_hash} is marked failed/lost and cannot be anonymized: {detail}"
+        )
 
     if state.anonymized:
         logger.info(

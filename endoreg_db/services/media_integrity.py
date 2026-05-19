@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 import math
 import os
@@ -21,7 +20,9 @@ from endoreg_db.models.media.video.storage_mode import (
     coerce_video_storage_mode,
 )
 from endoreg_db.models.media.video.video_file_frames._extract_frames import (
+    _sync_extracted_frame_records,
     _normalize_full_extraction_paths,
+    build_frame_cache_manifest,
     extract_full_frame_set_to_directory,
 )
 from endoreg_db.models.media.video.video_file_frames._manage_frame_range import (
@@ -40,6 +41,11 @@ from endoreg_db.utils.file_operations import (
 )
 from endoreg_db.utils.paths import STORAGE_DIR
 from endoreg_db.utils.storage import materialize_video_file
+from endoreg_db.utils.structured_logging import (
+    emit_structured_event,
+    hash_identifier,
+    safe_log_value,
+)
 from endoreg_db.utils.video import ffmpeg_wrapper
 
 logger = logging.getLogger(__name__)
@@ -83,6 +89,9 @@ class FrameCacheClassification:
     file_count: int
     db_frame_contract_valid: bool
     cache_status: FrameCacheStatus
+    db_extracted_frame_count: int = 0
+    db_extracted_frame_contract_valid: bool = False
+    db_extracted_missing_file_numbers: list[int] = field(default_factory=list)
     missing_frame_numbers: list[int] = field(default_factory=list)
     extra_frame_numbers: list[int] = field(default_factory=list)
     invalid_file_names: list[str] = field(default_factory=list)
@@ -119,8 +128,13 @@ class FrameCacheClassification:
             "frame_dir": self.frame_dir,
             "expected_count": self.expected_count,
             "db_frame_count": self.db_frame_count,
+            "db_extracted_frame_count": self.db_extracted_frame_count,
             "file_count": self.file_count,
             "db_frame_contract_valid": self.db_frame_contract_valid,
+            "db_extracted_frame_contract_valid": self.db_extracted_frame_contract_valid,
+            "db_extracted_missing_file_numbers": (
+                self.db_extracted_missing_file_numbers[:50]
+            ),
             "cache_status": self.cache_status.value,
             "cache_missing": self.cache_missing,
             "cache_complete": self.cache_complete,
@@ -210,25 +224,129 @@ def _record_report(report: dict[str, Any], key: str, payload: dict[str, Any]) ->
         report[key] = [existing, payload]
 
 
+def _video_integrity_detail(video: VideoFile) -> str:
+    payload = video.meta if isinstance(video.meta, dict) else {}
+    detail = str(payload.get("integrity_error") or "").strip()
+    if detail:
+        return detail
+    if bool(getattr(getattr(video, "state", None), "processing_error", False)):
+        return "video state is marked failed/lost"
+    return ""
+
+
+def _video_integrity_is_lost(video: VideoFile) -> bool:
+    payload = video.meta if isinstance(video.meta, dict) else {}
+    return payload.get("integrity_status") == "lost" or bool(
+        getattr(getattr(video, "state", None), "processing_error", False)
+    )
+
+
+def _mark_video_state_failed(
+    video: VideoFile,
+    detail: str,
+    *,
+    dry_run: bool = False,
+) -> bool:
+    state = getattr(video, "state", None)
+    already_failed = bool(getattr(state, "processing_error", False))
+    needs_normalization = bool(
+        state is not None
+        and (
+            not already_failed
+            or getattr(state, "processing_started", False)
+            or getattr(state, "ready_for_export", False)
+            or getattr(state, "ready_for_export_at", None) is not None
+            or bool(getattr(state, "ready_for_export_by", ""))
+            or bool(getattr(state, "processed_file_sha256", ""))
+        )
+    )
+    if dry_run:
+        emit_structured_event(
+            logger,
+            "media.integrity_lost_state",
+            level=logging.WARNING,
+            media_type="video",
+            video_id=video.pk,
+            video_hash_sha256=hash_identifier(video.video_hash),
+            dry_run=True,
+            detail=safe_log_value(detail),
+        )
+        return state is None or needs_normalization
+    if state is not None and not needs_normalization:
+        return False
+    state = state or video.get_or_create_state()
+    state.mark_processing_failed(save=True)
+    return True
+
+
 def _mark_video_lost(video: VideoFile, detail: str, *, dry_run: bool = False) -> None:
     if dry_run:
-        logger.error("Would mark video %s as LOST: %s", video.pk, detail)
+        emit_structured_event(
+            logger,
+            "media.integrity_lost",
+            level=logging.WARNING,
+            media_type="video",
+            video_id=video.pk,
+            video_hash_sha256=hash_identifier(video.video_hash),
+            dry_run=True,
+            detail=safe_log_value(detail),
+        )
         return
-    payload = dict(video.meta or {})
-    payload["integrity_status"] = "lost"
-    payload["integrity_error"] = detail
-    payload["integrity_checked_at"] = timezone.now().isoformat()
-    video.meta = payload
-    video.save(update_fields=["meta", "date_modified"])
-    logger.error("Marked video %s as LOST: %s", video.pk, detail)
+    with transaction.atomic():
+        _mark_video_state_failed(video, detail, dry_run=False)
+        payload = dict(video.meta or {})
+        payload["integrity_status"] = "lost"
+        payload["integrity_error"] = detail
+        payload["integrity_checked_at"] = timezone.now().isoformat()
+        video.meta = payload
+        video.save(update_fields=["meta", "date_modified"])
+    emit_structured_event(
+        logger,
+        "media.integrity_lost",
+        level=logging.ERROR,
+        media_type="video",
+        video_id=video.pk,
+        video_hash_sha256=hash_identifier(video.video_hash),
+        dry_run=False,
+        detail=safe_log_value(detail),
+    )
+
+
+def mark_video_integrity_lost(
+    video: VideoFile,
+    detail: str,
+    *,
+    dry_run: bool = False,
+) -> None:
+    _mark_video_lost(video, detail, dry_run=dry_run)
 
 
 def _mark_video_warning(
     video: VideoFile, detail: str, *, dry_run: bool = False
 ) -> None:
+    if _video_integrity_is_lost(video):
+        emit_structured_event(
+            logger,
+            "media.integrity_lost_preserved",
+            level=logging.WARNING,
+            media_type="video",
+            video_id=video.pk,
+            video_hash_sha256=hash_identifier(video.video_hash),
+            status="warning_not_applied",
+            detail=safe_log_value(_video_integrity_detail(video)),
+            suppressed_warning=safe_log_value(detail),
+        )
+        return
     if dry_run:
-        logger.warning(
-            "Would mark video %s with integrity warning: %s", video.pk, detail
+        emit_structured_event(
+            logger,
+            "media.integrity_warning",
+            level=logging.WARNING,
+            media_type="video",
+            video_id=video.pk,
+            video_hash_sha256=hash_identifier(video.video_hash),
+            dry_run=True,
+            detail=safe_log_value(detail),
         )
         return
     payload = dict(video.meta or {})
@@ -237,10 +355,31 @@ def _mark_video_warning(
     payload["integrity_checked_at"] = timezone.now().isoformat()
     video.meta = payload
     video.save(update_fields=["meta", "date_modified"])
-    logger.warning("Marked video %s with integrity warning: %s", video.pk, detail)
+    emit_structured_event(
+        logger,
+        "media.integrity_warning",
+        level=logging.WARNING,
+        media_type="video",
+        video_id=video.pk,
+        video_hash_sha256=hash_identifier(video.video_hash),
+        dry_run=False,
+        detail=safe_log_value(detail),
+    )
 
 
 def _mark_video_ok(video: VideoFile, *, dry_run: bool = False) -> None:
+    if _video_integrity_is_lost(video):
+        emit_structured_event(
+            logger,
+            "media.integrity_lost_preserved",
+            level=logging.WARNING,
+            media_type="video",
+            video_id=video.pk,
+            video_hash_sha256=hash_identifier(video.video_hash),
+            status="ok_not_applied",
+            detail=safe_log_value(_video_integrity_detail(video)),
+        )
+        return
     if dry_run:
         logger.info("Would mark video %s integrity status as ok", video.pk)
         return
@@ -443,12 +582,20 @@ def classify_frame_cache(
     frame_dir = video.get_frame_dir_path()
     expected_count = _expected_frame_count(video)
     frame_rows = list(
-        Frame.objects.filter(video=video).values("frame_number", "relative_path")
+        Frame.objects.filter(video=video).values(
+            "frame_number",
+            "relative_path",
+            "is_extracted",
+        )
     )
     db_frame_count = len(frame_rows)
 
     expected_paths: dict[int, str] = {}
     db_frame_contract_valid = False
+    db_extracted_contract_valid = False
+    db_extracted_missing_file_numbers: list[int] = []
+    db_extracted_rows = [row for row in frame_rows if row["is_extracted"]]
+    db_extracted_frame_count = len(db_extracted_rows)
     if expected_count is not None:
         expected_paths = {
             frame_number: _expected_relative_path(frame_number, ext)
@@ -458,46 +605,50 @@ def classify_frame_cache(
             int(row["frame_number"]): str(row["relative_path"]) for row in frame_rows
         }
         db_frame_contract_valid = db_paths == expected_paths
+        db_extracted_paths = {
+            int(row["frame_number"]): str(row["relative_path"])
+            for row in db_extracted_rows
+        }
+        db_extracted_contract_valid = db_extracted_paths == expected_paths
+        if frame_dir is not None:
+            db_extracted_missing_file_numbers = sorted(
+                frame_number
+                for frame_number, relative_path in db_extracted_paths.items()
+                if not (frame_dir / relative_path).is_file()
+            )
+        if db_extracted_missing_file_numbers:
+            db_extracted_contract_valid = False
 
-    frame_paths: list[Path] = []
-    if frame_dir is not None and frame_dir.exists():
-        frame_paths = sorted(
-            path for path in frame_dir.glob(f"frame_*.{ext}") if path.is_file()
+    manifest = None
+    if frame_dir is not None:
+        manifest = build_frame_cache_manifest(
+            frame_dir,
+            expected_count=expected_count,
+            ext=ext,
         )
 
-    if frame_dir is None or not frame_paths:
+    if frame_dir is None or manifest is None or manifest.file_count == 0:
         return FrameCacheClassification(
             video_id=video.pk,
             video_hash=str(video.video_hash),
             frame_dir=str(frame_dir or ""),
             expected_count=expected_count,
             db_frame_count=db_frame_count,
+            db_extracted_frame_count=db_extracted_frame_count,
             file_count=0,
             db_frame_contract_valid=db_frame_contract_valid,
+            db_extracted_frame_contract_valid=db_extracted_contract_valid,
+            db_extracted_missing_file_numbers=db_extracted_missing_file_numbers,
             cache_status=FrameCacheStatus.MISSING,
             missing_frame_numbers=list(range(expected_count or 0))[:50],
             has_manual_annotations=_has_manual_annotations(video),
         )
 
-    parsed_numbers: list[int] = []
-    invalid_file_names: list[str] = []
-    for frame_path in frame_paths:
-        frame_number = _parse_frame_number(frame_path)
-        if frame_number is None:
-            invalid_file_names.append(frame_path.name)
-        else:
-            parsed_numbers.append(frame_number)
-
-    actual_names = {path.name for path in frame_paths}
-    actual_numbers = set(parsed_numbers)
-    expected_numbers = set(range(expected_count or 0))
+    actual_names = set(manifest.actual_names)
+    actual_numbers = set(manifest.frame_numbers)
     expected_names = set(expected_paths.values())
 
-    missing_frame_numbers = sorted(expected_numbers - actual_numbers)
-    extra_frame_numbers = sorted(actual_numbers - expected_numbers)
-    unexpected_file_names = sorted(actual_names - expected_names)
-
-    if invalid_file_names:
+    if manifest.invalid_file_names or manifest.duplicate_frame_numbers:
         cache_status = FrameCacheStatus.CORRUPT
     elif expected_count is None:
         cache_status = FrameCacheStatus.CORRUPT
@@ -505,7 +656,7 @@ def classify_frame_cache(
         cache_status = FrameCacheStatus.COMPLETE
     elif (
         actual_numbers == set(range(1, expected_count + 1))
-        and len(frame_paths) == expected_count
+        and manifest.file_count == expected_count
     ):
         cache_status = FrameCacheStatus.SHIFTED
     else:
@@ -517,13 +668,16 @@ def classify_frame_cache(
         frame_dir=str(frame_dir or ""),
         expected_count=expected_count,
         db_frame_count=db_frame_count,
-        file_count=len(frame_paths),
+        db_extracted_frame_count=db_extracted_frame_count,
+        file_count=manifest.file_count,
         db_frame_contract_valid=db_frame_contract_valid,
+        db_extracted_frame_contract_valid=db_extracted_contract_valid,
+        db_extracted_missing_file_numbers=db_extracted_missing_file_numbers,
         cache_status=cache_status,
-        missing_frame_numbers=missing_frame_numbers,
-        extra_frame_numbers=extra_frame_numbers,
-        invalid_file_names=invalid_file_names,
-        unexpected_file_names=unexpected_file_names,
+        missing_frame_numbers=manifest.missing_frame_numbers,
+        extra_frame_numbers=manifest.extra_frame_numbers,
+        invalid_file_names=manifest.invalid_file_names,
+        unexpected_file_names=manifest.unexpected_file_names,
         has_manual_annotations=_has_manual_annotations(video),
     )
 
@@ -735,6 +889,38 @@ def _repair_full_frame_cache(
         raise
 
 
+def _repair_complete_frame_cache_db_contract(
+    video: VideoFile,
+    *,
+    expected_count: int,
+    dry_run: bool,
+    ext: str = "jpg",
+) -> tuple[int, str]:
+    if dry_run:
+        return 0, "would sync extracted frame DB rows from complete disk cache"
+
+    frame_numbers = list(range(expected_count))
+    with transaction.atomic():
+        synced_count = _sync_extracted_frame_records(
+            video,
+            frame_numbers=frame_numbers,
+            ext=ext,
+        )
+        state = video.get_or_create_state()
+        state.frames_initialized = True
+        state.frame_count = expected_count
+        state.mark_frames_extracted(save=False)
+        state.save(
+            update_fields=[
+                "frames_initialized",
+                "frame_count",
+                "frames_extracted",
+                "date_modified",
+            ]
+        )
+    return synced_count, "synced extracted frame DB rows from complete disk cache"
+
+
 def repair_frame_cache(
     video: VideoFile,
     classification: FrameCacheClassification,
@@ -747,7 +933,18 @@ def repair_frame_cache(
     detail = ""
     requested = sorted(set(requested_frame_numbers))
 
-    if classification.cache_complete:
+    if (
+        classification.cache_complete
+        and not classification.db_extracted_frame_contract_valid
+        and classification.expected_count is not None
+    ):
+        repaired, detail = _repair_complete_frame_cache_db_contract(
+            video,
+            expected_count=classification.expected_count,
+            dry_run=dry_run,
+        )
+        action = "sync_db_from_complete_cache"
+    elif classification.cache_complete:
         action = "none"
         detail = "cache already complete"
     elif classification.cache_missing and not requested:
@@ -1145,6 +1342,17 @@ def reconcile_video_integrity(
         "video_hash": str(video.video_hash),
     }
 
+    if _video_integrity_is_lost(video):
+        detail = _video_integrity_detail(video) or "video is marked lost"
+        changed = _mark_video_state_failed(
+            video,
+            detail,
+            dry_run=options.dry_run,
+        )
+        report["status"] = "lost"
+        report["detail"] = detail
+        return repaired, int(changed), report
+
     processed_name = getattr(video.processed_file, "name", "") or ""
     if processed_name:
         processed_path = _storage_absolute_path(processed_name)
@@ -1434,8 +1642,14 @@ def reconcile_media_integrity(
             if options.dry_run:
                 summary.upload_job_reports.append(report)
 
-    logger.info(
-        "Media integrity reconciliation complete: %s",
-        json.dumps(summary.as_dict(), sort_keys=True, default=str),
+    emit_structured_event(
+        logger,
+        "media.integrity_reconciliation_complete",
+        checked_videos=summary.checked_videos,
+        checked_upload_jobs=summary.checked_upload_jobs,
+        repaired_records=summary.repaired_records,
+        lost_records=summary.lost_records,
+        frame_caches_checked=summary.frame_caches_checked,
+        streamable_artifacts_checked=summary.streamable_artifacts_checked,
     )
     return summary

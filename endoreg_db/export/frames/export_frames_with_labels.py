@@ -135,6 +135,11 @@ def _assert_video_media_export_ready(video: VideoFile) -> None:
     if state is None and hasattr(video, "get_or_create_state"):
         state = video.get_or_create_state()
 
+    if bool(getattr(state, "processing_error", False)):
+        raise ValueError(
+            f"Video {video.pk} is marked failed/lost; refusing media export"
+        )
+
     if not bool(getattr(state, "anonymization_validated", False)):
         raise ValueError(
             f"Video {video.pk} is not human anonymization validated; "

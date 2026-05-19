@@ -107,6 +107,18 @@ def _mark_upload_jobs_error(video: VideoFile, error_detail: str) -> int:
     )
 
 
+def _video_has_integrity_loss(video: VideoFile) -> bool:
+    get_state = getattr(video, "get_or_create_state", None)
+    video_state = get_state() if callable(get_state) else getattr(video, "state", None)
+    video_meta = getattr(video, "meta", None)
+    if not isinstance(video_meta, dict):
+        video_meta = {}
+    return bool(
+        getattr(video_state, "processing_error", False)
+        or video_meta.get("integrity_status") == "lost"
+    )
+
+
 def _dispatch_prediction_refresh(
     video: VideoFile,
     payload: dict[str, Any],
@@ -170,6 +182,17 @@ class VideoReimportView(APIView):
             return Response(
                 {"error": f"Video with ID {pk} not found."},
                 status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if _video_has_integrity_loss(video):
+            return Response(
+                {
+                    "error": "Video is marked failed/lost by media integrity.",
+                    "error_type": "integrity_lost",
+                    "video_id": pk,
+                    "uuid": str(video.video_hash),
+                },
+                status=status.HTTP_409_CONFLICT,
             )
 
         if not video.raw_file:

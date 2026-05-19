@@ -116,6 +116,19 @@ def test_export_videos_rejects_unvalidated_media(tmp_path, monkeypatch):
         )
 
 
+def test_export_videos_rejects_failed_lost_media():
+    video = SimpleNamespace(
+        pk=7,
+        state=SimpleNamespace(
+            processing_error=True,
+            anonymization_validated=True,
+        ),
+    )
+
+    with pytest.raises(ValueError, match="failed/lost"):
+        export_module._assert_video_media_export_ready(video)
+
+
 @override_settings(ENDOREG_DEPLOYMENT_ROLE="local_study_server")
 def test_local_frame_asset_export_forces_processed_transcode():
     config = export_module.export_config(

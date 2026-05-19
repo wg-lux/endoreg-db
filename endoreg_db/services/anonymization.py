@@ -15,6 +15,24 @@ from endoreg_db.utils.storage import ensure_local_file, file_exists
 logger = logging.getLogger(__name__)
 
 
+def _video_integrity_status(video: VideoFile) -> tuple[str, str]:
+    payload = video.meta if isinstance(video.meta, dict) else {}
+    integrity_status = str(payload.get("integrity_status") or "").strip()
+    integrity_error = str(payload.get("integrity_error") or "").strip()
+    if not integrity_status and bool(
+        getattr(getattr(video, "state", None), "processing_error", False)
+    ):
+        integrity_status = "lost"
+    return integrity_status, integrity_error
+
+
+def _video_has_integrity_failure(video: VideoFile) -> bool:
+    integrity_status, _ = _video_integrity_status(video)
+    return integrity_status == "lost" or bool(
+        getattr(getattr(video, "state", None), "processing_error", False)
+    )
+
+
 class AnonymizationService:
     """
     Orchestrates long‑running anonymization tasks so the view only
@@ -56,10 +74,13 @@ class AnonymizationService:
                 .first()
             )
             if vf:
+                integrity_status, integrity_error = _video_integrity_status(vf)
                 return {
-                    "mediaType": "video",
-                    "anonymizationStatus": resolve_lx_anonymization_state(vf).value,
-                    "fileExists": file_exists(vf.raw_file),
+                    "media_type": "video",
+                    "anonymization_status": resolve_lx_anonymization_state(vf).value,
+                    "integrity_status": integrity_status,
+                    "integrity_error": integrity_error,
+                    "file_exists": file_exists(vf.raw_file),
                     "uuid": str(vf.video_hash) if vf.video_hash else None,
                 }
 
@@ -71,12 +92,16 @@ class AnonymizationService:
                 .first()
             )
             if pdf:
+                anonymization_status = (
+                    pdf.state.anonymization_status if pdf.state else "not_started"
+                )
                 return {
                     "mediaType": "pdf",
-                    "anonymizationStatus": (
-                        pdf.state.anonymization_status if pdf.state else "not_started"
-                    ),
+                    "media_type": "pdf",
+                    "anonymizationStatus": anonymization_status,
+                    "anonymization_status": anonymization_status,
                     "fileExists": file_exists(pdf.file),
+                    "file_exists": file_exists(pdf.file),
                     "hash": pdf.pdf_hash,
                 }
 
@@ -110,6 +135,18 @@ class AnonymizationService:
                         f"Starting video anonymization for VideoFile ID: {file_id}"
                     )
 
+                    if _video_has_integrity_failure(vf):
+                        integrity_status, integrity_error = _video_integrity_status(vf)
+                        logger.error(
+                            "Refusing anonymization for failed/lost VideoFile %s "
+                            "(hash=%s, integrity_status=%s, reason=%s)",
+                            file_id,
+                            vf.video_hash,
+                            integrity_status,
+                            integrity_error,
+                        )
+                        return None
+
                     # Check if already processed
                     if vf.state and vf.state.anonymized:
                         logger.info(f"VideoFile {file_id} already anonymized, skipping")
@@ -135,8 +172,7 @@ class AnonymizationService:
 
                     # Mark as started
                     if vf.state:
-                        vf.state.processing_started = True
-                        vf.state.save(update_fields=["processing_started"])
+                        vf.state.mark_processing_started()
 
                     # Use VideoImportService for anonymization
                     safe_processor_name = processor_name or "unknown_processor"

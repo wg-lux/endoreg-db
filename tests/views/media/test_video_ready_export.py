@@ -154,6 +154,26 @@ class VideoReadyExportEndpointTests(TestCase):
         video.refresh_from_db()
         assert video.get_or_create_state().ready_for_export is False
 
+    def test_rejects_when_video_is_failed_lost(self):
+        state = VideoState.objects.create(
+            anonymization_validated=True,
+            outside_segments_removed=True,
+            segment_annotations_created=True,
+            segment_annotations_validated=True,
+            processing_error=True,
+        )
+        video = self._video(state=state)
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            f"/api/media/videos/{video.pk}/mark-ready-for-export/",
+            data={"center_key": self.center.center_key},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 409, response.content
+        assert "failed/lost" in response.json()["error"]
+
     def test_rejects_when_segment_cleanup_is_not_final(self):
         for history_status, expected_status in (
             (None, "cleanup_required"),

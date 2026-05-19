@@ -183,6 +183,15 @@ class AnonymizationValidateView(APIView):
         # Try Video first
         video = VideoFile.objects.filter(pk=item_id).first()
         if video:
+            video_state = video.get_or_create_state()
+            video_meta = video.meta if isinstance(video.meta, dict) else {}
+            if getattr(video_state, "processing_error", False) or (
+                video_meta.get("integrity_status") == "lost"
+            ):
+                return Response(
+                    {"error": "Video is marked failed/lost by media integrity."},
+                    status=status.HTTP_409_CONFLICT,
+                )
             ok = video.validate_metadata_annotation(payload)
             if not ok:
                 return Response(
@@ -220,7 +229,12 @@ def anonymization_status(request, file_id: int):
     if not info:
         return Response({"detail": "File not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    file_type = info.get("mediaType") or info.get("type") or "video"
+    file_type = (
+        info.get("media_type")
+        or info.get("mediaType")
+        or info.get("type")
+        or "video"
+    )
 
     # Wende Rate-Limiting auf den echten Typ an (nicht auf einen evtl. falschen request-Parameter)
     if not PollingCoordinator.can_check_status(file_id, file_type):
@@ -233,7 +247,12 @@ def anonymization_status(request, file_id: int):
             status=status.HTTP_429_TOO_MANY_REQUESTS,
         )
 
-    status_val = info.get("anonymizationStatus") or info.get("status") or "not_started"
+    status_val = (
+        info.get("anonymization_status")
+        or info.get("anonymizationStatus")
+        or info.get("status")
+        or "not_started"
+    )
 
     # processing_locked als Ableitung des Status interpretieren
     processing_statuses = {
@@ -248,6 +267,9 @@ def anonymization_status(request, file_id: int):
             "file_id": file_id,
             "file_type": file_type,
             "anonymizationStatus": status_val,
+            "anonymization_status": status_val,
+            "integrity_status": info.get("integrity_status", ""),
+            "integrity_error": info.get("integrity_error", ""),
             "processing_locked": processing_locked_derived,
         }
     )
@@ -265,7 +287,24 @@ def start_anonymization(request, file_id: int):
     if not info:
         return Response({"detail": "File not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    file_type = info.get("mediaType") or "unknown"
+    file_type = info.get("media_type") or info.get("mediaType") or "unknown"
+    status_val = (
+        info.get("anonymization_status")
+        or info.get("anonymizationStatus")
+        or info.get("status")
+        or "not_started"
+    )
+    if info.get("integrity_status") == "lost" or status_val == "failed":
+        return Response(
+            {
+                "detail": "File is marked failed/lost and cannot be anonymized",
+                "file_id": file_id,
+                "file_type": file_type,
+                "integrity_status": info.get("integrity_status", ""),
+                "integrity_error": info.get("integrity_error", ""),
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
     # Use processing lock context to prevent duplicate processing
     with ProcessingLockContext(file_id, file_type) as lock:
         if not lock.acquired:

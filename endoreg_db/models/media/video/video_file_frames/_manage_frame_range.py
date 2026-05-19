@@ -1,11 +1,18 @@
 import logging
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
+from uuid import uuid4
 
 from django.db import transaction
 
 from endoreg_db.models.media.video.video_file_io import _get_frame_dir_path
-from endoreg_db.utils.file_operations import ensure_directory, safe_unlink_file
+from endoreg_db.utils.file_operations import (
+    atomic_move_file,
+    ensure_directory,
+    safe_rmtree,
+    safe_unlink_file,
+)
 from endoreg_db.utils.storage import materialize_video_file
 
 # Assuming ffmpeg_wrapper has or will have this function
@@ -31,6 +38,12 @@ def _video_source_context(video: "VideoFile", *, from_processed: bool):
 
 def _expected_relative_path(frame_number: int, ext: str) -> str:
     return f"frame_{frame_number:07d}.{ext}"
+
+
+def _get_staged_range_dir(output_dir: Path, video_hash: str) -> Path:
+    return output_dir.with_name(
+        f".range_extract_{video_hash}_{os.getpid()}_{uuid4().hex}"
+    )
 
 
 def _ensure_stable_frame_rows(
@@ -101,33 +114,47 @@ def extract_frame_range_to_directory(
     from_processed: bool = False,
 ) -> list[Path]:
     ensure_directory(output_dir)
-    with _video_source_context(video, from_processed=from_processed) as source_path:
-        if not Path(source_path).exists():
-            raise FileNotFoundError(
-                f"Video file not found at {source_path} for video {video.video_hash}. Cannot extract frame range."
+    staged_output_dir = _get_staged_range_dir(output_dir, str(video.video_hash))
+    try:
+        ensure_directory(staged_output_dir)
+        with _video_source_context(video, from_processed=from_processed) as source_path:
+            if not Path(source_path).exists():
+                raise FileNotFoundError(
+                    f"Video file not found at {source_path} for video {video.video_hash}. Cannot extract frame range."
+                )
+
+            ffmpeg_extract_frame_range(
+                Path(source_path),
+                staged_output_dir,
+                start_frame,
+                end_frame,
+                quality=quality,
+                ext=ext,
             )
 
-        extracted_paths = ffmpeg_extract_frame_range(
-            Path(source_path),
-            output_dir,
-            start_frame,
-            end_frame,
-            quality=quality,
-            ext=ext,
-        )
+        missing_files = [
+            frame_number
+            for frame_number in range(start_frame, end_frame)
+            if not (
+                staged_output_dir / _expected_relative_path(frame_number, ext)
+            ).is_file()
+        ]
+        if missing_files:
+            raise RuntimeError(
+                "Frame range extraction completed but stable files are missing for "
+                f"video {video.video_hash}: missing_sample={missing_files[:10]}"
+            )
 
-    missing_files = [
-        frame_number
-        for frame_number in range(start_frame, end_frame)
-        if not (output_dir / _expected_relative_path(frame_number, ext)).is_file()
-    ]
-    if missing_files:
-        raise RuntimeError(
-            "Frame range extraction completed but stable files are missing for "
-            f"video {video.video_hash}: missing_sample={missing_files[:10]}"
-        )
-
-    return extracted_paths
+        installed_paths = []
+        for frame_number in range(start_frame, end_frame):
+            relative_path = _expected_relative_path(frame_number, ext)
+            source_path = staged_output_dir / relative_path
+            target_path = output_dir / relative_path
+            atomic_move_file(source=source_path, destination=target_path)
+            installed_paths.append(target_path)
+        return installed_paths
+    finally:
+        safe_rmtree(staged_output_dir, missing_ok=True)
 
 
 def _delete_frame_range(video: "VideoFile", start_frame: int, end_frame: int):

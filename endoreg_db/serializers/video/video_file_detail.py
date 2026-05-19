@@ -30,6 +30,9 @@ class VideoDetailSerializer(VideoBriefSerializer):
     segment_annotation_status = serializers.SerializerMethodField()
     outside_segments_removed = serializers.SerializerMethodField()
     post_validation_rebuild = serializers.SerializerMethodField()
+    anonymization_status = serializers.SerializerMethodField()
+    integrity_status = serializers.SerializerMethodField()
+    integrity_error = serializers.SerializerMethodField()
 
     class Meta(VideoBriefSerializer.Meta):
         fields = VideoBriefSerializer.Meta.fields + [
@@ -45,6 +48,9 @@ class VideoDetailSerializer(VideoBriefSerializer):
             "segment_annotation_status",
             "outside_segments_removed",
             "post_validation_rebuild",
+            "anonymization_status",
+            "integrity_status",
+            "integrity_error",
         ]
 
     # ---------- helpers ---------- #
@@ -82,6 +88,29 @@ class VideoDetailSerializer(VideoBriefSerializer):
 
     def get_post_validation_rebuild(self, obj: VideoFile) -> dict | None:
         return post_validation_rebuild_summary(obj)
+
+    def get_anonymization_status(self, obj: VideoFile) -> str:
+        state = getattr(obj, "state", None)
+        if state is None:
+            return "not_started"
+        status = getattr(state, "anonymization_status", "not_started")
+        return getattr(status, "value", str(status))
+
+    def get_integrity_status(self, obj: VideoFile) -> str:
+        payload_obj = getattr(obj, "meta", None)
+        payload = payload_obj if isinstance(payload_obj, dict) else {}
+        status = str(payload.get("integrity_status") or "").strip()
+        if status:
+            return status
+        state = getattr(obj, "state", None)
+        if state is not None and getattr(state, "processing_error", False):
+            return "lost"
+        return ""
+
+    def get_integrity_error(self, obj: VideoFile) -> str:
+        payload_obj = getattr(obj, "meta", None)
+        payload = payload_obj if isinstance(payload_obj, dict) else {}
+        return str(payload.get("integrity_error") or "").strip()
 
     def get_patient_dob(self, obj):
         """

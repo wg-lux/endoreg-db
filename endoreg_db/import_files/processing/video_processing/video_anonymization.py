@@ -95,6 +95,18 @@ class VideoAnonymizer:
         # Setup anonymized directory
         anonymized_dir = ensure_directory(_processed_video_dir())
         assert ctx.current_video is not None
+        state = ctx.current_video.get_or_create_state()
+        meta = (
+            ctx.current_video.meta
+            if isinstance(ctx.current_video.meta, dict)
+            else {}
+        )
+        if getattr(state, "processing_error", False) or (
+            meta.get("integrity_status") == "lost"
+        ):
+            raise RuntimeError(
+                f"Video {ctx.current_video.video_hash} is marked failed/lost and cannot be anonymized."
+            )
         # Generate output path for anonymized report
 
         video_hash = ctx.current_video.video_hash
