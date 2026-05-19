@@ -6,7 +6,6 @@ from pathlib import Path
 import uuid
 
 import pytest
-from django.db import transaction
 
 from endoreg_db.models import Center, Frame, VideoFile
 from endoreg_db.models.state.anonymization import AnonymizationState
@@ -345,7 +344,7 @@ def test_range_extraction_recreates_stale_extracted_flag_file(monkeypatch, tmp_p
 
 
 @pytest.mark.django_db
-def test_pipe_2_repairs_stale_extracted_flag_missing_file_before_anonymize(
+def test_pipe_2_clears_stale_extracted_flag_without_reextracting_before_anonymize(
     monkeypatch,
     tmp_path,
 ):
@@ -362,52 +361,26 @@ def test_pipe_2_repairs_stale_extracted_flag_missing_file_before_anonymize(
     state.frames_extracted = True
     state.save(update_fields=["frames_extracted"])
 
-    calls: list[bool] = []
-
-    def fake_extract_frames(self, *, overwrite=False, **_kwargs):
-        calls.append(overwrite)
-        assert overwrite is False
-        assert self.pk == video.pk
-        assert frame_dir is not None
-        for frame_number in range(3):
-            (frame_dir / f"frame_{frame_number:07d}.jpg").write_bytes(b"frame")
-        with transaction.atomic():
-            extract_frames_module._sync_extracted_frame_records(
-                self,
-                frame_numbers=[0, 1, 2],
-                ext="jpg",
-            )
-            repair_state = self.get_or_create_state()
-            repair_state.frames_initialized = True
-            repair_state.frame_count = 3
-            repair_state.mark_frames_extracted(save=False)
-            repair_state.save(
-                update_fields=[
-                    "frames_initialized",
-                    "frame_count",
-                    "frames_extracted",
-                    "date_modified",
-                ]
-            )
-        return True
+    def fail_extract_frames(*_args, **_kwargs):
+        raise AssertionError("streamed pipe_2 must not run full frame extraction")
 
     def fake_anonymize(self, *, delete_original_raw=True):
         assert self.pk == video.pk
+        assert self.get_or_create_state().frames_extracted is False
         self.get_or_create_state().mark_anonymized(save=True)
         return True
 
-    monkeypatch.setattr(VideoFile, "extract_frames", fake_extract_frames)
+    monkeypatch.setattr(VideoFile, "extract_frames", fail_extract_frames)
     monkeypatch.setattr(VideoFile, "anonymize", fake_anonymize)
 
     assert video.pipe_2() is True
-    assert calls == [False]
     state.refresh_from_db()
-    assert state.frames_extracted is True
+    assert state.frames_extracted is False
     assert state.anonymized is True
 
 
 @pytest.mark.django_db
-def test_pipe_2_marks_lost_when_frame_cache_invalid_and_raw_unavailable(
+def test_pipe_2_marks_lost_for_invalid_frame_cache_when_raw_unavailable(
     monkeypatch,
     tmp_path,
 ):
@@ -421,9 +394,13 @@ def test_pipe_2_marks_lost_when_frame_cache_invalid_and_raw_unavailable(
     state.frames_extracted = True
     state.save(update_fields=["frames_extracted"])
 
-    def fail_anonymize(*_args, **_kwargs):
-        raise AssertionError("anonymize should not run with invalid frame cache")
+    def fail_extract_frames(*_args, **_kwargs):
+        raise AssertionError("streamed pipe_2 must not run full frame extraction")
 
+    def fail_anonymize(*_args, **_kwargs):
+        raise AssertionError("anonymize should not run without raw media")
+
+    monkeypatch.setattr(VideoFile, "extract_frames", fail_extract_frames)
     monkeypatch.setattr(VideoFile, "anonymize", fail_anonymize)
 
     assert video.pipe_2() is False

@@ -314,9 +314,9 @@ def _test_pipe_2(test: "VideoFileModelExtractedTest"):
     test.assertTrue(
         state.anonymized, "State.is_anonymized should be True"
     )  # Assuming this flag exists
-    test.assertTrue(
+    test.assertFalse(
         state.frames_extracted,
-        "State.frames_extracted should be True after pipe_2 (pipe_2 extracts frames)",
+        "State.frames_extracted should be False after streamed pipe_2 cleanup",
     )
     test.assertTrue(
         state.frames_initialized,

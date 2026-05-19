@@ -408,3 +408,59 @@ def test_blacken_video_frame_intervals_uses_video_filter_script_for_large_interv
     )
     assert script_path.parent == tmp_path
     assert not script_path.exists()
+
+
+@pytest.mark.unit
+def test_build_roi_mask_and_blacken_filter_expression_combines_roi_and_intervals():
+    expression = ffmpeg_wrapper._build_roi_mask_and_blacken_filter_expression(
+        endo_roi={"x": 10, "y": 20, "width": 300, "height": 200},
+        intervals=[(120, 240)],
+    )
+
+    assert "drawbox=x=0:y=0:w=iw:h=20:color=black:t=fill" in expression
+    assert "drawbox=x=0:y=20:w=10:h=200:color=black:t=fill" in expression
+    assert "drawbox=x=310:y=20:w=max(0\\,iw-310):h=200" in expression
+    assert "drawbox=x=0:y=220:w=iw:h=max(0\\,ih-220)" in expression
+    assert "(gte(n\\,120)*lt(n\\,240))" in expression
+
+
+@pytest.mark.unit
+def test_mask_video_to_roi_and_blacken_intervals_maps_audio_and_filter(
+    monkeypatch,
+    tmp_path,
+):
+    input_path = tmp_path / "input.mp4"
+    output_path = tmp_path / "output.mp4"
+    input_path.write_bytes(b"video")
+    captured = {}
+
+    monkeypatch.setattr(
+        "endoreg_db.utils.video.ffmpeg_wrapper._resolve_ffmpeg_executable",
+        lambda: "/smart/bin/ffmpeg",
+    )
+
+    def fake_popen(command, **kwargs):
+        captured["command"] = command
+        output_path.write_bytes(b"encoded")
+        return FakePopen(command, returncode=0, **kwargs)
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+
+    result = ffmpeg_wrapper.mask_video_to_roi_and_blacken_intervals(
+        input_path,
+        output_path,
+        endo_roi={"x": 10, "y": 20, "width": 300, "height": 200},
+        intervals=[(10, 20)],
+        force_cpu=True,
+    )
+
+    assert result == output_path
+    assert captured["command"].count("-map") == 2
+    assert "0:v:0" in captured["command"]
+    assert "0:a?" in captured["command"]
+    assert "-c:a" in captured["command"]
+    assert captured["command"][captured["command"].index("-c:a") + 1] == "copy"
+    assert "-vf" in captured["command"]
+    filter_expression = captured["command"][captured["command"].index("-vf") + 1]
+    assert "drawbox=x=0:y=0:w=iw:h=20:color=black:t=fill" in filter_expression
+    assert "(gte(n\\,10)*lt(n\\,20))" in filter_expression

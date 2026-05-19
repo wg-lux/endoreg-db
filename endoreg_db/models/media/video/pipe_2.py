@@ -11,7 +11,7 @@ from endoreg_db.models.media.video.video_file_frames._extract_frames import (
 logger = logging.getLogger(__name__)  # Changed from "video_file"
 
 if TYPE_CHECKING:
-    from endoreg_db.models import VideoFile, VideoState
+    from endoreg_db.models import VideoFile
 
 
 def _record_frame_cache_mismatch(video_file: "VideoFile", detail: str) -> None:
@@ -104,10 +104,69 @@ def _ensure_valid_frame_cache_for_legacy_pipe_2(video_file: "VideoFile") -> bool
     return False
 
 
+def _clear_invalid_frame_cache_flag_for_streaming_pipe_2(
+    video_file: "VideoFile",
+) -> bool:
+    state = video_file.get_or_create_state()
+    if not state.frames_extracted:
+        return True
+
+    try:
+        validation = validate_video_frame_cache(video_file)
+    except Exception as exc:
+        logger.warning(
+            "Pipe 2: Could not validate existing frame cache for video %s before "
+            "streamed anonymization. Clearing frames_extracted without repairing: %s",
+            video_file.video_hash,
+            exc,
+            exc_info=True,
+        )
+        state.mark_frames_not_extracted(save=True)
+        return True
+
+    if validation.valid:
+        return True
+
+    if not video_file.has_raw:
+        detail = (
+            "legacy pipe_2 frame cache invalid and raw media unavailable for "
+            "streamed anonymization"
+        )
+        _record_frame_cache_mismatch(video_file, detail)
+        logger.error(
+            json.dumps(
+                {
+                    "event": "pipe_2_frame_cache_preflight",
+                    "video_hash": str(video_file.video_hash),
+                    "status": "invalid_no_raw_media",
+                    **validation.as_log_payload(),
+                },
+                sort_keys=True,
+                default=str,
+            )
+        )
+        return False
+
+    logger.warning(
+        json.dumps(
+            {
+                "event": "pipe_2_frame_cache_preflight",
+                "video_hash": str(video_file.video_hash),
+                "status": "invalid_ignored_for_streaming_anonymization",
+                **validation.as_log_payload(),
+            },
+            sort_keys=True,
+            default=str,
+        )
+    )
+    state.mark_frames_not_extracted(save=True)
+    return True
+
+
 def _pipe_2(video_file: "VideoFile") -> bool:
     """
-    Process the given video file through pipeline 2 operations which include frame extraction,
-    anonymization of the video, and deletion of sensitive meta data.
+    Process the given video file through pipeline 2 operations: streamed video
+    anonymization and deletion of sensitive meta data.
     Heavy I/O operations are performed outside the main atomic transaction for DB updates.
 
     Parameters:
@@ -133,33 +192,7 @@ def _pipe_2(video_file: "VideoFile") -> bool:
             )
             return False
 
-        # --- Part 1: Frame Extraction ---
-        # Determine if frames are needed (short transaction for state read)
-        with transaction.atomic():
-            state: "VideoState" = video_file.get_or_create_state()
-            frames_needed = not state.frames_extracted
-
-        if frames_needed:
-            logger.info(
-                "Pipe 2: Frames not extracted. Extracting outside main DB transaction..."
-            )
-            if not video_file.extract_frames(overwrite=False):  # Heavy I/O work
-                logger.error("Pipe 2 failed: Frame extraction method returned False.")
-                return False
-
-            # Verify extraction and update state (short transaction)
-            with transaction.atomic():
-                video_file.refresh_from_db()
-                if not video_file.state or not video_file.state.frames_extracted:
-                    logger.error(
-                        "Pipe 2 failed: Frame extraction did not update state successfully."
-                    )
-                    return False
-                logger.info("Pipe 2: Frame extraction complete.")
-        else:
-            logger.info("Pipe 2: Frames already extracted.")
-
-        if not _ensure_valid_frame_cache_for_legacy_pipe_2(video_file):
+        if not _clear_invalid_frame_cache_flag_for_streaming_pipe_2(video_file):
             return False
 
         # --- Part 2: Video Anonymization ---
