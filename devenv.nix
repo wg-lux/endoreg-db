@@ -246,33 +246,33 @@ in
       '';
     };
     "test:fast" = {
-      description = "Run the fast PR pytest lane without coverage or heavy media/AI tests";
+      description = "Run the fast PR pytest lane with live logging";
       exec = ''
         export SKIP_EXPENSIVE_TESTS=true
         export RUN_VIDEO_TESTS=false
         export USE_STUB_MODEL_META=true
         export TEST_DB_REUSE=true
-        pytest -q --no-cov -o log_cli=false --log-level=WARNING -m '${FAST_TEST_MARKER}' -n auto --dist=loadscope
+        pytest -s -o log_cli=true --log-level=INFO -m '${FAST_TEST_MARKER}' -n auto --dist=loadscope
       '';
     };
     "test:heavy" = {
-      description = "Run heavy media, video, AI, pipeline, FFmpeg, and slow tests without coverage";
+      description = "Run heavy tests with live logging";
       exec = ''
         export SKIP_EXPENSIVE_TESTS=false
         export RUN_VIDEO_TESTS=true
         export USE_STUB_MODEL_META=true
         export TEST_DB_REUSE=true
-        pytest -q --no-cov -o log_cli=false --log-level=WARNING -m '${HEAVY_TEST_MARKER}' -n auto --dist=loadscope
+        pytest -s -o log_cli=true --log-level=INFO -m '${HEAVY_TEST_MARKER}' -n auto --dist=loadscope
       '';
     };
     "test:full" = {
-      description = "Run the full pytest suite with the repository coverage profile";
+      description = "Run the full pytest suite with live logging";
       exec = ''
         export SKIP_EXPENSIVE_TESTS=false
         export RUN_VIDEO_TESTS=true
         export USE_STUB_MODEL_META=true
         export TEST_DB_REUSE=true
-        pytest -q -o log_cli=false --log-level=WARNING -n auto --dist=loadscope ${COVERAGE_ARGS}
+        pytest -s -o log_cli=true --log-level=INFO -n auto --dist=loadscope ${COVERAGE_ARGS}
       '';
     };
     "test:clean" = {
