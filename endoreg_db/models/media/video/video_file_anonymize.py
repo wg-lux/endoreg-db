@@ -503,6 +503,7 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> bool:
     safe_cleanup_staging_file(
         anonymized_video_path,
         label="stale streamed anonymized video output",
+        allowed_roots=(anonymized_video_path.parent,),
         missing_ok=True,
     )
 
@@ -589,6 +590,7 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> bool:
         safe_cleanup_staging_file(
             anonymized_video_path,
             label="streamed anonymized video output after storage save",
+            allowed_roots=(anonymized_video_path.parent,),
             missing_ok=True,
         )
         video.refresh_from_db()
@@ -604,6 +606,7 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> bool:
         safe_cleanup_staging_file(
             anonymized_video_path,
             label="streamed anonymized video output after failure",
+            allowed_roots=(anonymized_video_path.parent,),
             missing_ok=True,
         )
         raise RuntimeError(f"Anonymization failed for video {video.video_hash}") from e
@@ -681,6 +684,7 @@ def _anonymize_from_frame_cache(
         safe_cleanup_staging_file(
             anonymized_video_path,
             label="stale legacy anonymized video output",
+            allowed_roots=(anonymized_video_path.parent,),
             missing_ok=True,
         )
 
@@ -729,6 +733,7 @@ def _anonymize_from_frame_cache(
         safe_cleanup_staging_file(
             anonymized_video_path,
             label="legacy anonymized video output after storage save",
+            allowed_roots=(anonymized_video_path.parent,),
             missing_ok=True,
         )
 
@@ -782,6 +787,7 @@ def _anonymize_from_frame_cache(
             safe_cleanup_staging_file(
                 anonymized_video_path,
                 label="legacy anonymized video output after failure",
+                allowed_roots=(anonymized_video_path.parent,),
                 missing_ok=True,
             )
         raise RuntimeError(f"Anonymization failed for video {video.video_hash}") from e

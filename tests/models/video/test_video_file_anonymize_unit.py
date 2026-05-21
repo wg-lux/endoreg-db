@@ -146,6 +146,7 @@ def test_anonymize_uses_streamed_mask_without_full_frame_extraction(
         "from_environment",
         lambda: SimpleNamespace(
             anonym_video=tmp_path / "anonymized",
+            storage=tmp_path,
             transcoding=transcoding_dir,
         ),
     )
