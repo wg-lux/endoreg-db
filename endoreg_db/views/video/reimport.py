@@ -2,217 +2,29 @@ import logging
 from typing import Any
 
 from django.db import transaction
-from django.db.models import Q
-from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ...models import AiModel, ModelMeta, SensitiveMeta, UploadJob, VideoFile
-from ...services.video_import import VideoImportService
+from endoreg_db.services.video_reimport_jobs import (
+    _as_bool,
+    _dispatch_prediction_refresh,
+    _mark_upload_jobs_anonymized,
+    _mark_upload_jobs_error,
+    _mark_upload_jobs_lost,
+    _reset_reimport_state,
+    _video_has_integrity_loss,
+)
 from endoreg_db.services.video_temporal_inference import (
     TemporalInferenceConfigError,
-    dispatch_video_temporal_inference,
-    extract_temporal_options,
 )
 from endoreg_db.utils.storage import ensure_local_file
 
+from ...models import AiModel, ModelMeta, VideoFile
+from ...models import SensitiveMeta as SensitiveMeta
+from ...services.video_import import VideoImportService
+
 logger = logging.getLogger(__name__)
-
-DEFAULT_SEGMENTATION_MODEL_NAME = "image_multilabel_classification_colonoscopy_default"
-INACTIVE_UPLOAD_JOB_STATUSES = {
-    UploadJob.Status.ERROR,
-    UploadJob.Status.LOST,
-}
-VIDEO_UPLOAD_JOB_CONTENT_TYPE_QUERY = Q(content_type__startswith="video/") | Q(
-    content_type=""
-)
-
-
-def _as_bool(value: Any, *, default: bool) -> bool:
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    normalized = str(value).strip().lower()
-    if normalized in {"1", "true", "yes", "y", "on"}:
-        return True
-    if normalized in {"0", "false", "no", "n", "off"}:
-        return False
-    return default
-
-
-def _resolve_prediction_model_meta(payload: dict[str, Any]) -> ModelMeta:
-    model_meta_id = payload.get("model_meta_id")
-    if model_meta_id not in (None, ""):
-        return ModelMeta.objects.select_related("model", "labelset").get(
-            pk=int(str(model_meta_id))
-        )
-
-    model_name = str(
-        payload.get("model_name") or DEFAULT_SEGMENTATION_MODEL_NAME
-    ).strip()
-    model_meta_version = payload.get("model_meta_version")
-    ai_model = AiModel.objects.get(name=model_name)
-    if model_meta_version not in (None, ""):
-        return ai_model.metadata_versions.select_related("model", "labelset").get(
-            version=str(model_meta_version)
-        )
-    return ai_model.get_latest_version()
-
-
-def _reimport_upload_job_queryset(video: VideoFile):
-    queryset = UploadJob.objects.filter(content_hash=video.video_hash).filter(
-        VIDEO_UPLOAD_JOB_CONTENT_TYPE_QUERY
-    )
-    center_id = getattr(video, "center_id", None)
-    if center_id is None:
-        center = getattr(video, "center", None)
-        center_id = getattr(center, "pk", None) or getattr(center, "id", None)
-    if center_id is not None:
-        queryset = queryset.filter(source_center_id=center_id)
-    return queryset
-
-
-def _select_reimport_upload_job_ids(video: VideoFile) -> list[Any]:
-    selected_by_scope: dict[tuple[int | None, str], UploadJob] = {}
-    total_count = 0
-    queryset = (
-        _reimport_upload_job_queryset(video)
-        .select_for_update()
-        .order_by("source_center_id", "content_type", "-updated_at", "-created_at")
-    )
-    for upload_job in queryset:
-        total_count += 1
-        scope = (upload_job.source_center_id, upload_job.content_type or "")
-        selected_job = selected_by_scope.get(scope)
-        if selected_job is None:
-            selected_by_scope[scope] = upload_job
-            continue
-        if (
-            selected_job.status in INACTIVE_UPLOAD_JOB_STATUSES
-            and upload_job.status not in INACTIVE_UPLOAD_JOB_STATUSES
-        ):
-            selected_by_scope[scope] = upload_job
-
-    selected_ids = [upload_job.pk for upload_job in selected_by_scope.values()]
-    skipped_count = total_count - len(selected_ids)
-    if skipped_count > 0:
-        logger.info(
-            "Skipped %d duplicate inactive UploadJob row(s) for video %s "
-            "during re-import state update",
-            skipped_count,
-            video.video_hash,
-        )
-    return selected_ids
-
-
-def _update_reimport_upload_jobs(video: VideoFile, **updates: Any) -> int:
-    with transaction.atomic():
-        selected_ids = _select_reimport_upload_job_ids(video)
-        if not selected_ids:
-            return 0
-        return UploadJob.objects.filter(pk__in=selected_ids).update(
-            **updates,
-            updated_at=timezone.now(),
-        )
-
-
-def _reset_reimport_state(video: VideoFile) -> int:
-    old_meta_id = video.sensitive_meta_id
-    if old_meta_id is not None:
-        logger.info(
-            "Clearing existing SensitiveMeta %s for video %s",
-            old_meta_id,
-            video.video_hash,
-        )
-        video.sensitive_meta = None
-        video.save(update_fields=["sensitive_meta"])
-        try:
-            SensitiveMeta.objects.filter(id=old_meta_id).delete()
-            logger.info("Deleted old SensitiveMeta %s", old_meta_id)
-        except Exception as exc:
-            logger.warning(
-                "Could not delete old SensitiveMeta %s: %s",
-                old_meta_id,
-                exc,
-            )
-
-    reset_count = _update_reimport_upload_jobs(
-        video,
-        status=UploadJob.Status.PROCESSING,
-        error_detail="",
-    )
-    logger.info(
-        "Reset %d UploadJob row(s) to processing for video %s",
-        reset_count,
-        video.video_hash,
-    )
-
-    logger.info("Re-initializing video specs for %s", video.video_hash)
-    video.initialize_video_specs()
-    video.initialize_frames()
-    return reset_count
-
-
-def _mark_upload_jobs_anonymized(video: VideoFile) -> int:
-    return _update_reimport_upload_jobs(
-        video,
-        status=UploadJob.Status.ANONYMIZED,
-        error_detail="",
-        sensitive_meta_id=video.sensitive_meta_id,
-    )
-
-
-def _mark_upload_jobs_error(video: VideoFile, error_detail: str) -> int:
-    return _update_reimport_upload_jobs(
-        video,
-        status=UploadJob.Status.ERROR,
-        error_detail=error_detail,
-    )
-
-
-def _video_has_integrity_loss(video: VideoFile) -> bool:
-    get_state = getattr(video, "get_or_create_state", None)
-    video_state = get_state() if callable(get_state) else getattr(video, "state", None)
-    video_meta = getattr(video, "meta", None)
-    if not isinstance(video_meta, dict):
-        video_meta = {}
-    return bool(
-        getattr(video_state, "processing_error", False)
-        or video_meta.get("integrity_status") == "lost"
-    )
-
-
-def _dispatch_prediction_refresh(
-    video: VideoFile,
-    payload: dict[str, Any],
-) -> dict[str, Any]:
-    model_meta = _resolve_prediction_model_meta(payload)
-    test_run = _as_bool(payload.get("test_run"), default=False)
-    try:
-        n_test_frames = int(payload.get("n_test_frames") or 10)
-    except (TypeError, ValueError) as exc:
-        raise TemporalInferenceConfigError("n_test_frames must be an integer.") from exc
-
-    dispatch_result = dispatch_video_temporal_inference(
-        video_id=video.pk,
-        model_meta_id=model_meta.pk,
-        replace_prediction_segments=True,
-        delete_frames_after=_as_bool(payload.get("delete_frames_after"), default=True),
-        ocr_frame_fraction=0.001,
-        ocr_cap=10,
-        temporal_options=extract_temporal_options(payload),
-        test_run=test_run,
-        n_test_frames=n_test_frames,
-    )
-    payload = dispatch_result.to_dict()
-    payload["queued"] = dispatch_result.status in {
-        "queued",
-        "already_queued",
-        "completed",
-    }
-    return payload
 
 
 class VideoReimportView(APIView):
@@ -282,6 +94,129 @@ class VideoReimportView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        request_data = getattr(request, "data", {})
+        payload = request_data if hasattr(request_data, "get") else {}
+
+        try:
+            from endoreg_db.services.video_reimport_jobs import (
+                dispatch_video_reimport,
+                get_video_reimport_job_mode,
+            )
+        except Exception as exc:
+            logger.exception("Video re-import dispatcher could not be loaded.")
+            return Response(
+                {
+                    "status": "failed",
+                    "operation": "video_reimport",
+                    "reason": str(exc),
+                    "error": "Video re-import dispatch failed.",
+                    "error_type": "dispatch_error",
+                    "video_id": pk,
+                    "uuid": str(video.video_hash),
+                    "updated_in_place": True,
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        if get_video_reimport_job_mode() == "inline":
+            return self._run_inline_video_reimport(
+                video=video,
+                pk=pk,
+                payload=payload,
+            )
+
+        try:
+            dispatch_result = dispatch_video_reimport(video_id=pk, payload=payload)
+        except Exception as exc:
+            logger.exception("Video re-import dispatch failed for %s.", video.video_hash)
+            return Response(
+                {
+                    "status": "failed",
+                    "operation": "video_reimport",
+                    "reason": str(exc),
+                    "error": "Video re-import dispatch failed.",
+                    "error_type": "dispatch_error",
+                    "video_id": pk,
+                    "uuid": str(video.video_hash),
+                    "updated_in_place": True,
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        response_payload = {
+            **dispatch_result.to_dict(),
+            "video_id": pk,
+            "uuid": str(video.video_hash),
+            "updated_in_place": True,
+        }
+
+        if dispatch_result.status == "busy":
+            return Response(
+                {
+                    **response_payload,
+                    "error": "Video media is currently busy.",
+                    "error_type": "media_busy",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        if dispatch_result.status == "lost":
+            return Response(
+                {
+                    **response_payload,
+                    "error": (
+                        "Raw video source could not be materialized from storage."
+                    ),
+                    "error_type": "missing_source",
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if dispatch_result.status == "failed":
+            inline_failure = dispatch_result.mode == "inline"
+            return Response(
+                {
+                    **response_payload,
+                    "error": (
+                        "Video re-import failed."
+                        if inline_failure
+                        else "Video re-import dispatch failed."
+                    ),
+                    "error_type": (
+                        "processing_error" if inline_failure else "dispatch_error"
+                    ),
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        if dispatch_result.status == "completed":
+            return Response(
+                {
+                    **response_payload,
+                    "message": "Video re-import completed.",
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        return Response(
+            {
+                **response_payload,
+                "message": (
+                    "Video re-import is already queued."
+                    if dispatch_result.status == "already_queued"
+                    else "Video re-import queued."
+                ),
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
+
+    def _run_inline_video_reimport(
+        self,
+        *,
+        video: VideoFile,
+        pk: int,
+        payload: dict[str, Any],
+    ) -> Response:
         try:
             logger.info(
                 "Starting in-place re-import for video %s (ID: %s)",
@@ -291,11 +226,16 @@ class VideoReimportView(APIView):
             try:
                 reset_upload_jobs = self._run_video_import_service(video)
             except FileNotFoundError as exc:
+                error_detail = (
+                    "Raw video source could not be materialized from storage. "
+                    f"{exc}"
+                )
                 logger.warning(
                     "Raw source missing during video re-import for %s: %s",
                     video.video_hash,
                     exc,
                 )
+                _mark_upload_jobs_lost(video, error_detail)
                 return Response(
                     {
                         "error": (
@@ -327,8 +267,6 @@ class VideoReimportView(APIView):
 
             video.refresh_from_db()
             completed_upload_jobs = _mark_upload_jobs_anonymized(video)
-            request_data = getattr(request, "data", {})
-            payload = request_data if hasattr(request_data, "get") else {}
             prediction_refresh = self._maybe_dispatch_prediction_refresh(
                 video=video,
                 payload=payload,
@@ -359,7 +297,6 @@ class VideoReimportView(APIView):
                 },
                 status=status.HTTP_200_OK,
             )
-
         except Exception as exc:
             logger.error(
                 "Failed to re-import video %s: %s",
