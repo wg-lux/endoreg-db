@@ -2,6 +2,7 @@ import logging
 from typing import Any
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
@@ -19,6 +20,13 @@ from endoreg_db.utils.storage import ensure_local_file
 logger = logging.getLogger(__name__)
 
 DEFAULT_SEGMENTATION_MODEL_NAME = "image_multilabel_classification_colonoscopy_default"
+INACTIVE_UPLOAD_JOB_STATUSES = {
+    UploadJob.Status.ERROR,
+    UploadJob.Status.LOST,
+}
+VIDEO_UPLOAD_JOB_CONTENT_TYPE_QUERY = Q(content_type__startswith="video/") | Q(
+    content_type=""
+)
 
 
 def _as_bool(value: Any, *, default: bool) -> bool:
@@ -53,6 +61,63 @@ def _resolve_prediction_model_meta(payload: dict[str, Any]) -> ModelMeta:
     return ai_model.get_latest_version()
 
 
+def _reimport_upload_job_queryset(video: VideoFile):
+    queryset = UploadJob.objects.filter(content_hash=video.video_hash).filter(
+        VIDEO_UPLOAD_JOB_CONTENT_TYPE_QUERY
+    )
+    center_id = getattr(video, "center_id", None)
+    if center_id is None:
+        center = getattr(video, "center", None)
+        center_id = getattr(center, "pk", None) or getattr(center, "id", None)
+    if center_id is not None:
+        queryset = queryset.filter(source_center_id=center_id)
+    return queryset
+
+
+def _select_reimport_upload_job_ids(video: VideoFile) -> list[Any]:
+    selected_by_scope: dict[tuple[int | None, str], UploadJob] = {}
+    total_count = 0
+    queryset = (
+        _reimport_upload_job_queryset(video)
+        .select_for_update()
+        .order_by("source_center_id", "content_type", "-updated_at", "-created_at")
+    )
+    for upload_job in queryset:
+        total_count += 1
+        scope = (upload_job.source_center_id, upload_job.content_type or "")
+        selected_job = selected_by_scope.get(scope)
+        if selected_job is None:
+            selected_by_scope[scope] = upload_job
+            continue
+        if (
+            selected_job.status in INACTIVE_UPLOAD_JOB_STATUSES
+            and upload_job.status not in INACTIVE_UPLOAD_JOB_STATUSES
+        ):
+            selected_by_scope[scope] = upload_job
+
+    selected_ids = [upload_job.pk for upload_job in selected_by_scope.values()]
+    skipped_count = total_count - len(selected_ids)
+    if skipped_count > 0:
+        logger.info(
+            "Skipped %d duplicate inactive UploadJob row(s) for video %s "
+            "during re-import state update",
+            skipped_count,
+            video.video_hash,
+        )
+    return selected_ids
+
+
+def _update_reimport_upload_jobs(video: VideoFile, **updates: Any) -> int:
+    with transaction.atomic():
+        selected_ids = _select_reimport_upload_job_ids(video)
+        if not selected_ids:
+            return 0
+        return UploadJob.objects.filter(pk__in=selected_ids).update(
+            **updates,
+            updated_at=timezone.now(),
+        )
+
+
 def _reset_reimport_state(video: VideoFile) -> int:
     old_meta_id = video.sensitive_meta_id
     if old_meta_id is not None:
@@ -73,10 +138,10 @@ def _reset_reimport_state(video: VideoFile) -> int:
                 exc,
             )
 
-    reset_count = UploadJob.objects.filter(content_hash=video.video_hash).update(
+    reset_count = _update_reimport_upload_jobs(
+        video,
         status=UploadJob.Status.PROCESSING,
         error_detail="",
-        updated_at=timezone.now(),
     )
     logger.info(
         "Reset %d UploadJob row(s) to processing for video %s",
@@ -91,19 +156,19 @@ def _reset_reimport_state(video: VideoFile) -> int:
 
 
 def _mark_upload_jobs_anonymized(video: VideoFile) -> int:
-    return UploadJob.objects.filter(content_hash=video.video_hash).update(
+    return _update_reimport_upload_jobs(
+        video,
         status=UploadJob.Status.ANONYMIZED,
         error_detail="",
         sensitive_meta_id=video.sensitive_meta_id,
-        updated_at=timezone.now(),
     )
 
 
 def _mark_upload_jobs_error(video: VideoFile, error_detail: str) -> int:
-    return UploadJob.objects.filter(content_hash=video.video_hash).update(
+    return _update_reimport_upload_jobs(
+        video,
         status=UploadJob.Status.ERROR,
         error_detail=error_detail,
-        updated_at=timezone.now(),
     )
 
 

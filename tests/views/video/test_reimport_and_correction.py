@@ -7,7 +7,10 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIRequestFactory
+
+from endoreg_db.models import Center, UploadJob
 
 
 def _load_video_view_module(module_name: str):
@@ -236,6 +239,78 @@ def test_reimport_uses_retry_true_and_refreshes_video(tmp_path, monkeypatch):
     assert video.refreshed is True
     assert prediction_calls == [(video, {})]
     assert response.data["prediction_refresh"]["queued"] is True
+
+
+@pytest.mark.django_db
+def test_reset_reimport_state_does_not_reactivate_duplicate_upload_jobs(tmp_path):
+    module = _load_video_view_module("reimport")
+    center = Center.objects.create(name="reimport-center")
+    raw_path = tmp_path / "raw.mp4"
+    raw_path.write_bytes(b"raw")
+    video = _FakeVideo(raw_path)
+    video.center = center
+    video.center_id = center.pk
+    video.video_hash = "duplicate-video-hash"
+
+    active_job = UploadJob.objects.create(
+        file=SimpleUploadedFile("active.mp4", b"active", content_type="video/mp4"),
+        status=UploadJob.Status.ANONYMIZED,
+        content_type="video/mp4",
+        source_center=center,
+        content_hash=video.video_hash,
+    )
+    failed_job = UploadJob.objects.create(
+        file=SimpleUploadedFile("failed.mp4", b"failed", content_type="video/mp4"),
+        status=UploadJob.Status.ERROR,
+        content_type="video/mp4",
+        source_center=center,
+        content_hash=video.video_hash,
+    )
+
+    reset_count = module._reset_reimport_state(video)
+
+    active_job.refresh_from_db()
+    failed_job.refresh_from_db()
+    assert reset_count == 1
+    assert active_job.status == UploadJob.Status.PROCESSING
+    assert failed_job.status == UploadJob.Status.ERROR
+    assert video.initialize_specs_called is True
+    assert video.initialize_frames_called is True
+
+
+@pytest.mark.django_db
+def test_mark_upload_jobs_anonymized_leaves_duplicate_failed_jobs_inactive(tmp_path):
+    module = _load_video_view_module("reimport")
+    center = Center.objects.create(name="reimport-complete-center")
+    raw_path = tmp_path / "raw.mp4"
+    raw_path.write_bytes(b"raw")
+    video = _FakeVideo(raw_path)
+    video.center = center
+    video.center_id = center.pk
+    video.video_hash = "complete-duplicate-video-hash"
+
+    active_job = UploadJob.objects.create(
+        file=SimpleUploadedFile("active.mp4", b"active", content_type="video/mp4"),
+        status=UploadJob.Status.PROCESSING,
+        content_type="video/mp4",
+        source_center=center,
+        content_hash=video.video_hash,
+    )
+    failed_job = UploadJob.objects.create(
+        file=SimpleUploadedFile("failed.mp4", b"failed", content_type="video/mp4"),
+        status=UploadJob.Status.ERROR,
+        content_type="video/mp4",
+        source_center=center,
+        content_hash=video.video_hash,
+    )
+
+    completed_count = module._mark_upload_jobs_anonymized(video)
+
+    active_job.refresh_from_db()
+    failed_job.refresh_from_db()
+    assert completed_count == 1
+    assert active_job.status == UploadJob.Status.ANONYMIZED
+    assert failed_job.status == UploadJob.Status.ERROR
 
 
 @pytest.mark.django_db
