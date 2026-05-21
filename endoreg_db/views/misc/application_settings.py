@@ -11,14 +11,12 @@ from uuid import UUID, uuid4
 
 from django.db import transaction
 from django.http import FileResponse
-from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
 from endoreg_db.models import (
     AIDataSet,
-    AIDataSetExportArtifact,
     AIModelTrainingRun,
     Center,
     EndoscopyProcessor,
@@ -30,11 +28,11 @@ from endoreg_db.models import (
     PatientExaminationReport,
     VideoFile,
 )
-from endoreg_db.services.hub import (
-    deployment_profile_payload,
-    local_study_server_mode_enabled,
-    resolve_allowed_center_id,
+from endoreg_db.services.application_settings.ai_dataset_export import (
+    create_ai_dataset_export,
+    prepare_ai_dataset_export_download,
 )
+from endoreg_db.services.hub import deployment_profile_payload
 from endoreg_db.services.model_training_jobs import (
     MODEL_TRAINING_LOST_TIMEOUT,  # noqa: F401
     MODEL_TRAINING_SERVER_INSTANCE_ID as _MODEL_TRAINING_SERVER_INSTANCE_ID,
@@ -59,14 +57,13 @@ from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_write_file,
     ensure_directory,
-    sha256_file,
 )
 from endoreg_db.utils.defaults.set_default_center import (
     get_application_defaults,
     get_application_settings,
     update_application_defaults,
 )
-from endoreg_db.utils.paths import EXPORT_DIR, PROTECTED_DATA_ROOT, STORAGE_DIR
+from endoreg_db.utils.paths import PROTECTED_DATA_ROOT, STORAGE_DIR
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 MODEL_TRAINING_BACKBONE_OPTIONS: tuple[dict[str, str], ...] = (
@@ -398,6 +395,20 @@ def _resolve_target_label_for_distribution(
             status=status.HTTP_404_NOT_FOUND,
         )
     return label, None
+
+
+def _payload_bool(value: Any, *, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off", ""}:
+            return False
+    return bool(value)
 
 
 def _payload_bool_field(
@@ -1711,320 +1722,31 @@ def application_settings_video_dimension_backfill_run_detail(request, run_id: st
     )
 
 
-def _sanitize_export_token(value: str) -> str:
-    normalized = []
-    for char in value.strip():
-        if char.isalnum():
-            normalized.append(char.lower())
-        elif char in {"-", "_"}:
-            normalized.append(char)
-        else:
-            normalized.append("_")
-    collapsed = "".join(normalized).strip("_")
-    return collapsed or "dataset"
-
-
-def _payload_bool(value: Any, *, default: bool = False) -> bool:
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        normalized = value.strip().lower()
-        if normalized in {"1", "true", "yes", "on"}:
-            return True
-        if normalized in {"0", "false", "no", "off", ""}:
-            return False
-    return bool(value)
-
-
-def _dataset_export_scope_error(
-    request,
-    *,
-    center_key: str | None,
-    all_centers: bool,
-    only_validated: bool,
-) -> tuple[str, int] | None:
-    if center_key and all_centers:
-        return "Export scope must use center_key or all_centers, not both.", 400
-
-    local_study_server = local_study_server_mode_enabled()
-    if not local_study_server:
-        return None
-
-    user = getattr(request, "user", None)
-    authenticated = bool(user and getattr(user, "is_authenticated", False))
-    privileged = bool(
-        authenticated
-        and (getattr(user, "is_staff", False) or getattr(user, "is_superuser", False))
-    )
-    if not authenticated:
-        return "Authentication is required for local_study_server exports.", 403
-    if not (bool(center_key) ^ all_centers):
-        return (
-            "local_study_server exports require exactly one center scope: "
-            "center_key or all_centers.",
-            400,
-        )
-    if all_centers and not privileged:
-        return "all_centers export requires staff or superuser privileges.", 403
-    if not only_validated:
-        return "local_study_server exports require only_validated=true.", 400
-    if center_key:
-        center = Center.objects.filter(center_key=center_key).first()
-        if center is None:
-            return f"Unknown center_key: {center_key}", 400
-        allowed_center_id = resolve_allowed_center_id(user)
-        if allowed_center_id == -1:
-            return "You do not have access to export center data.", 403
-        if allowed_center_id is not None and center.id != allowed_center_id:
-            return "Export center is outside the authenticated scope.", 403
-
-    return None
-
-
-def _resolve_ai_dataset_export_dataset(
-    payload: dict[str, Any],
-) -> tuple[AIDataSet | None, Response | None]:
-    settings_obj = get_application_settings()
-    normalized_dataset_id, dataset_id_error = _parse_optional_integer_param(
-        payload.get("dataset_id"),
-        field_name="dataset_id",
-    )
-
-    if dataset_id_error is not None:
-        return None, dataset_id_error
-    if normalized_dataset_id is not None:
-        dataset = AIDataSet.objects.filter(pk=normalized_dataset_id).first()
-        if dataset is None:
-            return None, Response(
-                {"errors": {"dataset_id": "AIDataSet not found."}},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-        return dataset, None
-
-    dataset_name = payload.get("ai_dataset_name", settings_obj.ai_dataset_name)
-    dataset_type = payload.get("ai_dataset_type", settings_obj.ai_dataset_type)
-
-    errors: dict[str, str] = {}
-    if not isinstance(dataset_name, str) or not dataset_name.strip():
-        errors["ai_dataset_name"] = "ai_dataset_name is required."
-    if not isinstance(dataset_type, str) or dataset_type not in {
-        AIDataSet.DATASET_TYPE_IMAGE,
-        AIDataSet.DATASET_TYPE_VIDEO,
-    }:
-        errors["ai_dataset_type"] = "ai_dataset_type must be one of: image, video."
-    if errors:
-        return None, Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
-
-    matches = list(
-        AIDataSet.objects.filter(
-            name=dataset_name.strip(),
-            dataset_type=dataset_type,
-        ).order_by("-updated_at", "-pk")[:2]
-    )
-    if not matches:
-        return None, Response(
-            {
-                "errors": {
-                    "ai_dataset_name": (
-                        f"No AIDataSet found for name='{dataset_name.strip()}' "
-                        f"and dataset_type='{dataset_type}'."
-                    )
-                }
-            },
-            status=status.HTTP_404_NOT_FOUND,
-        )
-    if len(matches) > 1:
-        return None, Response(
-            {
-                "errors": {
-                    "ai_dataset_name": (
-                        "Multiple AIDataSet rows match this name/type. "
-                        "Export by dataset_id to avoid selecting the wrong dataset."
-                    )
-                }
-            },
-            status=status.HTTP_409_CONFLICT,
-        )
-    return matches[0], None
-
-
-def _ai_dataset_export_download_url(artifact: AIDataSetExportArtifact) -> str:
-    return (
-        f"/api/settings/application/ai_dataset_export/{artifact.artifact_key}/download/"
-    )
-
-
-def _ai_dataset_export_payload(artifact: AIDataSetExportArtifact) -> dict[str, Any]:
-    return {
-        "success": artifact.status == AIDataSetExportArtifact.STATUS_COMPLETED,
-        "artifact_id": artifact.artifact_key,
-        "dataset_id": artifact.dataset_id,
-        "dataset_name": artifact.dataset_name,
-        "dataset_type": artifact.dataset_type,
-        "output_path": artifact.output_path,
-        "download_url": (
-            _ai_dataset_export_download_url(artifact)
-            if artifact.status == AIDataSetExportArtifact.STATUS_COMPLETED
-            else None
-        ),
-        "sha256": artifact.sha256,
-        "byte_size": artifact.byte_size,
-        "summary": artifact.summary,
-        "status": artifact.status,
-        "error": artifact.error or None,
-    }
-
-
 @api_view(["POST"])
 @permission_classes([EnvironmentAwarePermission])
 def application_settings_ai_dataset_export(request):
-    payload: dict[str, Any] = request.data or {}
-    dataset, dataset_error = _resolve_ai_dataset_export_dataset(payload)
-    if dataset_error is not None:
-        return dataset_error
-    assert dataset is not None
-
-    center_key = str(payload.get("center_key") or "").strip() or None
-    all_centers = _payload_bool(payload.get("all_centers"), default=False)
-    only_validated = _payload_bool(payload.get("only_validated"), default=True)
-    scope_error = _dataset_export_scope_error(
-        request,
-        center_key=center_key,
-        all_centers=all_centers,
-        only_validated=only_validated,
+    result = create_ai_dataset_export(
+        request.data or {},
+        user=getattr(request, "user", None),
     )
-    if scope_error is not None:
-        error_message, status_code = scope_error
-        return Response({"success": False, "error": error_message}, status=status_code)
-
-    artifact = AIDataSetExportArtifact.objects.create(
-        dataset=dataset,
-        dataset_name=dataset.name,
-        dataset_type=dataset.dataset_type,
-        ai_model_type=dataset.ai_model_type,
-        request_payload=payload,
-        center_key=center_key,
-        all_centers=all_centers,
-        only_validated=only_validated,
-        status=AIDataSetExportArtifact.STATUS_RUNNING,
-    )
-
-    export_dir = EXPORT_DIR / "ai_datasets"
-    timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-    file_name = (
-        f"{_sanitize_export_token(dataset.name or 'dataset')}"
-        f"_{_sanitize_export_token(dataset.dataset_type)}"
-        f"_{timestamp}_{artifact.artifact_key}.json"
-    )
-    output_path = export_dir / file_name
-
-    try:
-        export_payload = dataset.export_to_standardized_structure(
-            center_key=center_key,
-            all_centers=all_centers,
-            only_validated=only_validated,
-        )
-        json_bytes = json.dumps(
-            export_payload,
-            indent=2,
-            sort_keys=True,
-            ensure_ascii=True,
-        ).encode("utf-8")
-        atomic_write_file(
-            destination=output_path,
-            content=[json_bytes],
-            required_bytes=len(json_bytes),
-        )
-        artifact.status = AIDataSetExportArtifact.STATUS_COMPLETED
-        artifact.output_path = str(output_path)
-        artifact.download_filename = file_name
-        artifact.sha256 = sha256_file(output_path)
-        artifact.byte_size = len(json_bytes)
-        artifact.summary = export_payload.get("summary", {})
-        artifact.error = ""
-        artifact.finished_at = timezone.now()
-        artifact.save(
-            update_fields=[
-                "status",
-                "output_path",
-                "download_filename",
-                "sha256",
-                "byte_size",
-                "summary",
-                "error",
-                "finished_at",
-                "updated_at",
-            ]
-        )
-    except Exception as exc:
-        artifact.status = AIDataSetExportArtifact.STATUS_FAILED
-        artifact.error = str(exc)
-        artifact.finished_at = timezone.now()
-        artifact.save(update_fields=["status", "error", "finished_at", "updated_at"])
-        return Response(
-            _ai_dataset_export_payload(artifact),
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
-
-    return Response(
-        _ai_dataset_export_payload(artifact),
-        status=status.HTTP_201_CREATED,
-    )
+    return Response(result.payload, status=result.status_code)
 
 
 @api_view(["GET"])
 @permission_classes([EnvironmentAwarePermission])
 def application_settings_ai_dataset_export_download(request, artifact_id: str):
-    artifact_uuid = _coerce_uuid(artifact_id)
-    artifact = (
-        AIDataSetExportArtifact.objects.filter(artifact_id=artifact_uuid).first()
-        if artifact_uuid is not None
-        else None
-    )
-    if artifact is None:
-        return Response(
-            {"detail": "AI dataset export artifact not found."},
-            status=status.HTTP_404_NOT_FOUND,
-        )
-    if artifact.status != AIDataSetExportArtifact.STATUS_COMPLETED:
-        return Response(
-            _ai_dataset_export_payload(artifact),
-            status=status.HTTP_409_CONFLICT,
-        )
-
-    output_path = Path(artifact.output_path)
-    try:
-        output_path.resolve().relative_to(EXPORT_DIR.resolve())
-    except ValueError:
-        artifact.status = AIDataSetExportArtifact.STATUS_FAILED
-        artifact.error = "Export artifact path is outside the configured export root."
-        artifact.finished_at = timezone.now()
-        artifact.save(update_fields=["status", "error", "finished_at", "updated_at"])
-        return Response(
-            _ai_dataset_export_payload(artifact),
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
-
-    if not output_path.is_file():
-        artifact.status = AIDataSetExportArtifact.STATUS_FAILED
-        artifact.error = "Export artifact file is missing from disk."
-        artifact.finished_at = timezone.now()
-        artifact.save(update_fields=["status", "error", "finished_at", "updated_at"])
-        return Response(
-            _ai_dataset_export_payload(artifact),
-            status=status.HTTP_410_GONE,
-        )
+    result = prepare_ai_dataset_export_download(artifact_id)
+    if not result.is_file_response:
+        return Response(result.payload, status=result.status_code)
 
     response = FileResponse(
-        output_path.open("rb"),
+        result.file_path.open("rb"),
         as_attachment=True,
-        filename=artifact.download_filename or output_path.name,
-        content_type="application/json",
+        filename=result.filename,
+        content_type=result.content_type,
     )
-    response["X-Content-SHA256"] = artifact.sha256
-    response["X-Content-Length"] = str(artifact.byte_size)
+    response["X-Content-SHA256"] = result.sha256
+    response["X-Content-Length"] = str(result.byte_size)
     return response
 
 

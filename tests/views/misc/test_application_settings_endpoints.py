@@ -1241,13 +1241,18 @@ class ApplicationSettingsEndpointTests(TestCase):
         assert payload["role"] == NetworkNode.Role.CENTRAL_HUB
         assert payload["owning_center_id"] == self.center.pk
         assert payload["has_shared_secret"] is True
+        assert "shared_secret" not in payload
+        assert "shared_secret_hash" not in payload
         node_id = payload["id"]
 
         detail_response = self.client.get(
             f"/api/settings/application/network_nodes/{node_id}/"
         )
         assert detail_response.status_code == 200, detail_response.content
-        assert detail_response.json()["node_key"]
+        detail_payload = detail_response.json()
+        assert detail_payload["node_key"]
+        assert "shared_secret" not in detail_payload
+        assert "shared_secret_hash" not in detail_payload
 
         patch_response = self.client.patch(
             f"/api/settings/application/network_nodes/{node_id}/",
@@ -1265,6 +1270,8 @@ class ApplicationSettingsEndpointTests(TestCase):
         assert patched_payload["role"] == NetworkNode.Role.SITE_NODE
         assert patched_payload["is_active"] is False
         assert patched_payload["has_shared_secret"] is False
+        assert "shared_secret" not in patched_payload
+        assert "shared_secret_hash" not in patched_payload
 
         roles_response = self.client.get(
             "/api/settings/application/dropdowns/network_node_roles/"
@@ -1294,6 +1301,31 @@ class ApplicationSettingsEndpointTests(TestCase):
         )
         assert response.status_code == 400, response.content
         assert "node_key" in response.json()["errors"]
+
+    def test_network_node_patch_updates_shared_secret_without_returning_secret(self):
+        node = NetworkNode.objects.create(
+            display_name="Secret Node",
+            role=NetworkNode.Role.SITE_NODE,
+        )
+        node.set_shared_secret("old-secret")
+        node.save(update_fields=["shared_secret_hash"])
+
+        response = self.client.patch(
+            f"/api/settings/application/network_nodes/{node.pk}/",
+            data={"shared_secret": "new-secret"},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200, response.content
+        payload = response.json()
+        assert payload["has_shared_secret"] is True
+        assert "shared_secret" not in payload
+        assert "shared_secret_hash" not in payload
+
+        node.refresh_from_db()
+        assert node.check_shared_secret("new-secret") is True
+        assert node.check_shared_secret("old-secret") is False
+        assert node.shared_secret_hash != "new-secret"
 
     def test_network_node_create_rejects_duplicate_node_key_and_bad_types(self):
         existing = NetworkNode.objects.create(

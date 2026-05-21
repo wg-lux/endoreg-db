@@ -2,15 +2,12 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
-from datetime import datetime
-from enum import Enum
 from typing import TYPE_CHECKING, Any
 import uuid
 
 import numpy as np
 from django.db import models
 from django.utils import timezone
-from lx_dtypes.models.ledger.p_video.Pydantic import PatientVideoFile
 from pydantic import BaseModel, ConfigDict, Field
 
 from endoreg_db.schemas import (
@@ -20,7 +17,40 @@ from endoreg_db.schemas import (
     AITrainingLabel,
     AITrainingSample,
 )
-from endoreg_db.services.hub.deployment import local_study_server_mode_enabled
+from endoreg_db.services.aidataset_exports import (
+    AIDataSetExportPayload,
+    AIDataSetExportSummary,
+    AIDataSetFrameAnnotationExport,
+    AIDataSetFrameLabelExport,
+)
+from endoreg_db.services.aidataset_frame_buckets import (
+    AIDataSetFrameBucketCount,
+    AIDataSetFrameBucketDistribution,
+    AIDataSetFrameBucketSummary,
+    AIDataSetLabelDistributionEntry,
+    AIDataSetLabelFrameBucketCount,
+    AIDataSetTargetFrameBucket,
+)
+
+__all__ = [
+    "AIDataSet",
+    "AIDataSetActiveLearningCandidate",
+    "AIDataSetActiveLearningConfig",
+    "AIDataSetActiveLearningSelection",
+    "AIDataSetExportArtifact",
+    "AIDataSetExportPayload",
+    "AIDataSetExportSummary",
+    "AIDataSetFrameAnnotationExport",
+    "AIDataSetFrameBucketCount",
+    "AIDataSetFrameBucketDistribution",
+    "AIDataSetFrameBucketSummary",
+    "AIDataSetFrameLabelExport",
+    "AIDataSetLabelDistributionEntry",
+    "AIDataSetLabelFrameBucketCount",
+    "AIDataSetScoredActiveLearningCandidate",
+    "AIDataSetTargetFrameBucket",
+    "AIModelTrainingRun",
+]
 
 if TYPE_CHECKING:
     from django.db.models import QuerySet
@@ -32,12 +62,6 @@ if TYPE_CHECKING:
         LabelVideoSegment,
         VideoFile,
     )
-
-
-class AIDataSetFrameLabelExport(BaseModel):
-    id: int
-    name: str
-    labelset_name: str | None = None
 
 
 class AIDataSetActiveLearningConfig(BaseModel):
@@ -92,125 +116,6 @@ class AIDataSetActiveLearningSelection(BaseModel):
     selected_sample_indices: list[int] = Field(default_factory=list)
     selected_frame_ids: list[int] = Field(default_factory=list)
     selected_candidates: list[AIDataSetScoredActiveLearningCandidate] = Field(
-        default_factory=list
-    )
-
-
-class AIDataSetFrameAnnotationExport(BaseModel):
-    annotation_id: int
-    frame_id: int
-    frame_number: int
-    timestamp: float | None = None
-    relative_path: str
-    file_path: str | None = None
-    patient_video_file_uuid: str
-    video_id: int
-    video_uuid: str
-    video_hash: str
-    original_file_name: str | None = None
-    label: AIDataSetFrameLabelExport
-    value: bool
-    confidence: float | None = None
-    annotator: str | None = None
-    information_source_name: str | None = None
-    model_meta_id: int | None = None
-    external_annotation_id: str | None = None
-    date_created: datetime
-    date_modified: datetime
-
-
-class AIDataSetExportSummary(BaseModel):
-    image_annotation_count: int = 0
-    video_annotation_count: int = 0
-    frame_count: int = 0
-    video_count: int = 0
-    label_count: int = 0
-
-
-class AIDataSetExportPayload(BaseModel):
-    schema_version: str = "1.0"
-    dataset_id: int
-    name: str | None = None
-    description: str | None = None
-    dataset_type: str
-    ai_model_type: str
-    is_active: bool
-    created_at: datetime
-    updated_at: datetime
-    summary: AIDataSetExportSummary
-    patient_videos: dict[str, "PatientVideoFile"] = Field(default_factory=dict)
-    frame_annotations: list[AIDataSetFrameAnnotationExport] = Field(
-        default_factory=list
-    )
-
-
-AIDataSetExportPayload.model_rebuild()
-
-
-class AIDataSetTargetFrameBucket(str, Enum):
-    POSITIVE = "positive"
-    NEGATIVE = "negative"
-    UNKNOWN = "unknown"
-
-    def __str__(self) -> str:
-        return self.value
-
-
-class AIDataSetFrameBucketCount(BaseModel):
-    bucket: AIDataSetTargetFrameBucket
-    frame_count: int = 0
-
-
-class AIDataSetLabelDistributionEntry(BaseModel):
-    label_id: int
-    label_name: str
-    frame_positive: int = 0
-    frame_negative: int = 0
-    segment_count: int = 0
-    total: int = 0
-
-
-class AIDataSetLabelFrameBucketCount(BaseModel):
-    label_id: int
-    label_name: str
-    frame_count: int = 0
-
-
-class AIDataSetFrameBucketSummary(BaseModel):
-    image_annotation_count: int = 0
-    video_annotation_count: int = 0
-    annotation_frame_count: int = 0
-    segment_frame_count: int = 0
-    merged_frame_count: int = 0
-    video_count: int = 0
-    label_count: int = 0
-
-
-class AIDataSetFrameBucketDistribution(BaseModel):
-    schema_version: str = "1.0"
-    dataset_id: int
-    name: str | None = None
-    dataset_type: str
-    ai_model_type: str
-    is_active: bool
-    updated_at: datetime
-    label_group_id: int | None = None
-    label_group_name: str | None = None
-    target_label_id: int | None = None
-    target_label_name: str | None = None
-    prediction_segments_only: bool = True
-    summary: AIDataSetFrameBucketSummary
-    target_buckets: list[AIDataSetFrameBucketCount] = Field(default_factory=list)
-    label_distribution: list[AIDataSetLabelDistributionEntry] = Field(
-        default_factory=list
-    )
-    annotation_frame_buckets: list[AIDataSetLabelFrameBucketCount] = Field(
-        default_factory=list
-    )
-    segment_frame_buckets: list[AIDataSetLabelFrameBucketCount] = Field(
-        default_factory=list
-    )
-    merged_frame_buckets: list[AIDataSetLabelFrameBucketCount] = Field(
         default_factory=list
     )
 
@@ -302,64 +207,12 @@ class AIDataSet(models.Model):
         video_annotations: models.Manager[LabelVideoSegment]
 
     @staticmethod
-    def _resolve_labelset_name(label: Label | None) -> str | None:
-        if label is None:
-            return None
-        labelset = label.label_sets.order_by("-version", "name").first()
-        if labelset is None:
-            return None
-        return labelset.name
-
-    @staticmethod
     def _coerce_objects(
         objects: Iterable[models.Model] | QuerySet[models.Model],
     ) -> list[models.Model]:
         if isinstance(objects, models.QuerySet):
             return list(objects)
         return list(objects)
-
-    @staticmethod
-    def _label_allowed_by_set(label_id: int | None, label_set: LabelSet | None) -> bool:
-        if label_id is None:
-            return False
-        if label_set is None:
-            return True
-        return label_set.labels.filter(pk=label_id).exists()
-
-    @staticmethod
-    def _serialize_label_frame_buckets(
-        buckets: dict[int, set[int]],
-        *,
-        label_names_by_id: dict[int, str],
-    ) -> list[dict[str, Any]]:
-        return [
-            {
-                "label_id": label_id,
-                "label_name": label_names_by_id.get(label_id, f"Label {label_id}"),
-                "frame_count": len(frame_ids),
-            }
-            for label_id, frame_ids in sorted(
-                buckets.items(),
-                key=lambda item: (
-                    -len(item[1]),
-                    label_names_by_id.get(item[0], ""),
-                    item[0],
-                ),
-            )
-            if frame_ids
-        ]
-
-    @staticmethod
-    def _merge_label_frame_buckets(
-        *bucket_maps: dict[int, set[int]],
-    ) -> dict[int, set[int]]:
-        merged: dict[int, set[int]] = defaultdict(set)
-        for bucket_map in bucket_maps:
-            for label_id, frame_ids in bucket_map.items():
-                merged[label_id].update(frame_ids)
-        return {
-            label_id: frame_ids for label_id, frame_ids in merged.items() if frame_ids
-        }
 
     def get_image_annotations_queryset(self):
         return self.image_annotations
@@ -1377,175 +1230,6 @@ class AIDataSet(models.Model):
         )
         return manifest.to_lx_ai_core_dict()
 
-    def _build_target_frame_buckets(
-        self,
-        *,
-        target_label: Label | None,
-    ) -> dict[AIDataSetTargetFrameBucket, set[int]]:
-        if self.dataset_type != self.DATASET_TYPE_IMAGE or target_label is None:
-            return {}
-
-        annotations = self.image_annotations.select_related("frame", "label").filter(
-            frame__isnull=False,
-            frame__is_extracted=True,
-        )
-        if not annotations.exists():
-            return {}
-
-        frame_ids_by_bucket: dict[AIDataSetTargetFrameBucket, set[int]] = {
-            AIDataSetTargetFrameBucket.POSITIVE: set(),
-            AIDataSetTargetFrameBucket.NEGATIVE: set(),
-            AIDataSetTargetFrameBucket.UNKNOWN: set(),
-        }
-        seen_frame_ids: set[int] = set()
-        target_values_by_frame_id: dict[int, list[bool]] = defaultdict(list)
-
-        for annotation in annotations.iterator():
-            seen_frame_ids.add(annotation.frame_id)
-            if annotation.label_id == target_label.id:
-                target_values_by_frame_id[annotation.frame_id].append(
-                    bool(annotation.value)
-                )
-
-        for frame_id in seen_frame_ids:
-            target_values = target_values_by_frame_id.get(frame_id, [])
-            if any(target_values):
-                frame_ids_by_bucket[AIDataSetTargetFrameBucket.POSITIVE].add(frame_id)
-            elif target_values:
-                frame_ids_by_bucket[AIDataSetTargetFrameBucket.NEGATIVE].add(frame_id)
-            else:
-                frame_ids_by_bucket[AIDataSetTargetFrameBucket.UNKNOWN].add(frame_id)
-
-        return frame_ids_by_bucket
-
-    def _build_label_distribution(
-        self,
-        *,
-        label_set: LabelSet | None,
-    ) -> dict[int, dict[str, Any]]:
-        distribution: dict[int, dict[str, Any]] = {}
-
-        def ensure_label(label: Label | None) -> dict[str, Any] | None:
-            if label is None or not self._label_allowed_by_set(label.pk, label_set):
-                return None
-            return distribution.setdefault(
-                label.pk,
-                {
-                    "label_id": label.pk,
-                    "label_name": label.name,
-                    "frame_positive": 0,
-                    "frame_negative": 0,
-                    "segment_count": 0,
-                    "total": 0,
-                },
-            )
-
-        for annotation in (
-            self.image_annotations.select_related("label")
-            .filter(label__isnull=False, frame__is_extracted=True)
-            .iterator()
-        ):
-            entry = ensure_label(annotation.label)
-            if entry is None:
-                continue
-            if annotation.value:
-                entry["frame_positive"] += 1
-            else:
-                entry["frame_negative"] += 1
-            entry["total"] += 1
-
-        for segment in (
-            self.video_annotations.select_related("label")
-            .filter(label__isnull=False)
-            .iterator()
-        ):
-            entry = ensure_label(segment.label)
-            if entry is None:
-                continue
-            entry["segment_count"] += 1
-            entry["total"] += 1
-
-        return distribution
-
-    def _build_annotation_frame_buckets(
-        self,
-        *,
-        label_set: LabelSet | None,
-    ) -> dict[int, set[int]]:
-        buckets: dict[int, set[int]] = defaultdict(set)
-        annotations = self.image_annotations.select_related("label").filter(
-            label__isnull=False,
-            value=True,
-            frame__isnull=False,
-            frame__is_extracted=True,
-        )
-
-        for annotation in annotations.iterator():
-            if not self._label_allowed_by_set(annotation.label_id, label_set):
-                continue
-            buckets[annotation.label_id].add(annotation.frame_id)
-
-        return {
-            label_id: frame_ids for label_id, frame_ids in buckets.items() if frame_ids
-        }
-
-    def _build_segment_frame_buckets(
-        self,
-        *,
-        label_set: LabelSet | None,
-        prediction_segments_only: bool,
-    ) -> dict[int, set[int]]:
-        from endoreg_db.models import Frame
-        from endoreg_db.models.state.frame_annotation import is_prediction_segment
-
-        buckets: dict[int, set[int]] = defaultdict(set)
-        segments = (
-            self.video_annotations.select_related("label", "source")
-            .filter(
-                label__isnull=False,
-                video_file_id__isnull=False,
-                start_frame_number__isnull=False,
-                end_frame_number__isnull=False,
-            )
-            .order_by("video_file_id", "start_frame_number", "end_frame_number")
-        )
-        segments_by_video_id: dict[int, list[Any]] = defaultdict(list)
-
-        for segment in segments.iterator():
-            if prediction_segments_only and not is_prediction_segment(segment):
-                continue
-            if not self._label_allowed_by_set(segment.label_id, label_set):
-                continue
-            if segment.start_frame_number >= segment.end_frame_number:
-                continue
-            segments_by_video_id[segment.video_file_id].append(segment)
-
-        for video_id, video_segments in segments_by_video_id.items():
-            min_start = min(segment.start_frame_number for segment in video_segments)
-            max_end = max(segment.end_frame_number for segment in video_segments)
-            frame_rows = Frame.objects.filter(
-                video_id=video_id,
-                frame_number__gte=min_start,
-                frame_number__lt=max_end,
-                is_extracted=True,
-            ).values_list("id", "frame_number")
-            frame_ids_by_number = {
-                frame_number: frame_id for frame_id, frame_number in frame_rows
-            }
-
-            for segment in video_segments:
-                for frame_number, frame_id in frame_ids_by_number.items():
-                    if (
-                        segment.start_frame_number
-                        <= frame_number
-                        < segment.end_frame_number
-                    ):
-                        buckets[segment.label_id].add(frame_id)
-
-        return {
-            label_id: frame_ids for label_id, frame_ids in buckets.items() if frame_ids
-        }
-
     def build_frame_bucket_distribution(
         self,
         *,
@@ -1553,236 +1237,16 @@ class AIDataSet(models.Model):
         target_label: Label | None = None,
         prediction_segments_only: bool = True,
     ) -> AIDataSetFrameBucketDistribution:
-        """
-        Return validated frame-bucket counts used by dataset-aware annotation flows.
-        """
-        from endoreg_db.models import Label
-
-        target_buckets = self._build_target_frame_buckets(target_label=target_label)
-        label_distribution = self._build_label_distribution(label_set=label_set)
-        annotation_frame_buckets = self._build_annotation_frame_buckets(
-            label_set=label_set
+        from endoreg_db.services.aidataset_frame_buckets import (
+            build_frame_bucket_distribution,
         )
-        segment_frame_buckets = self._build_segment_frame_buckets(
+
+        return build_frame_bucket_distribution(
+            self,
             label_set=label_set,
+            target_label=target_label,
             prediction_segments_only=prediction_segments_only,
         )
-        merged_frame_buckets = self._merge_label_frame_buckets(
-            annotation_frame_buckets,
-            segment_frame_buckets,
-        )
-
-        label_ids = set(label_distribution)
-        label_ids.update(annotation_frame_buckets)
-        label_ids.update(segment_frame_buckets)
-        label_ids.update(merged_frame_buckets)
-        label_names_by_id = {
-            row["id"]: row["name"]
-            for row in Label.objects.filter(id__in=label_ids).values("id", "name")
-        }
-        for label_id, entry in label_distribution.items():
-            label_names_by_id.setdefault(label_id, entry["label_name"])
-
-        annotation_frame_ids = (
-            set().union(*annotation_frame_buckets.values())
-            if annotation_frame_buckets
-            else set()
-        )
-        segment_frame_ids = (
-            set().union(*segment_frame_buckets.values())
-            if segment_frame_buckets
-            else set()
-        )
-        merged_frame_ids = (
-            set().union(*merged_frame_buckets.values())
-            if merged_frame_buckets
-            else set()
-        )
-
-        return AIDataSetFrameBucketDistribution.model_validate(
-            {
-                "dataset_id": self.pk,
-                "name": self.name,
-                "dataset_type": self.dataset_type,
-                "ai_model_type": self.ai_model_type,
-                "is_active": self.is_active,
-                "updated_at": self.updated_at,
-                "label_group_id": label_set.pk if label_set is not None else None,
-                "label_group_name": label_set.name if label_set is not None else None,
-                "target_label_id": (
-                    target_label.pk if target_label is not None else None
-                ),
-                "target_label_name": (
-                    target_label.name if target_label is not None else None
-                ),
-                "prediction_segments_only": prediction_segments_only,
-                "summary": {
-                    "image_annotation_count": self.image_annotations.count(),
-                    "video_annotation_count": self.video_annotations.count(),
-                    "annotation_frame_count": len(annotation_frame_ids),
-                    "segment_frame_count": len(segment_frame_ids),
-                    "merged_frame_count": len(merged_frame_ids),
-                    "video_count": self.get_related_videos_queryset().count(),
-                    "label_count": len(label_ids),
-                },
-                "target_buckets": [
-                    {
-                        "bucket": bucket,
-                        "frame_count": len(target_buckets.get(bucket, set())),
-                    }
-                    for bucket in AIDataSetTargetFrameBucket
-                ],
-                "label_distribution": sorted(
-                    label_distribution.values(),
-                    key=lambda item: (
-                        -item["total"],
-                        item["label_name"],
-                        item["label_id"],
-                    ),
-                ),
-                "annotation_frame_buckets": self._serialize_label_frame_buckets(
-                    annotation_frame_buckets,
-                    label_names_by_id=label_names_by_id,
-                ),
-                "segment_frame_buckets": self._serialize_label_frame_buckets(
-                    segment_frame_buckets,
-                    label_names_by_id=label_names_by_id,
-                ),
-                "merged_frame_buckets": self._serialize_label_frame_buckets(
-                    merged_frame_buckets,
-                    label_names_by_id=label_names_by_id,
-                ),
-            }
-        )
-
-    def _build_frame_annotation_export(
-        self,
-        annotation: ImageClassificationAnnotation,
-    ) -> AIDataSetFrameAnnotationExport:
-        frame = annotation.frame
-        video = frame.video
-
-        file_path: str | None = None
-        try:
-            file_path = str(frame.file_path)
-        except Exception:
-            file_path = None
-
-        return AIDataSetFrameAnnotationExport.model_validate(
-            {
-                "annotation_id": annotation.pk,
-                "frame_id": frame.pk,
-                "frame_number": frame.frame_number,
-                "timestamp": frame.timestamp,
-                "relative_path": frame.relative_path,
-                "file_path": file_path,
-                "patient_video_file_uuid": str(video.uuid),
-                "video_id": video.pk,
-                "video_uuid": str(video.uuid),
-                "video_hash": video.video_hash,
-                "original_file_name": video.original_file_name,
-                "label": {
-                    "id": annotation.label_id,
-                    "name": annotation.label.name,
-                    "labelset_name": self._resolve_labelset_name(annotation.label),
-                },
-                "value": annotation.value,
-                "confidence": annotation.float_value,
-                "annotator": annotation.annotator,
-                "information_source_name": (
-                    annotation.information_source.name
-                    if annotation.information_source is not None
-                    else None
-                ),
-                "model_meta_id": annotation.model_meta_id,
-                "external_annotation_id": annotation.external_annotation_id,
-                "date_created": annotation.date_created,
-                "date_modified": annotation.date_modified,
-            }
-        )
-
-    def _build_patient_videos_export(
-        self,
-        *,
-        video_annotations: Sequence[LabelVideoSegment] | None = None,
-        videos: QuerySet[VideoFile] | None = None,
-    ) -> dict[str, PatientVideoFile]:
-        from endoreg_db.services.lx_video_contracts import (
-            build_lx_p_video_segment,
-            build_lx_patient_video_file,
-        )
-
-        patient_videos: dict[str, PatientVideoFile] = {}
-        segment_lists_by_video_id: dict[int, list[LabelVideoSegment]] = {}
-
-        if video_annotations is None:
-            video_annotations = list(
-                self.video_annotations.select_related(
-                    "label",
-                    "source",
-                    "video_file",
-                    "prediction_meta__model_meta__labelset",
-                    "video_file__ai_model_meta__labelset",
-                ).order_by(
-                    "video_file_id",
-                    "start_frame_number",
-                    "end_frame_number",
-                    "pk",
-                )
-            )
-
-        for segment in video_annotations:
-            segment_lists_by_video_id.setdefault(segment.video_file_id, []).append(
-                segment
-            )
-
-        if videos is None:
-            videos = self.get_related_videos_queryset()
-
-        for video in videos.select_related("sensitive_meta", "state"):
-            patient_video = build_lx_patient_video_file(video, include_segments=False)
-            attached_segments = segment_lists_by_video_id.get(video.pk, [])
-            if attached_segments:
-                for segment in attached_segments:
-                    lx_segment = build_lx_p_video_segment(segment)
-                    patient_video.patient_video_segments[str(lx_segment.uuid)] = (
-                        lx_segment
-                    )
-            patient_videos[str(video.uuid)] = patient_video
-
-        return patient_videos
-
-    @staticmethod
-    def _validate_export_scope(
-        *,
-        center_key: str | None,
-        all_centers: bool,
-        only_validated: bool,
-    ) -> str:
-        normalized_center_key = (center_key or "").strip()
-        if normalized_center_key and all_centers:
-            raise ValueError(
-                "Export scope must use center_key or all_centers, not both"
-            )
-
-        if normalized_center_key:
-            from endoreg_db.models import Center
-
-            if not Center.objects.filter(center_key=normalized_center_key).exists():
-                raise ValueError(f"Unknown center_key: {normalized_center_key}")
-
-        if local_study_server_mode_enabled():
-            if not (bool(normalized_center_key) ^ bool(all_centers)):
-                raise ValueError(
-                    "local_study_server exports require exactly one center scope: "
-                    "center_key or all_centers"
-                )
-            if not only_validated:
-                raise ValueError(
-                    "local_study_server exports require only_validated=true"
-                )
-
-        return normalized_center_key
 
     def build_export_payload(
         self,
@@ -1791,127 +1255,13 @@ class AIDataSet(models.Model):
         all_centers: bool = False,
         only_validated: bool = False,
     ) -> AIDataSetExportPayload:
-        if self.pk is None:
-            raise ValueError("AIDataSet must be saved before it can be exported.")
+        from endoreg_db.services.aidataset_exports import build_export_payload
 
-        normalized_center_key = self._validate_export_scope(
+        return build_export_payload(
+            self,
             center_key=center_key,
             all_centers=all_centers,
             only_validated=only_validated,
-        )
-        image_annotations_qs = self.image_annotations.select_related(
-            "frame__video",
-            "label",
-            "information_source",
-        )
-        video_annotations_qs = self.video_annotations.select_related(
-            "label",
-            "source",
-            "video_file",
-            "prediction_meta__model_meta__labelset",
-            "video_file__ai_model_meta__labelset",
-        )
-
-        if normalized_center_key and not all_centers:
-            image_annotations_qs = image_annotations_qs.filter(
-                frame__video__center__center_key=normalized_center_key
-            )
-            video_annotations_qs = video_annotations_qs.filter(
-                video_file__center__center_key=normalized_center_key
-            )
-        if only_validated:
-            image_annotations_qs = image_annotations_qs.filter(
-                frame__video__state__anonymization_validated=True
-            )
-            video_annotations_qs = video_annotations_qs.filter(
-                video_file__state__anonymization_validated=True
-            )
-            if local_study_server_mode_enabled():
-                image_annotations_qs = image_annotations_qs.filter(
-                    frame__video__state__outside_segments_removed=True,
-                    frame__video__state__ready_for_export=True,
-                ).exclude(frame__video__state__processed_file_sha256="")
-                video_annotations_qs = video_annotations_qs.filter(
-                    video_file__state__outside_segments_removed=True,
-                    video_file__state__ready_for_export=True,
-                ).exclude(video_file__state__processed_file_sha256="")
-
-        image_annotations = list(
-            image_annotations_qs.order_by(
-                "frame__video_id",
-                "frame__frame_number",
-                "label__name",
-                "pk",
-            )
-        )
-        video_annotations = list(
-            video_annotations_qs.order_by(
-                "video_file_id",
-                "start_frame_number",
-                "end_frame_number",
-                "pk",
-            )
-        )
-
-        frame_exports = [
-            self._build_frame_annotation_export(annotation)
-            for annotation in image_annotations
-        ]
-        related_video_ids = {
-            annotation.frame.video_id
-            for annotation in image_annotations
-            if annotation.frame_id is not None and annotation.frame.video_id is not None
-        }
-        related_video_ids.update(
-            segment.video_file_id
-            for segment in video_annotations
-            if segment.video_file_id is not None
-        )
-        related_videos = self.get_related_videos_queryset().filter(
-            pk__in=related_video_ids
-        )
-        patient_videos = self._build_patient_videos_export(
-            video_annotations=video_annotations,
-            videos=related_videos,
-        )
-
-        label_ids = {
-            annotation.label_id
-            for annotation in image_annotations
-            if annotation.label_id is not None
-        }
-        label_ids.update(
-            segment.label_id
-            for segment in video_annotations
-            if segment.label_id is not None
-        )
-
-        summary = AIDataSetExportSummary.model_validate(
-            {
-                "image_annotation_count": len(frame_exports),
-                "video_annotation_count": len(video_annotations),
-                "frame_count": len(
-                    {annotation.frame_id for annotation in image_annotations}
-                ),
-                "video_count": len(patient_videos),
-                "label_count": len(label_ids),
-            }
-        )
-
-        return AIDataSetExportPayload.model_validate(
-            {
-                "dataset_id": self.pk,
-                "name": self.name,
-                "description": self.description,
-                "dataset_type": self.dataset_type,
-                "ai_model_type": self.ai_model_type,
-                "is_active": self.is_active,
-                "created_at": self.created_at,
-                "updated_at": self.updated_at,
-                "summary": summary,
-                "patient_videos": patient_videos,
-                "frame_annotations": frame_exports,
-            }
         )
 
     def export_to_standardized_structure(
@@ -1921,14 +1271,14 @@ class AIDataSet(models.Model):
         all_centers: bool = False,
         only_validated: bool = False,
     ) -> dict[str, Any]:
-        """
-        Return a validated JSON-serializable export payload.
-        """
-        return self.build_export_payload(
+        from endoreg_db.services.aidataset_exports import export_to_standardized_structure
+
+        return export_to_standardized_structure(
+            self,
             center_key=center_key,
             all_centers=all_centers,
             only_validated=only_validated,
-        ).model_dump(mode="json")
+        )
 
     def __str__(self) -> str:
         if self.name:
