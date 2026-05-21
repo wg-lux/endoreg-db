@@ -393,9 +393,7 @@ class TestAnonymizationValidateView:
         pdf_file.sensitive_meta = sensitive_meta
         pdf_file.raw_meta = {"existing": "value"}
         pdf_file.anonymized_text = "Original text"
-        pdf_file.save(
-            update_fields=["sensitive_meta", "raw_meta", "anonymized_text"]
-        )
+        pdf_file.save(update_fields=["sensitive_meta", "raw_meta", "anonymized_text"])
 
         def mutate_if_called(instance, _payload):
             instance.sensitive_meta.patient_first_name = "Mutated"
@@ -458,9 +456,7 @@ class TestAnonymizationValidateView:
         pdf_file.sensitive_meta = sensitive_meta
         pdf_file.raw_meta = {"existing": "value"}
         pdf_file.anonymized_text = "Original text"
-        pdf_file.save(
-            update_fields=["sensitive_meta", "raw_meta", "anonymized_text"]
-        )
+        pdf_file.save(update_fields=["sensitive_meta", "raw_meta", "anonymized_text"])
 
         def mutate_and_fail(instance, _payload):
             instance.sensitive_meta.patient_first_name = "Mutated"

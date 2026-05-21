@@ -230,10 +230,7 @@ def anonymization_status(request, file_id: int):
         return Response({"detail": "File not found"}, status=status.HTTP_404_NOT_FOUND)
 
     file_type = (
-        info.get("media_type")
-        or info.get("mediaType")
-        or info.get("type")
-        or "video"
+        info.get("media_type") or info.get("mediaType") or info.get("type") or "video"
     )
 
     # Wende Rate-Limiting auf den echten Typ an (nicht auf einen evtl. falschen request-Parameter)

@@ -63,7 +63,9 @@ class AnonymizationMetricsEndpointTests(TestCase):
 
         assert response.status_code in {401, 403}
 
-    def test_metrics_endpoint_denies_authenticated_users_without_anonymization_role(self):
+    def test_metrics_endpoint_denies_authenticated_users_without_anonymization_role(
+        self,
+    ):
         user = User.objects.create_user(username=f"metrics-video-role-{uuid4().hex}")
         user.groups.add(self.video_read_role)
         self.client.force_login(user)
@@ -375,7 +377,8 @@ class AnonymizationMetricsEndpointTests(TestCase):
 
     @contextmanager
     def _production_permissions(self):
-        with patch(
-            "endoreg_db.utils.permissions.is_debug_mode", return_value=False
-        ), patch("endoreg_db.authz.permissions.is_debug_mode", return_value=False):
+        with (
+            patch("endoreg_db.utils.permissions.is_debug_mode", return_value=False),
+            patch("endoreg_db.authz.permissions.is_debug_mode", return_value=False),
+        ):
             yield

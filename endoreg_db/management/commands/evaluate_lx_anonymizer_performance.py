@@ -62,9 +62,7 @@ def _roi_is_configured(roi: dict[str, int | None] | None) -> bool:
     image_height = roi.get("image_height")
     image_dimensions_are_valid = (
         image_width is None or isinstance(image_width, int) and image_width > 0
-    ) and (
-        image_height is None or isinstance(image_height, int) and image_height > 0
-    )
+    ) and (image_height is None or isinstance(image_height, int) and image_height > 0)
     return image_dimensions_are_valid
 
 

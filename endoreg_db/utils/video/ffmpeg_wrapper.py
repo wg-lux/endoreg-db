@@ -1050,18 +1050,12 @@ def _build_roi_mask_filter_expressions(endo_roi: Dict[str, Any]) -> list[str]:
     if y > 0:
         filters.append(f"drawbox=x=0:y=0:w=iw:h={y}:color=black:t=fill")
     if x > 0:
-        filters.append(
-            f"drawbox=x=0:y={y}:w={x}:h={height}:color=black:t=fill"
-        )
+        filters.append(f"drawbox=x=0:y={y}:w={x}:h={height}:color=black:t=fill")
     filters.append(
-        "drawbox="
-        f"x={right}:y={y}:w=max(0\\,iw-{right}):h={height}:"
-        "color=black:t=fill"
+        f"drawbox=x={right}:y={y}:w=max(0\\,iw-{right}):h={height}:color=black:t=fill"
     )
     filters.append(
-        "drawbox="
-        f"x=0:y={bottom}:w=iw:h=max(0\\,ih-{bottom}):"
-        "color=black:t=fill"
+        f"drawbox=x=0:y={bottom}:w=iw:h=max(0\\,ih-{bottom}):color=black:t=fill"
     )
     return filters
 

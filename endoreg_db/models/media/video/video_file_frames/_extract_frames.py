@@ -407,9 +407,7 @@ def validate_video_frame_cache(
             "relative_path",
         )
     )
-    db_paths = {
-        int(row["frame_number"]): str(row["relative_path"]) for row in db_rows
-    }
+    db_paths = {int(row["frame_number"]): str(row["relative_path"]) for row in db_rows}
     expected_numbers = set(expected_paths)
     db_numbers = set(db_paths)
     db_missing = sorted(expected_numbers - db_numbers)
@@ -513,9 +511,7 @@ def _sync_extracted_frame_records(
             frame_number__in=unique_numbers
         ).update(is_extracted=False)
     else:
-        Frame.objects.filter(video=video, is_extracted=True).update(
-            is_extracted=False
-        )
+        Frame.objects.filter(video=video, is_extracted=True).update(is_extracted=False)
         return 0
     return _ensure_stable_frame_records(
         video,
@@ -573,9 +569,7 @@ def _normalize_full_extraction_paths(
     parsed: list[tuple[int, Path]] = []
     for frame_path in frame_paths:
         if not frame_path.is_file():
-            raise RuntimeError(
-                f"Extractor returned missing frame file: {frame_path}"
-            )
+            raise RuntimeError(f"Extractor returned missing frame file: {frame_path}")
         try:
             parsed.append((int(frame_path.stem.split("_")[-1]), frame_path))
         except (ValueError, IndexError) as exc:

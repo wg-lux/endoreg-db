@@ -97,9 +97,7 @@ class VideoAnonymizer:
         assert ctx.current_video is not None
         state = ctx.current_video.get_or_create_state()
         meta = (
-            ctx.current_video.meta
-            if isinstance(ctx.current_video.meta, dict)
-            else {}
+            ctx.current_video.meta if isinstance(ctx.current_video.meta, dict) else {}
         )
         if getattr(state, "processing_error", False) or (
             meta.get("integrity_status") == "lost"

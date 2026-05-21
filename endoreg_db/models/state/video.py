@@ -272,9 +272,7 @@ class VideoState(models.Model):
     # ---- Single‑responsibility mutators ---------------------------------
     def _raise_if_processing_error(self, action: str) -> None:
         if self.processing_error:
-            raise ValueError(
-                f"Video state is marked failed/lost; cannot {action}."
-            )
+            raise ValueError(f"Video state is marked failed/lost; cannot {action}.")
 
     def mark_processing_failed(self, *, save: bool = True) -> None:
         self.processing_error = True

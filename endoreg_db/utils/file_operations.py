@@ -7,7 +7,7 @@ import os
 import shutil
 import time
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
 from django.db.models.fields.files import FieldFile
 from endoreg_db.utils.storage import ensure_local_file
 
@@ -113,9 +113,9 @@ def _emit_file_operation_event(
     source: Path | None = None,
     destination: Path | None = None,
     detail: str = "",
-    **extra: object,
+    **extra: Any,
 ) -> None:
-    payload: dict[str, object] = {
+    payload: dict[str, Any] = {
         "operation": operation,
         "status": status,
     }

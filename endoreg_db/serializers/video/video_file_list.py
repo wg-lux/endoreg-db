@@ -102,9 +102,10 @@ class VideoFileListSerializer(serializers.ModelSerializer):
             return "available"
 
         # Use getattr with defaults to tolerate partially populated state objects
-        if getattr(state, "processing_error", False) or self.get_integrity_status(
-            obj
-        ) == "lost":
+        if (
+            getattr(state, "processing_error", False)
+            or self.get_integrity_status(obj) == "lost"
+        ):
             return "failed"
         anonymized = getattr(state, "anonymized", False)
         frames_extracted = getattr(state, "frames_extracted", False)
@@ -135,9 +136,10 @@ class VideoFileListSerializer(serializers.ModelSerializer):
         state = self._get_video_state(obj)
         if not state:
             return False
-        if getattr(state, "processing_error", False) or self.get_integrity_status(
-            obj
-        ) == "lost":
+        if (
+            getattr(state, "processing_error", False)
+            or self.get_integrity_status(obj) == "lost"
+        ):
             return False
 
         # getattr to be robust against partially/populated state

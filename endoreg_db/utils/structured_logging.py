@@ -96,8 +96,7 @@ def safe_log_value(value: Any, *, key: str | None = None) -> Any:
 
 def safe_log_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     return {
-        str(key): safe_log_value(value, key=str(key))
-        for key, value in payload.items()
+        str(key): safe_log_value(value, key=str(key)) for key, value in payload.items()
     }
 
 
@@ -110,13 +109,19 @@ def emit_structured_event(
     **payload: Any,
 ) -> None:
     structured_payload = safe_log_payload({"event": event, **payload})
-    structured_message = sanitize_log_string(message, key="message") if message else (
-        _default_event_message(event, structured_payload)
+    structured_message = (
+        sanitize_log_string(message, key="message")
+        if message
+        else (_default_event_message(event, structured_payload))
     )
-    log_message = structured_message if message else json.dumps(
-        structured_payload,
-        default=str,
-        sort_keys=True,
+    log_message = (
+        structured_message
+        if message
+        else json.dumps(
+            structured_payload,
+            default=str,
+            sort_keys=True,
+        )
     )
     extra = {
         "structured_event": structured_payload,

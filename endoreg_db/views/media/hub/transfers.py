@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from django.conf import settings
 from django.http import Http404
@@ -41,7 +42,7 @@ def _node_header(request, header_name: str) -> str:
     return str(request.headers.get(header_name, "") or "").strip()
 
 
-def _safe_request_context(request) -> dict[str, object]:
+def _safe_request_context(request) -> dict[str, Any]:
     remote_addr = str(request.META.get("REMOTE_ADDR", "") or "").strip()
     return {
         "request_method": str(getattr(request, "method", "") or ""),
@@ -73,7 +74,7 @@ def _log_transfer_validation_failure(
     transfer_key: str | None = None,
     transfer_job: TransferJob | None = None,
 ) -> None:
-    payload: dict[str, object] = {
+    payload: dict[str, Any] = {
         **_safe_request_context(request),
         "error_fields": sorted(set(_validation_error_fields(errors))),
     }

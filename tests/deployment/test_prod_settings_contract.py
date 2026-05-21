@@ -218,8 +218,7 @@ def test_prod_settings_refuse_required_proxy_https_header_when_missing() -> None
     assert result.returncode != 0
     assert (
         "DJANGO_REQUIRE_SECURE_PROXY_SSL_HEADER=true requires "
-        "DJANGO_SECURE_PROXY_SSL_HEADER_NAME=HTTP_X_FORWARDED_PROTO"
-        in result.stderr
+        "DJANGO_SECURE_PROXY_SSL_HEADER_NAME=HTTP_X_FORWARDED_PROTO" in result.stderr
     )
 
 
@@ -365,8 +364,7 @@ def test_prod_settings_refuse_central_hub_without_proxy_https_header() -> None:
     assert result.returncode != 0
     assert (
         "ENDOREG_DEPLOYMENT_ROLE=central_hub requires "
-        "DJANGO_SECURE_PROXY_SSL_HEADER_NAME=HTTP_X_FORWARDED_PROTO"
-        in result.stderr
+        "DJANGO_SECURE_PROXY_SSL_HEADER_NAME=HTTP_X_FORWARDED_PROTO" in result.stderr
     )
 
 

@@ -275,8 +275,7 @@ def get_secure_proxy_ssl_header() -> tuple[str, str] | None:
         header_name = "HTTP_X_FORWARDED_PROTO"
     if header_name != "HTTP_X_FORWARDED_PROTO":
         raise ValueError(
-            f"{SECURE_PROXY_SSL_HEADER_NAME_ENV} must be "
-            "HTTP_X_FORWARDED_PROTO"
+            f"{SECURE_PROXY_SSL_HEADER_NAME_ENV} must be HTTP_X_FORWARDED_PROTO"
         )
 
     secure_value = raw_value.lower()
