@@ -18,7 +18,6 @@ from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.response import Response
 
 from endoreg_db.models import (
@@ -42,6 +41,10 @@ from endoreg_db.models.state.frame_annotation import (
 from endoreg_db.services.segment_annotations import (
     ensure_prediction_segment_annotations,
     ensure_segment_annotations,
+)
+from endoreg_db.services.video_segments_bulk_mutation import (
+    BulkSegmentMutationServiceError,
+    bulk_mutate_video_segments,
 )
 from endoreg_db.services.media_operation_gate import (
     create_segment_update_lease_on_commit,
@@ -134,66 +137,6 @@ def _requested_annotator_from_payload(request) -> str | None:
         return None
     normalized = str(annotator).strip()
     return normalized or None
-
-
-def _segment_snapshot(segment: LabelVideoSegment) -> dict[str, Any]:
-    model_meta = segment.get_model_meta()
-    return {
-        "video": segment.video_file,
-        "start_frame_number": segment.start_frame_number,
-        "end_frame_number": segment.end_frame_number,
-        "label": segment.label,
-        "information_source_id": segment.source_id,
-        "model_meta_id": model_meta.pk if model_meta else None,
-    }
-
-
-def _timeline_segment_data(segment: LabelVideoSegment) -> dict[str, Any]:
-    return LabelVideoSegmentTimelineSerializer(segment).data
-
-
-def _require_bulk_list(data: dict[str, Any], field_name: str) -> list:
-    value = data.get(field_name, [])
-    if value is None:
-        return []
-    if not isinstance(value, list):
-        raise DRFValidationError({field_name: "Must be a list."})
-    return value
-
-
-def _bulk_delete_segment_id(item: Any, index: int) -> int:
-    raw_id = item.get("id") if isinstance(item, dict) else item
-    if raw_id is None:
-        raise _bulk_item_validation_error(
-            "deletes",
-            index,
-            "Each delete entry must be a segment id.",
-        )
-    try:
-        segment_id = int(raw_id)
-    except (TypeError, ValueError):
-        raise _bulk_item_validation_error(
-            "deletes",
-            index,
-            "Each delete entry must be a segment id.",
-        )
-    if segment_id <= 0:
-        raise _bulk_item_validation_error(
-            "deletes",
-            index,
-            "Segment id must be a positive integer.",
-        )
-    return segment_id
-
-
-def _bulk_item_validation_error(
-    field_name: str,
-    index: int,
-    detail: Any,
-) -> DRFValidationError:
-    indexed_errors: Mapping[str, Any] = {str(index): detail}
-    bulk_errors: Mapping[str, Mapping[str, Any]] = {field_name: indexed_errors}
-    return DRFValidationError(bulk_errors)
 
 
 def _normalized_annotator(annotator: str | None) -> str | None:
@@ -673,190 +616,23 @@ def video_segments_bulk_mutation(request, pk: int):
     }
     """
     video = get_object_or_404(VideoFile, id=pk)
-    defer_annotation_sync = _query_param_as_bool(
-        request.data.get("defer_annotation_sync"),
-        default=True,
-    )
-
     try:
-        creates = _require_bulk_list(request.data, "creates")
-        updates = _require_bulk_list(request.data, "updates")
-        deletes = _require_bulk_list(request.data, "deletes")
-    except DRFValidationError as exc:
-        return Response(
-            {"error": "Invalid bulk segment payload", "details": exc.detail},
-            status=status.HTTP_400_BAD_REQUEST,
+        response_data = bulk_mutate_video_segments(
+            video=video,
+            payload=request.data,
+            sync_frame_annotations=_sync_frame_annotations,
+            delete_frame_annotations_for_segment=(
+                _delete_frame_annotations_for_segment
+            ),
         )
-
-    ai_dataset, ai_dataset_error = _resolve_optional_ai_dataset(request.data)
-    if ai_dataset_error is not None:
-        return ai_dataset_error
-
-    if not creates and not updates and not deletes:
+    except BulkSegmentMutationServiceError as exc:
         return Response(
-            {"error": "At least one create, update, or delete is required."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    created_segments: list[dict[str, Any]] = []
-    created_segment_objects: list[LabelVideoSegment] = []
-    updated_segments: list[LabelVideoSegment] = []
-    deleted_segment_ids: list[int] = []
-    attached_segment_ids: list[int] = []
-
-    try:
-        with transaction.atomic():
-            for index, item in enumerate(creates):
-                if not isinstance(item, dict):
-                    raise _bulk_item_validation_error(
-                        "creates",
-                        index,
-                        "Each create entry must be an object.",
-                    )
-
-                client_id = item.get("client_id")
-                payload = dict(item)
-                payload.pop("client_id", None)
-                payload["video_id"] = pk
-
-                serializer = LabelVideoSegmentSerializer(data=payload)
-                if not serializer.is_valid():
-                    raise _bulk_item_validation_error(
-                        "creates",
-                        index,
-                        serializer.errors,
-                    )
-
-                segment = serializer.save()
-                if not defer_annotation_sync:
-                    _sync_frame_annotations(segment=segment)
-                created_segment_objects.append(segment)
-                created_segments.append(
-                    {
-                        "client_id": client_id,
-                        "segment": _timeline_segment_data(segment),
-                    }
-                )
-
-            for index, item in enumerate(updates):
-                if not isinstance(item, dict):
-                    raise _bulk_item_validation_error(
-                        "updates",
-                        index,
-                        "Each update entry must be an object.",
-                    )
-                if "id" not in item:
-                    raise _bulk_item_validation_error(
-                        "updates",
-                        index,
-                        {"id": "This field is required."},
-                    )
-
-                try:
-                    segment_id = int(item["id"])
-                except (TypeError, ValueError):
-                    raise _bulk_item_validation_error(
-                        "updates",
-                        index,
-                        {"id": "Must be an integer."},
-                    )
-
-                segment = get_object_or_404(
-                    LabelVideoSegment.objects.select_related(
-                        "video_file", "label", "source"
-                    ),
-                    id=segment_id,
-                    video_file=video,
-                )
-                old_snapshot = _segment_snapshot(segment)
-
-                payload = dict(item)
-                payload.pop("id", None)
-                serializer = LabelVideoSegmentSerializer(
-                    segment,
-                    data=payload,
-                    partial=True,
-                )
-                if not serializer.is_valid():
-                    raise _bulk_item_validation_error(
-                        "updates",
-                        index,
-                        serializer.errors,
-                    )
-
-                updated_segment = serializer.save()
-                if defer_annotation_sync:
-                    _delete_frame_annotations_for_segment(
-                        video=old_snapshot["video"],
-                        start_frame_number=old_snapshot["start_frame_number"],
-                        end_frame_number=old_snapshot["end_frame_number"],
-                        label=old_snapshot["label"],
-                        information_source_id=old_snapshot["information_source_id"],
-                        model_meta_id=old_snapshot["model_meta_id"],
-                    )
-                else:
-                    _sync_frame_annotations(
-                        segment=updated_segment,
-                        old_snapshot=old_snapshot,
-                    )
-                updated_segments.append(updated_segment)
-
-            for index, item in enumerate(deletes):
-                segment_id = _bulk_delete_segment_id(item, index)
-                segment = get_object_or_404(
-                    LabelVideoSegment.objects.select_related(
-                        "video_file", "label", "source"
-                    ),
-                    id=segment_id,
-                    video_file=video,
-                )
-                if segment.label is not None:
-                    delete_model_meta = segment.get_model_meta()
-                    _delete_frame_annotations_for_segment(
-                        video=segment.video_file,
-                        start_frame_number=segment.start_frame_number,
-                        end_frame_number=segment.end_frame_number,
-                        label=segment.label,
-                        information_source_id=segment.source_id,
-                        model_meta_id=(
-                            delete_model_meta.pk if delete_model_meta else None
-                        ),
-                    )
-                segment.delete()
-                deleted_segment_ids.append(segment_id)
-
-            if defer_annotation_sync:
-                mark_segment_annotations_stale(video)
-
-            if ai_dataset is not None:
-                segments_to_attach = [*created_segment_objects, *updated_segments]
-                ai_dataset.add_video_annotations(segments_to_attach)
-                attached_segment_ids = [segment.pk for segment in segments_to_attach]
-
-    except DRFValidationError as exc:
-        return Response(
-            {"error": "Invalid bulk segment payload", "details": exc.detail},
-            status=status.HTTP_400_BAD_REQUEST,
+            exc.response_data,
+            status=exc.status_code,
         )
 
     return Response(
-        {
-            "created": created_segments,
-            "updated": LabelVideoSegmentTimelineSerializer(
-                updated_segments,
-                many=True,
-            ).data,
-            "deleted": deleted_segment_ids,
-            "created_count": len(created_segments),
-            "updated_count": len(updated_segments),
-            "deleted_count": len(deleted_segment_ids),
-            "defer_annotation_sync": defer_annotation_sync,
-            "ai_dataset_id": ai_dataset.pk if ai_dataset is not None else None,
-            "attached_segment_ids": sorted(attached_segment_ids),
-            "dataset_video_annotation_count": (
-                ai_dataset.video_annotations.count() if ai_dataset is not None else 0
-            ),
-        },
+        response_data,
         status=status.HTTP_200_OK,
     )
 
