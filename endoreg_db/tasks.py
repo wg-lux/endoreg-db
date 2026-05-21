@@ -6,6 +6,52 @@ from celery import shared_task
 
 
 @shared_task(
+    name="endoreg_db.video_upload_import",
+    bind=True,
+    acks_late=True,
+    reject_on_worker_lost=True,
+    track_started=True,
+    time_limit=60 * 60 * 6,
+    soft_time_limit=60 * 60 * 5,
+)
+def run_video_upload_import_task(_task, job_id: str) -> bool:
+    from endoreg_db.services.hub.ingest import _run_video_upload_import_job
+
+    return _run_video_upload_import_job(str(job_id))
+
+
+@shared_task(
+    name="endoreg_db.video_reimport",
+    bind=True,
+    acks_late=True,
+    reject_on_worker_lost=True,
+    track_started=True,
+    time_limit=60 * 60 * 6,
+    soft_time_limit=60 * 60 * 5,
+)
+def run_video_reimport_task(
+    _task,
+    video_id: int,
+    history_id: int | None = None,
+) -> bool:
+    from endoreg_db.config.env import get_video_post_validation_dispatch_delay_seconds
+    from endoreg_db.services.media_operation_gate import MediaOperationDeferred
+    from endoreg_db.services.video_reimport_jobs import _run_video_reimport_job
+
+    try:
+        return _run_video_reimport_job(
+            int(video_id),
+            history_id=int(history_id) if history_id is not None else None,
+        )
+    except MediaOperationDeferred as exc:
+        raise _task.retry(
+            exc=exc,
+            countdown=max(get_video_post_validation_dispatch_delay_seconds(), 60),
+            max_retries=20,
+        ) from exc
+
+
+@shared_task(
     name="endoreg_db.frame_extraction_request",
     bind=True,
     acks_late=True,
@@ -124,6 +170,36 @@ def run_model_training_task(
         raise_on_error=True,
     )
     return True
+
+
+@shared_task(
+    name="endoreg_db.report_llm_reimport",
+    bind=True,
+    acks_late=True,
+    reject_on_worker_lost=True,
+    track_started=True,
+    time_limit=60 * 60 * 6,
+    soft_time_limit=60 * 60 * 5,
+)
+def run_report_llm_reimport_task(_task, job_id: str) -> bool:
+    from endoreg_db.services.report_llm_jobs import _run_report_llm_reimport_job
+
+    return _run_report_llm_reimport_job(str(job_id))
+
+
+@shared_task(
+    name="endoreg_db.report_llm_import",
+    bind=True,
+    acks_late=True,
+    reject_on_worker_lost=True,
+    track_started=True,
+    time_limit=60 * 60 * 6,
+    soft_time_limit=60 * 60 * 5,
+)
+def run_report_llm_import_task(_task, job_id: str) -> bool:
+    from endoreg_db.services.report_llm_jobs import _run_report_llm_import_job
+
+    return _run_report_llm_import_job(str(job_id))
 
 
 @shared_task(

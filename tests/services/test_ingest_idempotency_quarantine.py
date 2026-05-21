@@ -4,7 +4,7 @@ import threading
 import uuid
 from datetime import timedelta
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError
@@ -18,13 +18,16 @@ from endoreg_db.models import (
     UploadJob,
 )
 from endoreg_db.services.hub.ingest import (
+    _run_video_upload_import_job,
     create_or_reuse_upload_job,
     process_preanonymized_watcher_file,
-    process_upload_job,
     process_watcher_file,
 )
-from endoreg_db.utils.file_operations import safe_unlink_file
-from endoreg_db.utils.paths import QUARANTINE_DIR
+from endoreg_db.utils.file_operations import (
+    ensure_directory,
+    safe_rmtree,
+    safe_unlink_file,
+)
 
 
 @override_settings(MEDIA_ROOT=(Path(__file__).parent / "test_media").as_posix())
@@ -55,17 +58,22 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
         self.video_content = (
             b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom\x00\x00\x00\x00"
         )
+        self.quarantine_dir = self.test_media_dir / "quarantine"
+        self.quarantine_patch = patch(
+            "endoreg_db.services.hub.ingest._quarantine_dir",
+            return_value=self.quarantine_dir,
+        )
+        self.quarantine_patch.start()
+        self.addCleanup(self.quarantine_patch.stop)
 
-        if QUARANTINE_DIR.exists():
-            import shutil
-
-            shutil.rmtree(QUARANTINE_DIR)
-        QUARANTINE_DIR.mkdir(parents=True, exist_ok=True)
+        if self.quarantine_dir.exists():
+            safe_rmtree(self.quarantine_dir)
+        ensure_directory(self.quarantine_dir)
 
     def tearDown(self) -> None:
         super().tearDown()
-        if QUARANTINE_DIR.exists():
-            for item in QUARANTINE_DIR.iterdir():
+        if self.quarantine_dir.exists():
+            for item in self.quarantine_dir.iterdir():
                 if item.is_file():
                     safe_unlink_file(item)
 
@@ -231,17 +239,17 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
         )
         self.assertEqual(job_reingest.status, UploadJob.Status.PENDING)
 
-    def test_process_upload_job_quarantines_on_failure(self):
-        filename = "failed_upload.pdf"
+    def test_process_upload_job_quarantines_video_on_failure(self):
+        filename = "failed_upload.mp4"
         temp_file_path = self._create_temp_file(filename, self.pdf_content)
 
         upload_job = UploadJob.objects.create(
             file=SimpleUploadedFile(
                 name=filename,
                 content=self.pdf_content,
-                content_type="application/pdf",
+                content_type="video/mp4",
             ),
-            content_type="application/pdf",
+            content_type="video/mp4",
             source_center=self.center,
             source_system="test",
         )
@@ -250,11 +258,17 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
         ).as_posix()
         upload_job.save()
 
-        with patch(
-            "endoreg_db.services.hub.ingest.ReportImportService.import_and_anonymize",
-            side_effect=ValueError("Test processing error"),
+        with (
+            patch(
+                "endoreg_db.services.hub.ingest._default_processor_name",
+                return_value="processor",
+            ),
+            patch(
+                "endoreg_db.services.hub.ingest.VideoImportService.import_and_anonymize",
+                side_effect=ValueError("Test processing error"),
+            ),
         ):
-            result = process_upload_job(str(upload_job.id))
+            result = _run_video_upload_import_job(str(upload_job.id))
 
         self.assertFalse(result)
 
@@ -262,7 +276,7 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
         self.assertEqual(upload_job.status, UploadJob.Status.ERROR)
         self.assertIn("Test processing error", upload_job.error_detail)
 
-        quarantined_path = QUARANTINE_DIR / filename
+        quarantined_path = self.quarantine_dir / filename
         self.assertTrue(quarantined_path.exists())
         self.assertFalse(temp_file_path.exists())
         self.assertEqual(quarantined_path.read_bytes(), self.pdf_content)
@@ -272,13 +286,13 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
             str(quarantined_path),
         )
 
-    def test_process_watcher_file_cleans_upload_job_source_after_success(self):
+    def test_process_watcher_file_queues_processing_and_removes_watched_source(self):
         filename = "successful_watcher_report.pdf"
         temp_file_path = self._create_temp_file(filename, self.pdf_content)
 
         with patch(
-            "endoreg_db.services.hub.ingest.ReportImportService.import_and_anonymize",
-            return_value=RawPdfFile(center=self.center),
+            "endoreg_db.tasks.process_upload_job.apply_async",
+            return_value=Mock(id="watcher-upload-task"),
         ):
             upload_job = process_watcher_file(
                 file_path=temp_file_path,
@@ -287,10 +301,10 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
             )
 
         upload_job.refresh_from_db()
-        self.assertEqual(upload_job.status, UploadJob.Status.ANONYMIZED)
-        self.assertEqual(upload_job.cleanup_status, UploadJob.CleanupStatus.COMPLETED)
-        self.assertFalse(upload_job.source_file_persisted)
-        self.assertEqual(upload_job.file.name, "")
+        self.assertEqual(upload_job.status, UploadJob.Status.PROCESSING)
+        self.assertEqual(upload_job.cleanup_status, UploadJob.CleanupStatus.PENDING)
+        self.assertTrue(upload_job.source_file_persisted)
+        self.assertFalse(temp_file_path.exists())
 
     def test_process_watcher_file_quarantines_on_failure(self):
         filename = "failed_watcher_video.mp4"
@@ -299,8 +313,8 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
 
         with (
             patch(
-                "endoreg_db.services.hub.ingest.VideoImportService.import_and_anonymize",
-                side_effect=ValueError("Watcher processing error"),
+                "endoreg_db.tasks.process_upload_job.apply_async",
+                side_effect=ValueError("Watcher dispatch error"),
             ),
             patch(
                 "endoreg_db.services.hub.ingest.sha256_file",
@@ -325,9 +339,9 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
         upload_job = UploadJob.objects.order_by("-created_at").first()
         self.assertIsNotNone(upload_job)
         self.assertEqual(upload_job.status, UploadJob.Status.ERROR)
-        self.assertIn("Watcher processing error", upload_job.error_detail)
+        self.assertIn("Watcher dispatch error", upload_job.error_detail)
 
-        quarantined_path = QUARANTINE_DIR / filename
+        quarantined_path = self.quarantine_dir / filename
         self.assertTrue(quarantined_path.exists())
         self.assertFalse(temp_file_path.exists())
         self.assertEqual(quarantined_path.read_bytes(), self.video_content)
@@ -378,8 +392,8 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
         self.assertEqual(upload_job.status, UploadJob.Status.ERROR)
         self.assertIn("Preanonymized processing error", upload_job.error_detail)
 
-        quarantined_video_path = QUARANTINE_DIR / filename
-        quarantined_sidecar_path = QUARANTINE_DIR / sidecar_filename
+        quarantined_video_path = self.quarantine_dir / filename
+        quarantined_sidecar_path = self.quarantine_dir / sidecar_filename
 
         self.assertTrue(quarantined_video_path.exists())
         self.assertFalse(video_path.exists())
@@ -441,8 +455,8 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
                 return_value="stale-hash",
             ),
             patch(
-                "endoreg_db.services.hub.ingest.ReportImportService.import_and_anonymize",
-                return_value=RawPdfFile(center=self.center),
+                "endoreg_db.tasks.process_upload_job.apply_async",
+                return_value=Mock(id="stale-watcher-task"),
             ),
         ):
             new_job = process_watcher_file(

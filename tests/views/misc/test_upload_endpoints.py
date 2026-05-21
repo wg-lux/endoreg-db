@@ -14,6 +14,8 @@ from endoreg_db.models import (
     Examiner,
     NetworkNode,
     PortalUserInfo,
+    RawPdfFile,
+    ReportLlmInferenceJob,
     UploadJob,
 )
 
@@ -473,6 +475,84 @@ class UploadEndpointTests(TestCase):
         self.client.force_login(user)
         response = self.client.get(f"/api/upload/{upload_job.id}/status/")
         assert response.status_code == 404, response.content
+
+    def test_upload_status_includes_report_llm_job_for_queued_import(self):
+        center = Center.objects.create(name="llm-status-center")
+        upload_job = UploadJob.objects.create(
+            file=SimpleUploadedFile(
+                name="status-report.pdf",
+                content=MINIMAL_PDF_BYTES,
+                content_type="application/pdf",
+            ),
+            content_type="application/pdf",
+            source_center=center,
+            source_system="api",
+            ingest_mode=UploadJob.IngestMode.API,
+        )
+        job = ReportLlmInferenceJob.objects.create(
+            upload_job=upload_job,
+            operation=ReportLlmInferenceJob.OPERATION_IMPORT,
+            status=ReportLlmInferenceJob.STATUS_QUEUED,
+            task_id="status-task",
+            queue="llm_inference",
+            config={"kind": "report_llm_import", "queue": "llm_inference"},
+            result={},
+        )
+
+        response = self.client.get(f"/api/upload/{upload_job.id}/status/")
+
+        assert response.status_code == 200, response.content
+        payload = response.json()
+        assert payload["report_llm_job"]["status"] == "queued"
+        assert payload["report_llm_job"]["operation"] == "report_llm_import"
+        assert payload["report_llm_job"]["job_id"] == job.job_key
+        assert payload["report_llm_job"]["task_id"] == "status-task"
+        assert payload["report_llm_job"]["queue"] == "llm_inference"
+        assert payload["report_llm_job"]["result"] == {}
+        assert "report_id" not in payload["report_llm_job"]
+        assert "poll_url" not in payload["report_llm_job"]
+
+    def test_upload_status_report_llm_job_includes_poll_url_after_pdf_exists(self):
+        center = Center.objects.create(name="llm-status-completed-center")
+        report = RawPdfFile.objects.create(
+            center=center,
+            pdf_hash=f"llm-status-completed-report-{uuid4().hex}",
+            file=SimpleUploadedFile(
+                name="status-report-completed.pdf",
+                content=MINIMAL_PDF_BYTES,
+                content_type="application/pdf",
+            ),
+        )
+        upload_job = UploadJob.objects.create(
+            file=SimpleUploadedFile(
+                name="status-report-completed-upload.pdf",
+                content=MINIMAL_PDF_BYTES,
+                content_type="application/pdf",
+            ),
+            content_type="application/pdf",
+            source_center=center,
+            source_system="api",
+            ingest_mode=UploadJob.IngestMode.API,
+        )
+        job = ReportLlmInferenceJob.objects.create(
+            upload_job=upload_job,
+            pdf=report,
+            operation=ReportLlmInferenceJob.OPERATION_IMPORT,
+            status=ReportLlmInferenceJob.STATUS_SUCCESS,
+            task_id="status-completed-task",
+            queue="llm_inference",
+            config={"kind": "report_llm_import", "queue": "llm_inference"},
+            result={"pdf_id": report.pk},
+        )
+
+        response = self.client.get(f"/api/upload/{upload_job.id}/status/")
+
+        assert response.status_code == 200, response.content
+        report_job = response.json()["report_llm_job"]
+        assert report_job["report_id"] == report.pk
+        assert report_job["poll_url"] == (
+            f"/api/media/pdfs/{report.pk}/llm-jobs/{job.job_key}/"
+        )
 
     def test_upload_dispatches_inline_processing_when_celery_is_unavailable(self):
         uploaded = SimpleUploadedFile(

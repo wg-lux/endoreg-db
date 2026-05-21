@@ -1,0 +1,312 @@
+from __future__ import annotations
+
+from django.urls import URLPattern
+
+from endoreg_db.urls import media
+
+
+RouteContract = tuple[str, str, str]
+
+EXPECTED_MEDIA_ROUTE_CONTRACT: list[RouteContract] = [
+    (
+        "media/hub/transfers/",
+        "hub-transfer-create",
+        "endoreg_db.views.media.hub.transfers.HubTransferCreateView",
+    ),
+    (
+        "media/hub/transfers/<str:transfer_key>/status/",
+        "hub-transfer-status",
+        "endoreg_db.views.media.hub.transfers.HubTransferStatusView",
+    ),
+    (
+        "media/hub/transfers/<str:transfer_key>/media/",
+        "hub-transfer-media-upload",
+        "endoreg_db.views.media.hub.transfers.HubTransferMediaUploadView",
+    ),
+    (
+        "media/patients/<int:patient_id>/timeline/",
+        "patient-media-timeline",
+        "endoreg_db.views.media.patient_media_timeline.PatientMediaTimelineView",
+    ),
+    (
+        "media/anonymization/metrics/",
+        "media-anonymization-metrics",
+        "endoreg_db.views.media.anonymization_metrics.AnonymizationMetricsView",
+    ),
+    (
+        "media/sensitive-media-id/<int:pk>/<str:media_type>/",
+        "sm-pk",
+        "endoreg_db.views.media.sensitive_metadata.get_sensitive_metadata_pk",
+    ),
+    (
+        "media/videos/",
+        "video-list",
+        "endoreg_db.views.media.video_media.VideoMediaView",
+    ),
+    (
+        "media/videos/<int:pk>/",
+        "video-detail-stream",
+        "endoreg_db.views.video.video_stream.VideoStreamView",
+    ),
+    (
+        "media/videos/<int:pk>/details/",
+        "video-detail",
+        "endoreg_db.views.media.video_media.VideoMediaView",
+    ),
+    (
+        "media/videos/<int:pk>/stream/",
+        "video-stream",
+        "endoreg_db.views.video.video_stream.VideoStreamView",
+    ),
+    (
+        "media/videos/<int:video_id>/frames/<int:frame_number>/stream/",
+        "video-frame-stream",
+        "endoreg_db.views.media.frame_media.FrameStreamView",
+    ),
+    (
+        "media/videos/<int:pk>/reimport/",
+        "video-reimport",
+        "endoreg_db.views.video.reimport.VideoReimportView",
+    ),
+    (
+        "media/videos/<int:pk>/mark-ready-for-export/",
+        "video-mark-ready-for-export",
+        "endoreg_db.views.media.export_ready.VideoMarkReadyForExportView",
+    ),
+    (
+        "media/videos/export-annotated/",
+        "video-annotated-export",
+        "endoreg_db.views.video.export_annotated.export_annotated_data",
+    ),
+    (
+        "media/videos/video-correction/<int:pk>",
+        "video-correction",
+        "endoreg_db.views.video.correction.VideoCorrectionView",
+    ),
+    (
+        "media/videos/<int:pk>/metadata/",
+        "video-metadata",
+        "endoreg_db.views.video.video_metadata.VideoMetadataStatsView",
+    ),
+    (
+        "media/videos/<int:pk>/fps/",
+        "video-fps",
+        "endoreg_db.views.video.video_fps.VideoFpsView",
+    ),
+    (
+        "media/videos/<int:pk>/apply-mask/",
+        "video-apply-mask",
+        "endoreg_db.views.video.correction.VideoApplyMaskView",
+    ),
+    (
+        "media/videos/<int:pk>/remove-frames/",
+        "video-remove-frames",
+        "endoreg_db.views.video.correction.VideoRemoveFramesView",
+    ),
+    (
+        "media/videos/labels/list/",
+        "get_lvs_list",
+        "endoreg_db.views.video.ai.label.label_list",
+    ),
+    (
+        "media/videos/label-sets/list/",
+        "video-label-set-list",
+        "endoreg_db.views.video.ai.label.label_set_list",
+    ),
+    (
+        "media/videos/prediction-models/list/",
+        "video-prediction-model-list",
+        "endoreg_db.views.video.ai.label.prediction_model_list",
+    ),
+    (
+        "media/videos/<int:pk>/segments/rerun-predictions/",
+        "video-segments-rerun-predictions",
+        "endoreg_db.views.video.ai.label.rerun_prediction_segments",
+    ),
+    (
+        "media/videos/<int:pk>/segments/import-predictions/",
+        "video-segments-import-predictions",
+        "endoreg_db.views.video.segments_crud.import_prediction_segments_to_manual",
+    ),
+    (
+        "media/videos/<int:pk>/ensure-segment-annotations/",
+        "video-segment-ensure-annotations",
+        "endoreg_db.views.video.segments_crud.ensure_segment_annotations_for_video",
+    ),
+    (
+        "media/videos/ensure-segment-annotations/",
+        "video-segments-ensure-annotations",
+        "endoreg_db.views.video.segments_crud.ensure_segment_annotations_bulk",
+    ),
+    (
+        "media/videos/<int:pk>/ensure-prediction-segment-annotations/",
+        "video-segment-ensure-prediction-annotations",
+        "endoreg_db.views.video.segments_crud."
+        "ensure_prediction_segment_annotations_for_video",
+    ),
+    (
+        "media/videos/ensure-prediction-segment-annotations/",
+        "video-segments-ensure-prediction-annotations",
+        "endoreg_db.views.video.segments_crud."
+        "ensure_prediction_segment_annotations_bulk",
+    ),
+    (
+        "media/annotations/frames/bulk-upsert/",
+        "frame-annotations-bulk-upsert",
+        "endoreg_db.views.video.ai.frame_annotations.FrameAnnotationBulkUpsertView",
+    ),
+    (
+        "media/annotations/frames/random-task/",
+        "frame-annotations-random-task",
+        "endoreg_db.views.video.ai.frame_annotations.FrameAnnotationRandomTaskView",
+    ),
+    (
+        "media/annotations/frames/skip/",
+        "frame-annotations-skip",
+        "endoreg_db.views.video.ai.frame_annotations.FrameAnnotationSkipView",
+    ),
+    (
+        "media/annotations/frames/boxes/",
+        "frame-box-annotations",
+        "endoreg_db.views.video.ai.frame_box_annotations.FrameBoxAnnotationView",
+    ),
+    (
+        "media/videos/segments/stats/",
+        "video-segments-stats",
+        "endoreg_db.views.video.segments_crud.video_segments_stats",
+    ),
+    (
+        "media/videos/<int:pk>/segments/",
+        "video-segments-by-video",
+        "endoreg_db.views.video.segments_crud.video_segments_by_video",
+    ),
+    (
+        "media/videos/<int:pk>/segments/blacken-outside/",
+        "video-segments-blacken-outside",
+        "endoreg_db.views.video.segments_crud.video_segments_blacken_outside",
+    ),
+    (
+        "media/videos/<int:pk>/segments/bulk/",
+        "video-segments-bulk-mutation",
+        "endoreg_db.views.video.segments_crud.video_segments_bulk_mutation",
+    ),
+    (
+        "media/videos/<int:pk>/segments/<int:segment_id>/",
+        "video-segment-detail",
+        "endoreg_db.views.video.segments_crud.video_segment_detail",
+    ),
+    (
+        "media/videos/<int:pk>/segments/<int:segment_id>/validate/",
+        "video-segment-validate",
+        "endoreg_db.views.video.segments_crud.video_segment_validate",
+    ),
+    (
+        "media/videos/<int:pk>/segments/validate-bulk/",
+        "video-segments-validate-bulk",
+        "endoreg_db.views.video.segments_crud.video_segments_validate_bulk",
+    ),
+    (
+        "media/videos/<int:pk>/segments/validation-status/",
+        "video-segments-validation-status",
+        "endoreg_db.views.video.segments_crud.video_segments_validation_status",
+    ),
+    (
+        "media/videos/<int:pk>/sensitive-metadata/",
+        "video-sensitive-metadata",
+        "endoreg_db.views.media.sensitive_metadata.video_sensitive_metadata",
+    ),
+    (
+        "media/videos/<int:pk>/case-resolution/",
+        "video-case-resolution",
+        "endoreg_db.views.media.sensitive_metadata.video_case_resolution",
+    ),
+    (
+        "media/videos/<int:pk>/sensitive-metadata/verify/",
+        "video-sensitive-metadata-verify",
+        "endoreg_db.views.media.sensitive_metadata.video_sensitive_metadata_verify",
+    ),
+    (
+        "media/pdfs/<int:pk>/sensitive-metadata/",
+        "pdf-sensitive-metadata",
+        "endoreg_db.views.media.sensitive_metadata.pdf_sensitive_metadata",
+    ),
+    (
+        "media/pdfs/<int:pk>/case-resolution/",
+        "pdf-case-resolution",
+        "endoreg_db.views.media.sensitive_metadata.pdf_case_resolution",
+    ),
+    (
+        "media/pdfs/<int:pk>/sensitive-metadata/verify/",
+        "pdf-sensitive-metadata-verify",
+        "endoreg_db.views.media.sensitive_metadata.pdf_sensitive_metadata_verify",
+    ),
+    (
+        "media/sensitive-metadata/",
+        "sensitive-metadata-list",
+        "endoreg_db.views.media.sensitive_metadata.sensitive_metadata_list",
+    ),
+    (
+        "media/pdfs/sensitive-metadata/",
+        "pdf-sensitive-metadata-list",
+        "endoreg_db.views.media.sensitive_metadata.pdf_sensitive_metadata_list",
+    ),
+    ("media/pdfs/", "pdf-list", "endoreg_db.views.media.pdf_media.PdfMediaView"),
+    (
+        "media/pdfs/<int:pk>/",
+        "pdf-detail",
+        "endoreg_db.views.media.pdf_media.PdfMediaView",
+    ),
+    (
+        "media/pdfs/<int:pk>/stream/",
+        "pdf-stream",
+        "endoreg_db.views.report.report_stream.ReportStreamView",
+    ),
+    (
+        "media/pdfs/<int:pk>/reimport/",
+        "report-reimport",
+        "endoreg_db.views.report.reimport.ReportReimportView",
+    ),
+    (
+        "media/pdfs/<int:pk>/llm-jobs/<str:job_id>/",
+        "report-llm-job-status",
+        "endoreg_db.views.report.reimport.ReportLlmJobStatusView",
+    ),
+    (
+        "media/pdfs/<int:pk>/apply-redactions/",
+        "pdf-apply-redactions",
+        "endoreg_db.views.report.pdf_redaction.PdfApplyRedactionsView",
+    ),
+    (
+        "media/pdfs/<int:pk>/processing-history/",
+        "pdf-processing-history",
+        "endoreg_db.views.report.pdf_redaction.PdfProcessingHistoryView",
+    ),
+]
+
+
+def _view_name(pattern: URLPattern) -> str:
+    callback = pattern.callback
+    view = getattr(callback, "view_class", None) or callback
+    return f"{view.__module__}.{view.__name__}"
+
+
+def _route_contract(pattern: URLPattern) -> RouteContract:
+    return (str(pattern.pattern), pattern.name, _view_name(pattern))
+
+
+def test_media_urlpatterns_reexports_flattened_concern_lists() -> None:
+    assert media.urlpatterns == [
+        *media.HUB_TRANSFER_URLPATTERNS,
+        *media.MEDIA_OVERVIEW_URLPATTERNS,
+        *media.VIDEO_MEDIA_URLPATTERNS,
+        *media.VIDEO_ANNOTATION_URLPATTERNS,
+        *media.VIDEO_SEGMENT_VALIDATION_URLPATTERNS,
+        *media.SENSITIVE_METADATA_URLPATTERNS,
+        *media.PDF_REPORT_MEDIA_URLPATTERNS,
+    ]
+
+
+def test_media_urlpatterns_preserve_route_contract() -> None:
+    assert sorted(_route_contract(pattern) for pattern in media.urlpatterns) == sorted(
+        EXPECTED_MEDIA_ROUTE_CONTRACT
+    )

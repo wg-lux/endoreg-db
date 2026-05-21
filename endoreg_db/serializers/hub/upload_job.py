@@ -28,6 +28,7 @@ class UploadJobStatusSerializer(serializers.ModelSerializer):
     )
     source_system = serializers.CharField(read_only=True)
     ingest_mode = serializers.CharField(read_only=True)
+    report_llm_job = serializers.SerializerMethodField()
 
     class Meta:
         model = UploadJob
@@ -41,8 +42,22 @@ class UploadJobStatusSerializer(serializers.ModelSerializer):
             "ingest_mode",
             "text",
             "anonymized_text",
+            "report_llm_job",
         ]
         read_only_fields = fields
+
+    def get_report_llm_job(self, obj):
+        job = (
+            obj.report_llm_inference_jobs.select_related("pdf")
+            .order_by("-created_at", "-id")
+            .first()
+        )
+        if job is None:
+            return None
+
+        from endoreg_db.services.report_llm_jobs import report_llm_job_payload
+
+        return report_llm_job_payload(job)
 
     def to_representation(self, instance):
         """
@@ -66,6 +81,8 @@ class UploadJobStatusSerializer(serializers.ModelSerializer):
             data.pop("text", None)
         if not data.get("anonymized_text"):
             data.pop("anonymized_text", None)
+        if data.get("report_llm_job") is None:
+            data.pop("report_llm_job", None)
 
         return data
 

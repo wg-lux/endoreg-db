@@ -1,39 +1,34 @@
+from __future__ import annotations
+
 import logging
-from django.utils import timezone
-from django.db import transaction
+
+from django.core.exceptions import ValidationError
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ...models import RawPdfFile, SensitiveMeta, UploadJob
-from endoreg_db.services.report_import import ReportImportService
-from endoreg_db.utils.storage import ensure_local_file
+from endoreg_db.authz.permissions import PolicyPermission
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.views.access_control import assert_center_scope_allowed
+
+from ...models import RawPdfFile, ReportLlmInferenceJob
+from endoreg_db.services.report_llm_jobs import (
+    dispatch_report_llm_reimport,
+    report_llm_job_payload,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class ReportReimportView(APIView):
     """
-    API endpoint to re-import a pdf file and regenerate metadata.
-    This is useful when OCR failed or metadata is incomplete.
+    Queue report re-import work outside the Daphne request process.
     """
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.pdf_service = ReportImportService()
+    permission_classes = [EnvironmentAwarePermission, PolicyPermission]
 
     def post(self, request, pk):
-        """
-        Re-import a pdf file to regenerate SensitiveMeta and other metadata.
-        Instead of creating a new pdf, this updates the existing one.
-
-        Args:
-            request: HTTP request object
-            pk: report primary key (ID)
-        """
-        pdf_id = pk  # Align with media framework naming convention
-
-        # Validate pdf_id parameter
+        pdf_id = pk
         if not pdf_id or not isinstance(pdf_id, int):
             return Response(
                 {"error": "Invalid report ID provided."},
@@ -42,139 +37,130 @@ class ReportReimportView(APIView):
 
         try:
             pdf = RawPdfFile.objects.get(id=pdf_id)
-            logger.info(f"Found report {pdf.pdf_hash} (ID: {pdf_id}) for re-import")
+            logger.info("Found report %s (ID: %s) for re-import", pdf.pdf_hash, pdf_id)
         except RawPdfFile.DoesNotExist:
-            logger.warning(f"report with ID {pdf_id} not found")
+            logger.warning("Report with ID %s not found", pdf_id)
             return Response(
-                {"error": f"report with ID {pdf_id} not found."},
+                {"error": f"Report with ID {pdf_id} not found."},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        assert_center_scope_allowed(
+            request=request,
+            obj=pdf,
+            not_found_message="Report not found",
+        )
+
         if not pdf.file or not getattr(pdf.file, "name", None):
             logger.error(
-                f"Raw report file not found for hash {pdf.pdf_hash}: missing storage file"
+                "Raw report file not found for hash %s: missing storage file",
+                pdf.pdf_hash,
             )
             return Response(
                 {
-                    "error": f"Raw report file not found for report {pdf.pdf_hash}. Please upload the original file again."
+                    "status": "failed",
+                    "operation": "report_llm_reimport",
+                    "reason": "missing_source",
+                    "error": (
+                        "Raw report file not found. Upload the original file again "
+                        "before re-importing."
+                    ),
+                    "error_type": "missing_source",
+                    "report_id": pdf_id,
+                    "pdf_id": pdf_id,
+                    "pdf_hash": str(pdf.pdf_hash),
                 },
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # Check if report has required relationships
         if not pdf.center:
-            logger.warning(f"report {pdf.pdf_hash} has no associated center")
+            logger.warning("Report %s has no associated center", pdf.pdf_hash)
             return Response(
-                {"error": "report has no associated center."},
+                {"error": "Report has no associated center."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        try:
-            logger.info(f"Starting re-import for report {pdf.pdf_hash} (ID: {pdf_id})")
+        request_data = getattr(request, "data", {})
+        payload = request_data if hasattr(request_data, "get") else {}
+        dispatch_result = dispatch_report_llm_reimport(
+            report_id=pdf_id,
+            payload=payload,
+        )
+        response_payload = {
+            **dispatch_result.to_dict(),
+            "pdf_id": pdf_id,
+            "pdf_hash": str(pdf.pdf_hash),
+        }
 
-            with transaction.atomic():
-                # Clear existing metadata to force regeneration
-                old_meta_id = None
-                if pdf.sensitive_meta:
-                    old_meta_id = pdf.sensitive_meta.pk
-                    logger.info(
-                        f"Clearing existing SensitiveMeta {old_meta_id} for report {pdf.pdf_hash}"
-                    )
-                    pdf.sensitive_meta = None
-                    pdf.save(update_fields=["sensitive_meta"])
-
-                    # Delete the old SensitiveMeta record
-                    try:
-                        SensitiveMeta.objects.filter(pk=old_meta_id).delete()
-                        logger.info(f"Deleted old SensitiveMeta {old_meta_id}")
-                    except Exception as e:
-                        logger.warning(
-                            f"Could not delete old SensitiveMeta {old_meta_id}: {e}"
-                        )
-                    UploadJob.objects.filter(content_hash=pdf.pdf_hash).update(
-                        status=UploadJob.Status.PROCESSING,
-                        error_detail="",
-                        updated_at=timezone.now(),
-                    )
-
-                # Use ReportImportService for reprocessing
-                try:
-                    logger.info(
-                        f"Starting reprocessing using ReportImportService for {pdf.pdf_hash}"
-                    )
-                    with ensure_local_file(pdf.file) as raw_file_path:
-                        self.pdf_service.import_and_anonymize(
-                            file_path=raw_file_path,
-                            center_name=pdf.center.name,
-                            retry=True,  # Mark as retry attempt
-                        )
-
-                    logger.info(
-                        f"ReportImportService reprocessing completed for {pdf.pdf_hash}"
-                    )
-
-                    # Refresh to get updated state
-                    pdf.refresh_from_db()
-
-                    return Response(
-                        {
-                            "message": "report re-import completed successfully.",
-                            "pdf_id": pdf_id,
-                            "pdf_hash": str(pdf.pdf_hash),
-                            "sensitive_meta_created": pdf.sensitive_meta is not None,
-                            "sensitive_meta_id": pdf.sensitive_meta.pk
-                            if pdf.sensitive_meta
-                            else None,
-                            "text_extracted": bool(pdf.text),
-                            "anonymized": pdf.anonymized,
-                            "status": "done",
-                        },
-                        status=status.HTTP_200_OK,
-                    )
-
-                except Exception as e:
-                    logger.exception(
-                        f"ReportImportService reprocessing failed for report {pdf.pdf_hash}: {e}"
-                    )
-                    return Response(
-                        {
-                            "error": f"Reprocessing failed: {str(e)}",
-                            "error_type": "processing_error",
-                            "pdf_id": pdf_id,
-                            "pdf_hash": str(pdf.pdf_hash),
-                        },
-                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    )
-
-        except Exception as e:
-            logger.error(
-                f"Failed to re-import report {pdf.pdf_hash}: {str(e)}", exc_info=True
+        if dispatch_result.status == "lost":
+            return Response(
+                {
+                    **response_payload,
+                    "error": "Report source is missing.",
+                    "error_type": "missing_source",
+                },
+                status=status.HTTP_404_NOT_FOUND,
             )
 
-            # Handle specific error types
-            error_msg = str(e)
-            if any(
-                phrase in error_msg.lower()
-                for phrase in ["insufficient storage", "no space left", "disk full"]
-            ):
-                # Storage error - return specific error message
-                return Response(
-                    {
-                        "error": f"Storage error during re-import: {error_msg}",
-                        "error_type": "storage_error",
-                        "pdf_id": pdf_id,
-                        "pdf_hash": str(pdf.pdf_hash),
-                    },
-                    status=status.HTTP_507_INSUFFICIENT_STORAGE,
-                )
-            else:
-                # Other errors
-                return Response(
-                    {
-                        "error": f"Re-import failed: {error_msg}",
-                        "error_type": "processing_error",
-                        "pdf_id": pdf_id,
-                        "pdf_hash": str(pdf.pdf_hash),
-                    },
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                )
+        if dispatch_result.status == "failed":
+            return Response(
+                {
+                    **response_payload,
+                    "error": "Report re-import dispatch failed.",
+                    "error_type": "dispatch_error",
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        if dispatch_result.status == "completed":
+            return Response(
+                {
+                    **response_payload,
+                    "message": "Report re-import completed.",
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        return Response(
+            {
+                **response_payload,
+                "message": (
+                    "Report re-import is already queued."
+                    if dispatch_result.status == "already_queued"
+                    else "Report re-import queued."
+                ),
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
+
+
+class ReportLlmJobStatusView(APIView):
+    """
+    Poll status for report LLM import/reimport jobs.
+    """
+
+    permission_classes = [EnvironmentAwarePermission, PolicyPermission]
+
+    def get(self, request, pk: int, job_id: str):
+        try:
+            job = ReportLlmInferenceJob.objects.select_related(
+                "pdf",
+                "upload_job",
+                "upload_job__source_center",
+            ).get(
+                pdf_id=pk,
+                job_id=job_id,
+            )
+        except (ReportLlmInferenceJob.DoesNotExist, ValidationError, ValueError):
+            return Response(
+                {"error": "Report LLM job not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        assert_center_scope_allowed(
+            request=request,
+            obj=job,
+            not_found_message="Report LLM job not found",
+        )
+
+        return Response(report_llm_job_payload(job), status=status.HTTP_200_OK)

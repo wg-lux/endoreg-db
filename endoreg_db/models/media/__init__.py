@@ -9,6 +9,7 @@ from .frame import Frame
 from .pdf import (
     RawPdfFile,
     PdfProcessingHistory,
+    ReportLlmInferenceJob,
     DocumentType,
     AnonymExaminationReport,
     ReportReaderConfig,
@@ -28,6 +29,7 @@ __all__ = [
     "FrameExtractionRequest",
     "RawPdfFile",
     "PdfProcessingHistory",
+    "ReportLlmInferenceJob",
     "DocumentType",
     "AnonymExaminationReport",
     "AnonymHistologyReport",

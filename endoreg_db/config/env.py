@@ -44,6 +44,7 @@ DEFAULT_CELERY_FRAME_EXTRACTION_QUEUE = "frame_extraction"
 DEFAULT_CELERY_FFMPEG_MEDIA_QUEUE = "ffmpeg_media"
 DEFAULT_CELERY_INFERENCE_QUEUE = "inference"
 DEFAULT_CELERY_TRAINING_QUEUE = "model_training"
+DEFAULT_CELERY_LLM_INFERENCE_QUEUE = "llm_inference"
 DEFAULT_CELERY_MAINTENANCE_QUEUE = "maintenance"
 DEFAULT_CELERY_AUDIT_LEDGER_INTEGRITY_INTERVAL_SECONDS = 300
 DEFAULT_MODEL_TRAINING_JOB_MODE = "celery"
@@ -397,6 +398,13 @@ def get_celery_training_queue() -> str:
     return env_str("CELERY_TRAINING_QUEUE", DEFAULT_CELERY_TRAINING_QUEUE).strip()
 
 
+def get_celery_llm_inference_queue() -> str:
+    return env_str(
+        "CELERY_LLM_INFERENCE_QUEUE",
+        DEFAULT_CELERY_LLM_INFERENCE_QUEUE,
+    ).strip()
+
+
 def get_celery_maintenance_queue() -> str:
     return env_str("CELERY_MAINTENANCE_QUEUE", DEFAULT_CELERY_MAINTENANCE_QUEUE).strip()
 
@@ -699,6 +707,7 @@ def snapshot() -> Dict[str, Any]:
         "ENDOREG_DEPLOYMENT_ROLE",
         "ENDOREG_ENABLE_HUB_TRANSFERS",
         "CELERY_TRAINING_QUEUE",
+        "CELERY_LLM_INFERENCE_QUEUE",
         "MODEL_TRAINING_JOB_MODE",
         "MODEL_TRAINING_STAGING_ROOT",
         "CACHE_LOCATION",

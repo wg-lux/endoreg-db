@@ -138,6 +138,15 @@ class UploadProvenancePayload(BaseModel):
     watcher_processing_path: str | None = None
     processor_name: str | None = None
     processing_handoff: str | None = None
+    llm_job_id: str | None = None
+    llm_task_id: str | None = None
+    llm_queue: str | None = None
+    prediction_model_name: str | None = None
+    prediction_task_id: str | None = None
+    prediction_history_id: int | None = None
+    prediction_queue: str | None = None
+    video_import_task_id: str | None = None
+    video_import_queue: str | None = None
     stored_upload_path: str | None = None
     quarantined_path: str | None = None
     quarantined_sidecar_path: str | None = None

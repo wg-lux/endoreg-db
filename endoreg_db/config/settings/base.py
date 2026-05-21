@@ -13,6 +13,7 @@ from endoreg_db.config.env import (
     get_celery_ffmpeg_media_queue,
     get_celery_frame_extraction_queue,
     get_celery_inference_queue,
+    get_celery_llm_inference_queue,
     get_celery_maintenance_queue,
     get_celery_pipeline_queue,
     get_celery_training_queue,
@@ -81,6 +82,7 @@ CELERY_FRAME_EXTRACTION_QUEUE = get_celery_frame_extraction_queue()
 CELERY_FFMPEG_MEDIA_QUEUE = get_celery_ffmpeg_media_queue()
 CELERY_INFERENCE_QUEUE = get_celery_inference_queue()
 CELERY_TRAINING_QUEUE = get_celery_training_queue()
+CELERY_LLM_INFERENCE_QUEUE = get_celery_llm_inference_queue()
 CELERY_MAINTENANCE_QUEUE = get_celery_maintenance_queue()
 MODEL_TRAINING_JOB_MODE = get_model_training_job_mode()
 MODEL_TRAINING_STAGING_ROOT = get_model_training_staging_root()
@@ -121,12 +123,25 @@ CELERY_TASK_QUEUES = (
         routing_key=CELERY_TRAINING_QUEUE,
     ),
     Queue(
+        CELERY_LLM_INFERENCE_QUEUE,
+        Exchange(CELERY_LLM_INFERENCE_QUEUE),
+        routing_key=CELERY_LLM_INFERENCE_QUEUE,
+    ),
+    Queue(
         CELERY_MAINTENANCE_QUEUE,
         Exchange(CELERY_MAINTENANCE_QUEUE),
         routing_key=CELERY_MAINTENANCE_QUEUE,
     ),
 )
 CELERY_TASK_ROUTES = {
+    "endoreg_db.video_upload_import": {
+        "queue": CELERY_FFMPEG_MEDIA_QUEUE,
+        "routing_key": CELERY_FFMPEG_MEDIA_QUEUE,
+    },
+    "endoreg_db.video_reimport": {
+        "queue": CELERY_FFMPEG_MEDIA_QUEUE,
+        "routing_key": CELERY_FFMPEG_MEDIA_QUEUE,
+    },
     "endoreg_db.frame_extraction_request": {
         "queue": CELERY_FRAME_EXTRACTION_QUEUE,
         "routing_key": CELERY_FRAME_EXTRACTION_QUEUE,
@@ -146,6 +161,14 @@ CELERY_TASK_ROUTES = {
     "endoreg_db.model_training": {
         "queue": CELERY_TRAINING_QUEUE,
         "routing_key": CELERY_TRAINING_QUEUE,
+    },
+    "endoreg_db.report_llm_reimport": {
+        "queue": CELERY_LLM_INFERENCE_QUEUE,
+        "routing_key": CELERY_LLM_INFERENCE_QUEUE,
+    },
+    "endoreg_db.report_llm_import": {
+        "queue": CELERY_LLM_INFERENCE_QUEUE,
+        "routing_key": CELERY_LLM_INFERENCE_QUEUE,
     },
     "endoreg_db.refresh_audit_ledger_integrity_status": {
         "queue": CELERY_MAINTENANCE_QUEUE,
@@ -296,6 +319,7 @@ __all__ = [
     "CELERY_FFMPEG_MEDIA_QUEUE",
     "CELERY_INFERENCE_QUEUE",
     "CELERY_TRAINING_QUEUE",
+    "CELERY_LLM_INFERENCE_QUEUE",
     "CELERY_MAINTENANCE_QUEUE",
     "MODEL_TRAINING_JOB_MODE",
     "MODEL_TRAINING_STAGING_ROOT",

@@ -31,6 +31,8 @@ def resolve_object_center_id(obj: Any) -> int | None:
         ("patient_examination", "patient", "center_id"),
         ("sensitive_meta", "center_id"),
         ("video", "center_id"),
+        ("pdf", "center_id"),
+        ("upload_job", "source_center_id"),
     )
     for path in nested_paths:
         value = _extract_nested_attr(obj, path)

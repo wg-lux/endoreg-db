@@ -115,7 +115,10 @@ class PreanonymizedWatcherIngestTests(TestCase):
                     "endoreg_db.services.hub.ingest.path_utils.WATCHER_PREANONYMIZED_DROP_DIR",
                     drop_dir,
                 ),
-                patch("endoreg_db.services.hub.ingest.QUARANTINE_DIR", quarantine_dir),
+                patch(
+                    "endoreg_db.services.hub.ingest._quarantine_dir",
+                    return_value=quarantine_dir,
+                ),
             ):
                 upload_job = process_preanonymized_watcher_file(file_path=report_path)
 
@@ -167,7 +170,10 @@ class PreanonymizedWatcherIngestTests(TestCase):
                     "endoreg_db.services.hub.ingest.path_utils.WATCHER_PREANONYMIZED_DROP_DIR",
                     drop_dir,
                 ),
-                patch("endoreg_db.services.hub.ingest.QUARANTINE_DIR", quarantine_dir),
+                patch(
+                    "endoreg_db.services.hub.ingest._quarantine_dir",
+                    return_value=quarantine_dir,
+                ),
                 pytest.raises(ValueError, match="file_sha256 does not match"),
             ):
                 process_preanonymized_watcher_file(file_path=report_path)

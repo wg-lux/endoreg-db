@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 
-from endoreg_db.models import Center, RawPdfFile, UploadJob
+from endoreg_db.models import Center, ReportLlmInferenceJob, UploadJob
 from endoreg_db.services.hub.ingest import (
     create_or_reuse_upload_job,
     process_upload_job,
@@ -72,13 +72,17 @@ class UploadJobDispatchTests(TestCase):
 
         upload_job.refresh_from_db()
         assert handoff_mode == "celery"
-        task_dispatcher.delay.assert_called_once_with(str(upload_job.id))
+        task_dispatcher.apply_async.assert_called_once_with(
+            args=(str(upload_job.id),),
+            queue="pipeline",
+            routing_key="pipeline",
+        )
         assert upload_job.processing_provenance["processing_handoff"] == "celery"
 
     def test_start_upload_job_processing_marks_job_error_when_dispatch_fails(self):
         upload_job = self._create_upload_job()
         task_dispatcher = Mock()
-        task_dispatcher.delay.side_effect = RuntimeError("queue unavailable")
+        task_dispatcher.apply_async.side_effect = RuntimeError("queue unavailable")
 
         with self.assertRaises(RuntimeError, msg="queue unavailable"):
             start_upload_job_processing(
@@ -153,22 +157,51 @@ class UploadJobDispatchTests(TestCase):
         audit_log.assert_called()
         assert "hub.upload_job_created" in audit_log.call_args.args[0]
 
-    def test_process_upload_job_preserve_source_keeps_cleanup_skipped(self):
+    def test_process_upload_job_dispatches_report_import_to_llm_queue(self):
         upload_job = self._create_upload_job()
-        report = RawPdfFile(center=self.center)
 
         with patch(
-            "endoreg_db.services.hub.ingest.ReportImportService.import_and_anonymize",
-            return_value=report,
-        ):
+            "endoreg_db.tasks.run_report_llm_import_task.apply_async",
+            return_value=Mock(id="llm-import-task"),
+        ) as apply_async:
             processed = process_upload_job(str(upload_job.id))
 
         upload_job.refresh_from_db()
         assert processed is True
-        assert upload_job.status == UploadJob.Status.ANONYMIZED
-        assert upload_job.cleanup_status == UploadJob.CleanupStatus.SKIPPED
+        assert upload_job.status == UploadJob.Status.PROCESSING
+        apply_async.assert_called_once()
+        assert apply_async.call_args.kwargs["queue"] == "llm_inference"
+        assert apply_async.call_args.kwargs["routing_key"] == "llm_inference"
+        assert ReportLlmInferenceJob.objects.filter(upload_job=upload_job).exists()
         assert upload_job.source_file_delete_eligible_at is None
         assert (
             upload_job.processing_provenance["stored_upload_path"]
             == upload_job.file.name
         )
+        assert upload_job.processing_provenance["llm_queue"] == "llm_inference"
+
+    def test_process_upload_job_reuses_active_video_import_handoff(self):
+        upload_job = UploadJob.objects.create(
+            file=SimpleUploadedFile(
+                name="dispatch.mp4",
+                content=b"\x00\x00\x00\x18ftypmp42",
+                content_type="video/mp4",
+            ),
+            content_type="video/mp4",
+            source_center=self.center,
+            source_system="api",
+            status=UploadJob.Status.PROCESSING,
+            processing_provenance={
+                "entrypoint": "api",
+                "video_import_task_id": "existing-video-import-task",
+                "video_import_queue": "ffmpeg_media",
+            },
+        )
+
+        with patch(
+            "endoreg_db.tasks.run_video_upload_import_task.apply_async",
+        ) as apply_async:
+            processed = process_upload_job(str(upload_job.id))
+
+        assert processed is True
+        apply_async.assert_not_called()
