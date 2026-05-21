@@ -90,6 +90,17 @@ class AnonymizationValidationMetric(models.Model):
     exact_match_fields = models.PositiveIntegerField(default=0)
     missing_after_validation_fields = models.PositiveIntegerField(default=0)
     mean_similarity = models.FloatField(null=True, blank=True)
+    residual_ocr_match_count = models.PositiveIntegerField(default=0)
+    phi_region_false_negative_count = models.PositiveIntegerField(default=0)
+    raw_artifact_residual_count = models.PositiveIntegerField(default=0)
+    missing_sensitive_meta_deletion_count = models.PositiveIntegerField(default=0)
+    residual_phi_detected = models.BooleanField(default=False)
+    sensitive_meta_policy = models.CharField(max_length=64, blank=True, default="")
+    sensitive_meta_deletion_status = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

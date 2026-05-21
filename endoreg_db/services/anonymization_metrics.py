@@ -4,7 +4,7 @@ import importlib.metadata
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from difflib import SequenceMatcher
-from typing import Any, Iterable, Literal, Mapping
+from typing import Any, Iterable, Literal, Mapping, Sequence
 
 from django.contrib.auth.models import AnonymousUser
 from django.db.models import (
@@ -16,6 +16,7 @@ from django.db.models import (
     Max,
     Min,
     Q,
+    Sum,
     Subquery,
     Value,
     When,
@@ -132,6 +133,7 @@ def build_anonymization_metrics_payload(filters: MetricsFilters) -> dict[str, An
         "workflow": _workflow_payload(filters=filters, validation_qs=validation_qs),
         "field_quality": _field_quality_payload(validation_qs),
         "phi_regions": _phi_region_payload(filters),
+        "quality": _quality_payload(validation_qs),
     }
 
 
@@ -297,15 +299,9 @@ def _workflow_payload(*, filters: MetricsFilters, validation_qs) -> dict[str, An
         "validation_event_count": int(
             validation_aggregates["validation_event_count"] or 0
         ),
-        "avg_seconds_to_validation": validation_aggregates[
-            "avg_seconds_to_validation"
-        ],
-        "min_seconds_to_validation": validation_aggregates[
-            "min_seconds_to_validation"
-        ],
-        "max_seconds_to_validation": validation_aggregates[
-            "max_seconds_to_validation"
-        ],
+        "avg_seconds_to_validation": validation_aggregates["avg_seconds_to_validation"],
+        "min_seconds_to_validation": validation_aggregates["min_seconds_to_validation"],
+        "max_seconds_to_validation": validation_aggregates["max_seconds_to_validation"],
         "median_seconds_to_validation": _database_median_seconds_to_validation(
             validation_qs
         ),
@@ -357,9 +353,9 @@ def _source_media_filter(
     prefix: str = "",
 ) -> Q:
     upload_jobs = UploadJob.objects.filter(source_system=source_system)
-    sensitive_meta_ids = upload_jobs.exclude(
-        sensitive_meta_id__isnull=True
-    ).values("sensitive_meta_id")
+    sensitive_meta_ids = upload_jobs.exclude(sensitive_meta_id__isnull=True).values(
+        "sensitive_meta_id"
+    )
     content_hashes = upload_jobs.exclude(content_hash="").values("content_hash")
     hash_field = "video_hash__in" if media_type == "video" else "pdf_hash__in"
     return Q(**{f"{prefix}sensitive_meta_id__in": Subquery(sensitive_meta_ids)}) | Q(
@@ -367,7 +363,9 @@ def _source_media_filter(
     )
 
 
-def _aggregate_media_status_counts(queryset: Any, *, status_case: Case) -> dict[str, int]:
+def _aggregate_media_status_counts(
+    queryset: Any, *, status_case: Case
+) -> dict[str, int]:
     return {
         str(row["anonymization_status"]): int(row["total"] or 0)
         for row in (
@@ -476,6 +474,59 @@ def _field_quality_payload(validation_qs) -> list[dict[str, Any]]:
     return payload
 
 
+def _quality_payload(validation_qs) -> dict[str, Any]:
+    aggregates = validation_qs.aggregate(
+        evaluated_event_count=Count(
+            "id",
+            filter=~Q(sensitive_meta_deletion_status=""),
+        ),
+        residual_phi_detected_count=Count(
+            "id",
+            filter=Q(residual_phi_detected=True),
+        ),
+        residual_ocr_match_count=Sum("residual_ocr_match_count"),
+        phi_region_false_negative_count=Sum("phi_region_false_negative_count"),
+        raw_artifact_residual_count=Sum("raw_artifact_residual_count"),
+        missing_sensitive_meta_deletion_count=Sum(
+            "missing_sensitive_meta_deletion_count"
+        ),
+    )
+    status_counts = {
+        str(row["sensitive_meta_deletion_status"]): int(row["total"] or 0)
+        for row in (
+            validation_qs.exclude(sensitive_meta_deletion_status="")
+            .values("sensitive_meta_deletion_status")
+            .annotate(total=Count("id"))
+        )
+    }
+    policy_counts = {
+        str(row["sensitive_meta_policy"]): int(row["total"] or 0)
+        for row in (
+            validation_qs.exclude(sensitive_meta_policy="")
+            .values("sensitive_meta_policy")
+            .annotate(total=Count("id"))
+        )
+    }
+    return {
+        "evaluated_event_count": int(aggregates["evaluated_event_count"] or 0),
+        "residual_phi_detected_count": int(
+            aggregates["residual_phi_detected_count"] or 0
+        ),
+        "residual_ocr_match_count": int(aggregates["residual_ocr_match_count"] or 0),
+        "phi_region_false_negative_count": int(
+            aggregates["phi_region_false_negative_count"] or 0
+        ),
+        "raw_artifact_residual_count": int(
+            aggregates["raw_artifact_residual_count"] or 0
+        ),
+        "missing_sensitive_meta_deletion_count": int(
+            aggregates["missing_sensitive_meta_deletion_count"] or 0
+        ),
+        "sensitive_meta_deletion_status_counts": status_counts,
+        "sensitive_meta_policy_counts": policy_counts,
+    }
+
+
 def _phi_region_payload(filters: MetricsFilters) -> dict[str, Any]:
     if filters.media_type == "pdf":
         return {
@@ -520,9 +571,7 @@ def _phi_region_payload(filters: MetricsFilters) -> dict[str, Any]:
     proposal_count = proposal_qs.count()
     human_count = human_qs.count()
     matching_annotation_count = proposal_count + human_count
-    matching_evaluated = (
-        matching_annotation_count <= MAX_PHI_REGION_MATCH_ANNOTATIONS
-    )
+    matching_evaluated = matching_annotation_count <= MAX_PHI_REGION_MATCH_ANNOTATIONS
     matched_count = None
     if matching_evaluated:
         matched_count = (
@@ -567,8 +616,8 @@ def _annotation_box_rows(queryset: Any) -> list[dict[str, Any]]:
 
 
 def _matched_phi_region_count(
-    proposals: list[Mapping[str, Any]],
-    human_annotations: list[Mapping[str, Any]],
+    proposals: Sequence[Mapping[str, Any]],
+    human_annotations: Sequence[Mapping[str, Any]],
 ) -> int:
     humans_by_frame: dict[int, list[Mapping[str, Any]]] = {}
     for human_annotation in human_annotations:
