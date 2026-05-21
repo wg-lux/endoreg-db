@@ -1,6 +1,7 @@
 # Endoreg-db Agents.md
 ## Tests
-Run tests from devenv tasks run test:full or devenv tasks run test:fast
+Please use source /home/admin/endoreg-db/.devenv/state/venv/bin/activate in your shell beore running pytest. Pytest is provided by uv sync --extra dev.
+If that doesnt work: run tests from the shortcuts devenv tasks run test:full or devenv tasks run test:fast
 ## System Directive: Security And Storage Architecture
 
 You are acting as the Lead Security and Systems Architect for `endoreg_db` and
