@@ -4,6 +4,8 @@ result/
 .ruff_cache/
 .devenv
 untracked_notes.md
+data_integrity_security_report.md
+security_best_practices_report.md
 tests/sensitive/
 tests/assets/*.lock
 erc_data/
