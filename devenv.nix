@@ -47,6 +47,8 @@ let
     stdenv.cc.cc
     clang
     ffmpeg-headless.bin
+    jq
+    ripgrep
     tesseract
     uvPackage
     libglvnd # Add libglvnd for libGL.so.1
@@ -244,6 +246,34 @@ in
         rm -f uv.lock
         echo "Environment cleaned. Re-enter the shell (e.g., 'exit' then 'devenv up') to trigger uv sync."
       '';
+    };
+    "agent:sync" = {
+      description = "Sync the Python environment for Codex/agent workflows";
+      exec = ''
+        sync_cmd="${SYNC_CMD}"
+        if [ -d "../lx-ai-core" ]; then
+          sync_cmd="$sync_cmd --group ai-local"
+        fi
+        $sync_cmd
+      '';
+    };
+    "agent:format" = {
+      description = "Run the mutating format/lint hooks used after agent edits";
+      exec = ''
+        .devenv/state/venv/bin/pre-commit run ruff --all-files
+        .devenv/state/venv/bin/pre-commit run ruff-format --all-files
+      '';
+    };
+    "agent:smoke" = {
+      description = "Run quick import and deployment-contract checks after scoped edits";
+      exec = ''
+        .devenv/state/venv/bin/python scripts/check_django_startup_imports.py
+        .devenv/state/venv/bin/pytest tests/deployment/test_prod_settings_contract.py -q
+      '';
+    };
+    "agent:pre-commit" = {
+      description = "Run the full default pre-commit suite for agent preflight";
+      exec = ".devenv/state/venv/bin/pre-commit run --all-files";
     };
     "test:fast" = {
       description = "Run the fast PR pytest lane with live logging";

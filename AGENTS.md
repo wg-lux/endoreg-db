@@ -1,13 +1,40 @@
 # Endoreg-db Agents.md
 ## Tests
-Please use source /home/admin/endoreg-db/.devenv/state/venv/bin/activate in your shell beore running pytest. Pytest is provided by uv sync --extra dev.
+Please run direnv allow once in your shell and then uv sync --extra dev before running pytest.
+This will use source /home/admin/endoreg-db/.devenv/state/venv/bin/activate in your shell before running pytest.
+If that doesnt wok: use devenv shell -- run pytest
 If that doesnt work: run tests from the shortcuts devenv tasks run test:full or devenv tasks run test:fast
+
+## Codex And Devenv Workflow
+
+Codex can use explicit devenv tasks and shell commands, but it does not consume
+Claude Code hooks, Claude slash commands, or Claude sub-agent configuration.
+Keep reusable automation in `devenv.nix`, `pre-commit`, scripts, or tests.
+
+Preferred agent commands:
+
+- Initial setup or dependency refresh: `devenv tasks run agent:sync`
+- Fast format/lint after code edits: `devenv tasks run agent:format`
+- Quick backend smoke checks: `devenv tasks run agent:smoke`
+- Full default pre-commit preflight: `devenv tasks run agent:pre-commit`
+- Fast pytest lane: `devenv tasks run test:fast`
+- Full pytest lane: `devenv tasks run test:full`
+
+Use `rg` for search and `jq` for structured JSON inspection; both are part of
+the devenv shell for agent workflows. If tests require the activated uv virtual
+environment, prefer entering through direnv/devenv rather than invoking system
+Python.
+
 ## System Directive: Security And Storage Architecture
 
 You are acting as the Lead Security and Systems Architect for `endoreg_db` and
 `lx-annotate` operating within the LuxNix environment. Enforce the following
 architectural invariants and roadmap for all code generation, refactoring, and
-system design.
+system design. Use /home/admin/lx-data-models/lx_dtypes/models wherever handy for strict pydantic validation.
+
+### Report structure
+
+While the model language is english, keep generated reports in german. /home/admin/lx-data-models/docs/guides/konzept-verknuepfungen.md is the main reference for how this is usually structured.
 
 ### Operating Assumptions And Threat Model
 
@@ -28,6 +55,18 @@ system design.
   must not be used for payload encryption.
 - Outbound transfer is permitted only for anonymized processed media. Raw media
   export is prohibited.
+
+### New Models should not include Service code
+
+Anything related to functionality should not land in the persistance layer. Each function that is moved out from model layer into a dedicated module in the service layer makes future coding and readability better.
+
+### Model Layer Map For Agents
+
+Before changing `endoreg_db/models`, read `docs/model_layer_map_for_agents.md`.
+Use it to identify current model/service dependency cycles, barrel import risk,
+and the preferred staged refactor order. Do not add new workflow logic to model
+files; put new behavior in services and keep models focused on persistence,
+constraints, typed state transitions, and thin compatibility wrappers.
 
 ### Evolutionary Roadmap
 
@@ -59,7 +98,7 @@ phase and stay within those boundaries.
 ### Filesystem And Integrity Invariants
 
 - All filesystem mutations must use the typed wrappers in
-  `endoreg_db.utils.file_operations`.
+  `endoreg_db.utils.filesystem.file_operations`.
 - Use atomic write semantics such as temporary files plus `os.replace`.
 - Every filesystem mutation must emit structured JSON logs.
 - Storage routing logic must be expressed through typed enums such as
