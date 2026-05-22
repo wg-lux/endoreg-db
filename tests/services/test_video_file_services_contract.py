@@ -30,6 +30,20 @@ from endoreg_db.services.video_files import (
 )
 
 
+def test_model_frame_submodule_import_does_not_replace_service_frame_export():
+    import types
+    from importlib import import_module
+
+    from endoreg_db.services.video_files import _frames as service_frame_package
+
+    original_delete_frames = service_frame_package._delete_frames
+
+    import_module("endoreg_db.models.media.video.video_file_frames._delete_frames")
+
+    assert service_frame_package._delete_frames is original_delete_frames
+    assert not isinstance(service_frame_package._delete_frames, types.ModuleType)
+
+
 @pytest.fixture
 def video_center() -> Center:
     return Center.objects.create(
