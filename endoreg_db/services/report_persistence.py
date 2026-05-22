@@ -30,6 +30,7 @@ from endoreg_db.models import (
     PatientFindingIntervention,
     RawPdfFile,
 )
+from endoreg_db.schemas import validate_raw_pdf_meta_payload
 from endoreg_db.services.report_history import get_patient_examination_history_context
 
 User = get_user_model()
@@ -234,6 +235,7 @@ def persist_report_pdf_artifact(
     }
     if report.editor_payload:
         pdf_meta["editor_payload"] = report.editor_payload
+    pdf_meta = validate_raw_pdf_meta_payload(pdf_meta) or {}
 
     pdf_bytes: bytes
     try:

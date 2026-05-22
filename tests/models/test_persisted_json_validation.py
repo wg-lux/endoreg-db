@@ -74,6 +74,20 @@ def test_raw_pdf_meta_preserves_legacy_keys_and_normalizes_dates() -> None:
     assert report.raw_meta["case_resolution"]["linked_patient_id"] == 7
 
 
+def test_raw_pdf_meta_treats_blank_template_version_as_unset() -> None:
+    report = RawPdfFile(
+        pdf_hash="pdf-json-validation-template-version",
+        raw_meta={
+            "template_name": "star_upper_gi_main",
+            "template_version": "",
+        },
+    )
+
+    report.clean()
+
+    assert report.raw_meta == {"template_name": "star_upper_gi_main"}
+
+
 def test_ai_model_training_run_validates_request_and_artifact_paths() -> None:
     run = AIModelTrainingRun(
         request_payload={"dataset_id": 1, "annotation_source_scope": "all"},

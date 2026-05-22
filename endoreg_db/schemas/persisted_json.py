@@ -189,6 +189,13 @@ class RawPdfMetaPayload(BaseModel):
             # local document classes before lx-data-models has a matching enum.
             return document_type
 
+    @field_validator("template_version", mode="before")
+    @classmethod
+    def _normalize_template_version(cls, value: Any) -> Any:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
     @model_validator(mode="before")
     @classmethod
     def _coerce_payload(cls, value: Any) -> Any:
@@ -404,13 +411,16 @@ class AIModelTrainingArtifactPathsPayload(BaseModel):
             raise ValueError("artifact_paths must be a JSON object")
         normalized: dict[str, str] = {}
         for key, item in value.items():
+            serialized = serialize_path(item) if isinstance(item, Path) else item
+            if serialized is None:
+                return {}
             if not isinstance(key, str):
                 raise ValueError("artifact path keys must be strings")
             if not key.endswith("_path"):
                 raise ValueError("artifact path keys must end with '_path'")
             if not isinstance(item, (str, Path)):
                 raise ValueError("artifact path values must be local path strings")
-            text = (serialize_path(item) if isinstance(item, Path) else item).strip()
+            text = serialized.strip()
             if not text:
                 raise ValueError("artifact path values must not be blank")
             if "://" in text or text.startswith("//"):
