@@ -30,7 +30,6 @@ from endoreg_db.services.report_materialization import (
 from endoreg_db.services.raw_pdf_files import validate_report_metadata_annotation
 from endoreg_db.services.video_files import (
     get_or_create_video_state,
-    validate_video_metadata_annotation,
 )
 from endoreg_db.services.validated_identity import commit_validated_media_identity
 from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
@@ -265,7 +264,7 @@ class AnonymizationValidateView(APIView):
       "anonymized_text":    "...",             // nur für reports; Videos ignorieren
       "is_verified":        true               // optional; default true
       "file_type":        "video"            // optional; "video" oder "pdf"; wenn nicht angegeben, wird zuerst Video, dann report versucht
-      "center_name":       editedPatient.value.centerName || '',
+      "center_name":       edited_patient.value.center_name || '',
       "external_id":       editedPatient.value.externalId || '',
       "external_id_origin":editedPatient.value.externalIdOrigin || '',
     }
@@ -323,7 +322,7 @@ class AnonymizationValidateView(APIView):
                     )
                     prepared_payload = self._prepare_payload(payload, video)
                     try:
-                        ok = validate_video_metadata_annotation(video, prepared_payload)
+                        ok = video.validate_metadata_annotation(prepared_payload)
                     except Exception:  # pragma: no cover - defensive safety net
                         transaction.set_rollback(True)
                         logger.exception("Video validation crashed for id=%s", file_id)

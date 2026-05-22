@@ -98,11 +98,8 @@ class AnonymizationService:
                     pdf.state.anonymization_status if pdf.state else "not_started"
                 )
                 return {
-                    "mediaType": "pdf",
                     "media_type": "pdf",
-                    "anonymizationStatus": anonymization_status,
                     "anonymization_status": anonymization_status,
-                    "fileExists": file_exists(pdf.file),
                     "file_exists": file_exists(pdf.file),
                     "hash": pdf.pdf_hash,
                 }
@@ -295,12 +292,12 @@ class AnonymizationService:
             data.append(
                 {
                     "id": vf.pk,
-                    "mediaType": "video",
-                    "anonymizationStatus": (
+                    "media_type": "video",
+                    "anonymization_status": (
                         vf.state.anonymization_status if vf.state else "not_started"
                     ),
-                    "createdAt": vf.date_created,
-                    "updatedAt": vf.date_modified,
+                    "created_at": vf.date_created,
+                    "updated_at": vf.date_modified,
                 }
             )
 
@@ -308,12 +305,12 @@ class AnonymizationService:
             data.append(
                 {
                     "id": pdf.pk,
-                    "mediaType": "pdf",
-                    "anonymizationStatus": (
+                    "media_type": "pdf",
+                    "anonymization_status": (
                         pdf.state.anonymization_status if pdf.state else "not_started"
                     ),
-                    "createdAt": pdf.date_created,
-                    "updatedAt": pdf.date_modified,
+                    "created_at": pdf.date_created,
+                    "updated_at": pdf.date_modified,
                 }
             )
         return data

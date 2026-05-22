@@ -30,7 +30,7 @@ def create_user_segment_from_annotation(
     Create a user-source LabelVideoSegment from a segment annotation.
 
     This function:
-    1. Locates the original LabelVideoSegment (if segmentId is present)
+    1. Locates the original LabelVideoSegment (if segment_id is present)
     2. Clones all its DB fields
     3. Overwrites with new data from annotation
     4. Sets information_source = user

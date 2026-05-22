@@ -20,26 +20,26 @@ DOCUMENT_TYPE_VALUES = {document_type.value for document_type in DocumentTypeCon
 class FileOverviewSerializer(serializers.Serializer):
     id = serializers.IntegerField(read_only=True)
     filename = serializers.CharField(read_only=True)
-    mediaType = serializers.CharField(read_only=True)
-    anonymizationStatus = serializers.CharField(read_only=True)
-    annotationStatus = serializers.CharField(read_only=True)
-    createdAt = serializers.DateTimeField(read_only=True)
-    sensitiveMetaId = serializers.IntegerField(read_only=True, allow_null=True)
-    fileSize = serializers.IntegerField(read_only=True, required=False)
-    uploadJob = serializers.DictField(read_only=True, allow_null=True, required=False)
-    documentType = serializers.CharField(
+    media_type = serializers.CharField(read_only=True)
+    anonymization_status = serializers.CharField(read_only=True)
+    annotation_status = serializers.CharField(read_only=True)
+    created_at = serializers.DateTimeField(read_only=True)
+    sensitive_meta_id = serializers.IntegerField(read_only=True, allow_null=True)
+    file_size = serializers.IntegerField(read_only=True, required=False)
+    upload_job = serializers.DictField(read_only=True, allow_null=True, required=False)
+    document_type = serializers.CharField(
         read_only=True, allow_null=True, required=False
     )
-    patientHashDisplay = serializers.CharField(
+    patient_hash_display = serializers.CharField(
         read_only=True, allow_null=True, required=False
     )
-    examinationHashDisplay = serializers.CharField(
+    examination_hash_display = serializers.CharField(
         read_only=True, allow_null=True, required=False
     )
-    pseudoPatientId = serializers.IntegerField(
+    pseudo_patient_id = serializers.IntegerField(
         read_only=True, allow_null=True, required=False
     )
-    pseudoExaminationId = serializers.IntegerField(
+    pseudo_examination_id = serializers.IntegerField(
         read_only=True, allow_null=True, required=False
     )
 
@@ -71,21 +71,21 @@ class FileOverviewSerializer(serializers.Serializer):
         summary = {
             "id": str(upload_job.id),
             "status": upload_job.status,
-            "ingestMode": upload_job.ingest_mode,
-            "sourceSystem": upload_job.source_system,
-            "sourceCenterKey": (
+            "ingest_mode": upload_job.ingest_mode,
+            "source_system": upload_job.source_system,
+            "source_center_key": (
                 source_center.center_key if source_center is not None else None
             ),
-            "originalFilename": self._safe_original_filename(upload_job),
-            "sourceFilePersisted": upload_job.source_file_persisted,
-            "cleanupStatus": upload_job.cleanup_status,
-            "createdAt": self._datetime_value(upload_job.created_at),
-            "updatedAt": self._datetime_value(upload_job.updated_at),
+            "original_filename": self._safe_original_filename(upload_job),
+            "source_file_persisted": upload_job.source_file_persisted,
+            "cleanup_status": upload_job.cleanup_status,
+            "created_at": self._datetime_value(upload_job.created_at),
+            "updated_at": self._datetime_value(upload_job.updated_at),
         }
 
         error_detail = self._safe_error_detail(upload_job)
         if error_detail:
-            summary["errorDetail"] = error_detail
+            summary["error_detail"] = error_detail
 
         return summary
 
@@ -156,7 +156,7 @@ class FileOverviewSerializer(serializers.Serializer):
             else AnonymizationState.NOT_STARTED
         )
 
-        # 3. Map to Frontend 'annotationStatus'
+        # 3. Map to frontend annotation_status
         annot_status = "not_started"
 
         # FIX: Explicitly check against the Enum value
@@ -167,28 +167,28 @@ class FileOverviewSerializer(serializers.Serializer):
         return {
             "id": instance.pk,
             "filename": filename,
-            "mediaType": media_type,
-            "anonymizationStatus": raw_status,
-            "annotationStatus": annot_status,
-            "createdAt": created_at,
-            "sensitiveMetaId": sensitive_meta.pk if sensitive_meta else None,
-            "fileSize": file_size,
-            "uploadJob": self._upload_job_summary(instance),
-            "documentType": document_type,
-            "patientHashDisplay": (
+            "media_type": media_type,
+            "anonymization_status": raw_status,
+            "annotation_status": annot_status,
+            "created_at": created_at,
+            "sensitive_meta_id": sensitive_meta.pk if sensitive_meta else None,
+            "file_size": file_size,
+            "upload_job": self._upload_job_summary(instance),
+            "document_type": document_type,
+            "patient_hash_display": (
                 self._hash_display(sensitive_meta.patient_hash)
                 if sensitive_meta
                 else None
             ),
-            "examinationHashDisplay": (
+            "examination_hash_display": (
                 self._hash_display(sensitive_meta.examination_hash)
                 if sensitive_meta
                 else None
             ),
-            "pseudoPatientId": (
+            "pseudo_patient_id": (
                 sensitive_meta.pseudo_patient_id if sensitive_meta else None
             ),
-            "pseudoExaminationId": (
+            "pseudo_examination_id": (
                 sensitive_meta.pseudo_examination_id if sensitive_meta else None
             ),
         }

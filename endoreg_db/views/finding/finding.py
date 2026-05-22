@@ -51,7 +51,7 @@ class FindingViewSet(ReadOnlyModelViewSet):
                             "description": getattr(choice, "description", ""),
                             "description_de": getattr(choice, "description_de", ""),
                             "description_en": getattr(choice, "description_en", ""),
-                            "classificationId": lc.id,
+                            "classification_id": lc.id,
                         }
                     )
 
@@ -99,7 +99,7 @@ class FindingViewSet(ReadOnlyModelViewSet):
                             "description": getattr(choice, "description", ""),
                             "description_de": getattr(choice, "description_de", ""),
                             "description_en": getattr(choice, "description_en", ""),
-                            "classificationId": mc.id,
+                            "classification_id": mc.id,
                         }
                     )
 

@@ -103,36 +103,36 @@ def test_anonymization_overview_mixed_content():
     assert len(data) == 2
 
     # Verify PDF (Newer)
-    assert data[0]["mediaType"] == "pdf"
+    assert data[0]["media_type"] == "pdf"
     assert data[0]["id"] == pdf.pk
-    assert data[0]["fileSize"] > 0  # Check that size works now
-    assert data[0]["uploadJob"]["status"] == UploadJob.Status.ERROR
-    assert data[0]["uploadJob"]["ingestMode"] == UploadJob.IngestMode.API
-    assert data[0]["uploadJob"]["originalFilename"] == "new_report.pdf"
-    assert data[0]["uploadJob"]["sourceFilePersisted"] is True
-    assert data[0]["uploadJob"]["errorDetail"] == "OCR failed while parsing [path]"
+    assert data[0]["file_size"] > 0  # Check that size works now
+    assert data[0]["upload_job"]["status"] == UploadJob.Status.ERROR
+    assert data[0]["upload_job"]["ingest_mode"] == UploadJob.IngestMode.API
+    assert data[0]["upload_job"]["original_filename"] == "new_report.pdf"
+    assert data[0]["upload_job"]["source_file_persisted"] is True
+    assert data[0]["upload_job"]["error_detail"] == "OCR failed while parsing [path]"
 
     # Verify Video (Older)
-    assert data[1]["mediaType"] == "video"
+    assert data[1]["media_type"] == "video"
     assert data[1]["id"] == video.pk
-    assert data[1]["uploadJob"]["status"] == UploadJob.Status.ANONYMIZED
-    assert data[1]["uploadJob"]["ingestMode"] == UploadJob.IngestMode.WATCHER
-    assert data[1]["uploadJob"]["sourceSystem"] == "watcher-daemon"
-    assert data[1]["uploadJob"]["sourceCenterKey"] == center.center_key
-    assert data[1]["uploadJob"]["originalFilename"] == "old_video.mp4"
-    assert data[1]["uploadJob"]["sourceFilePersisted"] is False
-    assert data[1]["uploadJob"]["cleanupStatus"] == UploadJob.CleanupStatus.COMPLETED
-    assert "processingProvenance" not in data[1]["uploadJob"]
-    assert "idempotencyKey" not in data[1]["uploadJob"]
-    assert "contentHash" not in data[1]["uploadJob"]
-    assert "file" not in data[1]["uploadJob"]
+    assert data[1]["upload_job"]["status"] == UploadJob.Status.ANONYMIZED
+    assert data[1]["upload_job"]["ingest_mode"] == UploadJob.IngestMode.WATCHER
+    assert data[1]["upload_job"]["source_system"] == "watcher-daemon"
+    assert data[1]["upload_job"]["source_center_key"] == center.center_key
+    assert data[1]["upload_job"]["original_filename"] == "old_video.mp4"
+    assert data[1]["upload_job"]["source_file_persisted"] is False
+    assert data[1]["upload_job"]["cleanup_status"] == UploadJob.CleanupStatus.COMPLETED
+    assert "processing_provenance" not in data[1]["upload_job"]
+    assert "idempotency_key" not in data[1]["upload_job"]
+    assert "content_hash" not in data[1]["upload_job"]
+    assert "file" not in data[1]["upload_job"]
 
     # Verify Statuses
     assert (
-        data[0]["anonymizationStatus"]
+        data[0]["anonymization_status"]
         == AnonymizationState.DONE_PROCESSING_ANONYMIZATION
     )
-    assert data[0]["annotationStatus"] == "not_started"
+    assert data[0]["annotation_status"] == "not_started"
 
-    assert data[1]["anonymizationStatus"] == AnonymizationState.VALIDATED
-    assert data[1]["annotationStatus"] == "validated"
+    assert data[1]["anonymization_status"] == AnonymizationState.VALIDATED
+    assert data[1]["annotation_status"] == "validated"

@@ -30,7 +30,7 @@ class VideoFileListSerializer(serializers.ModelSerializer):
 
     # Add computed fields for video status
     status = serializers.SerializerMethodField()
-    assignedUser = serializers.SerializerMethodField()
+    assigned_user = serializers.SerializerMethodField()
     anonymized = serializers.SerializerMethodField()
     integrity_status = serializers.SerializerMethodField()
     integrity_error = serializers.SerializerMethodField()
@@ -49,7 +49,7 @@ class VideoFileListSerializer(serializers.ModelSerializer):
             "id",
             "original_file_name",
             "status",
-            "assignedUser",
+            "assigned_user",
             "anonymized",
             "integrity_status",
             "integrity_error",
@@ -116,7 +116,7 @@ class VideoFileListSerializer(serializers.ModelSerializer):
             return "in_progress"
         return "available"
 
-    def get_assignedUser(self, obj: VideoFile):
+    def get_assigned_user(self, obj: VideoFile):
         """
         Returns the user assigned to the video, or None if no user is assigned.
 

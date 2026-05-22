@@ -2,7 +2,7 @@ def build_multilingual_response(obj, include_choices=False, classification_id=No
     """
     Helper to build a multilingual response dict for an object.
     If include_choices is True, adds a 'choices' key with multilingual dicts for each choice.
-    If classification_id is given, adds 'classificationId' to each choice.
+    If classification_id is given, adds 'classification_id' to each choice.
     """
     data = {
         "id": obj.id,
@@ -25,7 +25,7 @@ def build_multilingual_response(obj, include_choices=False, classification_id=No
             for choice in obj.get_choices()
         ]
         for choice_dict in data["choices"]:
-            choice_dict["classificationId"] = classification_id or obj.id
+            choice_dict["classification_id"] = classification_id or obj.id
     if classification_id is not None and not include_choices:
-        data["classificationId"] = classification_id
+        data["classification_id"] = classification_id
     return data

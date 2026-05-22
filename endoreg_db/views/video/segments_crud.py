@@ -658,9 +658,7 @@ def import_prediction_segments_to_manual(request, pk: int):
     """
     video = get_object_or_404(VideoFile, id=pk)
     raw_segments = request.data.get("segments")
-    replace_existing = bool(
-        request.data.get("replace_existing", request.data.get("replaceExisting", True))
-    )
+    replace_existing = bool(request.data.get("replace_existing", True))
 
     if not isinstance(raw_segments, list) or len(raw_segments) == 0:
         return Response(

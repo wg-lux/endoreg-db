@@ -59,12 +59,12 @@ class TestSegmentAnnotationFlow(TestCase):
         # Create annotation data for a new segment
         annotation_data = {
             "type": "segment",
-            "videoId": 1,
-            "startTime": 10.0,
-            "endTime": 15.0,
+            "video_id": 1,
+            "start_time": 10.0,
+            "end_time": 15.0,
             "text": "polyp",
             "metadata": {},
-            "userId": "testdoctor",
+            "user_id": "testdoctor",
         }
 
         # Mock LabelVideoSegment.create_from_video
@@ -101,9 +101,9 @@ class TestSegmentAnnotationFlow(TestCase):
         self.video_fps = 0
         annotation_data = {
             "type": "segment",
-            "videoId": 1,
-            "startTime": 10.0,
-            "endTime": 15.0,
+            "video_id": 1,
+            "start_time": 10.0,
+            "end_time": 15.0,
             "text": "polyp",
             "metadata": {},
         }
@@ -146,12 +146,12 @@ class TestSegmentAnnotationFlow(TestCase):
             # Create annotation data with changes (different end time)
             annotation_data = {
                 "type": "segment",
-                "videoId": 1,
-                "startTime": 10.0,
-                "endTime": 18.0,  # Changed from 15.0 to 18.0
+                "video_id": 1,
+                "start_time": 10.0,
+                "end_time": 18.0,  # Changed from 15.0 to 18.0
                 "text": "polyp",
-                "metadata": {"segmentId": 456},
-                "userId": "testdoctor",
+                "metadata": {"segment_id": 456},
+                "user_id": "testdoctor",
             }
 
             # Mock new user segment
@@ -199,12 +199,12 @@ class TestSegmentAnnotationFlow(TestCase):
             # Create annotation data with no changes
             annotation_data = {
                 "type": "segment",
-                "videoId": 1,
-                "startTime": 10.0,
-                "endTime": 15.0,  # Same as original
+                "video_id": 1,
+                "start_time": 10.0,
+                "end_time": 15.0,  # Same as original
                 "text": "polyp",  # Same label
-                "metadata": {"segmentId": 456},
-                "userId": "testdoctor",
+                "metadata": {"segment_id": 456},
+                "user_id": "testdoctor",
             }
 
             with patch.object(Label.objects, "filter") as mock_label_filter:
@@ -231,12 +231,12 @@ class TestSegmentAnnotationFlow(TestCase):
         ):
             annotation_data = {
                 "type": "segment",
-                "videoId": 1,
-                "startTime": 10.0,
-                "endTime": 18.0,  # Changed
+                "video_id": 1,
+                "start_time": 10.0,
+                "end_time": 18.0,  # Changed
                 "text": "polyp",
-                "metadata": {"segmentId": 456},
-                "userId": "testdoctor",
+                "metadata": {"segment_id": 456},
+                "user_id": "testdoctor",
             }
 
             mock_new_segment = Mock(spec=LabelVideoSegment)
@@ -264,10 +264,10 @@ class TestSegmentAnnotationFlow(TestCase):
         """Test that non-segment annotations don't create segments"""
         annotation_data = {
             "type": "point",  # Not a segment
-            "videoId": 1,
-            "startTime": 10.0,
+            "video_id": 1,
+            "start_time": 10.0,
             "text": "marker",
-            "userId": "testdoctor",
+            "user_id": "testdoctor",
         }
 
         result = create_user_segment_from_annotation(annotation_data, self.user)
@@ -280,10 +280,10 @@ class TestSegmentAnnotationFlow(TestCase):
         # Missing required fields
         annotation_data = {
             "type": "segment",
-            "videoId": 1,
-            # Missing startTime and endTime
+            "video_id": 1,
+            # Missing start_time and end_time
             "text": "polyp",
-            "userId": "testdoctor",
+            "user_id": "testdoctor",
         }
 
         result = create_user_segment_from_annotation(annotation_data, self.user)
@@ -294,9 +294,9 @@ class TestSegmentAnnotationFlow(TestCase):
     def test_invalid_segment_time_range_handling(self):
         annotation_data = {
             "type": "segment",
-            "videoId": 1,
-            "startTime": 15.0,
-            "endTime": 10.0,
+            "video_id": 1,
+            "start_time": 15.0,
+            "end_time": 10.0,
             "text": "polyp",
         }
 
@@ -304,15 +304,15 @@ class TestSegmentAnnotationFlow(TestCase):
 
         self.assertIsNone(result)
 
-    def test_annotation_contract_parses_camel_case_payload(self):
+    def test_annotation_contract_parses_snake_case_payload(self):
         annotation_data = {
             "type": "segment",
-            "videoId": 1,
-            "startTime": 10.0,
-            "endTime": 15.0,
+            "video_id": 1,
+            "start_time": 10.0,
+            "end_time": 15.0,
             "text": "polyp",
             "tags": ["polyp"],
-            "metadata": {"segmentId": 456},
+            "metadata": {"segment_id": 456},
         }
 
         parsed = parse_segment_annotation_input(annotation_data)
@@ -326,9 +326,9 @@ class TestSegmentAnnotationFlow(TestCase):
     def test_annotation_contract_rejects_negative_start_time(self):
         annotation_data = {
             "type": "segment",
-            "videoId": 1,
-            "startTime": -0.1,
-            "endTime": 15.0,
+            "video_id": 1,
+            "start_time": -0.1,
+            "end_time": 15.0,
             "text": "polyp",
         }
 
@@ -339,9 +339,9 @@ class TestSegmentAnnotationFlow(TestCase):
     def test_create_user_segment_rounds_time_to_nearest_frame(self):
         annotation_data = {
             "type": "segment",
-            "videoId": 1,
-            "startTime": 7 / 25.0,
-            "endTime": 15 / 25.0,
+            "video_id": 1,
+            "start_time": 7 / 25.0,
+            "end_time": 15 / 25.0,
             "text": "polyp",
             "metadata": {},
         }
@@ -376,11 +376,11 @@ class TestSegmentAnnotationFlow(TestCase):
         ):
             annotation_data = {
                 "type": "segment",
-                "videoId": 999,  # Non-existent video
-                "startTime": 10.0,
-                "endTime": 15.0,
+                "video_id": 999,  # Non-existent video
+                "start_time": 10.0,
+                "end_time": 15.0,
                 "text": "polyp",
-                "userId": "testdoctor",
+                "user_id": "testdoctor",
             }
 
             result = create_user_segment_from_annotation(annotation_data, self.user)
@@ -418,18 +418,18 @@ class TestAnnotationViews(TestCase):
     #     # For now, just verify the logic would work
     #     annotation_data = {
     #         'type': 'segment',
-    #         'videoId': 1,
-    #         'startTime': 10.0,
-    #         'endTime': 15.0,
+    #         'video_id': 1,
+    #         'start_time': 10.0,
+    #         'end_time': 15.0,
     #         'text': 'polyp',
     #         'metadata': {},
-    #         'userId': 'testdoctor'
+    #         'user_id': 'testdoctor'
     #     }
 
     #     # In a real test, you'd make the actual HTTP request:
     #     # response = client.post('/api/annotations/', data=annotation_data, content_type='application/json')
     #     # self.assertEqual(response.status_code, 201)
-    #     # self.assertEqual(response.json()['metadata']['segmentId'], 123)
+    #     # self.assertEqual(response.json()['metadata']['segment_id'], 123)
 
     #     # For now, just verify our mock setup
     #     self.assertIsNotNone(mock_segment)

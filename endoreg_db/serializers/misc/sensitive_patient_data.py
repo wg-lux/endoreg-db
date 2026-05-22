@@ -15,10 +15,10 @@ class VoPPatientDataSerializer(serializers.Serializer):
 
     # Mark all fields as read_only since they're computed in to_representation
     id = serializers.IntegerField(read_only=True)
-    sensitiveMetaId = serializers.IntegerField(read_only=True)
+    sensitive_meta_id = serializers.IntegerField(read_only=True)
     text = serializers.CharField(read_only=True)
-    anonymizedText = serializers.CharField(read_only=True)
-    reportMeta = serializers.JSONField(read_only=True)
+    anonymized_text = serializers.CharField(read_only=True)
+    report_meta = serializers.JSONField(read_only=True)
     status = serializers.CharField(read_only=True)
     error = serializers.BooleanField(read_only=True)
 
@@ -77,12 +77,12 @@ class VoPPatientDataSerializer(serializers.Serializer):
 
             return {
                 "id": instance.pk,
-                "sensitiveMetaId": instance.sensitive_meta.pk
+                "sensitive_meta_id": instance.sensitive_meta.pk
                 if instance.sensitive_meta
                 else None,
                 "text": text,
-                "anonymizedText": anonym_text,
-                "reportMeta": self._serialize_sensitive_meta(instance.sensitive_meta)
+                "anonymized_text": anonym_text,
+                "report_meta": self._serialize_sensitive_meta(instance.sensitive_meta)
                 if instance.sensitive_meta
                 else None,
                 "status": "processing"
@@ -94,17 +94,17 @@ class VoPPatientDataSerializer(serializers.Serializer):
         elif isinstance(instance, RawPdfFile):
             return {
                 "id": instance.pk,
-                "sensitiveMetaId": instance.sensitive_meta.pk
+                "sensitive_meta_id": instance.sensitive_meta.pk
                 if instance.sensitive_meta
                 else None,
                 "text": instance.text or "",
-                "anonymizedText": instance.anonymized_text or "",
-                "reportMeta": self._serialize_sensitive_meta(instance.sensitive_meta)
+                "anonymized_text": instance.anonymized_text or "",
+                "report_meta": self._serialize_sensitive_meta(instance.sensitive_meta)
                 if instance.sensitive_meta
                 else None,
                 "status": "done" if instance.anonymized_text else "not_started",
                 "error": False,
-                "pdfStreamUrl": build_pdf_stream_path(instance.pk),
+                "pdf_stream_url": build_pdf_stream_path(instance.pk),
             }
 
         else:
@@ -124,23 +124,23 @@ class VoPPatientDataSerializer(serializers.Serializer):
 
         return {
             "id": sensitive_meta.pk,
-            "patientFirstName": sensitive_meta.patient_first_name or "",
-            "patientLastName": sensitive_meta.patient_last_name or "",
-            "patientDob": sensitive_meta.patient_dob.isoformat()
+            "patient_first_name": sensitive_meta.patient_first_name or "",
+            "patient_last_name": sensitive_meta.patient_last_name or "",
+            "patient_dob": sensitive_meta.patient_dob.isoformat()
             if sensitive_meta.patient_dob
             else "",
-            "patientGender": str(sensitive_meta.patient_gender)
+            "patient_gender": str(sensitive_meta.patient_gender)
             if sensitive_meta.patient_gender
             else "",
-            "examinationDate": sensitive_meta.examination_date.isoformat()
+            "examination_date": sensitive_meta.examination_date.isoformat()
             if sensitive_meta.examination_date
             else "",
-            "centerName": sensitive_meta.center.name if sensitive_meta.center else "",
-            "endoscopeType": sensitive_meta.endoscope_type or "",
-            "endoscopeSn": sensitive_meta.endoscope_sn or "",
-            "isVerified": getattr(sensitive_meta, "is_verified", False),
+            "center_name": sensitive_meta.center.name if sensitive_meta.center else "",
+            "endoscope_type": sensitive_meta.endoscope_type or "",
+            "endoscope_sn": sensitive_meta.endoscope_sn or "",
+            "is_verified": getattr(sensitive_meta, "is_verified", False),
             "tags": list(
                 sensitive_meta.tags.order_by("name").values_list("name", flat=True)
             ),
-            "validationComment": sensitive_meta.validation_comment or "",
+            "validation_comment": sensitive_meta.validation_comment or "",
         }

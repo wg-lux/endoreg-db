@@ -237,9 +237,7 @@ def anonymization_status(request, file_id: int):
     if not info:
         return Response({"detail": "File not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    file_type = (
-        info.get("media_type") or info.get("mediaType") or info.get("type") or "video"
-    )
+    file_type = info.get("media_type") or info.get("type") or "video"
 
     # Wende Rate-Limiting auf den echten Typ an (nicht auf einen evtl. falschen request-Parameter)
     if not PollingCoordinator.can_check_status(file_id, file_type):
@@ -252,12 +250,7 @@ def anonymization_status(request, file_id: int):
             status=status.HTTP_429_TOO_MANY_REQUESTS,
         )
 
-    status_val = (
-        info.get("anonymization_status")
-        or info.get("anonymizationStatus")
-        or info.get("status")
-        or "not_started"
-    )
+    status_val = info.get("anonymization_status") or info.get("status") or "not_started"
 
     # processing_locked als Ableitung des Status interpretieren
     processing_statuses = {
@@ -271,7 +264,6 @@ def anonymization_status(request, file_id: int):
         {
             "file_id": file_id,
             "file_type": file_type,
-            "anonymizationStatus": status_val,
             "anonymization_status": status_val,
             "integrity_status": info.get("integrity_status", ""),
             "integrity_error": info.get("integrity_error", ""),
@@ -292,13 +284,8 @@ def start_anonymization(request, file_id: int):
     if not info:
         return Response({"detail": "File not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    file_type = info.get("media_type") or info.get("mediaType") or "unknown"
-    status_val = (
-        info.get("anonymization_status")
-        or info.get("anonymizationStatus")
-        or info.get("status")
-        or "not_started"
-    )
+    file_type = info.get("media_type") or "unknown"
+    status_val = info.get("anonymization_status") or info.get("status") or "not_started"
     if info.get("integrity_status") == "lost" or status_val == "failed":
         return Response(
             {

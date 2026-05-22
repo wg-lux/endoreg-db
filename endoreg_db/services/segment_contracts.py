@@ -4,18 +4,18 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 
 class SegmentAnnotationMetadataInput(BaseModel):
-    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+    model_config = ConfigDict(extra="ignore")
 
-    segment_id: int | None = Field(default=None, alias="segmentId")
+    segment_id: int | None = None
 
 
 class SegmentAnnotationInput(BaseModel):
-    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+    model_config = ConfigDict(extra="ignore")
 
     annotation_type: str = Field(alias="type")
-    video_id: int = Field(alias="videoId", gt=0)
-    start_time: float = Field(alias="startTime", ge=0)
-    end_time: float = Field(alias="endTime", ge=0)
+    video_id: int = Field(gt=0)
+    start_time: float = Field(ge=0)
+    end_time: float = Field(ge=0)
     text: str = ""
     tags: list[str] = Field(default_factory=list)
     metadata: SegmentAnnotationMetadataInput = Field(
