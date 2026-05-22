@@ -1439,7 +1439,11 @@ def mock_storage(tmp_path, monkeypatch):
     # Force the model to re-initialize from the new env
     fake_paths_model = paths_module.EndoregPathsModel.from_environment()
 
-    # 3. Patch the module-level singleton and the factory method
+    # 3. Patch the module-level singleton and the factory method.
+    # Register these with monkeypatch before rebinding constants so teardown
+    # restores the original paths even if setup fails before this fixture yields.
+    monkeypatch.setattr(paths_module, "data_paths_model", fake_paths_model)
+    monkeypatch.setattr(paths_module, "data_paths", fake_paths_model)
     _rebind_paths_module(fake_paths_model)
     monkeypatch.setattr(
         paths_module.EndoregPathsModel,
@@ -1448,9 +1452,6 @@ def mock_storage(tmp_path, monkeypatch):
     )
 
     # 4. Patch the historical constants (for legacy code support)
-    monkeypatch.setattr(paths_module, "data_paths_model", fake_paths_model)
-    monkeypatch.setattr(paths_module, "data_paths", fake_paths_model)
-
     # Keep alias exports and import-time path constants in sync for modules that
     # imported path constants by value before this fixture runs.
     import endoreg_db.utils as utils_module
