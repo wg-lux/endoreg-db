@@ -1,21 +1,27 @@
-"""Module for utility classes and functions."""
+"""Convenience exports for common utility helpers."""
 
-from .yaml_model_loader import load_model_data_from_yaml
+from .data_loading.yaml_model_loader import load_model_data_from_yaml
 
 # dates
-from .dates import ensure_aware_datetime, random_day_by_month_year, random_day_by_year
+from .core.dates import (
+    ensure_aware_datetime,
+    random_day_by_month_year,
+    random_day_by_year,
+)
 
 # env
-from .env import DEBUG, get_env_var
+from .core.env import DEBUG, get_env_var
 
 # file_operations
-from .file_operations import (
+from .filesystem import file_operations as file_operations
+from .filesystem import paths as paths
+from .filesystem.file_operations import (
     copy_with_progress,
     get_content_hash_filename,
 )
 
 # hashs
-from .hashs import (
+from .security.hashs import (
     DJANGO_NAME_SALT,
     get_examiner_hash,
     get_hash_string,
@@ -25,17 +31,18 @@ from .hashs import (
 )
 
 # names
-from .names import (
+from .core.names import (
     create_mock_examiner_name,
     create_mock_patient_name,
     guess_name_gender,
 )
 
 # parse_and_generate_yaml
-from .parse_and_generate_yaml import collect_center_names
+from .data_loading import dataloader as dataloader
+from .data_loading.parse_and_generate_yaml import collect_center_names
 
 # paths
-from .paths import data_paths
+from .filesystem.paths import data_paths
 
 # pydantic_models
 from .pydantic_models import DbConfig
@@ -48,7 +55,7 @@ from .storage import (
 from .storage import file_exists as storage_file_exists
 
 # validate_endo_roi
-from .validate_endo_roi import validate_endo_roi
+from .validation.endo_roi import validate_endo_roi
 
 
 def assemble_video_from_frames(*args, **kwargs):
@@ -93,6 +100,7 @@ __all__ = [
     "create_mock_examiner_name",
     "create_mock_patient_name",
     "data_paths",
+    "dataloader",
     "DbConfig",
     "DEBUG",
     "DJANGO_NAME_SALT",
@@ -117,6 +125,8 @@ __all__ = [
     "delete_field_file",
     "ensure_local_file",
     "field_file_is_readable",
+    "file_operations",
+    "paths",
     "save_local_file",
     "storage_file_exists",
 ]

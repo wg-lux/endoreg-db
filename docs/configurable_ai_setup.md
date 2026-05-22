@@ -76,10 +76,10 @@ Model metadata files can now include setup-specific configuration:
 
 ### SetupConfig Class
 
-The `endoreg_db.utils.setup_config.SetupConfig` class provides programmatic access to configuration:
+The `endoreg_db.utils.data_loading.setup_config.SetupConfig` class provides programmatic access to configuration:
 
 ```python
-from endoreg_db.utils.setup_config import setup_config
+from endoreg_db.utils.data_loading.setup_config import setup_config
 
 # Get configured model names
 primary_model = setup_config.get_primary_model_name()
@@ -184,7 +184,7 @@ default_models:
 
 ```bash
 python manage.py shell -c "
-from endoreg_db.utils.setup_config import setup_config
+from endoreg_db.utils.data_loading.setup_config import setup_config
 print('Primary model:', setup_config.get_primary_model_name())
 print('Found weights:', setup_config.find_model_weights_files())
 "
@@ -245,7 +245,7 @@ The system follows this priority order:
 ```bash
 # Check if configuration file exists and is valid
 python manage.py shell -c "
-from endoreg_db.utils.setup_config import SetupConfig
+from endoreg_db.utils.data_loading.setup_config import SetupConfig
 config = SetupConfig()
 print('Config loaded:', config._config)
 "
@@ -256,7 +256,7 @@ print('Config loaded:', config._config)
 ```bash
 # Check weight discovery
 python manage.py shell -c "
-from endoreg_db.utils.setup_config import setup_config
+from endoreg_db.utils.data_loading.setup_config import setup_config
 print('Search patterns:', setup_config.get_weights_search_patterns())
 print('Search dirs:', setup_config.get_weights_search_dirs())
 print('Found files:', setup_config.find_model_weights_files())
@@ -268,7 +268,7 @@ print('Found files:', setup_config.find_model_weights_files())
 ```bash
 # Test HuggingFace configuration
 python manage.py shell -c "
-from endoreg_db.utils.setup_config import setup_config
+from endoreg_db.utils.data_loading.setup_config import setup_config
 hf_config = setup_config.get_huggingface_config()
 print('HF enabled:', hf_config.get('enabled'))
 print('HF repo:', hf_config.get('repo_id'))

@@ -266,7 +266,7 @@ Implemented today:
   storage class, and retention policy fields
 - explicit local file moves, copies, writes, quarantine moves, and safe unlink
   operations in hub ingest paths use wrappers from
-  `endoreg_db.utils.file_operations`
+  `endoreg_db.utils.filesystem.file_operations`
 - those wrappers use atomic write, move, and copy semantics and emit structured
   JSON logs
 - video streaming can use Nginx `X-Accel-Redirect` for streamable protected
@@ -287,8 +287,8 @@ Remaining storage work is still significant:
 Relevant files:
 
 - `endoreg_db/models/media/video/storage_mode.py`
-- `endoreg_db/utils/file_operations.py`
-- `endoreg_db/utils/storage_profile.py`
+- `endoreg_db/utils/filesystem/file_operations.py`
+- `endoreg_db/utils/storage/profile.py`
 - `endoreg_db/views/video/video_stream.py`
 - `endoreg_db/views/report/report_stream.py`
 
