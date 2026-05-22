@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from endoreg_db.models import Examination
 from ...serializers.finding import FindingSerializer
-from endoreg_db.utils.translation import build_multilingual_response
+from endoreg_db.utils.core.translation import build_multilingual_response
 from endoreg_db.models import PatientExamination
 
 

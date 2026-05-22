@@ -2,7 +2,7 @@ import logging
 from pathlib import Path
 
 from endoreg_db.models.media.video.create_from_file import atomic_copy_with_fallback
-from endoreg_db.utils.file_operations import ensure_directory
+from endoreg_db.utils.filesystem.file_operations import ensure_directory
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.utils.video.ffmpeg_wrapper import transcode_video
 

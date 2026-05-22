@@ -8,7 +8,7 @@ from typing import IO
 import pytest
 from django.test import TestCase
 
-from endoreg_db.utils.paths import ANONYM_REPORT_DIR, protected_media_root
+from endoreg_db.utils.filesystem.paths import ANONYM_REPORT_DIR, protected_media_root
 from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
 
 

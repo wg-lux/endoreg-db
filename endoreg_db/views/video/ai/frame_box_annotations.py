@@ -23,7 +23,7 @@ from endoreg_db.serializers.label_video_segment.frame_box_annotation import (
     FrameBoxAnnotationBulkItemSerializer,
     FrameBoxAnnotationSerializer,
 )
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
 
 logger = logging.getLogger(__name__)
 

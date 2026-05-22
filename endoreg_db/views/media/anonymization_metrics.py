@@ -9,7 +9,7 @@ from endoreg_db.services.anonymization_metrics import (
     build_anonymization_metrics_payload,
     parse_metrics_filters,
 )
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
 
 
 class AnonymizationMetricsView(APIView):

@@ -6,7 +6,7 @@ import pytest
 
 from endoreg_db.config import env as env_module
 from endoreg_db.config.env import BASE_DIR
-from endoreg_db.utils import paths as paths_module
+from endoreg_db.utils.filesystem import paths as paths_module
 
 
 def reload_paths(monkeypatch, **env):

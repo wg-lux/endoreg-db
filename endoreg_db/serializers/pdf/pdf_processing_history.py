@@ -3,7 +3,10 @@ from collections.abc import Mapping
 from rest_framework import serializers
 
 from endoreg_db.models import PdfProcessingHistory
-from endoreg_db.utils.media_urls import build_absolute_media_url, build_pdf_stream_path
+from endoreg_db.utils.web.media_urls import (
+    build_absolute_media_url,
+    build_pdf_stream_path,
+)
 
 
 class PdfProcessingHistorySerializer(serializers.ModelSerializer):

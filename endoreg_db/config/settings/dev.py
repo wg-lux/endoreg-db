@@ -62,7 +62,7 @@ REST_FRAMEWORK.update(  # noqa: F405
     {
         "DEFAULT_AUTHENTICATION_CLASSES": KEYCLOAK.REST_FRAMEWORK_DEFAULT_AUTH,
         "DEFAULT_PERMISSION_CLASSES": (
-            "endoreg_db.utils.permissions.EnvironmentAwarePermission",
+            "endoreg_db.utils.web.permissions.EnvironmentAwarePermission",
             "endoreg_db.authz.permissions.PolicyPermission",
         ),
     }

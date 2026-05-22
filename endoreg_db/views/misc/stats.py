@@ -11,7 +11,7 @@ from ...models import (
     SensitiveMeta,
     PatientExamination,
 )
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
 from endoreg_db.services.audit_integrity import get_audit_ledger_integrity_status
 
 logger = logging.getLogger(__name__)

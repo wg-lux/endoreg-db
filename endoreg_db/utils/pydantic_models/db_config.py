@@ -4,7 +4,7 @@ import yaml
 from icecream import ic
 from pydantic import BaseModel
 
-from endoreg_db.utils.file_operations import atomic_write_file
+from endoreg_db.utils.filesystem.file_operations import atomic_write_file
 
 
 class DbConfig(BaseModel):

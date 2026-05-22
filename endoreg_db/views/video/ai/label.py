@@ -23,7 +23,7 @@ from endoreg_db.services.video_temporal_inference import (
     dispatch_video_temporal_inference,
     extract_temporal_options,
 )
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
 
 # from rest_framework.permissions import IsAuthenticated
 # from endoreg_db.authz.permissions import PolicyPermission

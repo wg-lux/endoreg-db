@@ -23,7 +23,7 @@ from endoreg_db.services.hub.ingest import (
     process_preanonymized_watcher_file,
     process_watcher_file,
 )
-from endoreg_db.utils.file_operations import (
+from endoreg_db.utils.filesystem.file_operations import (
     ensure_directory,
     safe_rmtree,
     safe_unlink_file,

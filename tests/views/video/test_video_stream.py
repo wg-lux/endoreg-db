@@ -9,7 +9,7 @@ import pytest
 from django.test import TestCase
 
 from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
-from endoreg_db.utils.paths import protected_media_root
+from endoreg_db.utils.filesystem.paths import protected_media_root
 
 
 class FakeStorage:

@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from endoreg_db.utils import file_operations
-from endoreg_db.utils.file_operations import (
+from endoreg_db.utils.filesystem import file_operations
+from endoreg_db.utils.filesystem.file_operations import (
     atomic_move_file,
     atomic_write_file,
     ensure_directory,
@@ -51,7 +51,7 @@ def _file_operation_events(caplog) -> list[dict[str, object]]:
     return [
         record.structured_event
         for record in caplog.records
-        if record.name == "endoreg_db.utils.file_operations"
+        if record.name == "endoreg_db.utils.filesystem.file_operations"
         and getattr(record, "structured_event", {}).get("event") == "file_operation"
     ]
 
@@ -71,7 +71,7 @@ def test_sha256_file_hashes_field_file_through_streaming_storage():
 
 @pytest.mark.unit
 def test_atomic_write_file_replaces_destination_and_emits_json_log(caplog, tmp_path):
-    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
+    caplog.set_level(logging.INFO, logger="endoreg_db.utils.filesystem.file_operations")
     destination = tmp_path / "nested" / "payload.bin"
 
     result = atomic_write_file(
@@ -99,7 +99,7 @@ def test_atomic_write_file_replaces_destination_and_emits_json_log(caplog, tmp_p
 def test_atomic_write_file_removes_partial_temp_file_on_generator_failure(
     caplog, tmp_path
 ):
-    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
+    caplog.set_level(logging.INFO, logger="endoreg_db.utils.filesystem.file_operations")
     destination = tmp_path / "payload.bin"
 
     def failing_content():
@@ -123,7 +123,7 @@ def test_atomic_write_file_removes_partial_temp_file_on_generator_failure(
 def test_atomic_move_file_falls_back_to_copy_then_unlink_on_cross_device_error(
     caplog, monkeypatch, tmp_path
 ):
-    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
+    caplog.set_level(logging.INFO, logger="endoreg_db.utils.filesystem.file_operations")
     source = tmp_path / "source.bin"
     destination = tmp_path / "other" / "destination.bin"
     source.write_bytes(b"move-me")
@@ -161,7 +161,7 @@ def test_atomic_move_file_falls_back_to_copy_then_unlink_on_cross_device_error(
 
 @pytest.mark.unit
 def test_safe_unlink_file_missing_required_path_logs_and_raises(caplog, tmp_path):
-    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
+    caplog.set_level(logging.INFO, logger="endoreg_db.utils.filesystem.file_operations")
     missing = tmp_path / "missing.bin"
 
     with pytest.raises(FileNotFoundError):
@@ -178,7 +178,7 @@ def test_safe_unlink_file_missing_required_path_logs_and_raises(caplog, tmp_path
 
 @pytest.mark.unit
 def test_ensure_directory_and_safe_rmtree_emit_structured_events(caplog, tmp_path):
-    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
+    caplog.set_level(logging.INFO, logger="endoreg_db.utils.filesystem.file_operations")
     target = tmp_path / "created" / "nested"
 
     ensure_directory(target, dir_mode=0o700)
@@ -203,7 +203,7 @@ def test_ensure_directory_and_safe_rmtree_emit_structured_events(caplog, tmp_pat
 
 @pytest.mark.unit
 def test_safe_rmtree_retries_directory_not_empty_race(monkeypatch, caplog, tmp_path):
-    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
+    caplog.set_level(logging.INFO, logger="endoreg_db.utils.filesystem.file_operations")
     target = tmp_path / "racy"
     ensure_directory(target)
     atomic_write_file(destination=target / "child.txt", content=(b"payload",))

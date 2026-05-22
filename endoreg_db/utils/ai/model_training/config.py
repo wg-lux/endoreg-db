@@ -12,7 +12,7 @@ from endoreg_db.utils.ai.multilabel_dataset_builder import (
     ANNOTATION_SOURCE_SCOPE_ALL,
     AnnotationSourceScope,
 )
-from endoreg_db.utils.file_operations import ensure_directory
+from endoreg_db.utils.filesystem.file_operations import ensure_directory
 
 
 # ---------------------------------------------------------------------

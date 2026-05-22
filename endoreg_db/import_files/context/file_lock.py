@@ -5,7 +5,7 @@ import time
 from logging import getLogger
 from typing import Generator, Any
 
-from endoreg_db.utils.file_operations import ensure_directory
+from endoreg_db.utils.filesystem.file_operations import ensure_directory
 
 logger = getLogger(__name__)
 

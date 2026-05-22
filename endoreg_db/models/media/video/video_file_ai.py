@@ -261,7 +261,7 @@ def _extract_text_from_video_frames(
         - Pre-condition: Requires state.frames_extracted=True.
         - Post-condition: No state changes.
     """
-    from endoreg_db.utils.ocr import (
+    from endoreg_db.utils.media.ocr import (
         extract_text_from_rois,  # Local import for dependency isolation
     )
 

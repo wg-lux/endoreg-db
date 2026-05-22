@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from endoreg_db.utils.media_urls import (
+from endoreg_db.utils.web.media_urls import (
     build_absolute_media_url,
     build_patient_timeline_path,
     build_pdf_stream_path,

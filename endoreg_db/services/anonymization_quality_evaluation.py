@@ -29,7 +29,7 @@ from endoreg_db.services.anonymization_metrics import (
     _annotation_box_rows,
     _matched_phi_region_count,
 )
-from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.filesystem.file_operations import sha256_file
 from endoreg_db.utils.storage import file_exists
 
 logger = logging.getLogger(__name__)

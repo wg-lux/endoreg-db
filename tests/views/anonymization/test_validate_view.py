@@ -22,16 +22,16 @@ from rest_framework import status
 from rest_framework.response import Response as DRFResponse
 from rest_framework.test import APIRequestFactory, force_authenticate
 
-from endoreg_db.models import (
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.media.anonymization_metrics import (
     AnonymizationFieldMetric,
     AnonymizationMetricField,
     AnonymizationValidationMetric,
-    Center,
-    RawPdfFile,
-    SensitiveMeta,
-    Tag,
-    VideoFile,
 )
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+from endoreg_db.models.other.tag import Tag
 from endoreg_db.views.anonymization.validate import AnonymizationValidateView
 
 logger = logging.getLogger(__name__)
@@ -235,8 +235,9 @@ class TestAnonymizationValidateView:
             "document_type": "report_final",
         }
 
-        with patch.object(
-            RawPdfFile, "validate_metadata_annotation", return_value=True
+        with patch(
+            "endoreg_db.views.anonymization.validate.validate_report_metadata_annotation",
+            return_value=True,
         ):
             request = factory.post(
                 f"/api/anonymization/{pdf_file.id}/validate/",
@@ -298,8 +299,9 @@ class TestAnonymizationValidateView:
             "document_type": "report_final",
         }
 
-        with patch.object(
-            RawPdfFile, "validate_metadata_annotation", return_value=True
+        with patch(
+            "endoreg_db.views.anonymization.validate.validate_report_metadata_annotation",
+            return_value=True,
         ):
             request = factory.post(
                 f"/api/anonymization/{pdf_file.id}/validate/",
@@ -333,8 +335,9 @@ class TestAnonymizationValidateView:
             "document_type": "report_final",
         }
 
-        with patch.object(
-            RawPdfFile, "validate_metadata_annotation", return_value=False
+        with patch(
+            "endoreg_db.views.anonymization.validate.validate_report_metadata_annotation",
+            return_value=False,
         ):
             request = factory.post(
                 f"/api/anonymization/{pdf_file.id}/validate/",
@@ -362,8 +365,9 @@ class TestAnonymizationValidateView:
             "file_type": "pdf",
         }
 
-        with patch.object(
-            RawPdfFile, "validate_metadata_annotation", return_value=True
+        with patch(
+            "endoreg_db.views.anonymization.validate.validate_report_metadata_annotation",
+            return_value=True,
         ) as validate_mock:
             request = factory.post(
                 f"/api/anonymization/{pdf_file.id}/validate/",
@@ -418,10 +422,8 @@ class TestAnonymizationValidateView:
             "file_type": "pdf",
         }
 
-        with patch.object(
-            RawPdfFile,
-            "validate_metadata_annotation",
-            autospec=True,
+        with patch(
+            "endoreg_db.views.anonymization.validate.validate_report_metadata_annotation",
             side_effect=mutate_if_called,
         ) as validate_mock:
             request = factory.post(
@@ -482,10 +484,8 @@ class TestAnonymizationValidateView:
             "document_type": "report_final",
         }
 
-        with patch.object(
-            RawPdfFile,
-            "validate_metadata_annotation",
-            autospec=True,
+        with patch(
+            "endoreg_db.views.anonymization.validate.validate_report_metadata_annotation",
             side_effect=mutate_and_fail,
         ) as validate_mock:
             request = factory.post(
@@ -523,8 +523,9 @@ class TestAnonymizationValidateView:
         }
 
         with override("en"):
-            with patch.object(
-                RawPdfFile, "validate_metadata_annotation", return_value=True
+            with patch(
+                "endoreg_db.views.anonymization.validate.validate_report_metadata_annotation",
+                return_value=True,
             ) as validate_mock:
                 request = factory.post(
                     f"/api/anonymization/{pdf_file.id}/validate/",
@@ -662,7 +663,10 @@ class TestAnonymizationValidateView:
         }
 
         with (
-            patch.object(RawPdfFile, "validate_metadata_annotation", return_value=True),
+            patch(
+                "endoreg_db.views.anonymization.validate.validate_report_metadata_annotation",
+                return_value=True,
+            ),
             patch(
                 "endoreg_db.views.anonymization.validate.record_operation"
             ) as record_operation_mock,

@@ -12,7 +12,10 @@ from django.utils import timezone
 from endoreg_db.utils import guess_name_gender
 
 # Assuming these utils are correctly located
-from endoreg_db.utils.hashs import get_patient_examination_hash, get_patient_hash
+from endoreg_db.utils.security.hashs import (
+    get_patient_examination_hash,
+    get_patient_hash,
+)
 
 # Import models needed for logic, use local imports inside functions if needed to break cycles
 from ..administration import Center, Examiner, FirstName, LastName, Patient

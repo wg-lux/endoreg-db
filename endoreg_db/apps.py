@@ -22,7 +22,7 @@ class EndoregDbConfig(AppConfig):
         first database connection becomes available.
         """
         ensure_keycloak_settings()
-        from endoreg_db.utils.paths import validate_runtime_storage_contract
+        from endoreg_db.utils.filesystem.paths import validate_runtime_storage_contract
 
         validate_runtime_storage_contract()
         executable = Path(sys.argv[0]).name if sys.argv else ""

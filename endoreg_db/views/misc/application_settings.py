@@ -33,7 +33,7 @@ from endoreg_db.services.application_settings.ai_dataset_export import (
     prepare_ai_dataset_export_download,
 )
 from endoreg_db.services.hub import deployment_profile_payload
-from endoreg_db.services.model_training_jobs import (
+from endoreg_db.services.jobs.model_training_jobs import (
     MODEL_TRAINING_LOST_TIMEOUT,  # noqa: F401
     MODEL_TRAINING_SERVER_INSTANCE_ID as _MODEL_TRAINING_SERVER_INSTANCE_ID,
     _execute_model_training_run,  # noqa: F401
@@ -53,7 +53,7 @@ from endoreg_db.utils.ai.multilabel_dataset_builder import (
     ANNOTATION_SOURCE_SCOPE_ALL,
     normalize_annotation_source_scope,
 )
-from endoreg_db.utils.file_operations import (
+from endoreg_db.utils.filesystem.file_operations import (
     atomic_copy_file,
     atomic_write_file,
     ensure_directory,
@@ -63,8 +63,8 @@ from endoreg_db.utils.defaults.set_default_center import (
     get_application_settings,
     update_application_defaults,
 )
-from endoreg_db.utils.paths import PROTECTED_DATA_ROOT, STORAGE_DIR
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.filesystem.paths import PROTECTED_DATA_ROOT, STORAGE_DIR
+from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
 
 MODEL_TRAINING_BACKBONE_OPTIONS: tuple[dict[str, str], ...] = (
     {

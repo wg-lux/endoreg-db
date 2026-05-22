@@ -5,10 +5,10 @@ from typing import TYPE_CHECKING, List, Optional
 
 from django.db import OperationalError
 from tqdm import tqdm
-from endoreg_db.utils.rust_backend import (
+from endoreg_db.utils.system.rust_backend import (
     build_expected_frame_records as rust_build_expected_frame_records,
 )
-from endoreg_db.utils.rust_backend import (
+from endoreg_db.utils.system.rust_backend import (
     build_frame_records as rust_build_frame_records,
 )
 

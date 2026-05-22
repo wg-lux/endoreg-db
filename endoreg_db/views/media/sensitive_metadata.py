@@ -42,7 +42,7 @@ from endoreg_db.serializers.meta import (
     SensitiveMetaUpdateSerializer,
 )
 from endoreg_db.serializers.patient import PatientSerializer
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
 
 logger = logging.getLogger(__name__)
 

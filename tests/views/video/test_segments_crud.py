@@ -18,8 +18,8 @@ from endoreg_db.models import (
     VideoProcessingHistory,
 )
 from endoreg_db.models.state import video_segment_validation as segment_state
-from endoreg_db.services.video_post_validation_jobs import JobDispatchResult
-from endoreg_db.services import video_post_validation_jobs as post_validation_jobs
+from endoreg_db.services.jobs.video_post_validation_jobs import JobDispatchResult
+from endoreg_db.services.jobs import video_post_validation_jobs as post_validation_jobs
 from endoreg_db.serializers import LabelVideoSegmentSerializer
 from endoreg_db.serializers.video.video_file_list import VideoFileListSerializer
 from endoreg_db.views.video.segments_crud import (

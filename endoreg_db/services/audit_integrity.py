@@ -7,7 +7,10 @@ from django.core.cache import cache
 from django.utils import timezone
 
 from endoreg_db.models.state.audit_ledger import AuditLedger, LedgerHead
-from endoreg_db.utils.structured_logging import emit_structured_event, safe_log_value
+from endoreg_db.utils.observability.structured_logging import (
+    emit_structured_event,
+    safe_log_value,
+)
 
 
 AUDIT_LEDGER_INTEGRITY_CACHE_KEY = "audit-ledger:integrity-status:v1"

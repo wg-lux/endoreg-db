@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 _IMPORT_TARGETS: dict[str, tuple[str, str]] = {
     "build_multilingual_response": (
-        "endoreg_db.utils.translation",
+        "endoreg_db.utils.core.translation",
         "build_multilingual_response",
     ),
     "AnonymizationOverviewView": (

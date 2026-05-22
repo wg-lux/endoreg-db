@@ -8,8 +8,11 @@ from django.contrib.auth.models import User
 from django.utils import timezone
 
 from endoreg_db.services.hub.payloads import validate_upload_provenance_payload
-from endoreg_db.utils.paths import EndoregPathsModel, build_upload_job_relative_path
-from endoreg_db.utils.structured_logging import (
+from endoreg_db.utils.filesystem.paths import (
+    EndoregPathsModel,
+    build_upload_job_relative_path,
+)
+from endoreg_db.utils.observability.structured_logging import (
     emit_structured_event,
     hash_identifier,
     safe_log_value,

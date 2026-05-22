@@ -6,7 +6,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from endoreg_db.services.video_reimport_jobs import (
+from endoreg_db.services.jobs.video_reimport_jobs import (
     _as_bool,
     _dispatch_prediction_refresh,
     _mark_upload_jobs_anonymized,
@@ -98,7 +98,7 @@ class VideoReimportView(APIView):
         payload = request_data if hasattr(request_data, "get") else {}
 
         try:
-            from endoreg_db.services.video_reimport_jobs import (
+            from endoreg_db.services.jobs.video_reimport_jobs import (
                 dispatch_video_reimport,
                 get_video_reimport_job_mode,
             )
@@ -128,7 +128,9 @@ class VideoReimportView(APIView):
         try:
             dispatch_result = dispatch_video_reimport(video_id=pk, payload=payload)
         except Exception as exc:
-            logger.exception("Video re-import dispatch failed for %s.", video.video_hash)
+            logger.exception(
+                "Video re-import dispatch failed for %s.", video.video_hash
+            )
             return Response(
                 {
                     "status": "failed",
@@ -227,8 +229,7 @@ class VideoReimportView(APIView):
                 reset_upload_jobs = self._run_video_import_service(video)
             except FileNotFoundError as exc:
                 error_detail = (
-                    "Raw video source could not be materialized from storage. "
-                    f"{exc}"
+                    f"Raw video source could not be materialized from storage. {exc}"
                 )
                 logger.warning(
                     "Raw source missing during video re-import for %s: %s",

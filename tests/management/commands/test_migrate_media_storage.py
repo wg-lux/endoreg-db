@@ -10,7 +10,10 @@ from django.core.management import call_command
 from endoreg_db.management.commands import migrate_media_storage as command_module
 from endoreg_db.models import Center, RawPdfFile, VideoFile
 from endoreg_db.utils.encryption.encrypted import MAGIC
-from endoreg_db.utils.paths import EndoregPathsModel, to_protected_media_relative
+from endoreg_db.utils.filesystem.paths import (
+    EndoregPathsModel,
+    to_protected_media_relative,
+)
 from endoreg_db.utils.storage import save_local_file
 
 

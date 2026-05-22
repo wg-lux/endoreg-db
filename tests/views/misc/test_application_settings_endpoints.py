@@ -27,7 +27,7 @@ from endoreg_db.models import (
     NetworkNode,
     VideoFile,
 )
-from endoreg_db.services import model_training_jobs
+from endoreg_db.services.jobs import model_training_jobs
 from endoreg_db.views.misc import application_settings as view_module
 
 

@@ -8,7 +8,7 @@ import pytest
 
 from endoreg_db.models import Center, EndoscopyProcessor, UploadJob, VideoFile
 from endoreg_db.services.hub import ingest
-from endoreg_db.utils.file_operations import (
+from endoreg_db.utils.filesystem.file_operations import (
     atomic_write_file,
     safe_unlink_file,
     sha256_file,

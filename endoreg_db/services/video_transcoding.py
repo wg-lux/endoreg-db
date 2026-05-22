@@ -16,14 +16,17 @@ from endoreg_db.services.video_format_reconciliation import (
     VIDEO_EXTENSIONS,
     classify_video_format,
 )
-from endoreg_db.utils.file_operations import (
+from endoreg_db.utils.filesystem.file_operations import (
     atomic_copy_file,
     atomic_move_file,
     ensure_disk_capacity,
     ensure_directory,
     safe_unlink_file,
 )
-from endoreg_db.utils.paths import ensure_within_data_root, ensure_within_protected_root
+from endoreg_db.utils.filesystem.paths import (
+    ensure_within_data_root,
+    ensure_within_protected_root,
+)
 from endoreg_db.utils.video import ffmpeg_wrapper
 
 logger = logging.getLogger(__name__)

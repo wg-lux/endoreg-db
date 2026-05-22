@@ -8,13 +8,13 @@ from typing import TYPE_CHECKING, Optional, Type
 
 from endoreg_db.exceptions import InsufficientStorageError
 from endoreg_db.import_files.file_storage.cleanup import safe_cleanup_staging_file
-from endoreg_db.utils.file_operations import (
+from endoreg_db.utils.filesystem.file_operations import (
     atomic_copy_file,
     atomic_move_file,
     ensure_disk_capacity,
     ensure_directory,
 )
-from endoreg_db.utils.paths import (
+from endoreg_db.utils.filesystem.paths import (
     IMPORT_VIDEO_DIR,
     SENSITIVE_VIDEO_DIR,
 )
@@ -23,7 +23,7 @@ from endoreg_db.utils.storage import field_file_is_readable, save_local_file
 if TYPE_CHECKING:
     from endoreg_db.models import VideoFile
 
-import endoreg_db.utils.paths as path_utils
+import endoreg_db.utils.filesystem.paths as path_utils
 
 from ....utils.video.ffmpeg_wrapper import transcode_videofile_if_required
 

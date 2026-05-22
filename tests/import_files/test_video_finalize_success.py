@@ -5,7 +5,7 @@ import pytest
 
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.file_storage.state_management import finalize_video_success
-from endoreg_db.utils import paths as paths_module
+from endoreg_db.utils.filesystem import paths as paths_module
 
 
 @pytest.mark.unit

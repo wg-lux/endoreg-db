@@ -31,7 +31,7 @@ from endoreg_db.services.report_persistence import (
     persist_report_pdf_artifact,
     save_report_submission,
 )
-from endoreg_db.utils.media_urls import (
+from endoreg_db.utils.web.media_urls import (
     build_absolute_media_url,
     build_patient_timeline_path,
     build_pdf_stream_path,

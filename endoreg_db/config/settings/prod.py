@@ -19,7 +19,9 @@ from endoreg_db.config.env import (
     env_str,
     get_secure_proxy_ssl_header,
 )
-from endoreg_db.utils.structured_logging import build_production_logging_config
+from endoreg_db.utils.observability.structured_logging import (
+    build_production_logging_config,
+)
 from . import keycloak as KEYCLOAK
 
 pytest_active = "PYTEST_CURRENT_TEST" in os.environ
@@ -137,7 +139,7 @@ REST_FRAMEWORK.update(  # noqa: F405
     {
         "DEFAULT_AUTHENTICATION_CLASSES": KEYCLOAK.REST_FRAMEWORK_DEFAULT_AUTH,
         "DEFAULT_PERMISSION_CLASSES": (
-            "endoreg_db.utils.permissions.EnvironmentAwarePermission",
+            "endoreg_db.utils.web.permissions.EnvironmentAwarePermission",
             "endoreg_db.authz.permissions.PolicyPermission",
         ),
     }

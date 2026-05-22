@@ -17,7 +17,7 @@ from endoreg_db.services.anonymization_quality_evaluation import (
     SensitiveMetaHandlingPolicy,
     evaluate_media_object,
 )
-from endoreg_db.utils.file_operations import atomic_write_file
+from endoreg_db.utils.filesystem.file_operations import atomic_write_file
 
 
 @pytest.fixture(autouse=True)

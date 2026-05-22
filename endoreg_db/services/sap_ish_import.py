@@ -16,8 +16,11 @@ from endoreg_db.services.tabular_import_formats import (
     normalize_document_row,
     resolve_document_template,
 )
-from endoreg_db.utils.file_operations import atomic_write_file, ensure_directory
-from endoreg_db.utils.paths import ensure_within_data_root
+from endoreg_db.utils.filesystem.file_operations import (
+    atomic_write_file,
+    ensure_directory,
+)
+from endoreg_db.utils.filesystem.paths import ensure_within_data_root
 
 TEXT_DOCUMENT_TYPES = ("cwd", "briefe", "radiologie")
 ANCHOR_DOCUMENT_TYPES = (

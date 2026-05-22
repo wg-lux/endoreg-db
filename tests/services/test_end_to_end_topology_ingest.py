@@ -8,8 +8,8 @@ import pytest
 
 from endoreg_db.models import Center, RawPdfFile, UploadJob
 from endoreg_db.services.hub.ingest import process_watcher_file
-from endoreg_db.utils import paths as paths_module
-from endoreg_db.utils.file_operations import (
+from endoreg_db.utils.filesystem import paths as paths_module
+from endoreg_db.utils.filesystem.file_operations import (
     atomic_write_file,
     safe_unlink_file,
     sha256_file,

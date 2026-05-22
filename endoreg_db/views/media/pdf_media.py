@@ -17,7 +17,7 @@ from rest_framework.views import APIView
 
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models import RawPdfFile
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
 
 logger = logging.getLogger(__name__)
 

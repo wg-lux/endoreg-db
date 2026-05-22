@@ -6,7 +6,7 @@ import pytest
 from django.test.utils import override_settings
 
 from endoreg_db.export.frames import export_frames_with_labels as export_module
-from endoreg_db.utils.file_operations import atomic_write_file
+from endoreg_db.utils.filesystem.file_operations import atomic_write_file
 
 
 class _FakeValuesList:

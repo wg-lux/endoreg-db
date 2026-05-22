@@ -10,12 +10,12 @@ from pathlib import Path
 from typing import Any, Iterable
 from uuid import uuid4
 
-from endoreg_db.utils.file_operations import (
+from endoreg_db.utils.filesystem.file_operations import (
     atomic_move_file,
     ensure_disk_capacity,
     safe_unlink_file,
 )
-from endoreg_db.utils.paths import (
+from endoreg_db.utils.filesystem.paths import (
     ANONYM_VIDEO_DIR_NAME,
     EndoregPathsModel,
     SENSITIVE_VIDEO_DIR_NAME,

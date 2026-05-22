@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from endoreg_db.utils.rust_backend import (
+from endoreg_db.utils.system.rust_backend import (
     build_expected_frame_records,
     build_frame_records,
     parse_extracted_frame_numbers,
@@ -41,7 +41,7 @@ def test_frame_number_rust_backend_matches_python_reference_for_valid_paths() ->
 def test_frame_number_rust_backend_returns_none_for_invalid_input_to_preserve_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import endoreg_db.utils.rust_backend as rust_backend_module
+    import endoreg_db.utils.system.rust_backend as rust_backend_module
 
     frame_paths = [
         Path("/tmp/frame_0000001.jpg"),

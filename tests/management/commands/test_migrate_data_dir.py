@@ -10,7 +10,7 @@ from django.test import TestCase
 from endoreg_db.management.commands.migrate_data_dir import Command, MIGRATION_RULES
 from endoreg_db.models import Center, RawPdfFile, VideoFile
 from endoreg_db.models.media.video.storage_mode import VideoStorageMode
-from endoreg_db.utils.paths import (
+from endoreg_db.utils.filesystem.paths import (
     DOCUMENT_DIR,
     FRAME_DIR,
     IMPORT_ANONYMIZED_REPORT_DIR,

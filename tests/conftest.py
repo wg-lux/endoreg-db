@@ -53,8 +53,8 @@ _configure_test_path_env(TEST_PROTECTED_ROOT)
 from endoreg_db.models import AiModel, Label, ModelMeta, ModelType
 from endoreg_db.models.label import LabelSet, LabelType
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS, env_bool
-from endoreg_db.utils import paths as paths_module
-from endoreg_db.utils.file_operations import (
+from endoreg_db.utils.filesystem import paths as paths_module
+from endoreg_db.utils.filesystem.file_operations import (
     atomic_copy_file,
     atomic_write_file,
     ensure_directory,
@@ -721,7 +721,7 @@ def setup_test_environment(cache):
     disable_faker_logging()
 
     # Set environment variables for tests from one authoritative protected root,
-    # matching the runtime contract in endoreg_db.utils.paths.
+    # matching the runtime contract in endoreg_db.utils.filesystem.paths.
     _configure_test_path_env(TEST_PROTECTED_ROOT)
     os.environ["DJANGO_SETTINGS_MODULE"] = "endoreg_db.config.settings.test"
 

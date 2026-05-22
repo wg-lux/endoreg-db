@@ -3,7 +3,7 @@ from typing import cast
 from django.conf import settings as django_settings
 from django.urls import URLResolver, URLPattern, include, path
 from rest_framework.routers import DefaultRouter
-from endoreg_db.utils.django_static import static
+from endoreg_db.utils.web.django_static import static
 
 logger = logging.getLogger(__name__)
 

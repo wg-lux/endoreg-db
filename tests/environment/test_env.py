@@ -49,7 +49,7 @@ class TestEnvironment(TestCase):
             "endoreg_db.models",
             "endoreg_db.serializers",
             "endoreg_db.views",
-            "endoreg_db.utils.paths",
+            "endoreg_db.utils.filesystem.paths",
         ]
         for module_name in modules:
             imported = importlib.import_module(module_name)

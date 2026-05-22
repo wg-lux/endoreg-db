@@ -55,7 +55,7 @@ class UploadJobStatusSerializer(serializers.ModelSerializer):
         if job is None:
             return None
 
-        from endoreg_db.services.report_llm_jobs import report_llm_job_payload
+        from endoreg_db.services.jobs.report_llm_jobs import report_llm_job_payload
 
         return report_llm_job_payload(job)
 

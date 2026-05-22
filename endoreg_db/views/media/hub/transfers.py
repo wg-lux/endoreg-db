@@ -27,7 +27,10 @@ from endoreg_db.services.hub import (
     resolve_allowed_center_id,
     transfer_api_enabled,
 )
-from endoreg_db.utils.structured_logging import emit_structured_event, hash_identifier
+from endoreg_db.utils.observability.structured_logging import (
+    emit_structured_event,
+    hash_identifier,
+)
 
 
 logger = logging.getLogger(__name__)

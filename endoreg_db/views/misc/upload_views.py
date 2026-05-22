@@ -27,7 +27,7 @@ from endoreg_db.services.hub import (
     resolve_allowed_center_id,
 )
 from endoreg_db.authz.permissions import PolicyPermission
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
 
 # Try to import celery task, but provide fallback
 try:

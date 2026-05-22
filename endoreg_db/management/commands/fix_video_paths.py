@@ -10,7 +10,7 @@ from django.db import transaction
 
 from endoreg_db.models import VideoFile
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
-from endoreg_db.utils.paths import STORAGE_DIR
+from endoreg_db.utils.filesystem.paths import STORAGE_DIR
 
 logger = logging.getLogger(__name__)
 

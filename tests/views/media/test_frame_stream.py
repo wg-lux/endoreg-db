@@ -11,7 +11,7 @@ from django.test import TestCase
 from rest_framework.test import APIRequestFactory
 
 from endoreg_db.models import Center, Frame, FrameExtractionRequest, VideoFile
-from endoreg_db.utils.paths import protected_media_root
+from endoreg_db.utils.filesystem.paths import protected_media_root
 
 
 class FrameStreamViewTests(TestCase):
@@ -224,7 +224,7 @@ class FrameStreamViewTests(TestCase):
             "endoreg_db.authz.permissions"
         )
         util_permissions_module = importlib.import_module(
-            "endoreg_db.utils.permissions"
+            "endoreg_db.utils.web.permissions"
         )
 
         monkeypatches = pytest.MonkeyPatch()

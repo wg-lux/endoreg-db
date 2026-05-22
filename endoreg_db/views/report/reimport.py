@@ -8,11 +8,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from endoreg_db.authz.permissions import PolicyPermission
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
 from endoreg_db.views.access_control import assert_center_scope_allowed
 
 from ...models import RawPdfFile, ReportLlmInferenceJob
-from endoreg_db.services.report_llm_jobs import (
+from endoreg_db.services.jobs.report_llm_jobs import (
     dispatch_report_llm_reimport,
     report_llm_job_payload,
 )

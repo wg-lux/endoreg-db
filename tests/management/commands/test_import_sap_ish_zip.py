@@ -13,7 +13,7 @@ from django.test import TestCase
 
 from endoreg_db.management.commands import import_sap_ish_zip as command_module
 from endoreg_db.models import Center
-from endoreg_db.utils.paths import WATCHER_PREANONYMIZED_DROP_DIR
+from endoreg_db.utils.filesystem.paths import WATCHER_PREANONYMIZED_DROP_DIR
 
 
 def _write_tsv(path: Path, *, header: list[str], rows: list[list[str]]) -> None:

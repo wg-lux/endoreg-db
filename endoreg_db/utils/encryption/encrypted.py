@@ -11,7 +11,7 @@ from django.core.files.base import File
 from django.core.files.storage import FileSystemStorage, Storage
 from django.utils.deconstruct import deconstructible
 
-from endoreg_db.utils.file_operations import (
+from endoreg_db.utils.filesystem.file_operations import (
     atomic_move_file,
     ensure_directory,
     safe_unlink_file,

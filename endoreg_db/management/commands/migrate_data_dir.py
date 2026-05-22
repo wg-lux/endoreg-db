@@ -13,13 +13,13 @@ from django.db.models import Q
 
 from endoreg_db.models import RawPdfFile, UploadJob, VideoFile
 from endoreg_db.models.media.video.storage_mode import VideoStorageMode
-from endoreg_db.utils.file_operations import (
+from endoreg_db.utils.filesystem.file_operations import (
     atomic_copy_file,
     atomic_write_file,
     ensure_directory,
     sha256_file,
 )
-from endoreg_db.utils.paths import (
+from endoreg_db.utils.filesystem.paths import (
     DOCUMENT_DIR,
     FRAME_DIR,
     FRAME_IMPORT_DIR,
@@ -45,7 +45,7 @@ from endoreg_db.utils.paths import (
     ensure_within_protected_root,
     to_storage_relative,
 )
-from endoreg_db.utils.storage_profile import (
+from endoreg_db.utils.storage.profile import (
     PayloadKind,
     requires_app_encrypted_storage,
 )

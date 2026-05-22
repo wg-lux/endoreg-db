@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING, Iterator, Optional
 
 from django.db import transaction
 
-from endoreg_db.utils import paths as path_utils
+from endoreg_db.utils.filesystem import paths as path_utils
 from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
-from endoreg_db.utils.file_operations import safe_unlink_file
+from endoreg_db.utils.filesystem.file_operations import safe_unlink_file
 from endoreg_db.utils.storage import delete_field_file, ensure_local_file, file_exists
-from endoreg_db.utils.storage_streaming import maybe_local_plaintext_path
+from endoreg_db.utils.storage.streaming import maybe_local_plaintext_path
 
 if TYPE_CHECKING:
     from .video_file import VideoFile

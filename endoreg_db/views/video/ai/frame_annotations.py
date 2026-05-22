@@ -36,7 +36,7 @@ from endoreg_db.services.frame_retention import (
 from endoreg_db.serializers.label_video_segment.frame_annotation_bulk import (
     FrameAnnotationBulkItemSerializer,
 )
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
 
 logger = logging.getLogger(__name__)
 

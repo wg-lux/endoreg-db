@@ -8,7 +8,7 @@ from pathlib import Path
 from endoreg_db.services.sap_ish_import import (
     convert_sap_ish_zip_to_preanonymized_drop,
 )
-from endoreg_db.utils.paths import WATCHER_PREANONYMIZED_DROP_DIR
+from endoreg_db.utils.filesystem.paths import WATCHER_PREANONYMIZED_DROP_DIR
 
 
 def _write_tsv(path: Path, *, header: list[str], rows: list[list[str]]) -> None:

@@ -8,7 +8,7 @@ from django.core.management.base import BaseCommand
 
 from endoreg_db.models import VideoFile
 from endoreg_db.utils.storage import field_file_is_readable, file_exists
-from endoreg_db.utils.storage_streaming import field_file_size
+from endoreg_db.utils.storage.streaming import field_file_size
 
 logger = logging.getLogger(__name__)
 

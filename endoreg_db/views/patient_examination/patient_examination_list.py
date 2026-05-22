@@ -3,7 +3,7 @@ from endoreg_db.serializers.patient_examination import PatientExaminationSeriali
 
 from rest_framework import generics, status
 from rest_framework.response import Response
-from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
+from endoreg_db.utils.web.permissions import DEBUG_PERMISSIONS
 
 import logging
 

@@ -6,7 +6,7 @@ from endoreg_db.models import VideoFile
 from endoreg_db.models.state.video_segment_validation import (
     resolve_segment_annotation_status,
 )
-from endoreg_db.services.video_post_validation_jobs import (
+from endoreg_db.services.jobs.video_post_validation_jobs import (
     dispatch_video_post_validation_rebuild,
 )
 

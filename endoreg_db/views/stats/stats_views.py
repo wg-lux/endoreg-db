@@ -20,7 +20,7 @@ from ...models import (
     PatientExamination,
     Label,
 )
-from ...utils.permissions import EnvironmentAwarePermission
+from ...utils.web.permissions import EnvironmentAwarePermission
 
 
 class ExaminationStatsView(APIView):

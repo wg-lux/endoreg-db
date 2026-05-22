@@ -9,7 +9,10 @@ from django.core.management import call_command
 from django.core.management.base import BaseCommand
 
 from endoreg_db.models import ModelMeta
-from endoreg_db.utils.file_operations import atomic_copy_file, ensure_directory
+from endoreg_db.utils.filesystem.file_operations import (
+    atomic_copy_file,
+    ensure_directory,
+)
 
 
 class Command(BaseCommand):
@@ -120,7 +123,7 @@ class Command(BaseCommand):
             self.stdout.write("\n📋 Step 5: Creating AI model metadata...")
             try:
                 # Load setup configuration
-                from endoreg_db.utils.setup_config import setup_config
+                from endoreg_db.utils.data_loading.setup_config import setup_config
 
                 # Get primary model from configuration
                 default_model_name = setup_config.get_primary_model_name()
@@ -218,7 +221,7 @@ class Command(BaseCommand):
     def _find_model_weights_file(self):
         """Find the model weights file using configurable search patterns and directories."""
         # Load setup configuration
-        from endoreg_db.utils.setup_config import setup_config
+        from endoreg_db.utils.data_loading.setup_config import setup_config
 
         # First try to find weights using configured patterns
         found_files = setup_config.find_model_weights_files()
@@ -306,7 +309,7 @@ class Command(BaseCommand):
             yaml_only (bool): If True, only set active metadata but don't create new metadata
         """
         from endoreg_db.models import AiModel, LabelSet, ModelMeta
-        from endoreg_db.utils.setup_config import setup_config
+        from endoreg_db.utils.data_loading.setup_config import setup_config
 
         all_models = AiModel.objects.all()
         fixed_count = 0
@@ -349,7 +352,7 @@ class Command(BaseCommand):
                 weights_path = ""
                 if weights_file:
                     # If we have weights, set up the relative path
-                    from endoreg_db.utils.paths import STORAGE_DIR
+                    from endoreg_db.utils.filesystem.paths import STORAGE_DIR
 
                     try:
                         weights_path = str(Path(weights_file).relative_to(STORAGE_DIR))
@@ -401,7 +404,7 @@ class Command(BaseCommand):
                         )
                         weights_file = self._find_model_weights_file()
                         if weights_file:
-                            from endoreg_db.utils.paths import STORAGE_DIR
+                            from endoreg_db.utils.filesystem.paths import STORAGE_DIR
 
                             try:
                                 weights_path = str(

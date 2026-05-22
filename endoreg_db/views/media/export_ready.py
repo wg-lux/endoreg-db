@@ -9,7 +9,7 @@ from endoreg_db.services.export_ready import (
     ReadyForExportError,
     mark_video_ready_for_export,
 )
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
 
 
 class VideoMarkReadyForExportView(APIView):

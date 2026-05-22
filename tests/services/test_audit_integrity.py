@@ -200,7 +200,7 @@ def test_refresh_task_delegates_to_locked_refresh():
 
 def test_video_post_validation_task_delegates_to_runner():
     with patch(
-        "endoreg_db.services.video_post_validation_jobs._run_video_post_validation_rebuild",
+        "endoreg_db.services.jobs.video_post_validation_jobs._run_video_post_validation_rebuild",
         return_value=True,
     ) as runner:
         result = run_video_post_validation_rebuild_task.run(
@@ -247,7 +247,7 @@ def test_video_temporal_inference_task_delegates_to_runner():
 
 def test_model_training_task_delegates_to_runner():
     with patch(
-        "endoreg_db.services.model_training_jobs._execute_model_training_run",
+        "endoreg_db.services.jobs.model_training_jobs._execute_model_training_run",
         return_value=None,
     ) as runner:
         result = run_model_training_task.run(

@@ -6,25 +6,25 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from endoreg_db.utils import paths as path_utils
-from endoreg_db.utils.file_operations import (
+from endoreg_db.utils.filesystem import paths as path_utils
+from endoreg_db.utils.filesystem.file_operations import (
     atomic_move_path,
     atomic_write_file,
     ensure_file_mtime_after,
     safe_unlink_file,
     sha256_file,
 )
-from endoreg_db.utils.paths import (
+from endoreg_db.utils.filesystem.paths import (
     protected_media_root,
     to_protected_media_relative,
     to_storage_relative,
 )
-from endoreg_db.utils.storage_profile import (
+from endoreg_db.utils.storage.profile import (
     PayloadKind,
     StoragePolicy,
     resolve_storage_policy,
 )
-from endoreg_db.utils.storage_streaming import field_file_size, iter_field_file_bytes
+from endoreg_db.utils.storage.streaming import field_file_size, iter_field_file_bytes
 from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
 
 logger = logging.getLogger(__name__)

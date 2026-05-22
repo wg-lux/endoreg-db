@@ -10,7 +10,7 @@ from endoreg_db.apps import EndoregDbConfig
 @pytest.mark.unit
 def test_app_ready_does_not_import_reconciliation_for_pytest(monkeypatch):
     import endoreg_db.apps as apps_module
-    import endoreg_db.utils.paths as paths_module
+    import endoreg_db.utils.filesystem.paths as paths_module
 
     monkeypatch.setattr(apps_module, "ensure_keycloak_settings", lambda: None)
     monkeypatch.setattr(

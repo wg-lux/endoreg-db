@@ -3,7 +3,7 @@ from endoreg_db.serializers.patient_examination import PatientExaminationSeriali
 from django.db import transaction
 from rest_framework import generics, status
 from rest_framework.response import Response
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
 
 import logging
 

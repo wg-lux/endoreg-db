@@ -30,24 +30,24 @@ class VideoFpsViewTest(TestCase):
         self.assertEqual(response.data["video_id"], self.video.pk)
         self.assertEqual(response.data["fps"], 25.0)
 
-    def test_uses_get_fps_method(self):
+    def test_uses_video_fps_service(self):
         request = self.factory.get(f"/api/media/videos/{self.video.pk}/fps/")
 
         with patch(
-            "endoreg_db.views.video.video_fps.VideoFile.get_fps",
+            "endoreg_db.views.video.video_fps.get_video_fps",
             return_value=29.97,
-        ) as mocked_get_fps:
+        ) as mocked_get_video_fps:
             response = self.view(request, pk=self.video.pk)
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["fps"], 29.97)
-        mocked_get_fps.assert_called_once()
+        mocked_get_video_fps.assert_called_once()
 
     def test_returns_422_when_fps_missing(self):
         request = self.factory.get(f"/api/media/videos/{self.video.pk}/fps/")
 
         with patch(
-            "endoreg_db.views.video.video_fps.VideoFile.get_fps",
+            "endoreg_db.views.video.video_fps.get_video_fps",
             side_effect=ValueError("fps unavailable"),
         ):
             response = self.view(request, pk=self.video.pk)

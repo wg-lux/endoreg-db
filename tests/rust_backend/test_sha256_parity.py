@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from endoreg_db.utils.file_operations import sha256_file
-from endoreg_db.utils.rust_backend import sha256_file_hex as rust_sha256_file_hex
+from endoreg_db.utils.filesystem.file_operations import sha256_file
+from endoreg_db.utils.system.rust_backend import sha256_file_hex as rust_sha256_file_hex
 
 
 def _python_sha256_file(path: Path, chunk_size: int) -> str:
@@ -42,7 +42,7 @@ def test_sha256_rust_backend_returns_none_and_preserves_python_fallback(
     test_file = tmp_path / "sample.bin"
     test_file.write_bytes(b"abc123")
 
-    import endoreg_db.utils.rust_backend as rust_backend_module
+    import endoreg_db.utils.system.rust_backend as rust_backend_module
 
     monkeypatch.setattr(
         rust_backend_module,

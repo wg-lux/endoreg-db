@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from rest_framework import serializers
 
 from endoreg_db.models import VideoProcessingHistory
-from endoreg_db.utils.media_urls import (
+from endoreg_db.utils.web.media_urls import (
     build_absolute_media_url,
     build_video_stream_path,
 )

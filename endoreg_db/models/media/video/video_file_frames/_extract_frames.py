@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from endoreg_db.models.media.video.video_file_io import _get_frame_dir_path
 from endoreg_db.utils.storage import materialize_video_file
-from endoreg_db.utils.file_operations import (
+from endoreg_db.utils.filesystem.file_operations import (
     atomic_move_file,
     atomic_move_path,
     ensure_directory,
@@ -24,7 +24,9 @@ if TYPE_CHECKING:
 
 from django.db import transaction
 
-from endoreg_db.utils.rust_backend import parse_extracted_frame_numbers as rust_parse
+from endoreg_db.utils.system.rust_backend import (
+    parse_extracted_frame_numbers as rust_parse,
+)
 
 logger = logging.getLogger(__name__)
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from endoreg_db.utils.storage_profile import (
+from endoreg_db.utils.storage.profile import (
     PayloadKind,
     StoragePolicy,
     StorageProfile,

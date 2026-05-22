@@ -9,20 +9,20 @@ from unittest.mock import Mock
 import pytest
 from django.utils import timezone
 
-from endoreg_db.models import (
-    AiModel,
-    Center,
-    InformationSource,
-    Label,
-    LabelSet,
+from endoreg_db.models.administration.ai.ai_model import AiModel
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.label.label import Label
+from endoreg_db.models.label.label_set import LabelSet
+from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
-    ModelMeta,
-    Frame,
-    VideoFile,
-    VideoPredictionMeta,
-    VideoProcessingHistory,
 )
+from endoreg_db.models.media.frame.frame import Frame
 from endoreg_db.models.media.video.video_file_ai import VideoFrameScoreResult
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
+from endoreg_db.models.metadata.model_meta import ModelMeta
+from endoreg_db.models.metadata.video_prediction_meta import VideoPredictionMeta
+from endoreg_db.models.other.information_source import InformationSource
 from endoreg_db.services import video_temporal_inference as jobs
 
 
@@ -517,12 +517,16 @@ def test_run_video_temporal_inference_materializes_lx_core_segments(
         config={"kind": jobs.TEMPORAL_INFERENCE_KIND},
     )
 
-    monkeypatch.setattr(VideoFile, "update_video_meta", lambda self: None)
-    monkeypatch.setattr(VideoFile, "extract_frames", lambda self, overwrite=False: True)
+    monkeypatch.setattr(jobs, "update_video_meta", lambda video_obj: None)
     monkeypatch.setattr(
-        VideoFile,
-        "update_text_metadata",
-        lambda self, **kwargs: True,
+        jobs,
+        "extract_video_frames",
+        lambda video_obj, overwrite=False: True,
+    )
+    monkeypatch.setattr(
+        jobs,
+        "update_video_text_metadata",
+        lambda video_obj, **kwargs: True,
     )
     monkeypatch.setattr(jobs, "_has_extracted_frame_files", lambda video_obj: True)
 
@@ -540,7 +544,7 @@ def test_run_video_temporal_inference_materializes_lx_core_segments(
             frame_count=4,
         )
 
-    monkeypatch.setattr(VideoFile, "predict_video", _fake_predict_video)
+    monkeypatch.setattr(jobs, "predict_video", _fake_predict_video)
 
     def _fake_lx_core(**kwargs):
         assert kwargs["lx_options"]["include_score_vectors"] is False
@@ -597,18 +601,18 @@ def test_run_video_temporal_inference_stream_succeeds_when_extract_frames_would_
         config={"kind": jobs.TEMPORAL_INFERENCE_KIND},
     )
 
-    monkeypatch.setattr(VideoFile, "update_video_meta", lambda self: None)
+    monkeypatch.setattr(jobs, "update_video_meta", lambda video_obj: None)
     monkeypatch.setattr(
-        VideoFile,
-        "extract_frames",
-        lambda self, overwrite=False: (_ for _ in ()).throw(
+        jobs,
+        "extract_video_frames",
+        lambda video_obj, overwrite=False: (_ for _ in ()).throw(
             AssertionError("streaming temporal inference must not extract frames")
         ),
     )
     monkeypatch.setattr(
-        VideoFile,
-        "update_text_metadata",
-        lambda self, **kwargs: (_ for _ in ()).throw(
+        jobs,
+        "update_video_text_metadata",
+        lambda video_obj, **kwargs: (_ for _ in ()).throw(
             AssertionError("streaming temporal inference must not require frame OCR")
         ),
     )
@@ -633,7 +637,7 @@ def test_run_video_temporal_inference_stream_succeeds_when_extract_frames_would_
             timestamps=[0.0, 0.04, 0.08],
         )
 
-    monkeypatch.setattr(VideoFile, "predict_video", _fake_predict_video)
+    monkeypatch.setattr(jobs, "predict_video", _fake_predict_video)
 
     def _fake_lx_core(**kwargs):
         score_result = kwargs["score_result"]
@@ -683,18 +687,18 @@ def test_run_video_temporal_inference_stream_failure_does_not_create_frame_cache
         config={"kind": jobs.TEMPORAL_INFERENCE_KIND},
     )
 
-    monkeypatch.setattr(VideoFile, "update_video_meta", lambda self: None)
+    monkeypatch.setattr(jobs, "update_video_meta", lambda video_obj: None)
     monkeypatch.setattr(
-        VideoFile,
-        "extract_frames",
-        lambda self, overwrite=False: (_ for _ in ()).throw(
+        jobs,
+        "extract_video_frames",
+        lambda video_obj, overwrite=False: (_ for _ in ()).throw(
             AssertionError("streaming temporal inference must not extract frames")
         ),
     )
     monkeypatch.setattr(
-        VideoFile,
+        jobs,
         "predict_video",
-        lambda self, **kwargs: (_ for _ in ()).throw(
+        lambda video_obj, **kwargs: (_ for _ in ()).throw(
             RuntimeError("streaming decode failed")
         ),
     )
@@ -733,16 +737,16 @@ def test_run_video_temporal_inference_auto_uses_cache_when_frame_cache_exists(
     )
     calls: list[str] = []
 
-    monkeypatch.setattr(VideoFile, "update_video_meta", lambda self: None)
+    monkeypatch.setattr(jobs, "update_video_meta", lambda video_obj: None)
     monkeypatch.setattr(
-        VideoFile,
-        "extract_frames",
-        lambda self, overwrite=False: calls.append("extract_frames") or True,
+        jobs,
+        "extract_video_frames",
+        lambda video_obj, overwrite=False: calls.append("extract_frames") or True,
     )
     monkeypatch.setattr(
-        VideoFile,
-        "update_text_metadata",
-        lambda self, **kwargs: calls.append("update_text_metadata") or True,
+        jobs,
+        "update_video_text_metadata",
+        lambda video_obj, **kwargs: calls.append("update_text_metadata") or True,
     )
     monkeypatch.setattr(jobs, "_has_extracted_frame_files", lambda video_obj: True)
 
@@ -755,7 +759,7 @@ def test_run_video_temporal_inference_auto_uses_cache_when_frame_cache_exists(
             frame_count=1,
         )
 
-    monkeypatch.setattr(VideoFile, "predict_video", _fake_predict_video)
+    monkeypatch.setattr(jobs, "predict_video", _fake_predict_video)
     monkeypatch.setattr(
         jobs,
         "_run_lx_ai_core_temporal_inference",
@@ -797,18 +801,18 @@ def test_run_video_temporal_inference_auto_uses_stream_without_frame_cache(
         config={"kind": jobs.TEMPORAL_INFERENCE_KIND, "frame_source_mode": "auto"},
     )
 
-    monkeypatch.setattr(VideoFile, "update_video_meta", lambda self: None)
+    monkeypatch.setattr(jobs, "update_video_meta", lambda video_obj: None)
     monkeypatch.setattr(
-        VideoFile,
-        "extract_frames",
-        lambda self, overwrite=False: (_ for _ in ()).throw(
+        jobs,
+        "extract_video_frames",
+        lambda video_obj, overwrite=False: (_ for _ in ()).throw(
             AssertionError("auto stream mode must not extract frames")
         ),
     )
     monkeypatch.setattr(
-        VideoFile,
-        "update_text_metadata",
-        lambda self, **kwargs: (_ for _ in ()).throw(
+        jobs,
+        "update_video_text_metadata",
+        lambda video_obj, **kwargs: (_ for _ in ()).throw(
             AssertionError("auto stream mode must not require frame OCR")
         ),
     )
@@ -825,7 +829,7 @@ def test_run_video_temporal_inference_auto_uses_stream_without_frame_cache(
             timestamps=[0.0],
         )
 
-    monkeypatch.setattr(VideoFile, "predict_video", _fake_predict_video)
+    monkeypatch.setattr(jobs, "predict_video", _fake_predict_video)
     monkeypatch.setattr(
         jobs,
         "_run_lx_ai_core_temporal_inference",
@@ -874,22 +878,22 @@ def test_run_video_temporal_inference_fails_when_current_meta_materializes_nothi
         config={"kind": jobs.TEMPORAL_INFERENCE_KIND},
     )
 
-    monkeypatch.setattr(VideoFile, "update_video_meta", lambda self: None)
+    monkeypatch.setattr(jobs, "update_video_meta", lambda video_obj: None)
     monkeypatch.setattr(
-        VideoFile,
-        "extract_frames",
-        lambda self, overwrite=False: True,
+        jobs,
+        "extract_video_frames",
+        lambda video_obj, overwrite=False: True,
     )
     monkeypatch.setattr(
-        VideoFile,
-        "update_text_metadata",
-        lambda self, **kwargs: True,
+        jobs,
+        "update_video_text_metadata",
+        lambda video_obj, **kwargs: True,
     )
     monkeypatch.setattr(jobs, "_has_extracted_frame_files", lambda video_obj: True)
     monkeypatch.setattr(
-        VideoFile,
+        jobs,
         "predict_video",
-        lambda self, **kwargs: VideoFrameScoreResult(
+        lambda video_obj, **kwargs: VideoFrameScoreResult(
             labels=[label_a.name],
             frame_scores=[[0.8], [0.9], [0.7], [0.1]],
             device="cpu",
@@ -955,20 +959,20 @@ def test_run_video_temporal_inference_rolls_back_frames_on_failure(
         config={"kind": jobs.TEMPORAL_INFERENCE_KIND},
     )
 
-    monkeypatch.setattr(VideoFile, "update_video_meta", lambda self: None)
+    monkeypatch.setattr(jobs, "update_video_meta", lambda video_obj: None)
 
-    def fake_extract_frames(self, overwrite=False):
+    def fake_extract_frames(video_obj, overwrite=False):
         frame_dir.mkdir(parents=True, exist_ok=True)
         (frame_dir / "frame_0000000.jpg").write_bytes(b"frame")
         Frame.objects.update_or_create(
-            video=self,
+            video=video_obj,
             frame_number=0,
             defaults={
                 "relative_path": "frame_0000000.jpg",
                 "is_extracted": True,
             },
         )
-        state = self.get_or_create_state()
+        state = video_obj.get_or_create_state()
         state.frames_initialized = True
         state.frame_count = 1
         state.frames_extracted = True
@@ -981,17 +985,19 @@ def test_run_video_temporal_inference_rolls_back_frames_on_failure(
         )
         return True
 
-    monkeypatch.setattr(VideoFile, "extract_frames", fake_extract_frames)
+    monkeypatch.setattr(jobs, "extract_video_frames", fake_extract_frames)
     monkeypatch.setattr(
-        VideoFile,
-        "update_text_metadata",
-        lambda self, **kwargs: True,
+        jobs,
+        "update_video_text_metadata",
+        lambda video_obj, **kwargs: True,
     )
     monkeypatch.setattr(jobs, "_has_extracted_frame_files", lambda video_obj: True)
     monkeypatch.setattr(
-        VideoFile,
+        jobs,
         "predict_video",
-        lambda self, **kwargs: (_ for _ in ()).throw(RuntimeError("prediction failed")),
+        lambda video_obj, **kwargs: (_ for _ in ()).throw(
+            RuntimeError("prediction failed")
+        ),
     )
 
     with pytest.raises(RuntimeError, match="prediction failed"):

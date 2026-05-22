@@ -181,6 +181,8 @@ def test_reimport_returns_clear_error_when_raw_source_is_missing(tmp_path, monke
 @pytest.mark.django_db
 def test_reimport_uses_retry_true_and_refreshes_video(tmp_path, monkeypatch):
     module = _load_video_view_module("reimport")
+    import endoreg_db.services.jobs.video_reimport_jobs as reimport_jobs
+
     factory = APIRequestFactory()
 
     raw_path = tmp_path / "raw.mp4"
@@ -224,6 +226,18 @@ def test_reimport_uses_retry_true_and_refreshes_video(tmp_path, monkeypatch):
         or {"status": "queued", "queued": True, "history_id": 123},
         raising=True,
     )
+    monkeypatch.setattr(
+        reimport_jobs,
+        "initialize_video_specs",
+        lambda target_video: target_video.initialize_video_specs(),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        reimport_jobs,
+        "initialize_video_frames",
+        lambda target_video: target_video.initialize_frames(),
+        raising=True,
+    )
 
     view = module.VideoReimportView()
     view.video_service = _FakeService()
@@ -242,8 +256,13 @@ def test_reimport_uses_retry_true_and_refreshes_video(tmp_path, monkeypatch):
 
 
 @pytest.mark.django_db
-def test_reset_reimport_state_does_not_reactivate_duplicate_upload_jobs(tmp_path):
+def test_reset_reimport_state_does_not_reactivate_duplicate_upload_jobs(
+    tmp_path,
+    monkeypatch,
+):
     module = _load_video_view_module("reimport")
+    import endoreg_db.services.jobs.video_reimport_jobs as reimport_jobs
+
     center = Center.objects.create(name="reimport-center")
     raw_path = tmp_path / "raw.mp4"
     raw_path.write_bytes(b"raw")
@@ -265,6 +284,18 @@ def test_reset_reimport_state_does_not_reactivate_duplicate_upload_jobs(tmp_path
         content_type="video/mp4",
         source_center=center,
         content_hash=video.video_hash,
+    )
+    monkeypatch.setattr(
+        reimport_jobs,
+        "initialize_video_specs",
+        lambda target_video: target_video.initialize_video_specs(),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        reimport_jobs,
+        "initialize_video_frames",
+        lambda target_video: target_video.initialize_frames(),
+        raising=True,
     )
 
     reset_count = module._reset_reimport_state(video)

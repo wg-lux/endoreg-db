@@ -22,7 +22,7 @@ from endoreg_db.services.hub import (
     local_study_server_mode_enabled,
     resolve_allowed_center_id,
 )
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
 
 _BOOLEAN_PAYLOAD_KEYS = {
     "only_true",

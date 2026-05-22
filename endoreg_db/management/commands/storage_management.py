@@ -5,14 +5,14 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from django.core.management.base import BaseCommand, CommandError
 from endoreg_db.models import VideoFile
-from endoreg_db.utils.paths import PROTECTED_DATA_ROOT, data_paths
-from endoreg_db.utils.file_operations import (
+from endoreg_db.utils.filesystem.paths import PROTECTED_DATA_ROOT, data_paths
+from endoreg_db.utils.filesystem.file_operations import (
     atomic_write_file,
     safe_rmtree,
     safe_unlink_file,
 )
 from endoreg_db.utils.storage import delete_field_file
-from endoreg_db.utils.storage_streaming import field_file_size
+from endoreg_db.utils.storage.streaming import field_file_size
 
 logger = logging.getLogger(__name__)
 

@@ -10,7 +10,10 @@ from huggingface_hub import hf_hub_download
 from ..administration.ai.ai_model import AiModel
 from ..label.label_set import LabelSet
 from ..utils import STORAGE_DIR, WEIGHTS_DIR
-from endoreg_db.utils.file_operations import atomic_copy_file, ensure_directory
+from endoreg_db.utils.filesystem.file_operations import (
+    atomic_copy_file,
+    ensure_directory,
+)
 
 logger = getLogger("ai_model")
 

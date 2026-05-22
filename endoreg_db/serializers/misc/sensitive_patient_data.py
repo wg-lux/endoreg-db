@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from endoreg_db.models.media import RawPdfFile, VideoFile
-from endoreg_db.utils.media_urls import build_pdf_stream_path
+from endoreg_db.utils.web.media_urls import build_pdf_stream_path
 
 # TODO add this "naming convention" to the documentation
 # VoP: Video or Pdf

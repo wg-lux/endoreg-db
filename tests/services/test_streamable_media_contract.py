@@ -8,7 +8,7 @@ import pytest
 
 from endoreg_db.models import VideoFile
 from endoreg_db.services import streamable_media
-from endoreg_db.utils import paths as paths_module
+from endoreg_db.utils.filesystem import paths as paths_module
 
 
 def test_streamable_materialization_never_moves_canonical_source() -> None:

@@ -378,7 +378,7 @@ class AnonymizationMetricsEndpointTests(TestCase):
     @contextmanager
     def _production_permissions(self):
         with (
-            patch("endoreg_db.utils.permissions.is_debug_mode", return_value=False),
+            patch("endoreg_db.utils.web.permissions.is_debug_mode", return_value=False),
             patch("endoreg_db.authz.permissions.is_debug_mode", return_value=False),
         ):
             yield

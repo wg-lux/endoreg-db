@@ -1,4 +1,4 @@
-from endoreg_db.utils.extract_specific_frames import extract_selected_frames
+from endoreg_db.utils.media.extract_specific_frames import extract_selected_frames
 from rest_framework import serializers
 from endoreg_db.models import Label, LabelVideoSegment
 from itertools import combinations

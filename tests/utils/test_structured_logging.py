@@ -4,7 +4,7 @@ import json
 import logging
 from pathlib import Path
 
-from endoreg_db.utils.structured_logging import (
+from endoreg_db.utils.observability.structured_logging import (
     StructuredJsonFormatter,
     emit_structured_event,
     path_reference,

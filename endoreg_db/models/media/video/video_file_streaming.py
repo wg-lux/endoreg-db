@@ -12,9 +12,9 @@ from endoreg_db.models.media.video.storage_mode import (
 )
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
-from endoreg_db.utils.paths import normalize_protected_media_relative_path
+from endoreg_db.utils.filesystem.paths import normalize_protected_media_relative_path
 from endoreg_db.utils.storage import file_exists
-from endoreg_db.utils.storage_streaming import maybe_local_plaintext_path
+from endoreg_db.utils.storage.streaming import maybe_local_plaintext_path
 
 if TYPE_CHECKING:
     from .video_file import VideoFile

@@ -13,10 +13,10 @@ import io
 
 from django.core.files import File
 
-from endoreg_db.utils.rust_backend import (
+from endoreg_db.utils.system.rust_backend import (
     build_frame_records as rust_build_frame_records,
 )
-from endoreg_db.utils.file_operations import ensure_directory
+from endoreg_db.utils.filesystem.file_operations import ensure_directory
 
 from .ffmpeg_wrapper import extract_frames as ffmpeg_extract_frames
 

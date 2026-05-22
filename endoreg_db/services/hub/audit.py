@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from endoreg_db.utils.structured_logging import emit_structured_event
+from endoreg_db.utils.observability.structured_logging import emit_structured_event
 
 logger = logging.getLogger("endoreg_db.hub.audit")
 

@@ -484,9 +484,9 @@ def test_import_and_anonymize_duplicate_success_skips_storage_preflight_and_stag
         raising=True,
     )
     monkeypatch.setattr(
-        vis_module.VideoFile,
+        vis_module,
         "get_video_by_content_hash",
-        staticmethod(lambda file_hash: DummyVideo()),
+        lambda file_hash: DummyVideo(),
         raising=True,
     )
     monkeypatch.setattr(
@@ -569,9 +569,9 @@ def test_import_and_anonymize_completed_duplicate_removes_import_source(
         raising=True,
     )
     monkeypatch.setattr(
-        vis_module.VideoFile,
+        vis_module,
         "get_video_by_content_hash",
-        staticmethod(lambda file_hash: DummyVideo()),
+        lambda file_hash: DummyVideo(),
         raising=True,
     )
     monkeypatch.setattr(
@@ -653,9 +653,9 @@ def test_import_and_anonymize_completed_duplicate_keeps_external_source(
         raising=True,
     )
     monkeypatch.setattr(
-        vis_module.VideoFile,
+        vis_module,
         "get_video_by_content_hash",
-        staticmethod(lambda file_hash: DummyVideo()),
+        lambda file_hash: DummyVideo(),
         raising=True,
     )
     monkeypatch.setattr(
@@ -710,9 +710,9 @@ def test_import_and_anonymize_success_history_missing_media_fails_before_staging
         raising=True,
     )
     monkeypatch.setattr(
-        vis_module.VideoFile,
+        vis_module,
         "get_video_by_content_hash",
-        staticmethod(lambda file_hash: None),
+        lambda file_hash: None,
         raising=True,
     )
 

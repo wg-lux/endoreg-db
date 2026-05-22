@@ -6,7 +6,7 @@ from django.db import transaction
 from django.db.models import Q
 
 from endoreg_db.models import Frame, LabelVideoSegment, VideoFile
-from endoreg_db.utils.file_operations import safe_unlink_file
+from endoreg_db.utils.filesystem.file_operations import safe_unlink_file
 
 logger = logging.getLogger(__name__)
 

@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 
 from endoreg_db.import_files.report_import_service import ReportImportService
-from endoreg_db.utils.file_operations import sha256_file
-from endoreg_db.utils.rust_backend import (
+from endoreg_db.utils.filesystem.file_operations import sha256_file
+from endoreg_db.utils.system.rust_backend import (
     parse_extracted_frame_numbers,
 )
 
@@ -51,7 +51,7 @@ def test_parse_extracted_frame_numbers_matches_expected_values() -> None:
 def test_build_frame_records_returns_none_when_rust_backend_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import endoreg_db.utils.rust_backend as rust_backend_module
+    import endoreg_db.utils.system.rust_backend as rust_backend_module
 
     frame_paths = [Path("/tmp/frame_0000001.jpg")]
 
@@ -67,7 +67,7 @@ def test_build_frame_records_returns_none_when_rust_backend_errors(
 def test_build_expected_frame_records_returns_none_when_rust_backend_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import endoreg_db.utils.rust_backend as rust_backend_module
+    import endoreg_db.utils.system.rust_backend as rust_backend_module
 
     monkeypatch.setattr(
         rust_backend_module,
