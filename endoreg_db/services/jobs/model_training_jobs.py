@@ -15,6 +15,10 @@ from django.core.management import call_command
 from django.utils import timezone
 
 from endoreg_db.models import AIDataSet, AIModelTrainingRun, Frame, LabelVideoSegment
+from endoreg_db.services.jobs.heavy_jobs import (
+    HeavyJobKind,
+    ensure_secure_transport_for_job_kind,
+)
 from endoreg_db.services.video_files._frames._manage_frame_range import (
     extract_frame_range_to_directory,
 )
@@ -514,6 +518,7 @@ def _launch_model_training_run(
     if mode == "celery":
         from endoreg_db.tasks import run_model_training_task
 
+        ensure_secure_transport_for_job_kind(HeavyJobKind.MODEL_TRAINING)
         run_model_training_task.apply_async(
             args=[run_id, command_kwargs],
             queue=getattr(settings, "CELERY_TRAINING_QUEUE", "model_training"),

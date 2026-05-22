@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import uuid
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from django.db import transaction
 from django.utils import timezone
@@ -17,6 +17,7 @@ from endoreg_db.models import (
 )
 from endoreg_db.services.jobs.heavy_jobs import (
     HeavyJobKind,
+    ensure_secure_transport_for_job_kind,
     queue_for_job_kind,
 )
 from endoreg_db.services.hub.cleanup import cleanup_upload_job_source
@@ -25,8 +26,13 @@ from endoreg_db.utils.storage import ensure_local_file
 
 logger = logging.getLogger(__name__)
 
-REPORT_LLM_REIMPORT_OPERATION = ReportLlmInferenceJob.OPERATION_REIMPORT
-REPORT_LLM_IMPORT_OPERATION = ReportLlmInferenceJob.OPERATION_IMPORT
+ReportLlmOperation = Literal["report_llm_reimport", "report_llm_import"]
+REPORT_LLM_REIMPORT_OPERATION = cast(
+    ReportLlmOperation, ReportLlmInferenceJob.OPERATION_REIMPORT
+)
+REPORT_LLM_IMPORT_OPERATION = cast(
+    ReportLlmOperation, ReportLlmInferenceJob.OPERATION_IMPORT
+)
 REPORT_LLM_JOB_MODE_DEFAULT = "celery"
 REPORT_LLM_DISPATCH_DELAY_SECONDS_DEFAULT = 0
 
@@ -164,7 +170,7 @@ def _config_from_payload(
     payload: Any,
     *,
     queue: str,
-    operation: str,
+    operation: ReportLlmOperation,
 ) -> ReportLlmJobConfig:
     safe_payload = _json_safe_dict(payload)
     retry = safe_payload.get("retry")
@@ -600,6 +606,7 @@ def dispatch_report_llm_reimport(
     try:
         from endoreg_db.tasks import run_report_llm_reimport_task
 
+        ensure_secure_transport_for_job_kind(HeavyJobKind.REPORT_LLM_REIMPORT)
         async_result = run_report_llm_reimport_task.apply_async(
             args=(job.job_key,),
             queue=queue,
@@ -705,6 +712,7 @@ def dispatch_report_llm_import(
     try:
         from endoreg_db.tasks import run_report_llm_import_task
 
+        ensure_secure_transport_for_job_kind(HeavyJobKind.REPORT_LLM_IMPORT)
         async_result = run_report_llm_import_task.apply_async(
             args=(job.job_key,),
             queue=queue,

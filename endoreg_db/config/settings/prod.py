@@ -32,6 +32,12 @@ if env_bool("DJANGO_DEBUG", False) and not pytest_active:
         "DJANGO_DEBUG must be false in production; refusing to start with debug-mode auth bypass enabled"
     )
 
+if WATCHER_CELERY_INLINE_FALLBACK_ENABLED:
+    raise ValueError(
+        "WATCHER_CELERY_INLINE_FALLBACK_ENABLED must be false in production; "
+        "broker failures must fail closed instead of switching watcher processing inline"
+    )
+
 SECRET_KEY = env_str("DJANGO_SECRET_KEY")
 if not SECRET_KEY:
     if pytest_active:

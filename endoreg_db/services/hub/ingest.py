@@ -188,7 +188,7 @@ class UploadProvenance(TypedDict, total=False):
     llm_job_id: str
     llm_task_id: str
     llm_queue: str
-    prediction_model_name: str
+    prediction_model_name: str | None
     prediction_task_id: str
     prediction_history_id: int | None
     prediction_queue: str
@@ -1772,6 +1772,7 @@ def start_upload_job_processing(
     try:
         if task_dispatcher is not None:
             queue = queue_for_job_kind(HeavyJobKind.PIPELINE_INGEST)
+            ensure_secure_transport_for_job_kind(HeavyJobKind.PIPELINE_INGEST)
             apply_async = getattr(task_dispatcher, "apply_async", None)
             if callable(apply_async):
                 apply_async(
@@ -1780,7 +1781,12 @@ def start_upload_job_processing(
                     routing_key=queue,
                 )
             else:
-                task_dispatcher.delay(str(upload_job.id))
+                delay = getattr(task_dispatcher, "delay", None)
+                if not callable(delay):
+                    raise TypeError(
+                        "Task dispatcher must provide apply_async or delay."
+                    )
+                delay(str(upload_job.id))
         else:
             processed = process_upload_job(str(upload_job.id))
             if not processed:
@@ -1901,7 +1907,9 @@ def process_watcher_file(
         safe_unlink_file(watched_path, missing_ok=True)
         return upload_job
     except Exception as exc:
-        if _is_celery_broker_connection_error(exc):
+        if _is_celery_broker_connection_error(exc) and bool(
+            getattr(settings, "WATCHER_CELERY_INLINE_FALLBACK_ENABLED", False)
+        ):
             logger.warning(
                 "Watcher Celery handoff failed for %s; processing inline: %s",
                 watched_path,
@@ -1919,6 +1927,12 @@ def process_watcher_file(
                 )
             except Exception as inline_exc:
                 exc = inline_exc
+        elif _is_celery_broker_connection_error(exc):
+            logger.warning(
+                "Watcher Celery handoff failed for %s and inline fallback is disabled: %s",
+                watched_path,
+                exc,
+            )
 
         logger.exception(
             "Watcher processing handoff failed for %s: %s",

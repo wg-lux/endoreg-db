@@ -20,10 +20,8 @@ from endoreg_db.models.state.video_segment_validation import (
     mark_post_validation_incomplete,
 )
 from endoreg_db.config.env import (
-    celery_broker_secure_transport_confirmed,
-    celery_broker_url_uses_secure_transport,
+    celery_broker_transport_error,
     celery_ffmpeg_media_requires_secure_transport,
-    get_celery_broker_url,
     get_celery_ffmpeg_media_queue,
     get_video_post_validation_dispatch_delay_seconds,
     get_video_post_validation_job_max_workers,
@@ -245,17 +243,13 @@ def _job_dispatch_result(
 
 
 def _ensure_ffmpeg_media_broker_transport_allowed() -> None:
-    if not celery_ffmpeg_media_requires_secure_transport():
-        return
-    if celery_broker_secure_transport_confirmed():
-        return
-    broker_url = get_celery_broker_url()
-    if celery_broker_url_uses_secure_transport(broker_url):
-        return
-    raise RuntimeError(
-        "FFmpeg media Celery dispatch requires secure broker transport "
-        "or CELERY_BROKER_SECURE_TRANSPORT_CONFIRMED=1."
+    error = celery_broker_transport_error(
+        require_secure_transport=celery_ffmpeg_media_requires_secure_transport(),
+        workload="FFmpeg media Celery",
     )
+    if error is None:
+        return
+    raise RuntimeError(error)
 
 
 def _active_reprocessing_histories(video: VideoFile):

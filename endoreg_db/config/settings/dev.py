@@ -108,3 +108,10 @@ OIDC_LOGOUT_REDIRECT_URL = KEYCLOAK.OIDC_LOGOUT_REDIRECT_URL
 # Adds extra params to the authorization request so Keycloak won’t silently SSO you.
 # Great for switching users during testing. Remove/empty in production.
 OIDC_AUTH_REQUEST_EXTRA_PARAMS = KEYCLOAK.OIDC_AUTH_REQUEST_EXTRA_PARAMS
+
+# Local watcher workflows may degrade to inline processing when the development
+# broker is not running. Production/strict profiles keep this disabled.
+WATCHER_CELERY_INLINE_FALLBACK_ENABLED = env_bool(
+    "WATCHER_CELERY_INLINE_FALLBACK_ENABLED",
+    True,
+)

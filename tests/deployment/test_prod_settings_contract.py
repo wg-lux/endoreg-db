@@ -18,6 +18,7 @@ def _run_prod_settings_probe(
     env.pop("DJANGO_REQUIRE_SECURE_PROXY_SSL_HEADER", None)
     env.pop("DJANGO_SECURE_PROXY_SSL_HEADER_NAME", None)
     env.pop("DJANGO_SECURE_PROXY_SSL_HEADER_VALUE", None)
+    env.pop("WATCHER_CELERY_INLINE_FALLBACK_ENABLED", None)
     env.update(env_overrides)
 
     probe = """
@@ -46,6 +47,7 @@ payload = {
     "session_cookie_secure": prod.SESSION_COOKIE_SECURE,
     "csrf_cookie_secure": prod.CSRF_COOKIE_SECURE,
     "oidc_verify_ssl": prod.OIDC_VERIFY_SSL,
+    "watcher_celery_inline_fallback_enabled": prod.WATCHER_CELERY_INLINE_FALLBACK_ENABLED,
     "default_authentication_classes": list(prod.REST_FRAMEWORK["DEFAULT_AUTHENTICATION_CLASSES"]),
     "default_permission_classes": list(prod.REST_FRAMEWORK["DEFAULT_PERMISSION_CLASSES"]),
     "logging_formatter": prod.LOGGING["formatters"]["structured_json"]["()"],
@@ -94,6 +96,7 @@ def test_prod_settings_accept_service_style_env_contract() -> None:
     assert payload["session_cookie_secure"] is True
     assert payload["csrf_cookie_secure"] is True
     assert payload["oidc_verify_ssl"] is True
+    assert payload["watcher_celery_inline_fallback_enabled"] is False
     assert payload["default_authentication_classes"] == [
         "rest_framework.authentication.SessionAuthentication",
         "endoreg_db.authz.auth.KeycloakJWTAuthentication",
@@ -241,6 +244,28 @@ def test_prod_settings_refuse_unsafe_proxy_https_header_value() -> None:
 
     assert result.returncode != 0
     assert "DJANGO_SECURE_PROXY_SSL_HEADER_VALUE must be https" in result.stderr
+
+
+def test_prod_settings_refuse_watcher_inline_fallback() -> None:
+    result = _run_prod_settings_probe(
+        {
+            "DJANGO_DEBUG": "false",
+            "DJANGO_SECRET_KEY": "x" * 64,
+            "DJANGO_ALLOWED_HOSTS": "annotate.example.org",
+            "DB_ENGINE": "django.db.backends.sqlite3",
+            "DB_NAME": str(
+                REPO_ROOT / "data" / "tests" / "deployment_contract.sqlite3"
+            ),
+            "OIDC_RP_CLIENT_ID": "endoregdb-api",
+            "OIDC_RP_CLIENT_SECRET": "test-secret",
+            "WATCHER_CELERY_INLINE_FALLBACK_ENABLED": "true",
+        }
+    )
+
+    assert result.returncode != 0
+    assert "WATCHER_CELERY_INLINE_FALLBACK_ENABLED must be false in production" in (
+        result.stderr
+    )
 
 
 def test_prod_settings_accept_site_node_role() -> None:

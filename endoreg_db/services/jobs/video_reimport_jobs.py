@@ -51,7 +51,7 @@ INACTIVE_UPLOAD_JOB_STATUSES = {
 VIDEO_UPLOAD_JOB_CONTENT_TYPE_QUERY = Q(content_type__startswith="video/") | Q(
     content_type=""
 )
-VIDEO_REIMPORT_HISTORY_KIND = "video_reimport"
+VIDEO_REIMPORT_HISTORY_KIND: Literal["video_reimport"] = "video_reimport"
 ACTIVE_REIMPORT_STATUSES = (
     VideoProcessingHistory.STATUS_PENDING,
     VideoProcessingHistory.STATUS_RUNNING,

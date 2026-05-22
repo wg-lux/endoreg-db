@@ -43,7 +43,10 @@ from endoreg_db.config.env import (
     get_time_zone,
     get_video_default_fps,
     get_video_temporal_inference_frame_source_mode,
+    celery_requires_secure_transport,
+    celery_runtime_config_strict,
     run_video_tests_enabled,
+    watcher_celery_inline_fallback_enabled,
 )
 
 django_stubs_ext.monkeypatch()
@@ -74,6 +77,12 @@ LOOKUP_REQUIREMENT_LEGACY_FALLBACK_ENABLED = (
 LX_DTYPES_HOST_MODELS_MODULE = get_lx_dtypes_host_models_module()
 LX_DTYPES_KB_REGISTRY = get_lx_dtypes_kb_registry()
 CELERY_BROKER_URL = get_celery_broker_url()
+CELERY_REQUIRE_SECURE_TRANSPORT = celery_requires_secure_transport(
+    deployment_role=ENDOREG_DEPLOYMENT_ROLE
+)
+CELERY_RUNTIME_CONFIG_STRICT = celery_runtime_config_strict(
+    deployment_role=ENDOREG_DEPLOYMENT_ROLE
+)
 CELERY_RESULT_BACKEND = None
 CELERY_TASK_IGNORE_RESULT = True
 CELERY_TASK_DEFAULT_QUEUE = get_celery_default_queue()
@@ -182,6 +191,7 @@ CELERY_TASK_SOFT_TIME_LIMIT = 60 * 60 * 5
 CELERY_TIMEZONE = get_time_zone()
 CELERY_ENABLE_UTC = True
 CELERY_BEAT_SCHEDULE = {}
+WATCHER_CELERY_INLINE_FALLBACK_ENABLED = watcher_celery_inline_fallback_enabled()
 if celery_audit_ledger_integrity_beat_enabled():
     CELERY_BEAT_SCHEDULE["audit-ledger-integrity-refresh"] = {
         "task": "endoreg_db.refresh_audit_ledger_integrity_status",
@@ -311,6 +321,8 @@ __all__ = [
     "LX_DTYPES_HOST_MODELS_MODULE",
     "LX_DTYPES_KB_REGISTRY",
     "CELERY_BROKER_URL",
+    "CELERY_REQUIRE_SECURE_TRANSPORT",
+    "CELERY_RUNTIME_CONFIG_STRICT",
     "CELERY_RESULT_BACKEND",
     "CELERY_TASK_IGNORE_RESULT",
     "CELERY_TASK_DEFAULT_QUEUE",
@@ -334,6 +346,7 @@ __all__ = [
     "CELERY_TIMEZONE",
     "CELERY_ENABLE_UTC",
     "CELERY_BEAT_SCHEDULE",
+    "WATCHER_CELERY_INLINE_FALLBACK_ENABLED",
     "TEMPLATES",
     "TEST_LOGGER_NAMES",
     "REST_FRAMEWORK",

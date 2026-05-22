@@ -91,6 +91,12 @@ CACHES = {
     }
 }
 
+# Tests exercise watcher-local import behavior without requiring a live broker.
+WATCHER_CELERY_INLINE_FALLBACK_ENABLED = env_bool(
+    "WATCHER_CELERY_INLINE_FALLBACK_ENABLED",
+    True,
+)
+
 # Faster password hashing
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 

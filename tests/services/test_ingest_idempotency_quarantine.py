@@ -306,6 +306,70 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
         self.assertTrue(upload_job.source_file_persisted)
         self.assertFalse(temp_file_path.exists())
 
+    @override_settings(WATCHER_CELERY_INLINE_FALLBACK_ENABLED=True)
+    def test_process_watcher_file_uses_explicit_inline_fallback_for_pdf_broker_error(
+        self,
+    ):
+        filename = "fallback_watcher_report.pdf"
+        temp_file_path = self._create_temp_file(filename, self.pdf_content)
+
+        def _inline_fallback(**kwargs):
+            upload_job = kwargs["upload_job"]
+            upload_job.mark_completed()
+            safe_unlink_file(kwargs["watched_path"], missing_ok=True)
+            return upload_job
+
+        with (
+            patch(
+                "endoreg_db.tasks.process_upload_job.apply_async",
+                side_effect=ConnectionRefusedError("broker down"),
+            ),
+            patch(
+                "endoreg_db.services.hub.ingest._run_watcher_upload_job_inline",
+                side_effect=_inline_fallback,
+            ) as inline_fallback,
+        ):
+            upload_job = process_watcher_file(
+                file_path=temp_file_path,
+                file_type="report",
+                center=self.center,
+            )
+
+        upload_job.refresh_from_db()
+        self.assertEqual(upload_job.status, UploadJob.Status.ANONYMIZED)
+        inline_fallback.assert_called_once()
+        self.assertEqual(inline_fallback.call_args.kwargs["normalized_type"], "report")
+
+    @override_settings(WATCHER_CELERY_INLINE_FALLBACK_ENABLED=False)
+    def test_process_watcher_file_fails_closed_on_pdf_broker_error(self):
+        filename = "fail_closed_watcher_report.pdf"
+        temp_file_path = self._create_temp_file(filename, self.pdf_content)
+
+        with (
+            patch(
+                "endoreg_db.tasks.process_upload_job.apply_async",
+                side_effect=ConnectionRefusedError("broker down"),
+            ),
+            patch(
+                "endoreg_db.services.hub.ingest._run_watcher_upload_job_inline",
+                side_effect=AssertionError("inline fallback must be disabled"),
+            ),
+            self.assertRaises(ConnectionRefusedError),
+        ):
+            process_watcher_file(
+                file_path=temp_file_path,
+                file_type="report",
+                center=self.center,
+            )
+
+        upload_job = UploadJob.objects.order_by("-created_at").first()
+        self.assertIsNotNone(upload_job)
+        self.assertEqual(upload_job.status, UploadJob.Status.ERROR)
+        self.assertIn("broker down", upload_job.error_detail)
+        quarantined_path = self.quarantine_dir / filename
+        self.assertTrue(quarantined_path.exists())
+        self.assertFalse(temp_file_path.exists())
+
     def test_process_watcher_file_quarantines_on_failure(self):
         filename = "failed_watcher_video.mp4"
         temp_file_path = self._create_temp_file(filename, self.video_content)

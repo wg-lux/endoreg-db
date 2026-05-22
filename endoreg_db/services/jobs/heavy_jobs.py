@@ -6,9 +6,10 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from endoreg_db.config.env import (
-    celery_broker_secure_transport_confirmed,
-    celery_broker_url_uses_secure_transport,
+    celery_broker_transport_error,
     celery_ffmpeg_media_requires_secure_transport,
+    celery_frame_extraction_requires_secure_transport,
+    celery_requires_secure_transport,
     get_celery_default_queue,
     get_celery_ffmpeg_media_queue,
     get_celery_frame_extraction_queue,
@@ -17,7 +18,6 @@ from endoreg_db.config.env import (
     get_celery_maintenance_queue,
     get_celery_pipeline_queue,
     get_celery_training_queue,
-    get_celery_broker_url,
 )
 
 
@@ -87,21 +87,25 @@ def queue_for_job_kind(kind: HeavyJobKind) -> str:
     return queue_name(HEAVY_JOB_QUEUE_BY_KIND[kind])
 
 
-def ensure_secure_transport_for_job_kind(kind: HeavyJobKind) -> None:
+def _job_kind_requires_secure_transport(kind: HeavyJobKind) -> bool:
+    if celery_requires_secure_transport():
+        return True
     queue = HEAVY_JOB_QUEUE_BY_KIND[kind]
-    if queue != WorkloadQueue.FFMPEG_MEDIA:
-        return
-    if not celery_ffmpeg_media_requires_secure_transport():
-        return
-    if celery_broker_secure_transport_confirmed():
-        return
-    broker_url = get_celery_broker_url()
-    if celery_broker_url_uses_secure_transport(broker_url):
-        return
-    raise RuntimeError(
-        "FFmpeg media Celery dispatch requires secure broker transport "
-        "or CELERY_BROKER_SECURE_TRANSPORT_CONFIRMED=1."
+    if queue == WorkloadQueue.FFMPEG_MEDIA:
+        return celery_ffmpeg_media_requires_secure_transport()
+    if queue == WorkloadQueue.FRAME_EXTRACTION:
+        return celery_frame_extraction_requires_secure_transport()
+    return False
+
+
+def ensure_secure_transport_for_job_kind(kind: HeavyJobKind) -> None:
+    error = celery_broker_transport_error(
+        require_secure_transport=_job_kind_requires_secure_transport(kind),
+        workload=f"{kind.value} Celery",
     )
+    if error is None:
+        return
+    raise RuntimeError(error)
 
 
 class HeavyJobDispatchPayload(BaseModel):

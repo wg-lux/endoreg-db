@@ -368,6 +368,26 @@ def get_celery_broker_url() -> str:
     return env_str("CELERY_BROKER_URL", "")
 
 
+def celery_runtime_config_strict(*, deployment_role: str | None = None) -> bool:
+    settings_module = env_str(
+        DJANGO_SETTINGS_MODULE_ENV,
+        DEFAULT_DJANGO_SETTINGS_MODULE,
+    ).strip()
+    role = (deployment_role or get_endoreg_deployment_role()).strip().lower()
+    default = settings_module.endswith(".prod") or role in {
+        "central_hub",
+        "local_study_server",
+    }
+    return env_bool("CELERY_RUNTIME_CONFIG_STRICT", default)
+
+
+def celery_requires_secure_transport(*, deployment_role: str | None = None) -> bool:
+    return env_bool(
+        "CELERY_REQUIRE_SECURE_TRANSPORT",
+        celery_runtime_config_strict(deployment_role=deployment_role),
+    )
+
+
 def get_celery_default_queue() -> str:
     return env_str("CELERY_DEFAULT_QUEUE", DEFAULT_CELERY_DEFAULT_QUEUE).strip()
 
@@ -419,8 +439,35 @@ def celery_broker_secure_transport_confirmed() -> bool:
     return env_bool("CELERY_BROKER_SECURE_TRANSPORT_CONFIRMED", False)
 
 
+def celery_broker_transport_error(
+    *,
+    broker_url: str | None = None,
+    require_broker: bool = False,
+    require_secure_transport: bool = False,
+    workload: str = "Celery",
+) -> str | None:
+    raw_url = (
+        broker_url if broker_url is not None else get_celery_broker_url()
+    ).strip()
+    if require_broker and not raw_url:
+        return f"{workload} dispatch requires CELERY_BROKER_URL."
+    if not raw_url or not require_secure_transport:
+        return None
+    if celery_broker_secure_transport_confirmed():
+        return None
+    if celery_broker_url_uses_secure_transport(raw_url):
+        return None
+    return (
+        f"{workload} dispatch requires secure broker transport "
+        "or CELERY_BROKER_SECURE_TRANSPORT_CONFIRMED=1."
+    )
+
+
 def celery_frame_extraction_requires_secure_transport() -> bool:
-    return env_bool("CELERY_FRAME_EXTRACTION_REQUIRE_SECURE_TRANSPORT", False)
+    return env_bool(
+        "CELERY_FRAME_EXTRACTION_REQUIRE_SECURE_TRANSPORT",
+        celery_requires_secure_transport(),
+    )
 
 
 def celery_ffmpeg_media_requires_secure_transport() -> bool:
@@ -432,6 +479,10 @@ def celery_ffmpeg_media_requires_secure_transport() -> bool:
 
 def celery_audit_ledger_integrity_beat_enabled() -> bool:
     return env_bool("CELERY_BEAT_AUDIT_LEDGER_INTEGRITY_ENABLED", True)
+
+
+def watcher_celery_inline_fallback_enabled() -> bool:
+    return env_bool("WATCHER_CELERY_INLINE_FALLBACK_ENABLED", False)
 
 
 def get_celery_audit_ledger_integrity_interval_seconds() -> int:
@@ -706,6 +757,11 @@ def snapshot() -> Dict[str, Any]:
         "SKIP_EXPENSIVE_TESTS",
         "ENDOREG_DEPLOYMENT_ROLE",
         "ENDOREG_ENABLE_HUB_TRANSFERS",
+        "CELERY_BROKER_URL",
+        "CELERY_REQUIRE_SECURE_TRANSPORT",
+        "CELERY_RUNTIME_CONFIG_STRICT",
+        "CELERY_BROKER_SECURE_TRANSPORT_CONFIRMED",
+        "WATCHER_CELERY_INLINE_FALLBACK_ENABLED",
         "CELERY_TRAINING_QUEUE",
         "CELERY_LLM_INFERENCE_QUEUE",
         "MODEL_TRAINING_JOB_MODE",

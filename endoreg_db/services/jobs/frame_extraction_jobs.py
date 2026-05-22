@@ -7,10 +7,8 @@ from dataclasses import asdict, dataclass
 from django.db import transaction
 
 from endoreg_db.config.env import (
-    celery_broker_secure_transport_confirmed,
-    celery_broker_url_uses_secure_transport,
+    celery_broker_transport_error,
     celery_frame_extraction_requires_secure_transport,
-    get_celery_broker_url,
     get_celery_frame_extraction_queue,
 )
 from endoreg_db.models import Frame, FrameExtractionRequest, VideoFile
@@ -71,17 +69,13 @@ def is_frame_file_available(*, frame: Frame) -> bool:
 
 
 def _ensure_frame_extraction_broker_transport_allowed() -> None:
-    if not celery_frame_extraction_requires_secure_transport():
-        return
-    if celery_broker_secure_transport_confirmed():
-        return
-    broker_url = get_celery_broker_url()
-    if celery_broker_url_uses_secure_transport(broker_url):
-        return
-    raise RuntimeError(
-        "Frame extraction Celery dispatch requires secure broker transport "
-        "or CELERY_BROKER_SECURE_TRANSPORT_CONFIRMED=1."
+    error = celery_broker_transport_error(
+        require_secure_transport=celery_frame_extraction_requires_secure_transport(),
+        workload="Frame extraction Celery",
     )
+    if error is None:
+        return
+    raise RuntimeError(error)
 
 
 def request_frame_extraction(
