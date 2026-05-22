@@ -5,17 +5,7 @@ let
   host = "localhost";
   port = "8188";
 
-  # --- Directory Structure ---
-  dataDir = "data";
-  importDir = "${dataDir}/import";
-  importVideoDir = "${importDir}/video";
-  importReportDir = "${importDir}/report";
-  importLegacyAnnotationDir = "${importDir}/legacy_annotations";
-  exportDir = "${dataDir}/export";
-  exportFramesRootDir = "${exportDir}/frames";
-  exportFramesSampleExportDir = "${exportFramesRootDir}/test_outputs";
-  modelDir = "${dataDir}/models";
-  confDir = "./conf"; # Define confDir here
+  confDir = "./conf";
 
   # Pin to specific Python 3.12 version to match pyproject.toml
   python = pkgs.python312; #known devenv issue with python3Packages since python3Full was deprecated
@@ -91,7 +81,6 @@ let
 in 
 {
 
-  # A dotenv file was found, while dotenv integration is currently not enabled.
   dotenv.enable = true;
   dotenv.disableHint = true;
 
@@ -241,10 +230,11 @@ in
       description = "Remove the uv virtual environment and lock file for a clean sync";
       exec = ''
         echo "Removing uv virtual environment: .devenv/state/venv"
-        rm -rf .devenv/state/venv
+        rm -rf .devenv/
         echo "Removing uv lock file: uv.lock"
         rm -f uv.lock
-        echo "Environment cleaned. Re-enter the shell (e.g., 'exit' then 'devenv up') to trigger uv sync."
+        direnv allow
+        uv sync
       '';
     };
     "agent:sync" = {
@@ -267,6 +257,7 @@ in
     "agent:smoke" = {
       description = "Run quick import and deployment-contract checks after scoped edits";
       exec = ''
+
         .devenv/state/venv/bin/python scripts/check_django_startup_imports.py
         .devenv/state/venv/bin/pytest tests/deployment/test_prod_settings_contract.py -q
       '';
@@ -275,9 +266,81 @@ in
       description = "Run the full default pre-commit suite for agent preflight";
       exec = ".devenv/state/venv/bin/pre-commit run --all-files";
     };
+    "celery:check" = {
+      description = "Validate Celery broker, queue, and secure transport settings";
+      exec = ''
+        .devenv/state/venv/bin/python manage.py check --tag celery
+      '';
+    };
+    "celery:worker:pipeline" = {
+      description = "Run a Celery worker for pipeline ingest jobs";
+      exec = ''
+        devenv tasks run celery:check
+        queue=''${CELERY_PIPELINE_QUEUE:-pipeline}
+        concurrency=''${CELERY_PIPELINE_CONCURRENCY:-2}
+        .devenv/state/venv/bin/celery -A endoreg_db worker --loglevel=''${CELERY_LOGLEVEL:-INFO} -Q "$queue" -n "endoreg-pipeline@%h" --concurrency="$concurrency" --prefetch-multiplier=1
+      '';
+    };
+    "celery:worker:ffmpeg" = {
+      description = "Run a Celery worker for video import/reimport and FFmpeg media jobs";
+      exec = ''
+        devenv tasks run celery:check
+        queue=''${CELERY_FFMPEG_MEDIA_QUEUE:-ffmpeg_media}
+        concurrency=''${CELERY_FFMPEG_MEDIA_CONCURRENCY:-1}
+        .devenv/state/venv/bin/celery -A endoreg_db worker --loglevel=''${CELERY_LOGLEVEL:-INFO} -Q "$queue" -n "endoreg-ffmpeg@%h" --concurrency="$concurrency" --prefetch-multiplier=1
+      '';
+    };
+    "celery:worker:frames" = {
+      description = "Run a Celery worker for frame extraction jobs";
+      exec = ''
+        devenv tasks run celery:check
+        queue=''${CELERY_FRAME_EXTRACTION_QUEUE:-frame_extraction}
+        concurrency=''${CELERY_FRAME_EXTRACTION_CONCURRENCY:-2}
+        .devenv/state/venv/bin/celery -A endoreg_db worker --loglevel=''${CELERY_LOGLEVEL:-INFO} -Q "$queue" -n "endoreg-frames@%h" --concurrency="$concurrency" --prefetch-multiplier=1
+      '';
+    };
+    "celery:worker:inference" = {
+      description = "Run a Celery worker for vision and LLM inference jobs";
+      exec = ''
+        devenv tasks run celery:check
+        queues=''${CELERY_INFERENCE_QUEUE:-inference},''${CELERY_LLM_INFERENCE_QUEUE:-llm_inference}
+        concurrency=''${CELERY_INFERENCE_CONCURRENCY:-1}
+        .devenv/state/venv/bin/celery -A endoreg_db worker --loglevel=''${CELERY_LOGLEVEL:-INFO} -Q "$queues" -n "endoreg-inference@%h" --concurrency="$concurrency" --prefetch-multiplier=1
+      '';
+    };
+    "celery:worker:training" = {
+      description = "Run a Celery worker for model training jobs";
+      exec = ''
+        devenv tasks run celery:check
+        queue=''${CELERY_TRAINING_QUEUE:-model_training}
+        concurrency=''${CELERY_TRAINING_CONCURRENCY:-1}
+        .devenv/state/venv/bin/celery -A endoreg_db worker --loglevel=''${CELERY_LOGLEVEL:-INFO} -Q "$queue" -n "endoreg-training@%h" --concurrency="$concurrency" --prefetch-multiplier=1
+      '';
+    };
+    "celery:worker:maintenance" = {
+      description = "Run a Celery worker for maintenance and audit jobs";
+      exec = ''
+        devenv tasks run celery:check
+        queue=''${CELERY_MAINTENANCE_QUEUE:-maintenance}
+        concurrency=''${CELERY_MAINTENANCE_CONCURRENCY:-1}
+        .devenv/state/venv/bin/celery -A endoreg_db worker --loglevel=''${CELERY_LOGLEVEL:-INFO} -Q "$queue" -n "endoreg-maintenance@%h" --concurrency="$concurrency" --prefetch-multiplier=1
+      '';
+    };
+    "celery:beat" = {
+      description = "Run Celery beat for scheduled maintenance jobs";
+      exec = ''
+        devenv tasks run celery:check
+        .devenv/state/venv/bin/celery -A endoreg_db beat --loglevel=''${CELERY_LOGLEVEL:-INFO}
+      '';
+    };
+    "test:sync" = {
+      description = "Ensure pytest";
+      exec = "uv sync --extra dev";
+    };
     "test:fast" = {
       description = "Run the fast PR pytest lane with live logging";
       exec = ''
+        devenv tasks run test:sync
         export SKIP_EXPENSIVE_TESTS=true
         export RUN_VIDEO_TESTS=false
         export USE_STUB_MODEL_META=true
@@ -288,6 +351,7 @@ in
     "test:heavy" = {
       description = "Run heavy tests with live logging";
       exec = ''
+        devenv tasks run test:sync
         export SKIP_EXPENSIVE_TESTS=false
         export RUN_VIDEO_TESTS=true
         export USE_STUB_MODEL_META=true
@@ -298,6 +362,7 @@ in
     "test:full" = {
       description = "Run the full pytest suite with live logging";
       exec = ''
+        devenv tasks run test:sync
         export SKIP_EXPENSIVE_TESTS=false
         export RUN_VIDEO_TESTS=true
         export USE_STUB_MODEL_META=true
@@ -308,10 +373,11 @@ in
     "test:clean" = {
       description = "Remove pytest worker runtimes, temp directories, and test SQLite files";
       exec = ''
+        devenv tasks run test:sync
         python - <<'PY'
         from pathlib import Path
 
-        from endoreg_db.utils.file_operations import safe_rmtree, safe_unlink_file
+        from endoreg_db.utils.filesystem.file_operations import safe_rmtree, safe_unlink_file
 
         root = Path("data/tests")
         for path in (root / "workers", root / "tmp"):

@@ -1,8 +1,7 @@
 # Endoreg-db Agents.md
 ## Tests
-Please run direnv allow once in your shell and then uv sync --extra dev before running pytest.
+Please run uv sync --extra dev before running pytest.
 This will use source /home/admin/endoreg-db/.devenv/state/venv/bin/activate in your shell before running pytest.
-If that doesnt wok: use devenv shell -- run pytest
 If that doesnt work: run tests from the shortcuts devenv tasks run test:full or devenv tasks run test:fast
 
 ## Codex And Devenv Workflow

@@ -1,3 +1,5 @@
+[![Built with devenv](https://devenv.sh/assets/devenv-badge.svg)](https://devenv.sh)
+
 # EndoregDB - Professional Data Infrastructure for Clinical Research
 
 EndoregDB is a comprehensive database framework designed to manage medical and research-related data for clinical trials. This repository focuses on efficient data processing, automated deployment, security, and reproducibility, offering a flexible setup for local development environments as well as distributed systems. It supports the integration of AI/ML tools and advanced image and report processing.
