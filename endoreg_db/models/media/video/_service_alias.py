@@ -14,7 +14,11 @@ def alias_service_module(module_name: str, target_module: str) -> None:
             return getattr(impl, name)
 
         def __setattr__(self, name, value):
-            if name not in {"_impl", "ServiceAliasModule"}:
+            is_child_module = (
+                isinstance(value, types.ModuleType)
+                and value.__name__ == f"{module_name}.{name}"
+            )
+            if name not in {"_impl", "ServiceAliasModule"} and not is_child_module:
                 setattr(impl, name, value)
             super().__setattr__(name, value)
 
