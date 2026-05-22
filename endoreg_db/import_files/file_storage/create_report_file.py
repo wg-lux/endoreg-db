@@ -5,8 +5,12 @@ from typing import Tuple
 
 from endoreg_db.import_files.context.ensure_center import ensure_center
 from endoreg_db.import_files.context.import_context import ImportContext  #
-from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.filesystem.file_operations import sha256_file
 from endoreg_db.models.media import RawPdfFile
+from endoreg_db.services.raw_pdf_files import (
+    create_initialized_raw_pdf_file_from_path,
+    get_raw_pdf_by_content_hash,
+)
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
@@ -59,11 +63,11 @@ def create_or_retrieve_report_file(
         processed = True
         needs_processing = False
         if not isinstance(ctx.current_report, RawPdfFile):
-            ctx.current_report = RawPdfFile.get_report_by_hash(ctx.file_hash)
+            ctx.current_report = get_raw_pdf_by_content_hash(ctx.file_hash)
         return ctx.current_report, processed, needs_processing
     elif has_failure_history:
         if not isinstance(ctx.current_report, RawPdfFile):
-            ctx.current_report = RawPdfFile.get_report_by_hash(ctx.file_hash)
+            ctx.current_report = get_raw_pdf_by_content_hash(ctx.file_hash)
         finalize_failure(ctx)
         processed = True
         needs_processing = True
@@ -79,7 +83,7 @@ def create_or_retrieve_report_file(
             center_name,
         )
 
-        pdf = RawPdfFile.create_from_file_initialized(
+        pdf = create_initialized_raw_pdf_file_from_path(
             file_path=file_path,
             center_name=center_name,
         )

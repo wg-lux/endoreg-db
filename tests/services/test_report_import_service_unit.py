@@ -7,6 +7,11 @@ from unittest.mock import patch
 
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.services.report_import import ReportImportService
+from endoreg_db.utils.filesystem.file_operations import (
+    atomic_write_file,
+    ensure_directory,
+    safe_unlink_file,
+)
 
 ris = ReportImportService()
 import_and_anonymize = ris.import_and_anonymize
@@ -30,7 +35,12 @@ class TestReportImportServiceUnit(unittest.TestCase):
         try:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
                 txt_path = Path(tmp.name)
-            txt_path.write_text("line one\nline two", encoding="utf-8")
+            txt_content = b"line one\nline two"
+            atomic_write_file(
+                destination=txt_path,
+                content=[txt_content],
+                required_bytes=len(txt_content),
+            )
 
             temp_pdf = service._create_temp_pdf_from_txt(txt_path)
 
@@ -39,16 +49,14 @@ class TestReportImportServiceUnit(unittest.TestCase):
             self.assertTrue(temp_pdf.read_bytes().startswith(b"%PDF-1.4"))
         finally:
             if temp_pdf is not None and temp_pdf.exists():
-                temp_pdf.unlink()
+                safe_unlink_file(temp_pdf)
             if txt_path is not None and txt_path.exists():
-                txt_path.unlink()
+                safe_unlink_file(txt_path)
 
     @patch(
         "endoreg_db.import_files.report_import_service.ProcessingHistory.has_history_for_hash"
     )
-    @patch(
-        "endoreg_db.import_files.report_import_service.RawPdfFile.get_report_by_hash"
-    )
+    @patch("endoreg_db.import_files.report_import_service.get_raw_pdf_by_content_hash")
     def test_get_existing_completed_report_returns_existing_instance(
         self,
         get_report_by_hash_mock,
@@ -58,7 +66,12 @@ class TestReportImportServiceUnit(unittest.TestCase):
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             pdf_path = Path(tmp.name)
-        pdf_path.write_bytes(b"%PDF-1.4\n%%EOF\n")
+        pdf_content = b"%PDF-1.4\n%%EOF\n"
+        atomic_write_file(
+            destination=pdf_path,
+            content=[pdf_content],
+            required_bytes=len(pdf_content),
+        )
 
         try:
             ctx = ImportContext(
@@ -79,7 +92,7 @@ class TestReportImportServiceUnit(unittest.TestCase):
             get_report_by_hash_mock.assert_called_once_with(ctx.file_hash)
         finally:
             if pdf_path.exists():
-                pdf_path.unlink()
+                safe_unlink_file(pdf_path)
 
     def test_cleanup_duplicate_staging_deletes_import_source(self):
         service = ReportImportService()
@@ -87,14 +100,23 @@ class TestReportImportServiceUnit(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             base = Path(tmpdir)
             import_dir = base / "report_import"
-            import_dir.mkdir(parents=True, exist_ok=True)
+            ensure_directory(import_dir)
             source_path = import_dir / "duplicate.pdf"
-            source_path.write_bytes(b"%PDF-1.4\n%%EOF\n")
+            pdf_content = b"%PDF-1.4\n%%EOF\n"
+            atomic_write_file(
+                destination=source_path,
+                content=[pdf_content],
+                required_bytes=len(pdf_content),
+            )
 
             sensitive_dir = base / "sensitive_reports"
-            sensitive_dir.mkdir(parents=True, exist_ok=True)
+            ensure_directory(sensitive_dir)
             sensitive_path = sensitive_dir / "sensitive_copy.pdf"
-            sensitive_path.write_bytes(b"%PDF-1.4\n%%EOF\n")
+            atomic_write_file(
+                destination=sensitive_path,
+                content=[pdf_content],
+                required_bytes=len(pdf_content),
+            )
 
             ctx = ImportContext(
                 file_path=source_path,

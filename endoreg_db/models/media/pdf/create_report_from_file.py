@@ -1,17 +1,12 @@
-# models/data_file/import_classes/create_pdf_from_file.py
-import logging
-import os
+from __future__ import annotations
+
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Type, Union
 
-from endoreg_db.utils.file_operations import get_content_hash_filename
-from endoreg_db.utils.hashs import get_pdf_hash
-from endoreg_db.utils.storage import save_local_file
+from endoreg_db.services.raw_pdf_files import create_raw_pdf_file_from_path
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.pdf import RawPdfFile
-
-logger = logging.getLogger("raw_pdf")
 
 
 def _create_from_file(
@@ -22,79 +17,14 @@ def _create_from_file(
     **kwargs,
 ) -> "RawPdfFile":
     """
-    Creates a RawPdfFile instance from a given file path, mirroring the video pipeline.
-    Handles hashing, orphaned record cleanup, and atomic DB assignment.
+    Compatibility wrapper for legacy imports.
+
+    New code should use endoreg_db.services.raw_pdf_files.create_raw_pdf_file_from_path.
     """
-    from endoreg_db.models.administration import Center
-
-    # 1. Standardize Path
-    if isinstance(file_path, str):
-        file_path = Path(file_path)
-
-    if not file_path.exists():
-        logger.error(f"Source file does not exist: {file_path}")
-        raise FileNotFoundError(f"Source file not found: {file_path}")
-
-    # 2. Pull Center Name (with Environment Fallback)
-    if not center_name:
-        try:
-            center_name = os.environ["CENTER_NAME"]
-        except KeyError:
-            logger.error("Center name must be provided or set in CENTER_NAME env var.")
-            raise ValueError("Center name must be provided.")
-
-    try:
-        center = Center.objects.get(name=center_name)
-    except Center.DoesNotExist as e:
-        logger.error(f"Center '{center_name}' not found.")
-        raise ValueError(f"Center '{center_name}' not found.") from e
-
-    # 3. Hash Calculation
-    try:
-        pdf_hash = get_pdf_hash(file_path)
-        logger.debug(f"Calculated PDF hash: {pdf_hash}")
-    except Exception as e:
-        logger.error(f"Could not calculate hash for {file_path}: {e}")
-        raise ValueError(f"Could not calculate hash for {file_path}") from e
-
-    # 4. Handle Existing Records & TOCTOU (Aligned with VideoFile)
-    existing_pdf_file = cls_model.objects.filter(pdf_hash=pdf_hash).first()
-    if existing_pdf_file:
-        logger.warning(
-            "RawPdfFile with hash %s already exists (ID: %s)",
-            pdf_hash,
-            existing_pdf_file.pk,
-        )
-
-        # Check if the physical file is still present
-        _file = existing_pdf_file.file
-        file_name = _file.name if _file else None
-        if file_name and _file.storage.exists(file_name):
-            logger.warning("File is present. Returning existing instance.")
-            return existing_pdf_file
-
-        # Burn orphaned record to stay consistent with VideoFile philosophy
-        logger.warning(
-            "RawPdfFile exists but file is missing. Deleting orphaned record."
-        )
-        existing_pdf_file.delete()
-
-    # 5. Create New Record
-    new_file_name, _uuid = get_content_hash_filename(file_path)
-    try:
-        raw_pdf = cls_model(
-            pdf_hash=pdf_hash,
-            center=center,
-            **kwargs,
-        )
-        save_local_file(raw_pdf.file, file_path, name=new_file_name, save=False)
-
-        if save:
-            raw_pdf.save()
-            logger.info(f"Successfully created RawPdfFile PK {raw_pdf.pk}")
-
-        return raw_pdf
-
-    except Exception as e:
-        logger.error(f"Error processing or saving file {file_path}: {e}")
-        raise RuntimeError(f"PDF processing failed: {e}") from e
+    return create_raw_pdf_file_from_path(
+        file_path=file_path,
+        center_name=center_name,
+        model_cls=cls_model,
+        save=save,
+        **kwargs,
+    )

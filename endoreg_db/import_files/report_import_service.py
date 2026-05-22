@@ -26,9 +26,15 @@ from endoreg_db.models.media import RawPdfFile
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
-from endoreg_db.utils.file_operations import sha256_file
-from endoreg_db.utils import paths as path_utils
-from endoreg_db.utils.rust_backend import render_single_page_pdf as rust_render_pdf
+from endoreg_db.services.raw_pdf_files import (
+    get_or_create_raw_pdf_state,
+    get_raw_pdf_by_content_hash,
+)
+from endoreg_db.utils.filesystem.file_operations import sha256_file
+from endoreg_db.utils.filesystem import paths as path_utils
+from endoreg_db.utils.system.rust_backend import (
+    render_single_page_pdf as rust_render_pdf,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -209,7 +215,7 @@ class ReportImportService:
                     ctx.current_report, processed, needs_processing = (
                         create_or_retrieve_report_file(ctx)
                     )
-                    ctx.current_report.get_or_create_state()
+                    get_or_create_raw_pdf_state(ctx.current_report)
                     if ctx.current_report.state is None:
                         raise ValueError("Could not create state for video.")
                     ctx.current_report = ctx.current_report
@@ -308,7 +314,7 @@ class ReportImportService:
             return None
 
         try:
-            existing_report = RawPdfFile.get_report_by_hash(file_hash)
+            existing_report = get_raw_pdf_by_content_hash(file_hash)
         except ValueError:
             logger.warning(
                 "Successful processing history exists for %s but no RawPdfFile was found.",

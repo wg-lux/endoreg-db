@@ -8,42 +8,26 @@ import uuid
 from typing import TYPE_CHECKING, Optional, Any, cast, Union
 
 from django.core.exceptions import ValidationError
-from django.core.files import File
 from django.core.validators import FileExtensionValidator
 from django.db import models
-from django.urls import reverse
-from endoreg_db.models.media.pdf.create_report_from_file import _create_from_file
-from endoreg_db.utils.hashs import get_pdf_hash
-from endoreg_db.utils.paths import (
+from endoreg_db.schemas import validate_raw_pdf_meta_payload
+from endoreg_db.utils.filesystem.paths import (
     ANONYM_REPORT_DIR,
-    IMPORT_REPORT_DIR,
     SENSITIVE_REPORT_DIR,
 )
 from endoreg_db.utils.encryption.encrypted import LazyEncryptedStorage
-from endoreg_db.utils.storage import (
-    delete_field_file,
-    ensure_local_file,
-    file_exists,
-    save_local_file,
-)
-from endoreg_db.utils.storage_streaming import maybe_local_plaintext_path
-from endoreg_db.utils.storage_profile import (
+from endoreg_db.utils.storage.profile import (
     PayloadKind,
     StoragePolicy,
     resolve_storage_policy,
 )
 
+from pathlib import Path
+
 if TYPE_CHECKING:
     from django.db.models.fields.files import FieldFile
 
-    from endoreg_db.models.state import RawPdfState
-
-import logging
-from pathlib import Path
-
-from ...metadata import SensitiveMeta
-
-logger = logging.getLogger("raw_pdf")
+    from endoreg_db.models.state.raw_pdf import RawPdfState
 
 
 class RawPdfFile(models.Model):
@@ -140,15 +124,15 @@ class RawPdfFile(models.Model):
 
     # Type hinting is needed, improve and use correct django types
     if TYPE_CHECKING:
-        from endoreg_db.models import (
-            AnonymExaminationReport,
-            Center,
-            Examiner,
-            Patient,
+        from endoreg_db.models.administration.center.center import Center
+        from endoreg_db.models.administration.person.examiner.examiner import Examiner
+        from endoreg_db.models.administration.person.patient.patient import Patient
+        from endoreg_db.models.media.pdf.report_file import AnonymExaminationReport
+        from endoreg_db.models.medical.patient.patient_examination import (
             PatientExamination,
-            RawPdfState,
-            SensitiveMeta,
         )
+        from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+        from endoreg_db.models.state.raw_pdf import RawPdfState
 
         center: models.ForeignKey["Center | None"]
         examination: models.ForeignKey["PatientExamination | None"]
@@ -177,17 +161,17 @@ class RawPdfFile(models.Model):
 
         Use ensure_local_file(self.file) for tooling that requires a real path.
         """
-        return maybe_local_plaintext_path(self.file)
+        from endoreg_db.services.raw_pdf_files import get_raw_pdf_plaintext_path
+
+        return get_raw_pdf_plaintext_path(self)
 
     def set_file_path(self, file_path: Path):
         """
         Sets the file path of the stored report file.
         """
-        if not file_path.exists():
-            raise FileNotFoundError(f"File path does not exist: {file_path}")
+        from endoreg_db.services.raw_pdf_files import set_raw_pdf_file_path
 
-        save_local_file(self.file, file_path, name=file_path.name, save=False)
-        self.save(update_fields=["file"])
+        set_raw_pdf_file_path(self, file_path)
 
     @property
     def anonymized_file_path(self) -> Path | None:
@@ -196,17 +180,17 @@ class RawPdfFile(models.Model):
 
         Use ensure_local_file(self.processed_file) for tooling that requires a real path.
         """
-        return maybe_local_plaintext_path(self.processed_file)
+        from endoreg_db.services.raw_pdf_files import get_processed_pdf_plaintext_path
+
+        return get_processed_pdf_plaintext_path(self)
 
     def set_anonymized_file_path(self, file_path: Path):
         """
         Sets the file path of the anonymized report file.
         """
-        if not file_path.exists():
-            raise FileNotFoundError(f"File path does not exist: {file_path}")
+        from endoreg_db.services.raw_pdf_files import set_processed_pdf_file_path
 
-        save_local_file(self.processed_file, file_path, name=file_path.name, save=False)
-        self.save(update_fields=["processed_file"])
+        set_processed_pdf_file_path(self, file_path)
 
     def get_raw_file_path(self) -> Optional[Path]:
         """
@@ -220,74 +204,27 @@ class RawPdfFile(models.Model):
         Returns:
             Path to raw file if it exists, None otherwise
         """
-        # Check if file field already points to a valid file
-        file_path = self.file_path
-        if file_path is not None and file_path.exists():
-            logger.debug("Found raw report via explicit local path: %s", file_path)
-            return file_path
+        from endoreg_db.services.raw_pdf_files import get_raw_pdf_file_path
 
-        # Canonical raw report lookup order.
-        raw_dirs = [
-            SENSITIVE_REPORT_DIR,  # Files might be in sensitive dir
-            IMPORT_REPORT_DIR,  # General report directory
-        ]
-
-        # Check direct hash-based name in each directory
-        for raw_dir in raw_dirs:
-            if not raw_dir.exists():
-                continue
-
-            hash_path = raw_dir / f"{self.pdf_hash}.pdf"
-            if hash_path.exists():
-                logger.debug(f"Found raw report at: {hash_path}")
-                return hash_path
-
-        # Scan directories for matching hash
-        for raw_dir in raw_dirs:
-            if not raw_dir.exists():
-                continue
-
-            for file_path in raw_dir.glob("*.pdf"):
-                try:
-                    file_hash = get_pdf_hash(file_path)
-                    if file_hash == self.pdf_hash:
-                        logger.debug(f"Found matching report by hash: {file_path}")
-                        return file_path
-                except Exception as e:
-                    logger.debug(f"Error checking {file_path}: {e}")
-                    continue
-
-        logger.warning(f"No raw file found for report hash: {self.pdf_hash}")
-        return None
+        return get_raw_pdf_file_path(self)
 
     @property
     def file_url(self) -> Any | str | None:
         """
         Returns the URL of the stored report file if available; otherwise, returns None.
         """
-        try:
-            if not self.file or not self.file.name or self.pk is None:
-                return None
-            return reverse("api:pdf-stream", kwargs={"pk": self.pk})
-        except (ValueError, AttributeError):
-            return None
+        from endoreg_db.services.raw_pdf_files import get_raw_pdf_file_url
+
+        return get_raw_pdf_file_url(self)
 
     @property
     def anonymized_file_url(self):
         """
         Returns the URL of the stored report file if available; otherwise, returns None.
         """
-        try:
-            if (
-                not self.processed_file
-                or not self.processed_file.name
-                or self.pk is None
-            ):
-                return None
-            stream_url = reverse("api:pdf-stream", kwargs={"pk": self.pk})
-            return f"{stream_url}?type=processed"
-        except (ValueError, AttributeError):
-            return None
+        from endoreg_db.services.raw_pdf_files import get_processed_pdf_file_url
+
+        return get_processed_pdf_file_url(self)
 
     def __str__(self):
         """
@@ -302,51 +239,33 @@ class RawPdfFile(models.Model):
 
         This method ensures that the physical report file is deleted from the file system after the database record is removed. Logs warnings or errors if the file cannot be found or deleted.
         """
-        primary_name = self.file.name if self.file and self.file.name else None
-        anonymized_name = (
-            self.processed_file.name
-            if self.processed_file and self.processed_file.name
-            else None
-        )
+        from endoreg_db.services.raw_pdf_files import delete_raw_pdf_with_owned_files
 
-        if delete_field_file(self, "file", missing_ok=True, save=False):
-            logger.info("Original file removed from storage: %s", primary_name)
-        if delete_field_file(self, "processed_file", missing_ok=True, save=False):
-            logger.info("Anonymized file removed from storage: %s", anonymized_name)
+        return delete_raw_pdf_with_owned_files(self, *args, **kwargs)
 
-        super().delete(*args, **kwargs)
-
-        # --- Convenience state/meta helpers used in tests and admin workflows ---
+    # --- Convenience state/meta helpers used in tests and admin workflows ---
 
     def mark_sensitive_meta_processed(self, *, save: bool = True) -> "RawPdfFile":
         """
         Mark this video's processing state as having its sensitive meta fully processed.
         This proxies to the related VideoState and persists by default.
         """
-        sm = self.sensitive_meta
-        from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+        from endoreg_db.services.raw_pdf_files import (
+            mark_report_sensitive_meta_processed,
+        )
 
-        if not isinstance(sm, SensitiveMeta):
-            raise AttributeError()
-        state = self.get_or_create_state()
-        state.mark_sensitive_meta_processed(save=save)
-        return self
+        return mark_report_sensitive_meta_processed(self, save=save)
 
     def mark_sensitive_meta_verified(self) -> "RawPdfFile":
         """
         Mark the associated SensitiveMeta as verified by setting both DOB and names as verified.
         Ensures the SensitiveMeta and its state exist.
         """
-        sm = self.sensitive_meta
-        # Use SensitiveMeta methods to update underlying SensitiveMetaState
-        from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+        from endoreg_db.services.raw_pdf_files import (
+            mark_report_sensitive_meta_verified,
+        )
 
-        if not isinstance(sm, SensitiveMeta):
-            raise AttributeError()
-
-        sm.mark_dob_verified()
-        sm.mark_names_verified()
-        return self
+        return mark_report_sensitive_meta_verified(self)
 
     def validate_metadata_annotation(
         self, extracted_data_dict: Optional[dict] = None
@@ -357,47 +276,11 @@ class RawPdfFile(models.Model):
         Called after annotation in the frontend, this method deletes the associated active file, updates the sensitive meta data with the user annotated data.
         It also ensures the video file is properly saved after the metadata update.
         """
-
-        if not extracted_data_dict:
-            logger.error("No extracted data provided for validation.")
-            return False
-
-        sensitive_meta = self.sensitive_meta
-        if sensitive_meta is None:
-            logger.error("No sensitive meta attached to report %s.", self.pk)
-            return False
-
-        if extracted_data_dict:
-            sensitive_meta.update_from_dict(extracted_data_dict)
-        else:
-            return False
-
-        # Save the sensitive meta to ensure changes are persisted
-        sensitive_meta.save()
-
-        # Save the RawPdfFile instance to ensure all changes are saved
-        self.save()
-
-        logger.info(
-            f"Metadata for report {self.pk} validated and updated successfully."
+        from endoreg_db.services.raw_pdf_files import (
+            validate_report_metadata_annotation,
         )
 
-        deleted_original = delete_field_file(self, "file", missing_ok=True, save=False)
-        deleted_anonymized = delete_field_file(
-            self, "processed_file", missing_ok=True, save=False
-        )
-        self.get_or_create_state().mark_anonymization_validated()
-
-        if deleted_original or deleted_anonymized:
-            self.save(
-                update_fields=["file", "processed_file"]
-            )  # Persist cleared fields
-
-        self.mark_sensitive_meta_processed()
-        self.mark_sensitive_meta_verified()
-
-        logger.info(f"Files for report {self.pk} deleted successfully.")
-        return True
+        return validate_report_metadata_annotation(self, extracted_data_dict)
 
     @classmethod
     def create_from_file(
@@ -406,8 +289,13 @@ class RawPdfFile(models.Model):
         """
         Creates or retrieves a RawPdfFile instance.
         """
-        return _create_from_file(
-            cls_model=cls, file_path=file_path, center_name=center_name, **kwargs
+        from endoreg_db.services.raw_pdf_files import create_raw_pdf_file_from_path
+
+        return create_raw_pdf_file_from_path(
+            file_path=file_path,
+            center_name=center_name,
+            model_cls=cls,
+            **kwargs,
         )
 
     @classmethod
@@ -417,23 +305,32 @@ class RawPdfFile(models.Model):
         """
         Creates a RawPdfFile and immediately ensures states and metadata are initialized.
         """
-        raw_pdf = cls.create_from_file(
-            file_path=file_path, center_name=center_name, **kwargs
+        from endoreg_db.services.raw_pdf_files import (
+            create_initialized_raw_pdf_file_from_path,
         )
-        return raw_pdf.initialize()
+
+        return create_initialized_raw_pdf_file_from_path(
+            file_path=file_path,
+            center_name=center_name,
+            model_cls=cls,
+            **kwargs,
+        )
 
     def initialize(self) -> "RawPdfFile":
         """
         Initialize the RawPdfFile instance by ensuring related state exists and saving.
         Standardized to match VideoFile.initialize().
         """
-        # Create a new state if it doesn't exist
-        self.state = self.get_or_create_state()
+        from endoreg_db.services.raw_pdf_files import initialize_raw_pdf_file
 
-        # If PDFs ever require extra metadata parsing upon init, it goes here.
+        return initialize_raw_pdf_file(self)
 
-        self.save(update_fields=["state"])
-        return self
+    def clean(self) -> None:
+        super().clean()
+        try:
+            self.raw_meta = validate_raw_pdf_meta_payload(self.raw_meta)
+        except ValueError as exc:
+            raise ValidationError({"raw_meta": str(exc)}) from exc
 
     def save(self, *args, **kwargs):
         # Ensure hash is calculated before the first save if possible and not already set
@@ -443,50 +340,10 @@ class RawPdfFile(models.Model):
 
         If the report hash is missing, attempts to calculate it from the file before saving. Validates that the file has a `.pdf` extension. If related fields such as patient, examination, center, or examiner are unset but available in the associated sensitive metadata, they are populated accordingly before saving.
         """
-        if not self.pk and not self.pdf_hash and self.file:
-            try:
-                with ensure_local_file(self.file) as local_path:
-                    self.pdf_hash = get_pdf_hash(local_path)
-                    logger.info(
-                        "Calculated hash during pre-save for %s", self.file.name
-                    )
-            except Exception as exc:
-                logger.warning(
-                    "Could not calculate hash before initial save for %s: %s",
-                    self.file.name,
-                    exc,
-                )
+        from endoreg_db.services.raw_pdf_files import prepare_raw_pdf_before_save
 
-        if self.file and not self.file.name.endswith(".pdf"):
-            raise ValidationError("Only report files are allowed")
-
-        # If hash is still missing after potential creation logic (e.g., direct instantiation)
-        # and the file exists in storage, try calculating it from storage path.
-        # This is less ideal as it requires the file to be saved first.
-        if not self.pdf_hash and self.pk and self.file and file_exists(self.file):
-            try:
-                with ensure_local_file(self.file) as local_path:
-                    logger.warning(
-                        "Hash missing for saved file %s. Recalculating.", self.file.name
-                    )
-                    self.pdf_hash = get_pdf_hash(local_path)
-            except Exception as exc:
-                logger.error(
-                    "Could not calculate hash during save for existing file %s: %s",
-                    self.file.name,
-                    exc,
-                )
-
-        # Derive related fields from sensitive_meta if available
-        if not self.patient and self.sensitive_meta:
-            self.patient = self.sensitive_meta.pseudo_patient
-        if not self.examination and self.sensitive_meta:
-            self.examination = self.sensitive_meta.pseudo_examination
-        if not self.center and self.sensitive_meta:
-            self.center = self.sensitive_meta.center
-        # TODO Outdated?
-        # if not self.examiner and self.sensitive_meta and hasattr(self.sensitive_meta, 'pseudo_examiner'):
-        #     self.examiner = self.sensitive_meta.pseudo_examiner
+        prepare_raw_pdf_before_save(self)
+        self.clean()
 
         super().save(*args, **kwargs)
 
@@ -497,18 +354,9 @@ class RawPdfFile(models.Model):
         Returns:
             RawPdfState: The existing or newly created RawPdfState instance linked to this RawPdfFile.
         """
-        from endoreg_db.models.state import RawPdfState
+        from endoreg_db.services.raw_pdf_files import get_or_create_raw_pdf_state
 
-        if self.state:
-            return self.state
-
-        # Create a new RawPdfState instance directly and assign it
-        state = RawPdfState()
-        state.save()
-        self.state = state
-        self.save(update_fields=["state"])  # Save the RawPdfFile to link the state
-        logger.info("Created new RawPdfState for RawPdfFile %s", self.pk)
-        return state
+        return get_or_create_raw_pdf_state(self)
 
     def verify_existing_file(self, fallback_file):
         # This method might still be useful if called explicitly, but create_from_file now handles restoration
@@ -519,109 +367,34 @@ class RawPdfFile(models.Model):
         Parameters:
             fallback_file: Path or string representing the fallback file location to restore from if the stored file is missing.
         """
-        if not isinstance(fallback_file, Path):
-            fallback_file = Path(fallback_file)
+        from endoreg_db.services.raw_pdf_files import verify_existing_raw_pdf_file
 
-        _file = self.file
-        assert _file is not None
-        try:
-            if not _file.field.storage.exists(_file.name):
-                logger.warning(
-                    f"File missing at storage path {_file.name}. Attempting copy from fallback {fallback_file}"
-                )
-                if fallback_file.exists():
-                    with fallback_file.open("rb") as f:
-                        # Use save method which handles storage backend
-                        _file.save(
-                            Path(_file.name).name, File(f), save=True
-                        )  # Re-save the file content
-                    logger.info(
-                        f"Successfully restored file from fallback {fallback_file} to {_file.name}"
-                    )
-                else:
-                    logger.error(f"Fallback file {fallback_file} does not exist.")
-        except Exception as e:
-            logger.error(f"Error during verify_existing_file for {_file.name}: {e}")
+        verify_existing_raw_pdf_file(self, fallback_file)
 
     def process_file(self, text, anonymized_text, report_meta, verbose):
-        self.text = text
-        self.anonymized_text = anonymized_text
+        from endoreg_db.services.raw_pdf_files import process_raw_pdf_file
 
-        assert self.center is not None, "Center must be set before processing file"
-
-        report_meta["center_name"] = self.center.name
-        if not self.sensitive_meta:
-            # Pass the original report_meta with date objects to SensitiveMeta logic
-            sensitive_meta = SensitiveMeta.create_from_dict(report_meta)
-            self.sensitive_meta = sensitive_meta
-        else:
-            sensitive_meta = self.sensitive_meta
-            # Pass the original report_meta with date objects to SensitiveMeta logic
-            sensitive_meta.update_from_dict(report_meta)
-
-        # For storing in raw_meta (JSONField), dates need to be strings.
-        # Create a serializable version of report_meta for raw_meta.
-        import copy
-        from datetime import date, datetime
-
-        serializable_report_meta = copy.deepcopy(report_meta)
-        for key, value in serializable_report_meta.items():
-            if isinstance(value, (datetime, date)):
-                serializable_report_meta[key] = value.isoformat()
-
-        self.raw_meta = serializable_report_meta  # Assign the version with string dates
-
-        sensitive_meta.save()  # Save SensitiveMeta first
-        self.save()  # Then save RawPdfFile
-
-        return text, anonymized_text, report_meta
+        return process_raw_pdf_file(
+            self,
+            text=text,
+            anonymized_text=anonymized_text,
+            report_meta=report_meta,
+            verbose=verbose,
+        )
 
     def get_report_reader_config(self):
-        from warnings import warn
+        from endoreg_db.services.raw_pdf_files import build_report_reader_config
 
-        from ...administration import Center
-        from ...metadata.pdf_meta import PdfType
-
-        _center = self.center
-        assert _center is not None, "Center must be set to get report reader config"
-
-        if not self.pdf_type:
-            warn("PdfType not set, using default settings")
-            pdf_type = PdfType.default_pdf_type()
-        else:
-            pdf_type: PdfType = self.pdf_type
-        center: Center = _center
-        if pdf_type.endoscope_info_line:
-            endoscope_info_line = pdf_type.endoscope_info_line.value
-
-        else:
-            endoscope_info_line = None
-        settings_dict = {
-            "locale": "de_DE",
-            "employee_first_names": [_.name for _ in center.first_names.all()],
-            "employee_last_names": [_.name for _ in center.last_names.all()],
-            "text_date_format": "%d.%m.%Y",
-            "flags": {
-                "patient_info_line": pdf_type.patient_info_line.value,
-                "endoscope_info_line": endoscope_info_line,
-                "examiner_info_line": pdf_type.examiner_info_line.value,
-                "cut_off_below": [_.value for _ in pdf_type.cut_off_below_lines.all()],
-                "cut_off_above": [_.value for _ in pdf_type.cut_off_above_lines.all()],
-            },
-        }
-
-        return settings_dict
+        return build_report_reader_config(self)
 
     @staticmethod
     def get_report_by_pk(pk: int) -> "RawPdfFile":
-        try:
-            return RawPdfFile.objects.get(pk=pk)
-        except RawPdfFile.DoesNotExist:
-            raise ValueError(f"report with ID {pk} does not exist.")
+        from endoreg_db.services.raw_pdf_files import get_raw_pdf_by_pk
+
+        return get_raw_pdf_by_pk(pk)
 
     @staticmethod
     def get_report_by_hash(hash: str) -> "RawPdfFile":
-        try:
-            return RawPdfFile.objects.get(pdf_hash=hash)
-        except RawPdfFile.DoesNotExist:
-            raise ValueError(f"report with ID {hash} does not exist.")
+        from endoreg_db.services.raw_pdf_files import get_raw_pdf_by_content_hash
+
+        return get_raw_pdf_by_content_hash(hash)
