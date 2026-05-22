@@ -165,7 +165,7 @@ class RawPdfMetaPayload(BaseModel):
     source: str | None = None
     patient_examination_report_id: int | None = Field(default=None, ge=1)
     template_name: str | None = None
-    template_version: int | None = Field(default=None, ge=0)
+    template_version: str | int | None = None
     template_hash: str | None = None
     version: int | None = Field(default=None, ge=0)
     status: str | None = None

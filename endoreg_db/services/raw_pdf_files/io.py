@@ -145,14 +145,15 @@ def verify_existing_raw_pdf_file(
     fallback_path = Path(fallback_file)
 
     field_file = report.file
-    if field_file is None or not getattr(field_file, "name", None):
+    file_name = field_file.name if field_file is not None else None
+    if not file_name:
         raise FileNotFoundError("Raw report file field is empty.")
 
     try:
-        if not field_file.field.storage.exists(field_file.name):
+        if not field_file.field.storage.exists(file_name):
             logger.warning(
                 "File missing at storage path %s. Attempting copy from fallback %s",
-                field_file.name,
+                file_name,
                 fallback_path,
             )
             if not fallback_path.exists():
@@ -162,7 +163,7 @@ def verify_existing_raw_pdf_file(
             saved_name = save_local_file(
                 field_file,
                 fallback_path,
-                name=Path(field_file.name).name,
+                name=Path(file_name).name,
                 save=True,
                 overwrite=True,
             )
@@ -175,9 +176,7 @@ def verify_existing_raw_pdf_file(
                 storage_name=saved_name,
             )
     except Exception as exc:
-        logger.error(
-            "Error during verify_existing_file for %s: %s", field_file.name, exc
-        )
+        logger.error("Error during verify_existing_file for %s: %s", file_name, exc)
 
 
 def delete_raw_pdf_owned_files(

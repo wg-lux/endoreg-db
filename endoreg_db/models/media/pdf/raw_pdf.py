@@ -11,6 +11,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.db import models
 from endoreg_db.schemas import validate_raw_pdf_meta_payload
+from endoreg_db.utils.filesystem import paths as path_utils
 from endoreg_db.utils.filesystem.paths import (
     ANONYM_REPORT_DIR,
     SENSITIVE_REPORT_DIR,
@@ -23,6 +24,8 @@ from endoreg_db.utils.storage.profile import (
 )
 
 from pathlib import Path
+
+IMPORT_REPORT_DIR = path_utils.IMPORT_REPORT_DIR
 
 if TYPE_CHECKING:
     from django.db.models.fields.files import FieldFile

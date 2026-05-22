@@ -70,7 +70,8 @@ def prepare_raw_pdf_before_save(report: "RawPdfFile") -> None:
                 exc,
             )
 
-    if report.file and not report.file.name.endswith(".pdf"):
+    file_name = report.file.name if report.file else None
+    if file_name and not file_name.endswith(".pdf"):
         raise ValidationError("Only report files are allowed")
 
     if not report.pdf_hash and report.pk and report.file and file_exists(report.file):
