@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 import uuid
 
 import numpy as np
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 from pydantic import BaseModel, ConfigDict, Field
@@ -16,6 +17,9 @@ from endoreg_db.schemas import (
     AITrainingDatasetManifest,
     AITrainingLabel,
     AITrainingSample,
+    validate_ai_model_training_artifact_paths,
+    validate_ai_model_training_request_payload,
+    validate_ai_model_training_result_payload,
 )
 from endoreg_db.services.aidataset_exports import (
     AIDataSetExportPayload,
@@ -1271,7 +1275,9 @@ class AIDataSet(models.Model):
         all_centers: bool = False,
         only_validated: bool = False,
     ) -> dict[str, Any]:
-        from endoreg_db.services.aidataset_exports import export_to_standardized_structure
+        from endoreg_db.services.aidataset_exports import (
+            export_to_standardized_structure,
+        )
 
         return export_to_standardized_structure(
             self,
@@ -1356,6 +1362,32 @@ class AIModelTrainingRun(models.Model):
     @property
     def is_terminal(self) -> bool:
         return self.status in self.TERMINAL_STATUSES
+
+    def clean(self) -> None:
+        super().clean()
+        errors: dict[str, str] = {}
+        try:
+            self.request_payload = validate_ai_model_training_request_payload(
+                self.request_payload
+            )
+        except ValueError as exc:
+            errors["request_payload"] = str(exc)
+        try:
+            self.result = validate_ai_model_training_result_payload(self.result)
+        except ValueError as exc:
+            errors["result"] = str(exc)
+        try:
+            self.artifact_paths = validate_ai_model_training_artifact_paths(
+                self.artifact_paths
+            )
+        except ValueError as exc:
+            errors["artifact_paths"] = str(exc)
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        return super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return f"AIModelTrainingRun(run_id={self.run_key}, status={self.status})"

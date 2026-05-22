@@ -12,6 +12,9 @@ from endoreg_db.models.state.anonymization import AnonymizationState
 
 logger = logging.getLogger(__name__)
 
+SHA256_HEX_LENGTH = 64
+SHA256_HEX_DIGITS = frozenset("0123456789abcdef")
+
 if TYPE_CHECKING:
     from ..media import VideoFile
 
@@ -274,6 +277,37 @@ class VideoState(models.Model):
         if self.processing_error:
             raise ValueError(f"Video state is marked failed/lost; cannot {action}.")
 
+    def _validate_ready_for_export_transition(
+        self,
+        *,
+        processed_file_sha256: str,
+        ready_for_export_by: str,
+    ) -> tuple[str, str]:
+        errors: list[str] = []
+        if self.processing_error:
+            errors.append("video is marked failed/lost")
+        if not self.anonymization_validated:
+            errors.append("anonymization has not been validated")
+        if not self.outside_segments_removed:
+            errors.append("outside segments have not been removed")
+        if not self.segment_annotations_validated:
+            errors.append("segment annotations have not been validated")
+
+        normalized_sha = str(processed_file_sha256 or "").strip().lower()
+        if len(normalized_sha) != SHA256_HEX_LENGTH or any(
+            character not in SHA256_HEX_DIGITS for character in normalized_sha
+        ):
+            errors.append("processed_file_sha256 must be a SHA-256 hex digest")
+
+        normalized_actor = str(ready_for_export_by or "").strip()
+        if not normalized_actor:
+            errors.append("ready_for_export_by is required")
+
+        if errors:
+            raise ValueError(f"Cannot mark ready for export: {'; '.join(errors)}.")
+
+        return normalized_sha, normalized_actor
+
     def mark_processing_failed(self, *, save: bool = True) -> None:
         self.processing_error = True
         self.processing_started = False
@@ -375,11 +409,14 @@ class VideoState(models.Model):
         ready_for_export_by: str,
         save: bool = True,
     ) -> None:
-        self._raise_if_processing_error("mark ready for export")
+        normalized_sha, normalized_actor = self._validate_ready_for_export_transition(
+            processed_file_sha256=processed_file_sha256,
+            ready_for_export_by=ready_for_export_by,
+        )
         self.ready_for_export = True
         self.ready_for_export_at = timezone.now()
-        self.ready_for_export_by = ready_for_export_by
-        self.processed_file_sha256 = processed_file_sha256
+        self.ready_for_export_by = normalized_actor
+        self.processed_file_sha256 = normalized_sha
         if save:
             self.save(
                 update_fields=[
@@ -507,3 +544,59 @@ class VideoState(models.Model):
     class Meta:
         verbose_name = "Video Processing State"
         verbose_name_plural = "Video Processing States"
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(processing_error=False)
+                    | models.Q(processing_started=False)
+                ),
+                name="videostate_failed_not_started",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(ready_for_export=False) | models.Q(processing_error=False)
+                ),
+                name="videostate_ready_not_failed",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(ready_for_export=False)
+                    | models.Q(anonymization_validated=True)
+                ),
+                name="videostate_ready_requires_validation",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(ready_for_export=False)
+                    | models.Q(outside_segments_removed=True)
+                ),
+                name="videostate_ready_requires_cleanup",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(ready_for_export=False)
+                    | models.Q(segment_annotations_validated=True)
+                ),
+                name="videostate_ready_requires_segments",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(ready_for_export=False)
+                    | models.Q(ready_for_export_at__isnull=False)
+                ),
+                name="videostate_ready_requires_timestamp",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(ready_for_export=False) | ~models.Q(ready_for_export_by="")
+                ),
+                name="videostate_ready_requires_actor",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(ready_for_export=False)
+                    | ~models.Q(processed_file_sha256="")
+                ),
+                name="videostate_ready_requires_sha",
+            ),
+        ]
