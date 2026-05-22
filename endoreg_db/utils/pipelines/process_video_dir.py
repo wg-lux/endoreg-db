@@ -119,6 +119,13 @@ def process_video_dir(
             if video_file.sensitive_meta:
                 try:
                     sm_state = video_file.sensitive_meta.state
+                    if sm_state is None:
+                        logger.warning(
+                            "Cannot simulate validation for sensitive meta of video %s: "
+                            "state object does not exist.",
+                            video_file.video_hash,
+                        )
+                        continue
                     sm_state.dob_verified = True
                     sm_state.names_verified = True
                     sm_state.save()

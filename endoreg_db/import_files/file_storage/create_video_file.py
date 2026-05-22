@@ -17,7 +17,6 @@ from endoreg_db.services.hub.media_integrity import (
 )
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.services.video_files import (
-    create_initialized_video_file_from_path,
     get_video_by_content_hash,
 )
 from endoreg_db.utils.storage import file_exists
@@ -104,7 +103,7 @@ def create_or_retrieve_video_file(
             file_path,
             center_name,
         )
-        video = create_initialized_video_file_from_path(
+        video = VideoFile.create_from_file_initialized(
             file_path=file_path,
             center_name=center_name,
             processor_name=processor_name,

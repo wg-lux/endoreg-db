@@ -1739,8 +1739,12 @@ def application_settings_ai_dataset_export_download(request, artifact_id: str):
     if not result.is_file_response:
         return Response(result.payload, status=result.status_code)
 
+    file_path = result.file_path
+    if file_path is None:
+        return Response(result.payload, status=result.status_code)
+
     response = FileResponse(
-        result.file_path.open("rb"),
+        file_path.open("rb"),
         as_attachment=True,
         filename=result.filename,
         content_type=result.content_type,
