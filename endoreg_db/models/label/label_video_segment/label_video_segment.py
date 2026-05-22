@@ -7,6 +7,11 @@ from django.db import models
 from django.db.models import CheckConstraint, F, Q
 from tqdm import tqdm
 
+from endoreg_db.services.video_files import (
+    delete_video_frame_range,
+    extract_video_frame_range,
+    get_video_fps,
+)
 from ._create_from_video import _create_from_video
 
 logger = logging.getLogger(__name__)
@@ -202,7 +207,8 @@ class LabelVideoSegment(models.Model):
 
         if not isinstance(self.video_file, VideoFile):
             raise ValueError("Cannot extract frame files: No associated VideoFile.")
-        return self.video_file.extract_specific_frame_range(
+        return extract_video_frame_range(
+            self.video_file,
             start_frame=self.start_frame_number,
             end_frame=self.end_frame_number,
             overwrite=overwrite,
@@ -220,8 +226,10 @@ class LabelVideoSegment(models.Model):
 
         if not isinstance(self.video_file, VideoFile):
             raise ValueError("Cannot delete frame files: No associated VideoFile.")
-        self.video_file.delete_specific_frame_range(
-            start_frame=self.start_frame_number, end_frame=self.end_frame_number
+        delete_video_frame_range(
+            self.video_file,
+            start_frame=self.start_frame_number,
+            end_frame=self.end_frame_number,
         )
 
     @classmethod
@@ -491,7 +499,7 @@ class LabelVideoSegment(models.Model):
         """
         try:
             video_obj = self.get_video()
-            fps = video_obj.get_fps()
+            fps = get_video_fps(video_obj)
             if fps is None or fps <= 0:
                 logger.warning(
                     "Could not determine valid FPS for %s. Cannot calculate segment length in seconds.",
@@ -677,9 +685,10 @@ class LabelVideoSegment(models.Model):
             float: The FPS of the associated video, or 0.0 if unavailable or invalid.
         """
         video_obj = self.get_video()
-        if video_obj is None or video_obj.get_fps() is None:
+        if video_obj is None:
             return 0.0
-        return video_obj.get_fps()
+        fps = get_video_fps(video_obj)
+        return 0.0 if fps is None else fps
 
     @staticmethod
     def validate_frame_range(

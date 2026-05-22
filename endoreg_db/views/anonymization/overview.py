@@ -6,18 +6,26 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.db import transaction
 from django.db.models import Q
-from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
+from endoreg_db.utils.web.permissions import DEBUG_PERMISSIONS
 from endoreg_db.services.anonymization import AnonymizationService
 from endoreg_db.services.polling_coordinator import (
     PollingCoordinator,
     ProcessingLockContext,
 )
+from endoreg_db.services.raw_pdf_files import validate_report_metadata_annotation
+from endoreg_db.services.video_files import (
+    get_or_create_video_state,
+    get_video_by_pk,
+    validate_video_metadata_annotation,
+)
 from rest_framework.generics import ListAPIView
 from rest_framework.pagination import PageNumberPagination
-from endoreg_db.models import VideoFile, RawPdfFile, UploadJob
+from endoreg_db.models.hub.upload_job import UploadJob
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.media.video.video_file import VideoFile
 from ...serializers import FileOverviewSerializer, VoPPatientDataSerializer
 from django.http import JsonResponse
-from endoreg_db.utils.operation_log import (
+from endoreg_db.utils.observability.operation_log import (
     record_operation,
     ACTION_ANONYMIZATION_START,
     STATUS_NOT_STARTED,
@@ -183,7 +191,7 @@ class AnonymizationValidateView(APIView):
         # Try Video first
         video = VideoFile.objects.filter(pk=item_id).first()
         if video:
-            video_state = video.get_or_create_state()
+            video_state = get_or_create_video_state(video)
             video_meta = video.meta if isinstance(video.meta, dict) else {}
             if getattr(video_state, "processing_error", False) or (
                 video_meta.get("integrity_status") == "lost"
@@ -192,7 +200,7 @@ class AnonymizationValidateView(APIView):
                     {"error": "Video is marked failed/lost by media integrity."},
                     status=status.HTTP_409_CONFLICT,
                 )
-            ok = video.validate_metadata_annotation(payload)
+            ok = validate_video_metadata_annotation(video, payload)
             if not ok:
                 return Response(
                     {"error": "Video validation failed."},
@@ -203,7 +211,7 @@ class AnonymizationValidateView(APIView):
         # Then PDF
         pdf = RawPdfFile.objects.filter(pk=item_id).first()
         if pdf:
-            ok = pdf.validate_metadata_annotation(payload)
+            ok = validate_report_metadata_annotation(pdf, payload)
             if not ok:
                 return Response(
                     {"error": "PDF validation failed."},
@@ -438,7 +446,7 @@ def has_raw_video_file(request, file_id: int):
     Return whether the video still has a raw video file.
     """
     try:
-        video = VideoFile.get_video_by_pk(pk=file_id)
+        video = get_video_by_pk(pk=file_id)
     except VideoFile.DoesNotExist:
         return Response(
             {"detail": "Video not found", "file_id": file_id},

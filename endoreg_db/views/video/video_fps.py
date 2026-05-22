@@ -4,7 +4,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from endoreg_db.models import VideoFile
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.services.video_files import get_video_fps
+from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
 
 
 class VideoFpsView(APIView):
@@ -17,7 +18,7 @@ class VideoFpsView(APIView):
     def get(self, request, pk):
         video = get_object_or_404(VideoFile, pk=pk)
         try:
-            fps = float(video.get_fps())
+            fps = float(get_video_fps(video))
         except Exception as exc:
             return Response(
                 {

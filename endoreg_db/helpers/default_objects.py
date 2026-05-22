@@ -7,7 +7,7 @@ from typing import Optional
 from django.conf import settings  # Import settings
 from django.core.files.storage import default_storage  # Import default storage
 from django.db.models.fields.files import FieldFile
-from endoreg_db.utils.file_operations import (
+from endoreg_db.utils.filesystem.file_operations import (
     atomic_copy_file,
     safe_unlink_file,
     sha256_file,
@@ -22,7 +22,10 @@ from endoreg_db.models import (
     InformationSource,
     ModelMeta,
     Patient,
-    RawPdfFile,
+)
+from endoreg_db.services.raw_pdf_files import (
+    create_raw_pdf_file_from_path,
+    process_raw_pdf_file,
 )
 from endoreg_db.utils import create_mock_patient_name
 
@@ -320,7 +323,7 @@ def get_default_egd_pdf():
     file_field: Optional[FieldFile] = None
     try:
         # Create the report record using the temporary file.
-        pdf_file = RawPdfFile.create_from_file(
+        pdf_file = create_raw_pdf_file_from_path(
             file_path=temp_file_path,
             center_name=center_name,
             save=True,  # save=True is default and handled internally now
@@ -353,8 +356,9 @@ def get_default_egd_pdf():
             # center_name will be added by process_file using pdf_file.center.name
         }
 
-        # Call process_file to create SensitiveMeta and extract other info
-        pdf_file.process_file(
+        # Call service to create SensitiveMeta and extract other info
+        process_raw_pdf_file(
+            pdf_file,
             text="Default report text content.",
             anonymized_text="Default anonymized report text content.",
             report_meta=default_report_meta,
@@ -383,7 +387,7 @@ def get_default_video_file():
     Returns:
         VideoFile: The created and initialized VideoFile instance.
     """
-    from endoreg_db.models import VideoFile
+    from endoreg_db.services.video_files import create_initialized_video_file_from_path
 
     from .data_load_orchestrator import (
         load_ai_model_data,
@@ -411,7 +415,7 @@ def get_default_video_file():
         examination_alias="egd", is_anonymous=False
     )
 
-    video_file = VideoFile.create_from_file_initialized(
+    video_file = create_initialized_video_file_from_path(
         file_path=video_path,
         center_name=DEFAULT_CENTER_NAME,  # Pass center name as expected by _create_from_file
         processor_name=DEFAULT_ENDOSCOPY_PROCESSOR_NAME,

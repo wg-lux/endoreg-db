@@ -21,7 +21,8 @@ from endoreg_db.models import (
     Frame,
 )
 from endoreg_db.services.hub.deployment import local_study_server_mode_enabled
-from endoreg_db.utils.file_operations import (
+from endoreg_db.services.video_files import get_video_frame_dir_path
+from endoreg_db.utils.filesystem.file_operations import (
     atomic_copy_file,
     atomic_move_file,
     atomic_write_file,
@@ -30,13 +31,13 @@ from endoreg_db.utils.file_operations import (
     safe_unlink_file,
     sha256_file,
 )
-from endoreg_db.utils.paths import (
+from endoreg_db.utils.filesystem.paths import (
     ensure_within_protected_media_root,
     normalize_protected_media_relative_path,
     resolve_existing_protected_media_path,
 )
 from endoreg_db.utils.storage import ensure_local_file
-from endoreg_db.utils.storage_streaming import (
+from endoreg_db.utils.storage.streaming import (
     local_plaintext_path_from_name,
     maybe_local_plaintext_path,
 )
@@ -124,16 +125,20 @@ def _config_optional_bool(value: Any) -> bool | None:
 
 
 def _video_anonymization_validated(video: VideoFile) -> bool:
+    from endoreg_db.services.video_files import get_or_create_video_state
+
     state = getattr(video, "state", None)
-    if state is None and hasattr(video, "get_or_create_state"):
-        state = video.get_or_create_state()
+    if state is None:
+        state = get_or_create_video_state(video)
     return bool(getattr(state, "anonymization_validated", False))
 
 
 def _assert_video_media_export_ready(video: VideoFile) -> None:
+    from endoreg_db.services.video_files import get_or_create_video_state
+
     state = getattr(video, "state", None)
-    if state is None and hasattr(video, "get_or_create_state"):
-        state = video.get_or_create_state()
+    if state is None:
+        state = get_or_create_video_state(video)
 
     if bool(getattr(state, "processing_error", False)):
         raise ValueError(
@@ -981,7 +986,7 @@ def _resolve_frame_source_path(
                 return generated_path
             if generated_path.exists():
                 return generated_path
-        frame_dir = video.get_frame_dir_path()
+        frame_dir = get_video_frame_dir_path(video)
         if frame_dir is None:
             return None
         pk_path = frame_dir / frame_relative_path
@@ -1040,10 +1045,8 @@ def _transcode_video_to_frame_dir(
     if export_frame_root is not None:
         frame_dir = export_frame_root / f"video_{video.pk}"
     else:
-        fd = video.get_frame_dir_path()
-        if fd is not None:
-            frame_dir = fd
-        if not frame_dir:
+        frame_dir = get_video_frame_dir_path(video)
+        if frame_dir is None:
             raise ValueError(f"frame dir not available for video {video.pk}")
         frame_dir = ensure_within_protected_media_root(frame_dir)
 

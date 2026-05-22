@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Tuple
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.context.ensure_center import ensure_center
-from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.filesystem.file_operations import sha256_file
 from endoreg_db.models.media import VideoFile
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
@@ -16,6 +16,10 @@ from endoreg_db.services.hub.media_integrity import (
     check_video_media_integrity,
 )
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
+from endoreg_db.services.video_files import (
+    create_initialized_video_file_from_path,
+    get_video_by_content_hash,
+)
 from endoreg_db.utils.storage import file_exists
 
 logger = logging.getLogger(__name__)
@@ -66,7 +70,7 @@ def create_or_retrieve_video_file(
         processed = True
         needs_processing = False
         if not isinstance(ctx.current_video, VideoFile):
-            ctx.current_video = VideoFile.get_video_by_content_hash(ctx.file_hash)
+            ctx.current_video = get_video_by_content_hash(ctx.file_hash)
         integrity_result = check_video_media_integrity(
             ctx.current_video if isinstance(ctx.current_video, VideoFile) else None,
             expectation=MediaIntegrityExpectation.RAW_WATCHER_VIDEO,
@@ -84,7 +88,7 @@ def create_or_retrieve_video_file(
         return ctx.current_video, processed, needs_processing
     elif has_failure_history:
         if not isinstance(ctx.current_video, VideoFile):
-            ctx.current_video = VideoFile.get_video_by_content_hash(ctx.file_hash)
+            ctx.current_video = get_video_by_content_hash(ctx.file_hash)
         finalize_failure(ctx)
 
         processed = False
@@ -100,7 +104,7 @@ def create_or_retrieve_video_file(
             file_path,
             center_name,
         )
-        video = VideoFile.create_from_file_initialized(
+        video = create_initialized_video_file_from_path(
             file_path=file_path,
             center_name=center_name,
             processor_name=processor_name,

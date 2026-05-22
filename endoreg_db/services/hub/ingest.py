@@ -28,7 +28,8 @@ from endoreg_db.models import (
     VideoFile,
 )
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
-from endoreg_db.services.heavy_jobs import (
+from endoreg_db.services.raw_pdf_files import get_or_create_raw_pdf_state
+from endoreg_db.services.jobs.heavy_jobs import (
     HeavyJobKind,
     ensure_secure_transport_for_job_kind,
     queue_for_job_kind,
@@ -50,8 +51,9 @@ from endoreg_db.services.hub.media_integrity import (
 from endoreg_db.services.hub.payloads import PreanonymizedIngestPayload
 from endoreg_db.services.hub.payloads import LocalStudyServerPreanonymizedIngestPayload
 from endoreg_db.services.report_import import ReportImportService
-from endoreg_db.services.report_llm_jobs import dispatch_report_llm_import
+from endoreg_db.services.jobs.report_llm_jobs import dispatch_report_llm_import
 from endoreg_db.services.video_import import VideoImportService
+from endoreg_db.services.video_files import get_or_create_video_state
 from endoreg_db.services.video_temporal_inference import (
     dispatch_video_temporal_inference,
 )
@@ -59,15 +61,15 @@ from endoreg_db.utils.defaults.set_default_center import (
     get_application_defaults,
     get_default_processor,
 )
-from endoreg_db.utils.file_operations import (
+from endoreg_db.utils.filesystem.file_operations import (
     atomic_copy_file,
     atomic_move_file,
     ensure_directory,
     safe_unlink_file,
     sha256_file,
 )
-from endoreg_db.utils import paths as path_utils
-from endoreg_db.utils.paths import to_storage_relative
+from endoreg_db.utils.filesystem import paths as path_utils
+from endoreg_db.utils.filesystem.paths import to_storage_relative
 from endoreg_db.utils.storage import delete_field_file, ensure_local_file
 
 
@@ -78,8 +80,11 @@ WATCHER_CLEANUP_BATCH_LIMIT = 512
 
 
 class CeleryTaskDispatcher(Protocol):
-    def apply_async(self, *args: Any, **kwargs: Any) -> Any:
-        ...
+    def apply_async(self, *args: Any, **kwargs: Any) -> Any: ...
+
+
+class DelayTaskDispatcher(Protocol):
+    def delay(self, *args: Any, **kwargs: Any) -> Any: ...
 
 
 def _video_upload_import_task_dispatcher() -> CeleryTaskDispatcher:
@@ -622,10 +627,14 @@ def _reserve_video_upload_import_handoff(
 ) -> tuple[UploadJob, bool]:
     upload_job_manager = cast(Any, getattr(UploadJob, "objects"))
     with transaction.atomic():
-        job = upload_job_manager.select_for_update().select_related(
-            "source_center",
-            "sensitive_meta",
-        ).get(id=upload_job_id)
+        job = (
+            upload_job_manager.select_for_update()
+            .select_related(
+                "source_center",
+                "sensitive_meta",
+            )
+            .get(id=upload_job_id)
+        )
         if job.status == UploadJob.Status.ANONYMIZED:
             return job, False
         if not job.file or not job.file.name:
@@ -1358,7 +1367,7 @@ def _finalize_preanonymized_video(
         if update_fields:
             video.save(update_fields=update_fields)
 
-        state = video.get_or_create_state()
+        state = get_or_create_video_state(video)
         state.mark_processing_started()
         state.mark_anonymized()
         state.mark_sensitive_meta_processed()
@@ -1459,7 +1468,7 @@ def _finalize_preanonymized_report(
         if update_fields:
             report.save(update_fields=update_fields)
 
-        state = report.get_or_create_state()
+        state = get_or_create_raw_pdf_state(report)
         state.mark_processing_started()
         state.mark_anonymized()
         state.mark_sensitive_meta_processed()
@@ -1642,7 +1651,9 @@ def _run_video_upload_import_job(job_id: str) -> bool:
             logger.exception("Upload job processing failed for %s: %s", job_id, exc)
             job.mark_error(str(exc))
         else:
-            error_detail = f"Upload source could not be materialized from storage. {exc}"
+            error_detail = (
+                f"Upload source could not be materialized from storage. {exc}"
+            )
             logger.exception("Upload job source missing for %s: %s", job_id, exc)
             job.mark_lost(error_detail)
         return False
@@ -1740,7 +1751,7 @@ def _run_watcher_upload_job_inline(
 def start_upload_job_processing(
     *,
     upload_job: UploadJob,
-    task_dispatcher: Any | None = None,
+    task_dispatcher: CeleryTaskDispatcher | DelayTaskDispatcher | None = None,
 ) -> str:
     provenance = _normalized_upload_provenance(
         ingest_mode=upload_job.ingest_mode,
@@ -1903,9 +1914,7 @@ def process_watcher_file(
                     normalized_type=normalized_type,
                     source_center=source_center,
                     processor_name=(
-                        effective_processor_name
-                        if normalized_type == "video"
-                        else None
+                        effective_processor_name if normalized_type == "video" else None
                     ),
                 )
             except Exception as inline_exc:

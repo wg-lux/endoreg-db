@@ -11,8 +11,13 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from endoreg_db.models import RawPdfFile, VideoFile, VideoState, UploadJob
-from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
+from endoreg_db.models.hub.upload_job import UploadJob
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.state.video import VideoState
+from endoreg_db.services.raw_pdf_files import get_raw_pdf_by_pk
+from endoreg_db.services.video_files import get_video_by_pk
+from endoreg_db.utils.web.permissions import DEBUG_PERMISSIONS
 
 logger = logging.getLogger(__name__)
 
@@ -193,10 +198,10 @@ class MediaManagementView(APIView):
         pdf_file_obj = None
 
         if media_type == "video":
-            video_file_obj = VideoFile.get_video_by_pk(pk=file_id) if file_id else None
+            video_file_obj = get_video_by_pk(pk=file_id) if file_id else None
 
         elif media_type == "pdf":
-            pdf_file_obj = RawPdfFile.get_report_by_pk(pk=file_id) if file_id else None
+            pdf_file_obj = get_raw_pdf_by_pk(pk=file_id) if file_id else None
 
         with transaction.atomic():
             if video_file_obj:

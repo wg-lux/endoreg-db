@@ -33,7 +33,11 @@ from endoreg_db.services.hub.media_integrity import (
     MediaIntegrityExpectation,
     check_video_media_integrity,
 )
-from endoreg_db.utils import paths as path_utils
+from endoreg_db.services.video_files import (
+    get_or_create_video_state,
+    get_video_by_content_hash,
+)
+from endoreg_db.utils.filesystem import paths as path_utils
 
 logger = logging.getLogger(__name__)
 PIPELINE_STORAGE_MULTIPLIER = 2.5
@@ -159,7 +163,7 @@ class VideoImportService:
                 ctx.current_video, processed, needs_processing = (
                     create_or_retrieve_video_file(ctx)
                 )
-                ctx.current_video.get_or_create_state()
+                get_or_create_video_state(ctx.current_video)
                 if ctx.current_video.state is None:
                     raise ValueError(
                         f"{ctx.current_video.original_file_name} has no video state after trying."
@@ -252,7 +256,7 @@ class VideoImportService:
         ):
             return None
 
-        existing_video = VideoFile.get_video_by_content_hash(file_hash)
+        existing_video = get_video_by_content_hash(file_hash)
         integrity_result = check_video_media_integrity(
             existing_video,
             expectation=MediaIntegrityExpectation.RAW_WATCHER_VIDEO,

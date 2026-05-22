@@ -7,6 +7,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from endoreg_db.config.env import get_celery_ffmpeg_media_queue
+from endoreg_db.services.video_files import get_or_create_video_state
 
 if TYPE_CHECKING:
     from endoreg_db.models import VideoFile, VideoProcessingHistory
@@ -221,7 +222,7 @@ def _clear_export_readiness(state) -> None:
 
 
 def mark_segment_annotations_stale(video: VideoFile) -> None:
-    state = video.get_or_create_state()
+    state = get_or_create_video_state(video)
     state.segment_annotations_created = False
     state.segment_annotations_validated = False
     state.outside_segments_removed = False
@@ -241,7 +242,7 @@ def mark_segment_annotations_stale(video: VideoFile) -> None:
 
 
 def mark_segment_annotations_pending_cleanup(video: VideoFile) -> None:
-    state = video.get_or_create_state()
+    state = get_or_create_video_state(video)
     state.segment_annotations_created = True
     state.segment_annotations_validated = False
     state.outside_segments_removed = False
@@ -261,7 +262,7 @@ def mark_segment_annotations_pending_cleanup(video: VideoFile) -> None:
 
 
 def mark_segment_annotations_complete_without_cleanup(video: VideoFile) -> None:
-    state = video.get_or_create_state()
+    state = get_or_create_video_state(video)
     state.segment_annotations_created = True
     state.segment_annotations_validated = True
     state.outside_segments_removed = True
@@ -281,7 +282,7 @@ def mark_segment_annotations_complete_without_cleanup(video: VideoFile) -> None:
 
 
 def mark_post_validation_incomplete(video: VideoFile) -> None:
-    state = video.get_or_create_state()
+    state = get_or_create_video_state(video)
     state.segment_annotations_validated = False
     state.outside_segments_removed = False
     _clear_export_readiness(state)
@@ -299,7 +300,7 @@ def mark_post_validation_incomplete(video: VideoFile) -> None:
 
 
 def mark_post_validation_complete(video: VideoFile) -> None:
-    state = video.get_or_create_state()
+    state = get_or_create_video_state(video)
     state.outside_segments_removed = True
     state.segment_annotations_validated = True
     _clear_export_readiness(state)

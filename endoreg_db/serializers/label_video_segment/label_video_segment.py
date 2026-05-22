@@ -18,7 +18,8 @@ from endoreg_db.serializers.label_video_segment.image_classification_annotation 
     ImageClassificationAnnotationSerializer,
 )
 from endoreg_db.services.segment_contracts import SegmentAnnotationInput
-from endoreg_db.utils.media_urls import (
+from endoreg_db.services.video_files import get_video_fps, video_frame_number_to_seconds
+from endoreg_db.utils.web.media_urls import (
     build_absolute_media_url,
     build_video_frame_stream_path,
 )
@@ -58,7 +59,7 @@ class LabelVideoSegmentTimelineSerializer(serializers.ModelSerializer):
         if not video:
             return None
         try:
-            return video.frame_number_to_s(frame_number)
+            return video_frame_number_to_seconds(video, frame_number)
         except Exception:
             return None
 
@@ -203,7 +204,7 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
 
     def _validate_fps(self, video_file) -> float:
         """Helper to get valid FPS from video file."""
-        fps = video_file.get_fps()
+        fps = get_video_fps(video_file)
         if not fps or fps <= 0:
             raise serializers.ValidationError(
                 "Video file must have a defined, positive FPS to calculate frames."

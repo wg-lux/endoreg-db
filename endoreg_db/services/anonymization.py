@@ -8,8 +8,10 @@ from django.db import transaction
 from endoreg_db.models import RawPdfFile, VideoFile
 from endoreg_db.services.lx_video_contracts import resolve_lx_anonymization_state
 from endoreg_db.services.video_import import VideoImportService
+from endoreg_db.services.video_files import get_or_create_video_state
+from endoreg_db.services.raw_pdf_files import get_or_create_raw_pdf_state
 from endoreg_db.services.report_import import ReportImportService
-from endoreg_db.utils.paths import STORAGE_DIR
+from endoreg_db.utils.filesystem.paths import STORAGE_DIR
 from endoreg_db.utils.storage import ensure_local_file, file_exists
 
 logger = logging.getLogger(__name__)
@@ -267,14 +269,14 @@ class AnonymizationService:
     def validate(file_id: int) -> None | Literal["video"] | Literal["pdf"]:
         vf = VideoFile.objects.select_related("state").filter(pk=file_id).first()
         if vf:
-            video_state = vf.state or vf.get_or_create_state()
+            video_state = vf.state or get_or_create_video_state(vf)
             if hasattr(video_state, "mark_anonymization_validated"):
                 video_state.mark_anonymization_validated()
             return "video"
 
         pdf = RawPdfFile.objects.select_related("state").filter(pk=file_id).first()
         if pdf:
-            pdf_state = pdf.state or pdf.get_or_create_state()
+            pdf_state = pdf.state or get_or_create_raw_pdf_state(pdf)
             if hasattr(pdf_state, "mark_anonymization_validated"):
                 pdf_state.mark_anonymization_validated()
             return "pdf"

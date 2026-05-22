@@ -7,11 +7,16 @@ from django.core.exceptions import ObjectDoesNotExist
 from icecream import ic
 from tqdm import tqdm
 from endoreg_db.config.env import get_center_name
-from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.filesystem.file_operations import sha256_file
 from endoreg_db.models import (
     AiModel,
     ModelMeta,
-    VideoFile,
+)
+from endoreg_db.services.video_files import (
+    create_initialized_video_file_from_path,
+    get_video_outside_segments,
+    run_video_pipe_1,
+    run_video_pipe_2,
 )
 
 logger = logging.getLogger(__name__)
@@ -65,7 +70,7 @@ def process_video_dir(
         logger.info(f"Processing file: {file_path}")
         if file_path.is_file() and file_path.suffix in [".mp4", ".avi", ".mov"]:
             # Create a VideoFile object
-            video_file = VideoFile.create_from_file_initialized(
+            video_file = create_initialized_video_file_from_path(
                 file_path=file_path,
                 center_name=center_name,
                 processor_name=endoscopy_processor_name,
@@ -73,7 +78,8 @@ def process_video_dir(
             )
             logger.warning(f"Processing video file: {video_file}")
             try:
-                success_pipe_1 = video_file.pipe_1(
+                success_pipe_1 = run_video_pipe_1(
+                    video_file,
                     model_name=MODEL_NAME,
                 )
                 assert success_pipe_1, (
@@ -90,7 +96,7 @@ def process_video_dir(
 
             ####### SIMULATION OF VALIDATION #######
             # Simulate the validation process for video segments
-            outside_segments = video_file.get_outside_segments()
+            outside_segments = get_video_outside_segments(video_file)
             logger.warning(f"Outside segments found for simulation: {outside_segments}")
             if outside_segments:
                 for segment in outside_segments:
@@ -135,7 +141,7 @@ def process_video_dir(
             video_file.refresh_from_db()
             if success_pipe_1:
                 try:
-                    video_file.pipe_2()
+                    run_video_pipe_2(video_file)
                 except Exception as e:
                     logger.error(
                         f"Pipe 2 failed for video {video_file.video_hash}: {e}",

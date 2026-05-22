@@ -3,6 +3,8 @@ from typing import TYPE_CHECKING, List, Optional, Tuple
 
 import numpy as np
 
+from endoreg_db.services.video_files import get_video_fps
+
 from ..label.label_video_segment import LabelVideoSegment
 
 # Import necessary models and utils used by the logic
@@ -28,7 +30,7 @@ def apply_running_mean_logic(
     Apply a running mean filter to the confidence array for smoothing.
     """
     video_obj = instance.get_video()
-    fps = video_obj.get_fps()
+    fps = get_video_fps(video_obj)
 
     if fps is None or fps <= 0:
         logger.warning(
@@ -188,7 +190,7 @@ def create_video_segments_logic(
         segment_length_threshold_in_s = DEFAULT_VIDEO_SEGMENT_LENGTH_THRESHOLD_IN_S
 
     video_obj = instance.get_video()
-    fps = video_obj.get_fps()
+    fps = get_video_fps(video_obj)
 
     if fps is None or fps <= 0:
         logger.warning(

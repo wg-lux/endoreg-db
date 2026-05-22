@@ -14,15 +14,17 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from endoreg_db.authz.permissions import PolicyPermission
-from endoreg_db.models import PdfProcessingHistory, RawPdfFile
+from endoreg_db.models.media.pdf.pdf_processing_history import PdfProcessingHistory
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.serializers.pdf.pdf_processing_history import (
     PdfProcessingHistorySerializer,
 )
 from endoreg_db.services.polling_coordinator import ProcessingLockContext
-from endoreg_db.utils.file_operations import sha256_file
-from endoreg_db.utils.media_urls import build_pdf_stream_path
-from endoreg_db.utils.operation_log import record_operation
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.services.raw_pdf_files import get_or_create_raw_pdf_state
+from endoreg_db.utils.filesystem.file_operations import sha256_file
+from endoreg_db.utils.web.media_urls import build_pdf_stream_path
+from endoreg_db.utils.observability.operation_log import record_operation
+from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
 
 logger = logging.getLogger(__name__)
 
@@ -186,7 +188,7 @@ class PdfApplyRedactionsView(APIView):
                             status=status.HTTP_404_NOT_FOUND,
                         )
 
-                    state = pdf.get_or_create_state()
+                    state = get_or_create_raw_pdf_state(pdf)
                     status_before = _state_status_value(state) or "not_started"
 
                     pdf.processed_file.save(

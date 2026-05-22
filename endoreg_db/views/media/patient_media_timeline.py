@@ -17,13 +17,14 @@ from endoreg_db.models import (
     RawPdfFile,
     VideoFile,
 )
-from endoreg_db.utils.media_urls import (
+from endoreg_db.services.video_files import get_active_video_file
+from endoreg_db.utils.web.media_urls import (
     build_absolute_media_url,
     build_pdf_stream_path,
     build_video_frame_stream_path,
     build_video_stream_path,
 )
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
 
 logger = logging.getLogger(__name__)
 
@@ -441,7 +442,7 @@ class PatientMediaTimelineView(APIView):
             exam_patient = getattr(getattr(video, "examination", None), "patient", None)
             active_file_name = None
             try:
-                active_file = video.active_file
+                active_file = get_active_video_file(video)
                 active_file_name = active_file.name if active_file else None
             except Exception:
                 active_file_name = None

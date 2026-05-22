@@ -16,8 +16,9 @@ from endoreg_db.models.state.video_segment_validation import (
 )
 from endoreg_db.services.hub import resolve_allowed_center_id
 from endoreg_db.services.hub.audit import emit_hub_audit_event
-from endoreg_db.utils.file_operations import sha256_file
-from endoreg_db.utils.paths import ensure_within_protected_media_root
+from endoreg_db.services.video_files import get_or_create_video_state
+from endoreg_db.utils.filesystem.file_operations import sha256_file
+from endoreg_db.utils.filesystem.paths import ensure_within_protected_media_root
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +125,7 @@ def _verify_processed_path(processed_file) -> Path:
 
 
 def _verify_state(video: VideoFile) -> None:
-    state = video.get_or_create_state()
+    state = get_or_create_video_state(video)
     if getattr(state, "processing_error", False):
         raise ReadyForExportError(
             "Video is marked failed/lost by media integrity.",
@@ -209,7 +210,7 @@ def mark_video_ready_for_export(
             status_code=409,
         )
 
-    state = video.get_or_create_state()
+    state = get_or_create_video_state(video)
     ready_by = _user_identifier(user)
     state.mark_ready_for_export(
         processed_file_sha256=processed_file_sha256,

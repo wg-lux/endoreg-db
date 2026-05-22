@@ -31,8 +31,9 @@ from endoreg_db.models import (
     Label,
     VideoFile,
 )
-from endoreg_db.utils import paths as path_utils
-from endoreg_db.utils.file_operations import (
+from endoreg_db.services.video_files import get_or_create_video_state
+from endoreg_db.utils.filesystem import paths as path_utils
+from endoreg_db.utils.filesystem.file_operations import (
     atomic_move_file,
     ensure_directory,
     safe_unlink_file,
@@ -95,7 +96,7 @@ class VideoAnonymizer:
         # Setup anonymized directory
         anonymized_dir = ensure_directory(_processed_video_dir())
         assert ctx.current_video is not None
-        state = ctx.current_video.get_or_create_state()
+        state = get_or_create_video_state(ctx.current_video)
         meta = (
             ctx.current_video.meta if isinstance(ctx.current_video.meta, dict) else {}
         )

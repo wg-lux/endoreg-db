@@ -1,7 +1,8 @@
 from endoreg_db.models import VideoFile
 from endoreg_db.services.lx_video_contracts import resolve_lx_anonymization_state
+from endoreg_db.services.video_files import get_video_outside_segments
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.response import Response
@@ -64,7 +65,7 @@ class VideoMetadataStatsView(APIView):
         sensitive_ratio = None
         outside_frame_count = 0
 
-        outside_segments = video.get_outside_segments(only_validated=False)
+        outside_segments = get_video_outside_segments(video, only_validated=False)
         count = outside_segments.count()
 
         print(f"Number of outside segments: {count}")

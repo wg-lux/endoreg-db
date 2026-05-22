@@ -49,17 +49,18 @@ from endoreg_db.services.video_segments_bulk_mutation import (
 from endoreg_db.services.media_operation_gate import (
     create_segment_update_lease_on_commit,
 )
-from endoreg_db.services.video_post_validation_jobs import (
+from endoreg_db.services.jobs.video_post_validation_jobs import (
     JobDispatchResult,
     dispatch_video_post_validation_rebuild,
 )
+from endoreg_db.services.video_files import get_or_create_video_state, get_video_fps
 from endoreg_db.serializers.label_video_segment.label_video_segment import (
     LabelVideoSegmentTimelineSerializer,
     LabelVideoSegmentSerializer,
 )
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
 
-from endoreg_db.utils.operation_log import (
+from endoreg_db.utils.observability.operation_log import (
     record_operation,
     ACTION_SEGMENT_ANNOTATED,
     STATUS_VALIDATED,
@@ -239,7 +240,7 @@ def _validation_status_from_job(post_processing_job: JobDispatchResult | None) -
 
 
 def _segment_validation_state_payload(video: VideoFile) -> dict[str, object]:
-    state = video.get_or_create_state()
+    state = get_or_create_video_state(video)
     return {
         "segment_annotation_status": resolve_segment_annotation_status(video),
         "segment_annotations_validated": bool(
@@ -899,7 +900,7 @@ def video_segment_validate(request, pk: int, segment_id: int):
         end_time = request.data.get("end_time")
         fps_value = 0.0
         if start_time is not None and end_time is not None:
-            fps_value = segment.video_file.get_fps() or 0
+            fps_value = get_video_fps(segment.video_file) or 0
 
         with transaction.atomic():
             if start_time is not None and end_time is not None:
@@ -1066,7 +1067,7 @@ def video_segments_validate_bulk(request, pk: int):
             start_time = data.get("start_time")
             end_time = data.get("end_time")
             if start_time is not None and end_time is not None:
-                fps_by_segment_id[segment.pk] = segment.video_file.get_fps() or 0
+                fps_by_segment_id[segment.pk] = get_video_fps(segment.video_file) or 0
 
         updated_count = 0
         failed_ids = []

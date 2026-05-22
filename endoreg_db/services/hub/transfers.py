@@ -25,15 +25,17 @@ from endoreg_db.models.state.processing_history.processing_history import (
 from endoreg_db.models.metadata import sensitive_meta_logic
 from endoreg_db.services.auto_case_resolution import auto_resolve_media_case
 from endoreg_db.services.hub.audit import emit_hub_audit_event
-from endoreg_db.utils.file_operations import (
+from endoreg_db.services.raw_pdf_files import get_or_create_raw_pdf_state
+from endoreg_db.services.video_files import get_or_create_video_state
+from endoreg_db.utils.filesystem.file_operations import (
     ensure_directory,
     safe_unlink_file,
     sha256_file,
 )
-from endoreg_db.utils.hashs import get_pdf_hash
-from endoreg_db.utils.paths import TRANSCODING_DIR
+from endoreg_db.utils.security.hashs import get_pdf_hash
+from endoreg_db.utils.filesystem.paths import TRANSCODING_DIR
 from endoreg_db.utils.storage import delete_field_file, file_exists, save_local_file
-from endoreg_db.utils.structured_logging import hash_identifier
+from endoreg_db.utils.observability.structured_logging import hash_identifier
 from .ingest import _default_processor_name
 
 logger = logging.getLogger(__name__)
@@ -391,7 +393,7 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
         _apply_video_file_payload(video, video_file_payload)
 
         video.save()
-        video_state = video.get_or_create_state()
+        video_state = get_or_create_video_state(video)
         _apply_video_state_payload(video_state, video_state_payload)
 
         processing_success = _coerce_optional_bool(
@@ -485,7 +487,7 @@ def _apply_report_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
         _apply_report_file_payload(report, report_payload)
 
         report.save()
-        report_state = report.get_or_create_state()
+        report_state = get_or_create_raw_pdf_state(report)
         _apply_report_state_payload(report_state, report_state_payload)
 
         processing_success = _coerce_optional_bool(
@@ -1073,7 +1075,7 @@ def _expected_processed_video_hash(
 
 
 def _mark_video_transfer_as_processed(video: VideoFile) -> None:
-    state = video.get_or_create_state()
+    state = get_or_create_video_state(video)
     state.mark_processing_started()
     state.mark_anonymized()
     state.mark_sensitive_meta_processed()
@@ -1082,7 +1084,7 @@ def _mark_video_transfer_as_processed(video: VideoFile) -> None:
 
 
 def _mark_report_transfer_as_processed(report: RawPdfFile) -> None:
-    state = report.get_or_create_state()
+    state = get_or_create_raw_pdf_state(report)
     state.mark_processing_started()
     state.mark_anonymized()
     state.mark_sensitive_meta_processed()

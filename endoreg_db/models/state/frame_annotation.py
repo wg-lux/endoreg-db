@@ -11,7 +11,8 @@ from typing import TYPE_CHECKING, Any
 from django.db import models
 from django.db.models import Q
 
-from endoreg_db.utils.media_urls import build_video_frame_stream_path
+from endoreg_db.services.video_files import get_or_create_video_state
+from endoreg_db.utils.web.media_urls import build_video_frame_stream_path
 
 if TYPE_CHECKING:
     from django.db.models import QuerySet
@@ -197,7 +198,7 @@ def ai_dataset_requires_raw_frames(dataset: AIDataSet | None) -> bool:
 
 
 def mark_frame_prediction_reset(video: VideoFile) -> None:
-    state = video.get_or_create_state()
+    state = get_or_create_video_state(video)
     state.initial_prediction_completed = False
     state.lvs_created = False
     state.frame_annotations_generated = False
@@ -212,25 +213,25 @@ def mark_frame_prediction_reset(video: VideoFile) -> None:
 
 
 def mark_frame_prediction_completed(video: VideoFile) -> None:
-    state = video.get_or_create_state()
+    state = get_or_create_video_state(video)
     state.initial_prediction_completed = True
     state.save(update_fields=["initial_prediction_completed", "date_modified"])
 
 
 def mark_prediction_segments_created(video: VideoFile, *, created: bool) -> None:
-    state = video.get_or_create_state()
+    state = get_or_create_video_state(video)
     state.lvs_created = bool(created)
     state.save(update_fields=["lvs_created", "date_modified"])
 
 
 def mark_frame_annotations_generated(video: VideoFile) -> None:
-    state = video.get_or_create_state()
+    state = get_or_create_video_state(video)
     state.frame_annotations_generated = True
     state.save(update_fields=["frame_annotations_generated", "date_modified"])
 
 
 def mark_frame_annotations_stale(video: VideoFile) -> None:
-    state = video.get_or_create_state()
+    state = get_or_create_video_state(video)
     state.frame_annotations_generated = False
     state.save(update_fields=["frame_annotations_generated", "date_modified"])
 

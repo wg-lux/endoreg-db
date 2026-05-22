@@ -10,26 +10,27 @@ from rest_framework.views import APIView
 
 from endoreg_db.models import Frame, VideoFile
 from endoreg_db.authz.permissions import PolicyPermission
-from endoreg_db.services.frame_extraction_jobs import (
+from endoreg_db.services.jobs.frame_extraction_jobs import (
     FrameExtractionDispatchResult,
     REQUEST_STATUS_FAILED,
     get_or_create_frame_record,
     request_frame_extraction,
 )
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
-from endoreg_db.utils.paths import (
+from endoreg_db.services.video_files import get_video_frame_dir_path
+from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.filesystem.paths import (
     ensure_within_protected_media_root,
 )
-from endoreg_db.utils.storage_streaming import (
+from endoreg_db.utils.storage.streaming import (
     add_cors_headers,
     build_partial_content_response,
     parse_byte_range,
 )
-from endoreg_db.utils.nginx_accel import (
+from endoreg_db.utils.web.nginx_accel import (
     build_nginx_accel_response_for_path,
     nginx_offload_enabled,
 )
-from endoreg_db.utils.cors import resolve_response_origin
+from endoreg_db.utils.web.cors import resolve_response_origin
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +90,7 @@ class FrameStreamView(APIView):
             )
             raise Http404("Frame file path is invalid") from exc
 
-        frame_dir = video.get_frame_dir_path()
+        frame_dir = get_video_frame_dir_path(video)
         if frame_dir is None:
             raise Http404("Video frame directory is not configured")
         try:

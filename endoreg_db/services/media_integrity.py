@@ -32,16 +32,20 @@ from endoreg_db.services.streamable_media import (
     STREAMABLE_FILE_MODE,
     sync_video_streamable_artifacts,
 )
-from endoreg_db.utils.file_operations import (
+from endoreg_db.services.video_files import (
+    get_or_create_video_state,
+    get_video_frame_dir_path,
+)
+from endoreg_db.utils.filesystem.file_operations import (
     atomic_move_file,
     atomic_move_path,
     ensure_directory,
     safe_rmtree,
     sha256_file,
 )
-from endoreg_db.utils.paths import STORAGE_DIR
+from endoreg_db.utils.filesystem.paths import STORAGE_DIR
 from endoreg_db.utils.storage import materialize_video_file
-from endoreg_db.utils.structured_logging import (
+from endoreg_db.utils.observability.structured_logging import (
     emit_structured_event,
     hash_identifier,
     safe_log_value,
@@ -274,7 +278,7 @@ def _mark_video_state_failed(
         return state is None or needs_normalization
     if state is not None and not needs_normalization:
         return False
-    state = state or video.get_or_create_state()
+    state = state or get_or_create_video_state(video)
     state.mark_processing_failed(save=True)
     return True
 
@@ -530,7 +534,7 @@ def _expected_relative_path(frame_number: int, ext: str = "jpg") -> str:
 
 
 def _expected_frame_count(video: VideoFile) -> int | None:
-    state = video.get_or_create_state()
+    state = get_or_create_video_state(video)
     for value in (
         getattr(video, "frame_count", None),
         getattr(state, "frame_count", None),
@@ -579,7 +583,7 @@ def _has_manual_annotations(video: VideoFile) -> bool:
 def classify_frame_cache(
     video: VideoFile, *, ext: str = "jpg"
 ) -> FrameCacheClassification:
-    frame_dir = video.get_frame_dir_path()
+    frame_dir = get_video_frame_dir_path(video)
     expected_count = _expected_frame_count(video)
     frame_rows = list(
         Frame.objects.filter(video=video).values(
@@ -703,7 +707,7 @@ def _repair_specific_frames(
     dry_run: bool,
     ext: str = "jpg",
 ) -> tuple[int, str]:
-    frame_dir = video.get_frame_dir_path()
+    frame_dir = get_video_frame_dir_path(video)
     if frame_dir is None:
         return 0, "frame_dir unavailable"
 
@@ -784,7 +788,7 @@ def _repair_full_frame_cache(
     dry_run: bool,
     ext: str = "jpg",
 ) -> tuple[int, str]:
-    frame_dir = video.get_frame_dir_path()
+    frame_dir = get_video_frame_dir_path(video)
     expected_count = _expected_frame_count(video)
     if frame_dir is None:
         return 0, "frame_dir unavailable"
@@ -862,7 +866,7 @@ def _repair_full_frame_cache(
                     frames_to_update,
                     ["relative_path", "is_extracted"],
                 )
-            state = video.get_or_create_state()
+            state = get_or_create_video_state(video)
             state.frames_initialized = True
             state.frame_count = expected_count
             state.mark_frames_extracted(save=False)
@@ -906,7 +910,7 @@ def _repair_complete_frame_cache_db_contract(
             frame_numbers=frame_numbers,
             ext=ext,
         )
-        state = video.get_or_create_state()
+        state = get_or_create_video_state(video)
         state.frames_initialized = True
         state.frame_count = expected_count
         state.mark_frames_extracted(save=False)

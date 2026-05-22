@@ -40,7 +40,16 @@ from endoreg_db.models.state.frame_annotation import (
 from endoreg_db.models.state.video_segment_validation import (
     _is_outside_frame_blackening_history,
 )
-from endoreg_db.services.video_task_cleanup import rollback_video_frame_artifacts
+from endoreg_db.services.video_files import (
+    delete_video_frames,
+    extract_video_frames,
+    get_video_fps,
+    get_video_frame_dir_path,
+    predict_video,
+    update_video_meta,
+    update_video_text_metadata,
+)
+from endoreg_db.services.jobs.video_task_cleanup import rollback_video_frame_artifacts
 
 logger = logging.getLogger(__name__)
 
@@ -177,7 +186,7 @@ def _prediction_segments_for_meta(
 
 
 def _has_extracted_frame_files(video: VideoFile) -> bool:
-    frame_dir = video.get_frame_dir_path()
+    frame_dir = get_video_frame_dir_path(video)
     return bool(frame_dir and frame_dir.exists() and any(frame_dir.glob("frame_*.jpg")))
 
 
@@ -1213,7 +1222,7 @@ def _run_video_temporal_inference(
         model_meta = ModelMeta.objects.select_related("model", "labelset").get(
             pk=model_meta_id
         )
-        fps = float(video.get_fps() or DEFAULT_VIDEO_FPS)
+        fps = float(get_video_fps(video) or DEFAULT_VIDEO_FPS)
         lx_options, normalized_temporal_options = build_lx_temporal_options(
             temporal_options,
             fps=fps,
@@ -1221,7 +1230,7 @@ def _run_video_temporal_inference(
 
         mark_frame_prediction_reset(video)
         video.refresh_from_db()
-        video.update_video_meta()
+        update_video_meta(video)
         resolved_frame_source_mode = _resolve_temporal_frame_source_mode(
             video,
             requested_frame_source_mode,
@@ -1236,20 +1245,22 @@ def _run_video_temporal_inference(
             history.save(update_fields=["config"])
         if resolved_frame_source_mode == "cache":
             frames_touched = True
-            video.extract_frames(overwrite=False)
-            video.update_text_metadata(
+            extract_video_frames(video, overwrite=False)
+            update_video_text_metadata(
+                video,
                 ocr_frame_fraction=ocr_frame_fraction,
                 cap=ocr_cap,
                 overwrite=False,
             )
             if not _has_extracted_frame_files(video):
                 frames_touched = True
-                video.extract_frames(overwrite=True)
+                extract_video_frames(video, overwrite=True)
             if not _has_extracted_frame_files(video):
                 raise RuntimeError(
                     f"Frame cache for video {video.pk} is empty after extraction."
                 )
-        score_result = video.predict_video(
+        score_result = predict_video(
+            video,
             model_meta=model_meta,
             test_run=test_run,
             n_test_frames=n_test_frames,
@@ -1375,7 +1386,7 @@ def _run_video_temporal_inference(
     finally:
         if video is not None and delete_frames_after and success and frames_touched:
             try:
-                video.delete_frames()
+                delete_video_frames(video)
             except Exception:
                 logger.exception(
                     "Temporal inference succeeded, but frame cleanup failed for video %s.",
@@ -1400,7 +1411,7 @@ def dispatch_video_temporal_inference(
     task_id = str(uuid.uuid4())
     queue = get_celery_inference_queue()
     video = VideoFile.objects.get(pk=video_id)
-    fps = float(video.get_fps() or DEFAULT_VIDEO_FPS)
+    fps = float(get_video_fps(video) or DEFAULT_VIDEO_FPS)
     _, normalized_temporal_options = build_lx_temporal_options(
         temporal_options,
         fps=fps,

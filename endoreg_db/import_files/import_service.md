@@ -10,6 +10,7 @@ The main orchestration entrypoints are:
 
 - `ReportImportService`
 - `VideoImportService`
+- `endoreg_db.services.video_files.create_initialized_video_file_from_path(...)`
 
 ## Video Import Execution Order
 
@@ -22,7 +23,7 @@ The current intended flow is:
 3. A `file_lock` is acquired on the watched import file.
 4. Inside the lock, `create_sensitive_copy(...)` copies the import file into `SENSITIVE_VIDEO_DIR` under the original filename.
 5. `create_or_retrieve_video_file(...)` consumes `ctx.sensitive_path`, not the watched import path.
-6. `VideoFile.create_from_file_initialized(...)` is the single place that calls `transcode_videofile_if_required(...)`.
+6. `create_initialized_video_file_from_path(...)` is the single service entrypoint that calls `transcode_videofile_if_required(...)`.
 7. The standardized raw file is stored under the canonical hash-based filename in sensitive storage.
    It is first written to a `.part` path in the destination directory and atomically promoted only after verification.
 8. The anonymizer reads from the canonical raw file path when available.
@@ -47,7 +48,7 @@ For one video dropped into `data/import/video_import`, the current pipeline perf
 1. Sensitive staging copy.
    `create_sensitive_copy(...)` copies the watched import file into `SENSITIVE_VIDEO_DIR` under the original filename via `atomic_copy_with_fallback(...)`.
 2. Canonical raw video standardization.
-   `VideoFile.create_from_file_initialized(...)` calls `transcode_videofile_if_required(...)` with the sensitive staging copy as input and a `.part` file in canonical sensitive storage as output.
+   `create_initialized_video_file_from_path(...)` calls `transcode_videofile_if_required(...)` with the sensitive staging copy as input and a `.part` file in canonical sensitive storage as output.
 3. FFmpeg transcode when the source is not compliant.
    If codec is not `h264`, pixel format is not `yuv420p`, or color range is not `pc`, FFmpeg writes a transcoded file to the `.part` path.
 4. Plain file copy when the source is already compliant.
@@ -144,10 +145,10 @@ The main concurrency and consistency risks in this flow are:
   If a sensitive copy is created before the import lock is acquired, two workers can both copy the large import file into managed storage before one of them loses the lock race. This wastes IO and can create confusing temporary artifacts. The current implementation avoids this by copying only after the import lock is acquired.
 
 - Duplicate standardization.
-  If the pipeline standardizes during the sensitive copy step and again during `VideoFile` creation, the same 18GB source can be transcoded twice. The current intended design is "standardize once, consume everywhere": only `create_from_file_initialized(...)` performs standardization.
+  If the pipeline standardizes during the sensitive copy step and again during `VideoFile` creation, the same 18GB source can be transcoded twice. The current intended design is "standardize once, consume everywhere": only `create_initialized_video_file_from_path(...)` performs standardization.
 
 - Stale source paths after canonicalization.
-  `create_from_file_initialized(...)` may move or copy the managed working file into the canonical raw path. Code that continues reading from `ctx.file_path` or `ctx.sensitive_path` after that can end up using a stale path. The anonymizer should prefer `ctx.current_video.get_raw_file_path()`.
+  `create_initialized_video_file_from_path(...)` may move or copy the managed working file into the canonical raw path. Code that continues reading from `ctx.file_path` or `ctx.sensitive_path` after that can end up using a stale path. The anonymizer should prefer `endoreg_db.services.video_files.get_raw_video_file_path(ctx.current_video)`.
 
 - Leftover temporary sensitive copies.
   If the temporary sensitive working copy is not removed after success, the system can retain an extra original-named file in addition to the canonical raw file and the anonymized file. That inflates storage usage and makes the durable state ambiguous.

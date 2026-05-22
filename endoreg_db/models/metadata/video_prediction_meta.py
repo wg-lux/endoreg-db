@@ -6,6 +6,7 @@ import numpy as np
 from django.db import models
 
 from endoreg_db.models.label import LabelSet
+from endoreg_db.services.video_files import get_video_fps
 
 from ..label.label_video_segment import LabelVideoSegment
 from ..utils import find_segments_in_prediction_array
@@ -187,7 +188,7 @@ class VideoPredictionMeta(models.Model):
         of 0.5 for the edges.
         """
         video_obj = self.get_video()
-        fps = video_obj.get_fps()
+        fps = get_video_fps(video_obj)
 
         if fps is None or fps <= 0:
             logger.warning(
@@ -276,7 +277,7 @@ class VideoPredictionMeta(models.Model):
             segment_length_threshold_in_s = DEFAULT_VIDEO_SEGMENT_LENGTH_THRESHOLD_IN_S
 
         video_obj = self.get_video()
-        fps = video_obj.get_fps()
+        fps = get_video_fps(video_obj)
 
         if fps is None or fps <= 0:
             logger.warning(
