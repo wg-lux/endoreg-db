@@ -52,7 +52,10 @@ class Migration(migrations.Migration):
                         max_length=16,
                     ),
                 ),
-                ("task_id", models.CharField(blank=True, db_index=True, max_length=100)),
+                (
+                    "task_id",
+                    models.CharField(blank=True, db_index=True, max_length=100),
+                ),
                 ("queue", models.CharField(max_length=64)),
                 ("config", models.JSONField(blank=True, default=dict)),
                 ("result", models.JSONField(blank=True, default=dict)),

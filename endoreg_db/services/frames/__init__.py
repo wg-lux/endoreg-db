@@ -1,2 +1,1 @@
 """Frame-oriented service helpers."""
-

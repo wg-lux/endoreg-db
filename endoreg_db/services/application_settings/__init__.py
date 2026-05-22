@@ -1,2 +1,1 @@
 """Application settings service helpers."""
-

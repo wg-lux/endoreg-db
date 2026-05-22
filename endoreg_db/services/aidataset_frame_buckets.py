@@ -289,7 +289,11 @@ def _build_segment_frame_buckets(
 
         for segment in video_segments:
             for frame_number, frame_id in frame_ids_by_number.items():
-                if segment.start_frame_number <= frame_number < segment.end_frame_number:
+                if (
+                    segment.start_frame_number
+                    <= frame_number
+                    < segment.end_frame_number
+                ):
                     buckets[segment.label_id].add(frame_id)
 
     return {label_id: frame_ids for label_id, frame_ids in buckets.items() if frame_ids}
@@ -343,9 +347,7 @@ def build_frame_bucket_distribution(
         else set()
     )
     segment_frame_ids = (
-        set().union(*segment_frame_buckets.values())
-        if segment_frame_buckets
-        else set()
+        set().union(*segment_frame_buckets.values()) if segment_frame_buckets else set()
     )
     merged_frame_ids = (
         set().union(*merged_frame_buckets.values()) if merged_frame_buckets else set()

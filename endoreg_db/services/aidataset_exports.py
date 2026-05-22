@@ -316,7 +316,9 @@ def build_export_payload(
         if annotation.label_id is not None
     }
     label_ids.update(
-        segment.label_id for segment in video_annotations if segment.label_id is not None
+        segment.label_id
+        for segment in video_annotations
+        if segment.label_id is not None
     )
 
     summary = AIDataSetExportSummary.model_validate(
