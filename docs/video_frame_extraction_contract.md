@@ -2,9 +2,9 @@
 
 ## Scope
 
-This document describes how `VideoFile` frame extraction is expected to behave
-for full pipeline runs, on-demand frame streaming, and post-validation video
-rebuilds.
+This document describes how video frame extraction services are expected to
+behave for full pipeline runs, on-demand frame streaming, and post-validation
+video rebuilds.
 
 The key invariant is:
 
@@ -35,8 +35,8 @@ so it already produces names aligned with DB numbering.
 
 ## Full Extraction Reuse Rule
 
-`VideoFile.extract_frames(overwrite=False)` may skip ffmpeg only when all of the
-following are true:
+`endoreg_db.services.video_files.extract_video_frames(video, overwrite=False)`
+may skip ffmpeg only when all of the following are true:
 
 - The expected frame count is known from `video.frame_count` or the associated
   `VideoState.frame_count`.
@@ -54,8 +54,8 @@ the expected count is known. Missing or extra frame numbers fail loudly.
 
 ## Range Extraction Reuse Rule
 
-`VideoFile.extract_specific_frame_range(start_frame, end_frame, overwrite=False)`
-is used for on-demand frame streaming and other small range requests.
+`endoreg_db.services.video_files.extract_video_frame_range(...)` is used for
+on-demand frame streaming and other small range requests.
 
 Range extraction may skip ffmpeg only when the stable files for every requested
 frame exist. Stale `Frame.is_extracted=True` rows are not trusted by themselves.
@@ -70,12 +70,12 @@ range is not a complete video extraction.
 
 | Trigger | Entry point | Extraction mode | Source video | Expected behavior |
 | --- | --- | --- | --- | --- |
-| `pipe_1` initial processing | `endoreg_db/models/media/video/pipe_1.py` -> `video_file.extract_frames(overwrite=False)` | Full | Raw | Reuse only a complete frame set. Partial/on-demand files force full re-extraction. |
-| Frame stream request | `endoreg_db/views/media/frame_media.py` -> `video.extract_specific_frame_range(frame, frame + 1)` | Range | Raw | Recreate the requested stable frame file if missing. Never fall back to full extraction on the request path. |
-| Outside-frame video rebuild | `VideoFile.create_video_without_outside_frames(...)` | Full | Processed | Force processed-video extraction with `overwrite=True`, censor outside frames, then reassemble. Extracted frames remain available afterward. |
-| Post-validation rebuild job | `endoreg_db/services/video_post_validation_jobs.py` -> `VideoFile.create_video_without_outside_frames(...)` | Full | Processed | After rebuild, verify exact stable frame rows and files are still present. Fail if frames cannot be fetched/recreated by stable DB paths. |
+| `pipe_1` initial processing | `endoreg_db.services.video_files.run_video_pipe_1(video)` -> `extract_video_frames(video, overwrite=False)` | Full | Raw | Reuse only a complete frame set. Partial/on-demand files force full re-extraction. |
+| Frame stream request | `endoreg_db.services.video_files.extract_video_frame_range(video, start_frame=frame, end_frame=frame + 1)` | Range | Raw | Recreate the requested stable frame file if missing. Never fall back to full extraction on the request path. |
+| Outside-frame video rebuild | `endoreg_db.services.video_files.rebuild_processed_video_without_outside_frames(video)` | Full | Processed | Force processed-video extraction with `overwrite=True`, censor outside frames, then reassemble. Extracted frames remain available afterward. |
+| Post-validation rebuild job | `endoreg_db/services/jobs/video_post_validation_jobs.py` -> `rebuild_processed_video_without_outside_frames(video)` | Full | Processed | After rebuild, verify exact stable frame rows and files are still present. Fail if frames cannot be fetched/recreated by stable DB paths. |
 | Segment CRUD post-processing | `endoreg_db/views/video/segments_crud.py` -> `dispatch_video_post_validation_rebuild(...)` | Job dispatch | Processed via job | Trigger post-validation rebuild after outside-segment changes. |
-| Direct model/API use | `VideoFile.extract_frames(...)` or `VideoFile.extract_specific_frame_range(...)` | Full or range | Raw/processed depending on arguments | Must obey the same completeness and stable-path rules. |
+| Legacy compatibility wrappers | `VideoFile.extract_frames(...)`, `VideoFile.extract_specific_frame_range(...)`, `VideoFile.create_video_without_outside_frames(...)` | Full or range | Raw/processed depending on arguments | Preserved for existing callers; new code should use `endoreg_db.services.video_files`. |
 
 ## Pipe 1 Failure Mode This Prevents
 
@@ -117,6 +117,10 @@ stable DB paths.
   `endoreg_db/models/media/video/video_file_frames/_extract_frames.py`
 - Range extraction wrapper:
   `endoreg_db/models/media/video/video_file_frames/_manage_frame_range.py`
+- Service entrypoints:
+  `endoreg_db/services/video_files/frames.py`,
+  `endoreg_db/services/video_files/pipeline.py`,
+  `endoreg_db/services/video_files/anonymization.py`
 - ffmpeg command builder:
   `endoreg_db/utils/video/ffmpeg_wrapper.py`
 - Frame streaming view:
@@ -124,9 +128,9 @@ stable DB paths.
 - `pipe_1` caller:
   `endoreg_db/models/media/video/pipe_1.py`
 - Post-validation rebuild:
-  `endoreg_db/services/video_post_validation_jobs.py`
+  `endoreg_db/services/jobs/video_post_validation_jobs.py`
 - Outside-frame rebuild:
-  `endoreg_db/models/media/video/video_file.py`
+  `endoreg_db/services/video_post_validation_blackening.py`
 
 ## Maintenance Checklist
 
@@ -137,7 +141,7 @@ When changing frame extraction or frame streaming:
 - Keep DB numbering and filenames zero-based.
 - Keep range extraction from marking the whole video as fully extracted.
 - Keep post-validation rebuild frames available after the rebuild completes.
-- Use typed filesystem wrappers from `endoreg_db.utils.file_operations` for
+- Use typed filesystem wrappers from `endoreg_db.utils.filesystem.file_operations` for
   production filesystem mutations.
 - Add or update tests that cover partial files, stale DB flags, and stable
   `Frame.relative_path` values.

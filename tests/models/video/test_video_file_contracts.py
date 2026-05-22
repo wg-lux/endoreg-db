@@ -6,8 +6,9 @@ import pytest
 from django.core.files.base import ContentFile
 
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS
-from endoreg_db.models import Center, VideoFile
+from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.media.video.storage_mode import VideoStorageMode
+from endoreg_db.models.media.video.video_file import VideoFile
 
 
 @pytest.fixture
@@ -197,7 +198,7 @@ def test_video_file_resolve_raw_stream_source_materializes_when_requested(
     with (
         patch.object(video, "get_raw_stream_path", get_raw_stream_path),
         patch(
-            "endoreg_db.models.media.video.video_file_streaming.sync_video_streamable_artifacts",
+            "endoreg_db.services.video_files.streaming.sync_video_streamable_artifacts",
             Mock(),
         ) as sync_mock,
     ):

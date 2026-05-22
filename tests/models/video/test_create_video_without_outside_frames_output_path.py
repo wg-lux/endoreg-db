@@ -16,7 +16,7 @@ from endoreg_db.services.media_operation_gate import (
     MediaOperationDeferred,
     create_video_stream_lease,
 )
-from endoreg_db.utils.paths import data_paths, to_storage_relative
+from endoreg_db.utils.filesystem.paths import data_paths, to_storage_relative
 
 
 def _create_video(tmp_path):
@@ -104,7 +104,10 @@ def test_create_video_without_outside_frames_uses_streamed_rebuild(
         def __exit__(self, exc_type, exc, tb):
             return False
 
-    monkeypatch.setattr(video, "ensure_local_processed_file", lambda: _Context())
+    monkeypatch.setattr(
+        "endoreg_db.services.video_post_validation_blackening.ensure_local_processed_video_file",
+        lambda video_obj: _Context(),
+    )
 
     def fake_blacken_video_frame_intervals(
         input_path,
@@ -124,16 +127,16 @@ def test_create_video_without_outside_frames_uses_streamed_rebuild(
         return output_path
 
     monkeypatch.setattr(
-        "endoreg_db.models.media.video.video_file.blacken_video_frame_intervals",
+        "endoreg_db.services.video_post_validation_blackening.blacken_video_frame_intervals",
         fake_blacken_video_frame_intervals,
     )
     monkeypatch.setattr(
-        "endoreg_db.models.media.video.video_file.get_video_hash",
+        "endoreg_db.services.video_post_validation_blackening.get_video_hash",
         lambda path: "new-processed-hash",
     )
     streamable_sync = []
     monkeypatch.setattr(
-        "endoreg_db.models.media.video.video_file.sync_video_streamable_artifacts",
+        "endoreg_db.services.video_post_validation_blackening.sync_video_streamable_artifacts",
         lambda *args, **kwargs: streamable_sync.append((args, kwargs)),
     )
 
@@ -182,7 +185,10 @@ def test_create_video_without_outside_frames_defers_swap_when_stream_active(
         def __exit__(self, exc_type, exc, tb):
             return False
 
-    monkeypatch.setattr(video, "ensure_local_processed_file", lambda: _Context())
+    monkeypatch.setattr(
+        "endoreg_db.services.video_post_validation_blackening.ensure_local_processed_video_file",
+        lambda video_obj: _Context(),
+    )
 
     def fake_blacken_video_frame_intervals(input_path, output_path, *, intervals):
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -190,11 +196,11 @@ def test_create_video_without_outside_frames_defers_swap_when_stream_active(
         return output_path
 
     monkeypatch.setattr(
-        "endoreg_db.models.media.video.video_file.blacken_video_frame_intervals",
+        "endoreg_db.services.video_post_validation_blackening.blacken_video_frame_intervals",
         fake_blacken_video_frame_intervals,
     )
     monkeypatch.setattr(
-        "endoreg_db.models.media.video.video_file.get_video_hash",
+        "endoreg_db.services.video_post_validation_blackening.get_video_hash",
         lambda path: "new-processed-hash",
     )
 
@@ -202,7 +208,7 @@ def test_create_video_without_outside_frames_defers_swap_when_stream_active(
         raise AssertionError("must not swap active stream artifact")
 
     monkeypatch.setattr(
-        "endoreg_db.models.media.video.video_file.save_local_file",
+        "endoreg_db.services.video_post_validation_blackening.save_local_file",
         fail_save_local_file,
     )
     with pytest.raises(MediaOperationDeferred):
@@ -245,7 +251,10 @@ def test_create_video_without_outside_frames_merges_adjacent_intervals_and_noops
         def __exit__(self, exc_type, exc, tb):
             return False
 
-    monkeypatch.setattr(video, "ensure_local_processed_file", lambda: _Context())
+    monkeypatch.setattr(
+        "endoreg_db.services.video_post_validation_blackening.ensure_local_processed_video_file",
+        lambda video_obj: _Context(),
+    )
 
     calls = []
 
@@ -263,15 +272,15 @@ def test_create_video_without_outside_frames_merges_adjacent_intervals_and_noops
         return output_path
 
     monkeypatch.setattr(
-        "endoreg_db.models.media.video.video_file.blacken_video_frame_intervals",
+        "endoreg_db.services.video_post_validation_blackening.blacken_video_frame_intervals",
         fake_blacken_video_frame_intervals,
     )
     monkeypatch.setattr(
-        "endoreg_db.models.media.video.video_file.get_video_hash",
+        "endoreg_db.services.video_post_validation_blackening.get_video_hash",
         lambda path: "merged-hash",
     )
     monkeypatch.setattr(
-        "endoreg_db.models.media.video.video_file.sync_video_streamable_artifacts",
+        "endoreg_db.services.video_post_validation_blackening.sync_video_streamable_artifacts",
         lambda *args, **kwargs: None,
     )
 
@@ -298,7 +307,10 @@ def test_create_video_without_outside_frames_uses_supplied_intervals(
         def __exit__(self, exc_type, exc, tb):
             return False
 
-    monkeypatch.setattr(video, "ensure_local_processed_file", lambda: _Context())
+    monkeypatch.setattr(
+        "endoreg_db.services.video_post_validation_blackening.ensure_local_processed_video_file",
+        lambda video_obj: _Context(),
+    )
 
     calls = []
 
@@ -316,15 +328,15 @@ def test_create_video_without_outside_frames_uses_supplied_intervals(
         return output_path
 
     monkeypatch.setattr(
-        "endoreg_db.models.media.video.video_file.blacken_video_frame_intervals",
+        "endoreg_db.services.video_post_validation_blackening.blacken_video_frame_intervals",
         fake_blacken_video_frame_intervals,
     )
     monkeypatch.setattr(
-        "endoreg_db.models.media.video.video_file.get_video_hash",
+        "endoreg_db.services.video_post_validation_blackening.get_video_hash",
         lambda path: "supplied-interval-hash",
     )
     monkeypatch.setattr(
-        "endoreg_db.models.media.video.video_file.sync_video_streamable_artifacts",
+        "endoreg_db.services.video_post_validation_blackening.sync_video_streamable_artifacts",
         lambda *args, **kwargs: None,
     )
 
@@ -366,7 +378,10 @@ def test_create_video_without_outside_frames_includes_frame_level_outside_annota
         def __exit__(self, exc_type, exc, tb):
             return False
 
-    monkeypatch.setattr(video, "ensure_local_processed_file", lambda: _Context())
+    monkeypatch.setattr(
+        "endoreg_db.services.video_post_validation_blackening.ensure_local_processed_video_file",
+        lambda video_obj: _Context(),
+    )
 
     calls = []
 
@@ -384,15 +399,15 @@ def test_create_video_without_outside_frames_includes_frame_level_outside_annota
         return output_path
 
     monkeypatch.setattr(
-        "endoreg_db.models.media.video.video_file.blacken_video_frame_intervals",
+        "endoreg_db.services.video_post_validation_blackening.blacken_video_frame_intervals",
         fake_blacken_video_frame_intervals,
     )
     monkeypatch.setattr(
-        "endoreg_db.models.media.video.video_file.get_video_hash",
+        "endoreg_db.services.video_post_validation_blackening.get_video_hash",
         lambda path: "annotation-hash",
     )
     monkeypatch.setattr(
-        "endoreg_db.models.media.video.video_file.sync_video_streamable_artifacts",
+        "endoreg_db.services.video_post_validation_blackening.sync_video_streamable_artifacts",
         lambda *args, **kwargs: None,
     )
 
