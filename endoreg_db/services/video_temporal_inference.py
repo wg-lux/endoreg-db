@@ -18,6 +18,10 @@ from endoreg_db.config.env import (
     get_video_temporal_inference_job_mode,
     get_video_temporal_inference_frame_source_mode,
 )
+from endoreg_db.services.jobs.heavy_jobs import (
+    HeavyJobKind,
+    ensure_secure_transport_for_job_kind,
+)
 from endoreg_db.models import (
     LabelVideoSegment,
     ModelMeta,
@@ -983,6 +987,7 @@ def _dispatch_temporal_inference_history(
         try:
             from endoreg_db.tasks import run_video_temporal_inference_task
 
+            ensure_secure_transport_for_job_kind(HeavyJobKind.VISION_INFERENCE)
             async_result = run_video_temporal_inference_task.apply_async(
                 args=(int(video_id), int(dispatch_config.model_meta_id)),
                 kwargs={
