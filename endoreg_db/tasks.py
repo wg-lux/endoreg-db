@@ -36,7 +36,7 @@ def run_video_reimport_task(
 ) -> bool:
     from endoreg_db.config.env import get_video_post_validation_dispatch_delay_seconds
     from endoreg_db.services.media_operation_gate import MediaOperationDeferred
-    from endoreg_db.services.video_reimport_jobs import _run_video_reimport_job
+    from endoreg_db.services.jobs.video_reimport_jobs import _run_video_reimport_job
 
     try:
         return _run_video_reimport_job(
@@ -64,7 +64,9 @@ def run_frame_extraction_request_task(
     video_id: int,
     frame_number: int,
 ) -> bool:
-    from endoreg_db.services.frame_extraction_jobs import run_frame_extraction_request
+    from endoreg_db.services.jobs.frame_extraction_jobs import (
+        run_frame_extraction_request,
+    )
 
     return run_frame_extraction_request(
         request_id=int(request_id),
@@ -88,7 +90,7 @@ def run_video_post_validation_rebuild_task(
 ) -> bool:
     from endoreg_db.config.env import get_video_post_validation_dispatch_delay_seconds
     from endoreg_db.services.media_operation_gate import MediaOperationDeferred
-    from endoreg_db.services.video_post_validation_jobs import (
+    from endoreg_db.services.jobs.video_post_validation_jobs import (
         _run_video_post_validation_rebuild,
     )
 
@@ -162,7 +164,7 @@ def run_model_training_task(
     run_id: str,
     command_kwargs: dict[str, Any],
 ) -> bool:
-    from endoreg_db.services.model_training_jobs import _execute_model_training_run
+    from endoreg_db.services.jobs.model_training_jobs import _execute_model_training_run
 
     _execute_model_training_run(
         str(run_id),
@@ -182,7 +184,7 @@ def run_model_training_task(
     soft_time_limit=60 * 60 * 5,
 )
 def run_report_llm_reimport_task(_task, job_id: str) -> bool:
-    from endoreg_db.services.report_llm_jobs import _run_report_llm_reimport_job
+    from endoreg_db.services.jobs.report_llm_jobs import _run_report_llm_reimport_job
 
     return _run_report_llm_reimport_job(str(job_id))
 
@@ -197,7 +199,7 @@ def run_report_llm_reimport_task(_task, job_id: str) -> bool:
     soft_time_limit=60 * 60 * 5,
 )
 def run_report_llm_import_task(_task, job_id: str) -> bool:
-    from endoreg_db.services.report_llm_jobs import _run_report_llm_import_job
+    from endoreg_db.services.jobs.report_llm_jobs import _run_report_llm_import_job
 
     return _run_report_llm_import_job(str(job_id))
 

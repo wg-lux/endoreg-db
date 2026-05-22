@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from endoreg_db.services.heavy_jobs import (
+from endoreg_db.services.jobs.heavy_jobs import (
     HEAVY_JOB_QUEUE_BY_KIND,
     HeavyJobKind,
     WorkloadQueue,

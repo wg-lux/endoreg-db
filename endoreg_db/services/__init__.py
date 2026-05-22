@@ -23,31 +23,29 @@ _ANONYMIZATION_MODULES = (
 )
 _MEDIA_MODULES = (
     "export_ready",
-    "frame_extraction_jobs",
     "frame_retention",
     "frame_segment_reconciliation",
     "lx_video_contracts",
     "media_integrity",
     "media_operation_gate",
     "pdf_import",
+    "raw_pdf_files",
     "segment_annotations",
     "segment_contracts",
     "segment_sync",
     "streamable_media",
     "video_dimension_backfill",
     "video_format_reconciliation",
+    "video_files",
     "video_import",
-    "video_post_validation_jobs",
-    "video_reimport_jobs",
+    "video_post_validation_blackening",
     "video_segments_bulk_mutation",
-    "video_task_cleanup",
     "video_temporal_inference",
     "video_transcoding",
 )
 _REPORT_MODULES = (
     "report_history",
     "report_import",
-    "report_llm_jobs",
     "report_materialization",
     "report_pdf_renderer",
     "report_persistence",
@@ -60,15 +58,23 @@ _SYSTEM_MODULES = (
     "environment_readiness",
     "finding_description_service",
     "frames",
-    "heavy_jobs",
     "hub",
+    "jobs",
     "knowledge_base_identity",
     "model_meta_from_hf",
-    "model_training_jobs",
     "polling_coordinator",
     "reconciliation",
     "sap_ish_import",
     "tabular_import_formats",
+)
+_JOB_MODULES = (
+    "frame_extraction_jobs",
+    "heavy_jobs",
+    "model_training_jobs",
+    "report_llm_jobs",
+    "video_post_validation_jobs",
+    "video_reimport_jobs",
+    "video_task_cleanup",
 )
 
 _SERVICE_MODULES = {
@@ -81,6 +87,9 @@ _SERVICE_MODULES = {
         *_SYSTEM_MODULES,
     )
 }
+_SERVICE_MODULES.update(
+    {module_name: f".jobs.{module_name}" for module_name in _JOB_MODULES}
+)
 
 _EXPORTS = {
     "build_preanonymized_payload": (
@@ -132,6 +141,7 @@ if TYPE_CHECKING:
     frame_segment_reconciliation: ModuleType
     heavy_jobs: ModuleType
     hub: ModuleType
+    jobs: ModuleType
     knowledge_base_identity: ModuleType
     lx_video_contracts: ModuleType
     media_integrity: ModuleType
@@ -141,6 +151,7 @@ if TYPE_CHECKING:
     pdf_import: ModuleType
     polling_coordinator: ModuleType
     pseudonym_service: ModuleType
+    raw_pdf_files: ModuleType
     reconciliation: ModuleType
     report_history: ModuleType
     report_import: ModuleType
@@ -157,7 +168,9 @@ if TYPE_CHECKING:
     validated_identity: ModuleType
     video_dimension_backfill: ModuleType
     video_format_reconciliation: ModuleType
+    video_files: ModuleType
     video_import: ModuleType
+    video_post_validation_blackening: ModuleType
     video_post_validation_jobs: ModuleType
     video_reimport_jobs: ModuleType
     video_segments_bulk_mutation: ModuleType

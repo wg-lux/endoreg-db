@@ -6,7 +6,7 @@ import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 
 from endoreg_db.models import Center, RawPdfFile, ReportLlmInferenceJob, UploadJob
-from endoreg_db.services.report_llm_jobs import (
+from endoreg_db.services.jobs.report_llm_jobs import (
     dispatch_report_llm_import,
     dispatch_report_llm_reimport,
     report_llm_job_payload,
@@ -128,7 +128,7 @@ def test_report_upload_import_inline_returns_report_poll_url_after_completion(
 
     monkeypatch.setenv("REPORT_LLM_JOB_MODE", "inline")
     monkeypatch.setattr(
-        "endoreg_db.services.report_llm_jobs.ReportImportService.import_and_anonymize",
+        "endoreg_db.services.jobs.report_llm_jobs.ReportImportService.import_and_anonymize",
         lambda *_args, **_kwargs: report,
     )
 

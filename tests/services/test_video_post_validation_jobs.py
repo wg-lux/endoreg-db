@@ -22,7 +22,7 @@ from endoreg_db.services.media_operation_gate import (
     MediaOperationDeferred,
     create_video_stream_lease,
 )
-from endoreg_db.services import video_post_validation_jobs as jobs
+from endoreg_db.services.jobs import video_post_validation_jobs as jobs
 from endoreg_db.services import video_temporal_inference as temporal_jobs
 
 
@@ -423,8 +423,8 @@ def test_run_video_post_validation_rebuild_rolls_back_frames_when_rebuild_return
         return False
 
     monkeypatch.setattr(
-        VideoFile,
-        "create_video_without_outside_frames",
+        jobs,
+        "rebuild_processed_video_without_outside_frames",
         fake_create_video_without_outside_frames,
     )
     history = VideoProcessingHistory.objects.create(
@@ -456,7 +456,7 @@ def test_run_video_post_validation_rebuild_defers_when_stream_lease_active(
     video = _create_video_for_post_validation(tmp_path)
     create_video_stream_lease(video, file_type="processed", ttl_seconds=120)
     rebuild = Mock(side_effect=AssertionError("must not rebuild during stream"))
-    monkeypatch.setattr(VideoFile, "create_video_without_outside_frames", rebuild)
+    monkeypatch.setattr(jobs, "rebuild_processed_video_without_outside_frames", rebuild)
     history = VideoProcessingHistory.objects.create(
         video=video,
         operation=VideoProcessingHistory.OPERATION_REPROCESSING,
@@ -510,12 +510,12 @@ def test_run_video_post_validation_rebuild_accepts_valid_processed_output(
             return False
 
     monkeypatch.setattr(
-        VideoFile,
-        "create_video_without_outside_frames",
+        jobs,
+        "rebuild_processed_video_without_outside_frames",
         fake_create_video_without_outside_frames,
     )
     monkeypatch.setattr(
-        VideoFile, "ensure_local_processed_file", lambda self: _Context()
+        jobs, "ensure_local_processed_video_file", lambda _video: _Context()
     )
     monkeypatch.setattr(
         "endoreg_db.utils.video.ffmpeg_wrapper.get_stream_info",
@@ -576,8 +576,8 @@ def test_run_video_post_validation_rebuild_reuses_merged_intervals(
 
     monkeypatch.setattr(jobs, "_merge_outside_frame_intervals", fake_merge)
     monkeypatch.setattr(
-        VideoFile,
-        "create_video_without_outside_frames",
+        jobs,
+        "rebuild_processed_video_without_outside_frames",
         fake_create_video_without_outside_frames,
     )
     monkeypatch.setattr(
@@ -625,12 +625,12 @@ def test_run_video_post_validation_rebuild_queues_deferred_temporal_inference(
     submitted = []
     monkeypatch.setenv("VIDEO_TEMPORAL_INFERENCE_JOB_MODE", "thread")
     monkeypatch.setattr(
-        VideoFile,
-        "create_video_without_outside_frames",
+        jobs,
+        "rebuild_processed_video_without_outside_frames",
         fake_create_video_without_outside_frames,
     )
     monkeypatch.setattr(
-        VideoFile, "ensure_local_processed_file", lambda self: _Context()
+        jobs, "ensure_local_processed_video_file", lambda _video: _Context()
     )
     monkeypatch.setattr(
         "endoreg_db.utils.video.ffmpeg_wrapper.get_stream_info",
@@ -702,8 +702,8 @@ def test_run_video_post_validation_rebuild_failure_fails_deferred_temporal_infer
         return False
 
     monkeypatch.setattr(
-        VideoFile,
-        "create_video_without_outside_frames",
+        jobs,
+        "rebuild_processed_video_without_outside_frames",
         fake_create_video_without_outside_frames,
     )
     rebuild_history = VideoProcessingHistory.objects.create(
@@ -767,12 +767,12 @@ def test_run_video_post_validation_rebuild_rejects_processed_output_without_vide
             return False
 
     monkeypatch.setattr(
-        VideoFile,
-        "create_video_without_outside_frames",
+        jobs,
+        "rebuild_processed_video_without_outside_frames",
         fake_create_video_without_outside_frames,
     )
     monkeypatch.setattr(
-        VideoFile, "ensure_local_processed_file", lambda self: _Context()
+        jobs, "ensure_local_processed_video_file", lambda _video: _Context()
     )
     monkeypatch.setattr(
         "endoreg_db.utils.video.ffmpeg_wrapper.get_stream_info",

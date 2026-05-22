@@ -7,8 +7,8 @@ import pytest
 from django.test import TestCase
 
 from endoreg_db.models import Center, Frame, FrameExtractionRequest, VideoFile
-from endoreg_db.services import frame_extraction_jobs
-from endoreg_db.utils.paths import protected_media_root
+from endoreg_db.services.jobs import frame_extraction_jobs
+from endoreg_db.utils.filesystem.paths import protected_media_root
 
 
 class FrameExtractionJobsTest(TestCase):
@@ -107,7 +107,7 @@ class FrameExtractionJobsTest(TestCase):
         target_path = frame.file_path
         target_path.parent.mkdir(parents=True, exist_ok=True)
 
-        def _fake_extract_specific_frame_range(
+        def _fake_extract_video_frame_range(
             video_self, start_frame, end_frame, overwrite=False, **kwargs
         ):
             assert video_self.pk == self.video.pk
@@ -120,9 +120,9 @@ class FrameExtractionJobsTest(TestCase):
 
         monkeypatches = pytest.MonkeyPatch()
         monkeypatches.setattr(
-            VideoFile,
-            "extract_specific_frame_range",
-            _fake_extract_specific_frame_range,
+            frame_extraction_jobs,
+            "extract_video_frame_range",
+            _fake_extract_video_frame_range,
         )
         try:
             result = frame_extraction_jobs.run_frame_extraction_request(

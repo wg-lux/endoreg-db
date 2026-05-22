@@ -60,7 +60,7 @@ def test_task_module_defers_service_imports_until_execution() -> None:
 
 def test_frame_extraction_task_delegates_with_normalized_ids() -> None:
     with patch(
-        "endoreg_db.services.frame_extraction_jobs.run_frame_extraction_request",
+        "endoreg_db.services.jobs.frame_extraction_jobs.run_frame_extraction_request",
         return_value=True,
     ) as runner:
         result = tasks.run_frame_extraction_request_task.run("11", "22", "33")
@@ -75,7 +75,7 @@ def test_frame_extraction_task_delegates_with_normalized_ids() -> None:
 
 def test_video_post_validation_rebuild_task_delegates_with_normalized_args() -> None:
     with patch(
-        "endoreg_db.services.video_post_validation_jobs."
+        "endoreg_db.services.jobs.video_post_validation_jobs."
         "_run_video_post_validation_rebuild",
         return_value=True,
     ) as runner:
@@ -96,7 +96,7 @@ def test_video_post_validation_rebuild_task_retries_when_media_busy() -> None:
 
     with (
         patch(
-            "endoreg_db.services.video_post_validation_jobs."
+            "endoreg_db.services.jobs.video_post_validation_jobs."
             "_run_video_post_validation_rebuild",
             side_effect=deferred,
         ) as runner,
@@ -148,7 +148,7 @@ def test_model_training_task_delegates_and_returns_small_result() -> None:
     command_kwargs = {"dataset_id": 42}
 
     with patch(
-        "endoreg_db.services.model_training_jobs._execute_model_training_run",
+        "endoreg_db.services.jobs.model_training_jobs._execute_model_training_run",
         return_value=None,
     ) as runner:
         result = tasks.run_model_training_task.run("run-1", command_kwargs)
