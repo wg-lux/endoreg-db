@@ -9,15 +9,13 @@ if TYPE_CHECKING:
 
 
 def anonymize_video_file(video: "VideoFile", delete_original_raw: bool = True) -> bool:
-    from endoreg_db.models.media.video.video_file_anonymize import _anonymize
+    from ._anonymization import _anonymize
 
     return _anonymize(video, delete_original_raw=delete_original_raw)
 
 
 def create_anonymized_video_frame_files(video: "VideoFile", *args, **kwargs):
-    from endoreg_db.models.media.video.video_file_anonymize import (
-        _create_anonymized_frame_files,
-    )
+    from ._anonymization import _create_anonymized_frame_files
 
     return _create_anonymized_frame_files(video, *args, **kwargs)
 
@@ -29,7 +27,7 @@ def cleanup_video_raw_assets(
     raw_file_path: Path | None = None,
     raw_frame_dir: Path | None = None,
 ) -> None:
-    from endoreg_db.models.media.video.video_file_anonymize import _cleanup_raw_assets
+    from ._anonymization import _cleanup_raw_assets
 
     _cleanup_raw_assets(
         video_hash=video_hash,

@@ -23,31 +23,31 @@ def get_video_ffmpeg_meta(video: "VideoFile") -> "FFMpegMeta":
 
 
 def update_video_meta(video: "VideoFile", save_instance: bool = True):
-    from endoreg_db.models.media.video.video_file_meta import _update_video_meta
+    from ._metadata import _update_video_meta
 
     return _update_video_meta(video, save_instance=save_instance)
 
 
 def initialize_video_specs(video: "VideoFile", use_raw: bool = True) -> bool:
-    from endoreg_db.models.media.video.video_file_meta import _initialize_video_specs
+    from ._metadata import _initialize_video_specs
 
     return _initialize_video_specs(video, use_raw=use_raw)
 
 
 def get_video_fps(video: "VideoFile") -> float:
-    from endoreg_db.models.media.video.video_file_meta import _get_fps
+    from ._metadata import _get_fps
 
     return _get_fps(video)
 
 
 def get_video_endo_roi(video: "VideoFile", *args, **kwargs):
-    from endoreg_db.models.media.video.video_file_meta import _get_endo_roi
+    from ._metadata import _get_endo_roi
 
     return _get_endo_roi(video, *args, **kwargs)
 
 
 def get_video_crop_template(video: "VideoFile", *args, **kwargs):
-    from endoreg_db.models.media.video.video_file_meta import _get_crop_template
+    from ._metadata import _get_crop_template
 
     return _get_crop_template(video, *args, **kwargs)
 
@@ -59,7 +59,7 @@ def update_video_text_metadata(
     cap: int = 10,
     overwrite: bool = False,
 ) -> Optional["SensitiveMeta"]:
-    from endoreg_db.models.media.video.video_file_meta import _update_text_metadata
+    from ._metadata import _update_text_metadata
 
     return _update_text_metadata(
         video,
@@ -71,7 +71,7 @@ def update_video_text_metadata(
 
 
 def ensure_default_video_fps(video: "VideoFile") -> float:
-    from endoreg_db.models.media.video.video_file_time import _ensure_default_fps
+    from ._time import _ensure_default_fps
 
     return _ensure_default_fps(video)
 
@@ -83,6 +83,6 @@ def get_video_duration(video: "VideoFile"):
 
 
 def video_frame_number_to_seconds(video: "VideoFile", frame_number: int) -> float:
-    from endoreg_db.models.media.video.video_file_time import _frame_number_to_s
+    from ._time import _frame_number_to_s
 
     return _frame_number_to_s(video, frame_number)

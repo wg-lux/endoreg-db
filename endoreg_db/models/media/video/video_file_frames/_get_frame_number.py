@@ -1,13 +1,9 @@
-import logging
-from typing import TYPE_CHECKING
+"""Compatibility alias for the service-layer video implementation."""
 
-if TYPE_CHECKING:
-    from endoreg_db.models import VideoFile
+from __future__ import annotations
 
-logger = logging.getLogger(__name__)
+from endoreg_db.models.media.video._service_alias import alias_service_module
 
-
-def _get_frame_number(video: "VideoFile") -> int:
-    """Counts the number of associated Frame objects in the database."""
-    # Access related manager directly
-    return video.frames.count()
+alias_service_module(
+    __name__, "endoreg_db.services.video_files._frames._get_frame_number"
+)

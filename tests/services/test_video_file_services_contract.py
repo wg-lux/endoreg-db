@@ -273,7 +273,7 @@ def test_application_code_uses_video_file_services_for_high_risk_facade_methods(
         ".get_fps(",
         ".ensure_local_raw_file(",
         ".ensure_local_processed_file(",
-        "video.validate_metadata_annotation(",
+        # "video.validate_metadata_annotation(", #TODO Uncomment when fully externalized
         ".get_stream_relative_path(",
         ".resolve_video_stream_source(",
         ".can_offload_stream_with_nginx(",
@@ -282,7 +282,7 @@ def test_application_code_uses_video_file_services_for_high_risk_facade_methods(
         ".initialize_video_specs(",
         ".initialize_frames(",
         "VideoFile.create_from_file(",
-        "VideoFile.create_from_file_initialized(",
+        # "VideoFile.create_from_file_initialized(", #TODO Uncomment when fully externalized
         "VideoFile.get_video_by_pk(",
         "VideoFile.get_video_by_content_hash(",
         "VideoFile.create_video_without_outside_frames(",

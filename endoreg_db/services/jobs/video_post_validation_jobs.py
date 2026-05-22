@@ -161,7 +161,7 @@ def _verify_outside_frames_blackened(
     tolerance: int = 8,
 ) -> None:
     """Fail if any metadata-targeted outside frame is missing or visibly non-black."""
-    from endoreg_db.models.media.video.video_file_segments import _get_outside_frames
+    from endoreg_db.services.video_files._segments import _get_outside_frames
 
     outside_frames = list(
         _get_outside_frames(video, only_validated=only_validated).only(

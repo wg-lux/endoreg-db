@@ -5,7 +5,22 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 MODELS_ROOT = PROJECT_ROOT / "endoreg_db" / "models"
+SERVICES_ROOT = PROJECT_ROOT / "endoreg_db" / "services"
 SERVICE_IMPORT_PREFIX = "endoreg_db.services"
+BANNED_MODEL_IMPLEMENTATION_IMPORT_PREFIXES = (
+    "endoreg_db.models.media.pdf.create_report_from_file",
+    "endoreg_db.models.media.video.create_from_file",
+    "endoreg_db.models.media.video.pipe_1",
+    "endoreg_db.models.media.video.pipe_2",
+    "endoreg_db.models.media.video.video_file_ai",
+    "endoreg_db.models.media.video.video_file_anonymize",
+    "endoreg_db.models.media.video.video_file_frames",
+    "endoreg_db.models.media.video.video_file_io",
+    "endoreg_db.models.media.video.video_file_meta",
+    "endoreg_db.models.media.video.video_file_segments",
+    "endoreg_db.models.media.video.video_file_streaming",
+    "endoreg_db.models.media.video.video_file_time",
+)
 
 ALLOWLISTED_MODEL_TO_SERVICE_IMPORTS = {
     (
@@ -90,10 +105,6 @@ ALLOWLISTED_MODEL_TO_SERVICE_IMPORTS = {
         }
     ),
     (
-        "endoreg_db/models/media/video/pipe_2.py",
-        "endoreg_db.services.media_integrity",
-    ): frozenset({"mark_video_integrity_lost"}),
-    (
         "endoreg_db/models/media/video/video_file.py",
         "endoreg_db.services.video_files",
     ): frozenset(
@@ -173,22 +184,6 @@ ALLOWLISTED_MODEL_TO_SERVICE_IMPORTS = {
         "endoreg_db.services.video_post_validation_blackening",
     ): frozenset({"merge_outside_frame_intervals"}),
     (
-        "endoreg_db/models/media/video/video_file_anonymize.py",
-        "endoreg_db.services.media_integrity",
-    ): frozenset({"mark_video_integrity_lost"}),
-    (
-        "endoreg_db/models/media/video/video_file_anonymize.py",
-        "endoreg_db.services.streamable_media",
-    ): frozenset({"sync_video_streamable_artifacts"}),
-    (
-        "endoreg_db/models/media/video/video_file_io.py",
-        "endoreg_db.services.streamable_media",
-    ): frozenset({"sync_video_streamable_artifacts"}),
-    (
-        "endoreg_db/models/media/video/video_file_streaming.py",
-        "endoreg_db.services.streamable_media",
-    ): frozenset({"sync_video_streamable_artifacts"}),
-    (
         "endoreg_db/models/medical/patient/patient_examination.py",
         "endoreg_db.services.knowledge_base_identity",
     ): frozenset({"get_configured_knowledge_base_identity"}),
@@ -243,6 +238,39 @@ def _model_to_service_imports():
     return {key: frozenset(names) for key, names in imports.items()}
 
 
+def _is_banned_model_implementation_import(module: str) -> bool:
+    return any(
+        module == banned_prefix or module.startswith(f"{banned_prefix}.")
+        for banned_prefix in BANNED_MODEL_IMPLEMENTATION_IMPORT_PREFIXES
+    )
+
+
+def _service_to_model_implementation_imports():
+    imports = defaultdict(set)
+
+    for path in sorted(SERVICES_ROOT.rglob("*.py")):
+        tree = ast.parse(path.read_text(), filename=str(path))
+        rel_path = path.relative_to(PROJECT_ROOT).as_posix()
+
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.ImportFrom)
+                and node.module
+                and _is_banned_model_implementation_import(node.module)
+            ):
+                imports[(rel_path, node.module)].update(
+                    _imported_name(alias) for alias in node.names
+                )
+                continue
+
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if _is_banned_model_implementation_import(alias.name):
+                        imports[(rel_path, alias.name)].add(_imported_name(alias))
+
+    return {key: frozenset(names) for key, names in imports.items()}
+
+
 def test_models_do_not_add_new_service_imports():
     current_imports = _model_to_service_imports()
 
@@ -266,3 +294,7 @@ def test_models_do_not_add_new_service_imports():
     assert not unexpected_import_keys, sorted(unexpected_import_keys)
     assert not stale_import_keys, sorted(stale_import_keys)
     assert not changed_import_names, changed_import_names
+
+
+def test_services_do_not_import_model_media_implementation_modules():
+    assert not _service_to_model_implementation_imports()

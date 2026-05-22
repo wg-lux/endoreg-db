@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeGuard
 
 from django.db.models.fields.files import FieldFile
 from django.urls import reverse
@@ -11,6 +11,8 @@ from endoreg_db.models.media.video.storage_mode import (
     coerce_video_storage_mode,
 )
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
+from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
+from endoreg_db.utils.filesystem.paths import normalize_protected_media_relative_path
 from endoreg_db.utils.storage import file_exists
 from endoreg_db.utils.storage.streaming import maybe_local_plaintext_path
 
@@ -26,11 +28,11 @@ if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
 
 
-def _field_has_name(field_file) -> bool:
+def _field_has_name(field_file: object) -> TypeGuard[FieldFile]:
     return bool(field_file and getattr(field_file, "name", None))
 
 
-def _field_storage_can_stream(field_file) -> bool:
+def _field_storage_can_stream(field_file: object) -> bool:
     storage = getattr(field_file, "storage", None)
     return bool(
         storage is not None
@@ -157,19 +159,19 @@ def get_active_video_file_url(video: "VideoFile") -> str | None:
 
 
 def get_raw_video_stream_relative_path(video: "VideoFile") -> str | None:
-    from endoreg_db.models.media.video.video_file_streaming import (
-        _get_raw_stream_relative_path,
-    )
-
-    return _get_raw_stream_relative_path(video)
+    relative_path = getattr(video, "raw_streamable_relative_path", "")
+    try:
+        return normalize_protected_media_relative_path(relative_path)
+    except ValueError:
+        return None
 
 
 def get_processed_video_stream_relative_path(video: "VideoFile") -> str | None:
-    from endoreg_db.models.media.video.video_file_streaming import (
-        _get_processed_stream_relative_path,
-    )
-
-    return _get_processed_stream_relative_path(video)
+    relative_path = getattr(video, "processed_streamable_relative_path", "")
+    try:
+        return normalize_protected_media_relative_path(relative_path)
+    except ValueError:
+        return None
 
 
 def get_video_stream_relative_path(
@@ -304,8 +306,10 @@ def can_offload_video_stream(
 
 
 def is_encrypted_streamable_video_path(path: Path | None) -> bool:
-    from endoreg_db.models.media.video.video_file_streaming import (
-        _is_encrypted_streamable_path,
-    )
-
-    return _is_encrypted_streamable_path(path)
+    if path is None:
+        return False
+    try:
+        with path.open("rb") as handle:
+            return handle.read(len(LX_ENCRYPTED_MAGIC)) == LX_ENCRYPTED_MAGIC
+    except OSError:
+        return False

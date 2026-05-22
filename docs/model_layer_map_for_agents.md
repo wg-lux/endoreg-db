@@ -34,6 +34,11 @@ The biggest big-ball-of-mud risk is bidirectional coupling:
 model facade -> service package -> private model implementation -> model facade
 ```
 
+For video files, the private implementation has been inverted into
+`endoreg_db/services/video_files/_*`. The legacy
+`endoreg_db/models/media/video/video_file_*` modules are compatibility aliases
+only and should not receive new behavior.
+
 The import barrel at `endoreg_db/models/__init__.py` amplifies this risk by
 pulling broad subpackages into otherwise small imports.
 
@@ -43,8 +48,8 @@ pulling broad subpackages into otherwise small imports.
 | --- | --- | --- |
 | Video file lifecycle | central video model plus wrappers for IO, streaming, metadata, frames, anonymization, prediction, state | `endoreg_db/models/media/video/video_file.py:44`, `endoreg_db/services/video_files/__init__.py:3` |
 | Raw PDF lifecycle | report model plus wrappers for IO, metadata, state, validation, creation, deletion | `endoreg_db/models/media/pdf/raw_pdf.py:32`, `endoreg_db/services/raw_pdf_files/__init__.py:3` |
-| Frame extraction | frame cache manifests, validation, staging, record sync | `endoreg_db/models/media/video/video_file_frames/_extract_frames.py:33` |
-| Video anonymization | processed artifact generation, outside-frame blackening, raw cleanup | `endoreg_db/models/media/video/video_file_anonymize.py:122` |
+| Frame extraction | frame cache manifests, validation, staging, record sync | `endoreg_db/services/video_files/_frames/_extract_frames.py` |
+| Video anonymization | processed artifact generation, outside-frame blackening, raw cleanup | `endoreg_db/services/video_files/_anonymization.py` |
 | Segment annotations | segment lifecycle, validation, frame extraction/deletion, generated annotations | `endoreg_db/models/label/label_video_segment/label_video_segment.py:33` |
 | Frame annotation queue | task queueing, selection, serialization, annotation sync | `endoreg_db/models/state/frame_annotation.py:83` |
 | AI datasets | active learning, manifests, frame buckets, export artifacts | `endoreg_db/models/aidataset/aidataset.py:123` |
@@ -69,16 +74,16 @@ thin callers only where backward compatibility requires it.
 | `label/label_video_segment/label_video_segment.py` | services | `endoreg_db/models/label/label_video_segment/label_video_segment.py:10` |
 | `media/pdf/create_report_from_file.py` | services | `endoreg_db/models/media/pdf/create_report_from_file.py:6` |
 | `media/pdf/raw_pdf.py` | services, utils | `endoreg_db/models/media/pdf/raw_pdf.py:12`, `:17`, `:18`, `:163`, `:171`, `:182`, `:190`, `:206`, `:215`, `:224`, `:241`, `:252`, `:263`, `:278`, `:289`, `:305`, `:321`, `:333`, `:346`, `:359`, `:364`, `:375`, `:381`, `:387` |
-| `media/video/create_from_file.py` | import_files, utils | `endoreg_db/models/media/video/create_from_file.py:10`, `:11`, `:17`, `:21`, `:26` |
-| `media/video/pipe_1.py` | helpers | `endoreg_db/models/media/video/pipe_1.py:7` |
-| `media/video/pipe_2.py` | services | `endoreg_db/models/media/video/pipe_2.py:22` |
+| `media/video/create_from_file.py` | services | compatibility alias for `endoreg_db.services.video_files._imports` |
+| `media/video/pipe_1.py` | services | compatibility alias for `endoreg_db.services.video_files._pipeline_1` |
+| `media/video/pipe_2.py` | services | compatibility alias for `endoreg_db.services.video_files._pipeline_2` |
 | `media/video/storage_mode.py` | utils | `endoreg_db/models/media/video/storage_mode.py:5` |
 | `media/video/video_file.py` | services, utils | `endoreg_db/models/media/video/video_file.py:17`, `:21`, `:37`, `:200` through `:739` |
-| `media/video/video_file_ai.py` | utils | `endoreg_db/models/media/video/video_file_ai.py:264` |
-| `media/video/video_file_anonymize.py` | import_files, services, utils | `endoreg_db/models/media/video/video_file_anonymize.py:9`, `:10`, `:11`, `:12`, `:13`, `:18`, `:19`, `:64` |
-| `media/video/video_file_io.py` | services, utils | `endoreg_db/models/media/video/video_file_io.py:10`, `:11`, `:12`, `:13`, `:14`, `:167` |
-| `media/video/video_file_streaming.py` | services, utils | `endoreg_db/models/media/video/video_file_streaming.py:13`, `:14`, `:15`, `:16`, `:17` |
-| `media/video/video_file_frames/_*.py` | utils | `endoreg_db/models/media/video/video_file_frames/_extract_frames.py:10`, `:11`, `:18`, `:27`; `endoreg_db/models/media/video/video_file_frames/_manage_frame_range.py:10`, `:16`, `:19`; `endoreg_db/models/media/video/video_file_frames/_delete_frames.py:12`; `endoreg_db/models/media/video/video_file_frames/_initialize_frames.py:8`, `:11` |
+| `media/video/video_file_ai.py` | services | compatibility alias for `endoreg_db.services.video_files._ai` |
+| `media/video/video_file_anonymize.py` | services | compatibility alias for `endoreg_db.services.video_files._anonymization` |
+| `media/video/video_file_io.py` | services | compatibility alias for `endoreg_db.services.video_files._io` |
+| `media/video/video_file_streaming.py` | services | compatibility alias for `endoreg_db.services.video_files._streaming_compat` |
+| `media/video/video_file_frames/_*.py` | services | compatibility aliases for `endoreg_db.services.video_files._frames` |
 | `metadata/model_meta_logic.py` | utils | `endoreg_db/models/metadata/model_meta_logic.py:13` |
 | `metadata/sensitive_meta_logic.py` | utils | `endoreg_db/models/metadata/sensitive_meta_logic.py:12`, `:15` |
 | `metadata/video_prediction_meta.py` | services | `endoreg_db/models/metadata/video_prediction_meta.py:9` |
@@ -91,25 +96,14 @@ No model imports from `endoreg_db.serializers` were found in the current map.
 
 ## Service Files Importing Model-Private Implementation
 
-These are the main inversion points. If you refactor, move implementation toward
-services rather than adding more private model imports.
+Video service files should not import implementation from
+`endoreg_db.models.media.video.video_file_*`. Those implementations now live
+under `endoreg_db/services/video_files/_*`, and the model-side modules are
+compatibility aliases for old imports and tests.
 
-| Service file | Model-private dependency |
-| --- | --- |
-| `endoreg_db/services/video_files/io.py:11` | `_ensure_local_raw_file`, `_ensure_local_processed_file`, `_delete_with_file`, and path helpers from `models/media/video/video_file_io.py` |
-| `endoreg_db/services/video_files/frames.py:13` | `_extract_frames`, `_initialize_frames`, `_delete_frames`, `_get_frame*`, `_bulk_create_frames` from `models/media/video/video_file_frames` |
-| `endoreg_db/services/video_files/metadata.py:25` | `_update_video_meta`, `_initialize_video_specs`, `_get_fps`, `_get_endo_roi`, `_get_crop_template`, `_update_text_metadata`, `_frame_number_to_s` |
-| `endoreg_db/services/video_files/anonymization.py:12` | `_anonymize`, `_create_anonymized_frame_files`, `_cleanup_raw_assets` from `video_file_anonymize.py` |
-| `endoreg_db/services/video_files/pipeline.py:10` | `_pipe_1`, `_test_after_pipe_1`, `_pipe_2` |
-| `endoreg_db/services/video_files/ai.py:10` | `_predict_video_pipeline`, `_extract_text_from_video_frames` |
-| `endoreg_db/services/video_files/imports.py:34` | `_create_from_file` |
-| `endoreg_db/services/video_files/validation.py:16` | `_delete_raw_file_after_validation` |
-| `endoreg_db/services/video_files/streaming.py:130` | private streaming helpers from `video_file_streaming.py` |
-| `endoreg_db/services/media_integrity.py:22` | frame cache and range-management internals |
-| `endoreg_db/services/jobs/model_training_jobs.py:18` | frame-range materialization internals |
-| `endoreg_db/services/jobs/video_post_validation_jobs.py:164` | `_get_outside_frames` from `video_file_segments.py` |
-| `endoreg_db/services/video_temporal_inference.py:28` | `video_file_ai` and `video_file_segments` internals |
-| `endoreg_db/services/raw_pdf_files/*.py` | `RawPdfFile` leaf imports, plus some barrel imports from `endoreg_db.models` |
+`endoreg_db/services/raw_pdf_files/*.py` may import the `RawPdfFile` leaf model
+for persistence access, but should not import workflow implementation from
+`endoreg_db.models.media.pdf.create_report_from_file`.
 
 ## Barrel Import Pressure
 
@@ -137,17 +131,16 @@ needed for that local change.
 models/media/video/video_file.py
   -> services/video_files/__init__.py
   -> services/video_files/{io,frames,metadata,anonymization,pipeline,ai,...}.py
-  -> models/media/video/video_file_* private modules
-  -> models/media/video/video_file.py
+  -> models/media/video/video_file.py for persistence access
 ```
 
 Primary references:
 
 - `endoreg_db/models/media/video/video_file.py:200`
 - `endoreg_db/services/video_files/__init__.py:3`
-- `endoreg_db/services/video_files/io.py:11`
-- `endoreg_db/services/video_files/frames.py:13`
-- `endoreg_db/services/video_files/metadata.py:25`
+- `endoreg_db/services/video_files/_io.py`
+- `endoreg_db/services/video_files/_frames`
+- `endoreg_db/services/video_files/_metadata`
 
 ### Report PDF
 
@@ -188,8 +181,8 @@ This ranking is based on workflow responsibility, not just line count.
 3. `endoreg_db/models/aidataset/aidataset.py:123` - active learning, manifests, exports, training runs, artifacts.
 4. `endoreg_db/models/state/frame_annotation.py:83` - frame task queue, serialization, annotation sync.
 5. `endoreg_db/models/label/label_video_segment/label_video_segment.py:33` - segment lifecycle, validation, frame actions, generated annotations.
-6. `endoreg_db/models/media/video/video_file_anonymize.py:122` - anonymized artifact generation and raw cleanup.
-7. `endoreg_db/models/media/video/video_file_frames/_extract_frames.py:33` - frame extraction and cache integrity.
+6. `endoreg_db/services/video_files/_anonymization.py` - anonymized artifact generation and raw cleanup.
+7. `endoreg_db/services/video_files/_frames/_extract_frames.py` - frame extraction and cache integrity.
 8. `endoreg_db/models/metadata/sensitive_meta_logic.py:153` - patient identity and pseudonymization workflow logic.
 9. `endoreg_db/models/state/video.py:19` - video processing state transitions and export readiness.
 10. `endoreg_db/models/hub/transfer_job.py:17` - transfer policy/status model and provenance validation boundary.
@@ -227,11 +220,12 @@ This ranking is based on workflow responsibility, not just line count.
    Start with `endoreg_db/services`, then serializers, then views.
 3. Move neutral payload schemas out of service packages if models need them for
    boundary validation. Keep the typed validation at the model boundary.
-4. Invert `video_files`: move private implementations from
-   `models/media/video/video_file_*` into `services/video_files/*`, while
-   preserving `VideoFile` method wrappers for compatibility.
-5. Invert `raw_pdf_files` the same way: keep `RawPdfFile` fields and thin
-   wrappers, move workflow implementation fully into services.
+4. Keep `video_files` inverted: implementation belongs in
+   `services/video_files/*`; `models/media/video/video_file_*` remains a
+   compatibility alias layer only.
+5. Keep `raw_pdf_files` service-backed: `RawPdfFile` owns fields, validation,
+   and thin wrappers; report workflow implementation belongs in
+   `services/raw_pdf_files/*`.
 6. Extract annotation and dataset workflows after media lifecycle is stable:
    `frame_annotation.py`, `label_video_segment.py`, and `aidataset.py`.
 7. Only then reduce the model barrel. Do it incrementally by replacing imports

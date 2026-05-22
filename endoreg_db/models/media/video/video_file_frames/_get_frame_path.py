@@ -1,24 +1,9 @@
-# --- Frame Creation/Deletion ---
-import logging
-from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+"""Compatibility alias for the service-layer video implementation."""
 
-if TYPE_CHECKING:
-    from endoreg_db.models import VideoFile
+from __future__ import annotations
 
-logger = logging.getLogger(__name__)
+from endoreg_db.models.media.video._service_alias import alias_service_module
 
-
-def _get_frame_path(video: "VideoFile", frame_number: int) -> Optional[Path]:
-    """Constructs the expected path for a given frame number."""
-    target_dir = video.get_frame_dir_path()  # Use IO helper
-    if not target_dir:
-        logger.warning(
-            "Cannot get frame path for video %s: Frame directory not set.",
-            video.video_hash,
-        )
-        return None
-
-    frame_filename = f"frame_{frame_number:07d}.jpg"
-    path = target_dir / frame_filename
-    return path
+alias_service_module(
+    __name__, "endoreg_db.services.video_files._frames._get_frame_path"
+)

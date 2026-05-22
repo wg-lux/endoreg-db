@@ -13,9 +13,7 @@ def validate_video_metadata_annotation(
     video: "VideoFile",
     extracted_data_dict: Optional[dict] = None,
 ) -> bool:
-    from endoreg_db.models.media.video.video_file_io import (
-        _delete_raw_file_after_validation,
-    )
+    from ._io import _delete_raw_file_after_validation
 
     from .metadata import update_video_text_metadata
     from .state import get_or_create_video_state

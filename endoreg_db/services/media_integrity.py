@@ -19,13 +19,13 @@ from endoreg_db.models.media.video.storage_mode import (
     VideoStorageMode,
     coerce_video_storage_mode,
 )
-from endoreg_db.models.media.video.video_file_frames._extract_frames import (
+from endoreg_db.services.video_files._frames._extract_frames import (
     _sync_extracted_frame_records,
     _normalize_full_extraction_paths,
     build_frame_cache_manifest,
     extract_full_frame_set_to_directory,
 )
-from endoreg_db.models.media.video.video_file_frames._manage_frame_range import (
+from endoreg_db.services.video_files._frames._manage_frame_range import (
     extract_frame_range_to_directory,
 )
 from endoreg_db.services.streamable_media import (

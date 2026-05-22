@@ -25,11 +25,11 @@ from endoreg_db.models import (
     VideoPredictionMeta,
     VideoProcessingHistory,
 )
-from endoreg_db.models.media.video.video_file_ai import (
+from endoreg_db.services.video_files._ai import (
     FrameSourceMode,
     VideoFrameScoreResult,
 )
-from endoreg_db.models.media.video.video_file_segments import (
+from endoreg_db.services.video_files._segments import (
     _convert_sequences_to_db_segments,
 )
 from endoreg_db.models.state.frame_annotation import (

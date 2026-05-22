@@ -7,14 +7,12 @@ if TYPE_CHECKING:
 
 
 def predict_video(video: "VideoFile", *args, **kwargs):
-    from endoreg_db.models.media.video.video_file_ai import _predict_video_pipeline
+    from ._ai import _predict_video_pipeline
 
     return _predict_video_pipeline(video, *args, **kwargs)
 
 
 def extract_text_from_video_frames(video: "VideoFile", *args, **kwargs):
-    from endoreg_db.models.media.video.video_file_ai import (
-        _extract_text_from_video_frames,
-    )
+    from ._ai import _extract_text_from_video_frames
 
     return _extract_text_from_video_frames(video, *args, **kwargs)

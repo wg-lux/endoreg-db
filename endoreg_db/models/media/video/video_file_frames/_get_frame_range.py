@@ -1,44 +1,9 @@
-import logging
-from typing import TYPE_CHECKING
+"""Compatibility alias for the service-layer video implementation."""
 
-from django.db.models import QuerySet
+from __future__ import annotations
 
-if TYPE_CHECKING:
-    from endoreg_db.models import Frame, VideoFile
+from endoreg_db.models.media.video._service_alias import alias_service_module
 
-logger = logging.getLogger(__name__)
-
-
-def _get_frame_range(
-    video: "VideoFile", start_frame_number: int, end_frame_number: int
-) -> "QuerySet[Frame]":
-    """Gets a QuerySet of Frame objects within a specific range, ordered by frame number."""
-    from endoreg_db.models import Frame
-
-    try:
-        # Access related manager directly
-        return video.frames.filter(
-            frame_number__gte=start_frame_number,
-            frame_number__lte=end_frame_number,
-        ).order_by("frame_number")
-    except AttributeError:
-        logger.error(
-            "Could not access frame range for video %s via related manager.",
-            video.video_hash,
-        )
-        # Fallback query
-        return Frame.objects.filter(
-            video=video,
-            frame_number__gte=start_frame_number,
-            frame_number__lte=end_frame_number,
-        ).order_by("frame_number")
-    except Exception as e:
-        logger.error(
-            "Error getting frame range (%d-%d) for video %s: %s",
-            start_frame_number,
-            end_frame_number,
-            video.video_hash,
-            e,
-            exc_info=True,
-        )
-        return Frame.objects.none()  # Return empty queryset on error
+alias_service_module(
+    __name__, "endoreg_db.services.video_files._frames._get_frame_range"
+)

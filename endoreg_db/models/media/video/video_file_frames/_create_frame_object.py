@@ -1,23 +1,9 @@
-import logging
-from typing import TYPE_CHECKING
+"""Compatibility alias for the service-layer video implementation."""
 
-if TYPE_CHECKING:
-    from endoreg_db.models import Frame, VideoFile
+from __future__ import annotations
 
-logger = logging.getLogger(__name__)
+from endoreg_db.models.media.video._service_alias import alias_service_module
 
-__all__ = ["_create_frame_object"]
-
-
-def _create_frame_object(
-    video: "VideoFile", frame_number: int, relative_path: str, extracted: bool = False
-) -> "Frame":
-    """Instantiates a Frame object (does not save it)."""
-    from endoreg_db.models import Frame
-
-    return Frame(
-        video=video,
-        frame_number=frame_number,
-        relative_path=relative_path,
-        is_extracted=extracted,
-    )
+alias_service_module(
+    __name__, "endoreg_db.services.video_files._frames._create_frame_object"
+)

@@ -1,25 +1,9 @@
-import logging
-from typing import TYPE_CHECKING, List
+"""Compatibility alias for the service-layer video implementation."""
 
-if TYPE_CHECKING:
-    from endoreg_db.models import Frame, VideoFile
+from __future__ import annotations
 
-logger = logging.getLogger(__name__)
+from endoreg_db.models.media.video._service_alias import alias_service_module
 
-__all__ = ["_bulk_create_frames"]
-
-
-def _bulk_create_frames(video: "VideoFile", frames_to_create: List["Frame"]):
-    """Helper function to perform bulk_create with ignore_conflicts."""
-    from endoreg_db.models import Frame
-
-    try:
-        Frame.objects.bulk_create(frames_to_create, ignore_conflicts=True)
-    except Exception as e:
-        logger.error(
-            "Error during bulk creation of frames for video %s: %s",
-            video.video_hash,
-            e,
-            exc_info=True,
-        )
-        raise
+alias_service_module(
+    __name__, "endoreg_db.services.video_files._frames._bulk_create_frames"
+)

@@ -7,18 +7,18 @@ if TYPE_CHECKING:
 
 
 def run_video_pipe_1(video: "VideoFile", *args, **kwargs) -> bool:
-    from endoreg_db.models.media.video.pipe_1 import _pipe_1
+    from ._pipeline_1 import _pipe_1
 
     return _pipe_1(video, *args, **kwargs)
 
 
 def test_after_video_pipe_1(video: "VideoFile", *args, **kwargs) -> bool:
-    from endoreg_db.models.media.video.pipe_1 import _test_after_pipe_1
+    from ._pipeline_1 import _test_after_pipe_1
 
     return _test_after_pipe_1(video, *args, **kwargs)
 
 
 def run_video_pipe_2(video: "VideoFile") -> bool:
-    from endoreg_db.models.media.video.pipe_2 import _pipe_2
+    from ._pipeline_2 import _pipe_2
 
     return _pipe_2(video)

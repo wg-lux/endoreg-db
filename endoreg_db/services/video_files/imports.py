@@ -31,8 +31,9 @@ def create_video_file_from_path(
     model_cls: type["VideoFile"] | None = None,
     **kwargs,
 ) -> Optional["VideoFile"]:
-    from endoreg_db.models.media.video.create_from_file import _create_from_file
     from endoreg_db.utils.security.hashs import get_video_hash
+
+    from ._imports import _create_from_file
 
     if isinstance(file_path, str):
         file_path = Path(file_path)
@@ -70,7 +71,7 @@ def create_initialized_video_file_from_path(
     save_video_file: bool = True,
     model_cls: type["VideoFile"] | None = None,
 ) -> "VideoFile":
-    from endoreg_db.models.media.video.create_from_file import _create_from_file
+    from ._imports import _create_from_file
 
     if isinstance(file_path, str):
         file_path = Path(file_path)

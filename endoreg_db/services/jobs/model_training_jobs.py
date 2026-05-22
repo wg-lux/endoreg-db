@@ -15,7 +15,7 @@ from django.core.management import call_command
 from django.utils import timezone
 
 from endoreg_db.models import AIDataSet, AIModelTrainingRun, Frame, LabelVideoSegment
-from endoreg_db.models.media.video.video_file_frames._manage_frame_range import (
+from endoreg_db.services.video_files._frames._manage_frame_range import (
     extract_frame_range_to_directory,
 )
 from endoreg_db.schemas import (

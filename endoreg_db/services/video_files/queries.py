@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 from django.db import models
 
@@ -18,7 +18,10 @@ def video_hash_exists(
     video_hash: str, *, model_cls: type["VideoFile"] | None = None
 ) -> bool:
     model = model_cls or _video_file_model()
-    return bool(video_hash) and model.objects.filter(video_hash=video_hash).exists()
+    return (
+        bool(video_hash)
+        and cast(Any, model.objects).filter(video_hash=video_hash).exists()
+    )
 
 
 def get_all_videos(
@@ -26,7 +29,7 @@ def get_all_videos(
     model_cls: type["VideoFile"] | None = None,
 ) -> models.QuerySet["VideoFile"]:
     model = model_cls or _video_file_model()
-    return model.objects.all()
+    return cast(models.QuerySet["VideoFile"], cast(Any, model.objects).all())
 
 
 def get_video_by_pk(pk: int) -> "VideoFile":

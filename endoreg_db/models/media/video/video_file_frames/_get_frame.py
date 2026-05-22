@@ -1,36 +1,7 @@
-import logging
-from typing import TYPE_CHECKING
+"""Compatibility alias for the service-layer video implementation."""
 
-if TYPE_CHECKING:
-    from endoreg_db.models import Frame, VideoFile
+from __future__ import annotations
 
-logger = logging.getLogger(__name__)
+from endoreg_db.models.media.video._service_alias import alias_service_module
 
-
-def _get_frame(video: "VideoFile", frame_number: int) -> "Frame":
-    """Gets a specific Frame object by its frame number."""
-    from endoreg_db.models import Frame
-
-    try:
-        # Access related manager directly
-        return video.frames.get(frame_number=frame_number)
-    except AttributeError:
-        logger.error(
-            "Could not access frame %d for video %s via related manager.",
-            frame_number,
-            video.video_hash,
-        )
-        # Fallback query
-        return Frame.objects.get(video=video, frame_number=frame_number)
-    except Frame.DoesNotExist:
-        logger.error("Frame %d not found for video %s.", frame_number, video.video_hash)
-        raise  # Re-raise DoesNotExist
-    except Exception as e:
-        logger.error(
-            "Error getting frame %d for video %s: %s",
-            frame_number,
-            video.video_hash,
-            e,
-            exc_info=True,
-        )
-        raise  # Re-raise other exceptions
+alias_service_module(__name__, "endoreg_db.services.video_files._frames._get_frame")
