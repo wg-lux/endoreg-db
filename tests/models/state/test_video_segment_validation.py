@@ -3,9 +3,9 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from django.utils import timezone
-
-from endoreg_db.models import Center, VideoFile, VideoProcessingHistory
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
 from endoreg_db.models.state import SegmentAnnotationStatus
 from endoreg_db.models.state import video_segment_validation as segment_state
 
@@ -155,11 +155,20 @@ def test_segment_state_mutators_clear_export_readiness(
     state.segment_annotations_created = True
     state.segment_annotations_validated = True
     state.outside_segments_removed = True
-    state.ready_for_export = True
-    state.ready_for_export_at = timezone.now()
-    state.ready_for_export_by = "validator"
-    state.processed_file_sha256 = "a" * 64
-    state.save()
+    state.anonymization_validated = True
+    state.save(
+        update_fields=[
+            "segment_annotations_created",
+            "segment_annotations_validated",
+            "outside_segments_removed",
+            "anonymization_validated",
+            "date_modified",
+        ]
+    )
+    state.mark_ready_for_export(
+        processed_file_sha256="a" * 64,
+        ready_for_export_by="validator",
+    )
 
     getattr(segment_state, mutator_name)(video)
 

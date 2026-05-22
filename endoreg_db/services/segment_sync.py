@@ -14,6 +14,7 @@ from django.db import transaction
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS
 
 from ..models import VideoFile, Label, LabelVideoSegment, InformationSource
+from .video_files import get_video_fps
 from .segment_contracts import (
     SegmentAnnotationInput,
     parse_segment_annotation_input,
@@ -56,7 +57,7 @@ def create_user_segment_from_annotation(
     try:
         video_file = VideoFile.objects.get(id=video_id)
 
-        fps = video_file.get_fps()
+        fps = get_video_fps(video_file)
         if not fps or fps <= 0:
             logger.warning(
                 "Invalid FPS (%s) for video %s, using default %.1f",

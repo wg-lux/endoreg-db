@@ -6,6 +6,7 @@ from unittest.mock import Mock, patch
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS
 from endoreg_db.models import VideoFile, Label, LabelVideoSegment, InformationSource
 from endoreg_db.services.segment_contracts import parse_segment_annotation_input
+import endoreg_db.services.segment_sync as segment_sync
 from endoreg_db.services.segment_sync import create_user_segment_from_annotation
 
 
@@ -36,7 +37,7 @@ class TestSegmentAnnotationFlow(TestCase):
         # Mock video file with required methods
         self.video = Mock(spec=VideoFile)
         self.video.id = 1
-        self.video.get_fps.return_value = 25.0
+        self.video_fps = 25.0
         self.video.objects = Mock()
 
         # Patch manager lookup with automatic cleanup to avoid leaking into other tests.
@@ -45,6 +46,13 @@ class TestSegmentAnnotationFlow(TestCase):
         )
         self.mock_video_get = self.video_get_patcher.start()
         self.addCleanup(self.video_get_patcher.stop)
+        self.video_fps_patcher = patch.object(
+            segment_sync,
+            "get_video_fps",
+            side_effect=lambda video: self.video_fps,
+        )
+        self.video_fps_patcher.start()
+        self.addCleanup(self.video_fps_patcher.stop)
 
     def test_create_user_segment_from_new_annotation(self):
         """Test creating a user segment from a new segment annotation"""
@@ -90,7 +98,7 @@ class TestSegmentAnnotationFlow(TestCase):
                 mock_segment.save.assert_called_once()
 
     def test_create_user_segment_defaults_invalid_fps_to_50(self):
-        self.video.get_fps.return_value = 0
+        self.video_fps = 0
         annotation_data = {
             "type": "segment",
             "videoId": 1,
