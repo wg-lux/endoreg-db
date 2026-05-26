@@ -18,6 +18,9 @@ from endoreg_db.models.media.video.video_processing import VideoProcessingHistor
 
 logger = logging.getLogger(__name__)
 
+FFMPEG_STREAM_THROTTLE_NORMAL = "normal"
+FFMPEG_STREAM_THROTTLE_STREAMING = "streaming"
+
 
 class MediaOperationDeferred(RuntimeError):
     """Raised when media work must wait for active streaming or edits to drain."""
@@ -89,6 +92,37 @@ def wrap_iterator_with_media_lease(
         yield from chunks
     finally:
         release_media_operation_lease(lease)
+
+
+def get_ffmpeg_stream_throttle_state() -> dict[str, Any]:
+    expired_leases = expire_media_operation_leases()
+    checked_at = timezone.now()
+    active_stream_leases = MediaOperationLease.objects.filter(
+        lease_type=MediaOperationLease.LEASE_STREAM,
+        expires_at__gt=checked_at,
+    )
+    active_stream_lease_count = active_stream_leases.count()
+    next_stream_lease_expiry = (
+        active_stream_leases.order_by("expires_at")
+        .values_list("expires_at", flat=True)
+        .first()
+    )
+
+    return {
+        "mode": (
+            FFMPEG_STREAM_THROTTLE_STREAMING
+            if active_stream_lease_count > 0
+            else FFMPEG_STREAM_THROTTLE_NORMAL
+        ),
+        "active_stream_leases": active_stream_lease_count,
+        "expired_leases": expired_leases,
+        "checked_at": checked_at.isoformat(),
+        "next_stream_lease_expiry": (
+            next_stream_lease_expiry.isoformat()
+            if next_stream_lease_expiry is not None
+            else None
+        ),
+    }
 
 
 def active_media_operation_lease_summary(video_id: int) -> list[dict[str, Any]]:
