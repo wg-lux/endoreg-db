@@ -11,7 +11,13 @@ from safetensors import safe_open
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS
 
 from endoreg_db.models.metadata import ModelMeta, VideoPredictionMeta
-from endoreg_db.models.utils import TEST_RUN as GLOBAL_TEST_RUN
+from endoreg_db.models.utils import TEST_RUN as _GLOBAL_TEST_RUN
+
+GLOBAL_TEST_RUN: bool = (
+    _GLOBAL_TEST_RUN
+    if isinstance(_GLOBAL_TEST_RUN, bool)
+    else str(_GLOBAL_TEST_RUN).strip().lower() == "true"
+)
 
 GLOBAL_N_TEST_FRAMES = 100
 

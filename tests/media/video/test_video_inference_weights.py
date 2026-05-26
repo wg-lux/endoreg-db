@@ -6,7 +6,7 @@ from django.conf import settings
 
 from endoreg_db.models import ModelMeta
 from endoreg_db.models.metadata import VideoPredictionMeta
-from endoreg_db.models.media.video.video_file_ai import _is_stub_weights_file
+from endoreg_db.services.video_files._ai import _is_stub_weights_file
 from endoreg_db.utils.video.ffmpeg_wrapper import is_ffmpeg_available
 
 from tests.helpers.data_loader import load_ai_model_data, load_ai_model_label_data
@@ -26,9 +26,7 @@ def _skip_unless_video_tests_enabled():
 
 
 def _prepare_video_file():
-    video_file = get_default_video_file()
-    video_file.extract_frames(overwrite=True)
-    return video_file
+    return get_default_video_file()
 
 
 @pytest.mark.expensive
@@ -59,6 +57,7 @@ def test_predict_video_with_huggingface_weights(base_db_data):
             model_meta=model_meta,
             test_run=True,
             n_test_frames=16,
+            frame_source_mode="stream",
         )
 
         assert isinstance(sequences, dict)
@@ -138,6 +137,7 @@ def test_predict_video_with_local_fixture_weights(base_db_data):
             model_meta=model_meta,
             test_run=True,
             n_test_frames=16,
+            frame_source_mode="stream",
         )
 
         assert isinstance(sequences, dict)
