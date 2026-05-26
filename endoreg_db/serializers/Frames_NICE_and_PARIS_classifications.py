@@ -170,8 +170,9 @@ class BaseClassificationSerializer(serializers.Serializer):
 
         if len(valid_segments) < 3:
             valid_segments.sort(
-                key=lambda seg: seg["polyp"].end_frame_number
-                - seg["polyp"].start_frame_number,
+                key=lambda seg: (
+                    seg["polyp"].end_frame_number - seg["polyp"].start_frame_number
+                ),
                 reverse=True,
             )
             return valid_segments[:3]
@@ -201,8 +202,9 @@ class BaseClassificationSerializer(serializers.Serializer):
             return list(best_combo)
 
         valid_segments.sort(
-            key=lambda seg: seg["polyp"].end_frame_number
-            - seg["polyp"].start_frame_number,
+            key=lambda seg: (
+                seg["polyp"].end_frame_number - seg["polyp"].start_frame_number
+            ),
             reverse=True,
         )
         return valid_segments[:3]

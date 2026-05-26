@@ -1045,10 +1045,10 @@ def _transcode_video_to_frame_dir(
     if export_frame_root is not None:
         frame_dir = export_frame_root / f"video_{video.pk}"
     else:
-        frame_dir = get_video_frame_dir_path(video)
-        if frame_dir is None:
+        video_frame_dir = get_video_frame_dir_path(video)
+        if video_frame_dir is None:
             raise ValueError(f"frame dir not available for video {video.pk}")
-        frame_dir = ensure_within_protected_media_root(frame_dir)
+        frame_dir = ensure_within_protected_media_root(video_frame_dir)
 
     ensure_directory(frame_dir)
 

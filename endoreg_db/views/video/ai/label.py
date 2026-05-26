@@ -271,7 +271,7 @@ def rerun_prediction_segments(request, pk: int) -> Response:
         if dispatch_result.prediction_segments_count is not None
         else _prediction_segments_for_video(video).count()
     )
-    response_status = status.HTTP_202_ACCEPTED
+    response_status: int = status.HTTP_202_ACCEPTED
     if dispatch_result.status == "completed":
         response_status = status.HTTP_200_OK
     elif dispatch_result.status == "busy":
