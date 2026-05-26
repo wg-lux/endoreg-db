@@ -179,7 +179,9 @@ def test_reimport_returns_clear_error_when_raw_source_is_missing(tmp_path, monke
 
 
 @pytest.mark.django_db
-def test_reimport_uses_retry_true_and_refreshes_video(tmp_path, monkeypatch):
+def test_reimport_reanonymizes_existing_video_without_full_import(
+    tmp_path, monkeypatch
+):
     module = _load_video_view_module("reimport")
     factory = APIRequestFactory()
 
@@ -204,9 +206,14 @@ def test_reimport_uses_retry_true_and_refreshes_video(tmp_path, monkeypatch):
         yield
 
     class _FakeService:
-        def import_and_anonymize(self, **kwargs):
-            service_calls.append(kwargs)
+        def reanonymize_existing_video(self, target_video, *, source_path=None):
+            service_calls.append(
+                {"target_video": target_video, "source_path": source_path}
+            )
             return video
+
+        def import_and_anonymize(self, **kwargs):
+            raise AssertionError("reimport should not use the full import pipeline")
 
     monkeypatch.setattr(module, "VideoFile", _FakeVideoModel, raising=True)
     monkeypatch.setattr(module, "SensitiveMeta", _FakeSensitiveMetaModel, raising=True)
@@ -231,8 +238,7 @@ def test_reimport_uses_retry_true_and_refreshes_video(tmp_path, monkeypatch):
     response = view.post(factory.post("/reimport/"), pk=1)
 
     assert response.status_code == 200
-    assert service_calls[0]["retry"] is True
-    assert service_calls[0]["file_path"] == raw_path
+    assert service_calls == [{"target_video": video, "source_path": raw_path}]
     assert video.pipe_1_called is False
     assert video.initialize_specs_called is True
     assert video.initialize_frames_called is True

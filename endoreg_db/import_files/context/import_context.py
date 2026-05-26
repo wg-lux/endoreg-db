@@ -18,6 +18,7 @@ class ImportContext:
     error_reason: str = ""
 
     original_path: Optional[Path] = None
+    local_source_path: Optional[Path] = None
     quarantine_path: Optional[Path] = None
     sensitive_path: Optional[Path] = None
     anonymized_path: Optional[Path] = None

@@ -254,6 +254,80 @@ def test_video_import_service_does_not_construct_anonymizer_in_init(monkeypatch)
 
 
 @pytest.mark.unit
+def test_reanonymize_existing_video_skips_import_staging(monkeypatch, tmp_path):
+    import endoreg_db.import_files.video_import_service as vis_module
+
+    source_path = tmp_path / "raw.mp4"
+    source_path.write_bytes(b"raw-video")
+    events = []
+    video = SimpleNamespace(
+        video_hash="video-hash",
+        center=SimpleNamespace(name="university_hospital_wuerzburg"),
+        video_meta=SimpleNamespace(processor=SimpleNamespace(name="olympus_cv_1500")),
+    )
+
+    class DummyAnonymizer:
+        def anonymize_video(self, ctx):
+            events.append(
+                (
+                    "anonymize",
+                    ctx.current_video,
+                    Path(ctx.file_path),
+                    Path(ctx.local_source_path),
+                    ctx.sensitive_path,
+                    ctx.retry,
+                )
+            )
+            ctx.anonymized_path = tmp_path / "anon.mp4"
+            ctx.anonymized_path.write_bytes(b"anon")
+            return ctx
+
+    def fail_create_sensitive_copy(*args, **kwargs):
+        raise AssertionError("re-anonymization should not create a sensitive copy")
+
+    monkeypatch.setattr(vis_module, "validate_directories", lambda: None, raising=True)
+    monkeypatch.setattr(
+        vis_module, "create_sensitive_copy", fail_create_sensitive_copy, raising=True
+    )
+    monkeypatch.setattr(
+        vis_module,
+        "mark_instance_processing_started",
+        lambda instance, ctx: events.append(("started", instance, ctx.current_video)),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        vis_module,
+        "finalize_video_success",
+        lambda ctx: events.append(("success", ctx.current_video, ctx.anonymized_path)),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        vis_module,
+        "finalize_failure",
+        lambda ctx: (_ for _ in ()).throw(
+            AssertionError("successful re-anonymization should not finalize failure")
+        ),
+        raising=True,
+    )
+
+    service = VideoImportService(anonymizer=DummyAnonymizer())
+
+    result = service.reanonymize_existing_video(video, source_path=source_path)
+
+    assert result is video
+    assert events[0] == ("started", video, video)
+    assert events[1] == (
+        "anonymize",
+        video,
+        source_path,
+        source_path,
+        None,
+        True,
+    )
+    assert events[2] == ("success", video, tmp_path / "anon.mp4")
+
+
+@pytest.mark.unit
 def test_import_and_anonymize_short_circuit_cleans_duplicate_staging(
     monkeypatch, tmp_path
 ):
