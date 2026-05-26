@@ -7,6 +7,41 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _get_import_processor(video: "VideoFile"):
+    """
+    Return the processor that should be used for import/anonymization context.
+
+    ``VideoFile.processor`` is the canonical model field. ``VideoMeta.processor``
+    is kept as a compatibility fallback for older rows that predate the direct
+    VideoFile relation.
+    """
+    processor = video.processor
+    if processor is not None:
+        return processor
+
+    video_meta = video.video_meta
+    if video_meta is None:
+        return None
+    return video_meta.processor
+
+
+def _get_import_context_names(video: "VideoFile") -> tuple[str, str]:
+    """
+    Resolve center and processor names from the VideoFile model graph.
+
+    Center is required for import bookkeeping. Processor can be absent on legacy
+    rows, so keep the historical "Unknown" fallback used by the anonymization
+    path.
+    """
+    center = video.center
+    if center is None or not center.name:
+        raise ValueError(f"Video {video.video_hash} has no associated center.")
+
+    processor = video.get_import_processor()
+    processor_name = processor.name if processor is not None else None
+    return str(center.name), str(processor_name or "Unknown")
+
+
 def _populate_video_fields_from_meta(video: "VideoFile") -> list[str]:
     """
     Copy derived technical fields from ``video.video_meta`` onto ``video`` in memory.

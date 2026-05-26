@@ -74,24 +74,6 @@ def _hash_lock_dir() -> Path:
     return _storage_dir() / "locks" / "video_content"
 
 
-def _video_center_name(video: VideoFile) -> str:
-    video_hash = getattr(video, "video_hash", None)
-    center = getattr(video, "center", None)
-    center_name = getattr(center, "name", None)
-    if not center_name:
-        raise ValueError(f"Video {video_hash} has no associated center.")
-    return str(center_name)
-
-
-def _video_processor_name(video: VideoFile) -> str:
-    video_meta = getattr(video, "video_meta", None)
-    processor = getattr(video_meta, "processor", None)
-    processor_name = getattr(processor, "name", None)
-    if not processor_name:
-        return "Unknown"
-    return str(processor_name)
-
-
 class VideoImportService:
     """
     Service for importing and anonymizing video files.
@@ -288,39 +270,52 @@ class VideoImportService:
             if not local_source_path.exists():
                 raise FileNotFoundError(f"Video file not found: {local_source_path}")
 
-            ctx = ImportContext(
-                file_path=local_source_path,
-                center_name=_video_center_name(video),
-                processor_name=_video_processor_name(video),
-                file_type="video",
-            )
-            ctx.original_path = local_source_path
-            ctx.local_source_path = local_source_path
-            ctx.current_video = video
-            ctx.instance = video
-            ctx.retry = True
+            with file_lock(local_source_path):
+                logger.info("Acquired file lock for re-anonymization: %s", video_hash)
+                center_name, processor_name = video.get_import_context_names()
+                ctx = ImportContext(
+                    file_path=local_source_path,
+                    center_name=center_name,
+                    processor_name=processor_name,
+                    file_type="video",
+                )
+                if ctx.file_hash is None:
+                    raise ValueError("File hash missing.")
+                if not isinstance(ctx.file_hash, str):
+                    ctx.file_hash = str(ctx.file_hash)
 
-            try:
-                mark_instance_processing_started(video, ctx)
-                logger.info(
-                    "Persisted video state as processing before re-anonymization: video=%s",
-                    video_hash,
-                )
-                ctx = self.anonymizer.anonymize_video(ctx)
-                logger.info(
-                    "Existing video re-anonymization succeeded for %s",
-                    video_hash,
-                )
-                finalize_video_success(ctx)
-                return video
-            except Exception as exc:
-                logger.exception(
-                    "Existing video re-anonymization failed for %s: %s",
-                    video_hash,
-                    exc,
-                )
-                finalize_failure(ctx)
-                raise
+                with content_hash_lock(ctx.file_hash, _hash_lock_dir()):
+                    logger.info(
+                        "Acquired content-hash lock for re-anonymization: %s",
+                        ctx.file_hash,
+                    )
+                    ctx.original_path = local_source_path
+                    ctx.local_source_path = local_source_path
+                    ctx.current_video = video
+                    ctx.instance = video
+                    ctx.retry = True
+
+                    try:
+                        mark_instance_processing_started(video, ctx)
+                        logger.info(
+                            "Persisted video state as processing before re-anonymization: video=%s",
+                            video_hash,
+                        )
+                        ctx = self.anonymizer.anonymize_video(ctx)
+                        logger.info(
+                            "Existing video re-anonymization succeeded for %s",
+                            video_hash,
+                        )
+                        finalize_video_success(ctx)
+                        return video
+                    except Exception as exc:
+                        logger.exception(
+                            "Existing video re-anonymization failed for %s: %s",
+                            video_hash,
+                            exc,
+                        )
+                        finalize_failure(ctx)
+                        raise
 
     def _get_existing_completed_video(self, ctx: ImportContext) -> VideoFile | None:
         """

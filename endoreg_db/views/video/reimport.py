@@ -240,7 +240,11 @@ class VideoReimportView(APIView):
             )
 
         try:
-            video = VideoFile.objects.get(id=pk)
+            video = VideoFile.objects.select_related(
+                "center",
+                "processor",
+                "video_meta__processor",
+            ).get(id=pk)
             logger.info("Found video %s (ID: %s) for re-import", video.video_hash, pk)
         except VideoFile.DoesNotExist:
             logger.warning("Video with ID %s not found", pk)

@@ -78,6 +78,8 @@ from .video_file_meta import (
     _get_crop_template,
     _get_endo_roi,
     _get_fps,
+    _get_import_context_names,
+    _get_import_processor,
     _initialize_video_specs,
     _update_text_metadata,
     _update_video_meta,
@@ -364,6 +366,8 @@ class VideoFile(models.Model):
     get_fps = _get_fps
     get_endo_roi = _get_endo_roi
     get_crop_template = _get_crop_template
+    get_import_processor = _get_import_processor
+    get_import_context_names = _get_import_context_names
     update_text_metadata = _update_text_metadata
 
     extract_frames = _extract_frames
