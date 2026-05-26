@@ -117,8 +117,11 @@ class VideoAnonymizer:
 
         assert isinstance(self._frame_cleaning_class, FrameCleaner)
         endoscope_roi, endoscope_roi_nested = self._get_processor_roi_info(ctx)
+        explicit_source_path = getattr(ctx, "local_source_path", None)
         ensure_raw = getattr(ctx.current_video, "ensure_local_raw_file", None)
-        if callable(ensure_raw):
+        if explicit_source_path is not None:
+            source_context = nullcontext(Path(explicit_source_path))
+        elif callable(ensure_raw):
             source_context = ensure_raw()
         else:
             source_path = ctx.sensitive_path or ctx.file_path

@@ -1,6 +1,7 @@
 # endoreg_db/import_files/video_import_service.py
 import logging
 import shutil
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Optional, Union
 
@@ -238,6 +239,87 @@ class VideoImportService:
                     )
                     finalize_failure(ctx)
                     raise
+
+    def reanonymize_existing_video(
+        self,
+        video: VideoFile,
+        *,
+        source_path: Union[Path, str, None] = None,
+    ) -> VideoFile:
+        """
+        Re-run anonymization for an existing VideoFile without re-import staging.
+
+        Re-imports already have a canonical raw file attached to the VideoFile.
+        Running them through import_and_anonymize again creates a new sensitive
+        copy and, for videos, transcodes before anonymization. This path keeps
+        the existing VideoFile/state contract while using only one local raw
+        materialization as the frame-cleaning input.
+        """
+        video_hash = getattr(video, "video_hash", None)
+        if source_path is None:
+            ensure_raw = getattr(video, "ensure_local_raw_file", None)
+            if not callable(ensure_raw):
+                raise RuntimeError(
+                    f"Video {video_hash} cannot materialize its raw file."
+                )
+            source_context = ensure_raw()
+        else:
+            source_context = nullcontext(Path(source_path))
+
+        with source_context as local_source_path:
+            if local_source_path is None:
+                raise RuntimeError(f"Video {video_hash} raw source is unavailable.")
+
+            local_source_path = Path(local_source_path)
+            if not local_source_path.exists():
+                raise FileNotFoundError(f"Video file not found: {local_source_path}")
+
+            with file_lock(local_source_path):
+                logger.info("Acquired file lock for re-anonymization: %s", video_hash)
+                center_name, processor_name = video.get_import_context_names()
+                ctx = ImportContext(
+                    file_path=local_source_path,
+                    center_name=center_name,
+                    processor_name=processor_name,
+                    file_type="video",
+                )
+                if ctx.file_hash is None:
+                    raise ValueError("File hash missing.")
+                if not isinstance(ctx.file_hash, str):
+                    ctx.file_hash = str(ctx.file_hash)
+
+                with content_hash_lock(ctx.file_hash, _hash_lock_dir()):
+                    logger.info(
+                        "Acquired content-hash lock for re-anonymization: %s",
+                        ctx.file_hash,
+                    )
+                    ctx.original_path = local_source_path
+                    ctx.local_source_path = local_source_path
+                    ctx.current_video = video
+                    ctx.instance = video
+                    ctx.retry = True
+
+                    try:
+                        mark_instance_processing_started(video, ctx)
+                        logger.info(
+                            "Persisted video state as processing before re-anonymization: video=%s",
+                            video_hash,
+                        )
+                        ctx = self.anonymizer.anonymize_video(ctx)
+                        logger.info(
+                            "Existing video re-anonymization succeeded for %s",
+                            video_hash,
+                        )
+                        finalize_video_success(ctx)
+                        return video
+                    except Exception as exc:
+                        logger.exception(
+                            "Existing video re-anonymization failed for %s: %s",
+                            video_hash,
+                            exc,
+                        )
+                        finalize_failure(ctx)
+                        raise
 
     def _get_existing_completed_video(self, ctx: ImportContext) -> VideoFile | None:
         """

@@ -7,6 +7,8 @@ from django.core.files.base import ContentFile
 
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS
 from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.medical.hardware.endoscopy_processor import EndoscopyProcessor
+from endoreg_db.models.metadata.video_meta import VideoMeta
 from endoreg_db.models.media.video.storage_mode import VideoStorageMode
 from endoreg_db.models.media.video.video_file import VideoFile
 
@@ -34,6 +36,65 @@ def test_video_file_hash_lookup_helpers(video_center: Center):
     assert VideoFile.check_hash_exists("missing-hash") is False
     assert VideoFile.get_video_by_pk(video.pk) == video
     assert VideoFile.get_video_by_content_hash("known-hash") == video
+
+
+@pytest.mark.django_db
+def test_video_file_import_context_names_prefer_video_processor(
+    video_center: Center,
+):
+    canonical_processor = EndoscopyProcessor.objects.create(name="processor-canonical")
+    legacy_processor = EndoscopyProcessor.objects.create(name="processor-legacy")
+    video_meta = VideoMeta.objects.create(
+        center=video_center,
+        processor=legacy_processor,
+    )
+    video = VideoFile.objects.create(
+        center=video_center,
+        processor=canonical_processor,
+        video_meta=video_meta,
+        video_hash="import-context-canonical",
+    )
+
+    assert video.get_import_processor() == canonical_processor
+    assert video.get_import_context_names() == (
+        video_center.name,
+        canonical_processor.name,
+    )
+
+
+@pytest.mark.django_db
+def test_video_file_import_context_names_fall_back_to_video_meta_processor(
+    video_center: Center,
+):
+    legacy_processor = EndoscopyProcessor.objects.create(name="processor-meta")
+    video_meta = VideoMeta.objects.create(
+        center=video_center,
+        processor=legacy_processor,
+    )
+    video = VideoFile.objects.create(
+        center=video_center,
+        video_meta=video_meta,
+        video_hash="import-context-meta",
+    )
+
+    assert video.get_import_processor() == legacy_processor
+    assert video.get_import_context_names() == (
+        video_center.name,
+        legacy_processor.name,
+    )
+
+
+@pytest.mark.django_db
+def test_video_file_import_context_names_allow_unknown_processor(
+    video_center: Center,
+):
+    video = VideoFile.objects.create(
+        center=video_center,
+        video_hash="import-context-unknown",
+    )
+
+    assert video.get_import_processor() is None
+    assert video.get_import_context_names() == (video_center.name, "Unknown")
 
 
 @pytest.mark.django_db

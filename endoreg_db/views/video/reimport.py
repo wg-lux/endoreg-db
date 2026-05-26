@@ -52,7 +52,11 @@ class VideoReimportView(APIView):
             )
 
         try:
-            video = VideoFile.objects.get(id=pk)
+            video = VideoFile.objects.select_related(
+                "center",
+                "processor",
+                "video_meta__processor",
+            ).get(id=pk)
             logger.info("Found video %s (ID: %s) for re-import", video.video_hash, pk)
         except VideoFile.DoesNotExist:
             logger.warning("Video with ID %s not found", pk)
@@ -336,20 +340,13 @@ class VideoReimportView(APIView):
             with transaction.atomic():
                 reset_upload_jobs = _reset_reimport_state(video)
 
-            processor_name = (
-                video.video_meta.processor.name
-                if video.video_meta and video.video_meta.processor
-                else "Unknown"
-            )
             logger.info(
-                "Starting VideoImportService reprocessing for %s",
+                "Starting VideoImportService re-anonymization for %s",
                 video.video_hash,
             )
-            self.video_service.import_and_anonymize(
-                file_path=raw_file_path,
-                center_name=video.center.name,
-                processor_name=processor_name,
-                retry=True,
+            self.video_service.reanonymize_existing_video(
+                video,
+                source_path=raw_file_path,
             )
         return reset_upload_jobs
 

@@ -279,6 +279,16 @@ class VideoFile(models.Model):
 
         return get_video_crop_template(self, *args, **kwargs)
 
+    def get_import_processor(self):
+        from endoreg_db.services.video_files import get_video_import_processor
+
+        return get_video_import_processor(self)
+
+    def get_import_context_names(self) -> tuple[str, str]:
+        from endoreg_db.services.video_files import get_video_import_context_names
+
+        return get_video_import_context_names(self)
+
     def update_text_metadata(self, *args, **kwargs):
         from endoreg_db.services.video_files import update_video_text_metadata
 

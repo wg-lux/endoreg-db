@@ -52,6 +52,18 @@ def get_video_crop_template(video: "VideoFile", *args, **kwargs):
     return _get_crop_template(video, *args, **kwargs)
 
 
+def get_video_import_processor(video: "VideoFile"):
+    from ._metadata import _get_import_processor
+
+    return _get_import_processor(video)
+
+
+def get_video_import_context_names(video: "VideoFile") -> tuple[str, str]:
+    from ._metadata import _get_import_context_names
+
+    return _get_import_context_names(video)
+
+
 def update_video_text_metadata(
     video: "VideoFile",
     extracted_data_dict: Optional[dict] = None,

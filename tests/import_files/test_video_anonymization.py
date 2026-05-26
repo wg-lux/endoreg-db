@@ -333,3 +333,61 @@ def test_anonymize_video_persists_phi_region_proposals_from_frame_cleaner(
     assert result_ctx.anonymized_path == output_dir / "phi-video-anonymize.mp4"
     assert result_ctx.anonymized_path.read_bytes() == b"anonymized-video"
     assert FrameBoxAnnotation.objects.count() == 1
+
+
+@pytest.mark.django_db
+def test_anonymize_video_uses_local_source_path_override(monkeypatch, tmp_path):
+    center = Center.objects.create(
+        name="local-source-path-center",
+        display_name="Local Source Path Center",
+    )
+    video = VideoFile.objects.create(center=center, video_hash="local-source-video")
+    video.ensure_local_raw_file = lambda: (_ for _ in ()).throw(
+        AssertionError("local_source_path should avoid rematerializing raw video")
+    )
+    local_source = tmp_path / "local-source.mp4"
+    local_source.write_bytes(b"local-source")
+    fallback_source = tmp_path / "fallback.mp4"
+    fallback_source.write_bytes(b"fallback-source")
+    output_dir = tmp_path / "anonymized"
+    cleaned_paths = []
+
+    class FakeFrameCleaner:
+        def clean_video(
+            self,
+            *,
+            video_path,
+            endoscope_image_roi,
+            endoscope_data_roi_nested,
+            output_path,
+        ):
+            cleaned_paths.append(video_path)
+            output_path.write_bytes(b"anonymized-video")
+            return output_path, {}
+
+    monkeypatch.setattr(video_anonymization, "FrameCleaner", FakeFrameCleaner)
+    monkeypatch.setattr(
+        video_anonymization, "_ensure_ffmpeg_tools_on_path", lambda: None
+    )
+    monkeypatch.setattr(video_anonymization, "_processed_video_dir", lambda: output_dir)
+    monkeypatch.setattr(
+        video_anonymization,
+        "sensitive_meta_storage",
+        lambda sensitive_meta, current_video: None,
+    )
+
+    ctx = SimpleNamespace(
+        current_video=video,
+        file_path=fallback_source,
+        local_source_path=local_source,
+        sensitive_path=None,
+        anonymized_path=None,
+        processor_name="",
+    )
+    anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
+
+    result_ctx = anonymizer.anonymize_video(ctx)
+
+    assert cleaned_paths == [local_source]
+    assert result_ctx.anonymized_path == output_dir / "local-source-video.mp4"
+    assert result_ctx.anonymized_path.read_bytes() == b"anonymized-video"
