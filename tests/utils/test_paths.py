@@ -57,6 +57,20 @@ def test_data_paths_behaves_like_a_mapping():
     assert expanded["documents"] == paths_module.DOCUMENT_DIR
 
 
+def test_legacy_paths_import_reexports_filesystem_paths(monkeypatch, tmp_path):
+    reloaded = reload_paths(
+        monkeypatch,
+        LX_ANNOTATE_ENCRYPTED_DATA_DIR=tmp_path / "protected",
+        DATA_DIR=tmp_path / "public",
+    )
+    legacy_paths = importlib.reload(importlib.import_module("endoreg_db.utils.paths"))
+
+    assert legacy_paths.data_paths is reloaded.data_paths
+    assert legacy_paths.LOG_DIR == reloaded.LOG_DIR
+    assert legacy_paths.IMPORT_PREANONYMIZED_DIR == reloaded.IMPORT_PREANONYMIZED_DIR
+    assert legacy_paths.EndoregPathsModel is reloaded.EndoregPathsModel
+
+
 def test_paths_module_reexports_env_contracts():
     assert paths_module.PROTECTED_ROOT_ENV == env_module.PROTECTED_ROOT_ENV
     assert paths_module.STORAGE_DIR_ENV == env_module.STORAGE_DIR_ENV
