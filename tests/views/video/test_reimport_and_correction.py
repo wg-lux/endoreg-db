@@ -160,7 +160,9 @@ def test_reimport_returns_clear_error_when_raw_source_is_missing(tmp_path, monke
 
     class _FakeVideoModel:
         DoesNotExist = LookupError
-        objects = SimpleNamespace(get=lambda **kwargs: video)
+        objects = SimpleNamespace(
+            select_related=lambda *args: SimpleNamespace(get=lambda **kwargs: video)
+        )
 
     monkeypatch.setattr(module, "VideoFile", _FakeVideoModel, raising=True)
     monkeypatch.setattr(
@@ -195,7 +197,9 @@ def test_reimport_reanonymizes_existing_video_without_full_import(
 
     class _FakeVideoModel:
         DoesNotExist = LookupError
-        objects = SimpleNamespace(get=lambda **kwargs: video)
+        objects = SimpleNamespace(
+            select_related=lambda *args: SimpleNamespace(get=lambda **kwargs: video)
+        )
 
     class _FakeSensitiveMetaModel:
         class objects:
@@ -229,8 +233,10 @@ def test_reimport_reanonymizes_existing_video_without_full_import(
     monkeypatch.setattr(
         module,
         "_dispatch_prediction_refresh",
-        lambda target_video, payload: prediction_calls.append((target_video, payload))
-        or {"status": "queued", "queued": True, "history_id": 123},
+        lambda target_video, payload: (
+            prediction_calls.append((target_video, payload))
+            or {"status": "queued", "queued": True, "history_id": 123}
+        ),
         raising=True,
     )
     monkeypatch.setattr(

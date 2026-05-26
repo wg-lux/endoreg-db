@@ -37,6 +37,7 @@ from endoreg_db.services.hub.media_integrity import (
 from endoreg_db.services.video_files import (
     get_or_create_video_state,
     get_video_by_content_hash,
+    get_video_import_context_names,
 )
 from endoreg_db.utils.filesystem import paths as path_utils
 
@@ -276,7 +277,7 @@ class VideoImportService:
 
             with file_lock(local_source_path):
                 logger.info("Acquired file lock for re-anonymization: %s", video_hash)
-                center_name, processor_name = video.get_import_context_names()
+                center_name, processor_name = get_video_import_context_names(video)
                 ctx = ImportContext(
                     file_path=local_source_path,
                     center_name=center_name,

@@ -210,7 +210,7 @@ def _segment_annotation_integrity_errors(
 
 
 def _has_outside_cleanup_targets(video: VideoFile) -> bool:
-    from endoreg_db.models.media.video.video_file_segments import _get_outside_frames
+    from endoreg_db.services.video_files._segments import _get_outside_frames
 
     return _get_outside_frames(video, only_validated=False).exists()
 

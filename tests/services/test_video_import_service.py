@@ -265,10 +265,6 @@ def test_reanonymize_existing_video_skips_import_staging(monkeypatch, tmp_path):
         video_hash = "video-hash"
         resolved_import_context = False
 
-        def get_import_context_names(self):
-            self.resolved_import_context = True
-            return "university_hospital_wuerzburg", "olympus_cv_1500"
-
     video = DummyVideo()
 
     class DummyAnonymizer:
@@ -290,6 +286,10 @@ def test_reanonymize_existing_video_skips_import_staging(monkeypatch, tmp_path):
     def fail_create_sensitive_copy(*args, **kwargs):
         raise AssertionError("re-anonymization should not create a sensitive copy")
 
+    def fake_get_video_import_context_names(video):
+        video.resolved_import_context = True
+        return "university_hospital_wuerzburg", "olympus_cv_1500"
+
     @contextmanager
     def fake_file_lock(path):
         events.append(("file_lock", Path(path)))
@@ -305,6 +305,12 @@ def test_reanonymize_existing_video_skips_import_staging(monkeypatch, tmp_path):
     monkeypatch.setattr(vis_module, "content_hash_lock", fake_hash_lock, raising=True)
     monkeypatch.setattr(
         vis_module, "create_sensitive_copy", fail_create_sensitive_copy, raising=True
+    )
+    monkeypatch.setattr(
+        vis_module,
+        "get_video_import_context_names",
+        fake_get_video_import_context_names,
+        raising=True,
     )
     monkeypatch.setattr(
         vis_module,

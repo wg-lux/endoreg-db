@@ -44,6 +44,26 @@ def test_model_frame_submodule_import_does_not_replace_service_frame_export():
     assert not isinstance(service_frame_package._delete_frames, types.ModuleType)
 
 
+def test_legacy_video_model_modules_reexport_service_imports():
+    from importlib import import_module
+
+    legacy_io = import_module("endoreg_db.models.media.video.video_file_io")
+    service_io = import_module("endoreg_db.services.video_files._io")
+    assert legacy_io._get_raw_file_path is service_io._get_raw_file_path
+
+    legacy_frame_delete = import_module(
+        "endoreg_db.models.media.video.video_file_frames._delete_frames"
+    )
+    service_frame_delete = import_module(
+        "endoreg_db.services.video_files._frames._delete_frames"
+    )
+    assert legacy_frame_delete._delete_frames is service_frame_delete._delete_frames
+
+    legacy_ai = import_module("endoreg_db.models.media.video.video_file_ai")
+    service_ai = import_module("endoreg_db.services.video_files._ai")
+    assert legacy_ai.VideoFrameScoreResult is service_ai.VideoFrameScoreResult
+
+
 @pytest.fixture
 def video_center() -> Center:
     return Center.objects.create(
@@ -125,8 +145,8 @@ def test_video_fps_service_preserves_wrapper_behavior(video: VideoFile):
 
 @pytest.mark.django_db
 def test_video_frame_services_preserve_wrapper_behavior(video: VideoFile, monkeypatch):
-    from endoreg_db.models.media.video import video_file_frames
-    from endoreg_db.models.media.video.video_file_frames import _manage_frame_range
+    from endoreg_db.services.video_files import _frames as service_frames
+    from endoreg_db.services.video_files._frames import _manage_frame_range
 
     extraction_calls = []
     range_calls = []
@@ -143,7 +163,7 @@ def test_video_frame_services_preserve_wrapper_behavior(video: VideoFile, monkey
     def fake_delete_range(**kwargs):
         deletion_calls.append(kwargs)
 
-    monkeypatch.setattr(video_file_frames, "_extract_frames", fake_extract)
+    monkeypatch.setattr(service_frames, "_extract_frames", fake_extract)
     monkeypatch.setattr(_manage_frame_range, "_extract_frame_range", fake_extract_range)
     monkeypatch.setattr(_manage_frame_range, "_delete_frame_range", fake_delete_range)
 
@@ -189,8 +209,12 @@ def test_video_pipeline_and_anonymization_services_preserve_wrappers(
     video: VideoFile,
     monkeypatch,
 ):
-    from endoreg_db.models.media.video import pipe_1, pipe_2, video_file_anonymize
     from endoreg_db.services import video_post_validation_blackening
+    from endoreg_db.services.video_files import (
+        _anonymization as video_file_anonymize,
+    )
+    from endoreg_db.services.video_files import _pipeline_1 as pipe_1
+    from endoreg_db.services.video_files import _pipeline_2 as pipe_2
 
     pipe_1_calls = []
     pipe_2_calls = []

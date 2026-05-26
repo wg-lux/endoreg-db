@@ -4,8 +4,8 @@ import cv2
 import numpy as np
 import pytest
 
-import endoreg_db.models as endoreg_models
 import endoreg_db.models.media.video.video_file_anonymize as anonymize_module
+import endoreg_db.models.media.video.video_file as video_file_module
 from endoreg_db.models import (
     Center,
     Frame,
@@ -230,7 +230,7 @@ def test_cleanup_raw_assets_deletes_raw_paths_and_updates_state(tmp_path, monkey
 
     fake_queryset = _FakeQuerySet(fake_video)
     fake_video_model = SimpleNamespace(objects=fake_queryset)
-    monkeypatch.setattr(endoreg_models, "VideoFile", fake_video_model)
+    monkeypatch.setattr(video_file_module, "VideoFile", fake_video_model)
 
     anonymize_module._cleanup_raw_assets(
         video_hash="hash-cleanup",

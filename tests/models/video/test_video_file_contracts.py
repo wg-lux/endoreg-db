@@ -11,6 +11,10 @@ from endoreg_db.models.medical.hardware.endoscopy_processor import EndoscopyProc
 from endoreg_db.models.metadata.video_meta import VideoMeta
 from endoreg_db.models.media.video.storage_mode import VideoStorageMode
 from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.services.video_files import (
+    get_video_import_context_names,
+    get_video_import_processor,
+)
 
 
 @pytest.fixture
@@ -55,8 +59,8 @@ def test_video_file_import_context_names_prefer_video_processor(
         video_hash="import-context-canonical",
     )
 
-    assert video.get_import_processor() == canonical_processor
-    assert video.get_import_context_names() == (
+    assert get_video_import_processor(video) == canonical_processor
+    assert get_video_import_context_names(video) == (
         video_center.name,
         canonical_processor.name,
     )
@@ -77,8 +81,8 @@ def test_video_file_import_context_names_fall_back_to_video_meta_processor(
         video_hash="import-context-meta",
     )
 
-    assert video.get_import_processor() == legacy_processor
-    assert video.get_import_context_names() == (
+    assert get_video_import_processor(video) == legacy_processor
+    assert get_video_import_context_names(video) == (
         video_center.name,
         legacy_processor.name,
     )
@@ -93,8 +97,8 @@ def test_video_file_import_context_names_allow_unknown_processor(
         video_hash="import-context-unknown",
     )
 
-    assert video.get_import_processor() is None
-    assert video.get_import_context_names() == (video_center.name, "Unknown")
+    assert get_video_import_processor(video) is None
+    assert get_video_import_context_names(video) == (video_center.name, "Unknown")
 
 
 @pytest.mark.django_db
@@ -158,7 +162,7 @@ def test_video_file_protected_urls_require_streamable_paths(video_center: Center
 
     video.raw_streamable_relative_path = "streamable/raw/source.mp4"
     with patch(
-        "endoreg_db.models.media.video.video_file_streaming.reverse",
+        "endoreg_db.services.video_files.streaming.reverse",
         return_value=f"/api/media/videos/{video.pk}/stream/",
     ):
         raw_url = video.active_raw_file_url
@@ -180,7 +184,7 @@ def test_video_file_active_file_url_prefers_processed_stream(video_center: Cente
     video.processed_streamable_relative_path = "streamable/processed/source.mp4"
 
     with patch(
-        "endoreg_db.models.media.video.video_file_streaming.reverse",
+        "endoreg_db.services.video_files.streaming.reverse",
         return_value=f"/api/media/videos/{video.pk}/stream/",
     ):
         active_file_url = video.active_file_url

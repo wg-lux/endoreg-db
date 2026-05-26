@@ -5,8 +5,8 @@ from unittest.mock import MagicMock, patch
 import cv2
 import pytest
 
-from endoreg_db.models.media.video.video_file_meta import get_fps as get_fps_module
-from endoreg_db.models.media.video.video_file_meta.get_fps import _get_fps
+from endoreg_db.services.video_files._metadata import get_fps as get_fps_module
+from endoreg_db.services.video_files._metadata.get_fps import _get_fps
 
 
 def _build_video(
@@ -36,7 +36,7 @@ def test_get_fps_prefers_file_based_value_over_cached_field():
     video = _build_video(fps=50.0, use_default_fps=False)
 
     with patch(
-        "endoreg_db.models.media.video.video_file_meta.get_fps._get_fps_from_video_file",
+        "endoreg_db.services.video_files._metadata.get_fps._get_fps_from_video_file",
         return_value=29.97,
     ):
         resolved_fps = _get_fps(video)
@@ -51,7 +51,7 @@ def test_get_fps_uses_cached_value_when_no_file_source():
     video = _build_video(fps=25.0, use_default_fps=False)
 
     with patch(
-        "endoreg_db.models.media.video.video_file_meta.get_fps._get_fps_from_video_file",
+        "endoreg_db.services.video_files._metadata.get_fps._get_fps_from_video_file",
         return_value=None,
     ):
         resolved_fps = _get_fps(video)
@@ -65,11 +65,11 @@ def test_get_fps_uses_default_only_when_explicitly_enabled():
 
     with (
         patch(
-            "endoreg_db.models.media.video.video_file_meta.get_fps._get_fps_from_video_file",
+            "endoreg_db.services.video_files._metadata.get_fps._get_fps_from_video_file",
             return_value=None,
         ),
         patch(
-            "endoreg_db.models.media.video.video_file_meta.video_meta._update_video_meta",
+            "endoreg_db.services.video_files._metadata.video_meta._update_video_meta",
             return_value=None,
         ),
     ):
@@ -84,11 +84,11 @@ def test_get_fps_errs_when_no_file_and_no_fps_fallback():
 
     with (
         patch(
-            "endoreg_db.models.media.video.video_file_meta.get_fps._get_fps_from_video_file",
+            "endoreg_db.services.video_files._metadata.get_fps._get_fps_from_video_file",
             return_value=None,
         ),
         patch(
-            "endoreg_db.models.media.video.video_file_meta.video_meta._update_video_meta",
+            "endoreg_db.services.video_files._metadata.video_meta._update_video_meta",
             return_value=None,
         ),
     ):
