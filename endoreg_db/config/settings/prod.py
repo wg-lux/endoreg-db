@@ -7,6 +7,7 @@ from .base import (
     ENDOREG_ENABLE_HUB_TRANSFERS,
     ENDOREG_DEPLOYMENT_ROLE,
     REST_FRAMEWORK,
+    WATCHER_CELERY_INLINE_FALLBACK_ENABLED,
 )
 from endoreg_db.config.env import (
     BASE_DIR as ENV_BASE_DIR,
