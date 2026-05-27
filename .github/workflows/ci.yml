@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            accept-flake-config = true
+
+      - uses: cachix/cachix-action@v16
+        with:
+          name: devenv
+
+      - name: Install devenv
+        run: nix profile add nixpkgs#devenv
+
+      - name: Run checks
+        shell: devenv shell bash -- -e {0}
+        run: |
+          devenv tasks run agent:sync
+          .devenv/state/venv/bin/ruff check endoreg_db tests
+          .devenv/state/venv/bin/ruff format --check endoreg_db tests
+          .devenv/state/venv/bin/mypy --config-file pyproject.toml endoreg_db
+          devenv tasks run agent:smoke
+          devenv tasks run test:fast
