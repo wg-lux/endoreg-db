@@ -58,6 +58,7 @@ class VideoFile(models.Model):
         blank=True,
     )
     processed_file = models.FileField(
+        max_length=500,
         upload_to=ANONYM_VIDEO_DIR.name,  # Use .name for relative path
         storage=LazyEncryptedStorage(),
         validators=[FileExtensionValidator(allowed_extensions=["mp4"])],
