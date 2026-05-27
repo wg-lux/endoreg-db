@@ -1,5 +1,7 @@
 from .choice import FindingClassificationChoiceSerializer
-from endoreg_db.models import FindingClassification
+from endoreg_db.models.medical.finding.finding_classification import (
+    FindingClassification,
+)
 from rest_framework import serializers
 
 

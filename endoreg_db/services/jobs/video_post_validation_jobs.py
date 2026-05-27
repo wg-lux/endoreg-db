@@ -11,7 +11,8 @@ from pathlib import Path
 from django.db import transaction
 from django.utils import timezone
 
-from endoreg_db.models import VideoFile, VideoProcessingHistory
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
 from endoreg_db.models.state.video_segment_validation import (
     _blackening_history_config,
     _is_outside_frame_blackening_history,

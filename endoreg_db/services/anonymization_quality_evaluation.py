@@ -14,13 +14,11 @@ from django.utils.dateparse import parse_date, parse_datetime
 from pydantic import BaseModel, Field
 
 from endoreg_db.import_files.file_storage.cleanup import staging_cleanup_roots
-from endoreg_db.models import (
-    AnonymizationValidationMetric,
-    FrameBoxAnnotation,
-    RawPdfFile,
-    SensitiveMeta,
-    VideoFile,
-)
+from endoreg_db.models.label.annotation.frame_box import FrameBoxAnnotation
+from endoreg_db.models.media.anonymization_metrics import AnonymizationValidationMetric
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.services.anonymization_metrics import (
     MAX_PHI_REGION_MATCH_ANNOTATIONS,
     PHI_REGION_ANNOTATOR,

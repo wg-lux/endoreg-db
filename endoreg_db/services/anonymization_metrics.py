@@ -26,17 +26,17 @@ from django.db.models.functions import RowNumber
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
 
-from endoreg_db.models import (
+from endoreg_db.models.hub.upload_job import UploadJob
+from endoreg_db.models.label.annotation.frame_box import FrameBoxAnnotation
+from endoreg_db.models.media.anonymization_metrics import (
     AnonymizationFieldMetric,
     AnonymizationMetricField,
     AnonymizationValidationMetric,
-    FrameBoxAnnotation,
-    RawPdfFile,
-    SensitiveMeta,
-    UploadJob,
-    VideoFile,
-    VideoState,
 )
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+from endoreg_db.models.state.video import VideoState
 from endoreg_db.models.state.anonymization import AnonymizationState
 
 MediaType = Literal["video", "pdf"]

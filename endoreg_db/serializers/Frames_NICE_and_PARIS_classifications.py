@@ -1,6 +1,9 @@
 from endoreg_db.utils.media.extract_specific_frames import extract_selected_frames
 from rest_framework import serializers
-from endoreg_db.models import Label, LabelVideoSegment
+from endoreg_db.models.label.label import Label
+from endoreg_db.models.label.label_video_segment.label_video_segment import (
+    LabelVideoSegment,
+)
 from itertools import combinations
 from pathlib import Path
 from django.conf import settings

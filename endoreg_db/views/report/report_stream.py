@@ -11,7 +11,7 @@ from rest_framework.views import APIView
 from typing import TYPE_CHECKING
 
 from endoreg_db.authz.permissions import PolicyPermission
-from endoreg_db.models import RawPdfFile
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
 from endoreg_db.utils.filesystem import paths as path_utils
 from endoreg_db.utils.filesystem.paths import to_storage_relative

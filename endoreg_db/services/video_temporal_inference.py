@@ -22,13 +22,13 @@ from endoreg_db.services.jobs.heavy_jobs import (
     HeavyJobKind,
     ensure_secure_transport_for_job_kind,
 )
-from endoreg_db.models import (
+from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
-    ModelMeta,
-    VideoFile,
-    VideoPredictionMeta,
-    VideoProcessingHistory,
 )
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
+from endoreg_db.models.metadata.model_meta import ModelMeta
+from endoreg_db.models.metadata.video_prediction_meta import VideoPredictionMeta
 from endoreg_db.services.video_files._ai import (
     FrameSourceMode,
     VideoFrameScoreResult,

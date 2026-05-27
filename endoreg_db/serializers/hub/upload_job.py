@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from endoreg_db.models import UploadJob
+from endoreg_db.models.hub.upload_job import UploadJob
 
 
 class UploadJobStatusSerializer(serializers.ModelSerializer):

@@ -1,5 +1,5 @@
-from endoreg_db.models import (
-    Examination,
+from endoreg_db.models.medical.examination.examination import Examination
+from endoreg_db.models.medical.finding.finding_classification import (
     FindingClassificationChoice,
 )
 from rest_framework.response import Response

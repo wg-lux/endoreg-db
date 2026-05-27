@@ -1,4 +1,4 @@
-from endoreg_db.models import VideoFile
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.lx_video_contracts import resolve_lx_anonymization_state
 from endoreg_db.services.video_files import get_video_outside_segments
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS

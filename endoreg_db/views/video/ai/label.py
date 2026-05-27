@@ -8,14 +8,14 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
 
-from endoreg_db.models import (
-    AiModel,
-    Label,
-    LabelSet,
+from endoreg_db.models.administration.ai.ai_model import AiModel
+from endoreg_db.models.label.label import Label
+from endoreg_db.models.label.label_set import LabelSet
+from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
-    ModelMeta,
-    VideoFile,
 )
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.metadata.model_meta import ModelMeta
 from endoreg_db.serializers.label_video_segment.label import LabelSerializer
 from endoreg_db.services.video_temporal_inference import (
     TEMPORAL_INFERENCE_STATUS_PENDING_AFTER_REBUILD,

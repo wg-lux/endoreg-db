@@ -8,7 +8,11 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
-from endoreg_db.models import Center, LabelVideoSegment, VideoFile
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.label.label_video_segment.label_video_segment import (
+    LabelVideoSegment,
+)
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.state.video_segment_validation import (
     resolve_segment_annotation_status,
     segment_annotations_are_final,

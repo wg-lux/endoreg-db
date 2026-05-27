@@ -1,4 +1,7 @@
-from endoreg_db.models import PatientFinding, PatientFindingIntervention
+from endoreg_db.models.medical.patient.patient_finding import PatientFinding
+from endoreg_db.models.medical.patient.patient_finding_intervention import (
+    PatientFindingIntervention,
+)
 from endoreg_db.serializers.patient_finding.patient_finding_classification import (
     PatientFindingClassificationSerializer,
 )

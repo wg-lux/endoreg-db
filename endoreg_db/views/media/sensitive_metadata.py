@@ -21,14 +21,12 @@ from lx_dtypes.models.contracts import (
 )
 
 from endoreg_db.authz.permissions import PolicyPermission
-from endoreg_db.models import (
-    Examination,
-    Patient,
-    PatientExamination,
-    RawPdfFile,
-    SensitiveMeta,
-    VideoFile,
-)
+from endoreg_db.models.administration.person.patient.patient import Patient
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.medical.examination.examination import Examination
+from endoreg_db.models.medical.patient.patient_examination import PatientExamination
+from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.services.case_resolution_state import (
     get_case_resolution_meta,
     persist_case_resolution_state,

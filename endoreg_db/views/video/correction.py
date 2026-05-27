@@ -22,12 +22,12 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from endoreg_db.models import (
+from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
-    VideoFile,
-    VideoMetadata,
-    VideoProcessingHistory,
 )
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.media.video.video_metadata import VideoMetadata
+from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
 from endoreg_db.serializers import VideoProcessingHistorySerializer
 from endoreg_db.serializers.video.video_file_detail import VideoDetailSerializer
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts

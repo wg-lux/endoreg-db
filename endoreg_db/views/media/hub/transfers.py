@@ -14,7 +14,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from endoreg_db.models import TransferJob
+from endoreg_db.models.hub.transfer_job import TransferJob
 from endoreg_db.serializers.hub import (
     TransferJobCreateSerializer,
     TransferJobStatusSerializer,

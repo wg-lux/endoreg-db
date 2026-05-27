@@ -18,15 +18,15 @@ from kombu.exceptions import OperationalError as KombuOperationalError
 from pydantic import ValidationError
 
 from endoreg_db.models.administration.ai.ai_model import AiModel
-from endoreg_db.models import (
-    Center,
-    EndoscopyProcessor,
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.administration.person.patient.patient_external_id import (
     PatientExternalID,
-    RawPdfFile,
-    SensitiveMeta,
-    UploadJob,
-    VideoFile,
 )
+from endoreg_db.models.hub.upload_job import UploadJob
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.medical.hardware.endoscopy_processor import EndoscopyProcessor
+from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.services.raw_pdf_files import get_or_create_raw_pdf_state
 from endoreg_db.services.jobs.heavy_jobs import (

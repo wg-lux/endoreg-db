@@ -7,7 +7,11 @@ from lx_dtypes.models.ledger.p_video.state import (
 from lx_dtypes.models.ledger.p_video_segment.Pydantic import PVideoSegment
 from lx_dtypes.models.meta.SensitiveMeta import SensitiveMeta as LxSensitiveMeta
 
-from endoreg_db.models import LabelVideoSegment, SensitiveMeta, VideoFile
+from endoreg_db.models.label.label_video_segment.label_video_segment import (
+    LabelVideoSegment,
+)
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 
 _KNOWN_GENDER_NAMES = {"female", "male", "other", "unknown"}
 

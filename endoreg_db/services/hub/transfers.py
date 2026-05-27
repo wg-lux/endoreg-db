@@ -9,16 +9,14 @@ from typing import Any, Literal, NotRequired, TypedDict, cast
 from django.db import transaction
 from django.utils import timezone
 
-from endoreg_db.models import (
-    Center,
-    NetworkNode,
-    RawPdfFile,
-    RawPdfState,
-    SensitiveMeta,
-    TransferJob,
-    VideoFile,
-    VideoState,
-)
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.hub.network_node import NetworkNode
+from endoreg_db.models.hub.transfer_job import TransferJob
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+from endoreg_db.models.state.raw_pdf import RawPdfState
+from endoreg_db.models.state.video import VideoState
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )

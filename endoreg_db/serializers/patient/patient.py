@@ -1,5 +1,6 @@
 from rest_framework import serializers
-from endoreg_db.models import Patient, Gender
+from endoreg_db.models.administration.person.patient.patient import Patient
+from endoreg_db.models.other.gender import Gender
 from datetime import date
 from endoreg_db.serializers.fields import CenterKeyRelatedField
 

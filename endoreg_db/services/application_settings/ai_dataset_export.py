@@ -9,7 +9,8 @@ from uuid import UUID
 
 from django.utils import timezone
 
-from endoreg_db.models import AIDataSet, AIDataSetExportArtifact, Center
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.aidataset.aidataset import AIDataSet, AIDataSetExportArtifact
 from endoreg_db.services.hub import (
     local_study_server_mode_enabled,
     resolve_allowed_center_id,

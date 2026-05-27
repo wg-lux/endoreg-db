@@ -3,7 +3,8 @@ from typing import Any
 
 from rest_framework import serializers
 
-from endoreg_db.models import FrameBoxAnnotation, Label
+from endoreg_db.models.label.annotation.frame_box import FrameBoxAnnotation
+from endoreg_db.models.label.label import Label
 
 
 class FrameBoxAnnotationSerializer(serializers.ModelSerializer):

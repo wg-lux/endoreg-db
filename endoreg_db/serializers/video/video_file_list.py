@@ -4,7 +4,7 @@ import logging
 
 from rest_framework import serializers
 
-from endoreg_db.models import VideoFile
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.state.frame_annotation import validated_annotators_for_video
 from endoreg_db.models.state.video_segment_validation import (
     post_validation_rebuild_summary,

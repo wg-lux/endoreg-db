@@ -11,7 +11,11 @@ from endoreg_db.config.env import (
     celery_frame_extraction_requires_secure_transport,
     get_celery_frame_extraction_queue,
 )
-from endoreg_db.models import Frame, FrameExtractionRequest, VideoFile
+from endoreg_db.models.media.frame.frame import Frame
+from endoreg_db.models.media.video.frame_extraction_request import (
+    FrameExtractionRequest,
+)
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.video_files import extract_video_frame_range
 
 logger = logging.getLogger(__name__)

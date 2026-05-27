@@ -2,7 +2,9 @@ from typing import Optional
 from rest_framework import serializers
 
 
-from endoreg_db.models import ImageClassificationAnnotation
+from endoreg_db.models.label.annotation.image_classification import (
+    ImageClassificationAnnotation,
+)
 
 
 class ImageClassificationAnnotationSerializer(serializers.ModelSerializer):

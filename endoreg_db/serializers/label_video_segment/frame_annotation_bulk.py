@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from endoreg_db.models import Label
+from endoreg_db.models.label.label import Label
 
 
 class FrameAnnotationBulkItemSerializer(serializers.Serializer):

@@ -7,7 +7,9 @@ from endoreg_db.export.frames.export_frames_with_labels import (
     _frame_pk_filename,
     transcode_videos_for_annotations,
 )
-from endoreg_db.models import ImageClassificationAnnotation
+from endoreg_db.models.label.annotation.image_classification import (
+    ImageClassificationAnnotation,
+)
 
 
 def materialize_frames_for_annotation_ids(

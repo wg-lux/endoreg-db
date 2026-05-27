@@ -15,7 +15,8 @@ from endoreg_db.utils.filesystem.file_operations import (
     safe_unlink_file,
 )
 
-from endoreg_db.models import PatientExamination, PatientExaminationReport
+from endoreg_db.models.medical.patient.patient_examination import PatientExamination
+from endoreg_db.models.report.patient_examination_report import PatientExaminationReport
 
 
 class ReportPdfRendererError(RuntimeError):

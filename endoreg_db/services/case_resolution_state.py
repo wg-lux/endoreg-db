@@ -5,7 +5,8 @@ from typing import Any
 from django.utils import timezone
 from lx_dtypes.models.contracts import CaseResolutionRequest
 
-from endoreg_db.models import RawPdfFile, VideoFile
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.media.video.video_file import VideoFile
 
 CASE_RESOLUTION_META_KEY = "case_resolution"
 

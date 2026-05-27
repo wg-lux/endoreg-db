@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from endoreg_db.models import PatientExaminationReport
+from endoreg_db.models.report.patient_examination_report import PatientExaminationReport
 
 
 class PatientExaminationReportSerializer(serializers.ModelSerializer):

@@ -6,7 +6,8 @@ from typing import Any, Literal
 
 from django.db import transaction
 
-from endoreg_db.models import RawPdfFile, VideoFile
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.state.audit_ledger import AuditLedger
 from endoreg_db.services.auto_case_resolution import (
     AutoCaseResolutionResult,

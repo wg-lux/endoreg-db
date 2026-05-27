@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
 
-from endoreg_db.models import Examination
+from endoreg_db.models.medical.examination.examination import Examination
 from endoreg_db.serializers import ExaminationSerializer, FindingSerializer
 
 

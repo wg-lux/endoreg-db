@@ -3,11 +3,13 @@ from __future__ import annotations
 from typing import Sequence
 from django.db.models import Q
 
-from endoreg_db.models import (
+from endoreg_db.models.label.annotation.image_classification import (
     ImageClassificationAnnotation,
-    InformationSource,
+)
+from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
 )
+from endoreg_db.models.other.information_source import InformationSource
 from endoreg_db.models.state.frame_annotation import (
     segment_derived_external_annotation_id,
 )

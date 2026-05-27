@@ -20,14 +20,16 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
-from endoreg_db.models import (
-    AIDataSet,
+from endoreg_db.models.aidataset.aidataset import AIDataSet
+from endoreg_db.models.label.annotation.image_classification import (
     ImageClassificationAnnotation,
-    InformationSource,
-    Label,
-    LabelVideoSegment,
-    VideoFile,
 )
+from endoreg_db.models.label.label import Label
+from endoreg_db.models.label.label_video_segment.label_video_segment import (
+    LabelVideoSegment,
+)
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.other.information_source import InformationSource
 from endoreg_db.models.state.video_segment_validation import (
     mark_segment_annotations_complete_without_cleanup,
     mark_segment_annotations_pending_cleanup,

@@ -3,7 +3,7 @@ from ..finding_classification import (
     FindingClassificationSerializer,
     # FindingClassificationChoiceSerializer,
 )
-from endoreg_db.models import Finding
+from endoreg_db.models.medical.finding.finding import Finding
 
 
 class FindingSerializer(serializers.ModelSerializer):

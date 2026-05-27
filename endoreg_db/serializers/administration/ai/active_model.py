@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from endoreg_db.models import ActiveModel
+from endoreg_db.models.administration.ai.active_model import ActiveModel
 
 
 class ActiveModelSerializer(serializers.ModelSerializer):

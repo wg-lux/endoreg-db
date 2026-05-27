@@ -3,7 +3,9 @@
 from django.core.files.base import ContentFile
 from huggingface_hub import hf_hub_download
 
-from endoreg_db.models import AiModel, LabelSet, ModelMeta
+from endoreg_db.models.administration.ai.ai_model import AiModel
+from endoreg_db.models.label.label_set import LabelSet
+from endoreg_db.models.metadata.model_meta import ModelMeta
 
 
 def ensure_model_meta_from_hf(

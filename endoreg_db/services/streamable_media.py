@@ -30,7 +30,7 @@ from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from endoreg_db.models import VideoFile
+    from endoreg_db.models.media.video.video_file import VideoFile
 
 
 def _streamable_video_root() -> Path:

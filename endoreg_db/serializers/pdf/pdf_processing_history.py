@@ -2,7 +2,7 @@ from collections.abc import Mapping
 
 from rest_framework import serializers
 
-from endoreg_db.models import PdfProcessingHistory
+from endoreg_db.models.media.pdf.pdf_processing_history import PdfProcessingHistory
 from endoreg_db.utils.web.media_urls import (
     build_absolute_media_url,
     build_pdf_stream_path,

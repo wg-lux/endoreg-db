@@ -14,22 +14,28 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
-from endoreg_db.models import (
-    AnonymExaminationReport,
-    Center,
-    Finding,
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.media.pdf.report_file import AnonymExaminationReport
+from endoreg_db.models.medical.finding.finding import Finding
+from endoreg_db.models.medical.finding.finding_classification import (
     FindingClassification,
     FindingClassificationChoice,
-    FindingIntervention,
-    Gender,
-    PatientExamination,
-    PatientExaminationIndication,
-    PatientExaminationReport,
-    PatientFinding,
-    PatientFindingClassification,
-    PatientFindingIntervention,
-    RawPdfFile,
 )
+from endoreg_db.models.medical.finding.finding_intervention import FindingIntervention
+from endoreg_db.models.medical.patient.patient_examination import PatientExamination
+from endoreg_db.models.medical.patient.patient_examination_indication import (
+    PatientExaminationIndication,
+)
+from endoreg_db.models.medical.patient.patient_finding import PatientFinding
+from endoreg_db.models.medical.patient.patient_finding_classification import (
+    PatientFindingClassification,
+)
+from endoreg_db.models.medical.patient.patient_finding_intervention import (
+    PatientFindingIntervention,
+)
+from endoreg_db.models.other.gender import Gender
+from endoreg_db.models.report.patient_examination_report import PatientExaminationReport
 from endoreg_db.schemas import validate_raw_pdf_meta_payload
 from endoreg_db.services.report_history import get_patient_examination_history_context
 

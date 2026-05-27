@@ -1,5 +1,7 @@
 from endoreg_db.serializers.misc.translatable_field_mix_in import TranslatableFieldMixin
-from endoreg_db.models import PatientFindingIntervention
+from endoreg_db.models.medical.patient.patient_finding_intervention import (
+    PatientFindingIntervention,
+)
 
 from rest_framework import serializers
 

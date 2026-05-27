@@ -289,10 +289,9 @@ TEST_LOGGER_NAMES = [
     "ffmpeg_wrapper",
     # Video-pipeline modules
     "endoreg_db.models.media.video.video_file",
-    "endoreg_db.models.media.video.video_file_anonymize",
-    "endoreg_db.models.media.video.pipe_1",
-    "endoreg_db.models.media.video.pipe_2",
-    "endoreg_db.utils.pipelines.process_video_dir",
+    "endoreg_db.services.video_files._anonymization",
+    "endoreg_db.services.video_files._pipeline_1",
+    "endoreg_db.services.video_files._pipeline_2",
     "endoreg_db.models.metadata.sensitive_meta",
 ]
 

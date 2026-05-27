@@ -1,4 +1,4 @@
-from endoreg_db.models import Label
+from endoreg_db.models.label.label import Label
 
 
 from rest_framework import serializers

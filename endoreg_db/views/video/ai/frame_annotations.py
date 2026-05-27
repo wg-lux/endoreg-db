@@ -7,16 +7,16 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from endoreg_db.models import (
-    AIDataSet,
-    Frame,
+from endoreg_db.models.aidataset.aidataset import AIDataSet
+from endoreg_db.models.label.annotation.image_classification import (
     ImageClassificationAnnotation,
-    InformationSource,
-    Label,
-    LabelSet,
-    ModelMeta,
-    VideoFile,
 )
+from endoreg_db.models.label.label import Label
+from endoreg_db.models.label.label_set import LabelSet
+from endoreg_db.models.media.frame.frame import Frame
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.metadata.model_meta import ModelMeta
+from endoreg_db.models.other.information_source import InformationSource
 from endoreg_db.models.state.frame_annotation import (
     DEFAULT_FRAME_INFORMATION_SOURCE_NAME,
     FrameAnnotationQueueSpec,

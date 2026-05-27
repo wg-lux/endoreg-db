@@ -6,7 +6,7 @@ from rest_framework import serializers
 
 from lx_dtypes.models.contracts import DocumentType as DocumentTypeContract
 
-from endoreg_db.models import UploadJob
+from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.models.media import RawPdfFile, VideoFile
 from endoreg_db.models.state.anonymization import AnonymizationState
 

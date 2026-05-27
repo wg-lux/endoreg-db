@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from endoreg_db.models import Center, NetworkNode, TransferJob
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.hub.network_node import NetworkNode
+from endoreg_db.models.hub.transfer_job import TransferJob
 from endoreg_db.models.state.anonymization import AnonymizationState
 
 

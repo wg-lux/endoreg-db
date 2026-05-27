@@ -5,7 +5,8 @@ from typing import Optional, Literal
 
 from django.db import transaction
 
-from endoreg_db.models import RawPdfFile, VideoFile
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.lx_video_contracts import resolve_lx_anonymization_state
 from endoreg_db.services.video_import import VideoImportService
 from endoreg_db.services.video_files import get_or_create_video_state

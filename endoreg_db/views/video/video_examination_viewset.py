@@ -25,7 +25,8 @@ from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from endoreg_db.models import PatientExamination, VideoFile
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 
 from ...serializers.video_examination import (
     VideoExaminationCreateSerializer,

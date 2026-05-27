@@ -3,7 +3,7 @@ from rest_framework.viewsets import ReadOnlyModelViewSet
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from endoreg_db.models import Finding
+from endoreg_db.models.medical.finding.finding import Finding
 from ...serializers.finding import FindingSerializer
 
 

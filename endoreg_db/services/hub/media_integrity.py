@@ -6,7 +6,9 @@ from typing import cast
 
 from django.db.models.fields.files import FieldFile
 
-from endoreg_db.models import RawPdfFile, UploadJob, VideoFile
+from endoreg_db.models.hub.upload_job import UploadJob
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.utils.storage import field_file_is_readable, file_exists
 
 

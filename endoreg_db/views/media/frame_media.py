@@ -8,7 +8,8 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from endoreg_db.models import Frame, VideoFile
+from endoreg_db.models.media.frame.frame import Frame
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.services.jobs.frame_extraction_jobs import (
     FrameExtractionDispatchResult,

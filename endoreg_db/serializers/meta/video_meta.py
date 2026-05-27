@@ -1,6 +1,6 @@
 from pathlib import Path
 from rest_framework import serializers
-from endoreg_db.models import VideoMeta, VideoImportMeta
+from endoreg_db.models.metadata.video_meta import VideoImportMeta, VideoMeta
 
 
 class VideoMetaSerializer(serializers.ModelSerializer):

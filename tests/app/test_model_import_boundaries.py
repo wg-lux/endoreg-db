@@ -4,6 +4,7 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PACKAGE_ROOT = PROJECT_ROOT / "endoreg_db"
 MODELS_ROOT = PROJECT_ROOT / "endoreg_db" / "models"
 SERVICES_ROOT = PROJECT_ROOT / "endoreg_db" / "services"
 SERVICE_IMPORT_PREFIX = "endoreg_db.services"
@@ -271,6 +272,40 @@ def _service_to_model_implementation_imports():
     return {key: frozenset(names) for key, names in imports.items()}
 
 
+def _project_to_model_implementation_references():
+    references = defaultdict(set)
+
+    for path in sorted(PACKAGE_ROOT.rglob("*.py")):
+        tree = ast.parse(path.read_text(), filename=str(path))
+        rel_path = path.relative_to(PROJECT_ROOT).as_posix()
+
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.ImportFrom)
+                and node.module
+                and _is_banned_model_implementation_import(node.module)
+            ):
+                references[(rel_path, "import")].update(
+                    _imported_name(alias) for alias in node.names
+                )
+                continue
+
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if _is_banned_model_implementation_import(alias.name):
+                        references[(rel_path, "import")].add(_imported_name(alias))
+                continue
+
+            if (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and _is_banned_model_implementation_import(node.value)
+            ):
+                references[(rel_path, "string")].add(node.value)
+
+    return {key: frozenset(names) for key, names in references.items()}
+
+
 def test_models_do_not_add_new_service_imports():
     current_imports = _model_to_service_imports()
 
@@ -298,3 +333,7 @@ def test_models_do_not_add_new_service_imports():
 
 def test_services_do_not_import_model_media_implementation_modules():
     assert not _service_to_model_implementation_imports()
+
+
+def test_project_code_does_not_reference_model_media_implementation_modules():
+    assert not _project_to_model_implementation_references()

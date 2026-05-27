@@ -5,7 +5,8 @@ from typing import Any, Final
 
 from django.db import transaction
 
-from endoreg_db.models import Center, NetworkNode
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.hub.network_node import NetworkNode
 
 _UNCHANGED_OWNING_CENTER: Final = object()
 

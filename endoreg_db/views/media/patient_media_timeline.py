@@ -9,14 +9,14 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from endoreg_db.authz.permissions import PolicyPermission
-from endoreg_db.models import (
-    AnonymExaminationReport,
-    Frame,
+from endoreg_db.models.administration.person.patient.patient import Patient
+from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
-    Patient,
-    RawPdfFile,
-    VideoFile,
 )
+from endoreg_db.models.media.frame.frame import Frame
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.media.pdf.report_file import AnonymExaminationReport
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.video_files import get_active_video_file
 from endoreg_db.utils.web.media_urls import (
     build_absolute_media_url,

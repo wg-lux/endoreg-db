@@ -9,7 +9,7 @@ from django.db import OperationalError, ProgrammingError, transaction
 
 from endoreg_db.config.env import reconciliation_disabled
 from endoreg_db.import_files.context.file_lock import STALE_LOCK_SECONDS
-from endoreg_db.models import VideoFile
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.media_integrity import reconcile_media_integrity
 from endoreg_db.services.streamable_media import (
     STREAMABLE_PROCESSED_VIDEO_ROOT,

@@ -9,7 +9,11 @@ from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.exceptions import ValidationError as DRFValidationError
 
-from endoreg_db.models import AIDataSet, LabelVideoSegment, VideoFile
+from endoreg_db.models.aidataset.aidataset import AIDataSet
+from endoreg_db.models.label.label_video_segment.label_video_segment import (
+    LabelVideoSegment,
+)
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.state.frame_annotation import (
     delete_frame_annotations_for_segment as default_delete_frame_annotations,
     sync_frame_annotations_for_segment as default_sync_frame_annotations,

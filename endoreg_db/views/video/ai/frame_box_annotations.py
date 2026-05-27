@@ -7,13 +7,11 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from endoreg_db.models import (
-    Frame,
-    FrameBoxAnnotation,
-    InformationSource,
-    Label,
-    ModelMeta,
-)
+from endoreg_db.models.label.annotation.frame_box import FrameBoxAnnotation
+from endoreg_db.models.label.label import Label
+from endoreg_db.models.media.frame.frame import Frame
+from endoreg_db.models.metadata.model_meta import ModelMeta
+from endoreg_db.models.other.information_source import InformationSource
 from endoreg_db.models.state.frame_annotation import (
     DEFAULT_FRAME_INFORMATION_SOURCE_NAME,
     resolve_frame_information_source_name,

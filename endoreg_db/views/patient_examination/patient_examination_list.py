@@ -1,4 +1,4 @@
-from endoreg_db.models import PatientExamination
+from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.serializers.patient_examination import PatientExaminationSerializer
 
 from rest_framework import generics, status

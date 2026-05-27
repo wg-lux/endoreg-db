@@ -8,7 +8,9 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
-    from endoreg_db.models import AIDataSet, Label, LabelSet
+    from endoreg_db.models.aidataset.aidataset import AIDataSet
+    from endoreg_db.models.label.label import Label
+    from endoreg_db.models.label.label_set import LabelSet
 
 __all__ = [
     "AIDataSetFrameBucketCount",
@@ -249,7 +251,7 @@ def _build_segment_frame_buckets(
     label_set: LabelSet | None,
     prediction_segments_only: bool,
 ) -> dict[int, set[int]]:
-    from endoreg_db.models import Frame
+    from endoreg_db.models.media.frame.frame import Frame
     from endoreg_db.models.state.frame_annotation import is_prediction_segment
 
     buckets: dict[int, set[int]] = defaultdict(set)
@@ -309,7 +311,7 @@ def build_frame_bucket_distribution(
     """
     Return validated frame-bucket counts used by dataset-aware annotation flows.
     """
-    from endoreg_db.models import Label
+    from endoreg_db.models.label.label import Label
 
     target_buckets = _build_target_frame_buckets(
         dataset,

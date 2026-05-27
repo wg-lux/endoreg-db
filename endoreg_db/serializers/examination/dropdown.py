@@ -1,4 +1,4 @@
-from endoreg_db.models import Examination
+from endoreg_db.models.medical.examination.examination import Examination
 
 
 from rest_framework import serializers

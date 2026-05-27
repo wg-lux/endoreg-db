@@ -15,19 +15,20 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
-from endoreg_db.models import (
-    AIDataSet,
-    AIModelTrainingRun,
-    Center,
-    EndoscopyProcessor,
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.aidataset.aidataset import AIDataSet, AIModelTrainingRun
+from endoreg_db.models.hub.network_node import NetworkNode
+from endoreg_db.models.label.annotation.image_classification import (
     ImageClassificationAnnotation,
-    Label,
-    LabelSet,
-    LabelVideoSegment,
-    NetworkNode,
-    PatientExaminationReport,
-    VideoFile,
 )
+from endoreg_db.models.label.label import Label
+from endoreg_db.models.label.label_set import LabelSet
+from endoreg_db.models.label.label_video_segment.label_video_segment import (
+    LabelVideoSegment,
+)
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.medical.hardware.endoscopy_processor import EndoscopyProcessor
+from endoreg_db.models.report.patient_examination_report import PatientExaminationReport
 from endoreg_db.services.application_settings.ai_dataset_export import (
     create_ai_dataset_export,
     prepare_ai_dataset_export_download,

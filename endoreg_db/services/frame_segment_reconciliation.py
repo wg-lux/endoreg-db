@@ -6,11 +6,13 @@ from typing import Any, Literal
 from django.db import models, transaction
 from django.db.models import Q
 
-from endoreg_db.models import (
+from endoreg_db.models.label.annotation.image_classification import (
     ImageClassificationAnnotation,
-    InformationSource,
+)
+from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
 )
+from endoreg_db.models.other.information_source import InformationSource
 from endoreg_db.models.state.frame_annotation import (
     MANUAL_ANNOTATION_INFORMATION_SOURCE_NAMES,
     PREDICTION_INFORMATION_SOURCE_NAMES,

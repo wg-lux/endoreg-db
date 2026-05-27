@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from endoreg_db.models import Gender
+from endoreg_db.models.other.gender import Gender
 
 
 class GenderSerializer(serializers.ModelSerializer):

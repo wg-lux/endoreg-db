@@ -9,7 +9,7 @@ from typing import Any, ContextManager, Iterable
 from lx_anonymizer.anonymization.masking import MaskApplication
 from lx_anonymizer.video_processing import video_utils
 
-from endoreg_db.models import VideoFile
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.utils.filesystem.file_operations import (
     atomic_move_file,
     safe_unlink_file,

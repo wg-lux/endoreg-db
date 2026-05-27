@@ -1,12 +1,10 @@
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
-from endoreg_db.models import (
-    Examination,
-    VideoFile,
-    Finding,
-    PatientExamination,
-)
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.medical.examination.examination import Examination
+from endoreg_db.models.medical.finding.finding import Finding
+from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from django.db import DatabaseError, transaction
 from django.utils import timezone
 import logging

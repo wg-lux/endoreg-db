@@ -14,7 +14,10 @@ from django.db.models import Q
 from django.utils import timezone
 
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS
-from endoreg_db.models import FFMpegMeta, Frame, UploadJob, VideoFile, VideoMeta
+from endoreg_db.models.hub.upload_job import UploadJob
+from endoreg_db.models.media.frame.frame import Frame
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.metadata.video_meta import FFMpegMeta, VideoMeta
 from endoreg_db.models.media.video.storage_mode import (
     VideoStorageMode,
     coerce_video_storage_mode,

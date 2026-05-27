@@ -4,7 +4,7 @@ from rest_framework.permissions import IsAuthenticatedOrReadOnly
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework import status
-from endoreg_db.models import (
+from endoreg_db.models.medical.finding.finding_classification import (
     FindingClassification,
 )
 from ...serializers.finding_classification import (

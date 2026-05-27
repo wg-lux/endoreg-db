@@ -9,12 +9,10 @@ from django.db import transaction
 from django.utils import timezone
 from pydantic import BaseModel, ConfigDict, Field
 
-from endoreg_db.models import (
-    RawPdfFile,
-    ReportLlmInferenceJob,
-    SensitiveMeta,
-    UploadJob,
-)
+from endoreg_db.models.hub.upload_job import UploadJob
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.media.pdf.report_llm_job import ReportLlmInferenceJob
+from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.services.jobs.heavy_jobs import (
     HeavyJobKind,
     ensure_secure_transport_for_job_kind,

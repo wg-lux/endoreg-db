@@ -14,7 +14,11 @@ from django.conf import settings
 from django.core.management import call_command
 from django.utils import timezone
 
-from endoreg_db.models import AIDataSet, AIModelTrainingRun, Frame, LabelVideoSegment
+from endoreg_db.models.aidataset.aidataset import AIDataSet, AIModelTrainingRun
+from endoreg_db.models.label.label_video_segment.label_video_segment import (
+    LabelVideoSegment,
+)
+from endoreg_db.models.media.frame.frame import Frame
 from endoreg_db.services.jobs.heavy_jobs import (
     HeavyJobKind,
     ensure_secure_transport_for_job_kind,

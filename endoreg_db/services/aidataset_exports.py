@@ -10,13 +10,15 @@ from pydantic import BaseModel, Field
 from endoreg_db.services.hub.deployment import local_study_server_mode_enabled
 
 if TYPE_CHECKING:
-    from endoreg_db.models import (
-        AIDataSet,
+    from endoreg_db.models.aidataset.aidataset import AIDataSet
+    from endoreg_db.models.label.annotation.image_classification import (
         ImageClassificationAnnotation,
-        Label,
-        LabelVideoSegment,
-        VideoFile,
     )
+    from endoreg_db.models.label.label import Label
+    from endoreg_db.models.label.label_video_segment.label_video_segment import (
+        LabelVideoSegment,
+    )
+    from endoreg_db.models.media.video.video_file import VideoFile
 
 __all__ = [
     "AIDataSetExportPayload",
@@ -202,7 +204,7 @@ def validate_export_scope(
         raise ValueError("Export scope must use center_key or all_centers, not both")
 
     if normalized_center_key:
-        from endoreg_db.models import Center
+        from endoreg_db.models.administration.center.center import Center
 
         if not Center.objects.filter(center_key=normalized_center_key).exists():
             raise ValueError(f"Unknown center_key: {normalized_center_key}")

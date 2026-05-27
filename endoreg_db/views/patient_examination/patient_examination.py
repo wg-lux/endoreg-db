@@ -2,7 +2,9 @@ from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from endoreg_db.models import PatientExamination, Patient, Examination
+from endoreg_db.models.administration.person.patient.patient import Patient
+from endoreg_db.models.medical.examination.examination import Examination
+from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.serializers.patient.patient_dropdown import PatientDropdownSerializer
 from endoreg_db.serializers.patient_examination import (
     PatientExaminationDraftResponseSerializer,

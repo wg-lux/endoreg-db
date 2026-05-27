@@ -1369,13 +1369,13 @@ def smart_video_mocks(monkeypatch, cache):
     # This is critical because the import brings the function into the local namespace
     try:
         monkeypatch.setattr(
-            "endoreg_db.models.media.video.create_from_file.transcode_videofile_if_required",
+            "endoreg_db.services.video_files._imports.transcode_videofile_if_required",
             safe_transcode_videofile_if_required,
         )
-        LOGGER.debug("patched create_from_file.transcode_videofile_if_required")
+        LOGGER.debug("patched video import transcode_videofile_if_required")
     except Exception as e:
         LOGGER.debug(
-            "could not patch create_from_file.transcode_videofile_if_required: %s", e
+            "could not patch video import transcode_videofile_if_required: %s", e
         )
 
     # 3. Also patch any other modules that might import these functions
@@ -1455,9 +1455,8 @@ def mock_storage(tmp_path, monkeypatch):
     # Keep alias exports and import-time path constants in sync for modules that
     # imported path constants by value before this fixture runs.
     import endoreg_db.utils as utils_module
-    import endoreg_db.models.media.pdf.create_report_from_file as report_create_module
     import endoreg_db.models.media.pdf.raw_pdf as raw_pdf_module
-    import endoreg_db.models.media.video.create_from_file as video_create_module
+    import endoreg_db.services.video_files._imports as video_create_module
     import endoreg_db.models.media.video.video_file as video_file_module
     import endoreg_db.services.streamable_media as streamable_media_module
     import endoreg_db.views.video.video_stream as video_stream_module
@@ -1465,24 +1464,6 @@ def mock_storage(tmp_path, monkeypatch):
     from django.core.files.storage import FileSystemStorage
 
     monkeypatch.setattr(utils_module, "data_paths", fake_paths_model)
-    monkeypatch.setattr(
-        report_create_module,
-        "STORAGE_DIR",
-        fake_paths_model.storage,
-        raising=False,
-    )
-    monkeypatch.setattr(
-        report_create_module,
-        "SENSITIVE_REPORT_DIR",
-        fake_paths_model.sensitive_report,
-        raising=False,
-    )
-    monkeypatch.setattr(
-        report_create_module,
-        "IMPORT_REPORT_DIR",
-        fake_paths_model.import_report,
-        raising=False,
-    )
     monkeypatch.setattr(
         raw_pdf_module, "IMPORT_REPORT_DIR", fake_paths_model.import_report
     )

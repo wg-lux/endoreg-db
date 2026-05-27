@@ -8,7 +8,8 @@ from typing import Any
 from django.db import transaction
 from django.db.utils import OperationalError, ProgrammingError
 
-from endoreg_db.models import Center, VideoFile
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.state.audit_ledger import AuditLedger
 from endoreg_db.models.state.video_segment_validation import (
     resolve_segment_annotation_status,

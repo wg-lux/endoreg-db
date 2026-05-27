@@ -1,4 +1,4 @@
-from endoreg_db.models import Patient
+from endoreg_db.models.administration.person.patient.patient import Patient
 
 
 from rest_framework import serializers

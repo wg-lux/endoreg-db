@@ -13,14 +13,14 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 from endoreg_db.authz.permissions import PolicyPermission
-from endoreg_db.models import (
-    Finding,
-    Frame,
+from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
-    PatientExamination,
-    PatientExaminationReport,
-    PatientFinding,
 )
+from endoreg_db.models.media.frame.frame import Frame
+from endoreg_db.models.medical.finding.finding import Finding
+from endoreg_db.models.medical.patient.patient_examination import PatientExamination
+from endoreg_db.models.medical.patient.patient_finding import PatientFinding
+from endoreg_db.models.report.patient_examination_report import PatientExaminationReport
 from endoreg_db.serializers.report import (
     PatientExaminationReportMakeReportSerializer,
     PatientExaminationReportSerializer,
