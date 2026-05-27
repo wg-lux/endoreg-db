@@ -1,4 +1,5 @@
 import importlib
+import os
 import uuid
 from pathlib import Path
 
@@ -8,14 +9,16 @@ from endoreg_db.config import env as env_module
 from endoreg_db.config.env import BASE_DIR
 from endoreg_db.utils.filesystem import paths as paths_module
 
+PATH_ENV_KEYS = (
+    "LX_ANNOTATE_ENCRYPTED_DATA_DIR",
+    "STORAGE_DIR",
+    "DATA_DIR",
+    "PROTECTED_MEDIA_ROOT",
+)
+
 
 def reload_paths(monkeypatch, **env):
-    for key in (
-        "LX_ANNOTATE_ENCRYPTED_DATA_DIR",
-        "STORAGE_DIR",
-        "DATA_DIR",
-        "PROTECTED_MEDIA_ROOT",
-    ):
+    for key in PATH_ENV_KEYS:
         monkeypatch.delenv(key, raising=False)
 
     for key, value in env.items():
@@ -25,15 +28,14 @@ def reload_paths(monkeypatch, **env):
 
 
 @pytest.fixture(autouse=True)
-def restore_paths_env(monkeypatch):
+def restore_paths_env():
+    original_env = {key: os.environ.get(key) for key in PATH_ENV_KEYS}
     yield
-    for key in (
-        "LX_ANNOTATE_ENCRYPTED_DATA_DIR",
-        "STORAGE_DIR",
-        "DATA_DIR",
-        "PROTECTED_MEDIA_ROOT",
-    ):
-        monkeypatch.delenv(key, raising=False)
+    for key, value in original_env.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
     importlib.reload(paths_module)
 
 
