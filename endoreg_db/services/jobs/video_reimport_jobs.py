@@ -15,14 +15,12 @@ from endoreg_db.config.env import (
     get_celery_broker_url,
     get_celery_ffmpeg_media_queue,
 )
-from endoreg_db.models import (
-    AiModel,
-    ModelMeta,
-    SensitiveMeta,
-    UploadJob,
-    VideoFile,
-    VideoProcessingHistory,
-)
+from endoreg_db.models.administration.ai.ai_model import AiModel
+from endoreg_db.models.hub.upload_job import UploadJob
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
+from endoreg_db.models.metadata.model_meta import ModelMeta
+from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.services.jobs.heavy_jobs import (
     HeavyJobKind,
     ensure_secure_transport_for_job_kind,
@@ -33,6 +31,9 @@ from endoreg_db.services.video_import import VideoImportService
 from endoreg_db.services.video_files import (
     initialize_video_frames,
     initialize_video_specs,
+)
+from endoreg_db.services.video_files.processor_resolution import (
+    resolve_processor_name_for_import,
 )
 from endoreg_db.services.video_temporal_inference import (
     TemporalInferenceConfigError,
@@ -473,9 +474,11 @@ def _mark_history_failure(
 
 
 def _processor_name(video: VideoFile) -> str:
-    video_meta = getattr(video, "video_meta", None)
-    processor = getattr(video_meta, "processor", None)
-    return getattr(processor, "name", None) or "Unknown"
+    processor = getattr(video, "processor", None)
+    if processor is None:
+        video_meta = getattr(video, "video_meta", None)
+        processor = getattr(video_meta, "processor", None)
+    return resolve_processor_name_for_import(getattr(processor, "name", None)) or ""
 
 
 def _prediction_refresh_payload(
@@ -521,6 +524,7 @@ def _run_video_reimport_job(
     try:
         video = VideoFile.objects.select_related(
             "center",
+            "processor",
             "video_meta__processor",
         ).get(pk=video_id)
         config = _config_from_history(history) or VideoReimportHistoryConfig(
@@ -533,14 +537,12 @@ def _run_video_reimport_job(
 
             video.refresh_from_db()
             logger.info(
-                "Starting asynchronous VideoImportService reprocessing for %s",
+                "Starting asynchronous VideoImportService re-anonymization for %s",
                 video.video_hash,
             )
-            VideoImportService().import_and_anonymize(
-                file_path=raw_file_path,
-                center_name=video.center.name,
-                processor_name=_processor_name(video),
-                retry=True,
+            VideoImportService().reanonymize_existing_video(
+                video,
+                source_path=raw_file_path,
             )
 
         video.refresh_from_db()

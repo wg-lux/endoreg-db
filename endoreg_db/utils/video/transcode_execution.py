@@ -38,12 +38,31 @@ def _delete_partial_output(output_path: Path, *, reason: str) -> None:
         logger.error("Failed to delete %s output file %s: %s", reason, output_path, e)
 
 
+def _stream_info_has_video_stream(stream_info: Optional[Dict]) -> bool:
+    return bool(
+        next(
+            (
+                stream
+                for stream in (stream_info or {}).get("streams", [])
+                if stream.get("codec_type") == "video"
+            ),
+            None,
+        )
+    )
+
+
 def _transcode_output_is_valid(output_path: Path) -> bool:
     if not output_path.exists():
         logger.error("FFmpeg reported success but output is missing: %s", output_path)
         return False
     if output_path.stat().st_size <= 0:
         logger.error("FFmpeg reported success but output is empty: %s", output_path)
+        return False
+    if not _stream_info_has_video_stream(get_stream_info(output_path)):
+        logger.error(
+            "FFmpeg reported success but output has no readable video stream: %s",
+            output_path,
+        )
         return False
     return True
 

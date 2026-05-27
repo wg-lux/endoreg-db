@@ -207,21 +207,9 @@ class VideoImportService:
                         )
                     except Exception as primary_exc:
                         logger.exception(
-                            "Primary video anonymization failed for %s: %s "
-                            "- trying basic anonymization",
+                            "Video anonymization failed for %s: %s ",
                             ctx.file_path,
                             primary_exc,
-                        )
-                        try:
-                            ctx = self.anonymizer.anonymize_video(ctx)
-                        except Exception as e:
-                            logger.error(
-                                f"Video Extraction failed for the second time. {e}"
-                            )
-                            raise
-                        logger.info(
-                            "Secondary video anonymization succeeded for %s",
-                            ctx.file_path,
                         )
                     logger.info(
                         f"Anonymized Video is located at: {ctx.anonymized_path}"

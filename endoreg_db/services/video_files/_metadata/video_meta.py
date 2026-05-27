@@ -28,9 +28,8 @@ def _get_import_context_names(video: "VideoFile") -> tuple[str, str]:
     """
     Resolve center and processor names from the VideoFile model graph.
 
-    Center is required for import bookkeeping. Processor can be absent on legacy
-    rows, so keep the historical "Unknown" fallback used by the anonymization
-    path.
+    Center is required for import bookkeeping. Processor needs a defined value
+    so fallback is applied.
     """
     center = video.center
     if center is None or not center.name:
@@ -38,6 +37,12 @@ def _get_import_context_names(video: "VideoFile") -> tuple[str, str]:
 
     processor = _get_import_processor(video)
     processor_name = processor.name if processor is not None else None
+    if processor_name is None:
+        from endoreg_db.services.video_files.processor_resolution import (
+            resolve_processor_name_for_import,
+        )
+
+        processor_name = resolve_processor_name_for_import(processor_name)
     return str(center.name), str(processor_name or "Unknown")
 
 

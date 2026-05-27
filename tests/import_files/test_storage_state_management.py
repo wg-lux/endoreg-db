@@ -76,7 +76,9 @@ def test_delete_associated_files_removes_anonymized_and_sensitive_paths(
     monkeypatch.setattr(
         state_management,
         "nuke_transcoding_dir",
-        lambda *args, **kwargs: True,
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("delete_associated_files must not nuke global transcoding")
+        ),
         raising=True,
     )
     monkeypatch.setattr(

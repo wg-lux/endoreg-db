@@ -365,11 +365,6 @@ def finalize_video_success(
                     instance.processed_file.name = relative_name
                     logger.info("Updated video processed_file to %s", relative_name)
 
-    if not nuke_transcoding_dir():
-        logger.warning(
-            "Transcoding directory cleanup returned False after finalize_video_success; there may be leftover files."
-        )
-
     # --- Update VideoState flags (mirrors report) ---
     state = _ensure_instance_state(instance)
 
@@ -491,7 +486,7 @@ def delete_associated_files(ctx: ImportContext) -> None:
     - Ensure ctx.original_path points to an existing import file; if not, try to restore
       from ctx.sensitive_path into the appropriate IMPORT_*_DIR.
     - Delete anonymized file (if any).
-    - Nuke transcoding directory.
+    - Delete known transient paths recorded on the import context.
     - Delete sensitive file (if any).
 
     This function should *not* raise on non-critical cleanup errors; it logs instead.
@@ -517,12 +512,6 @@ def delete_associated_files(ctx: ImportContext) -> None:
             )
         finally:
             ctx.anonymized_path = None
-
-    # --- Nuke transcoding directory (best-effort) ---
-    if not nuke_transcoding_dir():
-        logger.warning(
-            "Transcoding directory cleanup returned False; there may be leftover files."
-        )
 
     # --- Delete sensitive file (best-effort) ---
     if isinstance(ctx.sensitive_path, Path):

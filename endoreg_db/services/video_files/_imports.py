@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import logging
 import shutil
+import uuid
 from importlib import import_module
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Type
 
 from endoreg_db.exceptions import InsufficientStorageError
 from endoreg_db.import_files.file_storage.cleanup import safe_cleanup_staging_file
+from endoreg_db.services.video_files.processor_resolution import (
+    resolve_processor_name_for_import,
+)
 from endoreg_db.utils.filesystem.file_operations import (
     atomic_copy_file,
     atomic_move_file,
@@ -25,7 +29,10 @@ if TYPE_CHECKING:
 
 import endoreg_db.utils.filesystem.paths as path_utils
 
-from endoreg_db.utils.video.ffmpeg_wrapper import transcode_videofile_if_required
+from endoreg_db.utils.video.ffmpeg_wrapper import (
+    get_stream_info,
+    transcode_videofile_if_required,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +46,17 @@ def _verify_completed_file(path: Path) -> None:
         raise RuntimeError(f"Expected output path is not a file: {path}")
     if path.stat().st_size <= 0:
         raise RuntimeError(f"Expected output file is empty: {path}")
+    stream_info = get_stream_info(path)
+    video_stream = next(
+        (
+            stream
+            for stream in (stream_info or {}).get("streams", [])
+            if stream.get("codec_type") == "video"
+        ),
+        None,
+    )
+    if video_stream is None:
+        raise RuntimeError(f"Expected output file has no readable video stream: {path}")
 
 
 def _temp_media_path(base_path: Path, marker: str) -> Path:
@@ -49,6 +67,16 @@ def _temp_media_path(base_path: Path, marker: str) -> Path:
         abc.mp4 -> abc.part.mp4
     """
     return base_path.with_name(f"{base_path.stem}.{marker}{base_path.suffix}")
+
+
+def _attempt_temp_media_path(base_path: Path, marker: str) -> Path:
+    """
+    Return a unique attempt-scoped staging path while preserving the media suffix.
+    """
+    attempt_id = uuid.uuid4().hex
+    return base_path.with_name(
+        f"{base_path.stem}.{attempt_id}.{marker}{base_path.suffix}"
+    )
 
 
 def check_storage_capacity(
@@ -260,13 +288,11 @@ def _create_from_file(
         storage_name = f"{video_hash}{original_suffix}"
 
         # This is a local staging path only. It is not the canonical final storage path.
-        temp_output_path = _temp_media_path(
+        temp_output_path = _attempt_temp_media_path(
             transcoding_staging_dir / storage_name,
             "part",
         )
         ensure_directory(temp_output_path.parent)
-
-        _safe_unlink_local(temp_output_path, label="stale temp output")
 
         logger.debug("Checking transcoding requirement for %s", file_path)
 
@@ -343,9 +369,10 @@ def _create_from_file(
 
         try:
             center = Center.objects.get(name=center_name)
+            effective_processor_name = resolve_processor_name_for_import(processor_name)
             processor = (
-                EndoscopyProcessor.objects.get(name=processor_name)
-                if processor_name
+                EndoscopyProcessor.objects.get(name=effective_processor_name)
+                if effective_processor_name
                 else None
             )
 

@@ -89,19 +89,6 @@ def test_video_file_import_context_names_fall_back_to_video_meta_processor(
 
 
 @pytest.mark.django_db
-def test_video_file_import_context_names_allow_unknown_processor(
-    video_center: Center,
-):
-    video = VideoFile.objects.create(
-        center=video_center,
-        video_hash="import-context-unknown",
-    )
-
-    assert get_video_import_processor(video) is None
-    assert get_video_import_context_names(video) == (video_center.name, "Unknown")
-
-
-@pytest.mark.django_db
 def test_video_file_active_file_prefers_processed_over_raw(video_center: Center):
     video = VideoFile.objects.create(center=video_center, video_hash="active-file")
     video.raw_file.save("raw/active.mp4", ContentFile(b"raw"), save=True)

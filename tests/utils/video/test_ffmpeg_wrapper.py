@@ -11,6 +11,7 @@ from endoreg_db.utils.video.command_construction import (
     _build_filter_transcode_command,
     _build_transcode_command,
 )
+from endoreg_db.utils.video import transcode_execution
 from endoreg_db.utils.video.ffmpeg_wrapper import _build_encoder_args, transcode_video
 
 
@@ -38,6 +39,15 @@ class FakePopen:
 
     def kill(self):
         self.killed = True
+
+
+@pytest.fixture(autouse=True)
+def _valid_transcode_output_stream(monkeypatch):
+    monkeypatch.setattr(
+        transcode_execution,
+        "get_stream_info",
+        lambda _path: {"streams": [{"codec_type": "video", "codec_name": "h264"}]},
+    )
 
 
 @pytest.mark.unit
@@ -135,6 +145,19 @@ def test_transcode_video_force_cpu_uses_cpu_only_flags(monkeypatch, tmp_path):
 
 
 @pytest.mark.unit
+def test_transcode_output_validation_rejects_non_video_payload(monkeypatch, tmp_path):
+    output_path = tmp_path / "output.mp4"
+    output_path.write_bytes(b"not empty but not video")
+    monkeypatch.setattr(
+        transcode_execution,
+        "get_stream_info",
+        lambda _path: {"streams": []},
+    )
+
+    assert ffmpeg_wrapper._transcode_output_is_valid(output_path) is False
+
+
+@pytest.mark.unit
 def test_transcode_video_retries_timestamp_repair(monkeypatch, tmp_path):
     input_path = tmp_path / "input.mp4"
     output_path = tmp_path / "output.mp4"
@@ -181,7 +204,7 @@ def test_create_sensitive_copy_fails_when_video_transcode_fails(
     input_path.write_bytes(b"input")
 
     monkeypatch.setattr(
-        "endoreg_db.import_files.file_storage.storage.transcode_video",
+        "endoreg_db.import_files.file_storage.storage.transcode_videofile_if_required",
         lambda src, dest: None,
     )
 
@@ -189,7 +212,7 @@ def test_create_sensitive_copy_fails_when_video_transcode_fails(
         create_sensitive_copy(
             input_path,
             sensitive_root,
-            type("Ctx", (), {"file_type": "video"})(),
+            type("ImportContext", (), {"file_type": "video"})(),
         )
 
 
@@ -234,7 +257,7 @@ def test_ffmpeg_timestamp_fault_detection_requires_timestamp_and_fault_signal():
 
 @pytest.mark.unit
 def test_update_or_append_ffmpeg_arg_replaces_appends_and_repairs_missing_value():
-    args = ["-pix_fmt", "yuvj420p"]
+    args = ["-pix_fmt", "yuv420p"]
 
     ffmpeg_wrapper._update_or_append_ffmpeg_arg(args, "-pix_fmt", "yuv420p")
     ffmpeg_wrapper._update_or_append_ffmpeg_arg(args, "-color_range", "pc")

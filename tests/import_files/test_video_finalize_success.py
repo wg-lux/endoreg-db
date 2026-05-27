@@ -8,6 +8,10 @@ from endoreg_db.import_files.file_storage.state_management import finalize_video
 from endoreg_db.utils.filesystem import paths as paths_module
 
 
+def _runtime_storage_root():
+    return paths_module.EndoregPathsModel.from_environment().storage
+
+
 @pytest.mark.unit
 def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
     tmp_path, monkeypatch
@@ -15,7 +19,7 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
     import endoreg_db.import_files.file_storage.cleanup as cleanup_module
     import endoreg_db.import_files.file_storage.state_management as state_management_module
 
-    storage_root = paths_module.STORAGE_DIR / "pytest_finalize_video_success"
+    storage_root = _runtime_storage_root() / "pytest_finalize_video_success"
     sensitive_dir = storage_root / "sensitive_videos"
     anonym_dir = storage_root / "anonymized_videos"
     sensitive_dir.mkdir(parents=True, exist_ok=True)
@@ -83,7 +87,9 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
     monkeypatch.setattr(
         state_management_module,
         "nuke_transcoding_dir",
-        lambda *args, **kwargs: True,
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("finalize_video_success must not nuke global transcoding")
+        ),
         raising=True,
     )
     monkeypatch.setattr(
@@ -135,7 +141,7 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
 def test_finalize_video_success_rejects_unprobeable_final_output(tmp_path, monkeypatch):
     import endoreg_db.import_files.file_storage.state_management as state_management_module
 
-    storage_root = paths_module.STORAGE_DIR / "pytest_finalize_video_invalid_output"
+    storage_root = _runtime_storage_root() / "pytest_finalize_video_invalid_output"
     sensitive_dir = storage_root / "sensitive_videos"
     anonym_dir = storage_root / "anonymized_videos"
     sensitive_dir.mkdir(parents=True, exist_ok=True)
@@ -205,7 +211,9 @@ def test_finalize_video_success_rejects_unprobeable_final_output(tmp_path, monke
     monkeypatch.setattr(
         state_management_module,
         "nuke_transcoding_dir",
-        lambda *args, **kwargs: True,
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("finalize_video_success must not nuke global transcoding")
+        ),
         raising=True,
     )
     monkeypatch.setattr(
