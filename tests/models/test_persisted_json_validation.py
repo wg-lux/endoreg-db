@@ -69,9 +69,13 @@ def test_raw_pdf_meta_preserves_legacy_keys_and_normalizes_dates() -> None:
 
     report.clean()
 
-    assert report.raw_meta["existing"] == "value"
-    assert report.raw_meta["generated_at"] == "2026-05-21"
-    assert report.raw_meta["case_resolution"]["linked_patient_id"] == 7
+    raw_meta = report.raw_meta
+    assert isinstance(raw_meta, dict)
+    case_resolution = raw_meta["case_resolution"]
+    assert isinstance(case_resolution, dict)
+    assert raw_meta["existing"] == "value"
+    assert raw_meta["generated_at"] == "2026-05-21"
+    assert case_resolution["linked_patient_id"] == 7
 
 
 def test_raw_pdf_meta_treats_blank_template_version_as_unset() -> None:

@@ -291,6 +291,7 @@ def _view_name(pattern: URLPattern) -> str:
 
 
 def _route_contract(pattern: URLPattern) -> RouteContract:
+    assert pattern.name is not None
     return (str(pattern.pattern), pattern.name, _view_name(pattern))
 
 
