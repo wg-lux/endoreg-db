@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from django.db import IntegrityError
 
 from endoreg_db.models import AiModel, LabelSet, ModelMeta
 from endoreg_db.services import model_meta_from_hf
@@ -22,20 +23,24 @@ def test_ensure_model_meta_from_hf_repairs_existing_missing_weights(
         lambda **_kwargs: source_weights.as_posix(),
     )
 
-    labelset = LabelSet.objects.create(
+    labelset, _ = LabelSet.objects.get_or_create(
         name="multilabel_classification_colonoscopy_default",
         version=1,
     )
-    ai_model = AiModel.objects.create(
+    ai_model, _ = AiModel.objects.get_or_create(
         name="image_multilabel_classification_colonoscopy_default",
     )
-    model_meta = ModelMeta.objects.create(
+    model_meta, _ = ModelMeta.objects.update_or_create(
         name="image_multilabel_classification_colonoscopy_default",
         model=ai_model,
         version="1",
-        labelset=labelset,
-        weights="model_weights/missing.safetensors",
+        defaults={
+            "labelset": labelset,
+            "weights": "model_weights/missing.safetensors",
+        },
     )
+    ai_model.active_meta = None
+    ai_model.save(update_fields=["active_meta"])
 
     result = model_meta_from_hf.ensure_model_meta_from_hf(
         model_id="wg-lux/colo_segmentation_RegNetX800MF_base",
@@ -51,4 +56,54 @@ def test_ensure_model_meta_from_hf_repairs_existing_missing_weights(
     assert result.pk == model_meta.pk
     assert result.weights.name == "model_weights/missing.safetensors"
     assert Path(result.weights.path).read_bytes() == b"downloaded weights"
+    assert ai_model.active_meta == result
+
+
+@pytest.mark.django_db
+def test_ensure_model_meta_from_hf_reuses_ai_model_after_unique_race(
+    monkeypatch,
+    settings,
+    tmp_path,
+):
+    settings.MEDIA_ROOT = tmp_path
+    source_weights = tmp_path / "downloaded.safetensors"
+    source_weights.write_bytes(b"downloaded weights")
+
+    monkeypatch.setattr(
+        model_meta_from_hf,
+        "hf_hub_download",
+        lambda **_kwargs: source_weights.as_posix(),
+    )
+
+    labelset, _ = LabelSet.objects.get_or_create(
+        name="multilabel_classification_colonoscopy_default",
+        version=1,
+    )
+    ai_model, _ = AiModel.objects.get_or_create(
+        name="image_multilabel_classification_colonoscopy_default",
+    )
+
+    original_get_or_create = AiModel.objects.get_or_create
+    state = {"raised": False}
+
+    def raise_existing_name_once(*args, **kwargs):
+        if not state["raised"] and kwargs.get("name") == ai_model.name:
+            state["raised"] = True
+            raise IntegrityError("UNIQUE constraint failed: endoreg_db_aimodel.name")
+        return original_get_or_create(*args, **kwargs)
+
+    monkeypatch.setattr(AiModel.objects, "get_or_create", raise_existing_name_once)
+
+    result = model_meta_from_hf.ensure_model_meta_from_hf(
+        model_id="wg-lux/colo_segmentation_RegNetX800MF_base",
+        model_name=ai_model.name,
+        labelset_name=labelset.name,
+        labelset_version=labelset.version,
+        meta_version="1",
+    )
+
+    ai_model.refresh_from_db()
+
+    assert state["raised"] is True
+    assert result.model == ai_model
     assert ai_model.active_meta == result

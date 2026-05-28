@@ -1,7 +1,9 @@
 # endoreg_db/services/model_meta_from_hf.py
 
+from logging import getLogger
 from pathlib import Path
 
+from django.db import IntegrityError, transaction
 from huggingface_hub import hf_hub_download
 
 from endoreg_db.models.administration.ai.ai_model import AiModel
@@ -11,6 +13,8 @@ from endoreg_db.utils.filesystem.file_operations import (
     atomic_copy_file,
     ensure_directory,
 )
+
+logger = getLogger(__name__)
 
 
 def _model_meta_weights_exist(model_meta: ModelMeta) -> bool:
@@ -42,6 +46,74 @@ def _store_downloaded_weights(
     model_meta.save(update_fields=["weights"])
 
 
+def _get_or_create_ai_model(*, model_name: str, model_id: str) -> AiModel:
+    try:
+        with transaction.atomic():
+            ai_model, _ = AiModel.objects.get_or_create(
+                name=model_name,
+                defaults={"description": f"Model from {model_id}"},
+            )
+            return ai_model
+    except IntegrityError:
+        ai_model = AiModel.objects.filter(name=model_name).first()
+        if ai_model is None:
+            raise
+        logger.info(
+            "AiModel '%s' already exists after concurrent creation; reusing row %s.",
+            model_name,
+            ai_model.pk,
+        )
+        return ai_model
+
+
+def _get_or_create_model_meta(
+    *,
+    ai_model: AiModel,
+    labelset: LabelSet,
+    model_id: str,
+    model_name: str,
+    meta_version: str,
+) -> ModelMeta:
+    defaults = {
+        "labelset": labelset,
+        "activation": "sigmoid",
+        "mean": "0.45211223,0.27139644,0.19264949",
+        "std": "0.31418097,0.21088019,0.16059452",
+        "size_x": 716,
+        "size_y": 716,
+        "axes": "2,0,1",
+        "batchsize": 16,
+        "num_workers": 0,
+        "description": f"Downloaded from {model_id}",
+    }
+    try:
+        with transaction.atomic():
+            model_meta, _ = ModelMeta.objects.get_or_create(
+                name=model_name,
+                model=ai_model,
+                version=meta_version,
+                defaults=defaults,
+            )
+            return model_meta
+    except IntegrityError:
+        model_meta = ModelMeta.objects.filter(
+            name=model_name,
+            model=ai_model,
+            version=meta_version,
+        ).first()
+        if model_meta is None:
+            raise
+        logger.info(
+            "ModelMeta '%s' v%s for AiModel '%s' already exists after "
+            "concurrent creation; reusing row %s.",
+            model_name,
+            meta_version,
+            ai_model.name,
+            model_meta.pk,
+        )
+        return model_meta
+
+
 def ensure_model_meta_from_hf(
     *,
     model_id: str,
@@ -54,6 +126,8 @@ def ensure_model_meta_from_hf(
     Download weights from Hugging Face (if needed) and ensure a ModelMeta
     exists for the given configuration. Returns the ModelMeta.
     """
+    meta_version = str(meta_version)
+
     # Download the model weights
     weights_path = hf_hub_download(
         repo_id=model_id,
@@ -62,9 +136,7 @@ def ensure_model_meta_from_hf(
     )
 
     # Get or create AI model
-    ai_model, _ = AiModel.objects.get_or_create(
-        name=model_name, defaults={"description": f"Model from {model_id}"}
-    )
+    ai_model = _get_or_create_ai_model(model_name=model_name, model_id=model_id)
 
     # Get labelset
     labelset_qs = LabelSet.objects.filter(name=labelset_name)
@@ -79,22 +151,12 @@ def ensure_model_meta_from_hf(
         )
 
     # Create or get ModelMeta
-    model_meta, _ = ModelMeta.objects.get_or_create(
-        name=model_name,
-        model=ai_model,
-        version=meta_version,
-        defaults={
-            "labelset": labelset,
-            "activation": "sigmoid",
-            "mean": "0.45211223,0.27139644,0.19264949",
-            "std": "0.31418097,0.21088019,0.16059452",
-            "size_x": 716,
-            "size_y": 716,
-            "axes": "2,0,1",
-            "batchsize": 16,
-            "num_workers": 0,
-            "description": f"Downloaded from {model_id}",
-        },
+    model_meta = _get_or_create_model_meta(
+        ai_model=ai_model,
+        labelset=labelset,
+        model_id=model_id,
+        model_name=model_name,
+        meta_version=meta_version,
     )
 
     # If weights file is missing, repair the existing field path or create it.
@@ -107,7 +169,8 @@ def ensure_model_meta_from_hf(
         )
 
     # Set as active meta
-    ai_model.active_meta = model_meta
-    ai_model.save(update_fields=["active_meta"])
+    if ai_model.active_meta_id != model_meta.pk:
+        ai_model.active_meta = model_meta
+        ai_model.save(update_fields=["active_meta"])
 
     return model_meta

@@ -506,6 +506,9 @@ def setup_default_from_huggingface_logic(
             logger.info(
                 f"ModelMeta {meta['name']} for model {ai_model.name} already exists with available weights. Skipping creation."
             )
+            if ai_model.active_meta_id != model_meta.pk:
+                ai_model.active_meta = model_meta
+                ai_model.save(update_fields=["active_meta"])
             return model_meta
         weights_path = _download_weights()
         logger.warning(
@@ -518,8 +521,9 @@ def setup_default_from_huggingface_logic(
             model_meta,
             source_weights_path=Path(weights_path).resolve(),
         )
-        ai_model.active_meta = model_meta
-        ai_model.save(update_fields=["active_meta"])
+        if ai_model.active_meta_id != model_meta.pk:
+            ai_model.active_meta = model_meta
+            ai_model.save(update_fields=["active_meta"])
         return model_meta
 
     weights_path = _download_weights()
