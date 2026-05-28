@@ -7,10 +7,49 @@ from django.test import TestCase
 
 from endoreg_db.models import Center, ReportLlmInferenceJob, UploadJob
 from endoreg_db.services.hub.ingest import (
+    _reserve_video_upload_import_handoff,
     create_or_reuse_upload_job,
     process_upload_job,
     start_upload_job_processing,
 )
+
+
+class _FakeUploadFile:
+    name = "dispatch.mp4"
+
+
+class _FakeVideoUploadJob:
+    status = UploadJob.Status.PENDING
+    file = _FakeUploadFile()
+    source_center = object()
+    processing_provenance: dict[str, object] = {}
+    error_detail = ""
+
+    def __init__(self) -> None:
+        self.saved_update_fields: list[str] | None = None
+
+    def save(self, *, update_fields: list[str]) -> None:
+        self.saved_update_fields = update_fields
+
+
+class _RecordingUploadJobManager:
+    def __init__(self, job: _FakeVideoUploadJob) -> None:
+        self.job = job
+        self.select_for_update_kwargs: dict[str, object] | None = None
+        self.select_related_fields: tuple[str, ...] | None = None
+        self.get_id: str | None = None
+
+    def select_for_update(self, **kwargs: object) -> "_RecordingUploadJobManager":
+        self.select_for_update_kwargs = kwargs
+        return self
+
+    def select_related(self, *fields: str) -> "_RecordingUploadJobManager":
+        self.select_related_fields = fields
+        return self
+
+    def get(self, *, id: str) -> _FakeVideoUploadJob:
+        self.get_id = id
+        return self.job
 
 
 class UploadJobDispatchTests(TestCase):
@@ -119,6 +158,29 @@ class UploadJobDispatchTests(TestCase):
             "Failed to start processing: inline processing failed"
             in upload_job.error_detail
         )
+
+    def test_video_upload_import_reservation_locks_only_upload_job_row(self):
+        job = _FakeVideoUploadJob()
+        upload_job_manager = _RecordingUploadJobManager(job)
+        fake_upload_job_model = Mock()
+        fake_upload_job_model.objects = upload_job_manager
+        fake_upload_job_model.Status = UploadJob.Status
+
+        with patch("endoreg_db.services.hub.ingest.UploadJob", fake_upload_job_model):
+            reserved_job, should_dispatch = _reserve_video_upload_import_handoff(
+                upload_job_id="upload-job-id",
+                queue="ffmpeg_media",
+                task_id="video-import-task-id",
+            )
+
+        assert reserved_job is job
+        assert should_dispatch is True
+        assert upload_job_manager.select_for_update_kwargs == {"of": ("self",)}
+        assert upload_job_manager.select_related_fields == (
+            "source_center",
+            "sensitive_meta",
+        )
+        assert upload_job_manager.get_id == "upload-job-id"
 
     def test_create_or_reuse_upload_job_normalizes_provenance_contract(self):
         with patch("endoreg_db.services.hub.audit.logger.info") as audit_log:

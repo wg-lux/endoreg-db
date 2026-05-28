@@ -72,7 +72,6 @@ from endoreg_db.utils.filesystem import paths as path_utils
 from endoreg_db.utils.filesystem.paths import to_storage_relative
 from endoreg_db.utils.storage import delete_field_file, ensure_local_file
 
-
 STALE_UPLOAD_JOB_AGE = timedelta(hours=2)
 LOCK_RETRY_ATTEMPTS = 10
 logger = logging.getLogger(__name__)
@@ -628,7 +627,7 @@ def _reserve_video_upload_import_handoff(
     upload_job_manager = cast(Any, getattr(UploadJob, "objects"))
     with transaction.atomic():
         job = (
-            upload_job_manager.select_for_update()
+            upload_job_manager.select_for_update(of=("self",))
             .select_related(
                 "source_center",
                 "sensitive_meta",
