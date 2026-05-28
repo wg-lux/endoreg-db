@@ -17,7 +17,7 @@ from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
 )
 from endoreg_db.models.media.frame.frame import Frame
-from endoreg_db.models.media.video.video_file_ai import VideoFrameScoreResult
+from endoreg_db.services.video_files._ai import VideoFrameScoreResult
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
 from endoreg_db.models.metadata.model_meta import ModelMeta
