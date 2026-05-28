@@ -588,12 +588,14 @@ def mock_video_file(base_db_data):
 
 
 @pytest.fixture(autouse=True)
-def enable_db_access_for_all_tests(db):
+def enable_db_access_for_all_tests(request):
     """
-    Allow database access for all tests.
+    Allow database access for all tests, unless explicitly opted out.
     This fixture is automatically used for all tests.
     """
-    pass
+    if request.node.get_closest_marker("no_db"):
+        return
+    request.getfixturevalue("db")
 
 
 @pytest.fixture
@@ -914,6 +916,10 @@ def pytest_configure(config):
     )
     config.addinivalue_line(
         "markers", "ffmpeg: marks tests that require FFmpeg operations"
+    )
+    config.addinivalue_line(
+        "markers",
+        "no_db: marks tests that must not trigger Django test database setup",
     )
 
     # Ensure dev cache does not leak into tests

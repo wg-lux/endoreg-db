@@ -6,8 +6,13 @@ from django.db import models
 from icecream import ic
 from typing import TYPE_CHECKING
 from logging import getLogger
+from pathlib import Path
 
 logger = getLogger(__name__)
+
+DEFAULT_HF_MODEL_ID = "wg-lux/colo_segmentation_RegNetX800MF_base"
+DEFAULT_PREDICTION_MODEL_NAME = "image_multilabel_classification_colonoscopy_default"
+DEFAULT_PREDICTION_LABELSET_NAME = "multilabel_classification_colonoscopy_default"
 
 if TYPE_CHECKING:
     from .model_type import ModelType
@@ -114,13 +119,63 @@ class AiModel(models.Model):
 
         raise ValueError(f"No model metadata found for version {version}.")
 
+    @staticmethod
+    def _model_meta_weights_exist(model_meta: "ModelMeta") -> bool:
+        if not model_meta.weights:
+            return False
+        try:
+            return Path(model_meta.weights.path).exists()
+        except (OSError, ValueError):
+            return False
+
+    def _ensure_default_huggingface_weights(
+        self, model_meta: "ModelMeta"
+    ) -> "ModelMeta":
+        if self.name != DEFAULT_PREDICTION_MODEL_NAME:
+            raise ValueError(
+                f"Model weights for '{self.name}' are missing and no Hugging Face fallback is configured."
+            )
+
+        from endoreg_db.services.model_meta_from_hf import ensure_model_meta_from_hf
+
+        labelset = model_meta.labelset
+        return ensure_model_meta_from_hf(
+            model_id=DEFAULT_HF_MODEL_ID,
+            model_name=self.name,
+            labelset_name=getattr(labelset, "name", DEFAULT_PREDICTION_LABELSET_NAME),
+            meta_version=str(model_meta.version),
+            labelset_version=getattr(labelset, "version", None),
+        )
+
     def get_latest_version(self) -> "ModelMeta":
         if self.active_meta is not None:
-            return self.active_meta
+            if (
+                self.name != DEFAULT_PREDICTION_MODEL_NAME
+                or self._model_meta_weights_exist(self.active_meta)
+            ):
+                return self.active_meta
+            logger.warning(
+                "Active ModelMeta %s for AiModel '%s' has no available weights file; "
+                "attempting Hugging Face repair.",
+                self.active_meta.pk,
+                self.name,
+            )
+            return self._ensure_default_huggingface_weights(self.active_meta)
 
         latest_version = self.metadata_versions.order_by("-version").first()
         if latest_version is not None:
-            return latest_version
+            if (
+                self.name != DEFAULT_PREDICTION_MODEL_NAME
+                or self._model_meta_weights_exist(latest_version)
+            ):
+                return latest_version
+            logger.warning(
+                "Latest ModelMeta %s for AiModel '%s' has no available weights file; "
+                "attempting Hugging Face repair.",
+                latest_version.pk,
+                self.name,
+            )
+            return self._ensure_default_huggingface_weights(latest_version)
 
         # Only in environments where auto-download is acceptable:
         try:
@@ -130,9 +185,9 @@ class AiModel(models.Model):
             from endoreg_db.services.model_meta_from_hf import ensure_model_meta_from_hf
 
             model_meta = ensure_model_meta_from_hf(
-                model_id="wg-lux/colo_segmentation_RegNetX800MF_base",
-                model_name="image_multilabel_classification_colonoscopy_default",
-                labelset_name="multilabel_classification_colonoscopy_default",
+                model_id=DEFAULT_HF_MODEL_ID,
+                model_name=DEFAULT_PREDICTION_MODEL_NAME,
+                labelset_name=DEFAULT_PREDICTION_LABELSET_NAME,
                 meta_version="1",
             )
             return model_meta

@@ -6,8 +6,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+pytestmark = pytest.mark.no_db
 
 
 def _run_prod_settings_probe(

@@ -1,6 +1,7 @@
 import pytest
 from endoreg_db.models import ModelMeta
 import endoreg_db.models.metadata.model_meta as model_meta_module
+from pathlib import Path
 
 
 @pytest.mark.django_db
@@ -135,6 +136,60 @@ def test_setup_default_from_huggingface_delegates_to_logic(monkeypatch):
         called["labelset_name"] == "image_multilabel_classification_colonoscopy_default"
     )
     assert called["labelset_version"] == 1
+
+
+@pytest.mark.django_db
+def test_setup_default_from_huggingface_repairs_existing_missing_weights(
+    monkeypatch,
+    settings,
+    tmp_path,
+    unique_ai_model,
+    base_labelset,
+):
+    settings.MEDIA_ROOT = tmp_path
+    source_weights = tmp_path / "downloaded.safetensors"
+    source_weights.write_bytes(b"downloaded weights")
+
+    model_meta = ModelMeta.objects.create(
+        name=unique_ai_model.name,
+        version="1",
+        model=unique_ai_model,
+        labelset=base_labelset,
+        weights="model_weights/missing.safetensors",
+    )
+
+    monkeypatch.setattr(
+        model_meta_module.logic,
+        "infer_default_model_meta_from_hf",
+        lambda _model_id: {
+            "name": unique_ai_model.name,
+            "activation": "sigmoid",
+            "mean": "0.1,0.2,0.3",
+            "std": "0.4,0.5,0.6",
+            "size_x": 224,
+            "size_y": 224,
+            "description": "test hf model",
+        },
+    )
+    monkeypatch.setattr(
+        model_meta_module.logic,
+        "hf_hub_download",
+        lambda **_kwargs: source_weights.as_posix(),
+    )
+
+    result = ModelMeta.setup_default_from_huggingface(
+        model_id="wg-lux/colo_segmentation_RegNetX800MF_base",
+        labelset_name=base_labelset.name,
+        labelset_version=base_labelset.version,
+    )
+
+    result.refresh_from_db()
+    unique_ai_model.refresh_from_db()
+
+    assert result.pk == model_meta.pk
+    assert result.weights.name == "model_weights/missing.safetensors"
+    assert Path(result.weights.path).read_bytes() == b"downloaded weights"
+    assert unique_ai_model.active_meta == result
 
 
 def test_get_activation_function_delegates_to_logic(monkeypatch):

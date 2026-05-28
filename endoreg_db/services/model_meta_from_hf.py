@@ -1,11 +1,45 @@
 # endoreg_db/services/model_meta_from_hf.py
 
-from django.core.files.base import ContentFile
+from pathlib import Path
+
 from huggingface_hub import hf_hub_download
 
 from endoreg_db.models.administration.ai.ai_model import AiModel
 from endoreg_db.models.label.label_set import LabelSet
 from endoreg_db.models.metadata.model_meta import ModelMeta
+from endoreg_db.utils.filesystem.file_operations import (
+    atomic_copy_file,
+    ensure_directory,
+)
+
+
+def _model_meta_weights_exist(model_meta: ModelMeta) -> bool:
+    if not model_meta.weights:
+        return False
+    try:
+        return Path(model_meta.weights.path).exists()
+    except (OSError, ValueError):
+        return False
+
+
+def _store_downloaded_weights(
+    *,
+    model_meta: ModelMeta,
+    weights_path: Path,
+    model_name: str,
+    meta_version: str,
+) -> None:
+    relative_name = str(model_meta.weights.name or "").strip()
+    if not relative_name:
+        upload_to = str(model_meta.weights.field.upload_to).strip("/")
+        filename = f"{model_name}_v{meta_version}.safetensors"
+        relative_name = f"{upload_to}/{filename}" if upload_to else filename
+
+    destination = Path(model_meta.weights.storage.path(relative_name))
+    ensure_directory(destination.parent)
+    atomic_copy_file(source=weights_path, destination=destination)
+    model_meta.weights = relative_name
+    model_meta.save(update_fields=["weights"])
 
 
 def ensure_model_meta_from_hf(
@@ -63,13 +97,14 @@ def ensure_model_meta_from_hf(
         },
     )
 
-    # If weights file not yet saved, save it
-    if not model_meta.weights:
-        with open(weights_path, "rb") as f:
-            model_meta.weights.save(
-                f"{model_name}_v{meta_version}.safetensors",
-                ContentFile(f.read()),
-            )
+    # If weights file is missing, repair the existing field path or create it.
+    if not _model_meta_weights_exist(model_meta):
+        _store_downloaded_weights(
+            model_meta=model_meta,
+            weights_path=Path(weights_path).resolve(),
+            model_name=model_name,
+            meta_version=meta_version,
+        )
 
     # Set as active meta
     ai_model.active_meta = model_meta

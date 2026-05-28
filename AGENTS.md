@@ -1,4 +1,24 @@
 # Endoreg-db Agents.md
+
+You are working in an existing codebase. Do not guess architecture from filenames alone.
+
+Before editing:
+1. Inspect the relevant files and call sites.
+2. Identify the existing patterns, helpers, types, tests, and ownership boundaries.
+3. State the exact files you intend to change.
+4. State what you will not change.
+
+During implementation:
+- Prefer existing helpers and libraries over new custom logic.
+- Do not add placeholders, fake env vars, fake API keys, mock data, or silent fallbacks unless explicitly requested.
+- Do not suppress errors just to make the app run.
+- Keep the change minimal and directly tied to the request.
+- If a requirement is ambiguous, stop and ask instead of inventing behavior.
+
+After implementation:
+1. Run the narrowest relevant verification.
+2. Run broader integration checks if the change crosses module boundaries.
+3. Report what passed, what failed, and any residual risk.
 ## Tests
 Please run uv sync --extra dev before running pytest.
 This will use source /home/admin/endoreg-db/.devenv/state/venv/bin/activate in your shell before running pytest.
