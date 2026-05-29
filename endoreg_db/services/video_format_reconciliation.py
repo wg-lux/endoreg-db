@@ -41,6 +41,7 @@ VIDEO_EXTENSIONS = frozenset(
 REQUIRED_CODEC = "h264"
 REQUIRED_PIXEL_FORMAT = "yuv420p"
 REQUIRED_COLOR_RANGE = "pc"
+FULL_RANGE_YUV420P_PIXEL_FORMATS = frozenset({REQUIRED_PIXEL_FORMAT, "yuvj420p"})
 DEFAULT_MIN_FREE_BYTES = 20 * 1024 * 1024 * 1024
 LEGACY_ROOT_READ_ONLY = "legacy_root_read_only"
 
@@ -439,22 +440,24 @@ def _format_mismatch_reasons(
     report: VideoFormatFileReport,
 ) -> list[str]:
     reasons: list[str] = []
+    has_required_pixel_format = _has_required_pixel_format(report.pixel_format)
     if path.suffix.lower() != ".mp4":
         reasons.append("container_suffix_not_mp4")
     if report.codec_name != REQUIRED_CODEC:
         reasons.append(f"codec_mismatch:{report.codec_name}!={REQUIRED_CODEC}")
-    if report.pixel_format != REQUIRED_PIXEL_FORMAT:
+    if not has_required_pixel_format:
         reasons.append(
             f"pixel_format_mismatch:{report.pixel_format}!={REQUIRED_PIXEL_FORMAT}"
         )
-    if (
-        report.pixel_format == REQUIRED_PIXEL_FORMAT
-        and report.color_range != REQUIRED_COLOR_RANGE
-    ):
+    if has_required_pixel_format and report.color_range != REQUIRED_COLOR_RANGE:
         reasons.append(
             f"color_range_mismatch:{report.color_range}!={REQUIRED_COLOR_RANGE}"
         )
     return reasons
+
+
+def _has_required_pixel_format(pixel_format: str | None) -> bool:
+    return pixel_format in FULL_RANGE_YUV420P_PIXEL_FORMATS
 
 
 def _iter_video_files(root: Path, extensions: frozenset[str]) -> Iterable[Path]:

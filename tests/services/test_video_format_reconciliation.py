@@ -61,6 +61,46 @@ def test_classify_video_format_accepts_filewatcher_standard(monkeypatch, tmp_pat
 
 
 @pytest.mark.unit
+def test_classify_video_format_accepts_ffmpeg_full_range_yuvj420p_alias(
+    monkeypatch, tmp_path
+):
+    video_path = tmp_path / "clip.mp4"
+    video_path.write_bytes(b"video")
+    monkeypatch.setattr(
+        reconciliation.ffmpeg_wrapper,
+        "get_stream_info",
+        lambda path: _stream_info(pixel_format="yuvj420p", color_range="pc"),
+    )
+
+    report = reconciliation.classify_video_format(video_path)
+
+    assert report.compliant is True
+    assert report.status == reconciliation.VideoFormatStatus.COMPLIANT
+    assert report.pixel_format == "yuvj420p"
+    assert report.color_range == "pc"
+    assert report.reasons == []
+
+
+@pytest.mark.unit
+def test_classify_video_format_rejects_yuvj420p_without_full_color_range(
+    monkeypatch, tmp_path
+):
+    video_path = tmp_path / "clip.mp4"
+    video_path.write_bytes(b"video")
+    monkeypatch.setattr(
+        reconciliation.ffmpeg_wrapper,
+        "get_stream_info",
+        lambda path: _stream_info(pixel_format="yuvj420p", color_range="tv"),
+    )
+
+    report = reconciliation.classify_video_format(video_path)
+
+    assert report.compliant is False
+    assert report.status == reconciliation.VideoFormatStatus.NON_COMPLIANT
+    assert report.reasons == ["color_range_mismatch:tv!=pc"]
+
+
+@pytest.mark.unit
 def test_default_managed_video_roots_exclude_legacy_data_roots(monkeypatch, tmp_path):
     paths = _patch_runtime_paths(monkeypatch, tmp_path)
 
