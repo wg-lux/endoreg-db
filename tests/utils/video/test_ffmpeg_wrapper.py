@@ -217,6 +217,87 @@ def test_create_sensitive_copy_fails_when_video_transcode_fails(
 
 
 @pytest.mark.unit
+def test_transcode_videofile_if_required_accepts_full_range_yuvj420p_alias(
+    monkeypatch,
+    tmp_path,
+):
+    input_path = tmp_path / "input.mp4"
+    output_path = tmp_path / "output.mp4"
+    input_path.write_bytes(b"input")
+
+    monkeypatch.setattr(
+        transcode_execution,
+        "get_stream_info",
+        lambda _path: {
+            "streams": [
+                {
+                    "codec_type": "video",
+                    "codec_name": "h264",
+                    "pix_fmt": "yuvj420p",
+                    "color_range": "pc",
+                }
+            ]
+        },
+    )
+
+    def fail_if_transcoded(*args, **kwargs):
+        raise AssertionError("full-range yuvj420p should not be transcoded")
+
+    monkeypatch.setattr(transcode_execution, "transcode_video", fail_if_transcoded)
+
+    result = transcode_execution.transcode_videofile_if_required(
+        input_path,
+        output_path,
+    )
+
+    assert result == output_path
+    assert output_path.read_bytes() == b"input"
+
+
+@pytest.mark.unit
+def test_transcode_videofile_if_required_rejects_yuvj420p_without_full_range(
+    monkeypatch,
+    tmp_path,
+):
+    input_path = tmp_path / "input.mp4"
+    output_path = tmp_path / "output.mp4"
+    input_path.write_bytes(b"input")
+    called = False
+
+    monkeypatch.setattr(
+        transcode_execution,
+        "get_stream_info",
+        lambda _path: {
+            "streams": [
+                {
+                    "codec_type": "video",
+                    "codec_name": "h264",
+                    "pix_fmt": "yuvj420p",
+                    "color_range": "tv",
+                }
+            ]
+        },
+    )
+
+    def fake_transcode(input_path, output_path, **kwargs):
+        nonlocal called
+        called = True
+        output_path.write_bytes(b"transcoded")
+        return output_path
+
+    monkeypatch.setattr(transcode_execution, "transcode_video", fake_transcode)
+
+    result = transcode_execution.transcode_videofile_if_required(
+        input_path,
+        output_path,
+    )
+
+    assert called is True
+    assert result == output_path
+    assert output_path.read_bytes() == b"transcoded"
+
+
+@pytest.mark.unit
 def test_build_encoder_args_nvenc_forces_yuv420p_format(monkeypatch):
     def fake_get_preferred_encoder():
         return {

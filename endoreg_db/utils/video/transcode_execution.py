@@ -26,6 +26,7 @@ from .executable_discovery import (
 
 logger = logging.getLogger("ffmpeg_wrapper")
 FFMPEG_TRANSCODE_TIMEOUT_SECONDS = get_ffmpeg_transcode_timeout_seconds()
+FULL_RANGE_YUV420P_PIXEL_FORMATS = frozenset({"yuv420p", "yuvj420p"})
 
 
 def _delete_partial_output(output_path: Path, *, reason: str) -> None:
@@ -567,6 +568,11 @@ def transcode_videofile_if_required(
         "color_range", "tv"
     )  # Default to tv if not specified
 
+    has_required_pixel_format = _pixel_format_matches_required(
+        pixel_format,
+        required_pixel_format,
+    )
+    needs_full_range = required_pixel_format == "yuv420p" and has_required_pixel_format
     needs_transcoding = False
     transcode_reason = []
     if codec_name != required_codec:
@@ -575,9 +581,7 @@ def transcode_videofile_if_required(
         transcode_reason.append(reason)
         needs_transcoding = True
     # Check both pixel format and color range for yuv420p
-    if pixel_format != required_pixel_format or (
-        pixel_format == "yuv420p" and color_range != "pc"
-    ):
+    if not has_required_pixel_format or (needs_full_range and color_range != "pc"):
         reason = f"Pixel format/color range mismatch (pix_fmt: {pixel_format}, color_range: {color_range} != {required_pixel_format} with color_range=pc)"
         logger.info("%s for %s. Transcoding required.", reason, input_path.name)
         transcode_reason.append(reason)
@@ -625,7 +629,19 @@ def transcode_videofile_if_required(
                 return output_path
             except Exception as e:
                 logger.error(
-                    "Failed to copy %s to %s: %s", input_path.name, output_path.name, e
+                    "Failed to copy %s to %s: %s",
+                    input_path.name,
+                    output_path.name,
+                    e,
                 )
                 return None
-        return input_path  # Return original path if no copy needed
+    return input_path  # Return original path if no copy needed
+
+
+def _pixel_format_matches_required(
+    pixel_format: str | None,
+    required_pixel_format: str,
+) -> bool:
+    if required_pixel_format == "yuv420p":
+        return pixel_format in FULL_RANGE_YUV420P_PIXEL_FORMATS
+    return pixel_format == required_pixel_format
