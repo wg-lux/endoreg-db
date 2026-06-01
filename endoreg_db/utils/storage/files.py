@@ -10,7 +10,9 @@ Boundary terminology used throughout the media pipeline:
 from __future__ import annotations
 
 import contextlib
+import io
 import logging
+import os
 import shutil
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -145,7 +147,7 @@ def materialize_video_file(video, file_type: str) -> ContextManager[Path]:
 
 @contextlib.contextmanager
 def ensure_local_file(
-    field_file: FieldFile,
+    field_file: "FieldFile",
     *,
     suffix: str | None = None,
     chunk_size: int = _DEFAULT_CHUNK_SIZE,
@@ -160,11 +162,25 @@ def ensure_local_file(
         return
 
     suffix = suffix or Path(field_file.name).suffix
+
     with NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
         temp_path = Path(tmp_file.name)
         try:
             with field_file.storage.open(field_file.name, "rb") as source:
+                # Reset the cursor when the storage stream supports it.
+                if hasattr(source, "seek"):
+                    try:
+                        if not hasattr(source, "seekable") or source.seekable():
+                            source.seek(0)
+                    except (io.UnsupportedOperation, OSError):
+                        pass
+
                 shutil.copyfileobj(source, tmp_file, length=chunk_size)
+
+            # 2. Force the OS to write the buffers to the actual physical disk
+            tmp_file.flush()
+            os.fsync(tmp_file.fileno())
+
         except Exception as exc:
             temp_path.unlink(missing_ok=True)
             raise IOError(
@@ -172,6 +188,8 @@ def ensure_local_file(
             ) from exc
 
     try:
+        # 3. Widen permissions so external binaries like ffprobe can always read it
+        temp_path.chmod(0o644)
         yield temp_path
     finally:
         temp_path.unlink(missing_ok=True)

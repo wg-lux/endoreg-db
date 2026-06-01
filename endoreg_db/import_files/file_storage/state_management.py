@@ -283,14 +283,13 @@ def finalize_video_success(
         logger.warning("finalize_video_success called with unsaved instance")
         return
 
-    # --- Move anonymized path into final storage (if we have one) ---
+    # --- Move anonymized path into final storage ---
     final_path: Optional[Path] = None
 
     if ctx.anonymized_path is None:
-        logger.warning(
-            "No anonymized_path for video instance %s (hash=%s); skipping file move.",
-            instance.pk,
-            getattr(instance, "video_hash", None),
+        raise RuntimeError(
+            "Cannot finalize video import without anonymized output "
+            f"(instance={instance.pk}, hash={getattr(instance, 'video_hash', None)})."
         )
     else:
         # Use a stable naming convention: <video_hash>.mp4
@@ -320,7 +319,9 @@ def finalize_video_success(
                 src,
                 expected_final_path,
             )
-            final_path = None
+            raise RuntimeError(
+                f"Cannot finalize video import because anonymized output is missing: {src}"
+            )
         elif requires_app_encrypted_storage(PayloadKind.VIDEO_PROCESSED):
             _verify_final_video_output(src)
             relative_name = path_utils.to_storage_relative(expected_final_path)

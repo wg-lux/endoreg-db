@@ -199,18 +199,11 @@ class VideoImportService:
                         "Persisted video state as processing before anonymization: video=%s",
                         ctx.current_video.video_hash,
                     )
-                    try:
-                        ctx = self.anonymizer.anonymize_video(ctx)
-                        logger.info(
-                            "Primary video anonymization succeeded for %s",
-                            ctx.file_path,
-                        )
-                    except Exception as primary_exc:
-                        logger.exception(
-                            "Video anonymization failed for %s: %s ",
-                            ctx.file_path,
-                            primary_exc,
-                        )
+                    ctx = self.anonymizer.anonymize_video(ctx)
+                    logger.info(
+                        "Primary video anonymization succeeded for %s",
+                        ctx.file_path,
+                    )
                     logger.info(
                         f"Anonymized Video is located at: {ctx.anonymized_path}"
                     )
