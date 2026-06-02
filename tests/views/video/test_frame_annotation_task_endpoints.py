@@ -688,3 +688,129 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["task"]["frame_id"], self.frame_1.pk)
+
+    def test_random_task_auto_frame_file_type_selects_processed_when_available(self):
+        self.video.raw_file.name = "videos/frame_task_raw.mp4"
+        self.video.processed_file.name = "videos/frame_task_processed.mp4"
+        self.video.save(update_fields=["raw_file", "processed_file"])
+
+        request = self.factory.get(
+            "/api/media/annotations/frames/random-task/",
+            {
+                "video_id": self.video.pk,
+                "information_source_name": self.source.name,
+                "frame_file_type": "auto",
+            },
+        )
+
+        with patch(
+            "endoreg_db.models.state.frame_annotation.random.randint",
+            return_value=0,
+        ):
+            response = self.random_task_view(request)
+
+        self.assertEqual(response.status_code, 200)
+        task = response.data["task"]
+        self.assertEqual(task["frame_file_type"], "processed")
+        self.assertIn(
+            "/decoded-stream/?file_type=processed",
+            task["decoded_frame_stream_path"],
+        )
+        self.assertEqual(response.data["frame_file_type"], "auto")
+
+    def test_random_task_stream_mode_allows_initialized_unextracted_frame(self):
+        stream_video = VideoFile.objects.create(
+            center=self.center,
+            video_hash="frame-task-stream-only-video",
+            original_file_name="stream_only.mp4",
+            fps=25.0,
+            frame_count=1,
+        )
+        stream_video.processed_file.name = "videos/stream_only_processed.mp4"
+        stream_video.save(update_fields=["processed_file"])
+        stream_frame = Frame.objects.create(
+            video=stream_video,
+            frame_number=0,
+            relative_path="frame_0000000.jpg",
+            is_extracted=False,
+        )
+
+        request = self.factory.get(
+            "/api/media/annotations/frames/random-task/",
+            {
+                "video_id": stream_video.pk,
+                "information_source_name": self.source.name,
+                "frame_file_type": "processed",
+            },
+        )
+
+        with patch(
+            "endoreg_db.models.state.frame_annotation.random.randint",
+            return_value=0,
+        ):
+            response = self.random_task_view(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["task"]["frame_id"], stream_frame.pk)
+        self.assertEqual(response.data["task"]["frame_file_type"], "processed")
+
+    def test_random_task_explicit_processed_does_not_fall_back_to_raw(self):
+        self.video.raw_file.name = "videos/frame_task_raw_only.mp4"
+        self.video.save(update_fields=["raw_file"])
+
+        request = self.factory.get(
+            "/api/media/annotations/frames/random-task/",
+            {
+                "video_id": self.video.pk,
+                "information_source_name": self.source.name,
+                "frame_file_type": "processed",
+            },
+        )
+
+        response = self.random_task_view(request)
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.data["details"]["frame_file_type"], "processed")
+
+    def test_random_task_phi_dataset_auto_forces_raw_frame_file_type(self):
+        dataset = AIDataSet.objects.create(
+            name="frame-task-phi-dataset-auto-raw",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type="phi_region_detector",
+        )
+        self.video.raw_file.name = "sensitive_videos/frame_task_raw.mp4"
+        self.video.processed_file.name = "videos/frame_task_processed.mp4"
+        self.video.save(update_fields=["raw_file", "processed_file"])
+        dataset.image_annotations.add(
+            ImageClassificationAnnotation.objects.create(
+                frame=self.frame_1,
+                label=self.target_label,
+                value=True,
+                information_source=self.source,
+                annotator="dataset",
+            )
+        )
+
+        request = self.factory.get(
+            "/api/media/annotations/frames/random-task/",
+            {
+                "video_id": self.video.pk,
+                "ai_dataset_name": dataset.name,
+                "ai_dataset_type": dataset.dataset_type,
+                "exclude_annotated": "false",
+                "frame_file_type": "auto",
+            },
+        )
+
+        with patch(
+            "endoreg_db.models.state.frame_annotation.random.randint",
+            return_value=0,
+        ):
+            response = self.random_task_view(request)
+
+        self.assertEqual(response.status_code, 200)
+        task = response.data["task"]
+        self.assertEqual(task["frame_file_type"], "raw")
+        self.assertIn(
+            "/decoded-stream/?file_type=raw", task["decoded_frame_stream_path"]
+        )

@@ -88,6 +88,7 @@ ROUTE_RESOURCE = {
     "video-detail-stream": "video",
     "video-stream": "video",
     "video-frame-stream": "video",
+    "video-frame-decoded-stream": "video",
     "video-reimport": "video",
     "video-correction": "video",
     "video-metadata": "video",

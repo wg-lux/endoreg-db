@@ -94,6 +94,10 @@ class FrameAnnotationQueueSpec:
     sampling_strategy: FrameSamplingStrategy = FrameSamplingStrategy.BALANCED
     prediction_segments_only: bool = True
     exclude_frame_ids: frozenset[int] = field(default_factory=frozenset)
+    require_extracted_frames: bool = True
+    require_raw_video: bool = False
+    require_processed_video: bool = False
+    require_streamable_video_artifact: bool = False
 
 
 @dataclass(frozen=True)
@@ -366,18 +370,33 @@ def _build_frame_task_queryset(
     annotator: str,
     exclude_annotated: bool,
     target_label_id: int | None,
+    require_extracted_frames: bool = True,
     require_raw_video: bool = False,
+    require_processed_video: bool = False,
+    require_streamable_video_artifact: bool = False,
     exclude_frame_ids: set[int] | None = None,
     candidate_frame_ids: set[int] | None = None,
 ) -> QuerySet[Frame]:
     from endoreg_db.models import Frame
 
-    frames_qs = Frame.objects.select_related("video").filter(is_extracted=True)
+    frames_qs = Frame.objects.select_related("video")
+    if require_extracted_frames:
+        frames_qs = frames_qs.filter(is_extracted=True)
     if video_id is not None:
         frames_qs = frames_qs.filter(video_id=video_id)
     if require_raw_video:
         frames_qs = frames_qs.exclude(video__raw_file__isnull=True).exclude(
             video__raw_file__exact=""
+        )
+    if require_processed_video:
+        frames_qs = frames_qs.exclude(video__processed_file__isnull=True).exclude(
+            video__processed_file__exact=""
+        )
+    if require_streamable_video_artifact:
+        frames_qs = frames_qs.filter(
+            Q(video__raw_file__isnull=False) & ~Q(video__raw_file__exact="")
+            | Q(video__processed_file__isnull=False)
+            & ~Q(video__processed_file__exact="")
         )
     if candidate_frame_ids is not None:
         if not candidate_frame_ids:
@@ -421,7 +440,12 @@ def _pick_random_frame(
         annotator=spec.annotator,
         exclude_annotated=spec.exclude_annotated,
         target_label_id=spec.target_label.id if spec.target_label is not None else None,
-        require_raw_video=ai_dataset_requires_raw_frames(spec.ai_dataset),
+        require_extracted_frames=spec.require_extracted_frames,
+        require_raw_video=(
+            spec.require_raw_video or ai_dataset_requires_raw_frames(spec.ai_dataset)
+        ),
+        require_processed_video=spec.require_processed_video,
+        require_streamable_video_artifact=spec.require_streamable_video_artifact,
         exclude_frame_ids=exclude_frame_ids,
         candidate_frame_ids=candidate_frame_ids,
     )
@@ -436,6 +460,7 @@ def _build_dataset_target_buckets(
     *,
     dataset: AIDataSet | None,
     target_label: Label | None,
+    require_extracted_frames: bool,
 ) -> dict[str, set[int]]:
     from endoreg_db.models import AIDataSet
 
@@ -448,8 +473,9 @@ def _build_dataset_target_buckets(
 
     annotations = dataset.image_annotations.select_related("frame", "label").filter(
         frame__isnull=False,
-        frame__is_extracted=True,
     )
+    if require_extracted_frames:
+        annotations = annotations.filter(frame__is_extracted=True)
     if not annotations.exists():
         return {}
 
@@ -576,6 +602,7 @@ def _build_segment_frame_buckets(
     dataset: AIDataSet | None,
     label_set: LabelSet | None,
     only_prediction_segments: bool,
+    require_extracted_frames: bool,
 ) -> dict[int, set[int]]:
     if dataset is None:
         return {}
@@ -615,8 +642,10 @@ def _build_segment_frame_buckets(
             video_id=video_id,
             frame_number__gte=min_start,
             frame_number__lt=max_end,
-            is_extracted=True,
-        ).values_list("id", "frame_number")
+        )
+        if require_extracted_frames:
+            frame_rows = frame_rows.filter(is_extracted=True)
+        frame_rows = frame_rows.values_list("id", "frame_number")
 
         frame_ids_by_number = {
             frame_number: frame_id for frame_id, frame_number in frame_rows
@@ -638,6 +667,7 @@ def _build_annotation_frame_buckets(
     *,
     dataset: AIDataSet | None,
     label_set: LabelSet | None,
+    require_extracted_frames: bool,
 ) -> dict[int, set[int]]:
     if dataset is None:
         return {}
@@ -647,8 +677,9 @@ def _build_annotation_frame_buckets(
         label__isnull=False,
         value=True,
         frame__isnull=False,
-        frame__is_extracted=True,
     )
+    if require_extracted_frames:
+        annotations = annotations.filter(frame__is_extracted=True)
 
     for annotation in annotations.iterator():
         if not _label_allowed_by_set(annotation.label_id, label_set):
@@ -663,6 +694,7 @@ def _build_dataset_candidate_frame_ids(
     dataset: AIDataSet | None,
     label_set: LabelSet | None,
     only_prediction_segments: bool,
+    require_extracted_frames: bool,
 ) -> set[int] | None:
     if dataset is None:
         return None
@@ -671,8 +703,9 @@ def _build_dataset_candidate_frame_ids(
     annotations = dataset.image_annotations.select_related("label").filter(
         label__isnull=False,
         frame__isnull=False,
-        frame__is_extracted=True,
     )
+    if require_extracted_frames:
+        annotations = annotations.filter(frame__is_extracted=True)
     for annotation in annotations.iterator():
         if _label_allowed_by_set(annotation.label_id, label_set):
             frame_ids.add(annotation.frame_id)
@@ -681,6 +714,7 @@ def _build_dataset_candidate_frame_ids(
         dataset=dataset,
         label_set=label_set,
         only_prediction_segments=only_prediction_segments,
+        require_extracted_frames=require_extracted_frames,
     )
     for segment_frame_ids in segment_frame_buckets.values():
         frame_ids.update(segment_frame_ids)
@@ -849,6 +883,7 @@ def build_frame_task_queue(
     dataset_buckets = _build_dataset_target_buckets(
         dataset=spec.ai_dataset,
         target_label=spec.target_label,
+        require_extracted_frames=spec.require_extracted_frames,
     )
     label_distribution = _build_dataset_label_distribution(
         dataset=spec.ai_dataset,
@@ -864,6 +899,7 @@ def build_frame_task_queue(
             dataset=spec.ai_dataset,
             label_set=spec.label_set,
             only_prediction_segments=spec.prediction_segments_only,
+            require_extracted_frames=spec.require_extracted_frames,
         )
         if spec.sampling_strategy
         in {FrameSamplingStrategy.BALANCED, FrameSamplingStrategy.SEGMENTS}
@@ -873,6 +909,7 @@ def build_frame_task_queue(
         _build_annotation_frame_buckets(
             dataset=spec.ai_dataset,
             label_set=spec.label_set,
+            require_extracted_frames=spec.require_extracted_frames,
         )
         if spec.sampling_strategy
         in {FrameSamplingStrategy.BALANCED, FrameSamplingStrategy.ANNOTATIONS}
@@ -886,6 +923,7 @@ def build_frame_task_queue(
         dataset=spec.ai_dataset,
         label_set=spec.label_set,
         only_prediction_segments=spec.prediction_segments_only,
+        require_extracted_frames=spec.require_extracted_frames,
     )
 
     tasks: list[dict[str, Any]] = []

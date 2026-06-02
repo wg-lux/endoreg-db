@@ -69,6 +69,18 @@ def build_video_frame_stream_path(
     return f"/api/media/videos/{video_id}/frames/{frame_number}/stream/"
 
 
+def build_video_frame_decoded_stream_path(
+    video_id: int,
+    frame_number: int,
+    *,
+    file_type: str,
+) -> str:
+    return _append_query(
+        f"/api/media/videos/{video_id}/frames/{frame_number}/decoded-stream/",
+        {"file_type": file_type},
+    )
+
+
 def build_absolute_media_url(
     request: Any | None,
     relative_path: str,

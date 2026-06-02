@@ -1,6 +1,6 @@
 from django.urls import URLPattern, path
 
-from endoreg_db.views.media.frame_media import FrameStreamView
+from endoreg_db.views.media.frame_media import DecodedFrameStreamView, FrameStreamView
 from endoreg_db.views.media.export_ready import VideoMarkReadyForExportView
 from endoreg_db.views.media.hub import (
     HubTransferCreateView,
@@ -112,6 +112,11 @@ VIDEO_MEDIA_URLPATTERNS: list[URLPattern] = [
         "media/videos/<int:video_id>/frames/<int:frame_number>/stream/",
         FrameStreamView.as_view(),
         name="video-frame-stream",
+    ),
+    path(
+        "media/videos/<int:video_id>/frames/<int:frame_number>/decoded-stream/",
+        DecodedFrameStreamView.as_view(),
+        name="video-frame-decoded-stream",
     ),
     path(
         "media/videos/<int:pk>/reimport/",

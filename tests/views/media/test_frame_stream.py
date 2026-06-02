@@ -5,7 +5,9 @@ import shutil
 import uuid
 import importlib.util
 from pathlib import Path
+from types import SimpleNamespace
 
+import numpy as np
 import pytest
 from django.test import TestCase
 from rest_framework.test import APIRequestFactory
@@ -264,3 +266,80 @@ class FrameStreamViewTests(TestCase):
         assert FrameExtractionRequest.objects.count() == 1
         request.refresh_from_db()
         assert request.task_id == "existing-task"
+
+    def test_decoded_frame_stream_serves_single_decoded_frame(self):
+        from endoreg_db.views.media import frame_media as frame_media_module
+
+        self.video.raw_file = "videos/raw_frame_stream_test.mp4"
+        self.video.save(update_fields=["raw_file"])
+
+        monkeypatches = pytest.MonkeyPatch()
+        monkeypatches.setattr(
+            frame_media_module,
+            "read_video_file_frame_sample",
+            lambda *args, **kwargs: SimpleNamespace(
+                frame_number=kwargs["frame_number"],
+                timestamp=1.25,
+                rgb_frame=np.zeros((2, 2, 3), dtype=np.uint8),
+            ),
+        )
+        try:
+            factory = APIRequestFactory()
+            req = factory.get(
+                f"/api/media/videos/{self.video.pk}/frames/{self.frame.frame_number}/decoded-stream/?file_type=raw"
+            )
+            view = frame_media_module.DecodedFrameStreamView.as_view()
+            resp = view(
+                req, video_id=self.video.pk, frame_number=self.frame.frame_number
+            )
+        finally:
+            monkeypatches.undo()
+
+        assert resp.status_code == 200
+        assert resp["Content-Type"] == "image/jpeg"
+        assert resp["X-Frame-File-Type"] == "raw"
+        assert resp["X-Frame-Number"] == str(self.frame.frame_number)
+        assert resp.content.startswith(b"\xff\xd8")
+
+    def test_decoded_frame_stream_rejects_invalid_file_type(self):
+        from endoreg_db.views.media.frame_media import DecodedFrameStreamView
+
+        factory = APIRequestFactory()
+        req = factory.get(
+            f"/api/media/videos/{self.video.pk}/frames/{self.frame.frame_number}/decoded-stream/?file_type=preview"
+        )
+        view = DecodedFrameStreamView.as_view()
+        resp = view(req, video_id=self.video.pk, frame_number=self.frame.frame_number)
+
+        assert resp.status_code == 400
+        assert "file_type" in resp.data["error"]
+
+    def test_decoded_frame_stream_reports_decode_failure(self):
+        from endoreg_db.views.media import frame_media as frame_media_module
+
+        self.video.processed_file = "videos/processed_frame_stream_test.mp4"
+        self.video.save(update_fields=["processed_file"])
+
+        monkeypatches = pytest.MonkeyPatch()
+        monkeypatches.setattr(
+            frame_media_module,
+            "read_video_file_frame_sample",
+            lambda *args, **kwargs: (_ for _ in ()).throw(
+                RuntimeError("decode failed")
+            ),
+        )
+        try:
+            factory = APIRequestFactory()
+            req = factory.get(
+                f"/api/media/videos/{self.video.pk}/frames/{self.frame.frame_number}/decoded-stream/?file_type=processed"
+            )
+            view = frame_media_module.DecodedFrameStreamView.as_view()
+            resp = view(
+                req, video_id=self.video.pk, frame_number=self.frame.frame_number
+            )
+        finally:
+            monkeypatches.undo()
+
+        assert resp.status_code == 409
+        assert resp.data["status"] == "frame_decode_failed"
+        assert resp.data["file_type"] == "processed"

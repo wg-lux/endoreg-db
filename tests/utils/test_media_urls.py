@@ -6,6 +6,7 @@ from endoreg_db.utils.web.media_urls import (
     build_absolute_media_url,
     build_patient_timeline_path,
     build_pdf_stream_path,
+    build_video_frame_decoded_stream_path,
     build_video_frame_stream_path,
     build_video_stream_path,
 )
@@ -46,6 +47,13 @@ def test_build_patient_timeline_path_supports_optional_filter() -> None:
 def test_build_video_frame_stream_path_returns_canonical_frame_endpoint() -> None:
     assert (
         build_video_frame_stream_path(7, 42) == "/api/media/videos/7/frames/42/stream/"
+    )
+
+
+def test_build_video_frame_decoded_stream_path_supports_file_type() -> None:
+    assert (
+        build_video_frame_decoded_stream_path(7, 42, file_type="processed")
+        == "/api/media/videos/7/frames/42/decoded-stream/?file_type=processed"
     )
 
 

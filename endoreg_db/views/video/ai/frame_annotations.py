@@ -33,12 +33,21 @@ from endoreg_db.models.state.frame_annotation import (
 from endoreg_db.services.frame_retention import (
     prune_unused_validated_outside_frames,
 )
+from endoreg_db.services.video_files import VideoArtifactKind
 from endoreg_db.serializers.label_video_segment.frame_annotation_bulk import (
     FrameAnnotationBulkItemSerializer,
 )
+from endoreg_db.utils.web.media_urls import build_video_frame_decoded_stream_path
 from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
 
 logger = logging.getLogger(__name__)
+
+FRAME_FILE_TYPE_AUTO = "auto"
+SUPPORTED_FRAME_FILE_TYPES = {
+    FRAME_FILE_TYPE_AUTO,
+    VideoArtifactKind.RAW.value,
+    VideoArtifactKind.PROCESSED.value,
+}
 
 
 def _build_bulk_upsert_response(
@@ -295,6 +304,100 @@ def _as_bool(value: Any, default: bool = False) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _parse_frame_file_type(value: Any) -> tuple[str | None, Response | None]:
+    if value is None or value == "":
+        return None, None
+    normalized = str(value).strip().lower()
+    if normalized in SUPPORTED_FRAME_FILE_TYPES:
+        return normalized, None
+    return None, Response(
+        {
+            "error": "frame_file_type must be one of ['auto', 'raw', 'processed'].",
+            "details": {"frame_file_type": value},
+        },
+        status=status.HTTP_400_BAD_REQUEST,
+    )
+
+
+def _video_has_artifact(video: VideoFile, artifact_kind: VideoArtifactKind) -> bool:
+    if artifact_kind == VideoArtifactKind.PROCESSED:
+        processed_file = getattr(video, "processed_file", None)
+        return bool(processed_file and getattr(processed_file, "name", None))
+    return bool(getattr(video, "has_raw", False))
+
+
+def _resolve_task_artifact_kind(
+    *,
+    video: VideoFile | None,
+    requested_frame_file_type: str | None,
+) -> VideoArtifactKind | None:
+    if video is None or requested_frame_file_type is None:
+        return None
+    if requested_frame_file_type == VideoArtifactKind.RAW.value:
+        return (
+            VideoArtifactKind.RAW
+            if _video_has_artifact(video, VideoArtifactKind.RAW)
+            else None
+        )
+    if requested_frame_file_type == VideoArtifactKind.PROCESSED.value:
+        return (
+            VideoArtifactKind.PROCESSED
+            if _video_has_artifact(video, VideoArtifactKind.PROCESSED)
+            else None
+        )
+    if _video_has_artifact(video, VideoArtifactKind.PROCESSED):
+        return VideoArtifactKind.PROCESSED
+    if _video_has_artifact(video, VideoArtifactKind.RAW):
+        return VideoArtifactKind.RAW
+    return None
+
+
+def _attach_decoded_frame_stream_paths(
+    tasks: list[dict[str, Any]],
+    *,
+    requested_frame_file_type: str | None,
+) -> list[dict[str, Any]]:
+    if requested_frame_file_type is None:
+        return tasks
+
+    video_ids = {
+        int(task["video_id"]) for task in tasks if task.get("video_id") is not None
+    }
+    videos_by_id = VideoFile.objects.in_bulk(video_ids)
+
+    stream_tasks: list[dict[str, Any]] = []
+    for task in tasks:
+        video_id = task.get("video_id")
+        frame_number = task.get("frame_number")
+        if video_id is None or frame_number is None:
+            continue
+        try:
+            video_id_int = int(video_id)
+            frame_number_int = int(frame_number)
+        except (TypeError, ValueError):
+            continue
+
+        artifact_kind = _resolve_task_artifact_kind(
+            video=videos_by_id.get(video_id_int),
+            requested_frame_file_type=requested_frame_file_type,
+        )
+        if artifact_kind is None:
+            continue
+
+        task_with_stream = dict(task)
+        task_with_stream["frame_file_type"] = artifact_kind.value
+        task_with_stream["decoded_frame_stream_path"] = (
+            build_video_frame_decoded_stream_path(
+                video_id_int,
+                frame_number_int,
+                file_type=artifact_kind.value,
+            )
+        )
+        stream_tasks.append(task_with_stream)
+
+    return stream_tasks
+
+
 def _as_positive_int(
     value: Any, field_name: str, *, default: int
 ) -> tuple[int, Response | None]:
@@ -542,6 +645,15 @@ class FrameAnnotationRandomTaskView(APIView):
                 {"error": str(exc)},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        requested_frame_file_type, error = _parse_frame_file_type(
+            request.query_params.get("frame_file_type")
+        )
+        if error is not None:
+            return error
+        raw_video_required = ai_dataset_requires_raw_frames(ai_dataset)
+        if raw_video_required and requested_frame_file_type is not None:
+            requested_frame_file_type = VideoArtifactKind.RAW.value
+        stream_backed_tasks = requested_frame_file_type is not None
         queue_spec = FrameAnnotationQueueSpec(
             limit=limit,
             task_mode=task_mode,
@@ -555,9 +667,20 @@ class FrameAnnotationRandomTaskView(APIView):
             ai_dataset=ai_dataset,
             sampling_strategy=sampling_strategy,
             prediction_segments_only=only_prediction_segments,
+            require_extracted_frames=not stream_backed_tasks,
+            require_raw_video=requested_frame_file_type == VideoArtifactKind.RAW.value,
+            require_processed_video=(
+                requested_frame_file_type == VideoArtifactKind.PROCESSED.value
+            ),
+            require_streamable_video_artifact=(
+                requested_frame_file_type == FRAME_FILE_TYPE_AUTO
+            ),
         )
         queue_result = build_frame_task_queue(queue_spec)
-        tasks = queue_result.tasks
+        tasks = _attach_decoded_frame_stream_paths(
+            queue_result.tasks,
+            requested_frame_file_type=requested_frame_file_type,
+        )
 
         if not tasks:
             details: dict[str, Any] = {
@@ -568,6 +691,8 @@ class FrameAnnotationRandomTaskView(APIView):
                 "task_mode": task_mode.value,
                 "limit": limit,
             }
+            if requested_frame_file_type is not None:
+                details["frame_file_type"] = requested_frame_file_type
             if label_set is not None:
                 details["label_group_id"] = label_set.id
             if target_label is not None:
@@ -579,9 +704,7 @@ class FrameAnnotationRandomTaskView(APIView):
                 details["ai_dataset_name"] = ai_dataset.name
                 details["ai_dataset_type"] = ai_dataset.dataset_type
                 details["ai_dataset_model_type"] = ai_dataset.ai_model_type
-                details["raw_video_required"] = ai_dataset_requires_raw_frames(
-                    ai_dataset
-                )
+                details["raw_video_required"] = raw_video_required
             return Response(
                 {
                     "error": "No frame task available.",
@@ -600,6 +723,8 @@ class FrameAnnotationRandomTaskView(APIView):
             "dataset_frame_filter": sampling_strategy.value,
             "prediction_segments_only": only_prediction_segments,
         }
+        if requested_frame_file_type is not None:
+            response_data["frame_file_type"] = requested_frame_file_type
         if label_set is not None:
             response_data["label_group_id"] = label_set.id
         if target_label is not None:

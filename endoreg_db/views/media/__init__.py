@@ -2,7 +2,7 @@
 
 from .video_media import VideoMediaView
 from .pdf_media import PdfMediaView
-from .frame_media import FrameStreamView
+from .frame_media import DecodedFrameStreamView, FrameStreamView
 from .hub import (
     HubTransferCreateView,
     HubTransferMediaUploadView,
@@ -28,6 +28,7 @@ __all__ = [
     "VideoMediaView",
     "PdfMediaView",
     "FrameStreamView",
+    "DecodedFrameStreamView",
     "HubTransferCreateView",
     "HubTransferMediaUploadView",
     "HubTransferStatusView",

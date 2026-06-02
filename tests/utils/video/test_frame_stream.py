@@ -79,6 +79,47 @@ def test_iter_video_path_frame_samples_yields_frame_numbers_and_timestamps(
 
 
 @pytest.mark.unit
+def test_read_video_path_frame_sample_decodes_requested_frame(monkeypatch, tmp_path):
+    _patch_stream_metadata(monkeypatch)
+    created_commands: list[list[str]] = []
+
+    def fake_popen(command, **kwargs):
+        created_commands.append(command)
+        return FakeStreamingProcess(bytes(range(6)))
+
+    monkeypatch.setattr(frame_stream.subprocess, "Popen", fake_popen)
+
+    sample = frame_stream.read_video_path_frame_sample(
+        tmp_path / "video.mp4",
+        frame_number=5,
+    )
+
+    assert sample.frame_number == 5
+    assert sample.timestamp == 2.5
+    assert sample.rgb_frame.tolist() == [[[0, 1, 2], [3, 4, 5]]]
+    assert "-frames:v" in created_commands[0]
+    assert "select='eq(n,5)'" in created_commands[0]
+
+
+@pytest.mark.unit
+def test_read_video_path_frame_sample_raises_when_frame_is_missing(
+    monkeypatch,
+    tmp_path,
+):
+    _patch_stream_metadata(monkeypatch)
+
+    def fake_popen(command, **kwargs):
+        return FakeStreamingProcess(b"")
+
+    monkeypatch.setattr(frame_stream.subprocess, "Popen", fake_popen)
+
+    with pytest.raises(RuntimeError, match="produced no decoded frame"):
+        frame_stream.read_video_path_frame_sample(
+            tmp_path / "video.mp4", frame_number=7
+        )
+
+
+@pytest.mark.unit
 def test_iter_video_path_frame_samples_cleans_process_on_early_close(
     monkeypatch,
     tmp_path,

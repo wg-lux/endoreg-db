@@ -176,6 +176,96 @@ def iter_video_path_frame_samples(
             process.stderr.close()
 
 
+def read_video_path_frame_sample(
+    video_path: Path,
+    *,
+    frame_number: int,
+    fps_hint: float | None = None,
+) -> FrameSample:
+    if frame_number < 0:
+        raise ValueError("frame_number must be non-negative.")
+
+    ffmpeg_executable = _resolve_ffmpeg_executable()
+    if not ffmpeg_executable:
+        raise FileNotFoundError(
+            "ffmpeg command not found. Ensure FFmpeg is installed and in PATH."
+        )
+
+    width, height, fps = _video_stream_metadata(video_path, fps_hint=fps_hint)
+    frame_size = width * height * 3
+    select_filter = f"select='eq(n,{frame_number})'"
+    command = [
+        ffmpeg_executable,
+        "-nostdin",
+        "-v",
+        "error",
+        "-i",
+        str(video_path),
+        "-map",
+        "0:v:0",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        select_filter,
+        "-vsync",
+        "vfr",
+        "-frames:v",
+        "1",
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        "rgb24",
+        "pipe:1",
+    ]
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    assert process.stdout is not None
+    try:
+        frame_bytes = _read_exact(process.stdout, frame_size)
+        return_code = process.wait()
+        stderr = ""
+        if process.stderr is not None:
+            stderr = process.stderr.read().decode("utf-8", errors="replace")
+
+        if return_code != 0:
+            raise RuntimeError(
+                f"ffmpeg single-frame decode failed for {video_path.name} "
+                f"with exit code {return_code}: {stderr.strip()}"
+            )
+        if not frame_bytes:
+            raise RuntimeError(
+                f"ffmpeg produced no decoded frame {frame_number} for {video_path.name}."
+            )
+        if len(frame_bytes) != frame_size:
+            raise RuntimeError(
+                "ffmpeg produced a partial decoded frame "
+                f"for {video_path.name}: expected={frame_size} actual={len(frame_bytes)}."
+            )
+
+        frame = np.frombuffer(frame_bytes, dtype=np.uint8).reshape((height, width, 3))
+        return FrameSample(
+            frame_number=frame_number,
+            timestamp=frame_number / fps,
+            rgb_frame=frame,
+        )
+    finally:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+        if process.stdout is not None:
+            process.stdout.close()
+        if process.stderr is not None:
+            process.stderr.close()
+
+
 def iter_video_file_frame_samples(
     video,
     *,
@@ -193,8 +283,32 @@ def iter_video_file_frame_samples(
         yield from iter_video_path_frame_samples(source_path, fps_hint=fps_hint)
 
 
+def read_video_file_frame_sample(
+    video,
+    *,
+    frame_number: int,
+    file_type: str = "raw",
+) -> FrameSample:
+    fps_hint = None
+    get_fps = getattr(video, "get_fps", None)
+    if callable(get_fps):
+        try:
+            fps_hint = float(get_fps() or 0.0) or None
+        except (TypeError, ValueError):
+            fps_hint = None
+
+    with materialize_video_file(video, file_type) as source_path:
+        return read_video_path_frame_sample(
+            source_path,
+            frame_number=frame_number,
+            fps_hint=fps_hint,
+        )
+
+
 __all__ = [
     "FrameSample",
     "iter_video_file_frame_samples",
     "iter_video_path_frame_samples",
+    "read_video_file_frame_sample",
+    "read_video_path_frame_sample",
 ]
