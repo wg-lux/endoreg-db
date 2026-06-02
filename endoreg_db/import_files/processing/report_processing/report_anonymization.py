@@ -29,6 +29,14 @@ class ReportAnonymizer:
         self._ensure_report_reading_available()
 
     @staticmethod
+    def _coerce_extracted_metadata(extracted_metadata: object) -> SensitiveMeta:
+        if isinstance(extracted_metadata, SensitiveMeta):
+            return extracted_metadata
+        sensitive_meta = SensitiveMeta()
+        sensitive_meta.safe_update(extracted_metadata)
+        return sensitive_meta
+
+    @staticmethod
     def _read_txt_content(txt_path: Path) -> str:
         for encoding in ("utf-8", "cp1252", "latin-1"):
             try:
@@ -56,7 +64,7 @@ class ReportAnonymizer:
             txt_content = self._read_txt_content(source_path)
             ctx.original_text = txt_content
             ctx.anonymized_text = txt_content
-            ctx.extracted_metadata = {}
+            ctx.extracted_metadata = SensitiveMeta()
             ctx.anonymized_path = None
         else:
             # Setup anonymized directory
@@ -77,9 +85,7 @@ class ReportAnonymizer:
                 create_anonymized_pdf=True,
                 anonymized_pdf_output_path=str(anonymized_output_path),
             )
-            ctx.extracted_metadata = (
-                extracted_metadata if isinstance(extracted_metadata, dict) else {}
-            )
+            ctx.extracted_metadata = self._coerce_extracted_metadata(extracted_metadata)
 
             anonymized_path = (
                 Path(ctx.anonymized_path)
@@ -98,11 +104,7 @@ class ReportAnonymizer:
             ctx.current_report.anonymized_text = ctx.anonymized_text
         ctx.current_report.save(update_fields=["text", "anonymized_text"])
 
-        sm = SensitiveMeta()
-        if isinstance(ctx.extracted_metadata, dict):
-            sm.safe_update(ctx.extracted_metadata)
-
-        sensitive_meta_storage(sm, ctx.current_report)
+        sensitive_meta_storage(ctx.extracted_metadata, ctx.current_report)
         return ctx
 
     def _instantiate_report_reader(self) -> object:

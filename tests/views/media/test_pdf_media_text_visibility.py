@@ -98,7 +98,7 @@ class PdfMediaTextVisibilityTests(TestCase):
             assert ctx.current_report is not None
             ctx.original_text = "pdf original text"
             ctx.anonymized_text = "pdf anonymized text"
-            ctx.extracted_metadata = {}
+            ctx.extracted_metadata = SensitiveMeta()
             ctx.anonymized_path = None
             ctx.current_report.text = ctx.original_text
             ctx.current_report.anonymized_text = ctx.anonymized_text
