@@ -1,6 +1,8 @@
-from .mock_video_anonym_annotation import mock_video_anonym_annotation
-from .test_pipe_2 import _test_pipe_2
-from .test_pipe_1 import _test_pipe_1
+from .mock_video_anonym_annotation import mock_video_manual_validation
+from .test_video_anonymization import _test_video_anonymization
+from .test_temporal_prediction_materialization import (
+    _test_temporal_prediction_materialization,
+)
 
 from django.test import TestCase
 from logging import getLogger
@@ -74,10 +76,10 @@ class VideoFileModelExtractedTest(TestCase):
         """
         Test the pipeline with optimized approach - uses mocked operations for fast testing.
 
-        This test validates the pipeline workflow:
-        - Pre-validation processing (pipe_1) - MOCKED for speed
-        - Simulating human validation processing (test_after_pipe_1) - MOCKED
-        - Post-validation processing (pipe_2) - MOCKED
+        This test validates the prediction and anonymization workflow:
+        - Temporal prediction segment materialization - MOCKED for speed
+        - Simulated manual validation - MOCKED
+        - Video anonymization - MOCKED
         """
         if not RUN_VIDEO_TESTS:
             self.skipTest("Video tests disabled (RUN_VIDEO_TESTS=False)")
@@ -87,9 +89,9 @@ class VideoFileModelExtractedTest(TestCase):
         self.video_file = MockVideoFile()
 
         # Test with mocked operations
-        _test_pipe_1(self)
-        mock_video_anonym_annotation(self)
-        _test_pipe_2(self)
+        _test_temporal_prediction_materialization(self)
+        mock_video_manual_validation(self)
+        _test_video_anonymization(self)
 
     @pytest.mark.slow
     @pytest.mark.pipeline
@@ -118,9 +120,9 @@ class VideoFileModelExtractedTest(TestCase):
             get_cached_or_create("real_pipeline_video", get_default_video_file),
         )
 
-        _test_pipe_1(self)
-        mock_video_anonym_annotation(self)
-        _test_pipe_2(self)
+        _test_temporal_prediction_materialization(self)
+        mock_video_manual_validation(self)
+        _test_video_anonymization(self)
 
     def tearDown(self):
         """Cleanup handled by OptimizedVideoTestCase"""

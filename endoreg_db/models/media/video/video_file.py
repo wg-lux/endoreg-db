@@ -240,21 +240,6 @@ class VideoFile(models.Model):
 
         return get_active_raw_video_file_url(self)
 
-    def pipe_1(self, *args, **kwargs):
-        from endoreg_db.services.video_files import run_video_pipe_1
-
-        return run_video_pipe_1(self, *args, **kwargs)
-
-    def test_after_pipe_1(self, *args, **kwargs):
-        from endoreg_db.services.video_files import test_after_video_pipe_1
-
-        return test_after_video_pipe_1(self, *args, **kwargs)
-
-    def pipe_2(self) -> bool:
-        from endoreg_db.services.video_files import run_video_pipe_2
-
-        return run_video_pipe_2(self)
-
     def update_video_meta(
         self, save_instance: bool = True, raw_video_path: Optional[Path] = None
     ):

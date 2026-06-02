@@ -6,6 +6,7 @@ from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, replace
 from datetime import timedelta
+from importlib import import_module
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any, cast
 
@@ -76,6 +77,7 @@ TEMPORAL_OPTION_KEYS = frozenset(
         "min_length_seconds",
         "max_gap_seconds",
         "smoothing_window_seconds",
+        "temporal_smoothing_enabled",
         "markov_stay_probability",
         "markov_enter_probability",
         "markov_label_priors",
@@ -214,7 +216,7 @@ def _resolve_temporal_frame_source_mode(
     requested_frame_source_mode: FrameSourceMode,
 ) -> FrameSourceMode:
     if requested_frame_source_mode == "auto":
-        return "cache" if _has_extracted_frame_files(video) else "stream"
+        return "stream"
     return requested_frame_source_mode
 
 
@@ -229,6 +231,18 @@ def _coerce_bool(value: Any, *, default: bool = False) -> bool:
     if normalized in {"0", "false", "no", "n", "off"}:
         return False
     return default
+
+
+def _coerce_strict_bool(value: Any, *, name: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "y", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "n", "off"}:
+            return False
+    raise TemporalInferenceConfigError(f"{name} must be a boolean.")
 
 
 def _coerce_float(value: Any, *, name: str, default: float | None = None) -> float:
@@ -283,6 +297,19 @@ def build_lx_temporal_options(
     *,
     fps: float,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Normalize caller options for lx-ai-core temporal segmentation.
+
+    `temporal_smoothing_enabled` controls only the rolling score smoothing
+    window passed as `smoothing_window` to lx-ai-core. When the flag is omitted
+    or true, the requested `smoothing_window_seconds` is converted to frames
+    with the current video FPS. When false, the effective window is forced to
+    one frame, which is lx-ai-core's identity window for frame-score smoothing.
+
+    Other temporal models still run normally. In particular, `temporal_model`
+    values such as `markov` can still apply their own temporal awareness before
+    segment extraction; disabling smoothing does not turn temporal inference
+    into a no-op.
+    """
     raw = raw_options or {}
     temporal_model = str(raw.get("temporal_model") or "hysteresis").strip().lower()
     if temporal_model not in SUPPORTED_TEMPORAL_MODELS:
@@ -290,6 +317,14 @@ def build_lx_temporal_options(
         raise TemporalInferenceConfigError(
             f"temporal_model must be one of: {supported}."
         )
+    temporal_smoothing_enabled = (
+        _coerce_strict_bool(
+            raw["temporal_smoothing_enabled"],
+            name="temporal_smoothing_enabled",
+        )
+        if "temporal_smoothing_enabled" in raw
+        else True
+    )
 
     resolved_fps = fps if fps > 0 else DEFAULT_VIDEO_FPS
     min_length_seconds = _coerce_nonnegative_seconds(
@@ -307,6 +342,8 @@ def build_lx_temporal_options(
         name="smoothing_window_seconds",
         default=1.0,
     )
+    if not temporal_smoothing_enabled:
+        smoothing_window_seconds = 0.0
 
     lx_options: dict[str, Any] = {
         "temporal_model": temporal_model,
@@ -398,6 +435,7 @@ def build_lx_temporal_options(
         "min_length_seconds": min_length_seconds,
         "max_gap_seconds": max_gap_seconds,
         "smoothing_window_seconds": smoothing_window_seconds,
+        "temporal_smoothing_enabled": temporal_smoothing_enabled,
         "lx_options": lx_options,
     }
     return lx_options, history_options
@@ -417,15 +455,21 @@ def _run_lx_ai_core_temporal_inference(
     lx_options: Mapping[str, Any],
     request_id: str,
 ):
-    from lx_ai_core import (
-        BackendName,
-        InferenceInput,
-        InferenceRequest,
-        Modality,
-        ModelSpec,
-        TaskKind,
-    )
-    from lx_ai_core.runtime import run_inference
+    try:
+        lx_ai_core = import_module("lx_ai_core")
+        lx_ai_core_runtime = import_module("lx_ai_core.runtime")
+    except ImportError as exc:
+        raise RuntimeError(
+            "lx-ai-core is required for temporal video inference."
+        ) from exc
+
+    BackendName = lx_ai_core.BackendName
+    InferenceInput = lx_ai_core.InferenceInput
+    InferenceRequest = lx_ai_core.InferenceRequest
+    Modality = lx_ai_core.Modality
+    ModelSpec = lx_ai_core.ModelSpec
+    TaskKind = lx_ai_core.TaskKind
+    run_inference = lx_ai_core_runtime.run_inference
 
     metadata = {
         "frame_count": score_result.frame_count,

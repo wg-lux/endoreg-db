@@ -370,7 +370,7 @@ class MockVideoFile:
             self._sensitive_meta.state = mock_state
         return self._sensitive_meta
 
-    def pipe_1(
+    def materialize_prediction_segments(
         self,
         model_name=None,
         model=None,
@@ -384,7 +384,7 @@ class MockVideoFile:
         n_test_frames=MAX_MOCK_VIDEO_FRAMES,
         **kwargs,
     ):
-        """Mock pipe 1 processing with full parameter compatibility."""
+        """Mock temporal prediction segment materialization."""
         self.is_processed = True
         # Update state to match successful processing
         if delete_frames_after:
@@ -402,17 +402,17 @@ class MockVideoFile:
         self.state.text_meta_extracted = True  # OCR metadata extracted
         return True
 
-    def pipe_2(self):
-        """Mock pipe 2 processing."""
+    def anonymize(self, delete_original_raw: bool = True):
+        """Mock video anonymization."""
         # Update state to match successful anonymization
         self.state.mark_anonymized()
         self.state.sensitive_meta_processed = True
+        if delete_original_raw:
+            self.raw_file = ""
         return True
 
-    def test_after_pipe_1(self):
-        """Mock test_after_pipe_1 processing - simulates validation after pipe_1."""
-        # This method simulates human validation or automated testing after pipe_1
-        # For mock objects, we just return True to indicate successful validation
+    def simulate_manual_validation(self):
+        """Mock manual validation after prediction segment materialization."""
         return True
 
     def refresh_from_db(self):
@@ -541,10 +541,10 @@ def mock_ffmpeg():
 def mock_ai_inference():
     """Mock AI inference operations to avoid expensive model loading."""
     with patch(
-        "endoreg_db.models.media.video.video_file.VideoFile.pipe_1"
-    ) as mock_pipe1:
-        mock_pipe1.return_value = True
-        yield mock_pipe1
+        "endoreg_db.services.video_temporal_inference._run_video_temporal_inference"
+    ) as mock_temporal_inference:
+        mock_temporal_inference.return_value = True
+        yield mock_temporal_inference
 
 
 @pytest.fixture

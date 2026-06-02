@@ -193,7 +193,7 @@ def prediction_model_list(request) -> Response:
 @permission_classes([EnvironmentAwarePermission])
 def rerun_prediction_segments(request, pk: int) -> Response:
     """
-    Rerun pipe_1 prediction segment materialization for a single video.
+    Rerun temporal prediction segment materialization for a single video.
 
     Body accepts one of:
     - model_meta_id: existing ModelMeta primary key

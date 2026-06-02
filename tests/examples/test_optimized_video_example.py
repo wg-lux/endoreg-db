@@ -57,7 +57,7 @@ class ExampleOptimizedVideoTest(TestCase, OptimizedVideoTestCase):
         video_file = self.get_mock_video_file()
 
         # Test pipeline without actual processing
-        result = video_file.pipe_1()
+        result = video_file.materialize_prediction_segments()
         self.assertTrue(result)
 
         # Mock video files don't need to verify mock calls since they're self-contained
@@ -67,14 +67,14 @@ class ExampleOptimizedVideoTest(TestCase, OptimizedVideoTestCase):
         """Test batch video processing with performance measurement."""
 
         videos = []
-        for i in range(5):
+        for _ in range(5):
             video = self.get_mock_video_file()
             videos.append(video)
 
         # Process batch
         for video in videos:
-            video.pipe_1()
-            video.pipe_2()
+            video.materialize_prediction_segments()
+            video.anonymize(delete_original_raw=True)
 
         self.assertEqual(len(videos), 5)
 
@@ -108,8 +108,8 @@ class LegacyVideoTestComparison(TestCase, OptimizedVideoTestCase):
         video_file = self.get_mock_video_file()
 
         # Fast: mocked operations
-        video_file.pipe_1()  # Mock AI inference
-        video_file.pipe_2()  # Mock video processing
+        video_file.materialize_prediction_segments()  # Mock temporal prediction
+        video_file.anonymize(delete_original_raw=True)  # Mock video anonymization
 
         # Fast: no actual file cleanup needed
         self.assertTrue(video_file.is_processed)
@@ -130,12 +130,12 @@ class RealVideoProcessingTest(TestCase, OptimizedVideoTestCase):
         # This uses the mock video file for testing (since we're in OptimizedVideoTestCase)
         video_file = self.get_mock_video_file()
 
-        # Mock operations (always available)
-        if hasattr(video_file, "pipe_1"):  # MockVideoFile
-            with PerformanceTimer("mock_pipeline_processing"):
-                result1 = video_file.pipe_1(delete_frames_after=False)
-                result2 = video_file.pipe_2()
-                self.assertTrue(result1)
-                self.assertTrue(result2)
+        with PerformanceTimer("mock_pipeline_processing"):
+            result1 = video_file.materialize_prediction_segments(
+                delete_frames_after=False
+            )
+            result2 = video_file.anonymize(delete_original_raw=True)
+            self.assertTrue(result1)
+            self.assertTrue(result2)
 
         self.assertTrue(hasattr(video_file, "video_meta"))

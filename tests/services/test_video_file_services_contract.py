@@ -24,8 +24,6 @@ from endoreg_db.services.video_files import (
     parse_video_artifact_kind,
     rebuild_processed_video_without_outside_frames,
     resolve_video_stream_source,
-    run_video_pipe_1,
-    run_video_pipe_2,
     video_hash_exists,
 )
 
@@ -179,21 +177,9 @@ def test_video_pipeline_and_anonymization_services_preserve_wrappers(
     from endoreg_db.services.video_files import (
         _anonymization as video_file_anonymize,
     )
-    from endoreg_db.services.video_files import _pipeline_1 as pipe_1
-    from endoreg_db.services.video_files import _pipeline_2 as pipe_2
 
-    pipe_1_calls = []
-    pipe_2_calls = []
     anonymize_calls = []
     rebuild_calls = []
-
-    def fake_pipe_1(video_obj, *args, **kwargs):
-        pipe_1_calls.append((video_obj, args, kwargs))
-        return True
-
-    def fake_pipe_2(video_obj):
-        pipe_2_calls.append(video_obj)
-        return True
 
     def fake_anonymize(video_obj, *, delete_original_raw=True):
         anonymize_calls.append((video_obj, delete_original_raw))
@@ -203,25 +189,12 @@ def test_video_pipeline_and_anonymization_services_preserve_wrappers(
         rebuild_calls.append((video_obj, only_validated, outside_intervals))
         return True
 
-    monkeypatch.setattr(pipe_1, "_pipe_1", fake_pipe_1)
-    monkeypatch.setattr(pipe_2, "_pipe_2", fake_pipe_2)
     monkeypatch.setattr(video_file_anonymize, "_anonymize", fake_anonymize)
     monkeypatch.setattr(
         video_post_validation_blackening,
         "rebuild_processed_video_without_outside_frames",
         fake_rebuild,
     )
-
-    assert run_video_pipe_1(video, ocr_frame_fraction=0.2) is True
-    assert video.pipe_1(ocr_frame_fraction=0.2) is True
-    assert pipe_1_calls == [
-        (video, (), {"ocr_frame_fraction": 0.2}),
-        (video, (), {"ocr_frame_fraction": 0.2}),
-    ]
-
-    assert run_video_pipe_2(video) is True
-    assert video.pipe_2() is True
-    assert pipe_2_calls == [video, video]
 
     assert anonymize_video_file(video, delete_original_raw=False) is False
     assert video.anonymize(delete_original_raw=True) is True
@@ -264,8 +237,6 @@ def test_application_code_uses_video_file_services_for_high_risk_facade_methods(
         ("endoreg_db", "services", "video_files"),
     }
     disallowed_tokens = (
-        ".pipe_1(",
-        ".pipe_2(",
         ".anonymize(",
         ".predict_video(",
         ".extract_text_from_frames(",

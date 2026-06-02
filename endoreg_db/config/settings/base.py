@@ -287,11 +287,9 @@ TEST_LOGGER_NAMES = [
     "patient",
     "default_objects",
     "ffmpeg_wrapper",
-    # Video-pipeline modules
+    # Video processing modules
     "endoreg_db.models.media.video.video_file",
     "endoreg_db.services.video_files._anonymization",
-    "endoreg_db.services.video_files._pipeline_1",
-    "endoreg_db.services.video_files._pipeline_2",
     "endoreg_db.models.metadata.sensitive_meta",
 ]
 

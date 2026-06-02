@@ -624,8 +624,8 @@ def _extract_frames(
     expected zero-based filename set for the known frame count. A non-empty
     frame directory, stale state flag, or range-extracted single frame is treated
     as incomplete and replaced only after a staged extraction verifies the full
-    expected frame set. This protects `pipe_1` from running OCR/prediction on a
-    partial frame set.
+    expected frame set. This protects explicit cache consumers from running OCR
+    or prediction on a partial frame set.
 
     Parameters:
         video (VideoFile): The video object from which frames are to be extracted.

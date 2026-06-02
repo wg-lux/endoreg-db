@@ -1,6 +1,5 @@
 import pytest
 
-from endoreg_db.services.video_files import _pipeline_1 as pipe_1_module
 from endoreg_db.services.video_files import _segments as segments_module
 from endoreg_db.models import (
     AiModel,
@@ -14,7 +13,6 @@ from endoreg_db.models import (
     VideoFile,
     VideoPredictionMeta,
 )
-from tests.helpers.model_weights import ensure_managed_stub_weights
 
 
 @pytest.mark.django_db
@@ -89,136 +87,6 @@ def test_convert_sequences_skips_single_frame_segments():
     assert segment.end_frame_number == 12
     assert segment.source.name == "prediction"
     assert segment.state is not None
-
-
-@pytest.mark.django_db
-def test_pipe_1_fails_when_prediction_ranges_do_not_materialize(monkeypatch):
-    center = Center.objects.create(
-        name="pipe-materialization-center", display_name="Pipe Materialization Center"
-    )
-    video = VideoFile.objects.create(center=center, video_hash="pipe-materialization")
-    state = video.get_or_create_state()
-
-    labelset = LabelSet.objects.create(name="pipe-materialization-set", version=1)
-    ai_model = AiModel.objects.create(name="pipe-materialization-model")
-    model_meta = ModelMeta.objects.create(
-        name="pipe-materialization-meta",
-        version="1",
-        model=ai_model,
-        labelset=labelset,
-    )
-    ensure_managed_stub_weights(
-        model_meta, suffix="pipe_materialization_stub.safetensors"
-    )
-    ai_model.active_meta = model_meta
-    ai_model.save(update_fields=["active_meta"])
-    VideoPredictionMeta.objects.create(model_meta=model_meta, video_file=video)
-
-    def mark_frames_extracted(**_kwargs):
-        state.frames_extracted = True
-        state.save(update_fields=["frames_extracted"])
-
-    monkeypatch.setattr(video, "refresh_from_db", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(video, "update_video_meta", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(video, "extract_frames", mark_frames_extracted)
-    monkeypatch.setattr(video, "update_text_metadata", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(
-        pipe_1_module, "_has_extracted_frame_files", lambda _video: True
-    )
-    monkeypatch.setattr(
-        video,
-        "predict_video",
-        lambda **_kwargs: {"missing-label": [(1, 5)]},
-    )
-
-    result = video.pipe_1(model_name=ai_model.name, delete_frames_after=False)
-
-    assert result is False
-    state.refresh_from_db()
-    assert state.initial_prediction_completed is True
-    assert state.lvs_created is False
-    assert LabelVideoSegment.objects.filter(video_file=video).count() == 0
-
-
-@pytest.mark.django_db
-def test_pipe_1_sets_up_frames_then_streams_when_frame_cache_is_missing(monkeypatch):
-    center = Center.objects.create(
-        name="pipe-stream-center", display_name="Pipe Stream Center"
-    )
-    video = VideoFile.objects.create(center=center, video_hash="pipe-stream")
-    state = video.get_or_create_state()
-    state.frames_extracted = False
-    state.save(update_fields=["frames_extracted"])
-
-    label_type = LabelType.objects.create(name="pipe-stream-video")
-    label = Label.objects.create(name="pipe-stream-label", label_type=label_type)
-    labelset = LabelSet.objects.create(name="pipe-stream-set", version=1)
-    labelset.labels.add(label)
-    ai_model = AiModel.objects.create(name="pipe-stream-model")
-    model_meta = ModelMeta.objects.create(
-        name="pipe-stream-meta",
-        version="1",
-        model=ai_model,
-        labelset=labelset,
-    )
-    ensure_managed_stub_weights(model_meta, suffix="pipe_stream_stub.safetensors")
-    ai_model.active_meta = model_meta
-    ai_model.save(update_fields=["active_meta"])
-
-    predict_kwargs = {}
-    extract_overwrites = []
-    text_metadata_calls = []
-
-    def fake_predict(**kwargs):
-        predict_kwargs.update(kwargs)
-        VideoPredictionMeta.objects.get_or_create(
-            model_meta=kwargs["model_meta"],
-            video_file=video,
-        )
-        return {label.name: [(1, 5)]}
-
-    def fake_extract_frames(**kwargs):
-        extract_overwrites.append(kwargs.get("overwrite"))
-        state.frames_extracted = True
-        state.save(update_fields=["frames_extracted"])
-
-    def fake_update_text_metadata(**kwargs):
-        text_metadata_calls.append(kwargs)
-
-    def fail_delete_frames():
-        raise AssertionError(
-            "delete_frames should not run when delete_frames_after=False"
-        )
-
-    monkeypatch.setattr(video, "refresh_from_db", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(video, "update_video_meta", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(video, "extract_frames", fake_extract_frames)
-    monkeypatch.setattr(video, "update_text_metadata", fake_update_text_metadata)
-    monkeypatch.setattr(video, "delete_frames", fail_delete_frames)
-    monkeypatch.setattr(
-        pipe_1_module, "_has_extracted_frame_files", lambda _video: False
-    )
-    monkeypatch.setattr(video, "predict_video", fake_predict)
-
-    result = video.pipe_1(
-        model_name=ai_model.name,
-        delete_frames_after=False,
-    )
-
-    assert result is True
-    assert extract_overwrites == [False, True]
-    assert len(text_metadata_calls) == 1
-    assert predict_kwargs["frame_source_mode"] == "stream"
-    assert predict_kwargs["frame_source_file_type"] == "raw"
-    state.refresh_from_db()
-    assert state.frames_extracted is True
-    assert state.initial_prediction_completed is True
-    assert state.lvs_created is True
-    assert LabelVideoSegment.objects.filter(
-        video_file=video,
-        label=label,
-        prediction_meta__model_meta=model_meta,
-    ).exists()
 
 
 @pytest.mark.django_db

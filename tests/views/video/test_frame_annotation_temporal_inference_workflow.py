@@ -1,5 +1,6 @@
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.test import TestCase
@@ -22,9 +23,11 @@ from endoreg_db.models import (
 from endoreg_db.services.segment_annotations import (
     ensure_prediction_segment_annotations,
 )
+from endoreg_db.services import video_temporal_inference as temporal_jobs
 from endoreg_db.services.video_temporal_inference import (
     TemporalInferenceDispatchResult,
 )
+from endoreg_db.services.video_files._ai import VideoFrameScoreResult
 from endoreg_db.views.video.ai import (
     FrameAnnotationBulkUpsertView,
     FrameAnnotationRandomTaskView,
@@ -33,17 +36,17 @@ from endoreg_db.views.video.ai import (
 )
 
 
-class FrameAnnotationPipe1WorkflowIntegrationTest(TestCase):
+class FrameAnnotationTemporalInferenceWorkflowIntegrationTest(TestCase):
     def setUp(self):
         self.factory = APIRequestFactory()
         self.random_task_view = FrameAnnotationRandomTaskView.as_view()
         self.bulk_upsert_view = FrameAnnotationBulkUpsertView.as_view()
 
-        self.center = Center.objects.create(name="pipe-1-frame-center")
+        self.center = Center.objects.create(name="temporal-frame-center")
         self.video = VideoFile.objects.create(
             center=self.center,
-            video_hash="pipe-1-frame-video",
-            original_file_name="pipe_1_frame_video.mp4",
+            video_hash="temporal-frame-video",
+            original_file_name="temporal_frame_video.mp4",
             fps=25.0,
             frame_count=30,
         )
@@ -65,17 +68,17 @@ class FrameAnnotationPipe1WorkflowIntegrationTest(TestCase):
             (frame_dir / frame.relative_path).write_bytes(b"frame")
 
         self.manual_source = InformationSource.objects.create(name="manual_annotation")
-        self.predicted_label = Label.objects.create(name="pipe-1-polyp")
-        self.other_label = Label.objects.create(name="pipe-1-outside")
+        self.predicted_label = Label.objects.create(name="temporal-polyp")
+        self.other_label = Label.objects.create(name="temporal-outside")
         self.label_set = LabelSet.objects.create(
-            name="pipe-1-frame-label-group",
+            name="temporal-frame-label-group",
             version=1,
         )
         self.label_set.labels.add(self.predicted_label, self.other_label)
 
-        self.ai_model = AiModel.objects.create(name="pipe-1-frame-model")
+        self.ai_model = AiModel.objects.create(name="temporal-frame-model")
         self.model_meta = ModelMeta.objects.create(
-            name="pipe-1-frame-model-meta",
+            name="temporal-frame-model-meta",
             version="1",
             model=self.ai_model,
             labelset=self.label_set,
@@ -84,68 +87,69 @@ class FrameAnnotationPipe1WorkflowIntegrationTest(TestCase):
         self.ai_model.save(update_fields=["active_meta"])
 
         self.dataset = AIDataSet.objects.create(
-            name="pipe-1-frame-dataset",
+            name="temporal-frame-dataset",
             dataset_type=AIDataSet.DATASET_TYPE_VIDEO,
             ai_model_type=AIDataSet.AI_MODEL_TYPE_VIDEO_SEGMENT_CLASSIFICATION,
         )
 
-    def _mark_frames_extracted(self, video_file, *args, **kwargs):
-        state = video_file.get_or_create_state()
-        state.frames_extracted = True
-        state.frames_initialized = True
-        state.frame_count = len(self.frames)
-        state.save(
-            update_fields=["frames_extracted", "frames_initialized", "frame_count"]
+    def _predict_temporal_frame_scores(self, video_file, *, model_meta, **kwargs):
+        self.assertEqual(video_file, self.video)
+        self.assertEqual(model_meta.pk, self.model_meta.pk)
+        self.assertEqual(kwargs["frame_source_mode"], "stream")
+        return VideoFrameScoreResult(
+            labels=[self.predicted_label.name, self.other_label.name],
+            frame_scores=[
+                [0.95, 0.05],
+                [0.93, 0.05],
+                [0.91, 0.04],
+            ],
+            device="cpu",
+            frame_count=3,
+            frame_numbers=[10, 11, 12],
+            timestamps=[0.4, 0.44, 0.48],
         )
 
-    def _mark_text_metadata_extracted(self, video_file, *args, **kwargs):
-        state = video_file.get_or_create_state()
-        state.text_meta_extracted = True
-        state.save(update_fields=["text_meta_extracted"])
-
-    def _predict_pipe_1_sequences(self, video_file, *, model_meta, **kwargs):
-        VideoPredictionMeta.objects.get_or_create(
-            video_file=video_file,
-            model_meta=model_meta,
-        )
-        return {self.predicted_label.name: [(10, 13)]}
-
-    def _run_pipe_1_without_io(self) -> LabelVideoSegment:
+    def _run_temporal_inference_without_io(self) -> LabelVideoSegment:
         with (
-            patch.object(VideoFile, "update_video_meta", autospec=True),
+            patch.object(temporal_jobs, "update_video_meta", return_value=None),
             patch.object(
-                VideoFile,
-                "extract_frames",
-                autospec=True,
-                side_effect=self._mark_frames_extracted,
-            ),
-            patch.object(
-                VideoFile,
-                "update_text_metadata",
-                autospec=True,
-                side_effect=self._mark_text_metadata_extracted,
-            ),
-            patch.object(
-                VideoFile,
+                temporal_jobs,
                 "predict_video",
-                autospec=True,
-                side_effect=self._predict_pipe_1_sequences,
+                side_effect=self._predict_temporal_frame_scores,
+            ),
+            patch.object(
+                temporal_jobs,
+                "_run_lx_ai_core_temporal_inference",
+                return_value=SimpleNamespace(
+                    temporal_segments=[
+                        SimpleNamespace(
+                            label=self.predicted_label.name,
+                            start_frame=10,
+                            end_frame=13,
+                        )
+                    ],
+                    backend="torch",
+                    device="cpu",
+                    duration_ms=1.0,
+                    provenance={"test": "temporal"},
+                ),
             ),
         ):
-            success = self.video.pipe_1(
-                model_name=self.ai_model.name,
+            success = temporal_jobs._run_video_temporal_inference(
+                self.video.pk,
+                model_meta_id=self.model_meta.pk,
                 delete_frames_after=False,
-                ocr_frame_fraction=0.01,
-                ocr_cap=1,
+                frame_source_mode="stream",
+                test_run=True,
+                n_test_frames=3,
             )
 
         self.assertTrue(success)
         self.video.refresh_from_db()
         state = self.video.get_or_create_state()
-        self.assertTrue(state.frames_extracted)
-        self.assertTrue(state.text_meta_extracted)
         self.assertTrue(state.initial_prediction_completed)
         self.assertTrue(state.lvs_created)
+        self.assertEqual(self.video.sequences, {self.predicted_label.name: [[10, 13]]})
 
         prediction_meta = VideoPredictionMeta.objects.get(
             video_file=self.video,
@@ -166,8 +170,8 @@ class FrameAnnotationPipe1WorkflowIntegrationTest(TestCase):
         self.dataset.video_annotations.add(segment)
         return segment
 
-    def _materialize_pipe_1_prediction_annotations(self) -> LabelVideoSegment:
-        segment = self._run_pipe_1_without_io()
+    def _materialize_temporal_prediction_annotations(self) -> LabelVideoSegment:
+        segment = self._run_temporal_inference_without_io()
 
         stats = ensure_prediction_segment_annotations(
             video_ids=[self.video.pk],
@@ -180,7 +184,7 @@ class FrameAnnotationPipe1WorkflowIntegrationTest(TestCase):
         self.assertEqual(stats["annotations_created"], len(self.frames))
         return segment
 
-    def _load_pipe_1_frame_task(self, *, exclude_annotated: bool = False):
+    def _load_temporal_frame_task(self, *, exclude_annotated: bool = False):
         request = self.factory.get(
             "/api/media/annotations/frames/random-task/",
             {
@@ -203,10 +207,10 @@ class FrameAnnotationPipe1WorkflowIntegrationTest(TestCase):
         ):
             return self.random_task_view(request)
 
-    def test_pipe_1_predictions_feed_frame_annotation_tasks(self):
-        self._materialize_pipe_1_prediction_annotations()
+    def test_temporal_predictions_feed_frame_annotation_tasks(self):
+        self._materialize_temporal_prediction_annotations()
 
-        response = self._load_pipe_1_frame_task()
+        response = self._load_temporal_frame_task()
 
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(response.data["selection_strategy"], "dataset_segments")
@@ -277,6 +281,7 @@ class FrameAnnotationPipe1WorkflowIntegrationTest(TestCase):
             {
                 "model_meta_id": self.model_meta.pk,
                 "temporal_model": "markov",
+                "temporal_smoothing_enabled": False,
                 "delete_frames_after": False,
             },
             format="json",
@@ -309,7 +314,10 @@ class FrameAnnotationPipe1WorkflowIntegrationTest(TestCase):
             delete_frames_after=False,
             ocr_frame_fraction=0.001,
             ocr_cap=10,
-            temporal_options={"temporal_model": "markov"},
+            temporal_options={
+                "temporal_model": "markov",
+                "temporal_smoothing_enabled": False,
+            },
             test_run=False,
             n_test_frames=10,
         )
@@ -408,9 +416,11 @@ class FrameAnnotationPipe1WorkflowIntegrationTest(TestCase):
         self.assertEqual(response.data["reason"], "video_reprocessing_active")
         self.assertEqual(response.data["blocked_by_history_id"], 789)
 
-    def test_manual_frame_annotation_after_pipe_1_excludes_completed_target(self):
-        self._materialize_pipe_1_prediction_annotations()
-        first_response = self._load_pipe_1_frame_task()
+    def test_manual_frame_annotation_after_temporal_prediction_excludes_completed_target(
+        self,
+    ):
+        self._materialize_temporal_prediction_annotations()
+        first_response = self._load_temporal_frame_task()
         self.assertEqual(first_response.status_code, 200, first_response.data)
         first_task = first_response.data["task"]
 
@@ -445,7 +455,7 @@ class FrameAnnotationPipe1WorkflowIntegrationTest(TestCase):
             ).exists()
         )
 
-        next_response = self._load_pipe_1_frame_task(exclude_annotated=True)
+        next_response = self._load_temporal_frame_task(exclude_annotated=True)
 
         self.assertEqual(next_response.status_code, 200, next_response.data)
         next_task = next_response.data["task"]

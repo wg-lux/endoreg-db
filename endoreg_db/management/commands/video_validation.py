@@ -1,9 +1,7 @@
 from typing import TYPE_CHECKING
 from django.core.management.base import BaseCommand
 
-"""
-This command handles the video validation as seen in tests _pipe_1
-"""
+"""Command scaffold for video validation state maintenance."""
 
 if TYPE_CHECKING:
     pass

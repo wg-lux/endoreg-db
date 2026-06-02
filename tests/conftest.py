@@ -516,8 +516,11 @@ def processed_video_file(sample_video_file, base_db_data, cache):
         return cached
 
     from tests.helpers.default_objects import get_latest_segmentation_model
+    from endoreg_db.services.video_temporal_inference import (
+        _run_video_temporal_inference,
+    )
     from tests.media.video.mock_video_anonym_annotation import (
-        mock_video_anonym_annotation,
+        mock_video_manual_validation,
     )
 
     video_file = sample_video_file
@@ -527,14 +530,17 @@ def processed_video_file(sample_video_file, base_db_data, cache):
         # Get AI model - ensure model metadata exists
         ai_model_meta = get_latest_segmentation_model()
 
-        # Run Pipe 1 (frame extraction + AI inference)
-        video_file.pipe_1(model=ai_model_meta, delete_frames_after=False)
+        _run_video_temporal_inference(
+            video_file.pk,
+            model_meta_id=ai_model_meta.pk,
+            delete_frames_after=False,
+            frame_source_mode="stream",
+        )
 
         # Mock validation
-        mock_video_anonym_annotation(video_file)
+        mock_video_manual_validation(video_file)
 
-        # Run Pipe 2 (video anonymization)
-        video_file.pipe_2()
+        video_file.anonymize(delete_original_raw=True)
 
         video_cache.set("processed", video_file)
         return video_file

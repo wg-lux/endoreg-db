@@ -87,17 +87,17 @@ def _frame_score_result_from_merged_predictions(
 
 
 def _resolve_frame_source_mode(
-    frame_source_mode: str,
+    frame_source_mode: str | None,
     *,
     frames_extracted: bool,
 ) -> FrameSourceMode:
-    normalized = str(frame_source_mode or "cache").strip().lower()
+    normalized = str(frame_source_mode or "stream").strip().lower()
     if normalized not in {"cache", "stream", "auto"}:
         raise ValueError(
             "frame_source_mode must be one of: 'cache', 'stream', or 'auto'."
         )
     if normalized == "auto":
-        return "cache" if frames_extracted else "stream"
+        return "stream"
     return cast(FrameSourceMode, normalized)
 
 
@@ -460,15 +460,15 @@ def _predict_video_pipeline(
     test_run: bool = False,
     n_test_frames: int = 10,
     return_frame_scores: bool = False,
-    frame_source_mode: FrameSourceMode = "cache",
+    frame_source_mode: FrameSourceMode = "stream",
     frame_source_file_type: str = "raw",
 ) -> Dict[str, List[Tuple[int, int]]] | VideoFrameScoreResult:
     """
     Executes the video prediction pipeline using an AI model.
-    Requires frames to be extracted. Raises exceptions on failure.
+    Streams frames by default. Explicit cache mode requires extracted frames.
 
     State Transitions:
-        - Pre-condition: Requires state.frames_extracted=True.
+        - Pre-condition: cache mode requires state.frames_extracted=True.
         - Post-condition: No state changes directly. (Calling pipeline sets flags).
     """
     # Import heavy dependencies locally

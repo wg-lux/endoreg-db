@@ -15,7 +15,7 @@ from endoreg_db.services.video_files._io import _get_temp_anonymized_frame_dir
 
 
 @pytest.mark.django_db
-def test_pipe_1_frame_deletion_keeps_db_frames_and_clears_extracted_flags(
+def test_prediction_frame_deletion_keeps_db_frames_and_clears_extracted_flags(
     tmp_path,
 ):
     """
@@ -27,8 +27,8 @@ def test_pipe_1_frame_deletion_keeps_db_frames_and_clears_extracted_flags(
     - VideoState reflects deletion side effect (frames_extracted=False) while
       keeping initialization metadata (frames_initialized=True, frame_count unchanged).
 
-    This validates the same `video.delete_frames()` behavior used in `pipe_1`
-    when `delete_frames_after=True`.
+    This validates the `video.delete_frames()` cleanup behavior used by
+    explicit cache consumers when `delete_frames_after=True`.
     """
     center = Center.objects.create(
         name=f"frame-contract-center-{uuid.uuid4().hex[:8]}",
@@ -79,7 +79,7 @@ def test_pipe_1_frame_deletion_keeps_db_frames_and_clears_extracted_flags(
     video = VideoFile.objects.create(
         center=center,
         processor=processor,
-        video_hash=f"pipe1-frame-contract-{uuid.uuid4().hex}",
+        video_hash=f"prediction-frame-contract-{uuid.uuid4().hex}",
         frame_count=expected_final_frame_count,
         frame_dir=str(frame_dir),
     )
@@ -97,7 +97,7 @@ def test_pipe_1_frame_deletion_keeps_db_frames_and_clears_extracted_flags(
     state.frames_extracted = True
     state.save(update_fields=["frames_extracted"])
 
-    # Pipeline deletion step (same method called in pipe_1 finally block).
+    # Cleanup step used after cache-backed derived frame processing.
     video.delete_frames()
 
     total_frames_after_pipeline = Frame.objects.filter(video=video).count()

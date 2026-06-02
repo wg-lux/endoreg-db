@@ -68,6 +68,33 @@ def test_build_lx_temporal_options_defaults_convert_seconds_to_frames():
     assert lx_options["smoothing_window"] == 25
     assert lx_options["include_score_vectors"] is False
     assert history_options["fps"] == 25.0
+    assert history_options["smoothing_window_seconds"] == 1.0
+    assert history_options["temporal_smoothing_enabled"] is True
+
+
+def test_build_lx_temporal_options_can_disable_temporal_smoothing():
+    lx_options, history_options = jobs.build_lx_temporal_options(
+        {
+            "temporal_smoothing_enabled": False,
+            "smoothing_window_seconds": 3.0,
+        },
+        fps=25.0,
+    )
+
+    assert lx_options["smoothing_window"] == 1
+    assert history_options["smoothing_window_seconds"] == 0.0
+    assert history_options["temporal_smoothing_enabled"] is False
+
+
+def test_build_lx_temporal_options_rejects_invalid_smoothing_enabled_value():
+    with pytest.raises(
+        jobs.TemporalInferenceConfigError,
+        match="temporal_smoothing_enabled must be a boolean",
+    ):
+        jobs.build_lx_temporal_options(
+            {"temporal_smoothing_enabled": "sometimes"},
+            fps=25.0,
+        )
 
 
 def test_build_lx_temporal_options_accepts_label_keyed_thresholds():
@@ -723,7 +750,7 @@ def test_run_video_temporal_inference_stream_failure_does_not_create_frame_cache
 
 
 @pytest.mark.django_db
-def test_run_video_temporal_inference_auto_uses_cache_when_frame_cache_exists(
+def test_run_video_temporal_inference_explicit_cache_uses_frame_cache(
     monkeypatch,
     tmp_path,
 ):
@@ -733,7 +760,7 @@ def test_run_video_temporal_inference_auto_uses_cache_when_frame_cache_exists(
         video=video,
         operation=VideoProcessingHistory.OPERATION_AI_TEMPORAL_INFERENCE,
         status=VideoProcessingHistory.STATUS_PENDING,
-        config={"kind": jobs.TEMPORAL_INFERENCE_KIND, "frame_source_mode": "auto"},
+        config={"kind": jobs.TEMPORAL_INFERENCE_KIND, "frame_source_mode": "cache"},
     )
     calls: list[str] = []
 
@@ -777,18 +804,18 @@ def test_run_video_temporal_inference_auto_uses_cache_when_frame_cache_exists(
         model_meta_id=model_meta.pk,
         history_id=history.pk,
         delete_frames_after=False,
-        frame_source_mode="auto",
+        frame_source_mode="cache",
     )
 
     assert calls == ["extract_frames", "update_text_metadata"]
     history.refresh_from_db()
-    assert history.config["requested_frame_source_mode"] == "auto"
+    assert history.config["requested_frame_source_mode"] == "cache"
     assert history.config["resolved_frame_source_mode"] == "cache"
     assert history.config["result"]["resolved_frame_source_mode"] == "cache"
 
 
 @pytest.mark.django_db
-def test_run_video_temporal_inference_auto_uses_stream_without_frame_cache(
+def test_run_video_temporal_inference_auto_uses_stream_even_when_frame_cache_exists(
     monkeypatch,
     tmp_path,
 ):
@@ -816,7 +843,7 @@ def test_run_video_temporal_inference_auto_uses_stream_without_frame_cache(
             AssertionError("auto stream mode must not require frame OCR")
         ),
     )
-    monkeypatch.setattr(jobs, "_has_extracted_frame_files", lambda video_obj: False)
+    monkeypatch.setattr(jobs, "_has_extracted_frame_files", lambda video_obj: True)
 
     def _fake_predict_video(self, **kwargs):
         assert kwargs["frame_source_mode"] == "stream"
