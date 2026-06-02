@@ -41,7 +41,7 @@
   "typeCheckingMode": "basic",
   "useLibraryCodeForTypes": true,
   "analyzeUnannotatedFunctions": true,
-  "reportMissingImports": "warning",
+  "reportMissingImports": "error",
   "reportMissingTypeStubs": "none",
   "reportAttributeAccessIssue": "information",
   "reportArgumentType": "information",
