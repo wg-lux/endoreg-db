@@ -21,6 +21,7 @@ output should stay out of version control.
 - `docs/annotation_export_guide.md`: exporting annotations and training images
 - `docs/annotation_source_scope_training.md`: annotation source scope for multilabel training
 - `docs/video_frame_extraction_contract.md`: frame extraction behavior and guarantees
+- `docs/video_temporal_inference.md`: temporal prediction options and smoothing behavior
 - `docs/wiki/frame_annotation_current_support.md`: frame annotation API and frontend status
 
 ## API And Deployment

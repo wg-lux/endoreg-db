@@ -12,9 +12,9 @@ The key invariant is:
 > presence of any frame file, or a stale `Frame.is_extracted=True` flag, is not
 > enough.
 
-This matters because `pipe_1` depends on a complete, stable frame set before OCR,
-prediction, and segment creation. A single on-demand frame in the frame directory
-must not cause `pipe_1` to skip full extraction.
+This matters because explicit cache-mode consumers depend on a complete, stable
+frame set before OCR, prediction, or export work. A single on-demand frame in
+the frame directory must not cause full extraction to be skipped.
 
 ## Stable Frame Path Contract
 
@@ -70,19 +70,20 @@ range is not a complete video extraction.
 
 | Trigger | Entry point | Extraction mode | Source video | Expected behavior |
 | --- | --- | --- | --- | --- |
-| `pipe_1` initial processing | `endoreg_db.services.video_files.run_video_pipe_1(video)` -> `extract_video_frames(video, overwrite=False)` | Full | Raw | Reuse only a complete frame set. Partial/on-demand files force full re-extraction. |
+| Explicit cache prediction | `endoreg_db.services.video_temporal_inference._run_video_temporal_inference(..., frame_source_mode="cache")` -> `extract_video_frames(video, overwrite=False)` | Full | Raw | Reuse only a complete frame set. Partial/on-demand files force full re-extraction. |
 | Frame stream request | `endoreg_db.services.video_files.extract_video_frame_range(video, start_frame=frame, end_frame=frame + 1)` | Range | Raw | Recreate the requested stable frame file if missing. Never fall back to full extraction on the request path. |
 | Outside-frame video rebuild | `endoreg_db.services.video_files.rebuild_processed_video_without_outside_frames(video)` | Full | Processed | Force processed-video extraction with `overwrite=True`, censor outside frames, then reassemble. Extracted frames remain available afterward. |
 | Post-validation rebuild job | `endoreg_db/services/jobs/video_post_validation_jobs.py` -> `rebuild_processed_video_without_outside_frames(video)` | Full | Processed | After rebuild, verify exact stable frame rows and files are still present. Fail if frames cannot be fetched/recreated by stable DB paths. |
 | Segment CRUD post-processing | `endoreg_db/views/video/segments_crud.py` -> `dispatch_video_post_validation_rebuild(...)` | Job dispatch | Processed via job | Trigger post-validation rebuild after outside-segment changes. |
 | Legacy compatibility wrappers | `VideoFile.extract_frames(...)`, `VideoFile.extract_specific_frame_range(...)`, `VideoFile.create_video_without_outside_frames(...)` | Full or range | Raw/processed depending on arguments | Preserved for existing callers; new code should use `endoreg_db.services.video_files`. |
 
-## Pipe 1 Failure Mode This Prevents
+## Cache Prediction Failure Mode This Prevents
 
 Before the completeness check, full extraction could skip when any file existed
 in the frame directory. A frame stream request could create one file such as
-`frame_0000007.jpg`; later `pipe_1` would see a non-empty frame directory and
-skip ffmpeg, leaving OCR and prediction with an incomplete frame set.
+`frame_0000007.jpg`; later explicit cache prediction could see a non-empty frame
+directory and skip ffmpeg, leaving OCR and prediction with an incomplete frame
+set.
 
 The current rule prevents that:
 
@@ -90,8 +91,8 @@ The current rule prevents that:
 - A stale `frames_extracted=True` state does not satisfy the file completeness
   check.
 - Partial state is cleared before the full extraction attempt.
-- `pipe_1` only proceeds after `state.frames_extracted` is true for the complete
-  extraction.
+- Explicit cache prediction only proceeds after the extracted files satisfy the
+  complete frame-set contract.
 
 ## Post-Validation Frame Availability
 
@@ -119,14 +120,11 @@ stable DB paths.
   `endoreg_db/services/video_files/_frames/_manage_frame_range.py`
 - Service entrypoints:
   `endoreg_db/services/video_files/frames.py`,
-  `endoreg_db/services/video_files/pipeline.py`,
   `endoreg_db/services/video_files/anonymization.py`
 - ffmpeg command builder:
   `endoreg_db/utils/video/ffmpeg_wrapper.py`
 - Frame streaming view:
   `endoreg_db/views/media/frame_media.py`
-- `pipe_1` implementation:
-  `endoreg_db/services/video_files/_pipeline_1.py`
 - Post-validation rebuild:
   `endoreg_db/services/jobs/video_post_validation_jobs.py`
 - Outside-frame rebuild:
