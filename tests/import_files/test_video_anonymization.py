@@ -29,6 +29,40 @@ def _valid_stream_info(*, width: int = 640, height: int = 480) -> dict:
     }
 
 
+def _create_processor_with_roi(
+    name: str,
+    center: Center | None = None,
+) -> EndoscopyProcessor:
+    processor = EndoscopyProcessor.objects.create(
+        name=name,
+        image_width=1920,
+        image_height=1080,
+        endoscope_image_x=550,
+        endoscope_image_y=0,
+        endoscope_image_width=1350,
+        endoscope_image_height=1080,
+        examination_date_x=100,
+        examination_date_y=10,
+        examination_date_width=200,
+        examination_date_height=40,
+        patient_first_name_x=100,
+        patient_first_name_y=60,
+        patient_first_name_width=200,
+        patient_first_name_height=40,
+        patient_last_name_x=320,
+        patient_last_name_y=60,
+        patient_last_name_width=240,
+        patient_last_name_height=40,
+        patient_dob_x=100,
+        patient_dob_y=110,
+        patient_dob_width=160,
+        patient_dob_height=40,
+    )
+    if center is not None:
+        processor.centers.add(center)
+    return processor
+
+
 @pytest.mark.unit
 def test_ensure_ffmpeg_tools_on_path_prepends_resolved_tool_dir(monkeypatch, tmp_path):
     tool_dir = tmp_path / "ffmpeg-bin"
@@ -75,7 +109,7 @@ def test_ensure_ffmpeg_tools_on_path_errors_when_tools_missing(monkeypatch):
 
 
 @pytest.mark.django_db
-def test_get_processor_roi_info_returns_none_without_processor_name():
+def test_get_processor_roi_info_errors_without_processor_name():
     center = Center.objects.create(
         name="roi-none-center",
         display_name="ROI None Center",
@@ -84,14 +118,12 @@ def test_get_processor_roi_info_returns_none_without_processor_name():
     ctx = SimpleNamespace(current_video=video, processor_name="")
     anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
 
-    endoscope_roi, sensitive_rois = anonymizer._get_processor_roi_info(ctx)
-
-    assert endoscope_roi is None
-    assert sensitive_rois is None
+    with pytest.raises(RuntimeError, match="requires a processor_name"):
+        anonymizer._get_processor_roi_info(ctx)
 
 
 @pytest.mark.django_db
-def test_get_processor_roi_info_returns_none_for_unknown_processor():
+def test_get_processor_roi_info_errors_for_unknown_processor():
     center = Center.objects.create(
         name="roi-unknown-center",
         display_name="ROI Unknown Center",
@@ -100,10 +132,27 @@ def test_get_processor_roi_info_returns_none_for_unknown_processor():
     ctx = SimpleNamespace(current_video=video, processor_name="unknown_processor")
     anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
 
-    endoscope_roi, sensitive_rois = anonymizer._get_processor_roi_info(ctx)
+    with pytest.raises(RuntimeError, match="unknown_processor"):
+        anonymizer._get_processor_roi_info(ctx)
 
-    assert endoscope_roi is None
-    assert sensitive_rois is None
+
+@pytest.mark.django_db
+def test_get_processor_roi_info_errors_for_invalid_endoscope_roi():
+    center = Center.objects.create(
+        name="roi-invalid-center",
+        display_name="ROI Invalid Center",
+    )
+    video = VideoFile.objects.create(center=center, video_hash="roi-invalid-hash")
+    processor = EndoscopyProcessor.objects.create(name="roi_invalid_processor")
+    processor.centers.add(center)
+    ctx = SimpleNamespace(
+        current_video=video,
+        processor_name="roi_invalid_processor",
+    )
+    anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
+
+    with pytest.raises(RuntimeError, match="invalid endoscope image ROI"):
+        anonymizer._get_processor_roi_info(ctx)
 
 
 @pytest.mark.django_db
@@ -162,6 +211,7 @@ def test_get_processor_roi_info_returns_canonical_mask_roi_with_source_dimension
         "width": 200,
         "height": 40,
     }
+    assert "examination_time" not in sensitive_rois
 
 
 def _phi_observation(frame_number: int = 5) -> dict:
@@ -343,6 +393,7 @@ def test_anonymize_video_persists_phi_region_proposals_from_frame_cleaner(
         display_name="PHI Anonymize Video Center",
     )
     video = VideoFile.objects.create(center=center, video_hash="phi-video-anonymize")
+    processor = _create_processor_with_roi("phi_anonymize_video_processor", center)
     video.ensure_local_raw_file = lambda: nullcontext(source_video)
     Frame.objects.create(
         video=video,
@@ -387,7 +438,7 @@ def test_anonymize_video_persists_phi_region_proposals_from_frame_cleaner(
         file_path=source_video,
         sensitive_path=None,
         anonymized_path=None,
-        processor_name="",
+        processor_name=processor.name,
     )
     anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
 
@@ -405,6 +456,7 @@ def test_anonymize_video_uses_local_source_path_override(monkeypatch, tmp_path):
         display_name="Local Source Path Center",
     )
     video = VideoFile.objects.create(center=center, video_hash="local-source-video")
+    processor = _create_processor_with_roi("local_source_video_processor", center)
     video.ensure_local_raw_file = lambda: (_ for _ in ()).throw(
         AssertionError("local_source_path should avoid rematerializing raw video")
     )
@@ -455,7 +507,7 @@ def test_anonymize_video_uses_local_source_path_override(monkeypatch, tmp_path):
         validated_raw_source_stream={"width": 640, "height": 480},
         sensitive_path=None,
         anonymized_path=None,
-        processor_name="",
+        processor_name=processor.name,
     )
     anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
 

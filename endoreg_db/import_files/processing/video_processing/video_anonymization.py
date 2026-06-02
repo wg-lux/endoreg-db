@@ -11,6 +11,14 @@ logger = logging.getLogger(__name__)
 PHI_REGION_LABEL_NAME = "phi_region"
 PHI_REGION_INFORMATION_SOURCE_NAME = "lx_anonymizer_phi_detector"
 PHI_REGION_ANNOTATOR = "system:lx_anonymizer"
+ENDOSCOPE_IMAGE_ROI_REQUIRED_KEYS = ("x", "y", "width", "height")
+ENDOSCOPE_IMAGE_ROI_POSITIVE_KEYS = (
+    "width",
+    "height",
+    "image_width",
+    "image_height",
+)
+ENDOSCOPE_IMAGE_ROI_NON_NEGATIVE_KEYS = ("x", "y")
 
 
 def _temp_media_path(final_path: Path, marker: str = "part") -> Path:
@@ -99,6 +107,65 @@ def _positive_int(value: object) -> int | None:
     except (TypeError, ValueError):
         return None
     return parsed if parsed > 0 else None
+
+
+def _require_endoscope_image_roi(
+    roi: dict[str, int | None] | None,
+    *,
+    processor_name: str,
+) -> dict[str, int]:
+    if roi is None:
+        raise RuntimeError(
+            f"Endoscopy processor {processor_name!r} has no endoscope image ROI configured."
+        )
+
+    missing_keys = [key for key in ENDOSCOPE_IMAGE_ROI_REQUIRED_KEYS if key not in roi]
+    invalid_value_keys: list[str] = []
+    complete_roi: dict[str, int] = {}
+    for key, value in roi.items():
+        if isinstance(value, bool) or not isinstance(value, int):
+            invalid_value_keys.append(key)
+            continue
+        complete_roi[key] = value
+
+    invalid_positive_keys = [
+        key
+        for key in ENDOSCOPE_IMAGE_ROI_POSITIVE_KEYS
+        if key in complete_roi and complete_roi[key] <= 0
+    ]
+    invalid_non_negative_keys = [
+        key
+        for key in ENDOSCOPE_IMAGE_ROI_NON_NEGATIVE_KEYS
+        if key in complete_roi and complete_roi[key] < 0
+    ]
+
+    if (
+        missing_keys
+        or invalid_value_keys
+        or invalid_positive_keys
+        or invalid_non_negative_keys
+    ):
+        details = []
+        if missing_keys:
+            details.append(f"missing keys: {', '.join(missing_keys)}")
+        if invalid_value_keys:
+            details.append(
+                f"non-integer or null values: {', '.join(invalid_value_keys)}"
+            )
+        if invalid_positive_keys:
+            details.append(
+                f"non-positive dimensions: {', '.join(invalid_positive_keys)}"
+            )
+        if invalid_non_negative_keys:
+            details.append(
+                f"negative coordinates: {', '.join(invalid_non_negative_keys)}"
+            )
+        raise RuntimeError(
+            f"Endoscopy processor {processor_name!r} has invalid endoscope image ROI "
+            f"({'; '.join(details)})."
+        )
+
+    return complete_roi
 
 
 def _first_video_stream(stream_info: object) -> dict[str, Any] | None:
@@ -631,37 +698,37 @@ class VideoAnonymizer:
     def _get_processor_roi_info(
         self,
         ctx: ImportContext,
-    ) -> tuple[
-        dict[str, int | None] | None, dict[str, dict[str, int | None] | None] | None
-    ]:
+    ) -> tuple[dict[str, int], dict[str, dict[str, int | None]]]:
         """Get processor ROI information for masking and data extraction."""
-        endoscope_data_roi_nested = None
-        endoscope_image_roi = None
-
         video = ctx.current_video
         assert isinstance(video, VideoFile)
 
+        processor_name = str(getattr(ctx, "processor_name", "") or "").strip()
+        if not processor_name:
+            raise RuntimeError(
+                f"Video {video.video_hash} requires a processor_name for anonymization ROI masking."
+            )
+
         try:
-            processor_name = ctx.processor_name if ctx.processor_name else None
-            if processor_name:
-                pr = EndoscopyProcessor()
-                processor = pr.get_by_name(processor_name)
-                assert isinstance(processor, EndoscopyProcessor), (
-                    "Processor is not of type EndoscopyProcessor"
-                )
-                endoscope_image_roi = processor.get_roi_endoscope_image()
-                endoscope_data_roi_nested = processor.get_sensitive_rois()
-                logger.info(
-                    "Retrieved processor ROI information: endoscope_image_roi=%s",
-                    endoscope_image_roi,
-                )
-            else:
-                logger.warning(
-                    "No processor found for video %s, proceeding without ROI masking",
-                    video.video_hash,
-                )
-        except Exception as exc:
-            logger.error("Failed to retrieve processor ROI information: %s", exc)
+            processor = EndoscopyProcessor.get_by_name(processor_name)
+        except EndoscopyProcessor.DoesNotExist as exc:
+            raise RuntimeError(
+                f"Endoscopy processor {processor_name!r} not found for video {video.video_hash}."
+            ) from exc
+
+        endoscope_image_roi = _require_endoscope_image_roi(
+            processor.get_roi_endoscope_image(),
+            processor_name=processor_name,
+        )
+        endoscope_data_roi_nested = {
+            name: roi
+            for name, roi in processor.get_sensitive_rois().items()
+            if roi is not None
+        }
+        logger.info(
+            "Retrieved processor ROI information: endoscope_image_roi=%s",
+            endoscope_image_roi,
+        )
 
         # IMPORTANT: return order must match clean_video signature
         return endoscope_image_roi, endoscope_data_roi_nested
