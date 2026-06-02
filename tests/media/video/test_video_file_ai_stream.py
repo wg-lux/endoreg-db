@@ -6,8 +6,8 @@ import pytest
 from django.core.files.base import ContentFile
 
 from endoreg_db.models import AiModel, Center, Label, LabelSet, ModelMeta, VideoFile
-from endoreg_db.models.media.video import video_file_ai
-from endoreg_db.models.media.video.video_file_ai import VideoFrameScoreResult
+from endoreg_db.services.video_files import _ai as video_file_ai
+from endoreg_db.services.video_files._ai import VideoFrameScoreResult
 
 
 class FakeModel:

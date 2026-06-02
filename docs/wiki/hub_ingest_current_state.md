@@ -151,6 +151,15 @@ Current behavior:
 
 - scans configured local drop folders for reports, videos, and preanonymized
   media
+- treats `.tmp`, `.part`, `.partial`, `.crdownload`, and `.download` names as
+  in-progress handoff files that must not be ingested
+- requires producers that bypass the lx-annotate watcher to write a temporary
+  handoff file, flush and fsync it, close it, and atomically rename to the final
+  watched name such as `.mp4`; Python producers can use
+  `atomic_handoff_file(...)` from `endoreg_db.utils.filesystem.file_operations`
+- performs a service-layer settle check before hashing and before persisting a
+  watcher `UploadJob`, so a changing file is retried/deferred instead of
+  captured mid-write
 - resolves the default center when no center is explicitly passed
 - creates or reuses an `UploadJob`
 - uses content hash plus file metadata for watcher idempotency
@@ -163,8 +172,9 @@ without re-running the full anonymization pipeline.
 
 Relevant files:
 
-- `endoreg_db/services/file_watcher.py`
+- `/home/admin/dev/lx-annotate/lx_annotate/file_watcher.py`
 - `endoreg_db/services/hub/ingest.py`
+- `endoreg_db/services/hub/watcher_handoff.py`
 
 ### 2. Upload API
 

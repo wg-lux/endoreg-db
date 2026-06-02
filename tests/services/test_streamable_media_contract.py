@@ -84,8 +84,8 @@ class StubFieldFile:
 
 class StubVideo:
     class StorageMode:
-        APP_ENCRYPTED = "app_encrypted"
-        FS_ENCRYPTED_STREAMABLE = "fs_encrypted_streamable"
+        ENCRYPTED = "app_encrypted"
+        STREAMABLE = "fs_encrypted_streamable"
 
     def __init__(self, *, raw_file, processed_file):
         self.pk = 123
@@ -95,7 +95,7 @@ class StubVideo:
         self.processed_file = processed_file
         self.raw_streamable_relative_path = ""
         self.processed_streamable_relative_path = ""
-        self.storage_mode = self.StorageMode.APP_ENCRYPTED
+        self.storage_mode = self.StorageMode.ENCRYPTED
 
     def save(self, update_fields):
         self.saved_update_fields = update_fields
@@ -154,7 +154,7 @@ def test_sync_video_streamable_artifacts_materializes_plaintext_from_encrypted_s
     ]
 
     # ✅ Storage mode switched
-    assert video.storage_mode == video.StorageMode.FS_ENCRYPTED_STREAMABLE
+    assert video.storage_mode == video.StorageMode.STREAMABLE
 
     # ✅ Resolve absolute paths via STORAGE_DIR (correct contract!)
     raw_target = paths_module.STORAGE_DIR / video.raw_streamable_relative_path
@@ -192,7 +192,7 @@ def test_sync_video_streamable_artifacts_clears_paths_when_not_streamable(
 
     assert video.raw_streamable_relative_path == ""
     assert video.processed_streamable_relative_path == ""
-    assert video.storage_mode == video.StorageMode.APP_ENCRYPTED
+    assert video.storage_mode == video.StorageMode.ENCRYPTED
 
 
 def test_sync_video_streamable_artifacts_is_idempotent(

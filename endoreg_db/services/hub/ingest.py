@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os
 import uuid
 import json
 import logging
@@ -47,6 +48,11 @@ from endoreg_db.services.hub.deployment import (
 from endoreg_db.services.hub.media_integrity import (
     MediaIntegrityResult,
     check_upload_job_media_integrity,
+)
+from endoreg_db.services.hub.watcher_handoff import (
+    WatcherFileNotReadyError,
+    assert_watcher_file_unchanged as _assert_watcher_file_unchanged,
+    wait_for_watcher_file_ready as _wait_for_watcher_file_ready,
 )
 from endoreg_db.services.hub.payloads import PreanonymizedIngestPayload
 from endoreg_db.services.hub.payloads import LocalStudyServerPreanonymizedIngestPayload
@@ -943,9 +949,26 @@ def create_or_reuse_watcher_upload_job(
     storage_tier: str = UploadJob.StorageTier.UPLOAD_WATCHER,
     retention_policy: str = UploadJob.RetentionPolicy.DELETE_AFTER_SUCCESS,
     processing_provenance: UploadProvenance | None = None,
+    settled_stat: os.stat_result | None = None,
 ) -> tuple[UploadJob, bool]:
+    file_path = Path(file_path)
+    entrypoint_settled_stat = settled_stat
+    settled_stat = _wait_for_watcher_file_ready(file_path)
+    if entrypoint_settled_stat is not None:
+        _assert_watcher_file_unchanged(
+            file_path=file_path,
+            expected_stat=entrypoint_settled_stat,
+            current_stat=settled_stat,
+            stage="pre_hash_recheck",
+        )
     file_hash = sha256_file(file_path)
     stat_result = file_path.stat()
+    _assert_watcher_file_unchanged(
+        file_path=file_path,
+        expected_stat=settled_stat,
+        current_stat=stat_result,
+        stage="post_hash",
+    )
     idempotency_key = (
         f"watcher:{file_hash}:{int(stat_result.st_mtime_ns)}:{stat_result.st_size}"
     )
@@ -1856,6 +1879,7 @@ def process_watcher_file(
     else:
         raise ValueError(f"Unsupported watcher file type: {file_type}")
 
+    settled_stat = _wait_for_watcher_file_ready(watched_path)
     upload_job, created = create_or_reuse_watcher_upload_job(
         file_path=watched_path,
         content_type=content_type,
@@ -1867,6 +1891,7 @@ def process_watcher_file(
             "file_type": normalized_type,
             "prediction_model_name": prediction_model_name,
         },
+        settled_stat=settled_stat,
     )
     if not created:
         safe_unlink_file(watched_path, missing_ok=True)
@@ -1968,6 +1993,7 @@ def process_preanonymized_watcher_file(
     watched_path = Path(file_path)
     if not watched_path.exists():
         raise FileNotFoundError(f"Watcher file not found: {watched_path}")
+    settled_stat = _wait_for_watcher_file_ready(watched_path)
 
     _opportunistic_reap_watcher_sources()
 
@@ -2000,6 +2026,12 @@ def process_preanonymized_watcher_file(
             assert metadata_payload is not None
             declared_hash = (metadata_payload.file_sha256 or "").strip().lower()
             actual_hash = sha256_file(watched_path)
+            _assert_watcher_file_unchanged(
+                file_path=watched_path,
+                expected_stat=settled_stat,
+                current_stat=watched_path.stat(),
+                stage="preanonymized_sidecar_hash",
+            )
             if declared_hash != actual_hash:
                 raise ValueError(
                     "Preanonymized sidecar file_sha256 does not match media file"
@@ -2035,6 +2067,8 @@ def process_preanonymized_watcher_file(
                 raise ObjectDoesNotExist(
                     "No center is configured for watcher ingestion"
                 )
+    except WatcherFileNotReadyError:
+        raise
     except Exception as exc:
         if strict_local:
             _quarantine_preanonymized_drop(
@@ -2070,6 +2104,7 @@ def process_preanonymized_watcher_file(
         source_system=source_system,
         storage_tier=UploadJob.StorageTier.UPLOAD_PREANONYMIZED,
         retention_policy=UploadJob.RetentionPolicy.DELETE_AFTER_SUCCESS,
+        settled_stat=settled_stat,
         processing_provenance={
             "file_type": normalized_type,
             "ingest_variant": "preanonymized",

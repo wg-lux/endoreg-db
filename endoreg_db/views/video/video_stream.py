@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import logging
 import mimetypes
+from collections.abc import Iterable
 from pathlib import Path
 
-from django.http import Http404, HttpResponse
+from django.http import Http404, HttpResponse, HttpResponseBase
 from rest_framework.views import APIView
 
 from endoreg_db.authz.permissions import PolicyPermission
@@ -151,6 +152,14 @@ def _field_file_for_stream(video: VideoFile, artifact_kind: VideoArtifactKind):
         return None
 
 
+def _add_cors_headers_if_configured(
+    response: HttpResponseBase, frontend_origin: str | None
+) -> HttpResponseBase:
+    if frontend_origin is None:
+        return response
+    return add_cors_headers(response, frontend_origin)
+
+
 class VideoStreamView(APIView):
     permission_classes = [EnvironmentAwarePermission, PolicyPermission]
 
@@ -188,7 +197,6 @@ class VideoStreamView(APIView):
         file_type = artifact_kind.value
         frontend_origin = resolve_response_origin(request)
         range_header = request.headers.get("Range") or request.META.get("HTTP_RANGE")
-
         stream_state = None
         stream_relative_path = get_video_stream_relative_path(video, artifact_kind)
         if _video_uses_streamable_mode(video):
@@ -258,16 +266,23 @@ class VideoStreamView(APIView):
                     exc,
                 )
                 raise Http404("Video file is not available") from exc
+        if field_file is None and local_path is None:
+            raise Http404("Video file is not available")
+        field_file_name = (
+            getattr(field_file, "name", None) if field_file is not None else None
+        )
+        if local_path is None and not field_file_name:
+            raise Http404("Video file is not available")
 
         filename = (
-            local_path.name if local_path is not None else Path(field_file.name).name
+            local_path.name
+            if local_path is not None
+            else Path(str(field_file_name)).name
         )
-        content_type = (
-            mimetypes.guess_type(
-                str(local_path if local_path is not None else field_file.name)
-            )[0]
-            or "video/mp4"
+        content_type_source = (
+            str(local_path) if local_path is not None else str(field_file_name)
         )
+        content_type = mimetypes.guess_type(content_type_source)[0] or "video/mp4"
 
         if (
             file_type == "raw"
@@ -281,7 +296,7 @@ class VideoStreamView(APIView):
             )
             response = HttpResponse(status=409, content_type="text/plain")
             response["X-Stream-State"] = stream_state or "raw_django_streaming_disabled"
-            return add_cors_headers(response, frontend_origin)
+            return _add_cors_headers_if_configured(response, frontend_origin)
 
         try:
             file_size = (
@@ -308,7 +323,7 @@ class VideoStreamView(APIView):
                 response = HttpResponse(status=416, content_type=content_type)
                 response["Content-Range"] = f"bytes */{file_size}"
                 response["Accept-Ranges"] = "bytes"
-                return add_cors_headers(response, frontend_origin)
+                return _add_cors_headers_if_configured(response, frontend_origin)
 
         if local_path is not None:
             response = build_partial_content_response_from_path(
@@ -320,6 +335,8 @@ class VideoStreamView(APIView):
                 filename=filename,
             )
         else:
+            if field_file is None:
+                raise Http404("Video file is not available")
             response = build_partial_content_response(
                 field_file=field_file,
                 content_type=content_type,
@@ -331,8 +348,12 @@ class VideoStreamView(APIView):
 
         stream_lease = create_video_stream_lease(video, file_type=file_type)
         if stream_lease is not None:
+            streaming_content = response.streaming_content
+            if not isinstance(streaming_content, Iterable):
+                release_media_operation_lease(stream_lease)
+                raise Http404("Video file is not available")
             response.streaming_content = wrap_iterator_with_media_lease(
-                response.streaming_content,
+                streaming_content,
                 stream_lease,
             )
             response["X-Media-Operation-Lease"] = str(stream_lease.token)
@@ -340,4 +361,4 @@ class VideoStreamView(APIView):
         if stream_state is not None:
             response["X-Stream-State"] = stream_state
 
-        return add_cors_headers(response, frontend_origin)
+        return _add_cors_headers_if_configured(response, frontend_origin)

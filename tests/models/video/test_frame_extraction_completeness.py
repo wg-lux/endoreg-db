@@ -13,10 +13,10 @@ from endoreg_db.services.anonymization import AnonymizationService
 from endoreg_db.services.media_integrity import mark_video_integrity_lost
 
 extract_frames_module = importlib.import_module(
-    "endoreg_db.models.media.video.video_file_frames._extract_frames"
+    "endoreg_db.services.video_files._frames._extract_frames"
 )
 frame_range_module = importlib.import_module(
-    "endoreg_db.models.media.video.video_file_frames._manage_frame_range"
+    "endoreg_db.services.video_files._frames._manage_frame_range"
 )
 
 

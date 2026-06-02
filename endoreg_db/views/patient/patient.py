@@ -111,11 +111,6 @@ class PatientViewSet(viewsets.ModelViewSet):
                 },
                 status=status.HTTP_409_CONFLICT,
             )
-        except Exception as e:
-            return Response(
-                {"error": f"Fehler beim Löschen des Patienten: {str(e)}"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
 
     def check_pe_exist(self, request, pk=None):
         """Check if a patient examination exists.

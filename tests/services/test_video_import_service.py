@@ -11,12 +11,13 @@ import threading
 import shutil
 import pytest
 from pathlib import Path
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from types import SimpleNamespace
 from django.test import TestCase
 from endoreg_db.models import VideoFile
 from endoreg_db.services.video_import import VideoImportService
 from endoreg_db.exceptions import InsufficientStorageError
+from endoreg_db.utils.filesystem.file_operations import sha256_file
 from ..helpers.default_objects import get_default_center, get_default_processor
 from ..media.video.helper import get_random_video_path_by_examination_alias
 import logging
@@ -375,6 +376,165 @@ def test_video_import_service_does_not_construct_anonymizer_in_init(monkeypatch)
     service = VideoImportService()
 
     assert service._anonymizer is None
+
+
+@pytest.mark.unit
+def test_import_and_anonymize_uses_verified_local_raw_source(monkeypatch, tmp_path):
+    import endoreg_db.import_files.video_import_service as vis_module
+
+    source_path = tmp_path / "upload.mp4"
+    source_path.write_bytes(b"uploaded-source")
+    sensitive_path = tmp_path / "sensitive.mp4"
+    sensitive_path.write_bytes(b"sensitive-source")
+    raw_materialized = tmp_path / "raw-materialized.mp4"
+    raw_materialized.write_bytes(b"canonical-raw-source")
+    events: list[tuple[str, object]] = []
+
+    class DummyVideo:
+        video_hash = "dummy-video-hash"
+        width = 640
+        height = 480
+        fps = 25.0
+        duration = 1.0
+        frame_count = 25
+        state = object()
+        sensitive_meta = None
+
+        @contextmanager
+        def ensure_local_raw_file(self):
+            events.append(("ensure_enter", raw_materialized))
+            yield raw_materialized
+            events.append(("ensure_exit", raw_materialized))
+
+    dummy_video = DummyVideo()
+
+    class DummyAnonymizer:
+        def anonymize_video(self, ctx):
+            events.append(("anonymize_path", Path(ctx.local_source_path)))
+            events.append(("validated_hash", ctx.validated_raw_source_sha256))
+            events.append(("validated_width", ctx.validated_raw_source_stream["width"]))
+            ctx.anonymized_path = tmp_path / "anonymized.mp4"
+            ctx.anonymized_path.write_bytes(b"anonymized")
+            return ctx
+
+    @contextmanager
+    def fake_file_lock(path):
+        events.append(("file_lock", Path(path)))
+        yield
+
+    @contextmanager
+    def fake_hash_lock(file_hash, lock_root):
+        events.append(("hash_lock", file_hash))
+        yield
+
+    monkeypatch.setattr(vis_module, "validate_directories", lambda: None, raising=True)
+    monkeypatch.setattr(vis_module, "file_lock", fake_file_lock, raising=True)
+    monkeypatch.setattr(vis_module, "content_hash_lock", fake_hash_lock, raising=True)
+    monkeypatch.setattr(
+        vis_module.VideoImportService,
+        "_get_existing_completed_video",
+        lambda self, ctx: None,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        vis_module.VideoImportService,
+        "_ensure_pipeline_storage_budget",
+        lambda self, path: None,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        vis_module,
+        "create_sensitive_copy",
+        lambda file_path, destination, ctx: sensitive_path,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        vis_module,
+        "create_or_retrieve_video_file",
+        lambda ctx: (dummy_video, False, True),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        vis_module,
+        "get_or_create_video_state",
+        lambda video: video.state,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        vis_module,
+        "mark_instance_processing_started",
+        lambda video, ctx: events.append(("mark_processing", video)),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        vis_module,
+        "finalize_video_success",
+        lambda ctx: events.append(("finalize_success", Path(ctx.anonymized_path))),
+        raising=True,
+    )
+
+    service = VideoImportService(anonymizer=DummyAnonymizer())
+    result = service.import_and_anonymize(
+        source_path,
+        center_name="center",
+        processor_name="processor",
+    )
+
+    assert result is dummy_video
+    assert events.count(("ensure_enter", raw_materialized)) == 1
+    assert ("anonymize_path", raw_materialized) in events
+    assert ("validated_hash", sha256_file(raw_materialized)) in events
+    assert ("validated_width", 640) in events
+    assert ("finalize_success", tmp_path / "anonymized.mp4") in events
+
+
+@pytest.mark.unit
+def test_verified_local_raw_source_initializes_video_meta_on_same_file(
+    monkeypatch, tmp_path
+):
+    import endoreg_db.import_files.video_import_service as vis_module
+    from endoreg_db.import_files.context import ImportContext
+
+    source_path = tmp_path / "upload.mp4"
+    source_path.write_bytes(b"uploaded-source")
+    raw_materialized = tmp_path / "raw-materialized.mp4"
+    raw_materialized.write_bytes(b"canonical-raw-source")
+    events: list[tuple[str, object]] = []
+
+    video = VideoFile(video_hash="same-source-video", width=None, height=None)
+    video.ensure_local_raw_file = lambda: nullcontext(raw_materialized)
+    ctx = ImportContext(
+        file_path=source_path,
+        center_name="center",
+        processor_name="processor",
+        file_type="video",
+    )
+    ctx.current_video = video
+
+    def fake_initialize_video_file(video_arg, *, local_raw_path=None):
+        events.append(("initialize", Path(local_raw_path)))
+        video_arg.width = 640
+        video_arg.height = 480
+        return video_arg
+
+    monkeypatch.setattr(vis_module, "validate_directories", lambda: None, raising=True)
+    monkeypatch.setattr(
+        vis_module,
+        "initialize_video_file",
+        fake_initialize_video_file,
+        raising=True,
+    )
+
+    service = VideoImportService(anonymizer=SimpleNamespace())
+    with service._verified_local_raw_source(ctx):
+        events.append(("local_source", Path(ctx.local_source_path)))
+        events.append(("validated_width", ctx.validated_raw_source_stream["width"]))
+
+    assert events == [
+        ("initialize", raw_materialized),
+        ("local_source", raw_materialized),
+        ("validated_width", 640),
+    ]
 
 
 @pytest.mark.unit

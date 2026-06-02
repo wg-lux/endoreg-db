@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import threading
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -8,6 +10,10 @@ import pytest
 
 from endoreg_db.models import Center, EndoscopyProcessor, UploadJob, VideoFile
 from endoreg_db.services.hub import ingest
+from endoreg_db.services.hub.watcher_handoff import (
+    WatcherFileNotReadyError,
+    is_in_progress_handoff_path,
+)
 from endoreg_db.utils.filesystem.file_operations import (
     atomic_write_file,
     safe_unlink_file,
@@ -104,6 +110,87 @@ def _fake_video_import(video: VideoFile):
         return video
 
     return _import_and_anonymize
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "slow.tmp",
+        "slow.part",
+        "slow.partial",
+        "slow.crdownload",
+        "slow.download",
+        "slow.mp4.tmp.123",
+        "slow.mp4.part.123",
+    ],
+)
+@pytest.mark.unit
+def test_wait_for_watcher_file_ready_rejects_atomic_handoff_marker(
+    tmp_path,
+    filename: str,
+):
+    watched_file = tmp_path / filename
+    watched_file.write_bytes(b"partial-video")
+
+    assert is_in_progress_handoff_path(watched_file) is True
+    with pytest.raises(WatcherFileNotReadyError, match="in-progress handoff"):
+        ingest._wait_for_watcher_file_ready(
+            watched_file,
+            stable_after_seconds=0,
+            poll_interval_seconds=0.01,
+        )
+
+
+@pytest.mark.django_db
+def test_process_watcher_file_waits_for_direct_slow_writer(
+    tmp_path,
+    watcher_center: Center,
+    monkeypatch,
+):
+    initial_content = b"partial-"
+    final_suffix = b"complete"
+    expected_content = initial_content + final_suffix
+    watched_file = tmp_path / "direct-slow-writer.mp4"
+    watched_file.write_bytes(initial_content)
+    writer_errors: list[BaseException] = []
+
+    def finish_write() -> None:
+        try:
+            time.sleep(0.03)
+            with watched_file.open("ab") as handle:
+                handle.write(final_suffix)
+            os.utime(watched_file, None)
+        except BaseException as exc:  # pragma: no cover - surfaced below
+            writer_errors.append(exc)
+
+    writer_thread = threading.Thread(target=finish_write, daemon=True)
+    writer_thread.start()
+
+    EndoscopyProcessor.objects.get_or_create(name="slow-writer-processor")
+    monkeypatch.setenv("WATCHER_STABLE_AFTER_SECONDS", "0.12")
+    monkeypatch.setenv("WATCHER_POLL_INTERVAL_SECONDS", "0.01")
+    monkeypatch.setattr(
+        ingest,
+        "start_upload_job_processing",
+        lambda **kwargs: "test-handoff",
+        raising=True,
+    )
+
+    try:
+        upload_job = ingest.process_watcher_file(
+            file_path=watched_file,
+            file_type="video",
+            center=watcher_center,
+            processor_name="slow-writer-processor",
+        )
+    finally:
+        writer_thread.join(timeout=1)
+
+    assert writer_errors == []
+    assert not watched_file.exists()
+    assert upload_job.content_hash == sha256_file(upload_job.file)
+    with upload_job.file.open("rb") as handle:
+        assert handle.read() == expected_content
 
 
 @pytest.mark.django_db
@@ -448,3 +535,31 @@ def test_create_or_reuse_watcher_upload_job_uses_file_stat_in_idempotency_key(
     assert upload_job.idempotency_key == (
         f"watcher:hash-123:456000000000:{watched_file.stat().st_size}"
     )
+
+
+@pytest.mark.django_db
+def test_create_or_reuse_watcher_upload_job_defers_when_file_changes_after_hash(
+    tmp_path,
+    watcher_center: Center,
+    monkeypatch,
+):
+    watched_file = tmp_path / "changing-report.pdf"
+    watched_file.write_bytes(b"%PDF-1.4\n%%EOF\n")
+
+    def mutate_during_hash(path):
+        with Path(path).open("ab") as handle:
+            handle.write(b"late-bytes")
+        os.utime(path, None)
+        return "hash-before-change"
+
+    monkeypatch.setattr(ingest, "sha256_file", mutate_during_hash)
+
+    with pytest.raises(WatcherFileNotReadyError, match="changed after settle"):
+        ingest.create_or_reuse_watcher_upload_job(
+            file_path=watched_file,
+            content_type="application/pdf",
+            source_center=watcher_center,
+        )
+
+    assert watched_file.exists()
+    assert UploadJob.objects.count() == 0

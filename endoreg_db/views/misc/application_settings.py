@@ -35,9 +35,7 @@ from endoreg_db.services.application_settings.ai_dataset_export import (
 )
 from endoreg_db.services.hub import deployment_profile_payload
 from endoreg_db.services.jobs.model_training_jobs import (
-    MODEL_TRAINING_LOST_TIMEOUT,  # noqa: F401
     MODEL_TRAINING_SERVER_INSTANCE_ID as _MODEL_TRAINING_SERVER_INSTANCE_ID,
-    _execute_model_training_run,  # noqa: F401
     _launch_model_training_run,
     _mark_lost_model_training_runs,
     _model_training_run_payload,
@@ -1608,6 +1606,11 @@ def application_settings_model_training_runs(request):
 
     if errors:
         return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
+    if dataset is None:
+        return Response(
+            {"errors": {"dataset_id": "AIDataSet not found."}},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     freeze_backbone = feature_mode == "freeze_backbone"
     command_kwargs = {

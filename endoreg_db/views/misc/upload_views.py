@@ -1,4 +1,5 @@
 import mimetypes
+from typing import TYPE_CHECKING, cast
 
 from django.http import Http404
 from rest_framework.exceptions import PermissionDenied
@@ -28,6 +29,9 @@ from endoreg_db.services.hub import (
 )
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
+
+if TYPE_CHECKING:
+    from endoreg_db.services.hub.ingest import CeleryTaskDispatcher, UploadProvenance
 
 # Try to import celery task, but provide fallback
 try:
@@ -171,10 +175,13 @@ class UploadFileView(APIView):
                 retention_policy=UploadJob.RetentionPolicy.PRESERVE_SOURCE,
                 source_file_persisted=True,
                 cleanup_status=UploadJob.CleanupStatus.PENDING,
-                processing_provenance={
-                    "entrypoint": "api",
-                    **upload_context,
-                },
+                processing_provenance=cast(
+                    "UploadProvenance",
+                    {
+                        "entrypoint": "api",
+                        **upload_context,
+                    },
+                ),
             )
 
             if created:
@@ -182,7 +189,9 @@ class UploadFileView(APIView):
                     start_upload_job_processing(
                         upload_job=upload_job,
                         task_dispatcher=(
-                            process_upload_job_task if CELERY_AVAILABLE else None
+                            cast("CeleryTaskDispatcher", process_upload_job_task)
+                            if CELERY_AVAILABLE
+                            else None
                         ),
                     )
                 except Exception as e:
@@ -290,11 +299,12 @@ class UploadStatusView(APIView):
             allowed_center_id = resolve_allowed_center_id(
                 getattr(request, "user", None)
             )
+            source_center_id = getattr(upload_job, "source_center_id", None)
             if (
                 allowed_center_id is not None
                 and allowed_center_id != -1
-                and upload_job.source_center_id is not None
-                and upload_job.source_center_id != allowed_center_id
+                and source_center_id is not None
+                and source_center_id != allowed_center_id
             ):
                 raise Http404("Upload job not found")
             if allowed_center_id == -1:

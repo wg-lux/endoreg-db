@@ -152,6 +152,26 @@ def _temporary_destination(destination: Path) -> Path:
     return destination.with_name(f"{destination.name}.tmp.{os.getpid()}")
 
 
+def _temporary_handoff_destination(destination: Path) -> Path:
+    return destination.with_name(f"{destination.name}.part.{os.getpid()}")
+
+
+def _fsync_directory_best_effort(directory: Path) -> None:
+    flags = os.O_RDONLY
+    if hasattr(os, "O_DIRECTORY"):
+        flags |= os.O_DIRECTORY
+    try:
+        fd = os.open(directory, flags)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        return
+    finally:
+        os.close(fd)
+
+
 def atomic_copy_file(
     *,
     source: Path,
@@ -300,6 +320,66 @@ def atomic_write_file(
         raise
     _emit_file_operation_event(
         operation="write",
+        status="ok",
+        destination=destination,
+        bytes=bytes_written,
+    )
+    return destination
+
+
+def atomic_handoff_file(
+    *,
+    destination: Path,
+    content: Iterable[bytes],
+    required_bytes: int | None = None,
+    file_mode: int | None = None,
+    dir_mode: int | None = None,
+) -> Path:
+    """
+    Write a producer handoff file and atomically promote it to the watched name.
+
+    The temporary name is intentionally outside the final media pattern so file
+    watchers can skip it until the fully fsynced payload is promoted.
+    """
+    destination = Path(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if dir_mode is not None:
+        os.chmod(destination.parent, dir_mode)
+    if required_bytes is not None:
+        ensure_disk_capacity(
+            destination_dir=destination.parent,
+            required_bytes=required_bytes,
+        )
+    temp_destination = _temporary_handoff_destination(destination)
+    bytes_written = 0
+    try:
+        with temp_destination.open("wb") as handle:
+            if file_mode is not None:
+                os.chmod(temp_destination, file_mode)
+            for chunk in content:
+                handle.write(chunk)
+                bytes_written += len(chunk)
+            if required_bytes is not None and bytes_written != required_bytes:
+                raise ValueError(
+                    "Handoff byte count mismatch: "
+                    f"required={required_bytes} written={bytes_written}"
+                )
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_destination, destination)
+        _fsync_directory_best_effort(destination.parent)
+    except Exception as exc:
+        temp_destination.unlink(missing_ok=True)
+        _emit_file_operation_event(
+            operation="handoff",
+            status="error",
+            destination=destination,
+            detail=str(exc),
+            bytes=bytes_written,
+        )
+        raise
+    _emit_file_operation_event(
+        operation="handoff",
         status="ok",
         destination=destination,
         bytes=bytes_written,

@@ -1,6 +1,8 @@
+import hashlib
+import json
 import logging
 import os
-import hashlib
+import uuid
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
@@ -17,7 +19,7 @@ def _temp_media_path(final_path: Path, marker: str = "part") -> Path:
 
 
 from lx_anonymizer.frame_cleaner import FrameCleaner
-from lx_anonymizer.sensitive_meta_interface import SensitiveMeta as LxSM
+from lx_dtypes.models import SensitiveMeta
 
 from endoreg_db.import_files.context import ImportContext
 from endoreg_db.import_files.file_storage.sensitive_meta_storage import (
@@ -34,13 +36,16 @@ from endoreg_db.models import (
 from endoreg_db.services.video_files import get_or_create_video_state
 from endoreg_db.utils.filesystem import paths as path_utils
 from endoreg_db.utils.filesystem.file_operations import (
+    atomic_copy_file,
     atomic_move_file,
     ensure_directory,
     safe_unlink_file,
+    sha256_file,
 )
 from endoreg_db.utils.video.ffmpeg_wrapper import (
     _resolve_ffmpeg_executable,
     _resolve_ffprobe_executable,
+    get_stream_info,
 )
 
 
@@ -49,6 +54,10 @@ def _processed_video_dir() -> Path:
         path_utils.EndoregPathsModel.from_environment().transcoding
         / "anonymized_videos"
     )
+
+
+def _quarantine_dir() -> Path:
+    return path_utils.EndoregPathsModel.from_environment().quarantine
 
 
 def _ensure_ffmpeg_tools_on_path() -> None:
@@ -82,6 +91,234 @@ def _ensure_ffmpeg_tools_on_path() -> None:
             "Prepended FFmpeg tool directories to PATH for lx_anonymizer: %s",
             prepend_dirs,
         )
+
+
+def _positive_int(value: object) -> int | None:
+    try:
+        parsed = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _first_video_stream(stream_info: object) -> dict[str, Any] | None:
+    if not isinstance(stream_info, dict):
+        return None
+    streams = stream_info.get("streams")
+    if not isinstance(streams, list):
+        return None
+    for stream in streams:
+        if isinstance(stream, dict) and stream.get("codec_type") == "video":
+            return stream
+    return None
+
+
+def _critical_source_mismatch(
+    *,
+    video_hash: str,
+    source_path: Path,
+    reason: str,
+    expected: object,
+    actual: object,
+) -> None:
+    quarantine_path = _quarantine_anonymizer_source(
+        source_path=source_path,
+        video_hash=video_hash,
+        reason=reason,
+    )
+    logger.critical(
+        json.dumps(
+            {
+                "event": "video.anonymizer_source_integrity_mismatch",
+                "video_hash": video_hash,
+                "path": str(source_path),
+                "quarantined_path": str(quarantine_path),
+                "reason": reason,
+                "expected": expected,
+                "actual": actual,
+            },
+            sort_keys=True,
+        )
+    )
+
+
+def _quarantine_anonymizer_source(
+    *,
+    source_path: Path,
+    video_hash: str,
+    reason: str,
+) -> Path:
+    quarantine_dir = ensure_directory(_quarantine_dir())
+    safe_reason = "".join(
+        char if char.isalnum() or char in {"-", "_"} else "_" for char in reason
+    )
+    destination = quarantine_dir / (
+        f"{video_hash}.anonymizer-input.{safe_reason}.{uuid.uuid4().hex}"
+        f"{source_path.suffix or '.bin'}"
+    )
+    return atomic_copy_file(source=source_path, destination=destination)
+
+
+def _log_anonymizer_source_verified(
+    *, video_hash: str, snapshot: dict[str, Any]
+) -> None:
+    logger.info(
+        json.dumps(
+            {
+                "event": "video.anonymizer_source_verified",
+                "video_hash": video_hash,
+                **snapshot,
+            },
+            sort_keys=True,
+        )
+    )
+
+
+def _verify_anonymizer_source(
+    ctx: ImportContext,
+    source_path: Path,
+    *,
+    video_hash: str,
+) -> dict[str, Any]:
+    source_path = Path(source_path).resolve()
+    if not source_path.exists():
+        raise FileNotFoundError(f"Video anonymization source not found: {source_path}")
+    if not source_path.is_file():
+        raise RuntimeError(
+            f"Video anonymization source is not a regular file: {source_path}"
+        )
+
+    stat_result = source_path.stat()
+    if stat_result.st_size <= 0:
+        raise RuntimeError(f"Video anonymization source is empty: {source_path}")
+
+    expected_path = getattr(ctx, "validated_raw_source_path", None)
+    if expected_path is not None:
+        expected_path = Path(expected_path).resolve()
+        if expected_path != source_path:
+            _critical_source_mismatch(
+                video_hash=video_hash,
+                source_path=source_path,
+                reason="path",
+                expected=str(expected_path),
+                actual=str(source_path),
+            )
+            raise RuntimeError(
+                "Anonymizer source path differs from validated raw materialization."
+            )
+
+    expected_size = getattr(ctx, "validated_raw_source_size_bytes", None)
+    if expected_size is not None and int(expected_size) != int(stat_result.st_size):
+        _critical_source_mismatch(
+            video_hash=video_hash,
+            source_path=source_path,
+            reason="size_bytes",
+            expected=int(expected_size),
+            actual=int(stat_result.st_size),
+        )
+        raise RuntimeError(
+            "Anonymizer source size differs from validated raw materialization."
+        )
+
+    expected_mtime_ns = getattr(ctx, "validated_raw_source_mtime_ns", None)
+    if expected_mtime_ns is not None and int(expected_mtime_ns) != int(
+        stat_result.st_mtime_ns
+    ):
+        _critical_source_mismatch(
+            video_hash=video_hash,
+            source_path=source_path,
+            reason="mtime_ns",
+            expected=int(expected_mtime_ns),
+            actual=int(stat_result.st_mtime_ns),
+        )
+        raise RuntimeError(
+            "Anonymizer source timestamp differs from validated raw materialization."
+        )
+
+    expected_sha256 = getattr(ctx, "validated_raw_source_sha256", None)
+    source_sha256 = sha256_file(source_path)
+    if expected_sha256 and str(expected_sha256) != source_sha256:
+        _critical_source_mismatch(
+            video_hash=video_hash,
+            source_path=source_path,
+            reason="sha256",
+            expected=str(expected_sha256),
+            actual=source_sha256,
+        )
+        raise RuntimeError(
+            "Anonymizer source hash differs from validated raw materialization."
+        )
+
+    stream_info = get_stream_info(source_path)
+    video_stream = _first_video_stream(stream_info)
+    if video_stream is None:
+        _critical_source_mismatch(
+            video_hash=video_hash,
+            source_path=source_path,
+            reason="video_stream",
+            expected="readable video stream",
+            actual="missing",
+        )
+        raise RuntimeError(
+            f"Anonymizer source has no readable video stream: {source_path}"
+        )
+
+    width = _positive_int(video_stream.get("width"))
+    height = _positive_int(video_stream.get("height"))
+    if width is None or height is None:
+        _critical_source_mismatch(
+            video_hash=video_hash,
+            source_path=source_path,
+            reason="dimensions",
+            expected="positive width and height",
+            actual={
+                "width": video_stream.get("width"),
+                "height": video_stream.get("height"),
+            },
+        )
+        raise RuntimeError(
+            f"Anonymizer source has unreadable structural dimensions: {source_path}"
+        )
+
+    expected_stream = getattr(ctx, "validated_raw_source_stream", None)
+    if isinstance(expected_stream, dict):
+        expected_width = _positive_int(expected_stream.get("width"))
+        expected_height = _positive_int(expected_stream.get("height"))
+        if expected_width is not None and width != expected_width:
+            _critical_source_mismatch(
+                video_hash=video_hash,
+                source_path=source_path,
+                reason="width",
+                expected=expected_width,
+                actual=width,
+            )
+            raise RuntimeError(
+                "Anonymizer source width differs from VideoMeta validation."
+            )
+        if expected_height is not None and height != expected_height:
+            _critical_source_mismatch(
+                video_hash=video_hash,
+                source_path=source_path,
+                reason="height",
+                expected=expected_height,
+                actual=height,
+            )
+            raise RuntimeError(
+                "Anonymizer source height differs from VideoMeta validation."
+            )
+
+    snapshot = {
+        "path": str(source_path),
+        "size_bytes": int(stat_result.st_size),
+        "mtime_ns": int(stat_result.st_mtime_ns),
+        "sha256": str(source_sha256),
+        "width": width,
+        "height": height,
+        "codec_name": video_stream.get("codec_name"),
+    }
+    _log_anonymizer_source_verified(video_hash=video_hash, snapshot=snapshot)
+    ctx.anonymizer_source_snapshot = snapshot
+    return snapshot
 
 
 class VideoAnonymizer:
@@ -133,9 +370,11 @@ class VideoAnonymizer:
                 raise RuntimeError(
                     f"Video anonymization source is unavailable for {video_hash}."
                 )
+            verified_source = Path(source_path).resolve()
+            _verify_anonymizer_source(ctx, verified_source, video_hash=video_hash)
             ctx.anonymized_path, extracted_metadata = (
                 self._frame_cleaning_class.clean_video(
-                    video_path=Path(source_path),
+                    video_path=verified_source,
                     endoscope_image_roi=endoscope_roi,
                     endoscope_data_roi_nested=endoscope_roi_nested,
                     output_path=temp_output_path,
@@ -156,10 +395,15 @@ class VideoAnonymizer:
 
         atomic_move_file(source=temp_result_path, destination=anonymized_output_path)
         ctx.anonymized_path = anonymized_output_path
-        sm = LxSM()
-        sm.safe_update(extracted_metadata)
 
-        sensitive_meta_storage(sm, ctx.current_video)
+        lx_sensitive_payload = {
+            key: value
+            for key, value in extracted_metadata.items()
+            if key in SensitiveMeta.model_fields
+        }
+        sensitive_meta_storage(
+            SensitiveMeta.model_validate(lx_sensitive_payload), ctx.current_video
+        )
         self._persist_phi_region_proposals(ctx.current_video, extracted_metadata)
         return ctx
 

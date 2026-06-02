@@ -255,15 +255,23 @@ class VideoFile(models.Model):
 
         return run_video_pipe_2(self)
 
-    def update_video_meta(self, save_instance: bool = True):
+    def update_video_meta(
+        self, save_instance: bool = True, raw_video_path: Optional[Path] = None
+    ):
         from endoreg_db.services.video_files import update_video_meta
 
-        return update_video_meta(self, save_instance=save_instance)
+        return update_video_meta(
+            self, save_instance=save_instance, raw_video_path=raw_video_path
+        )
 
-    def initialize_video_specs(self, use_raw: bool = True) -> bool:
+    def initialize_video_specs(
+        self, use_raw: bool = True, local_video_path: Optional[Path] = None
+    ) -> bool:
         from endoreg_db.services.video_files import initialize_video_specs
 
-        return initialize_video_specs(self, use_raw=use_raw)
+        return initialize_video_specs(
+            self, use_raw=use_raw, local_video_path=local_video_path
+        )
 
     def get_fps(self) -> float:
         from endoreg_db.services.video_files import get_video_fps
@@ -506,6 +514,7 @@ class VideoFile(models.Model):
         processor_name: Optional[str],
         video_hash: str,
         save_video_file: bool = True,
+        initialize: bool = True,
     ):
         """
         Creates a VideoFile instance from a given video file path.
@@ -522,6 +531,7 @@ class VideoFile(models.Model):
             processor_name=processor_name,
             video_hash=video_hash,
             save_video_file=save_video_file,
+            initialize=initialize,
             model_cls=cls,
         )
 

@@ -74,10 +74,6 @@ ALLOWLISTED_MODEL_TO_SERVICE_IMPORTS = {
         }
     ),
     (
-        "endoreg_db/models/media/pdf/create_report_from_file.py",
-        "endoreg_db.services.raw_pdf_files",
-    ): frozenset({"create_raw_pdf_file_from_path"}),
-    (
         "endoreg_db/models/media/pdf/raw_pdf.py",
         "endoreg_db.services.raw_pdf_files",
     ): frozenset(

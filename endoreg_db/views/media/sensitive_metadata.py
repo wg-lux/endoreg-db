@@ -468,6 +468,11 @@ def video_sensitive_metadata(request, pk):
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    return Response(
+        {"error": f"Method {request.method} not allowed"},
+        status=status.HTTP_405_METHOD_NOT_ALLOWED,
+    )
+
 
 @api_view(["GET", "POST"])
 @permission_classes([EnvironmentAwarePermission, PolicyPermission])
@@ -607,6 +612,11 @@ def pdf_sensitive_metadata(request, pk):
             )
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    return Response(
+        {"error": f"Method {request.method} not allowed"},
+        status=status.HTTP_405_METHOD_NOT_ALLOWED,
+    )
 
 
 @api_view(["GET", "POST"])

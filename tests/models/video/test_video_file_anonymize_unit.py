@@ -4,7 +4,6 @@ import cv2
 import numpy as np
 import pytest
 
-import endoreg_db.models.media.video.video_file_anonymize as anonymize_module
 import endoreg_db.models.media.video.video_file as video_file_module
 from endoreg_db.models import (
     Center,
@@ -14,6 +13,7 @@ from endoreg_db.models import (
     SensitiveMeta,
     VideoFile,
 )
+from endoreg_db.services.video_files import _anonymization as anonymize_module
 
 
 @pytest.mark.django_db

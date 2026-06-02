@@ -39,6 +39,8 @@ def _configure_test_path_env(protected_root: Path) -> None:
         "LX_ANNOTATE_MASTER_KEY",
         "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
     )
+    os.environ.setdefault("WATCHER_STABLE_AFTER_SECONDS", "0")
+    os.environ.setdefault("WATCHER_POLL_INTERVAL_SECONDS", "0.01")
 
 
 # Ensure the repository root is in the Python path before importing project code.
@@ -1118,7 +1120,7 @@ def mock_ai_inference(monkeypatch):
         labels = ["blood", "polyp", "normal", "abnormal", "artifact"]
         return {label: pred for label, pred in zip(labels, prediction)}
 
-    # Mock the classifier methods used in video_file_ai.py
+    # Mock the classifier methods used by video file AI services.
     monkeypatch.setattr(
         "endoreg_db.utils.ai.predict.Classifier.pipe", mock_classifier_pipe
     )

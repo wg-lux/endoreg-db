@@ -4,13 +4,13 @@ from types import SimpleNamespace
 
 import pytest
 
-import endoreg_db.models.media.video.create_from_file as create_from_file_module
 import endoreg_db.models.media.video.video_file as video_file_module
 from endoreg_db.exceptions import InsufficientStorageError
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.file_storage import create_video_file
 from endoreg_db.models import Center, EndoscopyProcessor
 from endoreg_db.models.state.processing_history import ProcessingHistory
+from endoreg_db.services.video_files import _imports as create_from_file_module
 from endoreg_db.utils.filesystem.file_operations import sha256_file
 from endoreg_db.utils.storage import save_local_file
 

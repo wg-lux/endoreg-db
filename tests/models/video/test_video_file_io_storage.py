@@ -11,7 +11,7 @@ from django.core.files import File
 from django.core.files.storage import default_storage
 
 from endoreg_db.models import Center, EndoscopyProcessor, VideoFile
-from endoreg_db.models.media.video.video_file_io import (
+from endoreg_db.services.video_files._io import (
     _ensure_local_processed_file,
     _ensure_local_raw_file,
 )
@@ -139,11 +139,11 @@ def test_delete_with_file_handles_pathless_storage(video_with_files: VideoFile):
     with (
         patch.object(video, "delete_frames", return_value="ok"),
         patch(
-            "endoreg_db.models.media.video.video_file_io._get_raw_file_path",
+            "endoreg_db.services.video_files._io._get_raw_file_path",
             return_value=None,
         ),
         patch(
-            "endoreg_db.models.media.video.video_file_io._get_processed_file_path",
+            "endoreg_db.services.video_files._io._get_processed_file_path",
             return_value=None,
         ),
     ):

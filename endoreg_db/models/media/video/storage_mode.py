@@ -13,10 +13,6 @@ class VideoStorageMode(StrEnum):
     ENCRYPTED = "app_encrypted"
     STREAMABLE = "fs_encrypted_streamable"
 
-    # Backward-compatible aliases for existing call sites.
-    APP_ENCRYPTED = "app_encrypted"
-    FS_ENCRYPTED_STREAMABLE = "fs_encrypted_streamable"
-
 
 VIDEO_STORAGE_MODE_CHOICES: list[tuple[str, str]] = [
     (VideoStorageMode.ENCRYPTED.value, "Application Encrypted"),

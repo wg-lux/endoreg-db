@@ -108,6 +108,7 @@ def create_or_retrieve_video_file(
             center_name=center_name,
             processor_name=processor_name,
             video_hash=ctx.file_hash,
+            initialize=not bool(getattr(ctx, "defer_video_initialization", False)),
         )
         needs_processing = True
 

@@ -40,11 +40,6 @@ import pytest
         ),
         ("endoreg_db.utils.names", "endoreg_db.utils.core.names", "guess_name_gender"),
         (
-            "endoreg_db.utils.nginx_accel",
-            "endoreg_db.utils.web.nginx_accel",
-            "build_nginx_accel_response",
-        ),
-        (
             "endoreg_db.utils.operation_log",
             "endoreg_db.utils.observability.operation_log",
             "record_operation",

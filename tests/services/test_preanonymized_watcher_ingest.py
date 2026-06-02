@@ -11,6 +11,7 @@ from django.test import TestCase, override_settings
 
 from endoreg_db.models import Center, Gender, PatientExternalID, RawPdfFile, UploadJob
 from endoreg_db.services.hub import process_preanonymized_watcher_file
+from endoreg_db.services.hub.watcher_handoff import WatcherFileNotReadyError
 
 
 class PreanonymizedWatcherIngestTests(TestCase):
@@ -182,6 +183,59 @@ class PreanonymizedWatcherIngestTests(TestCase):
             assert not sidecar_path.exists()
             assert (quarantine_dir / "incoming.pdf").exists()
             assert (quarantine_dir / "incoming.json").exists()
+            assert UploadJob.objects.count() == 0
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="local_study_server")
+    def test_local_study_server_not_ready_file_is_deferred_without_quarantine(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir_name:
+            temp_dir = Path(temp_dir_name)
+            drop_dir = temp_dir / "preanonymized_import"
+            quarantine_dir = temp_dir / "quarantine"
+            drop_dir.mkdir()
+            quarantine_dir.mkdir()
+            report_path = drop_dir / "incoming.pdf"
+            report_path.write_bytes(b"%PDF-1.4\n%%EOF\n")
+            sidecar_path = report_path.with_suffix(".json")
+            sidecar_path.write_text(
+                json.dumps(
+                    {
+                        "center_key": self.center.center_key,
+                        "source_system": "lx-annotate",
+                        "file_sha256": "0" * 64,
+                        "human_anonymization_validated": True,
+                        "validated_by": "operator-1",
+                        "validated_at": "2026-05-06T12:00:00+02:00",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with (
+                patch(
+                    "endoreg_db.services.hub.ingest.path_utils.WATCHER_PREANONYMIZED_DROP_DIR",
+                    drop_dir,
+                ),
+                patch(
+                    "endoreg_db.services.hub.ingest._quarantine_dir",
+                    return_value=quarantine_dir,
+                ),
+                patch(
+                    "endoreg_db.services.hub.ingest._wait_for_watcher_file_ready",
+                    side_effect=WatcherFileNotReadyError("not stable"),
+                ),
+                patch(
+                    "endoreg_db.services.hub.ingest.sha256_file",
+                    side_effect=AssertionError("must not hash before settle"),
+                ),
+                pytest.raises(WatcherFileNotReadyError, match="not stable"),
+            ):
+                process_preanonymized_watcher_file(file_path=report_path)
+
+            assert report_path.exists()
+            assert sidecar_path.exists()
+            assert list(quarantine_dir.iterdir()) == []
             assert UploadJob.objects.count() == 0
 
     def test_process_preanonymized_report_normalizes_sensitive_meta_strings(

@@ -358,9 +358,9 @@ def sync_video_streamable_artifacts(
 
     storage_mode_cls = type(video).StorageMode
     preferred_storage_mode = (
-        storage_mode_cls.FS_ENCRYPTED_STREAMABLE
+        storage_mode_cls.STREAMABLE
         if has_verified_streamable
-        else storage_mode_cls.APP_ENCRYPTED
+        else storage_mode_cls.ENCRYPTED
     )
 
     if video.storage_mode != preferred_storage_mode:

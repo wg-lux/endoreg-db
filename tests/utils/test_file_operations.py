@@ -9,6 +9,7 @@ import pytest
 
 from endoreg_db.utils.filesystem import file_operations
 from endoreg_db.utils.filesystem.file_operations import (
+    atomic_handoff_file,
     atomic_move_file,
     atomic_write_file,
     ensure_directory,
@@ -117,6 +118,68 @@ def test_atomic_write_file_removes_partial_temp_file_on_generator_failure(
     assert events[-1]["destination_path"] == file_operations.path_reference(destination)
     assert events[-1]["bytes"] == 7
     assert "write source failed" in str(events[-1]["detail"])
+
+
+@pytest.mark.unit
+def test_atomic_handoff_file_fsyncs_and_promotes_final_name(
+    caplog,
+    monkeypatch,
+    tmp_path,
+):
+    caplog.set_level(logging.INFO, logger="endoreg_db.utils.filesystem.file_operations")
+    destination = tmp_path / "incoming.mp4"
+    fsync_calls: list[int] = []
+    original_fsync = file_operations.os.fsync
+
+    def recording_fsync(fd: int) -> None:
+        fsync_calls.append(fd)
+        original_fsync(fd)
+
+    monkeypatch.setattr(file_operations.os, "fsync", recording_fsync)
+
+    result = atomic_handoff_file(
+        destination=destination,
+        content=(chunk for chunk in (b"video", b"-payload")),
+        required_bytes=13,
+        file_mode=0o600,
+    )
+
+    assert result == destination
+    assert destination.read_bytes() == b"video-payload"
+    assert oct(destination.stat().st_mode & 0o777) == "0o600"
+    assert list(tmp_path.glob("incoming.mp4.part.*")) == []
+    assert len(fsync_calls) >= 1
+    assert {
+        "event": "file_operation",
+        "operation": "handoff",
+        "status": "ok",
+        "destination_path": file_operations.path_reference(destination),
+        "bytes": 13,
+    } in _file_operation_events(caplog)
+
+
+@pytest.mark.unit
+def test_atomic_handoff_file_removes_temp_file_on_byte_count_mismatch(
+    caplog,
+    tmp_path,
+):
+    caplog.set_level(logging.INFO, logger="endoreg_db.utils.filesystem.file_operations")
+    destination = tmp_path / "incoming.mp4"
+
+    with pytest.raises(ValueError, match="byte count mismatch"):
+        atomic_handoff_file(
+            destination=destination,
+            content=(b"too-short",),
+            required_bytes=128,
+        )
+
+    assert not destination.exists()
+    assert list(tmp_path.glob("incoming.mp4.part.*")) == []
+    events = _file_operation_events(caplog)
+    assert events[-1]["operation"] == "handoff"
+    assert events[-1]["status"] == "error"
+    assert events[-1]["destination_path"] == file_operations.path_reference(destination)
+    assert events[-1]["bytes"] == 9
 
 
 @pytest.mark.unit

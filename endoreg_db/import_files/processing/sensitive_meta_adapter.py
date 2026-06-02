@@ -1,7 +1,7 @@
 # endoreg_db/import_files/processing/sensitive_meta_adapter.py
 from typing import Any, Dict
 
-from lx_anonymizer.sensitive_meta_interface import SensitiveMeta as LxSensitiveMeta
+from lx_dtypes.models import SensitiveMeta as LxSensitiveMeta
 
 
 def normalize_lx_sensitive_meta(meta: LxSensitiveMeta) -> Dict[str, Any]:

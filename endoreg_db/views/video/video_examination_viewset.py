@@ -126,7 +126,7 @@ class VideoExaminationViewSet(viewsets.ModelViewSet):
         video = get_object_or_404(VideoFile, id=video_id)
 
         # Get examinations for this video
-        examinations = self.queryset.filter(video=video)
+        examinations = self.get_queryset().filter(video=video)
 
         serializer = self.get_serializer(examinations, many=True)
         return Response(serializer.data)

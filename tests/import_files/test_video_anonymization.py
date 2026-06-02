@@ -16,6 +16,19 @@ from endoreg_db.import_files.processing.video_processing import video_anonymizat
 RealVideoAnonymizer = video_anonymization.VideoAnonymizer
 
 
+def _valid_stream_info(*, width: int = 640, height: int = 480) -> dict:
+    return {
+        "streams": [
+            {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "width": width,
+                "height": height,
+            }
+        ]
+    }
+
+
 @pytest.mark.unit
 def test_ensure_ffmpeg_tools_on_path_prepends_resolved_tool_dir(monkeypatch, tmp_path):
     tool_dir = tmp_path / "ffmpeg-bin"
@@ -275,6 +288,51 @@ def test_persist_phi_region_proposals_failure_is_best_effort(monkeypatch, caplog
     assert "Failed to persist lx-anonymizer PHI region proposals" in caplog.text
 
 
+@pytest.mark.unit
+def test_verify_anonymizer_source_aborts_on_validated_hash_mismatch(
+    monkeypatch,
+    tmp_path,
+    caplog,
+):
+    source_video = tmp_path / "changed.mp4"
+    source_video.write_bytes(b"changed-source")
+    stat_result = source_video.stat()
+    ctx = SimpleNamespace(
+        validated_raw_source_path=source_video,
+        validated_raw_source_size_bytes=stat_result.st_size,
+        validated_raw_source_mtime_ns=stat_result.st_mtime_ns,
+        validated_raw_source_sha256="not-the-current-hash",
+        validated_raw_source_stream={"width": 640, "height": 480},
+    )
+    monkeypatch.setattr(
+        video_anonymization,
+        "get_stream_info",
+        lambda path: _valid_stream_info(),
+    )
+    quarantine_dir = tmp_path / "quarantine"
+    monkeypatch.setattr(
+        video_anonymization,
+        "_quarantine_dir",
+        lambda: quarantine_dir,
+    )
+
+    with caplog.at_level("CRITICAL"):
+        with pytest.raises(RuntimeError, match="hash differs"):
+            video_anonymization._verify_anonymizer_source(
+                ctx,
+                source_video,
+                video_hash="source-mismatch",
+            )
+
+    assert "video.anonymizer_source_integrity_mismatch" in caplog.text
+    assert "quarantined_path" in caplog.text
+    quarantined_files = list(
+        quarantine_dir.glob("source-mismatch.anonymizer-input.sha256.*.mp4")
+    )
+    assert len(quarantined_files) == 1
+    assert quarantined_files[0].read_bytes() == b"changed-source"
+
+
 @pytest.mark.django_db
 def test_anonymize_video_persists_phi_region_proposals_from_frame_cleaner(
     monkeypatch,
@@ -313,6 +371,11 @@ def test_anonymize_video_persists_phi_region_proposals_from_frame_cleaner(
         video_anonymization, "_ensure_ffmpeg_tools_on_path", lambda: None
     )
     monkeypatch.setattr(video_anonymization, "_processed_video_dir", lambda: output_dir)
+    monkeypatch.setattr(
+        video_anonymization,
+        "get_stream_info",
+        lambda path: _valid_stream_info(),
+    )
     monkeypatch.setattr(
         video_anonymization,
         "sensitive_meta_storage",
@@ -372,6 +435,11 @@ def test_anonymize_video_uses_local_source_path_override(monkeypatch, tmp_path):
     monkeypatch.setattr(video_anonymization, "_processed_video_dir", lambda: output_dir)
     monkeypatch.setattr(
         video_anonymization,
+        "get_stream_info",
+        lambda path: _valid_stream_info(),
+    )
+    monkeypatch.setattr(
+        video_anonymization,
         "sensitive_meta_storage",
         lambda sensitive_meta, current_video: None,
     )
@@ -380,6 +448,11 @@ def test_anonymize_video_uses_local_source_path_override(monkeypatch, tmp_path):
         current_video=video,
         file_path=fallback_source,
         local_source_path=local_source,
+        validated_raw_source_path=local_source,
+        validated_raw_source_size_bytes=local_source.stat().st_size,
+        validated_raw_source_mtime_ns=local_source.stat().st_mtime_ns,
+        validated_raw_source_sha256=video_anonymization.sha256_file(local_source),
+        validated_raw_source_stream={"width": 640, "height": 480},
         sensitive_path=None,
         anonymized_path=None,
         processor_name="",
@@ -389,5 +462,10 @@ def test_anonymize_video_uses_local_source_path_override(monkeypatch, tmp_path):
     result_ctx = anonymizer.anonymize_video(ctx)
 
     assert cleaned_paths == [local_source]
+    assert result_ctx.anonymizer_source_snapshot["path"] == str(local_source.resolve())
+    assert (
+        result_ctx.anonymizer_source_snapshot["sha256"]
+        == ctx.validated_raw_source_sha256
+    )
     assert result_ctx.anonymized_path == output_dir / "local-source-video.mp4"
     assert result_ctx.anonymized_path.read_bytes() == b"anonymized-video"

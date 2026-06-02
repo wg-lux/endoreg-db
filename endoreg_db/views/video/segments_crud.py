@@ -11,7 +11,7 @@ Provides RESTful endpoints for video segment management:
 import logging
 import uuid
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, cast
 
 from django.db import transaction
 from django.db.models import Count, Q
@@ -25,6 +25,7 @@ from endoreg_db.models.label.annotation.image_classification import (
     ImageClassificationAnnotation,
 )
 from endoreg_db.models.label.label import Label
+from endoreg_db.models.label.label import LabelManager
 from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
 )
@@ -485,6 +486,10 @@ def video_segments_collection(request):
             },
         )
         return Response(serializer.data)
+    return Response(
+        {"error": f"Method {request.method} not allowed"},
+        status=status.HTTP_405_METHOD_NOT_ALLOWED,
+    )
 
 
 @api_view(["GET", "POST"])
@@ -524,7 +529,7 @@ def video_segments_by_video(request, pk):
         )
 
         if label_name:
-            label = Label.objects.resolve_by_name(label_name)
+            label = cast(LabelManager, Label.objects).resolve_by_name(label_name)
             if label is None:
                 return Response(
                     {"error": f'Label "{label_name}" not found'},
@@ -585,6 +590,10 @@ def video_segments_by_video(request, pk):
                     {"error": "Invalid data", "details": serializer.errors},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+    return Response(
+        {"error": f"Method {request.method} not allowed"},
+        status=status.HTTP_405_METHOD_NOT_ALLOWED,
+    )
 
 
 @api_view(["POST"])
@@ -687,7 +696,7 @@ def import_prediction_segments_to_manual(request, pk: int):
                         start_frame_number=segment.start_frame_number,
                         end_frame_number=segment.end_frame_number,
                         label=segment.label,
-                        information_source_id=segment.source_id,
+                        information_source_id=getattr(segment, "source_id", None),
                         model_meta_id=(
                             delete_model_meta.pk if delete_model_meta else None
                         ),
@@ -720,7 +729,7 @@ def import_prediction_segments_to_manual(request, pk: int):
                 )
 
             segment = serializer.save()
-            if segment.source_id != manual_source.id:
+            if getattr(segment, "source_id", None) != getattr(manual_source, "pk"):
                 segment.source = manual_source
                 segment.save(update_fields=["source"])
             _sync_frame_annotations(segment=segment)
@@ -786,7 +795,7 @@ def video_segment_detail(request, pk, segment_id):
                 "start_frame_number": segment.start_frame_number,
                 "end_frame_number": segment.end_frame_number,
                 "label": segment.label,
-                "information_source_id": segment.source_id,
+                "information_source_id": getattr(segment, "source_id", None),
                 "model_meta_id": old_model_meta.pk if old_model_meta else None,
             }
             serializer = LabelVideoSegmentSerializer(segment, data=data, partial=True)
@@ -825,7 +834,7 @@ def video_segment_detail(request, pk, segment_id):
                         start_frame_number=segment.start_frame_number,
                         end_frame_number=segment.end_frame_number,
                         label=segment.label,
-                        information_source_id=segment.source_id,
+                        information_source_id=getattr(segment, "source_id", None),
                         model_meta_id=(
                             delete_model_meta.pk if delete_model_meta else None
                         ),
@@ -842,6 +851,10 @@ def video_segment_detail(request, pk, segment_id):
                 {"error": f"Failed to delete segment: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+    return Response(
+        {"error": f"Method {request.method} not allowed"},
+        status=status.HTTP_405_METHOD_NOT_ALLOWED,
+    )
 
 
 @api_view(["POST"])
@@ -994,7 +1007,6 @@ def video_segment_validate(request, pk: int, segment_id: int):
             },
             status=response_status,
         )
-
     except Exception as e:
         logger.error(f"Error validating segment {segment_id} in video {pk}: {e}")
         return Response(
@@ -1416,6 +1428,10 @@ def video_segments_validation_status(request, pk: int):
             },
             status=response_status,
         )
+    return Response(
+        {"error": f"Method {request.method} not allowed"},
+        status=status.HTTP_405_METHOD_NOT_ALLOWED,
+    )
 
 
 @api_view(["POST"])

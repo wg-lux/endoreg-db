@@ -16,9 +16,9 @@ repos:
         language: system
         pass_filenames: false
         files: ^(endoreg_db/(urls|views)/.*\.py|endoreg_db/authz/policy\.py|docs/frontend_agent_url_contract\.md)$
-      - id: mypy
-        name: mypy type check
-        entry: .devenv/state/venv/bin/mypy --config-file pyproject.toml
+      - id: pyright
+        name: pyright type check
+        entry: .devenv/state/venv/bin/pyright
         language: system
         types: [python]
       - id: django-startup-smoke

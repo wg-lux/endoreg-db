@@ -801,7 +801,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/62/59/e47bbd0542d0e6f4c
 
 [[package]]
 name = "endoreg-db"
-version = "1.0.1.7"
+version = "1.0.1.9"
 source = { editable = "." }
 dependencies = [
     { name = "celery" },
@@ -836,6 +836,7 @@ dependencies = [
     { name = "pillow" },
     { name = "pydantic" },
     { name = "pyjwt" },
+    { name = "pyright" },
     { name = "pytesseract" },
     { name = "python-ffmpeg" },
     { name = "python-jose", extra = ["cryptography"] },
@@ -939,8 +940,8 @@ requires-dist = [
     { name = "linkify-it-py", marker = "extra == 'docs'", specifier = ">=2.0.3" },
     { name = "llvmlite", specifier = ">=0.44.0" },
     { name = "lx-ai-core", extras = ["torch"], marker = "extra == 'ai'", specifier = "==0.0.1" },
-    { name = "lx-anonymizer", extras = ["gpu", "llm", "ocr"], specifier = "==0.9.1.9" },
-    { name = "lx-dtypes", specifier = "==0.1.6" },
+    { name = "lx-anonymizer", extras = ["gpu", "llm", "ocr"], specifier = "==0.9.2.0" },
+    { name = "lx-dtypes", specifier = "==0.1.7" },
     { name = "moviepy", specifier = "==2.2.1" },
     { name = "mozilla-django-oidc", specifier = ">=4.0.1" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.16.0" },
@@ -956,6 +957,7 @@ requires-dist = [
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.5.1" },
     { name = "pydantic", specifier = ">=2.10.6" },
     { name = "pyjwt", specifier = ">=2.10.1" },
+    { name = "pyright", specifier = ">=1.1.410" },
     { name = "pytesseract", specifier = ">=0.3.13" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.5" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.1.1" },
@@ -1536,13 +1538,14 @@ torch = [
 
 [[package]]
 name = "lx-anonymizer"
-version = "0.9.1.9"
+version = "0.9.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
     { name = "dateparser" },
     { name = "faker" },
     { name = "gender-guesser" },
+    { name = "lx-dtypes" },
     { name = "numpy" },
     { name = "opencv-python-headless" },
     { name = "pdfplumber" },
@@ -1556,10 +1559,11 @@ dependencies = [
     { name = "requests" },
     { name = "spacy" },
     { name = "tenacity" },
+    { name = "tesserocr" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ca/a2/5caad6522ce0698b79fff3a57ee29b57b2d9bd221e8ef2d3bcff61574400/lx_anonymizer-0.9.1.9.tar.gz", hash = "sha256:31f7149bf438c2a1d3d68758e71cca31ed14f03a804adc48b8cff1ecf6a0bc61", size = 1316125, upload-time = "2026-05-29T13:41:52.836Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5f/68/a052c920df1dfea7b8b202eee177745a2e5d0a91c7f7af9b9058a253e3b0/lx_anonymizer-0.9.2.0.tar.gz", hash = "sha256:fd304801a3439bdb9c66d5112c5b1b5bdfa653a0191759a5046b7dae709ff21b", size = 1323755, upload-time = "2026-06-01T14:02:48.78Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/08/ac/7a427096c4cd1b86361a34c93f6a3ec4cd0a06ba492eb65a52d9d45ab394/lx_anonymizer-0.9.1.9-cp312-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:983ccd8109106b8b0acb0bd589d66b2973a8ed062f0fd25fbd066ca79a5bce42", size = 1231599, upload-time = "2026-05-29T13:41:50.985Z" },
+    { url = "https://files.pythonhosted.org/packages/8e/4f/3f3c987ec485d68cc47db11a8f999eed7313c12fdfc7039f6cbd2f03c141/lx_anonymizer-0.9.2.0-cp312-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:0715edcf6cf50c0998aa96779a355250d7431b731dd8a16720ba8e9f4bcaa681", size = 1235702, upload-time = "2026-06-01T14:02:46.736Z" },
 ]
 
 [package.optional-dependencies]
@@ -1583,7 +1587,7 @@ ocr = [
 
 [[package]]
 name = "lx-dtypes"
-version = "0.1.6"
+version = "0.1.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bibtexparser" },
@@ -1606,9 +1610,9 @@ dependencies = [
     { name = "scipy" },
     { name = "types-pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c0/31/cd20a54b9e14bb25791bff452c989d54a5a1749067216c1eed0c27889fe1/lx_dtypes-0.1.6.tar.gz", hash = "sha256:0a8e78fecfa07804301a7f477709442c5ea42f5cd83ce48c1d7a8f8e500460ca", size = 2175765, upload-time = "2026-05-11T13:59:29.381Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/19/8e/230c78c366307d51814c6e42feed24bdf773fda87a02a533662d3e60202f/lx_dtypes-0.1.7.tar.gz", hash = "sha256:7ec0bd8f3b31c19ba636175cc2bfc9f97e2c6abbb9e4a890cce8bf7838acf400", size = 2027821, upload-time = "2026-06-01T13:31:30.484Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a3/87/f998dcb5d85efb7f4ed64302efce22d2a1700c85b4609a90eb11036755db/lx_dtypes-0.1.6-py3-none-any.whl", hash = "sha256:37649a11fb104e3df7b8594a87460184d62a21e025c7be1d1bff671cac493a6a", size = 522159, upload-time = "2026-05-11T13:59:27.538Z" },
+    { url = "https://files.pythonhosted.org/packages/79/68/3d46f9244faed1e99281cd604bb50ecbf6ccd81c9f80f0f3c0443ac972ee/lx_dtypes-0.1.7-py3-none-any.whl", hash = "sha256:482b885a0c82ded25d8cf2018b2c8d3576c8fa84eeafa972e442d67d915b32bb", size = 530973, upload-time = "2026-06-01T13:31:28.678Z" },
 ]
 
 [[package]]
@@ -2626,6 +2630,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/e7/82/28175b2414effca1cdac8dc99f76d660e7a4fb0ceefa4b4ab8f5f6742925/pyproject_hooks-1.2.0.tar.gz", hash = "sha256:1e859bd5c40fae9448642dd871adf459e5e2084186e8d2c2a79a824c970da1f8", size = 19228, upload-time = "2024-09-29T09:24:13.293Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/bd/24/12818598c362d7f300f18e74db45963dbcb85150324092410c8b49405e42/pyproject_hooks-1.2.0-py3-none-any.whl", hash = "sha256:9e5c6bfa8dcc30091c74b0cf803c81fdd29d94f01992a7707bc97babb1141913", size = 10216, upload-time = "2024-09-29T09:24:11.978Z" },
+]
+
+[[package]]
+name = "pyright"
+version = "1.1.410"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "nodeenv" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/10/53/e4d8ea1391bd4355231be6f91bf239479aa0014260ed3fb5526eeb12a1f2/pyright-1.1.410.tar.gz", hash = "sha256:07a073b8ba6749826773c1269773efa11b93440d9a6aa60419d9a3172d6dc488", size = 4062013, upload-time = "2026-06-01T17:35:48.894Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d7/33/288b5868fa00846dacf249633719d747893e54aebd196b9968ac1878a5d3/pyright-1.1.410-py3-none-any.whl", hash = "sha256:5e961bed37cacf96b3f7cd7b1da39b350a9239aa2e69138d0e88f728cfaf296c", size = 6082448, upload-time = "2026-06-01T17:35:46.387Z" },
 ]
 
 [[package]]

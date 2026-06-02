@@ -1,3 +1,5 @@
+from typing import TypedDict
+
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -6,6 +8,12 @@ from endoreg_db.models.medical.examination.examination import Examination
 from endoreg_db.models.medical.examination.examination_indication import (
     ExaminationIndication,
 )
+
+
+class _IndicationChoiceRow(TypedDict):
+    id: int
+    name: str
+    classification_ids: list[int]
 
 
 @api_view(["GET"])
@@ -20,7 +28,7 @@ def get_indications_for_examination(request, exam_id):
     indications = exam.indications.all().order_by("name", "id")
     payload = [
         {
-            "id": indication.id,
+            "id": getattr(indication, "pk"),
             "name": indication.name,
             "description": indication.description or "",
         }
@@ -45,24 +53,25 @@ def get_indication_choices(request, indication_id):
         id=indication_id,
     )
 
-    choices_by_id: dict[int, dict[str, object]] = {}
+    choices_by_id: dict[int, _IndicationChoiceRow] = {}
     for classification in indication.classifications.all():
         for choice in classification.choices.all():
+            choice_id = int(getattr(choice, "pk"))
             row = choices_by_id.setdefault(
-                choice.id,
+                choice_id,
                 {
-                    "id": choice.id,
-                    "name": choice.name,
+                    "id": choice_id,
+                    "name": str(choice.name),
                     "classification_ids": [],
                 },
             )
-            row["classification_ids"].append(classification.id)
+            row["classification_ids"].append(int(getattr(classification, "pk")))
 
     payload: list[dict[str, object]] = []
     for row in sorted(
         choices_by_id.values(), key=lambda item: (str(item["name"]), int(item["id"]))
     ):
-        classification_ids = sorted({int(v) for v in row["classification_ids"]})
+        classification_ids = sorted(set(row["classification_ids"]))
         payload.append(
             {
                 "id": int(row["id"]),

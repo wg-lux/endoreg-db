@@ -14,7 +14,7 @@ The main orchestration entrypoints are:
 
 ## Video Import Execution Order
 
-The file watcher observes `data/import/video_import`. Once a file is stable, it calls `VideoImportService.import_and_anonymize(...)`.
+The file watcher observes `data/import/video_import`. Once a file is stable, it calls `VideoImportService.import_and_anonymize(...)`. Producers must not stream bytes directly into a watched final filename such as `*.mp4`; direct writers use a temporary handoff name first and atomically rename only after the file is closed and flushed.
 
 The current intended flow is:
 
@@ -31,12 +31,26 @@ The current intended flow is:
    It is also written to a `.part` path first and atomically promoted into place.
 10. The transient sensitive working copy is deleted after successful finalization.
 
+## Producer Atomic Handoff Contract
+
+External producers and uploaders that bypass the lx-annotate file watcher must use an atomic handoff pattern:
+
+1. Write into a name outside the watched final pattern, for example `exam.mp4.part` or `exam.mp4.tmp`.
+2. Finish writing, call `flush()` and `fsync()` on the file descriptor, close the file, and fsync the containing directory when the platform allows it. Producers in Python should use `endoreg_db.utils.filesystem.file_operations.atomic_handoff_file(...)`.
+3. Promote the completed file with an atomic same-filesystem rename to the final watched name, for example `exam.mp4`.
+4. Never append to or rewrite the final watched `*.mp4` after rename.
+
+The hub ingest service defensively ignores in-progress suffixes such as `.tmp`, `.part`, `.partial`, `.crdownload`, and `.download`, including marker names such as `.tmp.` and `.part.`. It also performs its own settle check before hashing and before persisting a watcher `UploadJob`, so direct service callers get deferred/retry behavior instead of capturing a partially written file.
+
+The video import pipeline uses one verified local raw materialization for the VideoMeta/ffprobe validation immediately preceding anonymization and for the `FrameCleaner.clean_video(...)` input. The anonymizer logs the exact absolute path, byte size, hash, and stream dimensions. If this exact input no longer matches the validated metadata source, processing aborts and the mismatched input is copied to quarantine.
+
 ## Filewatcher Operation Ledger
 
-The management command at `endoreg_db/management/commands/start_filewatcher.py`
-loads `scripts/file_watcher.py` from this repository. The watcher keeps
-filesystem-based dropoff ingestion available for trusted local workflows and
-delegates concrete processing to the same import services used elsewhere:
+The filesystem watcher lives in `lx-annotate` at
+`lx_annotate/file_watcher.py` and calls the hub ingest service in this
+repository. The watcher keeps filesystem-based dropoff ingestion available for
+trusted local workflows and delegates concrete processing to the same import
+services used elsewhere:
 
 - `VideoImportService.import_and_anonymize(...)`
 - `ReportImportService.import_and_anonymize(...)`

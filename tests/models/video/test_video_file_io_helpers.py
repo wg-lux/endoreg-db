@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from endoreg_db.models.media.video import video_file_io
+from endoreg_db.services.video_files import _io as video_file_io
 
 
 class _PathlessFieldFile:

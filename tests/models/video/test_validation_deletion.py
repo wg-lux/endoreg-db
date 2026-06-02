@@ -107,11 +107,11 @@ class TestVideoValidationDeletionBehavior:
         # Mock the file paths and _update_text_metadata
         with (
             patch(
-                "endoreg_db.models.media.video.video_file_io._get_raw_file_path",
+                "endoreg_db.services.video_files._io._get_raw_file_path",
                 return_value=raw_video_path,
             ),
             patch(
-                "endoreg_db.models.media.video.video_file_io._get_processed_file_path",
+                "endoreg_db.services.video_files._io._get_processed_file_path",
                 return_value=processed_video_path,
             ),
             patch(
@@ -165,7 +165,7 @@ class TestVideoValidationDeletionBehavior:
         # Mock: raw_file doesn't exist, only processed
         with (
             patch(
-                "endoreg_db.models.media.video.video_file_io._get_raw_file_path",
+                "endoreg_db.services.video_files._io._get_raw_file_path",
                 return_value=None,
             ),
             patch(
@@ -206,11 +206,11 @@ class TestVideoValidationDeletionBehavior:
 
         with (
             patch(
-                "endoreg_db.models.media.video.video_file_io._get_raw_file_path",
+                "endoreg_db.services.video_files._io._get_raw_file_path",
                 return_value=raw_video_path,
             ),
             patch(
-                "endoreg_db.models.media.video.video_file_io._get_processed_file_path",
+                "endoreg_db.services.video_files._io._get_processed_file_path",
                 return_value=None,
             ),
             patch(
@@ -320,11 +320,11 @@ class TestActiveFileLogicWithValidation:
 
         with (
             patch(
-                "endoreg_db.models.media.video.video_file_io._get_raw_file_path",
+                "endoreg_db.services.video_files._io._get_raw_file_path",
                 return_value=raw_path,
             ),
             patch(
-                "endoreg_db.models.media.video.video_file_io._get_processed_file_path",
+                "endoreg_db.services.video_files._io._get_processed_file_path",
                 return_value=processed_path,
             ),
             patch(
@@ -429,11 +429,11 @@ class TestValidationDeletion:
         # Mock the file paths and _update_text_metadata
         with (
             patch(
-                "endoreg_db.models.media.video.video_file_io._get_raw_file_path",
+                "endoreg_db.services.video_files._io._get_raw_file_path",
                 return_value=raw_video_path,
             ),
             patch(
-                "endoreg_db.models.media.video.video_file_io._get_processed_file_path",
+                "endoreg_db.services.video_files._io._get_processed_file_path",
                 return_value=processed_video_path,
             ),
             patch(
@@ -487,7 +487,7 @@ class TestValidationDeletion:
         # Mock: raw_file doesn't exist, only processed
         with (
             patch(
-                "endoreg_db.models.media.video.video_file_io._get_raw_file_path",
+                "endoreg_db.services.video_files._io._get_raw_file_path",
                 return_value=None,
             ),
             patch(
@@ -528,11 +528,11 @@ class TestValidationDeletion:
 
         with (
             patch(
-                "endoreg_db.models.media.video.video_file_io._get_raw_file_path",
+                "endoreg_db.services.video_files._io._get_raw_file_path",
                 return_value=raw_video_path,
             ),
             patch(
-                "endoreg_db.models.media.video.video_file_io._get_processed_file_path",
+                "endoreg_db.services.video_files._io._get_processed_file_path",
                 return_value=None,
             ),
             patch(
@@ -603,11 +603,11 @@ class TestValidationDeletion:
         # Mock the file paths and extract_frames only
         with (
             patch(
-                "endoreg_db.models.media.video.video_file_io._get_raw_file_path",
+                "endoreg_db.services.video_files._io._get_raw_file_path",
                 return_value=raw_video_path,
             ),
             patch(
-                "endoreg_db.models.media.video.video_file_io._get_processed_file_path",
+                "endoreg_db.services.video_files._io._get_processed_file_path",
                 return_value=processed_video_path,
             ),
             patch.object(video, "extract_frames", mock_extract_frames),

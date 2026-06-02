@@ -1,7 +1,7 @@
 import pytest
 
-import endoreg_db.models.media.video.pipe_1 as pipe_1_module
-import endoreg_db.models.media.video.video_file_segments as segments_module
+from endoreg_db.services.video_files import _pipeline_1 as pipe_1_module
+from endoreg_db.services.video_files import _segments as segments_module
 from endoreg_db.models import (
     AiModel,
     Center,

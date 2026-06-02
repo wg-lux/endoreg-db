@@ -7,7 +7,7 @@ from typing import Any, Callable
 from urllib.parse import urlsplit
 
 try:
-    from django.conf.urls.static import static
+    from django.conf.urls.static import static as _django_static
 except ImportError:
     from django.core.exceptions import ImproperlyConfigured
     from django.http import HttpResponseBase
@@ -33,3 +33,5 @@ except ImportError:
                 kwargs=kwargs,
             ),
         ]
+else:
+    static = _django_static

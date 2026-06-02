@@ -1,262 +1,106 @@
 from __future__ import annotations
 
-import logging
-from importlib import import_module
+from endoreg_db.utils.core.translation import build_multilingual_response
 
-logger = logging.getLogger(__name__)
-
-_IMPORT_TARGETS: dict[str, tuple[str, str]] = {
-    "build_multilingual_response": (
-        "endoreg_db.utils.core.translation",
-        "build_multilingual_response",
-    ),
-    "AnonymizationOverviewView": (
-        "endoreg_db.views.anonymization",
-        "AnonymizationOverviewView",
-    ),
-    "AnonymizationValidateView": (
-        "endoreg_db.views.anonymization",
-        "AnonymizationValidateView",
-    ),
-    "anonymization_current": (
-        "endoreg_db.views.anonymization",
-        "anonymization_current",
-    ),
-    "anonymization_status": ("endoreg_db.views.anonymization", "anonymization_status"),
-    "start_anonymization": ("endoreg_db.views.anonymization", "start_anonymization"),
-    "keycloak_callback": ("endoreg_db.views.auth", "keycloak_callback"),
-    "keycloak_login": ("endoreg_db.views.auth", "keycloak_login"),
-    "public_home": ("endoreg_db.views.auth", "public_home"),
-    "ExaminationManifestCache": (
-        "endoreg_db.views.examination",
-        "ExaminationManifestCache",
-    ),
-    "ExaminationViewSet": ("endoreg_db.views.examination", "ExaminationViewSet"),
-    "get_classification_choices_for_examination": (
-        "endoreg_db.views.examination",
-        "get_classification_choices_for_examination",
-    ),
-    "get_classifications_for_examination": (
-        "endoreg_db.views.examination",
-        "get_classifications_for_examination",
-    ),
-    "get_findings_for_examination": (
-        "endoreg_db.views.examination",
-        "get_findings_for_examination",
-    ),
-    "get_indication_choices": (
-        "endoreg_db.views.examination",
-        "get_indication_choices",
-    ),
-    "get_indications_for_examination": (
-        "endoreg_db.views.examination",
-        "get_indications_for_examination",
-    ),
-    "get_instruments_for_examination": (
-        "endoreg_db.views.examination",
-        "get_instruments_for_examination",
-    ),
-    "get_interventions_for_examination": (
-        "endoreg_db.views.examination",
-        "get_interventions_for_examination",
-    ),
-    "get_location_classification_choices_for_examination": (
-        "endoreg_db.views.examination",
-        "get_location_classification_choices_for_examination",
-    ),
-    "get_location_classifications_for_examination": (
-        "endoreg_db.views.examination",
-        "get_location_classifications_for_examination",
-    ),
-    "get_morphology_classification_choices_for_examination": (
-        "endoreg_db.views.examination",
-        "get_morphology_classification_choices_for_examination",
-    ),
-    "get_morphology_classifications_for_examination": (
-        "endoreg_db.views.examination",
-        "get_morphology_classifications_for_examination",
-    ),
-    "FindingViewSet": ("endoreg_db.views.finding", "FindingViewSet"),
-    "get_classifications_for_finding": (
-        "endoreg_db.views.finding",
-        "get_classifications_for_finding",
-    ),
-    "get_interventions_for_finding": (
-        "endoreg_db.views.finding",
-        "get_interventions_for_finding",
-    ),
-    "FindingClassificationViewSet": (
-        "endoreg_db.views.finding_classification",
-        "FindingClassificationViewSet",
-    ),
-    "get_classification_choices": (
-        "endoreg_db.views.finding_classification",
-        "get_classification_choices",
-    ),
-    "get_location_choices": (
-        "endoreg_db.views.finding_classification",
-        "get_location_choices",
-    ),
-    "get_morphology_choices": (
-        "endoreg_db.views.finding_classification",
-        "get_morphology_choices",
-    ),
-    "get_sensitive_metadata_pk": (
-        "endoreg_db.views.media",
-        "get_sensitive_metadata_pk",
-    ),
-    "label_list": ("endoreg_db.views.media", "label_list"),
-    "pdf_sensitive_metadata": ("endoreg_db.views.media", "pdf_sensitive_metadata"),
-    "pdf_sensitive_metadata_list": (
-        "endoreg_db.views.media",
-        "pdf_sensitive_metadata_list",
-    ),
-    "pdf_sensitive_metadata_verify": (
-        "endoreg_db.views.media",
-        "pdf_sensitive_metadata_verify",
-    ),
-    "sensitive_metadata_list": ("endoreg_db.views.media", "sensitive_metadata_list"),
-    "video_sensitive_metadata": ("endoreg_db.views.media", "video_sensitive_metadata"),
-    "video_sensitive_metadata_verify": (
-        "endoreg_db.views.media",
-        "video_sensitive_metadata_verify",
-    ),
-    "CenterViewSet": ("endoreg_db.views.misc", "CenterViewSet"),
-    "application_settings_detail": (
-        "endoreg_db.views.misc",
-        "application_settings_detail",
-    ),
-    "application_settings_centers_dropdown": (
-        "endoreg_db.views.misc",
-        "application_settings_centers_dropdown",
-    ),
-    "application_settings_processors_dropdown": (
-        "endoreg_db.views.misc",
-        "application_settings_processors_dropdown",
-    ),
-    "application_settings_annotators_dropdown": (
-        "endoreg_db.views.misc",
-        "application_settings_annotators_dropdown",
-    ),
-    "application_settings_report_templates_dropdown": (
-        "endoreg_db.views.misc",
-        "application_settings_report_templates_dropdown",
-    ),
-    "application_settings_ai_datasets_dropdown": (
-        "endoreg_db.views.misc",
-        "application_settings_ai_datasets_dropdown",
-    ),
-    "application_settings_ai_dataset_attachments": (
-        "endoreg_db.views.misc",
-        "application_settings_ai_dataset_attachments",
-    ),
-    "application_settings_ai_dataset_frame_bucket_distribution": (
-        "endoreg_db.views.misc",
-        "application_settings_ai_dataset_frame_bucket_distribution",
-    ),
-    "application_settings_ai_dataset_training_manifest": (
-        "endoreg_db.views.misc",
-        "application_settings_ai_dataset_training_manifest",
-    ),
-    "application_settings_model_training_options": (
-        "endoreg_db.views.misc",
-        "application_settings_model_training_options",
-    ),
-    "application_settings_model_training_runs": (
-        "endoreg_db.views.misc",
-        "application_settings_model_training_runs",
-    ),
-    "application_settings_model_training_run_detail": (
-        "endoreg_db.views.misc",
-        "application_settings_model_training_run_detail",
-    ),
-    "application_settings_video_dimension_backfill_runs": (
-        "endoreg_db.views.misc",
-        "application_settings_video_dimension_backfill_runs",
-    ),
-    "application_settings_video_dimension_backfill_run_detail": (
-        "endoreg_db.views.misc",
-        "application_settings_video_dimension_backfill_run_detail",
-    ),
-    "application_settings_ai_dataset_export": (
-        "endoreg_db.views.misc",
-        "application_settings_ai_dataset_export",
-    ),
-    "application_settings_ai_dataset_export_download": (
-        "endoreg_db.views.misc",
-        "application_settings_ai_dataset_export_download",
-    ),
-    "application_settings_backup": (
-        "endoreg_db.views.misc",
-        "application_settings_backup",
-    ),
-    "application_settings_network_nodes": (
-        "endoreg_db.views.misc",
-        "application_settings_network_nodes",
-    ),
-    "application_settings_network_node_detail": (
-        "endoreg_db.views.misc",
-        "application_settings_network_node_detail",
-    ),
-    "application_settings_network_node_roles_dropdown": (
-        "endoreg_db.views.misc",
-        "application_settings_network_node_roles_dropdown",
-    ),
-    "ExaminationStatsView": ("endoreg_db.views.misc", "ExaminationStatsView"),
-    "GenderViewSet": ("endoreg_db.views.misc", "GenderViewSet"),
-    "GeneralStatsView": ("endoreg_db.views.misc", "GeneralStatsView"),
-    "AuditLedgerIntegrityStatusView": (
-        "endoreg_db.views.misc",
-        "AuditLedgerIntegrityStatusView",
-    ),
-    "SensitiveMetaStatsView": ("endoreg_db.views.misc", "SensitiveMetaStatsView"),
-    "UploadFileView": ("endoreg_db.views.misc", "UploadFileView"),
-    "UploadStatusView": ("endoreg_db.views.misc", "UploadStatusView"),
-    "VideoSegmentStatsView": ("endoreg_db.views.misc", "VideoSegmentStatsView"),
-    "csrf_token_view": ("endoreg_db.views.misc", "csrf_token_view"),
-    "PatientViewSet": ("endoreg_db.views.patient", "PatientViewSet"),
-    "ExaminationCreateView": (
-        "endoreg_db.views.patient_examination",
-        "ExaminationCreateView",
-    ),
-    "PatientExaminationDetailView": (
-        "endoreg_db.views.patient_examination",
-        "PatientExaminationDetailView",
-    ),
-    "PatientExaminationListView": (
-        "endoreg_db.views.patient_examination",
-        "PatientExaminationListView",
-    ),
-    "PatientExaminationViewSet": (
-        "endoreg_db.views.patient_examination",
-        "PatientExaminationViewSet",
-    ),
-    "OptimizedPatientFindingViewSet": (
-        "endoreg_db.views.patient_finding",
-        "OptimizedPatientFindingViewSet",
-    ),
-    "PatientFindingViewSet": (
-        "endoreg_db.views.patient_finding",
-        "PatientFindingViewSet",
-    ),
-    "create_patient_finding_classification": (
-        "endoreg_db.views.patient_finding_classification",
-        "create_patient_finding_classification",
-    ),
-    "PatientExaminationReportViewSet": (
-        "endoreg_db.views.report",
-        "PatientExaminationReportViewSet",
-    ),
-    "ReportReimportView": ("endoreg_db.views.report", "ReportReimportView"),
-    "ReportLlmJobStatusView": ("endoreg_db.views.report", "ReportLlmJobStatusView"),
-    "ReportStreamView": ("endoreg_db.views.report", "ReportStreamView"),
-    "VideoApplyMaskView": ("endoreg_db.views.video", "VideoApplyMaskView"),
-    "VideoCorrectionView": ("endoreg_db.views.video", "VideoCorrectionView"),
-    "VideoExaminationViewSet": ("endoreg_db.views.video", "VideoExaminationViewSet"),
-    "VideoReimportView": ("endoreg_db.views.video", "VideoReimportView"),
-    "VideoRemoveFramesView": ("endoreg_db.views.video", "VideoRemoveFramesView"),
-    "VideoStreamView": ("endoreg_db.views.video", "VideoStreamView"),
-}
+from .anonymization import (
+    AnonymizationOverviewView,
+    AnonymizationValidateView,
+    anonymization_current,
+    anonymization_status,
+    start_anonymization,
+)
+from .auth import keycloak_callback, keycloak_login, public_home
+from .examination import (
+    ExaminationManifestCache,
+    ExaminationViewSet,
+    get_classification_choices_for_examination,
+    get_classifications_for_examination,
+    get_findings_for_examination,
+    get_indication_choices,
+    get_indications_for_examination,
+    get_instruments_for_examination,
+    get_interventions_for_examination,
+    get_location_classification_choices_for_examination,
+    get_location_classifications_for_examination,
+    get_morphology_classification_choices_for_examination,
+    get_morphology_classifications_for_examination,
+)
+from .finding import (
+    FindingViewSet,
+    get_classifications_for_finding,
+    get_interventions_for_finding,
+)
+from .finding_classification import (
+    FindingClassificationViewSet,
+    get_classification_choices,
+    get_location_choices,
+    get_morphology_choices,
+)
+from .media import (
+    get_sensitive_metadata_pk,
+    label_list,
+    pdf_sensitive_metadata,
+    pdf_sensitive_metadata_list,
+    pdf_sensitive_metadata_verify,
+    sensitive_metadata_list,
+    video_sensitive_metadata,
+    video_sensitive_metadata_verify,
+)
+from .misc import (
+    AuditLedgerIntegrityStatusView,
+    CenterViewSet,
+    ExaminationStatsView,
+    GenderViewSet,
+    GeneralStatsView,
+    SensitiveMetaStatsView,
+    UploadFileView,
+    UploadStatusView,
+    VideoSegmentStatsView,
+    application_settings_ai_dataset_attachments,
+    application_settings_ai_dataset_export,
+    application_settings_ai_dataset_export_download,
+    application_settings_ai_dataset_frame_bucket_distribution,
+    application_settings_ai_dataset_training_manifest,
+    application_settings_ai_datasets_dropdown,
+    application_settings_annotators_dropdown,
+    application_settings_centers_dropdown,
+    application_settings_detail,
+    application_settings_backup,
+    application_settings_model_training_options,
+    application_settings_model_training_run_detail,
+    application_settings_model_training_runs,
+    application_settings_network_node_detail,
+    application_settings_network_node_roles_dropdown,
+    application_settings_network_nodes,
+    application_settings_processors_dropdown,
+    application_settings_report_templates_dropdown,
+    application_settings_video_dimension_backfill_run_detail,
+    application_settings_video_dimension_backfill_runs,
+    csrf_token_view,
+)
+from .patient import PatientViewSet
+from .patient_examination import (
+    ExaminationCreateView,
+    PatientExaminationDetailView,
+    PatientExaminationListView,
+    PatientExaminationViewSet,
+)
+from .patient_finding import OptimizedPatientFindingViewSet, PatientFindingViewSet
+from .patient_finding_classification import create_patient_finding_classification
+from .report import (
+    PatientExaminationReportViewSet,
+    ReportLlmJobStatusView,
+    ReportReimportView,
+    ReportStreamView,
+)
+from .video import (
+    VideoApplyMaskView,
+    VideoCorrectionView,
+    VideoExaminationViewSet,
+    VideoReimportView,
+    VideoRemoveFramesView,
+    VideoStreamView,
+)
 
 __all__ = [
     "anonymization_status",
@@ -289,6 +133,7 @@ __all__ = [
     "get_location_choices",
     "CenterViewSet",
     "application_settings_detail",
+    "application_settings_backup",
     "application_settings_centers_dropdown",
     "application_settings_processors_dropdown",
     "application_settings_annotators_dropdown",
@@ -335,7 +180,6 @@ __all__ = [
     "VideoReimportView",
     "VideoStreamView",
     "VideoExaminationViewSet",
-    "ReportReimportView",
     "label_list",
     "get_sensitive_metadata_pk",
     "video_sensitive_metadata",
@@ -345,41 +189,6 @@ __all__ = [
     "sensitive_metadata_list",
     "pdf_sensitive_metadata_list",
 ]
-
-_OPTIONAL_IMPORT_NAMES = set()
-_SUBMODULE_TARGETS = {
-    "report": "endoreg_db.views.report",
-}
-
-
-def __getattr__(name: str):
-    submodule_name = _SUBMODULE_TARGETS.get(name)
-    if submodule_name is not None:
-        module = import_module(submodule_name)
-        globals()[name] = module
-        return module
-
-    target = _IMPORT_TARGETS.get(name)
-    if target is None:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-    module_name, attr_name = target
-    try:
-        module = import_module(module_name)
-        value = getattr(module, attr_name)
-    except Exception as exc:
-        if name in _OPTIONAL_IMPORT_NAMES:
-            logger.warning(
-                "Optional view import failed for %s from %s: %s",
-                name,
-                module_name,
-                exc,
-                exc_info=True,
-            )
-        raise
-
-    globals()[name] = value
-    return value
 
 
 def __dir__():

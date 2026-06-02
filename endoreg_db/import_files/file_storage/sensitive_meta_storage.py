@@ -1,42 +1,50 @@
 # endoreg_db/import_files/storage/sensitive_meta_storage.py
+from logging import getLogger
 from typing import Union
 
-from endoreg_db.models.media import RawPdfFile, VideoFile
-from endoreg_db.models.metadata import SensitiveMeta
-from endoreg_db.import_files.processing.sensitive_meta_adapter import (
-    normalize_lx_sensitive_meta,
-)
+from lx_dtypes.models import SensitiveMeta as LxSensitiveMeta
+
 from endoreg_db.import_files.context.default_sensitive_meta import (
     default_sensitive_meta,
 )
-from logging import getLogger
-from lx_anonymizer.sensitive_meta_interface import SensitiveMeta as LxSM
+from endoreg_db.models.media import RawPdfFile, VideoFile
+from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+
 #
 
 logger = getLogger(__name__)
 
 
 def sensitive_meta_storage(
-    sensitive_meta: LxSM,
+    sensitive_meta: LxSensitiveMeta,
     instance: Union[RawPdfFile, VideoFile],
 ) -> bool:
     """
     Merge lx_anonymizer.SensitiveMeta into instance.sensitive_meta in the DB.
 
-    - Normalizes the dataclass into the dict format expected by the model logic
-    - Delegates to SensitiveMeta.update_from_dict() (which already calls logic.update_*)
+    - Delegates normalization and persistence to SensitiveMeta.update_from_dict()
     """
     local_meta = instance.sensitive_meta  # Django SensitiveMeta model instance
     if not isinstance(local_meta, SensitiveMeta):
-        # If sensitice meta doesnt exist yet, ensure it
+        # If sensitive meta does not exist yet, ensure it.
         local_meta = default_sensitive_meta(instance)
-    assert isinstance(local_meta, SensitiveMeta)
+
+    if not isinstance(local_meta, SensitiveMeta):
+        logger.error(
+            "Could not create SensitiveMeta for %s(pk=%s)",
+            instance.__class__.__name__,
+            instance.pk,
+        )
+        return False
 
     try:
-        payload = normalize_lx_sensitive_meta(sensitive_meta)
-        local_meta.update_from_dict(payload)  # this calls your big logic.update_*
+        local_meta.update_from_lx_sensitive_meta(sensitive_meta)
     except Exception as e:
-        logger.error(f"{e}")
+        logger.exception(
+            "Failed to update SensitiveMeta(pk=%s) from lx sensitive meta: %s",
+            local_meta.pk,
+            e,
+        )
         return False
 
     return True

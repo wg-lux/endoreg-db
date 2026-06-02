@@ -69,6 +69,7 @@ def create_initialized_video_file_from_path(
     video_hash: str,
     *,
     save_video_file: bool = True,
+    initialize: bool = True,
     model_cls: type["VideoFile"] | None = None,
 ) -> "VideoFile":
     from ._imports import _create_from_file
@@ -84,11 +85,15 @@ def create_initialized_video_file_from_path(
         video_hash=video_hash,
         save=save_video_file,
     )
+    if not initialize:
+        return video_file
     return initialize_video_file(video_file)
 
 
-def initialize_video_file(video: "VideoFile") -> "VideoFile":
-    update_video_meta(video, save_instance=False)
+def initialize_video_file(
+    video: "VideoFile", *, local_raw_path: Path | None = None
+) -> "VideoFile":
+    update_video_meta(video, save_instance=False, raw_video_path=local_raw_path)
     try:
         if video.has_raw and (
             video.fps is None
@@ -97,7 +102,7 @@ def initialize_video_file(video: "VideoFile") -> "VideoFile":
             or video.frame_count is None
             or video.duration is None
         ):
-            initialize_video_specs(video, use_raw=True)
+            initialize_video_specs(video, use_raw=True, local_video_path=local_raw_path)
         else:
             logger.debug(
                 "Skipping OpenCV video spec init for %s; specs already available or raw file missing.",

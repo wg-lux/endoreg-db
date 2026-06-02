@@ -1,6 +1,7 @@
 from .center import CenterViewSet
 from .application_settings import (
     application_settings_detail,
+    application_settings_backup,
     application_settings_centers_dropdown,
     application_settings_processors_dropdown,
     application_settings_annotators_dropdown,
@@ -16,7 +17,6 @@ from .application_settings import (
     application_settings_video_dimension_backfill_run_detail,
     application_settings_ai_dataset_export,
     application_settings_ai_dataset_export_download,
-    application_settings_backup,
     application_settings_network_nodes,
     application_settings_network_node_detail,
     application_settings_network_node_roles_dropdown,

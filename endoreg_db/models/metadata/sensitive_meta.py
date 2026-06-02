@@ -5,6 +5,7 @@ import logging
 from typing import TYPE_CHECKING, Any, Dict, Type
 
 from django.db import models
+from lx_dtypes.models import SensitiveMeta as LxSensitiveMeta
 
 
 # Import models needed for type hints and FKs
@@ -161,6 +162,36 @@ class SensitiveMeta(models.Model):
         """Updates the instance from a dictionary using external logic."""
         # Delegate to logic function
         return logic.update_sensitive_meta_from_dict(self, data)
+
+    def update_from_lx_sensitive_meta(
+        self, sensitive_meta: LxSensitiveMeta
+    ) -> "SensitiveMeta":
+        """Updates this instance from the lx_dtypes SensitiveMeta contract."""
+        data = sensitive_meta.to_dict()
+        payload: Dict[str, Any] = {
+            "file_path": data.get("file_path"),
+            "patient_first_name": data.get("first_name"),
+            "patient_last_name": data.get("last_name"),
+            "patient_dob": data.get("dob"),
+            "casenumber": data.get("casenumber"),
+            "examination_date": data.get("examination_date"),
+            "examination_time": data.get("examination_time"),
+            "examiner_first_name": data.get("examiner_first_name"),
+            "examiner_last_name": data.get("examiner_last_name"),
+            "text": data.get("text"),
+            "anonymized_text": data.get("anonymized_text"),
+            "endoscope_type": data.get("endoscope_type"),
+            "endoscope_sn": data.get("endoscope_sn"),
+            "patient_gender": data.get("gender"),
+            "center_name": data.get("center"),
+        }
+        return self.update_from_dict(
+            {
+                key: value
+                for key, value in payload.items()
+                if value not in (None, "", [])
+            }
+        )
 
     # --- String representation ---
     def __str__(self):

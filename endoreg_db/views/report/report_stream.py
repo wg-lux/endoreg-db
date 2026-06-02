@@ -229,8 +229,12 @@ class ReportStreamView(APIView):
                 getattr(field_file, "name", None),
             )
             raise Http404("Report file is not available")
-        filename = Path(field_file.name).name
-        content_type = mimetypes.guess_type(field_file.name)[0] or "application/pdf"
+        field_file_name = getattr(field_file, "name", None)
+        if not field_file_name:
+            raise Http404("Report file is not available")
+        field_file_name = str(field_file_name)
+        filename = Path(field_file_name).name
+        content_type = mimetypes.guess_type(field_file_name)[0] or "application/pdf"
         recovered_from_fallback = False
         try:
             file_size = field_file_size(field_file)

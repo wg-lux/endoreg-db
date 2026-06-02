@@ -11,7 +11,7 @@ from endoreg_db.models import (
     Label,
     VideoFile,
 )
-from endoreg_db.models.media.video.video_file_io import _get_temp_anonymized_frame_dir
+from endoreg_db.services.video_files._io import _get_temp_anonymized_frame_dir
 
 
 @pytest.mark.django_db

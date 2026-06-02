@@ -1,5 +1,7 @@
 # --- Add Imports ---
 import logging
+from contextlib import nullcontext
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from endoreg_db.utils.filesystem.file_operations import _emit_file_operation_event
 from endoreg_db.utils.storage import ensure_local_file
@@ -33,13 +35,19 @@ logger = logging.getLogger(__name__)
 # --- End Add Logger ---
 
 
-def _initialize_video_specs(video: "VideoFile", use_raw: bool = True) -> bool:
+def _initialize_video_specs(
+    video: "VideoFile",
+    use_raw: bool = True,
+    local_video_path: Path | None = None,
+) -> bool:
     """
     Initializes video specifications using OpenCV, aligned with storage-agnostic I/O patterns.
     """
     # 1. Target File Resolution (Use file objects, not direct path properties)
     target_file = None
-    if use_raw and getattr(video, "has_raw", False):
+    if local_video_path is not None:
+        target_file = Path(local_video_path)
+    elif use_raw and getattr(video, "has_raw", False):
         target_file = video.raw_file
     elif getattr(video, "active_file", None):
         target_file = video.active_file
@@ -53,7 +61,12 @@ def _initialize_video_specs(video: "VideoFile", use_raw: bool = True) -> bool:
 
     try:
         # 2. Storage-Agnostic File Staging
-        with ensure_local_file(target_file) as video_path:
+        source_context = (
+            nullcontext(Path(local_video_path))
+            if local_video_path is not None
+            else ensure_local_file(target_file)
+        )
+        with source_context as video_path:
             # Defensive check on the temporarily staged file
             if not video_path.exists():
                 _emit_file_operation_event(

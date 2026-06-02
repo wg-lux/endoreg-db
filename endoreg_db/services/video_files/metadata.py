@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
@@ -22,16 +23,28 @@ def get_video_ffmpeg_meta(video: "VideoFile") -> "FFMpegMeta":
     return ffmpeg_meta
 
 
-def update_video_meta(video: "VideoFile", save_instance: bool = True):
+def update_video_meta(
+    video: "VideoFile",
+    save_instance: bool = True,
+    raw_video_path: Path | None = None,
+):
     from ._metadata import _update_video_meta
 
-    return _update_video_meta(video, save_instance=save_instance)
+    return _update_video_meta(
+        video,
+        save_instance=save_instance,
+        raw_video_path=raw_video_path,
+    )
 
 
-def initialize_video_specs(video: "VideoFile", use_raw: bool = True) -> bool:
+def initialize_video_specs(
+    video: "VideoFile", use_raw: bool = True, local_video_path: Path | None = None
+) -> bool:
     from ._metadata import _initialize_video_specs
 
-    return _initialize_video_specs(video, use_raw=use_raw)
+    return _initialize_video_specs(
+        video, use_raw=use_raw, local_video_path=local_video_path
+    )
 
 
 def get_video_fps(video: "VideoFile") -> float:

@@ -1,4 +1,6 @@
 import logging
+from contextlib import nullcontext
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -66,7 +68,11 @@ def _populate_video_fields_from_meta(video: "VideoFile") -> list[str]:
     return update_fields
 
 
-def _update_video_meta(video: "VideoFile", save_instance: bool = True):
+def _update_video_meta(
+    video: "VideoFile",
+    save_instance: bool = True,
+    raw_video_path: Path | None = None,
+):
     """
     Updates or creates the technical VideoMeta from the raw video file.
     Raises FileNotFoundError or ValueError on pre-condition failure, RuntimeError on processing failure.
@@ -77,7 +83,7 @@ def _update_video_meta(video: "VideoFile", save_instance: bool = True):
         "Updating technical VideoMeta for video %s (from raw file).", video.video_hash
     )
 
-    if not video.has_raw:
+    if raw_video_path is None and not video.has_raw:
         # DEFENSIVE: Log warning and skip instead of crashing
         logger.warning(
             f"Raw video file path not available for {video.video_hash}. Skipping VideoMeta update - this may indicate the video was processed and raw file moved."
@@ -85,7 +91,11 @@ def _update_video_meta(video: "VideoFile", save_instance: bool = True):
         return  # Graceful skip instead of FileNotFoundError
 
     try:
-        raw_context = video.ensure_local_raw_file()
+        raw_context = (
+            nullcontext(Path(raw_video_path))
+            if raw_video_path is not None
+            else video.ensure_local_raw_file()
+        )
     except (AttributeError, ValueError, FileNotFoundError):
         # DEFENSIVE: Log warning and skip instead of crashing production pipeline
         logger.warning(

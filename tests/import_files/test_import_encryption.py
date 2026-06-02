@@ -18,7 +18,7 @@ from endoreg_db.import_files.file_storage.state_management import (
     finalize_report_success,
 )
 from endoreg_db.models import Center, EndoscopyProcessor, VideoFile
-from endoreg_db.models.media.video import create_from_file as video_create_module
+from endoreg_db.services.video_files import _imports as video_create_module
 from endoreg_db.utils.filesystem import paths as paths_module
 from endoreg_db.utils.encryption.encrypted import MAGIC
 from endoreg_db.utils.filesystem.file_operations import sha256_file

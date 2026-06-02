@@ -22,6 +22,9 @@ __all__ = [
     "MediaIntegrityResult",
     "MediaIntegrityStatus",
     "PreanonymizedIngestPayload",
+    "WatcherFileNotReadyError",
+    "is_in_progress_handoff_path",
+    "wait_for_watcher_file_ready",
     "check_upload_job_media_integrity",
     "process_preanonymized_watcher_file",
     "process_upload_job",
@@ -38,6 +41,15 @@ __all__ = [
 
 _EXPORTS = {
     "PreanonymizedIngestPayload": (".payloads", "PreanonymizedIngestPayload"),
+    "WatcherFileNotReadyError": (".watcher_handoff", "WatcherFileNotReadyError"),
+    "is_in_progress_handoff_path": (
+        ".watcher_handoff",
+        "is_in_progress_handoff_path",
+    ),
+    "wait_for_watcher_file_ready": (
+        ".watcher_handoff",
+        "wait_for_watcher_file_ready",
+    ),
     "deployment_profile_payload": (".deployment", "deployment_profile_payload"),
     "get_deployment_role": (".deployment", "get_deployment_role"),
     "transfer_api_enabled": (".deployment", "transfer_api_enabled"),
@@ -126,6 +138,11 @@ if TYPE_CHECKING:
         check_upload_job_media_integrity,
     )
     from .payloads import PreanonymizedIngestPayload
+    from .watcher_handoff import (
+        WatcherFileNotReadyError,
+        is_in_progress_handoff_path,
+        wait_for_watcher_file_ready,
+    )
     from .transfers import (
         apply_transfer_metadata,
         attach_transfer_media,

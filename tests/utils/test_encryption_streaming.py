@@ -8,8 +8,8 @@ from endoreg_db.services import streamable_media as sm
 
 
 class DummyStorageMode:
-    FS_ENCRYPTED_STREAMABLE = "fs_encrypted_streamable"
-    APP_ENCRYPTED = "app_encrypted"
+    STREAMABLE = "fs_encrypted_streamable"
+    ENCRYPTED = "app_encrypted"
 
 
 class DummyFieldFile:
@@ -30,7 +30,7 @@ class DummyVideo:
         self.processed_file = DummyFieldFile("processed/input.mp4")
         self.raw_streamable_relative_path = ""
         self.processed_streamable_relative_path = ""
-        self.storage_mode = DummyStorageMode.APP_ENCRYPTED
+        self.storage_mode = DummyStorageMode.ENCRYPTED
         self.saved_update_fields = None
 
     def save(self, update_fields=None):
@@ -108,7 +108,7 @@ def test_sync_materializes_plaintext_raw_and_sets_streamable_mode(
         video.raw_streamable_relative_path
         == f"streamable_videos/raw/{video.video_hash}.mp4"
     )
-    assert video.storage_mode == DummyStorageMode.FS_ENCRYPTED_STREAMABLE
+    assert video.storage_mode == DummyStorageMode.STREAMABLE
     assert "raw_streamable_relative_path" in update_fields
     assert "storage_mode" in update_fields
     assert video.saved_update_fields is not None
@@ -130,7 +130,7 @@ def test_sync_is_idempotent_and_does_not_rewrite_existing_plaintext(
     before = target.stat().st_mtime_ns
 
     video.raw_streamable_relative_path = f"streamable_videos/raw/{video.video_hash}.mp4"
-    video.storage_mode = DummyStorageMode.FS_ENCRYPTED_STREAMABLE
+    video.storage_mode = DummyStorageMode.STREAMABLE
 
     def fail_if_called(*args, **kwargs):
         raise AssertionError(
@@ -208,7 +208,7 @@ def test_sync_repairs_existing_plaintext_with_wrong_hash(
     before = target.stat().st_mtime_ns
 
     video.raw_streamable_relative_path = f"streamable_videos/raw/{video.video_hash}.mp4"
-    video.storage_mode = DummyStorageMode.FS_ENCRYPTED_STREAMABLE
+    video.storage_mode = DummyStorageMode.STREAMABLE
 
     update_fields = sm.sync_video_streamable_artifacts(
         video,
@@ -242,7 +242,7 @@ def test_dry_run_does_not_write_file_or_set_streamable_mode(
 
     assert not target.exists()
     assert video.saved_update_fields is None
-    assert video.storage_mode == DummyStorageMode.APP_ENCRYPTED
+    assert video.storage_mode == DummyStorageMode.ENCRYPTED
     assert "storage_mode" not in update_fields
 
 
@@ -259,7 +259,7 @@ def test_skipped_policy_clears_stale_streamable_paths_and_app_encrypted_mode(
     video.processed_streamable_relative_path = (
         f"streamable_videos/processed/{video.processed_video_hash}.mp4"
     )
-    video.storage_mode = DummyStorageMode.FS_ENCRYPTED_STREAMABLE
+    video.storage_mode = DummyStorageMode.STREAMABLE
 
     update_fields = sm.sync_video_streamable_artifacts(
         video,
@@ -270,7 +270,7 @@ def test_skipped_policy_clears_stale_streamable_paths_and_app_encrypted_mode(
 
     assert video.raw_streamable_relative_path == ""
     assert video.processed_streamable_relative_path == ""
-    assert video.storage_mode == DummyStorageMode.APP_ENCRYPTED
+    assert video.storage_mode == DummyStorageMode.ENCRYPTED
     assert "raw_streamable_relative_path" in update_fields
     assert "processed_streamable_relative_path" in update_fields
     assert "storage_mode" in update_fields

@@ -82,7 +82,7 @@ def attach_video_stream_methods(fake_video_obj, view_module) -> None:
     def can_offload_stream_with_nginx(file_type: str) -> bool:
         return (
             getattr(fake_video_obj, "storage_mode", None)
-            == view_module.VideoFile.StorageMode.FS_ENCRYPTED_STREAMABLE
+            == view_module.VideoFile.StorageMode.STREAMABLE
             and get_stream_relative_path(file_type) is not None
         )
 
@@ -153,7 +153,7 @@ class VideoStreamViewTests(TestCase):
             fake_video_obj = SimpleNamespace(
                 active_raw_file=fake_file_field,
                 processed_file=fake_file_field,
-                storage_mode=view_module.VideoFile.StorageMode.FS_ENCRYPTED_STREAMABLE,
+                storage_mode=view_module.VideoFile.StorageMode.STREAMABLE,
                 raw_streamable_relative_path="streamable_videos/raw/test.mp4",
                 processed_streamable_relative_path="streamable_videos/processed/test.mp4",
             )
@@ -211,7 +211,7 @@ class VideoStreamViewTests(TestCase):
         fake_video_obj = SimpleNamespace(
             active_raw_file=fake_field,
             processed_file=fake_field,
-            storage_mode=view_module.VideoFile.StorageMode.APP_ENCRYPTED,
+            storage_mode=view_module.VideoFile.StorageMode.ENCRYPTED,
         )
         attach_video_stream_methods(fake_video_obj, view_module)
 
@@ -242,7 +242,7 @@ class VideoStreamViewTests(TestCase):
         fake_video_obj = SimpleNamespace(
             active_raw_file=fake_field,
             processed_file=fake_field,
-            storage_mode=view_module.VideoFile.StorageMode.APP_ENCRYPTED,
+            storage_mode=view_module.VideoFile.StorageMode.ENCRYPTED,
         )
         fake_lease = SimpleNamespace(token="lease-token")
         calls = {}
@@ -310,7 +310,7 @@ class VideoStreamViewTests(TestCase):
             fake_video_obj = SimpleNamespace(
                 active_raw_file=fake_file_field,
                 processed_file=fake_file_field,
-                storage_mode=view_module.VideoFile.StorageMode.FS_ENCRYPTED_STREAMABLE,
+                storage_mode=view_module.VideoFile.StorageMode.STREAMABLE,
             )
             attach_video_stream_methods(fake_video_obj, view_module)
 
@@ -353,7 +353,7 @@ class VideoStreamViewTests(TestCase):
             fake_video_obj = SimpleNamespace(
                 active_raw_file=fake_file_field,
                 processed_file=fake_file_field,
-                storage_mode=view_module.VideoFile.StorageMode.APP_ENCRYPTED,
+                storage_mode=view_module.VideoFile.StorageMode.ENCRYPTED,
                 raw_streamable_relative_path="streamable_videos/raw/test.mp4",
                 processed_streamable_relative_path="streamable_videos/processed/test.mp4",
             )
@@ -384,7 +384,7 @@ class VideoStreamViewTests(TestCase):
         fake_video_obj = SimpleNamespace(
             active_raw_file=fake_field,
             processed_file=fake_field,
-            storage_mode=view_module.VideoFile.StorageMode.FS_ENCRYPTED_STREAMABLE,
+            storage_mode=view_module.VideoFile.StorageMode.STREAMABLE,
             raw_streamable_relative_path="streamable_videos/raw/missing.mp4",
             processed_streamable_relative_path="streamable_videos/processed/missing.mp4",
         )
@@ -415,7 +415,7 @@ class VideoStreamViewTests(TestCase):
         fake_video_obj = SimpleNamespace(
             active_raw_file=fake_field,
             processed_file=fake_field,
-            storage_mode=view_module.VideoFile.StorageMode.APP_ENCRYPTED,
+            storage_mode=view_module.VideoFile.StorageMode.ENCRYPTED,
         )
         attach_video_stream_methods(fake_video_obj, view_module)
 
@@ -443,7 +443,7 @@ class VideoStreamViewTests(TestCase):
         fake_video_obj = SimpleNamespace(
             active_raw_file=fake_field,
             processed_file=fake_field,
-            storage_mode=view_module.VideoFile.StorageMode.APP_ENCRYPTED,
+            storage_mode=view_module.VideoFile.StorageMode.ENCRYPTED,
         )
         attach_video_stream_methods(fake_video_obj, view_module)
 
@@ -473,7 +473,7 @@ class VideoStreamViewTests(TestCase):
             raw_file=fake_field,
             active_raw_file=fake_field,
             processed_file=fake_field,
-            storage_mode=view_module.VideoFile.StorageMode.FS_ENCRYPTED_STREAMABLE,
+            storage_mode=view_module.VideoFile.StorageMode.STREAMABLE,
             raw_streamable_relative_path="streamable_videos/raw/encrypted.mp4",
             processed_streamable_relative_path="streamable_videos/processed/encrypted.mp4",
         )
@@ -517,7 +517,7 @@ class VideoStreamViewTests(TestCase):
             raw_file=fake_field,
             active_raw_file=fake_field,
             processed_file=fake_field,
-            storage_mode=view_module.VideoFile.StorageMode.FS_ENCRYPTED_STREAMABLE,
+            storage_mode=view_module.VideoFile.StorageMode.STREAMABLE,
             raw_streamable_relative_path="streamable_videos/raw/repaired.mp4",
             processed_streamable_relative_path="streamable_videos/processed/repaired.mp4",
         )
@@ -575,7 +575,7 @@ class VideoStreamViewTests(TestCase):
             raw_file=fake_raw_field,
             active_raw_file=fake_raw_field,
             processed_file=fake_raw_field,
-            storage_mode=view_module.VideoFile.StorageMode.APP_ENCRYPTED,
+            storage_mode=view_module.VideoFile.StorageMode.ENCRYPTED,
             get_raw_file_path=lambda: fallback_path,
             get_processed_file_path=lambda: fallback_path,
         )
@@ -614,7 +614,7 @@ class VideoStreamViewTests(TestCase):
             raw_file=fake_raw_field,
             active_raw_file=fake_raw_field,
             processed_file=fake_processed_field,
-            storage_mode=view_module.VideoFile.StorageMode.APP_ENCRYPTED,
+            storage_mode=view_module.VideoFile.StorageMode.ENCRYPTED,
             get_raw_file_path=lambda: None,
             get_processed_file_path=lambda: fallback_path,
         )
@@ -649,7 +649,7 @@ class VideoStreamViewTests(TestCase):
         fake_video_obj = SimpleNamespace(
             active_raw_file=fake_file_field,
             processed_file=fake_file_field,
-            storage_mode=view_module.VideoFile.StorageMode.FS_ENCRYPTED_STREAMABLE,
+            storage_mode=view_module.VideoFile.StorageMode.STREAMABLE,
             raw_streamable_relative_path="streamable_videos/raw/test.mp4",
             processed_streamable_relative_path="streamable_videos/processed/test.mp4",
         )
@@ -694,7 +694,7 @@ class VideoStreamViewTests(TestCase):
         fake_video_obj = SimpleNamespace(
             active_raw_file=fake_field,
             processed_file=fake_field,
-            storage_mode=view_module.VideoFile.StorageMode.APP_ENCRYPTED,
+            storage_mode=view_module.VideoFile.StorageMode.ENCRYPTED,
         )
         attach_video_stream_methods(fake_video_obj, view_module)
 

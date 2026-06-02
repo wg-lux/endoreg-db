@@ -176,6 +176,6 @@ class PatientExaminationViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        findings = PatientExaminationSerializer.get_
-        finding_data = [{"id": f.id, "name": str(f)} for f in findings]
+        findings = examination.get_findings()
+        finding_data = [{"id": getattr(f, "pk"), "name": str(f)} for f in findings]
         return Response(finding_data)

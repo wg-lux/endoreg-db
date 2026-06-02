@@ -15,8 +15,8 @@ When changing model-layer imports:
 - Do not add new broad `endoreg_db.models` barrel imports.
 - Do not add new `models -> services` imports unless preserving an existing
   compatibility wrapper.
-- Do not add new service imports from private model implementation modules such
-  as `video_file_io`, `video_file_anonymize`, or `video_file_frames/_*.py`.
+- Do not reintroduce legacy private model implementation modules such as
+  `video_file_io`, `video_file_anonymize`, or `video_file_frames/_*.py`.
 - Keep persisted JSON validation at the model boundary using typed schemas.
 - Keep storage routing typed through enums such as `VideoStorageMode`.
 - Keep raw media export and raw media transfer prohibited.
@@ -36,8 +36,8 @@ model facade -> service package -> private model implementation -> model facade
 
 For video files, the private implementation has been inverted into
 `endoreg_db/services/video_files/_*`. The legacy
-`endoreg_db/models/media/video/video_file_*` modules are compatibility aliases
-only and should not receive new behavior.
+`endoreg_db/models/media/video/video_file_*` compatibility aliases have been
+retired and should not be reintroduced.
 
 The import barrel at `endoreg_db/models/__init__.py` amplifies this risk by
 pulling broad subpackages into otherwise small imports.
@@ -72,18 +72,9 @@ thin callers only where backward compatibility requires it.
 | `hub/upload_job.py` | services, utils | `endoreg_db/models/hub/upload_job.py:10`, `:11`, `:12` |
 | `hub/transfer_job.py` | services | `endoreg_db/models/hub/transfer_job.py:9` |
 | `label/label_video_segment/label_video_segment.py` | services | `endoreg_db/models/label/label_video_segment/label_video_segment.py:10` |
-| `media/pdf/create_report_from_file.py` | services | `endoreg_db/models/media/pdf/create_report_from_file.py:6` |
 | `media/pdf/raw_pdf.py` | services, utils | `endoreg_db/models/media/pdf/raw_pdf.py:12`, `:17`, `:18`, `:163`, `:171`, `:182`, `:190`, `:206`, `:215`, `:224`, `:241`, `:252`, `:263`, `:278`, `:289`, `:305`, `:321`, `:333`, `:346`, `:359`, `:364`, `:375`, `:381`, `:387` |
-| `media/video/create_from_file.py` | services | compatibility alias for `endoreg_db.services.video_files._imports` |
-| `media/video/pipe_1.py` | services | compatibility alias for `endoreg_db.services.video_files._pipeline_1` |
-| `media/video/pipe_2.py` | services | compatibility alias for `endoreg_db.services.video_files._pipeline_2` |
 | `media/video/storage_mode.py` | utils | `endoreg_db/models/media/video/storage_mode.py:5` |
 | `media/video/video_file.py` | services, utils | `endoreg_db/models/media/video/video_file.py:17`, `:21`, `:37`, `:200` through `:739` |
-| `media/video/video_file_ai.py` | services | compatibility alias for `endoreg_db.services.video_files._ai` |
-| `media/video/video_file_anonymize.py` | services | compatibility alias for `endoreg_db.services.video_files._anonymization` |
-| `media/video/video_file_io.py` | services | compatibility alias for `endoreg_db.services.video_files._io` |
-| `media/video/video_file_streaming.py` | services | compatibility alias for `endoreg_db.services.video_files._streaming_compat` |
-| `media/video/video_file_frames/_*.py` | services | compatibility aliases for `endoreg_db.services.video_files._frames` |
 | `metadata/model_meta_logic.py` | utils | `endoreg_db/models/metadata/model_meta_logic.py:13` |
 | `metadata/sensitive_meta_logic.py` | utils | `endoreg_db/models/metadata/sensitive_meta_logic.py:12`, `:15` |
 | `metadata/video_prediction_meta.py` | services | `endoreg_db/models/metadata/video_prediction_meta.py:9` |
@@ -98,8 +89,8 @@ No model imports from `endoreg_db.serializers` were found in the current map.
 
 Video service files should not import implementation from
 `endoreg_db.models.media.video.video_file_*`. Those implementations now live
-under `endoreg_db/services/video_files/_*`, and the model-side modules are
-compatibility aliases for old imports and tests.
+under `endoreg_db/services/video_files/_*`, and the model-side compatibility
+modules for old imports and tests have been removed.
 
 `endoreg_db/services/raw_pdf_files/*.py` may import the `RawPdfFile` leaf model
 for persistence access, but should not import workflow implementation from
@@ -221,8 +212,8 @@ This ranking is based on workflow responsibility, not just line count.
 3. Move neutral payload schemas out of service packages if models need them for
    boundary validation. Keep the typed validation at the model boundary.
 4. Keep `video_files` inverted: implementation belongs in
-   `services/video_files/*`; `models/media/video/video_file_*` remains a
-   compatibility alias layer only.
+   `services/video_files/*`; do not reintroduce `models/media/video/video_file_*`
+   compatibility aliases.
 5. Keep `raw_pdf_files` service-backed: `RawPdfFile` owns fields, validation,
    and thin wrappers; report workflow implementation belongs in
    `services/raw_pdf_files/*`.

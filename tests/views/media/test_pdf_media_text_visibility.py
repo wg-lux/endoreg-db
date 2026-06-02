@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from django.test import TestCase
+from lx_dtypes.models import SensitiveMeta
 
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.file_storage.sensitive_meta_storage import (
@@ -15,7 +16,6 @@ from endoreg_db.import_files.processing.report_processing.report_anonymization i
 )
 from endoreg_db.models import RawPdfFile
 from endoreg_db.services.report_import import ReportImportService
-from lx_anonymizer.sensitive_meta_interface import SensitiveMeta as LxSM
 from tests.helpers.default_objects import DEFAULT_CENTER_NAME
 
 MINIMAL_PDF_BYTES = b"""%PDF-1.4
@@ -103,7 +103,7 @@ class PdfMediaTextVisibilityTests(TestCase):
             ctx.current_report.text = ctx.original_text
             ctx.current_report.anonymized_text = ctx.anonymized_text
             ctx.current_report.save(update_fields=["text", "anonymized_text"])
-            sm = LxSM()
+            sm = SensitiveMeta()
             if sensitive_meta_storage(sm, ctx.current_report):
                 ctx.extracted_metadata = sm
                 return ctx

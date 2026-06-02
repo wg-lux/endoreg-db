@@ -51,7 +51,7 @@ class FrameStreamView(APIView):
         frame_path: Path,
         content_type: str,
         *,
-        frontend_origin: str,
+        frontend_origin: str | None,
     ) -> HttpResponseBase | None:
         try:
             return build_nginx_accel_response_for_path(
@@ -132,7 +132,7 @@ class FrameStreamView(APIView):
                 if dispatch_result.status == REQUEST_STATUS_FAILED
                 else "frame_extraction_pending"
             ),
-            "video_id": int(frame.video_id),
+            "video_id": int(getattr(frame, "video_id")),
             "frame_number": int(frame.frame_number),
             "request_id": int(dispatch_result.request_id),
             "task_id": dispatch_result.task_id,
@@ -140,6 +140,14 @@ class FrameStreamView(APIView):
         if dispatch_result.status == REQUEST_STATUS_FAILED:
             return Response(payload, status=status.HTTP_409_CONFLICT)
         return Response(payload, status=status.HTTP_202_ACCEPTED)
+
+    @staticmethod
+    def _add_cors_headers_if_configured(
+        response: HttpResponseBase, frontend_origin: str | None
+    ) -> HttpResponseBase:
+        if frontend_origin is None:
+            return response
+        return add_cors_headers(response, frontend_origin)
 
     def get(self, request, video_id=None, frame_number=None):
         if video_id is None or frame_number is None:
@@ -203,7 +211,7 @@ class FrameStreamView(APIView):
                 response = HttpResponse(status=416, content_type=content_type)
                 response["Content-Range"] = f"bytes */{file_size}"
                 response["Accept-Ranges"] = "bytes"
-                return add_cors_headers(response, frontend_origin)
+                return self._add_cors_headers_if_configured(response, frontend_origin)
 
         django_file = File(frame_path.open("rb"), name=frame_path.name)
         response = build_partial_content_response(
@@ -214,4 +222,4 @@ class FrameStreamView(APIView):
             disposition="inline",
             filename=frame_path.name,
         )
-        return add_cors_headers(response, frontend_origin)
+        return self._add_cors_headers_if_configured(response, frontend_origin)

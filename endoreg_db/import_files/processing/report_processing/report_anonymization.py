@@ -1,10 +1,10 @@
+import importlib
 import logging
 import os
 import sys
-import importlib
 from pathlib import Path
 
-from lx_anonymizer.sensitive_meta_interface import SensitiveMeta as LxSM
+from lx_dtypes.models import SensitiveMeta
 
 from endoreg_db.import_files.context import ImportContext
 from endoreg_db.import_files.file_storage.sensitive_meta_storage import (
@@ -12,7 +12,6 @@ from endoreg_db.import_files.file_storage.sensitive_meta_storage import (
 )
 from endoreg_db.utils.filesystem import paths as path_utils
 from endoreg_db.utils.filesystem.file_operations import ensure_directory
-
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +98,7 @@ class ReportAnonymizer:
             ctx.current_report.anonymized_text = ctx.anonymized_text
         ctx.current_report.save(update_fields=["text", "anonymized_text"])
 
-        sm = LxSM()
+        sm = SensitiveMeta()
         if isinstance(ctx.extracted_metadata, dict):
             sm.safe_update(ctx.extracted_metadata)
 

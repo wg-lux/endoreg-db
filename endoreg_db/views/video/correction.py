@@ -15,7 +15,7 @@ Available Functions from lx_anonymizer (already implemented):
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from django.shortcuts import get_object_or_404
 from rest_framework import status
@@ -44,17 +44,21 @@ logger = logging.getLogger(__name__)
 
 
 try:
-    from lx_anonymizer import FrameCleaner
+    from lx_anonymizer import FrameCleaner as _FrameCleaner
+
+    FrameCleaner = cast(Any, _FrameCleaner)
 except ImportError as exc:  # pragma: no cover - exercised by dependency-light tests
     _FRAME_CLEANER_IMPORT_ERROR = exc
 
-    class FrameCleaner:  # type: ignore[no-redef]
+    class _UnavailableFrameCleaner:
         """Import-time placeholder so callers can monkeypatch FrameCleaner in tests."""
 
         def __init__(self, *args, **kwargs):
             raise RuntimeError(
                 "lx_anonymizer FrameCleaner is unavailable"
             ) from _FRAME_CLEANER_IMPORT_ERROR
+
+    FrameCleaner = cast(Any, _UnavailableFrameCleaner)
 
 
 def update_processed_file(video, output_path: Path) -> str:

@@ -113,10 +113,10 @@ stable DB paths.
 
 ## Implementation References
 
-- Full extraction wrapper:
-  `endoreg_db/models/media/video/video_file_frames/_extract_frames.py`
-- Range extraction wrapper:
-  `endoreg_db/models/media/video/video_file_frames/_manage_frame_range.py`
+- Full extraction implementation:
+  `endoreg_db/services/video_files/_frames/_extract_frames.py`
+- Range extraction implementation:
+  `endoreg_db/services/video_files/_frames/_manage_frame_range.py`
 - Service entrypoints:
   `endoreg_db/services/video_files/frames.py`,
   `endoreg_db/services/video_files/pipeline.py`,
@@ -125,8 +125,8 @@ stable DB paths.
   `endoreg_db/utils/video/ffmpeg_wrapper.py`
 - Frame streaming view:
   `endoreg_db/views/media/frame_media.py`
-- `pipe_1` caller:
-  `endoreg_db/models/media/video/pipe_1.py`
+- `pipe_1` implementation:
+  `endoreg_db/services/video_files/_pipeline_1.py`
 - Post-validation rebuild:
   `endoreg_db/services/jobs/video_post_validation_jobs.py`
 - Outside-frame rebuild:
