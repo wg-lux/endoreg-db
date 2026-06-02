@@ -44,7 +44,7 @@ def _record_warning(command, message, verbose, context):
     )
 
 
-def load_model_data_from_yaml(command, model_name, metadata, verbose):
+def load_model_data_from_yaml(command, model_name, metadata, verbose=False):
     """
     Load model data from YAML files.
 
