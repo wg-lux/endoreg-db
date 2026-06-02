@@ -6,7 +6,7 @@ from datetime import date as Date
 from .k_anonymity import _build_sensitive_meta_qi_queryset
 from .fake import fake_name_with_similar_dob_and_gender
 
-from endoreg_db.models import SensitiveMeta
+from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 
 logger = logging.getLogger(__name__)
 

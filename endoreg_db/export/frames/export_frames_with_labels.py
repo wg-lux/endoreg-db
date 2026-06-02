@@ -6,20 +6,21 @@ import logging
 import uuid
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, TypedDict, cast, Literal
+from typing import TYPE_CHECKING, Any, Literal, TypedDict, cast
 
 import yaml
 import json
 from django.db.models import Q, QuerySet
 
 from endoreg_db.helpers.data_load_orchestrator import load_base_db_data
-from endoreg_db.models import (
-    Center,
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.label.annotation.image_classification import (
     ImageClassificationAnnotation,
-    LabelVideoSegment,
-    VideoFile,
-    Frame,
 )
+from endoreg_db.models.label.label_video_segment.label_video_segment import (
+    LabelVideoSegment,
+)
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.hub.deployment import local_study_server_mode_enabled
 from endoreg_db.services.video_files import get_video_frame_dir_path
 from endoreg_db.utils.filesystem.file_operations import (
@@ -44,6 +45,9 @@ from endoreg_db.utils.storage.streaming import (
 from endoreg_db.utils.video.ffmpeg_wrapper import (
     extract_frames as ffmpeg_extract_frames,
 )
+
+if TYPE_CHECKING:
+    from endoreg_db.models.media.frame.frame import Frame
 
 logger = logging.getLogger(__name__)
 
@@ -122,15 +126,6 @@ def _config_optional_bool(value: Any) -> bool | None:
     if value is None:
         return None
     return _config_bool(value)
-
-
-def _video_anonymization_validated(video: VideoFile) -> bool:
-    from endoreg_db.services.video_files import get_or_create_video_state
-
-    state = getattr(video, "state", None)
-    if state is None:
-        state = get_or_create_video_state(video)
-    return bool(getattr(state, "anonymization_validated", False))
 
 
 def _assert_video_media_export_ready(video: VideoFile) -> None:

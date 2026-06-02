@@ -106,7 +106,7 @@ class TestVideoImportService(TestCase):
 
         # Check if state indicates processing occurred
         if hasattr(video_file, "state") and video_file.state:
-            # Note: anonymized state might not be set until pipe_2 runs
+            # Note: anonymized state might be set by a later anonymization job.
             self.assertIsNotNone(video_file.state)
 
     @pytest.mark.unit

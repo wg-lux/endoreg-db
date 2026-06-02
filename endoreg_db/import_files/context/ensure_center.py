@@ -1,7 +1,8 @@
-from typing import Union, Optional
+from typing import Optional, Union
 
-from endoreg_db.models import Center
-from endoreg_db.models.media import RawPdfFile, VideoFile
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.media.video.video_file import VideoFile
 
 
 def ensure_center(

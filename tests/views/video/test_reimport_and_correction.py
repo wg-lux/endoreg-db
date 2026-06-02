@@ -123,7 +123,7 @@ class _FakeVideo:
         self._raw_path = raw_path
         self.saved_update_fields: list[Any] = []
         self.refreshed = False
-        self.pipe_1_called = False
+        self.legacy_prediction_called = False
         self.initialize_specs_called = False
         self.initialize_frames_called = False
 
@@ -135,10 +135,6 @@ class _FakeVideo:
 
     def initialize_frames(self):
         self.initialize_frames_called = True
-
-    def pipe_1(self, **kwargs):
-        self.pipe_1_called = True
-        return True
 
     def save(self, update_fields=None):
         self.saved_update_fields.append(update_fields)
@@ -259,7 +255,7 @@ def test_reimport_reanonymizes_existing_video_without_full_import(
 
     assert response.status_code == 200
     assert service_calls == [{"target_video": video, "source_path": raw_path}]
-    assert video.pipe_1_called is False
+    assert video.legacy_prediction_called is False
     assert video.initialize_specs_called is True
     assert video.initialize_frames_called is True
     assert video.refreshed is True

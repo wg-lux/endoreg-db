@@ -1,4 +1,3 @@
-from endoreg_db.models import SensitiveMeta
 import logging
 from datetime import timedelta
 from typing import Tuple
@@ -7,6 +6,8 @@ from django.db.models import QuerySet
 
 from itertools import combinations
 from typing import Dict
+
+from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 
 logger = logging.getLogger(__name__)
 

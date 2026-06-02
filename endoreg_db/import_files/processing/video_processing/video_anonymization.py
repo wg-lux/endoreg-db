@@ -5,7 +5,7 @@ import os
 import uuid
 from contextlib import nullcontext
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 logger = logging.getLogger(__name__)
 PHI_REGION_LABEL_NAME = "phi_region"
@@ -29,18 +29,21 @@ def _temp_media_path(final_path: Path, marker: str = "part") -> Path:
 from lx_anonymizer.frame_cleaner import FrameCleaner
 from lx_dtypes.models import SensitiveMeta
 
-from endoreg_db.import_files.context import ImportContext
+from endoreg_db.import_files.context.import_context import (
+    AnonymizerSourceSnapshot,
+    ImportContext,
+)
 from endoreg_db.import_files.file_storage.sensitive_meta_storage import (
     sensitive_meta_storage,
 )
-from endoreg_db.models import (
+from endoreg_db.models.label.annotation.frame_box import FrameBoxAnnotation
+from endoreg_db.models.label.label import Label
+from endoreg_db.models.media.frame.frame import Frame
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.medical.hardware.endoscopy_processor import (
     EndoscopyProcessor,
-    Frame,
-    FrameBoxAnnotation,
-    InformationSource,
-    Label,
-    VideoFile,
 )
+from endoreg_db.models.other.information_source import InformationSource
 from endoreg_db.services.video_files import get_or_create_video_state
 from endoreg_db.utils.filesystem import paths as path_utils
 from endoreg_db.utils.filesystem.file_operations import (
@@ -227,7 +230,7 @@ def _quarantine_anonymizer_source(
 
 
 def _log_anonymizer_source_verified(
-    *, video_hash: str, snapshot: dict[str, Any]
+    *, video_hash: str, snapshot: Mapping[str, Any]
 ) -> None:
     logger.info(
         json.dumps(
@@ -246,7 +249,7 @@ def _verify_anonymizer_source(
     source_path: Path,
     *,
     video_hash: str,
-) -> dict[str, Any]:
+) -> AnonymizerSourceSnapshot:
     source_path = Path(source_path).resolve()
     if not source_path.exists():
         raise FileNotFoundError(f"Video anonymization source not found: {source_path}")
@@ -374,14 +377,15 @@ def _verify_anonymizer_source(
                 "Anonymizer source height differs from VideoMeta validation."
             )
 
-    snapshot = {
+    codec_value = video_stream.get("codec_name")
+    snapshot: AnonymizerSourceSnapshot = {
         "path": str(source_path),
         "size_bytes": int(stat_result.st_size),
         "mtime_ns": int(stat_result.st_mtime_ns),
         "sha256": str(source_sha256),
         "width": width,
         "height": height,
-        "codec_name": video_stream.get("codec_name"),
+        "codec_name": str(codec_value) if codec_value is not None else None,
     }
     _log_anonymizer_source_verified(video_hash=video_hash, snapshot=snapshot)
     ctx.anonymizer_source_snapshot = snapshot

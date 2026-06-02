@@ -1,6 +1,7 @@
 # forms.py
 from django import forms
-from endoreg_db.models import ActiveModel
+
+from endoreg_db.models.administration.ai.active_model import ActiveModel
 
 
 class ActiveModelForm(forms.ModelForm):

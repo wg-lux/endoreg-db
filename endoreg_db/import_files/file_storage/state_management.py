@@ -7,8 +7,10 @@ from django.db import transaction
 
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.file_storage.cleanup import safe_cleanup_staging_file
-from endoreg_db.models.media import RawPdfFile, VideoFile
-from endoreg_db.models.state import RawPdfState, VideoState
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.state.raw_pdf import RawPdfState
+from endoreg_db.models.state.video import VideoState
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
@@ -85,16 +87,6 @@ def _store_existing_final_file(
         save=False,
         overwrite=True,
     )
-
-
-def _get_history_filename(ctx: ImportContext) -> str:
-    """
-    Prefer original_path.name if provided, otherwise fall back to file_path.name.
-    """
-    if ctx.original_path is not None:
-        return ctx.original_path.name
-    # ctx.file_path is always present and already a Path in your tests
-    return Path(ctx.file_path).name
 
 
 def _ensure_instance_state(

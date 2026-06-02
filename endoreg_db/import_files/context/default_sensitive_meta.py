@@ -3,9 +3,9 @@
 import os
 import logging
 from datetime import date
-from typing import Union
 
-from endoreg_db.models.media import RawPdfFile, VideoFile
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta  # adjust path
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ DEFAULT_PATIENT_DOB = date(1970, 1, 1)
 
 
 def default_sensitive_meta(
-    instance: Union[RawPdfFile, VideoFile],
+    instance: RawPdfFile | VideoFile | None,
 ) -> SensitiveMeta | None:
     """
     Ensure the given instance has a minimal SensitiveMeta attached.

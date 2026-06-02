@@ -22,7 +22,7 @@ from endoreg_db.import_files.file_storage.storage import create_sensitive_copy
 from endoreg_db.import_files.processing.report_processing.report_anonymization import (
     ReportAnonymizer,
 )
-from endoreg_db.models.media import RawPdfFile
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )

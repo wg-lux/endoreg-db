@@ -7,7 +7,8 @@ from lx_dtypes.models import SensitiveMeta as LxSensitiveMeta
 from endoreg_db.import_files.context.default_sensitive_meta import (
     default_sensitive_meta,
 )
-from endoreg_db.models.media import RawPdfFile, VideoFile
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 
 #

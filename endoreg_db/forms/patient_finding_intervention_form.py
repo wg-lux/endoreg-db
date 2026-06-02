@@ -1,11 +1,14 @@
 from django import forms
-from endoreg_db.models import (
-    Patient,
-    PatientExamination,
-    Finding,
+
+from endoreg_db.models.administration.person.patient.patient import Patient
+from endoreg_db.models.medical.finding.finding import Finding
+from endoreg_db.models.medical.finding.finding_classification import (
     FindingClassification,
     FindingClassificationChoice,
-    FindingIntervention,
+)
+from endoreg_db.models.medical.finding.finding_intervention import FindingIntervention
+from endoreg_db.models.medical.patient.patient_examination import PatientExamination
+from endoreg_db.models.medical.patient.patient_finding_intervention import (
     PatientFindingIntervention,
 )
 

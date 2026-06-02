@@ -1,17 +1,14 @@
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from rest_framework import serializers
 
 from lx_dtypes.models.contracts import DocumentType as DocumentTypeContract
 
 from endoreg_db.models.hub.upload_job import UploadJob
-from endoreg_db.models.media import RawPdfFile, VideoFile
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.state.anonymization import AnonymizationState
-
-if TYPE_CHECKING:
-    pass
 
 PATH_PATTERN = re.compile(r"([A-Za-z]:\\[^\s]+|/[^\s]+)")
 DOCUMENT_TYPE_VALUES = {document_type.value for document_type in DocumentTypeContract}
@@ -116,10 +113,9 @@ class FileOverviewSerializer(serializers.Serializer):
         # 1. Extract Type-Specific Data
         if isinstance(instance, VideoFile):
             media_type = "video"
+            raw_file_name = getattr(instance.raw_file, "name", "") or ""
             filename = instance.original_file_name or (
-                instance.raw_file.name.split("/")[-1]
-                if instance.raw_file
-                else "unknown_video"
+                raw_file_name.split("/")[-1] if raw_file_name else "unknown_video"
             )
             created_at = instance.uploaded_at
             # Use the state relation optimized in the View
@@ -133,8 +129,11 @@ class FileOverviewSerializer(serializers.Serializer):
 
         elif isinstance(instance, RawPdfFile):
             media_type = "pdf"
+            report_file_name = getattr(instance.file, "name", "") or ""
             filename = (
-                instance.file.name.split("/")[-1] if instance.file else "unknown_report"
+                report_file_name.split("/")[-1]
+                if report_file_name
+                else "unknown_report"
             )
             created_at = instance.date_created
             state_obj = instance.state
@@ -186,9 +185,13 @@ class FileOverviewSerializer(serializers.Serializer):
                 else None
             ),
             "pseudo_patient_id": (
-                sensitive_meta.pseudo_patient_id if sensitive_meta else None
+                getattr(sensitive_meta, "pseudo_patient_id", None)
+                if sensitive_meta
+                else None
             ),
             "pseudo_examination_id": (
-                sensitive_meta.pseudo_examination_id if sensitive_meta else None
+                getattr(sensitive_meta, "pseudo_examination_id", None)
+                if sensitive_meta
+                else None
             ),
         }

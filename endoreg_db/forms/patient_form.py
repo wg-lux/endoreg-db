@@ -1,6 +1,9 @@
 from django import forms
 from django.forms import ModelForm, Select
-from endoreg_db.models import Patient, Gender, Center
+
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.administration.person.patient.patient import Patient
+from endoreg_db.models.other.gender import Gender
 
 
 class PatientForm(ModelForm):

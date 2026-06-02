@@ -8,9 +8,12 @@ from typing import Iterator, Optional, Union
 
 from endoreg_db.exceptions import InsufficientStorageError
 from endoreg_db.import_files.context import (
-    ImportContext,
     content_hash_lock,
     file_lock,
+)
+from endoreg_db.import_files.context.import_context import (
+    ImportContext,
+    SourceStreamData,
 )
 from endoreg_db.import_files.file_storage.cleanup import safe_cleanup_staging_file
 from endoreg_db.import_files.file_storage.state_management import (
@@ -25,7 +28,7 @@ from endoreg_db.import_files.context.validate_directories import validate_direct
 from endoreg_db.import_files.file_storage.state_management import (
     mark_instance_processing_started,
 )
-from endoreg_db.models import VideoFile
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
@@ -81,14 +84,25 @@ def _hash_lock_dir() -> Path:
     return _storage_dir() / "locks" / "video_content"
 
 
-def _video_meta_stream_contract(video: VideoFile | object | None) -> dict[str, object]:
+def _video_meta_stream_contract(video: VideoFile | object | None) -> SourceStreamData:
     if video is None:
         return {}
-    contract: dict[str, object] = {}
-    for field_name in ("width", "height", "fps", "duration", "frame_count"):
-        value = getattr(video, field_name, None)
-        if value is not None:
-            contract[field_name] = value
+    contract: SourceStreamData = {}
+    width = getattr(video, "width", None)
+    if isinstance(width, int) and not isinstance(width, bool):
+        contract["width"] = width
+    height = getattr(video, "height", None)
+    if isinstance(height, int) and not isinstance(height, bool):
+        contract["height"] = height
+    fps = getattr(video, "fps", None)
+    if isinstance(fps, (int, float)) and not isinstance(fps, bool):
+        contract["fps"] = float(fps)
+    duration = getattr(video, "duration", None)
+    if isinstance(duration, (int, float)) and not isinstance(duration, bool):
+        contract["duration"] = float(duration)
+    frame_count = getattr(video, "frame_count", None)
+    if isinstance(frame_count, int) and not isinstance(frame_count, bool):
+        contract["frame_count"] = frame_count
     return contract
 
 
@@ -217,7 +231,7 @@ class VideoImportService:
                 )
 
                 # create or retrieve VideoFile + update history
-                ctx.current_video, processed, needs_processing = (
+                ctx.current_video, _processed, needs_processing = (
                     create_or_retrieve_video_file(ctx)
                 )
                 get_or_create_video_state(ctx.current_video)
@@ -240,7 +254,7 @@ class VideoImportService:
                     and not current_state.anonymization_validated
                 ):
                     finalize_failure(ctx)
-                    ctx.current_video, processed, needs_processing = (
+                    ctx.current_video, _processed, needs_processing = (
                         create_or_retrieve_video_file(ctx)
                     )
 

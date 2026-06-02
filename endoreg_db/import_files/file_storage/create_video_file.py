@@ -5,7 +5,7 @@ from typing import Tuple
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.context.ensure_center import ensure_center
 from endoreg_db.utils.filesystem.file_operations import sha256_file
-from endoreg_db.models.media import VideoFile
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )

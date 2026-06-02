@@ -12,7 +12,8 @@ from pydantic import (
     field_validator,
 )
 
-from endoreg_db.models.media import RawPdfFile, VideoFile
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.utils.filesystem.file_operations import sha256_file
 
 
@@ -37,6 +38,14 @@ class AnonymizerSourceSnapshot(TypedDict, total=False):
     codec_name: str | None
 
 
+def _empty_source_stream_data() -> SourceStreamData:
+    return {}
+
+
+def _empty_anonymizer_source_snapshot() -> AnonymizerSourceSnapshot:
+    return {}
+
+
 class ImportContext(BaseModel):
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
@@ -59,8 +68,12 @@ class ImportContext(BaseModel):
     validated_raw_source_size_bytes: int | None = Field(default=None, ge=0)
     validated_raw_source_mtime_ns: int | None = Field(default=None, ge=0)
     validated_raw_source_sha256: str | None = None
-    validated_raw_source_stream: SourceStreamData = Field(default_factory=dict)
-    anonymizer_source_snapshot: AnonymizerSourceSnapshot = Field(default_factory=dict)
+    validated_raw_source_stream: SourceStreamData = Field(
+        default_factory=_empty_source_stream_data
+    )
+    anonymizer_source_snapshot: AnonymizerSourceSnapshot = Field(
+        default_factory=_empty_anonymizer_source_snapshot
+    )
     defer_video_initialization: bool = False
     quarantine_path: Path | None = None
     sensitive_path: Path | None = None
@@ -133,7 +146,7 @@ class ImportContext(BaseModel):
 
     @field_validator("extracted_metadata", mode="before")
     @classmethod
-    def _validate_extracted_metadata(cls, value: SensitiveMeta) -> SensitiveMeta:
+    def _validate_extracted_metadata(cls, value: object) -> SensitiveMeta:
         if isinstance(value, SensitiveMeta):
             return value
         raise ValueError("extracted_metadata must be an lx_dtypes SensitiveMeta")
