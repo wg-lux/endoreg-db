@@ -1,5 +1,5 @@
 import logging
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, List, Literal, Optional, Tuple, cast
 
 from django.db import transaction
 from django.db.models import Q
@@ -20,10 +20,30 @@ if TYPE_CHECKING:
 
     # --- Pipeline 1 ---
 
+FrameSourceMode = Literal["cache", "stream", "auto"]
+ResolvedFrameSourceMode = Literal["cache", "stream"]
+SUPPORTED_FRAME_SOURCE_MODES = {"cache", "stream", "auto"}
+
 
 def _has_extracted_frame_files(video_file: "VideoFile") -> bool:
     frame_dir = video_file.get_frame_dir_path()
     return bool(frame_dir and frame_dir.exists() and any(frame_dir.glob("frame_*.jpg")))
+
+
+def _normalize_pipe_1_frame_source_mode(value: str | None) -> FrameSourceMode:
+    normalized = str(value or "auto").strip().lower()
+    if normalized not in SUPPORTED_FRAME_SOURCE_MODES:
+        supported = ", ".join(sorted(SUPPORTED_FRAME_SOURCE_MODES))
+        raise ValueError(f"frame_source_mode must be one of: {supported}.")
+    return cast(FrameSourceMode, normalized)
+
+
+def _resolve_pipe_1_frame_source_mode(
+    requested_frame_source_mode: FrameSourceMode,
+) -> ResolvedFrameSourceMode:
+    if requested_frame_source_mode == "stream":
+        return "stream"
+    return "cache"
 
 
 def _pipe_1(
@@ -37,11 +57,14 @@ def _pipe_1(
     binarize_threshold: float = 0.5,
     test_run: bool = False,
     n_test_frames: int = 10,
+    frame_source_mode: str | None = "auto",
+    frame_source_file_type: str = "raw",
 ) -> bool:
     """
-    Pipeline 1: Extract frames, text, predict, create segments, optionally delete frames.
+    Pipeline 1: prepare metadata, predict, create segments, optionally delete frames.
     """
     success = False  # Initialize success flag
+    frames_touched = False
     from endoreg_db.models.administration.ai.ai_model import AiModel
     from endoreg_db.models.label.label_video_segment.label_video_segment import (
         LabelVideoSegment,
@@ -58,41 +81,71 @@ def _pipe_1(
 
     logger.info(f"Starting Pipe 1 for video {video_file.video_hash}")
     try:
-        # 1. Heavy I/O operations outside the transaction block
-        logger.info("Pipe 1: Extracting frames...")
-        video_file.extract_frames(
-            overwrite=False
-        )  # Avoid overwriting if already extracted
-
-        logger.info("Pipe 1: Extracting text metadata...")
-        video_file.update_text_metadata(
-            ocr_frame_fraction=ocr_frame_fraction, cap=ocr_cap, overwrite=False
+        requested_frame_source_mode = _normalize_pipe_1_frame_source_mode(
+            frame_source_mode
         )
-        if not _has_extracted_frame_files(video_file):
-            logger.warning(
-                "Pipe 1: Frame cache for video %s disappeared before prediction. "
-                "Re-extracting derived frames from canonical raw media.",
-                video_file.video_hash,
+        resolved_frame_source_mode = _resolve_pipe_1_frame_source_mode(
+            requested_frame_source_mode,
+        )
+        logger.info(
+            "Pipe 1: Using %s frame source mode for prediction "
+            "(requested=%s, file_type=%s).",
+            resolved_frame_source_mode,
+            requested_frame_source_mode,
+            frame_source_file_type,
+        )
+
+        # 1. Heavy I/O operations outside the transaction block
+        if resolved_frame_source_mode == "cache":
+            frames_touched = True
+            logger.info("Pipe 1: Extracting frames...")
+            video_file.extract_frames(
+                overwrite=False
+            )  # Avoid overwriting if already extracted
+
+            logger.info("Pipe 1: Extracting text metadata...")
+            video_file.update_text_metadata(
+                ocr_frame_fraction=ocr_frame_fraction, cap=ocr_cap, overwrite=False
             )
-            try:
-                video_file.extract_frames(overwrite=True)
-            except Exception as e:
-                logger.error(
-                    "Pipe 1 failed: could not restore frame cache for video %s: %s",
-                    video_file.video_hash,
-                    e,
-                    exc_info=True,
-                )
-                return False
             if not _has_extracted_frame_files(video_file):
-                logger.error(
-                    "Pipe 1 failed: frame cache for video %s is still empty after re-extraction.",
+                logger.warning(
+                    "Pipe 1: Frame cache for video %s disappeared before prediction. "
+                    "Re-extracting derived frames from canonical raw media.",
                     video_file.video_hash,
                 )
-                return False
+                try:
+                    video_file.extract_frames(overwrite=True)
+                except Exception as e:
+                    logger.error(
+                        "Pipe 1 failed: could not restore frame cache for video %s: %s",
+                        video_file.video_hash,
+                        e,
+                        exc_info=True,
+                    )
+                    return False
+                if not _has_extracted_frame_files(video_file):
+                    if requested_frame_source_mode == "auto":
+                        resolved_frame_source_mode = "stream"
+                        logger.warning(
+                            "Pipe 1: Frame cache for video %s is still empty after "
+                            "re-extraction. Falling back to decoded stream prediction.",
+                            video_file.video_hash,
+                        )
+                    else:
+                        logger.error(
+                            "Pipe 1 failed: frame cache for video %s is still empty after re-extraction.",
+                            video_file.video_hash,
+                        )
+                        return False
+        else:
+            logger.info(
+                "Pipe 1: Skipping cached frame extraction and OCR because "
+                "prediction will stream decoded frames from the selected video artifact."
+            )
+
         with transaction.atomic():
             state = video_file.get_or_create_state()
-            if not state.frames_extracted:
+            if resolved_frame_source_mode == "cache" and not state.frames_extracted:
                 logger.error(
                     "Pipe 1 failed: Frame extraction did not complete successfully."
                 )
@@ -146,6 +199,8 @@ def _pipe_1(
                         binarize_threshold=binarize_threshold,
                         test_run=test_run,
                         n_test_frames=n_test_frames,
+                        frame_source_mode=resolved_frame_source_mode,
+                        frame_source_file_type=frame_source_file_type,
                     )
                 )
             except Exception as e:
@@ -264,7 +319,7 @@ def _pipe_1(
         return False
     finally:
         # 5. Optionally delete frames
-        if delete_frames_after and success:  # Check success flag
+        if delete_frames_after and success and frames_touched:  # Check success flag
             logger.info("Pipe 1: Deleting frames after processing...")
             try:
                 video_file.delete_frames()
