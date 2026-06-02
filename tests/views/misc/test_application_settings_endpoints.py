@@ -1042,7 +1042,7 @@ class ApplicationSettingsEndpointTests(TestCase):
         AIModelTrainingRun.objects.filter(pk=run.pk).update(
             updated_at=(
                 timezone.now()
-                - view_module.MODEL_TRAINING_LOST_TIMEOUT
+                - model_training_jobs.MODEL_TRAINING_LOST_TIMEOUT
                 - timedelta(minutes=1)
             )
         )
