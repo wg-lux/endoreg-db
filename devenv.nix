@@ -400,9 +400,7 @@ in
   enterShell = ''
 
     # Add the uv virtual environment directly to your PATH
-    if [ -d ".devenv/state/venv/bin" ]; then
-      export PATH="$PWD/.devenv/state/venv/bin:$PATH"
-    fi
+    export PATH="$PWD/.devenv/state/venv/bin:$PATH"
   '';
 
   enterTest = ''

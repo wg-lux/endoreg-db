@@ -823,6 +823,7 @@ dependencies = [
     { name = "kombu" },
     { name = "librosa" },
     { name = "llvmlite" },
+    { name = "lx-ai-core", extra = ["torch"] },
     { name = "lx-anonymizer", extra = ["gpu", "llm", "ocr"] },
     { name = "lx-dtypes" },
     { name = "moviepy" },
@@ -836,7 +837,6 @@ dependencies = [
     { name = "pillow" },
     { name = "pydantic" },
     { name = "pyjwt" },
-    { name = "pyright" },
     { name = "pytesseract" },
     { name = "python-ffmpeg" },
     { name = "python-jose", extra = ["cryptography"] },
@@ -867,9 +867,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-ai = [
-    { name = "lx-ai-core", extra = ["torch"] },
-]
 dev = [
     { name = "black" },
     { name = "build" },
@@ -879,6 +876,7 @@ dev = [
     { name = "mypy" },
     { name = "pip" },
     { name = "pre-commit" },
+    { name = "pyright" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-django" },
@@ -939,7 +937,7 @@ requires-dist = [
     { name = "librosa", specifier = "==0.11.0" },
     { name = "linkify-it-py", marker = "extra == 'docs'", specifier = ">=2.0.3" },
     { name = "llvmlite", specifier = ">=0.44.0" },
-    { name = "lx-ai-core", extras = ["torch"], marker = "extra == 'ai'", specifier = "==0.0.1" },
+    { name = "lx-ai-core", extras = ["torch"], specifier = "==0.0.1" },
     { name = "lx-anonymizer", extras = ["gpu", "llm", "ocr"], specifier = "==0.9.2.0" },
     { name = "lx-dtypes", specifier = "==0.1.7" },
     { name = "moviepy", specifier = "==2.2.1" },
@@ -957,7 +955,7 @@ requires-dist = [
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.5.1" },
     { name = "pydantic", specifier = ">=2.10.6" },
     { name = "pyjwt", specifier = ">=2.10.1" },
-    { name = "pyright", specifier = ">=1.1.410" },
+    { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.410" },
     { name = "pytesseract", specifier = ">=0.3.13" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.5" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.1.1" },
@@ -1000,7 +998,7 @@ requires-dist = [
     { name = "whitenoise", specifier = ">=6.10.0" },
     { name = "ziglang", specifier = ">=0.15.2" },
 ]
-provides-extras = ["dev", "docs", "ai"]
+provides-extras = ["dev", "docs"]
 
 [package.metadata.requires-dev]
 ai-local = [{ name = "lx-ai-core", extras = ["torch"], specifier = "==0.0.1" }]

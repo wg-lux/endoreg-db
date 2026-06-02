@@ -86,7 +86,7 @@ dependencies = [
     "ffprobe>=0.5",
     "kombu>=5.6.1",
     "report-pdf-renderer>=0.1.0",
-    "pyright>=1.1.410",
+    "lx-ai-core[torch]==0.0.1",
 ]
 
 [project.urls]
@@ -114,6 +114,7 @@ dev = [
   "types-requests>=2.32.4.20250913",
   "types-tqdm>=4.67.0.20250809",
   "twine>=6.2.0",
+  "pyright>=1.1.410",
 ]
 docs = [
   "linkify-it-py>=2.0.3",
@@ -123,10 +124,6 @@ docs = [
   "sphinx>=8.2.3,<9.0",
   "furo>=2025.9.25",
 ]
-ai = [
-  "lx-ai-core[torch]==0.0.1",
-]
-# The `gpu` block was removed from here.
 
 [dependency-groups]
 # Hardware explicitly controlled via uv groups
@@ -194,8 +191,6 @@ disable_error_code = [
   "var-annotated", "no-redef", "assignment", "name-defined", "attr-defined"
 ]
 
-[tool.django-stubs]
-django_settings_module = "endoreg_db.config.settings.test"
 
 [tool.uv.extra-build-dependencies]
 "antlr4-python3-runtime" = ["setuptools"]
