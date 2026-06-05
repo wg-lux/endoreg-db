@@ -11,7 +11,10 @@ from endoreg_db.models import (
     Center,
     EndoscopyProcessor,
     Examiner,
+    Frame,
+    ImageClassificationAnnotation,
     NetworkNode,
+    PatientExaminationReport,
     PortalUserInfo,
     TransferJob,
     VideoFile,
@@ -281,6 +284,86 @@ class HubTransferEndpointTests(TestCase):
             == TransferJob.CleanupPolicy.RETAIN_ALL
         )
         assert transfer_job.cleanup_status == TransferJob.CleanupStatus.NOT_REQUESTED
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_video_transfer_imports_frame_annotations_and_related_reports(self):
+        payload = self._video_transfer_payload(
+            transfer_key="site-a__video__annotations",
+            video_hash="hash-annotations",
+        )
+        payload["resource_rows"]["frame_annotations"] = [
+            {
+                "annotation_id": 42,
+                "video_hash": "hash-annotations",
+                "frame_number": 5,
+                "frame_relative_path": "frames/frame_000005.jpg",
+                "frame_timestamp": 0.2,
+                "label_name": "lesion_visible",
+                "value": True,
+                "float_value": 0.91,
+                "annotator": "site-a-reviewer",
+                "information_source_name": "manual_annotation",
+            }
+        ]
+        payload["resource_rows"]["reports"] = [
+            {
+                "id": 77,
+                "patient_examination": 123,
+                "template_name": "star_upper_gi_main",
+                "template_version": "2026.1",
+                "template_hash": "template-hash",
+                "title": "Transferred upper GI report",
+                "status": "final",
+                "editor_payload": {"sections": [{"id": "findings"}]},
+                "patient_context_snapshot": {"patient_hash": "patient-hash"},
+                "history_context_snapshot": {"previous_reports": []},
+                "rendered_text": "Anonymized report text",
+                "version": 2,
+                "is_active": True,
+                "finalized_at": "2026-05-20T10:30:00Z",
+            }
+        ]
+
+        response = self._secure_post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        assert response.status_code == 201, response.content
+
+        video = VideoFile.objects.get(video_hash="hash-annotations")
+        frame = Frame.objects.get(video=video, frame_number=5)
+        assert frame.relative_path == "frames/frame_000005.jpg"
+        assert frame.timestamp == 0.2
+
+        annotation = ImageClassificationAnnotation.objects.select_related(
+            "label",
+            "information_source",
+        ).get(frame=frame)
+        assert annotation.label.name == "lesion_visible"
+        assert annotation.information_source.name == "manual_annotation"
+        assert annotation.value is True
+        assert annotation.float_value == 0.91
+        assert (
+            annotation.external_annotation_id
+            == f"hub_transfer:{self.source_node.node_key}:annotation:42"
+        )
+        video.state.refresh_from_db()
+        assert video.state.frame_annotations_generated is True
+
+        transfer_job = TransferJob.objects.get(transfer_key=payload["transfer_key"])
+        report = PatientExaminationReport.objects.get(
+            patient_examination_id=transfer_job.linked_patient_examination_id,
+            template_name="star_upper_gi_main",
+            version=2,
+        )
+        assert report.status == PatientExaminationReport.Status.FINAL
+        assert report.title == "Transferred upper GI report"
+        assert report.editor_payload == {"sections": [{"id": "findings"}]}
+        assert report.rendered_text == "Anonymized report text"
+        assert report.finalized_at is not None
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfer_registration_requires_matching_node_credentials(self):
@@ -589,6 +672,47 @@ class HubTransferEndpointTests(TestCase):
 
         assert response.status_code == 400, response.content
         assert "Raw media transfer is not permitted" in str(response.json())
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_report_transfer_imports_related_lx_report_rows(self):
+        payload = self._report_transfer_payload(
+            transfer_key="site-a__report__lx-report",
+            pdf_hash="hash-lx-report",
+        )
+        payload["resource_rows"]["reports"] = [
+            {
+                "id": 88,
+                "patient_examination": 321,
+                "template_name": "star_colonoscopy_main",
+                "template_version": "2026.1",
+                "template_hash": "report-template-hash",
+                "title": "Transferred colonoscopy report",
+                "status": "draft",
+                "editor_payload": {"sections": [{"id": "summary"}]},
+                "rendered_text": "Draft anonymized report text",
+                "version": 1,
+                "is_active": True,
+            }
+        ]
+
+        response = self._secure_post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        assert response.status_code == 201, response.content
+
+        transfer_job = TransferJob.objects.get(transfer_key=payload["transfer_key"])
+        report = PatientExaminationReport.objects.get(
+            patient_examination_id=transfer_job.linked_patient_examination_id,
+            template_name="star_colonoscopy_main",
+        )
+        assert report.status == PatientExaminationReport.Status.DRAFT
+        assert report.title == "Transferred colonoscopy report"
+        assert report.editor_payload == {"sections": [{"id": "summary"}]}
+        assert report.rendered_text == "Draft anonymized report text"
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfer_registration_requires_anonymized_status(self):

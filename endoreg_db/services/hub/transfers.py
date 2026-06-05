@@ -6,15 +6,25 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, Literal, NotRequired, TypedDict, cast
 
+from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
+from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.hub.network_node import NetworkNode
 from endoreg_db.models.hub.transfer_job import TransferJob
+from endoreg_db.models.label.annotation.image_classification import (
+    ImageClassificationAnnotation,
+)
+from endoreg_db.models.label.label import Label
+from endoreg_db.models.media.frame.frame import Frame
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+from endoreg_db.models.other.information_source import InformationSource
+from endoreg_db.models.report.patient_examination_report import PatientExaminationReport
 from endoreg_db.models.state.raw_pdf import RawPdfState
 from endoreg_db.models.state.video import VideoState
 from endoreg_db.models.state.processing_history.processing_history import (
@@ -136,7 +146,7 @@ def create_or_reuse_transfer_job(
     resource_rows: dict[str, Any],
     processing_snapshot: dict[str, Any],
     provenance: TransferProvenance,
-    created_by=None,
+    created_by: object | None = None,
 ) -> tuple[TransferJob, bool]:
     transfer_job_manager = cast(Any, TransferJob.objects)
     existing = transfer_job_manager.filter(transfer_key=transfer_key).first()
@@ -307,7 +317,7 @@ def apply_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
 def attach_transfer_media(
     *,
     transfer_job: TransferJob,
-    uploaded_file,
+    uploaded_file: UploadedFile,
     media_role: str,
 ) -> TransferJob:
     if media_role not in {"raw", "processed"}:
@@ -408,6 +418,15 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
             media_obj=video,
             media_type="video",
         )
+        _apply_frame_annotation_rows(
+            transfer_job=transfer_job,
+            video=video,
+            rows=resource_rows.get("frame_annotations") or [],
+        )
+        _apply_patient_examination_report_rows(
+            transfer_job=transfer_job,
+            rows=resource_rows.get("reports") or [],
+        )
 
         processing_decision, transfer_status, status_detail = _decide_video_processing(
             transfer_job=transfer_job,
@@ -501,6 +520,10 @@ def _apply_report_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
             transfer_job=transfer_job,
             media_obj=report,
             media_type="pdf",
+        )
+        _apply_patient_examination_report_rows(
+            transfer_job=transfer_job,
+            rows=resource_rows.get("reports") or [],
         )
 
         processing_decision, transfer_status, status_detail = _decide_report_processing(
@@ -1110,6 +1133,248 @@ def _normalized_suffix(upload_name: str, default_suffix: str) -> str:
     if not suffix.startswith("."):
         suffix = f".{suffix}"
     return suffix.lower()
+
+
+def _apply_frame_annotation_rows(
+    *,
+    transfer_job: TransferJob,
+    video: VideoFile,
+    rows: list[dict[str, Any]],
+) -> None:
+    if not rows:
+        return
+    if not isinstance(rows, list):
+        raise ValueError("resource_rows.frame_annotations must be a list")
+
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ValueError("resource_rows.frame_annotations entries must be objects")
+        row_video_hash = str(row.get("video_hash") or "").strip()
+        if row_video_hash and row_video_hash != video.video_hash:
+            raise ValueError(
+                "resource_rows.frame_annotations video_hash does not match transfer video"
+            )
+
+        frame_number = int(row["frame_number"])
+        relative_path = str(row["frame_relative_path"]).strip()
+        label_name = str(row["label_name"]).strip()
+        information_source_name = str(row["information_source_name"]).strip()
+        frame_timestamp = row.get("frame_timestamp")
+
+        frame, _ = Frame.objects.get_or_create(
+            video=video,
+            frame_number=frame_number,
+            defaults={
+                "relative_path": relative_path,
+                "timestamp": frame_timestamp,
+            },
+        )
+        frame_update_fields: list[str] = []
+        if frame.relative_path != relative_path:
+            frame.relative_path = relative_path
+            frame_update_fields.append("relative_path")
+        if frame.timestamp != frame_timestamp:
+            frame.timestamp = frame_timestamp
+            frame_update_fields.append("timestamp")
+        if frame_update_fields:
+            frame.save(update_fields=frame_update_fields)
+
+        label, _ = Label.get_or_create_from_name(label_name)
+        information_source, _ = InformationSource.objects.get_or_create_by_name(
+            information_source_name,
+            description="Imported from hub transfer frame annotations",
+        )
+        external_annotation_id = _transfer_annotation_external_id(
+            transfer_job=transfer_job,
+            row=row,
+        )
+        _upsert_frame_annotation(
+            frame=frame,
+            label=label,
+            information_source=information_source,
+            annotator=row.get("annotator"),
+            value=bool(row["value"]),
+            float_value=row.get("float_value"),
+            external_annotation_id=external_annotation_id,
+        )
+
+    video_state = get_or_create_video_state(video)
+    if not video_state.frame_annotations_generated:
+        video_state.frame_annotations_generated = True
+        video_state.save(update_fields=["frame_annotations_generated", "date_modified"])
+
+
+def _transfer_annotation_external_id(
+    *,
+    transfer_job: TransferJob,
+    row: dict[str, Any],
+) -> str | None:
+    external_annotation_id = row.get("external_annotation_id")
+    if external_annotation_id:
+        return str(external_annotation_id).strip()
+
+    source_annotation_id = row.get("annotation_id")
+    if source_annotation_id in (None, ""):
+        return None
+    return (
+        f"hub_transfer:{transfer_job.source_node.node_key}:"
+        f"annotation:{source_annotation_id}"
+    )
+
+
+def _upsert_frame_annotation(
+    *,
+    frame: Frame,
+    label: Label,
+    information_source: InformationSource,
+    annotator: str | None,
+    value: bool,
+    float_value: float | None,
+    external_annotation_id: str | None,
+) -> None:
+    annotation = None
+    if external_annotation_id:
+        annotation = (
+            ImageClassificationAnnotation.objects.filter(
+                external_annotation_id=external_annotation_id
+            )
+            .order_by("pk")
+            .first()
+        )
+
+    if annotation is None:
+        defaults: dict[str, Any] = {
+            "value": value,
+            "float_value": float_value,
+        }
+        if external_annotation_id is not None:
+            defaults["external_annotation_id"] = external_annotation_id
+        ImageClassificationAnnotation.objects.update_or_create(
+            frame=frame,
+            label=label,
+            information_source=information_source,
+            annotator=annotator,
+            defaults=defaults,
+        )
+        return
+
+    annotation.frame = frame
+    annotation.label = label
+    annotation.information_source = information_source
+    annotation.annotator = annotator
+    annotation.value = value
+    annotation.float_value = float_value
+    annotation.external_annotation_id = external_annotation_id
+    annotation.save(
+        update_fields=[
+            "frame",
+            "label",
+            "information_source",
+            "annotator",
+            "value",
+            "float_value",
+            "external_annotation_id",
+            "date_modified",
+        ]
+    )
+
+
+def _apply_patient_examination_report_rows(
+    *,
+    transfer_job: TransferJob,
+    rows: list[dict[str, Any]],
+) -> None:
+    if not rows:
+        return
+    if not isinstance(rows, list):
+        raise ValueError("resource_rows.reports must be a list")
+    if transfer_job.linked_patient_examination_id is None:
+        raise ValueError("report rows require a linked patient examination")
+
+    patient_examination = PatientExamination.objects.filter(
+        pk=transfer_job.linked_patient_examination_id
+    ).first()
+    if patient_examination is None:
+        raise ValueError("linked patient examination could not be resolved")
+
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ValueError("resource_rows.reports entries must be objects")
+        _upsert_patient_examination_report(
+            patient_examination=patient_examination,
+            row=row,
+        )
+
+
+def _upsert_patient_examination_report(
+    *,
+    patient_examination: PatientExamination,
+    row: dict[str, Any],
+) -> None:
+    template_name = str(row["template_name"]).strip()
+    template_version = str(row.get("template_version") or "")
+    template_hash = str(row.get("template_hash") or "")
+    version = int(row.get("version") or 1)
+
+    report = (
+        PatientExaminationReport.objects.filter(
+            patient_examination=patient_examination,
+            template_name=template_name,
+            template_version=template_version,
+            template_hash=template_hash,
+            version=version,
+        )
+        .order_by("-id")
+        .first()
+    )
+    if report is None:
+        report = PatientExaminationReport(
+            patient_examination=patient_examination,
+            template_name=template_name,
+            template_version=template_version,
+            template_hash=template_hash,
+            version=version,
+        )
+
+    report.patient_examination = patient_examination
+    report.template_name = template_name
+    report.template_version = template_version
+    report.template_hash = template_hash
+    report.version = version
+    if "title" in row:
+        report.title = str(row.get("title") or "")
+    if "status" in row:
+        report.status = str(row["status"])
+    if "editor_payload" in row:
+        report.editor_payload = row.get("editor_payload") or {}
+    if "patient_context_snapshot" in row:
+        report.patient_context_snapshot = row.get("patient_context_snapshot") or {}
+    if "history_context_snapshot" in row:
+        report.history_context_snapshot = row.get("history_context_snapshot") or {}
+    if "rendered_text" in row:
+        report.rendered_text = str(row.get("rendered_text") or "")
+    if "is_active" in row:
+        report.is_active = bool(row["is_active"])
+    if "finalized_at" in row:
+        report.finalized_at = _parse_transfer_datetime(row.get("finalized_at"))
+    elif report.status != PatientExaminationReport.Status.FINAL:
+        report.finalized_at = None
+
+    report.save()
+
+
+def _parse_transfer_datetime(value: Any) -> datetime | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        parsed = parse_datetime(str(value))
+    if parsed is None:
+        raise ValueError(f"Invalid transfer datetime value: {value!r}")
+    if timezone.is_naive(parsed):
+        return timezone.make_aware(parsed)
+    return parsed
 
 
 def _apply_video_file_payload(video: VideoFile, payload: dict[str, Any]) -> None:

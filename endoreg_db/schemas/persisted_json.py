@@ -3,9 +3,10 @@ from __future__ import annotations
 import math
 from datetime import date, datetime, time
 from pathlib import Path
-from typing import Any, Literal, get_args
+from typing import Any, Literal, cast, get_args
 
 from lx_dtypes.models.contracts import CaseResolutionRequest, DocumentType
+from lx_dtypes.models.ledger.p_examination.Pydantic import PExamination
 from lx_dtypes.serialization import serialize_path
 from pydantic import (
     BaseModel,
@@ -31,11 +32,19 @@ def _json_compatible_value(value: Any, *, field_name: str) -> Any:
     if isinstance(value, Path):
         return serialize_path(value)
     if isinstance(value, list):
-        return [_json_compatible_value(item, field_name=field_name) for item in value]
+        sequence = cast(list[Any], value)
+        return [
+            _json_compatible_value(item, field_name=field_name) for item in sequence
+        ]
     if isinstance(value, tuple):
-        return [_json_compatible_value(item, field_name=field_name) for item in value]
+        sequence = cast(tuple[Any, ...], value)
+        return [
+            _json_compatible_value(item, field_name=field_name) for item in sequence
+        ]
     if isinstance(value, dict):
-        return _json_compatible_mapping(value, field_name=field_name)
+        return _json_compatible_mapping(
+            cast(dict[Any, Any], value), field_name=field_name
+        )
     raise ValueError(
         f"{field_name} contains unsupported JSON value type: {type(value).__name__}"
     )
@@ -134,7 +143,9 @@ class VideoFileMetaPayload(BaseModel):
     @classmethod
     def _coerce_payload(cls, value: Any) -> Any:
         if isinstance(value, dict):
-            return _json_compatible_mapping(value, field_name="meta")
+            return _json_compatible_mapping(
+                cast(dict[Any, Any], value), field_name="meta"
+            )
         return value
 
     @field_validator("*", mode="before")
@@ -200,7 +211,9 @@ class RawPdfMetaPayload(BaseModel):
     @classmethod
     def _coerce_payload(cls, value: Any) -> Any:
         if isinstance(value, dict):
-            return _json_compatible_mapping(value, field_name="raw_meta")
+            return _json_compatible_mapping(
+                cast(dict[Any, Any], value), field_name="raw_meta"
+            )
         return value
 
     @field_validator("*", mode="before")
@@ -237,6 +250,96 @@ class TransferProcessingHistoryRow(BaseModel):
 
     file_hash: str | None = None
     success: bool | None = None
+
+
+class TransferFrameAnnotationRow(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    annotation_id: int | str | None = None
+    video_id: int | None = Field(default=None, ge=1)
+    video_hash: str | None = None
+    frame_id: int | None = Field(default=None, ge=1)
+    frame_number: int = Field(ge=0)
+    frame_relative_path: str
+    frame_timestamp: float | None = Field(default=None, ge=0)
+    label_id: int | None = Field(default=None, ge=1)
+    label_name: str
+    value: bool
+    float_value: float | None = None
+    annotator: str | None = None
+    information_source_id: int | None = Field(default=None, ge=1)
+    information_source_name: str
+    model_meta_id: int | None = Field(default=None, ge=1)
+    date_created: str | None = None
+    date_modified: str | None = None
+    external_annotation_id: str | None = None
+
+    @field_validator(
+        "frame_relative_path",
+        "label_name",
+        "information_source_name",
+        mode="before",
+    )
+    @classmethod
+    def _require_non_empty_strings(cls, value: Any) -> str:
+        normalized = _non_empty_string(str(value)) if value is not None else None
+        if normalized is None:
+            raise ValueError("value must not be blank")
+        return normalized
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _coerce_json_values(cls, value: Any) -> Any:
+        return _json_compatible_value(
+            value, field_name="resource_rows.frame_annotations"
+        )
+
+
+class TransferPatientExaminationReportRow(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    id: int | str | None = None
+    report_id: int | str | None = None
+    patient_examination_report_id: int | str | None = None
+    patient_examination: int | str | None = None
+    template_name: str
+    template_version: str | int | None = None
+    template_hash: str | None = None
+    title: str | None = None
+    status: Literal["draft", "final"] = "draft"
+    editor_payload: dict[str, Any] | None = None
+    patient_context_snapshot: dict[str, Any] | None = None
+    history_context_snapshot: dict[str, Any] | None = None
+    rendered_text: str | None = None
+    version: int = Field(default=1, ge=1)
+    is_active: bool | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+    finalized_at: str | None = None
+    created_by: int | str | None = None
+    updated_by: int | str | None = None
+    finalized_by: int | str | None = None
+
+    @field_validator("template_name", mode="before")
+    @classmethod
+    def _require_template_name(cls, value: Any) -> str:
+        normalized = _non_empty_string(str(value)) if value is not None else None
+        if normalized is None:
+            raise ValueError("template_name must not be blank")
+        return normalized
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _coerce_json_values(cls, value: Any) -> Any:
+        return _json_compatible_value(value, field_name="resource_rows.reports")
+
+
+def _empty_transfer_frame_annotation_rows() -> list[TransferFrameAnnotationRow]:
+    return []
+
+
+def _empty_transfer_report_rows() -> list[TransferPatientExaminationReportRow]:
+    return []
 
 
 class TransferVideoFileRow(BaseModel):
@@ -292,6 +395,12 @@ class TransferVideoResourceRows(BaseModel):
     sensitive_meta: TransferSensitiveMetaRow | None = None
     video_state: TransferVideoStateRow | None = None
     processing_history: TransferProcessingHistoryRow | None = None
+    frame_annotations: list[TransferFrameAnnotationRow] = Field(
+        default_factory=_empty_transfer_frame_annotation_rows
+    )
+    reports: list[TransferPatientExaminationReportRow] = Field(
+        default_factory=_empty_transfer_report_rows
+    )
 
 
 class TransferRawPdfFileRow(BaseModel):
@@ -333,6 +442,9 @@ class TransferReportResourceRows(BaseModel):
     sensitive_meta: TransferSensitiveMetaRow | None = None
     raw_pdf_state: TransferRawPdfStateRow | None = None
     processing_history: TransferProcessingHistoryRow | None = None
+    reports: list[TransferPatientExaminationReportRow] = Field(
+        default_factory=_empty_transfer_report_rows
+    )
 
 
 class TransferProcessingSnapshotPayload(BaseModel):
@@ -390,7 +502,9 @@ class AIModelTrainingResultPayload(BaseModel):
     @classmethod
     def _coerce_payload(cls, value: Any) -> Any:
         if isinstance(value, dict):
-            return _json_compatible_mapping(value, field_name="result")
+            return _json_compatible_mapping(
+                cast(dict[Any, Any], value), field_name="result"
+            )
         return value
 
     @field_validator("*", mode="before")
@@ -410,9 +524,9 @@ class AIModelTrainingArtifactPathsPayload(BaseModel):
         if not isinstance(value, dict):
             raise ValueError("artifact_paths must be a JSON object")
         normalized: dict[str, str] = {}
-        for key, item in value.items():
-            serialized = serialize_path(item) if isinstance(item, Path) else item
-            if serialized is None:
+        artifact_paths = cast(dict[Any, Any], value)
+        for key, item in artifact_paths.items():
+            if item is None:
                 return {}
             if not isinstance(key, str):
                 raise ValueError("artifact path keys must be strings")
@@ -420,6 +534,9 @@ class AIModelTrainingArtifactPathsPayload(BaseModel):
                 raise ValueError("artifact path keys must end with '_path'")
             if not isinstance(item, (str, Path)):
                 raise ValueError("artifact path values must be local path strings")
+            serialized = serialize_path(item) if isinstance(item, Path) else item
+            if serialized is None:
+                return {}
             text = serialized.strip()
             if not text:
                 raise ValueError("artifact path values must not be blank")
@@ -477,6 +594,25 @@ def validate_raw_pdf_meta_payload(value: Any) -> dict[str, Any] | None:
     return _validate_model_payload(RawPdfMetaPayload, value, field_name="raw_meta")
 
 
+def validate_dtypes_p_examination_payload(value: Any) -> dict[str, Any]:
+    if value is None or value == {}:
+        return {}
+    if isinstance(value, PExamination):
+        return value.model_dump(mode="json", exclude_none=True)
+    if not isinstance(value, dict):
+        raise ValueError("dtypes_record must be a JSON object")
+    try:
+        payload = PExamination.model_validate(
+            _json_compatible_mapping(
+                cast(dict[Any, Any], value),
+                field_name="dtypes_record",
+            )
+        )
+    except ValidationError as exc:
+        raise ValueError(str(exc)) from exc
+    return payload.model_dump(mode="json", exclude_none=True)
+
+
 def validate_ai_model_training_request_payload(value: Any) -> dict[str, Any]:
     return (
         _validate_model_payload(
@@ -512,6 +648,8 @@ __all__ = [
     "AIModelTrainingRequestPayload",
     "AIModelTrainingResultPayload",
     "RawPdfMetaPayload",
+    "TransferFrameAnnotationRow",
+    "TransferPatientExaminationReportRow",
     "TransferProcessingSnapshotPayload",
     "TransferReportResourceRows",
     "TransferVideoResourceRows",
@@ -519,6 +657,7 @@ __all__ = [
     "validate_ai_model_training_artifact_paths",
     "validate_ai_model_training_request_payload",
     "validate_ai_model_training_result_payload",
+    "validate_dtypes_p_examination_payload",
     "validate_raw_pdf_meta_payload",
     "validate_transfer_processing_snapshot",
     "validate_transfer_resource_rows",

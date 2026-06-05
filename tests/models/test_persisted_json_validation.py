@@ -28,6 +28,54 @@ def test_transfer_job_resource_rows_reject_unknown_video_keys() -> None:
     assert "unexpected" in str(exc_info.value)
 
 
+def test_transfer_job_resource_rows_accept_frame_annotations_and_reports() -> None:
+    job = TransferJob(
+        resource_kind=TransferJob.ResourceKind.VIDEO,
+        resource_rows={
+            "video_file": {
+                "video_hash": "abc123",
+            },
+            "frame_annotations": [
+                {
+                    "annotation_id": 7,
+                    "video_hash": "abc123",
+                    "frame_number": 3,
+                    "frame_relative_path": "frames/frame_000003.jpg",
+                    "frame_timestamp": 0.12,
+                    "label_name": "lesion_visible",
+                    "value": True,
+                    "float_value": 0.95,
+                    "annotator": "site-a-reviewer",
+                    "information_source_name": "manual_annotation",
+                }
+            ],
+            "reports": [
+                {
+                    "id": 11,
+                    "patient_examination": 99,
+                    "template_name": "star_upper_gi_main",
+                    "template_version": "2026.1",
+                    "template_hash": "template-hash",
+                    "title": "Transferred report",
+                    "status": "final",
+                    "editor_payload": {"sections": [{"id": "findings"}]},
+                    "rendered_text": "Anonymized report text",
+                    "version": 2,
+                    "is_active": True,
+                    "finalized_at": "2026-05-20T10:30:00Z",
+                }
+            ],
+        },
+        processing_snapshot={},
+        provenance={},
+    )
+
+    job.clean()
+
+    assert job.resource_rows["frame_annotations"][0]["label_name"] == "lesion_visible"
+    assert job.resource_rows["reports"][0]["template_name"] == "star_upper_gi_main"
+
+
 def test_transfer_job_processing_snapshot_rejects_unknown_keys() -> None:
     job = TransferJob(
         resource_kind=TransferJob.ResourceKind.REPORT,
