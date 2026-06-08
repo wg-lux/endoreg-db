@@ -3,8 +3,10 @@ from __future__ import annotations
 import logging
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Iterator, Optional
+from collections.abc import Generator
+from typing import TYPE_CHECKING, Optional
 
+from django.db.models.fields.files import FieldFile
 from django.db import transaction
 
 from endoreg_db.utils.filesystem import paths as path_utils
@@ -72,7 +74,7 @@ def _resolve_streamable_path(relative_path: str | None) -> Optional[Path]:
     return candidate if _streamable_path_is_safe_plaintext(candidate) else None
 
 
-def _field_file_exists(field_file) -> bool:
+def _field_file_exists(field_file: FieldFile | None) -> bool:
     return bool(
         field_file and getattr(field_file, "name", None) and file_exists(field_file)
     )
@@ -93,7 +95,7 @@ def _get_raw_file_path(video: "VideoFile") -> Optional[Path]:
 
 
 @contextmanager
-def _ensure_local_raw_file(video: "VideoFile") -> Iterator[Path]:
+def _ensure_local_raw_file(video: "VideoFile") -> Generator[Path]:
     """
     Yield a real local plaintext path for external tools.
 
@@ -142,7 +144,7 @@ def _get_processed_file_path(video: "VideoFile") -> Optional[Path]:
 
 
 @contextmanager
-def _ensure_local_processed_file(video: "VideoFile") -> Iterator[Path]:
+def _ensure_local_processed_file(video: "VideoFile") -> Generator[Path]:
     """
     Yield a real local plaintext path for external tools.
     """
@@ -211,7 +213,11 @@ def _delete_raw_file_after_validation(video: "VideoFile") -> bool:
 
 
 @transaction.atomic
-def _delete_with_file(video: "VideoFile", *args, **kwargs):
+def _delete_with_file(
+    video: "VideoFile",
+    using: str | None = None,
+    keep_parents: bool = False,
+) -> tuple[int, dict[str, int]]:
     """
     Delete VideoFile and owned artifacts.
 
@@ -251,17 +257,17 @@ def _delete_with_file(video: "VideoFile", *args, **kwargs):
     if processed_stream_path and processed_stream_path.exists():
         safe_unlink_file(processed_stream_path, missing_ok=True)
 
-    super(type(video), video).delete(*args, **kwargs)
+    deleted = super(type(video), video).delete(
+        using=using,
+        keep_parents=keep_parents,
+    )
 
     logger.info(
         "Deleted VideoFile database record PK %s UUID %s.",
         video.pk,
         video.video_hash,
     )
-    return (
-        f"Successfully deleted VideoFile {video.video_hash} "
-        "and attempted owned artifact cleanup."
-    )
+    return deleted
 
 
 def _get_base_frame_dir(video: "VideoFile") -> Path:

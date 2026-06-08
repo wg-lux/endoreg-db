@@ -3,9 +3,10 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Optional, TypedDict, Union, Unpack
 
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
+from endoreg_db.utils.filesystem.paths import IMPORT_VIDEO_DIR
 
 from .frames import initialize_video_frames
 from .io import set_video_frame_dir
@@ -16,6 +17,12 @@ if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
 
 logger = logging.getLogger(__name__)
+
+
+class _CreateVideoFileFromPathKwargs(TypedDict, total=False):
+    processor_name: str | None
+    video_hash: str | None
+    save: bool
 
 
 def _video_file_model():
@@ -29,7 +36,7 @@ def create_video_file_from_path(
     center_name: str,
     *,
     model_cls: type["VideoFile"] | None = None,
-    **kwargs,
+    **kwargs: Unpack[_CreateVideoFileFromPathKwargs],
 ) -> Optional["VideoFile"]:
     from endoreg_db.utils.security.hashs import get_video_hash
 
@@ -49,6 +56,7 @@ def create_video_file_from_path(
 
     processor_name = kwargs.pop("processor_name", None)
     video_hash = kwargs.pop("video_hash", None)
+    save = kwargs.pop("save", True)
     if not video_hash:
         video_hash = str(get_video_hash(file_path))
 
@@ -58,7 +66,8 @@ def create_video_file_from_path(
         center_name=center_name,
         processor_name=processor_name,
         video_hash=video_hash,
-        **kwargs,
+        video_dir=IMPORT_VIDEO_DIR,
+        save=save,
     )
 
 
@@ -78,11 +87,12 @@ def create_initialized_video_file_from_path(
         file_path = Path(file_path)
 
     video_file = _create_from_file(
-        cls_model=model_cls or _video_file_model(),
-        file_path=file_path,
+        model_cls or _video_file_model(),
+        file_path,
         center_name=center_name,
         processor_name=processor_name,
         video_hash=video_hash,
+        video_dir=IMPORT_VIDEO_DIR,
         save=save_video_file,
     )
     if not initialize:

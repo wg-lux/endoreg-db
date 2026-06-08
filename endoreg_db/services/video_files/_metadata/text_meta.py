@@ -1,30 +1,53 @@
 import logging
-from typing import TYPE_CHECKING, Optional
+from datetime import date
+from typing import TYPE_CHECKING, Protocol, cast
 
 # --- End Fix ---
 from django.db import transaction
+from lx_dtypes.models.contracts.json_types import JsonNull, JsonValue
 
 # --- Fix Imports ---
 from endoreg_db.models.metadata import SensitiveMeta
 from endoreg_db.models.metadata.sensitive_meta_logic import (
     update_or_create_sensitive_meta_from_dict,
 )
+from endoreg_db.services.video_files._frames import _extract_frames
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
 
     # SensitiveMeta is already imported above
 
+
+type VideoTextMetaValue = (
+    JsonValue
+    | JsonNull
+    | list["VideoTextMetaValue"]
+    | dict[str, "VideoTextMetaValue"]
+)
+type VideoTextMetaPayload = dict[str, VideoTextMetaValue]
+
+
+class _VideoTextMetaState(Protocol):
+    frames_extracted: bool
+    text_meta_extracted: bool
+
+    def refresh_from_db(self) -> None: ...
+
+    def save(self, *, update_fields: list[str]) -> None: ...
+
+    def mark_sensitive_meta_processed(self, *, save: bool = True) -> None: ...
+
 logger = logging.getLogger(__name__)
 
 
 def _update_text_metadata(
     video: "VideoFile",
-    extracted_data_dict: Optional[dict] = None,
+    extracted_data_dict: VideoTextMetaPayload | None = None,
     ocr_frame_fraction: float = 0.01,
     cap: int = 10,
     overwrite: bool = False,
-) -> Optional["SensitiveMeta"]:
+) -> "SensitiveMeta | None":
     """
     Extracts text from a fraction of video frames, updates or creates SensitiveMeta,
     and potentially updates the VideoFile's date field. Requires frames to be extracted.
@@ -35,7 +58,7 @@ def _update_text_metadata(
         - Post-condition: Sets state.text_meta_extracted=True (even if no text found).
     """
     logger.debug(f"Updating text metadata for video {video.video_hash}")
-    state = video.get_or_create_state()
+    state = cast(_VideoTextMetaState, video.get_or_create_state())
 
     # --- Pre-condition Checks ---
     if not state.frames_extracted:
@@ -44,7 +67,7 @@ def _update_text_metadata(
             f"Frames not extracted for video {video.video_hash}. Attempting automatic frame extraction..."
         )
         try:
-            success = video.extract_frames(overwrite=False)
+            success = _extract_frames(video, overwrite=False)
         except (FileNotFoundError, RuntimeError, ValueError, OSError) as exc:
             logger.error(
                 "Failed to extract frames for video %s: %s",
@@ -81,8 +104,13 @@ def _update_text_metadata(
     # _extract_text_from_video_frames raises ValueError on pre-condition failure
     try:
         if not extracted_data_dict:
-            extracted_data_dict = video.extract_text_from_frames(
+            extracted_text_payload = video.extract_text_from_frames(
                 frame_fraction=ocr_frame_fraction, cap=cap
+            )
+            extracted_data_dict = (
+                cast(VideoTextMetaPayload, extracted_text_payload)
+                if extracted_text_payload is not None
+                else None
             )
     except Exception as text_extract_e:
         logger.error(
@@ -131,18 +159,17 @@ def _update_text_metadata(
             )
 
             # Update VideoFile fields if necessary
-            update_fields_video = []
+            update_fields_video: list[str] = []
             if (
                 created or sensitive_meta != sensitive_meta_instance
             ):  # Check if relation needs update
                 video.sensitive_meta = sensitive_meta
                 update_fields_video.append("sensitive_meta")
 
-            if not video.date and sensitive_meta and extracted_data_dict.get("date"):
-                extracted_date = extracted_data_dict.get("date")
-                if extracted_date:  # Ensure date is not None or empty
-                    video.date = extracted_date
-                    update_fields_video.append("date")
+            extracted_date = extracted_data_dict.get("date")
+            if not video.date and sensitive_meta and isinstance(extracted_date, date):
+                video.date = extracted_date
+                update_fields_video.append("date")
 
             # Save VideoFile if fields changed
             if update_fields_video:

@@ -19,10 +19,14 @@ def ensure_local_processed_video_file(video: "VideoFile"):
     return _ensure_local_processed_file(video)
 
 
-def delete_video_with_owned_files(video: "VideoFile", *args, **kwargs):
+def delete_video_with_owned_files(
+    video: "VideoFile",
+    using: str | None = None,
+    keep_parents: bool = False,
+) -> tuple[int, dict[str, int]]:
     from ._io import _delete_with_file
 
-    return _delete_with_file(video, *args, **kwargs)
+    return _delete_with_file(video, using=using, keep_parents=keep_parents)
 
 
 def get_video_base_frame_dir(video: "VideoFile") -> Path:

@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, cast
+
+from lx_dtypes.models.meta.SensitiveMeta import SensitiveMeta as LxSensitiveMeta
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
+    from endoreg_db.services.video_files.metadata import VideoTextMetaPayload
 
 logger = logging.getLogger(__name__)
 
 
 def validate_video_metadata_annotation(
     video: "VideoFile",
-    extracted_data_dict: Optional[dict] = None,
+    extracted_data_dict: LxSensitiveMeta | None = None,
 ) -> bool:
     from ._io import _delete_raw_file_after_validation
 
@@ -32,10 +35,18 @@ def validate_video_metadata_annotation(
         return False
 
     metadata_updated = False
+    extracted_payload = (
+        cast(
+            "VideoTextMetaPayload",
+            extracted_data_dict.model_dump(mode="json", exclude_none=True),
+        )
+        if extracted_data_dict is not None
+        else None
+    )
     try:
         updated_meta = update_video_text_metadata(
             video,
-            extracted_data_dict,
+            extracted_payload,
             overwrite=True,
         )
         metadata_updated = updated_meta is not None or extracted_data_dict is not None
@@ -45,9 +56,13 @@ def validate_video_metadata_annotation(
             video.video_hash,
             exc,
         )
-        if video.sensitive_meta is not None and extracted_data_dict is not None:
+        if (
+            video.sensitive_meta is not None
+            and extracted_data_dict is not None
+            and extracted_payload is not None
+        ):
             try:
-                video.sensitive_meta.update_from_dict(extracted_data_dict)
+                video.sensitive_meta.update_from_dict(extracted_payload)
                 metadata_updated = True
             except Exception as update_exc:
                 logger.error(

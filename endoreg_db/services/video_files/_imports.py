@@ -5,7 +5,7 @@ import shutil
 import uuid
 from importlib import import_module
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Type
+from typing import TYPE_CHECKING, Optional, Protocol, Type, TypedDict, cast
 
 from endoreg_db.exceptions import InsufficientStorageError
 from endoreg_db.import_files.file_storage.cleanup import safe_cleanup_staging_file
@@ -39,6 +39,22 @@ logger = logging.getLogger(__name__)
 TRANSCODING_DIR = path_utils.data_paths["transcoding"]
 
 
+class _VideoStreamInfo(TypedDict, total=False):
+    codec_type: str
+
+
+class _StreamProbeInfo(TypedDict, total=False):
+    streams: list[_VideoStreamInfo]
+
+
+class _PathMapping(Protocol):
+    def __getitem__(self, key: str) -> Path | str: ...
+
+
+class _ProcessorForImport(Protocol):
+    name: str
+
+
 def _verify_completed_file(path: Path) -> None:
     if not path.exists():
         raise RuntimeError(f"Expected output file does not exist: {path}")
@@ -46,11 +62,12 @@ def _verify_completed_file(path: Path) -> None:
         raise RuntimeError(f"Expected output path is not a file: {path}")
     if path.stat().st_size <= 0:
         raise RuntimeError(f"Expected output file is empty: {path}")
-    stream_info = get_stream_info(path)
+    stream_info = cast(_StreamProbeInfo | None, get_stream_info(path))
+    streams = stream_info.get("streams", []) if stream_info else []
     video_stream = next(
         (
             stream
-            for stream in (stream_info or {}).get("streams", [])
+            for stream in streams
             if stream.get("codec_type") == "video"
         ),
         None,
@@ -86,6 +103,7 @@ def check_storage_capacity(
 ) -> None:
     src_path = Path(src_path)
     dst_root = Path(dst_root)
+    src_size = 0
 
     try:
         src_size = src_path.stat().st_size
@@ -190,18 +208,18 @@ def atomic_move_with_fallback(src_path: Path, dst_path: Path) -> bool:
         raise
 
 
-def _get_data_paths():
+def _get_data_paths() -> _PathMapping:
     """Return current data_paths mapping, including patched instances in tests."""
     utils_module = import_module("endoreg_db.utils")
-    return getattr(utils_module, "data_paths")
+    return cast(_PathMapping, getattr(utils_module, "data_paths"))
 
 
-def _get_path(mapping, key, default):
+def _get_path(mapping: _PathMapping | None, key: str, default: Path) -> Path:
     """Access mapping by key using __getitem__ so MagicMocks with side effects work."""
     if mapping is None:
         return default
     try:
-        return mapping[key]
+        return Path(mapping[key])
     except (KeyError, TypeError):
         return default
 
@@ -238,7 +256,6 @@ def _create_from_file(
     video_hash: str,
     video_dir: Path = IMPORT_VIDEO_DIR,
     save: bool = True,
-    **kwargs,
 ) -> "VideoFile":
     """
     Create a VideoFile from a local source path.
@@ -251,7 +268,9 @@ def _create_from_file(
     - storage_name: logical FieldFile name, not necessarily a direct filesystem path
     """
     from endoreg_db.models.administration.center.center import Center
-    from endoreg_db.models.medical.hardware import EndoscopyProcessor
+    from endoreg_db.models.medical.hardware.endoscopy_processor import (
+        EndoscopyProcessor,
+    )
 
     file_path = Path(file_path)
 
@@ -376,10 +395,12 @@ def _create_from_file(
                 else None
             )
 
+            typed_processor = cast(_ProcessorForImport | None, processor)
+            processor_name_for_log = typed_processor.name if typed_processor else "None"
             logger.debug(
                 "Found Center: %s, Processor: %s",
                 center.name,
-                processor.name if processor else "None",
+                processor_name_for_log,
             )
         except Center.DoesNotExist as exc:
             raise ValueError(f"Center '{center_name}' not found.") from exc
@@ -397,7 +418,6 @@ def _create_from_file(
             processed_video_hash=None,
             suffix=original_suffix,
             fps=None,
-            **kwargs,
         )
 
         _verify_completed_file(canonical_source_path)
@@ -417,7 +437,7 @@ def _create_from_file(
 
         _safe_unlink_local(canonical_source_path, label="canonical source staging file")
 
-        if transcoded_file_path is not None and transcoded_file_path not in {
+        if transcoded_file_path not in {
             file_path,
             canonical_source_path,
         }:
