@@ -6,7 +6,7 @@ from endoreg_db.models.administration.person.patient.patient import Patient
 from endoreg_db.models.other.gender import Gender
 
 
-class PatientForm(ModelForm):
+class PatientForm(ModelForm[Patient]):
     gender = forms.ModelChoiceField(
         queryset=Gender.objects.all(),
         empty_label="Select Gender",

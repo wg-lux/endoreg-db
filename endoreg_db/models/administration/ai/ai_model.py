@@ -2,9 +2,12 @@
 Django model for AI models.
 """
 
+from __future__ import annotations
+
 from logging import getLogger
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from types import NoneType
+from typing import TYPE_CHECKING, Protocol, TypeAlias, cast
 
 from django.db import models
 from icecream import ic
@@ -15,9 +18,29 @@ DEFAULT_HF_MODEL_ID = "wg-lux/colo_segmentation_RegNetX800MF_base"
 DEFAULT_PREDICTION_MODEL_NAME = "image_multilabel_classification_colonoscopy_default"
 DEFAULT_PREDICTION_LABELSET_NAME = "multilabel_classification_colonoscopy_default"
 
+NoAiModelRelationValue: TypeAlias = NoneType
+
 if TYPE_CHECKING:
-    from ...label.label_set import LabelSet
+    from ...label.video_segmentation_labelset import VideoSegmentationLabelSet
     from ...metadata.model_meta import ModelMeta
+    from .model_type import ModelType
+
+
+class _AiModelPkSource(Protocol):
+    pk: int
+
+
+class _AiModelMetaModelSource(Protocol):
+    model: _AiModelPkSource
+
+
+class _AiModelLabelSetSource(Protocol):
+    name: str
+    version: int
+
+
+class _AiModelVersionSource(Protocol):
+    version: str
 
 
 class AiModelManager(models.Manager["AiModel"]):
@@ -48,34 +71,42 @@ class AiModel(models.Model):
     and associated label sets and meta information.
 
         name (str): Unique name of the AI model.
-        description (str): Optional detailed description of the AI model.
-        model_type (str): Optional type/category of the AI model.
-        model_subtype (str): Optional subtype within the broader model type.
-        video_segmentation_labelset (VideoSegmentationLabelSet): Optional associated label set for video segmentation tasks.
-        active_meta (ModelMeta): Optional reference to the currently active ModelMeta instance associated with the model.
+        description (str): Detailed description of the AI model when configured.
+        model_type (str): Type/category of the AI model when configured.
+        model_subtype (str): Subtype within the broader model type when configured.
+        video_segmentation_labelset (VideoSegmentationLabelSet): associated label set for video segmentation tasks when configured.
+        active_meta (ModelMeta): reference to the currently active ModelMeta instance associated with the model when configured.
     """
 
-    objects: AiModelManager = AiModelManager()
+    objects = AiModelManager()
 
-    name = models.CharField(max_length=255, unique=True)
+    name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
 
-    description = models.TextField(blank=True, null=True)
-    model_type = models.ForeignKey(
+    description: models.TextField[str, str] = models.TextField(blank=True, null=True)
+    model_type: models.ForeignKey[ModelType, ModelType] = models.ForeignKey(
         "ModelType",
         on_delete=models.CASCADE,
         related_name="ai_models",
         blank=True,
         null=True,
     )
-    model_subtype = models.CharField(max_length=255, blank=True, null=True)
-    video_segmentation_labelset = models.ForeignKey(
+    model_subtype: models.CharField[str, str] = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+    )
+    video_segmentation_labelset: models.ForeignKey[
+        VideoSegmentationLabelSet, VideoSegmentationLabelSet
+    ] = models.ForeignKey(
         "VideoSegmentationLabelSet",
         on_delete=models.CASCADE,
         related_name="ai_models",
         blank=True,
         null=True,
     )
-    active_meta = models.ForeignKey(
+    active_meta: models.ForeignKey[
+        ModelMeta | NoAiModelRelationValue, ModelMeta | NoAiModelRelationValue
+    ] = models.ForeignKey(
         "ModelMeta",
         on_delete=models.SET_NULL,
         related_name="active_model",
@@ -106,8 +137,8 @@ class AiModel(models.Model):
 
         active_meta = self.active_meta
         if active_meta is not None:
-            active_meta = cast("ModelMeta", active_meta)
-            if active_meta.version == requested_version:
+            active_version = cast(_AiModelVersionSource, active_meta)
+            if active_version.version == requested_version:
                 return self._ensure_model_meta_ready(active_meta, "Active")
 
         # Get the model metadata with the given version
@@ -140,17 +171,19 @@ class AiModel(models.Model):
 
         from endoreg_db.services.model_meta_from_hf import ensure_model_meta_from_hf
 
-        labelset = cast("LabelSet", model_meta.labelset)
+        labelset = cast(_AiModelLabelSetSource, getattr(model_meta, "labelset"))
+        versioned_meta = cast(_AiModelVersionSource, model_meta)
         return ensure_model_meta_from_hf(
             model_id=DEFAULT_HF_MODEL_ID,
             model_name=self.name,
             labelset_name=labelset.name,
-            meta_version=str(model_meta.version),
+            meta_version=str(versioned_meta.version),
             labelset_version=labelset.version,
         )
 
     def _ensure_model_meta_belongs_to_self(self, model_meta: "ModelMeta") -> None:
-        model_pk = model_meta.model.pk
+        model = cast(_AiModelMetaModelSource, model_meta)
+        model_pk = model.model.pk
         if model_pk != self.pk:
             raise ValueError(
                 f"ModelMeta {model_meta.pk} belongs to AiModel {model_pk}, "
@@ -195,7 +228,6 @@ class AiModel(models.Model):
 
         active_meta = self.active_meta
         if active_meta is not None:
-            active_meta = cast("ModelMeta", active_meta)
             return self._ensure_model_meta_ready(active_meta, "Active")
 
         latest_version = self.metadata_versions.order_by("-version").first()

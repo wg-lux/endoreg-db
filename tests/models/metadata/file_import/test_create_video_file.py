@@ -236,6 +236,167 @@ def test_create_from_file_duplicate_with_existing_file(
     assert v2.pk == v1.pk
 
 
+def test_create_or_retrieve_success_history_unusable_processed_file_needs_processing(
+    monkeypatch, tmp_path
+):
+    from endoreg_db.services.hub.media_integrity import (
+        MediaIntegrityResult,
+        MediaIntegrityStatus,
+    )
+
+    source_path = tmp_path / "import" / "stale-success.mp4"
+    sensitive_path = tmp_path / "sensitive" / "stale-success.mp4"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    sensitive_path.parent.mkdir(parents=True, exist_ok=True)
+    source_path.write_bytes(b"source-video")
+    sensitive_path.write_bytes(b"sensitive-video")
+
+    ctx = ImportContext(
+        file_path=source_path,
+        center_name="university_hospital_wuerzburg",
+        processor_name="olympus_cv_1500",
+    )
+    ctx.sensitive_path = sensitive_path
+
+    assert isinstance(ctx.file_hash, str)
+    video = video_file_module.VideoFile(video_hash=ctx.file_hash)
+    video.pk = 1
+
+    integrity_result = MediaIntegrityResult(
+        ok=False,
+        status=MediaIntegrityStatus.ARTIFACT_MISSING,
+        reason="Required video artifact(s) are not usable: processed_file.",
+        content_hash=ctx.file_hash,
+        media_pk=1,
+        missing_artifacts=("processed_file",),
+    )
+
+    monkeypatch.setattr(
+        create_video_file.ProcessingHistory,
+        "has_history_for_hash",
+        staticmethod(lambda file_hash, success: bool(success)),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        create_video_file.ProcessingHistory,
+        "get_or_create_for_hash",
+        staticmethod(
+            lambda **kwargs: (_ for _ in ()).throw(
+                AssertionError(
+                    "self-heal reimport must not downgrade successful history"
+                )
+            )
+        ),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        create_video_file,
+        "get_video_by_content_hash",
+        lambda file_hash: video,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        create_video_file,
+        "check_video_media_integrity",
+        lambda *args, **kwargs: integrity_result,
+        raising=True,
+    )
+
+    result, processed, needs_processing = (
+        create_video_file.create_or_retrieve_video_file(ctx)
+    )
+
+    assert result is video
+    assert processed is False
+    assert needs_processing is True
+    assert ctx.current_video is video
+
+
+def test_create_or_retrieve_failure_history_missing_video_imports_fresh(
+    monkeypatch, tmp_path
+):
+    source_path = tmp_path / "import" / "failed-before-video-save.mp4"
+    sensitive_path = tmp_path / "sensitive" / "failed-before-video-save.mp4"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    sensitive_path.parent.mkdir(parents=True, exist_ok=True)
+    source_path.write_bytes(b"source-video")
+    sensitive_path.write_bytes(b"sensitive-video")
+
+    ctx = ImportContext(
+        file_path=source_path,
+        center_name="university_hospital_wuerzburg",
+        processor_name="olympus_cv_1500",
+    )
+    ctx.sensitive_path = sensitive_path
+
+    assert isinstance(ctx.file_hash, str)
+    captured = {}
+    created_video = video_file_module.VideoFile(video_hash=ctx.file_hash)
+    created_video.pk = 2
+
+    def fake_has_history_for_hash(file_hash, success):
+        return success is False
+
+    def fake_get_video_by_content_hash(file_hash):
+        raise video_file_module.VideoFile.DoesNotExist
+
+    def fake_create_from_file_initialized(**kwargs):
+        captured["file_path"] = kwargs["file_path"]
+        captured["video_hash"] = kwargs["video_hash"]
+        return created_video
+
+    monkeypatch.setattr(
+        create_video_file.ProcessingHistory,
+        "has_history_for_hash",
+        staticmethod(fake_has_history_for_hash),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        create_video_file.ProcessingHistory,
+        "get_or_create_for_hash",
+        staticmethod(lambda **kwargs: captured.setdefault("history", kwargs)),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        create_video_file,
+        "get_video_by_content_hash",
+        fake_get_video_by_content_hash,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        create_video_file,
+        "finalize_failure",
+        lambda ctx: (_ for _ in ()).throw(
+            AssertionError("missing VideoFile failure history cannot finalize files")
+        ),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        video_file_module.VideoFile,
+        "create_from_file_initialized",
+        staticmethod(fake_create_from_file_initialized),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        create_video_file,
+        "ensure_center",
+        lambda video, center_name: SimpleNamespace(name=center_name),
+        raising=True,
+    )
+
+    result, processed, needs_processing = (
+        create_video_file.create_or_retrieve_video_file(ctx)
+    )
+
+    assert result is created_video
+    assert ctx.current_video is created_video
+    assert captured["file_path"] == sensitive_path
+    assert captured["video_hash"] == ctx.file_hash
+    assert captured["history"] == {"file_hash": ctx.file_hash, "success": False}
+    assert processed is False
+    assert needs_processing is True
+
+
 @pytest.mark.django_db
 def test_create_from_file_duplicate_with_missing_file_reuses_existing_record_without_success_history(
     mock_storage, tmp_path, monkeypatch, base_db_data

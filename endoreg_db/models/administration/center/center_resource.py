@@ -1,4 +1,7 @@
-from typing import TYPE_CHECKING
+from __future__ import annotations
+
+from types import NoneType
+from typing import TYPE_CHECKING, TypeAlias
 
 from django.db import models
 
@@ -8,39 +11,53 @@ if TYPE_CHECKING:
     from ...other.unit import Unit
     from .center import Center
 
+NoCenterResourceValue: TypeAlias = NoneType
+CenterResourceName: TypeAlias = str | NoCenterResourceValue
+
 
 class CenterResource(models.Model):
-    name = models.CharField(max_length=255, null=True)
-    center = models.ForeignKey(
+    name: models.CharField[CenterResourceName, CenterResourceName] = models.CharField(
+        max_length=255,
+        null=True,
+    )
+    center: models.ForeignKey[Center, Center] = models.ForeignKey(
         "Center",
         on_delete=models.CASCADE,
         related_name="center_resources",
     )
-    quantity = models.FloatField()
-    resource = models.ForeignKey("Resource", on_delete=models.CASCADE)
-    transport_emission_factor = models.ForeignKey(
+    quantity: models.FloatField[float, float] = models.FloatField()
+    resource: models.ForeignKey[Resource, Resource] = models.ForeignKey(
+        "Resource",
+        on_delete=models.CASCADE,
+    )
+    transport_emission_factor: models.ForeignKey[
+        EmissionFactor | NoCenterResourceValue,
+        EmissionFactor | NoCenterResourceValue,
+    ] = models.ForeignKey(
         "EmissionFactor",
         on_delete=models.SET_NULL,
         null=True,
         related_name="center_resource_transport_emission_factor",
     )
-    use_emission_factor = models.ForeignKey(
+    use_emission_factor: models.ForeignKey[
+        EmissionFactor | NoCenterResourceValue,
+        EmissionFactor | NoCenterResourceValue,
+    ] = models.ForeignKey(
         "EmissionFactor",
         on_delete=models.SET_NULL,
         null=True,
         related_name="center_resource_use_emission_factor",
     )
-    year = models.IntegerField()
-    unit = models.ForeignKey("Unit", on_delete=models.SET_NULL, null=True)
+    year: models.IntegerField[int, int] = models.IntegerField()
+    unit: models.ForeignKey[
+        Unit | NoCenterResourceValue,
+        Unit | NoCenterResourceValue,
+    ] = models.ForeignKey("Unit", on_delete=models.SET_NULL, null=True)
 
     if TYPE_CHECKING:
-        center: models.ForeignKey["Center"]
-        resource: models.ForeignKey["Resource"]
-        transport_emission_factor: models.ForeignKey["EmissionFactor|None"]
-        use_emission_factor: models.ForeignKey["EmissionFactor|None"]
-        unit: models.ForeignKey["Unit|None"]
+        pass
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"CenterResource {self.pk} - {self.name if self.name else 'No Name'}"
 
     def display_str(self) -> str:

@@ -1,16 +1,26 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 import csv
 import io
 import logging
 import uuid
 from dataclasses import dataclass, replace
+from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, TypedDict, cast
+from types import NoneType
+from typing import Literal, Protocol, TypedDict, cast
 
 import yaml
 import json
 from django.db.models import Q, QuerySet
+from pydantic import ValidationError
+
+from lx_dtypes.models.contracts import (
+    VideoFrameAnnotationExportConfigPayload,
+    YamlValue,
+    validate_video_frame_annotation_export_config,
+)
 
 from endoreg_db.helpers.data_load_orchestrator import load_base_db_data
 from endoreg_db.models.administration.center.center import Center
@@ -46,12 +56,33 @@ from endoreg_db.utils.video.ffmpeg_wrapper import (
     extract_frames as ffmpeg_extract_frames,
 )
 
-if TYPE_CHECKING:
-    from endoreg_db.models.media.frame.frame import Frame
-
 logger = logging.getLogger(__name__)
 
-DEFAULT_FIELDNAMES = (
+type Null = NoneType
+type ConfigScalar = str | int | float | bool | Null
+type ExportConfigFieldValue = Path | str | int | float | bool | list[int] | Null
+type AnnotationCell = str | int | float | bool | Null
+type AnnotationFieldName = Literal[
+    "annotation_id",
+    "video_id",
+    "video_hash",
+    "frame_id",
+    "frame_number",
+    "frame_relative_path",
+    "frame_timestamp",
+    "label_id",
+    "label_name",
+    "value",
+    "float_value",
+    "annotator",
+    "information_source_id",
+    "information_source_name",
+    "model_meta_id",
+    "date_created",
+    "date_modified",
+]
+
+DEFAULT_FIELDNAMES: tuple[AnnotationFieldName, ...] = (
     "annotation_id",
     "video_id",
     "video_hash",
@@ -74,41 +105,96 @@ DEFAULT_FIELDNAMES = (
 
 class AnnotationRow(TypedDict):
     annotation_id: int
-    video_id: int | None
-    video_hash: str | None
-    frame_id: int | None
-    frame_number: int | None
-    frame_relative_path: str | None
-    frame_timestamp: float | None
-    label: int
-    label_name: str | None
-    label_id: int | None
-    value: bool | None
-    float_value: float | None
-    annotator: str | None
-    information_source_id: int | None
-    information_source_name: str | None
-    model_meta_id: int | None
-    date_created: str | None
-    date_modified: str | None
+    video_id: int | Null
+    video_hash: str | Null
+    frame_id: int | Null
+    frame_number: int | Null
+    frame_relative_path: str | Null
+    frame_timestamp: float | Null
+    label_name: str | Null
+    label_id: int | Null
+    value: bool | Null
+    float_value: float | Null
+    annotator: str | Null
+    information_source_id: int | Null
+    information_source_name: str | Null
+    model_meta_id: int | Null
+    date_created: str | Null
+    date_modified: str | Null
+
+
+class _LabelExportModel(Protocol):
+    pk: int
+    name: str
+
+
+class _InformationSourceExportModel(Protocol):
+    pk: int
+    name: str
+
+
+class _ModelMetaExportModel(Protocol):
+    pk: int
+
+
+class _FrameExportModel(Protocol):
+    pk: int
+    frame_number: int
+    relative_path: str
+    timestamp: float
+    file_path: str
+    video: VideoFile
+
+
+class _FrameQuerySetLike(Protocol):
+    def only(self, *fields: str) -> Iterable[_FrameExportModel]: ...
+
+
+class _VideoFramesExportModel(Protocol):
+    pk: int
+    frames: _FrameQuerySetLike
+
+
+class _VideoHashExportModel(Protocol):
+    pk: int
+    video_hash: str | Null
+
+
+class _AnnotationExportModel(Protocol):
+    pk: int
+    frame: _FrameExportModel
+    label: _LabelExportModel
+    value: bool | Null
+    float_value: float | Null
+    annotator: str | Null
+    information_source: _InformationSourceExportModel | Null
+    model_meta: _ModelMetaExportModel | Null
+    date_created: datetime | Null
+    date_modified: datetime | Null
+
+
+class _LabelVideoSegmentExportModel(Protocol):
+    pk: int
+    label: _LabelExportModel | Null
+    video_file: VideoFile
+    start_frame_number: int
+    end_frame_number: int
+    source_id: int | Null
+
+    def get_model_meta(self) -> _ModelMetaExportModel | Null: ...
+
+
+class _FrameValueRow(TypedDict):
+    frame__video_id: int | Null
+    frame_id: int | Null
 
 
 DEFAULT_TRANSCODE_FPS = 50.0
 DEFAULT_TRANSCODE_QUALITY = 2
 DEFAULT_TRANSCODE_EXT = "jpg"
-BOOLEAN_CONFIG_FIELDS = {
-    "load_base_data",
-    "export_videos",
-    "export_frames",
-    "transcode_frames",
-    "transcode_overwrite",
-    "use_export_flags",
-    "all_centers",
-    "only_validated",
-}
 
 
-def _config_bool(value: Any, *, default: bool = False) -> bool:
+def _config_bool(value: ConfigScalar, *, default: bool = False) -> bool:
     if value is None:
         return default
     if isinstance(value, bool):
@@ -122,7 +208,7 @@ def _config_bool(value: Any, *, default: bool = False) -> bool:
     return bool(value)
 
 
-def _config_optional_bool(value: Any) -> bool | None:
+def _config_optional_bool(value: ConfigScalar) -> bool | Null:
     if value is None:
         return None
     return _config_bool(value)
@@ -177,7 +263,7 @@ def _assert_video_media_export_ready(video: VideoFile) -> None:
         )
 
 
-def _resolve_processed_video_source_path(video: VideoFile) -> Path | None:
+def _resolve_processed_video_source_path(video: VideoFile) -> Path | Null:
     """
     Prefer the central protected-media path resolution used by streaming.
     Fall back to storage-backed downloads (ensure_local_file) elsewhere.
@@ -205,13 +291,13 @@ def _resolve_processed_video_source_path(video: VideoFile) -> Path | None:
 @dataclass(frozen=True, slots=True)
 class export_config:
     output_path: Path | str
-    output_dir: Path | str | None = None
+    output_dir: Path | str | Null = None
     output_format: Literal["csv", "json"] = "csv"
-    video_id: int | None = None
-    label_id: int | None = None
-    information_source_name: str | None = None
-    only_true: bool | None = None
-    limit: int | None = None
+    video_id: int | Null = None
+    label_id: int | Null = None
+    information_source_name: str | Null = None
+    only_true: bool | Null = None
+    limit: int | Null = None
     load_base_data: bool = False
     export_videos: bool = False
     export_frames: bool = True
@@ -220,56 +306,39 @@ class export_config:
     transcode_quality: int = DEFAULT_TRANSCODE_QUALITY
     transcode_ext: str = DEFAULT_TRANSCODE_EXT
     transcode_overwrite: bool = False
-    use_frame_pk_paths: bool | None = None
+    use_frame_pk_paths: bool | Null = None
     use_export_flags: bool = True
-    segment_ids: list[int] | None = None
-    center_key: str | None = None
+    segment_ids: list[int] | Null = None
+    center_key: str | Null = None
     all_centers: bool = False
     only_validated: bool = True
 
     @classmethod
     def from_yaml(cls, config_path: Path | str) -> "export_config":
         config_data = load_export_config(config_path)
-        output_path = config_data.get("output_path")
-        if not output_path:
-            raise ValueError("export config must include output_path")
         return cls(
-            output_path=output_path,
-            output_dir=config_data.get("output_dir"),
-            output_format=config_data.get("output_format", "csv"),
-            video_id=config_data.get("video_id"),
-            label_id=config_data.get("label_id"),
-            information_source_name=config_data.get("information_source_name"),
-            only_true=_config_optional_bool(config_data.get("only_true")),
-            limit=config_data.get("limit"),
-            load_base_data=_config_bool(
-                config_data.get("load_base_data"), default=False
-            ),
-            export_videos=_config_bool(config_data.get("export_videos"), default=False),
-            export_frames=_config_bool(config_data.get("export_frames"), default=True),
-            transcode_frames=_config_bool(
-                config_data.get("transcode_frames"), default=False
-            ),
-            transcode_fps=config_data.get("transcode_fps", DEFAULT_TRANSCODE_FPS),
-            transcode_quality=config_data.get(
-                "transcode_quality", DEFAULT_TRANSCODE_QUALITY
-            ),
-            transcode_ext=config_data.get("transcode_ext", DEFAULT_TRANSCODE_EXT),
-            transcode_overwrite=_config_bool(
-                config_data.get("transcode_overwrite"), default=False
-            ),
-            use_frame_pk_paths=_config_optional_bool(
-                config_data.get("use_frame_pk_paths")
-            ),
-            use_export_flags=_config_bool(
-                config_data.get("use_export_flags"), default=True
-            ),
-            segment_ids=config_data.get("segment_ids"),
-            center_key=config_data.get("center_key"),
-            all_centers=_config_bool(config_data.get("all_centers"), default=False),
-            only_validated=_config_bool(
-                config_data.get("only_validated"), default=True
-            ),
+            output_path=config_data.output_path,
+            output_dir=config_data.output_dir,
+            output_format=config_data.output_format,
+            video_id=config_data.video_id,
+            label_id=config_data.label_id,
+            information_source_name=config_data.information_source_name,
+            only_true=config_data.only_true,
+            limit=config_data.limit,
+            load_base_data=config_data.load_base_data,
+            export_videos=config_data.export_videos,
+            export_frames=config_data.export_frames,
+            transcode_frames=config_data.transcode_frames,
+            transcode_fps=config_data.transcode_fps,
+            transcode_quality=config_data.transcode_quality,
+            transcode_ext=config_data.transcode_ext,
+            transcode_overwrite=config_data.transcode_overwrite,
+            use_frame_pk_paths=config_data.use_frame_pk_paths,
+            use_export_flags=config_data.use_export_flags,
+            segment_ids=config_data.segment_ids,
+            center_key=config_data.center_key,
+            all_centers=config_data.all_centers,
+            only_validated=config_data.only_validated,
         )
 
 
@@ -280,20 +349,27 @@ class export_result:
     success: bool
     exported_video_count: int = 0
     exported_frame_count: int = 0
-    video_output_dir: Path | None = None
-    frame_output_dir: Path | None = None
+    video_output_dir: Path | Null = None
+    frame_output_dir: Path | Null = None
 
 
 class export_job_failed_error(RuntimeError):
-    def __init__(self, message: str, *, original_error: Exception | None = None):
+    def __init__(self, message: str, *, original_error: Exception | Null = None):
         super().__init__(message)
         self.original_error = original_error
 
 
 def _normalize_export_config(config: export_config) -> export_config:
-    updates: dict[str, Any] = {}
-    for key in BOOLEAN_CONFIG_FIELDS:
-        updates[key] = _config_bool(getattr(config, key))
+    updates: dict[str, ExportConfigFieldValue] = {
+        "load_base_data": _config_bool(config.load_base_data),
+        "export_videos": _config_bool(config.export_videos),
+        "export_frames": _config_bool(config.export_frames, default=True),
+        "transcode_frames": _config_bool(config.transcode_frames),
+        "transcode_overwrite": _config_bool(config.transcode_overwrite),
+        "use_export_flags": _config_bool(config.use_export_flags, default=True),
+        "all_centers": _config_bool(config.all_centers),
+        "only_validated": _config_bool(config.only_validated, default=True),
+    }
 
     updates["only_true"] = _config_optional_bool(config.only_true)
     center_key = str(config.center_key or "").strip() or None
@@ -312,7 +388,7 @@ def _normalize_export_config(config: export_config) -> export_config:
 
 
 class annotation_exporter_client:
-    def __init__(self, *, logger: logging.Logger | None = None) -> None:
+    def __init__(self, *, logger: logging.Logger | Null = None) -> None:
         self._logger = logger or logging.getLogger(__name__)
 
     def run_export(self, config: export_config) -> export_result:
@@ -456,69 +532,62 @@ class annotation_exporter_client:
             self._logger.info("Annotation export finished for %s", output_path)
 
 
-def load_export_config(config_path: Path | str) -> dict[str, Any]:
+def load_export_config(
+    config_path: Path | str,
+) -> VideoFrameAnnotationExportConfigPayload:
     config_file = Path(config_path)
     if not config_file.exists():
         raise FileNotFoundError(f"config file not found: {config_file}")
-    config_data = yaml.safe_load(config_file.read_text()) or {}
-    if not isinstance(config_data, dict):
-        raise ValueError("export config must be a mapping")
-    return config_data
+    loaded_config = cast(YamlValue, yaml.safe_load(config_file.read_text()))
+    raw_config: YamlValue = {} if loaded_config is None else loaded_config
+    try:
+        return validate_video_frame_annotation_export_config(raw_config)
+    except ValidationError as exc:
+        raise ValueError(f"invalid export config: {exc}") from exc
 
 
 def export_frames_with_labels_from_yaml(config_path: Path | str) -> Path:
     config_data = load_export_config(config_path)
-    output_path = config_data.get("output_path")
-    if not output_path:
-        raise ValueError("export config must include output_path")
 
     return export_frames_with_labels_to_csv(
-        output_path=output_path,
-        video_id=config_data.get("video_id"),
-        label_id=config_data.get("label_id"),
-        information_source_name=config_data.get("information_source_name"),
-        only_true=_config_optional_bool(config_data.get("only_true")),
-        limit=config_data.get("limit"),
-        load_base_data=_config_bool(config_data.get("load_base_data"), default=False),
-        export_videos=_config_bool(config_data.get("export_videos"), default=False),
-        export_frames=_config_bool(config_data.get("export_frames"), default=True),
-        use_export_flags=_config_bool(
-            config_data.get("use_export_flags"), default=True
-        ),
-        segment_ids=config_data.get("segment_ids"),
-        center_key=config_data.get("center_key"),
-        all_centers=_config_bool(config_data.get("all_centers"), default=False),
-        only_validated=_config_bool(config_data.get("only_validated"), default=True),
-        transcode_frames=_config_bool(
-            config_data.get("transcode_frames"), default=False
-        ),
-        transcode_fps=config_data.get("transcode_fps", DEFAULT_TRANSCODE_FPS),
-        transcode_quality=config_data.get(
-            "transcode_quality", DEFAULT_TRANSCODE_QUALITY
-        ),
-        transcode_ext=config_data.get("transcode_ext", DEFAULT_TRANSCODE_EXT),
-        transcode_overwrite=_config_bool(
-            config_data.get("transcode_overwrite"), default=False
-        ),
-        use_frame_pk_paths=_config_optional_bool(config_data.get("use_frame_pk_paths")),
+        output_path=config_data.output_path,
+        video_id=config_data.video_id,
+        label_id=config_data.label_id,
+        information_source_name=config_data.information_source_name,
+        only_true=config_data.only_true,
+        limit=config_data.limit,
+        load_base_data=config_data.load_base_data,
+        export_videos=config_data.export_videos,
+        export_frames=config_data.export_frames,
+        use_export_flags=config_data.use_export_flags,
+        segment_ids=config_data.segment_ids,
+        center_key=config_data.center_key,
+        all_centers=config_data.all_centers,
+        only_validated=config_data.only_validated,
+        transcode_frames=config_data.transcode_frames,
+        transcode_fps=config_data.transcode_fps,
+        transcode_quality=config_data.transcode_quality,
+        transcode_ext=config_data.transcode_ext,
+        transcode_overwrite=config_data.transcode_overwrite,
+        use_frame_pk_paths=config_data.use_frame_pk_paths,
     )
 
 
 def export_frames_with_labels_to_csv(
     output_path: Path | str,
     *,
-    annotations: QuerySet[ImageClassificationAnnotation] | None = None,
-    video_id: int | None = None,
-    label_id: int | None = None,
-    information_source_name: str | None = None,
-    only_true: bool | None = None,
-    limit: int | None = None,
+    annotations: QuerySet[ImageClassificationAnnotation] | Null = None,
+    video_id: int | Null = None,
+    label_id: int | Null = None,
+    information_source_name: str | Null = None,
+    only_true: bool | Null = None,
+    limit: int | Null = None,
     load_base_data: bool = False,
     export_videos: bool = False,
     export_frames: bool = True,
     use_export_flags: bool = True,
-    segment_ids: list[int] | None = None,
-    center_key: str | None = None,
+    segment_ids: list[int] | Null = None,
+    center_key: str | Null = None,
     all_centers: bool = False,
     only_validated: bool = True,
     transcode_frames: bool = False,
@@ -526,7 +595,7 @@ def export_frames_with_labels_to_csv(
     transcode_quality: int = DEFAULT_TRANSCODE_QUALITY,
     transcode_ext: str = DEFAULT_TRANSCODE_EXT,
     transcode_overwrite: bool = False,
-    use_frame_pk_paths: bool | None = None,
+    use_frame_pk_paths: bool | Null = None,
 ) -> Path:
     if load_base_data:
         load_base_db_data()
@@ -572,7 +641,7 @@ def export_frames_with_labels_to_csv(
             ),
         )
 
-    rows = [
+    rows: list[AnnotationRow] = [
         _annotation_to_row(
             annotation,
             use_frame_pk_paths=use_frame_pk_paths,
@@ -581,9 +650,13 @@ def export_frames_with_labels_to_csv(
         for annotation in annotations.iterator()
     ]
     csv_buffer = io.StringIO()
-    writer = csv.DictWriter(csv_buffer, fieldnames=DEFAULT_FIELDNAMES)
+    writer = csv.DictWriter[AnnotationFieldName](
+        csv_buffer,
+        fieldnames=DEFAULT_FIELDNAMES,
+    )
     writer.writeheader()
-    writer.writerows(rows)
+    for row in rows:
+        writer.writerow(_annotation_row_to_csv_dict(row))
     atomic_write_file(
         destination=output_file,
         content=[csv_buffer.getvalue().encode("utf-8")],
@@ -595,18 +668,18 @@ def export_frames_with_labels_to_csv(
 def export_frames_with_labels_to_json(
     output_path: Path | str,
     *,
-    annotations: QuerySet[ImageClassificationAnnotation] | None = None,
-    video_id: int | None = None,
-    label_id: int | None = None,
-    information_source_name: str | None = None,
-    only_true: bool | None = None,
-    limit: int | None = None,
+    annotations: QuerySet[ImageClassificationAnnotation] | Null = None,
+    video_id: int | Null = None,
+    label_id: int | Null = None,
+    information_source_name: str | Null = None,
+    only_true: bool | Null = None,
+    limit: int | Null = None,
     load_base_data: bool = False,
     export_videos: bool = False,
     export_frames: bool = True,
     use_export_flags: bool = True,
-    segment_ids: list[int] | None = None,
-    center_key: str | None = None,
+    segment_ids: list[int] | Null = None,
+    center_key: str | Null = None,
     all_centers: bool = False,
     only_validated: bool = True,
     transcode_frames: bool = False,
@@ -614,7 +687,7 @@ def export_frames_with_labels_to_json(
     transcode_quality: int = DEFAULT_TRANSCODE_QUALITY,
     transcode_ext: str = DEFAULT_TRANSCODE_EXT,
     transcode_overwrite: bool = False,
-    use_frame_pk_paths: bool | None = None,
+    use_frame_pk_paths: bool | Null = None,
 ) -> Path:
     if load_base_data:
         load_base_db_data()
@@ -662,7 +735,7 @@ def export_frames_with_labels_to_json(
             ),
         )
 
-    rows = []
+    rows: list[AnnotationRow] = []
     for annotation in annotations.iterator():
         rows.append(
             _annotation_to_row(
@@ -719,8 +792,8 @@ def _validate_export_scope(config: export_config) -> None:
 class ExportAssetResult(TypedDict):
     exported_video_count: int
     exported_frame_count: int
-    video_output_dir: Path | None
-    frame_output_dir: Path | None
+    video_output_dir: Path | Null
+    frame_output_dir: Path | Null
 
 
 def _export_media_assets(
@@ -734,7 +807,7 @@ def _export_media_assets(
     transcode_quality: int,
     transcode_ext: str,
     transcode_overwrite: bool,
-    use_frame_pk_paths: bool | None,
+    use_frame_pk_paths: bool | Null,
     strict_media_validation: bool,
 ) -> ExportAssetResult:
     ensure_directory(output_dir)
@@ -790,7 +863,7 @@ def _export_media_assets(
 def _export_videos_from_annotations(
     annotations: QuerySet[ImageClassificationAnnotation],
     *,
-    output_dir: Path | None,
+    output_dir: Path | Null,
     strict_media_validation: bool = True,
 ) -> int:
     if output_dir is None:
@@ -817,7 +890,8 @@ def _export_videos_from_annotations(
             source_path = _resolve_processed_video_source_path(video)
             if source_path is not None:
                 suffix = source_path.suffix or ".mp4"
-                video_hash = video.video_hash or "unknown"
+                video_export = cast(_VideoHashExportModel, video)
+                video_hash = video_export.video_hash or "unknown"
                 target_path = output_dir / f"video_{video.pk}_{video_hash}{suffix}"
                 try:
                     atomic_copy_file(source=source_path, destination=target_path)
@@ -840,7 +914,8 @@ def _export_videos_from_annotations(
             # Fallback: attempt to download processed media via Django storage backend.
             with ensure_local_file(processed_file) as source_path_fallback:
                 suffix = source_path_fallback.suffix or ".mp4"
-                video_hash = video.video_hash or "unknown"
+                video_export = cast(_VideoHashExportModel, video)
+                video_hash = video_export.video_hash or "unknown"
                 target_path = output_dir / f"video_{video.pk}_{video_hash}{suffix}"
                 try:
                     atomic_copy_file(
@@ -866,11 +941,11 @@ def _export_videos_from_annotations(
 def _export_frames_from_annotations(
     annotations: QuerySet[ImageClassificationAnnotation],
     *,
-    output_dir: Path | None,
+    output_dir: Path | Null,
     use_frame_pk_paths: bool,
     frame_ext: str,
     strict_media_validation: bool = True,
-    generated_frame_root: Path | None = None,
+    generated_frame_root: Path | Null = None,
 ) -> int:
     if output_dir is None:
         return 0
@@ -889,12 +964,9 @@ def _export_frames_from_annotations(
     copied_frames: set[tuple[int, str]] = set()
 
     for annotation in annotations.iterator():
-        frame = annotation.frame
-        if frame is None:
-            continue
+        annotation_export = cast(_AnnotationExportModel, annotation)
+        frame = annotation_export.frame
         video = frame.video
-        if video is None:
-            continue
         try:
             _assert_video_media_export_ready(video)
         except (ValueError, FileNotFoundError) as exc:
@@ -961,16 +1033,14 @@ def _export_frames_from_annotations(
 
 
 def _resolve_frame_source_path(
-    frame: "Frame",
+    frame: _FrameExportModel,
     *,
     frame_relative_path: str,
     use_frame_pk_paths: bool,
     frame_ext: str,
-    generated_frame_root: Path | None = None,
-) -> Path | None:
+    generated_frame_root: Path | Null = None,
+) -> Path | Null:
     video = frame.video
-    if not video:
-        return None
 
     if use_frame_pk_paths:
         if generated_frame_root is not None:
@@ -999,9 +1069,12 @@ def transcode_videos_for_annotations(
     quality: int = DEFAULT_TRANSCODE_QUALITY,
     ext: str = DEFAULT_TRANSCODE_EXT,
     overwrite: bool = False,
-    export_frame_root: Path | None = None,
+    export_frame_root: Path | Null = None,
 ) -> None:
-    frame_rows = annotations.values("frame__video_id", "frame_id")
+    frame_rows = cast(
+        Iterable[_FrameValueRow],
+        annotations.values("frame__video_id", "frame_id"),
+    )
     video_frame_pks: dict[int, set[int]] = {}
     for row in frame_rows:
         video_id = row["frame__video_id"]
@@ -1030,12 +1103,12 @@ def transcode_videos_for_annotations(
 def _transcode_video_to_frame_dir(
     video: VideoFile,
     *,
-    frame_pks: set[int] | None,
+    frame_pks: set[int] | Null,
     fps: float,
     quality: int,
     ext: str,
     overwrite: bool,
-    export_frame_root: Path | None = None,
+    export_frame_root: Path | Null = None,
 ) -> None:
     if export_frame_root is not None:
         frame_dir = export_frame_root / f"video_{video.pk}"
@@ -1098,7 +1171,7 @@ def _extract_and_move_transcoded_frames(
     *,
     source_path: Path,
     frame_dir: Path,
-    frame_pks: set[int] | None,
+    frame_pks: set[int] | Null,
     fps: float,
     quality: int,
     ext: str,
@@ -1130,12 +1203,14 @@ def _move_extracted_frames_to_pk_names(
     extracted_paths: list[Path],
     frame_dir: Path,
     *,
-    frame_pks: set[int] | None,
+    frame_pks: set[int] | Null,
     ext: str,
     overwrite: bool,
 ) -> None:
+    video_export = cast(_VideoFramesExportModel, video)
     frames_by_number = {
-        frame.frame_number: frame for frame in video.frames.only("pk", "frame_number")
+        frame.frame_number: frame
+        for frame in video_export.frames.only("pk", "frame_number")
     }
     if not frames_by_number:
         logger.warning("No frames available for video %s", video.pk)
@@ -1166,7 +1241,7 @@ def _move_extracted_frames_to_pk_names(
         atomic_move_file(source=extracted_path, destination=target_path)
 
 
-def _parse_extracted_frame_number(frame_path: Path) -> int | None:
+def _parse_extracted_frame_number(frame_path: Path) -> int | Null:
     try:
         return int(frame_path.stem.split("_")[-1])
     except (ValueError, IndexError):
@@ -1175,6 +1250,30 @@ def _parse_extracted_frame_number(frame_path: Path) -> int | None:
 
 def _frame_pk_filename(frame_pk: int, ext: str) -> str:
     return f"frame_{frame_pk}.{ext}"
+
+
+def _annotation_row_to_csv_dict(
+    row: AnnotationRow,
+) -> dict[AnnotationFieldName, AnnotationCell]:
+    return {
+        "annotation_id": row["annotation_id"],
+        "video_id": row["video_id"],
+        "video_hash": row["video_hash"],
+        "frame_id": row["frame_id"],
+        "frame_number": row["frame_number"],
+        "frame_relative_path": row["frame_relative_path"],
+        "frame_timestamp": row["frame_timestamp"],
+        "label_id": row["label_id"],
+        "label_name": row["label_name"],
+        "value": row["value"],
+        "float_value": row["float_value"],
+        "annotator": row["annotator"],
+        "information_source_id": row["information_source_id"],
+        "information_source_name": row["information_source_name"],
+        "model_meta_id": row["model_meta_id"],
+        "date_created": row["date_created"],
+        "date_modified": row["date_modified"],
+    }
 
 
 def _build_annotations_queryset() -> QuerySet[ImageClassificationAnnotation]:
@@ -1190,13 +1289,13 @@ def _build_annotations_queryset() -> QuerySet[ImageClassificationAnnotation]:
 def _apply_filters(
     annotations: QuerySet[ImageClassificationAnnotation],
     *,
-    video_id: int | None,
-    label_id: int | None,
-    information_source_name: str | None,
-    only_true: bool | None,
+    video_id: int | Null,
+    label_id: int | Null,
+    information_source_name: str | Null,
+    only_true: bool | Null,
     use_export_flags: bool = False,
-    segment_ids: list[int] | None = None,
-    center_key: str | None = None,
+    segment_ids: list[int] | Null = None,
+    center_key: str | Null = None,
     all_centers: bool = False,
     only_validated: bool = True,
 ) -> QuerySet[ImageClassificationAnnotation]:
@@ -1263,8 +1362,8 @@ def _count_annotations_for_config(config: export_config) -> int:
 def _filter_annotations_by_segments(
     annotations: QuerySet[ImageClassificationAnnotation],
     *,
-    video_id: int | None,
-    segment_ids: list[int] | None,
+    video_id: int | Null,
+    segment_ids: list[int] | Null,
     use_export_flags: bool,
 ) -> QuerySet[ImageClassificationAnnotation]:
     segments = LabelVideoSegment.objects.select_related(
@@ -1288,7 +1387,8 @@ def _filter_annotations_by_segments(
         return annotations.none()
 
     segment_filter = Q()
-    for segment in segment_list:
+    for segment_row in segment_list:
+        segment = cast(_LabelVideoSegmentExportModel, segment_row)
         if segment.label is None:
             continue
 
@@ -1324,54 +1424,45 @@ def _annotation_to_row(
     use_frame_pk_paths: bool,
     frame_ext: str,
 ) -> AnnotationRow:
-    frame = annotation.frame
-    video = frame.video if frame else None
-    information_source = annotation.information_source
+    annotation_export = cast(_AnnotationExportModel, annotation)
+    frame = annotation_export.frame
+    video = cast(_VideoHashExportModel, frame.video)
+    label = annotation_export.label
+    information_source = annotation_export.information_source
 
     if information_source is None:
         raise ValueError("Information Source is None.")
 
-    frame_relative_path = None
-    if frame:
-        if use_frame_pk_paths:
-            frame_relative_path = _frame_pk_filename(frame.pk, frame_ext)
-        else:
-            frame_relative_path = frame.relative_path
+    if use_frame_pk_paths:
+        frame_relative_path = _frame_pk_filename(frame.pk, frame_ext)
+    else:
+        frame_relative_path = frame.relative_path
 
-    return cast(
-        AnnotationRow,
-        {
-            "annotation_id": annotation.pk,
-            "video_id": video.pk if video else None,
-            "video_hash": video.video_hash if video else None,
-            "frame_id": frame.pk if frame else None,
-            "frame_number": frame.frame_number if frame else None,
-            "frame_relative_path": frame_relative_path,
-            "frame_timestamp": frame.timestamp if frame else None,
-            "label_id": annotation.label.pk,
-            "label_name": annotation.label.name if annotation.label else None,
-            "value": annotation.value,
-            "float_value": annotation.float_value,
-            "annotator": annotation.annotator,
-            "information_source_id": (
-                information_source.pk if information_source else None
-            ),
-            "information_source_name": (
-                information_source.name if information_source else None
-            ),
-            "model_meta_id": (
-                annotation.model_meta.pk if annotation.model_meta else None
-            ),
-            "date_created": (
-                annotation.date_created.isoformat() if annotation.date_created else None
-            ),
-            "date_modified": (
-                annotation.date_modified.isoformat()
-                if annotation.date_modified
-                else None
-            ),
-        },
-    )
+    model_meta = annotation_export.model_meta
+    date_created = annotation_export.date_created
+    date_modified = annotation_export.date_modified
+
+    return {
+        "annotation_id": annotation_export.pk,
+        "video_id": video.pk,
+        "video_hash": video.video_hash,
+        "frame_id": frame.pk,
+        "frame_number": frame.frame_number,
+        "frame_relative_path": frame_relative_path,
+        "frame_timestamp": frame.timestamp,
+        "label_id": label.pk,
+        "label_name": label.name,
+        "value": annotation_export.value,
+        "float_value": annotation_export.float_value,
+        "annotator": annotation_export.annotator,
+        "information_source_id": information_source.pk,
+        "information_source_name": information_source.name,
+        "model_meta_id": model_meta.pk if model_meta is not None else None,
+        "date_created": date_created.isoformat() if date_created is not None else None,
+        "date_modified": date_modified.isoformat()
+        if date_modified is not None
+        else None,
+    }
 
 
 """

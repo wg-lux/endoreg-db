@@ -2,7 +2,14 @@ import json
 import logging
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, cast
+from typing import Any, List, Optional, Tuple, TypedDict, Unpack, cast
+
+from lx_dtypes.models.contracts.media_streaming import (
+    FfmpegStreamProbeEntry,
+    validate_ffmpeg_stream_info,
+)
+from lx_dtypes.models.contracts.json_types import JsonObject
+from pydantic import ValidationError
 
 from endoreg_db.config.env import get_ffmpeg_transcode_timeout_seconds
 from endoreg_db.utils.filesystem.file_operations import (
@@ -29,6 +36,17 @@ FFMPEG_TRANSCODE_TIMEOUT_SECONDS = get_ffmpeg_transcode_timeout_seconds()
 FULL_RANGE_YUV420P_PIXEL_FORMATS = frozenset({"yuv420p", "yuvj420p"})
 
 
+class _TranscodeOptions(TypedDict, total=False):
+    codec: str
+    crf: int | None
+    preset: str
+    audio_codec: str
+    audio_bitrate: str
+    extra_args: list[str]
+    quality_mode: str
+    force_cpu: bool
+
+
 def _delete_partial_output(output_path: Path, *, reason: str) -> None:
     """Remove an ffmpeg output file that may be incomplete or corrupt."""
     if not output_path.exists():
@@ -39,17 +57,14 @@ def _delete_partial_output(output_path: Path, *, reason: str) -> None:
         logger.error("Failed to delete %s output file %s: %s", reason, output_path, e)
 
 
-def _stream_info_has_video_stream(stream_info: Optional[Dict]) -> bool:
-    return bool(
-        next(
-            (
-                stream
-                for stream in (stream_info or {}).get("streams", [])
-                if stream.get("codec_type") == "video"
-            ),
-            None,
-        )
-    )
+def _stream_info_has_video_stream(stream_info: JsonObject | None) -> bool:
+    if stream_info is None:
+        return False
+    try:
+        return validate_ffmpeg_stream_info(stream_info).has_video_stream
+    except ValidationError as exc:
+        logger.error("Invalid ffprobe stream info payload: %s", exc)
+        return False
 
 
 def _transcode_output_is_valid(output_path: Path) -> bool:
@@ -111,7 +126,7 @@ def _run_ffmpeg_command(command: List[str]) -> Tuple[int, str]:
     return process.returncode, stderr_output or ""
 
 
-def get_stream_info(file_path: Path) -> Optional[Dict]:
+def get_stream_info(file_path: Path) -> JsonObject | None:
     """
     Retrieves video stream information from a file using ffprobe.
 
@@ -134,7 +149,7 @@ def get_stream_info(file_path: Path) -> Optional[Dict]:
     )
     try:
         result = subprocess.run(command, capture_output=True, text=True, check=True)
-        return json.loads(result.stdout)
+        return cast(JsonObject, json.loads(result.stdout))
     except subprocess.CalledProcessError as e:
         logger.error("ffprobe command failed for %s: %s\n%s", file_path, e, e.stderr)
         return None
@@ -537,7 +552,9 @@ def transcode_videofile_if_required(
     output_path: Path,
     required_codec: str = "h264",
     required_pixel_format: str = "yuv420p",  # Changed default from yuvj420p
-    **transcode_options,  # Pass other options to transcode_video
+    **transcode_options: Unpack[
+        _TranscodeOptions
+    ],  # Pass other options to transcode_video
 ) -> Optional[Path]:
     """
     Checks if a video needs transcoding based on codec and pixel format,
@@ -546,27 +563,25 @@ def transcode_videofile_if_required(
     Returns the path to the compliant video (original or transcoded).
     """
     stream_info = get_stream_info(input_path)
-    if not stream_info or "streams" not in stream_info:
+    if stream_info is None:
         logger.error(
             "Could not get stream info for %s to check if transcoding is required.",
             input_path,
         )
         return None
 
-    video_stream = next(
-        (s for s in stream_info["streams"] if s.get("codec_type") == "video"), None
-    )
+    probe_info = validate_ffmpeg_stream_info(stream_info)
+    video_streams = probe_info.video_streams
 
-    if not video_stream:
+    if not video_streams:
         logger.error("No video stream found in %s.", input_path)
         return None
 
-    codec_name = video_stream.get("codec_name")
-    pixel_format = video_stream.get("pix_fmt")
+    video_stream: FfmpegStreamProbeEntry = video_streams[0]
+    codec_name = video_stream.codec_name
+    pixel_format = video_stream.pix_fmt
     # Check color range as well, default is usually 'tv' (limited)
-    color_range = video_stream.get(
-        "color_range", "tv"
-    )  # Default to tv if not specified
+    color_range = video_stream.color_range
 
     has_required_pixel_format = _pixel_format_matches_required(
         pixel_format,
@@ -574,7 +589,7 @@ def transcode_videofile_if_required(
     )
     needs_full_range = required_pixel_format == "yuv420p" and has_required_pixel_format
     needs_transcoding = False
-    transcode_reason = []
+    transcode_reason: list[str] = []
     if codec_name != required_codec:
         reason = f"Codec mismatch ({codec_name} != {required_codec})"
         logger.info("%s for %s. Transcoding required.", reason, input_path.name)
@@ -598,10 +613,10 @@ def transcode_videofile_if_required(
         transcode_options.setdefault(
             "codec", "libx264" if required_codec == "h264" else required_codec
         )
-        transcode_options.setdefault("extra_args", [])
+        extra_args = transcode_options.get("extra_args", [])
+        transcode_options["extra_args"] = extra_args
 
         # Ensure pixel format and color range are correctly set in extra_args
-        extra_args = transcode_options["extra_args"]
         _update_or_append_ffmpeg_arg(extra_args, "-pix_fmt", required_pixel_format)
         # Add color range 'pc' (which corresponds to 2 or 'jpeg') for yuv420p
         _update_or_append_ffmpeg_arg(extra_args, "-color_range", "pc")

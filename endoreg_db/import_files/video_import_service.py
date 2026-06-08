@@ -1,9 +1,10 @@
 # endoreg_db/import_files/video_import_service.py
 import logging
 import shutil
-from contextlib import contextmanager, nullcontext
+from contextlib import AbstractContextManager, contextmanager, nullcontext
+from collections.abc import Generator
 from pathlib import Path
-from typing import Iterator, Optional, Union
+from typing import TYPE_CHECKING, Protocol, cast
 
 
 from endoreg_db.exceptions import InsufficientStorageError
@@ -33,9 +34,9 @@ from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
 from endoreg_db.services.hub.media_integrity import (
-    MediaIntegrityError,
     MediaIntegrityExpectation,
     check_video_media_integrity,
+    video_integrity_failure_allows_existing_video_reprocessing,
 )
 from endoreg_db.services.video_files import (
     get_or_create_video_state,
@@ -43,27 +44,63 @@ from endoreg_db.services.video_files import (
     get_video_import_context_names,
     initialize_video_file,
 )
+from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.utils.filesystem import paths as path_utils
 from endoreg_db.utils.filesystem.file_operations import sha256_file
+from endoreg_db.utils.storage import file_exists
+
+if TYPE_CHECKING:
+    from endoreg_db.models.media.video.video_file import VideoFile
 
 logger = logging.getLogger(__name__)
 PIPELINE_STORAGE_MULTIPLIER = 2.5
 
 
+class _VideoAnonymizer(Protocol):
+    def anonymize_video(self, ctx: ImportContext) -> ImportContext: ...
+
+
+class _VideoImportState(Protocol):
+    anonymization_validated: bool
+
+
+class _LocalRawVideo(Protocol):
+    video_hash: str
+    original_file_name: str
+    state: _VideoImportState | None
+
+
+class _RawPathVideo(Protocol):
+    def get_raw_file_path(self) -> Path | str | None: ...
+
+
+class _LocalRawFileProvider(Protocol):
+    def ensure_local_raw_file(self) -> AbstractContextManager[Path]: ...
+
+
 try:
     from endoreg_db.import_files.processing.video_processing.video_anonymization import (
-        VideoAnonymizer,
+        VideoAnonymizer as _ImportedVideoAnonymizer,
     )
+
+    VideoAnonymizer = cast(type[_VideoAnonymizer], _ImportedVideoAnonymizer)
 except ImportError as exc:  # pragma: no cover - exercised by dependency-light tests
     _VIDEO_ANONYMIZER_IMPORT_ERROR = exc
 
-    class VideoAnonymizer:  # type: ignore[no-redef]
+    class _UnavailableVideoAnonymizer:
         """Import-time placeholder so tests can monkeypatch VideoAnonymizer."""
 
-        def __init__(self, *args, **kwargs):
+        def __init__(self) -> None:
             raise RuntimeError(
                 "Video anonymization dependencies are unavailable"
             ) from _VIDEO_ANONYMIZER_IMPORT_ERROR
+
+        def anonymize_video(self, ctx: ImportContext) -> ImportContext:
+            raise RuntimeError(
+                "Video anonymization dependencies are unavailable"
+            ) from _VIDEO_ANONYMIZER_IMPORT_ERROR
+
+    VideoAnonymizer: type[_VideoAnonymizer] = _UnavailableVideoAnonymizer
 
 
 def _storage_dir() -> Path:
@@ -84,7 +121,33 @@ def _hash_lock_dir() -> Path:
     return _storage_dir() / "locks" / "video_content"
 
 
-def _video_meta_stream_contract(video: VideoFile | object | None) -> SourceStreamData:
+def _local_raw_source_context(
+    video: object, *, fallback_path: Path | None = None
+) -> AbstractContextManager[Path]:
+    ensure_local_raw_file = getattr(video, "ensure_local_raw_file", None)
+    if callable(ensure_local_raw_file):
+        return cast(_LocalRawFileProvider, video).ensure_local_raw_file()
+
+    get_raw_file_path = getattr(video, "get_raw_file_path", None)
+    if callable(get_raw_file_path):
+        raw_path = cast(_RawPathVideo, video).get_raw_file_path()
+        if raw_path is not None:
+            local_raw_path = Path(raw_path)
+            if local_raw_path.exists() or fallback_path is None:
+                return nullcontext(local_raw_path)
+
+    if fallback_path is not None:
+        return nullcontext(fallback_path)
+
+    video_hash = getattr(video, "video_hash", "unknown")
+    raise ValueError(f"Video {video_hash} has no local raw source")
+
+
+def _supports_video_file_initialization(video: object) -> bool:
+    return isinstance(video, VideoFile)
+
+
+def _video_meta_stream_contract(video: VideoFile | None) -> SourceStreamData:
     if video is None:
         return {}
     contract: SourceStreamData = {}
@@ -167,27 +230,27 @@ class VideoImportService:
 
     """
 
-    def __init__(self, anonymizer: VideoAnonymizer | None = None):
+    def __init__(self, anonymizer: _VideoAnonymizer | None = None) -> None:
         self.logger = logger
         self._anonymizer = anonymizer
-        self.processing_context: Optional[ImportContext] = None
-        self.current_video: Optional[VideoFile] = None
+        self.processing_context: ImportContext | None = None
+        self.current_video: VideoFile | None = None
 
         validate_directories()
 
     @property
-    def anonymizer(self) -> VideoAnonymizer:
+    def anonymizer(self) -> _VideoAnonymizer:
         if self._anonymizer is None:
             self._anonymizer = VideoAnonymizer()
         return self._anonymizer
 
     @anonymizer.setter
-    def anonymizer(self, value: VideoAnonymizer) -> None:
+    def anonymizer(self, value: _VideoAnonymizer) -> None:
         self._anonymizer = value
 
     def import_and_anonymize(
         self,
-        file_path: Union[Path, str],
+        file_path: Path | str,
         center_name: str,
         processor_name: str,
         retry: bool = False,
@@ -214,8 +277,6 @@ class VideoImportService:
             logger.info("Acquired file lock for %s", lock_path)
             if ctx.file_hash is None:
                 raise ValueError("File hash missing.")
-            if not isinstance(ctx.file_hash, str):
-                ctx.file_hash = str(ctx.file_hash)
 
             with content_hash_lock(ctx.file_hash, _hash_lock_dir()):
                 logger.info("Acquired content-hash lock for %s", ctx.file_hash)
@@ -234,29 +295,29 @@ class VideoImportService:
                 ctx.current_video, _processed, needs_processing = (
                     create_or_retrieve_video_file(ctx)
                 )
+                self._sync_raw_streamable_artifacts(ctx.current_video)
                 get_or_create_video_state(ctx.current_video)
-                if ctx.current_video.state is None:
+                current_video = cast(_LocalRawVideo, ctx.current_video)
+                if current_video.state is None:
                     raise ValueError(
-                        f"{ctx.current_video.original_file_name} has no video state after trying."
+                        f"{current_video.original_file_name} has no video state after trying."
                     )
+                current_state = current_video.state
                 ctx.current_video = ctx.current_video
 
                 ctx.retry = retry
                 # Retry is a forced overwrite of needs processing - therefore the retry will cause full deletion of processed files using finalize failure.
-                current_state = ctx.current_video.state if ctx.current_video else None
 
                 if (
                     retry
                     and needs_processing
-                    and ctx
-                    and ctx.current_video
-                    and current_state is not None
                     and not current_state.anonymization_validated
                 ):
                     finalize_failure(ctx)
                     ctx.current_video, _processed, needs_processing = (
                         create_or_retrieve_video_file(ctx)
                     )
+                    self._sync_raw_streamable_artifacts(ctx.current_video)
 
                 if not needs_processing and not retry:
                     self._cleanup_duplicate_staging(ctx)
@@ -266,7 +327,7 @@ class VideoImportService:
                     mark_instance_processing_started(ctx.current_video, ctx)
                     logger.info(
                         "Persisted video state as processing before anonymization: video=%s",
-                        ctx.current_video.video_hash,
+                        current_video.video_hash,
                     )
                     with self._verified_local_raw_source(ctx):
                         ctx = self.anonymizer.anonymize_video(ctx)
@@ -292,40 +353,54 @@ class VideoImportService:
                     finalize_failure(ctx)
                     raise
 
-    @contextmanager
-    def _verified_local_raw_source(self, ctx: ImportContext) -> Iterator[None]:
-        assert ctx.current_video is not None
-        ensure_raw = getattr(ctx.current_video, "ensure_local_raw_file", None)
-        if not callable(ensure_raw):
-            yield
+    def _sync_raw_streamable_artifacts(self, video: VideoFile) -> None:
+        raw_file = getattr(video, "raw_file", None)
+        if raw_file is None or not file_exists(raw_file):
             return
+        try:
+            sync_video_streamable_artifacts(
+                video,
+                include_raw=True,
+                include_processed=False,
+                save=True,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Could not synchronize raw streamable artifact for video %s: %s",
+                getattr(video, "pk", "unknown"),
+                exc,
+            )
+
+    @contextmanager
+    def _verified_local_raw_source(self, ctx: ImportContext) -> Generator[None]:
+        assert ctx.current_video is not None
+        current_video = cast(_LocalRawVideo, ctx.current_video)
 
         previous_local_source = ctx.local_source_path
-        with ensure_raw() as local_source_path:
-            if local_source_path is None:
-                raise RuntimeError(
-                    f"Video {ctx.current_video.video_hash} raw source is unavailable."
-                )
+        fallback_path = Path(ctx.sensitive_path) if ctx.sensitive_path else None
+        with _local_raw_source_context(
+            ctx.current_video, fallback_path=fallback_path
+        ) as local_source_path:
             local_source_path = Path(local_source_path)
-            if isinstance(ctx.current_video, VideoFile):
-                before_identity = _raw_source_identity(local_source_path)
+            before_identity = _raw_source_identity(local_source_path)
+            if _supports_video_file_initialization(ctx.current_video):
                 ctx.current_video = initialize_video_file(
                     ctx.current_video,
                     local_raw_path=local_source_path,
                 )
-                after_identity = _raw_source_identity(local_source_path)
-                if before_identity != after_identity:
-                    logger.critical(
-                        "Video raw source changed during metadata extraction: "
-                        "video=%s path=%s before=%s after=%s",
-                        getattr(ctx.current_video, "video_hash", None),
-                        local_source_path.resolve(),
-                        before_identity,
-                        after_identity,
-                    )
-                    raise RuntimeError(
-                        "Video raw source changed during VideoMeta extraction."
-                    )
+            after_identity = _raw_source_identity(local_source_path)
+            if before_identity != after_identity:
+                logger.critical(
+                    "Video raw source changed during metadata extraction: "
+                    "video=%s path=%s before=%s after=%s",
+                    current_video.video_hash,
+                    local_source_path.resolve(),
+                    before_identity,
+                    after_identity,
+                )
+                raise RuntimeError(
+                    "Video raw source changed during VideoMeta extraction."
+                )
             _record_validated_raw_source(ctx, local_source_path)
             ctx.local_source_path = local_source_path
             try:
@@ -337,7 +412,7 @@ class VideoImportService:
         self,
         video: VideoFile,
         *,
-        source_path: Union[Path, str, None] = None,
+        source_path: Path | str | None = None,
     ) -> VideoFile:
         """
         Re-run anonymization for an existing VideoFile without re-import staging.
@@ -350,19 +425,11 @@ class VideoImportService:
         """
         video_hash = getattr(video, "video_hash", None)
         if source_path is None:
-            ensure_raw = getattr(video, "ensure_local_raw_file", None)
-            if not callable(ensure_raw):
-                raise RuntimeError(
-                    f"Video {video_hash} cannot materialize its raw file."
-                )
-            source_context = ensure_raw()
+            source_context = _local_raw_source_context(video)
         else:
             source_context = nullcontext(Path(source_path))
 
         with source_context as local_source_path:
-            if local_source_path is None:
-                raise RuntimeError(f"Video {video_hash} raw source is unavailable.")
-
             local_source_path = Path(local_source_path)
             if not local_source_path.exists():
                 raise FileNotFoundError(f"Video file not found: {local_source_path}")
@@ -378,8 +445,6 @@ class VideoImportService:
                 )
                 if ctx.file_hash is None:
                     raise ValueError("File hash missing.")
-                if not isinstance(ctx.file_hash, str):
-                    ctx.file_hash = str(ctx.file_hash)
 
                 with content_hash_lock(ctx.file_hash, _hash_lock_dir()):
                     logger.info(
@@ -391,25 +456,25 @@ class VideoImportService:
                     ctx.current_video = video
                     ctx.instance = video
                     ctx.retry = True
-                    if isinstance(video, VideoFile):
-                        before_identity = _raw_source_identity(local_source_path)
+                    before_identity = _raw_source_identity(local_source_path)
+                    if _supports_video_file_initialization(video):
                         ctx.current_video = initialize_video_file(
                             video,
                             local_raw_path=local_source_path,
                         )
-                        after_identity = _raw_source_identity(local_source_path)
-                        if before_identity != after_identity:
-                            logger.critical(
-                                "Video raw source changed during re-anonymization "
-                                "metadata extraction: video=%s path=%s before=%s after=%s",
-                                video_hash,
-                                local_source_path.resolve(),
-                                before_identity,
-                                after_identity,
-                            )
-                            raise RuntimeError(
-                                "Video raw source changed during VideoMeta extraction."
-                            )
+                    after_identity = _raw_source_identity(local_source_path)
+                    if before_identity != after_identity:
+                        logger.critical(
+                            "Video raw source changed during re-anonymization "
+                            "metadata extraction: video=%s path=%s before=%s after=%s",
+                            video_hash,
+                            local_source_path.resolve(),
+                            before_identity,
+                            after_identity,
+                        )
+                        raise RuntimeError(
+                            "Video raw source changed during VideoMeta extraction."
+                        )
                     _record_validated_raw_source(ctx, local_source_path)
 
                     try:
@@ -451,20 +516,33 @@ class VideoImportService:
         ):
             return None
 
-        existing_video = get_video_by_content_hash(file_hash)
+        try:
+            existing_video = get_video_by_content_hash(file_hash)
+        except VideoFile.DoesNotExist:
+            existing_video = None
+
         integrity_result = check_video_media_integrity(
-            existing_video,
+            existing_video if isinstance(existing_video, VideoFile) else None,
             expectation=MediaIntegrityExpectation.RAW_WATCHER_VIDEO,
             content_hash=file_hash,
         )
         if not integrity_result.ok:
-            logger.error(
+            if isinstance(
+                existing_video, VideoFile
+            ) and video_integrity_failure_allows_existing_video_reprocessing(
+                integrity_result
+            ):
+                ctx.current_video = existing_video
+            else:
+                ctx.current_video = None
+            logger.warning(
                 "Successful processing history exists for %s but media integrity "
-                "failed before staging: %s",
+                "failed before staging: %s. Continuing reimport so the processed "
+                "artifact can be repaired.",
                 file_hash,
                 integrity_result.reason,
             )
-            raise MediaIntegrityError(integrity_result)
+            return None
 
         logger.info(
             "VideoFile already has successful processing history (file_hash=%s) - short-circuiting before staging",

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from lx_dtypes.models.contracts import DocumentType as DocumentTypeContract
 from lx_dtypes.models.contracts import ReportContext
@@ -17,6 +17,20 @@ DOCUMENT_TYPE_VALUES = [
     DocumentTypeContract.histology_draft.value,
     DocumentTypeContract.histology_final.value,
 ]
+
+
+def _positive_id(value: int, *, field_name: str) -> int:
+    normalized = int(value)
+    if normalized <= 0:
+        raise ValueError(f"{field_name} must be a positive integer")
+    return normalized
+
+
+def _required_text(value: str, *, field_name: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError(f"{field_name} must not be empty")
+    return normalized
 
 
 def document_type_description(name: str) -> str:
@@ -98,13 +112,21 @@ def build_report_context_from_pdf(
         resolve_pdf_document_type_name(pdf, document_type_name=document_type_name)
     )
     return ReportContext(
-        patient_examination_id=pdf.examination_id,
-        patient_id=patient.pk,
+        patient_examination_id=_positive_id(
+            cast(int, pdf.examination_id), field_name="pdf.examination_id"
+        ),
+        patient_id=_positive_id(cast(int, patient.pk), field_name="patient.pk"),
         document_type=document_type,
         anonymized_text=resolve_report_text(pdf, payload),
-        patient_hash=getattr(sensitive_meta, "patient_hash", None),
-        examination_hash=getattr(sensitive_meta, "examination_hash", None),
-        source_pdf_id=pdf.pk,
+        patient_hash=_required_text(
+            cast(str, getattr(sensitive_meta, "patient_hash", "")),
+            field_name="sensitive_meta.patient_hash",
+        ),
+        examination_hash=_required_text(
+            cast(str, getattr(sensitive_meta, "examination_hash", "")),
+            field_name="sensitive_meta.examination_hash",
+        ),
+        source_pdf_id=_positive_id(cast(int, pdf.pk), field_name="pdf.pk"),
     )
 
 
@@ -130,13 +152,25 @@ def build_report_context_from_validation(
         resolve_pdf_document_type_name(pdf, document_type_name=document_type_name)
     )
     return ReportContext(
-        patient_examination_id=sensitive_meta.pseudo_examination_id,
-        patient_id=sensitive_meta.pseudo_patient_id,
+        patient_examination_id=_positive_id(
+            cast(int, sensitive_meta.pseudo_examination_id),
+            field_name="sensitive_meta.pseudo_examination_id",
+        ),
+        patient_id=_positive_id(
+            cast(int, sensitive_meta.pseudo_patient_id),
+            field_name="sensitive_meta.pseudo_patient_id",
+        ),
         document_type=document_type,
         anonymized_text=resolve_report_text(pdf, payload),
-        patient_hash=sensitive_meta.patient_hash,
-        examination_hash=sensitive_meta.examination_hash,
-        source_pdf_id=pdf.pk,
+        patient_hash=_required_text(
+            cast(str, sensitive_meta.patient_hash),
+            field_name="sensitive_meta.patient_hash",
+        ),
+        examination_hash=_required_text(
+            cast(str, sensitive_meta.examination_hash),
+            field_name="sensitive_meta.examination_hash",
+        ),
+        source_pdf_id=_positive_id(cast(int, pdf.pk), field_name="pdf.pk"),
     )
 
 

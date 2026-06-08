@@ -1,6 +1,8 @@
 from typing import TYPE_CHECKING, List, Optional
 
+from django.core.exceptions import ValidationError
 from django.db import models
+from endoreg_db.schemas import validate_dtypes_p_examination_payload
 
 if TYPE_CHECKING:
     from endoreg_db.utils.links import ModelLinks
@@ -41,6 +43,8 @@ class PatientExamination(models.Model):
     hash = models.CharField(max_length=255, unique=True)
     knowledge_base_module = models.CharField(max_length=255, blank=True, default="")
     knowledge_base_version = models.CharField(max_length=255, blank=True, default="")
+    dtypes_record = models.JSONField(default=dict, blank=True)
+    dtypes_record_updated_at = models.DateTimeField(null=True, blank=True)
     report_draft = models.JSONField(default=dict, blank=True)
     draft_updated_at = models.DateTimeField(null=True, blank=True)
 
@@ -118,7 +122,17 @@ class PatientExamination(models.Model):
         if not self.hash:
             self.hash = self.generate_default_hash()
         self.assign_knowledge_base_identity()
+        self.clean()
         super().save(*args, **kwargs)
+
+    def clean(self) -> None:
+        super().clean()
+        try:
+            self.dtypes_record = validate_dtypes_p_examination_payload(
+                self.dtypes_record
+            )
+        except ValueError as exc:
+            raise ValidationError({"dtypes_record": str(exc)}) from exc
 
     def assign_knowledge_base_identity(self) -> None:
         if self.knowledge_base_module and self.knowledge_base_version:

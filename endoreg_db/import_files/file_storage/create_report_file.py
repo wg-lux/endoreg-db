@@ -1,14 +1,16 @@
 # endoreg_db/import_files/storage/create_report_file.py
 import logging
 from pathlib import Path
-from typing import Tuple
+from typing import Protocol, cast
 
 from endoreg_db.import_files.context.ensure_center import ensure_center
 from endoreg_db.import_files.context.import_context import ImportContext  #
 from endoreg_db.utils.filesystem.file_operations import sha256_file
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
-from endoreg_db.services.raw_pdf_files import (
+from endoreg_db.services.raw_pdf_files.imports import (
     create_initialized_raw_pdf_file_from_path,
+)
+from endoreg_db.services.raw_pdf_files.queries import (
     get_raw_pdf_by_content_hash,
 )
 from endoreg_db.models.state.processing_history.processing_history import (
@@ -19,9 +21,13 @@ from endoreg_db.import_files.file_storage.state_management import finalize_failu
 logger = logging.getLogger(__name__)
 
 
+class _NamedCenter(Protocol):
+    name: str
+
+
 def create_or_retrieve_report_file(
     ctx: ImportContext,
-) -> Tuple[RawPdfFile, bool, bool]:
+) -> tuple[RawPdfFile, bool, bool]:
     """
     Create a new or retrieve an existing RawPdfFile for the given context.
 
@@ -64,7 +70,8 @@ def create_or_retrieve_report_file(
         needs_processing = False
         if not isinstance(ctx.current_report, RawPdfFile):
             ctx.current_report = get_raw_pdf_by_content_hash(ctx.file_hash)
-        return ctx.current_report, processed, needs_processing
+        report = ctx.current_report
+        return report, processed, needs_processing
     elif has_failure_history:
         if not isinstance(ctx.current_report, RawPdfFile):
             ctx.current_report = get_raw_pdf_by_content_hash(ctx.file_hash)
@@ -88,8 +95,9 @@ def create_or_retrieve_report_file(
             center_name=center_name,
         )
 
-        center = ensure_center(pdf, ctx.center_name)
-        logger.info("Successfully set up report file from %s", center.name)
+        center = cast(_NamedCenter, ensure_center(pdf, ctx.center_name))
+        center_name_value = str(center.name)
+        logger.info("Successfully set up report file from %s", center_name_value)
 
     # No successful history yet → ensure there is a history entry marking it as "in progress"/failed
     ProcessingHistory.get_or_create_for_hash(

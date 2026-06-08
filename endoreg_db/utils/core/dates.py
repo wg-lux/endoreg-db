@@ -31,7 +31,7 @@ def random_day_by_year(year: int) -> date:
     return date(year, month, day)
 
 
-def random_day_by_month_year(month: int, year) -> date:
+def random_day_by_month_year(month: int, year: int) -> date:
     """
     Return a random birth day within the specified month and year.
     """
@@ -42,14 +42,14 @@ def random_day_by_month_year(month: int, year) -> date:
 
 def ensure_aware_datetime(dt):
     """
-    Ensures a datetime object is timezone-aware.
+    Ensures a datetime value is timezone-aware.
     If the datetime is naive (has no timezone info), the current timezone is applied.
 
     Args:
-        dt: A datetime object that may be naive
+        dt: A datetime value that may be naive
 
     Returns:
-        A timezone-aware datetime object
+        A timezone-aware datetime value
     """
     if dt is None:
         return None

@@ -6,7 +6,8 @@ from hashlib import sha256
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from types import NoneType
+from typing import TYPE_CHECKING, Any, Protocol, TypeAlias
 
 from django.db import models
 from django.db.models import Q
@@ -39,6 +40,25 @@ MANUAL_ANNOTATION_INFORMATION_SOURCE_NAMES = {
     "lx_anonymizer_evaluation",
     "manual_annotation",
 }
+
+NoPredictionMetaIdValue: TypeAlias = NoneType
+NoFrameAnnotationSourceValue: TypeAlias = NoneType
+PredictionMetaId: TypeAlias = "int | NoPredictionMetaIdValue"
+FrameAnnotationSource: TypeAlias = (
+    "FrameAnnotationSourceName | NoFrameAnnotationSourceValue"
+)
+
+
+class FrameAnnotationSourceName(Protocol):
+    name: str
+
+
+class PredictionSegmentLike(Protocol):
+    @property
+    def source(self) -> FrameAnnotationSource: ...
+
+    @property
+    def prediction_meta_id(self) -> PredictionMetaId: ...
 
 
 class FrameAnnotationStatus(str, Enum):
@@ -279,7 +299,7 @@ def _label_allowed_by_set(label_id: int | None, label_set: LabelSet | None) -> b
     return label_set.labels.filter(pk=label_id).exists()
 
 
-def is_prediction_segment(segment) -> bool:
+def is_prediction_segment(segment: PredictionSegmentLike) -> bool:
     source_name = (segment.source.name if segment.source else "").strip().lower()
     return (
         segment.prediction_meta_id is not None

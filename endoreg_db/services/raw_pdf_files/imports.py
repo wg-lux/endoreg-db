@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Protocol, TypedDict, Unpack, cast
 
 from endoreg_db.utils.filesystem.file_operations import get_content_hash_filename
 from endoreg_db.utils.security.hashs import get_pdf_hash
@@ -19,6 +19,19 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class _RawPdfFileCreateKwargs(TypedDict, total=False):
+    pass
+
+
+class _RawPdfFilePersistence(Protocol):
+    pk: int
+    pdf_hash: str
+
+    def save(self, *args: object, **kwargs: object) -> None: ...
+
+    def delete(self, *args: object, **kwargs: object) -> tuple[int, dict[str, int]]: ...
+
+
 def _raw_pdf_model():
     from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 
@@ -26,12 +39,12 @@ def _raw_pdf_model():
 
 
 def create_raw_pdf_file_from_path(
-    file_path: Union[str, Path],
-    center_name: Optional[str] = None,
+    file_path: str | Path,
+    center_name: str | None = None,
     *,
     model_cls: type["RawPdfFile"] | None = None,
     save: bool = True,
-    **kwargs,
+    **kwargs: Unpack[_RawPdfFileCreateKwargs],
 ) -> "RawPdfFile":
     from endoreg_db.models.administration.center.center import Center
 
@@ -80,7 +93,8 @@ def create_raw_pdf_file_from_path(
         logger.warning(
             "RawPdfFile exists but file is missing. Deleting orphaned record."
         )
-        existing_pdf_file.delete()
+        existing_pdf = cast(_RawPdfFilePersistence, existing_pdf_file)
+        existing_pdf.delete()
 
     new_file_name, _uuid = get_content_hash_filename(file_path)
     try:
@@ -97,15 +111,17 @@ def create_raw_pdf_file_from_path(
         )
 
         if save:
-            raw_pdf.save()
+            raw_pdf_persistence = cast(_RawPdfFilePersistence, raw_pdf)
+            raw_pdf_persistence.save()
             logger.info("Successfully created RawPdfFile PK %s", raw_pdf.pk)
 
+        raw_pdf_persistence = cast(_RawPdfFilePersistence, raw_pdf)
         emit_structured_event(
             logger,
             "raw_pdf.file_saved",
             status="ok",
             report_id=raw_pdf.pk,
-            pdf_hash=raw_pdf.pdf_hash,
+            pdf_hash=raw_pdf_persistence.pdf_hash,
             artifact_kind=ReportPdfArtifactKind.RAW.value,
             source_path=file_path,
             storage_name=saved_name,
@@ -118,11 +134,11 @@ def create_raw_pdf_file_from_path(
 
 
 def create_initialized_raw_pdf_file_from_path(
-    file_path: Union[str, Path],
-    center_name: Optional[str] = None,
+    file_path: str | Path,
+    center_name: str | None = None,
     *,
     model_cls: type["RawPdfFile"] | None = None,
-    **kwargs,
+    **kwargs: Unpack[_RawPdfFileCreateKwargs],
 ) -> "RawPdfFile":
     raw_pdf = create_raw_pdf_file_from_path(
         file_path=file_path,
@@ -135,5 +151,6 @@ def create_initialized_raw_pdf_file_from_path(
 
 def initialize_raw_pdf_file(report: "RawPdfFile") -> "RawPdfFile":
     report.state = get_or_create_raw_pdf_state(report)
-    report.save(update_fields=["state"])
+    report_persistence = cast(_RawPdfFilePersistence, report)
+    report_persistence.save(update_fields=["state"])
     return report

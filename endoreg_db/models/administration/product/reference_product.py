@@ -1,44 +1,64 @@
-from typing import TYPE_CHECKING
+from __future__ import annotations
+
+from types import NoneType
+from typing import TYPE_CHECKING, TypeAlias
 
 from django.db import models
 
 if TYPE_CHECKING:
-    pass
+    from ...other.emission import EmissionFactor
+    from .product import Product
+    from .product_group import ProductGroup
+
+NoReferenceProductEmissionFactorValue: TypeAlias = NoneType
+ReferenceProductEmissionFactor: TypeAlias = (
+    "EmissionFactor | NoReferenceProductEmissionFactorValue"
+)
 
 
-class ReferenceProductManager(models.Manager):
-    def get_by_natural_key(self, product_name: str, product_group_name: str):
+class ReferenceProductManager(models.Manager["ReferenceProduct"]):
+    def get_by_natural_key(
+        self, product_name: str, product_group_name: str
+    ) -> "ReferenceProduct":
         return self.get(
             product__name=product_name, product_group__name=product_group_name
         )
 
 
 class ReferenceProduct(models.Model):
-    name = models.CharField(max_length=255)
-    product = models.ForeignKey(
+    name: models.CharField[str, str] = models.CharField(max_length=255)
+    product: models.ForeignKey[Product, Product] = models.ForeignKey(
         "Product",
         on_delete=models.CASCADE,
         related_name="reference_products",
     )
-    product_group = models.OneToOneField(
+    product_group: models.OneToOneField[ProductGroup, ProductGroup] = (
+        models.OneToOneField(
         "ProductGroup",
         on_delete=models.CASCADE,
         related_name="reference_product",  # Changed from "reference_products"
+        )
     )
-    emission_factor_total = models.ForeignKey(
+    emission_factor_total: models.ForeignKey[
+        ReferenceProductEmissionFactor, ReferenceProductEmissionFactor
+    ] = models.ForeignKey(
         "EmissionFactor",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="reference_products",
     )
-    emission_factor_package = models.ForeignKey(
+    emission_factor_package: models.ForeignKey[
+        ReferenceProductEmissionFactor, ReferenceProductEmissionFactor
+    ] = models.ForeignKey(
         "EmissionFactor",
         on_delete=models.SET_NULL,
         null=True,
         related_name="reference_product_package",
     )
-    emission_factor_product = models.ForeignKey(
+    emission_factor_product: models.ForeignKey[
+        ReferenceProductEmissionFactor, ReferenceProductEmissionFactor
+    ] = models.ForeignKey(
         "EmissionFactor",
         on_delete=models.SET_NULL,
         null=True,
@@ -50,10 +70,10 @@ class ReferenceProduct(models.Model):
 
     objects = ReferenceProductManager()
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.product.name + " (" + self.product_group.name + ")"
 
-    def set_emission_factors(self):
+    def set_emission_factors(self) -> None:
         from ...other.emission import EmissionFactor
 
         product = self.product
@@ -94,7 +114,7 @@ class ReferenceProduct(models.Model):
         package_emission_factor_value = package_emission / package_weight
         total_emission_factor_value = total_emission / total_weight
 
-        emission_factor, created = EmissionFactor.objects.get_or_create(
+        emission_factor, _created = EmissionFactor.objects.get_or_create(
             name=emission_factor_name,
             defaults={
                 "name": emission_factor_name,
@@ -104,7 +124,7 @@ class ReferenceProduct(models.Model):
         )
         self.emission_factor_total = emission_factor
 
-        emission_factor_package, created = EmissionFactor.objects.get_or_create(
+        emission_factor_package, _created = EmissionFactor.objects.get_or_create(
             name=emission_factor_package_name,
             defaults={
                 "name": emission_factor_package_name,
@@ -114,7 +134,7 @@ class ReferenceProduct(models.Model):
         )
         self.emission_factor_package = emission_factor_package
 
-        emission_factor_product, created = EmissionFactor.objects.get_or_create(
+        emission_factor_product, _created = EmissionFactor.objects.get_or_create(
             name=emission_factor_product_name,
             defaults={
                 "name": emission_factor_product_name,
@@ -126,7 +146,7 @@ class ReferenceProduct(models.Model):
 
         self.save()
 
-    def get_emission_factor(self, component: str):
+    def get_emission_factor(self, component: str) -> ReferenceProductEmissionFactor:
         # check if emission_factor_total exists:
         if self.emission_factor_total is None:
             self.set_emission_factors()
@@ -137,5 +157,4 @@ class ReferenceProduct(models.Model):
             return self.emission_factor_package
         elif component == "product":
             return self.emission_factor_product
-        else:
-            raise Exception("Unknown component: " + component)
+        raise ValueError("Unknown component: " + component)

@@ -12,10 +12,7 @@ if TYPE_CHECKING:
 
 
 type VideoTextMetaValue = (
-    JsonValue
-    | JsonNull
-    | list["VideoTextMetaValue"]
-    | dict[str, "VideoTextMetaValue"]
+    JsonValue | JsonNull | list["VideoTextMetaValue"] | dict[str, "VideoTextMetaValue"]
 )
 type VideoTextMetaPayload = dict[str, VideoTextMetaValue]
 

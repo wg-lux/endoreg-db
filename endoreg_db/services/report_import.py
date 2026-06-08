@@ -7,7 +7,7 @@ class ReportImportService(ris):
         + """
     Wrapper for known import of concurrency safe ReportImportService, 
     here celery will be implemented in the future.
-    12.02.2025
+    12.02.2026
     """
     )
     pass

@@ -30,15 +30,15 @@ def _sha256_field_file(field_file: FieldFile) -> str:
 
 
 def _get_date_hash_string(date_obj: date) -> str:
-    # if date is datetime object, convert to date
+    # if date is a datetime value, convert to date
     if isinstance(date_obj, datetime):
-        # warnings.warn("Date is a datetime object. Converting to date object.")
+        # warnings.warn("Date is a datetime value. Converting to date value.")
         date_obj = date_obj.date()
     elif isinstance(date_obj, str):
-        # warnings.warn(f"Date is a string ({date_obj}). Converting to date object.")
+        # warnings.warn(f"Date is a string ({date_obj}). Converting to date value.")
         date_obj = datetime.strptime(date_obj, "%Y-%m-%d").date()
 
-    assert isinstance(date_obj, date), "Date must be a date object"
+    assert isinstance(date_obj, date), "Date must be a date value"
     # if date is 1900-01-01, make it an empty string
     if date_obj == date(1900, 1, 1):
         date_str = ""
@@ -85,7 +85,7 @@ def get_patient_hash(
         center_name=center,
         salt=salt,
     )
-    # Create a hash object using SHA-256 algorithm
+    # Create a hash instance using SHA-256 algorithm
     hash_object = hashlib.sha256(hash_str.encode())
     # Get the hexadecimal representation of the hash
     patient_hash = hash_object.hexdigest()
@@ -113,7 +113,7 @@ def get_patient_examination_hash(
         examination_date=examination_date,
         salt=salt,
     )
-    # Create a hash object using SHA-256 algorithm
+    # Create a hash instance using SHA-256 algorithm
     hash_object = hashlib.sha256(hash_str.encode())
     # Get the hexadecimal representation of the hash
     patient_examination_hash = hash_object.hexdigest()
@@ -121,7 +121,12 @@ def get_patient_examination_hash(
     return patient_examination_hash
 
 
-def get_examiner_hash(first_name, last_name, center_name, salt):
+def get_examiner_hash(
+    first_name: str,
+    last_name: str,
+    center_name: str,
+    salt: str,
+) -> str:
     """
     Get the hash of an examiner's first name, last name, and center name.
     """
@@ -132,7 +137,7 @@ def get_examiner_hash(first_name, last_name, center_name, salt):
         center_name=center_name,
         salt=salt,
     )
-    # Create a hash object using SHA-256 algorithm
+    # Create a hash instance using SHA-256 algorithm
     hash_object = hashlib.sha256(hash_str.encode())
     # Get the hexadecimal representation of the hash
     examiner_hash = hash_object.hexdigest()

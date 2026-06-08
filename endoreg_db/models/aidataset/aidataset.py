@@ -2,14 +2,19 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
-from typing import TYPE_CHECKING, Any
+from datetime import datetime
+from pathlib import Path
+from types import NoneType
+from typing import TYPE_CHECKING, Any, Protocol, TypeAlias, TypeVar, cast
 import uuid
 
 import numpy as np
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models import QuerySet
 from django.utils import timezone
 from pydantic import BaseModel, ConfigDict, Field
+from lx_dtypes.models.contracts.json_types import JsonObject
 
 from endoreg_db.schemas import (
     AIFrameFormatManifest,
@@ -57,8 +62,6 @@ __all__ = [
 ]
 
 if TYPE_CHECKING:
-    from django.db.models import QuerySet
-
     from endoreg_db.models import (
         ImageClassificationAnnotation,
         Label,
@@ -66,6 +69,74 @@ if TYPE_CHECKING:
         LabelVideoSegment,
         VideoFile,
     )
+
+
+NoAIDataSetTextValue: TypeAlias = NoneType
+NoAIDataSetValue: TypeAlias = NoneType
+NoAIDataSetDateTimeValue: TypeAlias = NoneType
+AIDataSetText: TypeAlias = "str | NoAIDataSetTextValue"
+AIDataSetRelation: TypeAlias = "AIDataSet | NoAIDataSetValue"
+AIDataSetDateTime: TypeAlias = "datetime | NoAIDataSetDateTimeValue"
+_ModelT = TypeVar("_ModelT", bound=models.Model)
+
+
+class _LabelSetRelation(Protocol):
+    def values_list(self, *fields: str, flat: bool = False) -> Iterable[int]: ...
+
+
+class _TrainingLabel(Protocol):
+    pk: int | None
+    name: str
+    label_sets: _LabelSetRelation
+
+
+class _TrainingLabelSet(Protocol):
+    pk: int
+    name: str
+    version: int
+
+    def get_labels_in_order(self) -> list[_TrainingLabel]: ...
+
+
+class _TrainingInformationSource(Protocol):
+    name: str
+
+
+class _TrainingVideo(Protocol):
+    pk: int
+    uuid: uuid.UUID
+
+    def get_crop_template(self) -> list[int] | None: ...
+
+
+class _TrainingFrame(Protocol):
+    pk: int
+    video: _TrainingVideo
+    file_path: Path
+    relative_path: str
+    frame_number: int
+    timestamp: float | None
+
+
+class _TrainingImageAnnotation(Protocol):
+    pk: int | None
+    frame_id: int
+    label_id: int
+    value: bool
+    frame: _TrainingFrame
+    information_source: _TrainingInformationSource | None
+
+
+def _empty_selected_sample_indices() -> list[int]:
+    return []
+
+
+def _empty_selected_frame_ids() -> list[int]:
+    return []
+
+
+def _empty_selected_candidates() -> list[AIDataSetScoredActiveLearningCandidate]:
+    return []
 
 
 class AIDataSetActiveLearningConfig(BaseModel):
@@ -117,10 +188,12 @@ class AIDataSetActiveLearningSelection(BaseModel):
     config: AIDataSetActiveLearningConfig
     candidate_count: int
     segment_count: int
-    selected_sample_indices: list[int] = Field(default_factory=list)
-    selected_frame_ids: list[int] = Field(default_factory=list)
+    selected_sample_indices: list[int] = Field(
+        default_factory=_empty_selected_sample_indices
+    )
+    selected_frame_ids: list[int] = Field(default_factory=_empty_selected_frame_ids)
     selected_candidates: list[AIDataSetScoredActiveLearningCandidate] = Field(
-        default_factory=list
+        default_factory=_empty_selected_candidates
     )
 
 
@@ -148,18 +221,18 @@ class AIDataSet(models.Model):
     AI_MODEL_TYPE_IMAGE_MULTILABEL = "image_multilabel_classification"
     AI_MODEL_TYPE_VIDEO_SEGMENT_CLASSIFICATION = "video_segment_classification"
 
-    name = models.CharField(
+    name: models.CharField[AIDataSetText, AIDataSetText] = models.CharField(
         max_length=255,
         blank=True,
         null=True,
         help_text='Human-readable identifier, e.g. "Legacy multilabel dataset v1".',
     )
-    description = models.TextField(
+    description: models.TextField[AIDataSetText, AIDataSetText] = models.TextField(
         blank=True,
         null=True,
         help_text="Optional notes / explanation about this dataset.",
     )
-    ai_model_type = models.CharField(
+    ai_model_type: models.CharField[str, str] = models.CharField(
         max_length=255,
         default=AI_MODEL_TYPE_IMAGE_MULTILABEL,
         help_text=(
@@ -167,7 +240,7 @@ class AIDataSet(models.Model):
             '"image_multilabel_classification".'
         ),
     )
-    dataset_type = models.CharField(
+    dataset_type: models.CharField[str, str] = models.CharField(
         max_length=32,
         choices=DATASET_TYPE_CHOICES,
         default=DATASET_TYPE_IMAGE,
@@ -176,7 +249,9 @@ class AIDataSet(models.Model):
             "still include both frame and video annotations attached to the dataset."
         ),
     )
-    image_annotations = models.ManyToManyField(
+    image_annotations: models.ManyToManyField[
+        ImageClassificationAnnotation, ImageClassificationAnnotation
+    ] = models.ManyToManyField(
         "ImageClassificationAnnotation",
         related_name="image_ai_datasets",
         blank=True,
@@ -184,7 +259,9 @@ class AIDataSet(models.Model):
             "Frame-level annotations collected from the frame annotation workflow."
         ),
     )
-    video_annotations = models.ManyToManyField(
+    video_annotations: models.ManyToManyField[
+        LabelVideoSegment, LabelVideoSegment
+    ] = models.ManyToManyField(
         "LabelVideoSegment",
         related_name="video_ai_datasets",
         blank=True,
@@ -193,29 +270,26 @@ class AIDataSet(models.Model):
             "annotation workflow."
         ),
     )
-    created_at = models.DateTimeField(
+    created_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
         auto_now_add=True,
         help_text="When this AIDataSet was created.",
     )
-    updated_at = models.DateTimeField(
+    updated_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
         auto_now=True,
         help_text="When this AIDataSet was last modified.",
     )
-    is_active = models.BooleanField(
+    is_active: models.BooleanField[bool, bool] = models.BooleanField(
         default=True,
         help_text="Soft toggle to enable/disable this dataset for training.",
     )
 
     if TYPE_CHECKING:
-        image_annotations: models.Manager[ImageClassificationAnnotation]
-        video_annotations: models.Manager[LabelVideoSegment]
+        id: int
 
     @staticmethod
     def _coerce_objects(
-        objects: Iterable[models.Model] | QuerySet[models.Model],
-    ) -> list[models.Model]:
-        if isinstance(objects, models.QuerySet):
-            return list(objects)
+        objects: Iterable[_ModelT] | QuerySet[_ModelT, _ModelT],
+    ) -> list[_ModelT]:
         return list(objects)
 
     def get_image_annotations_queryset(self):
@@ -830,15 +904,17 @@ class AIDataSet(models.Model):
         labels = Label.objects.filter(pk__in=label_ids).prefetch_related("label_sets")
         labelset_id_sets: list[set[int]] = []
         for label in labels:
-            labelset_ids = set(label.label_sets.values_list("pk", flat=True))
+            labelset_ids = set(cast(_TrainingLabel, label).label_sets.values_list("pk", flat=True))
             if not labelset_ids:
                 raise ValueError(
                     f"Cannot infer LabelSet: label id={label.pk} "
-                    f"name={label.name!r} is not attached to a LabelSet."
+                    f"name={cast(_TrainingLabel, label).name!r} is not attached to a LabelSet."
                 )
             labelset_id_sets.append(labelset_ids)
 
-        common_labelset_ids = set.intersection(*labelset_id_sets)
+        common_labelset_ids: set[int] = set(labelset_id_sets[0])
+        for labelset_ids in labelset_id_sets[1:]:
+            common_labelset_ids &= labelset_ids
         if not common_labelset_ids:
             raise ValueError(
                 "Cannot infer LabelSet: no common LabelSet contains all frame labels."
@@ -1015,8 +1091,9 @@ class AIDataSet(models.Model):
                 f"AIDataSet id={self.pk} has no extracted frame annotations."
             )
 
-        resolved_label_set = (
-            label_set or self._infer_training_label_set_from_annotations(annotations_qs)
+        resolved_label_set = cast(
+            _TrainingLabelSet,
+            label_set or self._infer_training_label_set_from_annotations(annotations_qs),
         )
         labels = resolved_label_set.get_labels_in_order()
         if not labels:
@@ -1037,11 +1114,13 @@ class AIDataSet(models.Model):
                 f"LabelSet id={resolved_label_set.pk}."
             )
 
-        annotations_by_frame_id: dict[int, list[ImageClassificationAnnotation]] = (
+        annotations_by_frame_id: dict[int, list[_TrainingImageAnnotation]] = (
             defaultdict(list)
         )
         frame_order: list[int] = []
-        for annotation in annotations_qs.iterator():
+        for annotation in cast(
+            Iterable[_TrainingImageAnnotation], annotations_qs.iterator()
+        ):
             frame_id = int(annotation.frame_id)
             if frame_id not in annotations_by_frame_id:
                 frame_order.append(frame_id)
@@ -1067,7 +1146,7 @@ class AIDataSet(models.Model):
             frame = frame_annotations[0].frame
             video = frame.video
             frames_for_manifest.append(frame)
-            values_by_label_index: dict[int, list[ImageClassificationAnnotation]] = (
+            values_by_label_index: dict[int, list[_TrainingImageAnnotation]] = (
                 defaultdict(list)
             )
             for annotation in frame_annotations:
@@ -1105,11 +1184,10 @@ class AIDataSet(models.Model):
                     for annotation in label_annotations
                     if annotation.pk is not None
                 ]
-                source_names.update(
-                    annotation.information_source.name
-                    for annotation in label_annotations
-                    if annotation.information_source is not None
-                )
+                for annotation in label_annotations:
+                    information_source = annotation.information_source
+                    if information_source is not None:
+                        source_names.add(information_source.name)
 
             path = frame.file_path if include_file_paths else None
             video_uuid = str(video.uuid)
@@ -1307,43 +1385,47 @@ class AIModelTrainingRun(models.Model):
         (STATUS_LOST, "Lost"),
     ]
 
-    run_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
-    dataset = models.ForeignKey(
+    run_id: models.UUIDField[uuid.UUID, uuid.UUID] = models.UUIDField(
+        default=uuid.uuid4, editable=False, unique=True
+    )
+    dataset: models.ForeignKey[AIDataSetRelation, AIDataSetRelation] = models.ForeignKey(
         AIDataSet,
         blank=True,
         null=True,
         on_delete=models.SET_NULL,
         related_name="model_training_runs",
     )
-    dataset_name = models.CharField(max_length=255, blank=True, null=True)
-    dataset_type = models.CharField(max_length=32, blank=True)
-    ai_model_type = models.CharField(max_length=255, blank=True)
-    backbone_name = models.CharField(max_length=128)
-    feature_mode = models.CharField(max_length=64)
-    freeze_backbone = models.BooleanField(default=True)
-    epochs = models.PositiveIntegerField(default=10)
-    batch_size = models.PositiveIntegerField(default=32)
-    labelset_version = models.PositiveIntegerField(default=1)
-    treat_unlabeled_as_negative = models.BooleanField(default=True)
-    backbone_checkpoint = models.TextField(blank=True, null=True)
-    request_payload = models.JSONField(default=dict, blank=True)
-    command_kwargs = models.JSONField(default=dict, blank=True)
-    status = models.CharField(
+    dataset_name: models.CharField[AIDataSetText, AIDataSetText] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
+    dataset_type: models.CharField[str, str] = models.CharField(max_length=32, blank=True)
+    ai_model_type: models.CharField[str, str] = models.CharField(max_length=255, blank=True)
+    backbone_name: models.CharField[str, str] = models.CharField(max_length=128)
+    feature_mode: models.CharField[str, str] = models.CharField(max_length=64)
+    freeze_backbone: models.BooleanField[bool, bool] = models.BooleanField(default=True)
+    epochs: models.PositiveIntegerField[int, int] = models.PositiveIntegerField(default=10)
+    batch_size: models.PositiveIntegerField[int, int] = models.PositiveIntegerField(default=32)
+    labelset_version: models.PositiveIntegerField[int, int] = models.PositiveIntegerField(default=1)
+    treat_unlabeled_as_negative: models.BooleanField[bool, bool] = models.BooleanField(default=True)
+    backbone_checkpoint: models.TextField[AIDataSetText, AIDataSetText] = models.TextField(blank=True, null=True)
+    request_payload: models.JSONField[JsonObject, JsonObject] = models.JSONField(default=dict, blank=True)
+    command_kwargs: models.JSONField[JsonObject, JsonObject] = models.JSONField(default=dict, blank=True)
+    status: models.CharField[str, str] = models.CharField(
         max_length=16,
         choices=STATUS_CHOICES,
         default=STATUS_QUEUED,
         db_index=True,
     )
-    server_instance_id = models.CharField(max_length=64, blank=True, db_index=True)
-    result = models.JSONField(blank=True, null=True)
-    artifact_paths = models.JSONField(default=dict, blank=True)
-    error = models.TextField(blank=True)
-    stdout = models.TextField(blank=True)
-    stderr = models.TextField(blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    started_at = models.DateTimeField(blank=True, null=True)
-    finished_at = models.DateTimeField(blank=True, null=True)
+    server_instance_id: models.CharField[str, str] = models.CharField(max_length=64, blank=True, db_index=True)
+    result: models.JSONField[JsonObject | None, JsonObject | None] = models.JSONField(blank=True, null=True)
+    artifact_paths: models.JSONField[dict[str, str], dict[str, str]] = models.JSONField(default=dict, blank=True)
+    error: models.TextField[str, str] = models.TextField(blank=True)
+    stdout: models.TextField[str, str] = models.TextField(blank=True)
+    stderr: models.TextField[str, str] = models.TextField(blank=True)
+    created_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(auto_now_add=True)
+    updated_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(auto_now=True)
+    started_at: models.DateTimeField[AIDataSetDateTime, AIDataSetDateTime] = models.DateTimeField(blank=True, null=True)
+    finished_at: models.DateTimeField[AIDataSetDateTime, AIDataSetDateTime] = models.DateTimeField(blank=True, null=True)
 
     class Meta:
         indexes = [
@@ -1385,9 +1467,9 @@ class AIModelTrainingRun(models.Model):
         if errors:
             raise ValidationError(errors)
 
-    def save(self, *args, **kwargs):
+    def save(self, *args: object, **kwargs: object) -> None:
         self.clean()
-        return super().save(*args, **kwargs)
+        super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return f"AIModelTrainingRun(run_id={self.run_key}, status={self.status})"
@@ -1403,36 +1485,38 @@ class AIDataSetExportArtifact(models.Model):
         (STATUS_FAILED, "Failed"),
     ]
 
-    artifact_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
-    dataset = models.ForeignKey(
+    artifact_id: models.UUIDField[uuid.UUID, uuid.UUID] = models.UUIDField(
+        default=uuid.uuid4, editable=False, unique=True
+    )
+    dataset: models.ForeignKey[AIDataSetRelation, AIDataSetRelation] = models.ForeignKey(
         AIDataSet,
         blank=True,
         null=True,
         on_delete=models.SET_NULL,
         related_name="export_artifacts",
     )
-    dataset_name = models.CharField(max_length=255, blank=True, null=True)
-    dataset_type = models.CharField(max_length=32, blank=True)
-    ai_model_type = models.CharField(max_length=255, blank=True)
-    request_payload = models.JSONField(default=dict, blank=True)
-    center_key = models.CharField(max_length=255, blank=True, null=True)
-    all_centers = models.BooleanField(default=False)
-    only_validated = models.BooleanField(default=True)
-    status = models.CharField(
+    dataset_name: models.CharField[AIDataSetText, AIDataSetText] = models.CharField(max_length=255, blank=True, null=True)
+    dataset_type: models.CharField[str, str] = models.CharField(max_length=32, blank=True)
+    ai_model_type: models.CharField[str, str] = models.CharField(max_length=255, blank=True)
+    request_payload: models.JSONField[JsonObject, JsonObject] = models.JSONField(default=dict, blank=True)
+    center_key: models.CharField[AIDataSetText, AIDataSetText] = models.CharField(max_length=255, blank=True, null=True)
+    all_centers: models.BooleanField[bool, bool] = models.BooleanField(default=False)
+    only_validated: models.BooleanField[bool, bool] = models.BooleanField(default=True)
+    status: models.CharField[str, str] = models.CharField(
         max_length=16,
         choices=STATUS_CHOICES,
         default=STATUS_RUNNING,
         db_index=True,
     )
-    output_path = models.TextField(blank=True)
-    download_filename = models.CharField(max_length=255, blank=True)
-    sha256 = models.CharField(max_length=64, blank=True)
-    byte_size = models.PositiveBigIntegerField(default=0)
-    summary = models.JSONField(default=dict, blank=True)
-    error = models.TextField(blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    finished_at = models.DateTimeField(blank=True, null=True)
+    output_path: models.TextField[str, str] = models.TextField(blank=True)
+    download_filename: models.CharField[str, str] = models.CharField(max_length=255, blank=True)
+    sha256: models.CharField[str, str] = models.CharField(max_length=64, blank=True)
+    byte_size: models.PositiveBigIntegerField[int, int] = models.PositiveBigIntegerField(default=0)
+    summary: models.JSONField[JsonObject, JsonObject] = models.JSONField(default=dict, blank=True)
+    error: models.TextField[str, str] = models.TextField(blank=True)
+    created_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(auto_now_add=True)
+    updated_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(auto_now=True)
+    finished_at: models.DateTimeField[AIDataSetDateTime, AIDataSetDateTime] = models.DateTimeField(blank=True, null=True)
 
     class Meta:
         indexes = [

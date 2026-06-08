@@ -1,5 +1,4 @@
 from datetime import date, timedelta
-from typing import Tuple, Optional
 from faker import Faker
 import random
 
@@ -10,8 +9,8 @@ def fake_name_with_similar_dob_and_gender(
     *,
     year_tolerance: int = 3,
     locale: str = "de_DE",
-    seed: Optional[int] = None,
-) -> Tuple[str, str, date]:
+    seed: int | None = None,
+) -> tuple[str, str, date]:
     """
     Generate a fake name with the same gender and a similar date of birth.
 
@@ -20,7 +19,7 @@ def fake_name_with_similar_dob_and_gender(
         dob: Original date of birth
         year_tolerance: Maximum age difference in years
         locale: Faker locale (default: German)
-        seed: Optional reproducible seed
+        seed: Reproducible seed
 
     Returns:
         (full_name, fake_dob)

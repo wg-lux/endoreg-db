@@ -13,7 +13,7 @@ from endoreg_db.models.medical.patient.patient_finding_intervention import (
 )
 
 
-class PatientFindingInterventionForm(forms.ModelForm):
+class PatientFindingInterventionForm(forms.ModelForm[PatientFindingIntervention]):
     patient = forms.ModelChoiceField(queryset=Patient.objects.all(), required=True)
     examination = forms.ModelChoiceField(
         queryset=PatientExamination.objects.none(), required=True

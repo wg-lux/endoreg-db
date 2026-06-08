@@ -46,7 +46,9 @@ class ReportReaderConfig(models.Model):
     and text sections to ignore.
     """
 
-    locale: models.CharField[str, str] = models.CharField(default="de_DE", max_length=10)
+    locale: models.CharField[str, str] = models.CharField(
+        default="de_DE", max_length=10
+    )
     first_names: models.ManyToManyField[FirstName, FirstName] = models.ManyToManyField(
         "FirstName", related_name="report_reader_configs"
     )
@@ -56,36 +58,36 @@ class ReportReaderConfig(models.Model):
     text_date_format: models.CharField[str, str] = models.CharField(
         default="%d.%m.%Y", max_length=10
     )
-    patient_info_line_flag: models.ForeignKey[
-        ReportReaderFlag, ReportReaderFlag
-    ] = models.ForeignKey(
-        "ReportReaderFlag",
-        related_name="report_reader_configs_patient_info_line",
-        on_delete=models.CASCADE,
+    patient_info_line_flag: models.ForeignKey[ReportReaderFlag, ReportReaderFlag] = (
+        models.ForeignKey(
+            "ReportReaderFlag",
+            related_name="report_reader_configs_patient_info_line",
+            on_delete=models.CASCADE,
+        )
     )
-    endoscope_info_line_flag: models.ForeignKey[
-        ReportReaderFlag, ReportReaderFlag
-    ] = models.ForeignKey(
-        "ReportReaderFlag",
-        related_name="report_reader_configs_endoscope_info_line",
-        on_delete=models.CASCADE,
+    endoscope_info_line_flag: models.ForeignKey[ReportReaderFlag, ReportReaderFlag] = (
+        models.ForeignKey(
+            "ReportReaderFlag",
+            related_name="report_reader_configs_endoscope_info_line",
+            on_delete=models.CASCADE,
+        )
     )
-    examiner_info_line_flag: models.ForeignKey[
-        ReportReaderFlag, ReportReaderFlag
-    ] = models.ForeignKey(
-        "ReportReaderFlag",
-        related_name="report_reader_configs_examiner_info_line",
-        on_delete=models.CASCADE,
+    examiner_info_line_flag: models.ForeignKey[ReportReaderFlag, ReportReaderFlag] = (
+        models.ForeignKey(
+            "ReportReaderFlag",
+            related_name="report_reader_configs_examiner_info_line",
+            on_delete=models.CASCADE,
+        )
     )
-    cut_off_below: models.ManyToManyField[
-        ReportReaderFlag, ReportReaderFlag
-    ] = models.ManyToManyField(
-        "ReportReaderFlag", related_name="report_reader_configs_cut_off_below"
+    cut_off_below: models.ManyToManyField[ReportReaderFlag, ReportReaderFlag] = (
+        models.ManyToManyField(
+            "ReportReaderFlag", related_name="report_reader_configs_cut_off_below"
+        )
     )
-    cut_off_above: models.ManyToManyField[
-        ReportReaderFlag, ReportReaderFlag
-    ] = models.ManyToManyField(
-        "ReportReaderFlag", related_name="report_reader_configs_cut_off_above"
+    cut_off_above: models.ManyToManyField[ReportReaderFlag, ReportReaderFlag] = (
+        models.ManyToManyField(
+            "ReportReaderFlag", related_name="report_reader_configs_cut_off_above"
+        )
     )
 
     if TYPE_CHECKING:

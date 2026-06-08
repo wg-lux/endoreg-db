@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 from django.db import models
@@ -5,10 +7,8 @@ from django.db import models
 from ..person import Person
 
 if TYPE_CHECKING:
-    from endoreg_db.models import (
-        EmployeeQualification,
-        EmployeeType,
-    )
+    from .employee_qualification import EmployeeQualification
+    from .employee_type import EmployeeType
 
 
 class Employee(Person):
@@ -26,7 +26,7 @@ class Employee(Person):
         # qualification is a OneToOneField defined in the EmployeeQualification model
         qualification: models.OneToOneField["EmployeeQualification"]
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Returns a string representation of the Employee, including the class name, full name if available, and employee type if set.
         """

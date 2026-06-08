@@ -13,6 +13,7 @@ from django.conf import settings
 from django.utils import timezone
 from django.contrib.auth.models import AnonymousUser
 from django.core.files import File
+from django.core.files.uploadedfile import UploadedFile
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import IntegrityError, OperationalError, transaction
 from kombu.exceptions import OperationalError as KombuOperationalError
@@ -698,9 +699,9 @@ def _media_integrity_provenance(
 
 def create_or_reuse_upload_job(
     *,
-    uploaded_file,
+    uploaded_file: UploadedFile | File | None,
     content_type: str,
-    created_by=None,
+    created_by: object | None = None,
     source_center: Center | None = None,
     source_system: str = "api",
     content_hash: str = "",

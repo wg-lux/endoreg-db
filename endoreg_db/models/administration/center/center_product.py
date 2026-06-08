@@ -1,10 +1,34 @@
-from typing import TYPE_CHECKING
+from __future__ import annotations
+
+from datetime import date
+from types import NoneType
+from typing import TYPE_CHECKING, Protocol, TypeAlias, cast
 
 from django.db import models
 
 if TYPE_CHECKING:
+    from ...other.unit import Unit
     from ..product import Product
+    from ..product.product_group import ProductGroup
+    from ..product.reference_product import ReferenceProduct
     from .center import Center
+
+NoCenterProductValue: TypeAlias = NoneType
+CenterProductWeight: TypeAlias = tuple[float, "Unit | NoCenterProductValue"]
+CenterProductReferenceProduct: TypeAlias = "ReferenceProduct | NoCenterProductValue"
+
+
+class _CenterProductGroupSource(Protocol):
+    reference_product: CenterProductReferenceProduct
+
+
+class _CenterProductSource(Protocol):
+    name: str
+    product_group: "ProductGroup | NoCenterProductValue"
+
+    def get_product_weight(self) -> CenterProductWeight | NoCenterProductValue: ...
+
+    def get_package_weight(self) -> CenterProductWeight | NoCenterProductValue: ...
 
 
 class CenterProduct(models.Model):
@@ -17,13 +41,13 @@ class CenterProduct(models.Model):
         center (Center): The center where the product was used.
     """
 
-    product = models.ForeignKey(
+    product: models.ForeignKey[Product, Product] = models.ForeignKey(
         "Product",
         on_delete=models.CASCADE,
         related_name="center_products",  # Changed related_name for clarity
     )
-    date_used = models.DateField()
-    center = models.ForeignKey(
+    date_used: models.DateField[date, date] = models.DateField()
+    center: models.ForeignKey[Center, Center] = models.ForeignKey(
         "Center",
         on_delete=models.CASCADE,
         related_name="center_products",
@@ -43,25 +67,28 @@ class CenterProduct(models.Model):
 
     def get_product_name(self) -> str:
         """Returns the name of the product."""
-        return self.product.name
+        product = cast(_CenterProductSource, self.product)
+        return product.name
 
-    def get_product_group(self):
+    def get_product_group(self) -> "ProductGroup | NoCenterProductValue":
         """Returns the ProductGroup associated with this product."""
-        return self.product.product_group
+        product = cast(_CenterProductSource, self.product)
+        return product.product_group
 
-    def get_reference_product(self):
+    def get_reference_product(self) -> CenterProductReferenceProduct:
         """Returns the reference Product for this product's group."""
         product_group = self.get_product_group()
         if product_group:
-            return product_group.reference_product
+            product_group_source = cast(_CenterProductGroupSource, product_group)
+            return product_group_source.reference_product
         return None
 
-    def get_product_weight(self):
-        product = self.product
+    def get_product_weight(self) -> CenterProductWeight | NoCenterProductValue:
+        product = cast(_CenterProductSource, self.product)
 
         return product.get_product_weight()
 
-    def get_package_weight(self):
-        product = self.product
+    def get_package_weight(self) -> CenterProductWeight | NoCenterProductValue:
+        product = cast(_CenterProductSource, self.product)
 
         return product.get_package_weight()

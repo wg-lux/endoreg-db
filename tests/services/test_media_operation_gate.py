@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
+from typing import Protocol, cast
 
 import pytest
 from django.db import transaction
@@ -37,6 +38,23 @@ def _create_video() -> VideoFile:
     )
 
 
+class _LeaseWithExpiresAt(Protocol):
+    expires_at: datetime
+
+
+class _LeaseWithLeaseType(Protocol):
+    lease_type: str
+
+
+class _HistoryStatusDetails(Protocol):
+    status: str
+    details: str
+
+
+def _json_datetime(value: datetime) -> str:
+    return value.isoformat().replace("+00:00", "Z")
+
+
 @pytest.mark.django_db
 def test_active_lease_summary_expires_stale_rows_for_video_only() -> None:
     video = _create_video()
@@ -54,11 +72,12 @@ def test_active_lease_summary_expires_stale_rows_for_video_only() -> None:
     )
 
     summary = active_media_operation_lease_summary(video.pk)
+    active_lease_expires_at = cast(_LeaseWithExpiresAt, active_lease).expires_at
 
     assert summary == [
         {
             "lease_type": MediaOperationLease.LEASE_SEGMENT_UPDATE,
-            "expires_at": active_lease.expires_at,
+            "expires_at": active_lease_expires_at,
         }
     ]
     assert not MediaOperationLease.objects.filter(pk=stale_lease.pk).exists()
@@ -85,7 +104,7 @@ def test_ffmpeg_stream_throttle_state_is_normal_without_leases() -> None:
     assert state["mode"] == FFMPEG_STREAM_THROTTLE_NORMAL
     assert state["active_stream_leases"] == 0
     assert state["expired_leases"] == 0
-    assert state["next_stream_lease_expiry"] is None
+    assert "next_stream_lease_expiry" not in state
 
 
 @pytest.mark.django_db
@@ -99,7 +118,10 @@ def test_ffmpeg_stream_throttle_state_is_streaming_for_active_stream_lease() -> 
     assert state["mode"] == FFMPEG_STREAM_THROTTLE_STREAMING
     assert state["active_stream_leases"] == 1
     assert state["expired_leases"] == 0
-    assert state["next_stream_lease_expiry"] == lease.expires_at.isoformat()
+    assert "next_stream_lease_expiry" in state
+    assert state["next_stream_lease_expiry"] == _json_datetime(
+        cast(_LeaseWithExpiresAt, lease).expires_at
+    )
 
 
 @pytest.mark.django_db
@@ -145,8 +167,9 @@ def test_defer_if_video_media_busy_marks_history_without_running_rebuild() -> No
         defer_if_video_media_busy(video_id=video.pk, history=history)
 
     history.refresh_from_db()
-    assert history.status == VideoProcessingHistory.STATUS_PENDING
-    assert "media operation leases are active" in history.details
+    history_state = cast(_HistoryStatusDetails, history)
+    assert history_state.status == VideoProcessingHistory.STATUS_PENDING
+    assert "media operation leases are active" in history_state.details
 
 
 @pytest.mark.django_db(transaction=True)
@@ -158,5 +181,8 @@ def test_segment_update_lease_is_created_after_transaction_commit() -> None:
         assert MediaOperationLease.objects.filter(video=video).count() == 0
 
     lease = MediaOperationLease.objects.get(video=video)
-    assert lease.lease_type == MediaOperationLease.LEASE_SEGMENT_UPDATE
+    assert (
+        cast(_LeaseWithLeaseType, lease).lease_type
+        == MediaOperationLease.LEASE_SEGMENT_UPDATE
+    )
     assert lease.metadata == {"source": "segment_validation"}

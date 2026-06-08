@@ -1,11 +1,23 @@
+from __future__ import annotations
+
 import logging
+from datetime import datetime
+from types import NoneType
+from typing import TYPE_CHECKING, TypeAlias
 
 from django.conf import settings
 from django.db import models
+from lx_dtypes.models.contracts.json_types import JsonObject
 
 from .raw_pdf import RawPdfFile
 
+if TYPE_CHECKING:
+    from django.contrib.auth.models import AbstractBaseUser
+
 logger = logging.getLogger(__name__)
+
+NoPdfHistoryActorValue: TypeAlias = NoneType
+PdfHistoryActor: TypeAlias = "AbstractBaseUser | NoPdfHistoryActorValue"
 
 
 class PdfProcessingHistory(models.Model):
@@ -25,37 +37,52 @@ class PdfProcessingHistory(models.Model):
         (SOURCE_TYPE_PROCESSED, "Processed"),
     ]
 
-    pdf = models.ForeignKey(
+    pdf: models.ForeignKey[RawPdfFile, RawPdfFile] = models.ForeignKey(
         RawPdfFile,
         on_delete=models.CASCADE,
         related_name="pdf_processing_history",
     )
-    operation = models.CharField(
+    operation: models.CharField[str, str] = models.CharField(
         max_length=64,
         choices=OPERATION_CHOICES,
         default=OPERATION_PDF_REDACTION,
     )
-    source_type = models.CharField(
+    source_type: models.CharField[str, str] = models.CharField(
         max_length=16,
         choices=SOURCE_TYPE_CHOICES,
     )
-    redaction_manifest = models.JSONField(default=dict)
-    note = models.TextField(blank=True)
-    client_source_sha256 = models.CharField(max_length=64, blank=True)
-    source_sha256 = models.CharField(max_length=64, blank=True)
-    processed_file_name = models.CharField(max_length=500, blank=True)
+    redaction_manifest: models.JSONField[JsonObject, JsonObject] = models.JSONField(
+        default=dict
+    )
+    note: models.TextField[str, str] = models.TextField(blank=True)
+    client_source_sha256: models.CharField[str, str] = models.CharField(
+        max_length=64, blank=True
+    )
+    source_sha256: models.CharField[str, str] = models.CharField(
+        max_length=64, blank=True
+    )
+    processed_file_name: models.CharField[str, str] = models.CharField(
+        max_length=500, blank=True
+    )
 
-    actor_user = models.ForeignKey(
+    actor_user: models.ForeignKey[PdfHistoryActor, PdfHistoryActor] = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="pdf_processing_history_entries",
     )
-    actor_username = models.CharField(max_length=150, blank=True)
-    actor_email = models.EmailField(blank=True)
+    actor_username: models.CharField[str, str] = models.CharField(
+        max_length=150, blank=True
+    )
+    actor_email: models.EmailField[str, str] = models.EmailField(blank=True)
 
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    if TYPE_CHECKING:
+        pdf_id: int
 
     class Meta:
         db_table = "pdf_processing_history"

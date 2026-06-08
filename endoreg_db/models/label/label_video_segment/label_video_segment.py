@@ -1,9 +1,14 @@
+from __future__ import annotations
+
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Tuple, Union
+from types import NoneType
+from collections.abc import Callable, Iterable
+from typing import TYPE_CHECKING, Protocol, TypeAlias, cast
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
+from django.db.models.base import ModelBase
 from django.db.models import CheckConstraint, F, Q
 from tqdm import tqdm
 
@@ -17,17 +22,54 @@ from ._create_from_video import _create_from_video
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from endoreg_db.models import (
-        Frame,
+    from endoreg_db.models.media.frame import Frame
+    from endoreg_db.models.media.video.video_file import VideoFile
+    from endoreg_db.models.medical.patient.patient_finding import PatientFinding
+    from endoreg_db.models.metadata.model_meta import ModelMeta
+    from endoreg_db.models.metadata.video_prediction_meta import VideoPredictionMeta
+    from endoreg_db.models.other.information_source import InformationSource
+    from endoreg_db.models.state.label_video_segment import LabelVideoSegmentState
+    from endoreg_db.models.label.annotation.image_classification import (
         ImageClassificationAnnotation,
-        Label,
-        LabelSet,
-        LabelVideoSegmentState,
-        ModelMeta,
-        PatientFinding,
-        VideoFile,
-        VideoPredictionMeta,
     )
+    from endoreg_db.models.label.label import Label
+    from endoreg_db.models.label.label_set import LabelSet
+
+    class ModelMetaLabelSetCarrier(Protocol):
+        labelset: LabelSet
+        pk: int
+
+    class VideoModelMetaCarrier(Protocol):
+        ai_model_meta: "ModelMeta | NoModelMetaValue"
+        video_hash: str
+
+    class FrameIdentifier(Protocol):
+        pk: int
+
+
+NoInformationSourceValue: TypeAlias = NoneType
+NoSegmentLabelValue: TypeAlias = NoneType
+NoPredictionMetaValue: TypeAlias = NoneType
+NoModelMetaValue: TypeAlias = NoneType
+NoLabelSetValue: TypeAlias = NoneType
+NoAnnotatorValue: TypeAlias = NoneType
+NoVideoFileValue: TypeAlias = NoneType
+NoStringValue: TypeAlias = NoneType
+NoIterableStringValue: TypeAlias = NoneType
+SegmentInformationSource: TypeAlias = "InformationSource | NoInformationSourceValue"
+SegmentLabel: TypeAlias = "Label | NoSegmentLabelValue"
+SegmentPredictionMeta: TypeAlias = "VideoPredictionMeta | NoPredictionMetaValue"
+SegmentModelMeta: TypeAlias = "ModelMeta | NoModelMetaValue"
+ResolvedLabelSet: TypeAlias = "LabelSet | NoLabelSetValue"
+AnnotationAnnotator: TypeAlias = "str | NoAnnotatorValue"
+FrameRangeOption: TypeAlias = "bool | int | str"
+SegmentCreateValue: TypeAlias = (
+    "bool | int | str | SegmentInformationSource | SegmentPredictionMeta"
+)
+SaveForceInsert: TypeAlias = "bool | tuple[ModelBase, ...]"
+SaveUsing: TypeAlias = "str | NoStringValue"
+SaveUpdateFields: TypeAlias = "Iterable[str] | NoIterableStringValue"
+DeleteResult: TypeAlias = "tuple[int, dict[str, int]]"
 
 
 class LabelVideoSegment(models.Model):
@@ -38,15 +80,17 @@ class LabelVideoSegment(models.Model):
     If it originates from a prediction, it links to a single `VideoPredictionMeta`.
     """
 
-    start_frame_number = models.IntegerField()
-    end_frame_number = models.IntegerField()
-    source = models.ForeignKey(
-        "InformationSource", on_delete=models.SET_NULL, null=True
+    start_frame_number: models.IntegerField[int, int] = models.IntegerField()
+    end_frame_number: models.IntegerField[int, int] = models.IntegerField()
+    source: models.ForeignKey[SegmentInformationSource, SegmentInformationSource] = (
+        models.ForeignKey("InformationSource", on_delete=models.SET_NULL, null=True)
     )
-    label = models.ForeignKey("Label", on_delete=models.SET_NULL, null=True, blank=True)
+    label: models.ForeignKey[SegmentLabel, SegmentLabel] = models.ForeignKey(
+        "Label", on_delete=models.SET_NULL, null=True, blank=True
+    )
 
     # Single ForeignKey to the unified VideoFile model
-    video_file = models.ForeignKey(
+    video_file: models.ForeignKey["VideoFile", "VideoFile"] = models.ForeignKey(
         "VideoFile",
         on_delete=models.CASCADE,
         related_name="label_video_segments",
@@ -55,12 +99,14 @@ class LabelVideoSegment(models.Model):
     )
 
     # Single ForeignKey to the unified VideoPredictionMeta model
-    prediction_meta = models.ForeignKey(
-        "VideoPredictionMeta",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="label_video_segments",
+    prediction_meta: models.ForeignKey[SegmentPredictionMeta, SegmentPredictionMeta] = (
+        models.ForeignKey(
+            "VideoPredictionMeta",
+            on_delete=models.SET_NULL,
+            null=True,
+            blank=True,
+            related_name="label_video_segments",
+        )
     )
 
     # M2M relationship with patient finding
@@ -72,13 +118,13 @@ class LabelVideoSegment(models.Model):
         )
     )
 
-    export_segment = models.BooleanField(
+    export_segment: models.BooleanField[bool, bool] = models.BooleanField(
         default=False,
         help_text="If true, include this segment in export selection.",
     )
 
     if TYPE_CHECKING:
-        model_meta: ModelMeta | None
+        model_meta: SegmentModelMeta
         state: LabelVideoSegmentState
 
     class Meta:
@@ -126,14 +172,18 @@ class LabelVideoSegment(models.Model):
         """
         return self.end_time - self.start_time
 
-    def resolve_labelset(self) -> "LabelSet | None":
+    def resolve_labelset(self) -> ResolvedLabelSet:
         prediction_meta = self.prediction_meta
-        if (
-            prediction_meta is not None
-            and prediction_meta.model_meta is not None
-            and prediction_meta.model_meta.labelset is not None
-        ):
-            return prediction_meta.model_meta.labelset
+        prediction_model_meta = (
+            cast(
+                "ModelMetaLabelSetCarrier | NoModelMetaValue",
+                prediction_meta.model_meta,
+            )
+            if prediction_meta is not None
+            else None
+        )
+        if prediction_meta is not None and prediction_model_meta is not None:
+            return prediction_model_meta.labelset
 
         label = self.label
         if label is not None:
@@ -142,12 +192,16 @@ class LabelVideoSegment(models.Model):
                 return labelset
 
         video = self.video_file
-        if video.ai_model_meta is not None and video.ai_model_meta.labelset is not None:
-            return video.ai_model_meta.labelset
+        video_carrier = cast("VideoModelMetaCarrier", video)
+        video_model_meta = cast(
+            "ModelMetaLabelSetCarrier | NoModelMetaValue", video_carrier.ai_model_meta
+        )
+        if video_model_meta is not None:
+            return video_model_meta.labelset
 
         return None
 
-    def resolve_labelset_name(self) -> str | None:
+    def resolve_labelset_name(self) -> str | NoLabelSetValue:
         labelset = self.resolve_labelset()
         if labelset is None:
             return None
@@ -189,7 +243,7 @@ class LabelVideoSegment(models.Model):
         # ensure state exists
         state, _ = self.get_or_create_state()
         state.is_validated = is_validated
-        state.save()
+        models.Model.save(state, update_fields=["is_validated"])
 
         # update information source
         info_source, _ = InformationSource.objects.get_or_create(
@@ -198,15 +252,13 @@ class LabelVideoSegment(models.Model):
         self.source = info_source
         self.save(update_fields=["source"])
 
-    def extract_segment_frame_files(self, overwrite: bool = False, **kwargs) -> bool:
+    def extract_segment_frame_files(
+        self, overwrite: bool = False, **kwargs: FrameRangeOption
+    ) -> bool:
         """
         Extracts frame files specifically for this segment using the associated VideoFile.
         Passes additional keyword arguments to extract_frames.
         """
-        from endoreg_db.models import VideoFile
-
-        if not isinstance(self.video_file, VideoFile):
-            raise ValueError("Cannot extract frame files: No associated VideoFile.")
         return extract_video_frame_range(
             self.video_file,
             start_frame=self.start_frame_number,
@@ -222,10 +274,6 @@ class LabelVideoSegment(models.Model):
         Raises:
             ValueError: If there is no associated VideoFile.
         """
-        from endoreg_db.models import VideoFile
-
-        if not isinstance(self.video_file, VideoFile):
-            raise ValueError("Cannot delete frame files: No associated VideoFile.")
         delete_video_frame_range(
             self.video_file,
             start_frame=self.start_frame_number,
@@ -234,8 +282,13 @@ class LabelVideoSegment(models.Model):
 
     @classmethod
     def safe_create(
-        cls, video_file, label, start_frame_number, end_frame_number, **kwargs
-    ):
+        cls,
+        video_file: "VideoFile",
+        label: SegmentLabel,
+        start_frame_number: int,
+        end_frame_number: int,
+        **kwargs: SegmentCreateValue,
+    ) -> "LabelVideoSegment":
         """
         Create a new LabelVideoSegment instance after validating the frame range.
 
@@ -255,14 +308,26 @@ class LabelVideoSegment(models.Model):
             **kwargs,
         )
 
-    def save(self, *args, **kwargs):
+    def save(
+        self,
+        *,
+        force_insert: SaveForceInsert = False,
+        force_update: bool = False,
+        using: SaveUsing = None,
+        update_fields: SaveUpdateFields = None,
+    ) -> None:
         """
         Saves the LabelVideoSegment instance and ensures its associated state object exists.
 
         Overrides the default save behavior to guarantee that a related LabelVideoSegmentState is created or retrieved after saving.
         """
         # Call the original save method first
-        super().save(*args, **kwargs)
+        super().save(
+            force_insert=force_insert,
+            force_update=force_update,
+            using=using,
+            update_fields=update_fields,
+        )
 
         # Ensure state exists after saving, without nested transactions
         if self.pk:
@@ -277,9 +342,11 @@ class LabelVideoSegment(models.Model):
 
                 mark_segment_annotations_stale(video)
 
-    def delete(self, *args, **kwargs):
+    def delete(
+        self, using: SaveUsing = None, keep_parents: bool = False
+    ) -> DeleteResult:
         video = getattr(self, "video_file", None)
-        result = super().delete(*args, **kwargs)
+        result = super().delete(using=using, keep_parents=keep_parents)
         if video is not None:
             from endoreg_db.models.state.video_segment_validation import (
                 mark_segment_annotations_stale,
@@ -288,7 +355,7 @@ class LabelVideoSegment(models.Model):
             mark_segment_annotations_stale(video)
         return result
 
-    def get_or_create_state(self) -> Tuple["LabelVideoSegmentState", bool]:
+    def get_or_create_state(self) -> tuple["LabelVideoSegmentState", bool]:
         """
         Retrieves or creates the associated LabelVideoSegmentState object.
 
@@ -306,11 +373,11 @@ class LabelVideoSegment(models.Model):
     def create_from_video(
         cls,
         source: "VideoFile",
-        prediction_meta: Optional["VideoPredictionMeta"],
-        label: Optional["Label"],
+        prediction_meta: SegmentPredictionMeta,
+        label: SegmentLabel,
         start_frame_number: int,
         end_frame_number: int,
-    ):
+    ) -> "LabelVideoSegment":
         """
         Create a LabelVideoSegment instance from a VideoFile.
         """
@@ -334,16 +401,17 @@ class LabelVideoSegment(models.Model):
                 f"LabelVideoSegment {self.pk} is not associated with a valid VideoFile."
             )
 
-    def __str__(self):
+    def __str__(self) -> str:
         try:
             video_obj = self.get_video()
             label_name = self.label.name if self.label else "No Label"
             active_file = getattr(video_obj, "active_file", None)
             active_name = getattr(active_file, "name", None)
+            video_carrier = cast("VideoModelMetaCarrier", video_obj)
             video_identifier = (
                 Path(active_name).name
                 if active_name
-                else f"UUID {video_obj.video_hash}"
+                else f"UUID {video_carrier.video_hash}"
             )
 
             str_repr = f"{video_identifier} Label - {label_name} - {self.start_frame_number} - {self.end_frame_number}"
@@ -361,7 +429,7 @@ class LabelVideoSegment(models.Model):
 
         return str_repr
 
-    def get_model_meta(self) -> Optional["ModelMeta"]:
+    def get_model_meta(self) -> SegmentModelMeta:
         """
         Retrieve the associated ModelMeta object from the segment's prediction metadata, if available.
 
@@ -373,7 +441,7 @@ class LabelVideoSegment(models.Model):
         return None
 
     @property
-    def frames(self) -> Union[models.QuerySet["Frame"], list]:
+    def frames(self) -> models.QuerySet["Frame"]:
         """
         Return all frames within the segment's frame range.
 
@@ -500,7 +568,7 @@ class LabelVideoSegment(models.Model):
         try:
             video_obj = self.get_video()
             fps = get_video_fps(video_obj)
-            if fps is None or fps <= 0:
+            if fps <= 0:
                 logger.warning(
                     "Could not determine valid FPS for %s. Cannot calculate segment length in seconds.",
                     video_obj,
@@ -513,9 +581,7 @@ class LabelVideoSegment(models.Model):
             )
             return 0.0
 
-    def get_frames_without_annotation(
-        self, n_frames: int
-    ) -> Union[list["Frame"], list]:
+    def get_frames_without_annotation(self, n_frames: int) -> list["Frame"]:
         """
         Get up to n frames within the segment that do not have an ImageClassificationAnnotation
         for this segment's label.
@@ -523,7 +589,7 @@ class LabelVideoSegment(models.Model):
         from endoreg_db.models import ImageClassificationAnnotation
 
         frames_qs = self.get_frames()
-        if not isinstance(frames_qs, models.QuerySet) or not frames_qs.exists():
+        if not frames_qs.exists():
             return []
 
         if not self.label:
@@ -542,7 +608,7 @@ class LabelVideoSegment(models.Model):
         )
         return frames_without_annotation
 
-    def generate_annotations(self, annotator: str | None = None) -> int:
+    def generate_annotations(self, annotator: AnnotationAnnotator = None) -> int:
         """
         Creates image classification annotations for all frames in the segment, avoiding duplicates.
 
@@ -560,17 +626,21 @@ class LabelVideoSegment(models.Model):
         #     return
 
         from endoreg_db.models import ImageClassificationAnnotation, InformationSource
+        from endoreg_db.models.state import frame_annotation as frame_annotation_state
         from endoreg_db.models.state.frame_annotation import (
-            is_prediction_segment,
             manual_frame_annotation_preference_filter,
             segment_derived_external_annotation_id,
         )
 
         information_source = self.source
         if not information_source:
-            information_source, _ = InformationSource.objects.get_or_create_by_name(
+            information_source, _ = InformationSource.objects.get_or_create(
                 name="prediction"
             )
+        typed_is_prediction_segment = cast(
+            Callable[["LabelVideoSegment"], bool],
+            frame_annotation_state.is_prediction_segment,
+        )
         normalized_annotator = None
         if annotator is not None:
             normalized_annotator = str(annotator).strip()
@@ -596,15 +666,19 @@ class LabelVideoSegment(models.Model):
             )
             return 0
 
-        frames_queryset = self.get_frames().only("id")
-        if not isinstance(frames_queryset, models.QuerySet):
-            logger.error(
-                "Could not get frame queryset for segment %s. Skipping.", self.pk
-            )
-            return 0
+        segment_id = cast(int, self.pk)
+        information_source_id = cast(int, information_source.pk)
+        label_id = cast(int, label.pk)
+        model_meta_id = cast(int, model_meta.pk) if model_meta else None
 
-        existing_annotation_filters = {
-            "frame_id__in": frames_queryset.values("id"),
+        frames_queryset = self.get_frames().only("id")
+        frame_ids: list[int] = [
+            cast("FrameIdentifier", frame).pk for frame in frames_queryset.iterator()
+        ]
+        existing_annotation_filters: dict[
+            str, list[int] | Label | SegmentModelMeta | SegmentInformationSource | str
+        ] = {
+            "frame_id__in": frame_ids,
             "label": label,
             "model_meta": model_meta,
             "information_source": information_source,
@@ -617,9 +691,9 @@ class LabelVideoSegment(models.Model):
                 **existing_annotation_filters
             ).values_list("frame_id", flat=True)
         )
-        if not is_prediction_segment(self):
+        if not typed_is_prediction_segment(self):
             preferred_frame_annotations = ImageClassificationAnnotation.objects.filter(
-                frame_id__in=frames_queryset.values("id"),
+                frame_id__in=frame_ids,
                 label=label,
             ).filter(manual_frame_annotation_preference_filter())
             if normalized_annotator is None:
@@ -634,7 +708,7 @@ class LabelVideoSegment(models.Model):
                 preferred_frame_annotations.values_list("frame_id", flat=True)
             )
 
-        annotations_to_create = []
+        annotations_to_create: list["ImageClassificationAnnotation"] = []
         frames_to_annotate = frames_queryset.exclude(
             id__in=existing_annotation_frame_ids
         )
@@ -651,11 +725,11 @@ class LabelVideoSegment(models.Model):
                 value=True,
                 information_source=information_source,
                 external_annotation_id=segment_derived_external_annotation_id(
-                    segment_id=self.pk,
-                    frame_id=frame.pk,
-                    label_id=label.pk,
-                    information_source_id=information_source.pk,
-                    model_meta_id=model_meta.pk if model_meta else None,
+                    segment_id=segment_id,
+                    frame_id=cast(int, frame.pk),
+                    label_id=label_id,
+                    information_source_id=information_source_id,
+                    model_meta_id=model_meta_id,
                     annotator=normalized_annotator,
                 ),
             )
@@ -677,7 +751,7 @@ class LabelVideoSegment(models.Model):
             logger.info("No new annotations needed for segment %s.", self.pk)
         return len(annotations_to_create)
 
-    def _get_fps_safe(self):
+    def _get_fps_safe(self) -> float:
         """
         Safely retrieves the frames per second (FPS) value from the associated video.
 
@@ -685,15 +759,15 @@ class LabelVideoSegment(models.Model):
             float: The FPS of the associated video, or 0.0 if unavailable or invalid.
         """
         video_obj = self.get_video()
-        if video_obj is None:
-            return 0.0
         fps = get_video_fps(video_obj)
-        return 0.0 if fps is None else fps
+        return fps
 
     @staticmethod
     def validate_frame_range(
-        start_frame_number: int, end_frame_number: int, video_file=None
-    ):
+        start_frame_number: int,
+        end_frame_number: int,
+        video_file: "VideoFile | NoVideoFileValue" = None,
+    ) -> None:
         """
         Validate that the provided frame numbers define a valid segment range, optionally checking against a video's frame count.
 
@@ -705,12 +779,6 @@ class LabelVideoSegment(models.Model):
         Raises:
             ValueError: If frame numbers are not integers, are negative, are out of order, or exceed the video's frame count.
         """
-        if not isinstance(start_frame_number, int) or not isinstance(
-            end_frame_number, int
-        ):
-            raise ValueError(
-                "start_frame_number and end_frame_number must be integers."
-            )
         if start_frame_number < 0:
             raise ValueError("start_frame_number must be non-negative.")
         if end_frame_number < start_frame_number:

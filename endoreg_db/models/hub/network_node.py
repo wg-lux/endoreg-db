@@ -1,15 +1,23 @@
 from __future__ import annotations
 
-from typing import cast
+from datetime import datetime
+from types import NoneType
+from typing import TYPE_CHECKING, TypeAlias
 
 from django.contrib.auth.hashers import check_password, make_password
 from django.db import models
 from django.utils.text import slugify
 
+if TYPE_CHECKING:
+    from endoreg_db.models.administration.center.center import Center
+
+NoNetworkNodeCenterValue: TypeAlias = NoneType
+NetworkNodeCenter: TypeAlias = "Center | NoNetworkNodeCenterValue"
+
 
 class NetworkNodeManager(models.Manager["NetworkNode"]):
     def get_by_node_key(self, node_key: str) -> "NetworkNode":
-        return cast("NetworkNode", self.get(node_key=node_key))
+        return self.get(node_key=node_key)
 
 
 class NetworkNode(models.Model):
@@ -20,25 +28,33 @@ class NetworkNode(models.Model):
 
     objects = NetworkNodeManager()
 
-    node_key = models.CharField(max_length=255, unique=True, blank=True)
-    display_name = models.CharField(max_length=255)
-    role = models.CharField(
+    node_key: models.CharField[str, str] = models.CharField(
+        max_length=255, unique=True, blank=True
+    )
+    display_name: models.CharField[str, str] = models.CharField(max_length=255)
+    role: models.CharField[str, str] = models.CharField(
         max_length=32,
         choices=Role.choices,
         default=Role.SITE_NODE,
     )
-    base_url = models.URLField(blank=True, default="")
-    is_active = models.BooleanField(default=True)
-    shared_secret_hash = models.CharField(max_length=255, blank=True, default="")
-    owning_center = models.ForeignKey(
+    base_url: models.URLField[str, str] = models.URLField(blank=True, default="")
+    is_active: models.BooleanField[bool, bool] = models.BooleanField(default=True)
+    shared_secret_hash: models.CharField[str, str] = models.CharField(
+        max_length=255, blank=True, default=""
+    )
+    owning_center: models.ForeignKey[NetworkNodeCenter, NetworkNodeCenter] = models.ForeignKey(
         "Center",
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
         related_name="network_nodes",
     )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    created_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
+        auto_now_add=True
+    )
+    updated_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
+        auto_now=True
+    )
 
     class Meta:
         ordering = ["display_name", "pk"]
@@ -56,7 +72,7 @@ class NetworkNode(models.Model):
             suffix += 1
         return candidate
 
-    def save(self, *args, **kwargs):
+    def save(self, *args: object, **kwargs: object) -> None:
         if self.pk:
             existing_key = (
                 type(self)

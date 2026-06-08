@@ -1,16 +1,32 @@
 from __future__ import annotations
 
+from datetime import datetime
+from types import NoneType
+from typing import TYPE_CHECKING, TypeAlias
 import uuid
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.db import models
+from lx_dtypes.models.contracts.json_types import JsonObject
 
 from endoreg_db.schemas import (
     validate_transfer_processing_snapshot,
     validate_transfer_resource_rows,
 )
 from endoreg_db.services.hub.payloads import validate_transfer_provenance_payload
+
+if TYPE_CHECKING:
+    from endoreg_db.models.administration.center.center import Center
+    from .network_node import NetworkNode
+    from .upload_job import UploadJob
+
+NoTransferJobRelationValue: TypeAlias = NoneType
+NoTransferJobIntegerValue: TypeAlias = NoneType
+TransferJobCenter: TypeAlias = "Center | NoTransferJobRelationValue"
+TransferJobUploadJob: TypeAlias = "UploadJob | NoTransferJobRelationValue"
+TransferJobUser: TypeAlias = "User | NoTransferJobRelationValue"
+TransferJobInteger: TypeAlias = "int | NoTransferJobIntegerValue"
 
 
 class TransferJob(models.Model):
@@ -104,94 +120,120 @@ class TransferJob(models.Model):
         AMBIGUOUS = "ambiguous", "Ambiguous"
         UNRESOLVED = "unresolved", "Unresolved"
 
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    transfer_key = models.CharField(max_length=255, unique=True, db_index=True)
-    source_node = models.ForeignKey(
+    id: models.UUIDField[uuid.UUID, uuid.UUID] = models.UUIDField(
+        primary_key=True, default=uuid.uuid4, editable=False
+    )
+    transfer_key: models.CharField[str, str] = models.CharField(
+        max_length=255, unique=True, db_index=True
+    )
+    source_node: models.ForeignKey[NetworkNode, NetworkNode] = models.ForeignKey(
         "NetworkNode",
         on_delete=models.PROTECT,
         related_name="sent_transfer_jobs",
     )
-    target_node = models.ForeignKey(
+    target_node: models.ForeignKey[NetworkNode, NetworkNode] = models.ForeignKey(
         "NetworkNode",
         on_delete=models.PROTECT,
         related_name="received_transfer_jobs",
     )
-    source_center = models.ForeignKey(
+    source_center: models.ForeignKey[TransferJobCenter, TransferJobCenter] = models.ForeignKey(
         "Center",
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
         related_name="transfer_jobs",
     )
-    resource_kind = models.CharField(max_length=16, choices=ResourceKind.choices)
-    resource_hash = models.CharField(max_length=255, db_index=True)
-    transfer_mode = models.CharField(
+    resource_kind: models.CharField[str, str] = models.CharField(
+        max_length=16, choices=ResourceKind.choices
+    )
+    resource_hash: models.CharField[str, str] = models.CharField(
+        max_length=255, db_index=True
+    )
+    transfer_mode: models.CharField[str, str] = models.CharField(
         max_length=48,
         choices=TransferMode.choices,
         default=TransferMode.METADATA_ONLY,
     )
-    transfer_status = models.CharField(
+    transfer_status: models.CharField[str, str] = models.CharField(
         max_length=32,
         choices=TransferStatus.choices,
         default=TransferStatus.PENDING,
     )
-    processing_policy = models.CharField(
+    processing_policy: models.CharField[str, str] = models.CharField(
         max_length=48,
         choices=ProcessingPolicy.choices,
         default=ProcessingPolicy.PRESERVE_PROCESSING_STATE,
     )
-    processing_intent = models.CharField(
+    processing_intent: models.CharField[str, str] = models.CharField(
         max_length=48,
         choices=ProcessingIntent.choices,
         default=ProcessingIntent.STATE_PRESERVATION,
     )
-    processing_decision = models.CharField(
+    processing_decision: models.CharField[str, str] = models.CharField(
         max_length=48,
         choices=ProcessingDecision.choices,
         default=ProcessingDecision.WAIT_FOR_MISSING_MEDIA,
     )
-    cleanup_policy = models.CharField(
+    cleanup_policy: models.CharField[str, str] = models.CharField(
         max_length=64,
         choices=CleanupPolicy.choices,
         default=CleanupPolicy.RETAIN_ALL,
     )
-    cleanup_status = models.CharField(
+    cleanup_status: models.CharField[str, str] = models.CharField(
         max_length=32,
         choices=CleanupStatus.choices,
         default=CleanupStatus.PENDING,
     )
-    payload_schema_version = models.CharField(max_length=32, default="1.0")
-    resource_rows = models.JSONField(default=dict, blank=True)
-    processing_snapshot = models.JSONField(default=dict, blank=True)
-    status_detail = models.TextField(blank=True, default="")
-    provenance = models.JSONField(default=dict, blank=True)
-    target_object_id = models.PositiveBigIntegerField(null=True, blank=True)
-    linked_patient_id = models.PositiveBigIntegerField(null=True, blank=True)
-    linked_patient_examination_id = models.PositiveBigIntegerField(
+    payload_schema_version: models.CharField[str, str] = models.CharField(
+        max_length=32, default="1.0"
+    )
+    resource_rows: models.JSONField[JsonObject, JsonObject] = models.JSONField(
+        default=dict, blank=True
+    )
+    processing_snapshot: models.JSONField[JsonObject, JsonObject] = models.JSONField(
+        default=dict, blank=True
+    )
+    status_detail: models.TextField[str, str] = models.TextField(blank=True, default="")
+    provenance: models.JSONField[JsonObject, JsonObject] = models.JSONField(
+        default=dict, blank=True
+    )
+    target_object_id: models.PositiveBigIntegerField[
+        TransferJobInteger, TransferJobInteger
+    ] = models.PositiveBigIntegerField(null=True, blank=True)
+    linked_patient_id: models.PositiveBigIntegerField[
+        TransferJobInteger, TransferJobInteger
+    ] = models.PositiveBigIntegerField(null=True, blank=True)
+    linked_patient_examination_id: models.PositiveBigIntegerField[
+        TransferJobInteger, TransferJobInteger
+    ] = models.PositiveBigIntegerField(
         null=True,
         blank=True,
     )
-    case_resolution_status = models.CharField(
+    case_resolution_status: models.CharField[str, str] = models.CharField(
         max_length=24,
         choices=CaseResolutionStatus.choices,
         default=CaseResolutionStatus.PENDING,
     )
-    upload_job = models.ForeignKey(
+    upload_job: models.ForeignKey[TransferJobUploadJob, TransferJobUploadJob] = models.ForeignKey(
         "UploadJob",
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
         related_name="transfer_jobs",
     )
-    created_by = models.ForeignKey(
+    created_by: models.ForeignKey[TransferJobUser, TransferJobUser] = models.ForeignKey(
         User,
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
         related_name="created_transfer_jobs",
     )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    created_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
+        auto_now_add=True
+    )
+    updated_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
+        auto_now=True
+    )
 
     class Meta:
         ordering = ["-created_at"]
@@ -219,6 +261,6 @@ class TransferJob(models.Model):
         except ValueError as exc:
             raise ValidationError({"provenance": str(exc)}) from exc
 
-    def save(self, *args, **kwargs):
+    def save(self, *args: object, **kwargs: object) -> None:
         self.clean()
-        return super().save(*args, **kwargs)
+        super().save(*args, **kwargs)

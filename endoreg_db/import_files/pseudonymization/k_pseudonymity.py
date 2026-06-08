@@ -1,7 +1,11 @@
-from typing import Optional, Tuple
 import logging
+from datetime import date as Date, datetime
+from typing import Protocol, cast
 
-from datetime import date as Date
+from lx_dtypes.models.contracts.pseudonymization import (
+    KPseudonymizationResult,
+    QuasiIdentifierSubset,
+)
 
 from .k_anonymity import _build_sensitive_meta_qi_queryset
 from .fake import fake_name_with_similar_dob_and_gender
@@ -11,16 +15,30 @@ from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 logger = logging.getLogger(__name__)
 
 
+class _NamedGender(Protocol):
+    name: str
+
+
+class _MutableSensitiveMetaPseudonymRecord(Protocol):
+    pk: int | None
+    patient_gender: _NamedGender | None
+    patient_dob: datetime | Date | None
+    patient_first_name: str
+    patient_last_name: str
+
+    def save(self, *, update_fields: list[str]) -> None: ...
+
+
 def k_pseudonymize(
     instance: SensitiveMeta,
     *,
     k_threshold: int = 3,
     dob_year_tolerance: int = 3,
-    qi_subset: Optional[Tuple[str, ...]] = None,
+    qi_subset: QuasiIdentifierSubset | None = None,
     locale: str = "de_DE",
-    seed: Optional[int] = None,
+    seed: int | None = None,
     save: bool = True,
-) -> Tuple[SensitiveMeta, int, bool]:
+) -> tuple[SensitiveMeta, int, bool]:
     """
     Ensure a SensitiveMeta instance reaches at least `k_threshold` anonymity
     for the given quasi-identifier subset by pseudonymizing patient
@@ -40,7 +58,7 @@ def k_pseudonymize(
         locale:
             Faker locale for a realistic name.
         seed:
-            Optional seed for reproducibility.
+            Reproducible seed.
         save:
             If True, save the instance after pseudonymization.
 
@@ -51,17 +69,12 @@ def k_pseudonymize(
     # --- 1) Compute k for the requested subset BEFORE pseudonymization ---
     if qi_subset is None:
         qi_subset = ("first_name", "last_name", "center", "gender", "dob_band")
-        # --- 1) Compute k for the requested subset BEFORE pseudonymization ---
-        use_first_name = "first_name" in qi_subset
-        use_last_name = "last_name" in qi_subset
-        use_center = "center" in qi_subset
-        use_gender = "gender" in qi_subset
-        use_dob_band = "dob_band" in qi_subset
     use_first_name = "first_name" in qi_subset
     use_last_name = "last_name" in qi_subset
     use_center = "center" in qi_subset
     use_gender = "gender" in qi_subset
     use_dob_band = "dob_band" in qi_subset
+    pseudonym_record = cast(_MutableSensitiveMetaPseudonymRecord, instance)
 
     qs_before = _build_sensitive_meta_qi_queryset(
         instance,
@@ -81,15 +94,17 @@ def k_pseudonymize(
 
     # --- 2) Pseudonymize name + DOB using Faker ---
     # Gender string for Faker
-    if instance.patient_gender and getattr(instance.patient_gender, "name", None):
-        gender_name = instance.patient_gender.name
+    if pseudonym_record.patient_gender is not None:
+        gender_name = pseudonym_record.patient_gender.name
     else:
         # Fallback if gender missing -> bias to 'male' but you can change that
         gender_name = "male"
 
     # Original DOB as date (fallback to today's date if missing)
-    if instance.patient_dob is not None:
-        orig_dob: Date = instance.patient_dob.date()
+    if isinstance(pseudonym_record.patient_dob, datetime):
+        orig_dob = pseudonym_record.patient_dob.date()
+    elif isinstance(pseudonym_record.patient_dob, Date):
+        orig_dob = pseudonym_record.patient_dob
     else:
         orig_dob = Date.today()
 
@@ -102,14 +117,14 @@ def k_pseudonymize(
     )
 
     # Assign to instance (SensitiveMeta.patient_dob is a DateTimeField)
-    instance.patient_first_name = first_name
-    instance.patient_last_name = last_name
-    instance.patient_dob = Date(
+    pseudonym_record.patient_first_name = first_name
+    pseudonym_record.patient_last_name = last_name
+    pseudonym_record.patient_dob = Date(
         fake_dob.year, fake_dob.month, fake_dob.day
     )  # naive is usually fine for DOB
 
     if save:
-        instance.save(
+        pseudonym_record.save(
             update_fields=["patient_first_name", "patient_last_name", "patient_dob"]
         )
 
@@ -125,15 +140,20 @@ def k_pseudonymize(
         use_dob_band=use_dob_band,
     )
     k_after = qs_after.count()
-    is_k_anon_after = k_after >= k_threshold
+    result = KPseudonymizationResult(
+        k_value_after=k_after,
+        is_k_anonymous_after=k_after >= k_threshold,
+        threshold=k_threshold,
+    )
 
     logger.info(
         "k_pseudonymize: SensitiveMeta pk=%s, subset=%s, k_before=%s, k_after=%s, threshold=%s",
-        instance.pk,
+        pseudonym_record.pk,
         qi_subset,
         k_before,
-        k_after,
+        result.k_value_after,
         k_threshold,
     )
 
-    return instance, k_after, is_k_anon_after
+    k_value_after, is_k_anonymous_after = result.as_tuple()
+    return instance, k_value_after, is_k_anonymous_after

@@ -69,20 +69,20 @@ class ReportLlmInferenceJob(models.Model):
     )
     pdf: models.ForeignKey["RawPdfFile | None", "RawPdfFile | None"] = (
         models.ForeignKey(
-        "RawPdfFile",
-        on_delete=models.CASCADE,
-        related_name="llm_inference_jobs",
-        null=True,
-        blank=True,
+            "RawPdfFile",
+            on_delete=models.CASCADE,
+            related_name="llm_inference_jobs",
+            null=True,
+            blank=True,
         )
     )
     upload_job: models.ForeignKey["UploadJob | None", "UploadJob | None"] = (
         models.ForeignKey(
-        "UploadJob",
-        on_delete=models.SET_NULL,
-        related_name="report_llm_inference_jobs",
-        null=True,
-        blank=True,
+            "UploadJob",
+            on_delete=models.SET_NULL,
+            related_name="report_llm_inference_jobs",
+            null=True,
+            blank=True,
         )
     )
     operation: models.CharField[ReportLlmJobOperation, ReportLlmJobOperation] = (

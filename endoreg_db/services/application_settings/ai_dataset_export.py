@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, cast
 from uuid import UUID
 
 from django.utils import timezone
@@ -91,7 +91,7 @@ def _payload_bool(value: Any, *, default: bool = False) -> bool:
 
 
 def sanitize_export_token(value: str) -> str:
-    normalized = []
+    normalized: list[str] = []
     for char in value.strip():
         if char.isalnum():
             normalized.append(char.lower())
@@ -109,24 +109,80 @@ def ai_dataset_export_download_url(artifact: AIDataSetExportArtifact) -> str:
     )
 
 
+def _model_text(instance: object, field_name: str) -> str:
+    return str(getattr(instance, field_name, "") or "")
+
+
+def _model_int(instance: object, field_name: str) -> int:
+    value = getattr(instance, field_name, 0) or 0
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float | str):
+        return int(value)
+    raise TypeError(f"{field_name} must be numeric.")
+
+
+def _dataset_text(dataset: AIDataSet, field_name: str) -> str:
+    return _model_text(dataset, field_name)
+
+
+def _center_id(center: Center) -> int:
+    return _model_int(center, "id")
+
+
+def _artifact_text(artifact: AIDataSetExportArtifact, field_name: str) -> str:
+    return _model_text(artifact, field_name)
+
+
+def _artifact_status(artifact: AIDataSetExportArtifact) -> str:
+    return _artifact_text(artifact, "status")
+
+
+def _artifact_dataset_id(artifact: AIDataSetExportArtifact) -> int | None:
+    value = getattr(artifact, "dataset_id", None)
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float | str):
+        return int(value)
+    raise TypeError("dataset_id must be numeric.")
+
+
+def _artifact_byte_size(artifact: AIDataSetExportArtifact) -> int:
+    return _model_int(artifact, "byte_size")
+
+
+def _artifact_summary(artifact: AIDataSetExportArtifact) -> dict[str, Any]:
+    summary = getattr(artifact, "summary", None)
+    if not isinstance(summary, Mapping):
+        return {}
+    return dict(cast(Mapping[str, Any], summary))
+
+
 def ai_dataset_export_payload(artifact: AIDataSetExportArtifact) -> dict[str, Any]:
+    status = _artifact_status(artifact)
     return {
-        "success": artifact.status == AIDataSetExportArtifact.STATUS_COMPLETED,
+        "success": status == AIDataSetExportArtifact.STATUS_COMPLETED,
         "artifact_id": artifact.artifact_key,
-        "dataset_id": artifact.dataset_id,
-        "dataset_name": artifact.dataset_name,
-        "dataset_type": artifact.dataset_type,
-        "output_path": artifact.output_path,
+        "dataset_id": _artifact_dataset_id(artifact),
+        "dataset_name": _artifact_text(artifact, "dataset_name"),
+        "dataset_type": _artifact_text(artifact, "dataset_type"),
+        "output_path": _artifact_text(artifact, "output_path"),
         "download_url": (
             ai_dataset_export_download_url(artifact)
-            if artifact.status == AIDataSetExportArtifact.STATUS_COMPLETED
+            if status == AIDataSetExportArtifact.STATUS_COMPLETED
             else None
         ),
-        "sha256": artifact.sha256,
-        "byte_size": artifact.byte_size,
-        "summary": artifact.summary,
-        "status": artifact.status,
-        "error": artifact.error or None,
+        "sha256": _artifact_text(artifact, "sha256"),
+        "byte_size": _artifact_byte_size(artifact),
+        "summary": _artifact_summary(artifact),
+        "status": status,
+        "error": _artifact_text(artifact, "error") or None,
     }
 
 
@@ -235,7 +291,7 @@ def _dataset_export_scope_error(
         allowed_center_id = resolve_allowed_center_id(user)
         if allowed_center_id == -1:
             return "You do not have access to export center data.", 403
-        if allowed_center_id is not None and center.id != allowed_center_id:
+        if allowed_center_id is not None and _center_id(center) != allowed_center_id:
             return "Export center is outside the authenticated scope.", 403
 
     return None
@@ -253,8 +309,8 @@ def _json_bytes(payload: Mapping[str, Any]) -> bytes:
 def _export_file_name(dataset: AIDataSet, artifact: AIDataSetExportArtifact) -> str:
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     return (
-        f"{sanitize_export_token(dataset.name or 'dataset')}"
-        f"_{sanitize_export_token(dataset.dataset_type)}"
+        f"{sanitize_export_token(_dataset_text(dataset, 'name') or 'dataset')}"
+        f"_{sanitize_export_token(_dataset_text(dataset, 'dataset_type'))}"
         f"_{timestamp}_{artifact.artifact_key}.json"
     )
 
@@ -306,9 +362,9 @@ def create_ai_dataset_export(
 
     artifact = AIDataSetExportArtifact.objects.create(
         dataset=dataset,
-        dataset_name=dataset.name,
-        dataset_type=dataset.dataset_type,
-        ai_model_type=dataset.ai_model_type,
+        dataset_name=_dataset_text(dataset, "name"),
+        dataset_type=_dataset_text(dataset, "dataset_type"),
+        ai_model_type=_dataset_text(dataset, "ai_model_type"),
         request_payload=request_payload,
         center_key=center_key,
         all_centers=all_centers,
@@ -391,14 +447,14 @@ def prepare_ai_dataset_export_download(
             payload={"detail": "AI dataset export artifact not found."},
             status_code=404,
         )
-    if artifact.status != AIDataSetExportArtifact.STATUS_COMPLETED:
+    if _artifact_status(artifact) != AIDataSetExportArtifact.STATUS_COMPLETED:
         return DownloadResponse(
             payload=ai_dataset_export_payload(artifact),
             status_code=409,
             artifact=artifact,
         )
 
-    output_path = Path(artifact.output_path)
+    output_path = Path(_artifact_text(artifact, "output_path"))
     resolved_export_root = _resolve_export_root(export_root)
     try:
         output_path.resolve().relative_to(resolved_export_root.resolve())
@@ -425,7 +481,7 @@ def prepare_ai_dataset_export_download(
         status_code=200,
         artifact=artifact,
         file_path=output_path,
-        filename=artifact.download_filename or output_path.name,
-        sha256=artifact.sha256,
-        byte_size=artifact.byte_size,
+        filename=_artifact_text(artifact, "download_filename") or output_path.name,
+        sha256=_artifact_text(artifact, "sha256"),
+        byte_size=_artifact_byte_size(artifact),
     )

@@ -1,7 +1,8 @@
 import json
 import logging
+from contextlib import AbstractContextManager
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Protocol, Set, Tuple, cast
 
 from django.db import transaction
 from tqdm import tqdm
@@ -23,9 +24,8 @@ from endoreg_db.utils.video.ffmpeg_wrapper import (
     mask_video_to_roi_and_blacken_intervals,
 )
 from endoreg_db.models.utils import anonymize_frame  # Import from models.utils
-from endoreg_db.services.video_files._frames._extract_frames import (
-    validate_video_frame_cache,
-)
+from endoreg_db.services.video_files.frames import extract_video_frames
+from endoreg_db.services.video_files._frames._extract_frames import validate_video_frame_cache
 from endoreg_db.services.video_files._segments import (
     _get_outside_frame_numbers,
     _get_outside_frames,
@@ -39,6 +39,10 @@ if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
 
 logger = logging.getLogger(__name__)
+
+
+class _LocalRawFileProvider(Protocol):
+    def ensure_local_raw_file(self) -> AbstractContextManager[Path]: ...
 
 
 def _video_integrity_failure_detail(video: "VideoFile") -> str:
@@ -93,7 +97,7 @@ def _ensure_valid_frame_cache_for_frame_anonymization(video: "VideoFile") -> Non
         )
     )
     try:
-        if not video.extract_frames(overwrite=False):
+        if not extract_video_frames(video, overwrite=False):
             raise RuntimeError("frame cache repair returned false")
     except Exception as exc:
         detail = f"frame cache repair before anonymization failed: {exc}"
@@ -360,7 +364,7 @@ def _make_temporary_anonymized_frames(
             "Raw frames not extracted for %s, extracting now.", video.video_hash
         )
         try:
-            if not video.extract_frames(overwrite=False):
+            if not extract_video_frames(video, overwrite=False):
                 raise RuntimeError(
                     f"Frame extraction method returned False unexpectedly for video {video.video_hash}."
                 )
@@ -519,7 +523,7 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> bool:
     )
 
     try:
-        with video.ensure_local_raw_file() as raw_path:
+        with cast(_LocalRawFileProvider, video).ensure_local_raw_file() as raw_path:
             streamed_path = mask_video_to_roi_and_blacken_intervals(
                 Path(raw_path),
                 anonymized_video_path,

@@ -65,11 +65,7 @@ def _verify_completed_file(path: Path) -> None:
     stream_info = cast(_StreamProbeInfo | None, get_stream_info(path))
     streams = stream_info.get("streams", []) if stream_info else []
     video_stream = next(
-        (
-            stream
-            for stream in streams
-            if stream.get("codec_type") == "video"
-        ),
+        (stream for stream in streams if stream.get("codec_type") == "video"),
         None,
     )
     if video_stream is None:

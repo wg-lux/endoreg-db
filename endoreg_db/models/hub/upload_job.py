@@ -1,11 +1,14 @@
 import logging
 import uuid
-from typing import TYPE_CHECKING
+from datetime import datetime
+from types import NoneType
+from typing import TYPE_CHECKING, Protocol, TypeAlias, cast
 
+from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.db import models
-from django.contrib.auth.models import User
 from django.utils import timezone
+from lx_dtypes.models.contracts.json_types import JsonObject
 
 from endoreg_db.services.hub.payloads import validate_upload_provenance_payload
 from endoreg_db.utils.filesystem.paths import (
@@ -21,16 +24,36 @@ from endoreg_db.utils.observability.structured_logging import (
 
 logger = logging.getLogger(__name__)
 
+if TYPE_CHECKING:
+    from endoreg_db.models.administration.center.center import Center
+    from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+
+NoUploadJobRelationValue: TypeAlias = NoneType
+NoUploadJobDateTimeValue: TypeAlias = NoneType
+UploadJobCenter: TypeAlias = "Center | NoUploadJobRelationValue"
+UploadJobUser: TypeAlias = "User | NoUploadJobRelationValue"
+UploadJobSensitiveMeta: TypeAlias = "SensitiveMeta | NoUploadJobRelationValue"
+UploadJobDateTime: TypeAlias = "datetime | NoUploadJobDateTimeValue"
+
+
+class _UploadJobStorage(Protocol):
+    _location: str
+
+    def _clear_cached_properties(self, *names: str) -> None: ...
+
+
+class _UploadJobFileField(Protocol):
+    storage: _UploadJobStorage
+
 
 def _sync_upload_job_storage_location(instance: "UploadJob") -> None:
-    storage = instance._meta.get_field("file").storage
+    file_field = cast(_UploadJobFileField, instance._meta.get_field("file"))
+    storage = file_field.storage
     target_location = str(EndoregPathsModel.from_environment().storage.resolve())
-    if getattr(storage, "_location", None) == target_location:
+    if storage._location == target_location:
         return
     storage._location = target_location
-    clear_cached_properties = getattr(storage, "_clear_cached_properties", None)
-    if callable(clear_cached_properties):
-        clear_cached_properties("MEDIA_ROOT")
+    storage._clear_cached_properties("MEDIA_ROOT")
 
 
 def upload_job_upload_to(instance: "UploadJob", filename: str) -> str:
@@ -80,30 +103,30 @@ class UploadJob(models.Model):
 
     objects = models.Manager["UploadJob"]()
 
-    id = models.UUIDField(
+    id: models.UUIDField[uuid.UUID, uuid.UUID] = models.UUIDField(
         primary_key=True,
         default=uuid.uuid4,
         editable=False,
         help_text="Unique identifier for the upload job",
     )
 
-    file = models.FileField(
+    file: models.FileField = models.FileField(
         upload_to=upload_job_upload_to,
         help_text="Uploaded file (report or video)",
     )
 
-    status = models.CharField(
+    status: models.CharField[str, str] = models.CharField(
         max_length=20,
         choices=Status.choices,
         default=Status.PENDING,
         help_text="Current processing status of the upload",
     )
 
-    content_type = models.CharField(
+    content_type: models.CharField[str, str] = models.CharField(
         max_length=100, blank=True, help_text="MIME type of the uploaded file"
     )
 
-    source_center = models.ForeignKey(
+    source_center: models.ForeignKey[UploadJobCenter, UploadJobCenter] = models.ForeignKey(
         "Center",
         null=True,
         blank=True,
@@ -112,14 +135,14 @@ class UploadJob(models.Model):
         help_text="Center identity attached to the ingest request",
     )
 
-    source_system = models.CharField(
+    source_system: models.CharField[str, str] = models.CharField(
         max_length=255,
         blank=True,
         default="api",
         help_text="Name of the upstream source system or client",
     )
 
-    content_hash = models.CharField(
+    content_hash: models.CharField[str, str] = models.CharField(
         max_length=255,
         blank=True,
         default="",
@@ -127,7 +150,7 @@ class UploadJob(models.Model):
         help_text="Canonical content hash used for content-first deduplication.",
     )
 
-    idempotency_key = models.CharField(
+    idempotency_key: models.CharField[str, str] = models.CharField(
         max_length=255,
         blank=True,
         default="",
@@ -135,66 +158,68 @@ class UploadJob(models.Model):
         help_text="Client-supplied idempotency key for logical deduplication",
     )
 
-    ingest_mode = models.CharField(
+    ingest_mode: models.CharField[str, str] = models.CharField(
         max_length=20,
         choices=IngestMode.choices,
         default=IngestMode.API,
         help_text="How the ingest request entered the system",
     )
 
-    original_filename = models.CharField(
+    original_filename: models.CharField[str, str] = models.CharField(
         max_length=512,
         blank=True,
         default="",
         help_text="Original client-supplied filename",
     )
 
-    processing_provenance = models.JSONField(
+    processing_provenance: models.JSONField[JsonObject, JsonObject] = models.JSONField(
         blank=True,
         default=dict,
         help_text="Additional ingest metadata recorded for audit and processing",
     )
 
-    storage_class = models.CharField(
+    storage_class: models.CharField[str, str] = models.CharField(
         max_length=64,
         choices=StorageClass.choices,
         default=StorageClass.INGEST,
         help_text="High-level storage lifecycle class for the persisted artifact.",
     )
 
-    storage_tier = models.CharField(
+    storage_tier: models.CharField[str, str] = models.CharField(
         max_length=64,
         choices=StorageTier.choices,
         default=StorageTier.UPLOAD_API,
         help_text="Protected storage tier where the upload artifact is persisted.",
     )
 
-    retention_policy = models.CharField(
+    retention_policy: models.CharField[str, str] = models.CharField(
         max_length=64,
         choices=RetentionPolicy.choices,
         default=RetentionPolicy.PRESERVE_SOURCE,
         help_text="Lifecycle policy for the persisted upload artifact.",
     )
 
-    source_file_persisted = models.BooleanField(
+    source_file_persisted: models.BooleanField[bool, bool] = models.BooleanField(
         default=True,
         help_text="Whether the source ingest artifact is currently expected to remain on disk.",
     )
 
-    source_file_delete_eligible_at = models.DateTimeField(
+    source_file_delete_eligible_at: models.DateTimeField[
+        UploadJobDateTime, UploadJobDateTime
+    ] = models.DateTimeField(
         null=True,
         blank=True,
         help_text="When the persisted source ingest artifact becomes eligible for cleanup.",
     )
 
-    cleanup_status = models.CharField(
+    cleanup_status: models.CharField[str, str] = models.CharField(
         max_length=64,
         choices=CleanupStatus.choices,
         default=CleanupStatus.PENDING,
         help_text="Cleanup state for the persisted source artifact.",
     )
 
-    created_by = models.ForeignKey(
+    created_by: models.ForeignKey[UploadJobUser, UploadJobUser] = models.ForeignKey(
         User,
         null=True,
         blank=True,
@@ -203,7 +228,9 @@ class UploadJob(models.Model):
         help_text="Authenticated user who initiated the upload job, if any",
     )
 
-    sensitive_meta = models.ForeignKey(
+    sensitive_meta: models.ForeignKey[
+        UploadJobSensitiveMeta, UploadJobSensitiveMeta
+    ] = models.ForeignKey(
         "SensitiveMeta",
         null=True,
         blank=True,
@@ -211,22 +238,20 @@ class UploadJob(models.Model):
         help_text="Link to the created SensitiveMeta record after processing",
     )
 
-    error_detail = models.TextField(
+    error_detail: models.TextField[str, str] = models.TextField(
         blank=True, help_text="Error message if processing failed"
     )
 
-    created_at = models.DateTimeField(
+    created_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
         auto_now_add=True, help_text="When the upload job was created"
     )
 
-    updated_at = models.DateTimeField(
+    updated_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
         auto_now=True, help_text="When the upload job was last updated"
     )
 
     if TYPE_CHECKING:
-        from django.db.models.fields.files import FieldFile
-
-        file: FieldFile
+        pass
 
     class Meta:
         ordering = ["-created_at"]
@@ -271,7 +296,7 @@ class UploadJob(models.Model):
             ),
         ]
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"UploadJob {self.id} - {self.status} ({self.content_type})"
 
     def clean(self) -> None:
@@ -283,63 +308,65 @@ class UploadJob(models.Model):
         except ValueError as exc:
             raise ValidationError({"processing_provenance": str(exc)}) from exc
 
-    def save(self, *args, **kwargs):
+    def save(self, *args: object, **kwargs: object) -> None:
         self.clean()
         _sync_upload_job_storage_location(self)
-        return super().save(*args, **kwargs)
+        super().save(*args, **kwargs)
 
     @property
-    def is_complete(self):
+    def is_complete(self) -> bool:
         """Returns True if the job has finished processing (success or error)."""
         return self.status in [
-            self.Status.ANONYMIZED,
-            self.Status.ERROR,
-            self.Status.LOST,
+            self.Status.ANONYMIZED.value,
+            self.Status.ERROR.value,
+            self.Status.LOST.value,
         ]
 
     @property
-    def is_successful(self):
+    def is_successful(self) -> bool:
         """Returns True if the job completed successfully."""
-        return self.status == self.Status.ANONYMIZED
+        return self.status == self.Status.ANONYMIZED.value
 
-    def mark_processing(self):
+    def mark_processing(self) -> None:
         """Mark the job as processing."""
-        self.status = self.Status.PROCESSING
+        self.status = self.Status.PROCESSING.value
         self.save(update_fields=["status", "updated_at"])
 
-    def mark_completed(self, sensitive_meta=None):
+    def mark_completed(
+        self, sensitive_meta: UploadJobSensitiveMeta = None
+    ) -> None:
         """Mark the job as successfully completed."""
-        self.status = self.Status.ANONYMIZED
+        self.status = self.Status.ANONYMIZED.value
         if sensitive_meta:
             self.sensitive_meta = sensitive_meta
         update_fields = ["status", "sensitive_meta", "updated_at"]
         target_cleanup_status = self.cleanup_status
 
-        if self.retention_policy == self.RetentionPolicy.DELETE_AFTER_SUCCESS:
+        if self.retention_policy == self.RetentionPolicy.DELETE_AFTER_SUCCESS.value:
             if self.source_file_delete_eligible_at is None:
                 self.source_file_delete_eligible_at = timezone.now()
                 update_fields.append("source_file_delete_eligible_at")
-            target_cleanup_status = self.CleanupStatus.ELIGIBLE
+            target_cleanup_status = self.CleanupStatus.ELIGIBLE.value
         elif self.retention_policy in {
-            self.RetentionPolicy.PRESERVE_SOURCE,
-            self.RetentionPolicy.MIGRATION_MANAGED,
+            self.RetentionPolicy.PRESERVE_SOURCE.value,
+            self.RetentionPolicy.MIGRATION_MANAGED.value,
         }:
-            target_cleanup_status = self.CleanupStatus.SKIPPED
+            target_cleanup_status = self.CleanupStatus.SKIPPED.value
 
         if self.cleanup_status != target_cleanup_status:
             self.cleanup_status = target_cleanup_status
             update_fields.append("cleanup_status")
         self.save(update_fields=update_fields)
 
-    def mark_error(self, error_detail: str):
+    def mark_error(self, error_detail: str) -> None:
         """Mark the job as failed with error details."""
-        self.status = self.Status.ERROR
+        self.status = self.Status.ERROR.value
         self.error_detail = error_detail
         self.save(update_fields=["status", "error_detail", "updated_at"])
 
     def mark_lost(self, error_detail: str) -> None:
         """Mark the job as unrecoverably inconsistent with on-disk state."""
-        self.status = self.Status.LOST
+        self.status = self.Status.LOST.value
         self.error_detail = error_detail
         self.save(update_fields=["status", "error_detail", "updated_at"])
         emit_structured_event(

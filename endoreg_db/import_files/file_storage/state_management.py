@@ -1,9 +1,11 @@
 import logging
 import os
 from pathlib import Path
-from typing import Optional, Union
+from typing import Protocol, cast
 
 from django.db import transaction
+from django.db.models.fields.files import FieldFile
+from lx_dtypes.models.contracts.media_streaming import validate_ffmpeg_stream_info
 
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.file_storage.cleanup import safe_cleanup_staging_file
@@ -30,6 +32,29 @@ from endoreg_db.utils.video.ffmpeg_wrapper import get_stream_info
 logger = logging.getLogger(__name__)
 
 
+class _ProcessableState(Protocol):
+    processing_started: bool
+
+    def mark_processing_started(self) -> None: ...
+
+    def mark_processing_not_started(self) -> None: ...
+
+    def mark_anonymized(self) -> None: ...
+
+    def mark_sensitive_meta_processed(self) -> None: ...
+
+    def save(self, *args: object, **kwargs: object) -> None: ...
+
+
+class _StatefulImportInstance(Protocol):
+    pk: int
+    state: RawPdfState | VideoState | None
+
+    def get_or_create_state(self) -> RawPdfState | VideoState: ...
+
+    def save(self, *args: object, **kwargs: object) -> None: ...
+
+
 def _processed_report_dir() -> Path:
     return path_utils.EndoregPathsModel.from_environment().anonym_report
 
@@ -42,18 +67,16 @@ def _verify_final_video_output(path: Path) -> None:
     """Fail finalization if the committed anonymized video is not probeable."""
     if not path.exists():
         raise RuntimeError(f"Final anonymized video missing: {path}")
-    stream_info = get_stream_info(path)
-    if not stream_info or "streams" not in stream_info:
+    raw_stream_info = get_stream_info(path)
+    if raw_stream_info is None:
         raise RuntimeError(f"Final anonymized video failed ffprobe validation: {path}")
-    has_video_stream = any(
-        stream.get("codec_type") == "video" for stream in stream_info["streams"]
-    )
-    if not has_video_stream:
+    stream_info = validate_ffmpeg_stream_info(raw_stream_info)
+    if not stream_info.has_video_stream:
         raise RuntimeError(f"Final anonymized video has no video stream: {path}")
 
 
 def _store_existing_final_file(
-    field_file,
+    field_file: FieldFile,
     final_path: Path,
     *,
     relative_name: str | None = None,
@@ -90,41 +113,35 @@ def _store_existing_final_file(
 
 
 def _ensure_instance_state(
-    instance: Union[VideoFile, RawPdfFile],
-) -> Optional[Union[RawPdfState, VideoState]]:
+    instance: VideoFile | RawPdfFile,
+) -> RawPdfState | VideoState | None:
     """
     Helper: ensure instance.state exists and return it.
     Mirrors PdfImportService._ensure_state.
     """
-    if isinstance(instance, RawPdfFile):
-        state = getattr(instance, "state", None)
-    else:
-        state = getattr(instance, "state", None)
+    stateful_instance = cast(_StatefulImportInstance, instance)
+    state = stateful_instance.state
 
     if state is not None:
         return state
 
-    if hasattr(instance, "get_or_create_state"):
-        state = instance.get_or_create_state()
-        instance.save()
-        return state
-
-    return None
+    state = stateful_instance.get_or_create_state()
+    stateful_instance.save()
+    return state
 
 
 def mark_instance_processing_started(
-    instance: Union[RawPdfFile, VideoFile],
+    instance: RawPdfFile | VideoFile,
     ctx: ImportContext,
-):
+) -> None:
     state = _ensure_instance_state(instance)
 
     with transaction.atomic():
         if state is not None:
+            processable_state = cast(_ProcessableState, state)
             # In the old code, processing_started was set earlier; we guard here
-            if not getattr(state, "processing_started", False) and hasattr(
-                state, "mark_processing_started"
-            ):
-                state.mark_processing_started()
+            if not processable_state.processing_started:
+                processable_state.mark_processing_started()
 
 
 def finalize_report_success(
@@ -147,7 +164,7 @@ def finalize_report_success(
         return
 
     # --- Move anonymized path into final storage (if we have one) ---
-    final_path: Optional[Path] = None
+    final_path: Path | None = None
     if ctx.anonymized_path is None:
         logger.warning(
             "No anonymized_path for instance %s (hash=%s); skipping file move.",
@@ -204,32 +221,28 @@ def finalize_report_success(
                 final_path = expected_final_path
                 logger.info("Moved anonymized report to %s", final_path)
 
-            if final_path is not None:
-                relative_name = path_utils.to_storage_relative(final_path)
-                current_name = getattr(instance.processed_file, "name", None)
-                if current_name != relative_name:
-                    instance.processed_file.name = relative_name
-                    logger.info("Updated processed_file to %s", relative_name)
+            relative_name = path_utils.to_storage_relative(final_path)
+            current_name = getattr(instance.processed_file, "name", None)
+            if current_name != relative_name:
+                instance.processed_file.name = relative_name
+                logger.info("Updated processed_file to %s", relative_name)
 
     # --- Update RawPdfState flags (mirrors _finalize_processing) ---
     state = _ensure_instance_state(instance)
 
     with transaction.atomic():
         if state is not None:
-            if not getattr(state, "processing_started", False) and hasattr(
-                state, "mark_processing_started"
-            ):
-                state.mark_processing_started()
+            processable_state = cast(_ProcessableState, state)
+            if not processable_state.processing_started:
+                processable_state.mark_processing_started()
 
             # We consider text/meta extraction + anonymization done at this point
-            if hasattr(state, "mark_anonymized"):
-                state.mark_anonymized()
-            if hasattr(state, "mark_sensitive_meta_processed"):
-                state.mark_sensitive_meta_processed()
+            processable_state.mark_anonymized()
+            processable_state.mark_sensitive_meta_processed()
 
-            state.save()
+            processable_state.save()
 
-        instance.save()
+        cast(_StatefulImportInstance, instance).save()
 
     if isinstance(ctx.sensitive_path, Path):
         safe_cleanup_staging_file(
@@ -276,7 +289,7 @@ def finalize_video_success(
         return
 
     # --- Move anonymized path into final storage ---
-    final_path: Optional[Path] = None
+    final_path: Path | None = None
 
     if ctx.anonymized_path is None:
         raise RuntimeError(
@@ -350,32 +363,28 @@ def finalize_video_success(
                 final_path = expected_final_path
                 logger.info("Moved anonymized video to %s", final_path)
 
-            if final_path is not None:
-                _verify_final_video_output(final_path)
-                relative_name = path_utils.to_storage_relative(final_path)
-                current_name = getattr(instance.processed_file, "name", None)
-                if current_name != relative_name:
-                    instance.processed_file.name = relative_name
-                    logger.info("Updated video processed_file to %s", relative_name)
+            _verify_final_video_output(final_path)
+            relative_name = path_utils.to_storage_relative(final_path)
+            current_name = getattr(instance.processed_file, "name", None)
+            if current_name != relative_name:
+                instance.processed_file.name = relative_name
+                logger.info("Updated video processed_file to %s", relative_name)
 
     # --- Update VideoState flags (mirrors report) ---
     state = _ensure_instance_state(instance)
 
     with transaction.atomic():
         if state is not None:
-            if not getattr(state, "processing_started", False) and hasattr(
-                state, "mark_processing_started"
-            ):
-                state.mark_processing_started()
+            processable_state = cast(_ProcessableState, state)
+            if not processable_state.processing_started:
+                processable_state.mark_processing_started()
 
-            if hasattr(state, "mark_anonymized"):
-                state.mark_anonymized()
-            if hasattr(state, "mark_sensitive_meta_processed"):
-                state.mark_sensitive_meta_processed()
+            processable_state.mark_anonymized()
+            processable_state.mark_sensitive_meta_processed()
 
-            state.save()
+            processable_state.save()
 
-        instance.save()
+        cast(_StatefulImportInstance, instance).save()
 
     try:
         sync_video_streamable_artifacts(
@@ -447,9 +456,10 @@ def finalize_failure(
 
     if state is not None:
         try:
-            state.mark_processing_not_started()
+            processable_state = cast(_ProcessableState, state)
+            processable_state.mark_processing_not_started()
 
-            state.save()
+            processable_state.save()
             logger.info(
                 "Reset instance state for failed processing (instance pk=%s)",
                 ctx.instance.pk,
@@ -556,10 +566,10 @@ def _delete_video_streamable_artifacts(ctx: ImportContext) -> None:
         update_fields.append(field_name)
 
     if update_fields and video.pk:
-        video.save(update_fields=update_fields)
+        cast(_StatefulImportInstance, video).save(update_fields=update_fields)
 
 
-def nuke_transcoding_dir(transcoding_dir: Union[str, Path, None] = None) -> bool:
+def nuke_transcoding_dir(transcoding_dir: str | Path | None = None) -> bool:
     """
     Delete all files and subdirectories inside the transcoding directory.
 

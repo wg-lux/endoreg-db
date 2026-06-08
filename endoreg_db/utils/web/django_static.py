@@ -10,7 +10,7 @@ try:
     from django.conf.urls.static import static as _django_static
 except ImportError:
     from django.core.exceptions import ImproperlyConfigured
-    from django.http import HttpResponseBase
+    from django.http.response import HttpResponseBase
     from django.urls import URLPattern
     from django.urls import re_path
     from django.views.static import serve

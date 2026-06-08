@@ -3,6 +3,8 @@ from contextlib import nullcontext
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from endoreg_db.services.video_files._io import _ensure_local_raw_file
+
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
 
@@ -94,7 +96,7 @@ def _update_video_meta(
         raw_context = (
             nullcontext(Path(raw_video_path))
             if raw_video_path is not None
-            else video.ensure_local_raw_file()
+            else _ensure_local_raw_file(video)
         )
     except (AttributeError, ValueError, FileNotFoundError):
         # DEFENSIVE: Log warning and skip instead of crashing production pipeline

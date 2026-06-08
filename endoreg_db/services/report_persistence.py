@@ -37,6 +37,9 @@ from endoreg_db.models.medical.patient.patient_finding_intervention import (
 from endoreg_db.models.other.gender import Gender
 from endoreg_db.models.report.patient_examination_report import PatientExaminationReport
 from endoreg_db.schemas import validate_raw_pdf_meta_payload
+from endoreg_db.services.dtypes_records import (
+    persist_patient_examination_dtypes_record_from_ledger,
+)
 from endoreg_db.services.report_history import get_patient_examination_history_context
 
 User = get_user_model()
@@ -48,6 +51,8 @@ class SaveReportSubmissionResult:
     created: bool
     warnings: list[str]
     history_context: dict[str, Any]
+    persisted_dtypes_record: dict[str, Any] | None = None
+    persisted_dtypes_record_updated_at: datetime | None = None
     persisted_report_artifact_id: int | None = None
     persisted_pdf_artifact_id: int | None = None
 
@@ -676,8 +681,16 @@ def save_report_submission(
     if indications is not None:
         _sync_indications(patient_examination, indications)
 
+    persisted_dtypes_record: dict[str, Any] | None = None
+    persisted_dtypes_record_updated_at: datetime | None = None
     if findings is not None:
         _sync_findings(patient_examination, findings, user=user)
+        persisted_dtypes_record = persist_patient_examination_dtypes_record_from_ledger(
+            patient_examination
+        )
+        persisted_dtypes_record_updated_at = (
+            patient_examination.dtypes_record_updated_at
+        )
     else:
         warnings.append(
             "No findings payload provided; normalized findings were not synced."
@@ -741,6 +754,8 @@ def save_report_submission(
         created=created,
         warnings=warnings,
         history_context=history_context,
+        persisted_dtypes_record=persisted_dtypes_record,
+        persisted_dtypes_record_updated_at=persisted_dtypes_record_updated_at,
         persisted_report_artifact_id=persisted_report_artifact_id,
         persisted_pdf_artifact_id=persisted_pdf_artifact_id,
     )

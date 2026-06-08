@@ -1,27 +1,32 @@
-from typing import TYPE_CHECKING, Optional
+from __future__ import annotations
+
+from types import NoneType
+from typing import TYPE_CHECKING, TypeAlias, TypeVar
 
 if TYPE_CHECKING:
     from endoreg_db.models import Label, VideoFile, VideoPredictionMeta
+    from .label_video_segment import LabelVideoSegment
 
 __all__ = ["_create_from_video"]
 
+NoPredictionMetaValue: TypeAlias = NoneType
+NoSegmentLabelValue: TypeAlias = NoneType
+SegmentPredictionMeta: TypeAlias = "VideoPredictionMeta | NoPredictionMetaValue"
+SegmentLabel: TypeAlias = "Label | NoSegmentLabelValue"
+LabelVideoSegmentT = TypeVar("LabelVideoSegmentT", bound="LabelVideoSegment")
+
 
 def _create_from_video(
-    cls,
+    cls: type[LabelVideoSegmentT],
     source: "VideoFile",
-    prediction_meta: Optional["VideoPredictionMeta"],
-    label: Optional["Label"],
+    prediction_meta: SegmentPredictionMeta,
+    label: SegmentLabel,
     start_frame_number: int,
     end_frame_number: int,
-):
+) -> LabelVideoSegmentT:
     """
     Create a LabelVideoSegment instance from a VideoFile.
     """
-    from endoreg_db.models import VideoFile
-
-    if not isinstance(source, VideoFile):
-        raise ValueError("Source must be a VideoFile instance.")
-
     if start_frame_number < 0 or end_frame_number < 0:
         raise ValueError(
             f"Frame numbers must be non-negative: start={start_frame_number}, end={end_frame_number}"

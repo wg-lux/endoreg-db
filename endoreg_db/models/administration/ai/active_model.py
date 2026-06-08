@@ -1,12 +1,15 @@
-from django.db import models
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
+from django.db import models
+
 if TYPE_CHECKING:
-    pass
+    from ...metadata.model_meta import ModelMeta
 
 
-class ActiveModelManager(models.Manager):
-    def get_by_natural_key(self, name):
+class ActiveModelManager(models.Manager["ActiveModel"]):
+    def get_by_natural_key(self, name: str) -> "ActiveModel":
         return self.get(name=name)
 
 
@@ -15,8 +18,8 @@ class ActiveModel(models.Model):
     ActiveModel represents an active instance of a model within the application.
     Attributes:
         name (str): A unique identifier for the active model.
-        model_meta (ModelMeta, optional): A reference to the metadata of the model. This field acts as a ForeignKey
-                                            to the ModelMeta model and can be null.
+        model_meta (ModelMeta): A reference to the metadata of the model. This
+            field acts as a ForeignKey to the ModelMeta model and can be null.
     Notes:
         - The model_meta attribute is configured with on_delete=models.SET_NULL, meaning that if the related ModelMeta
           record is deleted, model_meta will be set to null.
@@ -26,9 +29,9 @@ class ActiveModel(models.Model):
         objects (ActiveModelManager): Custom manager providing specialized query capabilities for ActiveModel instances.
     """
 
-    name = models.CharField(max_length=255, unique=True)
+    name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
 
-    model_meta = models.ForeignKey(
+    model_meta: models.ForeignKey[ModelMeta, ModelMeta] = models.ForeignKey(
         "ModelMeta", on_delete=models.SET_NULL, blank=True, null=True
     )
 

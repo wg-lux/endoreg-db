@@ -57,10 +57,7 @@ if TYPE_CHECKING:
 
 
 type VideoMetaJsonValue = (
-    JsonValue
-    | JsonNull
-    | list["VideoMetaJsonValue"]
-    | dict[str, "VideoMetaJsonValue"]
+    JsonValue | JsonNull | list["VideoMetaJsonValue"] | dict[str, "VideoMetaJsonValue"]
 )
 type VideoMetaJsonObject = dict[str, VideoMetaJsonValue]
 
@@ -124,14 +121,14 @@ class VideoFile(models.Model):
     ] = models.ForeignKey(
         "EndoscopyProcessor", on_delete=models.PROTECT, blank=True, null=True
     )
-    video_meta: models.OneToOneField[
-        "VideoMeta | None", "VideoMeta | None"
-    ] = models.OneToOneField(
-        "VideoMeta",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="video_file",
+    video_meta: models.OneToOneField["VideoMeta | None", "VideoMeta | None"] = (
+        models.OneToOneField(
+            "VideoMeta",
+            on_delete=models.SET_NULL,
+            null=True,
+            blank=True,
+            related_name="video_file",
+        )
     )
     examination: models.ForeignKey[
         "PatientExamination | None", "PatientExamination | None"
@@ -149,19 +146,17 @@ class VideoFile(models.Model):
         null=True,
         related_name="video_files",
     )
-    ai_model_meta: models.ForeignKey[
-        "ModelMeta | None", "ModelMeta | None"
-    ] = models.ForeignKey(
-        "ModelMeta", on_delete=models.SET_NULL, blank=True, null=True
+    ai_model_meta: models.ForeignKey["ModelMeta | None", "ModelMeta | None"] = (
+        models.ForeignKey("ModelMeta", on_delete=models.SET_NULL, blank=True, null=True)
     )
-    state: models.OneToOneField[
-        "VideoState | None", "VideoState | None"
-    ] = models.OneToOneField(
-        "VideoState",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="video_file",
+    state: models.OneToOneField["VideoState | None", "VideoState | None"] = (
+        models.OneToOneField(
+            "VideoState",
+            on_delete=models.SET_NULL,
+            null=True,
+            blank=True,
+            related_name="video_file",
+        )
     )
     import_meta: models.OneToOneField[
         "VideoImportMeta | None", "VideoImportMeta | None"
@@ -224,10 +219,12 @@ class VideoFile(models.Model):
     suffix: models.CharField[str | None, str | None] = models.CharField(
         max_length=10, blank=True, null=True
     )
-    sequences: models.JSONField[VideoMetaJsonObject, VideoMetaJsonObject] = models.JSONField(
-        default=dict,
-        blank=True,
-        help_text="AI prediction sequences based on raw frames.",
+    sequences: models.JSONField[VideoMetaJsonObject, VideoMetaJsonObject] = (
+        models.JSONField(
+            default=dict,
+            blank=True,
+            help_text="AI prediction sequences based on raw frames.",
+        )
     )
     export_segments_by_video: models.BooleanField[bool, bool] = models.BooleanField(
         default=False,
@@ -236,9 +233,9 @@ class VideoFile(models.Model):
     date: models.DateField[date | None, date | None] = models.DateField(
         blank=True, null=True
     )
-    meta: models.JSONField[
-        VideoMetaJsonObject | None, VideoMetaJsonObject | None
-    ] = models.JSONField(blank=True, null=True)
+    meta: models.JSONField[VideoMetaJsonObject | None, VideoMetaJsonObject | None] = (
+        models.JSONField(blank=True, null=True)
+    )
     date_created: models.DateTimeField[datetime, datetime] = models.DateTimeField(
         auto_now_add=True
     )

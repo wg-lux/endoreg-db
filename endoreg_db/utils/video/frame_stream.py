@@ -289,11 +289,12 @@ def read_video_file_frame_sample(
     frame_number: int,
     file_type: str = "raw",
 ) -> FrameSample:
-    fps_hint = None
+    fps_hint: int = None
     get_fps = getattr(video, "get_fps", None)
     if callable(get_fps):
         try:
-            fps_hint = float(get_fps() or 0.0) or None
+            fps = get_fps()
+            fps_hint = int(fps or 50) or None
         except (TypeError, ValueError):
             fps_hint = None
 

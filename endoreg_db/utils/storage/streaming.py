@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable, Iterator
+from io import BufferedIOBase
 from pathlib import Path
-from typing import Callable, Iterator
+from typing import Protocol, TypeGuard, cast
 
-from django.http import HttpResponseBase, StreamingHttpResponse
+from django.http import StreamingHttpResponse
+from django.http.response import HttpResponseBase
 
+from endoreg_db.schemas import ByteRange, MediaStreamDisposition
 from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
 from endoreg_db.utils.filesystem.paths import (
     ensure_within_protected_root,
@@ -16,14 +19,58 @@ from endoreg_db.utils.filesystem.paths import (
 RANGE_RE = re.compile(r"bytes=(\d+)-(\d*)$")
 
 
-@dataclass(frozen=True)
-class ByteRange:
-    start: int
-    end: int
+class _PlaintextSizeStorage(Protocol):
+    def get_plaintext_size(self, name: str) -> int: ...
 
-    @property
-    def length(self) -> int:
-        return self.end - self.start + 1
+
+class _DecryptedRangeStorage(Protocol):
+    def iter_decrypted_range(
+        self,
+        name: str,
+        *,
+        start: int,
+        end: int,
+        chunk_size: int,
+    ) -> Iterable[bytes]: ...
+
+
+class _ReadableFieldFile(Protocol):
+    name: str
+    file: BufferedIOBase
+
+    def open(self, mode: str = "rb") -> None: ...
+
+    def close(self) -> None: ...
+
+    def chunks(self, chunk_size: int = 64 * 1024) -> Iterable[bytes]: ...
+
+
+def _has_plaintext_size_storage(
+    storage: object | None,
+) -> TypeGuard[_PlaintextSizeStorage]:
+    return callable(getattr(storage, "get_plaintext_size", None))
+
+
+def _has_decrypted_range_storage(
+    storage: object | None,
+) -> TypeGuard[_DecryptedRangeStorage]:
+    return callable(getattr(storage, "iter_decrypted_range", None))
+
+
+def _field_file_storage(field_file: object) -> object | None:
+    return getattr(field_file, "storage", None)
+
+
+def _field_file_name(field_file: object) -> str:
+    name = getattr(field_file, "name", None)
+    if not isinstance(name, str) or not name:
+        raise ValueError("field_file.name must be a non-empty string")
+    return name
+
+
+def _optional_field_file_name(field_file: object) -> str | None:
+    name = getattr(field_file, "name", None)
+    return name if isinstance(name, str) and name else None
 
 
 def parse_byte_range(range_header: str, file_size: int) -> ByteRange:
@@ -43,34 +90,35 @@ def parse_byte_range(range_header: str, file_size: int) -> ByteRange:
     return ByteRange(start=start, end=end)
 
 
-def field_file_size(field_file) -> int:
-    storage = getattr(field_file, "storage", None)
-    if storage is not None and hasattr(storage, "get_plaintext_size"):
-        return int(storage.get_plaintext_size(field_file.name))
-    return int(field_file.size)
+def field_file_size(field_file: object) -> int:
+    storage = _field_file_storage(field_file)
+    if _has_plaintext_size_storage(storage):
+        return int(storage.get_plaintext_size(_field_file_name(field_file)))
+    return int(getattr(field_file, "size"))
 
 
 def iter_field_file_bytes(
-    field_file,
+    field_file: object,
     *,
     start: int,
     end: int,
     chunk_size: int = 64 * 1024,
-) -> Iterator[bytes]:
-    storage = getattr(field_file, "storage", None)
-    if storage is not None and hasattr(storage, "iter_decrypted_range"):
+) -> Iterable[bytes]:
+    storage = _field_file_storage(field_file)
+    if _has_decrypted_range_storage(storage):
         yield from storage.iter_decrypted_range(
-            field_file.name,
+            _field_file_name(field_file),
             start=start,
             end=end,
             chunk_size=chunk_size,
         )
         return
 
-    field_file.open("rb")
+    readable_field_file = cast(_ReadableFieldFile, field_file)
+    readable_field_file.open("rb")
     try:
-        handle = field_file.file
-        if getattr(handle, "seekable", lambda: False)():
+        handle = readable_field_file.file
+        if handle.seekable():
             handle.seek(start)
             remaining = end - start + 1
             while remaining > 0:
@@ -83,7 +131,7 @@ def iter_field_file_bytes(
 
         consumed = 0
         remaining = end - start + 1
-        for chunk in field_file.chunks(chunk_size=chunk_size):
+        for chunk in readable_field_file.chunks(chunk_size=chunk_size):
             chunk_end = consumed + len(chunk)
             if chunk_end <= start:
                 consumed = chunk_end
@@ -98,7 +146,7 @@ def iter_field_file_bytes(
             if remaining <= 0:
                 break
     finally:
-        field_file.close()
+        readable_field_file.close()
 
 
 def iter_file_path_bytes(
@@ -127,23 +175,20 @@ def _path_starts_with_encryption_magic(path: Path) -> bool:
         return False
 
 
-def field_file_has_decrypting_storage(field_file) -> bool:
-    storage = getattr(field_file, "storage", None)
-    return storage is not None and (
-        hasattr(storage, "iter_decrypted_range")
-        or hasattr(storage, "get_plaintext_size")
-    )
+def field_file_has_decrypting_storage(field_file: object) -> bool:
+    storage = _field_file_storage(field_file)
+    return _has_decrypted_range_storage(storage) or _has_plaintext_size_storage(storage)
 
 
-def field_file_is_local_encrypted_without_reader(field_file) -> bool:
+def field_file_is_local_encrypted_without_reader(field_file: object) -> bool:
     if field_file_has_decrypting_storage(field_file):
         return False
 
     candidate: Path | None = None
     try:
-        candidate = Path(field_file.path).resolve()
+        candidate = Path(cast(str | Path, getattr(field_file, "path"))).resolve()
     except (AttributeError, NotImplementedError, OSError, ValueError):
-        file_name = getattr(field_file, "name", None)
+        file_name = _optional_field_file_name(field_file)
         if file_name:
             candidate = resolve_existing_protected_media_path(file_name)
 
@@ -177,12 +222,12 @@ def local_plaintext_path_from_name(
     return candidate
 
 
-def maybe_local_plaintext_path(field_file) -> Path | None:
+def maybe_local_plaintext_path(field_file: object) -> Path | None:
     if field_file_has_decrypting_storage(field_file):
         return None
 
     try:
-        path = Path(field_file.path).resolve()
+        path = Path(cast(str | Path, getattr(field_file, "path"))).resolve()
         if path.exists():
             try:
                 ensure_within_protected_root(path)
@@ -194,17 +239,17 @@ def maybe_local_plaintext_path(field_file) -> Path | None:
     except (AttributeError, NotImplementedError, OSError, ValueError):
         pass
 
-    file_name = getattr(field_file, "name", None)
+    file_name = _optional_field_file_name(field_file)
     return local_plaintext_path_from_name(file_name)
 
 
 def build_partial_content_response(
     *,
-    field_file,
+    field_file: object,
     content_type: str,
     file_size: int,
     range_header: str | None,
-    disposition: str,
+    disposition: MediaStreamDisposition,
     filename: str,
 ) -> StreamingHttpResponse:
     if range_header:
@@ -239,7 +284,7 @@ def build_partial_content_response_from_path(
     content_type: str,
     file_size: int,
     range_header: str | None,
-    disposition: str,
+    disposition: MediaStreamDisposition,
     filename: str,
 ) -> StreamingHttpResponse:
     if range_header:

@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import tempfile
 from pathlib import Path
-from typing import Optional, Union
+from typing import Protocol, cast
 
 from endoreg_db.import_files.context import content_hash_lock, file_lock
 from endoreg_db.import_files.context.import_context import ImportContext
@@ -37,6 +37,10 @@ from endoreg_db.utils.system.rust_backend import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class _RawPdfImportState(Protocol):
+    anonymization_validated: bool
 
 
 def _sensitive_report_dir() -> Path:
@@ -77,8 +81,8 @@ class ReportImportService:
     def __init__(self) -> None:
         self.logger = logger
         self.anonymizer = ReportAnonymizer()
-        self.processing_context: Optional[ImportContext] = None
-        self.current_report: Optional[RawPdfFile] = None
+        self.processing_context: ImportContext | None = None
+        self.current_report: RawPdfFile | None = None
 
         validate_directories()
 
@@ -161,7 +165,7 @@ class ReportImportService:
 
     def import_and_anonymize(
         self,
-        file_path: Union[Path, str],
+        file_path: Path | str,
         center_name: str,
         retry: bool = False,
     ) -> "RawPdfFile | None":
@@ -175,7 +179,7 @@ class ReportImportService:
             file_type="report",
             original_path=Path(file_path),
         )
-        temp_pdf_path: Optional[Path] = None
+        temp_pdf_path: Path | None = None
         is_txt_input = False
         self.logger.info("validating and preparing file")
         if not ctx.file_path.exists():
@@ -218,6 +222,7 @@ class ReportImportService:
                     get_or_create_raw_pdf_state(ctx.current_report)
                     if ctx.current_report.state is None:
                         raise ValueError("Could not create state for video.")
+                    current_state = cast(_RawPdfImportState, ctx.current_report.state)
                     ctx.current_report = ctx.current_report
 
                     if processed or retry:
@@ -228,8 +233,7 @@ class ReportImportService:
                         if (
                             ctx.retry
                             and needs_processing
-                            and ctx.current_report.state
-                            and not ctx.current_report.state.anonymization_validated
+                            and not current_state.anonymization_validated
                         ):
                             finalize_failure(ctx)
                             ctx.current_report, processed, needs_processing = (

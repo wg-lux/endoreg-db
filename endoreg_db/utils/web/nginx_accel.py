@@ -5,7 +5,7 @@ from __future__ import annotations
 import posixpath
 from pathlib import Path
 
-from django.http import HttpResponse, HttpResponseBase
+from django.http import HttpResponse, HttpResponse
 
 from endoreg_db.config.env import (
     get_protected_media_url,
@@ -35,11 +35,11 @@ def build_nginx_accel_response(
     frontend_origin: str | None = None,
     buffering: str = "no",
     accept_ranges: bool = True,
-) -> HttpResponseBase:
+) -> HttpResponse:
     safe_relative_path = normalize_protected_media_relative_path(
         protected_relative_path
     )
-    response: HttpResponseBase = HttpResponse()
+    response: HttpResponse = HttpResponse()
     response["Content-Type"] = content_type
     response["X-Accel-Redirect"] = posixpath.join(
         nginx_protected_url().rstrip("/"),
@@ -64,7 +64,7 @@ def build_nginx_accel_response_for_path(
     frontend_origin: str | None = None,
     buffering: str = "no",
     accept_ranges: bool = True,
-) -> HttpResponseBase:
+) -> HttpResponse:
     relative_path = to_protected_media_relative(path.resolve())
     return build_nginx_accel_response(
         protected_relative_path=str(relative_path),

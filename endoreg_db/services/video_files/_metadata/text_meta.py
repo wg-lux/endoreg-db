@@ -20,10 +20,7 @@ if TYPE_CHECKING:
 
 
 type VideoTextMetaValue = (
-    JsonValue
-    | JsonNull
-    | list["VideoTextMetaValue"]
-    | dict[str, "VideoTextMetaValue"]
+    JsonValue | JsonNull | list["VideoTextMetaValue"] | dict[str, "VideoTextMetaValue"]
 )
 type VideoTextMetaPayload = dict[str, VideoTextMetaValue]
 
@@ -37,6 +34,7 @@ class _VideoTextMetaState(Protocol):
     def save(self, *, update_fields: list[str]) -> None: ...
 
     def mark_sensitive_meta_processed(self, *, save: bool = True) -> None: ...
+
 
 logger = logging.getLogger(__name__)
 

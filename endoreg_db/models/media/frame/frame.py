@@ -1,37 +1,54 @@
+from __future__ import annotations
+
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from types import NoneType
+from typing import TYPE_CHECKING, Protocol, TypeAlias, cast
 
 import cv2
 import numpy as np
 from django.db import models
 
 if TYPE_CHECKING:
-    from endoreg_db.models import ImageClassificationAnnotation, VideoFile
+    from endoreg_db.models.label.annotation.image_classification import (
+        ImageClassificationAnnotation,
+    )
+    from endoreg_db.models.media.video.video_file import VideoFile
+
+    class FrameVideoCarrier(Protocol):
+        video_hash: str
+
+        def get_frame_dir_path(self) -> Path | None: ...
+
+
+NoFrameTimestampValue: TypeAlias = NoneType
+FrameTimestamp: TypeAlias = "float | NoFrameTimestampValue"
+FrameImage: TypeAlias = "np.ndarray | NoFrameTimestampValue"
 
 logger = logging.getLogger(__name__)
 
 
 # Unified Frame model
 class Frame(models.Model):
-    video = models.ForeignKey(
+    video: models.ForeignKey["VideoFile", "VideoFile"] = models.ForeignKey(
         "VideoFile",
         on_delete=models.CASCADE,
         related_name="frames",
         blank=False,
         null=False,
     )
-    frame_number = models.PositiveIntegerField()
-    relative_path = models.CharField(max_length=512)
-    timestamp = models.FloatField(null=True, blank=True)
+    frame_number: models.PositiveIntegerField[int, int] = models.PositiveIntegerField()
+    relative_path: models.CharField[str, str] = models.CharField(max_length=512)
+    timestamp: models.FloatField[FrameTimestamp, FrameTimestamp] = models.FloatField(
+        null=True, blank=True
+    )
 
-    is_extracted = models.BooleanField(default=False)
+    is_extracted: models.BooleanField[bool, bool] = models.BooleanField(default=False)
 
     if TYPE_CHECKING:
         image_classification_annotations: models.QuerySet[
             "ImageClassificationAnnotation"
         ]
-        video: models.ForeignKey["VideoFile"]
 
     class Meta:
         unique_together = ("video", "frame_number")
@@ -45,7 +62,8 @@ class Frame(models.Model):
         Returns:
             Path: The absolute path to the frame image file.
         """
-        base_dir = self.video.get_frame_dir_path()
+        video = cast("FrameVideoCarrier", self.video)
+        base_dir = video.get_frame_dir_path()
         assert base_dir is not None, "Video frame directory path should not be None"
         return base_dir / self.relative_path
 
@@ -95,7 +113,7 @@ class Frame(models.Model):
         """
         return self.manual_annotations.exists()
 
-    def get_image(self) -> Optional[np.ndarray]:
+    def get_image(self) -> FrameImage:
         """
         Load and return the frame image as a NumPy array using OpenCV.
 
@@ -103,12 +121,13 @@ class Frame(models.Model):
             The image as a NumPy array if successfully loaded, or None if the file does not exist or cannot be read.
         """
         frame_path = self.file_path
+        video = cast("FrameVideoCarrier", self.video)
         if not frame_path.exists():
             logger.warning(
                 "Frame file not found at %s for Frame %s (Video %s)",
                 frame_path,
                 self.pk,
-                self.video.video_hash,
+                video.video_hash,
             )
             return None
         try:
@@ -118,7 +137,7 @@ class Frame(models.Model):
                     "cv2.imread returned None for frame file %s (Frame %s, Video %s)",
                     frame_path,
                     self.pk,
-                    self.video.video_hash,
+                    video.video_hash,
                 )
             return image
         except Exception as e:
@@ -126,14 +145,15 @@ class Frame(models.Model):
                 "Error reading frame file %s (Frame %s, Video %s): %s",
                 frame_path,
                 self.pk,
-                self.video.video_hash,
+                video.video_hash,
                 e,
                 exc_info=True,
             )
             return None
 
-    def __str__(self):
-        return f"Frame {self.frame_number} of Video {self.video.video_hash}"
+    def __str__(self) -> str:
+        video = cast("FrameVideoCarrier", self.video)
+        return f"Frame {self.frame_number} of Video {video.video_hash}"
 
     def get_classification_annotations(
         self,

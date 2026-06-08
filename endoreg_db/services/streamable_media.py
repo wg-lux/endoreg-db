@@ -63,6 +63,8 @@ def _streamable_processed_video_root() -> Path:
 STREAMABLE_VIDEO_ROOT = _streamable_video_root()
 STREAMABLE_RAW_VIDEO_ROOT = _streamable_raw_video_root()
 STREAMABLE_PROCESSED_VIDEO_ROOT = _streamable_processed_video_root()
+_DEFAULT_STREAMABLE_RAW_VIDEO_ROOT = STREAMABLE_RAW_VIDEO_ROOT
+_DEFAULT_STREAMABLE_PROCESSED_VIDEO_ROOT = STREAMABLE_PROCESSED_VIDEO_ROOT
 _DEFAULT_STREAMABLE_RAW_VIDEO_ROOT_FN = _streamable_raw_video_root
 _DEFAULT_STREAMABLE_PROCESSED_VIDEO_ROOT_FN = _streamable_processed_video_root
 STREAMABLE_DIRECTORY_MODE = 0o750
@@ -176,7 +178,9 @@ def _materialize_streamable_target(
 def _configured_streamable_raw_video_root() -> Path:
     if _streamable_raw_video_root is not _DEFAULT_STREAMABLE_RAW_VIDEO_ROOT_FN:
         return Path(_streamable_raw_video_root()).resolve()
-    return Path(STREAMABLE_RAW_VIDEO_ROOT).resolve()
+    if STREAMABLE_RAW_VIDEO_ROOT != _DEFAULT_STREAMABLE_RAW_VIDEO_ROOT:
+        return Path(STREAMABLE_RAW_VIDEO_ROOT).resolve()
+    return Path(_streamable_raw_video_root()).resolve()
 
 
 def _configured_streamable_processed_video_root() -> Path:
@@ -185,7 +189,9 @@ def _configured_streamable_processed_video_root() -> Path:
         is not _DEFAULT_STREAMABLE_PROCESSED_VIDEO_ROOT_FN
     ):
         return Path(_streamable_processed_video_root()).resolve()
-    return Path(STREAMABLE_PROCESSED_VIDEO_ROOT).resolve()
+    if STREAMABLE_PROCESSED_VIDEO_ROOT != _DEFAULT_STREAMABLE_PROCESSED_VIDEO_ROOT:
+        return Path(STREAMABLE_PROCESSED_VIDEO_ROOT).resolve()
+    return Path(_streamable_processed_video_root()).resolve()
 
 
 def _video_streamable_target(

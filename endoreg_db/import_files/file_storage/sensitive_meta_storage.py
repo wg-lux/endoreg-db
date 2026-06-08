@@ -1,6 +1,6 @@
 # endoreg_db/import_files/storage/sensitive_meta_storage.py
 from logging import getLogger
-from typing import Union
+from typing import Protocol, cast
 
 from lx_dtypes.models import SensitiveMeta as LxSensitiveMeta
 
@@ -16,16 +16,22 @@ from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 logger = getLogger(__name__)
 
 
+class _SensitiveMetaCarrier(Protocol):
+    pk: int
+    sensitive_meta: SensitiveMeta | None
+
+
 def sensitive_meta_storage(
     sensitive_meta: LxSensitiveMeta,
-    instance: Union[RawPdfFile, VideoFile],
+    instance: RawPdfFile | VideoFile,
 ) -> bool:
     """
     Merge lx_anonymizer.SensitiveMeta into instance.sensitive_meta in the DB.
 
     - Delegates normalization and persistence to SensitiveMeta.update_from_dict()
     """
-    local_meta = instance.sensitive_meta  # Django SensitiveMeta model instance
+    typed_instance = cast(_SensitiveMetaCarrier, instance)
+    local_meta = typed_instance.sensitive_meta
     if not isinstance(local_meta, SensitiveMeta):
         # If sensitive meta does not exist yet, ensure it.
         local_meta = default_sensitive_meta(instance)

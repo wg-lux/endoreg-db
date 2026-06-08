@@ -3,15 +3,20 @@ from __future__ import annotations
 import logging
 import re
 from datetime import date, datetime
-from enum import StrEnum
 from pathlib import Path
-from typing import Any, Iterable, Literal, Mapping
+from typing import Any, Iterable, Literal, Mapping, cast
 
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
-from pydantic import BaseModel, Field
+from lx_dtypes.models.contracts.anonymization_quality import (
+    AnonymizationQualityPayload,
+    AnonymizationQualityResult,
+    AnonymizationQualitySummary,
+    QualityEvaluationStatus,
+    SensitiveMetaHandlingPolicy,
+)
 
 from endoreg_db.import_files.file_storage.cleanup import staging_cleanup_roots
 from endoreg_db.models.label.annotation.frame_box import FrameBoxAnnotation
@@ -24,8 +29,8 @@ from endoreg_db.services.anonymization_metrics import (
     PHI_REGION_ANNOTATOR,
     PHI_REGION_INFORMATION_SOURCE_NAME,
     PHI_REGION_LABEL_NAME,
-    _annotation_box_rows,
-    _matched_phi_region_count,
+    annotation_box_rows,
+    matched_phi_region_count,
 )
 from endoreg_db.utils.filesystem.file_operations import sha256_file
 from endoreg_db.utils.storage import file_exists
@@ -33,21 +38,6 @@ from endoreg_db.utils.storage import file_exists
 logger = logging.getLogger(__name__)
 
 MediaType = Literal["video", "pdf"]
-
-
-class SensitiveMetaHandlingPolicy(StrEnum):
-    RETAIN_FOR_GOVERNANCE = "retain_for_governance"
-    CLEAR_DIRECT_IDENTIFIERS = "clear_direct_identifiers"
-    DELETE_SENSITIVE_META = "delete_sensitive_meta"
-
-
-class QualityEvaluationStatus(StrEnum):
-    PASSED = "passed"
-    RESIDUAL_PHI_DETECTED = "residual_phi_detected"
-    NOT_VALIDATED = "not_validated"
-    FAILED_OR_LOST = "failed_or_lost"
-    NO_SENSITIVE_META = "no_sensitive_meta"
-    NOT_MEASURABLE = "not_measurable"
 
 
 DIRECT_IDENTIFIER_FIELDS: tuple[str, ...] = (
@@ -66,36 +56,6 @@ DIRECT_IDENTIFIER_FIELDS: tuple[str, ...] = (
     "external_id",
     "validation_comment",
 )
-
-
-class AnonymizationQualityResult(BaseModel):
-    media_type: MediaType
-    media_id: int
-    status: str
-    residual_phi_detected: bool
-    checked_fields: list[str] = Field(default_factory=list)
-    leaked_field_count: int = 0
-    missing_sensitive_meta_deletion_count: int = 0
-    raw_artifact_residual_count: int = 0
-    processed_artifact_sha256: str = ""
-    warnings: list[str] = Field(default_factory=list)
-
-
-class AnonymizationQualitySummary(BaseModel):
-    total: int
-    residual_phi_detected_count: int
-    leaked_field_count: int
-    missing_sensitive_meta_deletion_count: int
-    raw_artifact_residual_count: int
-    status_counts: dict[str, int]
-
-
-class AnonymizationQualityPayload(BaseModel):
-    schema_version: str = "1.0"
-    sensitive_meta_policy: SensitiveMetaHandlingPolicy
-    policy_applied: bool
-    summary: AnonymizationQualitySummary
-    results: list[AnonymizationQualityResult]
 
 
 def evaluate_anonymization_quality(
@@ -368,7 +328,10 @@ def _media_failed_or_lost(media_obj: VideoFile | RawPdfFile) -> bool:
     if bool(getattr(state, "processing_error", False)):
         return True
     meta = getattr(media_obj, "meta", None)
-    return isinstance(meta, Mapping) and meta.get("integrity_status") == "lost"
+    if not isinstance(meta, Mapping):
+        return False
+    meta_payload = cast(Mapping[str, object], meta)
+    return meta_payload.get("integrity_status") == "lost"
 
 
 def _media_is_validated(media_obj: VideoFile | RawPdfFile) -> bool:
@@ -498,8 +461,9 @@ def _residual_text_corpus(
     else:
         meta = getattr(media_obj, "meta", None)
         if isinstance(meta, Mapping):
+            meta_payload = cast(Mapping[str, object], meta)
             for key in ("anonymized_text", "processed_text", "residual_ocr_text"):
-                value = meta.get(key)
+                value = meta_payload.get(key)
                 if value:
                     values.append(str(value))
     return "\n".join(values)
@@ -555,9 +519,9 @@ def _phi_region_false_negative_count(media_obj: VideoFile | RawPdfFile) -> int:
     total_count = proposal_qs.count() + human_count
     if not human_count or total_count > MAX_PHI_REGION_MATCH_ANNOTATIONS:
         return 0
-    matched_count = _matched_phi_region_count(
-        _annotation_box_rows(proposal_qs),
-        _annotation_box_rows(human_qs),
+    matched_count = matched_phi_region_count(
+        annotation_box_rows(proposal_qs),
+        annotation_box_rows(human_qs),
     )
     return max(human_count - matched_count, 0)
 

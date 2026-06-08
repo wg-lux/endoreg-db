@@ -3,13 +3,21 @@ from __future__ import annotations
 import logging
 import os
 import uuid
-from typing import Any, Literal
+from typing import Any, Literal, TypeAlias
 
 from django.conf import settings
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
-from pydantic import BaseModel, ConfigDict, Field
+from lx_dtypes.models.contracts.video_reimport import (
+    VideoReimportDispatchResult,
+    VideoReimportHistoryConfig,
+    VideoReimportJobMode,
+    VideoReimportJsonValue,
+    dump_video_reimport_request_payload,
+    validate_video_reimport_request_payload,
+    video_reimport_json_safe_dict,
+)
 
 from endoreg_db.config.env import (
     get_celery_broker_url,
@@ -52,7 +60,6 @@ INACTIVE_UPLOAD_JOB_STATUSES = {
 VIDEO_UPLOAD_JOB_CONTENT_TYPE_QUERY = Q(content_type__startswith="video/") | Q(
     content_type=""
 )
-VIDEO_REIMPORT_HISTORY_KIND: Literal["video_reimport"] = "video_reimport"
 ACTIVE_REIMPORT_STATUSES = (
     VideoProcessingHistory.STATUS_PENDING,
     VideoProcessingHistory.STATUS_RUNNING,
@@ -60,46 +67,11 @@ ACTIVE_REIMPORT_STATUSES = (
 RESERVATION_CREATED = "created"
 RESERVATION_ALREADY_QUEUED = "already_queued"
 RESERVATION_BUSY = "busy"
-DEFAULT_VIDEO_REIMPORT_JOB_MODE = "celery"
+DEFAULT_VIDEO_REIMPORT_JOB_MODE: VideoReimportJobMode = "celery"
 DEFAULT_VIDEO_REIMPORT_DISPATCH_DELAY_SECONDS = 0
 
 
-JsonValue = Any
-
-
-class VideoReimportHistoryConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    kind: Literal["video_reimport"] = VIDEO_REIMPORT_HISTORY_KIND
-    queue: str
-    refresh_predictions: bool = True
-    prediction_payload: dict[str, JsonValue] = Field(default_factory=dict)
-
-
-class VideoReimportDispatchResult(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    task_id: str
-    mode: str
-    status: Literal[
-        "queued",
-        "already_queued",
-        "busy",
-        "completed",
-        "failed",
-        "lost",
-    ]
-    operation: str = VIDEO_REIMPORT_HISTORY_KIND
-    video_id: int
-    queue: str
-    history_id: int | None = None
-    poll_url: str | None = None
-    message: str | None = None
-    reason: str | None = None
-    prediction_refresh: dict[str, JsonValue] | None = None
-
-    def to_dict(self) -> dict[str, JsonValue]:
-        return self.model_dump(mode="json", exclude_none=True)
+JsonValue: TypeAlias = VideoReimportJsonValue
 
 
 def _env_int(key: str, default: int) -> int:
@@ -112,7 +84,7 @@ def _env_int(key: str, default: int) -> int:
         return default
 
 
-def get_video_reimport_job_mode() -> str:
+def get_video_reimport_job_mode() -> VideoReimportJobMode:
     raw_mode = os.environ.get("VIDEO_REIMPORT_JOB_MODE")
     if raw_mode is None:
         broker_url = str(
@@ -132,7 +104,9 @@ def get_video_reimport_job_mode() -> str:
             mode,
         )
         return DEFAULT_VIDEO_REIMPORT_JOB_MODE
-    return normalized
+    if normalized == "inline":
+        return "inline"
+    return "celery"
 
 
 def get_video_reimport_dispatch_delay_seconds() -> int:
@@ -158,31 +132,16 @@ def _as_bool(value: Any, *, default: bool) -> bool:
     return default
 
 
-def _json_safe(value: Any) -> JsonValue:
-    if value is None or isinstance(value, (str, int, float, bool)):
-        return value
-    if isinstance(value, dict):
-        return {str(key): _json_safe(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_json_safe(item) for item in value]
-    return str(value)
-
-
-def _json_safe_dict(payload: Any) -> dict[str, JsonValue]:
-    if not hasattr(payload, "items"):
-        return {}
-    return {str(key): _json_safe(value) for key, value in payload.items()}
-
-
 def _config_from_payload(payload: Any, *, queue: str) -> VideoReimportHistoryConfig:
-    safe_payload = _json_safe_dict(payload)
+    request_payload = validate_video_reimport_request_payload(payload)
+    safe_payload = dump_video_reimport_request_payload(request_payload)
     return VideoReimportHistoryConfig(
         queue=queue,
         refresh_predictions=_as_bool(
             safe_payload.get("refresh_predictions"),
             default=True,
         ),
-        prediction_payload=safe_payload,
+        prediction_payload=dict(safe_payload),
     )
 
 
@@ -442,7 +401,7 @@ def _get_processing_history(
 def _job_dispatch_result(
     *,
     task_id: str,
-    mode: str,
+    mode: VideoReimportJobMode,
     status: Literal["queued", "already_queued", "busy", "completed", "failed", "lost"],
     video_id: int,
     queue: str,
@@ -504,7 +463,7 @@ def _run_prediction_refresh(
             reason="disabled",
         )
     raw_result = _dispatch_prediction_refresh(video, dict(config.prediction_payload))
-    return _json_safe_dict(raw_result)
+    return video_reimport_json_safe_dict(raw_result)
 
 
 def _run_video_reimport_job(
@@ -695,3 +654,12 @@ def dispatch_video_reimport(
             history_id=history.pk,
             reason=str(exc),
         )
+
+
+as_bool = _as_bool
+dispatch_prediction_refresh = _dispatch_prediction_refresh
+mark_upload_jobs_anonymized = _mark_upload_jobs_anonymized
+mark_upload_jobs_error = _mark_upload_jobs_error
+mark_upload_jobs_lost = _mark_upload_jobs_lost
+reset_reimport_state = _reset_reimport_state
+video_has_integrity_loss = _video_has_integrity_loss

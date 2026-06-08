@@ -1,33 +1,69 @@
 import logging
 import random
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING, List, Optional, Self  # Added List
+from types import NoneType
+from typing import TYPE_CHECKING, Protocol, TypeAlias, cast
 
 from django.db import models
 from django.utils import timezone  # Add this import
 from faker import Faker
 
-from ..person import Person
+from ..person import Person, PersonGenderValue
 
 # Import ModelLinks and Disease for the links property
 
 logger = logging.getLogger("patient")
 
 if TYPE_CHECKING:
-    from endoreg_db.models import (
-        AnonymExaminationReport,
-        AnonymHistologyReport,
-        Center,
-        Gender,
-        PatientDisease,
-        PatientEvent,
-        PatientExamination,
-        PatientExternalID,
-        PatientLabValue,
-        PatientMedication,
-        RawPdfFile,
-    )
+    from endoreg_db.models import AnonymExaminationReport, AnonymHistologyReport
     from endoreg_db.utils.links import ModelLinks
+
+    from ....medical.patient.patient_disease import PatientDisease
+    from ....medical.patient.patient_event import PatientEvent
+    from ....medical.patient.patient_examination import PatientExamination
+    from ....medical.patient.patient_lab_sample import PatientLabSample
+    from ....medical.patient.patient_lab_sample import PatientLabSampleType
+    from ....medical.patient.patient_lab_value import PatientLabValue
+    from ....medical.patient.patient_medication import PatientMedication
+    from ....media.pdf.raw_pdf import RawPdfFile
+    from ....other.gender import Gender
+    from ....medical.disease import Disease, DiseaseClassificationChoice
+    from ....medical.medication.medication import Medication
+    from ....medical.medication.medication_indication import MedicationIndication
+    from ....medical.medication.medication_intake_time import MedicationIntakeTime
+    from ...center.center import Center
+    from .patient_external_id import PatientExternalID
+
+NoPatientValue: TypeAlias = NoneType
+PatientDateValue: TypeAlias = date | NoPatientValue
+PatientTextValue: TypeAlias = str | NoPatientValue
+PatientDateTimeValue: TypeAlias = datetime | NoPatientValue
+PatientGenderInput: TypeAlias = "Gender | str | NoPatientValue"
+PatientCenterInput: TypeAlias = "Center | str"
+PatientLabSampleDate: TypeAlias = datetime | NoPatientValue
+
+
+class _PatientGenderManager(Protocol):
+    def resolve_by_name(self, name: str) -> "Gender | NoPatientValue": ...
+
+
+class _PatientGenderSource(Protocol):
+    name: str
+
+
+class _PatientSaveSource(Protocol):
+    def save(self) -> None: ...
+
+
+class _PatientDiseaseLinkSource(Protocol):
+    disease: "Disease | NoPatientValue"
+    classification_choices: models.Manager["DiseaseClassificationChoice"]
+
+
+class _PatientMedicationLinkSource(Protocol):
+    medication: "Medication | NoPatientValue"
+    medication_indication: "MedicationIndication | NoPatientValue"
+    intake_times: models.Manager["MedicationIntakeTime"]
 
 
 class Patient(Person):
@@ -44,18 +80,29 @@ class Patient(Person):
 
     """
 
-    first_name = models.CharField(max_length=100)
-    last_name = models.CharField(max_length=100)
-    dob = models.DateField(null=True, blank=True)
-    gender = models.ForeignKey(
+    first_name: models.CharField[str, str] = models.CharField(max_length=100)
+    last_name: models.CharField[str, str] = models.CharField(max_length=100)
+    dob: models.DateField[PatientDateValue, PatientDateValue] = models.DateField(
+        null=True, blank=True
+    )
+    gender: models.ForeignKey[
+        PersonGenderValue,
+        PersonGenderValue,
+    ] = models.ForeignKey(
         "Gender", on_delete=models.SET_NULL, null=True, blank=True
     )
-    center = models.ForeignKey(
+    center: models.ForeignKey[
+        PatientCenterInput,
+        PatientCenterInput,
+    ] = models.ForeignKey(
         "Center", on_delete=models.SET_NULL, null=True, blank=True
     )
-    patient_hash = models.CharField(max_length=255, blank=True, null=True)
+    patient_hash: models.CharField[
+        PatientTextValue,
+        PatientTextValue,
+    ] = models.CharField(max_length=255, blank=True, null=True)
 
-    objects = models.Manager()  # Default manager
+    objects = cast(models.Manager["Patient"], models.Manager())
 
     if TYPE_CHECKING:
 
@@ -87,18 +134,18 @@ class Patient(Person):
         @property
         def lab_values(self) -> models.Manager[PatientLabValue]: ...
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.first_name} {self.last_name} ({self.dob})"
 
     @classmethod
     def get_or_create_pseudo_patient_by_hash(
         cls,
         patient_hash: str,
-        center: Optional["Center"] = None,
-        gender: Optional["Gender | str"] = None,  # Allow string type hint
-        birth_month: Optional[int] = None,
-        birth_year: Optional[int] = None,
-    ) -> tuple[Self, bool]:
+        center: "Center | NoPatientValue" = None,
+        gender: PatientGenderInput = None,
+        birth_month: int | NoPatientValue = None,
+        birth_year: int | NoPatientValue = None,
+    ) -> tuple["Patient", bool]:
         from endoreg_db.utils import create_mock_patient_name, random_day_by_month_year
 
         from ....other import Gender  # Import Gender model
@@ -119,22 +166,22 @@ class Patient(Person):
         )
         assert birth_year, "Birth year must be provided to create a new pseudo patient"
 
-        # Ensure gender is a Gender object
+        # Ensure gender is a Gender model instance.
         if isinstance(gender, str):
-            gender_obj = Gender.objects.resolve_by_name(gender)
+            gender_manager = cast(_PatientGenderManager, Gender.objects)
+            gender_obj = gender_manager.resolve_by_name(gender)
             if gender_obj is None:
                 raise ValueError(f"Gender '{gender}' not found in database.")
-        elif isinstance(gender, Gender):
-            gender_obj = gender
         else:
-            raise ValueError("Gender must be a string name or a Gender object.")
+            gender_obj = gender
 
         assert birth_month is not None
         if not 1 <= birth_month <= 12:
             raise ValueError("Birth month must be between 1 and 12.")
         assert birth_year is not None
         pseudo_dob = random_day_by_month_year(month=birth_month, year=birth_year)
-        gender_name = gender_obj.name
+        gender_source = cast(_PatientGenderSource, gender_obj)
+        gender_name = gender_source.name
         first_name, last_name = create_mock_patient_name(gender_name)
 
         logger.info(f"Creating pseudo patient with hash {patient_hash}")
@@ -144,29 +191,31 @@ class Patient(Person):
             first_name=first_name,
             last_name=last_name,
             dob=pseudo_dob,
-            gender=gender_obj,  # Use the fetched/validated Gender object
+            gender=gender_obj,  # Use the fetched/validated Gender instance.
             center=center,
             patient_hash=patient_hash,
             is_real_person=False,
         )
 
-        patient.save()
+        cast(_PatientSaveSource, patient).save()
         created = True
 
         return patient, created
 
-    def get_dob(self) -> date | None:
+    def get_dob(self) -> PatientDateValue:
         return self.dob
 
-    def get_patient_examinations(self):  # field: self.patient_examinations
+    def get_patient_examinations(
+        self,
+    ) -> models.QuerySet["PatientExamination"]:  # field: self.patient_examinations
         """Returns all patient examinations for this patient ordered by date (most recent is first)."""
         return self.patient_examinations.order_by("-date_start")
 
     def create_examination(
         self,
-        examination_name_str: Optional[str] = None,
-        date_start: Optional[datetime] = None,
-        date_end: Optional[datetime] = None,
+        examination_name_str: PatientTextValue = None,
+        date_start: PatientDateTimeValue = None,
+        date_end: PatientDateTimeValue = None,
         save: bool = True,
     ) -> "PatientExamination":
         """Creates a patient examination for this patient."""
@@ -187,17 +236,17 @@ class Patient(Person):
             )
 
         if save:
-            patient_examination.save()
+            cast(_PatientSaveSource, patient_examination).save()
 
         return patient_examination
 
     def create_event(
         self,
         event_name_str: str,
-        date_start: Optional[datetime] = None,
-        date_end: Optional[datetime] = None,
-        description: Optional[str] = None,
-    ):
+        date_start: PatientDateTimeValue = None,
+        date_end: PatientDateTimeValue = None,
+        description: PatientTextValue = None,
+    ) -> "PatientEvent":
         """
         Creates a patient event with the specified event name and start date.
 
@@ -218,7 +267,7 @@ class Patient(Person):
 
         return patient_event
 
-    def create_examination_by_pdf(self, pdf: "RawPdfFile"):
+    def create_examination_by_pdf(self, pdf: "RawPdfFile") -> "PatientExamination":
         """
         Creates a patient examination and associates it with the provided report report file.
 
@@ -233,20 +282,20 @@ class Patient(Person):
         from ....medical import PatientExamination
 
         patient_examination = PatientExamination(patient=self)
-        patient_examination.save()
+        cast(_PatientSaveSource, patient_examination).save()
         pdf.examination = patient_examination
-        pdf.save()
+        cast(_PatientSaveSource, pdf).save()
 
         return patient_examination
 
     @classmethod
-    def get_random_gender(cls, p_male=0.5, p_female=0.5):
+    def get_random_gender(cls, p_male: float = 0.5, p_female: float = 0.5) -> "Gender":
         """
-        Get a Gender object by name (male, female) from the database with given probability.
+        Get a Gender instance by name (male, female) from the database with given probability.
 
         :param p_male: Probability of selecting 'male' gender.
         :param p_female: Probability of selecting 'female' gender.
-        :return: Gender object selected based on given probabilities.
+        :return: Gender instance selected based on given probabilities.
         """
         from ....other import Gender
 
@@ -256,8 +305,9 @@ class Patient(Person):
 
         selected_gender = random.choices(gender_names, probabilities)[0]
 
-        # Fetch the corresponding Gender object from the database
-        gender_obj = Gender.objects.resolve_by_name(selected_gender)
+        # Fetch the corresponding Gender instance from the database.
+        gender_manager = cast(_PatientGenderManager, Gender.objects)
+        gender_obj = gender_manager.resolve_by_name(selected_gender)
         if gender_obj is None:
             raise ValueError(f"Gender '{selected_gender}' not found in database.")
 
@@ -265,8 +315,13 @@ class Patient(Person):
 
     @classmethod
     def get_random_age(
-        cls, min_age=55, max_age=90, mean_age=65, std_age=10, distribution="normal"
-    ):
+        cls,
+        min_age: int = 55,
+        max_age: int = 90,
+        mean_age: int = 65,
+        std_age: int = 10,
+        distribution: str = "normal",
+    ) -> int:
         """
         Get a random age based on the given distribution.
 
@@ -290,7 +345,11 @@ class Patient(Person):
         return age
 
     @classmethod
-    def get_dob_from_age(cls, age, current_date=None):
+    def get_dob_from_age(
+        cls,
+        age: int,
+        current_date: date | datetime | NoPatientValue = None,
+    ) -> date:
         """
         Get a date of birth based on the given age and current date.
 
@@ -323,8 +382,11 @@ class Patient(Person):
         return earliest_dob + timedelta(days=offset_days)
 
     @classmethod
-    def get_random_name_for_gender(cls, gender_obj, locale="de_DE"):
-        gender = gender_obj.name
+    def get_random_name_for_gender(
+        cls, gender_obj: "Gender", locale: str = "de_DE"
+    ) -> tuple[str, str]:
+        gender_source = cast(_PatientGenderSource, gender_obj)
+        gender = gender_source.name
         fake = Faker(locale)
 
         if gender == "male":
@@ -338,11 +400,13 @@ class Patient(Person):
         return last_name, first_name
 
     @classmethod
-    def create_generic(cls, center="gplay_case_generator"):
+    def create_generic(
+        cls, center: PatientCenterInput = "gplay_case_generator"
+    ) -> "Patient":
         """
         Create a generic patient with random attributes.
 
-        :param center: The center name or Center object of the patient.
+        :param center: The center name or Center instance of the patient.
         :return: The created patient.
         """
         from ....administration import Center
@@ -358,22 +422,21 @@ class Patient(Person):
             age = Patient.get_random_age()
         else:
             age = patient.age()
+            assert age is not None, "Patient age is not set."
         dob = Patient.get_dob_from_age(age)
 
-        # Fetch the center object if a name is provided
+        # Fetch the center instance if a name is provided.
         if isinstance(center, str):
             center_obj = Center.objects.get(name=center)
-        elif isinstance(center, Center):
-            center_obj = center.objects.get(name=center.name)
         else:
-            raise ValueError("Center must be a string name or a Center object.")
+            center_obj = center.objects.get(name=center.name)
 
         patient = Patient.objects.create(
             first_name=first_name,
             last_name=last_name,
             dob=dob,
             gender=gender,
-            center=center_obj,  # Assign the center object
+            center=center_obj,  # Assign the center instance.
         )
         # No need to call save() again after create()
         return patient
@@ -384,7 +447,7 @@ class Patient(Person):
         assert age is not None, "Patient age is not set."
         return age
 
-    def age(self) -> int | None:
+    def age(self) -> int | NoPatientValue:
         """
         Get the age of the patient.
 
@@ -405,12 +468,17 @@ class Patient(Person):
             return age
         return None  # Or handle the case where dob is None appropriately
 
-    def create_lab_sample(self, sample_type="generic", date=None, save=True):
+    def create_lab_sample(
+        self,
+        sample_type: "PatientLabSampleType | str" = "generic",
+        date: PatientLabSampleDate = None,
+        save: bool = True,
+    ) -> "PatientLabSample":
         """
         Create a lab sample for this patient.
 
         :param sample_type: The sample type. Should be either string of the sample types
-            name or the sample type object. If not set, the default sample type ("generic") is used.
+            name or the sample type instance. If not set, the default sample type ("generic") is used.
         :param date: The date of the lab sample. Must be timezone-aware if provided.
         :return: The created lab sample.
         """
@@ -430,10 +498,6 @@ class Patient(Person):
             assert sample_type is not None, (
                 f"Sample type with name '{sample_type}' not found."
             )
-        elif not isinstance(sample_type, PatientLabSampleType):
-            raise ValueError(
-                "Sample type must be either a string or a PatientLabSampleType object."
-            )
 
         patient_lab_sample = PatientLabSample.objects.create(
             patient=self, sample_type=sample_type, date=date
@@ -445,7 +509,7 @@ class Patient(Person):
     def links(self) -> "ModelLinks":
         """
         Aggregates and returns all related model instances for linked-model traversal
-        as a ModelLinks object. For a Patient, this includes their diseases, associated classification choices,
+        as ModelLinks. For a Patient, this includes their diseases, associated classification choices,
         all their lab values, and medication information.
         """
         from endoreg_db.models.medical.disease import (
@@ -469,14 +533,15 @@ class Patient(Person):
         patient_disease_instances = list(
             self.diseases.all()
         )  # These are PatientDisease model instances
-        actual_diseases: List[Disease] = []
-        all_classification_choices: List[DiseaseClassificationChoice] = []
+        actual_diseases: list[Disease] = []
+        all_classification_choices: list[DiseaseClassificationChoice] = []
 
         for pd_instance in patient_disease_instances:
-            if pd_instance.disease:  # pd_instance.disease is a Disease instance
-                actual_diseases.append(pd_instance.disease)
+            disease_source = cast(_PatientDiseaseLinkSource, pd_instance)
+            if disease_source.disease:  # disease is a Disease instance
+                actual_diseases.append(disease_source.disease)
             all_classification_choices.extend(
-                list(pd_instance.classification_choices.all())
+                list(disease_source.classification_choices.all())
             )
 
         # Assuming self.lab_values is a related manager for PatientLabValue instances
@@ -488,21 +553,18 @@ class Patient(Person):
         # self.patientmedication_set gives a QuerySet of PatientMedication
         patient_medication_instances = list(self.patientmedication_set.all())
 
-        actual_medications: List[Medication] = []
-        med_indications: List[MedicationIndication] = []
-        med_intake_times: List[MedicationIntakeTime] = []
+        actual_medications: list[Medication] = []
+        med_indications: list[MedicationIndication] = []
+        med_intake_times: list[MedicationIntakeTime] = []
 
         for pm_instance in patient_medication_instances:
-            if (
-                pm_instance.medication
-            ):  # pm_instance.medication is a Medication instance
-                actual_medications.append(pm_instance.medication)
-            if (
-                pm_instance.medication_indication
-            ):  # pm_instance.medication_indication is a MedicationIndication instance
-                med_indications.append(pm_instance.medication_indication)
+            medication_source = cast(_PatientMedicationLinkSource, pm_instance)
+            if medication_source.medication:
+                actual_medications.append(medication_source.medication)
+            if medication_source.medication_indication:
+                med_indications.append(medication_source.medication_indication)
             med_intake_times.extend(
-                list(pm_instance.intake_times.all())
+                list(medication_source.intake_times.all())
             )  # pm_instance.intake_times is a ManyRelatedManager for MedicationIntakeTime
 
         return ModelLinks(

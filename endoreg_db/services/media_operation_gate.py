@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable, Iterator
-from datetime import timedelta
-from typing import Any
+from datetime import datetime, timedelta
+from typing import Final, cast
 
 from django.db import transaction
 from django.utils import timezone
@@ -15,11 +15,21 @@ from endoreg_db.config.env import (
 from endoreg_db.models.media.operation_lease import MediaOperationLease
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
+from endoreg_db.schemas import (
+    FfmpegActiveStreamThrottleState,
+    FfmpegStreamThrottleState,
+    FfmpegStreamThrottleStatePayload,
+    MediaOperationLeaseSummary,
+    MediaOperationLeaseSummaryPayload,
+    StreamThrottleMode,
+    dump_ffmpeg_stream_throttle_state,
+    dump_media_operation_lease_summary,
+)
 
 logger = logging.getLogger(__name__)
 
-FFMPEG_STREAM_THROTTLE_NORMAL = "normal"
-FFMPEG_STREAM_THROTTLE_STREAMING = "streaming"
+FFMPEG_STREAM_THROTTLE_NORMAL: Final[StreamThrottleMode] = "normal"
+FFMPEG_STREAM_THROTTLE_STREAMING: Final[StreamThrottleMode] = "streaming"
 
 
 class MediaOperationDeferred(RuntimeError):
@@ -35,7 +45,7 @@ def expire_media_operation_leases(*, video_id: int | None = None) -> int:
 
 
 def create_video_stream_lease(
-    video: VideoFile,
+    video: object,
     *,
     file_type: str,
     ttl_seconds: int | None = None,
@@ -94,7 +104,7 @@ def wrap_iterator_with_media_lease(
         release_media_operation_lease(lease)
 
 
-def get_ffmpeg_stream_throttle_state() -> dict[str, Any]:
+def get_ffmpeg_stream_throttle_state() -> FfmpegStreamThrottleStatePayload:
     expired_leases = expire_media_operation_leases()
     checked_at = timezone.now()
     active_stream_leases = MediaOperationLease.objects.filter(
@@ -108,24 +118,32 @@ def get_ffmpeg_stream_throttle_state() -> dict[str, Any]:
         .first()
     )
 
-    return {
-        "mode": (
-            FFMPEG_STREAM_THROTTLE_STREAMING
-            if active_stream_lease_count > 0
-            else FFMPEG_STREAM_THROTTLE_NORMAL
-        ),
-        "active_stream_leases": active_stream_lease_count,
-        "expired_leases": expired_leases,
-        "checked_at": checked_at.isoformat(),
-        "next_stream_lease_expiry": (
-            next_stream_lease_expiry.isoformat()
-            if next_stream_lease_expiry is not None
-            else None
-        ),
-    }
+    mode = (
+        FFMPEG_STREAM_THROTTLE_STREAMING
+        if active_stream_lease_count > 0
+        else FFMPEG_STREAM_THROTTLE_NORMAL
+    )
+    if isinstance(next_stream_lease_expiry, datetime):
+        state = FfmpegActiveStreamThrottleState(
+            mode=mode,
+            active_stream_leases=active_stream_lease_count,
+            expired_leases=expired_leases,
+            checked_at=checked_at,
+            next_stream_lease_expiry=next_stream_lease_expiry,
+        )
+    else:
+        state = FfmpegStreamThrottleState(
+            mode=mode,
+            active_stream_leases=active_stream_lease_count,
+            expired_leases=expired_leases,
+            checked_at=checked_at,
+        )
+    return dump_ffmpeg_stream_throttle_state(state)
 
 
-def active_media_operation_lease_summary(video_id: int) -> list[dict[str, Any]]:
+def active_media_operation_lease_summary(
+    video_id: int,
+) -> list[MediaOperationLeaseSummaryPayload]:
     expire_media_operation_leases(video_id=int(video_id))
     rows = (
         MediaOperationLease.objects.filter(
@@ -135,14 +153,13 @@ def active_media_operation_lease_summary(video_id: int) -> list[dict[str, Any]]:
         .order_by("lease_type", "expires_at")
         .values("lease_type", "expires_at")
     )
-    summary: list[dict[str, Any]] = []
+    summary: list[MediaOperationLeaseSummaryPayload] = []
     for row in rows:
-        summary.append(
-            {
-                "lease_type": row["lease_type"],
-                "expires_at": row["expires_at"],
-            }
+        lease = MediaOperationLeaseSummary(
+            lease_type=cast(str, row["lease_type"]),
+            expires_at=cast(datetime, row["expires_at"]),
         )
+        summary.append(dump_media_operation_lease_summary(lease))
     return summary
 
 

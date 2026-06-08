@@ -1,8 +1,9 @@
 from django import forms
+
 from endoreg_db.models.medical import Examination
 
 
-class ExaminationForm(forms.ModelForm):
+class ExaminationForm(forms.ModelForm[Examination]):
     class Meta:
         model = Examination
         fields = "__all__"

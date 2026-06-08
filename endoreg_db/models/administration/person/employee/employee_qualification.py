@@ -1,14 +1,12 @@
-from typing import TYPE_CHECKING, cast
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 from django.db import models
 
 if TYPE_CHECKING:
-    from django.db.models.manager import RelatedManager
-
-    from endoreg_db.models import (
-        Employee,
-        Qualification,
-    )
+    from ...qualification.qualification import Qualification
+    from .employee import Employee
 
 
 class EmployeeQualification(models.Model):
@@ -16,21 +14,22 @@ class EmployeeQualification(models.Model):
     Model representing an employee's qualification.
     """
 
-    employee = models.OneToOneField(
+    employee: models.OneToOneField[Employee, Employee] = models.OneToOneField(
         "Employee",
         on_delete=models.CASCADE,
         related_name="qualification",
     )
-    qualifications = models.ManyToManyField(
+    qualifications: models.ManyToManyField[Qualification, Qualification] = (
+        models.ManyToManyField(
         "Qualification",
         related_name="employee_qualifications",
     )
+    )
 
     if TYPE_CHECKING:
-        employee: models.ForeignKey["Employee"]
-        qualifications = cast(RelatedManager[Qualification], qualifications)
+        pass
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Returns a human-readable string summarizing the employee and their qualifications.
 

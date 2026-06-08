@@ -1,6 +1,18 @@
+from __future__ import annotations
+
 from abc import abstractmethod
+from datetime import date
+from types import NoneType
+from typing import TypeAlias
 
 from django.db import models
+
+from ...other.gender import Gender
+
+NoPersonValue: TypeAlias = NoneType
+PersonTextValue: TypeAlias = str | NoPersonValue
+PersonDateValue: TypeAlias = date | NoPersonValue
+PersonGenderValue: TypeAlias = "Gender | NoPersonValue"
 
 
 class Person(models.Model):
@@ -11,28 +23,54 @@ class Person(models.Model):
         first_name (str): The first name of the person.
         last_name (str): The last name of the person.
         dob (date): The date of birth of the person.
-        gender (str): The gender of the person.
+        gender (Gender): The gender of the person.
         email (str): The email address of the person.
         phone (str): The phone number of the person.
     """
 
-    first_name = models.CharField(max_length=255)
-    last_name = models.CharField(max_length=255)
-    dob = models.DateField("Date of Birth", blank=True, null=True)
-    gender = models.ForeignKey(
+    first_name: models.CharField[str, str] = models.CharField(max_length=255)
+    last_name: models.CharField[str, str] = models.CharField(max_length=255)
+    dob: models.DateField[PersonDateValue, PersonDateValue] = models.DateField(
+        "Date of Birth",
+        blank=True,
+        null=True,
+    )
+    gender: models.ForeignKey[
+        PersonGenderValue,
+        PersonGenderValue,
+    ] = models.ForeignKey(
         "endoreg_db.Gender", on_delete=models.SET_NULL, null=True
     )
-    email = models.EmailField(max_length=255, blank=True, null=True)
-    phone = models.CharField(max_length=255, blank=True, null=True)
-    is_real_person = models.BooleanField(default=True)
+    email: models.EmailField[PersonTextValue, PersonTextValue] = models.EmailField(
+        max_length=255,
+        blank=True,
+        null=True,
+    )
+    phone: models.CharField[PersonTextValue, PersonTextValue] = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+    )
+    is_real_person: models.BooleanField[bool, bool] = models.BooleanField(default=True)
 
-    post_code = models.CharField(max_length=20, blank=True, null=True)
-    city = models.CharField(max_length=255, blank=True, null=True)
-    street = models.CharField(max_length=255, blank=True, null=True)
+    post_code: models.CharField[PersonTextValue, PersonTextValue] = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True,
+    )
+    city: models.CharField[PersonTextValue, PersonTextValue] = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+    )
+    street: models.CharField[PersonTextValue, PersonTextValue] = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+    )
 
     @abstractmethod
-    def __str__(self):
-        pass
+    def __str__(self) -> str: ...
 
     class Meta:
         abstract = True
