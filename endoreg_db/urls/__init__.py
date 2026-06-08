@@ -1,4 +1,6 @@
 import logging
+
+# pyright: reportUnknownVariableType=false, reportUnnecessaryCast=false
 from typing import cast
 from django.conf import settings as django_settings
 from django.urls import URLResolver, URLPattern, include, path
@@ -14,12 +16,8 @@ logger = logging.getLogger(__name__)
 from endoreg_db.authz.views_auth import auth_bootstrap
 
 from endoreg_db.views import (
-    ExaminationViewSet,
-    FindingClassificationViewSet,
-    FindingViewSet,
     PatientExaminationViewSet,
     PatientExaminationReportViewSet,
-    PatientFindingViewSet,
 )
 
 from .anonymization import url_patterns as anonymization_url_patterns
@@ -32,22 +30,18 @@ from .settings import urlpatterns as settings_url_patterns
 from .stats import url_patterns as stats_url_patterns
 from .upload import urlpatterns as upload_url_patterns
 
-api_urls = []
-api_urls += classification_url_patterns
-api_urls += anonymization_url_patterns
-api_urls += auth_url_patterns
-api_urls += examination_url_patterns
-api_urls += media_url_patterns
-api_urls += upload_url_patterns
-api_urls += patient_url_patterns
-api_urls += settings_url_patterns
-api_urls += stats_url_patterns
+api_urls: list[URLPattern | URLResolver] = []
+api_urls += cast(list[URLPattern | URLResolver], classification_url_patterns)
+api_urls += cast(list[URLPattern | URLResolver], anonymization_url_patterns)
+api_urls += cast(list[URLPattern | URLResolver], auth_url_patterns)
+api_urls += cast(list[URLPattern | URLResolver], examination_url_patterns)
+api_urls += cast(list[URLPattern | URLResolver], media_url_patterns)
+api_urls += cast(list[URLPattern | URLResolver], upload_url_patterns)
+api_urls += cast(list[URLPattern | URLResolver], patient_url_patterns)
+api_urls += cast(list[URLPattern | URLResolver], settings_url_patterns)
+api_urls += cast(list[URLPattern | URLResolver], stats_url_patterns)
 
 router = DefaultRouter()
-router.register(r"examinations", ExaminationViewSet)
-router.register(r"findings", FindingViewSet)
-router.register(r"classifications", FindingClassificationViewSet)
-router.register(r"patient-findings", PatientFindingViewSet)
 router.register(r"patient-examinations", PatientExaminationViewSet)
 router.register(r"patient-examination-reports", PatientExaminationReportViewSet)
 

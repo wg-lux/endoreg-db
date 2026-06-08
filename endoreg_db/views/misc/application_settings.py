@@ -4,15 +4,18 @@ import json
 import threading
 import traceback
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timezone as datetime_timezone
 from pathlib import Path
-from typing import Any, Callable, Literal, cast
+from typing import Any, Callable, Literal, Protocol, TypeVar, cast
 from uuid import UUID, uuid4
 
+from django.db import models
 from django.db import transaction
+from django.db.models import QuerySet
 from django.http import FileResponse
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.request import Request
 from rest_framework.response import Response
 
 from endoreg_db.models.administration.center.center import Center
@@ -153,6 +156,48 @@ AIDataSetFrameFormatStrategy = Literal[
 
 _VIDEO_DIMENSION_BACKFILL_RUNS: dict[str, dict[str, Any]] = {}
 _VIDEO_DIMENSION_BACKFILL_RUNS_LOCK = threading.Lock()
+_BatchModel = TypeVar("_BatchModel", bound=models.Model)
+
+
+class _RequestUserWithUsername(Protocol):
+    is_authenticated: bool
+    username: str
+
+
+class _SaveableNetworkNode(Protocol):
+    def save(self, *args: object, **kwargs: object) -> None: ...
+
+
+def _request_user_with_username(request: Request) -> _RequestUserWithUsername:
+    return cast(_RequestUserWithUsername, request.user)
+
+
+def _model_pk(instance: models.Model) -> int | None:
+    return cast(int | None, instance.pk)
+
+
+def _center_field(value: Center | None) -> Center | None:
+    return value
+
+
+def _model_datetime(value: datetime | None) -> datetime | None:
+    return value
+
+
+def _ai_dataset_name(dataset: AIDataSet) -> str:
+    return cast(str | None, getattr(dataset, "name", None)) or ""
+
+
+def _ai_dataset_type(dataset: AIDataSet) -> str:
+    return cast(str, getattr(dataset, "dataset_type"))
+
+
+def _ai_dataset_model_type(dataset: AIDataSet) -> str:
+    return cast(str, getattr(dataset, "ai_model_type"))
+
+
+def _ai_dataset_is_active(dataset: AIDataSet) -> bool:
+    return cast(bool, getattr(dataset, "is_active"))
 
 
 def _integer_param_error(field_name: str) -> Response:
@@ -243,18 +288,18 @@ def _copy_backup_source_tree(source_root: Path, destination_root: Path) -> int:
     return copied_count
 
 
-def _settings_payload(request) -> dict[str, Any]:
+def _settings_payload(request: Request) -> dict[str, Any]:
     settings_obj = get_application_settings()
     snapshot = get_application_defaults()
     annotator_name = snapshot.annotator_name
-    if (
-        not annotator_name
-        and getattr(request, "user", None)
-        and request.user.is_authenticated
-    ):
-        annotator_name = str(request.user.username or "")
+    if not annotator_name and _request_user_with_username(request).is_authenticated:
+        annotator_name = _request_user_with_username(request).username or ""
+    center = _center_field(cast(Center | None, getattr(settings_obj, "center", None)))
+    updated_at = _model_datetime(
+        cast(datetime | None, getattr(settings_obj, "updated_at", None))
+    )
     return {
-        "id": settings_obj.pk,
+        "id": _model_pk(settings_obj),
         "center_id": snapshot.center_id,
         "center_name": snapshot.center_name,
         "processor_id": snapshot.processor_id,
@@ -265,14 +310,16 @@ def _settings_payload(request) -> dict[str, Any]:
         "ai_dataset_name": snapshot.ai_dataset_name,
         "ai_dataset_type": snapshot.ai_dataset_type,
         "center_key": (
-            settings_obj.center.center_key if settings_obj.center is not None else None
+            cast(str, getattr(center, "center_key", "")) if center is not None else None
         ),
-        "updated_at": (
-            settings_obj.updated_at.isoformat() if settings_obj.updated_at else None
-        ),
+        "updated_at": updated_at.isoformat() if updated_at is not None else None,
         "deployment_profile": deployment_profile_payload(),
         "backup_status": _backup_status_payload(),
     }
+
+
+def _request_payload(data: object) -> dict[str, Any]:
+    return cast(dict[str, Any], data) if isinstance(data, dict) else {}
 
 
 def _application_settings_ai_dataset_entry(
@@ -280,14 +327,14 @@ def _application_settings_ai_dataset_entry(
     *,
     dataset_counts: Counter[str] | None = None,
 ) -> dict[str, Any]:
-    name = dataset.name or ""
+    name = _ai_dataset_name(dataset)
     return {
-        "id": dataset.pk,
+        "id": _model_pk(dataset),
         "value": name,
         "label": name,
-        "dataset_type": dataset.dataset_type,
-        "ai_model_type": dataset.ai_model_type,
-        "is_active": dataset.is_active,
+        "dataset_type": _ai_dataset_type(dataset),
+        "ai_model_type": _ai_dataset_model_type(dataset),
+        "is_active": _ai_dataset_is_active(dataset),
         "name_count": (dataset_counts or Counter()).get(name, 1),
     }
 
@@ -301,7 +348,7 @@ def _application_settings_ai_dataset_entries() -> list[dict[str, Any]]:
         )
         if name is not None
     )
-    entries = []
+    entries: list[dict[str, Any]] = []
     for dataset in AIDataSet.objects.exclude(name__exact="").order_by(
         "name", "dataset_type", "pk"
     ):
@@ -472,7 +519,7 @@ def _payload_information_source_names(
         return names or None, None
     if isinstance(raw_value, list):
         normalized_names: list[str] = []
-        for item in raw_value:
+        for item in cast(list[str | int], raw_value):
             if not isinstance(item, str):
                 return (
                     None,
@@ -523,7 +570,7 @@ def _payload_integer_list(
         )
 
     values: list[int] = []
-    for item in raw_value:
+    for item in cast(list[str | int], raw_value):
         if isinstance(item, bool):
             return (
                 [],
@@ -546,13 +593,13 @@ def _payload_integer_list(
 
 
 def _attach_queryset_in_batches(
-    add_objects: Callable[[list[Any]], int],
-    queryset,
+    add_objects: Callable[[list[_BatchModel]], int],
+    queryset: QuerySet[_BatchModel],
     *,
     batch_size: int = 1000,
 ) -> int:
     attached_count = 0
-    batch: list[Any] = []
+    batch: list[_BatchModel] = []
     for item in queryset.order_by("pk").iterator(chunk_size=batch_size):
         batch.append(item)
         if len(batch) >= batch_size:
@@ -566,7 +613,7 @@ def _attach_queryset_in_batches(
 
 
 def _utcnow_iso() -> str:
-    return datetime.utcnow().isoformat() + "Z"
+    return datetime.now(datetime_timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _store_video_dimension_backfill_run(
@@ -804,29 +851,38 @@ def _launch_video_dimension_backfill_run(
 
 
 def _network_node_payload(node: NetworkNode) -> dict[str, Any]:
-    owning_center = node.owning_center
-    owning_center_id = owning_center.pk if owning_center is not None else None
+    owning_center = cast(Center | None, getattr(node, "owning_center", None))
+    owning_center_id = _model_pk(owning_center) if owning_center is not None else None
+    node_role = cast(str, getattr(node, "role"))
     try:
-        role_label = NetworkNode.Role(node.role).label
+        role_label = str(NetworkNode.Role(node_role).label)
     except ValueError:
-        role_label = node.role
+        role_label = node_role
+    created_at = cast(datetime | None, getattr(node, "created_at", None))
+    updated_at = cast(datetime | None, getattr(node, "updated_at", None))
 
     return {
-        "id": node.pk,
-        "node_key": node.node_key,
-        "display_name": node.display_name,
-        "role": node.role,
+        "id": _model_pk(node),
+        "node_key": cast(str, getattr(node, "node_key", "")),
+        "display_name": cast(str, getattr(node, "display_name", "")),
+        "role": node_role,
         "role_label": role_label,
-        "base_url": node.base_url,
-        "is_active": node.is_active,
+        "base_url": cast(str, getattr(node, "base_url", "")),
+        "is_active": cast(bool, getattr(node, "is_active", False)),
         "owning_center_id": owning_center_id,
         "owning_center_key": (
-            owning_center.center_key if owning_center is not None else None
+            cast(str, getattr(owning_center, "center_key", ""))
+            if owning_center is not None
+            else None
         ),
-        "owning_center_name": owning_center.name if owning_center is not None else None,
-        "has_shared_secret": bool(node.shared_secret_hash),
-        "created_at": node.created_at.isoformat() if node.created_at else None,
-        "updated_at": node.updated_at.isoformat() if node.updated_at else None,
+        "owning_center_name": (
+            cast(str, getattr(owning_center, "name", ""))
+            if owning_center is not None
+            else None
+        ),
+        "has_shared_secret": bool(cast(str, getattr(node, "shared_secret_hash", ""))),
+        "created_at": created_at.isoformat() if created_at is not None else None,
+        "updated_at": updated_at.isoformat() if updated_at is not None else None,
     }
 
 
@@ -834,14 +890,13 @@ def _resolve_center_from_payload(
     data: dict[str, Any],
     *,
     errors: dict[str, str],
-) -> Center | None | object:
-    sentinel = object()
+) -> tuple[Center | None, bool]:
     if "owning_center_id" not in data and "owning_center_key" not in data:
-        return sentinel
+        return None, False
 
     center_value = data.get("owning_center_id", data.get("owning_center_key"))
     if center_value in (None, "", 0):
-        return None
+        return None, True
 
     if isinstance(center_value, int):
         center = Center.objects.filter(pk=center_value).first()
@@ -850,7 +905,7 @@ def _resolve_center_from_payload(
 
     if center is None:
         errors["owning_center"] = "Owning center not found."
-    return center
+    return center, True
 
 
 def _network_node_roles_payload() -> list[dict[str, str]]:
@@ -862,11 +917,11 @@ def _network_node_roles_payload() -> list[dict[str, str]]:
 
 @api_view(["GET", "PATCH"])
 @permission_classes([EnvironmentAwarePermission])
-def application_settings_detail(request):
+def application_settings_detail(request: Request) -> Response:
     if request.method == "GET":
         return Response(_settings_payload(request), status=status.HTTP_200_OK)
 
-    data = request.data
+    data = _request_payload(request.data)
     center_value = data.get("center_id", data.get("center_name"))
     processor_value = data.get("processor_id", data.get("processor_name"))
     annotator_name = data.get("annotator_name")
@@ -926,9 +981,9 @@ def application_settings_detail(request):
                 errors["ai_dataset_id"] = "AIDataSet not found."
             else:
                 if "ai_dataset_name" not in data:
-                    ai_dataset_name = ai_dataset.name
+                    ai_dataset_name = _ai_dataset_name(ai_dataset)
                 if "ai_dataset_type" not in data:
-                    ai_dataset_type = ai_dataset.dataset_type
+                    ai_dataset_type = _ai_dataset_type(ai_dataset)
 
     if annotator_name is not None and not isinstance(annotator_name, str):
         errors["annotator_name"] = "annotator_name must be a string."
@@ -971,21 +1026,21 @@ def application_settings_detail(request):
 
 @api_view(["GET"])
 @permission_classes([EnvironmentAwarePermission])
-def application_settings_centers_dropdown(request):
+def application_settings_centers_dropdown(request: Request) -> Response:
     centers = Center.objects.order_by("name").values("id", "name", "center_key")
     return Response(list(centers), status=status.HTTP_200_OK)
 
 
 @api_view(["GET"])
 @permission_classes([EnvironmentAwarePermission])
-def application_settings_processors_dropdown(request):
+def application_settings_processors_dropdown(request: Request) -> Response:
     processors = EndoscopyProcessor.objects.order_by("name").values("id", "name")
     return Response(list(processors), status=status.HTTP_200_OK)
 
 
 @api_view(["GET"])
 @permission_classes([EnvironmentAwarePermission])
-def application_settings_annotators_dropdown(request):
+def application_settings_annotators_dropdown(request: Request) -> Response:
     values = list(
         ImageClassificationAnnotation.objects.exclude(annotator__isnull=True)
         .exclude(annotator__exact="")
@@ -993,7 +1048,7 @@ def application_settings_annotators_dropdown(request):
         .values_list("annotator", flat=True)
         .distinct()
     )
-    current_value = get_application_settings().annotator_name
+    current_value = cast(str, getattr(get_application_settings(), "annotator_name", ""))
     if current_value and current_value not in values:
         values.insert(0, current_value)
     return Response(
@@ -1004,14 +1059,17 @@ def application_settings_annotators_dropdown(request):
 
 @api_view(["GET"])
 @permission_classes([EnvironmentAwarePermission])
-def application_settings_report_templates_dropdown(request):
+def application_settings_report_templates_dropdown(request: Request) -> Response:
     values = list(
         PatientExaminationReport.objects.exclude(template_name__exact="")
         .order_by("template_name")
         .values_list("template_name", flat=True)
         .distinct()
     )
-    current_value = get_application_settings().report_template_name
+    current_value = cast(
+        str,
+        getattr(get_application_settings(), "report_template_name", ""),
+    )
     if current_value and current_value not in values:
         values.insert(0, current_value)
     return Response(
@@ -1022,9 +1080,9 @@ def application_settings_report_templates_dropdown(request):
 
 @api_view(["GET", "POST"])
 @permission_classes([EnvironmentAwarePermission])
-def application_settings_ai_datasets_dropdown(request):
+def application_settings_ai_datasets_dropdown(request: Request) -> Response:
     if request.method == "POST":
-        payload: dict[str, Any] = request.data or {}
+        payload: dict[str, Any] = _request_payload(request.data)
         errors: dict[str, str] = {}
 
         name_raw = payload.get("name")
@@ -1108,7 +1166,9 @@ def application_settings_ai_datasets_dropdown(request):
 
 @api_view(["POST"])
 @permission_classes([EnvironmentAwarePermission])
-def application_settings_ai_dataset_attachments(request, dataset_id: int):
+def application_settings_ai_dataset_attachments(
+    request: Request, dataset_id: int
+) -> Response:
     dataset = AIDataSet.objects.filter(pk=dataset_id).first()
     if dataset is None:
         return Response(
@@ -1116,7 +1176,7 @@ def application_settings_ai_dataset_attachments(request, dataset_id: int):
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    payload: dict[str, Any] = request.data if isinstance(request.data, dict) else {}
+    payload: dict[str, Any] = _request_payload(request.data)
 
     video_id, video_id_error = _parse_optional_integer_param(
         payload.get("video_id"),
@@ -1313,7 +1373,9 @@ def application_settings_ai_dataset_attachments(request, dataset_id: int):
 
 @api_view(["GET"])
 @permission_classes([EnvironmentAwarePermission])
-def application_settings_ai_dataset_frame_bucket_distribution(request, param: str):
+def application_settings_ai_dataset_frame_bucket_distribution(
+    request: Request, param: str
+) -> Response:
     dataset = _resolve_ai_dataset_param(param)
     if dataset is None:
         return Response(
@@ -1352,7 +1414,9 @@ def application_settings_ai_dataset_frame_bucket_distribution(request, param: st
 
 @api_view(["POST"])
 @permission_classes([EnvironmentAwarePermission])
-def application_settings_ai_dataset_training_manifest(request, param: str):
+def application_settings_ai_dataset_training_manifest(
+    request: Request, param: str
+) -> Response:
     dataset = _resolve_ai_dataset_param(param)
     if dataset is None:
         return Response(
@@ -1360,7 +1424,7 @@ def application_settings_ai_dataset_training_manifest(request, param: str):
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    payload: dict[str, Any] = request.data or {}
+    payload: dict[str, Any] = _request_payload(request.data)
     label_set_id, error = _parse_optional_integer_param(
         payload.get("label_set_id"),
         field_name="label_set_id",
@@ -1440,9 +1504,9 @@ def application_settings_ai_dataset_training_manifest(request, param: str):
     return Response(
         {
             "dataset_id": dataset.pk,
-            "dataset_name": dataset.name,
-            "dataset_type": dataset.dataset_type,
-            "ai_model_type": dataset.ai_model_type,
+            "dataset_name": _ai_dataset_name(dataset),
+            "dataset_type": _ai_dataset_type(dataset),
+            "ai_model_type": _ai_dataset_model_type(dataset),
             "config": {
                 "label_set_id": label_set.pk if label_set is not None else None,
                 "treat_unlabeled_as_negative": treat_unlabeled_as_negative,
@@ -1467,7 +1531,7 @@ def application_settings_ai_dataset_training_manifest(request, param: str):
 
 @api_view(["GET"])
 @permission_classes([EnvironmentAwarePermission])
-def application_settings_model_training_options(request):
+def application_settings_model_training_options(request: Request) -> Response:
     return Response(
         {
             "training_targets": list(MODEL_TRAINING_TARGET_OPTIONS),
@@ -1517,7 +1581,7 @@ def application_settings_model_training_options(request):
 
 @api_view(["GET", "POST"])
 @permission_classes([EnvironmentAwarePermission])
-def application_settings_model_training_runs(request):
+def application_settings_model_training_runs(request: Request) -> Response:
     _mark_lost_model_training_runs()
 
     if request.method == "GET":
@@ -1530,7 +1594,7 @@ def application_settings_model_training_runs(request):
             status=status.HTTP_200_OK,
         )
 
-    payload: dict[str, Any] = request.data or {}
+    payload: dict[str, Any] = _request_payload(request.data)
     training_target = str(
         payload.get("training_target", MODEL_TRAINING_TARGET_IMAGE_MULTILABEL) or ""
     ).strip()
@@ -1597,9 +1661,11 @@ def application_settings_model_training_runs(request):
         dataset = AIDataSet.objects.filter(pk=dataset_id).first()
         if dataset is None:
             errors["dataset_id"] = "AIDataSet not found."
-        elif dataset.dataset_type != AIDataSet.DATASET_TYPE_IMAGE:
+        elif _ai_dataset_type(dataset) != AIDataSet.DATASET_TYPE_IMAGE:
             errors["dataset_id"] = "AIDataSet must have dataset_type='image'."
-        elif dataset.ai_model_type != AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL:
+        elif (
+            _ai_dataset_model_type(dataset) != AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL
+        ):
             errors["dataset_id"] = (
                 "AIDataSet must have ai_model_type='image_multilabel_classification'."
             )
@@ -1628,9 +1694,9 @@ def application_settings_model_training_runs(request):
     }
     run = AIModelTrainingRun.objects.create(
         dataset=dataset,
-        dataset_name=dataset.name,
-        dataset_type=dataset.dataset_type,
-        ai_model_type=dataset.ai_model_type,
+        dataset_name=_ai_dataset_name(dataset),
+        dataset_type=_ai_dataset_type(dataset),
+        ai_model_type=_ai_dataset_model_type(dataset),
         backbone_name=backbone_name,
         feature_mode=feature_mode,
         freeze_backbone=freeze_backbone,
@@ -1650,7 +1716,9 @@ def application_settings_model_training_runs(request):
 
 @api_view(["GET"])
 @permission_classes([EnvironmentAwarePermission])
-def application_settings_model_training_run_detail(request, run_id: str):
+def application_settings_model_training_run_detail(
+    request: Request, run_id: str
+) -> Response:
     _mark_lost_model_training_runs()
     run_uuid = _coerce_uuid(run_id)
     run = (
@@ -1670,8 +1738,8 @@ def application_settings_model_training_run_detail(request, run_id: str):
 
 @api_view(["POST"])
 @permission_classes([EnvironmentAwarePermission])
-def application_settings_video_dimension_backfill_runs(request):
-    payload: dict[str, Any] = request.data or {}
+def application_settings_video_dimension_backfill_runs(request: Request) -> Response:
+    payload: dict[str, Any] = _request_payload(request.data)
     dry_run = payload.get("dry_run", False)
     limit = payload.get("limit")
 
@@ -1713,7 +1781,9 @@ def application_settings_video_dimension_backfill_runs(request):
 
 @api_view(["GET"])
 @permission_classes([EnvironmentAwarePermission])
-def application_settings_video_dimension_backfill_run_detail(request, run_id: str):
+def application_settings_video_dimension_backfill_run_detail(
+    request: Request, run_id: str
+) -> Response:
     run = _get_video_dimension_backfill_run(run_id)
     if run is None:
         return Response(
@@ -1728,9 +1798,9 @@ def application_settings_video_dimension_backfill_run_detail(request, run_id: st
 
 @api_view(["POST"])
 @permission_classes([EnvironmentAwarePermission])
-def application_settings_ai_dataset_export(request):
+def application_settings_ai_dataset_export(request: Request) -> Response:
     result = create_ai_dataset_export(
-        request.data or {},
+        _request_payload(request.data),
         user=getattr(request, "user", None),
     )
     return Response(result.payload, status=result.status_code)
@@ -1738,7 +1808,9 @@ def application_settings_ai_dataset_export(request):
 
 @api_view(["GET"])
 @permission_classes([EnvironmentAwarePermission])
-def application_settings_ai_dataset_export_download(request, artifact_id: str):
+def application_settings_ai_dataset_export_download(
+    request: Request, artifact_id: str
+) -> Response | FileResponse:
     result = prepare_ai_dataset_export_download(artifact_id)
     if not result.is_file_response:
         return Response(result.payload, status=result.status_code)
@@ -1760,7 +1832,7 @@ def application_settings_ai_dataset_export_download(request, artifact_id: str):
 
 @api_view(["POST"])
 @permission_classes([EnvironmentAwarePermission])
-def application_settings_backup(request):
+def application_settings_backup(request: Request) -> Response:
     backup_status = _backup_status_payload()
     if not backup_status["ready"]:
         return Response(
@@ -1771,7 +1843,9 @@ def application_settings_backup(request):
             status=status.HTTP_409_CONFLICT,
         )
 
-    target_path_raw = str(request.data.get("target_path", "") or "").strip()
+    target_path_raw = str(
+        _request_payload(request.data).get("target_path", "") or ""
+    ).strip()
     if not target_path_raw:
         return Response(
             {"errors": {"target_path": "target_path is required."}},
@@ -1856,7 +1930,7 @@ def application_settings_backup(request):
 
 @api_view(["GET", "POST"])
 @permission_classes([EnvironmentAwarePermission])
-def application_settings_network_nodes(request):
+def application_settings_network_nodes(request: Request) -> Response:
     if request.method == "GET":
         nodes = NetworkNode.objects.select_related("owning_center").order_by(
             "display_name",
@@ -1867,7 +1941,7 @@ def application_settings_network_nodes(request):
             status=status.HTTP_200_OK,
         )
 
-    data = request.data
+    data = _request_payload(request.data)
     display_name = str(data.get("display_name", "") or "").strip()
     role = str(data.get("role", "") or NetworkNode.Role.SITE_NODE).strip()
     base_url = str(data.get("base_url", "") or "").strip()
@@ -1883,7 +1957,7 @@ def application_settings_network_nodes(request):
     if not isinstance(is_active, bool):
         errors["is_active"] = "is_active must be a boolean."
 
-    owning_center = _resolve_center_from_payload(data, errors=errors)
+    owning_center, _ = _resolve_center_from_payload(data, errors=errors)
     if shared_secret is not None and not isinstance(shared_secret, str):
         errors["shared_secret"] = "shared_secret must be a string."
 
@@ -1905,14 +1979,14 @@ def application_settings_network_nodes(request):
         node.node_key = provided_node_key
     if isinstance(shared_secret, str) and shared_secret.strip():
         node.set_shared_secret(shared_secret)
-    node.save()
+    cast(_SaveableNetworkNode, node).save()
     node.refresh_from_db()
     return Response(_network_node_payload(node), status=status.HTTP_201_CREATED)
 
 
 @api_view(["GET", "PATCH", "DELETE"])
 @permission_classes([EnvironmentAwarePermission])
-def application_settings_network_node_detail(request, pk: int):
+def application_settings_network_node_detail(request: Request, pk: int) -> Response:
     node = NetworkNode.objects.select_related("owning_center").filter(pk=pk).first()
     if node is None:
         return Response(
@@ -1927,12 +2001,15 @@ def application_settings_network_node_detail(request, pk: int):
         node.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-    data = request.data
+    data = _request_payload(request.data)
     errors: dict[str, str] = {}
 
     if "node_key" in data:
         requested_node_key = str(data.get("node_key", "") or "").strip()
-        if requested_node_key and requested_node_key != node.node_key:
+        if requested_node_key and requested_node_key != cast(
+            str,
+            getattr(node, "node_key", ""),
+        ):
             errors["node_key"] = "node_key is immutable once assigned."
 
     if "display_name" in data:
@@ -1959,7 +2036,7 @@ def application_settings_network_node_detail(request, pk: int):
         else:
             node.is_active = is_active
 
-    owning_center = _resolve_center_from_payload(data, errors=errors)
+    owning_center, _ = _resolve_center_from_payload(data, errors=errors)
     if isinstance(owning_center, Center) or owning_center is None:
         if "owning_center_id" in data or "owning_center_key" in data:
             node.owning_center = owning_center
@@ -1979,14 +2056,14 @@ def application_settings_network_node_detail(request, pk: int):
     if errors:
         return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
 
-    node.save()
+    cast(_SaveableNetworkNode, node).save()
     node.refresh_from_db()
     return Response(_network_node_payload(node), status=status.HTTP_200_OK)
 
 
 @api_view(["GET"])
 @permission_classes([EnvironmentAwarePermission])
-def application_settings_network_node_roles_dropdown(request):
+def application_settings_network_node_roles_dropdown(request: Request) -> Response:
     return Response(_network_node_roles_payload(), status=status.HTTP_200_OK)
 
 

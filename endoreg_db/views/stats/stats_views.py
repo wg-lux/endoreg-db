@@ -5,22 +5,29 @@ Provides dashboard statistics for the frontend including examination stats,
 video segment stats, sensitive meta stats, and general overview stats.
 """
 
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
+from __future__ import annotations
+
+from datetime import timedelta
+from typing import cast
+
 from django.db.models import Count
 from django.utils import timezone
-from datetime import timedelta
+from rest_framework import status
+from rest_framework.request import Request
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from ...models import (
-    VideoFile,
-    LabelVideoSegment,
-    SensitiveMeta,
     Examination,
-    PatientExamination,
     Label,
+    LabelVideoSegment,
+    PatientExamination,
+    SensitiveMeta,
+    VideoFile,
 )
 from ...utils.web.permissions import EnvironmentAwarePermission
+
+StatsDistribution = list[dict[str, object]]
 
 
 class ExaminationStatsView(APIView):
@@ -32,7 +39,7 @@ class ExaminationStatsView(APIView):
 
     permission_classes = [EnvironmentAwarePermission]
 
-    def get(self, request):
+    def get(self, request: Request) -> Response:
         """
         Returns statistics about examinations including total counts,
         recent activity, and status distribution.
@@ -51,20 +58,23 @@ class ExaminationStatsView(APIView):
             )
 
             # Status distribution for patient examinations
-            status_distribution = (
-                PatientExamination.objects.values("status")
-                .annotate(count=Count("id"))
-                .order_by("status")
-                if hasattr(PatientExamination, "status")
-                else []
-            )
+            status_distribution: StatsDistribution = []
+            if hasattr(PatientExamination, "status"):
+                status_distribution = cast(
+                    StatsDistribution,
+                    list(
+                        PatientExamination.objects.values("status")
+                        .annotate(count=Count("id"))
+                        .order_by("status")
+                    ),
+                )
 
             return Response(
                 {
                     "total_examinations": total_examinations,
                     "total_patient_examinations": total_patient_examinations,
                     "recent_examinations": recent_examinations,
-                    "status_distribution": list(status_distribution),
+                    "status_distribution": status_distribution,
                 },
                 status=status.HTTP_200_OK,
             )
@@ -86,7 +96,7 @@ class VideoSegmentStatsView(APIView):
 
     permission_classes = [EnvironmentAwarePermission]
 
-    def get(self, request):
+    def get(self, request: Request) -> Response:
         """
         Returns statistics about video segments including total counts,
         label distribution, and processing status.
@@ -146,7 +156,7 @@ class SensitiveMetaStatsView(APIView):
 
     permission_classes = [EnvironmentAwarePermission]
 
-    def get(self, request):
+    def get(self, request: Request) -> Response:
         """
         Returns statistics about sensitive metadata including verification status,
         types of sensitive data found, and processing statistics.
@@ -170,12 +180,15 @@ class SensitiveMetaStatsView(APIView):
             )
 
             # Type distribution (if available)
-            type_distribution = []
+            type_distribution: StatsDistribution = []
             if hasattr(SensitiveMeta, "meta_type"):
-                type_distribution = (
-                    SensitiveMeta.objects.values("meta_type")
-                    .annotate(count=Count("id"))
-                    .order_by("-count")
+                type_distribution = cast(
+                    StatsDistribution,
+                    list(
+                        SensitiveMeta.objects.values("meta_type")
+                        .annotate(count=Count("id"))
+                        .order_by("-count")
+                    ),
                 )
 
             return Response(
@@ -184,7 +197,7 @@ class SensitiveMetaStatsView(APIView):
                     "verified_count": verified_count,
                     "unverified_count": unverified_count,
                     "videos_with_sensitive_data": videos_with_sensitive_data,
-                    "type_distribution": list(type_distribution),
+                    "type_distribution": type_distribution,
                 },
                 status=status.HTTP_200_OK,
             )
@@ -205,7 +218,7 @@ class GeneralStatsView(APIView):
 
     permission_classes = [EnvironmentAwarePermission]
 
-    def get(self, request):
+    def get(self, request: Request) -> Response:
         """
         Returns general overview statistics for the dashboard including
         total counts across all major entities.

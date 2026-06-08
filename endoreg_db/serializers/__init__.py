@@ -38,17 +38,13 @@ from .patient import PatientDropdownSerializer, PatientSerializer
 from .patient_examination import PatientExaminationSerializer
 from .patient_finding import (
     PatientFindingClassificationSerializer,
-    PatientFindingDetailSerializer,
     PatientFindingInterventionSerializer,
-    PatientFindingListSerializer,
     PatientFindingSerializer,
-    PatientFindingWriteSerializer,
 )
 from .report import (
     PatientExaminationReportSerializer,
     PatientExaminationReportSubmissionSerializer,
 )
-from .pdf import RawPdfAnonyTextSerializer
 from .video.video_processing_history import VideoProcessingHistorySerializer
 from .video_examination import (
     VideoExaminationCreateSerializer,
@@ -96,14 +92,9 @@ __all__ = [
     # Patient Finding
     "PatientFindingSerializer",
     "PatientFindingClassificationSerializer",
-    "PatientFindingDetailSerializer",
     "PatientFindingInterventionSerializer",
-    "PatientFindingListSerializer",
-    "PatientFindingWriteSerializer",
     "PatientExaminationReportSerializer",
     "PatientExaminationReportSubmissionSerializer",
-    # report
-    "RawPdfAnonyTextSerializer",
     # Video Correction (Phase 1.1)
     "VideoProcessingHistorySerializer",
     # Video Examination

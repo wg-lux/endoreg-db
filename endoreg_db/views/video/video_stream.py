@@ -12,8 +12,13 @@ import logging
 import mimetypes
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Literal, TypeAlias, cast
 
-from django.http import Http404, HttpResponse, HttpResponseBase
+from django.db.models.fields.files import FieldFile
+from django.http import Http404, HttpResponse
+from django.http.response import HttpResponseBase
+
+from rest_framework.request import Request
 from rest_framework.views import APIView
 
 from endoreg_db.authz.permissions import PolicyPermission
@@ -36,7 +41,6 @@ from endoreg_db.services.media_operation_gate import (
     release_media_operation_lease,
     wrap_iterator_with_media_lease,
 )
-from endoreg_db.utils.web.cors import resolve_response_origin
 from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
 from endoreg_db.utils.web.nginx_accel import (
     build_nginx_accel_response,
@@ -52,8 +56,20 @@ from endoreg_db.utils.storage.streaming import (
     maybe_local_plaintext_path,
     parse_byte_range,
 )
+from endoreg_db.utils.web.cors import resolve_response_origin
 
 logger = logging.getLogger(__name__)
+
+
+StreamState: TypeAlias = Literal[
+    "encrypted_streamable_artifact",
+    "invalid_streamable_artifact",
+    "missing_streamable_artifact",
+    "raw_django_streaming_disabled",
+    "streamable_repair_failed",
+    "streamable_repaired",
+    "unreadable_streamable_artifact",
+]
 
 
 def _path_starts_with_encrypted_magic(path: Path) -> bool:
@@ -73,7 +89,7 @@ def _video_uses_streamable_mode(video: VideoFile) -> bool:
 
 def _resolve_verified_streamable_path(
     relative_path: str | None,
-) -> tuple[Path | None, str | None]:
+) -> tuple[Path | None, StreamState | None]:
     if relative_path is None:
         return None, "missing_streamable_artifact"
 
@@ -122,7 +138,7 @@ def _resolve_verified_streamable_path(
 def _try_repair_streamable_artifact(
     video: VideoFile,
     artifact_kind: VideoArtifactKind,
-) -> str:
+) -> StreamState:
     try:
         sync_video_streamable_artifacts(
             video,
@@ -143,9 +159,11 @@ def _try_repair_streamable_artifact(
     return "streamable_repaired"
 
 
-def _field_file_for_stream(video: VideoFile, artifact_kind: VideoArtifactKind):
+def _field_file_for_stream(
+    video: VideoFile, artifact_kind: VideoArtifactKind
+) -> FieldFile | None:
     if artifact_kind == VideoArtifactKind.PROCESSED:
-        return getattr(video, "processed_file", None)
+        return cast(FieldFile | None, getattr(video, "processed_file", None))
     try:
         return get_active_raw_video_file(video)
     except (FileNotFoundError, ValueError):
@@ -164,10 +182,10 @@ class VideoStreamView(APIView):
     permission_classes = [EnvironmentAwarePermission, PolicyPermission]
 
     @staticmethod
-    def _parse_file_type(request) -> VideoArtifactKind:
-        raw_value = request.query_params.get("type") or request.query_params.get(
-            "file_type"
-        )
+    def _parse_file_type(request: Request) -> VideoArtifactKind:
+        type_value = request.query_params.get("type")
+        file_type_value = request.query_params.get("file_type")
+        raw_value = type_value if type_value is not None else file_type_value
         if raw_value is None:
             return VideoArtifactKind.RAW
         return parse_video_artifact_kind(
@@ -176,7 +194,7 @@ class VideoStreamView(APIView):
         )
 
     @staticmethod
-    def _get_video_or_404(pk) -> VideoFile:
+    def _get_video_or_404(pk: int | str | None) -> VideoFile:
         if pk is None:
             raise Http404("Video ID is required")
         try:
@@ -189,15 +207,29 @@ class VideoStreamView(APIView):
         except VideoFile.DoesNotExist as exc:
             raise Http404(f"Video with ID {pk} not found") from exc
 
-    def get(self, request, pk=None):
+    @staticmethod
+    def _range_header(request: Request) -> str | None:
+        header_value = request.headers.get("Range")
+        if header_value is not None:
+            return header_value
+        meta_value = request.META.get("HTTP_RANGE")
+        if isinstance(meta_value, str):
+            return meta_value
+        return None
+
+    def get(
+        self,
+        request: Request,
+        pk: int | str | None = None,
+    ) -> HttpResponseBase:
         video = self._get_video_or_404(pk)
         self.check_object_permissions(request, video)
 
         artifact_kind = self._parse_file_type(request)
         file_type = artifact_kind.value
         frontend_origin = resolve_response_origin(request)
-        range_header = request.headers.get("Range") or request.META.get("HTTP_RANGE")
-        stream_state = None
+        range_header = self._range_header(request)
+        stream_state: StreamState | None = None
         stream_relative_path = get_video_stream_relative_path(video, artifact_kind)
         if _video_uses_streamable_mode(video):
             resolved_stream_path, stream_state = _resolve_verified_streamable_path(
@@ -242,7 +274,9 @@ class VideoStreamView(APIView):
                         release_media_operation_lease(stream_lease)
                         raise
                     if stream_lease is not None:
-                        response["X-Media-Operation-Lease"] = str(stream_lease.token)
+                        response["X-Media-Operation-Lease"] = str(
+                            getattr(stream_lease, "token")
+                        )
                     return response
 
         try:
@@ -268,9 +302,7 @@ class VideoStreamView(APIView):
                 raise Http404("Video file is not available") from exc
         if field_file is None and local_path is None:
             raise Http404("Video file is not available")
-        field_file_name = (
-            getattr(field_file, "name", None) if field_file is not None else None
-        )
+        field_file_name = field_file.name if field_file is not None else None
         if local_path is None and not field_file_name:
             raise Http404("Video file is not available")
 
@@ -299,11 +331,12 @@ class VideoStreamView(APIView):
             return _add_cors_headers_if_configured(response, frontend_origin)
 
         try:
-            file_size = (
-                local_path.stat().st_size
-                if local_path is not None
-                else field_file_size(field_file)
-            )
+            if local_path is not None:
+                file_size = local_path.stat().st_size
+            else:
+                if field_file is None:
+                    raise Http404("Video file is not available")
+                file_size = field_file_size(field_file)
         except FileNotFoundError as exc:
             logger.warning(
                 "Video file disappeared during streaming setup for id=%s type=%s: %s",
@@ -356,7 +389,7 @@ class VideoStreamView(APIView):
                 streaming_content,
                 stream_lease,
             )
-            response["X-Media-Operation-Lease"] = str(stream_lease.token)
+            response["X-Media-Operation-Lease"] = str(getattr(stream_lease, "token"))
 
         if stream_state is not None:
             response["X-Stream-State"] = stream_state

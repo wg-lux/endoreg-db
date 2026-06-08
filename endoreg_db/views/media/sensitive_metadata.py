@@ -2,20 +2,24 @@ from __future__ import annotations
 
 # Modern Media Framework: Sensitive Metadata Management
 
-from typing import Literal, cast
+from collections.abc import Mapping
+from datetime import date, datetime
+from typing import Any, Literal, cast
+import json
+import logging
 
 from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
-import json
-import logging
 
 from rest_framework import status
 from rest_framework import serializers as drf_serializers
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.request import Request
 from rest_framework.response import Response
 from lx_dtypes.models.contracts import (
     CaseResolutionRequest,
+    CaseResolutionNewPatient,
     CaseResolutionResponse,
     ValidationError,
 )
@@ -45,24 +49,108 @@ from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
 logger = logging.getLogger(__name__)
 
 
+def _as_int(value: object) -> int | None:
+    return value if isinstance(value, int) else None
+
+
+def _as_str(value: object) -> str | None:
+    return value if isinstance(value, str) else None
+
+
+def _as_date_or_datetime(value: object) -> date | datetime | None:
+    return value if isinstance(value, (date, datetime)) else None
+
+
+def _as_isoformat(value: object) -> str | None:
+    value_ = _as_date_or_datetime(value)
+    return value_.isoformat() if value_ is not None else None
+
+
+def _request_payload(request: Request) -> Mapping[str, Any]:
+    payload = cast(object, request.data)
+    if isinstance(payload, Mapping):
+        return cast(Mapping[str, Any], payload)
+    return {}
+
+
+def _query_params(request: Request) -> Mapping[str, object]:
+    return cast(
+        Mapping[str, object], cast(object, getattr(request, "query_params", {}))
+    )
+
+
+def _serialize_response_data(serializer: object) -> object:
+    return cast(object, getattr(serializer, "data", {}))
+
+
+def _serialize_response_errors(serializer: object) -> Mapping[str, Any]:
+    return cast(Mapping[str, Any], getattr(serializer, "errors", {}))
+
+
+def _get_object_field(
+    value: object | None, field: str, default: object | None = None
+) -> object | None:
+    if value is None:
+        return default
+    return getattr(value, field, default)
+
+
+def _get_int_field(value: object | None, field: str) -> int | None:
+    return _as_int(_get_object_field(value, field))
+
+
+def _get_str_field(value: object | None, field: str) -> str | None:
+    return _as_str(_get_object_field(value, field))
+
+
+def _get_fk_id(value: object | None, relation_field: str) -> int | None:
+    relation = _get_object_field(value, relation_field)
+    return _get_int_field(relation, "pk")
+
+
+def _as_bool(value: object) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes"}:
+            return True
+        if normalized in {"false", "0", "no"}:
+            return False
+    return None
+
+
+def _query_bool_param(params: Mapping[str, object], key: str) -> bool | None:
+    return _as_bool(params.get(key, None))
+
+
+def _query_str_param(
+    params: Mapping[str, object], key: str, default: str | None = None
+) -> str | None:
+    value = params.get(key)
+    if value is None:
+        return default
+    if isinstance(value, str):
+        return value
+    return str(value)
+
+
 def _serialize_patient_examination_match(
-    patient_examination: PatientExamination,
+    patient_examination: object,
 ) -> dict[str, object]:
     examination_name = None
-    examination = getattr(patient_examination, "examination", None)
+    examination = _get_object_field(patient_examination, "examination")
     if examination is not None:
-        examination_name = examination.name
+        examination_name = _get_str_field(examination, "name")
     return {
-        "id": patient_examination.pk,
-        "patient_id": patient_examination.patient_id,
+        "id": _get_int_field(patient_examination, "pk"),
+        "patient_id": _get_int_field(patient_examination, "patient_id"),
         "examination_name": examination_name,
-        "date_start": patient_examination.date_start.isoformat()
-        if patient_examination.date_start
-        else None,
-        "date_end": patient_examination.date_end.isoformat()
-        if patient_examination.date_end
-        else None,
-        "hash": patient_examination.hash,
+        "date_start": _as_isoformat(
+            _get_object_field(patient_examination, "date_start")
+        ),
+        "date_end": _as_isoformat(_get_object_field(patient_examination, "date_end")),
+        "hash": _get_str_field(patient_examination, "hash"),
     }
 
 
@@ -74,9 +162,11 @@ def _case_resolution_payload(
     sensitive_meta: SensitiveMeta,
     linked_patient_examination_id: int | None,
 ) -> dict[str, object]:
-    patient_hash = getattr(sensitive_meta, "patient_hash", None)
-    examination_hash = getattr(sensitive_meta, "examination_hash", None)
-    case_resolution_meta = get_case_resolution_meta(media_obj)
+    patient_hash = _get_str_field(sensitive_meta, "patient_hash")
+    examination_hash = _get_str_field(sensitive_meta, "examination_hash")
+    case_resolution_meta = cast(
+        Mapping[str, object], get_case_resolution_meta(media_obj)
+    )
     explicit_linked_patient_examination_id = linked_patient_examination_id
     if not case_resolution_meta.get("is_explicitly_resolved"):
         explicit_linked_patient_examination_id = None
@@ -88,7 +178,7 @@ def _case_resolution_payload(
     resolved_linked_patient_examination_id = (
         explicit_linked_patient_examination_id
         or auto_linked_patient_examination_id
-        or getattr(media_obj, "examination_id", None)
+        or _get_int_field(media_obj, "examination_id")
     )
 
     examination_matches_qs = PatientExamination.objects.none()
@@ -119,23 +209,35 @@ def _case_resolution_payload(
         match_status = "unresolved"
 
     recommended_patient_examination_id = (
-        examination_matches[0].pk if examination_matches_count == 1 else None
+        _get_int_field(examination_matches[0], "pk")
+        if examination_matches_count == 1
+        else None
+    )
+
+    pseudo_patient_id = _get_int_field(sensitive_meta, "pseudo_patient_id")
+    if pseudo_patient_id is None:
+        pseudo_patient_id = _get_fk_id(sensitive_meta, "pseudo_patient")
+    pseudo_examination_id = _get_int_field(sensitive_meta, "pseudo_examination_id")
+    if pseudo_examination_id is None:
+        pseudo_examination_id = _get_fk_id(sensitive_meta, "pseudo_examination")
+    current_patient_examination_id = _get_int_field(media_obj, "examination_id")
+    current_patient_id = _get_int_field(media_obj, "patient_id")
+    linked_patient_id = (
+        _get_int_field(case_resolution_meta, "linked_patient_id")
+        if (is_explicitly_resolved or is_auto_resolved)
+        else current_patient_id
     )
 
     return {
         "media_type": media_type,
         "media_id": media_pk,
-        "sensitive_meta_id": sensitive_meta.pk,
+        "sensitive_meta_id": _get_int_field(sensitive_meta, "pk"),
         "linked_patient_examination_id": resolved_linked_patient_examination_id,
-        "linked_patient_id": (
-            case_resolution_meta.get("linked_patient_id")
-            if (is_explicitly_resolved or is_auto_resolved)
-            else getattr(media_obj, "patient_id", None)
-        ),
-        "current_patient_examination_id": getattr(media_obj, "examination_id", None),
-        "current_patient_id": getattr(media_obj, "patient_id", None),
-        "pseudo_patient_id": sensitive_meta.pseudo_patient_id,
-        "pseudo_examination_id": sensitive_meta.pseudo_examination_id,
+        "linked_patient_id": linked_patient_id,
+        "current_patient_examination_id": current_patient_examination_id,
+        "current_patient_id": current_patient_id,
+        "pseudo_patient_id": pseudo_patient_id,
+        "pseudo_examination_id": pseudo_examination_id,
         "patient_hash_display": (
             f"...{patient_hash[-8:]}"
             if isinstance(patient_hash, str) and patient_hash
@@ -147,11 +249,11 @@ def _case_resolution_payload(
             else None
         ),
         "pseudo_patient": {
-            "id": sensitive_meta.pseudo_patient_id,
+            "id": pseudo_patient_id,
             "match_count": patient_matches_count,
         },
         "pseudo_examination": {
-            "id": sensitive_meta.pseudo_examination_id,
+            "id": pseudo_examination_id,
             "linked_patient_examination_id": resolved_linked_patient_examination_id,
         },
         "match_status": match_status,
@@ -197,8 +299,8 @@ def _build_case_resolution_write_response(
     return response_payload
 
 
-def _resolve_case_resolution_request(request) -> CaseResolutionRequest:
-    payload = request.data or {}
+def _resolve_case_resolution_request(request: Request) -> CaseResolutionRequest:
+    payload = _request_payload(request)
     return CaseResolutionRequest.model_validate(payload)
 
 
@@ -214,7 +316,7 @@ def _resolve_target_patient_examination(
 def _resolve_case_resolution_patient(
     *,
     patient_id: int | None,
-    new_patient_payload,
+    new_patient_payload: CaseResolutionNewPatient | None,
     sensitive_meta: SensitiveMeta,
 ) -> Patient:
     if patient_id is not None:
@@ -222,19 +324,18 @@ def _resolve_case_resolution_patient(
 
     if new_patient_payload is not None:
         patient_payload = new_patient_payload.model_dump()
-        if (
-            patient_payload.get("gender") is None
-            and sensitive_meta.patient_gender is not None
-        ):
-            patient_payload["gender"] = sensitive_meta.patient_gender.name
-        if (
-            patient_payload.get("center_key") is None
-            and sensitive_meta.center is not None
-        ):
-            patient_payload["center_key"] = sensitive_meta.center.center_key
+        patient_gender_name = _get_str_field(
+            _get_object_field(sensitive_meta, "patient_gender"), "name"
+        )
+        if patient_payload.get("gender") is None and patient_gender_name is not None:
+            patient_payload["gender"] = patient_gender_name
+        center = _get_object_field(sensitive_meta, "center")
+        center_key = _get_str_field(center, "center_key")
+        if patient_payload.get("center_key") is None and center is not None:
+            patient_payload["center_key"] = center_key
         patient_serializer = PatientSerializer(data=patient_payload)
         patient_serializer.is_valid(raise_exception=True)
-        return patient_serializer.save()
+        return cast(Patient, patient_serializer.save())
 
     raise ValueError("patient_id or new_patient is required for create action")
 
@@ -245,9 +346,11 @@ def _resolve_case_resolution_examination(
     if examination_name:
         return get_object_or_404(Examination, name=examination_name)
 
-    pseudo_examination = sensitive_meta.pseudo_examination
+    pseudo_examination = _get_object_field(sensitive_meta, "pseudo_examination")
     if pseudo_examination is not None:
-        return pseudo_examination.examination
+        examination = _get_object_field(pseudo_examination, "examination")
+        if isinstance(examination, Examination):
+            return examination
     return None
 
 
@@ -264,26 +367,38 @@ def _create_patient_examination_for_case_resolution(
         sensitive_meta=sensitive_meta,
     )
 
+    examination_date = _get_object_field(sensitive_meta, "examination_date")
+    if isinstance(examination_date, datetime):
+        normalized_examination_date: date | None = examination_date.date()
+    elif isinstance(examination_date, date):
+        normalized_examination_date = examination_date
+    else:
+        normalized_examination_date = None
+
     return PatientExamination.objects.create(
         patient=patient,
         examination=examination,
-        date_start=payload.date_start or sensitive_meta.examination_date,
+        date_start=payload.date_start or normalized_examination_date,
         date_end=payload.date_end,
     )
 
 
 def _handle_case_resolution_post(
     *,
-    request,
+    request: Request,
     media_type: Literal["video", "pdf"],
     media_obj: RawPdfFile | VideoFile,
 ) -> Response:
-    sensitive_meta = media_obj.sensitive_meta
+    sensitive_meta = cast(
+        SensitiveMeta | None, _get_object_field(media_obj, "sensitive_meta")
+    )
     if sensitive_meta is None:
+        media_obj_pk = _get_int_field(media_obj, "pk")
         return Response(
-            {"error": f"No sensitive metadata found for {media_type} {media_obj.pk}"},
+            {"error": f"No sensitive metadata found for {media_type} {media_obj_pk}"},
             status=status.HTTP_404_NOT_FOUND,
         )
+    media_obj_pk = _get_int_field(media_obj, "pk")
 
     try:
         payload = _resolve_case_resolution_request(request)
@@ -311,8 +426,14 @@ def _handle_case_resolution_post(
                 persist_case_resolution_state(
                     media_obj=media_obj,
                     payload=payload,
-                    patient_examination_id=patient_examination.pk,
-                    patient_id=patient_examination.patient_id,
+                    patient_examination_id=_get_int_field(
+                        patient_examination,
+                        "pk",
+                    ),
+                    patient_id=_get_int_field(
+                        patient_examination,
+                        "patient_id",
+                    ),
                 )
             elif payload.action == "create":
                 patient_examination = _create_patient_examination_for_case_resolution(
@@ -328,15 +449,18 @@ def _handle_case_resolution_post(
                 persist_case_resolution_state(
                     media_obj=media_obj,
                     payload=payload,
-                    patient_examination_id=patient_examination.pk,
-                    patient_id=patient_examination.patient_id,
+                    patient_examination_id=_get_int_field(patient_examination, "pk"),
+                    patient_id=_get_int_field(patient_examination, "patient_id"),
                 )
             else:
-                if media_obj.examination_id is not None:
+                if _get_int_field(media_obj, "examination_id") is not None:
                     raise ValueError(
                         "cannot defer case resolution for already linked media"
                     )
-                patient_examination = media_obj.examination
+                patient_examination = cast(
+                    PatientExamination | None,
+                    _get_object_field(media_obj, "examination"),
+                )
                 persist_case_resolution_state(
                     media_obj=media_obj,
                     payload=payload,
@@ -364,18 +488,20 @@ def _handle_case_resolution_post(
 
     return Response(
         _build_case_resolution_write_response(
-            action=cast(Literal["attach", "create", "defer"], payload.action),
+            action=payload.action,
             created=created,
             media_type=media_type,
-            media_pk=media_obj.pk,
+            media_pk=cast(int, media_obj_pk),
             media_obj=media_obj,
             patient_examination_id=(
-                patient_examination.pk if patient_examination is not None else None
+                _get_int_field(patient_examination, "pk")
+                if patient_examination is not None
+                else None
             ),
             patient_id=(
-                patient_examination.patient_id
+                _get_int_field(patient_examination, "patient_id")
                 if patient_examination is not None
-                else media_obj.patient_id
+                else _get_int_field(media_obj, "patient_id")
             ),
             sensitive_meta=sensitive_meta,
         ),
@@ -388,7 +514,7 @@ def _handle_case_resolution_post(
 
 @api_view(["GET"])
 @permission_classes([EnvironmentAwarePermission, PolicyPermission])
-def get_sensitive_metadata_pk(request, pk: int, media_type: str) -> Response:
+def get_sensitive_metadata_pk(request: Request, pk: int, media_type: str) -> Response:
     """
     A route to get the sensitive meta pk for a media type quickly.
 
@@ -404,21 +530,37 @@ def get_sensitive_metadata_pk(request, pk: int, media_type: str) -> Response:
 
     if media_type == "video":
         video = get_object_or_404(VideoFile, pk=pk)
-        if not video.sensitive_meta:
+        sensitive_meta = cast(
+            SensitiveMeta | None, _get_object_field(video, "sensitive_meta")
+        )
+        if sensitive_meta is None:
             return Response(
                 {"error": f"No sensitive metadata found for video {pk}"},
                 status=status.HTTP_404_NOT_FOUND,
             )
-        sm_id = video.sensitive_meta.pk
+        sm_id = _get_int_field(sensitive_meta, "pk")
+        if sm_id is None:
+            return Response(
+                {"error": f"Sensitive metadata for video {pk} has no id"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         return Response({"sm": sm_id})
     if media_type == "pdf":
         pdf = get_object_or_404(RawPdfFile, pk=pk)
-        if not pdf.sensitive_meta:
+        sensitive_meta = cast(
+            SensitiveMeta | None, _get_object_field(pdf, "sensitive_meta")
+        )
+        if sensitive_meta is None:
             return Response(
                 {"error": f"No sensitive metadata found for report {pk}"},
                 status=status.HTTP_404_NOT_FOUND,
             )
-        sm_id = pdf.sensitive_meta.pk
+        sm_id = _get_int_field(sensitive_meta, "pk")
+        if sm_id is None:
+            return Response(
+                {"error": f"Sensitive metadata for report {pk} has no id"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         return Response({"sm": sm_id})
     return Response(
         {"error": f"Unsupported media_type '{media_type}'"},
@@ -428,7 +570,7 @@ def get_sensitive_metadata_pk(request, pk: int, media_type: str) -> Response:
 
 @api_view(["GET", "PATCH"])
 @permission_classes([EnvironmentAwarePermission, PolicyPermission])
-def video_sensitive_metadata(request, pk):
+def video_sensitive_metadata(request: Request, pk: int) -> Response:
     """
     GET /api/media/videos/<pk>/sensitive-metadata/
     PATCH /api/media/videos/<pk>/sensitive-metadata/
@@ -437,36 +579,48 @@ def video_sensitive_metadata(request, pk):
     Video-scoped: Uses video ID to locate related sensitive metadata.
     """
     video = get_object_or_404(VideoFile, pk=pk)
-    if not video.sensitive_meta:
+    sensitive_meta = cast(
+        SensitiveMeta | None, _get_object_field(video, "sensitive_meta")
+    )
+    if sensitive_meta is None:
         return Response(
             {"error": f"No sensitive metadata found for video {pk}"},
             status=status.HTTP_404_NOT_FOUND,
         )
-    sensitive_meta = video.sensitive_meta
 
     if request.method == "GET":
         serializer = SensitiveMetaDetailSerializer(sensitive_meta)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(_serialize_response_data(serializer), status=status.HTTP_200_OK)
 
     elif request.method == "PATCH":
+        data = _request_payload(request)
         serializer = SensitiveMetaUpdateSerializer(
-            sensitive_meta, data=request.data, partial=True
+            sensitive_meta, data=data, partial=True
         )
 
         if serializer.is_valid():
-            updated_instance = serializer.save()
+            updated_instance = cast(SensitiveMeta, serializer.save())
             response_serializer = SensitiveMetaDetailSerializer(updated_instance)
+            response_data = _serialize_response_data(response_serializer)
+            video_pk = _get_int_field(video, "pk")
+            if video_pk is None:
+                return Response(
+                    {"error": "Could not resolve video id"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
 
             return Response(
                 {
                     "message": "Sensitive metadata updated successfully",
-                    "sensitive_meta": response_serializer.data,
-                    "video_id": video.pk,
+                    "sensitive_meta": response_data,
+                    "video_id": video_pk,
                 },
                 status=status.HTTP_200_OK,
             )
 
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            _serialize_response_errors(serializer), status=status.HTTP_400_BAD_REQUEST
+        )
 
     return Response(
         {"error": f"Method {request.method} not allowed"},
@@ -476,14 +630,17 @@ def video_sensitive_metadata(request, pk):
 
 @api_view(["GET", "POST"])
 @permission_classes([EnvironmentAwarePermission, PolicyPermission])
-def video_case_resolution(request, pk):
+def video_case_resolution(request: Request, pk: int) -> Response:
     """
     GET /api/media/videos/<pk>/case-resolution/
 
     Return read-only case resolution hints for a validated or pending video.
     """
     video = get_object_or_404(VideoFile, pk=pk)
-    if not video.sensitive_meta:
+    sensitive_meta = cast(
+        SensitiveMeta | None, _get_object_field(video, "sensitive_meta")
+    )
+    if sensitive_meta is None:
         return Response(
             {"error": f"No sensitive metadata found for video {pk}"},
             status=status.HTTP_404_NOT_FOUND,
@@ -499,10 +656,10 @@ def video_case_resolution(request, pk):
     return Response(
         _case_resolution_payload(
             media_type="video",
-            media_pk=video.pk,
+            media_pk=cast(int, _get_int_field(video, "pk")),
             media_obj=video,
-            sensitive_meta=video.sensitive_meta,
-            linked_patient_examination_id=video.examination_id,
+            sensitive_meta=sensitive_meta,
+            linked_patient_examination_id=_get_int_field(video, "examination_id"),
         ),
         status=status.HTTP_200_OK,
     )
@@ -511,7 +668,7 @@ def video_case_resolution(request, pk):
 @api_view(["POST"])
 @permission_classes([EnvironmentAwarePermission, PolicyPermission])
 @transaction.atomic
-def video_sensitive_metadata_verify(request, pk):
+def video_sensitive_metadata_verify(request: Request, pk: int) -> Response:
     """
     POST /api/media/videos/<pk>/sensitive-metadata/verify/
 
@@ -524,17 +681,19 @@ def video_sensitive_metadata_verify(request, pk):
     }
     """
     video = get_object_or_404(VideoFile, pk=pk)
+    sensitive_meta = cast(
+        SensitiveMeta | None, _get_object_field(video, "sensitive_meta")
+    )
 
-    if not video.sensitive_meta:
+    if sensitive_meta is None:
         return Response(
             {"error": f"No sensitive metadata found for video {pk}"},
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    sensitive_meta = video.sensitive_meta
-
-    dob_verified = request.data.get("dob_verified")
-    names_verified = request.data.get("names_verified")
+    request_data = _request_payload(request)
+    dob_verified = _as_bool(request_data.get("dob_verified"))
+    names_verified = _as_bool(request_data.get("names_verified"))
 
     if dob_verified is None and names_verified is None:
         return Response(
@@ -557,7 +716,7 @@ def video_sensitive_metadata_verify(request, pk):
     return Response(
         {
             "message": "Verification state updated successfully",
-            "sensitive_meta": response_serializer.data,
+            "sensitive_meta": _serialize_response_data(response_serializer),
             "video_id": pk,
             "state_verified": state.is_verified,
         },
@@ -570,7 +729,7 @@ def video_sensitive_metadata_verify(request, pk):
 
 @api_view(["GET", "PATCH"])
 @permission_classes([EnvironmentAwarePermission, PolicyPermission])
-def pdf_sensitive_metadata(request, pk):
+def pdf_sensitive_metadata(request: Request, pk: int) -> Response:
     """
     GET /api/media/pdfs/<pk>/sensitive-metadata/
     PATCH /api/media/pdfs/<pk>/sensitive-metadata/
@@ -579,39 +738,51 @@ def pdf_sensitive_metadata(request, pk):
     report-scoped: Uses report ID to locate related sensitive metadata.
     """
     pdf = get_object_or_404(RawPdfFile, pk=pk)
-    if not pdf.sensitive_meta:
+    sensitive_meta = cast(
+        SensitiveMeta | None, _get_object_field(pdf, "sensitive_meta")
+    )
+    if sensitive_meta is None:
         return Response(
             {"error": f"No sensitive metadata found for report {pk}"},
             status=status.HTTP_404_NOT_FOUND,
         )
-    sensitive_meta = pdf.sensitive_meta
 
     if request.method == "GET":
         serializer = SensitiveMetaDetailSerializer(sensitive_meta)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(_serialize_response_data(serializer), status=status.HTTP_200_OK)
 
     elif request.method == "PATCH":
+        data = _request_payload(request)
         serializer = SensitiveMetaUpdateSerializer(
-            sensitive_meta, data=request.data, partial=True
+            sensitive_meta, data=data, partial=True
         )
 
         if serializer.is_valid():
-            updated_instance = serializer.save()
+            updated_instance = cast(SensitiveMeta, serializer.save())
             response_serializer = SensitiveMetaDetailSerializer(updated_instance)
-            sensitive_meta.update_from_dict(response_serializer.data)
-            logger.info(
-                "Updated sensitive metadata: %s", json.dumps(response_serializer.data)
+            response_data = cast(
+                dict[str, Any], _serialize_response_data(response_serializer)
             )
+            sensitive_meta.update_from_dict(response_data)
+            logger.info("Updated sensitive metadata: %s", json.dumps(response_data))
+            pdf_pk = _get_int_field(pdf, "pk")
+            if pdf_pk is None:
+                return Response(
+                    {"error": "Could not resolve report id"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
             return Response(
                 {
                     "message": "Sensitive metadata updated successfully",
-                    "sensitive_meta": response_serializer.data,
-                    "pdf_id": pdf.pk,
+                    "sensitive_meta": response_data,
+                    "pdf_id": pdf_pk,
                 },
                 status=status.HTTP_200_OK,
             )
 
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            _serialize_response_errors(serializer), status=status.HTTP_400_BAD_REQUEST
+        )
 
     return Response(
         {"error": f"Method {request.method} not allowed"},
@@ -621,14 +792,17 @@ def pdf_sensitive_metadata(request, pk):
 
 @api_view(["GET", "POST"])
 @permission_classes([EnvironmentAwarePermission, PolicyPermission])
-def pdf_case_resolution(request, pk):
+def pdf_case_resolution(request: Request, pk: int) -> Response:
     """
     GET /api/media/pdfs/<pk>/case-resolution/
 
     Return read-only case resolution hints for a validated or pending PDF.
     """
     pdf = get_object_or_404(RawPdfFile, pk=pk)
-    if not pdf.sensitive_meta:
+    sensitive_meta = cast(
+        SensitiveMeta | None, _get_object_field(pdf, "sensitive_meta")
+    )
+    if sensitive_meta is None:
         return Response(
             {"error": f"No sensitive metadata found for report {pk}"},
             status=status.HTTP_404_NOT_FOUND,
@@ -644,10 +818,10 @@ def pdf_case_resolution(request, pk):
     return Response(
         _case_resolution_payload(
             media_type="pdf",
-            media_pk=pdf.pk,
+            media_pk=cast(int, _get_int_field(pdf, "pk")),
             media_obj=pdf,
-            sensitive_meta=pdf.sensitive_meta,
-            linked_patient_examination_id=pdf.examination_id,
+            sensitive_meta=sensitive_meta,
+            linked_patient_examination_id=_get_int_field(pdf, "examination_id"),
         ),
         status=status.HTTP_200_OK,
     )
@@ -656,7 +830,7 @@ def pdf_case_resolution(request, pk):
 @api_view(["POST"])
 @permission_classes([EnvironmentAwarePermission, PolicyPermission])
 @transaction.atomic
-def pdf_sensitive_metadata_verify(request, pk):
+def pdf_sensitive_metadata_verify(request: Request, pk: int) -> Response:
     """
     POST /api/media/pdfs/<pk>/sensitive-metadata/verify/
 
@@ -669,17 +843,19 @@ def pdf_sensitive_metadata_verify(request, pk):
     }
     """
     pdf = get_object_or_404(RawPdfFile, pk=pk)
+    sensitive_meta = cast(
+        SensitiveMeta | None, _get_object_field(pdf, "sensitive_meta")
+    )
 
-    if not pdf.sensitive_meta:
+    if sensitive_meta is None:
         return Response(
             {"error": f"No sensitive metadata found for report {pk}"},
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    sensitive_meta = pdf.sensitive_meta
-
-    dob_verified = request.data.get("dob_verified")
-    names_verified = request.data.get("names_verified")
+    request_data = _request_payload(request)
+    dob_verified = _as_bool(request_data.get("dob_verified"))
+    names_verified = _as_bool(request_data.get("names_verified"))
 
     if dob_verified is None and names_verified is None:
         return Response(
@@ -702,7 +878,7 @@ def pdf_sensitive_metadata_verify(request, pk):
     return Response(
         {
             "message": "Verification state updated successfully",
-            "sensitive_meta": response_serializer.data,
+            "sensitive_meta": _serialize_response_data(response_serializer),
             "pdf_id": pk,
             "state_verified": state.is_verified,
         },
@@ -715,7 +891,7 @@ def pdf_sensitive_metadata_verify(request, pk):
 
 @api_view(["GET"])
 @permission_classes([EnvironmentAwarePermission, PolicyPermission])
-def sensitive_metadata_list(request):
+def sensitive_metadata_list(request: Request) -> Response:
     """
     GET /api/media/sensitive-metadata/
 
@@ -728,13 +904,12 @@ def sensitive_metadata_list(request):
     - ordering: Sort field
     - search: Search in patient names
     """
-    from endoreg_db.serializers.meta import SensitiveMetaDetailSerializer
-
     # Get all sensitive metadata
     queryset = SensitiveMeta.objects.select_related("state").all()
+    query_params = _query_params(request)
 
     # Filter by content type
-    content_type = request.query_params.get("content_type")
+    content_type = _query_str_param(query_params, "content_type")
     if content_type == "pdf":
         # Only reports - filter by existence of related reports
         queryset = queryset.filter(raw_pdf_files__isnull=False).distinct()
@@ -743,13 +918,12 @@ def sensitive_metadata_list(request):
         queryset = queryset.filter(video_file__isnull=False).distinct()
 
     # Filter by verification status
-    verified = request.query_params.get("verified")
+    verified = _query_bool_param(query_params, "verified")
     if verified is not None:
-        verified_bool = verified.lower() in ("true", "1", "yes")
-        queryset = queryset.filter(state__is_verified=verified_bool)
+        queryset = queryset.filter(state__is_verified=verified)
 
     # Search in patient names
-    search = request.query_params.get("search")
+    search = _query_str_param(query_params, "search")
     if search:
         queryset = queryset.filter(
             Q(patient_first_name__icontains=search)
@@ -757,7 +931,9 @@ def sensitive_metadata_list(request):
         )
 
     # Ordering
-    ordering = request.query_params.get("ordering", "-id")
+    ordering = _query_str_param(query_params, "ordering", "-id")
+    if ordering is None:
+        ordering = "-id"
     queryset = queryset.order_by(ordering)
 
     # Pagination
@@ -769,39 +945,41 @@ def sensitive_metadata_list(request):
 
     if page is not None:
         serializer = SensitiveMetaDetailSerializer(page, many=True)
-        return paginator.get_paginated_response(serializer.data)
+        serialized_data = _serialize_response_data(serializer)
+        return paginator.get_paginated_response(serialized_data)
 
     serializer = SensitiveMetaDetailSerializer(queryset, many=True)
-    return Response(serializer.data, status=status.HTTP_200_OK)
+    return Response(_serialize_response_data(serializer), status=status.HTTP_200_OK)
 
 
 @api_view(["GET"])
 @permission_classes([EnvironmentAwarePermission, PolicyPermission])
-def pdf_sensitive_metadata_list(request):
+def pdf_sensitive_metadata_list(request: Request) -> Response:
     """
     GET /api/media/pdfs/sensitive-metadata/
 
     List sensitive metadata for reports only.
     Replaces legacy /api/pdf/sensitivemeta/list/
     """
-    from endoreg_db.serializers.meta import SensitiveMetaDetailSerializer
-
     # Get all reports with sensitive metadata
     queryset = (
         SensitiveMeta.objects.select_related("state")
         .filter(raw_pdf_files__isnull=False)
         .distinct()
     )
+    query_params = _query_params(request)
 
     # Apply filters
-    search = request.query_params.get("search")
+    search = _query_str_param(query_params, "search")
     if search:
         queryset = queryset.filter(
             Q(patient_first_name__icontains=search)
             | Q(patient_last_name__icontains=search)
         )
 
-    ordering = request.query_params.get("ordering", "-id")
+    ordering = _query_str_param(query_params, "ordering", "-id")
+    if ordering is None:
+        ordering = "-id"
     queryset = queryset.order_by(ordering)
 
     # Pagination
@@ -813,7 +991,8 @@ def pdf_sensitive_metadata_list(request):
 
     if page is not None:
         serializer = SensitiveMetaDetailSerializer(page, many=True)
-        return paginator.get_paginated_response(serializer.data)
+        serialized_data = _serialize_response_data(serializer)
+        return paginator.get_paginated_response(serialized_data)
 
     serializer = SensitiveMetaDetailSerializer(queryset, many=True)
-    return Response(serializer.data, status=status.HTTP_200_OK)
+    return Response(_serialize_response_data(serializer), status=status.HTTP_200_OK)

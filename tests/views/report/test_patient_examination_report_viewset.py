@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from rest_framework.test import APIRequestFactory, force_authenticate
 
 from endoreg_db.models import (
     Center,
@@ -18,6 +19,7 @@ from endoreg_db.models import (
     PatientExamination,
     PatientExaminationReport,
     RawPdfFile,
+    SensitiveMeta,
     VideoFile,
 )
 from endoreg_db.utils.filesystem.file_operations import atomic_write_file, safe_rmtree
@@ -89,6 +91,8 @@ class PatientExaminationReportViewSetTests(TestCase):
                 created=True,
                 warnings=["nag"],
                 history_context={"previous_examinations": []},
+                persisted_dtypes_record=None,
+                persisted_dtypes_record_updated_at=None,
                 persisted_report_artifact_id=None,
                 persisted_pdf_artifact_id=None,
             ),
@@ -100,8 +104,8 @@ class PatientExaminationReportViewSetTests(TestCase):
         )
         try:
             user = User.objects.create_user(username="report-editor", password="pw")
-            self.client.force_login(user)
-            resp = self.client.post(
+            factory = APIRequestFactory()
+            request = factory.post(
                 "/api/patient-examination-reports/save-submission/",
                 data=json.dumps(
                     {
@@ -112,13 +116,20 @@ class PatientExaminationReportViewSetTests(TestCase):
                 ),
                 content_type="application/json",
             )
+            force_authenticate(request, user=user)
+            view = view_module.PatientExaminationReportViewSet.as_view(
+                {"post": "save_submission"}
+            )
+            resp = view(request)
         finally:
             monkeypatches.undo()
 
         assert resp.status_code == 201
-        data = resp.json()
+        data = resp.data
         assert data["history_context"] == {"previous_examinations": []}
         assert data["warnings"] == ["nag"]
+        assert data["persisted_dtypes_record"] is None
+        assert data["persisted_dtypes_record_updated_at"] is None
 
 
 class PatientExaminationReportSegmentFrameSelectorTests(TestCase):
@@ -206,6 +217,67 @@ class PatientExaminationReportSegmentFrameSelectorTests(TestCase):
             item["controls"]["step_forward_5_frame_number"]
             <= self.segment.end_frame_number
         )
+
+    def test_segment_frame_selector_includes_video_segments_by_shared_sensitive_meta(
+        self,
+    ):
+        sensitive_meta = SensitiveMeta.objects.create(center=self.center)
+        RawPdfFile.objects.create(
+            pdf_hash=f"selector-pdf-{uuid.uuid4().hex}",
+            center=self.center,
+            patient=self.patient,
+            examination=self.patient_examination,
+            sensitive_meta=sensitive_meta,
+        )
+        linked_by_meta_video = VideoFile.objects.create(
+            center=self.center,
+            video_hash=f"selector-shared-meta-video-{uuid.uuid4().hex}",
+            patient=self.patient,
+            sensitive_meta=sensitive_meta,
+            fps=25.0,
+            frame_count=100,
+            original_file_name="selector-shared-meta.mp4",
+        )
+        linked_by_meta_segment = LabelVideoSegment.objects.create(
+            video_file=linked_by_meta_video,
+            start_frame_number=30,
+            end_frame_number=40,
+        )
+        Frame.objects.create(
+            video=linked_by_meta_video,
+            frame_number=35,
+            relative_path="frame_0035.jpg",
+            timestamp=1.4,
+            is_extracted=True,
+        )
+
+        resp = self.client.get(self._selector_url())
+
+        assert resp.status_code == 200, resp.content
+        data = resp.json()
+        segment_ids = {item["segment_id"] for item in data["results"]}
+        assert self.segment.id in segment_ids
+        assert linked_by_meta_segment.id in segment_ids
+
+        patch_resp = self.client.patch(
+            self._selector_url(report_id=data["report_id"]),
+            data=json.dumps(
+                {
+                    "patient_examination_id": self.patient_examination.id,
+                    "segment_id": linked_by_meta_segment.id,
+                    "frame_number": 35,
+                }
+            ),
+            content_type="application/json",
+        )
+
+        assert patch_resp.status_code == 200, patch_resp.content
+        shared_item = next(
+            item
+            for item in patch_resp.json()["results"]
+            if item["segment_id"] == linked_by_meta_segment.id
+        )
+        assert shared_item["selected_frame_number"] == 35
 
     def test_segment_frame_selector_patch_random_step_set(self):
         first = self.client.get(self._selector_url())

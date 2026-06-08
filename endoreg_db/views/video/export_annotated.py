@@ -1,13 +1,23 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
+from django.db.models import QuerySet
+from pydantic import ValidationError
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.request import Request
 from rest_framework.response import Response
 
+from endoreg_db.export.frames.export_frames_with_labels import (
+    annotation_exporter_client,
+    export_config,
+    export_job_failed_error,
+    export_result,
+)
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
@@ -17,10 +27,12 @@ from endoreg_db.models.state.video_segment_validation import (
     resolve_segment_annotation_status,
     segment_annotations_are_final,
 )
-from endoreg_db.export.frames.export_frames_with_labels import (
-    annotation_exporter_client,
-    export_config,
-    export_job_failed_error,
+from endoreg_db.schemas import (
+    VideoAnnotationExportConfigUpdateData,
+    VideoAnnotationExportErrorPayload,
+    VideoAnnotationExportRequestPayload,
+    VideoAnnotationExportResultPayload,
+    dump_video_annotation_export_update_payload,
 )
 from endoreg_db.services.hub import (
     local_study_server_mode_enabled,
@@ -28,33 +40,28 @@ from endoreg_db.services.hub import (
 )
 from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
 
-_BOOLEAN_PAYLOAD_KEYS = {
-    "only_true",
-    "load_base_data",
-    "export_videos",
-    "export_frames",
-    "use_export_flags",
-    "all_centers",
-    "only_validated",
-    "transcode_frames",
-    "transcode_overwrite",
-    "use_frame_pk_paths",
-}
+
+def _error_response(message: str, status_code: int) -> Response[dict[str, object]]:
+    payload = VideoAnnotationExportErrorPayload(error=message)
+    return Response(payload.model_dump(mode="json"), status=status_code)
 
 
-def _payload_bool(value: Any) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on"}
-    return bool(value)
+def _request_payload_data(request: Request) -> Mapping[str, object]:
+    payload = cast(object, request.data)
+    if payload is None:
+        return {}
+    if not isinstance(payload, Mapping):
+        raise ValueError("Request payload must be a JSON object.")
+    return cast(Mapping[str, object], payload)
 
 
-def _api_export_scope_error(request, config: export_config) -> tuple[str, int] | None:
+def _api_export_scope_error(
+    request: Request, config: export_config
+) -> tuple[str, int] | None:
     center_key = str(config.center_key or "").strip()
     all_centers = bool(config.all_centers)
     local_study_server = local_study_server_mode_enabled()
-    user = getattr(request, "user", None)
+    user = cast(Any, request.user)
     authenticated = bool(user and getattr(user, "is_authenticated", False))
     privileged = bool(
         authenticated
@@ -81,22 +88,27 @@ def _api_export_scope_error(request, config: export_config) -> tuple[str, int] |
         if center is None:
             return f"Unknown center_key: {center_key}", 400
         allowed_center_id = resolve_allowed_center_id(user)
+        center_id = cast(int, center.pk)
         if allowed_center_id == -1:
             return "You do not have access to export center data.", 403
-        if allowed_center_id is not None and center.id != allowed_center_id:
+        if allowed_center_id is not None and center_id != allowed_center_id:
             return "Export center is outside the authenticated scope.", 403
 
     return None
 
 
-def _scoped_video_queryset(queryset, config: export_config):
+def _scoped_video_queryset(
+    queryset: QuerySet[VideoFile], config: export_config
+) -> QuerySet[VideoFile]:
     center_key = str(config.center_key or "").strip()
     if center_key:
         return queryset.filter(center__center_key=center_key)
     return queryset
 
 
-def _scoped_segment_queryset(queryset, config: export_config):
+def _scoped_segment_queryset(
+    queryset: QuerySet[LabelVideoSegment], config: export_config
+) -> QuerySet[LabelVideoSegment]:
     center_key = str(config.center_key or "").strip()
     if center_key:
         return queryset.filter(video_file__center__center_key=center_key)
@@ -113,7 +125,10 @@ def _selected_video_ids_for_cleanup_preflight(config: export_config) -> set[int]
         segment_queryset = _scoped_segment_queryset(segment_queryset, config)
         video_ids.update(
             int(video_id)
-            for video_id in segment_queryset.values_list("video_file_id", flat=True)
+            for video_id in cast(
+                Iterable[int | None],
+                segment_queryset.values_list("video_file_id", flat=True),
+            )
             if video_id is not None
         )
     elif config.use_export_flags:
@@ -122,7 +137,11 @@ def _selected_video_ids_for_cleanup_preflight(config: export_config) -> set[int]
             config,
         )
         video_ids.update(
-            int(video_id) for video_id in flagged_videos.values_list("pk", flat=True)
+            int(video_id)
+            for video_id in cast(
+                Iterable[int],
+                flagged_videos.values_list("pk", flat=True),
+            )
         )
 
         flagged_segments = _scoped_segment_queryset(
@@ -131,7 +150,10 @@ def _selected_video_ids_for_cleanup_preflight(config: export_config) -> set[int]
         )
         video_ids.update(
             int(video_id)
-            for video_id in flagged_segments.values_list("video_file_id", flat=True)
+            for video_id in cast(
+                Iterable[int | None],
+                flagged_segments.values_list("video_file_id", flat=True),
+            )
             if video_id is not None
         )
 
@@ -143,7 +165,11 @@ def _api_segment_cleanup_error(config: export_config) -> tuple[str, int] | None:
     if not video_ids:
         return None
 
-    for video in VideoFile.objects.select_related("state").filter(pk__in=video_ids):
+    videos = cast(
+        Iterable[VideoFile],
+        VideoFile.objects.select_related("state").filter(pk__in=video_ids),
+    )
+    for video in videos:
         if segment_annotations_are_final(video):
             continue
         segment_status = resolve_segment_annotation_status(video)
@@ -155,110 +181,141 @@ def _api_segment_cleanup_error(config: export_config) -> tuple[str, int] | None:
     return None
 
 
+def _apply_api_default_updates(
+    updates: VideoAnnotationExportConfigUpdateData,
+) -> VideoAnnotationExportConfigUpdateData:
+    if "export_frames" not in updates:
+        updates["export_frames"] = True
+    if "use_export_flags" not in updates and "segment_ids" not in updates:
+        updates["use_export_flags"] = True
+    if "export_videos" not in updates:
+        updates["export_videos"] = False
+    return updates
+
+
+def _apply_export_config_updates(
+    config: export_config,
+    updates: VideoAnnotationExportConfigUpdateData,
+) -> export_config:
+    if "output_path" in updates:
+        config = replace(config, output_path=updates["output_path"])
+    if "output_dir" in updates:
+        config = replace(config, output_dir=updates["output_dir"])
+    if "output_format" in updates:
+        config = replace(config, output_format=updates["output_format"])
+    if "video_id" in updates:
+        config = replace(config, video_id=updates["video_id"])
+    if "label_id" in updates:
+        config = replace(config, label_id=updates["label_id"])
+    if "information_source_name" in updates:
+        config = replace(
+            config,
+            information_source_name=updates["information_source_name"],
+        )
+    if "only_true" in updates:
+        config = replace(config, only_true=updates["only_true"])
+    if "limit" in updates:
+        config = replace(config, limit=updates["limit"])
+    if "load_base_data" in updates:
+        config = replace(config, load_base_data=updates["load_base_data"])
+    if "export_videos" in updates:
+        config = replace(config, export_videos=updates["export_videos"])
+    if "export_frames" in updates:
+        config = replace(config, export_frames=updates["export_frames"])
+    if "transcode_frames" in updates:
+        config = replace(config, transcode_frames=updates["transcode_frames"])
+    if "transcode_fps" in updates:
+        config = replace(config, transcode_fps=updates["transcode_fps"])
+    if "transcode_quality" in updates:
+        config = replace(config, transcode_quality=updates["transcode_quality"])
+    if "transcode_ext" in updates:
+        config = replace(config, transcode_ext=updates["transcode_ext"])
+    if "transcode_overwrite" in updates:
+        config = replace(config, transcode_overwrite=updates["transcode_overwrite"])
+    if "use_frame_pk_paths" in updates:
+        config = replace(config, use_frame_pk_paths=updates["use_frame_pk_paths"])
+    if "use_export_flags" in updates:
+        config = replace(config, use_export_flags=updates["use_export_flags"])
+    if "segment_ids" in updates:
+        config = replace(config, segment_ids=updates["segment_ids"])
+    if "center_key" in updates:
+        config = replace(config, center_key=updates["center_key"])
+    if "all_centers" in updates:
+        config = replace(config, all_centers=updates["all_centers"])
+    if "only_validated" in updates:
+        config = replace(config, only_validated=updates["only_validated"])
+    return config
+
+
+def _success_payload(result: export_result) -> VideoAnnotationExportResultPayload:
+    return VideoAnnotationExportResultPayload(
+        success=result.success,
+        output_path=str(result.output_path),
+        row_count=result.row_count,
+        exported_video_count=result.exported_video_count,
+        exported_frame_count=result.exported_frame_count,
+        video_output_dir=(
+            str(result.video_output_dir)
+            if result.video_output_dir is not None
+            else None
+        ),
+        frame_output_dir=(
+            str(result.frame_output_dir)
+            if result.frame_output_dir is not None
+            else None
+        ),
+    )
+
+
 @api_view(["POST"])
 @permission_classes([EnvironmentAwarePermission])
-def export_annotated_data(request):
-    payload: dict[str, Any] = request.data or {}
-    config_path = payload.get("config_path")
+def export_annotated_data(request: Request) -> Response[dict[str, object]]:
+    try:
+        payload = VideoAnnotationExportRequestPayload.model_validate(
+            _request_payload_data(request)
+        )
+    except (ValidationError, ValueError) as exc:
+        return _error_response(
+            f"Invalid export request payload: {exc}",
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+    config_path = payload.config_path
     if config_path:
         try:
             config = export_config.from_yaml(config_path)
         except (FileNotFoundError, ValueError) as exc:
-            return Response(
-                {"success": False, "error": str(exc)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return _error_response(str(exc), status.HTTP_400_BAD_REQUEST)
     else:
-        output_dir = payload.get("output_dir")
-        output_path = payload.get("output_path")
+        output_dir = payload.output_dir
+        output_path = payload.output_path
         if not output_path:
             output_path = "frames.csv" if output_dir else "data/export/frames.csv"
         config = export_config(output_path=Path(output_path))
 
-    if payload.get("output_format"):
-        config = replace(config, output_format=payload["output_format"])
-    elif payload.get("format"):
-        config = replace(config, output_format=payload["format"])
-
-    updates: dict[str, Any] = {}
-    for key in (
-        "output_path",
-        "output_dir",
-        "video_id",
-        "label_id",
-        "information_source_name",
-        "only_true",
-        "limit",
-        "load_base_data",
-        "export_videos",
-        "export_frames",
-        "use_export_flags",
-        "center_key",
-        "all_centers",
-        "only_validated",
-        "segment_ids",
-        "transcode_frames",
-        "transcode_fps",
-        "transcode_quality",
-        "transcode_ext",
-        "transcode_overwrite",
-        "use_frame_pk_paths",
-    ):
-        if key in payload and payload[key] is not None:
-            if key in _BOOLEAN_PAYLOAD_KEYS:
-                updates[key] = _payload_bool(payload[key])
-            elif key == "center_key":
-                updates[key] = str(payload[key]).strip() or None
-            else:
-                updates[key] = payload[key]
-
+    updates = dump_video_annotation_export_update_payload(payload)
     if not config_path:
-        if "export_frames" not in updates:
-            updates["export_frames"] = True
-        if "use_export_flags" not in updates and "segment_ids" not in updates:
-            updates["use_export_flags"] = True
-        if "export_videos" not in updates:
-            updates["export_videos"] = False
-
-    if updates:
-        config = replace(config, **updates)
+        updates = _apply_api_default_updates(updates)
+    config = _apply_export_config_updates(config, updates)
 
     scope_error = _api_export_scope_error(request, config)
     if scope_error is not None:
         error_message, status_code = scope_error
-        return Response({"success": False, "error": error_message}, status=status_code)
+        return _error_response(error_message, status_code)
 
     cleanup_error = _api_segment_cleanup_error(config)
     if cleanup_error is not None:
         error_message, status_code = cleanup_error
-        return Response({"success": False, "error": error_message}, status=status_code)
+        return _error_response(error_message, status_code)
 
     client = annotation_exporter_client()
     try:
         result = client.run_export(config)
     except export_job_failed_error as exc:
-        return Response(
-            {"success": False, "error": str(exc)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
+        return _error_response(str(exc), status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    response_payload = _success_payload(result)
     return Response(
-        {
-            "success": result.success,
-            "output_path": str(result.output_path),
-            "row_count": result.row_count,
-            "exported_video_count": result.exported_video_count,
-            "exported_frame_count": result.exported_frame_count,
-            "video_output_dir": (
-                str(result.video_output_dir)
-                if result.video_output_dir is not None
-                else None
-            ),
-            "frame_output_dir": (
-                str(result.frame_output_dir)
-                if result.frame_output_dir is not None
-                else None
-            ),
-        },
+        response_payload.model_dump(mode="json"),
         status=status.HTTP_200_OK,
     )

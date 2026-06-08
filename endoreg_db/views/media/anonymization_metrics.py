@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import cast
+
 from rest_framework import status
+from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -21,9 +25,15 @@ class AnonymizationMetricsView(APIView):
 
     permission_classes = [EnvironmentAwarePermission, PolicyPermission]
 
-    def get(self, request):
+    def get(self, request: Request) -> Response:
+        query_params = cast(object, request.query_params)
+        filters_payload: Mapping[str, object] = (
+            cast(Mapping[str, object], query_params)
+            if isinstance(query_params, Mapping)
+            else {}
+        )
         try:
-            filters = parse_metrics_filters(request.query_params)
+            filters = parse_metrics_filters(filters_payload)
         except ValueError as exc:
             return Response(
                 {"error": str(exc)},

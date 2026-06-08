@@ -1,18 +1,42 @@
+import logging
+from collections.abc import Mapping
+from typing import Protocol, TypeAlias, cast
+
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.serializers.patient_examination import PatientExaminationSerializer
 
 from django.db import transaction
 from rest_framework import generics, status
+from rest_framework.request import Request
 from rest_framework.response import Response
 
 from endoreg_db.utils.web.permissions import DEBUG_PERMISSIONS
 
-import logging
-
 logger = logging.getLogger(__name__)
 
+JsonScalar: TypeAlias = str | int | float | bool | None
+JsonValue: TypeAlias = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
 
-class PatientExaminationDetailView(generics.RetrieveUpdateAPIView):
+
+class _SerializerDataLike(Protocol):
+    @property
+    def data(self) -> Mapping[str, JsonValue]: ...
+
+
+class _SerializerErrorsLike(Protocol):
+    @property
+    def errors(self) -> JsonValue: ...
+
+
+def _serializer_data(serializer: _SerializerDataLike) -> Mapping[str, JsonValue]:
+    return serializer.data
+
+
+def _serializer_errors(serializer: _SerializerErrorsLike) -> JsonValue:
+    return serializer.errors
+
+
+class PatientExaminationDetailView(generics.RetrieveUpdateAPIView[PatientExamination]):
     """
     Retrieve and update PatientExamination instances.
     GET /api/examinations/{id}/
@@ -23,11 +47,11 @@ class PatientExaminationDetailView(generics.RetrieveUpdateAPIView):
     serializer_class = PatientExaminationSerializer
     permission_classes = DEBUG_PERMISSIONS
 
-    def get(self, request, *args, **kwargs):
+    def get(self, request: Request, *args: str, **kwargs: str) -> Response:
         try:
             instance = self.get_object()
             serializer = self.get_serializer(instance)
-            return Response(serializer.data)
+            return Response(_serializer_data(cast(_SerializerDataLike, serializer)))
         except Exception as e:
             logger.error(f"Error retrieving examination: {str(e)}")
             return Response(
@@ -36,7 +60,7 @@ class PatientExaminationDetailView(generics.RetrieveUpdateAPIView):
             )
 
     @transaction.atomic
-    def patch(self, request, *args, **kwargs):
+    def patch(self, request: Request, *args: str, **kwargs: str) -> Response:
         try:
             instance = self.get_object()
             serializer = self.get_serializer(instance, data=request.data, partial=True)
@@ -44,14 +68,21 @@ class PatientExaminationDetailView(generics.RetrieveUpdateAPIView):
             if serializer.is_valid():
                 serializer.save()
 
-                response_data = serializer.data
+                response_data = dict(
+                    _serializer_data(cast(_SerializerDataLike, serializer))
+                )
                 response_data["message"] = "Examination updated successfully"
 
-                logger.info(f"Examination {instance.id} updated successfully")
+                logger.info(f"Examination {instance.pk} updated successfully")
                 return Response(response_data, status=status.HTTP_200_OK)
             else:
                 return Response(
-                    {"error": "Validation failed", "details": serializer.errors},
+                    {
+                        "error": "Validation failed",
+                        "details": _serializer_errors(
+                            cast(_SerializerErrorsLike, serializer)
+                        ),
+                    },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 

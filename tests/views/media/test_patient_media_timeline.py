@@ -134,10 +134,7 @@ class PatientMediaTimelineViewTests(TestCase):
         assert latest_report is not None
         assert latest_report["id"] == report.pk
         assert latest_report["anonymized_text"] == "ANONYMIZED REPORT TEXT"
-        assert {entry["type"] for entry in latest_report["stream_options"]} == {
-            "raw",
-            "processed",
-        }
+        assert [entry["type"] for entry in latest_report["stream_options"]] == ["raw"]
 
         latest_video = payload["latest_video"]
         assert latest_video is not None
@@ -191,6 +188,7 @@ class PatientMediaTimelineViewTests(TestCase):
         assert latest_report["id"] == full_report.pk
         assert latest_report["raw_pdf_id"] == raw_pdf.pk
         assert latest_report["anonymized_text"] == "FULL REPORT TEXT"
+        assert [entry["type"] for entry in latest_report["stream_options"]] == ["raw"]
         assert all(
             f"/api/media/pdfs/{raw_pdf.pk}/stream/" in option["url"]
             for option in latest_report["stream_options"]

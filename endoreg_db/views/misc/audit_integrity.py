@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from rest_framework.request import Request
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -18,7 +19,7 @@ class AuditLedgerIntegrityStatusView(APIView):
 
     permission_classes = [EnvironmentAwarePermission]
 
-    def get(self, request):
+    def get(self, request: Request) -> Response:
         return Response(
             get_audit_ledger_integrity_status(),
             status=status.HTTP_200_OK,

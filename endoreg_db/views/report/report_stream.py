@@ -3,15 +3,19 @@ from __future__ import annotations
 import logging
 import mimetypes
 from pathlib import Path
+from typing import TYPE_CHECKING, TypeGuard, cast
 
-from django.http import Http404, HttpResponse, HttpResponseBase, StreamingHttpResponse
+from django.db.models.fields.files import FieldFile
+from django.http import Http404, HttpResponse, StreamingHttpResponse
+from django.http.response import HttpResponseBase
 from django.utils.decorators import method_decorator
 from django.views.decorators.clickjacking import xframe_options_exempt
+from rest_framework.request import Request
 from rest_framework.views import APIView
-from typing import TYPE_CHECKING
 
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.schemas import MediaStreamDisposition, MediaStreamFileKind
 from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
 from endoreg_db.utils.filesystem import paths as path_utils
 from endoreg_db.utils.filesystem.paths import to_storage_relative
@@ -37,13 +41,38 @@ from endoreg_db.utils.web.cors import resolve_response_origin
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from django.db.models.fields.files import FieldFile
+    from collections.abc import Mapping
+
+
+def _field_file_has_name(field_file: object | None) -> TypeGuard[FieldFile]:
+    return bool(field_file and isinstance(getattr(field_file, "name", None), str))
+
+
+def _field_file_name(field_file: object) -> str:
+    name = getattr(field_file, "name", None)
+    if not isinstance(name, str) or not name:
+        raise Http404("Report file is not available")
+    return name
+
+
+def _set_field_file_name(field_file: object, name: str) -> FieldFile:
+    field = cast(FieldFile, field_file)
+    field.name = name
+    return field
+
+
+def _query_value(
+    query_params: "Mapping[str, object]", key: str, default: str = ""
+) -> str:
+    value = query_params.get(key, default)
+    return str(value if value is not None else default)
 
 
 def _processed_report_fallback_path(report: RawPdfFile) -> Path | None:
+    pdf_hash = cast(str, getattr(report, "pdf_hash"))
     candidate = (
         path_utils.EndoregPathsModel.from_environment().anonym_report
-        / f"{report.pdf_hash}.pdf"
+        / f"{pdf_hash}.pdf"
     )
     return path_utils.resolve_existing_protected_media_path(candidate)
 
@@ -66,61 +95,65 @@ def _raw_report_fallback_path(report: RawPdfFile) -> Path | None:
     return None
 
 
-def _pick_report_field_file(report: RawPdfFile, file_type: str):
+def _pick_report_field_file(
+    report: RawPdfFile, file_type: MediaStreamFileKind
+) -> FieldFile:
     if file_type == "processed":
         field_file = getattr(report, "processed_file", None)
-        if field_file and getattr(field_file, "name", None):
+        if _field_file_has_name(field_file):
             return field_file
 
         fallback_path = _processed_report_fallback_path(report)
         if fallback_path is not None:
             relative_name = to_storage_relative(fallback_path)
-            report.processed_file.name = relative_name
-            return report.processed_file
+            return _set_field_file_name(
+                getattr(report, "processed_file"),
+                relative_name,
+            )
 
         raise Http404("Processed report file not available")
 
     field_file = getattr(report, "file", None)
-    if field_file and getattr(field_file, "name", None):
+    if _field_file_has_name(field_file):
         return field_file
 
     raw_fallback_path = _raw_report_fallback_path(report)
     if raw_fallback_path is not None and raw_fallback_path.exists():
         relative_name = to_storage_relative(raw_fallback_path)
-        report.file.name = relative_name
-        return report.file
+        return _set_field_file_name(getattr(report, "file"), relative_name)
 
     raise Http404("Raw report file not available")
 
 
 def _recover_missing_report_field_path(
-    report: RawPdfFile, file_type: str
-) -> "FieldFile | None":
+    report: RawPdfFile, file_type: MediaStreamFileKind
+) -> FieldFile | None:
     if file_type == "processed":
         fallback_path = _processed_report_fallback_path(report)
         if fallback_path is not None:
             relative_name = to_storage_relative(fallback_path)
-            report.processed_file.name = relative_name
-            return report.processed_file
+            return _set_field_file_name(
+                getattr(report, "processed_file"),
+                relative_name,
+            )
         return None
 
     raw_fallback_path = _raw_report_fallback_path(report)
     if raw_fallback_path is not None and raw_fallback_path.exists():
         relative_name = to_storage_relative(raw_fallback_path)
-        report.file.name = relative_name
-        return report.file
+        return _set_field_file_name(getattr(report, "file"), relative_name)
     return None
 
 
-def _resolve_local_path_for_nginx(field_file) -> Path | None:
+def _resolve_local_path_for_nginx(field_file: object) -> Path | None:
     return maybe_local_plaintext_path(field_file)
 
 
 def _serve_with_nginx(
-    field_file,
+    field_file: object,
     content_type: str,
     *,
-    disposition: str,
+    disposition: MediaStreamDisposition,
     frontend_origin: str | None,
 ) -> HttpResponseBase | None:
     path = _resolve_local_path_for_nginx(field_file)
@@ -131,7 +164,7 @@ def _serve_with_nginx(
         return build_nginx_accel_response_for_path(
             path=path,
             content_type=content_type,
-            filename=Path(field_file.name).name,
+            filename=Path(_field_file_name(field_file)).name,
             disposition=disposition,
             frontend_origin=frontend_origin,
         )
@@ -153,11 +186,11 @@ def _add_cors_headers_if_configured(
 
 def _build_eager_content_response(
     *,
-    field_file,
+    field_file: object,
     content_type: str,
     file_size: int,
     range_header: str | None,
-    disposition: str,
+    disposition: MediaStreamDisposition,
     filename: str,
 ) -> StreamingHttpResponse:
     if range_header:
@@ -198,7 +231,35 @@ def _build_eager_content_response(
 class ReportStreamView(APIView):
     permission_classes = [EnvironmentAwarePermission, PolicyPermission]
 
-    def get(self, request, pk: int, *args, **kwargs):
+    @staticmethod
+    def _parse_file_type(request: Request) -> MediaStreamFileKind:
+        type_value = request.query_params.get("type")
+        file_type_value = request.query_params.get("file_type")
+        raw_value = str(type_value if type_value is not None else file_type_value)
+        return "processed" if raw_value.lower() == "processed" else "raw"
+
+    @staticmethod
+    def _parse_disposition(request: Request) -> MediaStreamDisposition:
+        download_raw = _query_value(request.query_params, "download").lower()
+        return "attachment" if download_raw in {"1", "true", "yes", "on"} else "inline"
+
+    @staticmethod
+    def _range_header(request: Request) -> str | None:
+        header_value = request.headers.get("Range")
+        if header_value is not None:
+            return header_value
+        meta_value = request.META.get("HTTP_RANGE")
+        if isinstance(meta_value, str):
+            return meta_value
+        return None
+
+    def get(
+        self,
+        request: Request,
+        pk: int | str,
+        *args: object,
+        **kwargs: object,
+    ) -> HttpResponseBase:
         try:
             report_id = int(pk)
         except (TypeError, ValueError):
@@ -211,13 +272,7 @@ class ReportStreamView(APIView):
 
         self.check_object_permissions(request, report)
 
-        file_type = str(
-            request.query_params.get("type")
-            or request.query_params.get("file_type")
-            or "raw"
-        ).lower()
-        if file_type not in {"raw", "processed"}:
-            file_type = "raw"
+        file_type = self._parse_file_type(request)
 
         field_file = _pick_report_field_file(report, file_type)
         if field_file_is_local_encrypted_without_reader(field_file):
@@ -229,10 +284,7 @@ class ReportStreamView(APIView):
                 getattr(field_file, "name", None),
             )
             raise Http404("Report file is not available")
-        field_file_name = getattr(field_file, "name", None)
-        if not field_file_name:
-            raise Http404("Report file is not available")
-        field_file_name = str(field_file_name)
+        field_file_name = _field_file_name(field_file)
         filename = Path(field_file_name).name
         content_type = mimetypes.guess_type(field_file_name)[0] or "application/pdf"
         recovered_from_fallback = False
@@ -255,12 +307,9 @@ class ReportStreamView(APIView):
         if file_size <= 0:
             raise Http404("Report file is empty")
 
-        download_raw = str(request.query_params.get("download", "")).lower()
-        disposition = (
-            "attachment" if download_raw in {"1", "true", "yes", "on"} else "inline"
-        )
+        disposition = self._parse_disposition(request)
         frontend_origin = resolve_response_origin(request)
-        range_header = request.headers.get("Range") or request.META.get("HTTP_RANGE")
+        range_header = self._range_header(request)
 
         if nginx_offload_enabled() and not range_header and not recovered_from_fallback:
             nginx_response = _serve_with_nginx(

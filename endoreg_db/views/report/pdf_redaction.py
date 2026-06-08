@@ -1,8 +1,15 @@
+from __future__ import annotations
+
 import hashlib
 import logging
-from typing import Any
+from collections.abc import Callable, Iterable, Mapping
+from datetime import datetime
+from typing import Any, cast
 
+from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
+from django.db.models.fields.files import FieldFile
+from django.http import HttpRequest
 from lx_dtypes.models.contracts import (
     PdfRedactionRequest,
     PdfRedactionResponse,
@@ -10,12 +17,14 @@ from lx_dtypes.models.contracts import (
 )
 from rest_framework import status
 from rest_framework.parsers import FormParser, MultiPartParser
+from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models.media.pdf.pdf_processing_history import PdfProcessingHistory
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.state.raw_pdf import RawPdfState
 from endoreg_db.serializers.pdf.pdf_processing_history import (
     PdfProcessingHistorySerializer,
 )
@@ -42,7 +51,92 @@ def _state_status_value(state_obj: Any) -> str | None:
     return str(getattr(status_value, "value", status_value))
 
 
-def _is_pdf_file(uploaded_file) -> bool:
+def _request_data(request: Request) -> Mapping[str, Any]:
+    data = cast(object, request.data)
+    if isinstance(data, Mapping):
+        return cast(Mapping[str, Any], data)
+    return {}
+
+
+def _uploaded_file(request: Request, field_name: str) -> UploadedFile | None:
+    files = cast(Mapping[str, UploadedFile], request.FILES)
+    return files.get(field_name)
+
+
+def _django_request(request: Request) -> HttpRequest:
+    return request._request
+
+
+def _pdf_pk(pdf: RawPdfFile) -> int:
+    value: object = pdf.pk
+    return int(value)
+
+
+def _pdf_hash(pdf: RawPdfFile) -> str:
+    pdf_obj = cast(Any, pdf)
+    return str(pdf_obj.pdf_hash)
+
+
+def _pdf_file(pdf: RawPdfFile) -> FieldFile:
+    return pdf.file
+
+
+def _pdf_processed_file(pdf: RawPdfFile) -> FieldFile:
+    return pdf.processed_file
+
+
+def _pdf_state(pdf: RawPdfFile) -> RawPdfState | None:
+    return pdf.state
+
+
+def _pdf_updated_at(pdf: RawPdfFile) -> str:
+    pdf_obj = cast(Any, pdf)
+    date_modified: object = pdf_obj.date_modified
+    if isinstance(date_modified, datetime):
+        return date_modified.isoformat()
+    return str(date_modified)
+
+
+def _history_pk(history_entry: PdfProcessingHistory) -> int:
+    value: object = history_entry.pk
+    if isinstance(value, int):
+        return value
+    return int(str(value))
+
+
+def _state_sensitive_meta_processed(state: RawPdfState) -> bool:
+    state_obj = cast(Any, state)
+    return bool(state_obj.sensitive_meta_processed)
+
+
+def _save_pdf_after_processed_file(pdf: RawPdfFile) -> None:
+    pdf_obj = cast(Any, pdf)
+    pdf_obj.save(update_fields=["processed_file", "date_modified"])
+
+
+def _save_pdf_state(state: RawPdfState, *, update_fields: list[str]) -> None:
+    state_obj = cast(Any, state)
+    state_obj.save(update_fields=update_fields)
+
+
+def _save_processed_file(
+    pdf: RawPdfFile,
+    *,
+    filename: str,
+    uploaded_pdf: UploadedFile,
+) -> None:
+    save_file = cast(
+        Callable[[str, UploadedFile, bool], None],
+        cast(Any, _pdf_processed_file(pdf)).save,
+    )
+    save_file(filename, uploaded_pdf, False)
+
+
+def _serializer_data(serializer: PdfProcessingHistorySerializer) -> object:
+    return cast(object, cast(Any, serializer).data)
+
+
+def _is_pdf_file(uploaded_file: UploadedFile) -> bool:
     try:
         uploaded_file.seek(0)
         header = uploaded_file.read(len(PDF_MAGIC_HEADER))
@@ -51,11 +145,12 @@ def _is_pdf_file(uploaded_file) -> bool:
     return header == PDF_MAGIC_HEADER
 
 
-def _sha256_uploaded_file(uploaded_file) -> str:
+def _sha256_uploaded_file(uploaded_file: UploadedFile) -> str:
     digest = hashlib.sha256()
     try:
         uploaded_file.seek(0)
-        for chunk in uploaded_file.chunks():
+        chunks = cast(Callable[[], Iterable[bytes]], cast(Any, uploaded_file).chunks)
+        for chunk in chunks():
             digest.update(chunk)
     finally:
         uploaded_file.seek(0)
@@ -70,7 +165,7 @@ class PdfApplyRedactionsView(APIView):
     permission_classes = [EnvironmentAwarePermission, PolicyPermission]
     parser_classes = [MultiPartParser, FormParser]
 
-    def post(self, request, pk: int):
+    def post(self, request: Request, pk: int) -> Response:
         pdf = RawPdfFile.objects.select_related("state").filter(pk=pk).first()
         if pdf is None:
             return Response(
@@ -86,7 +181,8 @@ class PdfApplyRedactionsView(APIView):
                 )
 
             try:
-                uploaded_pdf = request.FILES.get("file")
+                request_payload = _request_data(request)
+                uploaded_pdf = _uploaded_file(request, "file")
                 if uploaded_pdf is None:
                     return Response(
                         {"error": "file is required."},
@@ -127,12 +223,12 @@ class PdfApplyRedactionsView(APIView):
                 try:
                     payload = PdfRedactionRequest.model_validate(
                         {
-                            "source_type": request.data.get("source_type", ""),
-                            "redaction_manifest": request.data.get(
+                            "source_type": request_payload.get("source_type", ""),
+                            "redaction_manifest": request_payload.get(
                                 "redaction_manifest"
                             ),
-                            "note": request.data.get("note", ""),
-                            "client_source_sha256": request.data.get(
+                            "note": request_payload.get("note", ""),
+                            "client_source_sha256": request_payload.get(
                                 "client_source_sha256", ""
                             ),
                         }
@@ -148,9 +244,9 @@ class PdfApplyRedactionsView(APIView):
                 manifest = payload.redaction_manifest.model_dump(mode="python")
 
                 source_field = (
-                    pdf.file
+                    _pdf_file(pdf)
                     if source_type == PdfProcessingHistory.SOURCE_TYPE_RAW
-                    else pdf.processed_file
+                    else _pdf_processed_file(pdf)
                 )
                 if not source_field or not getattr(source_field, "name", None):
                     return Response(
@@ -172,7 +268,7 @@ class PdfApplyRedactionsView(APIView):
 
                 uploaded_sha256 = _sha256_uploaded_file(uploaded_pdf)
                 processed_filename = (
-                    f"{pdf.pdf_hash}_redaction_{uploaded_sha256[:12]}.pdf"
+                    f"{_pdf_hash(pdf)}_redaction_{uploaded_sha256[:12]}.pdf"
                 )
 
                 with transaction.atomic():
@@ -191,10 +287,12 @@ class PdfApplyRedactionsView(APIView):
                     state = get_or_create_raw_pdf_state(pdf)
                     status_before = _state_status_value(state) or "not_started"
 
-                    pdf.processed_file.save(
-                        processed_filename, uploaded_pdf, save=False
+                    _save_processed_file(
+                        pdf,
+                        filename=processed_filename,
+                        uploaded_pdf=uploaded_pdf,
                     )
-                    pdf.save(update_fields=["processed_file", "date_modified"])
+                    _save_pdf_after_processed_file(pdf)
 
                     state_update_fields = [
                         "anonymized",
@@ -204,10 +302,10 @@ class PdfApplyRedactionsView(APIView):
                     state.anonymized = True
                     state.anonymization_validated = False
                     # Keep existing value unless missing; a redacted upload is processed output.
-                    if not state.sensitive_meta_processed:
+                    if not _state_sensitive_meta_processed(state):
                         state.sensitive_meta_processed = True
                         state_update_fields.append("sensitive_meta_processed")
-                    state.save(update_fields=state_update_fields)
+                    _save_pdf_state(state, update_fields=state_update_fields)
 
                     user = getattr(request, "user", None)
                     actor_user = (
@@ -222,7 +320,7 @@ class PdfApplyRedactionsView(APIView):
                         client_source_sha256=client_source_sha256,
                         source_sha256=source_sha256,
                         processed_file_name=str(
-                            getattr(pdf.processed_file, "name", "")
+                            getattr(_pdf_processed_file(pdf), "name", "")
                         ),
                         actor_user=actor_user,
                         actor_username=getattr(user, "username", "") if user else "",
@@ -230,17 +328,17 @@ class PdfApplyRedactionsView(APIView):
                     )
 
                     pdf.refresh_from_db(fields=["date_modified", "state"])
-                    status_after = _state_status_value(pdf.state) or status_before
+                    status_after = _state_status_value(_pdf_state(pdf)) or status_before
 
                     record_operation(
-                        request,
+                        _django_request(request),
                         action=PdfProcessingHistory.OPERATION_PDF_REDACTION,
                         resource_type="pdf",
-                        resource_id=pdf.pk,
+                        resource_id=_pdf_pk(pdf),
                         status_before=status_before,
                         status_after=status_after,
                         meta={
-                            "revision_id": history_entry.pk,
+                            "revision_id": _history_pk(history_entry),
                             "source_type": source_type,
                             "client_source_sha256": client_source_sha256 or None,
                             "source_sha256": source_sha256,
@@ -248,14 +346,14 @@ class PdfApplyRedactionsView(APIView):
                     )
 
                 response_payload = PdfRedactionResponse(
-                    file_id=pdf.pk,
-                    revision_id=history_entry.pk,
+                    file_id=_pdf_pk(pdf),
+                    revision_id=_history_pk(history_entry),
                     processed_stream_url=build_pdf_stream_path(
-                        pdf.pk, file_type="processed"
+                        _pdf_pk(pdf), file_type="processed"
                     ),
                     status="done_processing_anonymization",
                     anonymization_validated=False,
-                    updated_at=pdf.date_modified.isoformat(),
+                    updated_at=_pdf_updated_at(pdf),
                 )
                 return Response(
                     response_payload.model_dump(mode="python"),
@@ -279,7 +377,7 @@ class PdfProcessingHistoryView(APIView):
 
     permission_classes = [EnvironmentAwarePermission, PolicyPermission]
 
-    def get(self, request, pk: int):
+    def get(self, request: Request, pk: int) -> Response:
         pdf = RawPdfFile.objects.filter(pk=pk).first()
         if pdf is None:
             return Response(
@@ -295,4 +393,4 @@ class PdfProcessingHistoryView(APIView):
             many=True,
             context={"request": request},
         )
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(_serializer_data(serializer), status=status.HTTP_200_OK)

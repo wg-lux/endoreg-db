@@ -5,6 +5,7 @@ from datetime import timedelta
 from typing import Any, Dict
 
 from django.db import transaction
+from django.http import HttpRequest
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -441,7 +442,7 @@ def force_remove_media(request, file_id: int):
 
 @api_view(["POST"])
 @permission_classes(DEBUG_PERMISSIONS)
-def reset_processing_status(request, file_id: int):
+def reset_processing_status(request: HttpRequest, file_id: int):
     """
     POST /api/media-management/reset-status/{file_id}/
     Reset processing status for a stuck/failed media item

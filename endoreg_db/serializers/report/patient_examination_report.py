@@ -1,12 +1,36 @@
 from __future__ import annotations
 
+from typing import Any, cast
+
+from lx_dtypes.models.contracts.patient_examination_report import (
+    PatientExaminationReportMakeReportData,
+    PatientExaminationReportMakeReportPayload,
+    PatientExaminationReportSubmissionData,
+    PatientExaminationReportSubmissionPayload,
+    PatientReportIdentityData,
+    PatientReportIdentityPayload,
+    dump_make_report_payload,
+    dump_report_submission_payload,
+)
 from rest_framework import serializers
 
 from endoreg_db.models.report.patient_examination_report import PatientExaminationReport
+from endoreg_db.utils.pydantic_drf import validate_drf_payload
 
 
-class PatientExaminationReportSerializer(serializers.ModelSerializer):
-    class Meta:
+class PatientExaminationReportSerializer(
+    serializers.ModelSerializer[PatientExaminationReport]
+):
+    dtypes_record = serializers.JSONField(
+        source="patient_examination.dtypes_record",
+        read_only=True,
+    )
+    dtypes_record_updated_at = serializers.DateTimeField(
+        source="patient_examination.dtypes_record_updated_at",
+        read_only=True,
+    )
+
+    class Meta:  # type: ignore[reportIncompatibleVariableOverride]
         model = PatientExaminationReport
         fields = [
             "id",
@@ -20,6 +44,8 @@ class PatientExaminationReportSerializer(serializers.ModelSerializer):
             "patient_context_snapshot",
             "history_context_snapshot",
             "rendered_text",
+            "dtypes_record",
+            "dtypes_record_updated_at",
             "version",
             "is_active",
             "created_at",
@@ -35,13 +61,17 @@ class PatientExaminationReportSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "finalized_at",
+            "dtypes_record",
+            "dtypes_record_updated_at",
             "created_by",
             "updated_by",
             "finalized_by",
         ]
 
 
-class PatientExaminationReportSubmissionSerializer(serializers.Serializer):
+class PatientExaminationReportSubmissionSerializer(
+    serializers.Serializer[PatientExaminationReportSubmissionData]
+):
     report_id = serializers.IntegerField(required=False)
     patient_examination_id = serializers.IntegerField()
     template_name = serializers.CharField()
@@ -69,14 +99,26 @@ class PatientExaminationReportSubmissionSerializer(serializers.Serializer):
         required=False, min_value=1, max_value=50, default=5
     )
 
+    def validate(self, attrs: Any) -> dict[str, Any]:
+        payload = validate_drf_payload(PatientExaminationReportSubmissionPayload, attrs)
+        return cast(dict[str, Any], dump_report_submission_payload(payload))
 
-class PatientReportIdentitySerializer(serializers.Serializer):
+
+class PatientReportIdentitySerializer(
+    serializers.Serializer[PatientReportIdentityData]
+):
     first_name = serializers.CharField(max_length=150)
     last_name = serializers.CharField(max_length=150)
     dob = serializers.DateField()
 
+    def validate(self, attrs: Any) -> dict[str, Any]:
+        payload = validate_drf_payload(PatientReportIdentityPayload, attrs)
+        return payload.model_dump(mode="python")
 
-class PatientExaminationReportMakeReportSerializer(serializers.Serializer):
+
+class PatientExaminationReportMakeReportSerializer(
+    serializers.Serializer[PatientExaminationReportMakeReportData]
+):
     patient_examination_id = serializers.IntegerField()
     report_id = serializers.IntegerField(required=False)
     patient = PatientReportIdentitySerializer()
@@ -86,3 +128,7 @@ class PatientExaminationReportMakeReportSerializer(serializers.Serializer):
         max_value=24,
         default=12,
     )
+
+    def validate(self, attrs: Any) -> dict[str, Any]:
+        payload = validate_drf_payload(PatientExaminationReportMakeReportPayload, attrs)
+        return cast(dict[str, Any], dump_make_report_payload(payload))

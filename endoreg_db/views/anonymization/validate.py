@@ -8,6 +8,7 @@ from lx_dtypes.models.contracts import DocumentType as DocumentTypeContract
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
+from rest_framework.request import Request
 from rest_framework.views import APIView
 
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
@@ -273,7 +274,7 @@ class AnonymizationValidateView(APIView):
     """
 
     @transaction.atomic
-    def post(self, request, file_id: int):
+    def post(self, request: Request, file_id: int):
         # Serializer-Validierung mit deutscher Datums-Priorität
         serializer = SensitiveMetaValidateSerializer(data=request.data or {})
         serializer.is_valid(raise_exception=True)

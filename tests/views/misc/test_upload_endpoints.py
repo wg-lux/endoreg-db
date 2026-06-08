@@ -42,7 +42,7 @@ class UploadEndpointTests(TestCase):
         with (
             patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
             patch(
-                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                "endoreg_db.services.hub.ingest.start_upload_job_processing",
                 return_value="inline",
             ),
         ):
@@ -75,7 +75,7 @@ class UploadEndpointTests(TestCase):
         with (
             patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
             patch(
-                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                "endoreg_db.services.hub.ingest.start_upload_job_processing",
                 return_value="inline",
             ),
         ):
@@ -109,7 +109,7 @@ class UploadEndpointTests(TestCase):
         with (
             patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
             patch(
-                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                "endoreg_db.services.hub.ingest.start_upload_job_processing",
                 return_value="inline",
             ),
         ):
@@ -136,7 +136,7 @@ class UploadEndpointTests(TestCase):
         with (
             patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
             patch(
-                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                "endoreg_db.services.hub.ingest.start_upload_job_processing",
                 return_value="inline",
             ),
         ):
@@ -166,7 +166,7 @@ class UploadEndpointTests(TestCase):
         with (
             patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
             patch(
-                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                "endoreg_db.services.hub.ingest.start_upload_job_processing",
                 return_value="inline",
             ),
         ):
@@ -187,7 +187,7 @@ class UploadEndpointTests(TestCase):
         with (
             patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
             patch(
-                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                "endoreg_db.services.hub.ingest.start_upload_job_processing",
                 return_value="inline",
             ),
         ):
@@ -212,7 +212,7 @@ class UploadEndpointTests(TestCase):
         with (
             patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
             patch(
-                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                "endoreg_db.services.hub.ingest.start_upload_job_processing",
                 return_value="inline",
             ),
         ):
@@ -235,7 +235,7 @@ class UploadEndpointTests(TestCase):
         with (
             patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
             patch(
-                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                "endoreg_db.services.hub.ingest.start_upload_job_processing",
                 return_value="inline",
             ),
         ):
@@ -260,7 +260,7 @@ class UploadEndpointTests(TestCase):
         with (
             patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
             patch(
-                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                "endoreg_db.services.hub.ingest.start_upload_job_processing",
                 return_value="inline",
             ),
         ):
@@ -291,7 +291,7 @@ class UploadEndpointTests(TestCase):
         with (
             patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
             patch(
-                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                "endoreg_db.services.hub.ingest.start_upload_job_processing",
                 return_value="inline",
             ),
         ):
@@ -324,7 +324,7 @@ class UploadEndpointTests(TestCase):
         with (
             patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
             patch(
-                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                "endoreg_db.services.hub.ingest.start_upload_job_processing",
                 return_value="inline",
             ),
         ):
@@ -367,7 +367,7 @@ class UploadEndpointTests(TestCase):
         with (
             patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
             patch(
-                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                "endoreg_db.services.hub.ingest.start_upload_job_processing",
                 return_value="inline",
             ),
         ):
@@ -401,7 +401,7 @@ class UploadEndpointTests(TestCase):
         with (
             patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
             patch(
-                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                "endoreg_db.services.hub.ingest.start_upload_job_processing",
                 return_value="inline",
             ),
         ):
@@ -437,7 +437,7 @@ class UploadEndpointTests(TestCase):
     #     with (
     #         patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
     #         patch(
-    #             "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+    #             "endoreg_db.services.hub.ingest.start_upload_job_processing",
     #             return_value="inline",
     #         ),
     #     ):
@@ -564,7 +564,7 @@ class UploadEndpointTests(TestCase):
         with (
             patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
             patch(
-                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                "endoreg_db.services.hub.ingest.start_upload_job_processing",
                 return_value="inline",
             ) as start_processing,
         ):
@@ -576,10 +576,7 @@ class UploadEndpointTests(TestCase):
         assert upload_job.storage_tier == UploadJob.StorageTier.UPLOAD_API
         assert upload_job.retention_policy == UploadJob.RetentionPolicy.PRESERVE_SOURCE
         assert upload_job.cleanup_status == UploadJob.CleanupStatus.PENDING
-        start_processing.assert_called_once_with(
-            upload_job=upload_job,
-            task_dispatcher=None,
-        )
+        start_processing.assert_called_once_with(upload_job=upload_job)
 
     def test_upload_returns_500_when_processing_handoff_fails(self):
         uploaded = SimpleUploadedFile(
@@ -591,7 +588,7 @@ class UploadEndpointTests(TestCase):
         with (
             patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
             patch(
-                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                "endoreg_db.services.hub.ingest.start_upload_job_processing",
                 side_effect=RuntimeError("inline processing failed"),
             ),
         ):

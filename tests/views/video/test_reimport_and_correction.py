@@ -149,6 +149,8 @@ class _FakeVideo:
 @pytest.mark.django_db
 def test_reimport_returns_clear_error_when_raw_source_is_missing(tmp_path, monkeypatch):
     module = _load_video_view_module("reimport")
+    import endoreg_db.services.video_reimport_orchestrator as reimport_orchestrator
+
     factory = APIRequestFactory()
 
     missing_raw = tmp_path / "missing.mp4"
@@ -162,7 +164,7 @@ def test_reimport_returns_clear_error_when_raw_source_is_missing(tmp_path, monke
 
     monkeypatch.setattr(module, "VideoFile", _FakeVideoModel, raising=True)
     monkeypatch.setattr(
-        module,
+        reimport_orchestrator,
         "ensure_local_file",
         lambda field_file: (_ for _ in ()).throw(
             FileNotFoundError("raw source missing from storage")
@@ -182,6 +184,7 @@ def test_reimport_reanonymizes_existing_video_without_full_import(
 ):
     module = _load_video_view_module("reimport")
     import endoreg_db.services.jobs.video_reimport_jobs as reimport_jobs
+    import endoreg_db.services.video_reimport_orchestrator as reimport_orchestrator
 
     factory = APIRequestFactory()
 
@@ -218,16 +221,23 @@ def test_reimport_reanonymizes_existing_video_without_full_import(
             raise AssertionError("reimport should not use the full import pipeline")
 
     monkeypatch.setattr(module, "VideoFile", _FakeVideoModel, raising=True)
-    monkeypatch.setattr(module, "SensitiveMeta", _FakeSensitiveMetaModel, raising=True)
-    monkeypatch.setattr(module.transaction, "atomic", _fake_atomic, raising=True)
     monkeypatch.setattr(
-        module,
+        reimport_orchestrator,
+        "SensitiveMeta",
+        _FakeSensitiveMetaModel,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        reimport_orchestrator.transaction, "atomic", _fake_atomic, raising=True
+    )
+    monkeypatch.setattr(
+        reimport_orchestrator,
         "ensure_local_file",
         lambda field_file: _context_path(raw_path),
         raising=True,
     )
     monkeypatch.setattr(
-        module,
+        reimport_orchestrator,
         "_dispatch_prediction_refresh",
         lambda target_video, payload: (
             prediction_calls.append((target_video, payload))
@@ -268,7 +278,6 @@ def test_reset_reimport_state_does_not_reactivate_duplicate_upload_jobs(
     tmp_path,
     monkeypatch,
 ):
-    module = _load_video_view_module("reimport")
     import endoreg_db.services.jobs.video_reimport_jobs as reimport_jobs
 
     center = Center.objects.create(name="reimport-center")
@@ -306,7 +315,7 @@ def test_reset_reimport_state_does_not_reactivate_duplicate_upload_jobs(
         raising=True,
     )
 
-    reset_count = module._reset_reimport_state(video)
+    reset_count = reimport_jobs._reset_reimport_state(video)
 
     active_job.refresh_from_db()
     failed_job.refresh_from_db()
@@ -319,7 +328,8 @@ def test_reset_reimport_state_does_not_reactivate_duplicate_upload_jobs(
 
 @pytest.mark.django_db
 def test_mark_upload_jobs_anonymized_leaves_duplicate_failed_jobs_inactive(tmp_path):
-    module = _load_video_view_module("reimport")
+    import endoreg_db.services.jobs.video_reimport_jobs as reimport_jobs
+
     center = Center.objects.create(name="reimport-complete-center")
     raw_path = tmp_path / "raw.mp4"
     raw_path.write_bytes(b"raw")
@@ -343,7 +353,7 @@ def test_mark_upload_jobs_anonymized_leaves_duplicate_failed_jobs_inactive(tmp_p
         content_hash=video.video_hash,
     )
 
-    completed_count = module._mark_upload_jobs_anonymized(video)
+    completed_count = reimport_jobs._mark_upload_jobs_anonymized(video)
 
     active_job.refresh_from_db()
     failed_job.refresh_from_db()

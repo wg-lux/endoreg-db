@@ -1,46 +1,144 @@
-import mimetypes
-from typing import TYPE_CHECKING, cast
+from __future__ import annotations
 
+import mimetypes
+from collections.abc import Mapping
+from importlib import import_module
+from typing import TYPE_CHECKING, Protocol, TypeAlias, cast
+
+from django.core.files.uploadedfile import UploadedFile
 from django.http import Http404
+from django.views.decorators.csrf import csrf_exempt
 from rest_framework.exceptions import PermissionDenied
 from django.urls import reverse
 from django.utils.decorators import method_decorator
-from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
+from rest_framework.request import Request
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 # Try to import python-magic, but provide fallback if not available
 try:
-    import magic
-
-    MAGIC_AVAILABLE = True
+    import magic as _magic
 except ImportError:
-    MAGIC_AVAILABLE = False
+    _magic = None
 
+MAGIC_AVAILABLE = _magic is not None
+
+from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.serializers.hub import UploadJobStatusSerializer
-from endoreg_db.services.hub import (
-    create_or_reuse_upload_job,
-    resolve_api_upload_context,
-    start_upload_job_processing,
-    resolve_allowed_center_id,
-)
+from endoreg_db.schemas import UploadApiRequestPayload
+from endoreg_db.schemas import validate_upload_api_request_payload
+from endoreg_db.services.hub import ingest
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
 
 if TYPE_CHECKING:
     from endoreg_db.services.hub.ingest import CeleryTaskDispatcher, UploadProvenance
 
-# Try to import celery task, but provide fallback
-try:
+JsonScalar: TypeAlias = str | int | float | bool
+JsonValue: TypeAlias = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
+UploadContext: TypeAlias = dict[str, JsonValue]
+
+
+class UploadCreator(Protocol):
+    @property
+    def is_authenticated(self) -> bool: ...
+
+
+class _SerializerDataLike(Protocol):
+    @property
+    def data(self) -> Mapping[str, JsonValue]: ...
+
+
+class _UploadJobFactoryWithoutCenter(Protocol):
+    def __call__(
+        self,
+        *,
+        uploaded_file: UploadedFile,
+        content_type: str,
+        created_by: UploadCreator,
+        source_system: str,
+        content_hash: str,
+        idempotency_key: str,
+        ingest_mode: str,
+        storage_class: str,
+        storage_tier: str,
+        retention_policy: str,
+        source_file_persisted: bool,
+        cleanup_status: str,
+        processing_provenance: "UploadProvenance",
+        allow_completed_reuse_without_media: bool,
+    ) -> tuple[UploadJob, bool]: ...
+
+
+class _UploadJobFactoryWithCenter(Protocol):
+    def __call__(
+        self,
+        *,
+        uploaded_file: UploadedFile,
+        content_type: str,
+        created_by: UploadCreator,
+        source_center: Center,
+        source_system: str,
+        content_hash: str,
+        idempotency_key: str,
+        ingest_mode: str,
+        storage_class: str,
+        storage_tier: str,
+        retention_policy: str,
+        source_file_persisted: bool,
+        cleanup_status: str,
+        processing_provenance: "UploadProvenance",
+        allow_completed_reuse_without_media: bool,
+    ) -> tuple[UploadJob, bool]: ...
+
+
+def _request_user(request: Request) -> UploadCreator:
+    return cast(UploadCreator, request.user)
+
+
+def _serializer_data(serializer: _SerializerDataLike) -> Mapping[str, JsonValue]:
+    return serializer.data
+
+
+def _upload_job_factory_without_center() -> _UploadJobFactoryWithoutCenter:
+    ingest_module = import_module("endoreg_db.services.hub.ingest")
+    return cast(
+        _UploadJobFactoryWithoutCenter,
+        getattr(ingest_module, "create_or_reuse_upload_job"),
+    )
+
+
+def _upload_job_factory_with_center() -> _UploadJobFactoryWithCenter:
+    ingest_module = import_module("endoreg_db.services.hub.ingest")
+    return cast(
+        _UploadJobFactoryWithCenter,
+        getattr(ingest_module, "create_or_reuse_upload_job"),
+    )
+
+
+def _upload_api_request_mapping(request: Request) -> Mapping[str, str]:
+    return cast(Mapping[str, str], request.data)
+
+
+def _celery_upload_task_available() -> bool:
+    try:
+        from endoreg_db.tasks import process_upload_job as _process_upload_job_task
+
+        return _process_upload_job_task is not None
+    except ImportError:
+        return False
+
+
+def _celery_upload_task_dispatcher() -> "CeleryTaskDispatcher":
     from endoreg_db.tasks import process_upload_job as process_upload_job_task
 
-    CELERY_AVAILABLE = True
-except ImportError:
-    CELERY_AVAILABLE = False
-    process_upload_job_task = None
+    return cast("CeleryTaskDispatcher", process_upload_job_task)
+
+
+CELERY_AVAILABLE = _celery_upload_task_available()
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -72,7 +170,12 @@ class UploadFileView(APIView):
         "video/x-ms-wmv",
     }
 
-    def post(self, request, *args, **kwargs):
+    def post(
+        self,
+        request: Request,
+        *args: str,
+        **kwargs: str,
+    ) -> Response:
         """
         Handle file upload and create processing job.
         """
@@ -86,16 +189,35 @@ class UploadFileView(APIView):
             )
 
         uploaded_file = request.FILES["file"]
+        if not isinstance(uploaded_file, UploadedFile):
+            return Response(
+                {"error": "Uploaded file must be a valid uploaded file."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            request_payload: UploadApiRequestPayload = (
+                validate_upload_api_request_payload(
+                    _upload_api_request_mapping(request)
+                )
+            )
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         # Validate file is not empty
-        if not uploaded_file or uploaded_file.size == 0:
+        uploaded_file_size = uploaded_file.size
+        
+        if uploaded_file_size is None:
+            uploaded_file_size = 0
+
+        if uploaded_file_size == 0:
             return Response(
                 {"error": "Uploaded file is empty. Please select a valid file."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         # Validate file size
-        if uploaded_file.size > self.MAX_FILE_SIZE:
+        if uploaded_file_size > self.MAX_FILE_SIZE:
             return Response(
                 {
                     "error": f"File too large. Maximum size is {self.MAX_FILE_SIZE // (1024**3)} GB."
@@ -133,12 +255,13 @@ class UploadFileView(APIView):
                 source_center,
                 _allowed_center_id,
                 center_resolution_error,
-                upload_context,
-            ) = resolve_api_upload_context(
-                user=getattr(request, "user", None),
-                center_key=request.data.get("center_key"),
-                center_name=request.data.get("center_name"),
+                raw_upload_context,
+            ) = ingest.resolve_api_upload_context(
+                user=_request_user(request),
+                center_key=request_payload.center_key,
+                center_name=request_payload.center_name,
             )
+            upload_context = cast(UploadContext, raw_upload_context)
             if center_resolution_error:
                 status_code = (
                     status.HTTP_403_FORBIDDEN
@@ -152,48 +275,66 @@ class UploadFileView(APIView):
                     status=status_code,
                 )
 
-            source_system = (
-                str(request.data.get("source_system", "api")).strip() or "api"
-            )
+            source_system = request_payload.source_system
             idempotency_key = (
                 request.headers.get("Idempotency-Key")
-                or request.data.get("idempotency_key")
+                or request_payload.idempotency_key
                 or ""
             )
 
-            # Create upload job
-            upload_job, created = create_or_reuse_upload_job(
-                uploaded_file=uploaded_file,
-                content_type=content_type,
-                created_by=getattr(request, "user", None),
-                source_center=source_center,
-                source_system=source_system,
-                idempotency_key=str(idempotency_key),
-                ingest_mode=UploadJob.IngestMode.API,
-                storage_class=UploadJob.StorageClass.INGEST,
-                storage_tier=UploadJob.StorageTier.UPLOAD_API,
-                retention_policy=UploadJob.RetentionPolicy.PRESERVE_SOURCE,
-                source_file_persisted=True,
-                cleanup_status=UploadJob.CleanupStatus.PENDING,
-                processing_provenance=cast(
-                    "UploadProvenance",
-                    {
-                        "entrypoint": "api",
-                        **upload_context,
-                    },
-                ),
+            processing_provenance = cast(
+                "UploadProvenance",
+                {
+                    "entrypoint": "api",
+                    **upload_context,
+                },
             )
+
+            if source_center is None:
+                upload_job, created = _upload_job_factory_without_center()(
+                    uploaded_file=uploaded_file,
+                    content_type=content_type,
+                    created_by=_request_user(request),
+                    source_system=source_system,
+                    content_hash="",
+                    idempotency_key=idempotency_key,
+                    ingest_mode=UploadJob.IngestMode.API,
+                    storage_class=UploadJob.StorageClass.INGEST,
+                    storage_tier=UploadJob.StorageTier.UPLOAD_API,
+                    retention_policy=UploadJob.RetentionPolicy.PRESERVE_SOURCE,
+                    source_file_persisted=True,
+                    cleanup_status=UploadJob.CleanupStatus.PENDING,
+                    processing_provenance=processing_provenance,
+                    allow_completed_reuse_without_media=False,
+                )
+            else:
+                upload_job, created = _upload_job_factory_with_center()(
+                    uploaded_file=uploaded_file,
+                    content_type=content_type,
+                    created_by=_request_user(request),
+                    source_center=source_center,
+                    source_system=source_system,
+                    content_hash="",
+                    idempotency_key=idempotency_key,
+                    ingest_mode=UploadJob.IngestMode.API,
+                    storage_class=UploadJob.StorageClass.INGEST,
+                    storage_tier=UploadJob.StorageTier.UPLOAD_API,
+                    retention_policy=UploadJob.RetentionPolicy.PRESERVE_SOURCE,
+                    source_file_persisted=True,
+                    cleanup_status=UploadJob.CleanupStatus.PENDING,
+                    processing_provenance=processing_provenance,
+                    allow_completed_reuse_without_media=False,
+                )
 
             if created:
                 try:
-                    start_upload_job_processing(
-                        upload_job=upload_job,
-                        task_dispatcher=(
-                            cast("CeleryTaskDispatcher", process_upload_job_task)
-                            if CELERY_AVAILABLE
-                            else None
-                        ),
-                    )
+                    if CELERY_AVAILABLE:
+                        ingest.start_upload_job_processing(
+                            upload_job=upload_job,
+                            task_dispatcher=_celery_upload_task_dispatcher(),
+                        )
+                    else:
+                        ingest.start_upload_job_processing(upload_job=upload_job)
                 except Exception as e:
                     return Response(
                         {"error": f"Failed to start processing: {str(e)}"},
@@ -201,9 +342,11 @@ class UploadFileView(APIView):
                     )
 
             # Prepare response
-            status_url = reverse("api:upload_status", kwargs={"id": upload_job.id})
+            upload_job_id = getattr(upload_job, "id", None)
+            upload_id = str(upload_job_id) if upload_job_id is not None else ""
+            status_url = reverse("api:upload_status", kwargs={"id": upload_id})
             response_data = {
-                "upload_id": str(upload_job.id),  # Ensure UUID is converted to string
+                "upload_id": upload_id,
                 "status_url": status_url,
                 "message": "Upload job created successfully",
             }
@@ -225,11 +368,15 @@ class UploadFileView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-    def _detect_mime_type(self, uploaded_file) -> str:
+    def _detect_mime_type(self, uploaded_file: UploadedFile) -> str:
         """
         Detect MIME type using python-magic as primary method,
         fallback to mimetypes module.
         """
+        uploaded_file_name = uploaded_file.name
+        if uploaded_file_name is None:
+            return ""
+
         try:
             # Reset file pointer
             uploaded_file.seek(0)
@@ -241,27 +388,28 @@ class UploadFileView(APIView):
                     chunk = uploaded_file.read(2048)
                     uploaded_file.seek(0)  # Reset again
 
-                    mime_type = magic.from_buffer(chunk, mime=True)
+                    mime_type = _magic.from_buffer(chunk, mime=True)  # type: ignore[union-attr]
                     if mime_type and mime_type != "application/octet-stream":
                         return mime_type
                 except Exception:
                     pass  # Fall back to mimetypes
 
             # Fallback to mimetypes module
-            mime_guess, _ = mimetypes.guess_type(uploaded_file.name)
+            mime_guess, _ = mimetypes.guess_type(uploaded_file_name)
             if isinstance(mime_guess, str):
                 return mime_guess
 
             # Last resort - check file extension
-            if uploaded_file.name.lower().endswith(".pdf"):
+            normalized_name = uploaded_file_name.lower()
+            if normalized_name.endswith(".pdf"):
                 return "application/pdf"
-            elif uploaded_file.name.lower().endswith((".mp4", ".m4v")):
+            elif normalized_name.endswith((".mp4", ".m4v")):
                 return "video/mp4"
-            elif uploaded_file.name.lower().endswith(".avi"):
+            elif normalized_name.endswith(".avi"):
                 return "video/avi"
-            elif uploaded_file.name.lower().endswith((".mov", ".qt")):
+            elif normalized_name.endswith((".mov", ".qt")):
                 return "video/quicktime"
-            elif uploaded_file.name.lower().endswith(".wmv"):
+            elif normalized_name.endswith(".wmv"):
                 return "video/x-ms-wmv"
 
             raise ValueError("Could not determine file type")
@@ -285,7 +433,13 @@ class UploadStatusView(APIView):
 
     permission_classes = [EnvironmentAwarePermission, PolicyPermission]
 
-    def get(self, request, id, *args, **kwargs):
+    def get(
+        self,
+        request: Request,
+        id: str,
+        *args: str,
+        **kwargs: str,
+    ) -> Response:
         """
         Return the current status of an upload job.
         """
@@ -296,7 +450,7 @@ class UploadStatusView(APIView):
                 "source_center",
             ).get(id=id)
 
-            allowed_center_id = resolve_allowed_center_id(
+            allowed_center_id = ingest.resolve_allowed_center_id(
                 getattr(request, "user", None)
             )
             source_center_id = getattr(upload_job, "source_center_id", None)
@@ -312,8 +466,8 @@ class UploadStatusView(APIView):
 
             # Serialize the response
             serializer = UploadJobStatusSerializer(upload_job)
-
-            return Response(serializer.data, status=status.HTTP_200_OK)
+            serializer_payload = _serializer_data(cast(_SerializerDataLike, serializer))
+            return Response(dict(serializer_payload), status=status.HTTP_200_OK)
 
         except UploadJob.DoesNotExist:
             raise Http404("Upload job not found")

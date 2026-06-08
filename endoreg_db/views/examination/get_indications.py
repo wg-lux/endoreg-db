@@ -1,5 +1,6 @@
 from typing import TypedDict
 
+from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -16,8 +17,16 @@ class _IndicationChoiceRow(TypedDict):
     classification_ids: list[int]
 
 
+def _int_pk(value: object) -> int:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        return int(value)
+    raise ValueError(f"Expected integer primary key, got {type(value).__name__}.")
+
+
 @api_view(["GET"])
-def get_indications_for_examination(request, exam_id):
+def get_indications_for_examination(request: HttpRequest, exam_id: int) -> Response:
     """
     Retrieve indication options for a given examination.
 
@@ -28,9 +37,9 @@ def get_indications_for_examination(request, exam_id):
     indications = exam.indications.all().order_by("name", "id")
     payload = [
         {
-            "id": getattr(indication, "pk"),
-            "name": indication.name,
-            "description": indication.description or "",
+            "id": _int_pk(getattr(indication, "pk")),
+            "name": str(getattr(indication, "name", "")),
+            "description": str(getattr(indication, "description", "") or ""),
         }
         for indication in indications
     ]
@@ -38,7 +47,7 @@ def get_indications_for_examination(request, exam_id):
 
 
 @api_view(["GET"])
-def get_indication_choices(request, indication_id):
+def get_indication_choices(request: HttpRequest, indication_id: int) -> Response:
     """
     Retrieve all possible classification choices for a specific indication.
 
@@ -56,16 +65,16 @@ def get_indication_choices(request, indication_id):
     choices_by_id: dict[int, _IndicationChoiceRow] = {}
     for classification in indication.classifications.all():
         for choice in classification.choices.all():
-            choice_id = int(getattr(choice, "pk"))
+            choice_id = _int_pk(getattr(choice, "pk"))
             row = choices_by_id.setdefault(
                 choice_id,
                 {
                     "id": choice_id,
-                    "name": str(choice.name),
+                    "name": str(getattr(choice, "name", "")),
                     "classification_ids": [],
                 },
             )
-            row["classification_ids"].append(int(getattr(classification, "pk")))
+            row["classification_ids"].append(_int_pk(getattr(classification, "pk")))
 
     payload: list[dict[str, object]] = []
     for row in sorted(

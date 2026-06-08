@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Protocol, TypeAlias, cast
 
 from django.conf import settings
+from django.core.files.uploadedfile import UploadedFile
 from django.http import Http404
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
@@ -11,9 +13,12 @@ from rest_framework import status
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import AllowAny
+from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.hub.network_node import NetworkNode
 from endoreg_db.models.hub.transfer_job import TransferJob
 from endoreg_db.serializers.hub import (
     TransferJobCreateSerializer,
@@ -32,8 +37,31 @@ from endoreg_db.utils.observability.structured_logging import (
     hash_identifier,
 )
 
+if TYPE_CHECKING:
+    from endoreg_db.services.hub.transfers import TransferProvenance
 
 logger = logging.getLogger(__name__)
+
+_ValidationErrorValue: TypeAlias = str | list[str] | dict[str, "_ValidationErrorValue"]
+
+_TransferPayloadValue: TypeAlias = (
+    str
+    | int
+    | bool
+    | None
+    | list["_TransferPayloadValue"]
+    | dict[str, "_TransferPayloadValue"]
+)
+
+
+class _SerializerLike(Protocol):
+    @property
+    def data(self) -> Mapping[str, _TransferPayloadValue]: ...
+
+
+class _SerializerErrorLike(Protocol):
+    @property
+    def errors(self) -> _ValidationErrorValue: ...
 
 
 def _assert_transfer_api_enabled() -> None:
@@ -41,11 +69,11 @@ def _assert_transfer_api_enabled() -> None:
         raise Http404("Hub transfer API is not enabled")
 
 
-def _node_header(request, header_name: str) -> str:
+def _node_header(request: Request, header_name: str) -> str:
     return str(request.headers.get(header_name, "") or "").strip()
 
 
-def _safe_request_context(request) -> dict[str, Any]:
+def _safe_request_context(request: Request) -> dict[str, str | None]:
     remote_addr = str(request.META.get("REMOTE_ADDR", "") or "").strip()
     return {
         "request_method": str(getattr(request, "method", "") or ""),
@@ -53,7 +81,18 @@ def _safe_request_context(request) -> dict[str, Any]:
     }
 
 
-def _validation_error_fields(errors, prefix: str = "") -> list[str]:
+def _serialize_response_data(serializer: object) -> Mapping[str, _TransferPayloadValue]:
+    return cast(_SerializerLike, serializer).data
+
+
+def _serialize_validation_error_payload(serializer: object) -> _ValidationErrorValue:
+    return cast(_SerializerErrorLike, serializer).errors
+
+
+def _validation_error_fields(
+    errors: _ValidationErrorValue,
+    prefix: str = "",
+) -> list[str]:
     if isinstance(errors, dict):
         fields: list[str] = []
         for key, value in errors.items():
@@ -70,26 +109,30 @@ def _validation_error_fields(errors, prefix: str = "") -> list[str]:
 
 
 def _log_transfer_validation_failure(
-    request,
+    request: Request,
     *,
     event: str,
-    errors,
+    errors: _ValidationErrorValue,
     transfer_key: str | None = None,
     transfer_job: TransferJob | None = None,
 ) -> None:
-    payload: dict[str, Any] = {
-        **_safe_request_context(request),
-        "error_fields": sorted(set(_validation_error_fields(errors))),
-    }
+    error_fields = sorted(set(_validation_error_fields(errors)))
+    payload = _safe_request_context(request)
     if transfer_key:
         payload["transfer_key_sha256"] = hash_identifier(transfer_key)
     if transfer_job is not None:
         payload["transfer_job_id"] = str(transfer_job.pk)
-        payload["resource_kind"] = transfer_job.resource_kind
-    emit_structured_event(logger, event, level=logging.WARNING, **payload)
+        payload["resource_kind"] = str(getattr(transfer_job, "resource_kind", ""))
+    emit_structured_event(
+        logger,
+        event,
+        level=logging.WARNING,
+        error_fields=error_fields,
+        **payload,
+    )
 
 
-def _assert_secure_transfer_transport(request) -> None:
+def _assert_secure_transfer_transport(request: Request) -> None:
     if not bool(
         getattr(settings, "ENDOREG_HUB_TRANSFER_REQUIRE_SECURE_TRANSPORT", True)
     ):
@@ -106,7 +149,7 @@ def _assert_secure_transfer_transport(request) -> None:
     raise PermissionDenied("Hub transfer requires HTTPS or equivalent secure transport")
 
 
-def _assert_transfer_mtls(request) -> None:
+def _assert_transfer_mtls(request: Request) -> None:
     if not bool(getattr(settings, "ENDOREG_HUB_TRANSFER_REQUIRE_MTLS", False)):
         return
     meta_key = str(
@@ -137,7 +180,7 @@ def _assert_transfer_mtls(request) -> None:
         )
 
 
-def _enforce_transfer_node_auth(request, source_node_key: str):
+def _enforce_transfer_node_auth(request: Request, source_node_key: str) -> NetworkNode:
     _assert_secure_transfer_transport(request)
     _assert_transfer_mtls(request)
     provided_node_key = _node_header(request, "X-Network-Node-Key")
@@ -152,7 +195,9 @@ def _enforce_transfer_node_auth(request, source_node_key: str):
     return authenticated_node
 
 
-def _assert_transfer_center_scope(request, source_center_id: int | None) -> None:
+def _assert_transfer_center_scope(
+    request: Request, source_center_id: int | None
+) -> None:
     allowed_center_id = resolve_allowed_center_id(getattr(request, "user", None))
     if allowed_center_id == -1:
         raise PermissionDenied("You do not have access to transfer jobs.")
@@ -169,42 +214,68 @@ def _assert_transfer_center_scope(request, source_center_id: int | None) -> None
 class HubTransferCreateView(APIView):
     permission_classes = [AllowAny]
 
-    def post(self, request, *args, **kwargs):
+    def post(self, request: Request) -> Response:
         _assert_transfer_api_enabled()
         serializer = TransferJobCreateSerializer(
             data=request.data,
             context={"request": request},
         )
         if not serializer.is_valid():
+            validation_errors = _serialize_validation_error_payload(serializer)
             _log_transfer_validation_failure(
                 request,
                 event="hub.transfer_create_validation_failed",
-                errors=serializer.errors,
+                errors=validation_errors,
             )
-            raise ValidationError(serializer.errors)
-        data = serializer.validated_data
-        _enforce_transfer_node_auth(request, data["source_node"].node_key)
-        _assert_transfer_center_scope(
-            request,
-            getattr(data.get("source_center"), "id", None),
-        )
+            raise ValidationError(validation_errors)
+
+        data = cast(dict[str, _TransferPayloadValue], serializer.validated_data)
+        source_node = cast("NetworkNode", data.get("source_node"))
+        source_node_key = cast(str, getattr(source_node, "node_key", ""))
+        _enforce_transfer_node_auth(request, source_node_key)
+        source_center = cast(Center | None, data.get("source_center"))
+        source_center_id = cast(int | None, getattr(source_center, "id", None))
+        _assert_transfer_center_scope(request, source_center_id)
+        target_node = cast("NetworkNode", data.get("target_node"))
+        provenance = cast("TransferProvenance", data.get("provenance", {}))
 
         try:
             transfer_job, created = create_or_reuse_transfer_job(
-                transfer_key=data["transfer_key"],
-                source_node=data["source_node"],
-                target_node=data["target_node"],
-                source_center=data.get("source_center"),
-                resource_kind=data["resource_kind"],
-                resource_hash=data["resource_hash"],
-                transfer_mode=data["transfer_mode"],
-                processing_policy=data["processing_policy"],
-                processing_intent=data["processing_intent"],
-                cleanup_policy=data["cleanup_policy"],
-                payload_schema_version=data["payload_schema_version"],
-                resource_rows=data["resource_rows"],
-                processing_snapshot=data["processing_snapshot"],
-                provenance=data.get("provenance") or {},
+                transfer_key=cast(str, data["transfer_key"]),
+                source_node=source_node,
+                target_node=target_node,
+                source_center=source_center,
+                resource_kind=cast(str, data["resource_kind"]),
+                resource_hash=cast(str, data["resource_hash"]),
+                transfer_mode=cast(
+                    str,
+                    data["transfer_mode"],
+                ),
+                processing_policy=cast(
+                    str,
+                    data["processing_policy"],
+                ),
+                processing_intent=cast(
+                    str,
+                    data["processing_intent"],
+                ),
+                cleanup_policy=cast(
+                    str,
+                    data["cleanup_policy"],
+                ),
+                payload_schema_version=cast(
+                    str,
+                    data["payload_schema_version"],
+                ),
+                resource_rows=cast(
+                    dict[str, _TransferPayloadValue],
+                    data["resource_rows"],
+                ),
+                processing_snapshot=cast(
+                    dict[str, _TransferPayloadValue],
+                    data["processing_snapshot"],
+                ),
+                provenance=provenance,
                 created_by=getattr(request, "user", None),
             )
         except ValueError as exc:
@@ -214,8 +285,12 @@ class HubTransferCreateView(APIView):
             transfer_job = apply_transfer_metadata(transfer_job)
 
         response_serializer = TransferJobStatusSerializer(transfer_job)
+        response_payload = cast(
+            dict[str, _TransferPayloadValue],
+            _serialize_response_data(response_serializer),
+        )
         return Response(
-            response_serializer.data,
+            response_payload,
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
 
@@ -224,7 +299,7 @@ class HubTransferCreateView(APIView):
 class HubTransferStatusView(APIView):
     permission_classes = [AllowAny]
 
-    def get(self, request, transfer_key: str, *args, **kwargs):
+    def get(self, request: Request, transfer_key: str) -> Response:
         _assert_transfer_api_enabled()
         transfer_job = (
             TransferJob.objects.select_related(
@@ -238,11 +313,19 @@ class HubTransferStatusView(APIView):
         if transfer_job is None:
             raise Http404("Transfer job not found")
 
-        _enforce_transfer_node_auth(request, transfer_job.source_node.node_key)
-        _assert_transfer_center_scope(request, transfer_job.source_center_id)
+        transfer_source_node = cast(NetworkNode, getattr(transfer_job, "source_node"))
+        _enforce_transfer_node_auth(
+            request, cast(str, getattr(transfer_source_node, "node_key"))
+        )
+        source_center = cast(
+            Center | None, getattr(transfer_job, "source_center", None)
+        )
+        source_center_id = cast(int | None, getattr(source_center, "id", None))
+        _assert_transfer_center_scope(request, source_center_id)
 
         serializer = TransferJobStatusSerializer(transfer_job)
-        return Response(serializer.data)
+        payload = _serialize_response_data(serializer)
+        return Response(payload)
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -250,7 +333,11 @@ class HubTransferMediaUploadView(APIView):
     permission_classes = [AllowAny]
     parser_classes = [MultiPartParser, FormParser]
 
-    def post(self, request, transfer_key: str, *args, **kwargs):
+    def post(
+        self,
+        request: Request,
+        transfer_key: str,
+    ) -> Response:
         _assert_transfer_api_enabled()
         transfer_job = (
             TransferJob.objects.select_related(
@@ -264,22 +351,31 @@ class HubTransferMediaUploadView(APIView):
         if transfer_job is None:
             raise Http404("Transfer job not found")
 
-        _enforce_transfer_node_auth(request, transfer_job.source_node.node_key)
-        _assert_transfer_center_scope(request, transfer_job.source_center_id)
+        transfer_source_node = cast(NetworkNode, getattr(transfer_job, "source_node"))
+        _enforce_transfer_node_auth(
+            request,
+            cast(str, getattr(transfer_source_node, "node_key")),
+        )
+        source_center = cast(
+            Center | None, getattr(transfer_job, "source_center", None)
+        )
+        source_center_id = cast(int | None, getattr(source_center, "id", None))
+        _assert_transfer_center_scope(request, source_center_id)
 
-        uploaded_file = request.FILES.get("file")
-        if uploaded_file is None:
+        uploaded_file = cast(Mapping[str, UploadedFile], request.FILES).get("file")
+        if not isinstance(uploaded_file, UploadedFile):
             errors = {"file": "A multipart file upload is required"}
             _log_transfer_validation_failure(
                 request,
                 event="hub.transfer_media_upload_validation_failed",
-                errors=errors,
+                errors=cast(_ValidationErrorValue, errors),
                 transfer_key=transfer_key,
                 transfer_job=transfer_job,
             )
             raise ValidationError(errors)
 
-        media_role = str(request.data.get("media_role", "") or "").strip().lower()
+        request_data = cast(dict[str, object], request.data)
+        media_role = str(request_data.get("media_role", "") or "").strip().lower()
         if media_role not in {"processed"}:
             errors = {
                 "media_role": (
@@ -289,7 +385,7 @@ class HubTransferMediaUploadView(APIView):
             _log_transfer_validation_failure(
                 request,
                 event="hub.transfer_media_upload_validation_failed",
-                errors=errors,
+                errors=cast(_ValidationErrorValue, errors),
                 transfer_key=transfer_key,
                 transfer_job=transfer_job,
             )
@@ -305,11 +401,12 @@ class HubTransferMediaUploadView(APIView):
             _log_transfer_validation_failure(
                 request,
                 event="hub.transfer_media_upload_validation_failed",
-                errors={"detail": exc},
+                errors=cast(_ValidationErrorValue, {"detail": str(exc)}),
                 transfer_key=transfer_key,
                 transfer_job=transfer_job,
             )
             raise ValidationError({"detail": str(exc)}) from exc
 
         serializer = TransferJobStatusSerializer(transfer_job)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        payload = _serialize_response_data(serializer)
+        return Response(payload, status=status.HTTP_200_OK)

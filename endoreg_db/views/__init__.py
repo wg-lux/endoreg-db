@@ -1,4 +1,5 @@
 from __future__ import annotations
+# pyright: reportUnknownVariableType=false
 
 from endoreg_db.utils.core.translation import build_multilingual_response
 
@@ -10,32 +11,7 @@ from .anonymization import (
     start_anonymization,
 )
 from .auth import keycloak_callback, keycloak_login, public_home
-from .examination import (
-    ExaminationManifestCache,
-    ExaminationViewSet,
-    get_classification_choices_for_examination,
-    get_classifications_for_examination,
-    get_findings_for_examination,
-    get_indication_choices,
-    get_indications_for_examination,
-    get_instruments_for_examination,
-    get_interventions_for_examination,
-    get_location_classification_choices_for_examination,
-    get_location_classifications_for_examination,
-    get_morphology_classification_choices_for_examination,
-    get_morphology_classifications_for_examination,
-)
-from .finding import (
-    FindingViewSet,
-    get_classifications_for_finding,
-    get_interventions_for_finding,
-)
-from .finding_classification import (
-    FindingClassificationViewSet,
-    get_classification_choices,
-    get_location_choices,
-    get_morphology_choices,
-)
+
 from .media import (
     get_sensitive_metadata_pk,
     label_list,
@@ -85,8 +61,6 @@ from .patient_examination import (
     PatientExaminationListView,
     PatientExaminationViewSet,
 )
-from .patient_finding import OptimizedPatientFindingViewSet, PatientFindingViewSet
-from .patient_finding_classification import create_patient_finding_classification
 from .report import (
     PatientExaminationReportViewSet,
     ReportLlmJobStatusView,
@@ -111,26 +85,6 @@ __all__ = [
     "keycloak_login",
     "keycloak_callback",
     "public_home",
-    "ExaminationManifestCache",
-    "ExaminationViewSet",
-    "get_classification_choices_for_examination",
-    "get_morphology_classification_choices_for_examination",
-    "get_location_classification_choices_for_examination",
-    "get_classifications_for_examination",
-    "get_location_classifications_for_examination",
-    "get_morphology_classifications_for_examination",
-    "get_findings_for_examination",
-    "get_indications_for_examination",
-    "get_indication_choices",
-    "get_instruments_for_examination",
-    "get_interventions_for_examination",
-    "FindingViewSet",
-    "get_interventions_for_finding",
-    "get_classifications_for_finding",
-    "FindingClassificationViewSet",
-    "get_classification_choices",
-    "get_morphology_choices",
-    "get_location_choices",
     "CenterViewSet",
     "application_settings_detail",
     "application_settings_backup",
@@ -167,9 +121,6 @@ __all__ = [
     "PatientExaminationDetailView",
     "PatientExaminationListView",
     "PatientExaminationViewSet",
-    "PatientFindingViewSet",
-    "OptimizedPatientFindingViewSet",
-    "create_patient_finding_classification",
     "ReportReimportView",
     "ReportLlmJobStatusView",
     "ReportStreamView",
