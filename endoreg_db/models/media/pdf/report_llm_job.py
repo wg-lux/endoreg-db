@@ -1,32 +1,61 @@
 from __future__ import annotations
 
-import uuid
+import uuid as uuid_lib
+from datetime import datetime
+from typing import ClassVar, Literal, TYPE_CHECKING
 
 from django.db import models
 from django.utils import timezone
+from lx_dtypes.models.contracts.json_types import JsonNull, JsonValue
+
+if TYPE_CHECKING:
+    from endoreg_db.models.hub.upload_job import UploadJob
+    from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+
+
+type ReportLlmJobOperation = Literal["report_llm_reimport", "report_llm_import"]
+type ReportLlmJobStatus = Literal[
+    "queued",
+    "running",
+    "success",
+    "failure",
+    "lost",
+    "cancelled",
+]
+type ReportLlmJobJsonValue = (
+    JsonValue
+    | JsonNull
+    | list["ReportLlmJobJsonValue"]
+    | dict[str, "ReportLlmJobJsonValue"]
+)
+type ReportLlmJobJsonObject = dict[str, ReportLlmJobJsonValue]
 
 
 class ReportLlmInferenceJob(models.Model):
     """Pollable job row for report import/reimport work that may call lx-anonymizer LLMs."""
 
-    OPERATION_REIMPORT = "report_llm_reimport"
-    OPERATION_IMPORT = "report_llm_import"
-    OPERATION_CHOICES = (
+    objects = models.Manager["ReportLlmInferenceJob"]()
+
+    OPERATION_REIMPORT: Literal["report_llm_reimport"] = "report_llm_reimport"
+    OPERATION_IMPORT: Literal["report_llm_import"] = "report_llm_import"
+    OPERATION_CHOICES: ClassVar[tuple[tuple[ReportLlmJobOperation, str], ...]] = (
         (OPERATION_REIMPORT, "Report LLM Reimport"),
         (OPERATION_IMPORT, "Report LLM Import"),
     )
 
-    STATUS_QUEUED = "queued"
-    STATUS_RUNNING = "running"
-    STATUS_SUCCESS = "success"
-    STATUS_FAILURE = "failure"
-    STATUS_LOST = "lost"
-    STATUS_CANCELLED = "cancelled"
-    ACTIVE_STATUSES = frozenset({STATUS_QUEUED, STATUS_RUNNING})
-    TERMINAL_STATUSES = frozenset(
+    STATUS_QUEUED: Literal["queued"] = "queued"
+    STATUS_RUNNING: Literal["running"] = "running"
+    STATUS_SUCCESS: Literal["success"] = "success"
+    STATUS_FAILURE: Literal["failure"] = "failure"
+    STATUS_LOST: Literal["lost"] = "lost"
+    STATUS_CANCELLED: Literal["cancelled"] = "cancelled"
+    ACTIVE_STATUSES: ClassVar[frozenset[ReportLlmJobStatus]] = frozenset(
+        {STATUS_QUEUED, STATUS_RUNNING}
+    )
+    TERMINAL_STATUSES: ClassVar[frozenset[ReportLlmJobStatus]] = frozenset(
         {STATUS_SUCCESS, STATUS_FAILURE, STATUS_LOST, STATUS_CANCELLED}
     )
-    STATUS_CHOICES = (
+    STATUS_CHOICES: ClassVar[tuple[tuple[ReportLlmJobStatus, str], ...]] = (
         (STATUS_QUEUED, "Queued"),
         (STATUS_RUNNING, "Running"),
         (STATUS_SUCCESS, "Success"),
@@ -35,37 +64,59 @@ class ReportLlmInferenceJob(models.Model):
         (STATUS_CANCELLED, "Cancelled"),
     )
 
-    job_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
-    pdf = models.ForeignKey(
+    job_id: models.UUIDField[uuid_lib.UUID, uuid_lib.UUID] = models.UUIDField(
+        default=uuid_lib.uuid4, editable=False, unique=True
+    )
+    pdf: models.ForeignKey["RawPdfFile | None", "RawPdfFile | None"] = (
+        models.ForeignKey(
         "RawPdfFile",
         on_delete=models.CASCADE,
         related_name="llm_inference_jobs",
         null=True,
         blank=True,
+        )
     )
-    upload_job = models.ForeignKey(
+    upload_job: models.ForeignKey["UploadJob | None", "UploadJob | None"] = (
+        models.ForeignKey(
         "UploadJob",
         on_delete=models.SET_NULL,
         related_name="report_llm_inference_jobs",
         null=True,
         blank=True,
+        )
     )
-    operation = models.CharField(max_length=64, choices=OPERATION_CHOICES)
-    status = models.CharField(
+    operation: models.CharField[ReportLlmJobOperation, ReportLlmJobOperation] = (
+        models.CharField(max_length=64, choices=OPERATION_CHOICES)
+    )
+    status: models.CharField[ReportLlmJobStatus, ReportLlmJobStatus] = models.CharField(
         max_length=16,
         choices=STATUS_CHOICES,
         default=STATUS_QUEUED,
         db_index=True,
     )
-    task_id = models.CharField(max_length=100, blank=True, db_index=True)
-    queue = models.CharField(max_length=64)
-    config = models.JSONField(default=dict, blank=True)
-    result = models.JSONField(default=dict, blank=True)
-    error = models.TextField(blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    started_at = models.DateTimeField(blank=True, null=True)
-    completed_at = models.DateTimeField(blank=True, null=True)
+    task_id: models.CharField[str, str] = models.CharField(
+        max_length=100, blank=True, db_index=True
+    )
+    queue: models.CharField[str, str] = models.CharField(max_length=64)
+    config: models.JSONField[ReportLlmJobJsonObject, ReportLlmJobJsonObject] = (
+        models.JSONField(default=dict, blank=True)
+    )
+    result: models.JSONField[ReportLlmJobJsonObject, ReportLlmJobJsonObject] = (
+        models.JSONField(default=dict, blank=True)
+    )
+    error: models.TextField[str, str] = models.TextField(blank=True)
+    created_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
+        auto_now_add=True
+    )
+    updated_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
+        auto_now=True
+    )
+    started_at: models.DateTimeField[datetime | None, datetime | None] = (
+        models.DateTimeField(blank=True, null=True)
+    )
+    completed_at: models.DateTimeField[datetime | None, datetime | None] = (
+        models.DateTimeField(blank=True, null=True)
+    )
 
     class Meta:
         db_table = "report_llm_inference_job"
@@ -90,7 +141,7 @@ class ReportLlmInferenceJob(models.Model):
         self.started_at = self.started_at or timezone.now()
         self.save(update_fields=["status", "started_at", "updated_at"])
 
-    def mark_success(self, *, result: dict | None = None) -> None:
+    def mark_success(self, *, result: ReportLlmJobJsonObject | None = None) -> None:
         self.status = self.STATUS_SUCCESS
         self.completed_at = timezone.now()
         self.error = ""
