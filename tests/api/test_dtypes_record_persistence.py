@@ -1,0 +1,361 @@
+from __future__ import annotations
+
+import json
+from datetime import date
+
+import pytest
+from django.contrib.auth import get_user_model
+from django.test import Client
+from rest_framework.test import APIRequestFactory, force_authenticate
+
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.administration.person.patient.patient import Patient
+from endoreg_db.models.medical.examination.examination import Examination
+from endoreg_db.models.medical.finding.finding import Finding
+from endoreg_db.models.medical.finding.finding_classification import (
+    FindingClassification,
+    FindingClassificationChoice,
+)
+from endoreg_db.models.medical.finding.finding_intervention import FindingIntervention
+from endoreg_db.models.medical.patient.patient_examination import PatientExamination
+from endoreg_db.models.medical.patient.patient_finding_classification import (
+    PatientFindingClassification,
+)
+from endoreg_db.models.other.gender import Gender
+from endoreg_db.services.report_persistence import save_report_submission
+from endoreg_db.views.report.patient_examination_report import (
+    PatientExaminationReportViewSet,
+)
+from lx_dtypes.django.api.findings_routes import clear_findings_route_caches
+
+
+pytestmark = pytest.mark.django_db
+
+
+def _create_patient_examination() -> PatientExamination:
+    gender, _ = Gender.objects.get_or_create(name="male")
+    center, _ = Center.objects.get_or_create(name="Dtypes Test Center")
+    patient = Patient.objects.create(
+        first_name="Dtypes",
+        last_name="Record",
+        dob=date(1980, 1, 1),
+        gender=gender,
+        center=center,
+    )
+    examination = Examination.objects.create(name="colonoscopy")
+    return PatientExamination.objects.create(
+        patient=patient,
+        examination=examination,
+        hash=f"dtypes-record-{patient.id}-{examination.id}",
+    )
+
+
+def _create_dtypes_exam_graph() -> tuple[
+    PatientExamination,
+    Finding,
+    FindingClassification,
+    FindingClassificationChoice,
+    FindingIntervention,
+]:
+    patient_examination = _create_patient_examination()
+    assert patient_examination.examination is not None
+
+    finding = Finding.objects.create(name="colon_polyp")
+    classification = FindingClassification.objects.create(name="lesion_size_mm")
+    choice = FindingClassificationChoice.objects.create(
+        name="lesion_size_oval_mm",
+        description="oval lesion size",
+        subcategories={},
+        numerical_descriptors={},
+    )
+    intervention = FindingIntervention.objects.create(
+        name="endoscopy_biopsy_grasper_generic"
+    )
+
+    classification.choices.add(choice)
+    finding.finding_classifications.add(classification)
+    finding.finding_interventions.add(intervention)
+    patient_examination.examination.findings.add(finding)
+
+    return patient_examination, finding, classification, choice, intervention
+
+
+@pytest.fixture(autouse=True)
+def _use_report_template_examples_findings_module(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("LX_DTYPES_FINDINGS_MODULE", "report_template_examples")
+    clear_findings_route_caches()
+    yield
+    clear_findings_route_caches()
+
+
+def test_base_api_persists_full_dtypes_record() -> None:
+    client = Client()
+    patient_examination = _create_patient_examination()
+    payload = {
+        "patient": str(patient_examination.patient_id),
+        "examiners": [],
+        "examination": "colonoscopy",
+        "knowledge_base_module": "report_template_examples",
+        "knowledge_base_version": "0.1.0",
+        "patient_findings": [],
+        "patient_indications": [],
+    }
+
+    response = client.post(
+        f"/base_api/patient-examinations/{patient_examination.id}/dtypes-record/",
+        data=json.dumps(payload),
+        content_type="application/json",
+        secure=True,
+    )
+
+    assert response.status_code == 200, response.content.decode()
+    patient_examination.refresh_from_db()
+    assert patient_examination.dtypes_record["examination"] == "colonoscopy"
+    assert patient_examination.dtypes_record["knowledge_base_module"] == (
+        "report_template_examples"
+    )
+    assert patient_examination.knowledge_base_module == "report_template_examples"
+    assert patient_examination.knowledge_base_version == "0.1.0"
+    assert patient_examination.dtypes_record_updated_at is not None
+
+    get_response = client.get(
+        f"/base_api/patient-examinations/{patient_examination.id}/dtypes-record/",
+        secure=True,
+    )
+
+    assert get_response.status_code == 200, get_response.content.decode()
+    assert get_response.json()["examination"] == "colonoscopy"
+
+
+def test_base_api_rejects_dtypes_record_for_wrong_examination() -> None:
+    client = Client()
+    patient_examination = _create_patient_examination()
+
+    response = client.post(
+        f"/base_api/patient-examinations/{patient_examination.id}/dtypes-record/",
+        data=json.dumps(
+            {
+                "patient": str(patient_examination.patient_id),
+                "examination": "gastroscopy",
+                "patient_findings": [],
+            }
+        ),
+        content_type="application/json",
+        secure=True,
+    )
+
+    assert response.status_code == 422, response.content.decode()
+    patient_examination.refresh_from_db()
+    assert patient_examination.dtypes_record == {}
+
+
+def test_patient_finding_create_updates_dtypes_record() -> None:
+    client = Client()
+    patient_examination, finding, classification, choice, _intervention = (
+        _create_dtypes_exam_graph()
+    )
+
+    response = client.post(
+        "/base_api/patient-findings/",
+        data=json.dumps(
+            {
+                "patient_examination": patient_examination.id,
+                "finding": finding.id,
+                "classifications": [
+                    {"classification": classification.id, "choice": choice.id}
+                ],
+            }
+        ),
+        content_type="application/json",
+        secure=True,
+    )
+
+    assert response.status_code == 200, response.content.decode()
+    patient_examination.refresh_from_db()
+    patient_findings = patient_examination.dtypes_record["patient_findings"]
+    assert len(patient_findings) == 1
+    assert patient_findings[0]["finding"] == "colon_polyp"
+    classification_choices = patient_findings[0]["patient_finding_classifications"][0][
+        "patient_finding_classification_choices"
+    ]
+    assert classification_choices[0]["classification"] == "lesion_size_mm"
+    assert classification_choices[0]["classification_choice"] == "lesion_size_oval_mm"
+
+
+def test_patient_finding_delete_refreshes_dtypes_record() -> None:
+    client = Client()
+    patient_examination, finding, _classification, _choice, _intervention = (
+        _create_dtypes_exam_graph()
+    )
+
+    create_response = client.post(
+        "/base_api/patient-findings/",
+        data=json.dumps(
+            {"patient_examination": patient_examination.id, "finding": finding.id}
+        ),
+        content_type="application/json",
+        secure=True,
+    )
+    assert create_response.status_code == 200, create_response.content.decode()
+
+    delete_response = client.delete(
+        f"/base_api/patient-findings/{create_response.json()['id']}/",
+        secure=True,
+    )
+
+    assert delete_response.status_code == 200, delete_response.content.decode()
+    patient_examination.refresh_from_db()
+    assert patient_examination.dtypes_record["patient_findings"] == []
+
+
+def test_patient_finding_classification_append_is_idempotent() -> None:
+    client = Client()
+    patient_examination, finding, classification, choice, _intervention = (
+        _create_dtypes_exam_graph()
+    )
+
+    create_response = client.post(
+        "/base_api/patient-findings/",
+        data=json.dumps(
+            {"patient_examination": patient_examination.id, "finding": finding.id}
+        ),
+        content_type="application/json",
+        secure=True,
+    )
+    assert create_response.status_code == 200, create_response.content.decode()
+    patient_finding_id = create_response.json()["id"]
+
+    payload = {
+        "replace": False,
+        "classifications": [{"classification": classification.id, "choice": choice.id}],
+    }
+    first_response = client.post(
+        f"/base_api/patient-findings/{patient_finding_id}/classifications/",
+        data=json.dumps(payload),
+        content_type="application/json",
+        secure=True,
+    )
+    second_response = client.post(
+        f"/base_api/patient-findings/{patient_finding_id}/classifications/",
+        data=json.dumps(payload),
+        content_type="application/json",
+        secure=True,
+    )
+
+    assert first_response.status_code == 200, first_response.content.decode()
+    assert second_response.status_code == 200, second_response.content.decode()
+    assert (
+        PatientFindingClassification.objects.filter(
+            finding_id=patient_finding_id,
+            classification=classification,
+            classification_choice=choice,
+            is_active=True,
+        ).count()
+        == 1
+    )
+    patient_examination.refresh_from_db()
+    classification_choices = patient_examination.dtypes_record["patient_findings"][0][
+        "patient_finding_classifications"
+    ][0]["patient_finding_classification_choices"]
+    assert len(classification_choices) == 1
+
+
+def test_report_submission_refreshes_dtypes_record_with_interventions() -> None:
+    patient_examination, _finding, _classification, _choice, _intervention = (
+        _create_dtypes_exam_graph()
+    )
+
+    save_report_submission(
+        patient_examination_id=patient_examination.id,
+        template_name="colonoscopy_training_basic",
+        findings=[
+            {
+                "finding": "colon_polyp",
+                "classifications": [
+                    {
+                        "classification": "lesion_size_mm",
+                        "classification_choice": "lesion_size_oval_mm",
+                    }
+                ],
+                "interventions": [
+                    {
+                        "intervention": "endoscopy_biopsy_grasper_generic",
+                        "state": "done",
+                    }
+                ],
+            }
+        ],
+    )
+
+    patient_examination.refresh_from_db()
+    patient_findings = patient_examination.dtypes_record["patient_findings"]
+    assert len(patient_findings) == 1
+    intervention_groups = patient_findings[0]["patient_finding_interventions"]
+    assert len(intervention_groups) == 1
+    interventions = intervention_groups[0]["patient_finding_interventions"]
+    assert len(interventions) == 1
+    assert interventions[0]["patient_finding_interventions"]
+    assert interventions[0]["intervention"] == "endoscopy_biopsy_grasper_generic"
+
+
+def test_report_submission_api_returns_and_retrieves_persisted_dtypes_record() -> None:
+    factory = APIRequestFactory()
+    user_model = get_user_model()
+    user = user_model.objects.create_user(
+        username="dtypes-report-viewer",
+        password="pw",
+        is_staff=True,
+    )
+    patient_examination, _finding, _classification, _choice, _intervention = (
+        _create_dtypes_exam_graph()
+    )
+
+    request = factory.post(
+        "/api/patient-examination-reports/save-submission/",
+        data={
+            "patient_examination_id": patient_examination.id,
+            "template_name": "colonoscopy_training_basic",
+            "findings": [
+                {
+                    "finding": "colon_polyp",
+                    "classifications": [
+                        {
+                            "classification": "lesion_size_mm",
+                            "classification_choice": "lesion_size_oval_mm",
+                        }
+                    ],
+                    "interventions": [
+                        {
+                            "intervention": "endoscopy_biopsy_grasper_generic",
+                            "state": "done",
+                        }
+                    ],
+                }
+            ],
+        },
+        format="json",
+    )
+    force_authenticate(request, user=user)
+    save_view = PatientExaminationReportViewSet.as_view({"post": "save_submission"})
+    response = save_view(request)
+
+    assert response.status_code == 201, response.data
+    payload = response.data
+    persisted_record = payload["persisted_dtypes_record"]
+    assert persisted_record["examination"] == "colonoscopy"
+    assert persisted_record["patient_findings"][0]["finding"] == "colon_polyp"
+    assert payload["persisted_dtypes_record_updated_at"]
+    assert payload["report"]["dtypes_record"] == persisted_record
+    assert payload["report"]["dtypes_record_updated_at"]
+
+    detail_request = factory.get(
+        f"/api/patient-examination-reports/{payload['report']['id']}/",
+    )
+    force_authenticate(detail_request, user=user)
+    detail_view = PatientExaminationReportViewSet.as_view({"get": "retrieve"})
+    detail_response = detail_view(detail_request, pk=payload["report"]["id"])
+
+    assert detail_response.status_code == 200, detail_response.data
+    detail_payload = detail_response.data
+    assert detail_payload["dtypes_record"] == persisted_record
+    assert detail_payload["dtypes_record_updated_at"]
