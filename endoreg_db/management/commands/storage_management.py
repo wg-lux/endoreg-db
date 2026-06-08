@@ -3,7 +3,12 @@ import shutil
 import logging
 from pathlib import Path
 from datetime import datetime, timedelta
-from django.core.management.base import BaseCommand, CommandError
+from typing import cast
+from uuid import UUID
+
+from django.core.management.base import BaseCommand, CommandError, CommandParser
+from pydantic import ValidationError
+
 from endoreg_db.models import VideoFile
 from endoreg_db.utils.filesystem.paths import PROTECTED_DATA_ROOT, data_paths
 from endoreg_db.utils.filesystem.file_operations import (
@@ -13,6 +18,10 @@ from endoreg_db.utils.filesystem.file_operations import (
 )
 from endoreg_db.utils.storage import delete_field_file
 from endoreg_db.utils.storage.streaming import field_file_size
+from lx_dtypes.models.contracts.management_command import (
+    StorageManagementCommandOptionsPayload,
+    StorageManagementInfoPayload,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +32,18 @@ FRAME_CLEANUP_COMPLETE_STATUSES = (
 )
 
 
+def _video_uuid_text(video: VideoFile) -> str:
+    return str(cast(UUID, getattr(video, "uuid")))
+
+
 class Command(BaseCommand):
     help = "Automated storage management and cleanup to prevent disk space issues"
+    dry_run: bool
+    force: bool
+    max_age_days: int
+    emergency_threshold: float
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
             "--dry-run",
             action="store_true",
@@ -70,18 +87,19 @@ class Command(BaseCommand):
             help="Storage usage percentage that triggers emergency cleanup (default: 95%%)",
         )
 
-    def handle(self, *args, **options):
+    def handle(self, *args: object, **options: object) -> None:
         """Main command handler for storage management."""
-        self.dry_run = options["dry_run"]
-        self.force = options["force"]
-        self.max_age_days = options["max_age_days"]
-        self.emergency_threshold = options["emergency_threshold"]
-
-        # Validate emergency_threshold range
-        if not (0 <= self.emergency_threshold <= 100):
-            raise CommandError(
-                "The --emergency-threshold value must be between 0 and 100 (inclusive)."
+        try:
+            options_payload = StorageManagementCommandOptionsPayload.model_validate(
+                options
             )
+        except ValidationError as exc:
+            raise CommandError(str(exc)) from exc
+
+        self.dry_run = options_payload.dry_run
+        self.force = options_payload.force
+        self.max_age_days = options_payload.max_age_days
+        self.emergency_threshold = options_payload.emergency_threshold
 
         if self.dry_run:
             self.stdout.write(
@@ -95,33 +113,33 @@ class Command(BaseCommand):
 
             # Determine if emergency cleanup is needed
             needs_emergency_cleanup = (
-                storage_info["usage_percent"] >= self.emergency_threshold or self.force
+                storage_info.usage_percent >= self.emergency_threshold or self.force
             )
 
             if needs_emergency_cleanup:
                 self.stdout.write(
                     self.style.ERROR(
-                        f"🚨 EMERGENCY CLEANUP TRIGGERED - Storage at {storage_info['usage_percent']:.1f}%"
+                        f"🚨 EMERGENCY CLEANUP TRIGGERED - Storage at {storage_info.usage_percent:.1f}%"
                     )
                 )
-                self.emergency_cleanup(options)
+                self.emergency_cleanup()
             else:
                 self.stdout.write(
                     self.style.SUCCESS(
-                        f"✅ Storage usage is acceptable at {storage_info['usage_percent']:.1f}%"
+                        f"✅ Storage usage is acceptable at {storage_info.usage_percent:.1f}%"
                     )
                 )
 
             # Always run maintenance cleanup if requested
             if any(
                 [
-                    options["cleanup_frames"],
-                    options["cleanup_old_videos"],
-                    options["cleanup_uploads"],
-                    options["cleanup_logs"],
+                    options_payload.cleanup_frames,
+                    options_payload.cleanup_old_videos,
+                    options_payload.cleanup_uploads,
+                    options_payload.cleanup_logs,
                 ]
             ):
-                self.maintenance_cleanup(options)
+                self.maintenance_cleanup(options_payload)
 
             # Show final storage status
             final_storage = self.get_storage_info()
@@ -131,7 +149,7 @@ class Command(BaseCommand):
             logger.error(f"Storage management failed: {e}")
             raise CommandError(f"Storage management failed: {e}")
 
-    def get_storage_info(self):
+    def get_storage_info(self) -> StorageManagementInfoPayload:
         """Get current storage information."""
         try:
             # Get storage stats for the root filesystem
@@ -142,24 +160,24 @@ class Command(BaseCommand):
             protected_root = self.get_protected_root()
             project_storage = self.get_directory_size(protected_root)
 
-            return {
-                "total_gb": total / (1024**3),
-                "used_gb": used / (1024**3),
-                "free_gb": free / (1024**3),
-                "usage_percent": usage_percent,
-                "project_storage_gb": project_storage / (1024**3),
-                "critical": usage_percent >= 95.0,
-                "warning": usage_percent >= 85.0,
-            }
+            return StorageManagementInfoPayload(
+                total_gb=total / (1024**3),
+                used_gb=used / (1024**3),
+                free_gb=free / (1024**3),
+                usage_percent=usage_percent,
+                project_storage_gb=project_storage / (1024**3),
+                critical=usage_percent >= 95.0,
+                warning=usage_percent >= 85.0,
+            )
         except Exception as e:
             logger.error(f"Failed to get storage info: {e}")
             raise
 
-    def get_directory_size(self, path):
+    def get_directory_size(self, path: Path) -> int:
         """Calculate total size of a directory."""
         total_size = 0
         try:
-            for dirpath, dirnames, filenames in os.walk(path):
+            for dirpath, _, filenames in os.walk(path):
                 for filename in filenames:
                     filepath = os.path.join(dirpath, filename)
                     try:
@@ -194,33 +212,33 @@ class Command(BaseCommand):
             self.get_storage_root() / "temp",
         ]
 
-    def display_storage_status(self, storage_info):
+    def display_storage_status(
+        self, storage_info: StorageManagementInfoPayload
+    ) -> None:
         """Display current storage status."""
         status_color = (
             self.style.ERROR
-            if storage_info["critical"]
+            if storage_info.critical
             else self.style.WARNING
-            if storage_info["warning"]
+            if storage_info.warning
             else self.style.SUCCESS
         )
 
         self.stdout.write("\n" + "=" * 60)
         self.stdout.write(status_color("💾 STORAGE STATUS"))
         self.stdout.write("=" * 60)
-        self.stdout.write(f"Total Space: {storage_info['total_gb']:.1f} GB")
-        self.stdout.write(f"Used Space:  {storage_info['used_gb']:.1f} GB")
-        self.stdout.write(f"Free Space:  {storage_info['free_gb']:.1f} GB")
-        self.stdout.write(
-            status_color(f"Usage:       {storage_info['usage_percent']:.1f}%")
-        )
-        self.stdout.write(f"Project Size: {storage_info['project_storage_gb']:.1f} GB")
+        self.stdout.write(f"Total Space: {storage_info.total_gb:.1f} GB")
+        self.stdout.write(f"Used Space:  {storage_info.used_gb:.1f} GB")
+        self.stdout.write(f"Free Space:  {storage_info.free_gb:.1f} GB")
+        self.stdout.write(status_color(f"Usage:       {storage_info.usage_percent:.1f}%"))
+        self.stdout.write(f"Project Size: {storage_info.project_storage_gb:.1f} GB")
 
-        if storage_info["critical"]:
+        if storage_info.critical:
             self.stdout.write(self.style.ERROR("🚨 CRITICAL: Storage critically low!"))
-        elif storage_info["warning"]:
+        elif storage_info.warning:
             self.stdout.write(self.style.WARNING("⚠️  WARNING: Storage getting low"))
 
-    def emergency_cleanup(self, options):
+    def emergency_cleanup(self) -> None:
         """Perform emergency cleanup to free critical storage space."""
         self.stdout.write(self.style.ERROR("\n🚨 PERFORMING EMERGENCY CLEANUP"))
 
@@ -244,7 +262,7 @@ class Command(BaseCommand):
 
         # 5. If still critical, clean up ALL processed videos (more aggressive)
         storage_info = self.get_storage_info()
-        if storage_info["usage_percent"] >= 90.0:
+        if storage_info.usage_percent >= 90.0:
             # Use 0 days to clean up ALL processed videos
             videos_freed = self.cleanup_all_processed_videos()
             total_freed += videos_freed
@@ -255,25 +273,27 @@ class Command(BaseCommand):
             )
         )
 
-    def maintenance_cleanup(self, options):
+    def maintenance_cleanup(
+        self, options: StorageManagementCommandOptionsPayload
+    ) -> None:
         """Perform regular maintenance cleanup."""
         self.stdout.write(self.style.SUCCESS("\n🔧 PERFORMING MAINTENANCE CLEANUP"))
 
         total_freed = 0
 
-        if options["cleanup_frames"]:
+        if options.cleanup_frames:
             freed = self.cleanup_extracted_frames()
             total_freed += freed
 
-        if options["cleanup_old_videos"]:
+        if options.cleanup_old_videos:
             freed = self.cleanup_old_processed_videos(self.max_age_days)
             total_freed += freed
 
-        if options["cleanup_uploads"]:
+        if options.cleanup_uploads:
             freed = self.cleanup_upload_cache()
             total_freed += freed
 
-        if options["cleanup_logs"]:
+        if options.cleanup_logs:
             freed = self.cleanup_old_logs()
             total_freed += freed
 
@@ -283,7 +303,7 @@ class Command(BaseCommand):
             )
         )
 
-    def cleanup_extracted_frames(self):
+    def cleanup_extracted_frames(self) -> int:
         """Clean up extracted video frames that are no longer needed."""
         self.stdout.write("🖼️  Cleaning up extracted video frames...")
 
@@ -301,7 +321,8 @@ class Command(BaseCommand):
         for video in completed_videos:
             try:
                 # Find frame directories for this video
-                video_frame_dirs = list(frames_dir.glob(f"*{video.uuid}*"))
+                video_uuid = _video_uuid_text(video)
+                video_frame_dirs = list(frames_dir.glob(f"*{video_uuid}*"))
 
                 for frame_dir in video_frame_dirs:
                     if frame_dir.is_dir():
@@ -312,17 +333,17 @@ class Command(BaseCommand):
 
                         total_freed += dir_size
                         self.stdout.write(
-                            f"  Removed frames for {video.uuid}: {dir_size / (1024**2):.1f} MB"
+                            f"  Removed frames for {video_uuid}: {dir_size / (1024**2):.1f} MB"
                         )
 
             except Exception as e:
-                logger.warning(f"Failed to clean frames for video {video.uuid}: {e}")
+                logger.warning(f"Failed to clean frames for video {_video_uuid_text(video)}: {e}")
                 continue
 
         self.stdout.write(f"✅ Frames cleanup: {total_freed / (1024**3):.2f} GB freed")
         return total_freed
 
-    def cleanup_upload_cache(self):
+    def cleanup_upload_cache(self) -> int:
         """Clean up old upload cache files."""
         self.stdout.write("📤 Cleaning up upload cache...")
 
@@ -356,7 +377,7 @@ class Command(BaseCommand):
         )
         return total_freed
 
-    def cleanup_old_logs(self):
+    def cleanup_old_logs(self) -> int:
         """Clean up old log files."""
         self.stdout.write("📋 Cleaning up old log files...")
 
@@ -384,7 +405,7 @@ class Command(BaseCommand):
         self.stdout.write(f"✅ Log cleanup: {total_freed / (1024**3):.2f} GB freed")
         return total_freed
 
-    def cleanup_temp_files(self):
+    def cleanup_temp_files(self) -> int:
         """Clean up temporary files."""
         self.stdout.write("🗂️  Cleaning up temporary files...")
 
@@ -414,7 +435,7 @@ class Command(BaseCommand):
         )
         return total_freed
 
-    def cleanup_old_processed_videos(self, max_age_days):
+    def cleanup_old_processed_videos(self, max_age_days: int) -> int:
         """Clean up old processed videos while keeping raw files."""
         self.stdout.write(
             f"🎥 Cleaning up processed videos older than {max_age_days} days..."
@@ -476,11 +497,11 @@ class Command(BaseCommand):
 
                     total_freed += file_size
                     self.stdout.write(
-                        f"  Removed processed video {video.uuid}: {file_size / (1024**2):.1f} MB"
+                        f"  Removed processed video {_video_uuid_text(video)}: {file_size / (1024**2):.1f} MB"
                     )
 
             except Exception as e:
-                logger.warning(f"Failed to clean processed video {video.uuid}: {e}")
+                logger.warning(f"Failed to clean processed video {_video_uuid_text(video)}: {e}")
                 continue
 
         self.stdout.write(
@@ -488,7 +509,7 @@ class Command(BaseCommand):
         )
         return total_freed
 
-    def cleanup_all_extracted_frames(self):
+    def cleanup_all_extracted_frames(self) -> int:
         """More aggressive cleanup - remove ALL extracted frames regardless of status."""
         self.stdout.write("🖼️  AGGRESSIVE: Cleaning up ALL extracted video frames...")
 
@@ -537,7 +558,7 @@ class Command(BaseCommand):
         )
         return total_freed
 
-    def cleanup_all_uploads(self):
+    def cleanup_all_uploads(self) -> int:
         """More aggressive cleanup - remove ALL upload cache files."""
         self.stdout.write("📤 AGGRESSIVE: Cleaning up ALL upload cache...")
 
@@ -565,7 +586,7 @@ class Command(BaseCommand):
         )
         return total_freed
 
-    def cleanup_all_processed_videos(self):
+    def cleanup_all_processed_videos(self) -> int:
         """AGGRESSIVE: Clean up ALL processed videos while keeping raw files."""
         self.stdout.write("🎥 AGGRESSIVE: Cleaning up ALL processed videos...")
 
@@ -591,7 +612,7 @@ class Command(BaseCommand):
                     freed = self._cleanup_processed_video_file(video)
                     total_freed += freed
                 except Exception as e:
-                    logger.warning(f"Failed to clean processed video {video.uuid}: {e}")
+                    logger.warning(f"Failed to clean processed video {_video_uuid_text(video)}: {e}")
                     continue
 
         except Exception as e:
@@ -602,7 +623,7 @@ class Command(BaseCommand):
         )
         return total_freed
 
-    def _cleanup_processed_video_file(self, video):
+    def _cleanup_processed_video_file(self, video: VideoFile) -> int:
         """
         Helper to clean up a single processed video file, update DB, and return freed size in bytes.
         """
@@ -620,29 +641,33 @@ class Command(BaseCommand):
                     save=True,
                 )
             self.stdout.write(
-                f"  Removed processed video {video.uuid}: {file_size / (1024**2):.1f} MB"
+                f"  Removed processed video {_video_uuid_text(video)}: {file_size / (1024**2):.1f} MB"
             )
             return file_size
         return 0
 
-    def display_cleanup_summary(self, before, after):
+    def display_cleanup_summary(
+        self,
+        before: StorageManagementInfoPayload,
+        after: StorageManagementInfoPayload,
+    ) -> None:
         """Display cleanup summary."""
-        freed_gb = before["used_gb"] - after["used_gb"]
+        freed_gb = before.used_gb - after.used_gb
 
         self.stdout.write("\n" + "=" * 60)
         self.stdout.write(self.style.SUCCESS("📊 CLEANUP SUMMARY"))
         self.stdout.write("=" * 60)
         self.stdout.write(
-            f"Before: {before['used_gb']:.1f} GB used ({before['usage_percent']:.1f}%)"
+            f"Before: {before.used_gb:.1f} GB used ({before.usage_percent:.1f}%)"
         )
         self.stdout.write(
-            f"After:  {after['used_gb']:.1f} GB used ({after['usage_percent']:.1f}%)"
+            f"After:  {after.used_gb:.1f} GB used ({after.usage_percent:.1f}%)"
         )
         self.stdout.write(self.style.SUCCESS(f"Freed:  {freed_gb:.2f} GB"))
 
-        if after["usage_percent"] < 90.0:
+        if after.usage_percent < 90.0:
             self.stdout.write(self.style.SUCCESS("✅ Storage levels are now healthy!"))
-        elif after["usage_percent"] < 95.0:
+        elif after.usage_percent < 95.0:
             self.stdout.write(
                 self.style.WARNING("⚠️  Storage levels improved but still high")
             )

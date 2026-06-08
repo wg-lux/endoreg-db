@@ -25,16 +25,14 @@ Goals
    - If a user has "patient:write", they automatically satisfy "patient:read".
 """
 
-from typing import Dict, Union
-
 # ------------------------------------------------------------
 # Types
 # ------------------------------------------------------------
 
-# A route can map to:
-#   - a single role string ("patient:read")
-#   - or per-method roles: {"GET": "patient:read", "POST": "patient:write", ...}
-RouteRoles = Dict[str, Union[str, Dict[str, str]]]
+type ResourceRoles = dict[str, dict[str, str]]
+type RouteResourceMap = dict[str, str]
+type RouteRoles = dict[str, dict[str, str]]
+type MethodRoles = dict[str, str]
 
 # ------------------------------------------------------------
 # Resource → roles (technical roles in Keycloak)
@@ -43,7 +41,7 @@ RouteRoles = Dict[str, Union[str, Dict[str, str]]]
 # and assign to users/groups (directly or via composite roles).
 #
 # For each resource, define which role is used for read & write.
-RESOURCE_ROLES = {
+RESOURCE_ROLES: ResourceRoles = {
     "patient": {
         "read": "patient:read",
         "write": "patient:write",
@@ -73,7 +71,7 @@ RESOURCE_ROLES = {
 #       "<basename>-<action_name>"
 #   - path(..., name="..."):
 #       exactly that "name"
-ROUTE_RESOURCE = {
+ROUTE_RESOURCE: RouteResourceMap = {
     # Patients
     "patient-list": "patient",  # /api/patients/
     "patient-detail": "patient",  # /api/patients/{id}/
@@ -133,8 +131,10 @@ REQUIRED_ROLES: RouteRoles = {
     # "patient-detail": {
     #     "DELETE": "admin",  # admin role in Keycloak
     # },
-    # Example: a special helper route that you always want read-only patients role:
-    # "check_pe_exist": "patient:read",
+    # Example: special helper route that should always require read:
+    # "check_pe_exist": {
+    #     "GET": "patient:read",
+    # },
 }
 
 # ------------------------------------------------------------
@@ -148,7 +148,7 @@ REQUIRED_ROLES: RouteRoles = {
 #
 # If you move fully to resource-based roles, you can leave this as None
 # or a generic "data:read"/"data:write" depending on your preference.
-DEFAULT_ROLE_BY_METHOD = {
+DEFAULT_ROLE_BY_METHOD: MethodRoles = {
     "GET": "data:read",
     "HEAD": "data:read",
     "OPTIONS": "data:read",
@@ -216,14 +216,13 @@ def satisfies(user_roles: set[str], needed: str) -> bool:
 # ------------------------------------------------------------
 
 
-def get_needed_role(route_name: str, method: str) -> str | None:
+def get_needed_role(route_name: str, method: str) -> str:
     """
     Compute the required role for a given route + HTTP method.
 
     Priority:
       1) REQUIRED_ROLES[route_name] if present
-         - if dict: use per-method role if defined
-         - if str : use that role for all methods
+         - use per-method role if defined
       2) ROUTE_RESOURCE + RESOURCE_ROLES (resource-based policy)
          - e.g. route "patient-list" with GET → "patient:read"
       3) DEFAULT_ROLE_BY_METHOD[method] as final fallback
@@ -232,13 +231,10 @@ def get_needed_role(route_name: str, method: str) -> str | None:
     method = (method or "").upper()
 
     # 1) explicit per-route overrides
-    per_route = REQUIRED_ROLES.get(route_name)
-    if isinstance(per_route, dict):
-        role = per_route.get(method)
-        if role:
-            return role
-    elif isinstance(per_route, str):
-        return per_route  # one role for all methods of that route
+    per_route = REQUIRED_ROLES.get(route_name, {})
+    role = per_route.get(method, "")
+    if role:
+        return role
 
     # 2) resource-based default
     resource = ROUTE_RESOURCE.get(route_name)
@@ -249,4 +245,4 @@ def get_needed_role(route_name: str, method: str) -> str | None:
             return role
 
     # 3) global fallback by method
-    return DEFAULT_ROLE_BY_METHOD.get(method)
+    return DEFAULT_ROLE_BY_METHOD.get(method, "")

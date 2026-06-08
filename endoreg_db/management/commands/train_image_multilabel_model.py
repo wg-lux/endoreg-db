@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
+from importlib import import_module
+from typing import Protocol, cast
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand, CommandError, CommandParser
+from pydantic import ValidationError
 
 from endoreg_db.models import AIDataSet
 from endoreg_db.utils.ai.multilabel_dataset_builder import (
@@ -12,25 +16,47 @@ from endoreg_db.utils.ai.multilabel_dataset_builder import (
     VALID_ANNOTATION_SOURCE_SCOPES,
     normalize_annotation_source_scope,
 )
+from lx_dtypes.models.contracts.json_types import JsonObject
+from lx_dtypes.models.contracts.management_command import (
+    TrainImageMultilabelModelCommandOptionsPayload,
+    validate_model_training_result,
+)
 
 
-def train_gastronet_multilabel(config):
+class _TrainImageDataSet(Protocol):
+    name: str
+    dataset_type: str
+    ai_model_type: str
+
+
+def train_gastronet_multilabel(config: object) -> JsonObject:
     try:
-        from endoreg_db.utils.ai.model_training.trainer_gastronet_multilabel import (
-            train_gastronet_multilabel as _train_gastronet_multilabel,
+        from endoreg_db.utils.ai.model_training.config import TrainingConfig
+
+        trainer_module = import_module(
+            "endoreg_db.utils.ai.model_training.trainer_gastronet_multilabel"
+        )
+        train_candidate: object = getattr(trainer_module, "train_gastronet_multilabel")
+        if not callable(train_candidate):
+            raise CommandError("train_gastronet_multilabel is not callable.")
+        train_model = cast(
+            Callable[[TrainingConfig], JsonObject],
+            train_candidate,
         )
     except ImportError as exc:
         raise CommandError(
             "Training dependencies are not available. Install the AI training "
             "dependencies before running train_image_multilabel_model."
         ) from exc
-    return _train_gastronet_multilabel(config)
+    if not isinstance(config, TrainingConfig):
+        raise CommandError("TrainingConfig is required for image multilabel training.")
+    return train_model(config)
 
 
 class Command(BaseCommand):
     help = "Train / fine-tune the image multi-label model on a given AIDataSet."
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: CommandParser) -> None:
         from endoreg_db.utils.ai.model_training.config import (
             DEFAULT_LABELSET_VERSION_TO_TRAIN,
         )
@@ -118,25 +144,32 @@ class Command(BaseCommand):
         )
         parser.set_defaults(treat_unlabeled_as_negative=True)
 
-    def handle(self, *args, **options):
-        dataset_id = options["dataset_id"]
+    def handle(self, *args: object, **options: object) -> None:
+        try:
+            options_payload = TrainImageMultilabelModelCommandOptionsPayload.model_validate(
+                options
+            )
+        except ValidationError as exc:
+            raise CommandError(str(exc)) from exc
+
+        dataset_id = options_payload.dataset_id
         try:
             annotation_source_scope = normalize_annotation_source_scope(
-                options.get("annotation_source_scope")
+                options_payload.annotation_source_scope
             )
         except ValueError as exc:
             raise CommandError(str(exc)) from exc
-        backbone_name = str(options["backbone_name"]).strip()
-        backbone_checkpoint = options["backbone_checkpoint"]
-        epochs = int(options["epochs"])
-        batch_size = int(options["batch_size"])
-        labelset_version = int(options["labelset_version"])
-        device = str(options["device"] or "auto").strip() or "auto"
-        freeze_backbone = bool(options["freeze_backbone"])
-        treat_unlabeled_as_negative = bool(options["treat_unlabeled_as_negative"])
+        backbone_name = options_payload.backbone_name
+        backbone_checkpoint = options_payload.backbone_checkpoint
+        epochs = options_payload.epochs
+        batch_size = options_payload.batch_size
+        labelset_version = options_payload.labelset_version
+        device = options_payload.device
+        freeze_backbone = options_payload.freeze_backbone
+        treat_unlabeled_as_negative = options_payload.treat_unlabeled_as_negative
 
         try:
-            dataset = AIDataSet.objects.get(id=dataset_id)
+            dataset = cast(_TrainImageDataSet, AIDataSet.objects.get(id=dataset_id))
         except AIDataSet.DoesNotExist:
             raise CommandError(f"AIDataSet with id={dataset_id} does not exist.")
 
@@ -153,7 +186,7 @@ class Command(BaseCommand):
 
         self.stdout.write(
             self.style.NOTICE(
-                f"Using AIDataSet id={dataset.id}, "
+                f"Using AIDataSet id={dataset_id}, "
                 f"name={dataset.name!r}, "
                 f"dataset_type={dataset.dataset_type!r}, "
                 f"ai_model_type={dataset.ai_model_type!r}"
@@ -181,7 +214,7 @@ class Command(BaseCommand):
             ) from exc
 
         config = TrainingConfig(
-            dataset_id=dataset.id,
+            dataset_id=dataset_id,
             annotation_source_scope=annotation_source_scope,
             labelset_version_to_train=labelset_version,
             backbone_checkpoint=backbone_checkpoint,
@@ -192,14 +225,13 @@ class Command(BaseCommand):
             freeze_backbone=freeze_backbone,
             treat_unlabeled_as_negative=treat_unlabeled_as_negative,
         )
-        result = train_gastronet_multilabel(config)
+        result = validate_model_training_result(train_gastronet_multilabel(config))
 
         self.stdout.write(
             self.style.SUCCESS(
                 "Training completed successfully. "
-                f"Model saved to: {result['model_path']}"
+                f"Model saved to: {result.model_path}"
             )
         )
 
-        self.stdout.write(json.dumps(result))
-        return None
+        self.stdout.write(json.dumps(result.model_dump(mode="json")))

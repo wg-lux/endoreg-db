@@ -1,14 +1,26 @@
 # endoreg_db/management/commands/load_legacy_data.py
 
-import json
 import hashlib
+import json
 from datetime import datetime, timezone
 from pathlib import Path
+from types import TracebackType
+from typing import Protocol, TypeAlias, TypedDict, Unpack, cast
 
 from django.conf import settings
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand, CommandError, CommandParser
 from django.db import transaction
 from django.db.models import Max
+from lx_dtypes.models.contracts.legacy_data_import import (
+    LegacyDataImportCommandOptionsPayload,
+    LegacyImageImportRowPayload,
+    LegacyImportManifestPayload,
+    LegacyIntOrNull,
+    LegacyTextOrNull,
+    NullValue,
+    dump_legacy_import_manifest,
+)
+from pydantic import ValidationError
 
 from endoreg_db.models import (
     AIDataSet,
@@ -34,6 +46,70 @@ DEFAULT_LABELSET_NAME = (
 )
 DEFAULT_LABELSET_VERSION = 1
 
+VideoFileOrNull: TypeAlias = VideoFile | NullValue
+AiDataSetOrNull: TypeAlias = AIDataSet | NullValue
+ExceptionTypeOrNull: TypeAlias = type[BaseException] | NullValue
+ExceptionValueOrNull: TypeAlias = BaseException | NullValue
+TracebackOrNull: TypeAlias = TracebackType | NullValue
+
+
+class LegacyDataImportCommandOptions(TypedDict):
+    jsonl_path: str
+    images_root: str
+    video_id: LegacyIntOrNull
+    center_id: LegacyIntOrNull
+    dataset_name: str
+    dataset_description: str
+    labelset_name: str
+    labelset_version: int
+    dry_run: bool
+    staged_images_root: str
+    manifest_path: str
+
+
+class PersistedRecord(Protocol):
+    id: int
+    pk: LegacyIntOrNull
+
+
+class NamedPersistedRecord(PersistedRecord, Protocol):
+    name: str
+
+
+class LabelSetRecord(NamedPersistedRecord, Protocol):
+    version: int
+
+
+class LegacyVideoRecord(PersistedRecord, Protocol):
+    center_id: int
+    center: Center
+    video_hash: str
+    frame_dir: LegacyTextOrNull
+
+    def save(self, *, update_fields: list[str]) -> None: ...
+
+
+class AnnotationCollection(Protocol):
+    def add(self, annotation: ImageClassificationAnnotation) -> None: ...
+
+
+def _persisted_record(
+    model: Center | VideoFile | LabelSet | AIDataSet,
+) -> PersistedRecord:
+    return cast(PersistedRecord, model)
+
+
+def _named_record(model: LabelSet | AIDataSet) -> NamedPersistedRecord:
+    return cast(NamedPersistedRecord, model)
+
+
+def _labelset_record(labelset: LabelSet) -> LabelSetRecord:
+    return cast(LabelSetRecord, labelset)
+
+
+def _legacy_video_record(video: VideoFile) -> LegacyVideoRecord:
+    return cast(LegacyVideoRecord, video)
+
 
 class Command(BaseCommand):
     help = (
@@ -45,7 +121,7 @@ class Command(BaseCommand):
         "- Fills an AIDataSet (image dataset) with all annotations via image_annotations"
     )
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
             "--jsonl-path",
             type=str,
@@ -69,7 +145,7 @@ class Command(BaseCommand):
             required=False,
             default=None,
             help=(
-                "Optional fallback VideoFile for rows without old_examination_id. "
+                "Fallback VideoFile for rows without old_examination_id. "
                 "Also supplies the Center used for synthetic legacy VideoFile rows."
             ),
         )
@@ -122,19 +198,27 @@ class Command(BaseCommand):
             "--manifest-path",
             type=str,
             default="",
-            help="Optional manifest path under the protected migration manifest tier.",
+            help="Manifest path under the protected migration manifest tier.",
         )
 
-    def handle(self, *args, **options):
-        jsonl_path = Path(options["jsonl_path"])
-        images_root = Path(options["images_root"])
-        video_id = options.get("video_id")
-        center_id = options.get("center_id")
-        dataset_name = options["dataset_name"]
-        dataset_description = options["dataset_description"]
-        labelset_name = options["labelset_name"]
-        labelset_version = options["labelset_version"]
-        dry_run = options["dry_run"]
+    def handle(
+        self,
+        *args: str,
+        **options: Unpack[LegacyDataImportCommandOptions],
+    ) -> None:
+        option_keys = LegacyDataImportCommandOptions.__annotations__.keys()
+        command_options = LegacyDataImportCommandOptionsPayload.model_validate(
+            {key: options[key] for key in option_keys}
+        )
+        jsonl_path = Path(command_options.jsonl_path)
+        images_root = Path(command_options.images_root)
+        video_id = command_options.video_id
+        center_id = command_options.center_id
+        dataset_name = command_options.dataset_name
+        dataset_description = command_options.dataset_description
+        labelset_name = command_options.labelset_name
+        labelset_version = command_options.labelset_version
+        dry_run = command_options.dry_run
 
         # --- Basic checks ---
         if not jsonl_path.exists():
@@ -147,15 +231,18 @@ class Command(BaseCommand):
             video_id=video_id,
             center_id=center_id,
         )
+        center_record = _persisted_record(center)
         import_key = (
-            f"video_{fallback_video.id}" if fallback_video else f"center_{center.id}"
+            f"video_{_persisted_record(fallback_video).id}"
+            if fallback_video
+            else f"center_{center_record.id}"
         )
         staged_images_root = self._resolve_staged_images_root(
-            raw_path=options.get("staged_images_root"),
+            raw_path=command_options.staged_images_root,
             import_key=import_key,
         )
         manifest_path = self._resolve_manifest_path(
-            raw_path=options.get("manifest_path"),
+            raw_path=command_options.manifest_path,
             import_key=import_key,
         )
 
@@ -165,12 +252,13 @@ class Command(BaseCommand):
         if fallback_video:
             self.stdout.write(
                 self.style.NOTICE(
-                    f"Using VideoFile id={fallback_video.id} only for rows without old_examination_id."
+                    f"Using VideoFile id={_persisted_record(fallback_video).id} "
+                    "only for rows without old_examination_id."
                 )
             )
         self.stdout.write(
             self.style.NOTICE(
-                f"Using Center id={center.id} for synthetic legacy VideoFile rows."
+                f"Using Center id={center_record.id} for synthetic legacy VideoFile rows."
             )
         )
 
@@ -182,7 +270,9 @@ class Command(BaseCommand):
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"Using LabelSet '{labelset.name}' (version={labelset.version}, id={labelset.id})."
+                f"Using LabelSet '{_labelset_record(labelset).name}' "
+                f"(version={_labelset_record(labelset).version}, "
+                f"id={_labelset_record(labelset).id})."
             )
         )
 
@@ -205,7 +295,8 @@ class Command(BaseCommand):
             if created:
                 self.stdout.write(
                     self.style.SUCCESS(
-                        f"Created AIDataSet id={ai_dataset.id}, name='{ai_dataset.name}'."
+                        f"Created AIDataSet id={_named_record(ai_dataset).id}, "
+                        f"name='{_named_record(ai_dataset).name}'."
                     )
                 )
             else:
@@ -213,7 +304,8 @@ class Command(BaseCommand):
                 current_count = ai_dataset.get_annotations_queryset().count()
                 self.stdout.write(
                     self.style.WARNING(
-                        f"Re-using existing AIDataSet id={ai_dataset.id}, name='{ai_dataset.name}'. "
+                        f"Re-using existing AIDataSet id={_named_record(ai_dataset).id}, "
+                        f"name='{_named_record(ai_dataset).name}'. "
                         f"(Current annotation_count={current_count})"
                     )
                 )
@@ -221,7 +313,7 @@ class Command(BaseCommand):
         frame_counter = 0
         frame_number_counters: dict[int | str, int] = {}
         legacy_videos_by_old_examination_id: dict[str, VideoFile] = {}
-        legacy_video_ids_by_old_examination_id: dict[str, int | None] = {}
+        legacy_video_ids_by_old_examination_id: dict[str, LegacyIntOrNull] = {}
         staged_dirs_by_video_key: dict[int | str, Path] = {}
         used_video_ids: set[int] = set()
         annotation_counter = 0
@@ -239,25 +331,15 @@ class Command(BaseCommand):
                         continue
 
                     try:
-                        item = json.loads(line)
-                    except json.JSONDecodeError as exc:
+                        item = LegacyImageImportRowPayload.model_validate_json(line)
+                    except ValidationError as exc:
                         raise CommandError(
                             f"Invalid JSON on line {line_num} of {jsonl_path}: {exc}"
                         )
 
-                    labels_list = item.get("labels", [])
-                    filename = item.get("filename")
-                    if not filename:
-                        self.stdout.write(
-                            self.style.WARNING(
-                                f"Skipping line {line_num}: no 'filename' key."
-                            )
-                        )
-                        continue
-
-                    legacy_examination_id = self._normalize_legacy_examination_id(
-                        item.get("old_examination_id")
-                    )
+                    labels_list = item.labels
+                    filename = item.filename
+                    legacy_examination_id = item.normalized_old_examination_id()
                     target_video = self._resolve_video_for_legacy_item(
                         old_examination_id=legacy_examination_id,
                         center=center,
@@ -265,12 +347,13 @@ class Command(BaseCommand):
                         dry_run=dry_run,
                         cache=legacy_videos_by_old_examination_id,
                     )
+                    target_video_record = _legacy_video_record(target_video)
                     if legacy_examination_id is not None:
                         legacy_video_ids_by_old_examination_id[
                             legacy_examination_id
-                        ] = target_video.pk
-                    if target_video.pk is not None:
-                        used_video_ids.add(target_video.pk)
+                        ] = target_video_record.pk
+                    if target_video_record.pk is not None:
+                        used_video_ids.add(target_video_record.pk)
 
                     video_staged_root = self._ensure_video_frame_dir(
                         target_video=target_video,
@@ -337,10 +420,11 @@ class Command(BaseCommand):
                         if not dry_run:
                             annotation.save()
                             if ai_dataset is not None:
-                                # IMPORTANT CHANGE:
-                                # Use the AIDataSet helper, which for dataset_type='image'
-                                # returns the image_annotations manager.
-                                ai_dataset.get_annotations_queryset().add(annotation)
+                                annotations = cast(
+                                    AnnotationCollection,
+                                    ai_dataset.get_annotations_queryset(),
+                                )
+                                annotations.add(annotation)
 
             # --- Summary ---
             if dry_run:
@@ -351,30 +435,36 @@ class Command(BaseCommand):
                     )
                 )
             else:
+                if ai_dataset is None:
+                    raise CommandError("AIDataSet is required outside dry-run mode.")
+                ai_dataset_record = _persisted_record(ai_dataset)
                 self.stdout.write(
                     self.style.SUCCESS(
                         f"Imported {frame_counter} Frames, {annotation_counter} "
-                        f"ImageClassificationAnnotations into AIDataSet id={ai_dataset.id}."
+                        "ImageClassificationAnnotations into "
+                        f"AIDataSet id={ai_dataset_record.id}."
                     )
                 )
-                manifest = {
-                    "command": "load_legacy_data",
-                    "created_at": datetime.now(timezone.utc).isoformat(),
-                    "jsonl_path": str(jsonl_path.resolve()),
-                    "images_root": str(images_root.resolve()),
-                    "staged_images_root": str(staged_images_root),
-                    "fallback_video_id": video_id,
-                    "center_id": center.id,
-                    "used_video_ids": sorted(used_video_ids),
-                    "legacy_video_ids_by_old_examination_id": (
-                        legacy_video_ids_by_old_examination_id
-                    ),
-                    "dataset_name": dataset_name,
-                    "frame_count": frame_counter,
-                    "annotation_count": annotation_counter,
-                    "copied_image_count": copied_image_counter,
-                    "missing_image_count": missing_image_counter,
-                }
+                manifest = dump_legacy_import_manifest(
+                    LegacyImportManifestPayload(
+                        command="load_legacy_data",
+                        created_at=datetime.now(timezone.utc).isoformat(),
+                        jsonl_path=str(jsonl_path.resolve()),
+                        images_root=str(images_root.resolve()),
+                        staged_images_root=str(staged_images_root),
+                        fallback_video_id=video_id,
+                        center_id=center_record.id,
+                        used_video_ids=sorted(used_video_ids),
+                        legacy_video_ids_by_old_examination_id=(
+                            legacy_video_ids_by_old_examination_id
+                        ),
+                        dataset_name=dataset_name,
+                        frame_count=frame_counter,
+                        annotation_count=annotation_counter,
+                        copied_image_count=copied_image_counter,
+                        missing_image_count=missing_image_counter,
+                    )
+                )
                 atomic_write_file(
                     destination=manifest_path,
                     content=[
@@ -414,15 +504,20 @@ class Command(BaseCommand):
     class _noop_context:
         """Simple no-op context manager used for dry-run."""
 
-        def __enter__(self):
+        def __enter__(self) -> NullValue:
             return None
 
-        def __exit__(self, exc_type, exc_val, exc_tb):
+        def __exit__(
+            self,
+            exc_type: ExceptionTypeOrNull,
+            exc_val: ExceptionValueOrNull,
+            exc_tb: TracebackOrNull,
+        ) -> bool:
             return False
 
     def _resolve_import_context(
-        self, *, video_id: int | None, center_id: int | None
-    ) -> tuple[VideoFile | None, Center]:
+        self, *, video_id: LegacyIntOrNull, center_id: LegacyIntOrNull
+    ) -> tuple[VideoFileOrNull, Center]:
         if video_id is not None:
             try:
                 video = VideoFile.objects.select_related("center").get(id=video_id)
@@ -430,11 +525,13 @@ class Command(BaseCommand):
                 raise CommandError(
                     f"VideoFile with id={video_id} does not exist."
                 ) from exc
-            if center_id is not None and video.center_id != center_id:
+            video_record = _legacy_video_record(video)
+            if center_id is not None and video_record.center_id != center_id:
                 raise CommandError(
-                    f"--center-id={center_id} does not match VideoFile id={video_id} center_id={video.center_id}."
+                    f"--center-id={center_id} does not match VideoFile id={video_id} "
+                    f"center_id={video_record.center_id}."
                 )
-            return video, video.center
+            return video, video_record.center
 
         if center_id is None:
             raise CommandError(
@@ -451,9 +548,9 @@ class Command(BaseCommand):
     def _resolve_video_for_legacy_item(
         self,
         *,
-        old_examination_id: str | None,
+        old_examination_id: LegacyTextOrNull,
         center: Center,
-        fallback_video: VideoFile | None,
+        fallback_video: VideoFileOrNull,
         dry_run: bool,
         cache: dict[str, VideoFile],
     ) -> VideoFile:
@@ -469,7 +566,7 @@ class Command(BaseCommand):
             return cache[old_examination_id]
 
         video_hash = self._build_legacy_video_hash(
-            center_id=center.id,
+            center_id=_persisted_record(center).id,
             old_examination_id=old_examination_id,
         )
         defaults = {
@@ -488,10 +585,12 @@ class Command(BaseCommand):
                 video_hash=video_hash,
                 defaults=defaults,
             )
+            video_record = _legacy_video_record(video)
             if created:
                 self.stdout.write(
                     self.style.NOTICE(
-                        f"Created synthetic legacy VideoFile id={video.id}, video_hash='{video.video_hash}'."
+                        f"Created synthetic legacy VideoFile id={video_record.id}, "
+                        f"video_hash='{video_record.video_hash}'."
                     )
                 )
         cache[old_examination_id] = video
@@ -506,32 +605,35 @@ class Command(BaseCommand):
         dry_run: bool,
     ) -> Path:
         video_key = self._video_key(target_video)
+        target_video_record = _legacy_video_record(target_video)
         if video_key in staged_dirs_by_video_key:
             return staged_dirs_by_video_key[video_key]
 
         video_staged_root = ensure_within_protected_root(
-            staged_images_root / target_video.video_hash
+            staged_images_root / target_video_record.video_hash
         )
         staged_dirs_by_video_key[video_key] = video_staged_root
 
         if dry_run:
             self.stdout.write(
                 self.style.WARNING(
-                    f"[DRY RUN] Would set frame_dir for VideoFile '{target_video.video_hash}' to '{video_staged_root}'."
+                    "[DRY RUN] Would set frame_dir for VideoFile "
+                    f"'{target_video_record.video_hash}' to '{video_staged_root}'."
                 )
             )
             return video_staged_root
 
         ensure_directory(video_staged_root)
         if (
-            not target_video.frame_dir
-            or Path(target_video.frame_dir).resolve() != video_staged_root
+            not target_video_record.frame_dir
+            or Path(target_video_record.frame_dir).resolve() != video_staged_root
         ):
-            target_video.frame_dir = str(video_staged_root)
-            target_video.save(update_fields=["frame_dir"])
+            target_video_record.frame_dir = str(video_staged_root)
+            target_video_record.save(update_fields=["frame_dir"])
             self.stdout.write(
                 self.style.NOTICE(
-                    f"Set frame_dir for VideoFile id={target_video.id} to '{target_video.frame_dir}'."
+                    f"Set frame_dir for VideoFile id={target_video_record.id} "
+                    f"to '{target_video_record.frame_dir}'."
                 )
             )
         return video_staged_root
@@ -576,7 +678,7 @@ class Command(BaseCommand):
     ) -> int:
         video_key = self._video_key(target_video)
         if video_key not in counters:
-            if target_video.pk is None:
+            if isinstance(video_key, str):
                 counters[video_key] = 0
             else:
                 counters[video_key] = (
@@ -589,13 +691,10 @@ class Command(BaseCommand):
         return counters[video_key]
 
     def _video_key(self, video: VideoFile) -> int | str:
-        return video.pk if video.pk is not None else video.video_hash
-
-    def _normalize_legacy_examination_id(self, value: object) -> str | None:
-        if value is None:
-            return None
-        normalized = str(value).strip()
-        return normalized or None
+        video_record = _legacy_video_record(video)
+        return (
+            video_record.pk if video_record.pk is not None else video_record.video_hash
+        )
 
     def _build_legacy_video_hash(
         self, *, center_id: int, old_examination_id: str
@@ -605,7 +704,7 @@ class Command(BaseCommand):
         return f"legacy_exam_c{center_id}_{digest}"
 
     def _resolve_staged_images_root(
-        self, *, raw_path: str | None, import_key: str
+        self, *, raw_path: LegacyTextOrNull, import_key: str
     ) -> Path:
         if raw_path:
             return ensure_within_protected_root(Path(raw_path).expanduser().resolve())
@@ -613,7 +712,9 @@ class Command(BaseCommand):
             self._protected_migration_root() / "legacy_data" / import_key
         )
 
-    def _resolve_manifest_path(self, *, raw_path: str | None, import_key: str) -> Path:
+    def _resolve_manifest_path(
+        self, *, raw_path: LegacyTextOrNull, import_key: str
+    ) -> Path:
         if raw_path:
             return ensure_within_protected_root(Path(raw_path).expanduser().resolve())
         return ensure_within_protected_root(

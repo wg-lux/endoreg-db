@@ -43,8 +43,8 @@ from .base import *  # noqa: F403  # bring in EVERYTHING from base.py first
 # Add the mozilla-django-oidc app (gives /oidc/authenticate/, /oidc/callback/, /oidc/logout/)
 # and our small middleware that redirects browsers hitting /api/* to the OIDC login.
 # NOTE: AuthenticationMiddleware is already in base.py and MUST run before our middleware.
-INSTALLED_APPS = INSTALLED_APPS + KEYCLOAK.EXTRA_INSTALLED_APPS  # noqa: F405
-MIDDLEWARE = MIDDLEWARE + KEYCLOAK.EXTRA_MIDDLEWARE  # noqa: F405
+globals()["INSTALLED_APPS"] = INSTALLED_APPS + KEYCLOAK.EXTRA_INSTALLED_APPS  # noqa: F405
+globals()["MIDDLEWARE"] = MIDDLEWARE + KEYCLOAK.EXTRA_MIDDLEWARE  # noqa: F405
 
 # ---- Authentication backends -----------------------------------------------
 # Order matters: OIDC backend first (handles the OIDC callback, verifies ID token,
@@ -111,7 +111,7 @@ OIDC_AUTH_REQUEST_EXTRA_PARAMS = KEYCLOAK.OIDC_AUTH_REQUEST_EXTRA_PARAMS
 
 # Local watcher workflows may degrade to inline processing when the development
 # broker is not running. Production/strict profiles keep this disabled.
-WATCHER_CELERY_INLINE_FALLBACK_ENABLED = env_bool(
+globals()["WATCHER_CELERY_INLINE_FALLBACK_ENABLED"] = env_bool(
     "WATCHER_CELERY_INLINE_FALLBACK_ENABLED",
     True,
 )

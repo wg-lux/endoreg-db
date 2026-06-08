@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from io import StringIO
 from pathlib import Path
 
@@ -200,13 +201,15 @@ def test_migrate_media_storage_rewrites_bad_streamable_object(
     media_center: Center,
     tmp_path: Path,
 ) -> None:
-    video = _create_video(media_center, "streamable-video")
-    source = tmp_path / "streamable-video.mp4"
+    worker = os.environ.get("PYTEST_XDIST_WORKER", "main")
+    video_hash = f"streamable-video-{worker}"
+    video = _create_video(media_center, video_hash)
+    source = tmp_path / f"{video_hash}.mp4"
     source.write_bytes(b"\x00\x00\x00\x18ftypmp42streamable")
     save_local_file(
         video.processed_file,
         source,
-        name="streamable-video.mp4",
+        name=f"{video_hash}.mp4",
         save=False,
     )
     video.save(update_fields=["processed_file"])
@@ -230,7 +233,7 @@ def test_migrate_media_storage_rewrites_bad_streamable_object(
         str(video.pk),
     )
 
-    assert summary["failed"] == 0
+    assert summary["failed"] == 0, json.dumps(summary, sort_keys=True)
     assert summary["changed"] == 1
     assert not _starts_with_magic(streamable_path)
     assert streamable_path.read_bytes() == b"\x00\x00\x00\x18ftypmp42streamable"

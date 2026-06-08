@@ -6,9 +6,10 @@ import os
 import shutil
 import time
 from pathlib import Path
+from typing import TypedDict, cast
 
 from django.conf import settings
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand, CommandError, CommandParser
 from django.db.utils import OperationalError, ProgrammingError
 
 from endoreg_db.config.env import (
@@ -34,6 +35,16 @@ from endoreg_db.utils.filesystem.paths import (
 SECRET_KEY_FINGERPRINT_FILE = LOG_DIR / ".secret_key_fingerprint"
 DEFAULT_MIN_FREE_BYTES = 1024 * 1024 * 1024
 DEFAULT_QUARANTINE_MAX_AGE_DAYS = 30
+type _CommandOption = bool
+
+
+class _AuditLedgerIntegrityStatus(TypedDict):
+    status: str
+    verified: bool
+    checked_at: str | None
+    entry_count: int | None
+    error: str | None
+    source: str
 
 
 def _secret_key_fingerprint() -> str:
@@ -97,9 +108,12 @@ def _upload_job_failure_stats() -> dict[str, int | str | None]:
         }
 
 
-def _audit_ledger_integrity_status() -> dict[str, object]:
+def _audit_ledger_integrity_status() -> _AuditLedgerIntegrityStatus:
     try:
-        return get_audit_ledger_integrity_status()
+        return cast(
+            _AuditLedgerIntegrityStatus,
+            get_audit_ledger_integrity_status(),
+        )
     except (OperationalError, ProgrammingError) as exc:
         return {
             "status": "error",
@@ -139,14 +153,14 @@ class Command(BaseCommand):
         "and stable SECRET_KEY derivation."
     )
 
-    def add_arguments(self, parser) -> None:
+    def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
             "--json",
             action="store_true",
             help="Emit the health report as JSON.",
         )
 
-    def handle(self, *args, **options) -> None:
+    def handle(self, *args: str, **options: _CommandOption) -> None:
         protected_media_url = get_protected_media_url()
         protected_media_root = get_protected_media_root().resolve()
         current_gid = os.getgid()
@@ -259,7 +273,8 @@ class Command(BaseCommand):
             },
         }
 
-        if options["json"]:
+        emit_json = options["json"]
+        if emit_json:
             self.stdout.write(json.dumps(payload, indent=2, sort_keys=True))
         else:
             for key, value in checks.items():

@@ -1,6 +1,6 @@
 # endoreg_db/root_urls.py
 from django.urls import include, path
-from django.http import HttpResponse
+from django.http import HttpRequest, HttpResponse
 from django.conf import settings
 from endoreg_db.utils.web.django_static import static
 
@@ -8,12 +8,16 @@ from endoreg_db.utils.web.django_static import static
 from endoreg_db.urls import urlpatterns as api_urlpatterns
 
 
-def public_home(_request):
+def public_home(_request: HttpRequest) -> HttpResponse:
     return HttpResponse("Public home – no login required.")
 
 
 urlpatterns = [
     path("", public_home, name="public_home"),
+    # ``lx_dtypes`` owns the Django Ninja surface under /base_api/.
+    # Keep this outside /api/ so reverse proxies can route dtypes-api and
+    # endoreg-api independently.
+    path("", include("lx_dtypes.django.urls")),
     # path("admin/", admin.site.urls),
     # Mount ALL API endpoints under /api/
     path("api/", include((api_urlpatterns, "endoreg_db"), namespace="api")),

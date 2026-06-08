@@ -1,7 +1,13 @@
 # libs/endoreg-db/endoreg_db/authz/views_auth.py
 
+from __future__ import annotations
+
+from collections.abc import Iterable
+from typing import Protocol, TypedDict, cast
+
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.request import Request
 from rest_framework.response import Response
 
 from .policy import satisfies, get_needed_role
@@ -11,7 +17,24 @@ from .policy import satisfies, get_needed_role
 # Route names come from your router registration, e.g.:
 #   router.register(r'patients', PatientViewSet, basename='patient')
 # => "patient-list", "patient-detail"
-PAGE_CAPS = {
+type PageCapabilityRouteMap = dict[str, tuple[str, str]]
+
+
+class CapabilityFlags(TypedDict):
+    read: bool
+    write: bool
+
+
+class _UserGroupManager(Protocol):
+    def values_list(self, field_name: str, flat: bool) -> Iterable[str]: ...
+
+
+class _BootstrapUser(Protocol):
+    username: str
+    groups: _UserGroupManager
+
+
+PAGE_CAPS: PageCapabilityRouteMap = {
     # Vue route /patienten
     "page.patients.view": ("patient-list", "GET"),
     # You can extend later, e.g.:
@@ -22,19 +45,19 @@ PAGE_CAPS = {
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
-def auth_bootstrap(request):
+def auth_bootstrap(request: Request) -> Response:
     """
     Return auth context for the frontend:
       - current user (username, basic info)
       - roles (Django groups, synced from Keycloak)
       - capabilities (what parts of UI the user may access)
     """
-    user = request.user
+    user = cast(_BootstrapUser, request.user)
 
     # Roles = Django group names = Keycloak roles synced from Keycloak
-    roles = set(user.groups.values_list("name", flat=True))
+    roles: set[str] = set(user.groups.values_list("name", flat=True))
 
-    capabilities = {}
+    capabilities: dict[str, CapabilityFlags] = {}
 
     for cap_key, (route_name, method) in PAGE_CAPS.items():
         method = method.upper()

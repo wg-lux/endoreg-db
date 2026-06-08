@@ -5,11 +5,15 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Literal, Protocol, cast
+from typing import Any, Iterable, Literal, Protocol, TypedDict, Unpack, cast
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand, CommandError, CommandParser
 from django.db import models
 from django.db.utils import OperationalError, ProgrammingError
+from lx_dtypes.models.contracts.json_types import JsonObject
+from lx_dtypes.models.contracts.management_command import (
+    MigrateMediaStorageCommandOptionsPayload,
+)
 
 from endoreg_db.import_files.file_storage.cleanup import (
     is_safe_staging_path,
@@ -46,6 +50,25 @@ REPORTABLE_STATUSES = ACTIONABLE_STATUSES | {"failed"}
 class _StorageBackedFile(Protocol):
     name: str
     storage: Any
+
+
+class _AuditLedgerDataRecord(Protocol):
+    data: JsonObject
+
+
+class MigrateMediaStorageCommandOptions(TypedDict):
+    apply: bool
+    limit: int | None
+    repeat_until_empty: bool
+    json: bool
+    fail_fast: bool
+    include_raw: bool
+    include_processed: bool
+    include_reports: bool
+    include_streamable: bool
+    delete_verified_legacy: bool
+    video_ids: list[int] | None
+    hash_value: str | None
 
 
 @dataclass(frozen=True)
@@ -210,7 +233,7 @@ def _append_audit_once(
     *,
     instance: models.Model,
     action: str,
-    data: dict[str, Any],
+    data: JsonObject,
 ) -> None:
     object_type = instance.__class__.__name__
     object_pk = str(instance.pk)
@@ -220,7 +243,7 @@ def _append_audit_once(
             object_pk=object_pk,
             action=action,
         )
-        for record in existing.iterator():
+        for record in cast(Iterable[_AuditLedgerDataRecord], existing.iterator()):
             if record.data == data:
                 return
         AuditLedger.objects.create(
@@ -284,7 +307,7 @@ class Command(BaseCommand):
         lookup_hash_attrs=("pdf_hash",),
     )
 
-    def add_arguments(self, parser) -> None:
+    def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
             "--apply",
             action="store_true",
@@ -331,27 +354,34 @@ class Command(BaseCommand):
             help="Restrict to matching video_hash, processed_video_hash, or pdf_hash.",
         )
 
-    def handle(self, *args, **options) -> None:
-        apply = bool(options["apply"])
-        repeat = bool(options["repeat_until_empty"])
+    def handle(
+        self,
+        *args: str,
+        **options: Unpack[MigrateMediaStorageCommandOptions],
+    ) -> None:
+        options_payload = MigrateMediaStorageCommandOptionsPayload.model_validate(
+            options
+        )
+        apply = options_payload.apply
+        repeat = options_payload.repeat_until_empty
         if repeat and not apply:
             raise CommandError("--repeat-until-empty requires --apply")
 
-        limit = options.get("limit")
+        limit = options_payload.limit
         if limit is not None and limit <= 0:
             raise CommandError("--limit must be a positive integer")
 
-        includes = self._resolve_includes(options)
+        includes = self._resolve_includes(options_payload)
         summary = self._empty_summary(
             apply=apply,
             limit=limit,
             repeat_until_empty=repeat,
             includes=includes,
-            delete_verified_legacy=bool(options["delete_verified_legacy"]),
+            delete_verified_legacy=options_payload.delete_verified_legacy,
         )
 
         while True:
-            iteration_summary = self._run_iteration(options, includes)
+            iteration_summary = self._run_iteration(options_payload, includes)
             summary["iterations"] += 1
             self._merge_summary(summary, iteration_summary)
 
@@ -362,7 +392,7 @@ class Command(BaseCommand):
             if iteration_summary["changed"] == 0:
                 break
 
-        if options["json"]:
+        if options_payload.json:
             self.stdout.write(json.dumps(summary, sort_keys=True, default=str))
         else:
             self.stdout.write(
@@ -374,14 +404,15 @@ class Command(BaseCommand):
                 )
             )
 
-    def _resolve_includes(self, options: dict[str, Any]) -> dict[str, bool]:
+    def _resolve_includes(
+        self, options: MigrateMediaStorageCommandOptionsPayload
+    ) -> dict[str, bool]:
         any_scope_flag = any(
-            bool(options[name])
-            for name in (
-                "include_raw",
-                "include_processed",
-                "include_reports",
-                "include_streamable",
+            (
+                options.include_raw,
+                options.include_processed,
+                options.include_reports,
+                options.include_streamable,
             )
         )
         if not any_scope_flag:
@@ -392,10 +423,10 @@ class Command(BaseCommand):
                 "streamable": True,
             }
         return {
-            "raw": bool(options["include_raw"]),
-            "processed": bool(options["include_processed"]),
-            "reports": bool(options["include_reports"]),
-            "streamable": bool(options["include_streamable"]),
+            "raw": options.include_raw,
+            "processed": options.include_processed,
+            "reports": options.include_reports,
+            "streamable": options.include_streamable,
         }
 
     def _empty_summary(
@@ -453,12 +484,14 @@ class Command(BaseCommand):
         summary["records"].extend(iteration["records"])
 
     def _run_iteration(
-        self, options: dict[str, Any], includes: dict[str, bool]
+        self,
+        options: MigrateMediaStorageCommandOptionsPayload,
+        includes: dict[str, bool],
     ) -> dict[str, Any]:
-        apply = bool(options["apply"])
-        fail_fast = bool(options["fail_fast"])
-        limit = options.get("limit")
-        self._delete_verified_legacy = bool(options["delete_verified_legacy"])
+        apply = options.apply
+        fail_fast = options.fail_fast
+        limit = options.limit
+        self._delete_verified_legacy = options.delete_verified_legacy
 
         reportable_plans = self._collect_reportable_plans(options, includes)
         actionable_plans = [plan for plan in reportable_plans if plan.actionable]
@@ -492,7 +525,7 @@ class Command(BaseCommand):
                 record_plan,
                 apply=apply,
                 includes=includes,
-                delete_verified_legacy=bool(options["delete_verified_legacy"]),
+                delete_verified_legacy=options.delete_verified_legacy,
                 fail_fast=fail_fast,
             )
             for result in record_results:
@@ -518,7 +551,9 @@ class Command(BaseCommand):
         return iteration
 
     def _collect_reportable_plans(
-        self, options: dict[str, Any], includes: dict[str, bool]
+        self,
+        options: MigrateMediaStorageCommandOptionsPayload,
+        includes: dict[str, bool],
     ) -> list[RecordPlan]:
         self._last_scan_count = 0
         plans: list[RecordPlan] = []
@@ -534,10 +569,12 @@ class Command(BaseCommand):
         return plans
 
     def _iter_records(
-        self, options: dict[str, Any], includes: dict[str, bool]
+        self,
+        options: MigrateMediaStorageCommandOptionsPayload,
+        includes: dict[str, bool],
     ) -> Iterable[tuple[ObjectKind, models.Model]]:
-        video_ids = options.get("video_ids") or []
-        hash_value = (options.get("hash_value") or "").strip()
+        video_ids = options.video_ids
+        hash_value = options.hash_value.strip()
 
         if includes["raw"] or includes["processed"] or includes["streamable"]:
             video_qs = VideoFile.objects.all().order_by("pk")
@@ -671,6 +708,10 @@ class Command(BaseCommand):
                 save=False,
             )
         except Exception as exc:
+            logger.exception(
+                "Failed to plan streamable media migration for VideoFile %s",
+                video.pk,
+            )
             return FieldPlan(
                 "video",
                 video.pk,

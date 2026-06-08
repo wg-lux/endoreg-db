@@ -1,6 +1,18 @@
-from django.core.management import BaseCommand, call_command
+from __future__ import annotations
+
+from typing import TypedDict, Unpack
+
+from django.core.management import call_command
+from django.core.management.base import BaseCommand, CommandParser
 from django.db import connection
 from django.db.migrations.recorder import MigrationRecorder
+from lx_dtypes.models.contracts.management_command import (
+    VerboseManagementCommandOptionsPayload,
+)
+
+
+class LoadBaseDbCommandOptions(TypedDict):
+    verbose: bool
 
 
 class Command(BaseCommand):
@@ -14,14 +26,18 @@ class Command(BaseCommand):
 
         return any(app == "endoreg_db" for app, _name in recorder.applied_migrations())
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
             "--verbose",
             action="store_true",
             help="Display verbose output for all commands",
         )
 
-    def handle(self, *args, **options):
+    def handle(
+        self,
+        *args: str,
+        **options: Unpack[LoadBaseDbCommandOptions],
+    ) -> None:
         # verbose = options['verbose']
         """
         Orchestrates the sequential execution of data loading commands to populate base database models.
@@ -30,6 +46,7 @@ class Command(BaseCommand):
         (via call_command) in a specified order. It ignores any verbose setting from the command-line options
         and forces verbose output. A final success message is printed after all commands complete.
         """
+        VerboseManagementCommandOptionsPayload.model_validate(options)
         verbose = True
 
         self.stdout.write(self.style.SUCCESS("Populating base db models with data..."))

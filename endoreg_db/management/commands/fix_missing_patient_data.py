@@ -4,11 +4,87 @@ Fills in default values for videos that have incomplete SensitiveMeta.
 """
 
 from datetime import date
+from types import NoneType
+from typing import Protocol, TypeAlias, TypedDict, Unpack, cast
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandParser
 from django.db import transaction
+from lx_dtypes.models.contracts import (
+    SensitiveMetaPatientRepairCreatePayload,
+    SensitiveMetaPatientRepairData,
+    SensitiveMetaPatientRepairUpdatePayload,
+    dump_sensitive_meta_patient_repair_create_payload,
+    dump_sensitive_meta_patient_repair_update_payload,
+)
 
 from endoreg_db.models import SensitiveMeta, VideoFile
+
+JsonNull: TypeAlias = NoneType
+
+
+class FixMissingPatientDataOptions(TypedDict):
+    dry_run: bool
+    verbose: bool
+
+
+class _NamedCenter(Protocol):
+    name: str
+
+
+class _SensitiveMetaRepairInstance(Protocol):
+    patient_first_name: str | JsonNull
+    patient_last_name: str | JsonNull
+    patient_dob: date | JsonNull
+    examination_date: date | JsonNull
+
+    def update_from_dict(self, data: SensitiveMetaPatientRepairData) -> None: ...
+
+
+class _SensitiveMetaFactory(Protocol):
+    def create_from_dict(
+        self,
+        data: SensitiveMetaPatientRepairData,
+    ) -> _SensitiveMetaRepairInstance: ...
+
+
+class _RepairVideo(Protocol):
+    video_hash: str
+    center: _NamedCenter | JsonNull
+    sensitive_meta: _SensitiveMetaRepairInstance | JsonNull
+
+    def save(self, *, update_fields: list[str]) -> None: ...
+
+
+def _center_name(video: _RepairVideo) -> str:
+    center = video.center
+    if center is None:
+        return "university_hospital_wuerzburg"
+    return center.name
+
+
+def _missing_patient_update(
+    sensitive_meta: _SensitiveMetaRepairInstance,
+) -> tuple[SensitiveMetaPatientRepairData, list[str]]:
+    missing_fields: list[str] = []
+    payload = SensitiveMetaPatientRepairUpdatePayload()
+
+    if not sensitive_meta.patient_first_name:
+        payload = payload.model_copy(update={"patient_first_name": "Patient"})
+        missing_fields.append("first_name")
+
+    if not sensitive_meta.patient_last_name:
+        payload = payload.model_copy(update={"patient_last_name": "Unknown"})
+        missing_fields.append("last_name")
+
+    if not sensitive_meta.patient_dob:
+        payload = payload.model_copy(update={"patient_dob": date(1990, 1, 1)})
+        missing_fields.append("dob")
+
+    if not sensitive_meta.examination_date:
+        payload = payload.model_copy(update={"examination_date": date.today()})
+        missing_fields.append("examination_date")
+
+    return dump_sensitive_meta_patient_repair_update_payload(payload), missing_fields
 
 
 class Command(BaseCommand):
@@ -20,7 +96,7 @@ class Command(BaseCommand):
     3. Fill in missing fields (first_name, last_name, DOB, examination_date)
     """
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
             "--dry-run",
             action="store_true",
@@ -32,7 +108,11 @@ class Command(BaseCommand):
             help="Show detailed output",
         )
 
-    def handle(self, *args, **options):
+    def handle(
+        self,
+        *args: str,
+        **options: Unpack[FixMissingPatientDataOptions],
+    ) -> None:
         dry_run = options["dry_run"]
         verbose = options["verbose"]
 
@@ -98,7 +178,10 @@ class Command(BaseCommand):
                 f"\nProcessing {count_without_meta} videos without SensitiveMeta..."
             )
 
-            for video in videos_without_meta:
+            sensitive_meta_factory = cast(_SensitiveMetaFactory, SensitiveMeta)
+
+            for raw_video in videos_without_meta:
+                video = cast(_RepairVideo, raw_video)
                 if verbose:
                     self.stdout.write(
                         f"Creating SensitiveMeta for video {video.video_hash}"
@@ -107,18 +190,14 @@ class Command(BaseCommand):
                 if not dry_run:
                     try:
                         with transaction.atomic():
-                            default_data = {
-                                "patient_first_name": "Patient",
-                                "patient_last_name": "Unknown",
-                                "patient_dob": date(1990, 1, 1),
-                                "examination_date": date.today(),
-                                "center_name": video.center.name
-                                if video.center
-                                else "university_hospital_wuerzburg",
-                            }
-
-                            sensitive_meta = SensitiveMeta.create_from_dict(
-                                default_data
+                            payload = SensitiveMetaPatientRepairCreatePayload(
+                                examination_date=date.today(),
+                                center_name=_center_name(video),
+                            )
+                            sensitive_meta = sensitive_meta_factory.create_from_dict(
+                                dump_sensitive_meta_patient_repair_create_payload(
+                                    payload
+                                )
                             )
                             video.sensitive_meta = sensitive_meta
                             video.save(update_fields=["sensitive_meta"])
@@ -139,28 +218,13 @@ class Command(BaseCommand):
                 f"\nProcessing {count_incomplete} videos with incomplete SensitiveMeta..."
             )
 
-            for video in videos_with_incomplete_meta:
-                if not video.sensitive_meta:
+            for raw_video in videos_with_incomplete_meta:
+                video = cast(_RepairVideo, raw_video)
+                sensitive_meta = video.sensitive_meta
+                if sensitive_meta is None:
                     continue  # Skip if somehow None (already handled above)
 
-                update_data = {}
-                missing_fields = []
-
-                if not video.sensitive_meta.patient_first_name:
-                    update_data["patient_first_name"] = "Patient"
-                    missing_fields.append("first_name")
-
-                if not video.sensitive_meta.patient_last_name:
-                    update_data["patient_last_name"] = "Unknown"
-                    missing_fields.append("last_name")
-
-                if not video.sensitive_meta.patient_dob:
-                    update_data["patient_dob"] = date(1990, 1, 1)
-                    missing_fields.append("dob")
-
-                if not video.sensitive_meta.examination_date:
-                    update_data["examination_date"] = date.today()
-                    missing_fields.append("examination_date")
+                update_data, missing_fields = _missing_patient_update(sensitive_meta)
 
                 if update_data:
                     if verbose:
@@ -171,7 +235,7 @@ class Command(BaseCommand):
                     if not dry_run:
                         try:
                             with transaction.atomic():
-                                video.sensitive_meta.update_from_dict(update_data)
+                                sensitive_meta.update_from_dict(update_data)
                                 fixed_count += 1
                         except Exception as e:
                             self.stdout.write(

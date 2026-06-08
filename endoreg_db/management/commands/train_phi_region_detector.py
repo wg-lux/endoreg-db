@@ -1,24 +1,33 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
+from importlib import import_module
 from pathlib import Path
+from typing import Protocol, cast
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand, CommandError, CommandParser
+from pydantic import ValidationError
 
-try:
-    from lx_anonymizer.text_detection.phi_region_detector_training import (
-        PhiRegionDetectorTrainingConfig,
-        train_phi_region_detector,
-    )
-except ImportError:
-    PhiRegionDetectorTrainingConfig = None
-    train_phi_region_detector = None
+from lx_dtypes.models.contracts.json_types import JsonObject
+from lx_dtypes.models.contracts.management_command import (
+    TrainPhiRegionDetectorCommandOptionsPayload,
+    validate_model_training_result,
+)
+
+
+class PhiRegionDetectorTrainingConfigProtocol(Protocol):
+    dataset_yaml: Path
+    base_model: str
+    epochs: int
+    batch_size: int
+    input_size: int
 
 
 class Command(BaseCommand):
     help = "Train the lx-anonymizer PHI-region detector and export an ONNX artifact."
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument("--dataset-yaml", type=Path, required=True)
         parser.add_argument("--output-dir", type=Path, required=True)
         parser.add_argument("--base-model", type=str, default="yolov8n.pt")
@@ -40,28 +49,57 @@ class Command(BaseCommand):
         )
         parser.set_defaults(export_onnx=True)
 
-    def handle(self, *args, **options):
-        if PhiRegionDetectorTrainingConfig is None or train_phi_region_detector is None:
+    def handle(self, *args: object, **options: object) -> None:
+        try:
+            options_payload = TrainPhiRegionDetectorCommandOptionsPayload.model_validate(
+                options
+            )
+        except ValidationError as exc:
+            raise CommandError(str(exc)) from exc
+
+        try:
+            training_module = import_module(
+                "lx_anonymizer.text_detection.phi_region_detector_training"
+            )
+        except ImportError as exc:
             raise CommandError(
                 "lx-anonymizer PHI detector training is not available. Install "
                 "lx-anonymizer with its training extra before starting this run."
-            )
+            ) from exc
 
-        config = PhiRegionDetectorTrainingConfig(
-            dataset_yaml=options["dataset_yaml"],
-            output_dir=options["output_dir"],
-            base_model=str(options["base_model"]).strip(),
-            run_name=options["run_name"],
-            epochs=int(options["epochs"]),
-            batch_size=int(options["batch_size"]),
-            input_size=int(options["input_size"]),
-            device=str(options["device"]).strip() or "auto",
-            workers=int(options["workers"]),
-            patience=int(options["patience"]),
-            export_onnx=bool(options["export_onnx"]),
-            confidence_threshold=float(options["confidence_threshold"]),
-            nms_threshold=float(options["nms_threshold"]),
-            class_ids=str(options["class_ids"] or "").strip(),
+        config_factory_candidate: object = getattr(
+            training_module, "PhiRegionDetectorTrainingConfig"
+        )
+        train_candidate: object = getattr(training_module, "train_phi_region_detector")
+        if not callable(config_factory_candidate):
+            raise CommandError("PhiRegionDetectorTrainingConfig is not callable.")
+        if not callable(train_candidate):
+            raise CommandError("train_phi_region_detector is not callable.")
+
+        config_factory = cast(
+            Callable[..., PhiRegionDetectorTrainingConfigProtocol],
+            config_factory_candidate,
+        )
+        train_model = cast(
+            Callable[[PhiRegionDetectorTrainingConfigProtocol], JsonObject],
+            train_candidate,
+        )
+
+        config = config_factory(
+            dataset_yaml=options_payload.dataset_yaml,
+            output_dir=options_payload.output_dir,
+            base_model=options_payload.base_model,
+            run_name=options_payload.run_name or None,
+            epochs=options_payload.epochs,
+            batch_size=options_payload.batch_size,
+            input_size=options_payload.input_size,
+            device=options_payload.device,
+            workers=options_payload.workers,
+            patience=options_payload.patience,
+            export_onnx=options_payload.export_onnx,
+            confidence_threshold=options_payload.confidence_threshold,
+            nms_threshold=options_payload.nms_threshold,
+            class_ids=options_payload.class_ids,
         )
 
         self.stdout.write(
@@ -74,12 +112,11 @@ class Command(BaseCommand):
                 f"input_size={config.input_size}"
             )
         )
-        result = train_phi_region_detector(config)
+        result = validate_model_training_result(train_model(config))
         self.stdout.write(
             self.style.SUCCESS(
                 "PHI-region detector training completed. "
-                f"Model saved to: {result['model_path']}"
+                f"Model saved to: {result.model_path}"
             )
         )
-        self.stdout.write(json.dumps(result))
-        return None
+        self.stdout.write(json.dumps(result.model_dump(mode="json")))

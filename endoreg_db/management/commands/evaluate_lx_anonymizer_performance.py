@@ -2,19 +2,40 @@ from __future__ import annotations
 
 import csv
 import io
-import json
 import logging
 import os
 import resource
 import time
-from argparse import ArgumentParser
-from dataclasses import asdict, dataclass, field
+from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Any, Callable, Iterable, Literal, Mapping, cast
+from types import NoneType
+from typing import (
+    Literal,
+    ParamSpec,
+    Protocol,
+    TypeAlias,
+    TypeVar,
+    TypedDict,
+    Unpack,
+    cast,
+)
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand, CommandError, CommandParser
+from django.db.models.fields.files import FieldFile
+from lx_dtypes.models.contracts import (
+    LX_ANONYMIZER_PERFORMANCE_CSV_FIELDNAMES,
+    LxAnonymizerDurationStatsPayload,
+    LxAnonymizerPerformanceMediaType,
+    LxAnonymizerPerformancePayload,
+    LxAnonymizerPerformanceRunPayload,
+    LxAnonymizerPerformanceSummaryPayload,
+    dump_lx_anonymizer_performance_run_csv_row,
+)
 
 from endoreg_db.models import EndoscopyProcessor
+from endoreg_db.import_files.context.import_context import ImportContext
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.report_import import ReportImportService
 from endoreg_db.services.video_import import VideoImportService
 from endoreg_db.utils.filesystem import paths as path_utils
@@ -28,14 +49,80 @@ from endoreg_db.utils.filesystem.file_operations import (
 
 logger = logging.getLogger(__name__)
 
-MediaType = Literal["video", "report"]
+JsonNull: TypeAlias = NoneType
+MediaType: TypeAlias = LxAnonymizerPerformanceMediaType
+ForcedMediaType: TypeAlias = Literal["auto", "video", "report"]
+ProcessorRoi: TypeAlias = dict[str, int | JsonNull]
+ImportedMedia: TypeAlias = VideoFile | RawPdfFile
+TimedParameters = ParamSpec("TimedParameters")
+TimedReturn = TypeVar("TimedReturn")
 
 VIDEO_EXTENSIONS = {".avi", ".m4v", ".mkv", ".mov", ".mp4", ".mpg", ".mpeg"}
 REPORT_EXTENSIONS = {".pdf"}
 REPORT_BYPASS_EXTENSIONS = {".txt"}
 
 
-def _roi_is_configured(roi: dict[str, int | None] | None) -> bool:
+class _ProcessorWithRois(Protocol):
+    def get_roi_endoscope_image(self) -> ProcessorRoi | JsonNull: ...
+
+    def get_sensitive_rois(self) -> dict[str, ProcessorRoi | JsonNull]: ...
+
+
+class _ProcessorRegistry(Protocol):
+    def get_by_name(self, name: str) -> _ProcessorWithRois: ...
+
+
+class _VideoAnonymizer(Protocol):
+    def anonymize_video(self, ctx: ImportContext) -> ImportContext: ...
+
+
+class _ReportAnonymizer(Protocol):
+    def anonymize_report(self, ctx: ImportContext) -> ImportContext: ...
+
+
+class _TimedVideoImportService(Protocol):
+    anonymizer: _VideoAnonymizer
+
+    def import_and_anonymize(
+        self,
+        file_path: Path,
+        center_name: str,
+        processor_name: str,
+        retry: bool,
+    ) -> VideoFile | JsonNull: ...
+
+
+class _TimedReportImportService(Protocol):
+    anonymizer: _ReportAnonymizer
+
+    def import_and_anonymize(
+        self,
+        file_path: Path,
+        center_name: str,
+        retry: bool,
+    ) -> RawPdfFile | JsonNull: ...
+
+
+class _NamedFieldFile(Protocol):
+    name: str | JsonNull
+
+
+class _VideoEvaluationMedia(Protocol):
+    pk: int | JsonNull
+    video_hash: str
+    processed_video_hash: str | JsonNull
+    raw_file: FieldFile
+    processed_file: FieldFile
+
+
+class _ReportEvaluationMedia(Protocol):
+    pk: int | JsonNull
+    pdf_hash: str
+    file: FieldFile
+    processed_file: FieldFile
+
+
+def _roi_is_configured(roi: ProcessorRoi | JsonNull) -> bool:
     if roi is None:
         return False
     required_keys = {"x", "y", "width", "height"}
@@ -46,10 +133,10 @@ def _roi_is_configured(roi: dict[str, int | None] | None) -> bool:
     width = roi["width"]
     height = roi["height"]
     coordinates_are_valid = (
-        isinstance(x, int)
-        and isinstance(y, int)
-        and isinstance(width, int)
-        and isinstance(height, int)
+        x is not None
+        and y is not None
+        and width is not None
+        and height is not None
         and x >= 0
         and y >= 0
         and width > 0
@@ -60,43 +147,22 @@ def _roi_is_configured(roi: dict[str, int | None] | None) -> bool:
 
     image_width = roi.get("image_width")
     image_height = roi.get("image_height")
-    image_dimensions_are_valid = (
-        image_width is None or isinstance(image_width, int) and image_width > 0
-    ) and (image_height is None or isinstance(image_height, int) and image_height > 0)
+    image_dimensions_are_valid = (image_width is None or image_width > 0) and (
+        image_height is None or image_height > 0
+    )
     return image_dimensions_are_valid
 
 
-@dataclass
-class EvaluationRun:
-    source_path: str
-    staged_path: str
-    media_type: str
-    iteration: int
-    source_size_bytes: int
-    source_sha256: str
-    ok: bool
-    total_seconds: float
-    import_seconds: float
-    staging_seconds: float
-    anonymizer_seconds: float | None
-    process_cpu_seconds: float
-    max_rss_kib_delta: int
-    object_model: str = ""
-    object_pk: int | None = None
-    content_hash: str = ""
-    processed_hash: str = ""
-    raw_file_name: str = ""
-    processed_file_name: str = ""
-    short_circuited: bool = False
-    error_type: str = ""
-    error: str = ""
-
-
-@dataclass
 class TimedCallRecorder:
-    durations: list[float] = field(default_factory=list)
+    def __init__(self) -> None:
+        self.durations: list[float] = []
 
-    def time_call(self, callback: Callable[..., Any], *args, **kwargs) -> Any:
+    def time_call(
+        self,
+        callback: Callable[TimedParameters, TimedReturn],
+        *args: TimedParameters.args,
+        **kwargs: TimedParameters.kwargs,
+    ) -> TimedReturn:
         start = time.perf_counter()
         try:
             return callback(*args, **kwargs)
@@ -104,27 +170,48 @@ class TimedCallRecorder:
             self.durations.append(time.perf_counter() - start)
 
 
-class TimedAnonymizer:
-    def __init__(self, wrapped: object, recorder: TimedCallRecorder):
+class TimedVideoAnonymizer:
+    def __init__(
+        self,
+        wrapped: _VideoAnonymizer,
+        recorder: TimedCallRecorder,
+    ) -> None:
         self._wrapped = wrapped
         self._recorder = recorder
 
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._wrapped, name)
+    def anonymize_video(self, ctx: ImportContext) -> ImportContext:
+        return self._recorder.time_call(self._wrapped.anonymize_video, ctx)
 
-    def anonymize_video(self, *args, **kwargs) -> Any:
-        return self._recorder.time_call(
-            getattr(self._wrapped, "anonymize_video"),
-            *args,
-            **kwargs,
-        )
 
-    def anonymize_report(self, *args, **kwargs) -> Any:
-        return self._recorder.time_call(
-            getattr(self._wrapped, "anonymize_report"),
-            *args,
-            **kwargs,
-        )
+class TimedReportAnonymizer:
+    def __init__(
+        self,
+        wrapped: _ReportAnonymizer,
+        recorder: TimedCallRecorder,
+    ) -> None:
+        self._wrapped = wrapped
+        self._recorder = recorder
+
+    def anonymize_report(self, ctx: ImportContext) -> ImportContext:
+        return self._recorder.time_call(self._wrapped.anonymize_report, ctx)
+
+
+class PerformanceCommandOptions(TypedDict):
+    paths: list[str]
+    input_dir: list[str]
+    media_type: ForcedMediaType
+    recursive: bool
+    limit: int
+    repeat: int
+    retry: bool
+    center_name: str
+    processor_name: str
+    load_reference_data: bool
+    keep_staged_inputs: bool
+    continue_on_error: bool
+    json_output: str
+    csv_output: str
+    json: bool
 
 
 class Command(BaseCommand):
@@ -133,7 +220,7 @@ class Command(BaseCommand):
         "VideoImportService and ReportImportService pipelines."
     )
 
-    def add_arguments(self, parser: ArgumentParser) -> None:
+    def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
             "paths",
             nargs="*",
@@ -222,12 +309,16 @@ class Command(BaseCommand):
             help="Emit full JSON results to stdout instead of the compact text summary.",
         )
 
-    def handle(self, *args, **options) -> None:
-        repeat = int(options["repeat"])
+    def handle(
+        self,
+        *args: str,
+        **options: Unpack[PerformanceCommandOptions],
+    ) -> None:
+        repeat = options["repeat"]
         if repeat < 1:
             raise CommandError("--repeat must be >= 1")
 
-        limit = int(options["limit"])
+        limit = options["limit"]
         if limit < 0:
             raise CommandError("--limit must be >= 0")
 
@@ -239,15 +330,15 @@ class Command(BaseCommand):
             load_all_reference_data()
 
         inputs = self._discover_inputs(
-            paths=[*(options["paths"] or []), *(options["input_dir"] or [])],
+            paths=[*options["paths"], *options["input_dir"]],
             forced_media_type=options["media_type"],
-            recursive=bool(options["recursive"]),
+            recursive=options["recursive"],
             limit=limit,
         )
         skipped_video_count = 0
         inputs, skipped_video_count = self._exclude_video_inputs_without_roi(
             inputs=inputs,
-            processor_name=str(options["processor_name"]),
+            processor_name=options["processor_name"],
         )
         if not inputs:
             detail = (
@@ -265,17 +356,17 @@ class Command(BaseCommand):
                 repeat,
             )
 
-        run_results: list[EvaluationRun] = []
+        run_results: list[LxAnonymizerPerformanceRunPayload] = []
         for source_path, media_type in inputs:
             for iteration in range(1, repeat + 1):
                 result = self._run_one(
                     source_path=source_path,
                     media_type=media_type,
                     iteration=iteration,
-                    center_name=str(options["center_name"]),
-                    processor_name=str(options["processor_name"]),
-                    retry=bool(options["retry"]),
-                    keep_staged_inputs=bool(options["keep_staged_inputs"]),
+                    center_name=options["center_name"],
+                    processor_name=options["processor_name"],
+                    retry=options["retry"],
+                    keep_staged_inputs=options["keep_staged_inputs"],
                 )
                 run_results.append(result)
                 if not result.ok and not options["continue_on_error"]:
@@ -287,10 +378,10 @@ class Command(BaseCommand):
             ):
                 break
 
-        payload: dict[str, object] = {
-            "summary": self._summarize(run_results),
-            "runs": [asdict(result) for result in run_results],
-        }
+        payload = LxAnonymizerPerformancePayload(
+            summary=self._summarize(run_results),
+            runs=run_results,
+        )
 
         if options["json_output"]:
             self._write_json(Path(options["json_output"]), payload)
@@ -298,7 +389,7 @@ class Command(BaseCommand):
             self._write_csv(Path(options["csv_output"]), run_results)
 
         if options["json"]:
-            self.stdout.write(json.dumps(payload, indent=2, sort_keys=True))
+            self.stdout.write(payload.model_dump_json(indent=2))
         else:
             self._write_text_summary(payload)
 
@@ -309,7 +400,7 @@ class Command(BaseCommand):
         self,
         *,
         paths: list[str],
-        forced_media_type: str,
+        forced_media_type: ForcedMediaType,
         recursive: bool,
         limit: int,
     ) -> list[tuple[Path, MediaType]]:
@@ -371,7 +462,8 @@ class Command(BaseCommand):
         if not processor_name:
             return False
         try:
-            processor = EndoscopyProcessor.get_by_name(processor_name)
+            processor_registry = cast(_ProcessorRegistry, EndoscopyProcessor)
+            processor = processor_registry.get_by_name(processor_name)
         except EndoscopyProcessor.DoesNotExist:
             return False
 
@@ -390,7 +482,10 @@ class Command(BaseCommand):
         return bool(configured_sensitive_rois) and not invalid_sensitive_rois
 
     @staticmethod
-    def _media_type_for_path(path: Path, forced_media_type: str) -> MediaType | None:
+    def _media_type_for_path(
+        path: Path,
+        forced_media_type: ForcedMediaType,
+    ) -> MediaType | JsonNull:
         suffix = path.suffix.lower()
         if suffix in REPORT_BYPASS_EXTENSIONS:
             if forced_media_type == "report":
@@ -419,13 +514,13 @@ class Command(BaseCommand):
         processor_name: str,
         retry: bool,
         keep_staged_inputs: bool,
-    ) -> EvaluationRun:
+    ) -> LxAnonymizerPerformanceRunPayload:
         source_size = source_path.stat().st_size
         source_hash = sha256_file(source_path)
-        staged_path = Path("")
+        staged_path: Path | JsonNull = None
         staging_seconds = 0.0
         import_seconds = 0.0
-        anonymizer_seconds: float | None = None
+        anonymizer_seconds: float | JsonNull = None
         process_cpu_start = time.process_time()
         rss_start = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
         total_start = time.perf_counter()
@@ -448,7 +543,7 @@ class Command(BaseCommand):
             import_seconds = time.perf_counter() - import_start
             anonymizer_seconds = sum(recorder.durations) if recorder.durations else 0.0
 
-            return EvaluationRun(
+            return LxAnonymizerPerformanceRunPayload(
                 source_path=source_path.as_posix(),
                 staged_path=staged_path.as_posix(),
                 media_type=media_type,
@@ -465,12 +560,11 @@ class Command(BaseCommand):
                     resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - rss_start
                 ),
                 object_model=imported.__class__.__name__,
-                object_pk=getattr(imported, "pk", None),
+                object_pk=self._media_pk(imported),
                 content_hash=self._content_hash(imported),
                 processed_hash=self._processed_hash(imported),
-                raw_file_name=self._field_name(imported, "raw_file")
-                or self._field_name(imported, "file"),
-                processed_file_name=self._field_name(imported, "processed_file"),
+                raw_file_name=self._raw_file_name(imported),
+                processed_file_name=self._processed_file_name(imported),
                 short_circuited=anonymizer_seconds == 0.0,
             )
         except Exception as exc:
@@ -479,9 +573,9 @@ class Command(BaseCommand):
                 source_path,
                 iteration,
             )
-            return EvaluationRun(
+            return LxAnonymizerPerformanceRunPayload(
                 source_path=source_path.as_posix(),
-                staged_path=staged_path.as_posix() if staged_path else "",
+                staged_path=staged_path.as_posix() if staged_path is not None else "",
                 media_type=media_type,
                 iteration=iteration,
                 source_size_bytes=source_size,
@@ -499,7 +593,7 @@ class Command(BaseCommand):
                 error=str(exc),
             )
         finally:
-            if staged_path and not keep_staged_inputs:
+            if staged_path is not None and not keep_staged_inputs:
                 safe_unlink_file(staged_path, missing_ok=True)
 
     def _stage_input(self, source_path: Path, iteration: int) -> Path:
@@ -523,59 +617,81 @@ class Command(BaseCommand):
         processor_name: str,
         retry: bool,
         recorder: TimedCallRecorder,
-    ) -> object:
-        result: object | None
+    ) -> ImportedMedia:
         if media_type == "video":
-            video_service = VideoImportService()
-            video_service.anonymizer = cast(
-                Any,
-                TimedAnonymizer(video_service.anonymizer, recorder),
+            video_service = cast(_TimedVideoImportService, VideoImportService())
+            video_service.anonymizer = TimedVideoAnonymizer(
+                video_service.anonymizer,
+                recorder,
             )
-            result = video_service.import_and_anonymize(
+            video_result = video_service.import_and_anonymize(
                 file_path=staged_path,
                 center_name=center_name,
                 processor_name=processor_name,
                 retry=retry,
             )
-        else:
-            report_service = ReportImportService()
-            report_service.anonymizer = cast(
-                Any,
-                TimedAnonymizer(report_service.anonymizer, recorder),
-            )
-            result = report_service.import_and_anonymize(
-                file_path=staged_path,
-                center_name=center_name,
-                retry=retry,
-            )
+            if video_result is None:
+                raise RuntimeError("video import returned no media instance")
+            return video_result
 
-        if result is None:
-            raise RuntimeError(f"{media_type} import returned no object")
-        return result
-
-    @staticmethod
-    def _field_name(instance: object, field_name: str) -> str:
-        field_file = getattr(instance, field_name, None)
-        return str(getattr(field_file, "name", "") or "")
-
-    @staticmethod
-    def _content_hash(instance: object) -> str:
-        return str(
-            getattr(instance, "video_hash", "")
-            or getattr(instance, "pdf_hash", "")
-            or ""
+        report_service = cast(_TimedReportImportService, ReportImportService())
+        report_service.anonymizer = TimedReportAnonymizer(
+            report_service.anonymizer,
+            recorder,
         )
-
-    @staticmethod
-    def _processed_hash(instance: object) -> str:
-        return str(
-            getattr(instance, "processed_video_hash", "")
-            or getattr(instance, "processed_pdf_hash", "")
-            or ""
+        report_result = report_service.import_and_anonymize(
+            file_path=staged_path,
+            center_name=center_name,
+            retry=retry,
         )
+        if report_result is None:
+            raise RuntimeError("report import returned no media instance")
+        return report_result
 
     @staticmethod
-    def _summarize(results: list[EvaluationRun]) -> dict[str, object]:
+    def _field_file_name(field_file: FieldFile) -> str:
+        typed_field_file = cast(_NamedFieldFile, field_file)
+        return str(typed_field_file.name or "")
+
+    @staticmethod
+    def _media_pk(instance: ImportedMedia) -> int | JsonNull:
+        if isinstance(instance, VideoFile):
+            return cast(_VideoEvaluationMedia, instance).pk
+        return cast(_ReportEvaluationMedia, instance).pk
+
+    @staticmethod
+    def _raw_file_name(instance: ImportedMedia) -> str:
+        if isinstance(instance, VideoFile):
+            video = cast(_VideoEvaluationMedia, instance)
+            return Command._field_file_name(video.raw_file)
+        report = cast(_ReportEvaluationMedia, instance)
+        return Command._field_file_name(report.file)
+
+    @staticmethod
+    def _processed_file_name(instance: ImportedMedia) -> str:
+        if isinstance(instance, VideoFile):
+            video = cast(_VideoEvaluationMedia, instance)
+            return Command._field_file_name(video.processed_file)
+        report = cast(_ReportEvaluationMedia, instance)
+        return Command._field_file_name(report.processed_file)
+
+    @staticmethod
+    def _content_hash(instance: ImportedMedia) -> str:
+        if isinstance(instance, VideoFile):
+            return cast(_VideoEvaluationMedia, instance).video_hash
+        return cast(_ReportEvaluationMedia, instance).pdf_hash
+
+    @staticmethod
+    def _processed_hash(instance: ImportedMedia) -> str:
+        if isinstance(instance, VideoFile):
+            video = cast(_VideoEvaluationMedia, instance)
+            return str(video.processed_video_hash or "")
+        return ""
+
+    @staticmethod
+    def _summarize(
+        results: list[LxAnonymizerPerformanceRunPayload],
+    ) -> LxAnonymizerPerformanceSummaryPayload:
         ok_results = [result for result in results if result.ok]
         failed_results = [result for result in results if not result.ok]
         anonymizer_durations = [
@@ -585,31 +701,37 @@ class Command(BaseCommand):
         ]
         import_durations = [result.import_seconds for result in ok_results]
         total_durations = [result.total_seconds for result in ok_results]
-        return {
-            "total_runs": len(results),
-            "ok_runs": len(ok_results),
-            "failed_runs": len(failed_results),
-            "short_circuited_runs": sum(
+        return LxAnonymizerPerformanceSummaryPayload(
+            total_runs=len(results),
+            ok_runs=len(ok_results),
+            failed_runs=len(failed_results),
+            short_circuited_runs=sum(
                 1 for result in ok_results if result.short_circuited
             ),
-            "total_seconds": sum(total_durations),
-            "import_seconds": Command._duration_stats(import_durations),
-            "anonymizer_seconds": Command._duration_stats(anonymizer_durations),
-            "end_to_end_seconds": Command._duration_stats(total_durations),
-        }
+            total_seconds=sum(total_durations),
+            import_seconds=Command._duration_stats(import_durations),
+            anonymizer_seconds=Command._duration_stats(anonymizer_durations),
+            end_to_end_seconds=Command._duration_stats(total_durations),
+        )
 
     @staticmethod
-    def _duration_stats(values: list[float]) -> dict[str, float | int]:
+    def _duration_stats(values: list[float]) -> LxAnonymizerDurationStatsPayload:
         if not values:
-            return {"count": 0, "min": 0.0, "mean": 0.0, "max": 0.0, "p95": 0.0}
+            return LxAnonymizerDurationStatsPayload(
+                count=0,
+                min=0.0,
+                mean=0.0,
+                max=0.0,
+                p95=0.0,
+            )
         sorted_values = sorted(values)
-        return {
-            "count": len(values),
-            "min": sorted_values[0],
-            "mean": sum(sorted_values) / len(sorted_values),
-            "max": sorted_values[-1],
-            "p95": Command._percentile(sorted_values, 0.95),
-        }
+        return LxAnonymizerDurationStatsPayload(
+            count=len(values),
+            min=sorted_values[0],
+            mean=sum(sorted_values) / len(sorted_values),
+            max=sorted_values[-1],
+            p95=Command._percentile(sorted_values, 0.95),
+        )
 
     @staticmethod
     def _percentile(sorted_values: list[float], percentile: float) -> float:
@@ -621,21 +743,31 @@ class Command(BaseCommand):
         )
         return sorted_values[index]
 
-    def _write_json(self, destination: Path, payload: Mapping[str, object]) -> None:
-        encoded = json.dumps(payload, indent=2, sort_keys=True).encode("utf-8")
+    def _write_json(
+        self,
+        destination: Path,
+        payload: LxAnonymizerPerformancePayload,
+    ) -> None:
+        encoded = payload.model_dump_json(indent=2).encode("utf-8")
         atomic_write_file(
             destination=destination,
             content=[encoded],
             required_bytes=len(encoded),
         )
 
-    def _write_csv(self, destination: Path, results: list[EvaluationRun]) -> None:
+    def _write_csv(
+        self,
+        destination: Path,
+        results: list[LxAnonymizerPerformanceRunPayload],
+    ) -> None:
         buffer = io.StringIO()
-        fieldnames = list(asdict(results[0]).keys()) if results else []
-        writer = csv.DictWriter(buffer, fieldnames=fieldnames)
+        writer = csv.DictWriter(
+            buffer,
+            fieldnames=list(LX_ANONYMIZER_PERFORMANCE_CSV_FIELDNAMES),
+        )
         writer.writeheader()
         for result in results:
-            writer.writerow(asdict(result))
+            writer.writerow(dump_lx_anonymizer_performance_run_csv_row(result))
         encoded = buffer.getvalue().encode("utf-8")
         atomic_write_file(
             destination=destination,
@@ -643,25 +775,29 @@ class Command(BaseCommand):
             required_bytes=len(encoded),
         )
 
-    def _write_text_summary(self, payload: Mapping[str, object]) -> None:
-        summary = payload["summary"]
-        assert isinstance(summary, dict)
+    def _write_text_summary(self, payload: LxAnonymizerPerformancePayload) -> None:
+        summary = payload.summary
         self.stdout.write(self.style.SUCCESS("lx_anonymizer evaluation complete"))
         self.stdout.write(
             "runs={total_runs} ok={ok_runs} failed={failed_runs} "
-            "short_circuited={short_circuited_runs}".format(**summary)
+            "short_circuited={short_circuited_runs}".format(
+                total_runs=summary.total_runs,
+                ok_runs=summary.ok_runs,
+                failed_runs=summary.failed_runs,
+                short_circuited_runs=summary.short_circuited_runs,
+            )
         )
-        anonymizer_stats = summary.get("anonymizer_seconds", {})
-        import_stats = summary.get("import_seconds", {})
-        if isinstance(anonymizer_stats, dict):
-            self.stdout.write(
-                "anonymizer_seconds: mean={mean:.3f} p95={p95:.3f} max={max:.3f}".format(
-                    **anonymizer_stats
-                )
+        self.stdout.write(
+            "anonymizer_seconds: mean={mean:.3f} p95={p95:.3f} max={max:.3f}".format(
+                mean=summary.anonymizer_seconds.mean,
+                p95=summary.anonymizer_seconds.p95,
+                max=summary.anonymizer_seconds.max,
             )
-        if isinstance(import_stats, dict):
-            self.stdout.write(
-                "import_seconds: mean={mean:.3f} p95={p95:.3f} max={max:.3f}".format(
-                    **import_stats
-                )
+        )
+        self.stdout.write(
+            "import_seconds: mean={mean:.3f} p95={p95:.3f} max={max:.3f}".format(
+                mean=summary.import_seconds.mean,
+                p95=summary.import_seconds.p95,
+                max=summary.import_seconds.max,
             )
+        )

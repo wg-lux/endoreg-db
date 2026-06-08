@@ -4,16 +4,21 @@ import json
 import time
 from pathlib import Path
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError, CommandParser
+from pydantic import ValidationError
 
 from endoreg_db.utils.filesystem.file_operations import safe_unlink_file
 from endoreg_db.utils.filesystem.paths import QUARANTINE_DIR
+from lx_dtypes.models.contracts.json_types import JsonObject
+from lx_dtypes.models.contracts.management_command import (
+    ReapQuarantineCommandOptionsPayload,
+)
 
 
 class Command(BaseCommand):
     help = "Report or delete stale files from the local quarantine directory."
 
-    def add_arguments(self, parser) -> None:
+    def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
             "--older-than-days",
             type=int,
@@ -38,9 +43,16 @@ class Command(BaseCommand):
             help="Emit the result as JSON.",
         )
 
-    def handle(self, *args, **options) -> None:
-        older_than_days = max(0, int(options["older_than_days"]))
-        dry_run = bool(options["dry_run"]) or not bool(options["confirm"])
+    def handle(self, *args: object, **options: object) -> None:
+        try:
+            command_options = ReapQuarantineCommandOptionsPayload.model_validate(
+                options
+            )
+        except ValidationError as exc:
+            raise CommandError(str(exc)) from exc
+
+        older_than_days = command_options.older_than_days
+        dry_run = command_options.dry_run or not command_options.confirm
         cutoff = time.time() - (older_than_days * 24 * 60 * 60)
         candidates = _stale_quarantine_files(
             quarantine_dir=QUARANTINE_DIR,
@@ -56,7 +68,7 @@ class Command(BaseCommand):
                 safe_unlink_file(path, missing_ok=True)
                 deleted.append(path)
 
-        payload = {
+        payload: JsonObject = {
             "quarantine_dir": str(QUARANTINE_DIR),
             "older_than_days": older_than_days,
             "dry_run": dry_run,
@@ -67,7 +79,7 @@ class Command(BaseCommand):
             "deleted": [str(path) for path in deleted],
         }
 
-        if options["json"]:
+        if command_options.json:
             self.stdout.write(json.dumps(payload, indent=2, sort_keys=True))
             return
 

@@ -16,12 +16,20 @@
 #   - We only redirect *browser* requests (no Authorization header) that target protected prefixes.
 #   - We attach the original URL as ?next=<relative-path>. mozilla-django-oidc will read this
 #     and redirect back after a successful login.
-#   - Optional: you can sanitize/validate the next parameter to avoid open redirects,
+#   - A future hardening step may sanitize/validate the next parameter to avoid open redirects,
 #     though using a relative path from request.get_full_path() is already safe.
 
+from __future__ import annotations
+
+from collections.abc import Callable
+from urllib.parse import urlencode
+
+from django.conf import settings
+from django.http import HttpRequest
+from django.http.response import HttpResponseBase
 from django.shortcuts import redirect
 
-# Any URL path that starts with one of these prefixes is considered "protected" for browser UX.
+# Every URL path that starts with one of these prefixes is considered "protected" for browser UX.
 # You can add more prefixes if you want the same login-redirect behavior elsewhere
 # (e.g., PROTECTED_PREFIXES = ("/api/", "/reports/", "/dashboard/")).
 # PROTECTED_PREFIXES = ("/api/",)
@@ -39,6 +47,9 @@ PUBLIC_PREFIXES = (
 )
 
 
+type GetResponse = Callable[[HttpRequest], HttpResponseBase]
+
+
 class LoginRequiredForAPIsMiddleware:
     """
     For browser traffic:
@@ -50,10 +61,12 @@ class LoginRequiredForAPIsMiddleware:
 
     """
 
-    def __init__(self, get_response):
+    get_response: GetResponse
+
+    def __init__(self, get_response: GetResponse) -> None:
         self.get_response = get_response
 
-    def __call__(self, request):
+    def __call__(self, request: HttpRequest) -> HttpResponseBase:
         # request.path is the URL path without scheme/host/query (e.g., "/api/patients/").
         # If for any reason it's None/empty, coerce to empty string so startswith won’t explode.
         path = request.path or ""
@@ -68,15 +81,13 @@ class LoginRequiredForAPIsMiddleware:
             return self.get_response(request)
 
         # API/token clients never get redirected
-        auth = request.META.get("HTTP_AUTHORIZATION", "")
-        if auth.startswith("Bearer "):
+        raw_auth_header = request.META.get("HTTP_AUTHORIZATION", "")
+        auth_header = raw_auth_header if isinstance(raw_auth_header, str) else ""
+        if auth_header.startswith("Bearer "):
             return self.get_response(request)
 
         # 3) Browser without session → redirect to OIDC
         if not request.user.is_authenticated:
-            from django.conf import settings
-            from urllib.parse import urlencode
-
             params = urlencode({"next": request.get_full_path()})
             return redirect(f"{settings.LOGIN_URL}?{params}")
 

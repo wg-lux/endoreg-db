@@ -3,10 +3,17 @@ Django management command to fix video file paths in the database.
 """
 
 import logging
+from collections.abc import Iterable
 from pathlib import Path
+from types import NoneType
+from typing import Protocol, TypeAlias, TypedDict, Unpack, cast
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandParser
 from django.db import transaction
+from lx_dtypes.models.contracts import (
+    VideoPathRepairFileIndex,
+    VideoPathRepairFileInfoPayload,
+)
 
 from endoreg_db.models import VideoFile
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
@@ -14,11 +21,37 @@ from endoreg_db.utils.filesystem.paths import STORAGE_DIR
 
 logger = logging.getLogger(__name__)
 
+JsonNull: TypeAlias = NoneType
+
+
+class FixVideoPathsOptions(TypedDict):
+    video_id: int | JsonNull
+    dry_run: bool
+    verbose: bool
+    storage_dir: str | JsonNull
+
+
+class _StorageExists(Protocol):
+    def exists(self, name: str) -> bool: ...
+
+
+class _StoredVideoFile(Protocol):
+    name: str | JsonNull
+    storage: _StorageExists
+
+
+class _VideoPathRepairModel(Protocol):
+    id: int
+    video_hash: str
+    raw_file: _StoredVideoFile
+
+    def save(self, *, update_fields: list[str]) -> None: ...
+
 
 class Command(BaseCommand):
     help = "Fix video file paths in the database to match actual file locations"
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
             "--video-id",
             type=int,
@@ -41,7 +74,11 @@ class Command(BaseCommand):
             help=f"Path to the storage directory (default: {STORAGE_DIR})",
         )
 
-    def handle(self, *args, **options):
+    def handle(
+        self,
+        *args: str,
+        **options: Unpack[FixVideoPathsOptions],
+    ) -> None:
         """
         Synchronizes video file paths in the database with actual files on disk, updating broken or missing paths as needed.
 
@@ -49,13 +86,14 @@ class Command(BaseCommand):
         """
         dry_run = options["dry_run"]
         verbose = options["verbose"]
-        video_id = options.get("video_id")
+        video_id = options["video_id"]
 
         # Determine storage_dir from argument, env, or fallback
-        storage_dir = Path(options.get("storage_dir") or STORAGE_DIR)
+        storage_option = options["storage_dir"]
+        storage_dir = Path(storage_option) if storage_option is not None else STORAGE_DIR
 
         # Find all actual video files
-        actual_files = {}
+        actual_files: VideoPathRepairFileIndex = {}
         for pattern in ["**/*.mp4", "**/*.avi", "**/*.mov", "**/*.mkv"]:
             for file_path in storage_dir.glob(pattern):
                 if file_path.is_file() and file_path.stat().st_size > 0:
@@ -69,18 +107,18 @@ class Command(BaseCommand):
 
                     # Store relative path from storage directory
                     relative_path = file_path.relative_to(storage_dir)
-                    actual_files[uuid_part] = {
-                        "absolute_path": file_path,
-                        "relative_path": relative_path,
-                        "size_mb": file_path.stat().st_size / (1024 * 1024),
-                    }
+                    actual_files[uuid_part] = VideoPathRepairFileInfoPayload(
+                        absolute_path=file_path,
+                        relative_path=relative_path,
+                        size_mb=file_path.stat().st_size / (1024 * 1024),
+                    )
 
         self.stdout.write(f"Found {len(actual_files)} video files in storage")
 
         # Query videos to fix
         if video_id:
             try:
-                videos = [VideoFile.objects.get(pk=video_id)]
+                videos: Iterable[VideoFile] = [VideoFile.objects.get(pk=video_id)]
                 self.stdout.write(f"Processing specific video ID: {video_id}")
             except VideoFile.DoesNotExist:
                 self.stdout.write(
@@ -95,7 +133,8 @@ class Command(BaseCommand):
         skipped_count = 0
         error_count = 0
 
-        for video in videos:
+        for raw_video in videos:
+            video = cast(_VideoPathRepairModel, raw_video)
             try:
                 uuid_str = str(video.video_hash)
 
@@ -105,9 +144,9 @@ class Command(BaseCommand):
 
                     # Check current file path
                     current_path_exists = False
-                    current_path = None
+                    current_path: str | JsonNull = None
 
-                    if hasattr(video, "raw_file") and video.raw_file:
+                    if video.raw_file:
                         try:
                             current_path = video.raw_file.name
                             current_path_exists = bool(
@@ -125,17 +164,17 @@ class Command(BaseCommand):
                                 f"  Current: {current_path or 'None'} (broken)"
                             )
                             self.stdout.write(
-                                f"  Found: {file_info['absolute_path']} ({file_info['size_mb']:.1f} MB)"
+                                f"  Found: {file_info.absolute_path} ({file_info.size_mb:.1f} MB)"
                             )
 
                         if not dry_run:
                             with transaction.atomic():
                                 # Update the raw_file path
-                                video.raw_file.name = str(file_info["relative_path"])
+                                video.raw_file.name = str(file_info.relative_path)
                                 video.save(update_fields=["raw_file"])
                             try:
                                 sync_video_streamable_artifacts(
-                                    video,
+                                    raw_video,
                                     include_raw=True,
                                     include_processed=False,
                                     save=True,
@@ -149,13 +188,13 @@ class Command(BaseCommand):
 
                             self.stdout.write(
                                 self.style.SUCCESS(
-                                    f"✅ Fixed video {video.id}: {file_info['relative_path']}"
+                                    f"✅ Fixed video {video.id}: {file_info.relative_path}"
                                 )
                             )
                         else:
                             self.stdout.write(
                                 self.style.WARNING(
-                                    f"🔄 Would fix video {video.id}: {file_info['relative_path']}"
+                                    f"🔄 Would fix video {video.id}: {file_info.relative_path}"
                                 )
                             )
 

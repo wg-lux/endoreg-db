@@ -4,12 +4,13 @@ from unittest.mock import Mock, patch
 
 import pytest
 from django.test import override_settings
+from lx_dtypes.models.contracts.json_types import JsonValue
 
 from endoreg_db.authz.auth import KeycloakJWTAuthentication
 
 
 def test_extract_roles_merges_flat_realm_and_resource_roles() -> None:
-    claims = {
+    claims: dict[str, JsonValue] = {
         "roles": ["flat-role"],
         "realm_access": {"roles": ["realm-role"]},
         "resource_access": {

@@ -154,12 +154,12 @@ def _normalize_protected_runtime_paths(
     )
 
 
-_DOTENV_LOADED = False
+_dotenv_loaded = False
 
 import dotenv
 
 dotenv.load_dotenv()
-_DOTENV_LOADED = True
+_dotenv_loaded = True
 
 if _is_explicit_test_settings():
     test_root = (BASE_DIR / "data" / "tests").resolve()
@@ -357,7 +357,10 @@ def get_lookup_requirement_legacy_fallback_enabled() -> bool:
 
 
 def get_lx_dtypes_host_models_module() -> str:
-    return env_str("LX_DTYPES_HOST_MODELS_MODULE", "endoreg_db.models")
+    return env_str(
+        "LX_DTYPES_HOST_MODELS_MODULE",
+        "endoreg_db.integrations.lx_dtypes_host_models",
+    )
 
 
 def get_lx_dtypes_kb_registry() -> str:
@@ -774,7 +777,7 @@ def snapshot() -> Dict[str, Any]:
     data: Dict[str, Any] = {k: os.environ.get(k) for k in keys}
     data.update(
         {
-            "DOTENV_LOADED": _DOTENV_LOADED,
+            "DOTENV_LOADED": _dotenv_loaded,
             "BASE_DIR": str(BASE_DIR),
         }
     )

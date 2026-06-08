@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from django.core.management.base import BaseCommand, CommandError
+from collections.abc import Callable
+from importlib import import_module
+from typing import Protocol, cast
+
+from django.core.management.base import BaseCommand, CommandError, CommandParser
+from pydantic import ValidationError
 
 from endoreg_db.models import AIDataSet
 from endoreg_db.utils.ai.data_loader_for_model_input import (
@@ -11,6 +16,35 @@ from endoreg_db.utils.ai.data_loader_for_model_input import (
     build_dataset_for_training,
     normalize_annotation_source_scope,
 )
+from lx_dtypes.models.contracts.management_command import (
+    ModelInputCommandOptionsPayload,
+    validate_model_training_result,
+)
+from lx_dtypes.models.contracts.json_types import JsonObject
+
+
+class _AIDataSetFields(Protocol):
+    pk: object
+    name: str
+    dataset_type: str
+    ai_model_type: str
+
+
+class _LabelSetFields(Protocol):
+    pk: object
+    name: str
+    version: int
+
+
+class _LabelFields(Protocol):
+    pk: object
+    name: str
+
+
+def _model_pk_as_int(value: object, *, model_name: str) -> int:
+    if isinstance(value, int):
+        return value
+    raise CommandError(f"{model_name} primary key must be an integer.")
 
 
 class Command(BaseCommand):
@@ -26,7 +60,7 @@ class Command(BaseCommand):
         "- Trains a model using RN50 GastroNet checkpoint (if provided).\n"
     )
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
             "--dataset-id",
             type=int,
@@ -68,30 +102,37 @@ class Command(BaseCommand):
             help="Number of training epochs.",
         )
 
-    def handle(self, *args, **options):
-        dataset_id = options["dataset_id"]
+    def handle(self, *args: object, **options: object) -> None:
+        try:
+            payload = ModelInputCommandOptionsPayload.model_validate(options)
+        except ValidationError as exc:
+            raise CommandError(str(exc)) from exc
+
+        dataset_id = payload.dataset_id
         try:
             annotation_source_scope = normalize_annotation_source_scope(
-                options.get("annotation_source_scope")
+                payload.annotation_source_scope
             )
         except ValueError as exc:
             raise CommandError(str(exc)) from exc
-        backbone_ckpt = options["backbone_checkpoint"]
-        backbone_name = options["backbone_name"]
-        num_epochs = options["epochs"]
+        backbone_ckpt = payload.backbone_checkpoint
+        backbone_name = payload.backbone_name
+        num_epochs = payload.epochs
 
         try:
             dataset = AIDataSet.objects.get(id=dataset_id)
         except AIDataSet.DoesNotExist:
             raise CommandError(f"AIDataSet with id={dataset_id} does not exist.")
+        dataset_fields = cast(_AIDataSetFields, dataset)
+        dataset_pk = _model_pk_as_int(dataset_fields.pk, model_name="AIDataSet")
 
         # Basic info
         self.stdout.write(
             self.style.NOTICE(
-                f"Using AIDataSet id={dataset.id}, "
-                f"name={dataset.name!r}, "
-                f"dataset_type={dataset.dataset_type!r}, "
-                f"ai_model_type={dataset.ai_model_type!r}"
+                f"Using AIDataSet id={dataset_pk}, "
+                f"name={dataset_fields.name!r}, "
+                f"dataset_type={dataset_fields.dataset_type!r}, "
+                f"ai_model_type={dataset_fields.ai_model_type!r}"
             )
         )
 
@@ -107,18 +148,22 @@ class Command(BaseCommand):
         labelset = data["labelset"]
 
         self.stdout.write(self.style.NOTICE("Inferred LabelSet for this AIDataSet:"))
+        labelset_fields = cast(_LabelSetFields, labelset)
+        labelset_pk = _model_pk_as_int(labelset_fields.pk, model_name="LabelSet")
         self.stdout.write(
-            f"  LabelSet id={labelset.id}, "
-            f"name={labelset.name!r}, "
-            f"version={labelset.version}"
+            f"  LabelSet id={labelset_pk}, "
+            f"name={labelset_fields.name!r}, "
+            f"version={labelset_fields.version}"
         )
         self.stdout.write("  Labels (index, id, name):")
         for idx, lbl in enumerate(labels):
-            self.stdout.write(f"    [{idx}] id={lbl.id}, name={lbl.name!r}")
+            label_fields = cast(_LabelFields, lbl)
+            label_pk = _model_pk_as_int(label_fields.pk, model_name="Label")
+            self.stdout.write(f"    [{idx}] id={label_pk}, name={label_fields.name!r}")
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"\nBuilt training dataset from AIDataSet id={dataset.id}:\n"
+                f"\nBuilt training dataset from AIDataSet id={dataset_pk}:\n"
                 f"- #samples: {len(image_paths)}\n"
                 f"- #labels:  {len(labels)}"
             )
@@ -146,7 +191,7 @@ class Command(BaseCommand):
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"\n Input for model training built successfully from AIDataSet id={dataset.id}."
+                f"\n Input for model training built successfully from AIDataSet id={dataset_pk}."
             )
         )
 
@@ -172,26 +217,34 @@ class Command(BaseCommand):
         # ---- Training ----
         try:
             from endoreg_db.utils.ai.model_training.config import TrainingConfig
-            from endoreg_db.utils.ai.model_training.trainer_gastronet_multilabel import (
-                train_gastronet_multilabel,
+
+            trainer_module = import_module(
+                "endoreg_db.utils.ai.model_training.trainer_gastronet_multilabel"
             )
         except ImportError as exc:
             raise CommandError(
                 "Training dependencies are not available. Install the AI training "
                 "dependencies before running model_input."
             ) from exc
+        train_candidate: object = getattr(trainer_module, "train_gastronet_multilabel")
+        if not callable(train_candidate):
+            raise CommandError("train_gastronet_multilabel is not callable.")
+        train_model = cast(
+            Callable[[TrainingConfig], JsonObject],
+            train_candidate,
+        )
 
         cfg = TrainingConfig(
-            dataset_id=dataset.id,
+            dataset_id=dataset_pk,
             annotation_source_scope=annotation_source_scope,
             backbone_checkpoint=backbone_ckpt,
             backbone_name=backbone_name,
             num_epochs=num_epochs,
         )
-        result = train_gastronet_multilabel(cfg)
+        result = validate_model_training_result(train_model(cfg))
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"\nTraining finished. Model saved to: {result['model_path']}"
+                f"\nTraining finished. Model saved to: {result.model_path}"
             )
         )

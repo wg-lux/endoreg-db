@@ -23,14 +23,63 @@
 #       "django.contrib.auth.backends.ModelBackend",
 #   )
 
+from __future__ import annotations
+
+from collections.abc import Iterable, Mapping
+from typing import Protocol, cast, overload
+
 from mozilla_django_oidc.auth import OIDCAuthenticationBackend
 from django.contrib.auth import get_user_model
-from django.contrib.auth.models import Group
+from django.contrib.auth.models import AbstractUser, Group
+from django.db.models.query import QuerySet
+from lx_dtypes.models.contracts import KeycloakClaimsPayload, validate_keycloak_claims
+from lx_dtypes.models.contracts.json_types import JsonValue
 
 User = get_user_model()
 
 
-def _extract_realm_roles(claims):
+class _UserGroups(Protocol):
+    def set(self, groups: Iterable[Group]) -> None: ...
+
+
+class _AuthenticatedUser(Protocol):
+    username: str
+    email: str
+    first_name: str
+    last_name: str
+    groups: _UserGroups
+
+    @overload
+    def save(self) -> None: ...
+
+    @overload
+    def save(self, *, update_fields: list[str]) -> None: ...
+
+
+class _UserManager(Protocol):
+    def create_user(
+        self,
+        *,
+        username: str,
+        email: str,
+        first_name: str,
+        last_name: str,
+    ) -> _AuthenticatedUser: ...
+
+    def none(self) -> QuerySet[AbstractUser, AbstractUser]: ...
+
+    def filter(self, *, username__iexact: str) -> QuerySet[AbstractUser, AbstractUser]: ...
+
+
+class _UserModel(Protocol):
+    objects: _UserManager
+
+
+def _claims_payload(claims: Mapping[str, JsonValue]) -> KeycloakClaimsPayload:
+    return validate_keycloak_claims(claims)
+
+
+def _extract_realm_roles(claims: KeycloakClaimsPayload) -> set[str]:
     """
     Extract Keycloak *realm* roles from ID token claims.
 
@@ -43,23 +92,14 @@ def _extract_realm_roles(claims):
     Returns:
         set[str]: unique, non-empty role names.
     """
-    roles = set()
-
-    # 1) Custom/flat roles claim (if you configured such a mapper in Keycloak)
-    roles.update(claims.get("roles", []) or [])
-
-    # 2) Standard Keycloak realm roles location
-    roles.update((claims.get("realm_access") or {}).get("roles", []) or [])
-
     # OPTIONAL — include client roles as well (uncomment if you use them)
-    # resource_access = claims.get("resource_access") or {}
+    # resource_access = claims.resource_access
     # for client_id, entry in resource_access.items():
-    #     for r in entry.get("roles", []) or []:
+    #     for r in entry.roles:
     #         # Prefix client roles to avoid name collisions with realm roles
     #         roles.add(f"{client_id}:{r}")
 
-    # Filter out any non-strings / empties, just in case
-    return {r for r in roles if isinstance(r, str) and r}
+    return set(claims.roles) | set(claims.realm_access.roles)
 
 
 class KeycloakOIDCBackend(OIDCAuthenticationBackend):
@@ -74,7 +114,7 @@ class KeycloakOIDCBackend(OIDCAuthenticationBackend):
     """
 
     # Called by the base class when no existing user matches the claims.
-    def create_user(self, claims):
+    def create_user(self, claims: Mapping[str, JsonValue]) -> AbstractUser:
         """
         Create a new Django user on first OIDC login.
 
@@ -86,22 +126,29 @@ class KeycloakOIDCBackend(OIDCAuthenticationBackend):
         """
         # Preferred username is the most human-friendly identifier in Keycloak.
         # Fallback to 'sub' (the stable subject identifier) if needed.
-        username = claims.get("preferred_username") or claims.get("sub")
+        claims_payload = _claims_payload(claims)
+        username = claims_payload.username
 
         # Create a minimal user; no password is set (OIDC will handle auth).
-        user = User.objects.create_user(
-            username=username,
-            email=claims.get("email", ""),
-            first_name=(claims.get("given_name") or "")[:150],
-            last_name=(claims.get("family_name") or "")[:150],
+        user_model = cast(_UserModel, User)
+        user = cast(
+            AbstractUser,
+            user_model.objects.create_user(
+                username=username,
+                email=claims_payload.email,
+                first_name=claims_payload.given_name[:150],
+                last_name=claims_payload.family_name[:150],
+            ),
         )
 
         # Ensure Django groups mirror Keycloak roles immediately.
-        self._sync_groups(user, claims)
+        self._sync_groups(cast(_AuthenticatedUser, user), claims_payload)
         return user
 
     # Called by the base class when a matching user already exists.
-    def update_user(self, user, claims):
+    def update_user(
+        self, user: _AuthenticatedUser, claims: Mapping[str, JsonValue]
+    ) -> _AuthenticatedUser:
         """
         Update existing Django user profile fields and resync groups.
 
@@ -113,16 +160,19 @@ class KeycloakOIDCBackend(OIDCAuthenticationBackend):
             User: the updated user
         """
         # Keep user profile in sync with IdP data (safe truncation to field max length)
-        user.email = claims.get("email", user.email)
-        user.first_name = (claims.get("given_name") or user.first_name)[:150]
-        user.last_name = (claims.get("family_name") or user.last_name)[:150]
+        claims_payload = _claims_payload(claims)
+        user.email = claims_payload.email or user.email
+        user.first_name = (claims_payload.given_name or user.first_name)[:150]
+        user.last_name = (claims_payload.family_name or user.last_name)[:150]
         user.save(update_fields=["email", "first_name", "last_name"])
 
         # Keep roles (groups) in sync on every login
-        self._sync_groups(user, claims)
+        self._sync_groups(user, claims_payload)
         return user
 
-    def _sync_groups(self, user, claims):
+    def _sync_groups(
+        self, user: _AuthenticatedUser, claims: KeycloakClaimsPayload
+    ) -> None:
         """
         Make Django Groups *exactly* match the roles coming from Keycloak.
 
@@ -136,7 +186,7 @@ class KeycloakOIDCBackend(OIDCAuthenticationBackend):
         """
         kc_roles = _extract_realm_roles(claims)
 
-        groups = []
+        groups: list[Group] = []
         for r in kc_roles:
             grp, _ = Group.objects.get_or_create(name=r)
             groups.append(grp)
@@ -153,7 +203,9 @@ class KeycloakOIDCBackend(OIDCAuthenticationBackend):
         #     user.is_staff = False
         # user.save(update_fields=["is_staff", "is_superuser"])
 
-    def filter_users_by_claims(self, claims):
+    def filter_users_by_claims(
+        self, claims: Mapping[str, JsonValue]
+    ) -> QuerySet[AbstractUser, AbstractUser]:
         """
         Return the queryset of users matching the incoming claims.
 
@@ -161,8 +213,8 @@ class KeycloakOIDCBackend(OIDCAuthenticationBackend):
 
         We match on preferred_username (case-insensitive). If not present, fall back to 'sub'.
         """
-        username = claims.get("preferred_username") or claims.get("sub")
+        username = _claims_payload(claims).username
         if not username:
             # No usable identifier → no match
-            return self.UserModel.objects.none()
-        return self.UserModel.objects.filter(username__iexact=username)
+            return cast(_UserModel, self.UserModel).objects.none()
+        return cast(_UserModel, self.UserModel).objects.filter(username__iexact=username)

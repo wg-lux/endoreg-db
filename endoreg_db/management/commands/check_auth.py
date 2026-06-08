@@ -2,15 +2,17 @@
 Management command to check and configure authentication settings.
 """
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError, CommandParser
 from django.conf import settings
 import os
+
+type _CommandOption = bool | str
 
 
 class Command(BaseCommand):
     help = "Check and configure authentication settings based on environment"
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
             "--mode",
             choices=["check", "dev", "prod"],
@@ -23,8 +25,10 @@ class Command(BaseCommand):
             help="Show which permission classes will be used",
         )
 
-    def handle(self, *args, **options):
+    def handle(self, *args: str, **options: _CommandOption) -> None:
         mode = options["mode"]
+        if not isinstance(mode, str):
+            raise CommandError("--mode must be a string.")
 
         if mode == "check":
             self.check_current_settings()
@@ -33,10 +37,13 @@ class Command(BaseCommand):
         elif mode == "prod":
             self.set_prod_mode()
 
-        if options["show_permissions"]:
+        show_permissions = options["show_permissions"]
+        if not isinstance(show_permissions, bool):
+            raise CommandError("--show-permissions must be a boolean flag.")
+        if show_permissions:
             self.show_permission_classes()
 
-    def check_current_settings(self):
+    def check_current_settings(self) -> None:
         """Check current authentication configuration."""
         debug_mode = getattr(settings, "DEBUG", False)
         settings_module = os.environ.get("DJANGO_SETTINGS_MODULE", "Unknown")
@@ -70,7 +77,7 @@ class Command(BaseCommand):
 
         self.stdout.write("=" * 50 + "\n")
 
-    def set_dev_mode(self):
+    def set_dev_mode(self) -> None:
         """Instructions for setting development mode."""
         self.stdout.write(self.style.SUCCESS("\n🛠️  DEVELOPMENT MODE SETUP"))
         self.stdout.write("To enable development mode with disabled authentication:")
@@ -86,7 +93,7 @@ class Command(BaseCommand):
             "This will set DEBUG=True and disable authentication requirements."
         )
 
-    def set_prod_mode(self):
+    def set_prod_mode(self) -> None:
         """Instructions for setting production mode."""
         self.stdout.write(self.style.SUCCESS("\n🏭 PRODUCTION MODE SETUP"))
         self.stdout.write("To enable production mode with authentication:")
@@ -103,7 +110,7 @@ class Command(BaseCommand):
             "This will set DEBUG=False and enable authentication requirements."
         )
 
-    def show_permission_classes(self):
+    def show_permission_classes(self) -> None:
         """Show which permission classes are being used."""
         debug_mode = getattr(settings, "DEBUG", False)
 

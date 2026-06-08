@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError, CommandParser
+from pydantic import ValidationError
 
 from endoreg_db.models import VideoFile
 from endoreg_db.models.state.video_segment_validation import (
@@ -8,6 +9,9 @@ from endoreg_db.models.state.video_segment_validation import (
 )
 from endoreg_db.services.jobs.video_post_validation_jobs import (
     dispatch_video_post_validation_rebuild,
+)
+from lx_dtypes.models.contracts.management_command import (
+    ReconcileSegmentValidationStateCommandOptionsPayload,
 )
 
 
@@ -17,7 +21,7 @@ class Command(BaseCommand):
         "outside-frame cleanup completed."
     )
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
             "--video-id",
             dest="video_ids",
@@ -32,12 +36,21 @@ class Command(BaseCommand):
             help="Queue post-validation cleanup for matching videos.",
         )
 
-    def handle(self, *args, **options):
+    def handle(self, *args: object, **options: object) -> None:
+        try:
+            command_options = (
+                ReconcileSegmentValidationStateCommandOptionsPayload.model_validate(
+                    options
+                )
+            )
+        except ValidationError as exc:
+            raise CommandError(str(exc)) from exc
+
         queryset = VideoFile.objects.select_related("state").filter(
             state__segment_annotations_validated=True,
             state__outside_segments_removed=False,
         )
-        video_ids = options.get("video_ids")
+        video_ids = command_options.video_ids
         if video_ids:
             queryset = queryset.filter(pk__in=video_ids)
 
@@ -48,7 +61,7 @@ class Command(BaseCommand):
             )
             return
 
-        queue_cleanup = bool(options.get("queue_cleanup"))
+        queue_cleanup = command_options.queue_cleanup
         self.stdout.write(
             self.style.WARNING(
                 f"Found {len(videos)} video(s) with premature segment validation."

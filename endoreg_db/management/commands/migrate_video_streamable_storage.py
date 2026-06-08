@@ -1,9 +1,21 @@
 from __future__ import annotations
 
-from django.core.management.base import BaseCommand, CommandError
+from typing import TypedDict, Unpack
+
+from django.core.management.base import BaseCommand, CommandError, CommandParser
+from lx_dtypes.models.contracts.management_command import (
+    MigrateVideoStreamableStorageCommandOptionsPayload,
+)
 
 from endoreg_db.models import VideoFile
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
+
+
+class MigrateVideoStreamableStorageCommandOptions(TypedDict):
+    video_ids: list[int] | None
+    processed_only: bool
+    raw_only: bool
+    dry_run: bool
 
 
 class Command(BaseCommand):
@@ -12,7 +24,7 @@ class Command(BaseCommand):
         "stamp VideoFile storage metadata for X-Accel-Redirect delivery."
     )
 
-    def add_arguments(self, parser) -> None:
+    def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
             "--video-id",
             type=int,
@@ -36,15 +48,22 @@ class Command(BaseCommand):
             help="Report what would change without copying files or saving metadata.",
         )
 
-    def handle(self, *args, **options) -> None:
-        video_ids = options.get("video_ids") or []
-        processed_only = bool(options["processed_only"])
-        raw_only = bool(options["raw_only"])
+    def handle(
+        self,
+        *args: str,
+        **options: Unpack[MigrateVideoStreamableStorageCommandOptions],
+    ) -> None:
+        options_payload = (
+            MigrateVideoStreamableStorageCommandOptionsPayload.model_validate(options)
+        )
+        video_ids = options_payload.video_ids
+        processed_only = options_payload.processed_only
+        raw_only = options_payload.raw_only
         if processed_only and raw_only:
             raise CommandError(
                 "--processed-only and --raw-only cannot be used together"
             )
-        dry_run = bool(options["dry_run"])
+        dry_run = options_payload.dry_run
 
         include_raw = not processed_only
         include_processed = not raw_only

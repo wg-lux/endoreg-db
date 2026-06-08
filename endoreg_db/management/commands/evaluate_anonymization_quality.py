@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-import json
-from argparse import ArgumentParser
 from pathlib import Path
+from types import NoneType
 from typing import Literal, TypeAlias
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand, CommandError, CommandParser
 
 from endoreg_db.services.anonymization_quality_evaluation import (
+    AnonymizationQualityPayload,
     SensitiveMetaHandlingPolicy,
     evaluate_anonymization_quality,
     parse_quality_datetime,
@@ -17,6 +17,8 @@ from endoreg_db.utils.filesystem.file_operations import atomic_write_file
 
 QualityMediaType: TypeAlias = Literal["all", "video", "pdf"]
 QUALITY_MEDIA_TYPE_CHOICES: tuple[QualityMediaType, ...] = ("all", "video", "pdf")
+type _CommandOption = NoneType | bool | int | list[int] | str
+type _MaybeInt = NoneType | int
 
 
 class Command(BaseCommand):
@@ -25,7 +27,7 @@ class Command(BaseCommand):
         "derived-only quality metrics."
     )
 
-    def add_arguments(self, parser: ArgumentParser) -> None:
+    def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
             "--media-type",
             choices=QUALITY_MEDIA_TYPE_CHOICES,
@@ -109,23 +111,27 @@ class Command(BaseCommand):
             help="Emit the full JSON payload to stdout.",
         )
 
-    def handle(self, *args, **options) -> None:
-        limit = int(options["limit"])
+    def handle(self, *args: str, **options: _CommandOption) -> None:
+        limit = _int_option(options, "limit")
         if limit < 0:
             raise CommandError("--limit must be >= 0")
 
-        video_ids = tuple(int(value) for value in options["video_id"])
-        pdf_ids = tuple(int(value) for value in options["pdf_id"])
-        media_type = _parse_media_type(options["media_type"])
+        video_ids = tuple(_int_sequence_option(options, "video_id"))
+        pdf_ids = tuple(_int_sequence_option(options, "pdf_id"))
+        media_type = _parse_media_type(_string_option(options, "media_type"))
         if media_type == "video" and pdf_ids:
             raise CommandError("--pdf-id cannot be used with --media-type=video")
         if media_type == "pdf" and video_ids:
             raise CommandError("--video-id cannot be used with --media-type=pdf")
 
         try:
-            date_from = parse_quality_datetime(options["date_from"])
-            date_to = parse_quality_datetime(options["date_to"], end_of_day=True)
-            policy = SensitiveMetaHandlingPolicy(options["sensitive_meta_policy"])
+            date_from = parse_quality_datetime(_string_option(options, "date_from"))
+            date_to = parse_quality_datetime(
+                _string_option(options, "date_to"), end_of_day=True
+            )
+            policy = SensitiveMetaHandlingPolicy(
+                _string_option(options, "sensitive_meta_policy")
+            )
         except ValueError as exc:
             raise CommandError(str(exc)) from exc
 
@@ -133,39 +139,40 @@ class Command(BaseCommand):
             media_type=media_type,
             video_ids=video_ids,
             pdf_ids=pdf_ids,
-            center_id=options["center_id"],
+            center_id=_maybe_int_option(options, "center_id"),
             date_from=date_from,
             date_to=date_to,
             limit=limit,
-            include_unvalidated=bool(options["include_unvalidated"]),
+            include_unvalidated=_bool_option(options, "include_unvalidated"),
             sensitive_meta_policy=policy,
-            apply_policy=bool(options["apply_policy"]),
-            allow_sensitive_meta_delete=bool(options["allow_sensitive_meta_delete"]),
+            apply_policy=_bool_option(options, "apply_policy"),
+            allow_sensitive_meta_delete=_bool_option(
+                options, "allow_sensitive_meta_delete"
+            ),
         )
-        serialized = payload.model_dump(mode="json")
+        json_output = _string_option(options, "json_output")
+        if json_output:
+            _write_json_output(Path(json_output), payload)
 
-        if options["json_output"]:
-            _write_json_output(Path(options["json_output"]), serialized)
-
-        if options["json"]:
-            self.stdout.write(json.dumps(serialized, indent=2, sort_keys=True))
+        if _bool_option(options, "json"):
+            self.stdout.write(payload.model_dump_json(indent=2))
         else:
-            summary = serialized["summary"]
+            summary = payload.summary
             self.stdout.write(
                 "Evaluated {total} media rows; residual_phi_detected={residual}; "
                 "leaked_fields={leaked}; raw_artifact_residuals={raw}; "
                 "missing_sensitive_meta_deletions={missing}".format(
-                    total=summary["total"],
-                    residual=summary["residual_phi_detected_count"],
-                    leaked=summary["leaked_field_count"],
-                    raw=summary["raw_artifact_residual_count"],
-                    missing=summary["missing_sensitive_meta_deletion_count"],
+                    total=summary.total,
+                    residual=summary.residual_phi_detected_count,
+                    leaked=summary.leaked_field_count,
+                    raw=summary.raw_artifact_residual_count,
+                    missing=summary.missing_sensitive_meta_deletion_count,
                 )
             )
 
 
-def _write_json_output(path: Path, payload: dict) -> None:
-    json_bytes = json.dumps(payload, indent=2, sort_keys=True).encode("utf-8")
+def _write_json_output(path: Path, payload: AnonymizationQualityPayload) -> None:
+    json_bytes = payload.model_dump_json(indent=2).encode("utf-8")
     atomic_write_file(
         destination=path,
         content=[json_bytes],
@@ -173,8 +180,8 @@ def _write_json_output(path: Path, payload: dict) -> None:
     )
 
 
-def _parse_media_type(value: object) -> QualityMediaType:
-    media_type = str(value)
+def _parse_media_type(value: str) -> QualityMediaType:
+    media_type = value
     if media_type == "all":
         return "all"
     if media_type == "video":
@@ -182,3 +189,40 @@ def _parse_media_type(value: object) -> QualityMediaType:
     if media_type == "pdf":
         return "pdf"
     raise CommandError("--media-type must be one of: all, video, pdf")
+
+
+def _string_option(options: dict[str, _CommandOption], name: str) -> str:
+    value = options[name]
+    if not isinstance(value, str):
+        raise CommandError(f"--{name.replace('_', '-')} must be a string")
+    return value
+
+
+def _int_option(options: dict[str, _CommandOption], name: str) -> int:
+    value = options[name]
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    raise CommandError(f"--{name.replace('_', '-')} must be an integer")
+
+
+def _maybe_int_option(options: dict[str, _CommandOption], name: str) -> _MaybeInt:
+    value = options[name]
+    if value is None:
+        return None
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    raise CommandError(f"--{name.replace('_', '-')} must be an integer")
+
+
+def _bool_option(options: dict[str, _CommandOption], name: str) -> bool:
+    value = options[name]
+    if isinstance(value, bool):
+        return value
+    raise CommandError(f"--{name.replace('_', '-')} must be a boolean flag")
+
+
+def _int_sequence_option(options: dict[str, _CommandOption], name: str) -> list[int]:
+    value = options[name]
+    if not isinstance(value, list):
+        raise CommandError(f"--{name.replace('_', '-')} must be an integer list")
+    return value

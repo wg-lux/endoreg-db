@@ -2,10 +2,15 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from types import NoneType
+from typing import Literal, Protocol, TypeAlias, TypedDict, Unpack, cast
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand, CommandError, CommandParser
 from django.db import connection, transaction
+from lx_dtypes.models.contracts.management_command import (
+    VerboseManagementCommandOptionsPayload,
+)
+from lx_dtypes.models.interface.KnowledgeBase import KnowledgeBase
 
 from ...data import (
     EXAMINATION_INDICATION_CLASSIFICATION_CHOICE_DATA_DIR,
@@ -21,21 +26,48 @@ from ...models import (
     InformationSource,
 )
 from ...utils import load_model_data_from_yaml
+from ...utils.data_loading.yaml_model_loader import LoadModelDataMetadata
 
-IMPORT_MODELS = [  # string as model key, serves as key in IMPORT_METADATA
+NullValue: TypeAlias = NoneType
+TextOrNull: TypeAlias = str | NullValue
+StringListSource: TypeAlias = str | Sequence[str]
+LoadExaminationIndicationSource: TypeAlias = Literal["yaml", "dtypes", "hybrid"]
+
+IMPORT_MODELS: list[str] = [  # string as model key, serves as key in IMPORT_METADATA
     ExaminationIndicationClassificationChoice.__name__,
     ExaminationIndicationClassification.__name__,
     ExaminationIndication.__name__,
 ]
 
-SOURCE_YAML = "yaml"
-SOURCE_DTYPES = "dtypes"
-SOURCE_HYBRID = "hybrid"
-SOURCE_CHOICES = [SOURCE_YAML, SOURCE_DTYPES, SOURCE_HYBRID]
+SOURCE_YAML: LoadExaminationIndicationSource = "yaml"
+SOURCE_DTYPES: LoadExaminationIndicationSource = "dtypes"
+SOURCE_HYBRID: LoadExaminationIndicationSource = "hybrid"
+SOURCE_CHOICES: list[LoadExaminationIndicationSource] = [
+    SOURCE_YAML,
+    SOURCE_DTYPES,
+    SOURCE_HYBRID,
+]
 
 DEFAULT_DTYPES_MODULE = "lx_examinations"
 
-IMPORT_METADATA = {
+
+class LoadExaminationIndicationCommandOptions(TypedDict):
+    verbose: bool
+    source: LoadExaminationIndicationSource
+    module_name: str
+
+
+class NamedRecord(Protocol):
+    name: str
+
+
+class DescriptionRecord(Protocol):
+    description: TextOrNull
+
+    def save(self, *, update_fields: list[str]) -> None: ...
+
+
+IMPORT_METADATA: dict[str, LoadModelDataMetadata] = {
     ExaminationIndication.__name__: {
         "dir": EXAMINATION_INDICATION_DATA_DIR,
         "model": ExaminationIndication,
@@ -107,22 +139,16 @@ def _resolve_dtypes_data_dirs() -> list[Path]:
     return deduplicated
 
 
-def _as_str_list(raw_value: Any) -> list[str]:
-    if raw_value is None:
-        return []
+def _as_str_list(raw_value: StringListSource) -> list[str]:
     if isinstance(raw_value, str):
         value = raw_value.strip()
         if not value:
             return []
         return [part.strip() for part in value.split(",") if part.strip()]
-    if isinstance(raw_value, Sequence) and not isinstance(
-        raw_value, (bytes, bytearray)
-    ):
-        return [str(item).strip() for item in raw_value if str(item).strip()]
-    return [str(raw_value).strip()] if str(raw_value).strip() else []
+    return [item.strip() for item in raw_value if item.strip()]
 
 
-def _load_dtypes_knowledge_base(module_name: str):
+def _load_dtypes_knowledge_base(module_name: str) -> KnowledgeBase:
     from lx_dtypes.models.interface.DataLoader import DataLoader
 
     input_dirs = _resolve_dtypes_data_dirs()
@@ -141,7 +167,7 @@ class Command(BaseCommand):
     help = """Load all .yaml files in the data/intervention directory
     into the Intervention and InterventionType model"""
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: CommandParser) -> None:
         """
         Add the --verbose flag to the command-line argument parser.
 
@@ -169,8 +195,8 @@ class Command(BaseCommand):
 
     def _load_from_yaml(self, verbose: bool) -> None:
         for model_name in IMPORT_MODELS:
-            _metadata = IMPORT_METADATA[model_name]
-            load_model_data_from_yaml(self, model_name, _metadata, verbose)
+            metadata = IMPORT_METADATA[model_name]
+            load_model_data_from_yaml(self, model_name, metadata, verbose)
 
     def _required_tables_available(self, *, verbose: bool) -> bool:
         existing_tables = set(connection.introspection.table_names())
@@ -200,30 +226,32 @@ class Command(BaseCommand):
     def _upsert_dtypes_indications(
         self,
         *,
-        kb: Any,
+        kb: KnowledgeBase,
         verbose: bool,
     ) -> None:
-        indication_types_by_name = getattr(kb, "indication_type", {}) or {}
-        indications_by_name = getattr(kb, "indication", {}) or {}
+        indication_types_by_name = kb.indication_type
+        indications_by_name = kb.indication
 
         for indication_name, indication in indications_by_name.items():
-            description = (getattr(indication, "description", "") or "").strip() or None
+            description: TextOrNull = indication.description.strip() or None
+            db_indication: ExaminationIndication
             db_indication, _created = ExaminationIndication.objects.get_or_create(
                 name=indication_name,
                 defaults={"description": description},
             )
-            if db_indication.description != description:
-                db_indication.description = description
-                db_indication.save(update_fields=["description"])
+            db_indication_description = cast(DescriptionRecord, db_indication)
+            if db_indication_description.description != description:
+                db_indication_description.description = description
+                db_indication_description.save(update_fields=["description"])
 
-            intervention_names = _as_str_list(getattr(indication, "interventions", []))
-            interventions = list(
+            intervention_names = _as_str_list(indication.interventions)
+            interventions: list[FindingIntervention] = list(
                 FindingIntervention.objects.filter(name__in=intervention_names)
             )
             db_indication.expected_interventions.set(interventions)
 
-            found_intervention_names = {
-                intervention.name for intervention in interventions
+            found_intervention_names: set[str] = {
+                cast(NamedRecord, intervention).name for intervention in interventions
             }
             missing_interventions = sorted(
                 set(intervention_names) - found_intervention_names
@@ -236,27 +264,36 @@ class Command(BaseCommand):
                     )
                 )
 
-            classification_names = _as_str_list(
-                getattr(indication, "indication_types", [])
-            )
+            classification_names = _as_str_list(indication.indication_types)
             classifications: list[ExaminationIndicationClassification] = []
             for classification_name in classification_names:
                 indication_type = indication_types_by_name.get(classification_name)
-                classification_description = None
+                classification_description: TextOrNull = None
                 if indication_type is not None:
                     classification_description = (
-                        getattr(indication_type, "description", "") or ""
-                    ).strip() or None
+                        indication_type.description.strip() or None
+                    )
 
+                classification: ExaminationIndicationClassification
                 classification, _ = (
                     ExaminationIndicationClassification.objects.get_or_create(
                         name=classification_name,
                         defaults={"description": classification_description},
                     )
                 )
-                if classification.description != classification_description:
-                    classification.description = classification_description
-                    classification.save(update_fields=["description"])
+                classification_description_record = cast(
+                    DescriptionRecord, classification
+                )
+                if (
+                    classification_description_record.description
+                    != classification_description
+                ):
+                    classification_description_record.description = (
+                        classification_description
+                    )
+                    classification_description_record.save(
+                        update_fields=["description"]
+                    )
                 classifications.append(classification)
 
             db_indication.classifications.set(classifications)
@@ -268,8 +305,10 @@ class Command(BaseCommand):
                 )
             )
 
-    def _sync_dtypes_examination_links(self, *, kb: Any, verbose: bool) -> None:
-        examinations_by_name = getattr(kb, "examination", {}) or {}
+    def _sync_dtypes_examination_links(
+        self, *, kb: KnowledgeBase, verbose: bool
+    ) -> None:
+        examinations_by_name = kb.examination
         if not examinations_by_name:
             if verbose:
                 self.stdout.write(
@@ -287,16 +326,17 @@ class Command(BaseCommand):
                 missing_exam_names.append(exam_name)
                 continue
 
-            indication_names = _as_str_list(
-                getattr(dtypes_examination, "indications", [])
-            )
+            indication_names = _as_str_list(dtypes_examination.indications)
             indication_qs = ExaminationIndication.objects.filter(
                 name__in=indication_names
             )
             db_examination.indications.set(indication_qs)
             updated_exam_count += 1
 
-            found_indication_names = set(indication_qs.values_list("name", flat=True))
+            found_indication_names: set[str] = {
+                str(indication_name)
+                for indication_name in indication_qs.values_list("name", flat=True)
+            }
             missing_indications = sorted(set(indication_names) - found_indication_names)
             if verbose and missing_indications:
                 self.stdout.write(
@@ -345,11 +385,15 @@ class Command(BaseCommand):
             self._upsert_dtypes_indications(kb=kb, verbose=verbose)
             self._sync_dtypes_examination_links(kb=kb, verbose=verbose)
 
-    def handle(self, *args, **options):
+    def handle(
+        self,
+        *args: str,
+        **options: Unpack[LoadExaminationIndicationCommandOptions],
+    ) -> None:
         """
         Load indication catalog data from yaml, dtypes, or both.
         """
-        verbose = options["verbose"]
+        verbose = VerboseManagementCommandOptionsPayload.model_validate(options).verbose
         source = options["source"]
         module_name = options["module_name"]
 

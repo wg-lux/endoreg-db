@@ -1,18 +1,40 @@
 import os
 import sys
+from importlib import import_module
 from pathlib import Path
+from typing import Protocol, cast
 
 from django.apps import AppConfig
+from django.db.backends.base.base import BaseDatabaseWrapper
 from django.db.backends.signals import connection_created
+from django.dispatch import Signal
 
 from endoreg_db.authz.settings import ensure_keycloak_settings
+
+
+class _ConnectionCreatedReceiver(Protocol):
+    def __call__(
+        self,
+        *,
+        signal: Signal,
+        sender: type[BaseDatabaseWrapper],
+        connection: BaseDatabaseWrapper,
+    ) -> None: ...
+
+
+class _ConnectionCreatedSignal(Protocol):
+    def connect(
+        self,
+        receiver: _ConnectionCreatedReceiver,
+        dispatch_uid: str,
+    ) -> None: ...
 
 
 class EndoregDbConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "endoreg_db"
 
-    def ready(self):
+    def ready(self) -> None:
         """
         Finalize app startup integration hooks.
 
@@ -22,7 +44,7 @@ class EndoregDbConfig(AppConfig):
         first database connection becomes available.
         """
         ensure_keycloak_settings()
-        from endoreg_db import checks as _checks  # noqa: F401
+        import_module("endoreg_db.checks")
 
         from endoreg_db.utils.filesystem.paths import validate_runtime_storage_contract
 
@@ -52,10 +74,16 @@ class EndoregDbConfig(AppConfig):
 
         if should_run_startup_reconciliation():
 
-            def _run_reconciliation(**kwargs):
+            def _run_reconciliation(
+                *,
+                signal: Signal,
+                sender: type[BaseDatabaseWrapper],
+                connection: BaseDatabaseWrapper,
+            ) -> None:
                 ReconciliationService().run_once()
 
-            connection_created.connect(
+            typed_connection_created = cast(_ConnectionCreatedSignal, connection_created)
+            typed_connection_created.connect(
                 _run_reconciliation,
                 dispatch_uid="endoreg_db_startup_reconciliation",
             )

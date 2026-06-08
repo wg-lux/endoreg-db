@@ -1,40 +1,52 @@
-from django.core.management.base import BaseCommand
-from endoreg_db.models import (
-    EmissionFactor,
-    Resource,
-    Waste,
-    Material,
-    Product,
-    ProductGroup,
-    ReferenceProduct,
-    TransportRoute,
-    CenterWaste,
-    CenterResource,
-    ProductMaterial,
-    ProductWeight,
-    # Other models for ForeignKeys
-    Unit,
-    Center,
-)
-from collections import OrderedDict
+from __future__ import annotations
 
-from ...utils import load_model_data_from_yaml
+from collections import OrderedDict
+from typing import TypedDict, Unpack
+
+from django.core.management.base import BaseCommand, CommandParser
+from lx_dtypes.models.contracts.management_command import (
+    VerboseManagementCommandOptionsPayload,
+)
+
 from ...data import (
+    CENTER_RESOURCE_DATA_DIR,
+    CENTER_WASTE_DATA_DIR,
     EMISSION_FACTOR_DATA_DIR,
-    RESOURCE_DATA_DIR,
-    WASTE_DATA_DIR,
     MATERIAL_DATA_DIR,
     PRODUCT_DATA_DIR,
     PRODUCT_GROUP_DATA_DIR,
-    REFERENCE_PRODUCT_DATA_DIR,
-    TRANSPORT_ROUTE_DATA_DIR,
-    CENTER_WASTE_DATA_DIR,
-    CENTER_RESOURCE_DATA_DIR,
     PRODUCT_MATERIAL_DATA_DIR,
     PRODUCT_WEIGHT_DATA_DIR,
+    REFERENCE_PRODUCT_DATA_DIR,
+    RESOURCE_DATA_DIR,
+    TRANSPORT_ROUTE_DATA_DIR,
+    WASTE_DATA_DIR,
 )
+from endoreg_db.models import (
+    Center,
+    CenterResource,
+    CenterWaste,
+    EmissionFactor,
+    Material,
+    Product,
+    ProductGroup,
+    ProductMaterial,
+    ProductWeight,
+    ReferenceProduct,
+    Resource,
+    TransportRoute,
+    Unit,
+    Waste,
+)
+from ...utils import load_model_data_from_yaml
+from ...utils.data_loading.yaml_model_loader import LoadModelDataMetadata
 
-IMPORT_METADATA = OrderedDict(
+
+class LoadGreenEndoscopyCommandOptions(TypedDict):
+    verbose: bool
+
+
+IMPORT_METADATA: OrderedDict[str, LoadModelDataMetadata] = OrderedDict(
     {
         EmissionFactor.__name__: {
             "dir": EMISSION_FACTOR_DATA_DIR,
@@ -128,15 +140,19 @@ class Command(BaseCommand):
     help = """Load all .yaml files in the data/intervention directory
     into the Intervention and InterventionType model"""
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
             "--verbose",
             action="store_true",
             help="Display verbose output",
         )
 
-    def handle(self, *args, **options):
-        verbose = options["verbose"]
+    def handle(
+        self,
+        *args: str,
+        **options: Unpack[LoadGreenEndoscopyCommandOptions],
+    ) -> None:
+        verbose = VerboseManagementCommandOptionsPayload.model_validate(options).verbose
         for model_name in IMPORT_METADATA.keys():
-            _metadata = IMPORT_METADATA[model_name]
-            load_model_data_from_yaml(self, model_name, _metadata, verbose)
+            metadata = IMPORT_METADATA[model_name]
+            load_model_data_from_yaml(self, model_name, metadata, verbose)

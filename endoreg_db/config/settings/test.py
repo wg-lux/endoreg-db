@@ -1,11 +1,15 @@
 import os
 from pathlib import Path
-from typing import Any
+from types import NoneType
 
 from endoreg_db.config.env import env_bool, env_str
 
 from .base import *  # noqa: F401,F403
 from .base import BASE_DIR, INSTALLED_APPS as BASE_INSTALLED_APPS
+
+type Null = NoneType
+type DatabaseOptions = dict[str, int]
+type DatabaseConfigValue = str | DatabaseOptions
 
 TEST_DB_DIR = BASE_DIR / "data" / "tests" / "db"
 TEST_DB_DIR.mkdir(parents=True, exist_ok=True)
@@ -63,7 +67,7 @@ DB_HOST = env_str("TEST_DB_HOST", "")
 DB_PORT = env_str("TEST_DB_PORT", "")
 
 # Build DB config without redundant conditionals and avoid passing empty creds
-_db_config: dict[str, Any] = {
+_db_config: dict[str, DatabaseConfigValue] = {
     "ENGINE": DB_ENGINE,
     "NAME": DB_NAME,
 }
@@ -83,7 +87,7 @@ if not DB_ENGINE.endswith("sqlite3"):
 DATABASES = {"default": _db_config}
 
 # Configure cache with explicit TIMEOUT for tests
-CACHES = {
+globals()["CACHES"] = {
     "default": {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
         "LOCATION": "endoreg-test-cache",
@@ -92,7 +96,7 @@ CACHES = {
 }
 
 # Tests exercise watcher-local import behavior without requiring a live broker.
-WATCHER_CELERY_INLINE_FALLBACK_ENABLED = env_bool(
+globals()["WATCHER_CELERY_INLINE_FALLBACK_ENABLED"] = env_bool(
     "WATCHER_CELERY_INLINE_FALLBACK_ENABLED",
     True,
 )
@@ -104,15 +108,15 @@ PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 if env_str("TEST_DISABLE_MIGRATIONS", "false").lower() == "true":
 
     class DisableMigrations:
-        def __contains__(self, item):
+        def __contains__(self, item: str) -> bool:
             return True
 
-        def __getitem__(self, item):
+        def __getitem__(self, item: str) -> Null:
             return None
 
     # MIGRATION_MODULES = DisableMigrations()
 
-INSTALLED_APPS = BASE_INSTALLED_APPS + [
+globals()["INSTALLED_APPS"] = BASE_INSTALLED_APPS + [
     "django.contrib.admin",
     "django_extensions",
 ]

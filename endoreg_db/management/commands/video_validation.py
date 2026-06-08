@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 class Command(BaseCommand):
     help = "Data extraction and validation of video files in the database and updating their states accordingly."
 
-    def handle(self, *args, **options):
+    def handle(self, *args: object, **options: object) -> None:
         """
         Validates video files stored in the database and updates their states based on validation results.
 

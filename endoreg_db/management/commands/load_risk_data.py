@@ -1,16 +1,29 @@
-from django.core.management.base import BaseCommand
+from __future__ import annotations
+
+from typing import TypedDict, Unpack
+
+from django.core.management.base import BaseCommand, CommandParser
+from lx_dtypes.models.contracts.management_command import (
+    VerboseManagementCommandOptionsPayload,
+)
 
 from endoreg_db.models import Risk, RiskType
 
 from ...data import RISK_DATA_DIR, RISK_TYPE_DATA_DIR
 from ...utils import load_model_data_from_yaml
+from ...utils.data_loading.yaml_model_loader import LoadModelDataMetadata
 
-IMPORT_MODELS = [  # string as model key, serves as key in IMPORT_METADATA
+
+class LoadRiskCommandOptions(TypedDict):
+    verbose: bool
+
+
+IMPORT_MODELS: list[str] = [  # string as model key, serves as key in IMPORT_METADATA
     RiskType.__name__,
     Risk.__name__,
 ]
 
-IMPORT_METADATA = {
+IMPORT_METADATA: dict[str, LoadModelDataMetadata] = {
     RiskType.__name__: {
         "dir": RISK_TYPE_DATA_DIR,  # e.g. "interventions"
         "model": RiskType,
@@ -30,7 +43,7 @@ class Command(BaseCommand):
     help = """Load all .yaml files in the data/intervention directory
     into the Intervention and InterventionType model"""
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: CommandParser) -> None:
         """
         Adds the '--verbose' flag to the argument parser for detailed output.
 
@@ -43,7 +56,11 @@ class Command(BaseCommand):
             help="Display verbose output",
         )
 
-    def handle(self, *args, **options):
+    def handle(
+        self,
+        *args: str,
+        **options: Unpack[LoadRiskCommandOptions],
+    ) -> None:
         """
         Execute the command to load YAML data into configured models.
 
@@ -51,7 +68,7 @@ class Command(BaseCommand):
         For each model, it obtains the corresponding metadata from IMPORT_METADATA and calls the utility
         function load_model_data_from_yaml to load data from the associated YAML files.
         """
-        verbose = options["verbose"]
+        verbose = VerboseManagementCommandOptionsPayload.model_validate(options).verbose
         for model_name in IMPORT_MODELS:
-            _metadata = IMPORT_METADATA[model_name]
-            load_model_data_from_yaml(self, model_name, _metadata, verbose)
+            metadata = IMPORT_METADATA[model_name]
+            load_model_data_from_yaml(self, model_name, metadata, verbose)

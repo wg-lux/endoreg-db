@@ -6,10 +6,18 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from types import NoneType
+from typing import Protocol, Sequence, TypeAlias, TypedDict, Unpack, cast
 
 from django.core.files import File
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand, CommandError, CommandParser
+from django.db.models.fields.files import FieldFile
 from django.db.models import Q
+from lx_dtypes.models.contracts.migrate_data_dir import (
+    MigrateDataDirCommandOptionsPayload,
+    MigrateDataDirManifestEntryPayload,
+    MigrateDataDirManifestPayload,
+)
 
 from endoreg_db.models import RawPdfFile, UploadJob, VideoFile
 from endoreg_db.models.media.video.storage_mode import VideoStorageMode
@@ -52,6 +60,58 @@ from endoreg_db.utils.storage.profile import (
 from endoreg_db.utils.storage import save_local_file
 
 logger = logging.getLogger(__name__)
+
+
+class MigrateDataDirCommandOptions(TypedDict):
+    source_root: str
+    dry_run: bool
+    manifest_path: str
+
+
+def _migrate_data_dir_command_options_payload(
+    options: dict[str, object],
+) -> MigrateDataDirCommandOptionsPayload:
+    return MigrateDataDirCommandOptionsPayload.model_validate(
+        {
+            "source_root": options.get("source_root"),
+            "dry_run": options.get("dry_run"),
+            "manifest_path": options.get("manifest_path", ""),
+        }
+    )
+
+
+class PersistedMigrationModel(Protocol):
+    id: int
+    pk: int
+
+    def save(self, *, update_fields: Sequence[str]) -> None: ...
+
+
+class _MigrationStorage(Protocol):
+    def exists(self, name: str) -> bool: ...
+
+
+class _MigrationEncryptedStorage(_MigrationStorage, Protocol):
+    def is_encrypted(self, name: str) -> bool: ...
+
+
+class _MigrationFileField(Protocol):
+    upload_to: str
+
+    def generate_filename(
+        self, instance: PersistedMigrationModel, filename: str
+    ) -> str: ...
+
+
+class _MigrationFieldFile(Protocol):
+    name: str
+    storage: _MigrationStorage
+    field: _MigrationFileField
+
+
+NoMigrationValue: TypeAlias = NoneType
+MigrationFieldValue: TypeAlias = str | VideoStorageMode
+MigrationExtensions: TypeAlias = tuple[str, ...] | NoMigrationValue
 
 
 def _ensure_within_runtime_root(path: Path) -> Path:
@@ -104,7 +164,7 @@ class MigrationRule:
     retention_policy: str
     source_file_persisted: bool
     cleanup_status: str
-    allowed_extensions: tuple[str, ...] | None = None
+    allowed_extensions: MigrationExtensions = None
 
 
 VIDEO_FILE_EXTENSIONS = (".mp4", ".webm", ".avi", ".mkv", ".mov", ".m4v")
@@ -486,7 +546,7 @@ class Command(BaseCommand):
         "LX_ANNOTATE_ENCRYPTED_DATA_DIR and emit a JSON manifest."
     )
 
-    def add_arguments(self, parser) -> None:
+    def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
             "source_root",
             type=str,
@@ -501,22 +561,29 @@ class Command(BaseCommand):
             "--manifest-path",
             type=str,
             default="",
-            help="Optional manifest path inside the protected manifest tier.",
+            help="Manifest path inside the protected manifest tier.",
         )
 
-    def handle(self, *args, **options) -> None:
-        source_root = Path(options["source_root"]).expanduser().resolve()
+    def handle(
+        self,
+        *args: str,
+        **options: Unpack[MigrateDataDirCommandOptions],
+    ) -> None:
+        options_payload = _migrate_data_dir_command_options_payload(
+            cast(dict[str, object], options)
+        )
+        source_root = Path(options_payload.source_root).expanduser().resolve()
         if not source_root.exists() or not source_root.is_dir():
             raise CommandError(f"Legacy source root does not exist: {source_root}")
 
-        dry_run = bool(options["dry_run"])
+        dry_run = options_payload.dry_run
         manifest_path = self._resolve_manifest_path(
-            raw_path=str(options.get("manifest_path") or "").strip(),
+            raw_path=options_payload.manifest_path.strip(),
             source_root=source_root,
         )
 
-        migrated_entries: list[dict[str, object]] = []
-        skipped_entries: list[dict[str, object]] = []
+        migrated_entries: list[MigrateDataDirManifestEntryPayload] = []
+        skipped_entries: list[MigrateDataDirManifestEntryPayload] = []
 
         for rule in MIGRATION_RULES:
             legacy_dir = source_root / rule.legacy_relative
@@ -528,20 +595,20 @@ class Command(BaseCommand):
                 destination_path = _ensure_within_runtime_root(
                     rule.target_root / source_path.relative_to(legacy_dir)
                 )
-                entry = {
-                    "source_path": str(source_path),
-                    "destination_path": str(destination_path),
-                    "storage_class": rule.storage_class,
-                    "storage_tier": rule.storage_tier,
-                    "retention_policy": rule.retention_policy,
-                    "create_upload_job": rule.create_upload_job,
-                }
+                entry = MigrateDataDirManifestEntryPayload(
+                    source_path=str(source_path),
+                    destination_path=str(destination_path),
+                    storage_class=rule.storage_class,
+                    storage_tier=rule.storage_tier,
+                    retention_policy=rule.retention_policy,
+                    create_upload_job=rule.create_upload_job,
+                )
                 # FIX 1: Ignore lock files
                 if source_path.suffix.lower() == ".lock":
                     logger.warning(f"Skipping lock file: {source_path}")
                     continue
 
-                # FIX 2: Ignore non-media junk (Optional, but highly recommended)
+                # FIX 2: Ignore non-media junk.
                 allowed_extensions = rule.allowed_extensions
                 if (
                     allowed_extensions is not None
@@ -552,7 +619,9 @@ class Command(BaseCommand):
 
                 if self._raw_streamable_disabled(rule):
                     skipped_entries.append(
-                        {**entry, "reason": "raw_streamable_disabled_by_policy"}
+                        entry.model_copy(
+                            update={"reason": "raw_streamable_disabled_by_policy"}
+                        )
                     )
                     logger.warning(
                         "Skipping raw streamable migration because raw video policy "
@@ -565,11 +634,12 @@ class Command(BaseCommand):
 
                 if dry_run:
                     migrated_entries.append(
-                        {
-                            **entry,
-                            "dry_run": True,
-                            "destination_exists": destination_path.exists(),
-                        }
+                        entry.model_copy(
+                            update={
+                                "dry_run": True,
+                                "destination_exists": destination_path.exists(),
+                            }
+                        )
                     )
                     continue
 
@@ -588,25 +658,27 @@ class Command(BaseCommand):
                             destination_hash,
                         )
                         skipped_entries.append(
-                            {
-                                **entry,
-                                "reason": "destination_exists_hash_mismatch",
-                                "source_sha256": source_hash,
-                                "destination_sha256": destination_hash,
-                            }
+                            entry.model_copy(
+                                update={
+                                    "reason": "destination_exists_hash_mismatch",
+                                    "source_sha256": source_hash,
+                                    "destination_sha256": destination_hash,
+                                }
+                            )
                         )
                         continue
 
                     synced = self.sync_db(destination_path, source_path, rule)
                     skipped_entries.append(
-                        {
-                            **entry,
-                            "reason": (
-                                "destination_exists_and_synced"
-                                if synced
-                                else "destination_exists_unchanged"
-                            ),
-                        }
+                        entry.model_copy(
+                            update={
+                                "reason": (
+                                    "destination_exists_and_synced"
+                                    if synced
+                                    else "destination_exists_unchanged"
+                                )
+                            }
+                        )
                     )
                     continue
 
@@ -622,7 +694,7 @@ class Command(BaseCommand):
                         source_path=source_path,
                         rule=rule,
                     )
-                    job_id = str(job.id)
+                    job_id = str(cast("PersistedMigrationModel", job).id)
                 if self.sync_db(destination_path, source_path, rule):
                     logger.info(
                         f"synced db path of {destination_path} to {source_path}"
@@ -631,16 +703,16 @@ class Command(BaseCommand):
                     logger.info(
                         f"No existing DB records found for {source_path.name} to sync."
                     )
-                migrated_entries.append({**entry, "upload_job_id": job_id})
+                migrated_entries.append(entry.model_copy(update={"upload_job_id": job_id}))
 
-        manifest = {
-            "command": "migrate_data_dir",
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "source_root": str(source_root),
-            "dry_run": dry_run,
-            "migrated_entries": migrated_entries,
-            "skipped_entries": skipped_entries,
-        }
+        manifest = MigrateDataDirManifestPayload(
+            command="migrate_data_dir",
+            created_at=datetime.now(timezone.utc).isoformat(),
+            source_root=str(source_root),
+            dry_run=dry_run,
+            migrated_entries=migrated_entries,
+            skipped_entries=skipped_entries,
+        ).to_manifest_data()
         ensure_directory(manifest_path.parent)
         manifest_payload = json.dumps(manifest, indent=2, sort_keys=True).encode(
             "utf-8"
@@ -665,7 +737,7 @@ class Command(BaseCommand):
         )
 
         # Calculate content hash and derive the canonical hash stem from the filename.
-        # Processed media is typically named after the raw object hash, not the
+        # Processed media is typically named after the raw media hash, not the
         # processed bytes hash, so we use both signals and fail closed on ambiguity.
         content_hash = sha256_file(destination_path)
         stem_hash = self._canonical_hash_stem(destination_path)
@@ -689,14 +761,14 @@ class Command(BaseCommand):
                     processed_video_hash and processed_video_hash != content_hash
                 )
                 file_changed = self._store_file_field_if_needed(
-                    instance=video,
+                    instance=cast(PersistedMigrationModel, video),
                     field_name="processed_file",
                     relative_name=rel_path,
                     source_path=source_path,
                     payload_kind=PayloadKind.VIDEO_PROCESSED,
                     force_upload_to=processed_hash_mismatch,
                 )
-                video_update_fields: dict[str, object] = {}
+                video_update_fields: dict[str, MigrationFieldValue] = {}
                 if not processed_video_hash:
                     video_update_fields["processed_video_hash"] = content_hash
                 elif processed_hash_mismatch:
@@ -710,19 +782,18 @@ class Command(BaseCommand):
                         processed_video_hash,
                         content_hash,
                     )
-                extra_changed = self._changed_fields(video, video_update_fields)
+                extra_changed = self._changed_fields(
+                    cast(PersistedMigrationModel, video), video_update_fields
+                )
                 for field_name, desired_value in extra_changed.items():
                     setattr(video, field_name, desired_value)
                 if file_changed or extra_changed:
-                    video.save(
-                        update_fields=list(
-                            dict.fromkeys(
-                                [
-                                    *(["processed_file"] if file_changed else []),
-                                    *extra_changed.keys(),
-                                ]
-                            )
-                        )
+                    update_fields: list[str] = [
+                        *(["processed_file"] if file_changed else []),
+                        *extra_changed.keys(),
+                    ]
+                    cast("PersistedMigrationModel", video).save(
+                        update_fields=update_fields
                     )
                     updated_count = 1
         elif rule.target_root == SENSITIVE_VIDEO_DIR:
@@ -735,14 +806,16 @@ class Command(BaseCommand):
             )
             if video is not None:
                 changed = self._store_file_field_if_needed(
-                    instance=video,
+                    instance=cast(PersistedMigrationModel, video),
                     field_name="raw_file",
                     relative_name=rel_path,
                     source_path=source_path,
                     payload_kind=PayloadKind.VIDEO_RAW,
                 )
                 if changed:
-                    video.save(update_fields=["raw_file"])
+                    cast("PersistedMigrationModel", video).save(
+                        update_fields=["raw_file"]
+                    )
                     updated_count = 1
         elif rule.target_root == _streamable_raw_video_root():
             if self._raw_streamable_disabled(rule):
@@ -794,18 +867,16 @@ class Command(BaseCommand):
             )
             if report is not None:
                 processed_changed = self._store_file_field_if_needed(
-                    instance=report,
+                    instance=cast(PersistedMigrationModel, report),
                     field_name="processed_file",
                     relative_name=rel_path,
                     source_path=source_path,
                     payload_kind=PayloadKind.REPORT_PDF,
                 )
                 if processed_changed:
-                    update_fields = []
-                    if processed_changed:
-                        update_fields.append("processed_file")
-                    report.save(
-                        update_fields=list(dict.fromkeys(update_fields)),
+                    update_fields: list[str] = ["processed_file"]
+                    cast("PersistedMigrationModel", report).save(
+                        update_fields=update_fields,
                     )
                     updated_count = 1
         elif rule.target_root == SENSITIVE_REPORT_DIR:
@@ -817,14 +888,14 @@ class Command(BaseCommand):
             )
             if report is not None:
                 changed = self._store_file_field_if_needed(
-                    instance=report,
+                    instance=cast(PersistedMigrationModel, report),
                     field_name="file",
                     relative_name=rel_path,
                     source_path=source_path,
                     payload_kind=PayloadKind.REPORT_PDF,
                 )
                 if changed:
-                    report.save(update_fields=["file"])
+                    cast("PersistedMigrationModel", report).save(update_fields=["file"])
                     updated_count = 1
 
         if updated_count > 0:
@@ -843,21 +914,28 @@ class Command(BaseCommand):
         )
 
     @staticmethod
-    def _current_field_value(instance: object, field_name: str) -> object:
+    def _current_field_value(
+        instance: PersistedMigrationModel, field_name: str
+    ) -> MigrationFieldValue:
         value = getattr(instance, field_name)
-        return getattr(value, "name", value)
+        if hasattr(value, "name"):
+            return cast(MigrationFieldValue, cast(_MigrationFieldFile, value).name)
+        return cast(MigrationFieldValue, value)
 
     @staticmethod
-    def _field_file_is_valid_encrypted(field_file: object, relative_name: str) -> bool:
-        storage = getattr(field_file, "storage", None)
-        if storage is None or not getattr(field_file, "name", None):
+    def _field_file_is_valid_encrypted(
+        field_file: _MigrationFieldFile, relative_name: str
+    ) -> bool:
+        storage = field_file.storage
+        if not field_file.name:
             return False
         try:
             if not storage.exists(relative_name):
                 return False
-            is_encrypted = getattr(storage, "is_encrypted", None)
-            if callable(is_encrypted):
-                return bool(is_encrypted(relative_name))
+            if hasattr(storage, "is_encrypted"):
+                return cast(_MigrationEncryptedStorage, storage).is_encrypted(
+                    relative_name
+                )
             return True
         except Exception as exc:
             logger.warning(
@@ -871,21 +949,21 @@ class Command(BaseCommand):
     def _store_file_field_if_needed(
         cls,
         *,
-        instance: object,
+        instance: PersistedMigrationModel,
         field_name: str,
         relative_name: str,
         source_path: Path,
         payload_kind: PayloadKind,
         force_upload_to: bool = False,
     ) -> bool:
-        field_file = getattr(instance, field_name)
+        field_file = cast(_MigrationFieldFile, getattr(instance, field_name))
         save_name, storage_name = cls._field_storage_names(
             instance=instance,
             field_file=field_file,
             relative_name=relative_name,
             force_upload_to=force_upload_to,
         )
-        current_name = getattr(field_file, "name", None)
+        current_name = field_file.name
         if requires_app_encrypted_storage(payload_kind):
             if current_name == storage_name and cls._field_file_is_valid_encrypted(
                 field_file,
@@ -893,7 +971,7 @@ class Command(BaseCommand):
             ):
                 return False
             save_local_file(
-                field_file,
+                cast(FieldFile, field_file),
                 source_path,
                 name=save_name,
                 save=False,
@@ -909,15 +987,14 @@ class Command(BaseCommand):
     @staticmethod
     def _field_storage_names(
         *,
-        instance: object,
-        field_file: object,
+        instance: PersistedMigrationModel,
+        field_file: _MigrationFieldFile,
         relative_name: str,
         force_upload_to: bool = False,
     ) -> tuple[str, str]:
         requested_name = Path(relative_name).as_posix()
-        field = getattr(field_file, "field", None)
-        upload_to = getattr(field, "upload_to", "") if field is not None else ""
-        upload_prefix = Path(str(upload_to)).as_posix().strip("/")
+        field = field_file.field
+        upload_prefix = Path(field.upload_to).as_posix().strip("/")
 
         save_name = requested_name
         if upload_prefix:
@@ -927,7 +1004,7 @@ class Command(BaseCommand):
             elif requested_name.startswith(prefix):
                 save_name = requested_name[len(prefix) :]
 
-        if force_upload_to and field is not None:
+        if force_upload_to:
             try:
                 storage_name = field.generate_filename(instance, save_name)
             except Exception as exc:
@@ -941,7 +1018,7 @@ class Command(BaseCommand):
             normalized_storage_name = Path(storage_name).as_posix()
             return normalized_storage_name, normalized_storage_name
 
-        if field is None or "/" in save_name or "\\" in save_name:
+        if "/" in save_name or "\\" in save_name:
             return save_name, save_name
 
         try:
@@ -959,10 +1036,10 @@ class Command(BaseCommand):
     @classmethod
     def _changed_fields(
         cls,
-        instance: object,
-        fields: dict[str, object],
-    ) -> dict[str, object]:
-        changed: dict[str, object] = {}
+        instance: PersistedMigrationModel,
+        fields: dict[str, MigrationFieldValue],
+    ) -> dict[str, MigrationFieldValue]:
+        changed: dict[str, MigrationFieldValue] = {}
         for field_name, desired_value in fields.items():
             current_value = cls._current_field_value(instance, field_name)
             if current_value != desired_value:
@@ -970,21 +1047,23 @@ class Command(BaseCommand):
         return changed
 
     @classmethod
-    def _update_video_if_changed(cls, video: VideoFile, **fields: object) -> int:
-        changed = cls._changed_fields(video, fields)
+    def _update_video_if_changed(cls, video: VideoFile, **fields: MigrationFieldValue) -> int:
+        changed = cls._changed_fields(cast(PersistedMigrationModel, video), fields)
         if not changed:
             return 0
         return VideoFile.objects.filter(pk=video.pk).update(**changed)
 
     @classmethod
-    def _update_report_if_changed(cls, report: RawPdfFile, **fields: object) -> int:
-        changed = cls._changed_fields(report, fields)
+    def _update_report_if_changed(
+        cls, report: RawPdfFile, **fields: MigrationFieldValue
+    ) -> int:
+        changed = cls._changed_fields(cast(PersistedMigrationModel, report), fields)
         if not changed:
             return 0
         return RawPdfFile.objects.filter(pk=report.pk).update(**changed)
 
     @staticmethod
-    def _canonical_hash_stem(path: Path) -> str | None:
+    def _canonical_hash_stem(path: Path) -> str | NoMigrationValue:
         stem = path.stem.strip()
         return stem or None
 
@@ -992,11 +1071,11 @@ class Command(BaseCommand):
         self,
         *,
         content_hash: str,
-        stem_hash: str | None,
+        stem_hash: str | NoMigrationValue,
         include_processed_hash: bool,
         source_path: Path,
         destination_path: Path,
-    ) -> VideoFile | None:
+    ) -> VideoFile | NoMigrationValue:
         query = Q(video_hash=content_hash)
         if include_processed_hash:
             query |= Q(processed_video_hash=content_hash)
@@ -1027,10 +1106,10 @@ class Command(BaseCommand):
         self,
         *,
         content_hash: str,
-        stem_hash: str | None,
+        stem_hash: str | NoMigrationValue,
         source_path: Path,
         destination_path: Path,
-    ) -> RawPdfFile | None:
+    ) -> RawPdfFile | NoMigrationValue:
         query = Q(pdf_hash=content_hash)
         if stem_hash:
             query |= Q(pdf_hash=stem_hash)

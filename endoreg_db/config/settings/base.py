@@ -51,6 +51,10 @@ from endoreg_db.config.env import (
 
 django_stubs_ext.monkeypatch()
 
+type DjangoTemplateOptions = dict[str, list[str]]
+type DjangoTemplateSettingValue = str | bool | list[str] | DjangoTemplateOptions
+type DjangoTemplateConfig = dict[str, DjangoTemplateSettingValue]
+
 
 BASE_DIR = Path(__file__).parent.parent.parent.resolve()
 
@@ -264,7 +268,7 @@ CACHES = build_default_cache_settings()
 
 REST_FRAMEWORK = build_base_rest_framework_settings()
 
-TEMPLATES = [
+TEMPLATES: list[DjangoTemplateConfig] = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
         "DIRS": [],

@@ -1,6 +1,13 @@
-from django.urls import path
+from __future__ import annotations
+
+from collections.abc import Iterable
+from typing import TypedDict, cast
+
 from django.contrib import admin
-from django.http import JsonResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
+from django.urls import path
+from django.urls.resolvers import URLPattern
+
 from endoreg_db.models import (
     ApplicationSettings,
     Patient,
@@ -19,17 +26,31 @@ from endoreg_db.models import (
 from endoreg_db.forms.patient_form import PatientForm
 
 
+class FindingClassificationChoiceAdminJson(TypedDict):
+    id: int
+    name: str
+
+
+type FindingClassificationChoiceDbRow = tuple[int, str]
+
+
 @admin.register(Patient)
-class PatientAdmin(admin.ModelAdmin):
+class PatientAdmin(admin.ModelAdmin[Patient]):
     form = PatientForm
-    list_display = ("id", "first_name", "last_name", "dob", "center")
+    list_display = (
+        "id",
+        "first_name",
+        "last_name",
+        "dob",
+        "center",
+    )
     search_fields = ("first_name", "last_name", "email", "phone")
     list_filter = ("dob", "center")
     ordering = ("last_name",)
 
 
 @admin.register(Examination)
-class ExaminationAdmin(admin.ModelAdmin):
+class ExaminationAdmin(admin.ModelAdmin[Examination]):
     list_display = ("id", "name")
     search_fields = ("name",)
     list_filter = ("name",)
@@ -37,7 +58,7 @@ class ExaminationAdmin(admin.ModelAdmin):
 
 
 @admin.register(ApplicationSettings)
-class ApplicationSettingsAdmin(admin.ModelAdmin):
+class ApplicationSettingsAdmin(admin.ModelAdmin[ApplicationSettings]):
     list_display = (
         "id",
         "center",
@@ -46,22 +67,32 @@ class ApplicationSettingsAdmin(admin.ModelAdmin):
         "report_template_name",
         "updated_at",
     )
-    fields = ("center", "processor", "annotator_name", "report_template_name")
+    fields = (
+        "center",
+        "processor",
+        "annotator_name",
+        "report_template_name",
+    )
 
-    def has_add_permission(self, request):
+    def has_add_permission(self, request: HttpRequest) -> bool:
         if ApplicationSettings.objects.exists():
             return False
         return super().has_add_permission(request)
 
 
-class PatientFindingInterventionAdmin(admin.ModelAdmin):
+@admin.register(PatientFindingIntervention)
+class PatientFindingInterventionAdmin(admin.ModelAdmin[PatientFindingIntervention]):
     change_list_template = "admin/patient_finding_intervention.html"
 
-    def changelist_view(self, request, extra_context=None):
+    def changelist_view(
+        self,
+        request: HttpRequest,
+        extra_context: dict[str, str] | None = None,
+    ) -> HttpResponse:
         """
         Overrides the admin changelist view to provide additional context data for the template, including all patients, examinations, findings, classifications, and interventions relevant to patient finding interventions.
         """
-        extra_context = {
+        admin_context = {
             "patients": Patient.objects.all(),
             "examinations": Examination.objects.all(),
             "findings": Finding.objects.all(),
@@ -75,9 +106,12 @@ class PatientFindingInterventionAdmin(admin.ModelAdmin):
             "morphology_choices": FindingClassificationChoice.objects.none(),
             "finding_interventions": FindingIntervention.objects.all(),
         }
-        return super().changelist_view(request, extra_context=extra_context)
+        return super().changelist_view(
+            request,
+            extra_context=cast(dict[str, str], admin_context),
+        )
 
-    def get_location_choices_json(self, request):
+    def get_location_choices_json(self, request: HttpRequest) -> JsonResponse:
         """
         Handles AJAX requests to retrieve location classification choices as JSON.
 
@@ -88,19 +122,27 @@ class PatientFindingInterventionAdmin(admin.ModelAdmin):
             return JsonResponse({"error": "Location ID is required"}, status=400)
 
         try:
-            choices = list(
+            choice_rows = cast(
+                Iterable[FindingClassificationChoiceDbRow],
                 FindingClassificationChoice.objects.filter(
                     classifications__id=location_id,
                     classifications__classification_types__name__iexact="location",
-                ).values("id", "name")
+                ).values_list("id", "name"),
             )
+            choices: list[FindingClassificationChoiceAdminJson] = [
+                {
+                    "id": choice_id,
+                    "name": choice_name,
+                }
+                for choice_id, choice_name in choice_rows
+            ]
             if not choices:
                 return JsonResponse([], safe=False)
             return JsonResponse(choices, safe=False)
-        except Exception as e:
-            return JsonResponse({"error": str(e)}, status=500)
+        except Exception as exc:
+            return JsonResponse({"error": str(exc)}, status=500)
 
-    def get_urls(self):
+    def get_urls(self) -> list[URLPattern]:
         """Register JSON endpoint inside Django Admin"""
         urls = super().get_urls()
         custom_urls = [
@@ -111,6 +153,3 @@ class PatientFindingInterventionAdmin(admin.ModelAdmin):
             ),
         ]
         return custom_urls + urls
-
-
-admin.site.register(PatientFindingIntervention, PatientFindingInterventionAdmin)

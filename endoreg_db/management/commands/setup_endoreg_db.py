@@ -4,15 +4,28 @@ This command ensures all necessary data and configurations are initialized.
 """
 
 from pathlib import Path
+from typing import Protocol, cast
 
 from django.core.management import call_command
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandParser
+from django.db.models.fields.files import FieldFile
+from lx_dtypes.models.contracts.management_command import (
+    SetupEndoregDbCommandOptionsPayload,
+)
 
 from endoreg_db.models import ModelMeta
 from endoreg_db.utils.filesystem.file_operations import (
     atomic_copy_file,
     ensure_directory,
 )
+
+
+class _SetupModelMeta(Protocol):
+    name: str
+    version: str
+    weights: FieldFile
+
+    def save(self, *, update_fields: list[str]) -> None: ...
 
 
 class Command(BaseCommand):
@@ -26,7 +39,7 @@ class Command(BaseCommand):
     5. Initializes model metadata
     """
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
             "--skip-ai-setup",
             action="store_true",
@@ -43,10 +56,11 @@ class Command(BaseCommand):
             help="Only use YAML-defined models, don't auto-generate missing metadata",
         )
 
-    def handle(self, *args, **options):
-        skip_ai = options.get("skip_ai_setup", False)
-        force_recreate = options.get("force_recreate", False)
-        yaml_only = options.get("yaml_only", False)
+    def handle(self, *args: object, **options: object) -> None:
+        options_payload = SetupEndoregDbCommandOptionsPayload.model_validate(options)
+        skip_ai = options_payload.skip_ai_setup
+        force_recreate = options_payload.force_recreate
+        yaml_only = options_payload.yaml_only
 
         self.stdout.write(
             self.style.SUCCESS("🚀 Starting EndoReg DB embedded app setup...")
@@ -300,7 +314,7 @@ class Command(BaseCommand):
 
         self.stdout.write("Setup verification passed")
 
-    def _validate_and_fix_ai_model_metadata(self, yaml_only=False):
+    def _validate_and_fix_ai_model_metadata(self, yaml_only: bool = False) -> None:
         """
         Validate that all AI models have proper active metadata and fix if necessary.
         This addresses the "No model metadata found for this model" error.
@@ -395,10 +409,11 @@ class Command(BaseCommand):
                 # Model has metadata but no active meta set
                 first_meta = model.metadata_versions.first()
                 if first_meta:
+                    typed_first_meta = cast(_SetupModelMeta, first_meta)
                     self.stdout.write(f"  Setting active metadata for {model.name}...")
 
                     # Check if the metadata has weights - if not, try to assign them
-                    if not first_meta.weights:
+                    if not typed_first_meta.weights:
                         self.stdout.write(
                             "    Metadata exists but no weights assigned, attempting to add weights..."
                         )
@@ -425,8 +440,8 @@ class Command(BaseCommand):
                                 )
 
                             # Assign the relative path to the FileField
-                            first_meta.weights.name = weights_path
-                            first_meta.save(update_fields=["weights"])
+                            typed_first_meta.weights.name = weights_path
+                            typed_first_meta.save(update_fields=["weights"])
                             self.stdout.write(
                                 f"      Added weights to existing metadata: {weights_path}"
                             )
@@ -435,7 +450,7 @@ class Command(BaseCommand):
                     model.save()
                     fixed_count += 1
                     self.stdout.write(
-                        f"  ✅ Set active metadata: {first_meta.name} v{first_meta.version}"
+                        f"  ✅ Set active metadata: {typed_first_meta.name} v{typed_first_meta.version}"
                     )
                 else:
                     self.stdout.write(

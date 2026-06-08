@@ -3,12 +3,15 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+from types import NoneType
+from typing import TypeAlias, TypedDict, Unpack
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand, CommandError, CommandParser
+from endoreg_db.models import Center
 from endoreg_db.services.hub.ingest import (
+    process_preanonymized_watcher_file,
     resolve_declared_upload_center,
     resolve_default_center,
-    process_preanonymized_watcher_file,
 )
 
 from endoreg_db.services.sap_ish_import import convert_sap_ish_zip_to_preanonymized_drop
@@ -23,20 +26,39 @@ from endoreg_db.utils.filesystem.paths import (
     ensure_within_data_root,
 )
 
+JsonNull: TypeAlias = NoneType
 
-def _resolve_declared_upload_center(*, center_key: str | None, center_name: str | None):
+
+class ImportSapIshZipOptions(TypedDict):
+    zip_path: str
+    output_dir: str
+    source_system: str
+    center_name: str
+    center_key: str
+    process: bool
+    manifest_path: str
+
+
+def _resolve_declared_upload_center(
+    *,
+    center_key: str | JsonNull,
+    center_name: str | JsonNull,
+) -> tuple[Center | JsonNull, str | JsonNull]:
     return resolve_declared_upload_center(
         center_key=center_key,
         center_name=center_name,
     )
 
 
-def _resolve_default_center():
+def _resolve_default_center() -> Center | JsonNull:
     return resolve_default_center()
 
 
 def _process_preanonymized_watcher_file(
-    *, file_path, center, source_system: str
+    *,
+    file_path: Path,
+    center: Center | JsonNull,
+    source_system: str,
 ) -> None:
     process_preanonymized_watcher_file(
         file_path=file_path,
@@ -48,11 +70,11 @@ def _process_preanonymized_watcher_file(
 class Command(BaseCommand):
     help = (
         "Convert a SAP IS-H zip export of tab-separated .txt tables into "
-        "preanonymized watcher files (.txt + .json). Optionally process them "
+        "preanonymized watcher files (.txt + .json). Can process them "
         "immediately through the existing watcher ingest path."
     )
 
-    def add_arguments(self, parser) -> None:
+    def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
             "zip_path",
             type=str,
@@ -77,13 +99,13 @@ class Command(BaseCommand):
             "--center_name",
             type=str,
             default="",
-            help="Optional center name to write into sidecars and use for processing.",
+            help="Center name to write into sidecars and use for processing.",
         )
         parser.add_argument(
             "--center_key",
             type=str,
             default="",
-            help="Optional center key to write into sidecars and use for processing.",
+            help="Center key to write into sidecars and use for processing.",
         )
         parser.add_argument(
             "--process",
@@ -98,19 +120,23 @@ class Command(BaseCommand):
             "--manifest_path",
             type=str,
             default="",
-            help="Optional manifest path under the protected migration manifest tier.",
+            help="Manifest path under the protected migration manifest tier.",
         )
 
-    def handle(self, *args, **options) -> None:
+    def handle(
+        self,
+        *args: str,
+        **options: Unpack[ImportSapIshZipOptions],
+    ) -> None:
         zip_path = Path(options["zip_path"]).expanduser().resolve()
         output_dir = ensure_within_data_root(
             Path(options["output_dir"]).expanduser().resolve()
         )
-        source_system = str(options["source_system"]).strip() or "sap_ish"
-        center_name = str(options.get("center_name") or "").strip() or None
-        center_key = str(options.get("center_key") or "").strip() or None
-        should_process = bool(options["process"])
-        manifest_path_raw = str(options.get("manifest_path") or "").strip()
+        source_system = options["source_system"].strip() or "sap_ish"
+        center_name: str | JsonNull = options["center_name"].strip() or None
+        center_key: str | JsonNull = options["center_key"].strip() or None
+        should_process = options["process"]
+        manifest_path_raw = options["manifest_path"].strip()
 
         if not zip_path.exists():
             raise CommandError(f"Zip archive does not exist: {zip_path}")
@@ -121,7 +147,7 @@ class Command(BaseCommand):
                 )
             )
 
-        center = None
+        center: Center | JsonNull = None
         if center_name or center_key:
             center, center_resolution_error = _resolve_declared_upload_center(
                 center_key=center_key,

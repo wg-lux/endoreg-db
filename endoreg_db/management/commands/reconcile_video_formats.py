@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand, CommandError, CommandParser
+from lx_dtypes.models.contracts.management_command import (
+    ReconcileVideoFormatsCommandOptionsPayload,
+)
 
 from endoreg_db.config.env import env_int
 from endoreg_db.services.video_format_reconciliation import (
@@ -18,7 +21,7 @@ class Command(BaseCommand):
         "and optionally repair non-compliant MP4 files in place."
     )
 
-    def add_arguments(self, parser) -> None:
+    def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
             "--root",
             action="append",
@@ -117,10 +120,13 @@ class Command(BaseCommand):
             help="Emit the summary as JSON.",
         )
 
-    def handle(self, *args, **options) -> None:
-        repair = bool(options["repair"])
-        dry_run = bool(options["dry_run"])
-        in_place = bool(options["in_place"])
+    def handle(self, *args: object, **options: object) -> None:
+        options_payload = ReconcileVideoFormatsCommandOptionsPayload.model_validate(
+            options
+        )
+        repair = options_payload.repair
+        dry_run = options_payload.dry_run
+        in_place = options_payload.in_place
 
         if repair and not in_place and not dry_run:
             raise CommandError(
@@ -128,13 +134,13 @@ class Command(BaseCommand):
                 "is supplied. Re-run with --dry-run first, then --repair --in-place."
             )
 
-        explicit_roots = list(options["root"] or [])
+        explicit_roots = options_payload.root
         include_default_roots = (
-            bool(options["include_default_roots"]) or not explicit_roots
+            options_payload.include_default_roots or not explicit_roots
         )
-        if options["no_default_roots"]:
+        if options_payload.no_default_roots:
             include_default_roots = False
-        include_legacy_roots = bool(options["include_legacy_roots"])
+        include_legacy_roots = options_payload.include_legacy_roots
         if (
             not include_default_roots
             and not explicit_roots
@@ -142,7 +148,7 @@ class Command(BaseCommand):
         ):
             raise CommandError("No scan roots selected.")
 
-        extensions = tuple(options["extension"] or VIDEO_EXTENSIONS)
+        extensions = tuple(options_payload.extension or VIDEO_EXTENSIONS)
         summary = reconcile_video_formats(
             roots=explicit_roots,
             include_default_roots=include_default_roots,
@@ -150,16 +156,16 @@ class Command(BaseCommand):
             dry_run=dry_run,
             repair=repair,
             in_place=in_place,
-            allow_unmanaged_roots=bool(options["allow_unmanaged_root"]),
-            include_compliant=bool(options["include_compliant"]),
-            max_files=options["max_files"],
-            min_free_bytes=int(options["min_free_bytes"]),
-            force_cpu=bool(options["force_cpu"]),
+            allow_unmanaged_roots=options_payload.allow_unmanaged_root,
+            include_compliant=options_payload.include_compliant,
+            max_files=options_payload.max_files or None,
+            min_free_bytes=options_payload.min_free_bytes,
+            force_cpu=options_payload.force_cpu,
             extensions=extensions,
         )
 
         payload = summary.as_dict()
-        if options["json"]:
+        if options_payload.json:
             self.stdout.write(json.dumps(payload, indent=2, sort_keys=True))
         else:
             self.stdout.write(
@@ -178,7 +184,7 @@ class Command(BaseCommand):
         unresolved = (
             summary.non_compliant_files + summary.invalid_files - summary.repaired_files
         )
-        if options["fail_on_non_compliant"] and unresolved > 0:
+        if options_payload.fail_on_non_compliant and unresolved > 0:
             raise CommandError(
                 f"Video format reconciliation found {unresolved} issues."
             )

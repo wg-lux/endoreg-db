@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass
+from types import NoneType
 
+from django.apps import AppConfig
 from django.conf import settings
-from django.core.checks import Error, Tags, Warning, register
+from django.core.checks import CheckMessage, Error, Tags, Warning, register
 
 from endoreg_db.config.env import (
     celery_broker_secure_transport_confirmed,
@@ -36,6 +39,10 @@ CELERY_MODES = (
     CeleryMode("MODEL_TRAINING_JOB_MODE", "celery", "model training"),
 )
 ALWAYS_CELERY_LABELS = ("upload pipeline ingest",)
+type Null = NoneType
+type AppConfigSequence = Sequence[AppConfig] | Null
+type DatabaseAliasSequence = Sequence[str] | Null
+type CheckKwargValue = str | bool | int | AppConfigSequence | DatabaseAliasSequence
 
 
 def _job_mode(mode: CeleryMode) -> str:
@@ -56,7 +63,12 @@ def _celery_enabled_labels() -> list[str]:
 
 
 @register("celery", Tags.security)
-def check_celery_runtime_configuration(app_configs=None, **kwargs):
+def check_celery_runtime_configuration(
+    *,
+    app_configs: AppConfigSequence = None,
+    databases: DatabaseAliasSequence = None,
+    **kwargs: CheckKwargValue,
+) -> list[CheckMessage]:
     if bool(getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False)):
         return []
 
@@ -70,7 +82,7 @@ def check_celery_runtime_configuration(app_configs=None, **kwargs):
     )
     celery_enabled = _celery_enabled_labels()
     labels = ", ".join(celery_enabled)
-    messages = []
+    messages: list[CheckMessage] = []
 
     if strict and watcher_inline_fallback:
         messages.append(

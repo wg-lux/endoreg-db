@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand, CommandError, CommandParser
+from pydantic import ValidationError
 
 from endoreg_db.utils.filesystem.paths import (
     DATA_DIR,
@@ -27,6 +29,10 @@ from endoreg_db.utils.filesystem.paths import (
     ensure_within_data_root,
     ensure_within_protected_root,
 )
+from lx_dtypes.models.contracts.management_command import (
+    RuntimeStorageContractPayload,
+    ValidateRuntimeStorageContractCommandOptionsPayload,
+)
 
 
 class Command(BaseCommand):
@@ -35,15 +41,24 @@ class Command(BaseCommand):
         "LX_ANNOTATE_ENCRYPTED_DATA_DIR and print the active contract."
     )
 
-    def add_arguments(self, parser) -> None:
+    def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
             "--json",
             action="store_true",
             help="Emit the runtime storage contract as JSON.",
         )
 
-    def handle(self, *args, **options) -> None:
-        protected_paths = {
+    def handle(self, *args: object, **options: object) -> None:
+        try:
+            options_payload = (
+                ValidateRuntimeStorageContractCommandOptionsPayload.model_validate(
+                    options
+                )
+            )
+        except ValidationError as exc:
+            raise CommandError(str(exc)) from exc
+
+        protected_paths: dict[str, Path] = {
             "protected_root": PROTECTED_DATA_ROOT,
             "storage": STORAGE_DIR,
             "ingest_uploads": INGEST_UPLOADS_DIR,
@@ -51,7 +66,7 @@ class Command(BaseCommand):
             "managed_anonymized_reports": MANAGED_ANONYMIZED_REPORTS_DIR,
             "managed_sensitive_sidecars": MANAGED_SENSITIVE_SIDECARS_DIR,
         }
-        public_paths = {
+        public_paths: dict[str, Path] = {
             "data_root": DATA_DIR,
             "import": IMPORT_DIR,
             "export": EXPORT_DIR,
@@ -80,19 +95,21 @@ class Command(BaseCommand):
             except ValueError as exc:
                 violations.append(f"{label}: {exc}")
 
-        payload = {
-            "protected_root": str(PROTECTED_DATA_ROOT),
-            "data_root": str(DATA_DIR),
-            "protected_paths": {
+        payload = RuntimeStorageContractPayload(
+            protected_root=str(PROTECTED_DATA_ROOT),
+            data_root=str(DATA_DIR),
+            protected_paths={
                 label: str(path) for label, path in protected_paths.items()
             },
-            "public_paths": {label: str(path) for label, path in public_paths.items()},
-            "valid": not violations,
-            "violations": violations,
-        }
+            public_paths={label: str(path) for label, path in public_paths.items()},
+            valid=not violations,
+            violations=violations,
+        )
 
-        if options["json"]:
-            self.stdout.write(json.dumps(payload, indent=2, sort_keys=True))
+        if options_payload.json:
+            self.stdout.write(
+                json.dumps(payload.model_dump(mode="json"), indent=2, sort_keys=True)
+            )
         else:
             self.stdout.write(
                 self.style.SUCCESS(f"Protected runtime root: {PROTECTED_DATA_ROOT}")

@@ -1,11 +1,27 @@
 from __future__ import annotations
 
+from types import NoneType
 from typing import Sequence
+from typing import TypedDict, cast
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand, CommandError, CommandParser
+from lx_dtypes.models.contracts import validate_segment_annotation_ensure_payload
 
 from endoreg_db.models import VideoFile
 from endoreg_db.services.segment_annotations import ensure_segment_annotations
+
+
+type _CommandOption = NoneType | bool | list[int] | str
+type _IdSequence = NoneType | Sequence[int]
+
+
+class _SegmentAnnotationSummary(TypedDict):
+    total_segments: int
+    segments_processed: int
+    skipped_no_label: int
+    skipped_no_frames: int
+    annotations_needed: int
+    annotations_created: int
 
 
 class Command(BaseCommand):
@@ -14,20 +30,20 @@ class Command(BaseCommand):
         "currently have no annotations so that export pipelines see the segment labels."
     )
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
             "--video-id",
             dest="video_ids",
             type=int,
             action="append",
-            help="Optional video ID to limit the migration. Can be passed multiple times.",
+            help="Video ID to limit the migration. Can be passed multiple times.",
         )
         parser.add_argument(
             "--segment-id",
             dest="segment_ids",
             type=int,
             action="append",
-            help="Optional segment ID to limit the migration. Can be passed multiple times.",
+            help="Segment ID to limit the migration. Can be passed multiple times.",
         )
         parser.add_argument(
             "--all-videos",
@@ -49,10 +65,19 @@ class Command(BaseCommand):
             help="Report how many annotations would be created without inserting rows.",
         )
 
-    def handle(self, *args, **options):
-        video_ids: Sequence[int] | None = options.get("video_ids")
-        segment_ids: Sequence[int] | None = options.get("segment_ids")
-        all_videos: bool = options.get("all_videos", False)
+    def handle(self, *args: str, **options: _CommandOption) -> None:
+        all_videos = self._bool_option(options, "all_videos")
+        dry_run = self._bool_option(options, "dry_run")
+        payload = validate_segment_annotation_ensure_payload(
+            {
+                "video_ids": options.get("video_ids"),
+                "segment_ids": options.get("segment_ids"),
+                "information_source_name": options.get("information_source_name"),
+            },
+            default_information_source_name="manual_annotation",
+        )
+        video_ids: _IdSequence = payload.video_ids
+        segment_ids: _IdSequence = payload.segment_ids
 
         if not all_videos and not video_ids and not segment_ids:
             raise CommandError(
@@ -62,16 +87,19 @@ class Command(BaseCommand):
         if all_videos:
             video_ids = list(VideoFile.objects.values_list("id", flat=True))
 
-        commit = not options.get("dry_run", False)
+        commit = not dry_run
 
-        summary = ensure_segment_annotations(
-            video_ids=video_ids,
-            segment_ids=segment_ids,
-            information_source_name=options["information_source_name"],
-            commit=commit,
+        summary = cast(
+            _SegmentAnnotationSummary,
+            ensure_segment_annotations(
+                video_ids=video_ids,
+                segment_ids=segment_ids,
+                information_source_name=payload.information_source_name,
+                commit=commit,
+            ),
         )
 
-        if options.get("dry_run"):
+        if dry_run:
             self.stdout.write(
                 self.style.NOTICE(
                     "Dry run: missing annotations would have been created for "
@@ -87,3 +115,10 @@ class Command(BaseCommand):
                     f"{summary['segments_processed']} segments."
                 )
             )
+
+    @staticmethod
+    def _bool_option(options: dict[str, _CommandOption], name: str) -> bool:
+        value = options.get(name, False)
+        if not isinstance(value, bool):
+            raise CommandError(f"Option {name} must be a boolean flag.")
+        return value

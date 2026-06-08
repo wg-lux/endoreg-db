@@ -1,5 +1,8 @@
-from django.core.management.base import BaseCommand, CommandError
+from collections.abc import Sequence
+from typing import Protocol, cast
+
 from django.apps import apps
+from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Min, Max, Count, fields
 from django.utils.timezone import is_aware, make_naive
 import datetime
@@ -13,10 +16,34 @@ from endoreg_db.utils.filesystem.file_operations import (
 )
 
 
+type SummaryCell = str | int
+type CsvSummaryRow = tuple[str, str]
+
+
+class DbSummaryWorksheet(Protocol):
+    title: str
+
+    def append(self, iterable: Sequence[SummaryCell]) -> None: ...
+
+
+class DbSummaryWorkbook(Protocol):
+    active: DbSummaryWorksheet
+
+    def save(self, filename: BytesIO) -> None: ...
+
+
+class VerboseNamedField(Protocol):
+    verbose_name: str
+
+
+def _field_verbose_name(field: VerboseNamedField) -> str:
+    return str(field.verbose_name).capitalize()
+
+
 class Command(BaseCommand):
     help = "Generates a structured report summarizing the database content of custom endoreg_db models and saves it to Excel and CSV files, excluding models with zero records from the files."  # Updated help text
 
-    def handle(self, *args, **options):
+    def handle(self, *args: object, **options: object) -> None:
         """
         Generates a summary report of all models in the 'endoreg_db' app and exports the results to Excel and CSV files.
 
@@ -53,22 +80,22 @@ class Command(BaseCommand):
         csv_file_path = data_dir / "db_summary.csv"
 
         # --- Excel Setup ---
-        wb = Workbook()
+        wb = cast(DbSummaryWorkbook, Workbook())
         ws = wb.active
         ws.title = "DB Summary"
-        excel_headers = ["Model Name", "Total Records"]
+        excel_headers: tuple[str, str] = ("Model Name", "Total Records")
         ws.append(excel_headers)
         # --- End Excel Setup ---
 
         # --- CSV Setup ---
-        csv_data_for_file = [
+        csv_data_for_file: list[CsvSummaryRow] = [
             excel_headers
         ]  # Initialize with headers for CSV, will only store rows with count > 0
         # --- End CSV Setup ---
 
-        models = app_config.get_models()
+        app_models = app_config.get_models()
 
-        if not models:
+        if not app_models:
             self.stdout.write(
                 self.style.WARNING("No models found in the 'endoreg_db' app.")
             )
@@ -100,7 +127,7 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.ERROR(f"Error saving files: {e}"))
             return
 
-        for model in models:
+        for model in app_models:
             model_name = model.__name__
             self.stdout.write(self.style.HTTP_INFO(f"\n--- Model: {model_name} ---"))
 
@@ -121,7 +148,7 @@ class Command(BaseCommand):
                 # --- End Add to Excel ---
 
                 # --- Add to CSV data list (only if count > 0) ---
-                csv_data_for_file.append([model_name, count])
+                csv_data_for_file.append((model_name, str(count)))
                 # --- End Add to CSV data list ---
 
                 # Attempt to get date ranges for common date/datetime fields
@@ -137,9 +164,10 @@ class Command(BaseCommand):
                     "record_date",
                 ]
                 for field_obj in model._meta.get_fields():
-                    if field_obj.name in date_fields_to_check and isinstance(
-                        field_obj, (fields.DateField, fields.DateTimeField)
-                    ):
+                    if not isinstance(field_obj, (fields.DateField, fields.DateTimeField)):
+                        continue
+
+                    if field_obj.name in date_fields_to_check:
                         try:
                             aggregation = model.objects.aggregate(
                                 min_date=Min(field_obj.name),
@@ -168,7 +196,7 @@ class Command(BaseCommand):
                                     max_val = max_val.strftime("%Y-%m-%d")
 
                                 self.stdout.write(
-                                    f"  {field_obj.verbose_name.capitalize()} range: {min_val} to {max_val}"
+                                    f"  {_field_verbose_name(cast(VerboseNamedField, field_obj))} range: {min_val} to {max_val}"
                                 )
                                 break  # Process only the first found relevant date field for brevity
                         except Exception as e:
@@ -186,6 +214,9 @@ class Command(BaseCommand):
                 for field in model._meta.get_fields():
                     if categorical_fields_found >= MAX_CATEGORICAL_FIELDS_TO_ANALYZE:
                         break
+
+                    if not isinstance(field, fields.Field):
+                        continue
 
                     is_potential_categorical = False
                     field_name_lower = field.name.lower()
@@ -219,7 +250,7 @@ class Command(BaseCommand):
                     if is_potential_categorical:
                         try:
                             self.stdout.write(
-                                f"  Value counts for '{field.verbose_name.capitalize() if hasattr(field, 'verbose_name') else field.name}':"
+                                f"  Value counts for '{_field_verbose_name(cast(VerboseNamedField, field))}':"
                             )
 
                             # QuerySet for distinct values and their counts

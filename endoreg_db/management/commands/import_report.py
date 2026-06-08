@@ -1,8 +1,15 @@
+import glob
+import importlib
 import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
+from types import NoneType
+from typing import Protocol, TypeAlias, TypedDict, Unpack, cast
 
-from django.core.management import BaseCommand
+import requests
+from django.core.management.base import BaseCommand, CommandParser
 
 from endoreg_db.helpers.data_load_orchestrator import load_all_reference_data
 from endoreg_db.services.report_import import ReportImportService
@@ -11,7 +18,49 @@ from endoreg_db.utils.filesystem.file_operations import ensure_directory
 
 # python manage.py import_report tests/assets/lux-gastro-report.pdf --verbose --start_ollama
 # Dynamic import path manipulation to ensure local development version is used
-def ensure_local_lx_anonymizer():
+JsonNull: TypeAlias = NoneType
+
+
+class ImportReportOptions(TypedDict):
+    verbose: bool
+    file_path: str
+    center_name: str
+    report_dir_root: str
+    save: bool
+    start_ollama: bool
+    ollama_debug: bool
+    ollama_timeout: int
+
+
+class _InitOllamaService(Protocol):
+    def __call__(self, *, auto_start: bool) -> None: ...
+
+
+class _OllamaServiceModule(Protocol):
+    init_ollama_service: _InitOllamaService
+
+
+class _PkCarrier(Protocol):
+    pk: int | JsonNull
+
+
+class _NamedField(Protocol):
+    name: str | JsonNull
+
+
+class _ImportedReport(Protocol):
+    pk: int | JsonNull
+    pdf_hash: str
+    text: str | JsonNull
+    anonymized_text: str | JsonNull
+    sensitive_meta: _PkCarrier | JsonNull
+    file: _NamedField
+    processed_file: _NamedField
+
+    def refresh_from_db(self) -> None: ...
+
+
+def ensure_local_lx_anonymizer() -> bool:
     """
     Checks for a local development version of the lx-anonymizer package and adds it to sys.path if available.
 
@@ -32,16 +81,19 @@ def ensure_local_lx_anonymizer():
     return False
 
 
+def _load_init_ollama_service() -> _InitOllamaService | JsonNull:
+    try:
+        module = importlib.import_module("lx_anonymizer.ollama.ollama_service")
+    except ImportError:
+        print("Could not import init_ollama_service from local or installed lx_anonymizer")
+        return None
+    service_module = cast(_OllamaServiceModule, module)
+    return service_module.init_ollama_service
+
+
 # Try to use local version, fall back to installed version
 local_version_available = ensure_local_lx_anonymizer()
-
-
-# Now import from lx_anonymizer
-try:
-    from lx_anonymizer.ollama.ollama_service import init_ollama_service
-except ImportError:
-    print("Could not import init_ollama_service from local or installed lx_anonymizer")
-    init_ollama_service = None
+init_ollama_service = _load_init_ollama_service()
 
 
 class Command(BaseCommand):
@@ -52,11 +104,12 @@ class Command(BaseCommand):
         1. Get center by center name from db (default: university_hospital_wuerzburg)
     """
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: CommandParser) -> None:
         """
         Defines command-line arguments for the import_report management command.
 
-        Adds options for specifying the report file path, center name, report directory, deletion and save behavior, and controls for initializing the Ollama LLM service.
+        Adds options for the report path, center, report directory, save behavior,
+        and controls for initializing the Ollama LLM service.
         """
         parser.add_argument(
             "--verbose",
@@ -87,7 +140,7 @@ class Command(BaseCommand):
             "--save",
             action="store_true",
             default=False,
-            help="Save the report object to the database",
+            help="Persist the imported report",
         )
 
         parser.add_argument(
@@ -111,11 +164,17 @@ class Command(BaseCommand):
             help="Maximum time to wait for Ollama to start in seconds",
         )
 
-    def handle(self, *args, **options):
+    def handle(
+        self,
+        *args: str,
+        **options: Unpack[ImportReportOptions],
+    ) -> None:
         """
         Handles the import of a report report file into the database, with optional LLM service initialization and anonymization.
 
-        This method validates input options, optionally starts the Ollama LLM service, ensures the existence of required files and directories, determines the report type, processes the report for text and metadata extraction, anonymizes content, and saves the resulting data to the database. Provides verbose output and error handling throughout the process.
+        This method validates input options, optionally starts the Ollama LLM service,
+        ensures the required files and directories exist, runs the report import
+        pipeline, and writes a compact summary.
         """
         # Load initial or prerequisite data for the application.
         # This may include loading default values, configurations, or lookup table data
@@ -146,7 +205,7 @@ class Command(BaseCommand):
                 self.style.SUCCESS("Using local development version of lx-anonymizer")
             )
 
-        ollama_proc = None  # Track Ollama process if started
+        ollama_proc: subprocess.Popen[bytes] | JsonNull = None
         try:
             # Initialize Ollama service if requested
             if start_ollama:
@@ -164,8 +223,6 @@ class Command(BaseCommand):
                             "/run/current-system/sw/bin/ollama",
                             "/nix/store/*/bin/ollama",
                         ]:
-                            import glob
-
                             matches = glob.glob(path)
                             if matches:
                                 ollama_bin = matches[0]
@@ -178,13 +235,8 @@ class Command(BaseCommand):
                         os.environ["OLLAMA_BIN"] = ollama_bin
 
                     # Start Ollama server process if not already running
-                    import shutil
-                    import subprocess
-
                     # Check if ollama is already running
                     try:
-                        import requests
-
                         resp = requests.get(
                             "http://127.0.0.1:11434/api/version", timeout=1
                         )
@@ -286,28 +338,31 @@ class Command(BaseCommand):
             if not report_file_obj:
                 self.stdout.write(self.style.ERROR("Failed to import report."))
                 return
-            report_file_obj.refresh_from_db()
+            report = cast(_ImportedReport, report_file_obj)
+            report.refresh_from_db()
 
-            text_len = len(report_file_obj.text or "")
-            anonymized_text_len = len(report_file_obj.anonymized_text or "")
+            text_len = len(report.text or "")
+            anonymized_text_len = len(report.anonymized_text or "")
             self.stdout.write(
                 self.style.SUCCESS(
-                    f"Imported report id={report_file_obj.pk} hash={report_file_obj.pdf_hash}"
+                    f"Imported report id={report.pk} hash={report.pdf_hash}"
                 )
             )
+            sensitive_meta = report.sensitive_meta
+            sensitive_meta_id = sensitive_meta.pk if sensitive_meta is not None else None
             self.stdout.write(
                 self.style.SUCCESS(
                     "Import summary: "
                     f"text_len={text_len}, "
                     f"anonymized_text_len={anonymized_text_len}, "
-                    f"sensitive_meta_id={getattr(report_file_obj.sensitive_meta, 'pk', None)}"
+                    f"sensitive_meta_id={sensitive_meta_id}"
                 )
             )
             if verbose:
                 self.stdout.write(
                     self.style.SUCCESS(
-                        f"Stored file={getattr(report_file_obj.file, 'name', None)} "
-                        f"processed_file={getattr(report_file_obj.processed_file, 'name', None)}"
+                        f"Stored file={report.file.name} "
+                        f"processed_file={report.processed_file.name}"
                     )
                 )
         finally:

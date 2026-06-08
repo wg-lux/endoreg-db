@@ -1,11 +1,38 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
+from typing import Protocol, Sequence, TypedDict, Unpack, cast
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandParser
 from django.utils import timezone
+from lx_dtypes.models.contracts.management_command import (
+    MigrationMarkEligibleCommandOptionsPayload,
+)
 
 from endoreg_db.models import UploadJob
+
+
+class MigrationMarkEligibleCommandOptions(TypedDict):
+    apply: bool
+    limit: int
+    json: bool
+
+
+class MigrationUploadJobFile(Protocol):
+    name: str
+    storage: object
+
+
+class MigrationUploadJob(Protocol):
+    file: MigrationUploadJobFile
+    source_file_delete_eligible_at: datetime | None
+    status: str
+    error_detail: str
+    cleanup_status: str
+    source_file_persisted: bool
+
+    def save(self, *, update_fields: Sequence[str]) -> None: ...
 
 
 class Command(BaseCommand):
@@ -14,7 +41,7 @@ class Command(BaseCommand):
         "repair orphaned source metadata."
     )
 
-    def add_arguments(self, parser) -> None:
+    def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument("--apply", action="store_true")
         parser.add_argument("--limit", type=int, default=0)
         parser.add_argument(
@@ -23,7 +50,14 @@ class Command(BaseCommand):
             help="Emit machine-readable JSON summary.",
         )
 
-    def handle(self, *args, **options) -> None:
+    def handle(
+        self,
+        *args: str,
+        **options: Unpack[MigrationMarkEligibleCommandOptions],
+    ) -> None:
+        options_payload = MigrationMarkEligibleCommandOptionsPayload.model_validate(
+            options
+        )
         qs = UploadJob.objects.filter(
             cleanup_status=UploadJob.CleanupStatus.PENDING,
             source_system="migration",
@@ -31,7 +65,7 @@ class Command(BaseCommand):
         ).order_by("id")
 
         total = qs.count()
-        limit = int(options["limit"] or 0)
+        limit = options_payload.limit
 
         if limit > 0:
             ids = list(qs.values_list("id", flat=True)[:limit])
@@ -41,15 +75,16 @@ class Command(BaseCommand):
         payload: dict[str, object] = {
             "total_pending_migration_rows": total,
             "selected_rows": selected,
-            "dry_run": not bool(options["apply"]),
-            "applied": bool(options["apply"]),
+            "dry_run": not options_payload.apply,
+            "applied": options_payload.apply,
         }
 
         self.stdout.write(f"Matching migration UploadJobs: {selected} / total {total}")
 
         eligible_candidates = 0
         orphaned_candidates = 0
-        for upload_job in qs.iterator():
+        for upload_job_model in qs.iterator():
+            upload_job = cast(MigrationUploadJob, upload_job_model)
             source_exists = _source_file_exists(upload_job)
             if source_exists:
                 eligible_candidates += 1
@@ -62,8 +97,8 @@ class Command(BaseCommand):
         payload["eligible_candidates"] = eligible_candidates
         payload["orphaned_candidates"] = orphaned_candidates
 
-        if not options["apply"]:
-            if options["json"]:
+        if not options_payload.apply:
+            if options_payload.json:
                 self.stdout.write(json.dumps(payload, sort_keys=True))
             self.stdout.write("Dry run only. Re-run with --apply.")
             return
@@ -72,9 +107,10 @@ class Command(BaseCommand):
         marked_lost = 0
         repaired_orphaned = 0
         now = timezone.now()
-        for upload_job in qs.iterator():
+        for upload_job_model in qs.iterator():
+            upload_job = cast(MigrationUploadJob, upload_job_model)
             source_exists = _source_file_exists(upload_job)
-            update_fields = [
+            update_fields: list[str] = [
                 "cleanup_status",
                 "updated_at",
             ]
@@ -105,7 +141,7 @@ class Command(BaseCommand):
                 updated_eligible += 1
                 continue
 
-            orphan_update_fields = [
+            orphan_update_fields: list[str] = [
                 "file",
                 "source_file_persisted",
                 "cleanup_status",
@@ -126,7 +162,7 @@ class Command(BaseCommand):
         payload["marked_lost"] = marked_lost
         payload["repaired_orphaned"] = repaired_orphaned
 
-        if options["json"]:
+        if options_payload.json:
             self.stdout.write(json.dumps(payload, sort_keys=True))
         self.stdout.write(
             self.style.SUCCESS(
@@ -136,8 +172,12 @@ class Command(BaseCommand):
         )
 
 
-def _source_file_exists(upload_job: UploadJob) -> bool:
-    file_name = str(getattr(upload_job.file, "name", "") or "").strip()
+def _source_file_exists(upload_job: MigrationUploadJob) -> bool:
+    file_name = upload_job.file.name.strip()
     if not file_name:
         return False
-    return bool(upload_job.file.storage.exists(file_name))
+    storage = upload_job.file.storage
+    exists = getattr(storage, "exists", None)
+    if not callable(exists):
+        return False
+    return bool(exists(file_name))

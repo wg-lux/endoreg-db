@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import json
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError, CommandParser
+from pydantic import ValidationError
 
 from endoreg_db.services.media_integrity import reconcile_media_integrity
+from lx_dtypes.models.contracts.management_command import (
+    ReconcileMediaIntegrityCommandOptionsPayload,
+)
 
 
 class Command(BaseCommand):
@@ -13,7 +17,7 @@ class Command(BaseCommand):
         "discrepancies, and mark unrecoverable records as LOST."
     )
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
             "--dry-run",
             action="store_true",
@@ -69,22 +73,29 @@ class Command(BaseCommand):
             help="Remove stale temporary media artifacts through the existing reconciliation cleanup.",
         )
 
-    def handle(self, *args, **options) -> None:
+    def handle(self, *args: object, **options: object) -> None:
+        try:
+            command_options = ReconcileMediaIntegrityCommandOptionsPayload.model_validate(
+                options
+            )
+        except ValidationError as exc:
+            raise CommandError(str(exc)) from exc
+
         summary = reconcile_media_integrity(
-            dry_run=bool(options["dry_run"]),
-            video_ids=list(options["video_id"] or ()),
-            check_frames=bool(options["check_frames"] or options["repair_frames"]),
-            repair_frames=bool(options["repair_frames"]),
-            repair_frame_numbers=list(options["repair_frame"] or ()),
-            check_ffmpeg_meta=bool(
-                options["check_ffmpeg_meta"] or options["repair_ffmpeg_meta"]
-            ),
-            repair_ffmpeg_meta=bool(options["repair_ffmpeg_meta"]),
-            check_streamable_probe=bool(options["check_streamable_probe"]),
-            cleanup_stale_artifacts=bool(options["cleanup_stale_artifacts"]),
+            dry_run=command_options.dry_run,
+            video_ids=command_options.video_id,
+            check_frames=command_options.check_frames
+            or command_options.repair_frames,
+            repair_frames=command_options.repair_frames,
+            repair_frame_numbers=command_options.repair_frame,
+            check_ffmpeg_meta=command_options.check_ffmpeg_meta
+            or command_options.repair_ffmpeg_meta,
+            repair_ffmpeg_meta=command_options.repair_ffmpeg_meta,
+            check_streamable_probe=command_options.check_streamable_probe,
+            cleanup_stale_artifacts=command_options.cleanup_stale_artifacts,
         )
-        summary.dry_run = bool(options["dry_run"])
-        if options["json"]:
+        summary.dry_run = command_options.dry_run
+        if command_options.json:
             self.stdout.write(json.dumps(summary.as_dict(), indent=2, sort_keys=True))
             return
         self.stdout.write(
