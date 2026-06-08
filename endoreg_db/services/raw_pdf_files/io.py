@@ -145,7 +145,7 @@ def verify_existing_raw_pdf_file(
     fallback_path = Path(fallback_file)
 
     field_file = report.file
-    file_name = field_file.name if field_file is not None else None
+    file_name = field_file.name
     if not file_name:
         raise FileNotFoundError("Raw report file field is empty.")
 
@@ -219,7 +219,11 @@ def delete_raw_pdf_owned_files(
     return raw_deleted, processed_deleted
 
 
-def delete_raw_pdf_with_owned_files(report: "RawPdfFile", *args, **kwargs):
+def delete_raw_pdf_with_owned_files(
+    report: "RawPdfFile",
+    using: str | None = None,
+    keep_parents: bool = False,
+) -> tuple[int, dict[str, int]]:
     raw_name = report.file.name if report.file and report.file.name else None
     processed_name = (
         report.processed_file.name
@@ -233,12 +237,12 @@ def delete_raw_pdf_with_owned_files(report: "RawPdfFile", *args, **kwargs):
     if processed_deleted:
         logger.info("Anonymized file removed from storage: %s", processed_name)
 
-    return models.Model.delete(report, *args, **kwargs)
+    return models.Model.delete(report, using=using, keep_parents=keep_parents)
 
 
 def get_raw_pdf_file_url(report: "RawPdfFile") -> str | None:
     try:
-        if not report.file or not report.file.name or report.pk is None:
+        if not report.file or not report.file.name:
             return None
         return reverse("api:pdf-stream", kwargs={"pk": report.pk})
     except (ValueError, AttributeError):
@@ -247,11 +251,7 @@ def get_raw_pdf_file_url(report: "RawPdfFile") -> str | None:
 
 def get_processed_pdf_file_url(report: "RawPdfFile") -> str | None:
     try:
-        if (
-            not report.processed_file
-            or not report.processed_file.name
-            or report.pk is None
-        ):
+        if not report.processed_file or not report.processed_file.name:
             return None
         stream_url = reverse("api:pdf-stream", kwargs={"pk": report.pk})
         return f"{stream_url}?type=processed"
@@ -265,6 +265,4 @@ def select_report_field_file(
 ) -> "FieldFile":
     if artifact_kind == ReportPdfArtifactKind.PROCESSED:
         return report.processed_file
-    if artifact_kind == ReportPdfArtifactKind.RAW:
-        return report.file
-    raise ValueError(f"Unsupported report artifact kind: {artifact_kind}")
+    return report.file

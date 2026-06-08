@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Protocol, cast
+
+from endoreg_db.services.raw_pdf_files.metadata import ReportMetaJsonObject
 
 from .io import delete_raw_pdf_owned_files
 from .state import (
@@ -16,6 +18,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class _ValidatedSensitiveMeta(Protocol):
+    def update_from_dict(self, data: ReportMetaJsonObject) -> None: ...
+
+    def save(self) -> None: ...
+
+
 def _report_is_failed_or_lost(report: "RawPdfFile") -> bool:
     state = report.state
     raw_meta = report.raw_meta if isinstance(report.raw_meta, dict) else {}
@@ -26,7 +34,7 @@ def _report_is_failed_or_lost(report: "RawPdfFile") -> bool:
 
 def validate_report_metadata_annotation(
     report: "RawPdfFile",
-    extracted_data_dict: Optional[dict] = None,
+    extracted_data_dict: ReportMetaJsonObject | None = None,
 ) -> bool:
     if _report_is_failed_or_lost(report):
         raise ValueError(
@@ -42,8 +50,9 @@ def validate_report_metadata_annotation(
         logger.error("No sensitive meta attached to report %s.", report.pk)
         return False
 
-    sensitive_meta.update_from_dict(extracted_data_dict)
-    sensitive_meta.save()
+    validated_sensitive_meta = cast(_ValidatedSensitiveMeta, sensitive_meta)
+    validated_sensitive_meta.update_from_dict(extracted_data_dict)
+    validated_sensitive_meta.save()
 
     report.save()
 
