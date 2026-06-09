@@ -1,4 +1,3 @@
-
 import json
 import logging
 import os
@@ -8,8 +7,24 @@ from enum import Enum
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Literal, cast
+
+import cv2
+from tqdm import tqdm
+
+from endoreg_db.config.env import (
+    get_ffmpeg_env_candidates,
+    get_ffmpeg_transcode_timeout_seconds,
+)
+
+from endoreg_db.utils.file_operations import (
+    atomic_copy_file,
+    ensure_directory,
+    safe_unlink_file,
+)
+
 from PIL import Image
 import numpy as np
+
 
 """Compatibility facade for FFmpeg helpers.
 
@@ -17,8 +32,9 @@ The implementation lives in focused sibling modules. Keep imports from this
 module working for existing callers.
 """
 
+logger = logging.getLogger("ffmpeg_wrapper")
+FFMPEG_TRANSCODE_TIMEOUT_SECONDS = get_ffmpeg_transcode_timeout_seconds()
 
-import logging
 
 from .command_construction import (
     TimestampRepairMode,
