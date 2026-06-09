@@ -43,6 +43,7 @@ from endoreg_db.utils.storage.streaming import (
 )
 from endoreg_db.utils.video.ffmpeg_wrapper import (
     extract_frames as ffmpeg_extract_frames,
+    extract_selected_frames_streamed as ffmpeg_extract_selected_frames_streamed,
 )
 
 logger = logging.getLogger(__name__)
@@ -1111,6 +1112,96 @@ def _extract_and_move_transcoded_frames(
 ) -> None:
     tmp_dir = ensure_directory(frame_dir / f"transcode_tmp_{uuid.uuid4().hex}")
     try:
+        if frame_pks is not None:
+            requested_frames = list(
+                video.frames.only("pk", "frame_number")
+                .filter(pk__in=frame_pks)
+                .order_by("frame_number", "pk")
+            )
+
+            missing_requested_frames = [
+                frame
+                for frame in requested_frames
+                if overwrite or not (frame_dir / _frame_pk_filename(frame.pk, ext)).exists()
+
+            ]
+
+            total_db_frames = video.frames.count()
+            requested_count = len(requested_frames)
+            missing_count = len(missing_requested_frames)
+            
+            frame_numbers = [int(frame.frame_number) for frame in missing_requested_frames]
+            duplicate_frame_numbers = len(frame_numbers) != len(set(frame_numbers))
+
+            print(
+                "[ENDOREG FRAME MATERIALIZATION] "
+                f"video={video.pk} requested={requested_count} "
+                f"missing={missing_count} total_db_frames={total_db_frames} "
+                f"duplicate_frame_numbers={duplicate_frame_numbers}",
+                flush=True,
+            )
+
+            if missing_count == 0:
+                print(
+                    "[ENDOREG FRAME MATERIALIZATION] "
+                    f"video={video.pk} all requested frames already exist; skipping",
+                    flush=True,
+                )
+                return
+
+            if not duplicate_frame_numbers:
+                try:
+                    selected_paths = ffmpeg_extract_selected_frames_streamed(
+                        source_path,
+                        tmp_dir,
+                        frame_numbers=frame_numbers,
+                        quality=quality,
+                        ext=ext,
+                        fps=fps,
+                    )
+
+                    kept = 0
+                    for frame in missing_requested_frames:
+                        frame_number = int(frame.frame_number)
+                        extracted_path = selected_paths.get(frame_number)
+
+                        if extracted_path is None:
+                            raise FileNotFoundError(
+                                "Streamed extraction missing expected frame "
+                                f"video={video.pk}, frame_pk={frame.pk}, "
+                                f"frame_number={frame_number}"
+                            )
+
+                        target_path = frame_dir / _frame_pk_filename(frame.pk, ext)
+
+                        if target_path.exists() and not overwrite:
+                            safe_unlink_file(extracted_path, missing_ok=True)
+                            continue
+
+                        atomic_move_file(source=extracted_path, destination=target_path)
+                        kept += 1
+
+                    print(
+                        "[ENDOREG FRAME MATERIALIZATION] "
+                        f"video={video.pk} streamed extraction finished kept={kept}",
+                        flush=True,
+                    )
+                    return
+
+                except Exception:
+                    print(
+                        "[ENDOREG FRAME MATERIALIZATION] "
+                        f"video={video.pk} streamed extraction failed; "
+                        "falling back to full extraction",
+                        flush=True,
+                    )
+                    logger.warning(
+                        "Streamed selected extraction failed for video %s; "
+                        "falling back to full extraction.",
+                        video.pk,
+                        exc_info=True,
+                    )
+
         extracted_paths = ffmpeg_extract_frames(
             source_path,
             tmp_dir,
@@ -1118,6 +1209,7 @@ def _extract_and_move_transcoded_frames(
             ext=ext,
             fps=fps,
         )
+
         _move_extracted_frames_to_pk_names(
             video,
             extracted_paths,
@@ -1126,6 +1218,7 @@ def _extract_and_move_transcoded_frames(
             ext=ext,
             overwrite=overwrite,
         )
+
     finally:
         safe_rmtree(tmp_dir, missing_ok=True)
 
