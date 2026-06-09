@@ -6,7 +6,7 @@ from django.core.management import BaseCommand
 
 from endoreg_db.helpers.data_load_orchestrator import load_all_reference_data
 from endoreg_db.services.report_import import ReportImportService
-from endoreg_db.utils.filesystem.file_operations import ensure_directory
+from endoreg_db.utils.file_operations import ensure_directory
 
 
 # python manage.py import_report tests/assets/lux-gastro-report.pdf --verbose --start_ollama

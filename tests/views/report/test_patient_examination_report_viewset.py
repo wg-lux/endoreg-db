@@ -20,7 +20,7 @@ from endoreg_db.models import (
     RawPdfFile,
     VideoFile,
 )
-from endoreg_db.utils.filesystem.file_operations import atomic_write_file, safe_rmtree
+from endoreg_db.utils.file_operations import atomic_write_file, safe_rmtree
 from endoreg_db.utils.filesystem.paths import protected_media_root
 
 User = get_user_model()

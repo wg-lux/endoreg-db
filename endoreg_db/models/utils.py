@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, List, Tuple
 from django.core.files import File
 from django.core.files.storage import FileSystemStorage
 
-from endoreg_db.utils.filesystem.file_operations import atomic_write_file
+from endoreg_db.utils.file_operations import atomic_write_file
 
 from ..utils import DJANGO_NAME_SALT, data_paths
 

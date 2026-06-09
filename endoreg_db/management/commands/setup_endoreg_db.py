@@ -9,7 +9,7 @@ from django.core.management import call_command
 from django.core.management.base import BaseCommand
 
 from endoreg_db.models import ModelMeta
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     ensure_directory,
 )

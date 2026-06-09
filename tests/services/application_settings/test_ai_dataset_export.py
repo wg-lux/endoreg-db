@@ -15,7 +15,7 @@ from endoreg_db.services.application_settings.ai_dataset_export import (
     prepare_ai_dataset_export_download,
     sanitize_export_token,
 )
-from endoreg_db.utils.filesystem.file_operations import atomic_write_file, sha256_file
+from endoreg_db.utils.file_operations import atomic_write_file, sha256_file
 
 
 def _dataset() -> AIDataSet:

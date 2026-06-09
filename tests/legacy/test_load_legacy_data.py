@@ -12,7 +12,7 @@ import json
 import tempfile
 
 from endoreg_db.models import AIDataSet, Center, Frame, LabelSet, VideoFile
-from endoreg_db.utils.filesystem.file_operations import safe_rmtree
+from endoreg_db.utils.file_operations import safe_rmtree
 from endoreg_db.utils.filesystem.paths import EndoregPathsModel
 from endoreg_db.utils.video.ffmpeg_wrapper import is_ffmpeg_available  # ADDED
 

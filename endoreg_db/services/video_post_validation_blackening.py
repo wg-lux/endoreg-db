@@ -15,7 +15,7 @@ from endoreg_db.services.media_operation_gate import (
 )
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.services.video_files.io import ensure_local_processed_video_file
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     ensure_directory,
     safe_unlink_file,
 )

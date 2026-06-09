@@ -10,7 +10,7 @@ from endoreg_db.import_files.file_storage.cleanup import safe_cleanup_staging_fi
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.utils.security.hashs import get_video_hash
 from endoreg_db.utils.filesystem import paths as path_utils
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     ensure_directory,
     safe_rmtree,
     safe_unlink_file,

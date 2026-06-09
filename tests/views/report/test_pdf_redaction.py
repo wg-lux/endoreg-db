@@ -13,7 +13,7 @@ from endoreg_db.models.media.pdf.pdf_processing_history import PdfProcessingHist
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.operation_log import OperationLog
 from endoreg_db.models.state.raw_pdf import RawPdfState
-from endoreg_db.utils.filesystem.file_operations import sha256_file
+from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.utils.storage import ensure_local_file
 
 MINIMAL_PDF_BYTES = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"

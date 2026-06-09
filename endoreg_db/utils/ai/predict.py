@@ -13,7 +13,7 @@ from tqdm import tqdm
 from icecream import ic
 from .inference_dataset import InferenceDataset
 from .postprocess import concat_pred_dicts, make_smooth_preds, find_true_pred_sequences
-from endoreg_db.utils.filesystem.file_operations import atomic_write_file
+from endoreg_db.utils.file_operations import atomic_write_file
 
 sample_config = {
     # mean and std for normalization

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Iterable
 
 from endoreg_db.utils.filesystem import paths as path_utils
-from endoreg_db.utils.filesystem.file_operations import safe_unlink_file
+from endoreg_db.utils.file_operations import safe_unlink_file
 
 logger = logging.getLogger(__name__)
 

@@ -5,7 +5,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
 
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_write_file,
     ensure_directory,
     safe_unlink_file,

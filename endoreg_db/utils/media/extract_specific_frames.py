@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from endoreg_db.utils.filesystem.file_operations import ensure_directory, safe_rmtree
+from endoreg_db.utils.file_operations import ensure_directory, safe_rmtree
 
 
 def extract_selected_frames(

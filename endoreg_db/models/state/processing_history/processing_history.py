@@ -2,7 +2,7 @@ from typing import Optional
 from logging import getLogger
 from pathlib import Path
 from django.db import models
-from endoreg_db.utils.filesystem.file_operations import get_content_hash_filename
+from endoreg_db.utils.file_operations import get_content_hash_filename
 
 logger = getLogger(__name__)
 

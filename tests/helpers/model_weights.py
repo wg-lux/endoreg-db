@@ -6,7 +6,7 @@ from pathlib import Path
 from django.core.files.storage import default_storage
 
 from endoreg_db.models import ModelMeta
-from endoreg_db.utils.filesystem.file_operations import atomic_write_file
+from endoreg_db.utils.file_operations import atomic_write_file
 
 MANAGED_STUB_WEIGHT_PAYLOAD = b"stub-weights"
 

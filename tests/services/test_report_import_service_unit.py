@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.services.report_import import ReportImportService
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_write_file,
     ensure_directory,
     safe_unlink_file,

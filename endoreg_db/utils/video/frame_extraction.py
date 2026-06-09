@@ -6,7 +6,7 @@ from typing import List, Optional
 import cv2
 from tqdm import tqdm
 
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     ensure_directory,
     safe_unlink_file,
 )

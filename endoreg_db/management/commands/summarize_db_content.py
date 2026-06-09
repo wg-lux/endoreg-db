@@ -7,7 +7,7 @@ import csv
 from io import BytesIO, StringIO
 from pathlib import Path
 
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_write_file,
     ensure_directory,
 )

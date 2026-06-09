@@ -121,7 +121,7 @@ def _dedupe_paths(paths: Iterable[Path]) -> list[Path]:
 
 
 def _ensure_directory(path: Path) -> Path:
-    from endoreg_db.utils.filesystem.file_operations import ensure_directory
+    from endoreg_db.utils.file_operations import ensure_directory
 
     return ensure_directory(path)
 

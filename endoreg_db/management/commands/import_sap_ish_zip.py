@@ -12,7 +12,7 @@ from endoreg_db.services.hub.ingest import (
 )
 
 from endoreg_db.services.sap_ish_import import convert_sap_ish_zip_to_preanonymized_drop
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_write_file,
     ensure_directory,
 )

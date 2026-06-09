@@ -14,7 +14,7 @@ from endoreg_db.models.state.processing_history.processing_history import (
 )
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.utils.filesystem import paths as path_utils
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_move_file,
     atomic_move_path,
     safe_rmtree,

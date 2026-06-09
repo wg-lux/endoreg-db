@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, cast
 
 from endoreg_db.config.env import get_ffmpeg_transcode_timeout_seconds
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     ensure_directory,
     safe_unlink_file,

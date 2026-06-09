@@ -7,7 +7,7 @@ from typing import Optional
 from django.conf import settings  # Import settings
 from django.core.files.storage import default_storage  # Import default storage
 from django.db.models.fields.files import FieldFile
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     safe_unlink_file,
     sha256_file,

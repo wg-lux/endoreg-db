@@ -22,7 +22,7 @@ from endoreg_db.models import (
 )
 from endoreg_db.services.hub.deployment import local_study_server_mode_enabled
 from endoreg_db.services.video_files import get_video_frame_dir_path
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_move_file,
     atomic_write_file,

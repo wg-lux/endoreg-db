@@ -12,7 +12,7 @@ from endoreg_db.import_files.file_storage.cleanup import safe_cleanup_staging_fi
 from endoreg_db.services.video_files.processor_resolution import (
     resolve_processor_name_for_import,
 )
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_move_file,
     ensure_disk_capacity,

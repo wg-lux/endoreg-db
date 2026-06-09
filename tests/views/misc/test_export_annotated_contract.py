@@ -10,7 +10,7 @@ from django.test import TestCase
 from django.test.utils import override_settings
 
 from endoreg_db.models import Center, VideoFile, VideoState
-from endoreg_db.utils.filesystem.file_operations import atomic_write_file
+from endoreg_db.utils.file_operations import atomic_write_file
 
 
 class ExportAnnotatedContractTests(TestCase):

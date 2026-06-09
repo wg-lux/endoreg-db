@@ -4,7 +4,7 @@ from datetime import date, datetime
 from pathlib import Path
 import logging
 from django.db.models.fields.files import FieldFile
-from endoreg_db.utils.filesystem.file_operations import sha256_file
+from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.utils.storage import ensure_local_file
 
 logger = logging.getLogger(__name__)

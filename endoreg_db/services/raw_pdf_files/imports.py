@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Union
 
-from endoreg_db.utils.filesystem.file_operations import get_content_hash_filename
+from endoreg_db.utils.file_operations import get_content_hash_filename
 from endoreg_db.utils.security.hashs import get_pdf_hash
 from endoreg_db.utils.storage import save_local_file
 from endoreg_db.utils.observability.structured_logging import emit_structured_event

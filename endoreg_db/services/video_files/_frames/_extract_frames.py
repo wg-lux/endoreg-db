@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from endoreg_db.services.video_files._io import _get_frame_dir_path
 from endoreg_db.utils.storage import materialize_video_file
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_move_file,
     atomic_move_path,
     ensure_directory,

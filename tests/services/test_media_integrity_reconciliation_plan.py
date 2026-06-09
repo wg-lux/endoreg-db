@@ -14,7 +14,7 @@ from endoreg_db.models import (
     VideoFile,
 )
 from endoreg_db.services.media_integrity import reconcile_media_integrity
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_write_file,
     ensure_directory,
 )

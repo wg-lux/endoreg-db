@@ -9,7 +9,7 @@ from endoreg_db.services.video_files._io import (
     _get_frame_dir_path,
     _get_temp_anonymized_frame_dir,
 )
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_move_path,
     safe_rmtree,
     safe_unlink_file,

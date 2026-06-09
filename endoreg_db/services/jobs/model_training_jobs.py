@@ -41,7 +41,7 @@ from endoreg_db.utils.ai.multilabel_dataset_builder import (
     uses_frame_annotations,
     uses_segment_annotations,
 )
-from endoreg_db.utils.filesystem.file_operations import ensure_directory, safe_rmtree
+from endoreg_db.utils.file_operations import ensure_directory, safe_rmtree
 
 MODEL_TRAINING_TARGET_IMAGE_MULTILABEL = "image_multilabel"
 MODEL_TRAINING_TARGET_PHI_REGION_DETECTOR = "phi_region_detector"

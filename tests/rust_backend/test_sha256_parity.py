@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from endoreg_db.utils.filesystem.file_operations import sha256_file
+from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.utils.system.rust_backend import sha256_file_hex as rust_sha256_file_hex
 
 

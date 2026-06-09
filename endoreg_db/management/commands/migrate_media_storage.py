@@ -19,7 +19,7 @@ from endoreg_db.models import RawPdfFile, VideoFile
 from endoreg_db.models.state.audit_ledger import AuditLedger
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
-from endoreg_db.utils.filesystem.file_operations import sha256_file
+from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.utils.filesystem.paths import (
     EndoregPathsModel,
     protected_media_root,

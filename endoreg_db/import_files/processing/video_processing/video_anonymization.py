@@ -33,7 +33,7 @@ from endoreg_db.models import (
 )
 from endoreg_db.services.video_files import get_or_create_video_state
 from endoreg_db.utils.filesystem import paths as path_utils
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_move_file,
     ensure_directory,
     safe_unlink_file,

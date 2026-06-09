@@ -10,7 +10,7 @@ from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.medical.hardware.endoscopy_processor import EndoscopyProcessor
 from endoreg_db.models.state.processing_history import ProcessingHistory
 from endoreg_db.utils.filesystem import paths as paths_module
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_write_file,
     ensure_directory,

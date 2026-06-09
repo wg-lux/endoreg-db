@@ -21,7 +21,7 @@ from endoreg_db.serializers.pdf.pdf_processing_history import (
 )
 from endoreg_db.services.polling_coordinator import ProcessingLockContext
 from endoreg_db.services.raw_pdf_files import get_or_create_raw_pdf_state
-from endoreg_db.utils.filesystem.file_operations import sha256_file
+from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.utils.web.media_urls import build_pdf_stream_path
 from endoreg_db.utils.observability.operation_log import record_operation
 from endoreg_db.utils.web.permissions import EnvironmentAwarePermission

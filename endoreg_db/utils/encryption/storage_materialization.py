@@ -7,7 +7,7 @@ from typing import Iterator
 
 from django.db.models.fields.files import FieldFile
 
-from endoreg_db.utils.filesystem.file_operations import safe_unlink_file
+from endoreg_db.utils.file_operations import safe_unlink_file
 from endoreg_db.utils.storage.streaming import field_file_size, iter_field_file_bytes
 
 

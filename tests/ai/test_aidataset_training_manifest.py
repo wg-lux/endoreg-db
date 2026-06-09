@@ -15,7 +15,7 @@ from endoreg_db.models import (
     LabelSet,
     VideoFile,
 )
-from endoreg_db.utils.filesystem.file_operations import atomic_write_file
+from endoreg_db.utils.file_operations import atomic_write_file
 
 
 class AIDataSetTrainingManifestTests(TestCase):

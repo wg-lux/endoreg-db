@@ -19,7 +19,7 @@ from endoreg_db.services.report_import import ReportImportService
 from endoreg_db.services.report_materialization import (
     upsert_anonym_examination_report_from_pdf,
 )
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_write_file,
     safe_unlink_file,
 )

@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from endoreg_db.utils.filesystem import file_operations
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils import file_operations
+from endoreg_db.utils.file_operations import (
     atomic_move_file,
     atomic_write_file,
     ensure_directory,

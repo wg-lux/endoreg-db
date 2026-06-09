@@ -61,7 +61,7 @@ from endoreg_db.utils.defaults.set_default_center import (
     get_application_defaults,
     get_default_processor,
 )
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_move_file,
     ensure_directory,

@@ -11,7 +11,7 @@ from endoreg_db.import_files.file_storage.sensitive_meta_storage import (
     sensitive_meta_storage,
 )
 from endoreg_db.utils.filesystem import paths as path_utils
-from endoreg_db.utils.filesystem.file_operations import ensure_directory
+from endoreg_db.utils.file_operations import ensure_directory
 
 
 logger = logging.getLogger(__name__)

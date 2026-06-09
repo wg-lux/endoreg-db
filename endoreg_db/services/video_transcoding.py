@@ -16,7 +16,7 @@ from endoreg_db.services.video_format_reconciliation import (
     VIDEO_EXTENSIONS,
     classify_video_format,
 )
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_move_file,
     ensure_disk_capacity,

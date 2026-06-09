@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from endoreg_db.import_files.report_import_service import ReportImportService
-from endoreg_db.utils.filesystem.file_operations import sha256_file
+from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.utils.system.rust_backend import (
     parse_extracted_frame_numbers,
 )

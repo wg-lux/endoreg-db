@@ -9,7 +9,7 @@ import pytest
 
 from endoreg_db.import_files.context.file_lock import STALE_LOCK_SECONDS
 from endoreg_db.services.reconciliation import ReconciliationService
-from endoreg_db.utils.filesystem.file_operations import atomic_copy_file
+from endoreg_db.utils.file_operations import atomic_copy_file
 
 
 @pytest.mark.unit

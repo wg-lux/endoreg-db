@@ -3,7 +3,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from endoreg_db.services.video_files._imports import atomic_copy_with_fallback
-from endoreg_db.utils.filesystem.file_operations import ensure_directory
+from endoreg_db.utils.file_operations import ensure_directory
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.utils.video.ffmpeg_wrapper import transcode_videofile_if_required
 

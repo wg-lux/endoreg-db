@@ -54,7 +54,7 @@ from endoreg_db.models import AiModel, Label, ModelMeta, ModelType
 from endoreg_db.models.label import LabelSet, LabelType
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS, env_bool
 from endoreg_db.utils.filesystem import paths as paths_module
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_write_file,
     ensure_directory,

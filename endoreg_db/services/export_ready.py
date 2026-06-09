@@ -18,7 +18,7 @@ from endoreg_db.models.state.video_segment_validation import (
 from endoreg_db.services.hub import resolve_allowed_center_id
 from endoreg_db.services.hub.audit import emit_hub_audit_event
 from endoreg_db.services.video_files import get_or_create_video_state
-from endoreg_db.utils.filesystem.file_operations import sha256_file
+from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.utils.filesystem.paths import ensure_within_protected_media_root
 
 logger = logging.getLogger(__name__)

@@ -13,9 +13,9 @@ from .core.dates import (
 from .core.env import DEBUG, get_env_var
 
 # file_operations
-from .filesystem import file_operations as file_operations
+from . import file_operations as file_operations
 from .filesystem import paths as paths
-from .filesystem.file_operations import (
+from .file_operations import (
     copy_with_progress,
     get_content_hash_filename,
 )
