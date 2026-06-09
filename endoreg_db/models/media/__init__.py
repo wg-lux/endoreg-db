@@ -1,20 +1,35 @@
-from .video import VideoFile, VideoMetadata, VideoProcessingHistory
+from .video import (
+    FrameExtractionRequest,
+    VideoFile,
+    VideoMetadata,
+    VideoProcessingHistory,
+)
+from .operation_lease import MediaOperationLease
 from .frame import Frame
 from .pdf import (
     RawPdfFile,
     PdfProcessingHistory,
+    ReportLlmInferenceJob,
     DocumentType,
     AnonymExaminationReport,
     ReportReaderConfig,
     ReportReaderFlag,
     AnonymHistologyReport,
 )
+from .anonymization_metrics import (
+    AnonymizationFieldMetric,
+    AnonymizationMetricField,
+    AnonymizationMetricMediaType,
+    AnonymizationValidationMetric,
+)
 
 __all__ = [
     "VideoFile",
     "Frame",
+    "FrameExtractionRequest",
     "RawPdfFile",
     "PdfProcessingHistory",
+    "ReportLlmInferenceJob",
     "DocumentType",
     "AnonymExaminationReport",
     "AnonymHistologyReport",
@@ -22,4 +37,9 @@ __all__ = [
     "ReportReaderFlag",
     "VideoMetadata",
     "VideoProcessingHistory",
+    "MediaOperationLease",
+    "AnonymizationFieldMetric",
+    "AnonymizationMetricField",
+    "AnonymizationMetricMediaType",
+    "AnonymizationValidationMetric",
 ]

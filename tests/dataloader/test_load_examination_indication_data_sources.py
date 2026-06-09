@@ -65,11 +65,11 @@ class _FakeDtypesKnowledgeBase:
 
 class LoadExaminationIndicationDataSourceTests(TestCase):
     def test_dtypes_source_upserts_and_syncs_links(self):
-        Examination.objects.create(name="colonoscopy")
-        FindingIntervention.objects.create(
+        Examination.objects.get_or_create(name="colonoscopy")
+        FindingIntervention.objects.get_or_create(
             name="endoscopy_cold_snare_resection_generic"
         )
-        FindingIntervention.objects.create(name="endoscopy_hemoclip_generic")
+        FindingIntervention.objects.get_or_create(name="endoscopy_hemoclip_generic")
 
         fake_kb = _FakeDtypesKnowledgeBase()
         with patch(

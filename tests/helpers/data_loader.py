@@ -26,7 +26,6 @@ def load_default_ai_model():
         "--model_path",
         model_path,
         "--bump_version",  # Handle existing models by bumping version
-        "--bump_version",  # Handle existing models by bumping version
     )
 
 
@@ -47,19 +46,11 @@ def load_shift_data():
         "load_shift_data",
     )
 
-    call_command(
-        "load_shift_data",
-    )
-
 
 def load_base_db_data():
     """
     Loads the base database data using the corresponding Django management command.
     """
-    call_command(
-        "load_base_db_data",
-    )
-
     call_command(
         "load_base_db_data",
     )
@@ -194,9 +185,7 @@ def load_ai_model_label_data():
 
 
 def load_ai_model_data():
-    call_command(
-        "load_ai_model_label_data",
-    )
+    load_ai_model_label_data()
     call_command(
         "load_ai_model_data",
     )

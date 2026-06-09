@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import URLPattern, path
 
 from endoreg_db.views.media.frame_media import FrameStreamView
 from endoreg_db.views.media.export_ready import VideoMarkReadyForExportView
@@ -8,6 +8,7 @@ from endoreg_db.views.media.hub import (
     HubTransferStatusView,
 )
 from endoreg_db.views.media.patient_media_timeline import PatientMediaTimelineView
+from endoreg_db.views.media.anonymization_metrics import AnonymizationMetricsView
 from endoreg_db.views.media.pdf_media import (
     PdfMediaView,  # Alias to avoid conflict with legacy pdf.reportMediaView
 )
@@ -23,7 +24,7 @@ from endoreg_db.views.media.sensitive_metadata import (
     video_sensitive_metadata_verify,
 )
 from endoreg_db.views.media.video_media import VideoMediaView
-from endoreg_db.views.report.reimport import ReportReimportView
+from endoreg_db.views.report.reimport import ReportLlmJobStatusView, ReportReimportView
 from endoreg_db.views.report.pdf_redaction import (
     PdfApplyRedactionsView,
     PdfProcessingHistoryView,
@@ -52,6 +53,7 @@ from endoreg_db.views.video.ai import (
     FrameAnnotationBulkUpsertView,
     FrameAnnotationRandomTaskView,
     FrameAnnotationSkipView,
+    FrameBoxAnnotationView,
     label_list,
     label_set_list,
     prediction_model_list,
@@ -64,9 +66,7 @@ from endoreg_db.views.video.correction import (
 )
 from endoreg_db.views.video.video_metadata import VideoMetadataStatsView
 
-# Simplified Meta and Validation Endpoints
-
-urlpatterns = [
+HUB_TRANSFER_URLPATTERNS: list[URLPattern] = [
     path(
         "media/hub/transfers/",
         HubTransferCreateView.as_view(),
@@ -82,17 +82,22 @@ urlpatterns = [
         HubTransferMediaUploadView.as_view(),
         name="hub-transfer-media-upload",
     ),
+]
+
+MEDIA_OVERVIEW_URLPATTERNS: list[URLPattern] = [
     path(
         "media/patients/<int:patient_id>/timeline/",
         PatientMediaTimelineView.as_view(),
         name="patient-media-timeline",
     ),
     path(
-        "media/sensitive-media-id/<int:pk>/<str:media_type>/",
-        get_sensitive_metadata_pk,
-        name="sm-pk",
+        "media/anonymization/metrics/",
+        AnonymizationMetricsView.as_view(),
+        name="media-anonymization-metrics",
     ),
-    # Video media endpoints
+]
+
+VIDEO_MEDIA_URLPATTERNS: list[URLPattern] = [
     path("media/videos/", VideoMediaView.as_view(), name="video-list"),
     path(
         "media/videos/<int:pk>/", VideoStreamView.as_view(), name="video-detail-stream"
@@ -108,9 +113,6 @@ urlpatterns = [
         FrameStreamView.as_view(),
         name="video-frame-stream",
     ),
-    # Video Re-import API endpoint (modern media framework)
-    # POST /api/media/videos/<int:pk>/reimport/
-    # Re-imports a video file to regenerate metadata when OCR failed or data is incomplete
     path(
         "media/videos/<int:pk>/reimport/",
         VideoReimportView.as_view(),
@@ -122,32 +124,10 @@ urlpatterns = [
         name="video-mark-ready-for-export",
     ),
     path(
-        "media/videos/export-annotated/",
-        export_annotated_data,
-        name="video-annotated-export",
-    ),
-    # ---------------------------------------------------------------------------------------
-    # VIDEO CORRECTION API ENDPOINTS (Modern Media Framework - October 14, 2025)
-    #
-    # All video correction endpoints migrated to unified /api/media/videos/<pk>/ pattern
-    # These endpoints enable video correction workflows (Phase 1.1):
-    # - Analysis: Detect sensitive frames using MiniCPM-o 2.6 or OCR+LLM
-    # - Masking: Apply device-specific masks or custom ROI masks
-    # - Frame Removal: Remove sensitive frames from videos
-    # - Reprocessing: Re-run entire anonymization pipeline
-    # - Metadata: View analysis results
-    # - History: Track all correction operations
-    # ---------------------------------------------------------------------------------------
-    # Video Correction API
-    # GET /api/media/videos/video-correction/{id}/ - Get video details for correction
-    path(
         "media/videos/video-correction/<int:pk>",
         VideoCorrectionView.as_view(),
         name="video-correction",
     ),
-    # Video Metadata API
-    # GET /api/media/videos/<int:pk>/metadata/
-    # Returns analysis results (sensitive frame count, ratio, frame IDs)
     path(
         "media/videos/<int:pk>/metadata/",
         VideoMetadataStatsView.as_view(),
@@ -158,27 +138,23 @@ urlpatterns = [
         VideoFpsView.as_view(),
         name="video-fps",
     ),
-    # Video Analysis API
-    # POST /api/media/videos/<int:pk>/analyze/
-    # Analyzes video for sensitive frames using MiniCPM-o 2.6 or OCR+LLM
-    # Body: { detection_method: 'minicpm'|'ocr_llm'|'hybrid', sample_interval: 30 }
-    # Video Masking API
-    # POST /api/media/videos/<int:pk>/apply-mask/
-    # Applies device mask or custom ROI mask to video
-    # Body: { mask_type: 'device'|'custom', device_name: 'olympus', roi: {...} }
     path(
         "media/videos/<int:pk>/apply-mask/",
         VideoApplyMaskView.as_view(),
         name="video-apply-mask",
     ),
-    # Video Frame Removal API
-    # POST /api/media/videos/<int:pk>/remove-frames/
-    # Removes specified frames from video
-    # Body: { frame_list: [10,20,30] OR frame_ranges: '10-20,30' OR detection_method: 'automatic' }
     path(
         "media/videos/<int:pk>/remove-frames/",
         VideoRemoveFramesView.as_view(),
         name="video-remove-frames",
+    ),
+]
+
+VIDEO_ANNOTATION_URLPATTERNS: list[URLPattern] = [
+    path(
+        "media/videos/export-annotated/",
+        export_annotated_data,
+        name="video-annotated-export",
     ),
     path("media/videos/labels/list/", label_list, name="get_lvs_list"),
     path(
@@ -195,101 +171,6 @@ urlpatterns = [
         "media/videos/<int:pk>/segments/rerun-predictions/",
         rerun_prediction_segments,
         name="video-segments-rerun-predictions",
-    ),
-    path(
-        "media/annotations/frames/bulk-upsert/",
-        FrameAnnotationBulkUpsertView.as_view(),
-        name="frame-annotations-bulk-upsert",
-    ),
-    path(
-        "media/annotations/frames/random-task/",
-        FrameAnnotationRandomTaskView.as_view(),
-        name="frame-annotations-random-task",
-    ),
-    path(
-        "media/annotations/frames/skip/",
-        FrameAnnotationSkipView.as_view(),
-        name="frame-annotations-skip",
-    ),
-    # VIDEO SEGMENT API ENDPOINTS (Modern Media Framework - October 14, 2025)
-    # Video Segments Stats API
-    # GET /api/media/videos/segments/stats/
-    # Get statistics about video segments
-    path(
-        "media/videos/segments/stats/",
-        video_segments_stats,
-        name="video-segments-stats",
-    ),
-    # Video-Specific Segments API
-    # GET/POST /api/media/videos/<int:pk>/segments/
-    # List segments for specific video or create segment for video
-    path(
-        "media/videos/<int:pk>/segments/",
-        video_segments_by_video,
-        name="video-segments-by-video",
-    ),
-    # Outside-Frame Blackening API
-    # POST /api/media/videos/<int:pk>/segments/blacken-outside/
-    # Re-runs processed video rebuild with "outside" segments blackened.
-    path(
-        "media/videos/<int:pk>/segments/blacken-outside/",
-        video_segments_blacken_outside,
-        name="video-segments-blacken-outside",
-    ),
-    # Bulk Segment Mutation API
-    # POST /api/media/videos/<int:pk>/segments/bulk/
-    # Applies creates, updates, and deletes in one transaction.
-    path(
-        "media/videos/<int:pk>/segments/bulk/",
-        video_segments_bulk_mutation,
-        name="video-segments-bulk-mutation",
-    ),
-    # Segment Detail API
-    # GET /api/media/videos/<int:pk>/segments/<int:segment_id>/
-    # PATCH /api/media/videos/<int:pk>/segments/<int:segment_id>/
-    # DELETE /api/media/videos/<int:pk>/segments/<int:segment_id>/
-    # Manages individual segment operations
-    path(
-        "media/videos/<int:pk>/segments/<int:segment_id>/",
-        video_segment_detail,
-        name="video-segment-detail",
-    ),
-    # ---------------------------------------------------------------------------------------
-    # VIDEO SEGMENT VALIDATION API ENDPOINTS (Modern Media Framework - October 14, 2025)
-    #
-    # Unified validation endpoints replacing legacy /api/label-video-segment/*/validate/
-    # Single: POST validate individual segment
-    # Bulk: POST validate multiple segments
-    # Status: GET/POST validation status for all segments
-    # ---------------------------------------------------------------------------------------
-    # Single Segment Validation API
-    # POST /api/media/videos/<int:pk>/segments/<int:segment_id>/validate/
-    # Validates a single video segment
-    # Body: { "is_validated": true, "notes": "..." }
-    path(
-        "media/videos/<int:pk>/segments/<int:segment_id>/validate/",
-        video_segment_validate,
-        name="video-segment-validate",
-    ),
-    # Bulk Segment Validation API
-    # POST /api/media/videos/<int:pk>/segments/validate-bulk/
-    # Validates multiple segments at once
-    # Body: { "segment_ids": [1,2,3], "is_validated": true, "notes": "..." }
-    path(
-        "media/videos/<int:pk>/segments/validate-bulk/",
-        video_segments_validate_bulk,
-        name="video-segments-validate-bulk",
-    ),
-    # Segment Validation Status API
-    # GET /api/media/videos/<int:pk>/segments/validation-status/
-    # Returns validation statistics for all segments
-    # POST /api/media/videos/<int:pk>/segments/validation-status/
-    # Marks all segments (or filtered by label) as validated
-    # Body: { "label_name": "polyp", "notes": "..." }
-    path(
-        "media/videos/<int:pk>/segments/validation-status/",
-        video_segments_validation_status,
-        name="video-segments-validation-status",
     ),
     path(
         "media/videos/<int:pk>/segments/import-predictions/",
@@ -316,12 +197,77 @@ urlpatterns = [
         ensure_prediction_segment_annotations_bulk,
         name="video-segments-ensure-prediction-annotations",
     ),
-    # ---------------------------------------------------------------------------------------
-    # SENSITIVE METADATA ENDPOINTS (Modern Media Framework)
-    # ---------------------------------------------------------------------------------------
-    # Video Sensitive Metadata (Resource-Scoped)
-    # GET/PATCH /api/media/videos/<pk>/sensitive-metadata/
-    # Get or update sensitive patient data for a video
+    path(
+        "media/annotations/frames/bulk-upsert/",
+        FrameAnnotationBulkUpsertView.as_view(),
+        name="frame-annotations-bulk-upsert",
+    ),
+    path(
+        "media/annotations/frames/random-task/",
+        FrameAnnotationRandomTaskView.as_view(),
+        name="frame-annotations-random-task",
+    ),
+    path(
+        "media/annotations/frames/skip/",
+        FrameAnnotationSkipView.as_view(),
+        name="frame-annotations-skip",
+    ),
+    path(
+        "media/annotations/frames/boxes/",
+        FrameBoxAnnotationView.as_view(),
+        name="frame-box-annotations",
+    ),
+    path(
+        "media/videos/segments/stats/",
+        video_segments_stats,
+        name="video-segments-stats",
+    ),
+    path(
+        "media/videos/<int:pk>/segments/",
+        video_segments_by_video,
+        name="video-segments-by-video",
+    ),
+    path(
+        "media/videos/<int:pk>/segments/blacken-outside/",
+        video_segments_blacken_outside,
+        name="video-segments-blacken-outside",
+    ),
+    path(
+        "media/videos/<int:pk>/segments/bulk/",
+        video_segments_bulk_mutation,
+        name="video-segments-bulk-mutation",
+    ),
+    path(
+        "media/videos/<int:pk>/segments/<int:segment_id>/",
+        video_segment_detail,
+        name="video-segment-detail",
+    ),
+]
+
+VIDEO_SEGMENT_VALIDATION_URLPATTERNS: list[URLPattern] = [
+    path(
+        "media/videos/<int:pk>/segments/<int:segment_id>/validate/",
+        video_segment_validate,
+        name="video-segment-validate",
+    ),
+    path(
+        "media/videos/<int:pk>/segments/validate-bulk/",
+        video_segments_validate_bulk,
+        name="video-segments-validate-bulk",
+    ),
+    path(
+        "media/videos/<int:pk>/segments/validation-status/",
+        video_segments_validation_status,
+        name="video-segments-validation-status",
+    ),
+]
+
+SENSITIVE_METADATA_URLPATTERNS: list[URLPattern] = [
+    path(
+        "media/sensitive-media-id/<int:pk>/<str:media_type>/",
+        get_sensitive_metadata_pk,
+        name="sm-pk",
+    ),
     path(
         "media/videos/<int:pk>/sensitive-metadata/",
         video_sensitive_metadata,
@@ -332,16 +278,11 @@ urlpatterns = [
         video_case_resolution,
         name="video-case-resolution",
     ),
-    # POST /api/media/videos/<pk>/sensitive-metadata/verify/
-    # Update verification state (dob_verified, names_verified)
     path(
         "media/videos/<int:pk>/sensitive-metadata/verify/",
         video_sensitive_metadata_verify,
         name="video-sensitive-metadata-verify",
     ),
-    # report Sensitive Metadata (Resource-Scoped)
-    # GET/PATCH /api/media/pdfs/<pk>/sensitive-metadata/
-    # Get or update sensitive patient data for a report
     path(
         "media/pdfs/<int:pk>/sensitive-metadata/",
         pdf_sensitive_metadata,
@@ -352,43 +293,38 @@ urlpatterns = [
         pdf_case_resolution,
         name="pdf-case-resolution",
     ),
-    # POST /api/media/pdfs/<pk>/sensitive-metadata/verify/
-    # Update verification state (dob_verified, names_verified)
     path(
         "media/pdfs/<int:pk>/sensitive-metadata/verify/",
         pdf_sensitive_metadata_verify,
         name="pdf-sensitive-metadata-verify",
     ),
-    # List Endpoints (Collection-Level)
-    # GET /api/media/sensitive-metadata/
-    # List all sensitive metadata (combined reports and Videos)
-    # Supports filtering: ?content_type=pdf|video&verified=true&search=name
     path(
         "media/sensitive-metadata/",
         sensitive_metadata_list,
         name="sensitive-metadata-list",
     ),
-    # GET /api/media/pdfs/sensitive-metadata/
-    # List sensitive metadata for reports only
-    # Replaces legacy /api/pdf/sensitivemeta/list/
     path(
         "media/pdfs/sensitive-metadata/",
         pdf_sensitive_metadata_list,
         name="pdf-sensitive-metadata-list",
     ),
-    # report media endpoints
+]
+
+PDF_REPORT_MEDIA_URLPATTERNS: list[URLPattern] = [
     path("media/pdfs/", PdfMediaView.as_view(), name="pdf-list"),
     path("media/pdfs/<int:pk>/", PdfMediaView.as_view(), name="pdf-detail"),
     path(
         "media/pdfs/<int:pk>/stream/", ReportStreamView.as_view(), name="pdf-stream"
     ),  # Support ?type=raw|anonymized params
-    # report Re-import API endpoint (modern media framework)
-    # POST /api/media/pdfs/<int:pk>/reimport/
-    # Re-imports a report file to regenerate metadata when OCR failed or data is incomplete
     path(
         "media/pdfs/<int:pk>/reimport/",
         ReportReimportView.as_view(),
         name="report-reimport",
+    ),
+    path(
+        "media/pdfs/<int:pk>/llm-jobs/<str:job_id>/",
+        ReportLlmJobStatusView.as_view(),
+        name="report-llm-job-status",
     ),
     path(
         "media/pdfs/<int:pk>/apply-redactions/",
@@ -401,4 +337,13 @@ urlpatterns = [
         name="pdf-processing-history",
     ),
 ]
-# ---------------------------------------------------------------------------------------
+
+urlpatterns: list[URLPattern] = [
+    *HUB_TRANSFER_URLPATTERNS,
+    *MEDIA_OVERVIEW_URLPATTERNS,
+    *VIDEO_MEDIA_URLPATTERNS,
+    *VIDEO_ANNOTATION_URLPATTERNS,
+    *VIDEO_SEGMENT_VALIDATION_URLPATTERNS,
+    *SENSITIVE_METADATA_URLPATTERNS,
+    *PDF_REPORT_MEDIA_URLPATTERNS,
+]

@@ -16,7 +16,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from endoreg_db.models import LabelVideoSegment, VideoFile
+from endoreg_db.models.label.label_video_segment.label_video_segment import (
+    LabelVideoSegment,
+)
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.serializers.video.video_file_detail import VideoDetailSerializer
 from endoreg_db.serializers.video.video_file_list import VideoFileListSerializer
 
@@ -225,6 +228,9 @@ class VideoMediaView(APIView):
             QuerySet: Filtered queryset
         """
         status_filter = query_params.get("status", "").strip().lower()
+        failed_query = Q(state__processing_error=True) | Q(
+            meta__integrity_status="lost"
+        )
 
         if status_filter:
             if status_filter == "not_started":
@@ -235,29 +241,24 @@ class VideoMediaView(APIView):
                         state__frames_extracted=False,
                         state__sensitive_meta_processed=False,
                     )
-                )
+                ).exclude(failed_query)
             elif status_filter == "processing":
                 # Videos in any processing state
                 queryset = queryset.filter(
                     state__frames_extracted=True, state__sensitive_meta_processed=False
-                )
+                ).exclude(failed_query)
             elif status_filter == "done_processing_anonymization":
                 # Videos with anonymization complete but not validated
                 queryset = queryset.filter(
                     state__anonymized=True, sensitive_meta__is_verified=False
-                )
+                ).exclude(failed_query)
             elif status_filter == "validated":
                 # Videos with human validation complete
                 queryset = queryset.filter(
                     state__anonymized=True, sensitive_meta__is_verified=True
-                )
+                ).exclude(failed_query)
             elif status_filter == "failed":
-                # Failed videos (this might need adjustment based on actual failure tracking)
-                queryset = queryset.filter(
-                    state__isnull=False,
-                    state__frames_extracted=False,
-                    state__sensitive_meta_processed=False,
-                )
+                queryset = queryset.filter(failed_query)
 
         return queryset
 

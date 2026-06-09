@@ -1,5 +1,6 @@
 from rest_framework import serializers
-from endoreg_db.models import AiModel, ModelType
+from endoreg_db.models.administration.ai.ai_model import AiModel
+from endoreg_db.models.administration.ai.model_type import ModelType
 
 
 class AiModelSerializer(serializers.ModelSerializer):

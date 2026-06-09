@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pytest
 
 from endoreg_db.import_files.report_import_service import ReportImportService
-from endoreg_db.utils.rust_backend import (
+from endoreg_db.utils.system.rust_backend import (
     render_single_page_pdf as rust_render_single_page_pdf,
 )
 

@@ -2,7 +2,15 @@ import uuid
 
 import pytest
 
-from endoreg_db.models import Center, EndoscopyProcessor, Frame, VideoFile
+from endoreg_db.models import (
+    AIDataSet,
+    Center,
+    EndoscopyProcessor,
+    Frame,
+    ImageClassificationAnnotation,
+    Label,
+    VideoFile,
+)
 from endoreg_db.models.media.video.video_file_io import _get_temp_anonymized_frame_dir
 
 
@@ -109,6 +117,101 @@ def test_pipe_1_frame_deletion_keeps_db_frames_and_clears_extracted_flags(
     assert state.frames_extracted is False
     assert state.frames_initialized is True
     assert state.frame_count == expected_final_frame_count
+
+
+@pytest.mark.django_db
+def test_delete_frames_preserves_dataset_backed_frame_files(
+    tmp_path,
+    django_capture_on_commit_callbacks,
+):
+    center = Center.objects.create(
+        name=f"frame-preserve-center-{uuid.uuid4().hex[:8]}",
+        display_name="Frame Preserve Center",
+    )
+    processor = EndoscopyProcessor.objects.create(
+        name=f"frame-preserve-processor-{uuid.uuid4().hex[:8]}",
+        image_width=1920,
+        image_height=1080,
+        endoscope_image_x=0,
+        endoscope_image_y=0,
+        endoscope_image_width=1920,
+        endoscope_image_height=1080,
+        examination_date_x=0,
+        examination_date_y=0,
+        examination_date_width=100,
+        examination_date_height=50,
+        examination_time_x=0,
+        examination_time_y=0,
+        examination_time_width=100,
+        examination_time_height=50,
+        patient_first_name_x=0,
+        patient_first_name_y=0,
+        patient_first_name_width=100,
+        patient_first_name_height=50,
+        patient_last_name_x=0,
+        patient_last_name_y=0,
+        patient_last_name_width=100,
+        patient_last_name_height=50,
+        patient_dob_x=0,
+        patient_dob_y=0,
+        patient_dob_width=100,
+        patient_dob_height=50,
+        endoscope_type_x=0,
+        endoscope_type_y=0,
+        endoscope_type_width=100,
+        endoscope_type_height=50,
+        endoscope_sn_x=0,
+        endoscope_sn_y=0,
+        endoscope_sn_width=100,
+        endoscope_sn_height=50,
+    )
+    processor.centers.add(center)
+    frame_dir = tmp_path / f"frames-{uuid.uuid4().hex[:8]}"
+    frame_dir.mkdir(parents=True, exist_ok=True)
+    video = VideoFile.objects.create(
+        center=center,
+        processor=processor,
+        video_hash=f"frame-preserve-{uuid.uuid4().hex}",
+        frame_count=3,
+        frame_dir=str(frame_dir),
+    )
+    video.initialize_frames()
+    frames = list(Frame.objects.filter(video=video).order_by("frame_number"))
+    for frame in frames:
+        frame.file_path.write_bytes(f"frame-{frame.frame_number}".encode("utf-8"))
+    Frame.objects.filter(video=video).update(is_extracted=True)
+
+    label = Label.objects.create(name=f"frame-preserve-label-{uuid.uuid4().hex[:8]}")
+    annotation = ImageClassificationAnnotation.objects.create(
+        frame=frames[1],
+        label=label,
+        value=True,
+    )
+    dataset = AIDataSet.objects.create(
+        name=f"frame-preserve-dataset-{uuid.uuid4().hex[:8]}",
+        dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+        ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+    )
+    dataset.image_annotations.add(annotation)
+
+    state = video.get_or_create_state()
+    state.frames_extracted = True
+    state.save(update_fields=["frames_extracted"])
+
+    with django_capture_on_commit_callbacks(execute=True):
+        video.delete_frames()
+
+    for frame in frames:
+        frame.refresh_from_db()
+    state.refresh_from_db()
+
+    assert frames[0].file_path.exists() is False
+    assert frames[1].file_path.read_bytes() == b"frame-1"
+    assert frames[2].file_path.exists() is False
+    assert frames[0].is_extracted is False
+    assert frames[1].is_extracted is True
+    assert frames[2].is_extracted is False
+    assert state.frames_extracted is False
 
 
 @pytest.mark.django_db

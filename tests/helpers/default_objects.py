@@ -1,5 +1,4 @@
 import random
-import shutil
 from datetime import date
 from logging import getLogger
 from pathlib import Path
@@ -8,7 +7,11 @@ from typing import Optional
 from django.conf import settings  # Import settings
 from django.core.files.storage import default_storage  # Import default storage
 from django.db.models.fields.files import FieldFile
-from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.filesystem.file_operations import (
+    atomic_copy_file,
+    safe_unlink_file,
+    sha256_file,
+)
 from endoreg_db.models import (
     AiModel,
     Center,
@@ -19,9 +22,13 @@ from endoreg_db.models import (
     InformationSource,
     ModelMeta,
     Patient,
-    RawPdfFile,
+)
+from endoreg_db.services.raw_pdf_files import (
+    create_initialized_raw_pdf_file_from_path,
+    process_raw_pdf_file,
 )
 from endoreg_db.utils import create_mock_patient_name
+from .model_weights import ensure_managed_stub_weights
 
 logger = getLogger("default_objects")
 
@@ -55,7 +62,7 @@ def get_information_source_prediction():
     from .data_loader import load_information_source_data
 
     load_information_source_data()
-    source = InformationSource.objects.get(name="prediction")
+    source = InformationSource.objects.resolve_by_name("prediction")
     assert isinstance(source, InformationSource), (
         "No InformationSource found in the database."
     )
@@ -85,13 +92,22 @@ def get_latest_segmentation_model(
     ai_model = AiModel.objects.filter(name=model_name).first()
     if ai_model is not None:
         try:
-            return ai_model.get_latest_version()
+            latest_meta = ai_model.get_latest_version()
+            ensure_managed_stub_weights(
+                latest_meta,
+                suffix=f"{model_name}_stub.safetensors",
+            )
+            return latest_meta
         except ValueError:
             pass
 
     load_default_ai_model()  # Fallback to management command in case metadata is missing
     ai_model = AiModel.objects.get(name=model_name)
     latest_meta = ai_model.get_latest_version()
+    ensure_managed_stub_weights(
+        latest_meta,
+        suffix=f"{model_name}_stub.safetensors",
+    )
     return latest_meta
 
 
@@ -271,13 +287,13 @@ def get_default_egd_pdf():
     temp_dir.mkdir(parents=True, exist_ok=True)
     temp_file_path = temp_dir / f"temp_{egd_path.name}"
 
-    shutil.copy(egd_path, temp_file_path)
+    atomic_copy_file(source=egd_path, destination=temp_file_path)
 
     pdf_file = None
     file_field: Optional[FieldFile] = None
     try:
         # Create the report record using the temporary file.
-        pdf_file = RawPdfFile.create_from_file_initialized(
+        pdf_file = create_initialized_raw_pdf_file_from_path(
             file_path=temp_file_path,
             center_name=center_name,
         )
@@ -292,7 +308,7 @@ def get_default_egd_pdf():
         )
 
         # Act as the watcher and clean up the file now that ingestion is successful
-        temp_file_path.unlink(missing_ok=True)
+        safe_unlink_file(temp_file_path, missing_ok=True)
 
         # Prepare a minimal report_meta for SensitiveMeta creation
         default_report_meta = {
@@ -303,8 +319,9 @@ def get_default_egd_pdf():
             # center_name will be added by process_file using pdf_file.center.name
         }
 
-        # Call process_file to create SensitiveMeta and extract other info
-        pdf_file.process_file(
+        # Call service to create SensitiveMeta and extract other info
+        process_raw_pdf_file(
+            pdf_file,
             text="Default report text content.",
             anonymized_text="Default anonymized report text content.",
             report_meta=default_report_meta,
@@ -315,7 +332,7 @@ def get_default_egd_pdf():
     except Exception as e:
         # Clean up temp file in case of error before deletion could occur
         if temp_file_path.exists():
-            temp_file_path.unlink()
+            safe_unlink_file(temp_file_path)
         raise e  # Re-raise the exception
 
     # pdf_file.file.path might fail if storage doesn't support direct paths (like S3)

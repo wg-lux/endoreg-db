@@ -5,10 +5,10 @@ from typing import Any
 from lx_dtypes.models.contracts import DocumentType as DocumentTypeContract
 from lx_dtypes.models.contracts import ReportContext
 
-from endoreg_db.models import (
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.media.pdf.report_file import (
     AnonymExaminationReport,
     DocumentType as DocumentTypeModel,
-    RawPdfFile,
 )
 
 DOCUMENT_TYPE_VALUES = [

@@ -7,7 +7,7 @@ from rest_framework.response import Response
 from rest_framework.decorators import action
 
 from endoreg_db.authz.permissions import PolicyPermission
-from endoreg_db.models import Patient
+from endoreg_db.models.administration.person.patient.patient import Patient
 from endoreg_db.serializers.patient import PatientSerializer
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 

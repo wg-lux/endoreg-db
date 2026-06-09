@@ -22,6 +22,7 @@ from endoreg_db.models.state.processing_history.processing_history import (
 from tests.helpers.data_loader import load_gender_data
 
 
+@override_settings(ENDOREG_ENABLE_HUB_TRANSFERS=True)
 class HubTransferEndpointTests(TestCase):
     @classmethod
     def setUpTestData(cls):
@@ -201,6 +202,10 @@ class HubTransferEndpointTests(TestCase):
             },
         }
 
+    @override_settings(
+        ENDOREG_DEPLOYMENT_ROLE="central_hub",
+        ENDOREG_ENABLE_HUB_TRANSFERS=False,
+    )
     def test_transfer_endpoints_return_404_when_feature_flag_is_disabled(self):
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__disabled",
@@ -299,6 +304,33 @@ class HubTransferEndpointTests(TestCase):
         ).exists()
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_transfer_registration_fails_closed_without_shared_secret_hash(self):
+        self.source_node.shared_secret_hash = ""
+        self.source_node.save(update_fields=["shared_secret_hash"])
+        payload = self._video_transfer_payload(
+            transfer_key="site-a__video__missing-secret-hash",
+            video_hash="hash-missing-secret-hash",
+        )
+
+        with self.assertLogs("endoreg_db.hub.audit", level="INFO") as audit_logs:
+            response = self._secure_post(
+                "/api/media/hub/transfers/",
+                data=payload,
+                content_type="application/json",
+                **self._auth_headers(),
+            )
+
+        assert response.status_code == 403, response.content
+        assert "Invalid network node credentials" in response.json()["detail"]
+        assert not TransferJob.objects.filter(
+            transfer_key="site-a__video__missing-secret-hash"
+        ).exists()
+        log_output = "\n".join(audit_logs.output)
+        assert "hub.transfer_node_auth_failed" in log_output
+        assert "missing_shared_secret_hash" in log_output
+        assert self.source_secret not in log_output
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfer_registration_does_not_allow_authenticated_user_to_bypass_node_auth(
         self,
     ):
@@ -356,15 +388,47 @@ class HubTransferEndpointTests(TestCase):
             video_hash="hash-insecure-transport",
         )
 
+        with self.assertLogs(
+            "endoreg_db.views.media.hub.transfers",
+            level="WARNING",
+        ) as transfer_logs:
+            response = self.client.post(
+                "/api/media/hub/transfers/",
+                data=payload,
+                content_type="application/json",
+                **self._auth_headers(),
+            )
+
+        assert response.status_code == 403, response.content
+        assert "requires HTTPS" in response.json()["detail"]
+        event = transfer_logs.records[-1].structured_event
+        assert event["event"] == "hub.transfer_secure_transport_failed"
+        assert event["reason"] == "insecure_request"
+        assert self.source_secret not in "\n".join(transfer_logs.output)
+
+    @override_settings(
+        ENDOREG_DEPLOYMENT_ROLE="central_hub",
+        ENDOREG_HUB_TRANSFER_REQUIRE_MTLS=True,
+        SECURE_PROXY_SSL_HEADER=("HTTP_X_FORWARDED_PROTO", "https"),
+    )
+    def test_transfer_registration_accepts_proxy_https_header(self):
+        payload = self._video_transfer_payload(
+            transfer_key="site-a__video__proxy-https",
+            video_hash="hash-proxy-https",
+        )
+
         response = self.client.post(
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
+            HTTP_X_FORWARDED_PROTO="https",
             **self._auth_headers(),
         )
 
-        assert response.status_code == 403, response.content
-        assert "requires HTTPS" in response.json()["detail"]
+        assert response.status_code == 201, response.content
+        assert TransferJob.objects.filter(
+            transfer_key="site-a__video__proxy-https"
+        ).exists()
 
     @override_settings(
         ENDOREG_DEPLOYMENT_ROLE="central_hub",
@@ -376,16 +440,26 @@ class HubTransferEndpointTests(TestCase):
             video_hash="hash-mtls-required",
         )
 
-        response = self._secure_post(
-            "/api/media/hub/transfers/",
-            data=payload,
-            content_type="application/json",
-            HTTP_X_NETWORK_NODE_KEY=self.source_node.node_key,
-            HTTP_X_NETWORK_NODE_SECRET=self.source_secret,
-        )
+        with self.assertLogs(
+            "endoreg_db.views.media.hub.transfers",
+            level="WARNING",
+        ) as transfer_logs:
+            response = self._secure_post(
+                "/api/media/hub/transfers/",
+                data=payload,
+                content_type="application/json",
+                HTTP_X_NETWORK_NODE_KEY=self.source_node.node_key,
+                HTTP_X_NETWORK_NODE_SECRET=self.source_secret,
+            )
 
         assert response.status_code == 403, response.content
         assert "mutual TLS" in response.json()["detail"]
+        event = transfer_logs.records[-1].structured_event
+        assert event["event"] == "hub.transfer_mtls_check_failed"
+        assert event["reason"] == "mtls_proxy_verification_failed"
+        assert event["mtls_actual_value_present"] is False
+        assert "SUCCESS" not in "\n".join(transfer_logs.output)
+        assert self.source_secret not in "\n".join(transfer_logs.output)
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfer_registration_is_idempotent_for_same_transfer_key(self):
@@ -554,23 +628,33 @@ class HubTransferEndpointTests(TestCase):
         )
         assert create_response.status_code == 201, create_response.content
 
-        upload_response = self._secure_post(
-            f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
-            data={
-                "media_role": "raw",
-                "file": SimpleUploadedFile(
-                    "source.mp4",
-                    raw_bytes,
-                    content_type="video/mp4",
-                ),
-            },
-            **self._auth_headers(),
-        )
+        with self.assertLogs(
+            "endoreg_db.views.media.hub.transfers",
+            level="WARNING",
+        ) as transfer_logs:
+            upload_response = self._secure_post(
+                f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
+                data={
+                    "media_role": "raw",
+                    "file": SimpleUploadedFile(
+                        "source.mp4",
+                        raw_bytes,
+                        content_type="video/mp4",
+                    ),
+                },
+                **self._auth_headers(),
+            )
 
         assert upload_response.status_code == 400, upload_response.content
         assert "Only anonymized processed media may be uploaded" in str(
             upload_response.json()
         )
+        event = transfer_logs.records[-1].structured_event
+        assert event["event"] == "hub.transfer_media_upload_validation_failed"
+        assert event["error_fields"] == ["media_role"]
+        log_output = "\n".join(transfer_logs.output)
+        assert "raw-video-bytes" not in log_output
+        assert "source.mp4" not in log_output
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfer_media_upload_requires_multipart_file(self):

@@ -9,7 +9,7 @@ import pytest
 from django.test import TestCase
 
 from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
-from endoreg_db.utils.paths import protected_media_root
+from endoreg_db.utils.filesystem.paths import protected_media_root
 
 
 class FakeStorage:
@@ -157,7 +157,14 @@ class VideoStreamViewTests(TestCase):
                 raw_streamable_relative_path="streamable_videos/raw/test.mp4",
                 processed_streamable_relative_path="streamable_videos/processed/test.mp4",
             )
+            fake_lease = SimpleNamespace(token="nginx-lease-token")
+            lease_calls = {}
             attach_video_stream_methods(fake_video_obj, view_module)
+
+            def fake_create_video_stream_lease(video, *, file_type):
+                lease_calls["video"] = video
+                lease_calls["file_type"] = file_type
+                return fake_lease
 
             monkeypatches.setenv("SERVE_WITH_NGINX", "true")
             monkeypatches.setenv(
@@ -169,6 +176,11 @@ class VideoStreamViewTests(TestCase):
                 view_module.VideoStreamView,
                 "_get_video_or_404",
                 staticmethod(lambda pk: fake_video_obj),
+            )
+            monkeypatches.setattr(
+                view_module,
+                "create_video_stream_lease",
+                fake_create_video_stream_lease,
             )
 
             response = self.client.get("/api/media/videos/123/stream/?type=raw")
@@ -187,6 +199,8 @@ class VideoStreamViewTests(TestCase):
         )
         assert response["X-Accel-Buffering"] == "no"
         assert response["Access-Control-Allow-Origin"] == "http://frontend.test"
+        assert response["X-Media-Operation-Lease"] == "nginx-lease-token"
+        assert lease_calls == {"video": fake_video_obj, "file_type": "raw"}
 
     def test_video_stream_range_uses_storage_api_hooks(self):
         from endoreg_db.views.video import video_stream as view_module
@@ -218,6 +232,62 @@ class VideoStreamViewTests(TestCase):
         assert response.status_code == 206
         assert response["Content-Range"] == f"bytes 25-99/{len(payload)}"
         assert b"".join(response.streaming_content) == payload[25:100]
+
+    def test_video_stream_wraps_django_stream_with_media_lease(self):
+        from endoreg_db.views.video import video_stream as view_module
+
+        payload = b"\x00\x00\x00\x18ftypmp42lease"
+        fake_storage = FakeStorage(payload)
+        fake_field = StubFieldFile(fake_storage, "videos/test.mp4")
+        fake_video_obj = SimpleNamespace(
+            active_raw_file=fake_field,
+            processed_file=fake_field,
+            storage_mode=view_module.VideoFile.StorageMode.APP_ENCRYPTED,
+        )
+        fake_lease = SimpleNamespace(token="lease-token")
+        calls = {}
+        attach_video_stream_methods(fake_video_obj, view_module)
+
+        def fake_create_video_stream_lease(video, *, file_type):
+            calls["video"] = video
+            calls["file_type"] = file_type
+            return fake_lease
+
+        def fake_wrap_iterator_with_media_lease(chunks, lease):
+            calls["lease"] = lease
+            yield from chunks
+
+        monkeypatches = pytest.MonkeyPatch()
+        try:
+            monkeypatches.setattr(
+                view_module.VideoStreamView,
+                "_get_video_or_404",
+                staticmethod(lambda pk: fake_video_obj),
+            )
+            monkeypatches.setattr(
+                view_module,
+                "create_video_stream_lease",
+                fake_create_video_stream_lease,
+            )
+            monkeypatches.setattr(
+                view_module,
+                "wrap_iterator_with_media_lease",
+                fake_wrap_iterator_with_media_lease,
+            )
+
+            response = self.client.get("/api/media/videos/123/stream/?type=processed")
+            body = b"".join(response.streaming_content)
+        finally:
+            monkeypatches.undo()
+
+        assert response.status_code == 200
+        assert response["X-Media-Operation-Lease"] == "lease-token"
+        assert body == payload
+        assert calls == {
+            "video": fake_video_obj,
+            "file_type": "processed",
+            "lease": fake_lease,
+        }
 
     def test_video_stream_does_not_emit_nginx_redirect_for_plaintext_path_outside_protected_root(
         self,

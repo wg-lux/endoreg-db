@@ -364,7 +364,7 @@ self.sensitive_meta = SensitiveMeta.create_from_dict(default_data)
 - **Implementation:** `endoreg_db/models/metadata/sensitive_meta_logic.py`
 - **Video Integration:** `endoreg_db/models/media/video/video_file.py`
 - **Import Service:** `endoreg_db/services/video_import.py`
-- **Hash Calculation:** `endoreg_db/utils/hashs.py`
+- **Hash Calculation:** `endoreg_db/utils/security/hashs.py`
 
 ---
 

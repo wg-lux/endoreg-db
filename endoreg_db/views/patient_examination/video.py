@@ -1,12 +1,10 @@
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
-from endoreg_db.models import (
-    Examination,
-    VideoFile,
-    Finding,
-    PatientExamination,
-)
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.medical.examination.examination import Examination
+from endoreg_db.models.medical.finding.finding import Finding
+from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from django.db import DatabaseError, transaction
 from django.utils import timezone
 import logging
@@ -27,7 +25,7 @@ class VideoPatientExaminationViewSet(viewsets.ModelViewSet):
     """
 
     def get_queryset(self):
-        video_id = self.request.query_params.get("videoId")
+        video_id = self.request.query_params.get("video_id")
         if video_id:
             return PatientExamination.objects.filter(video_id=video_id)
         return PatientExamination.objects.all()
@@ -108,12 +106,12 @@ class VideoPatientExaminationViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             data = request.data
-            if "videoId" in data:
+            if "video_id" in data:
                 try:
-                    data["videoId"] = int(data["videoId"])
+                    data["video_id"] = int(data["video_id"])
                 except (ValueError, TypeError):
                     return Response(
-                        {"error": "Invalid videoId format"},
+                        {"error": "Invalid video_id format"},
                         status=status.HTTP_400_BAD_REQUEST,
                     )
             if "timestamp" in data:
@@ -131,17 +129,17 @@ class VideoPatientExaminationViewSet(viewsets.ModelViewSet):
                         status=status.HTTP_400_BAD_REQUEST,
                     )
             with transaction.atomic():
-                if "videoId" in data:
+                if "video_id" in data:
                     try:
-                        VideoFile.objects.get(id=data["videoId"])
+                        VideoFile.objects.get(id=data["video_id"])
                     except VideoFile.DoesNotExist:
                         return Response(
                             {"error": "Video not found"},
                             status=status.HTTP_404_NOT_FOUND,
                         )
-                if "examinationTypeId" in data:
+                if "examination_type_id" in data:
                     try:
-                        examination_type_id = int(data["examinationTypeId"])
+                        examination_type_id = int(data["examination_type_id"])
                         Examination.objects.get(id=examination_type_id)
                     except (ValueError, TypeError):
                         return Response(
@@ -153,9 +151,9 @@ class VideoPatientExaminationViewSet(viewsets.ModelViewSet):
                             {"error": "Examination type not found"},
                             status=status.HTTP_404_NOT_FOUND,
                         )
-                if "findingId" in data:
+                if "finding_id" in data:
                     try:
-                        finding_id = int(data["findingId"])
+                        finding_id = int(data["finding_id"])
                         Finding.objects.get(id=finding_id)
                     except (ValueError, TypeError):
                         return Response(
@@ -169,15 +167,17 @@ class VideoPatientExaminationViewSet(viewsets.ModelViewSet):
                         )
                 examination_data = {
                     "id": examination_id,
-                    "video_id": data.get("videoId"),
+                    "video_id": data.get("video_id"),
                     "timestamp": data.get("timestamp"),
-                    "examination_type": data.get("examinationTypeId"),
-                    "finding": data.get("findingId"),
-                    "location_classification": data.get("locationClassificationId"),
-                    "location_choice": data.get("locationChoiceId"),
-                    "morphology_classification": data.get("morphologyClassificationId"),
-                    "morphology_choice": data.get("morphologyChoiceId"),
-                    "interventions": data.get("interventionIds", []),
+                    "examination_type": data.get("examination_type_id"),
+                    "finding": data.get("finding_id"),
+                    "location_classification": data.get("location_classification_id"),
+                    "location_choice": data.get("location_choice_id"),
+                    "morphology_classification": data.get(
+                        "morphology_classification_id"
+                    ),
+                    "morphology_choice": data.get("morphology_choice_id"),
+                    "interventions": data.get("intervention_ids", []),
                     "notes": data.get("notes", ""),
                     "updated_at": timezone.now().isoformat(),
                 }

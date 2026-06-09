@@ -234,6 +234,130 @@ def test_import_and_anonymize_locks_original_before_sensitive_copy(
 
 
 @pytest.mark.unit
+def test_import_and_anonymize_anonymizer_failure_finalizes_failure(
+    monkeypatch, tmp_path
+):
+    import endoreg_db.import_files.video_import_service as vis_module
+
+    source_path = tmp_path / "import" / "watcher.mp4"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    source_path.write_bytes(b"video")
+
+    events = []
+    sensitive_path = tmp_path / "managed" / "sensitive_videos" / source_path.name
+
+    monkeypatch.setattr(vis_module, "validate_directories", lambda: None, raising=True)
+    monkeypatch.setattr(
+        VideoImportService,
+        "_get_existing_completed_video",
+        lambda self, ctx: None,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        VideoImportService,
+        "_ensure_pipeline_storage_budget",
+        lambda self, path: None,
+        raising=True,
+    )
+
+    @contextmanager
+    def fake_file_lock(path):
+        events.append(("file_lock", Path(path)))
+        yield
+
+    @contextmanager
+    def fake_hash_lock(file_hash, lock_root):
+        events.append(("hash_lock", file_hash, Path(lock_root)))
+        yield
+
+    def fake_create_sensitive_copy(src, sensitive_root, ctx):
+        events.append(("create_sensitive_copy", Path(src)))
+        sensitive_path.parent.mkdir(parents=True, exist_ok=True)
+        sensitive_path.write_bytes(src.read_bytes())
+        return sensitive_path
+
+    class DummyVideo:
+        def __init__(self):
+            self.pk = 1
+            self.state = SimpleNamespace(anonymization_validated=False)
+            self.video_hash = "video-hash"
+            self.sensitive_meta = object()
+            self.original_file_name = source_path.name
+
+        def get_or_create_state(self):
+            return self.state
+
+        def get_raw_file_path(self):
+            return sensitive_path
+
+    def fake_create_or_retrieve(ctx):
+        events.append(
+            (
+                "create_or_retrieve",
+                Path(ctx.file_path),
+                Path(ctx.sensitive_path) if ctx.sensitive_path else None,
+            )
+        )
+        return DummyVideo(), False, True
+
+    class DummyAnonymizer:
+        def anonymize_video(self, ctx):
+            events.append(("anonymize_video", Path(ctx.file_path)))
+            raise ValueError("anonymizer failed")
+
+    monkeypatch.setattr(vis_module, "file_lock", fake_file_lock, raising=True)
+    monkeypatch.setattr(vis_module, "content_hash_lock", fake_hash_lock, raising=True)
+    monkeypatch.setattr(
+        vis_module, "create_sensitive_copy", fake_create_sensitive_copy, raising=True
+    )
+    monkeypatch.setattr(
+        vis_module,
+        "create_or_retrieve_video_file",
+        fake_create_or_retrieve,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        vis_module,
+        "get_or_create_video_state",
+        lambda video: video.state,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        vis_module,
+        "mark_instance_processing_started",
+        lambda instance, ctx: events.append(("mark_processing_started", instance.pk)),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        vis_module,
+        "finalize_video_success",
+        lambda ctx: (_ for _ in ()).throw(
+            AssertionError("failed anonymization must not finalize success")
+        ),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        vis_module,
+        "finalize_failure",
+        lambda ctx: events.append(("finalize_failure", ctx.current_video.pk)),
+        raising=True,
+    )
+
+    service = VideoImportService(anonymizer=DummyAnonymizer())
+
+    with pytest.raises(ValueError, match="anonymizer failed"):
+        service.import_and_anonymize(
+            file_path=source_path,
+            center_name="university_hospital_wuerzburg",
+            processor_name="olympus_cv_1500",
+        )
+
+    assert ("anonymize_video", source_path) in events
+    assert ("finalize_failure", 1) in events
+    assert not any(event[0] == "finalize_video_success" for event in events)
+
+
+@pytest.mark.unit
 def test_video_import_service_does_not_construct_anonymizer_in_init(monkeypatch):
     import endoreg_db.import_files.video_import_service as vis_module
 
@@ -251,6 +375,106 @@ def test_video_import_service_does_not_construct_anonymizer_in_init(monkeypatch)
     service = VideoImportService()
 
     assert service._anonymizer is None
+
+
+@pytest.mark.unit
+def test_reanonymize_existing_video_skips_import_staging(monkeypatch, tmp_path):
+    import endoreg_db.import_files.video_import_service as vis_module
+
+    source_path = tmp_path / "raw.mp4"
+    source_path.write_bytes(b"raw-video")
+    events = []
+
+    class DummyVideo:
+        video_hash = "video-hash"
+        resolved_import_context = False
+
+    video = DummyVideo()
+
+    class DummyAnonymizer:
+        def anonymize_video(self, ctx):
+            events.append(
+                (
+                    "anonymize",
+                    ctx.current_video,
+                    Path(ctx.file_path),
+                    Path(ctx.local_source_path),
+                    ctx.sensitive_path,
+                    ctx.retry,
+                )
+            )
+            ctx.anonymized_path = tmp_path / "anon.mp4"
+            ctx.anonymized_path.write_bytes(b"anon")
+            return ctx
+
+    def fail_create_sensitive_copy(*args, **kwargs):
+        raise AssertionError("re-anonymization should not create a sensitive copy")
+
+    def fake_get_video_import_context_names(video):
+        video.resolved_import_context = True
+        return "university_hospital_wuerzburg", "olympus_cv_1500"
+
+    @contextmanager
+    def fake_file_lock(path):
+        events.append(("file_lock", Path(path)))
+        yield
+
+    @contextmanager
+    def fake_hash_lock(file_hash, lock_root):
+        events.append(("hash_lock", file_hash, Path(lock_root)))
+        yield
+
+    monkeypatch.setattr(vis_module, "validate_directories", lambda: None, raising=True)
+    monkeypatch.setattr(vis_module, "file_lock", fake_file_lock, raising=True)
+    monkeypatch.setattr(vis_module, "content_hash_lock", fake_hash_lock, raising=True)
+    monkeypatch.setattr(
+        vis_module, "create_sensitive_copy", fail_create_sensitive_copy, raising=True
+    )
+    monkeypatch.setattr(
+        vis_module,
+        "get_video_import_context_names",
+        fake_get_video_import_context_names,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        vis_module,
+        "mark_instance_processing_started",
+        lambda instance, ctx: events.append(("started", instance, ctx.current_video)),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        vis_module,
+        "finalize_video_success",
+        lambda ctx: events.append(("success", ctx.current_video, ctx.anonymized_path)),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        vis_module,
+        "finalize_failure",
+        lambda ctx: (_ for _ in ()).throw(
+            AssertionError("successful re-anonymization should not finalize failure")
+        ),
+        raising=True,
+    )
+
+    service = VideoImportService(anonymizer=DummyAnonymizer())
+
+    result = service.reanonymize_existing_video(video, source_path=source_path)
+
+    assert result is video
+    assert video.resolved_import_context is True
+    assert events[0] == ("file_lock", source_path)
+    assert events[1][0] == "hash_lock"
+    assert events[2] == ("started", video, video)
+    assert events[3] == (
+        "anonymize",
+        video,
+        source_path,
+        source_path,
+        None,
+        True,
+    )
+    assert events[4] == ("success", video, tmp_path / "anon.mp4")
 
 
 @pytest.mark.unit
@@ -484,9 +708,15 @@ def test_import_and_anonymize_duplicate_success_skips_storage_preflight_and_stag
         raising=True,
     )
     monkeypatch.setattr(
-        vis_module.VideoFile,
+        vis_module,
         "get_video_by_content_hash",
-        staticmethod(lambda file_hash: DummyVideo()),
+        lambda file_hash: DummyVideo(),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        vis_module,
+        "check_video_media_integrity",
+        lambda *args, **kwargs: SimpleNamespace(ok=True, reason="ok"),
         raising=True,
     )
 
@@ -563,9 +793,15 @@ def test_import_and_anonymize_completed_duplicate_removes_import_source(
         raising=True,
     )
     monkeypatch.setattr(
-        vis_module.VideoFile,
+        vis_module,
         "get_video_by_content_hash",
-        staticmethod(lambda file_hash: DummyVideo()),
+        lambda file_hash: DummyVideo(),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        vis_module,
+        "check_video_media_integrity",
+        lambda *args, **kwargs: SimpleNamespace(ok=True, reason="ok"),
         raising=True,
     )
 
@@ -641,9 +877,15 @@ def test_import_and_anonymize_completed_duplicate_keeps_external_source(
         raising=True,
     )
     monkeypatch.setattr(
-        vis_module.VideoFile,
+        vis_module,
         "get_video_by_content_hash",
-        staticmethod(lambda file_hash: DummyVideo()),
+        lambda file_hash: DummyVideo(),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        vis_module,
+        "check_video_media_integrity",
+        lambda *args, **kwargs: SimpleNamespace(ok=True, reason="ok"),
         raising=True,
     )
 
@@ -655,6 +897,69 @@ def test_import_and_anonymize_completed_duplicate_keeps_external_source(
     )
 
     assert result.pk == 1
+    assert source_path.exists()
+
+
+@pytest.mark.unit
+def test_import_and_anonymize_success_history_missing_media_fails_before_staging(
+    monkeypatch, tmp_path
+):
+    import endoreg_db.import_files.video_import_service as vis_module
+    from endoreg_db.services.hub.media_integrity import MediaIntegrityError
+
+    import_dir = tmp_path / "import"
+    source_path = import_dir / "missing-media-success-history.mp4"
+    import_dir.mkdir(parents=True, exist_ok=True)
+    source_path.write_bytes(b"video")
+
+    monkeypatch.setattr(vis_module, "validate_directories", lambda: None, raising=True)
+    monkeypatch.setattr(
+        vis_module, "_video_import_dir", lambda: import_dir, raising=True
+    )
+
+    @contextmanager
+    def fake_file_lock(path):
+        yield
+
+    @contextmanager
+    def fake_hash_lock(file_hash, lock_root):
+        yield
+
+    monkeypatch.setattr(vis_module, "file_lock", fake_file_lock, raising=True)
+    monkeypatch.setattr(vis_module, "content_hash_lock", fake_hash_lock, raising=True)
+    monkeypatch.setattr(
+        vis_module.ProcessingHistory,
+        "has_history_for_hash",
+        staticmethod(lambda file_hash, success: success),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        vis_module,
+        "get_video_by_content_hash",
+        lambda file_hash: None,
+        raising=True,
+    )
+
+    def fail_storage_budget(path):
+        raise AssertionError(
+            "storage preflight should be skipped when media integrity fails"
+        )
+
+    monkeypatch.setattr(
+        VideoImportService,
+        "_ensure_pipeline_storage_budget",
+        fail_storage_budget,
+        raising=True,
+    )
+
+    service = VideoImportService()
+    with pytest.raises(MediaIntegrityError, match="No VideoFile"):
+        service.import_and_anonymize(
+            file_path=source_path,
+            center_name="university_hospital_wuerzburg",
+            processor_name="olympus_cv_1500",
+        )
+
     assert source_path.exists()
 
 

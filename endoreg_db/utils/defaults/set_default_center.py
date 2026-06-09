@@ -4,7 +4,9 @@ from dataclasses import dataclass
 
 from django.core.exceptions import ObjectDoesNotExist
 
-from endoreg_db.models import ApplicationSettings, Center, EndoscopyProcessor
+from endoreg_db.models import AIDataSet, ApplicationSettings, Center, EndoscopyProcessor
+
+_UNSET = object()
 
 
 @dataclass(frozen=True)
@@ -15,6 +17,7 @@ class application_defaults_snapshot:
     processor_name: str | None
     annotator_name: str
     report_template_name: str
+    ai_dataset_id: int | None
     ai_dataset_name: str
     ai_dataset_type: str
 
@@ -34,6 +37,7 @@ def get_application_defaults() -> application_defaults_snapshot:
         processor_name=getattr(processor, "name", None),
         annotator_name=settings_obj.annotator_name or "",
         report_template_name=settings_obj.report_template_name or "",
+        ai_dataset_id=settings_obj.ai_dataset_id,
         ai_dataset_name=settings_obj.ai_dataset_name or "",
         ai_dataset_type=settings_obj.ai_dataset_type or "",
     )
@@ -65,6 +69,16 @@ def _resolve_processor(
     raise TypeError(f"Unsupported processor value: {type(processor)!r}")
 
 
+def _resolve_ai_dataset(ai_dataset: int | AIDataSet | None) -> AIDataSet | None:
+    if ai_dataset is None:
+        return None
+    if isinstance(ai_dataset, AIDataSet):
+        return ai_dataset
+    if isinstance(ai_dataset, int):
+        return AIDataSet.objects.filter(pk=ai_dataset).first()
+    raise TypeError(f"Unsupported ai_dataset value: {type(ai_dataset)!r}")
+
+
 def set_default_center(center: int | str | Center | None) -> ApplicationSettings:
     settings_obj = get_application_settings()
     settings_obj.center = _resolve_center(center)
@@ -78,6 +92,7 @@ def update_application_defaults(
     processor: int | str | EndoscopyProcessor | None = None,
     annotator_name: str | None = None,
     report_template_name: str | None = None,
+    ai_dataset: int | AIDataSet | None | object = _UNSET,
     ai_dataset_name: str | None = None,
     ai_dataset_type: str | None = None,
 ) -> ApplicationSettings:
@@ -91,6 +106,8 @@ def update_application_defaults(
         settings_obj.annotator_name = annotator_name
     if report_template_name is not None:
         settings_obj.report_template_name = report_template_name
+    if ai_dataset is not _UNSET:
+        settings_obj.ai_dataset = _resolve_ai_dataset(ai_dataset)  # type: ignore[arg-type]
     if ai_dataset_name is not None:
         settings_obj.ai_dataset_name = ai_dataset_name
     if ai_dataset_type is not None:
@@ -128,6 +145,10 @@ def get_default_ai_dataset_name(default: str = "") -> str:
     return value or default
 
 
+def get_default_ai_dataset_id() -> int | None:
+    return get_application_settings().ai_dataset_id
+
+
 def get_default_ai_dataset_type(default: str = "") -> str:
     value = get_application_settings().ai_dataset_type
     return value or default
@@ -138,6 +159,7 @@ __all__ = [
     "get_application_defaults",
     "get_application_settings",
     "get_default_annotator_name",
+    "get_default_ai_dataset_id",
     "get_default_ai_dataset_name",
     "get_default_ai_dataset_type",
     "get_default_processor",

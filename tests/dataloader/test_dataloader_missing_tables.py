@@ -3,7 +3,7 @@ from pathlib import Path
 from django.core.management.base import BaseCommand
 
 from endoreg_db.models import InformationSourceType
-from endoreg_db.utils import dataloader
+from endoreg_db.utils.data_loading import dataloader
 
 
 def test_load_model_data_from_yaml_skips_when_model_table_is_missing(

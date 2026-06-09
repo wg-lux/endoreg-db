@@ -3,14 +3,20 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
-import tempfile
+import uuid
 from pathlib import Path
 from typing import Any
 
 from endoreg_db.config.env import get_report_pdf_renderer_bin
-from endoreg_db.utils.file_operations import safe_unlink_file
+from endoreg_db.utils.filesystem.file_operations import (
+    atomic_move_file,
+    atomic_write_file,
+    ensure_directory,
+    safe_unlink_file,
+)
 
-from endoreg_db.models import PatientExamination, PatientExaminationReport
+from endoreg_db.models.medical.patient.patient_examination import PatientExamination
+from endoreg_db.models.report.patient_examination_report import PatientExaminationReport
 
 
 class ReportPdfRendererError(RuntimeError):
@@ -32,14 +38,20 @@ def build_report_template_pdf_payload(
     report: PatientExaminationReport,
     patient_examination: PatientExamination,
     frame_image_paths: list[str] | None = None,
+    frame_captions: list[str] | None = None,
     section_blocks: list[dict[str, Any]] | None = None,
     assets_root: str | None = None,
+    patient_identity: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     patient = patient_examination.patient
+    identity = patient_identity or {}
+    first_name = str(identity.get("first_name") or getattr(patient, "first_name", ""))
+    last_name = str(identity.get("last_name") or getattr(patient, "last_name", ""))
+    dob = identity.get("dob", getattr(patient, "dob", None))
     header = {
         "center_name": getattr(getattr(patient, "center", None), "name", None),
-        "patient_label": f"{getattr(patient, 'first_name', '')} {getattr(patient, 'last_name', '')}".strip()
-        or None,
+        "patient_label": f"{first_name} {last_name}".strip() or None,
+        "patient_birth_date": str(dob or "") or None,
         "examination_date": str(getattr(patient_examination, "date_start", None) or "")
         or None,
         "report_version": str(getattr(report, "version", "")) or None,
@@ -73,7 +85,9 @@ def build_report_template_pdf_payload(
                 "title": "Frames",
                 "columns": 3,
                 "image_paths": frame_image_paths,
-                "captions": [f"frame {i + 1}" for i in range(len(frame_image_paths))],
+                "captions": frame_captions
+                if frame_captions
+                else [f"frame {i + 1}" for i in range(len(frame_image_paths))],
             }
         )
 
@@ -98,18 +112,18 @@ def render_pdf_with_rust_renderer(
             "report_pdf_renderer binary not configured or found in PATH"
         )
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with tempfile.NamedTemporaryFile(
-        "w", suffix=".json", delete=False, encoding="utf-8"
-    ) as tmp:
-        json.dump(payload, tmp, ensure_ascii=False)
-        tmp.flush()
-        input_path = Path(tmp.name)
+    ensure_directory(output_path.parent)
+    unique_suffix = uuid.uuid4().hex
+    input_path = output_path.with_name(f".{output_path.name}.{unique_suffix}.json")
+    temp_output_path = output_path.with_name(f".{output_path.name}.{unique_suffix}.tmp")
+    atomic_write_file(
+        destination=input_path,
+        content=[json.dumps(payload, ensure_ascii=False).encode("utf-8")],
+    )
 
     try:
         proc = subprocess.run(
-            [binary, "--input", str(input_path), "--output", str(output_path)],
+            [binary, "--input", str(input_path), "--output", str(temp_output_path)],
             check=False,
             capture_output=True,
             text=True,
@@ -119,15 +133,17 @@ def render_pdf_with_rust_renderer(
             raise ReportPdfRendererError(
                 f"renderer failed with exit code {proc.returncode}: {proc.stderr.strip() or proc.stdout.strip()}"
             )
-        if not output_path.exists():
+        if not temp_output_path.exists():
             raise ReportPdfRendererError(
                 "renderer completed without producing output pdf"
             )
+        atomic_move_file(source=temp_output_path, destination=output_path)
         return output_path
     except subprocess.TimeoutExpired as exc:
         raise ReportPdfRendererError("renderer timed out") from exc
     finally:
         try:
             safe_unlink_file(input_path, missing_ok=True)
+            safe_unlink_file(temp_output_path, missing_ok=True)
         except Exception:
             pass

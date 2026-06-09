@@ -4,7 +4,7 @@ from io import BytesIO
 
 import pytest
 
-from endoreg_db.utils.storage_streaming import (
+from endoreg_db.utils.storage.streaming import (
     build_partial_content_response,
     iter_field_file_bytes,
     parse_byte_range,

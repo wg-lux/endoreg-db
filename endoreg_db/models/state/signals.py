@@ -16,10 +16,32 @@ def _mark_upload_jobs_lost_for_deleted_media(
     )
     lost_count = 0
     error_detail = (
-        f"Associated media record was deleted for {media_kind} hash: {content_hash}"
+        "media integrity check failed: "
+        f"associated media record was deleted for {media_kind} hash: {content_hash}"
     )
+    missing_artifact = "raw_pdf_file" if media_kind == "RawPdfFile" else "video_file"
     for upload_job in active_jobs.iterator():
-        upload_job.mark_lost(error_detail)
+        provenance = (
+            upload_job.processing_provenance
+            if isinstance(upload_job.processing_provenance, dict)
+            else {}
+        )
+        upload_job.processing_provenance = {
+            **provenance,
+            "media_integrity_status": "media_record_missing",
+            "media_integrity_reason": error_detail,
+            "media_integrity_missing_artifacts": [missing_artifact],
+        }
+        upload_job.status = UploadJob.Status.LOST
+        upload_job.error_detail = error_detail
+        upload_job.save(
+            update_fields=[
+                "status",
+                "error_detail",
+                "processing_provenance",
+                "updated_at",
+            ]
+        )
         lost_count += 1
 
     if lost_count > 0:

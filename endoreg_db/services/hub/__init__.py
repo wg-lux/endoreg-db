@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from importlib import import_module
+from typing import TYPE_CHECKING
 
 __all__ = [
     "_default_processor_name",
@@ -16,7 +17,12 @@ __all__ = [
     "get_deployment_role",
     "hub_mode_enabled",
     "local_study_server_mode_enabled",
+    "MediaIntegrityError",
+    "MediaIntegrityExpectation",
+    "MediaIntegrityResult",
+    "MediaIntegrityStatus",
     "PreanonymizedIngestPayload",
+    "check_upload_job_media_integrity",
     "process_preanonymized_watcher_file",
     "process_upload_job",
     "process_watcher_file",
@@ -74,7 +80,58 @@ _EXPORTS = {
     "attach_transfer_media": (".transfers", "attach_transfer_media"),
     "authenticate_network_node": (".transfers", "authenticate_network_node"),
     "create_or_reuse_transfer_job": (".transfers", "create_or_reuse_transfer_job"),
+    "MediaIntegrityError": (".media_integrity", "MediaIntegrityError"),
+    "MediaIntegrityExpectation": (".media_integrity", "MediaIntegrityExpectation"),
+    "MediaIntegrityResult": (".media_integrity", "MediaIntegrityResult"),
+    "MediaIntegrityStatus": (".media_integrity", "MediaIntegrityStatus"),
+    "check_upload_job_media_integrity": (
+        ".media_integrity",
+        "check_upload_job_media_integrity",
+    ),
 }
+
+if TYPE_CHECKING:
+    from endoreg_db.services.environment_readiness import (
+        assert_environment_readiness,
+        check_environment_readiness,
+    )
+
+    from .cleanup import reap_upload_job_sources
+    from .deployment import (
+        deployment_profile_payload,
+        get_deployment_role,
+        local_study_server_mode_enabled,
+        transfer_api_enabled,
+    )
+    from .ingest import (
+        _default_processor_name,
+        create_or_reuse_upload_job,
+        create_or_reuse_watcher_upload_job,
+        hub_mode_enabled,
+        process_preanonymized_watcher_file,
+        process_upload_job,
+        process_watcher_file,
+        resolve_allowed_center_id,
+        resolve_api_upload_context,
+        resolve_declared_upload_center,
+        resolve_default_center,
+        resolve_upload_center,
+        start_upload_job_processing,
+    )
+    from .media_integrity import (
+        MediaIntegrityError,
+        MediaIntegrityExpectation,
+        MediaIntegrityResult,
+        MediaIntegrityStatus,
+        check_upload_job_media_integrity,
+    )
+    from .payloads import PreanonymizedIngestPayload
+    from .transfers import (
+        apply_transfer_metadata,
+        attach_transfer_media,
+        authenticate_network_node,
+        create_or_reuse_transfer_job,
+    )
 
 
 def __getattr__(name: str):
@@ -87,3 +144,7 @@ def __getattr__(name: str):
     value = getattr(module, attribute_name)
     globals()[name] = value
     return value
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(__all__))

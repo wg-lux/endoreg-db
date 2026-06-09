@@ -36,6 +36,7 @@ from .administration import (
 
 ####### Label ########
 from .label import (
+    FrameBoxAnnotation,
     ImageClassificationAnnotation,
     Label,
     LabelSet,
@@ -50,10 +51,17 @@ from .label import (
 from .media import (
     AnonymExaminationReport,
     AnonymHistologyReport,
+    AnonymizationFieldMetric,
+    AnonymizationMetricField,
+    AnonymizationMetricMediaType,
+    AnonymizationValidationMetric,
     DocumentType,
+    FrameExtractionRequest,
     Frame,
+    MediaOperationLease,
     PdfProcessingHistory,
     RawPdfFile,
+    ReportLlmInferenceJob,
     ReportReaderConfig,
     ReportReaderFlag,
     VideoFile,
@@ -141,6 +149,7 @@ from .other import (
 from .state import (
     AnonymizationState,
     LabelVideoSegmentState,
+    ProcessingHistory,
     RawPdfState,
     SensitiveMetaState,
     VideoState,
@@ -152,6 +161,8 @@ from .report import (
 # AI dataset model
 from .aidataset import (
     AIDataSet,
+    AIDataSetExportArtifact,
+    AIModelTrainingRun,
 )
 from .hub import TransferJob, UploadJob
 
@@ -204,13 +215,17 @@ __all__ = [
     "VideoSegmentationLabel",
     "VideoSegmentationLabelSet",
     "LabelVideoSegment",
+    "FrameBoxAnnotation",
     "ImageClassificationAnnotation",
     "VideoSegmentationAnnotation",
     ####### Media ########
     "VideoFile",
     "Frame",
+    "FrameExtractionRequest",
+    "MediaOperationLease",
     "RawPdfFile",
     "PdfProcessingHistory",
+    "ReportLlmInferenceJob",
     "DocumentType",
     "AnonymExaminationReport",
     "AnonymHistologyReport",
@@ -218,6 +233,11 @@ __all__ = [
     "ReportReaderFlag",
     "VideoMetadata",
     "VideoProcessingHistory",
+    "ProcessingHistory",
+    "AnonymizationFieldMetric",
+    "AnonymizationMetricField",
+    "AnonymizationMetricMediaType",
+    "AnonymizationValidationMetric",
     "PatientExaminationReport",
     "TransferJob",
     "UploadJob",
@@ -317,4 +337,6 @@ __all__ = [
     "RawPdfState",
     ###### AIDATASET ######
     "AIDataSet",
+    "AIDataSetExportArtifact",
+    "AIModelTrainingRun",
 ]

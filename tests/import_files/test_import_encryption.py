@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from django.core.files.base import ContentFile
 
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.file_storage.create_report_file import (
@@ -18,11 +19,28 @@ from endoreg_db.import_files.file_storage.state_management import (
 )
 from endoreg_db.models import Center, EndoscopyProcessor, VideoFile
 from endoreg_db.models.media.video import create_from_file as video_create_module
+from endoreg_db.utils.filesystem import paths as paths_module
 from endoreg_db.utils.encryption.encrypted import MAGIC
-from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.filesystem.file_operations import sha256_file
 
 
 pytestmark = pytest.mark.django_db
+
+
+def _runtime_paths() -> paths_module.EndoregPathsModel:
+    return paths_module.EndoregPathsModel.from_environment()
+
+
+def _default_center_name() -> str:
+    center = Center.objects.first()
+    assert center is not None
+    return center.name
+
+
+def _default_processor_name() -> str:
+    processor = EndoscopyProcessor.objects.first()
+    assert processor is not None
+    return processor.name
 
 
 def _write_minimal_pdf(path: Path, marker: bytes) -> bytes:
@@ -38,7 +56,7 @@ def _write_minimal_pdf(path: Path, marker: bytes) -> bytes:
 def test_report_import_persists_raw_pdf_as_encrypted_bytes(tmp_path, base_db_data):
     source = tmp_path / "raw-report.pdf"
     plaintext = _write_minimal_pdf(source, b"report-import-encryption")
-    center_name = Center.objects.first().name
+    center_name = _default_center_name()
 
     ctx = ImportContext(file_path=source, center_name=center_name, file_type="report")
 
@@ -46,7 +64,10 @@ def test_report_import_persists_raw_pdf_as_encrypted_bytes(tmp_path, base_db_dat
 
     assert processed is False
     assert needs_processing is True
+    runtime_paths = _runtime_paths()
     stored_path = Path(report.file.path)
+    assert report.file.name.startswith(f"{runtime_paths.sensitive_report.name}/")
+    assert stored_path.is_relative_to(runtime_paths.sensitive_report)
     assert stored_path.read_bytes().startswith(MAGIC)
     with report.file.open("rb") as stored:
         assert stored.read() == plaintext
@@ -55,13 +76,25 @@ def test_report_import_persists_raw_pdf_as_encrypted_bytes(tmp_path, base_db_dat
 
 def test_video_import_persists_raw_video_as_encrypted_bytes(
     tmp_path, monkeypatch, base_db_data
-):
+) -> None:
     def fake_initialize(self):
         return self
 
     def fake_transcode(input_path: Path, output_path: Path) -> Path:
         output_path.write_bytes(input_path.read_bytes())
         return output_path
+
+    def fake_get_stream_info(_path: Path) -> dict:
+        return {
+            "streams": [
+                {
+                    "codec_type": "video",
+                    "codec_name": "h264",
+                    "pix_fmt": "yuv420p",
+                    "color_range": "pc",
+                }
+            ]
+        }
 
     monkeypatch.setattr(VideoFile, "initialize", fake_initialize, raising=True)
     monkeypatch.setattr(
@@ -70,12 +103,18 @@ def test_video_import_persists_raw_video_as_encrypted_bytes(
         fake_transcode,
         raising=True,
     )
+    monkeypatch.setattr(
+        video_create_module,
+        "get_stream_info",
+        fake_get_stream_info,
+        raising=True,
+    )
 
     source = tmp_path / "raw-video.mp4"
     plaintext = b"\x00\x00\x00\x20ftypmp42" + b"video-import-encryption"
     source.write_bytes(plaintext)
-    center_name = Center.objects.first().name
-    processor_name = EndoscopyProcessor.objects.first().name
+    center_name = _default_center_name()
+    processor_name = _default_processor_name()
 
     ctx = ImportContext(
         file_path=source,
@@ -88,12 +127,28 @@ def test_video_import_persists_raw_video_as_encrypted_bytes(
 
     assert processed is False
     assert needs_processing is True
+    runtime_paths = _runtime_paths()
     stored_path = Path(video.raw_file.path)
+    raw_file_name = video.raw_file.name
+    assert raw_file_name is not None
+    assert raw_file_name.startswith(f"{runtime_paths.sensitive_video.name}/")
+    assert stored_path.is_relative_to(runtime_paths.sensitive_video)
     assert stored_path.read_bytes().startswith(MAGIC)
     with video.raw_file.open("rb") as stored:
         assert stored.read() == plaintext
     assert sha256_file(source) == sha256_file(video.raw_file)
     assert not list(stored_path.parent.glob("*.part.*"))
+
+    video.processed_file.save(
+        "processed-video.mp4",
+        ContentFile(b"\x00\x00\x00\x20ftypmp42processed"),
+        save=False,
+    )
+    processed_path = Path(video.processed_file.path)
+    processed_file_name = video.processed_file.name
+    assert processed_file_name is not None
+    assert processed_file_name.startswith(f"{runtime_paths.anonym_video.name}/")
+    assert processed_path.is_relative_to(runtime_paths.anonym_video)
 
 
 def test_report_finalize_persists_processed_pdf_as_encrypted_bytes(
@@ -101,7 +156,7 @@ def test_report_finalize_persists_processed_pdf_as_encrypted_bytes(
 ):
     source = tmp_path / "raw-report.pdf"
     _write_minimal_pdf(source, b"report-processed-encryption-raw")
-    center_name = Center.objects.first().name
+    center_name = _default_center_name()
     ctx = ImportContext(file_path=source, center_name=center_name, file_type="report")
     report, _, _ = create_or_retrieve_report_file(ctx)
 
@@ -116,7 +171,10 @@ def test_report_finalize_persists_processed_pdf_as_encrypted_bytes(
     finalize_report_success(ctx)
     report.refresh_from_db()
 
+    runtime_paths = _runtime_paths()
     stored_path = Path(report.processed_file.path)
+    assert report.processed_file.name.startswith(f"{runtime_paths.anonym_report.name}/")
+    assert stored_path.is_relative_to(runtime_paths.anonym_report)
     assert stored_path.read_bytes().startswith(MAGIC)
     with report.processed_file.open("rb") as stored:
         assert stored.read() == processed_plaintext

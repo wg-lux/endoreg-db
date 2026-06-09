@@ -1,12 +1,21 @@
 from rest_framework import serializers
-from endoreg_db.models import Patient, Gender
+from endoreg_db.models.administration.person.patient.patient import Patient
+from endoreg_db.models.other.gender import Gender
 from datetime import date
 from endoreg_db.serializers.fields import CenterKeyRelatedField
 
 
+class GenderNameRelatedField(serializers.SlugRelatedField):
+    def to_internal_value(self, data):
+        gender = Gender.objects.resolve_by_name(str(data))
+        if gender is None:
+            raise serializers.ValidationError(f'Gender "{data}" does not exist.')
+        return gender
+
+
 class PatientSerializer(serializers.ModelSerializer):
     # Use the slug field "name" so that the gender is represented by its string value
-    gender = serializers.SlugRelatedField(
+    gender = GenderNameRelatedField(
         slug_field="name",
         queryset=Gender.objects.all(),
         required=False,

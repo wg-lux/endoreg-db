@@ -1,7 +1,8 @@
-from endoreg_db.models import VideoFile
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.lx_video_contracts import resolve_lx_anonymization_state
+from endoreg_db.services.video_files import get_video_outside_segments
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.response import Response
@@ -64,7 +65,7 @@ class VideoMetadataStatsView(APIView):
         sensitive_ratio = None
         outside_frame_count = 0
 
-        outside_segments = video.get_outside_segments(only_validated=False)
+        outside_segments = get_video_outside_segments(video, only_validated=False)
         count = outside_segments.count()
 
         print(f"Number of outside segments: {count}")
@@ -79,17 +80,17 @@ class VideoMetadataStatsView(APIView):
             "id": video.pk,
             "original_file_name": video.original_file_name or f"Video {pk}",
             "status": str(status_val),
-            "assignedUser": "BLANK",
+            "assigned_user": "BLANK",
             "anonymized": is_anonymized,
             "duration": duration,
             "fps": fps,
-            "hasROI": has_roi,
-            "outsideFrameCount": outside_frame_count,
-            "centerName": center_name,
-            "processorName": processor_name,
-            "sensitiveFrameCount": sensitive_count,
-            "totalFrames": total_frames,
-            "sensitiveRatio": sensitive_ratio,
+            "has_roi": has_roi,
+            "outside_frame_count": outside_frame_count,
+            "center_name": center_name,
+            "processor_name": processor_name,
+            "sensitive_frame_count": sensitive_count,
+            "total_frames": total_frames,
+            "sensitive_ratio": sensitive_ratio,
             "resolution": resolution,
         }
 

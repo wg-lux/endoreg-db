@@ -1,4 +1,3 @@
-import shutil
 from logging import getLogger
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable, Optional, Type
@@ -11,6 +10,10 @@ from huggingface_hub import hf_hub_download
 from ..administration.ai.ai_model import AiModel
 from ..label.label_set import LabelSet
 from ..utils import STORAGE_DIR, WEIGHTS_DIR
+from endoreg_db.utils.filesystem.file_operations import (
+    atomic_copy_file,
+    ensure_directory,
+)
 
 logger = getLogger("ai_model")
 
@@ -137,15 +140,15 @@ def create_from_file_logic(
         Path(WEIGHTS_DIR.relative_to(STORAGE_DIR))
         / f"{meta_name}_v{target_version}_{weights_filename}"
     )
-    # Full path for shutil.copy
+    # Full path for the managed copy
     full_dest_path = STORAGE_DIR / relative_dest_path
 
     # Ensure the destination directory exists
-    full_dest_path.parent.mkdir(parents=True, exist_ok=True)
+    ensure_directory(full_dest_path.parent)
 
     # Copy the file
     try:
-        shutil.copy(source_weights_path, full_dest_path)
+        atomic_copy_file(source=source_weights_path, destination=full_dest_path)
         logger.info(f"Copied weights from {source_weights_path} to {full_dest_path}")
     except Exception as e:
         raise IOError(f"Failed to copy weights file: {e}") from e
@@ -353,6 +356,38 @@ def get_model_meta_by_name_version_logic(
             )
 
 
+def _model_meta_weights_exist(model_meta: "ModelMeta") -> bool:
+    if not model_meta.weights:
+        return False
+    try:
+        return Path(model_meta.weights.path).exists()
+    except (OSError, ValueError):
+        return False
+
+
+def _copy_weights_to_existing_model_meta(
+    model_meta: "ModelMeta",
+    *,
+    source_weights_path: Path,
+) -> "ModelMeta":
+    current_name = str(model_meta.weights.name or "").strip()
+    if current_name:
+        relative_dest_path = Path(current_name)
+        full_dest_path = Path(model_meta.weights.path)
+    else:
+        relative_dest_path = (
+            Path(WEIGHTS_DIR.relative_to(STORAGE_DIR))
+            / f"{model_meta.name}_v{model_meta.version}_{source_weights_path.name}"
+        )
+        full_dest_path = STORAGE_DIR / relative_dest_path
+
+    ensure_directory(full_dest_path.parent)
+    atomic_copy_file(source=source_weights_path, destination=full_dest_path)
+    model_meta.weights = relative_dest_path.as_posix()
+    model_meta.save(update_fields=["weights"])
+    return model_meta
+
+
 import re
 
 from huggingface_hub import model_info
@@ -430,17 +465,17 @@ def setup_default_from_huggingface_logic(
     """
     meta = infer_default_model_meta_from_hf(model_id)
 
-    # Download safetensor weights; raise a clear error if unavailable
-    try:
-        weights_path = hf_hub_download(
-            repo_id=model_id,
-            filename="colo_segmentation_RegNetX800MF_base.safetensors",
-            local_dir=WEIGHTS_DIR,
-        )
-    except Exception as exc:  # pragma: no cover - network errors
-        raise RuntimeError(
-            "Failed to download safetensor weights from Hugging Face; ensure the repository provides a .safetensors artifact."
-        ) from exc
+    def _download_weights() -> str:
+        try:
+            return hf_hub_download(
+                repo_id=model_id,
+                filename="colo_segmentation_RegNetX800MF_base.safetensors",
+                local_dir=WEIGHTS_DIR,
+            )
+        except Exception as exc:  # pragma: no cover - network errors
+            raise RuntimeError(
+                "Failed to download safetensor weights from Hugging Face; ensure the repository provides a .safetensors artifact."
+            ) from exc
 
     ai_model, _ = AiModel.objects.get_or_create(name=meta["name"])
     if not labelset_name:
@@ -467,11 +502,31 @@ def setup_default_from_huggingface_logic(
     ModelMeta = _get_model_meta_class()
     model_meta = ModelMeta.objects.filter(name=meta["name"], model=ai_model).first()
     if model_meta:
-        logger.info(
-            f"ModelMeta {meta['name']} for model {ai_model.name} already exists. Skipping creation."
+        if _model_meta_weights_exist(model_meta):
+            logger.info(
+                f"ModelMeta {meta['name']} for model {ai_model.name} already exists with available weights. Skipping creation."
+            )
+            if ai_model.active_meta_id != model_meta.pk:
+                ai_model.active_meta = model_meta
+                ai_model.save(update_fields=["active_meta"])
+            return model_meta
+        weights_path = _download_weights()
+        logger.warning(
+            "ModelMeta %s for model %s exists but its weights file is missing; "
+            "repairing from Hugging Face download.",
+            meta["name"],
+            ai_model.name,
         )
+        _copy_weights_to_existing_model_meta(
+            model_meta,
+            source_weights_path=Path(weights_path).resolve(),
+        )
+        if ai_model.active_meta_id != model_meta.pk:
+            ai_model.active_meta = model_meta
+            ai_model.save(update_fields=["active_meta"])
         return model_meta
 
+    weights_path = _download_weights()
     return create_from_file_logic(
         cls,
         meta_name=meta["name"],

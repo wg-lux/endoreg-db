@@ -1,3 +1,5 @@
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 from django.test import TestCase
@@ -19,6 +21,9 @@ from endoreg_db.models import (
 )
 from endoreg_db.services.segment_annotations import (
     ensure_prediction_segment_annotations,
+)
+from endoreg_db.services.video_temporal_inference import (
+    TemporalInferenceDispatchResult,
 )
 from endoreg_db.views.video.ai import (
     FrameAnnotationBulkUpsertView,
@@ -42,14 +47,22 @@ class FrameAnnotationPipe1WorkflowIntegrationTest(TestCase):
             fps=25.0,
             frame_count=30,
         )
+        self.frame_dir_temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.frame_dir_temp.cleanup)
+        self.video.frame_dir = self.frame_dir_temp.name
+        self.video.save(update_fields=["frame_dir"])
         self.frames = [
             Frame.objects.create(
                 video=self.video,
                 frame_number=frame_number,
                 relative_path=f"frame_{frame_number:07d}.jpg",
+                is_extracted=True,
             )
             for frame_number in (10, 11, 12)
         ]
+        frame_dir = Path(self.frame_dir_temp.name)
+        for frame in self.frames:
+            (frame_dir / frame.relative_path).write_bytes(b"frame")
 
         self.manual_source = InformationSource.objects.create(name="manual_annotation")
         self.predicted_label = Label.objects.create(name="pipe-1-polyp")
@@ -185,7 +198,7 @@ class FrameAnnotationPipe1WorkflowIntegrationTest(TestCase):
             },
         )
         with patch(
-            "endoreg_db.views.video.ai.frame_annotations.random.randint",
+            "endoreg_db.models.state.frame_annotation.random.randint",
             return_value=0,
         ):
             return self.random_task_view(request)
@@ -242,7 +255,7 @@ class FrameAnnotationPipe1WorkflowIntegrationTest(TestCase):
             "wg-lux/colo_segmentation_RegNetX800MF_base",
         )
 
-    def test_rerun_prediction_segments_replaces_old_predictions_and_calls_pipe_1(
+    def test_rerun_prediction_segments_dispatches_temporal_inference_job(
         self,
     ):
         prediction_source = InformationSource.objects.create(name="prediction")
@@ -258,51 +271,142 @@ class FrameAnnotationPipe1WorkflowIntegrationTest(TestCase):
             source=prediction_source,
             prediction_meta=old_prediction_meta,
         )
-        pipe_1_calls = []
 
-        def fake_pipe_1(video_file: VideoFile, **kwargs) -> bool:
-            pipe_1_calls.append(kwargs)
-            prediction_meta, _ = VideoPredictionMeta.objects.get_or_create(
-                video_file=video_file,
-                model_meta=self.model_meta,
-            )
-            LabelVideoSegment.objects.create(
-                video_file=video_file,
-                label=self.predicted_label,
-                start_frame_number=10,
-                end_frame_number=13,
-                source=prediction_source,
-                prediction_meta=prediction_meta,
-            )
-            state = video_file.get_or_create_state()
-            state.initial_prediction_completed = True
-            state.lvs_created = True
-            state.save(update_fields=["initial_prediction_completed", "lvs_created"])
-            return True
+        request = self.factory.post(
+            f"/api/media/videos/{self.video.pk}/segments/rerun-predictions/",
+            {
+                "model_meta_id": self.model_meta.pk,
+                "temporal_model": "markov",
+                "delete_frames_after": False,
+            },
+            format="json",
+        )
 
+        with patch(
+            "endoreg_db.views.video.ai.label.dispatch_video_temporal_inference",
+            return_value=TemporalInferenceDispatchResult(
+                task_id="temporal-task",
+                mode="celery",
+                status="queued",
+                video_id=self.video.pk,
+                model_meta_id=self.model_meta.pk,
+                queue="inference",
+                history_id=123,
+            ),
+        ) as dispatch:
+            response = rerun_prediction_segments(request, self.video.pk)
+
+        self.assertEqual(response.status_code, 202, response.data)
+        self.assertEqual(response.data["status"], "queued")
+        self.assertEqual(response.data["job"]["task_id"], "temporal-task")
+        self.assertEqual(response.data["prediction_segments_count"], 1)
+        self.assertEqual(response.data["model_meta"]["id"], self.model_meta.pk)
+        self.assertTrue(LabelVideoSegment.objects.filter(pk=old_segment.pk).exists())
+        dispatch.assert_called_once_with(
+            video_id=self.video.pk,
+            model_meta_id=self.model_meta.pk,
+            replace_prediction_segments=True,
+            delete_frames_after=False,
+            ocr_frame_fraction=0.001,
+            ocr_cap=10,
+            temporal_options={"temporal_model": "markov"},
+            test_run=False,
+            n_test_frames=10,
+        )
+
+    def test_rerun_prediction_segments_reports_inline_completion(self):
         request = self.factory.post(
             f"/api/media/videos/{self.video.pk}/segments/rerun-predictions/",
             {"model_meta_id": self.model_meta.pk},
             format="json",
         )
 
-        with patch.object(VideoFile, "pipe_1", autospec=True, side_effect=fake_pipe_1):
+        with patch(
+            "endoreg_db.views.video.ai.label.dispatch_video_temporal_inference",
+            return_value=TemporalInferenceDispatchResult(
+                task_id="temporal-inline-task",
+                mode="inline",
+                status="completed",
+                video_id=self.video.pk,
+                model_meta_id=self.model_meta.pk,
+                queue="inference",
+                history_id=456,
+                deleted_prediction_segments=2,
+                prediction_segments_count=3,
+            ),
+        ):
             response = rerun_prediction_segments(request, self.video.pk)
 
         self.assertEqual(response.status_code, 200, response.data)
-        self.assertEqual(response.data["deleted_prediction_segments"], 1)
-        self.assertEqual(response.data["prediction_segments_count"], 1)
-        self.assertEqual(response.data["model_meta"]["id"], self.model_meta.pk)
-        self.assertFalse(LabelVideoSegment.objects.filter(pk=old_segment.pk).exists())
-        self.assertEqual(len(pipe_1_calls), 1)
-        self.assertEqual(pipe_1_calls[0]["model_name"], self.ai_model.name)
-        self.assertEqual(pipe_1_calls[0]["model_meta_version"], self.model_meta.version)
-        self.assertTrue(pipe_1_calls[0]["delete_frames_after"])
-        new_segment = LabelVideoSegment.objects.get(
-            video_file=self.video,
-            label=self.predicted_label,
+        self.assertEqual(response.data["status"], "completed")
+        self.assertEqual(response.data["deleted_prediction_segments"], 2)
+        self.assertEqual(response.data["prediction_segments_count"], 3)
+
+    def test_rerun_prediction_segments_reports_pending_after_rebuild(self):
+        request = self.factory.post(
+            f"/api/media/videos/{self.video.pk}/segments/rerun-predictions/",
+            {"model_meta_id": self.model_meta.pk},
+            format="json",
         )
-        self.assertEqual(new_segment.source.name, "prediction")
+
+        with patch(
+            "endoreg_db.views.video.ai.label.dispatch_video_temporal_inference",
+            return_value=TemporalInferenceDispatchResult(
+                task_id="",
+                mode="celery",
+                status="pending_after_rebuild",
+                video_id=self.video.pk,
+                model_meta_id=self.model_meta.pk,
+                queue="inference",
+                history_id=456,
+                reason="video_reprocessing_active",
+                message="Prediction will start after frame rebuild finishes.",
+                blocked_by_history_id=123,
+            ),
+        ):
+            response = rerun_prediction_segments(request, self.video.pk)
+
+        self.assertEqual(response.status_code, 202, response.data)
+        self.assertTrue(response.data["success"])
+        self.assertFalse(response.data["queued"])
+        self.assertTrue(response.data["pending"])
+        self.assertEqual(response.data["status"], "pending_after_rebuild")
+        self.assertEqual(response.data["reason"], "video_reprocessing_active")
+        self.assertEqual(response.data["blocked_by_history_id"], 123)
+        self.assertEqual(response.data["job"]["task_id"], "")
+        self.assertEqual(response.data["job"]["history_id"], 456)
+
+    def test_rerun_prediction_segments_reports_busy_reprocessing_conflict(self):
+        request = self.factory.post(
+            f"/api/media/videos/{self.video.pk}/segments/rerun-predictions/",
+            {"model_meta_id": self.model_meta.pk},
+            format="json",
+        )
+
+        with patch(
+            "endoreg_db.views.video.ai.label.dispatch_video_temporal_inference",
+            return_value=TemporalInferenceDispatchResult(
+                task_id="reprocessing-task",
+                mode="celery",
+                status="busy",
+                video_id=self.video.pk,
+                model_meta_id=self.model_meta.pk,
+                queue="inference",
+                history_id=456,
+                reason="video_reprocessing_active",
+                message="Video reprocessing is active. Prediction was not queued.",
+                blocked_by_history_id=789,
+            ),
+        ):
+            response = rerun_prediction_segments(request, self.video.pk)
+
+        self.assertEqual(response.status_code, 409, response.data)
+        self.assertFalse(response.data["success"])
+        self.assertFalse(response.data["queued"])
+        self.assertFalse(response.data["pending"])
+        self.assertEqual(response.data["status"], "busy")
+        self.assertEqual(response.data["reason"], "video_reprocessing_active")
+        self.assertEqual(response.data["blocked_by_history_id"], 789)
 
     def test_manual_frame_annotation_after_pipe_1_excludes_completed_target(self):
         self._materialize_pipe_1_prediction_annotations()

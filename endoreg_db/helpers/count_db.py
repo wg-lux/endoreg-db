@@ -26,7 +26,6 @@ def collect_counters():
     Returns a dictionary with statistical counts for cases, videos, annotations, anonymizations, images, and video statuses.
 
     The returned dictionary includes:
-    - "totalCases": Count of distinct created video files.
     - "totalVideos": Count of distinct created video files.
     - "totalAnnotations": Count of audit log entries where an annotation was added.
     - "totalAnonymizations": Count of distinct video files that have been anonymized.
@@ -35,8 +34,6 @@ def collect_counters():
     - "videosAnonym": Count of distinct video files that have been anonymized.
     """
     return {
-        # TODO @maxhild can we remove the totalCases key?
-        # "totalCases":           _distinct("VideoFile", "created"),
         "totalVideos": _distinct("VideoFile", "created"),
         "totalAnnotations": AuditLedger.objects.filter(
             action="annotation_added"

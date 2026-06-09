@@ -7,7 +7,10 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIRequestFactory
+
+from endoreg_db.models import Center, UploadJob
 
 
 def _load_video_view_module(module_name: str):
@@ -157,7 +160,9 @@ def test_reimport_returns_clear_error_when_raw_source_is_missing(tmp_path, monke
 
     class _FakeVideoModel:
         DoesNotExist = LookupError
-        objects = SimpleNamespace(get=lambda **kwargs: video)
+        objects = SimpleNamespace(
+            select_related=lambda *args: SimpleNamespace(get=lambda **kwargs: video)
+        )
 
     monkeypatch.setattr(module, "VideoFile", _FakeVideoModel, raising=True)
     monkeypatch.setattr(
@@ -176,18 +181,25 @@ def test_reimport_returns_clear_error_when_raw_source_is_missing(tmp_path, monke
 
 
 @pytest.mark.django_db
-def test_reimport_uses_retry_true_and_refreshes_video(tmp_path, monkeypatch):
+def test_reimport_reanonymizes_existing_video_without_full_import(
+    tmp_path, monkeypatch
+):
     module = _load_video_view_module("reimport")
+    import endoreg_db.services.jobs.video_reimport_jobs as reimport_jobs
+
     factory = APIRequestFactory()
 
     raw_path = tmp_path / "raw.mp4"
     raw_path.write_bytes(b"raw")
     video = _FakeVideo(raw_path)
     service_calls = []
+    prediction_calls = []
 
     class _FakeVideoModel:
         DoesNotExist = LookupError
-        objects = SimpleNamespace(get=lambda **kwargs: video)
+        objects = SimpleNamespace(
+            select_related=lambda *args: SimpleNamespace(get=lambda **kwargs: video)
+        )
 
     class _FakeSensitiveMetaModel:
         class objects:
@@ -200,9 +212,14 @@ def test_reimport_uses_retry_true_and_refreshes_video(tmp_path, monkeypatch):
         yield
 
     class _FakeService:
-        def import_and_anonymize(self, **kwargs):
-            service_calls.append(kwargs)
+        def reanonymize_existing_video(self, target_video, *, source_path=None):
+            service_calls.append(
+                {"target_video": target_video, "source_path": source_path}
+            )
             return video
+
+        def import_and_anonymize(self, **kwargs):
+            raise AssertionError("reimport should not use the full import pipeline")
 
     monkeypatch.setattr(module, "VideoFile", _FakeVideoModel, raising=True)
     monkeypatch.setattr(module, "SensitiveMeta", _FakeSensitiveMetaModel, raising=True)
@@ -213,6 +230,27 @@ def test_reimport_uses_retry_true_and_refreshes_video(tmp_path, monkeypatch):
         lambda field_file: _context_path(raw_path),
         raising=True,
     )
+    monkeypatch.setattr(
+        module,
+        "_dispatch_prediction_refresh",
+        lambda target_video, payload: (
+            prediction_calls.append((target_video, payload))
+            or {"status": "queued", "queued": True, "history_id": 123}
+        ),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        reimport_jobs,
+        "initialize_video_specs",
+        lambda target_video: target_video.initialize_video_specs(),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        reimport_jobs,
+        "initialize_video_frames",
+        lambda target_video: target_video.initialize_frames(),
+        raising=True,
+    )
 
     view = module.VideoReimportView()
     view.video_service = _FakeService()
@@ -220,10 +258,102 @@ def test_reimport_uses_retry_true_and_refreshes_video(tmp_path, monkeypatch):
     response = view.post(factory.post("/reimport/"), pk=1)
 
     assert response.status_code == 200
-    assert service_calls[0]["retry"] is True
-    assert service_calls[0]["file_path"] == raw_path
-    assert video.pipe_1_called is True
+    assert service_calls == [{"target_video": video, "source_path": raw_path}]
+    assert video.pipe_1_called is False
+    assert video.initialize_specs_called is True
+    assert video.initialize_frames_called is True
     assert video.refreshed is True
+    assert prediction_calls == [(video, {})]
+    assert response.data["prediction_refresh"]["queued"] is True
+
+
+@pytest.mark.django_db
+def test_reset_reimport_state_does_not_reactivate_duplicate_upload_jobs(
+    tmp_path,
+    monkeypatch,
+):
+    module = _load_video_view_module("reimport")
+    import endoreg_db.services.jobs.video_reimport_jobs as reimport_jobs
+
+    center = Center.objects.create(name="reimport-center")
+    raw_path = tmp_path / "raw.mp4"
+    raw_path.write_bytes(b"raw")
+    video = _FakeVideo(raw_path)
+    video.center = center
+    video.center_id = center.pk
+    video.video_hash = "duplicate-video-hash"
+
+    active_job = UploadJob.objects.create(
+        file=SimpleUploadedFile("active.mp4", b"active", content_type="video/mp4"),
+        status=UploadJob.Status.ANONYMIZED,
+        content_type="video/mp4",
+        source_center=center,
+        content_hash=video.video_hash,
+    )
+    failed_job = UploadJob.objects.create(
+        file=SimpleUploadedFile("failed.mp4", b"failed", content_type="video/mp4"),
+        status=UploadJob.Status.ERROR,
+        content_type="video/mp4",
+        source_center=center,
+        content_hash=video.video_hash,
+    )
+    monkeypatch.setattr(
+        reimport_jobs,
+        "initialize_video_specs",
+        lambda target_video: target_video.initialize_video_specs(),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        reimport_jobs,
+        "initialize_video_frames",
+        lambda target_video: target_video.initialize_frames(),
+        raising=True,
+    )
+
+    reset_count = module._reset_reimport_state(video)
+
+    active_job.refresh_from_db()
+    failed_job.refresh_from_db()
+    assert reset_count == 1
+    assert active_job.status == UploadJob.Status.PROCESSING
+    assert failed_job.status == UploadJob.Status.ERROR
+    assert video.initialize_specs_called is True
+    assert video.initialize_frames_called is True
+
+
+@pytest.mark.django_db
+def test_mark_upload_jobs_anonymized_leaves_duplicate_failed_jobs_inactive(tmp_path):
+    module = _load_video_view_module("reimport")
+    center = Center.objects.create(name="reimport-complete-center")
+    raw_path = tmp_path / "raw.mp4"
+    raw_path.write_bytes(b"raw")
+    video = _FakeVideo(raw_path)
+    video.center = center
+    video.center_id = center.pk
+    video.video_hash = "complete-duplicate-video-hash"
+
+    active_job = UploadJob.objects.create(
+        file=SimpleUploadedFile("active.mp4", b"active", content_type="video/mp4"),
+        status=UploadJob.Status.PROCESSING,
+        content_type="video/mp4",
+        source_center=center,
+        content_hash=video.video_hash,
+    )
+    failed_job = UploadJob.objects.create(
+        file=SimpleUploadedFile("failed.mp4", b"failed", content_type="video/mp4"),
+        status=UploadJob.Status.ERROR,
+        content_type="video/mp4",
+        source_center=center,
+        content_hash=video.video_hash,
+    )
+
+    completed_count = module._mark_upload_jobs_anonymized(video)
+
+    active_job.refresh_from_db()
+    failed_job.refresh_from_db()
+    assert completed_count == 1
+    assert active_job.status == UploadJob.Status.ANONYMIZED
+    assert failed_job.status == UploadJob.Status.ERROR
 
 
 @pytest.mark.django_db

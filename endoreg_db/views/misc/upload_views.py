@@ -18,7 +18,7 @@ try:
 except ImportError:
     MAGIC_AVAILABLE = False
 
-from endoreg_db.models import UploadJob
+from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.serializers.hub import UploadJobStatusSerializer
 from endoreg_db.services.hub import (
     create_or_reuse_upload_job,
@@ -26,7 +26,8 @@ from endoreg_db.services.hub import (
     start_upload_job_processing,
     resolve_allowed_center_id,
 )
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.authz.permissions import PolicyPermission
+from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
 
 # Try to import celery task, but provide fallback
 try:
@@ -273,7 +274,7 @@ class UploadStatusView(APIView):
         404 Not Found: Upload job not found
     """
 
-    permission_classes = [EnvironmentAwarePermission]
+    permission_classes = [EnvironmentAwarePermission, PolicyPermission]
 
     def get(self, request, id, *args, **kwargs):
         """

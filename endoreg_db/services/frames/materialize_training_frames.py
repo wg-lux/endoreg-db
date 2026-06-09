@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from collections import defaultdict
 from pathlib import Path
-
+from typing import cast
 from endoreg_db.export.frames.export_frames_with_labels import (
     DEFAULT_TRANSCODE_FPS,
     _frame_pk_filename,
     transcode_videos_for_annotations,
 )
 from endoreg_db.models import ImageClassificationAnnotation, VideoFile
+
 
  
 def materialize_frames_for_annotation_ids(
@@ -102,7 +103,7 @@ def materialize_frames_for_annotation_ids(
 
     transcode_videos_for_annotations(
         annotations,
-        fps=fps,
+        fps=cast(float, fps),
         quality=2,
         ext=ext,
         overwrite=overwrite,
@@ -119,9 +120,11 @@ def materialize_frames_for_annotation_ids(
             continue
 
         expected_path = (
+
             output_root
             / f"video_{frame.video.pk}"
             / _frame_pk_filename(frame.pk, ext)
+
         )
 
         if not expected_path.exists():
@@ -137,3 +140,4 @@ def materialize_frames_for_annotation_ids(
 
     print(f"[ENDOREG FRAME MATERIALIZATION] verified frames={len(result)}", flush=True)
     return result
+

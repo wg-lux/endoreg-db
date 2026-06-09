@@ -1,8 +1,8 @@
 import logging
 from pathlib import Path
 from typing import Iterable
-from endoreg_db.utils.file_operations import ensure_directory
-from endoreg_db.utils.paths import (
+from endoreg_db.utils.filesystem.file_operations import ensure_directory
+from endoreg_db.utils.filesystem.paths import (
     ANONYM_REPORT_DIR,
     ANONYM_VIDEO_DIR,
     FRAME_IMPORT_DIR,

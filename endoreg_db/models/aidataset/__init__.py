@@ -3,7 +3,10 @@ from .aidataset import (
     AIDataSetActiveLearningCandidate,
     AIDataSetActiveLearningConfig,
     AIDataSetActiveLearningSelection,
+    AIDataSetExportArtifact,
+    AIDataSetFrameBucketDistribution,
     AIDataSetScoredActiveLearningCandidate,
+    AIModelTrainingRun,
 )
 
 __all__ = [
@@ -11,5 +14,8 @@ __all__ = [
     "AIDataSetActiveLearningCandidate",
     "AIDataSetActiveLearningConfig",
     "AIDataSetActiveLearningSelection",
+    "AIDataSetExportArtifact",
+    "AIDataSetFrameBucketDistribution",
     "AIDataSetScoredActiveLearningCandidate",
+    "AIModelTrainingRun",
 ]

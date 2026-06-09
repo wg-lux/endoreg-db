@@ -1,29 +1,15 @@
-import sys
 import logging
-from pathlib import Path
 from typing import cast
 from django.conf import settings as django_settings
-from django.conf.urls.static import static
 from django.urls import URLResolver, URLPattern, include, path
 from rest_framework.routers import DefaultRouter
+from endoreg_db.utils.web.django_static import static
 
 logger = logging.getLogger(__name__)
 
-# Make lx-data-models submodule importable during Django startup (before views import).
-# settings.BASE_DIR is /.../endoreg_db in this project, so the repo root is BASE_DIR.parent.
-base_dir = Path(
-    str(getattr(django_settings, "BASE_DIR", Path(__file__).resolve().parents[2]))
-)
-candidate_roots = [
-    base_dir / "lx-data-models",
-    base_dir.parent / "lx-data-models",
-]
-for submodule_root in candidate_roots:
-    if submodule_root.exists():
-        submodule_path = str(submodule_root)
-        if submodule_path not in sys.path:
-            sys.path.insert(0, submodule_path)
-        break
+# ``lx_dtypes`` is a declared package dependency (``lx-dtypes`` in
+# pyproject.toml). Keep URLConf imports on that package boundary instead of
+# shadowing it with the checked-out ``lx-data-models`` tree via sys.path.
 
 from endoreg_db.authz.views_auth import auth_bootstrap
 

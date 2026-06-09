@@ -5,7 +5,7 @@ import pytest
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.file_storage import state_management
 from endoreg_db.models import Center, VideoFile
-from endoreg_db.utils import paths as paths_module
+from endoreg_db.utils.filesystem import paths as paths_module
 
 
 @pytest.mark.django_db
@@ -76,7 +76,9 @@ def test_delete_associated_files_removes_anonymized_and_sensitive_paths(
     monkeypatch.setattr(
         state_management,
         "nuke_transcoding_dir",
-        lambda *args, **kwargs: True,
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("delete_associated_files must not nuke global transcoding")
+        ),
         raising=True,
     )
     monkeypatch.setattr(

@@ -3,13 +3,18 @@ from __future__ import annotations
 import importlib
 import uuid
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
-from endoreg_db.models import Center, UploadJob
+from endoreg_db.models import Center, RawPdfFile, UploadJob
 from endoreg_db.services.hub.ingest import process_watcher_file
-from endoreg_db.utils import paths as paths_module
+from endoreg_db.utils.filesystem import paths as paths_module
+from endoreg_db.utils.filesystem.file_operations import (
+    atomic_write_file,
+    safe_unlink_file,
+    sha256_file,
+)
+from endoreg_db.utils.storage import save_local_file
 
 
 @pytest.mark.django_db
@@ -23,6 +28,7 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
     with monkeypatch.context() as scoped:
         scoped.setenv("LX_ANNOTATE_ENCRYPTED_DATA_DIR", protected_root_rel)
         scoped.setenv("STORAGE_DIR", f"{protected_root_rel}/storage")
+        scoped.setenv("PROTECTED_MEDIA_ROOT", f"{protected_root_rel}/storage")
         scoped.setenv("DATA_DIR", data_root_rel)
 
         reloaded_paths = importlib.reload(paths_module)
@@ -35,8 +41,8 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
             first_drop = reloaded_paths.WATCHER_REPORT_DROP_DIR / "case-a.pdf"
             second_drop = reloaded_paths.WATCHER_REPORT_DROP_DIR / "case-b.pdf"
             payload = b"%PDF-1.4 topology ingest"
-            first_drop.write_bytes(payload)
-            second_drop.write_bytes(payload)
+            atomic_write_file(destination=first_drop, content=(payload,))
+            atomic_write_file(destination=second_drop, content=(payload,))
 
             assert first_drop.is_relative_to(reloaded_paths.IMPORT_DIR)
             assert second_drop.is_relative_to(reloaded_paths.IMPORT_DIR)
@@ -56,8 +62,24 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
                     assert Path(file_path) == first_drop
                     assert center_name == center.name
                     assert retry is False
-                    Path(file_path).unlink(missing_ok=True)
-                    return SimpleNamespace(sensitive_meta=None)
+                    file_hash = sha256_file(Path(file_path))
+                    report = RawPdfFile(pdf_hash=file_hash, center=center)
+                    save_local_file(
+                        report.file,
+                        Path(file_path),
+                        name=f"{file_hash}.pdf",
+                        save=False,
+                    )
+                    save_local_file(
+                        report.processed_file,
+                        Path(file_path),
+                        name=f"{file_hash}.processed.pdf",
+                        save=False,
+                    )
+                    report.save()
+                    report.get_or_create_state().mark_anonymization_validated()
+                    safe_unlink_file(Path(file_path), missing_ok=False)
+                    return report
 
             monkeypatch.setattr(
                 "endoreg_db.services.hub.ingest.ReportImportService",

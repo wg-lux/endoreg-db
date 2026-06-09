@@ -1,4 +1,4 @@
-from endoreg_db.models import PatientFinding
+from endoreg_db.models.medical.patient.patient_finding import PatientFinding
 from endoreg_db.serializers import PatientFindingSerializer
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet

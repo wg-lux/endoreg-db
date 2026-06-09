@@ -13,8 +13,8 @@ from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
-from endoreg_db.utils import paths as path_utils
-from endoreg_db.utils.file_operations import (
+from endoreg_db.utils.filesystem import paths as path_utils
+from endoreg_db.utils.filesystem.file_operations import (
     atomic_move_file,
     atomic_move_path,
     safe_rmtree,
@@ -22,7 +22,7 @@ from endoreg_db.utils.file_operations import (
     sha256_file,
 )
 from endoreg_db.utils.storage import save_local_file
-from endoreg_db.utils.storage_profile import PayloadKind, requires_app_encrypted_storage
+from endoreg_db.utils.storage.profile import PayloadKind, requires_app_encrypted_storage
 from endoreg_db.utils.video.ffmpeg_wrapper import get_stream_info
 
 logger = logging.getLogger(__name__)
@@ -283,14 +283,13 @@ def finalize_video_success(
         logger.warning("finalize_video_success called with unsaved instance")
         return
 
-    # --- Move anonymized path into final storage (if we have one) ---
+    # --- Move anonymized path into final storage ---
     final_path: Optional[Path] = None
 
     if ctx.anonymized_path is None:
-        logger.warning(
-            "No anonymized_path for video instance %s (hash=%s); skipping file move.",
-            instance.pk,
-            getattr(instance, "video_hash", None),
+        raise RuntimeError(
+            "Cannot finalize video import without anonymized output "
+            f"(instance={instance.pk}, hash={getattr(instance, 'video_hash', None)})."
         )
     else:
         # Use a stable naming convention: <video_hash>.mp4
@@ -320,7 +319,9 @@ def finalize_video_success(
                 src,
                 expected_final_path,
             )
-            final_path = None
+            raise RuntimeError(
+                f"Cannot finalize video import because anonymized output is missing: {src}"
+            )
         elif requires_app_encrypted_storage(PayloadKind.VIDEO_PROCESSED):
             _verify_final_video_output(src)
             relative_name = path_utils.to_storage_relative(expected_final_path)
@@ -364,11 +365,6 @@ def finalize_video_success(
                 if current_name != relative_name:
                     instance.processed_file.name = relative_name
                     logger.info("Updated video processed_file to %s", relative_name)
-
-    if not nuke_transcoding_dir():
-        logger.warning(
-            "Transcoding directory cleanup returned False after finalize_video_success; there may be leftover files."
-        )
 
     # --- Update VideoState flags (mirrors report) ---
     state = _ensure_instance_state(instance)
@@ -491,7 +487,7 @@ def delete_associated_files(ctx: ImportContext) -> None:
     - Ensure ctx.original_path points to an existing import file; if not, try to restore
       from ctx.sensitive_path into the appropriate IMPORT_*_DIR.
     - Delete anonymized file (if any).
-    - Nuke transcoding directory.
+    - Delete known transient paths recorded on the import context.
     - Delete sensitive file (if any).
 
     This function should *not* raise on non-critical cleanup errors; it logs instead.
@@ -517,12 +513,6 @@ def delete_associated_files(ctx: ImportContext) -> None:
             )
         finally:
             ctx.anonymized_path = None
-
-    # --- Nuke transcoding directory (best-effort) ---
-    if not nuke_transcoding_dir():
-        logger.warning(
-            "Transcoding directory cleanup returned False; there may be leftover files."
-        )
 
     # --- Delete sensitive file (best-effort) ---
     if isinstance(ctx.sensitive_path, Path):

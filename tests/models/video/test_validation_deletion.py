@@ -115,7 +115,7 @@ class TestVideoValidationDeletionBehavior:
                 return_value=processed_video_path,
             ),
             patch(
-                "endoreg_db.models.media.video.video_file._update_text_metadata"
+                "endoreg_db.services.video_files.metadata.update_video_text_metadata"
             ) as mock_update,
         ):
             # Mock sensitive meta update
@@ -169,7 +169,7 @@ class TestVideoValidationDeletionBehavior:
                 return_value=None,
             ),
             patch(
-                "endoreg_db.models.media.video.video_file._update_text_metadata"
+                "endoreg_db.services.video_files.metadata.update_video_text_metadata"
             ) as mock_update,
         ):
             mock_sm = Mock()
@@ -214,7 +214,7 @@ class TestVideoValidationDeletionBehavior:
                 return_value=None,
             ),
             patch(
-                "endoreg_db.models.media.video.video_file._update_text_metadata"
+                "endoreg_db.services.video_files.metadata.update_video_text_metadata"
             ) as mock_update,
         ):
             mock_sm = Mock()
@@ -328,7 +328,7 @@ class TestActiveFileLogicWithValidation:
                 return_value=processed_path,
             ),
             patch(
-                "endoreg_db.models.media.video.video_file._update_text_metadata"
+                "endoreg_db.services.video_files.metadata.update_video_text_metadata"
             ) as mock_update,
         ):
             mock_update.return_value = Mock()
@@ -437,7 +437,7 @@ class TestValidationDeletion:
                 return_value=processed_video_path,
             ),
             patch(
-                "endoreg_db.models.media.video.video_file._update_text_metadata"
+                "endoreg_db.services.video_files.metadata.update_video_text_metadata"
             ) as mock_update,
         ):
             # Mock sensitive meta update
@@ -491,7 +491,7 @@ class TestValidationDeletion:
                 return_value=None,
             ),
             patch(
-                "endoreg_db.models.media.video.video_file._update_text_metadata"
+                "endoreg_db.services.video_files.metadata.update_video_text_metadata"
             ) as mock_update,
         ):
             mock_sm = Mock()
@@ -536,7 +536,7 @@ class TestValidationDeletion:
                 return_value=None,
             ),
             patch(
-                "endoreg_db.models.media.video.video_file._update_text_metadata"
+                "endoreg_db.services.video_files.metadata.update_video_text_metadata"
             ) as mock_update,
         ):
             mock_sm = Mock()
@@ -612,7 +612,7 @@ class TestValidationDeletion:
             ),
             patch.object(video, "extract_frames", mock_extract_frames),
             patch(
-                "endoreg_db.models.media.video.video_file._update_text_metadata"
+                "endoreg_db.services.video_files.metadata.update_video_text_metadata"
             ) as mock_update_meta,
         ):
             # Mock sensitive meta update - ensure it calls extract_frames

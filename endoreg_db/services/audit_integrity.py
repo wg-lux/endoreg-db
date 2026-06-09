@@ -1,16 +1,22 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from django.core.cache import cache
 from django.utils import timezone
 
 from endoreg_db.models.state.audit_ledger import AuditLedger, LedgerHead
+from endoreg_db.utils.observability.structured_logging import (
+    emit_structured_event,
+    safe_log_value,
+)
 
 
 AUDIT_LEDGER_INTEGRITY_CACHE_KEY = "audit-ledger:integrity-status:v1"
 AUDIT_LEDGER_INTEGRITY_LOCK_KEY = "audit-ledger:integrity-refresh-lock:v1"
 AUDIT_LEDGER_INTEGRITY_LOCK_TIMEOUT_SECONDS = 60 * 30
+logger = logging.getLogger(__name__)
 
 
 def _ledger_head_snapshot() -> dict[str, Any]:
@@ -77,6 +83,25 @@ def refresh_audit_ledger_integrity_status() -> dict[str, Any]:
             "error": str(exc),
             **_ledger_head_snapshot(),
         }
+
+    if payload["status"] == "failed":
+        emit_structured_event(
+            logger,
+            "audit_ledger.integrity_failed",
+            level=logging.ERROR,
+            entry_count=payload["entry_count"],
+            ledger_head_hash=payload["ledger_head_hash"],
+            last_entry_id=payload["last_entry_id"],
+        )
+    elif payload["status"] == "error":
+        emit_structured_event(
+            logger,
+            "audit_ledger.integrity_error",
+            level=logging.ERROR,
+            error=safe_log_value(payload["error"]),
+            ledger_head_hash=payload["ledger_head_hash"],
+            last_entry_id=payload["last_entry_id"],
+        )
 
     cache.set(AUDIT_LEDGER_INTEGRITY_CACHE_KEY, payload, timeout=None)
     return {**payload, "source": "refresh"}

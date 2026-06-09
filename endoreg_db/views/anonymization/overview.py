@@ -5,18 +5,27 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.db import transaction
-from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
+from django.db.models import Q
+from endoreg_db.utils.web.permissions import DEBUG_PERMISSIONS
 from endoreg_db.services.anonymization import AnonymizationService
 from endoreg_db.services.polling_coordinator import (
     PollingCoordinator,
     ProcessingLockContext,
 )
+from endoreg_db.services.raw_pdf_files import validate_report_metadata_annotation
+from endoreg_db.services.video_files import (
+    get_or_create_video_state,
+    get_video_by_pk,
+    validate_video_metadata_annotation,
+)
 from rest_framework.generics import ListAPIView
 from rest_framework.pagination import PageNumberPagination
-from endoreg_db.models import VideoFile, RawPdfFile
+from endoreg_db.models.hub.upload_job import UploadJob
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.media.video.video_file import VideoFile
 from ...serializers import FileOverviewSerializer, VoPPatientDataSerializer
 from django.http import JsonResponse
-from endoreg_db.utils.operation_log import (
+from endoreg_db.utils.observability.operation_log import (
     record_operation,
     ACTION_ANONYMIZATION_START,
     STATUS_NOT_STARTED,
@@ -34,6 +43,61 @@ PERMS = DEBUG_PERMISSIONS  # shorten
 # ---------- overview ----------------------------------------------------
 class NoPagination(PageNumberPagination):
     page_size = None
+
+
+def _overview_content_hash(item) -> str:
+    if isinstance(item, VideoFile):
+        return getattr(item, "video_hash", "") or ""
+    if isinstance(item, RawPdfFile):
+        return getattr(item, "pdf_hash", "") or ""
+    return ""
+
+
+def _attach_overview_upload_jobs(items):
+    sensitive_meta_ids = {
+        sensitive_meta_id
+        for item in items
+        if (sensitive_meta_id := getattr(item, "sensitive_meta_id", None)) is not None
+    }
+    content_hashes = {
+        content_hash for item in items if (content_hash := _overview_content_hash(item))
+    }
+
+    if not sensitive_meta_ids and not content_hashes:
+        return
+
+    filters = Q()
+    if sensitive_meta_ids:
+        filters |= Q(sensitive_meta_id__in=sensitive_meta_ids)
+    if content_hashes:
+        filters |= Q(content_hash__in=content_hashes)
+
+    upload_jobs = (
+        UploadJob.objects.select_related("source_center")
+        .filter(filters)
+        .order_by("-updated_at", "-created_at")
+    )
+
+    by_sensitive_meta_id = {}
+    by_content_hash = {}
+    for upload_job in upload_jobs:
+        if (
+            upload_job.sensitive_meta_id
+            and upload_job.sensitive_meta_id not in by_sensitive_meta_id
+        ):
+            by_sensitive_meta_id[upload_job.sensitive_meta_id] = upload_job
+        if upload_job.content_hash and upload_job.content_hash not in by_content_hash:
+            by_content_hash[upload_job.content_hash] = upload_job
+
+    for item in items:
+        sensitive_meta_id = getattr(item, "sensitive_meta_id", None)
+        content_hash = _overview_content_hash(item)
+        upload_job = (
+            by_sensitive_meta_id.get(sensitive_meta_id)
+            if sensitive_meta_id is not None
+            else None
+        ) or by_content_hash.get(content_hash)
+        setattr(item, "_overview_upload_job", upload_job)
 
 
 class AnonymizationOverviewView(ListAPIView):
@@ -61,16 +125,34 @@ class AnonymizationOverviewView(ListAPIView):
                 "original_file_name",
                 "raw_file",
                 "uploaded_at",
+                "video_hash",
                 "state",
                 "sensitive_meta",
             )
         )
         # 2) RawPdfFile queryset - only fields that exist on RawPdfFile
-        qs_pdf = RawPdfFile.objects.select_related("sensitive_meta").only(
-            "id", "file", "date_created", "text", "anonymized_text", "sensitive_meta"
+        qs_pdf = RawPdfFile.objects.select_related(
+            "sensitive_meta", "anonym_examination_report__type"
+        ).only(
+            "id",
+            "file",
+            "date_created",
+            "text",
+            "anonymized_text",
+            "pdf_hash",
+            "sensitive_meta",
+            "raw_meta",
+            "anonym_examination_report",
+            "anonym_examination_report__type",
+            "anonym_examination_report__type__name",
+            "sensitive_meta__patient_hash",
+            "sensitive_meta__examination_hash",
+            "sensitive_meta__pseudo_patient",
+            "sensitive_meta__pseudo_examination",
         )
 
         combined = list(qs_video) + list(qs_pdf)
+        _attach_overview_upload_jobs(combined)
 
         def _created_at(item):
             if isinstance(item, VideoFile):
@@ -109,7 +191,16 @@ class AnonymizationValidateView(APIView):
         # Try Video first
         video = VideoFile.objects.filter(pk=item_id).first()
         if video:
-            ok = video.validate_metadata_annotation(payload)
+            video_state = get_or_create_video_state(video)
+            video_meta = video.meta if isinstance(video.meta, dict) else {}
+            if getattr(video_state, "processing_error", False) or (
+                video_meta.get("integrity_status") == "lost"
+            ):
+                return Response(
+                    {"error": "Video is marked failed/lost by media integrity."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            ok = validate_video_metadata_annotation(video, payload)
             if not ok:
                 return Response(
                     {"error": "Video validation failed."},
@@ -120,7 +211,7 @@ class AnonymizationValidateView(APIView):
         # Then PDF
         pdf = RawPdfFile.objects.filter(pk=item_id).first()
         if pdf:
-            ok = pdf.validate_metadata_annotation(payload)
+            ok = validate_report_metadata_annotation(pdf, payload)
             if not ok:
                 return Response(
                     {"error": "PDF validation failed."},
@@ -146,7 +237,7 @@ def anonymization_status(request, file_id: int):
     if not info:
         return Response({"detail": "File not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    file_type = info.get("mediaType") or info.get("type") or "video"
+    file_type = info.get("media_type") or info.get("type") or "video"
 
     # Wende Rate-Limiting auf den echten Typ an (nicht auf einen evtl. falschen request-Parameter)
     if not PollingCoordinator.can_check_status(file_id, file_type):
@@ -159,7 +250,7 @@ def anonymization_status(request, file_id: int):
             status=status.HTTP_429_TOO_MANY_REQUESTS,
         )
 
-    status_val = info.get("anonymizationStatus") or info.get("status") or "not_started"
+    status_val = info.get("anonymization_status") or info.get("status") or "not_started"
 
     # processing_locked als Ableitung des Status interpretieren
     processing_statuses = {
@@ -173,7 +264,9 @@ def anonymization_status(request, file_id: int):
         {
             "file_id": file_id,
             "file_type": file_type,
-            "anonymizationStatus": status_val,
+            "anonymization_status": status_val,
+            "integrity_status": info.get("integrity_status", ""),
+            "integrity_error": info.get("integrity_error", ""),
             "processing_locked": processing_locked_derived,
         }
     )
@@ -191,7 +284,19 @@ def start_anonymization(request, file_id: int):
     if not info:
         return Response({"detail": "File not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    file_type = info.get("mediaType") or "unknown"
+    file_type = info.get("media_type") or "unknown"
+    status_val = info.get("anonymization_status") or info.get("status") or "not_started"
+    if info.get("integrity_status") == "lost" or status_val == "failed":
+        return Response(
+            {
+                "detail": "File is marked failed/lost and cannot be anonymized",
+                "file_id": file_id,
+                "file_type": file_type,
+                "integrity_status": info.get("integrity_status", ""),
+                "integrity_error": info.get("integrity_error", ""),
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
     # Use processing lock context to prevent duplicate processing
     with ProcessingLockContext(file_id, file_type) as lock:
         if not lock.acquired:
@@ -328,7 +433,7 @@ def has_raw_video_file(request, file_id: int):
     Return whether the video still has a raw video file.
     """
     try:
-        video = VideoFile.get_video_by_pk(pk=file_id)
+        video = get_video_by_pk(pk=file_id)
     except VideoFile.DoesNotExist:
         return Response(
             {"detail": "Video not found", "file_id": file_id},

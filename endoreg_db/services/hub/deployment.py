@@ -27,13 +27,18 @@ def local_study_server_mode_enabled() -> bool:
 
 
 def transfer_api_enabled() -> bool:
-    return get_deployment_role() == "central_hub"
+    return get_deployment_role() == "central_hub" and bool(
+        getattr(settings, "ENDOREG_ENABLE_HUB_TRANSFERS", False)
+    )
 
 
 def deployment_profile_payload() -> dict[str, object]:
     return {
         "deployment_role": get_deployment_role(),
         "hub_mode": hub_mode_enabled(),
+        "enable_hub_transfers": bool(
+            getattr(settings, "ENDOREG_ENABLE_HUB_TRANSFERS", False)
+        ),
         "transfer_api_enabled": transfer_api_enabled(),
         "transfer_require_secure_transport": bool(
             getattr(settings, "ENDOREG_HUB_TRANSFER_REQUIRE_SECURE_TRANSPORT", True)

@@ -112,6 +112,13 @@ class SensitiveMeta(models.Model):
     text = models.TextField(blank=True, null=True)
     anonymized_text = models.TextField(blank=True, null=True)
     validation_comment = models.TextField(blank=True, default="")
+    direct_identifiers_cleared_at = models.DateTimeField(blank=True, null=True)
+    direct_identifier_policy = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+    )
+    direct_identifier_tombstone = models.JSONField(default=dict, blank=True)
 
     # --- Anonymization helper method ---
     create_anonymized_record = logic._create_anonymized_record

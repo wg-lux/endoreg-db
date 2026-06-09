@@ -5,7 +5,10 @@ from typing import Literal
 
 from django.db import transaction
 
-from endoreg_db.models import Examination, PatientExamination, RawPdfFile, VideoFile
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.medical.examination.examination import Examination
+from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.services.case_resolution_state import (
     get_case_resolution_meta,
     persist_auto_case_resolution_state,

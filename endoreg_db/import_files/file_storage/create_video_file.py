@@ -4,13 +4,21 @@ from pathlib import Path
 from typing import Tuple
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.context.ensure_center import ensure_center
-from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.filesystem.file_operations import sha256_file
 from endoreg_db.models.media import VideoFile
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
 from endoreg_db.import_files.file_storage.state_management import finalize_failure
+from endoreg_db.services.hub.media_integrity import (
+    MediaIntegrityError,
+    MediaIntegrityExpectation,
+    check_video_media_integrity,
+)
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
+from endoreg_db.services.video_files import (
+    get_video_by_content_hash,
+)
 from endoreg_db.utils.storage import file_exists
 
 logger = logging.getLogger(__name__)
@@ -55,17 +63,31 @@ def create_or_retrieve_video_file(
     if has_success_history:
         logger.info(
             "VideoFile already has successful processing history (file_hash=%s) "
-            "- short-circuiting",
+            "- checking media integrity before short-circuiting",
             ctx.file_hash,
         )
         processed = True
         needs_processing = False
         if not isinstance(ctx.current_video, VideoFile):
-            ctx.current_video = VideoFile.get_video_by_content_hash(ctx.file_hash)
+            ctx.current_video = get_video_by_content_hash(ctx.file_hash)
+        integrity_result = check_video_media_integrity(
+            ctx.current_video if isinstance(ctx.current_video, VideoFile) else None,
+            expectation=MediaIntegrityExpectation.RAW_WATCHER_VIDEO,
+            content_hash=ctx.file_hash,
+        )
+        if not integrity_result.ok:
+            logger.error(
+                "Successful processing history exists for %s but media integrity "
+                "failed in create_or_retrieve_video_file: %s",
+                ctx.file_hash,
+                integrity_result.reason,
+            )
+            raise MediaIntegrityError(integrity_result)
+        assert isinstance(ctx.current_video, VideoFile)
         return ctx.current_video, processed, needs_processing
     elif has_failure_history:
         if not isinstance(ctx.current_video, VideoFile):
-            ctx.current_video = VideoFile.get_video_by_content_hash(ctx.file_hash)
+            ctx.current_video = get_video_by_content_hash(ctx.file_hash)
         finalize_failure(ctx)
 
         processed = False

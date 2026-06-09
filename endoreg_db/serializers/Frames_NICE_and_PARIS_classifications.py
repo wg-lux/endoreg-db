@@ -1,6 +1,9 @@
-from endoreg_db.utils.extract_specific_frames import extract_selected_frames
+from endoreg_db.utils.media.extract_specific_frames import extract_selected_frames
 from rest_framework import serializers
-from endoreg_db.models import Label, LabelVideoSegment
+from endoreg_db.models.label.label import Label
+from endoreg_db.models.label.label_video_segment.label_video_segment import (
+    LabelVideoSegment,
+)
 from itertools import combinations
 from pathlib import Path
 from django.conf import settings
@@ -170,8 +173,9 @@ class BaseClassificationSerializer(serializers.Serializer):
 
         if len(valid_segments) < 3:
             valid_segments.sort(
-                key=lambda seg: seg["polyp"].end_frame_number
-                - seg["polyp"].start_frame_number,
+                key=lambda seg: (
+                    seg["polyp"].end_frame_number - seg["polyp"].start_frame_number
+                ),
                 reverse=True,
             )
             return valid_segments[:3]
@@ -201,8 +205,9 @@ class BaseClassificationSerializer(serializers.Serializer):
             return list(best_combo)
 
         valid_segments.sort(
-            key=lambda seg: seg["polyp"].end_frame_number
-            - seg["polyp"].start_frame_number,
+            key=lambda seg: (
+                seg["polyp"].end_frame_number - seg["polyp"].start_frame_number
+            ),
             reverse=True,
         )
         return valid_segments[:3]

@@ -6,10 +6,17 @@ import pytest
 # report equivalents
 import endoreg_db.import_files.file_storage.create_report_file as create_from_file_module  # <-- pdf create_from_file
 from endoreg_db.import_files.context.import_context import ImportContext
-from endoreg_db.models import Center, EndoscopyProcessor
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.medical.hardware.endoscopy_processor import EndoscopyProcessor
 from endoreg_db.models.state.processing_history import ProcessingHistory
-from endoreg_db.utils import paths as paths_module
-from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.filesystem import paths as paths_module
+from endoreg_db.utils.filesystem.file_operations import (
+    atomic_copy_file,
+    atomic_write_file,
+    ensure_directory,
+    safe_unlink_file,
+    sha256_file,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -19,7 +26,7 @@ def cleanup_temp_files():
     # Teardown: Scan for any leftover .tmp files and delete them
     # although tmp_path handles this, this is good for extra safety
     for tmp_file in Path().glob("**/*.tmp.*"):
-        tmp_file.unlink(missing_ok=True)
+        safe_unlink_file(tmp_file, missing_ok=True)
 
 
 def _configure_storage_layout(mock_paths) -> tuple[Path, Path]:
@@ -39,7 +46,13 @@ def _write_minimal_pdf(path: Path) -> None:
     """
     Write a tiny valid-ish report (enough to be treated as a report file on disk).
     """
-    path.write_bytes(b"%report-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n")
+    content = b"%report-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n"
+    ensure_directory(path.parent)
+    atomic_write_file(
+        destination=path,
+        content=[content],
+        required_bytes=len(content),
+    )
 
 
 @pytest.mark.django_db
@@ -51,7 +64,7 @@ def test_create_from_file_happy_path(mock_storage, tmp_path, base_db_data):
     storage_root, sensitive_dir = _configure_storage_layout(mock_storage)
 
     import_dir = tmp_path / "import"
-    import_dir.mkdir(parents=True, exist_ok=True)
+    ensure_directory(import_dir)
     src_file = import_dir / "test_report.pdf"
     _write_minimal_pdf(src_file)
 
@@ -91,12 +104,12 @@ def test_create_from_file_uses_sensitive_copy_as_input_but_not_as_canonical_raw_
     _storage_root, sensitive_dir = _configure_storage_layout(mock_storage)
 
     import_dir = tmp_path / "import"
-    import_dir.mkdir(parents=True, exist_ok=True)
+    ensure_directory(import_dir)
     src_file = import_dir / "test_sensitive_source.pdf"
     _write_minimal_pdf(src_file)
 
     sensitive_copy = sensitive_dir / src_file.name
-    shutil.copy2(src_file, sensitive_copy)
+    atomic_copy_file(source=src_file, destination=sensitive_copy)
 
     center_name = Center.objects.first().name
     processor_name = EndoscopyProcessor.objects.first().name
@@ -138,7 +151,7 @@ def test_create_from_file_duplicate_with_existing_file(
     storage_root, sensitive_dir = _configure_storage_layout(mock_storage)
 
     import_dir = tmp_path / "import"
-    import_dir.mkdir(parents=True, exist_ok=True)
+    ensure_directory(import_dir)
     src_file = import_dir / "test_dup.pdf"
     _write_minimal_pdf(src_file)
 
@@ -191,7 +204,7 @@ def test_create_from_file_duplicate_with_missing_file_short_circuits_when_succes
     storage_root, sensitive_dir = _configure_storage_layout(mock_storage)
 
     import_dir = tmp_path / "import"
-    import_dir.mkdir(parents=True, exist_ok=True)
+    ensure_directory(import_dir)
     src_file = import_dir / "test_orphan.pdf"
     _write_minimal_pdf(src_file)
 
@@ -217,7 +230,7 @@ def test_create_from_file_duplicate_with_missing_file_short_circuits_when_succes
     assert raw_path.exists()
 
     # Simulate missing file on disk
-    raw_path.unlink()
+    safe_unlink_file(raw_path)
     assert not raw_path.exists()
 
     # Mark as successfully processed (so processed2 becomes True and we short-circuit)

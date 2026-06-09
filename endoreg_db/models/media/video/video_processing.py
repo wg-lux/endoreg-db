@@ -30,12 +30,14 @@ class VideoProcessingHistory(models.Model):
     OPERATION_FRAME_REMOVAL = "frame_removal"
     OPERATION_ANALYSIS = "analysis"
     OPERATION_REPROCESSING = "reprocessing"
+    OPERATION_AI_TEMPORAL_INFERENCE = "ai_temporal_inference"
 
     OPERATION_CHOICES = [
         (OPERATION_MASKING, "Mask Overlay"),
         (OPERATION_FRAME_REMOVAL, "Frame Removal"),
         (OPERATION_ANALYSIS, "Sensitivity Analysis"),
         (OPERATION_REPROCESSING, "Full Reprocessing"),
+        (OPERATION_AI_TEMPORAL_INFERENCE, "AI Temporal Inference"),
     ]
 
     # Status Types

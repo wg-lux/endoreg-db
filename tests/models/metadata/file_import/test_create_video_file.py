@@ -11,7 +11,8 @@ from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.file_storage import create_video_file
 from endoreg_db.models import Center, EndoscopyProcessor
 from endoreg_db.models.state.processing_history import ProcessingHistory
-from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.filesystem.file_operations import sha256_file
+from endoreg_db.utils.storage import save_local_file
 
 
 def _configure_storage_layout(mock_paths, test_suffix: str) -> tuple[Path, Path, Path]:
@@ -51,6 +52,19 @@ def _patch_video_initialize(monkeypatch):
         video_file_module.VideoFile,
         "initialize",
         fake_initialize,
+        raising=True,
+    )
+
+
+@pytest.fixture(autouse=True)
+def _patch_video_stream_validation(monkeypatch):
+    def fake_get_stream_info(_path: Path):
+        return {"streams": [{"codec_type": "video", "codec_name": "h264"}]}
+
+    monkeypatch.setattr(
+        create_from_file_module,
+        "get_stream_info",
+        fake_get_stream_info,
         raising=True,
     )
 
@@ -186,6 +200,19 @@ def test_create_from_file_duplicate_with_existing_file(
     assert raw1 is not None
     assert raw1.exists()
 
+    processed_src = import_dir / "processed_test_dup.mp4"
+    processed_src.write_bytes(b"processed-duplicate-video")
+    processed_hash = sha256_file(processed_src)
+    save_local_file(
+        v1.processed_file,
+        processed_src,
+        name=f"{processed_hash}.mp4",
+        save=False,
+    )
+    v1.processed_video_hash = processed_hash
+    v1.save(update_fields=["processed_file", "processed_video_hash"])
+    v1.get_or_create_state().mark_anonymization_validated()
+
     # Second call: should reuse existing instance
     ctx2 = ImportContext(
         file_path=src_file,
@@ -313,6 +340,77 @@ def test_check_storage_capacity_raises_on_insufficient_space(tmp_path, monkeypat
         create_from_file_module.check_storage_capacity(src_file, tmp_path)
 
 
+@pytest.mark.django_db
+def test_create_from_file_uses_unique_standardization_temp_paths(
+    mock_storage, tmp_path, monkeypatch, base_db_data
+):
+    storage_root, sensitive_dir, transcoding_dir = _configure_storage_layout(
+        mock_storage, "unique_temp_paths"
+    )
+    monkeypatch.setattr(
+        create_from_file_module,
+        "TRANSCODING_DIR",
+        transcoding_dir,
+        raising=True,
+    )
+
+    captured_output_paths: list[Path] = []
+
+    def failing_transcode(input_path: Path, output_path: Path):
+        captured_output_paths.append(output_path)
+        raise RuntimeError("transcode failed before output promotion")
+
+    monkeypatch.setattr(
+        create_from_file_module,
+        "transcode_videofile_if_required",
+        failing_transcode,
+        raising=True,
+    )
+
+    src_file = tmp_path / "same-hash.mp4"
+    src_file.write_bytes(b"same video bytes")
+    expected_hash = sha256_file(src_file)
+    center_name = Center.objects.first().name
+    processor_name = EndoscopyProcessor.objects.first().name
+
+    for _attempt in range(2):
+        ctx = ImportContext(
+            file_path=src_file,
+            center_name=center_name,
+            processor_name=processor_name,
+        )
+        with pytest.raises(RuntimeError, match="Video standardization failed"):
+            create_video_file.create_or_retrieve_video_file(ctx)
+
+    assert len(captured_output_paths) == 2
+    assert captured_output_paths[0] != captured_output_paths[1]
+    actual_transcoding_dir = captured_output_paths[0].parent
+    assert all(path.parent == actual_transcoding_dir for path in captured_output_paths)
+    assert all(
+        path.name.startswith(f"{expected_hash}.")
+        and path.name.endswith(f".part{src_file.suffix}")
+        for path in captured_output_paths
+    )
+    assert not (
+        actual_transcoding_dir / f"{expected_hash}.part{src_file.suffix}"
+    ).exists()
+
+
+def test_verify_completed_file_rejects_non_video_payload(tmp_path, monkeypatch):
+    invalid_video = tmp_path / "invalid.mp4"
+    invalid_video.write_bytes(b"not a real mp4")
+
+    monkeypatch.setattr(
+        create_from_file_module,
+        "get_stream_info",
+        lambda _path: {"streams": []},
+        raising=True,
+    )
+
+    with pytest.raises(RuntimeError, match="no readable video stream"):
+        create_from_file_module._verify_completed_file(invalid_video)
+
+
 def test_create_or_retrieve_prefers_sensitive_path(monkeypatch, tmp_path):
     """
     The managed sensitive copy is the source of truth for VideoFile creation.
@@ -422,9 +520,6 @@ def test_create_from_file_transcoding_failure_fails_closed(
 
     expected_hash = sha256_file(src_file)
     expected_final_path = sensitive_dir / f"{expected_hash}{src_file.suffix}"
-    expected_temp_path = expected_final_path.with_name(
-        f"{expected_final_path.stem}.part{expected_final_path.suffix}"
-    )
 
     with pytest.raises(RuntimeError, match="Video standardization failed"):
         create_video_file.create_or_retrieve_video_file(ctx)
@@ -433,7 +528,7 @@ def test_create_from_file_transcoding_failure_fails_closed(
         video_hash=expected_hash
     ).exists()
     assert not expected_final_path.exists()
-    assert not expected_temp_path.exists()
+    assert not list(transcoding_dir.glob(f"{expected_hash}.*.part{src_file.suffix}"))
 
 
 @pytest.mark.django_db
@@ -484,9 +579,6 @@ def test_create_from_file_transcoding_failure_is_retry_safe(
     processor_name = EndoscopyProcessor.objects.first().name
     expected_hash = sha256_file(src_file)
     expected_final_path = sensitive_dir / f"{expected_hash}{src_file.suffix}"
-    expected_temp_path = expected_final_path.with_name(
-        f"{expected_final_path.stem}.part{expected_final_path.suffix}"
-    )
 
     first_ctx = ImportContext(
         file_path=src_file,
@@ -502,7 +594,7 @@ def test_create_from_file_transcoding_failure_is_retry_safe(
         video_hash=expected_hash
     ).exists()
     assert not expected_final_path.exists()
-    assert not expected_temp_path.exists()
+    assert not list(transcoding_dir.glob(f"{expected_hash}.*.part{src_file.suffix}"))
 
     second_ctx = ImportContext(
         file_path=src_file,

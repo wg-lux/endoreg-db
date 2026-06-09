@@ -9,26 +9,31 @@ from typing import Any, Literal, NotRequired, TypedDict, cast
 from django.db import transaction
 from django.utils import timezone
 
-from endoreg_db.models import (
-    Center,
-    NetworkNode,
-    RawPdfFile,
-    RawPdfState,
-    SensitiveMeta,
-    TransferJob,
-    VideoFile,
-    VideoState,
-)
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.hub.network_node import NetworkNode
+from endoreg_db.models.hub.transfer_job import TransferJob
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+from endoreg_db.models.state.raw_pdf import RawPdfState
+from endoreg_db.models.state.video import VideoState
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
 from endoreg_db.models.metadata import sensitive_meta_logic
 from endoreg_db.services.auto_case_resolution import auto_resolve_media_case
 from endoreg_db.services.hub.audit import emit_hub_audit_event
-from endoreg_db.utils.file_operations import safe_unlink_file, sha256_file
-from endoreg_db.utils.hashs import get_pdf_hash
-from endoreg_db.utils.paths import TRANSCODING_DIR
+from endoreg_db.services.raw_pdf_files import get_or_create_raw_pdf_state
+from endoreg_db.services.video_files import get_or_create_video_state
+from endoreg_db.utils.filesystem.file_operations import (
+    ensure_directory,
+    safe_unlink_file,
+    sha256_file,
+)
+from endoreg_db.utils.security.hashs import get_pdf_hash
+from endoreg_db.utils.filesystem.paths import TRANSCODING_DIR
 from endoreg_db.utils.storage import delete_field_file, file_exists, save_local_file
+from endoreg_db.utils.observability.structured_logging import hash_identifier
 from .ingest import _default_processor_name
 
 logger = logging.getLogger(__name__)
@@ -211,20 +216,70 @@ def authenticate_network_node(
         node_key=source_node_key, is_active=True
     ).first()
     if source_node is None:
+        _log_transfer_node_auth_failure(
+            reason="unknown_or_inactive_source_node",
+            source_node_key=source_node_key,
+            provided_node_key=provided_node_key,
+        )
         return None
 
     normalized_key = str(provided_node_key or "").strip()
     normalized_secret = str(provided_secret or "").strip()
 
     if normalized_key != source_node.node_key:
+        _log_transfer_node_auth_failure(
+            reason="node_key_mismatch",
+            source_node_key=source_node.node_key,
+            provided_node_key=normalized_key,
+            source_node_id=source_node.id,
+            source_node_role=source_node.role,
+        )
         return None
 
-    if source_node.shared_secret_hash:
-        if not source_node.check_shared_secret(normalized_secret):
-            return None
-        return source_node
+    if not str(source_node.shared_secret_hash or "").strip():
+        _log_transfer_node_auth_failure(
+            reason="missing_shared_secret_hash",
+            source_node_key=source_node.node_key,
+            provided_node_key=normalized_key,
+            source_node_id=source_node.id,
+            source_node_role=source_node.role,
+        )
+        return None
 
+    if not source_node.check_shared_secret(normalized_secret):
+        _log_transfer_node_auth_failure(
+            reason="shared_secret_mismatch",
+            source_node_key=source_node.node_key,
+            provided_node_key=normalized_key,
+            source_node_id=source_node.id,
+            source_node_role=source_node.role,
+        )
+        return None
     return source_node
+
+
+def _log_transfer_node_auth_failure(
+    *,
+    reason: str,
+    source_node_key: str,
+    provided_node_key: str | None,
+    source_node_id: int | None = None,
+    source_node_role: str | None = None,
+) -> None:
+    normalized_provided_node_key = str(provided_node_key or "").strip()
+    emit_hub_audit_event(
+        "hub.transfer_node_auth_failed",
+        reason=reason,
+        source_node_key=source_node_key,
+        provided_node_key_present=bool(normalized_provided_node_key),
+        provided_node_key_sha256=(
+            hash_identifier(normalized_provided_node_key)
+            if normalized_provided_node_key
+            else None
+        ),
+        source_node_id=source_node_id,
+        source_node_role=source_node_role,
+    )
 
 
 def apply_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
@@ -336,7 +391,7 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
         _apply_video_file_payload(video, video_file_payload)
 
         video.save()
-        video_state = video.get_or_create_state()
+        video_state = get_or_create_video_state(video)
         _apply_video_state_payload(video_state, video_state_payload)
 
         processing_success = _coerce_optional_bool(
@@ -430,7 +485,7 @@ def _apply_report_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
         _apply_report_file_payload(report, report_payload)
 
         report.save()
-        report_state = report.get_or_create_state()
+        report_state = get_or_create_raw_pdf_state(report)
         _apply_report_state_payload(report_state, report_state_payload)
 
         processing_success = _coerce_optional_bool(
@@ -941,7 +996,7 @@ def _stored_field_name(field_file: object) -> str:
 
 
 def _write_uploaded_file_to_temp(*, uploaded_file, default_suffix: str) -> Path:
-    TRANSCODING_DIR.mkdir(parents=True, exist_ok=True)
+    ensure_directory(TRANSCODING_DIR)
     upload_name = Path(str(getattr(uploaded_file, "name", "") or "upload")).name
     suffix = _normalized_suffix(upload_name, default_suffix)
     with NamedTemporaryFile(
@@ -1018,7 +1073,7 @@ def _expected_processed_video_hash(
 
 
 def _mark_video_transfer_as_processed(video: VideoFile) -> None:
-    state = video.get_or_create_state()
+    state = get_or_create_video_state(video)
     state.mark_processing_started()
     state.mark_anonymized()
     state.mark_sensitive_meta_processed()
@@ -1027,7 +1082,7 @@ def _mark_video_transfer_as_processed(video: VideoFile) -> None:
 
 
 def _mark_report_transfer_as_processed(report: RawPdfFile) -> None:
-    state = report.get_or_create_state()
+    state = get_or_create_raw_pdf_state(report)
     state.mark_processing_started()
     state.mark_anonymized()
     state.mark_sensitive_meta_processed()
@@ -1089,6 +1144,8 @@ def _apply_video_state_payload(
         "sensitive_meta_processed",
         "anonymized",
         "anonymization_validated",
+        "outside_segments_removed",
+        "processing_error",
         "processing_started",
         "segment_annotations_created",
         "segment_annotations_validated",

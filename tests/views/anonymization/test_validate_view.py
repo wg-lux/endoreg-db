@@ -10,17 +10,28 @@ Tests cover:
 """
 
 import logging
+from datetime import date, datetime
 from typing import Dict, cast
 from unittest.mock import patch
 
 import pytest
 from django.contrib.auth.models import User
+from django.utils import timezone
 from django.utils.translation import override
 from rest_framework import status
 from rest_framework.response import Response as DRFResponse
 from rest_framework.test import APIRequestFactory, force_authenticate
 
-from endoreg_db.models import Center, RawPdfFile, Tag, VideoFile
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.media.anonymization_metrics import (
+    AnonymizationFieldMetric,
+    AnonymizationMetricField,
+    AnonymizationValidationMetric,
+)
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+from endoreg_db.models.other.tag import Tag
 from endoreg_db.views.anonymization.validate import AnonymizationValidateView
 
 logger = logging.getLogger(__name__)
@@ -113,6 +124,74 @@ class TestAnonymizationValidateView:
 
             assert response.status_code == status.HTTP_200_OK
 
+    def test_validate_video_records_derived_metrics_without_patient_values(
+        self, factory, user, video_file
+    ):
+        sensitive_meta = SensitiveMeta.objects.create(
+            center=video_file.center,
+            patient_first_name="MetricFirst",
+            patient_last_name="MetricBeforeSurname",
+            patient_dob=timezone.make_aware(datetime(1994, 3, 21)),
+            examination_date=date(2024, 2, 15),
+            casenumber="CASE-BEFORE",
+        )
+        video_file.sensitive_meta = sensitive_meta
+        video_file.save(update_fields=["sensitive_meta"])
+        data = {
+            "patient_first_name": "MetricFirst",
+            "patient_last_name": "MetricAfterSurname",
+            "patient_dob": "21.03.1994",
+            "examination_date": "15.02.2024",
+            "casenumber": "CASE-AFTER",
+            "file_type": "video",
+            "no_more_names_confirmed": True,
+        }
+
+        with patch.object(VideoFile, "validate_metadata_annotation", return_value=True):
+            request = factory.post(
+                f"/api/anonymization/{video_file.id}/validate/",
+                data=data,
+                format="json",
+            )
+            force_authenticate(request, user=user)
+
+            view = AnonymizationValidateView.as_view()
+            response = self._call_view(view, request, file_id=video_file.id)
+
+        assert response.status_code == status.HTTP_200_OK
+        metric = AnonymizationValidationMetric.objects.get(video=video_file)
+        assert metric.media_type == "video"
+        assert metric.no_more_names_confirmed is True
+        assert metric.total_fields == len(AnonymizationMetricField.values)
+        assert metric.changed_fields >= 2
+
+        last_name_metric = AnonymizationFieldMetric.objects.get(
+            validation_metric=metric,
+            field_name=AnonymizationMetricField.PATIENT_LAST_NAME,
+        )
+        assert last_name_metric.present_before is True
+        assert last_name_metric.present_after is True
+        assert last_name_metric.changed is True
+        assert last_name_metric.exact_match is False
+
+        first_name_metric = AnonymizationFieldMetric.objects.get(
+            validation_metric=metric,
+            field_name=AnonymizationMetricField.PATIENT_FIRST_NAME,
+        )
+        assert first_name_metric.exact_match is True
+
+        persisted_text = str(metric.__dict__) + str(
+            list(
+                AnonymizationFieldMetric.objects.filter(
+                    validation_metric=metric
+                ).values()
+            )
+        )
+        assert "MetricBeforeSurname" not in persisted_text
+        assert "MetricAfterSurname" not in persisted_text
+        assert "CASE-BEFORE" not in persisted_text
+        assert "CASE-AFTER" not in persisted_text
+
     def test_validate_video_failure(self, factory, user, video_file):
         """Test video validation failure."""
         data = {
@@ -156,8 +235,9 @@ class TestAnonymizationValidateView:
             "document_type": "report_final",
         }
 
-        with patch.object(
-            RawPdfFile, "validate_metadata_annotation", return_value=True
+        with patch(
+            "endoreg_db.views.anonymization.validate.validate_report_metadata_annotation",
+            return_value=True,
         ):
             request = factory.post(
                 f"/api/anonymization/{pdf_file.id}/validate/",
@@ -189,6 +269,15 @@ class TestAnonymizationValidateView:
                 payload["validation_context"]["pseudo_examination_id"]
                 == pdf_file.sensitive_meta.pseudo_examination_id
             )
+            metric = AnonymizationValidationMetric.objects.get(pdf=pdf_file)
+            assert metric.media_type == "pdf"
+            assert metric.document_type == "report_final"
+            assert metric.total_fields == len(AnonymizationMetricField.values)
+            assert AnonymizationFieldMetric.objects.filter(
+                validation_metric=metric,
+                field_name=AnonymizationMetricField.DOCUMENT_TYPE,
+                present_after=True,
+            ).exists()
 
     def test_validate_pdf_persists_report_materialization_metadata_in_mocked_validator_path(
         self, factory, user, pdf_file
@@ -210,8 +299,9 @@ class TestAnonymizationValidateView:
             "document_type": "report_final",
         }
 
-        with patch.object(
-            RawPdfFile, "validate_metadata_annotation", return_value=True
+        with patch(
+            "endoreg_db.views.anonymization.validate.validate_report_metadata_annotation",
+            return_value=True,
         ):
             request = factory.post(
                 f"/api/anonymization/{pdf_file.id}/validate/",
@@ -242,10 +332,12 @@ class TestAnonymizationValidateView:
             "examination_date": "15.02.2024",
             "casenumber": "12345",
             "file_type": "pdf",
+            "document_type": "report_final",
         }
 
-        with patch.object(
-            RawPdfFile, "validate_metadata_annotation", return_value=False
+        with patch(
+            "endoreg_db.views.anonymization.validate.validate_report_metadata_annotation",
+            return_value=False,
         ):
             request = factory.post(
                 f"/api/anonymization/{pdf_file.id}/validate/",
@@ -273,9 +365,10 @@ class TestAnonymizationValidateView:
             "file_type": "pdf",
         }
 
-        with patch.object(
-            RawPdfFile, "validate_metadata_annotation", return_value=True
-        ):
+        with patch(
+            "endoreg_db.views.anonymization.validate.validate_report_metadata_annotation",
+            return_value=True,
+        ) as validate_mock:
             request = factory.post(
                 f"/api/anonymization/{pdf_file.id}/validate/",
                 data=data,
@@ -290,6 +383,130 @@ class TestAnonymizationValidateView:
             assert response.status_code == status.HTTP_400_BAD_REQUEST
             assert "document_type is required" in self._payload_text(payload, "error")
             assert payload["allowed_document_types"]
+            validate_mock.assert_not_called()
+
+    def test_validate_pdf_missing_document_type_does_not_mutate_metadata(
+        self, factory, user, pdf_file
+    ):
+        sensitive_meta = SensitiveMeta.objects.create(
+            center=pdf_file.center,
+            patient_first_name="Original",
+            patient_last_name="Person",
+            validation_comment="keep",
+        )
+        pdf_file.sensitive_meta = sensitive_meta
+        pdf_file.raw_meta = {"existing": "value"}
+        pdf_file.anonymized_text = "Original text"
+        pdf_file.save(update_fields=["sensitive_meta", "raw_meta", "anonymized_text"])
+
+        def mutate_if_called(instance, _payload):
+            instance.sensitive_meta.patient_first_name = "Mutated"
+            instance.sensitive_meta.validation_comment = "mutated"
+            instance.sensitive_meta.save(
+                update_fields=["patient_first_name", "validation_comment"]
+            )
+            instance.sensitive_meta.get_or_create_state()
+            instance.raw_meta = {"document_type": "report_final"}
+            instance.anonymized_text = "Mutated text"
+            instance.save(update_fields=["raw_meta", "anonymized_text"])
+            instance.get_or_create_state().mark_anonymization_validated()
+            return True
+
+        data = {
+            "patient_first_name": "Max",
+            "patient_last_name": "Mustermann",
+            "patient_dob": "21.03.1994",
+            "examination_date": "15.02.2024",
+            "casenumber": "12345",
+            "anonymized_text": "Anonymized report content",
+            "file_type": "pdf",
+        }
+
+        with patch(
+            "endoreg_db.views.anonymization.validate.validate_report_metadata_annotation",
+            side_effect=mutate_if_called,
+        ) as validate_mock:
+            request = factory.post(
+                f"/api/anonymization/{pdf_file.id}/validate/",
+                data=data,
+                format="json",
+            )
+            force_authenticate(request, user=user)
+
+            view = AnonymizationValidateView.as_view()
+            response = self._call_view(view, request, file_id=pdf_file.id)
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        validate_mock.assert_not_called()
+        sensitive_meta.refresh_from_db()
+        pdf_file.refresh_from_db()
+        assert sensitive_meta.patient_first_name == "Original"
+        assert sensitive_meta.validation_comment == "keep"
+        assert pdf_file.raw_meta == {"existing": "value"}
+        assert pdf_file.anonymized_text == "Original text"
+        assert pdf_file.state_id is None
+
+    def test_validate_pdf_failure_rolls_back_metadata_mutations(
+        self, factory, user, pdf_file
+    ):
+        sensitive_meta = SensitiveMeta.objects.create(
+            center=pdf_file.center,
+            patient_first_name="Original",
+            patient_last_name="Person",
+            validation_comment="keep",
+        )
+        pdf_file.sensitive_meta = sensitive_meta
+        pdf_file.raw_meta = {"existing": "value"}
+        pdf_file.anonymized_text = "Original text"
+        pdf_file.save(update_fields=["sensitive_meta", "raw_meta", "anonymized_text"])
+
+        def mutate_and_fail(instance, _payload):
+            instance.sensitive_meta.patient_first_name = "Mutated"
+            instance.sensitive_meta.validation_comment = "mutated"
+            instance.sensitive_meta.save(
+                update_fields=["patient_first_name", "validation_comment"]
+            )
+            instance.sensitive_meta.get_or_create_state()
+            instance.raw_meta = {"document_type": "report_final"}
+            instance.anonymized_text = "Mutated text"
+            instance.save(update_fields=["raw_meta", "anonymized_text"])
+            instance.get_or_create_state().mark_anonymization_validated()
+            return False
+
+        data = {
+            "patient_first_name": "Max",
+            "patient_last_name": "Mustermann",
+            "patient_dob": "21.03.1994",
+            "examination_date": "15.02.2024",
+            "casenumber": "12345",
+            "anonymized_text": "Anonymized report content",
+            "file_type": "pdf",
+            "document_type": "report_final",
+        }
+
+        with patch(
+            "endoreg_db.views.anonymization.validate.validate_report_metadata_annotation",
+            side_effect=mutate_and_fail,
+        ) as validate_mock:
+            request = factory.post(
+                f"/api/anonymization/{pdf_file.id}/validate/",
+                data=data,
+                format="json",
+            )
+            force_authenticate(request, user=user)
+
+            view = AnonymizationValidateView.as_view()
+            response = self._call_view(view, request, file_id=pdf_file.id)
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        validate_mock.assert_called_once()
+        sensitive_meta.refresh_from_db()
+        pdf_file.refresh_from_db()
+        assert sensitive_meta.patient_first_name == "Original"
+        assert sensitive_meta.validation_comment == "keep"
+        assert pdf_file.raw_meta == {"existing": "value"}
+        assert pdf_file.anonymized_text == "Original text"
+        assert pdf_file.state_id is None
 
     def test_validate_pdf_rejects_unsupported_document_type(
         self, factory, user, pdf_file
@@ -306,9 +523,10 @@ class TestAnonymizationValidateView:
         }
 
         with override("en"):
-            with patch.object(
-                RawPdfFile, "validate_metadata_annotation", return_value=True
-            ):
+            with patch(
+                "endoreg_db.views.anonymization.validate.validate_report_metadata_annotation",
+                return_value=True,
+            ) as validate_mock:
                 request = factory.post(
                     f"/api/anonymization/{pdf_file.id}/validate/",
                     data=data,
@@ -325,6 +543,7 @@ class TestAnonymizationValidateView:
                 assert "not a valid choice" in self._payload_text(
                     payload, "document_type"
                 )
+                validate_mock.assert_not_called()
 
     def test_validate_video_keeps_is_verified_false(self, factory, user, video_file):
         data = {
@@ -444,7 +663,10 @@ class TestAnonymizationValidateView:
         }
 
         with (
-            patch.object(RawPdfFile, "validate_metadata_annotation", return_value=True),
+            patch(
+                "endoreg_db.views.anonymization.validate.validate_report_metadata_annotation",
+                return_value=True,
+            ),
             patch(
                 "endoreg_db.views.anonymization.validate.record_operation"
             ) as record_operation_mock,

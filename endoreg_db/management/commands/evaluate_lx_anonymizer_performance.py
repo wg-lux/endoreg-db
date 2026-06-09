@@ -14,10 +14,11 @@ from typing import Any, Callable, Iterable, Literal, Mapping, cast
 
 from django.core.management.base import BaseCommand, CommandError
 
+from endoreg_db.models import EndoscopyProcessor
 from endoreg_db.services.report_import import ReportImportService
 from endoreg_db.services.video_import import VideoImportService
-from endoreg_db.utils import paths as path_utils
-from endoreg_db.utils.file_operations import (
+from endoreg_db.utils.filesystem import paths as path_utils
+from endoreg_db.utils.filesystem.file_operations import (
     atomic_copy_file,
     atomic_write_file,
     ensure_directory,
@@ -30,7 +31,39 @@ logger = logging.getLogger(__name__)
 MediaType = Literal["video", "report"]
 
 VIDEO_EXTENSIONS = {".avi", ".m4v", ".mkv", ".mov", ".mp4", ".mpg", ".mpeg"}
-REPORT_EXTENSIONS = {".pdf", ".txt"}
+REPORT_EXTENSIONS = {".pdf"}
+REPORT_BYPASS_EXTENSIONS = {".txt"}
+
+
+def _roi_is_configured(roi: dict[str, int | None] | None) -> bool:
+    if roi is None:
+        return False
+    required_keys = {"x", "y", "width", "height"}
+    if not required_keys.issubset(roi):
+        return False
+    x = roi["x"]
+    y = roi["y"]
+    width = roi["width"]
+    height = roi["height"]
+    coordinates_are_valid = (
+        isinstance(x, int)
+        and isinstance(y, int)
+        and isinstance(width, int)
+        and isinstance(height, int)
+        and x >= 0
+        and y >= 0
+        and width > 0
+        and height > 0
+    )
+    if not coordinates_are_valid:
+        return False
+
+    image_width = roi.get("image_width")
+    image_height = roi.get("image_height")
+    image_dimensions_are_valid = (
+        image_width is None or isinstance(image_width, int) and image_width > 0
+    ) and (image_height is None or isinstance(image_height, int) and image_height > 0)
+    return image_dimensions_are_valid
 
 
 @dataclass
@@ -104,7 +137,10 @@ class Command(BaseCommand):
         parser.add_argument(
             "paths",
             nargs="*",
-            help="Files or directories to evaluate. Directories are scanned for media files.",
+            help=(
+                "Files or directories to evaluate. Directories are scanned for "
+                "media files. Report performance evaluation only accepts PDFs."
+            ),
         )
         parser.add_argument(
             "--input-dir",
@@ -208,8 +244,19 @@ class Command(BaseCommand):
             recursive=bool(options["recursive"]),
             limit=limit,
         )
+        skipped_video_count = 0
+        inputs, skipped_video_count = self._exclude_video_inputs_without_roi(
+            inputs=inputs,
+            processor_name=str(options["processor_name"]),
+        )
         if not inputs:
-            raise CommandError("No supported video/report inputs were found.")
+            detail = (
+                " Video inputs were excluded because the selected processor has "
+                "missing or invalid ROI data."
+                if skipped_video_count
+                else ""
+            )
+            raise CommandError(f"No supported video/report inputs were found.{detail}")
 
         if repeat > 1 and not options["retry"]:
             logger.warning(
@@ -290,13 +337,72 @@ class Command(BaseCommand):
 
         return discovered
 
+    def _exclude_video_inputs_without_roi(
+        self,
+        *,
+        inputs: list[tuple[Path, MediaType]],
+        processor_name: str,
+    ) -> tuple[list[tuple[Path, MediaType]], int]:
+        video_inputs = [
+            (source_path, media_type)
+            for source_path, media_type in inputs
+            if media_type == "video"
+        ]
+        if not video_inputs:
+            return inputs, 0
+        if self._processor_has_evaluable_video_roi(processor_name):
+            return inputs, 0
+
+        skipped_count = len(video_inputs)
+        logger.warning(
+            "Excluding %s video input(s) from lx_anonymizer evaluation because "
+            "processor %r has missing or invalid ROI data.",
+            skipped_count,
+            processor_name,
+        )
+        return [
+            (source_path, media_type)
+            for source_path, media_type in inputs
+            if media_type != "video"
+        ], skipped_count
+
+    @staticmethod
+    def _processor_has_evaluable_video_roi(processor_name: str) -> bool:
+        if not processor_name:
+            return False
+        try:
+            processor = EndoscopyProcessor.get_by_name(processor_name)
+        except EndoscopyProcessor.DoesNotExist:
+            return False
+
+        if not _roi_is_configured(processor.get_roi_endoscope_image()):
+            return False
+
+        sensitive_rois = processor.get_sensitive_rois()
+        configured_sensitive_rois = [
+            roi for roi in sensitive_rois.values() if _roi_is_configured(roi)
+        ]
+        invalid_sensitive_rois = [
+            roi
+            for roi in sensitive_rois.values()
+            if roi is not None and not _roi_is_configured(roi)
+        ]
+        return bool(configured_sensitive_rois) and not invalid_sensitive_rois
+
     @staticmethod
     def _media_type_for_path(path: Path, forced_media_type: str) -> MediaType | None:
+        suffix = path.suffix.lower()
+        if suffix in REPORT_BYPASS_EXTENSIONS:
+            if forced_media_type == "report":
+                raise CommandError(
+                    "Text report inputs bypass lx_anonymizer in the report import "
+                    f"pipeline and cannot be used for performance evaluation: {path}"
+                )
+            return None
         if forced_media_type == "video":
             return "video"
         if forced_media_type == "report":
             return "report"
-        suffix = path.suffix.lower()
         if suffix in VIDEO_EXTENSIONS:
             return "video"
         if suffix in REPORT_EXTENSIONS:

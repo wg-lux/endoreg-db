@@ -1,5 +1,7 @@
-from endoreg_db.models import LabelVideoSegment
 from typing import TYPE_CHECKING
+
+from endoreg_db.models import LabelVideoSegment
+from endoreg_db.models.media.video.video_file import VideoFile
 
 if TYPE_CHECKING:
     from tests.media.video.test_video_file_extracted import VideoFileModelExtractedTest
@@ -20,10 +22,13 @@ def mock_video_anonym_annotation(test: "VideoFileModelExtractedTest"):
         video_file.sensitive_meta,
         "SensitiveMeta should still exist after test_after_pipe_1",
     )
-    sensitive_meta_state = video_file.sensitive_meta.state
+    sensitive_meta = video_file.sensitive_meta
+    assert sensitive_meta is not None
+    sensitive_meta_state = sensitive_meta.state
     test.assertIsNotNone(
         sensitive_meta_state, "SensitiveMetaState should exist after test_after_pipe_1"
     )
+    assert sensitive_meta_state is not None
     sensitive_meta_state.refresh_from_db()
     # Check if the specific function _test_after_pipe_1 sets these flags
     test.assertTrue(
@@ -40,7 +45,7 @@ def mock_video_anonym_annotation(test: "VideoFileModelExtractedTest"):
     )
 
     # Check Label Video Segments are still present - handle mock vs real objects
-    if "MockVideoFile" in str(type(video_file)):
+    if not isinstance(video_file, VideoFile):
         # For mock objects, we simulate that LabelVideoSegments exist
         lvs_exists = True  # Simulate that segments exist for mock testing
     else:

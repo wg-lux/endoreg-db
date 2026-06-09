@@ -4,6 +4,8 @@ import yaml
 from icecream import ic
 from pydantic import BaseModel
 
+from endoreg_db.utils.filesystem.file_operations import atomic_write_file
+
 
 class DbConfig(BaseModel):
     """Database configuration model."""
@@ -50,8 +52,14 @@ class DbConfig(BaseModel):
         assert self.name, "Missing Database"
 
     def to_file(self, target: str = "./conf/db.yml", ask_override: bool = True):
-        """Export the configuration to a YAML file."""
+        """Export the non-secret configuration to a YAML file."""
         ic(target)
 
-        with open(target, "w") as f:
-            yaml.safe_dump(self.model_dump(), f)
+        payload = yaml.safe_dump(
+            self.model_dump(exclude={"password"}),
+            sort_keys=False,
+        )
+        atomic_write_file(
+            destination=Path(target),
+            content=[payload.encode("utf-8")],
+        )

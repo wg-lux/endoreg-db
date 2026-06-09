@@ -17,15 +17,16 @@ from django.conf import settings
 from rest_framework.exceptions import ValidationError
 
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS
-from endoreg_db.utils.media_urls import (
+from endoreg_db.services.video_files import get_active_video_file, get_video_fps
+from endoreg_db.utils.web.media_urls import (
     build_absolute_media_url,
     build_video_stream_path,
 )
 from endoreg_db.utils.storage import ensure_local_file
-from endoreg_db.utils.storage_streaming import maybe_local_plaintext_path
+from endoreg_db.utils.storage.streaming import maybe_local_plaintext_path
 
 if TYPE_CHECKING:
-    from endoreg_db.models import VideoFile
+    from endoreg_db.models.media.video.video_file import VideoFile
 
 
 class VideoFileSerializer(serializers.ModelSerializer):
@@ -116,7 +117,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
             return None
 
         try:
-            with ensure_local_file(obj.active_file) as video_path:
+            with ensure_local_file(get_active_video_file(obj)) as video_path:
                 cap = cv2_mod.VideoCapture(str(video_path))
                 try:
                     if not cap.isOpened():
@@ -143,10 +144,11 @@ class VideoFileSerializer(serializers.ModelSerializer):
         Returns:
             str or dict: The relative file path as a string, or a dictionary with an error message if the file is missing or invalid.
         """
-        if not obj.active_file:
+        try:
+            active_file = get_active_video_file(obj)
+        except ValueError:
             return {"error": "No file  associated with this entry"}
-        # obj.active_file.name is an attribute of FieldFile that returns the file path as a string and name is not the database attribute, it is an attribute of Django’s FieldFile object that holds the file path as a string.
-        file_name = getattr(obj.active_file, "name", None)
+        file_name = getattr(active_file, "name", None)
         if not isinstance(file_name, str) or not file_name.strip():
             return {"error": "Invalid file name"}
 
@@ -158,11 +160,13 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
         If the file does not exist or an error occurs during path construction, returns a dictionary with an error message.
         """
-        if not obj.active_file:
+        try:
+            active_file = get_active_video_file(obj)
+        except ValueError:
             return {"error": "No video file associated with this entry"}
 
         try:
-            local_path = maybe_local_plaintext_path(obj.active_file)
+            local_path = maybe_local_plaintext_path(active_file)
             if local_path is None:
                 return {"error": "Local plaintext path unavailable; use video_url"}
             return (
@@ -209,8 +213,8 @@ class VideoFileSerializer(serializers.ModelSerializer):
         """
 
         fps = getattr(obj, "fps", None)
-        if fps is None and hasattr(obj, "get_fps"):
-            fps = obj.get_fps()
+        if fps is None:
+            fps = get_video_fps(obj)
 
         if not fps or fps <= 0:
             # Strict by default — only use fallback if explicitly enabled and > 0

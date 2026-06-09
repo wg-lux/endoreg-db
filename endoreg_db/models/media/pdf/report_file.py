@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from django.db import models
 
@@ -120,7 +120,7 @@ class AnonymExaminationReport(AbstractExaminationReport):
     def get_or_create_examiner(self, examiner_first_name: str, examiner_last_name: str):
         from ...administration.person import Examiner
 
-        examiner_center = self.center
+        examiner_center = cast("Center | None", self.center)
 
         examiner, created = Examiner.objects.get_or_create(
             first_name=examiner_first_name,

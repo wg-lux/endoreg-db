@@ -71,7 +71,47 @@ When role is `central_hub`:
 Watcher ingestion remains supported in hub deployments and keeps trusted
 local-drop behavior.
 
-### 3. Keep storage inside the protected runtime root
+### 3. Configure production proxy HTTPS and mTLS headers
+
+Production deployments behind a TLS-terminating proxy must make the proxy HTTPS
+signal explicit:
+
+```bash
+DJANGO_SECURE_PROXY_SSL_HEADER_NAME=HTTP_X_FORWARDED_PROTO
+DJANGO_SECURE_PROXY_SSL_HEADER_VALUE=https
+```
+
+For non-hub production deployments that require a TLS-terminating proxy, set
+this fail-closed guard as well:
+
+```bash
+DJANGO_REQUIRE_SECURE_PROXY_SSL_HEADER=true
+```
+
+Central hub production settings require the proxy HTTPS header because transfer
+security depends on `request.is_secure()` before node authentication runs.
+Hub transfer deployments must also keep mTLS required:
+
+```bash
+ENDOREG_HUB_TRANSFER_REQUIRE_MTLS=true
+ENDOREG_HUB_TRANSFER_MTLS_META_KEY=HTTP_X_CLIENT_CERT_VERIFIED
+ENDOREG_HUB_TRANSFER_MTLS_META_VALUE=SUCCESS
+```
+
+The proxy must:
+
+- strip inbound client-supplied `X-Forwarded-Proto`
+- strip inbound client-supplied `X-Client-Cert-Verified`
+- set `X-Forwarded-Proto: https` only for HTTPS requests
+- set `X-Client-Cert-Verified: SUCCESS` only after successful client
+  certificate verification
+- leave the mTLS attestation header absent or non-successful when client
+  certificate verification fails
+
+Do not expose the Django process directly to untrusted clients when these
+headers are trusted.
+
+### 4. Keep storage inside the protected runtime root
 
 The package expects a protected runtime boundary rooted at:
 
@@ -87,7 +127,7 @@ Both of these must resolve inside that protected root:
 Downstream deployments should not point ingest, storage, or workflow paths
 outside the protected runtime root.
 
-### 4. Run the package migrations
+### 5. Run the package migrations
 
 This upgrade includes schema and lifecycle behavior that depend on current
 migrations, including upload-job storage policy and content-hash metadata.

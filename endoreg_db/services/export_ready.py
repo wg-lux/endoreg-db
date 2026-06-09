@@ -8,12 +8,18 @@ from typing import Any
 from django.db import transaction
 from django.db.utils import OperationalError, ProgrammingError
 
-from endoreg_db.models import Center, VideoFile
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.state.audit_ledger import AuditLedger
+from endoreg_db.models.state.video_segment_validation import (
+    resolve_segment_annotation_status,
+    segment_annotations_are_final,
+)
 from endoreg_db.services.hub import resolve_allowed_center_id
 from endoreg_db.services.hub.audit import emit_hub_audit_event
-from endoreg_db.utils.file_operations import sha256_file
-from endoreg_db.utils.paths import ensure_within_protected_media_root
+from endoreg_db.services.video_files import get_or_create_video_state
+from endoreg_db.utils.filesystem.file_operations import sha256_file
+from endoreg_db.utils.filesystem.paths import ensure_within_protected_media_root
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +126,12 @@ def _verify_processed_path(processed_file) -> Path:
 
 
 def _verify_state(video: VideoFile) -> None:
-    state = video.get_or_create_state()
+    state = get_or_create_video_state(video)
+    if getattr(state, "processing_error", False):
+        raise ReadyForExportError(
+            "Video is marked failed/lost by media integrity.",
+            status_code=409,
+        )
     if not getattr(state, "anonymization_validated", False):
         raise ReadyForExportError(
             "Human anonymization validation is not complete.",
@@ -129,6 +140,12 @@ def _verify_state(video: VideoFile) -> None:
     if not getattr(state, "outside_segments_removed", False):
         raise ReadyForExportError(
             "Outside segments have not been removed from the processed artifact.",
+            status_code=409,
+        )
+    if not segment_annotations_are_final(video):
+        segment_status = resolve_segment_annotation_status(video)
+        raise ReadyForExportError(
+            f"Segment annotation cleanup is not complete: {segment_status}.",
             status_code=409,
         )
 
@@ -194,7 +211,7 @@ def mark_video_ready_for_export(
             status_code=409,
         )
 
-    state = video.get_or_create_state()
+    state = get_or_create_video_state(video)
     ready_by = _user_identifier(user)
     state.mark_ready_for_export(
         processed_file_sha256=processed_file_sha256,

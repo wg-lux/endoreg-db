@@ -1,3 +1,5 @@
+[![Built with devenv](https://devenv.sh/assets/devenv-badge.svg)](https://devenv.sh)
+
 # EndoregDB - Professional Data Infrastructure for Clinical Research
 
 EndoregDB is a comprehensive database framework designed to manage medical and research-related data for clinical trials. This repository focuses on efficient data processing, automated deployment, security, and reproducibility, offering a flexible setup for local development environments as well as distributed systems. It supports the integration of AI/ML tools and advanced image and report processing.
@@ -34,6 +36,21 @@ For the current transport-security phase, transfer deployments must:
 - use HTTPS or equivalent secure transport
 - require proxy-verified mTLS for node-authenticated transfer requests
 - keep `NetworkNode.shared_secret` limited to request authentication rather than payload encryption
+
+Production deployments behind a TLS-terminating proxy must configure Django to
+trust only the proxy's HTTPS signal:
+
+```bash
+DJANGO_SECURE_PROXY_SSL_HEADER_NAME=HTTP_X_FORWARDED_PROTO
+DJANGO_SECURE_PROXY_SSL_HEADER_VALUE=https
+```
+
+The proxy must strip any inbound client-supplied `X-Forwarded-Proto` and
+`X-Client-Cert-Verified` headers, then set `X-Forwarded-Proto: https` only for
+requests that arrived over HTTPS. Central hub transfer deployments must also
+set `ENDOREG_HUB_TRANSFER_REQUIRE_MTLS=true` and forward the configured mTLS
+attestation header, for example `X-Client-Cert-Verified: SUCCESS`, only after
+successful client certificate verification.
 
 For downstream upgrade and deployment impact, see
 [`docs/deployment_note_hub_contract.md`](/home/admin/endoreg-db/docs/deployment_note_hub_contract.md).

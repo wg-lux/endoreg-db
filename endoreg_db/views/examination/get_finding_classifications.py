@@ -1,8 +1,11 @@
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
-from endoreg_db.models import Examination, FindingClassification
-from endoreg_db.utils.translation import build_multilingual_response
+from endoreg_db.models.medical.examination.examination import Examination
+from endoreg_db.models.medical.finding.finding_classification import (
+    FindingClassification,
+)
+from endoreg_db.utils.core.translation import build_multilingual_response
 
 
 @api_view(["GET"])

@@ -1,4 +1,4 @@
-from endoreg_db.models import Finding
+from endoreg_db.models.medical.finding.finding import Finding
 
 
 from django.shortcuts import get_object_or_404

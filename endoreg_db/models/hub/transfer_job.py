@@ -6,6 +6,10 @@ from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.db import models
 
+from endoreg_db.schemas import (
+    validate_transfer_processing_snapshot,
+    validate_transfer_resource_rows,
+)
 from endoreg_db.services.hub.payloads import validate_transfer_provenance_payload
 
 
@@ -197,6 +201,19 @@ class TransferJob(models.Model):
 
     def clean(self) -> None:
         super().clean()
+        try:
+            self.resource_rows = validate_transfer_resource_rows(
+                self.resource_rows,
+                resource_kind=self.resource_kind,
+            )
+        except ValueError as exc:
+            raise ValidationError({"resource_rows": str(exc)}) from exc
+        try:
+            self.processing_snapshot = validate_transfer_processing_snapshot(
+                self.processing_snapshot
+            )
+        except ValueError as exc:
+            raise ValidationError({"processing_snapshot": str(exc)}) from exc
         try:
             self.provenance = validate_transfer_provenance_payload(self.provenance)
         except ValueError as exc:

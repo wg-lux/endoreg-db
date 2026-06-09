@@ -1,8 +1,9 @@
-from endoreg_db.models import VideoPredictionMeta
 from typing import TYPE_CHECKING
 
+from endoreg_db.models import VideoPredictionMeta
+from endoreg_db.models.media.video.video_file import VideoFile
+
 if TYPE_CHECKING:
-    from endoreg_db.models import VideoFile
     from .test_video_file_extracted import VideoFileModelExtractedTest
 
 
@@ -15,7 +16,7 @@ def _test_pipe_1(test: "VideoFileModelExtractedTest"):
     - Post-validation processing (pipe_2)
     """
 
-    video_file: "VideoFile" = test.video_file
+    video_file = test.video_file
 
     success = video_file.pipe_1(
         model_name=test.ai_model_meta.model.name,
@@ -30,14 +31,10 @@ def _test_pipe_1(test: "VideoFileModelExtractedTest"):
     video_file.refresh_from_db()
     state = video_file.state  # Access the related state object
     test.assertIsNotNone(state, "VideoState should exist after pipe_1")
+    assert state is not None
     state.refresh_from_db()  # Ensure state is up-to-date
 
-    # Check if this is a mock object
-    is_mock = (
-        hasattr(video_file, "__class__") and "Mock" in video_file.__class__.__name__
-    )
-
-    if not is_mock:
+    if isinstance(video_file, VideoFile):
         # Only perform database queries for real VideoFile objects
         # Check Metadata objects
         test.assertIsNotNone(

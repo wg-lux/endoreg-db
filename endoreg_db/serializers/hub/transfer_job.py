@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from endoreg_db.models import Center, NetworkNode, TransferJob
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.hub.network_node import NetworkNode
+from endoreg_db.models.hub.transfer_job import TransferJob
 from endoreg_db.models.state.anonymization import AnonymizationState
 
 
@@ -240,6 +242,8 @@ class TransferJobCreateSerializer(serializers.Serializer):
     ) -> AnonymizationState:
         if not isinstance(video_state_payload, dict):
             return AnonymizationState.NOT_STARTED
+        if bool(video_state_payload.get("processing_error")):
+            return AnonymizationState.FAILED
         if bool(video_state_payload.get("anonymization_validated")):
             return AnonymizationState.VALIDATED
         if bool(video_state_payload.get("sensitive_meta_processed")):
@@ -252,8 +256,6 @@ class TransferJobCreateSerializer(serializers.Serializer):
             video_state_payload.get("frames_extracted")
         ):
             return AnonymizationState.EXTRACTING_FRAMES
-        if bool(video_state_payload.get("processing_error")):
-            return AnonymizationState.FAILED
         if bool(video_state_payload.get("processing_started")):
             return AnonymizationState.STARTED
         if bool(video_state_payload.get("anonymized")):

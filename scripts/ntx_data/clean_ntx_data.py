@@ -4,6 +4,7 @@ from .utils.process_lab_data import lab_data_etl
 from .utils.process_patients import patient_df_etl
 from .utils.process_readout import readout_df_etl
 from .utils.utils import processed_data_dir
+from endoreg_db.utils.file_operations import atomic_write_file
 
 readout_df, readout_data_list = readout_df_etl()
 lab_df, lab_data_list = lab_data_etl()
@@ -39,5 +40,7 @@ exported_jsonl = export2json(
 # write to jsonl files
 for key, jsonl_str in exported_jsonl.items():
     output_path = processed_data_dir / f"{key}_data.jsonl"
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write(jsonl_str)
+    atomic_write_file(
+        destination=output_path,
+        content=[jsonl_str.encode("utf-8")],
+    )

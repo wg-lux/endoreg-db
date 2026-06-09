@@ -10,14 +10,27 @@ def get_prediction_information_source():
     Raises:
         AssertionError: If no InformationSource with the name "prediction" exists.
     """
-    _source = InformationSource.objects.get(name="prediction")
+    _source = InformationSource.objects.resolve_by_name("prediction")
 
     # make sure to return only one object
-    assert _source, "No prediction information source found"
+    assert _source is not None, "No prediction information source found"
     return _source
 
 
 class InformationSourceManager(models.Manager):
+    def resolve_by_name(self, name: str):
+        """Return the deterministic first source for a natural name."""
+        normalized_name = str(name).strip()
+        return self.filter(name=normalized_name).order_by("pk").first()
+
+    def get_or_create_by_name(self, name: str, **defaults):
+        """Return an existing source by name before creating a new row."""
+        normalized_name = str(name).strip()
+        source = self.resolve_by_name(normalized_name)
+        if source is not None:
+            return source, False
+        return self.get_or_create(name=normalized_name, defaults=defaults)
+
     def get_by_natural_key(self, name):
         """
         Retrieves a model instance using its natural key.
@@ -28,7 +41,12 @@ class InformationSourceManager(models.Manager):
         Returns:
             The model instance that matches the provided natural key.
         """
-        return self.get(name=name)
+        source = self.resolve_by_name(name)
+        if source is None:
+            raise self.model.DoesNotExist(
+                f"{self.model._meta.object_name} matching query does not exist."
+            )
+        return source
 
 
 class InformationSource(models.Model):

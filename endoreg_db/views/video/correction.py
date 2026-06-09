@@ -22,22 +22,22 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from endoreg_db.models import (
+from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
-    VideoFile,
-    VideoMetadata,
-    VideoProcessingHistory,
 )
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.media.video.video_metadata import VideoMetadata
+from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
 from endoreg_db.serializers import VideoProcessingHistorySerializer
 from endoreg_db.serializers.video.video_file_detail import VideoDetailSerializer
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
-from endoreg_db.utils import paths as path_utils
-from endoreg_db.utils.file_operations import (
+from endoreg_db.utils.filesystem import paths as path_utils
+from endoreg_db.utils.filesystem.file_operations import (
     atomic_move_file,
     ensure_directory,
     safe_unlink_file,
 )
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
 from endoreg_db.utils.storage import ensure_local_file, save_local_file
 
 logger = logging.getLogger(__name__)
@@ -139,6 +139,8 @@ def _normalize_custom_roi(roi: Any) -> dict[str, Any] | None:
             "y": roi.get("endoscope_y"),
             "width": roi.get("endoscope_width"),
             "height": roi.get("endoscope_height"),
+            "image_width": roi.get("image_width"),
+            "image_height": roi.get("image_height"),
         }
     return roi
 
@@ -376,7 +378,7 @@ class VideoApplyMaskView(APIView):
                 )
             output_path = _masked_output_path(video)
             temp_output_path = _part_output_path(output_path)
-            output_path.parent.mkdir(parents=True, exist_ok=True)
+            ensure_directory(output_path.parent)
             safe_unlink_file(temp_output_path, missing_ok=True)
 
             # Load or create mask config against current lx_anonymizer API.
@@ -547,7 +549,7 @@ class VideoRemoveFramesView(APIView):
                 )
             output_path = _cleaned_output_path(video)
             temp_output_path = _part_output_path(output_path)
-            output_path.parent.mkdir(parents=True, exist_ok=True)
+            ensure_directory(output_path.parent)
             safe_unlink_file(temp_output_path, missing_ok=True)
 
             # Remove frames using the current streaming removal API.

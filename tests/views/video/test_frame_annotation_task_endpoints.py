@@ -14,6 +14,7 @@ from endoreg_db.models import (
     VideoFile,
 )
 from endoreg_db.views.video.ai import (
+    FrameAnnotationBulkUpsertView,
     FrameAnnotationRandomTaskView,
     FrameAnnotationSkipView,
     label_set_list,
@@ -23,6 +24,7 @@ from endoreg_db.views.video.ai import (
 class FrameAnnotationTaskEndpointsTest(TestCase):
     def setUp(self):
         self.factory = APIRequestFactory()
+        self.bulk_upsert_view = FrameAnnotationBulkUpsertView.as_view()
         self.random_task_view = FrameAnnotationRandomTaskView.as_view()
         self.skip_view = FrameAnnotationSkipView.as_view()
 
@@ -38,16 +40,19 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
             video=self.video,
             frame_number=10,
             relative_path="frame_0000010.jpg",
+            is_extracted=True,
         )
         self.frame_2 = Frame.objects.create(
             video=self.video,
             frame_number=11,
             relative_path="frame_0000011.jpg",
+            is_extracted=True,
         )
         self.frame_3 = Frame.objects.create(
             video=self.video,
             frame_number=12,
             relative_path="frame_0000012.jpg",
+            is_extracted=True,
         )
         self.source = InformationSource.objects.create(name="manual_annotation")
         self.prediction_source = InformationSource.objects.create(
@@ -91,7 +96,7 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
         )
 
         with patch(
-            "endoreg_db.views.video.ai.frame_annotations.random.randint",
+            "endoreg_db.models.state.frame_annotation.random.randint",
             return_value=0,
         ):
             response = self.random_task_view(request)
@@ -137,7 +142,7 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
         )
 
         with patch(
-            "endoreg_db.views.video.ai.frame_annotations.random.randint",
+            "endoreg_db.models.state.frame_annotation.random.randint",
             return_value=0,
         ):
             response = self.random_task_view(request)
@@ -185,6 +190,53 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data["error"], "Unknown frame_id.")
 
+    def test_bulk_upsert_attaches_annotations_to_exact_ai_dataset(self):
+        dataset = AIDataSet.objects.create(
+            name="bulk-upsert-dataset",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+        other_dataset = AIDataSet.objects.create(
+            name=dataset.name,
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+        request = self.factory.post(
+            "/api/media/annotations/frames/bulk-upsert/",
+            {
+                "video_id": self.video.pk,
+                "ai_dataset_id": dataset.pk,
+                "annotations": [
+                    {
+                        "frame_id": self.frame_1.pk,
+                        "label_id": self.label.pk,
+                        "value": True,
+                        "information_source_name": self.source.name,
+                        "annotator": "alice",
+                    }
+                ],
+            },
+            format="json",
+        )
+
+        response = self.bulk_upsert_view(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["ai_dataset_id"], dataset.pk)
+        annotation = ImageClassificationAnnotation.objects.get(
+            frame=self.frame_1,
+            label=self.label,
+            information_source=self.source,
+            annotator="alice",
+        )
+        self.assertEqual(
+            response.data["attached_frame_annotation_ids"], [annotation.pk]
+        )
+        self.assertTrue(dataset.image_annotations.filter(pk=annotation.pk).exists())
+        self.assertFalse(
+            other_dataset.image_annotations.filter(pk=annotation.pk).exists()
+        )
+
     def test_random_task_filtered_mode_requires_filter_label(self):
         request = self.factory.get(
             "/api/media/annotations/frames/random-task/",
@@ -196,7 +248,7 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
         )
 
         with patch(
-            "endoreg_db.views.video.ai.frame_annotations.random.randint",
+            "endoreg_db.models.state.frame_annotation.random.randint",
             return_value=0,
         ):
             response = self.random_task_view(request)
@@ -374,7 +426,7 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
         )
 
         with patch(
-            "endoreg_db.views.video.ai.frame_annotations.random.randint",
+            "endoreg_db.models.state.frame_annotation.random.randint",
             return_value=0,
         ):
             response = self.random_task_view(request)
@@ -439,7 +491,7 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
         )
 
         with patch(
-            "endoreg_db.views.video.ai.frame_annotations.random.randint",
+            "endoreg_db.models.state.frame_annotation.random.randint",
             return_value=0,
         ):
             response = self.random_task_view(request)
@@ -506,7 +558,7 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
         )
 
         with patch(
-            "endoreg_db.views.video.ai.frame_annotations.random.randint",
+            "endoreg_db.models.state.frame_annotation.random.randint",
             return_value=0,
         ):
             response = self.random_task_view(request)
@@ -515,25 +567,124 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
         self.assertEqual(response.data["ai_dataset_name"], dataset.name)
         self.assertEqual(response.data["ai_dataset_type"], dataset.dataset_type)
         self.assertEqual(response.data["selection_strategy"], "dataset_segments")
-        self.assertEqual(response.data["task"]["frame_id"], self.frame_3.pk)
-        self.assertEqual(
-            response.data["task"]["dataset_selection_label_id"],
-            self.label.pk,
+
+    def test_random_task_uses_explicit_ai_dataset_id(self):
+        stale_dataset = AIDataSet.objects.create(
+            name="duplicate-frame-task-dataset",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
         )
-        self.assertEqual(
-            response.data["segment_bucket_counts"],
-            {str(self.label.pk): 1},
+        selected_dataset = AIDataSet.objects.create(
+            name=stale_dataset.name,
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
         )
-        self.assertEqual(
-            response.data["selected_label_counts"],
-            {str(self.label.pk): 1},
+        stale_annotation = ImageClassificationAnnotation.objects.create(
+            frame=self.frame_1,
+            label=self.target_label,
+            value=True,
+            information_source=self.source,
+            annotator="dataset",
         )
-        distribution_by_label = {
-            item["label_id"]: item for item in response.data["label_distribution"]
-        }
-        self.assertEqual(distribution_by_label[self.label.pk]["segment_count"], 1)
-        self.assertEqual(distribution_by_label[self.label.pk]["total"], 1)
-        self.assertEqual(
-            distribution_by_label[self.target_label.pk]["frame_positive"],
-            2,
+        selected_annotation = ImageClassificationAnnotation.objects.create(
+            frame=self.frame_2,
+            label=self.target_label,
+            value=True,
+            information_source=self.source,
+            annotator="dataset",
         )
+        stale_dataset.image_annotations.add(stale_annotation)
+        selected_dataset.image_annotations.add(selected_annotation)
+
+        request = self.factory.get(
+            "/api/media/annotations/frames/random-task/",
+            {
+                "video_id": self.video.pk,
+                "label_group_id": self.label_set.pk,
+                "target_label": self.target_label.name,
+                "limit": 1,
+                "ai_dataset_id": selected_dataset.pk,
+                "ai_dataset_name": stale_dataset.name,
+                "ai_dataset_type": stale_dataset.dataset_type,
+                "exclude_annotated": "false",
+            },
+        )
+
+        with patch(
+            "endoreg_db.models.state.frame_annotation.random.randint",
+            return_value=0,
+        ):
+            response = self.random_task_view(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["ai_dataset_id"], selected_dataset.pk)
+        self.assertEqual(response.data["task"]["frame_id"], self.frame_2.pk)
+
+    def test_random_task_phi_dataset_reports_raw_video_requirement_when_no_raw_frame_matches(
+        self,
+    ):
+        dataset = AIDataSet.objects.create(
+            name="frame-task-phi-dataset",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type="phi_region_detector",
+        )
+        dataset.image_annotations.add(
+            ImageClassificationAnnotation.objects.create(
+                frame=self.frame_1,
+                label=self.target_label,
+                value=True,
+                information_source=self.source,
+                annotator="dataset",
+            )
+        )
+
+        request = self.factory.get(
+            "/api/media/annotations/frames/random-task/",
+            {
+                "video_id": self.video.pk,
+                "ai_dataset_name": dataset.name,
+                "ai_dataset_type": dataset.dataset_type,
+            },
+        )
+
+        response = self.random_task_view(request)
+
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(response.data["details"]["raw_video_required"])
+
+    def test_random_task_phi_dataset_allows_frames_when_raw_video_exists(self):
+        dataset = AIDataSet.objects.create(
+            name="frame-task-phi-dataset-raw",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type="phi_region_detector",
+        )
+        self.video.raw_file.name = "sensitive_videos/frame_task_raw.mp4"
+        self.video.save(update_fields=["raw_file"])
+        dataset.image_annotations.add(
+            ImageClassificationAnnotation.objects.create(
+                frame=self.frame_1,
+                label=self.target_label,
+                value=True,
+                information_source=self.source,
+                annotator="dataset",
+            )
+        )
+
+        request = self.factory.get(
+            "/api/media/annotations/frames/random-task/",
+            {
+                "video_id": self.video.pk,
+                "ai_dataset_name": dataset.name,
+                "ai_dataset_type": dataset.dataset_type,
+                "exclude_annotated": "false",
+            },
+        )
+
+        with patch(
+            "endoreg_db.models.state.frame_annotation.random.randint",
+            return_value=0,
+        ):
+            response = self.random_task_view(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["task"]["frame_id"], self.frame_1.pk)

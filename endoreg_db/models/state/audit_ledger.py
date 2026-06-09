@@ -243,7 +243,7 @@ class AuditLedger(models.Model):
             anonymizations, images, and breakdowns of video statuses based on audit records.
         """
         return {
-            "totalCases": AuditLedger._distinct("VideoFile", "created"),
+            "totalCases": AuditLedger._distinct("PatientExamination", "created"),
             "totalVideos": AuditLedger._distinct("VideoFile", "created"),
             "totalAnnotations": AuditLedger.objects.filter(
                 action="annotation_added"

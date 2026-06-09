@@ -1,9 +1,9 @@
-from endoreg_db.models import (
-    Examination,
-    Finding,
+from endoreg_db.models.medical.examination.examination import Examination
+from endoreg_db.models.medical.finding.finding import Finding
+from endoreg_db.models.medical.finding.finding_classification import (
     FindingClassification,
-    PatientFinding,
 )
+from endoreg_db.models.medical.patient.patient_finding import PatientFinding
 from endoreg_db.serializers.patient_finding import (
     PatientFindingClassificationSerializer,
     PatientFindingDetailSerializer,

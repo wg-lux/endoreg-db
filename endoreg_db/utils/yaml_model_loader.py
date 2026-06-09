@@ -1,16 +1,7 @@
-"""Canonical YAML model loader module.
+"""Compatibility imports for :mod:`endoreg_db.utils.data_loading.yaml_model_loader`."""
 
-This module provides the preferred import path for YAML-to-ORM loading logic.
-The implementation currently lives in ``endoreg_db.utils.dataloader`` to keep
-backward compatibility with existing imports.
-"""
+from __future__ import annotations
 
-from endoreg_db.utils.dataloader import (
-    load_data_with_foreign_keys,
-    load_model_data_from_yaml,
-)
+from endoreg_db.utils._compat import reexport_public_module
 
-__all__ = [
-    "load_model_data_from_yaml",
-    "load_data_with_foreign_keys",
-]
+reexport_public_module("endoreg_db.utils.data_loading.yaml_model_loader", globals())

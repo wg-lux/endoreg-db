@@ -16,7 +16,11 @@ from endoreg_db.services.tabular_import_formats import (
     normalize_document_row,
     resolve_document_template,
 )
-from endoreg_db.utils.paths import ensure_within_data_root
+from endoreg_db.utils.filesystem.file_operations import (
+    atomic_write_file,
+    ensure_directory,
+)
+from endoreg_db.utils.filesystem.paths import ensure_within_data_root
 
 TEXT_DOCUMENT_TYPES = ("cwd", "briefe", "radiologie")
 ANCHOR_DOCUMENT_TYPES = (
@@ -387,7 +391,7 @@ def _write_drop_file(
     payload: dict[str, Any],
     carrier_text: str,
 ) -> GeneratedDropFile:
-    output_dir.mkdir(parents=True, exist_ok=True)
+    ensure_directory(output_dir)
     patient_token = _slugify_token(payload.get("external_id"), fallback="patient")
     case_token = _slugify_token(
         payload.get("casenumber"), fallback=f"case_{case_index:04d}"
@@ -396,10 +400,17 @@ def _write_drop_file(
     stem = f"sap_ish_{case_index:04d}_{document_token}_{patient_token}_{case_token}"
     carrier_path = output_dir / f"{stem}.txt"
     sidecar_path = output_dir / f"{stem}.json"
-    carrier_path.write_text(carrier_text.strip() + "\n", encoding="utf-8")
-    sidecar_path.write_text(
-        json.dumps(payload, ensure_ascii=True, indent=2, sort_keys=True),
-        encoding="utf-8",
+    atomic_write_file(
+        destination=carrier_path,
+        content=[f"{carrier_text.strip()}\n".encode("utf-8")],
+    )
+    atomic_write_file(
+        destination=sidecar_path,
+        content=[
+            json.dumps(payload, ensure_ascii=True, indent=2, sort_keys=True).encode(
+                "utf-8"
+            )
+        ],
     )
     return GeneratedDropFile(
         carrier_path=carrier_path,

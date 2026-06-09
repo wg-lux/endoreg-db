@@ -6,8 +6,15 @@ import pytest
 from django.core.files.base import ContentFile
 
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS
-from endoreg_db.models import Center, VideoFile
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.medical.hardware.endoscopy_processor import EndoscopyProcessor
+from endoreg_db.models.metadata.video_meta import VideoMeta
 from endoreg_db.models.media.video.storage_mode import VideoStorageMode
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.services.video_files import (
+    get_video_import_context_names,
+    get_video_import_processor,
+)
 
 
 @pytest.fixture
@@ -33,6 +40,52 @@ def test_video_file_hash_lookup_helpers(video_center: Center):
     assert VideoFile.check_hash_exists("missing-hash") is False
     assert VideoFile.get_video_by_pk(video.pk) == video
     assert VideoFile.get_video_by_content_hash("known-hash") == video
+
+
+@pytest.mark.django_db
+def test_video_file_import_context_names_prefer_video_processor(
+    video_center: Center,
+):
+    canonical_processor = EndoscopyProcessor.objects.create(name="processor-canonical")
+    legacy_processor = EndoscopyProcessor.objects.create(name="processor-legacy")
+    video_meta = VideoMeta.objects.create(
+        center=video_center,
+        processor=legacy_processor,
+    )
+    video = VideoFile.objects.create(
+        center=video_center,
+        processor=canonical_processor,
+        video_meta=video_meta,
+        video_hash="import-context-canonical",
+    )
+
+    assert get_video_import_processor(video) == canonical_processor
+    assert get_video_import_context_names(video) == (
+        video_center.name,
+        canonical_processor.name,
+    )
+
+
+@pytest.mark.django_db
+def test_video_file_import_context_names_fall_back_to_video_meta_processor(
+    video_center: Center,
+):
+    legacy_processor = EndoscopyProcessor.objects.create(name="processor-meta")
+    video_meta = VideoMeta.objects.create(
+        center=video_center,
+        processor=legacy_processor,
+    )
+    video = VideoFile.objects.create(
+        center=video_center,
+        video_meta=video_meta,
+        video_hash="import-context-meta",
+    )
+
+    assert get_video_import_processor(video) == legacy_processor
+    assert get_video_import_context_names(video) == (
+        video_center.name,
+        legacy_processor.name,
+    )
 
 
 @pytest.mark.django_db
@@ -96,7 +149,7 @@ def test_video_file_protected_urls_require_streamable_paths(video_center: Center
 
     video.raw_streamable_relative_path = "streamable/raw/source.mp4"
     with patch(
-        "endoreg_db.models.media.video.video_file_streaming.reverse",
+        "endoreg_db.services.video_files.streaming.reverse",
         return_value=f"/api/media/videos/{video.pk}/stream/",
     ):
         raw_url = video.active_raw_file_url
@@ -118,7 +171,7 @@ def test_video_file_active_file_url_prefers_processed_stream(video_center: Cente
     video.processed_streamable_relative_path = "streamable/processed/source.mp4"
 
     with patch(
-        "endoreg_db.models.media.video.video_file_streaming.reverse",
+        "endoreg_db.services.video_files.streaming.reverse",
         return_value=f"/api/media/videos/{video.pk}/stream/",
     ):
         active_file_url = video.active_file_url
@@ -197,7 +250,7 @@ def test_video_file_resolve_raw_stream_source_materializes_when_requested(
     with (
         patch.object(video, "get_raw_stream_path", get_raw_stream_path),
         patch(
-            "endoreg_db.models.media.video.video_file_streaming.sync_video_streamable_artifacts",
+            "endoreg_db.services.video_files.streaming.sync_video_streamable_artifacts",
             Mock(),
         ) as sync_mock,
     ):

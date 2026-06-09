@@ -1,4 +1,5 @@
 import importlib
+import os
 import uuid
 from pathlib import Path
 
@@ -6,16 +7,18 @@ import pytest
 
 from endoreg_db.config import env as env_module
 from endoreg_db.config.env import BASE_DIR
-from endoreg_db.utils import paths as paths_module
+from endoreg_db.utils.filesystem import paths as paths_module
+
+PATH_ENV_KEYS = (
+    "LX_ANNOTATE_ENCRYPTED_DATA_DIR",
+    "STORAGE_DIR",
+    "DATA_DIR",
+    "PROTECTED_MEDIA_ROOT",
+)
 
 
 def reload_paths(monkeypatch, **env):
-    for key in (
-        "LX_ANNOTATE_ENCRYPTED_DATA_DIR",
-        "STORAGE_DIR",
-        "DATA_DIR",
-        "PROTECTED_MEDIA_ROOT",
-    ):
+    for key in PATH_ENV_KEYS:
         monkeypatch.delenv(key, raising=False)
 
     for key, value in env.items():
@@ -25,15 +28,14 @@ def reload_paths(monkeypatch, **env):
 
 
 @pytest.fixture(autouse=True)
-def restore_paths_env(monkeypatch):
+def restore_paths_env():
+    original_env = {key: os.environ.get(key) for key in PATH_ENV_KEYS}
     yield
-    for key in (
-        "LX_ANNOTATE_ENCRYPTED_DATA_DIR",
-        "STORAGE_DIR",
-        "DATA_DIR",
-        "PROTECTED_MEDIA_ROOT",
-    ):
-        monkeypatch.delenv(key, raising=False)
+    for key, value in original_env.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
     importlib.reload(paths_module)
 
 
@@ -55,6 +57,20 @@ def test_data_paths_behaves_like_a_mapping():
     )
     assert expanded["anonym_video"] == paths_module.ANONYM_VIDEO_DIR
     assert expanded["documents"] == paths_module.DOCUMENT_DIR
+
+
+def test_legacy_paths_import_reexports_filesystem_paths(monkeypatch, tmp_path):
+    reloaded = reload_paths(
+        monkeypatch,
+        LX_ANNOTATE_ENCRYPTED_DATA_DIR=tmp_path / "protected",
+        DATA_DIR=tmp_path / "public",
+    )
+    legacy_paths = importlib.reload(importlib.import_module("endoreg_db.utils.paths"))
+
+    assert legacy_paths.data_paths is reloaded.data_paths
+    assert legacy_paths.LOG_DIR == reloaded.LOG_DIR
+    assert legacy_paths.IMPORT_PREANONYMIZED_DIR == reloaded.IMPORT_PREANONYMIZED_DIR
+    assert legacy_paths.EndoregPathsModel is reloaded.EndoregPathsModel
 
 
 def test_paths_module_reexports_env_contracts():
@@ -105,6 +121,8 @@ def test_paths_module_resolves_relative_env_paths(monkeypatch):
     assert reloaded.STORAGE_DIR == expected_storage
     assert reloaded.DATA_DIR == expected_data
     assert reloaded.LOG_DIR == expected_data / "logs"
+    assert reloaded.QUARANTINE_DIR == expected_data / "quarantine"
+    assert reloaded.MIGRATION_STAGING_DIR == expected_data / "migration_staging"
     assert reloaded.UPLOAD_API_DIR == expected_storage / "upload_jobs" / "api"
     assert reloaded.SAP_IMPORT_DROP_DIR == expected_data / "import" / "sap_import"
     assert reloaded.IMPORT_VIDEO_DIR == expected_data / "import" / "video_import"
@@ -120,7 +138,22 @@ def test_paths_module_resolves_relative_env_paths(monkeypatch):
         reloaded.IMPORT_ANONYMIZED_REPORT_DIR
         == expected_data / "import" / "anonymized_report_import"
     )
+    assert reloaded.EXPORT_DIR == expected_data / "export"
+    assert reloaded.SENSITIVE_VIDEO_DIR == expected_storage / "sensitive_videos"
+    assert reloaded.SENSITIVE_REPORT_DIR == expected_storage / "sensitive_reports"
     assert reloaded.ANONYM_VIDEO_DIR == expected_storage / "processed_videos_final"
+    assert reloaded.ANONYM_REPORT_DIR == expected_storage / "processed_reports_final"
+    assert reloaded.RAW_FRAME_DIR == expected_storage / "raw_frames"
+    assert reloaded.FRAME_DIR == expected_storage / "frames"
+    assert reloaded.WEIGHTS_DIR == expected_storage / "model_weights"
+    assert (
+        reloaded.MANAGED_ANONYMIZED_VIDEOS_DIR
+        == expected_storage / "processed_videos_final"
+    )
+    assert (
+        reloaded.MANAGED_ANONYMIZED_REPORTS_DIR
+        == expected_storage / "processed_reports_final"
+    )
 
     for path in (
         reloaded.PROTECTED_DATA_ROOT,

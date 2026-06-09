@@ -9,7 +9,7 @@ from django.db import OperationalError, ProgrammingError, transaction
 
 from endoreg_db.config.env import reconciliation_disabled
 from endoreg_db.import_files.context.file_lock import STALE_LOCK_SECONDS
-from endoreg_db.models import VideoFile
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.media_integrity import reconcile_media_integrity
 from endoreg_db.services.streamable_media import (
     STREAMABLE_PROCESSED_VIDEO_ROOT,
@@ -22,13 +22,14 @@ from endoreg_db.models.state.processing_history.processing_history import (
 )
 from endoreg_db.models.state.raw_pdf import RawPdfState
 from endoreg_db.models.state.video import VideoState
-from endoreg_db.utils.file_operations import (
+from endoreg_db.utils.filesystem.file_operations import (
     atomic_copy_file,
     atomic_move_file,
+    ensure_directory,
     safe_unlink_file,
     sha256_file,
 )
-from endoreg_db.utils.paths import data_paths
+from endoreg_db.utils.filesystem.paths import data_paths
 from endoreg_db.utils.storage import file_exists, save_local_file
 
 logger = logging.getLogger(__name__)
@@ -367,7 +368,7 @@ class ReconciliationService:
                 relative_name=relative_name,
             )
 
-        canonical_path.parent.mkdir(parents=True, exist_ok=True)
+        ensure_directory(canonical_path.parent)
         atomic_move_file(source=candidate, destination=canonical_path)
         return canonical_path, relative_name
 

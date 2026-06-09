@@ -212,6 +212,10 @@ Current gating:
 Current validation and security behavior:
 
 - secure transport is enforced when configured
+- production TLS-terminating proxy deployments must set
+  `DJANGO_SECURE_PROXY_SSL_HEADER_NAME=HTTP_X_FORWARDED_PROTO` and
+  `DJANGO_SECURE_PROXY_SSL_HEADER_VALUE=https` so `request.is_secure()` sees
+  proxy-attested HTTPS
 - if the request is not already authenticated as a user, the caller must
   present `X-Network-Node-Key` and `X-Network-Node-Secret`
 - when `ENDOREG_HUB_TRANSFER_REQUIRE_MTLS=true`, the request must also carry

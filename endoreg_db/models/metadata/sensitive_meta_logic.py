@@ -12,7 +12,10 @@ from django.utils import timezone
 from endoreg_db.utils import guess_name_gender
 
 # Assuming these utils are correctly located
-from endoreg_db.utils.hashs import get_patient_examination_hash, get_patient_hash
+from endoreg_db.utils.security.hashs import (
+    get_patient_examination_hash,
+    get_patient_hash,
+)
 
 # Import models needed for logic, use local imports inside functions if needed to break cycles
 from ..administration import Center, Examiner, FirstName, LastName, Patient
@@ -411,10 +414,10 @@ def perform_save_logic(instance: "SensitiveMeta") -> "Examiner":
                 "Patient gender could not be determined and must be set before saving."
             )
         # Convert string to Gender object
-        try:
-            gender_obj = Gender.objects.get(name=gender_str)
+        gender_obj = Gender.objects.resolve_by_name(gender_str)
+        if gender_obj is not None:
             instance.patient_gender = gender_obj
-        except Gender.DoesNotExist:
+        else:
             # If the gender is 'unknown' (likely because name was DEFAULT_UNKNOWN),
             # we should auto-create it rather than crashing.
             if (
@@ -424,7 +427,7 @@ def perform_save_logic(instance: "SensitiveMeta") -> "Examiner":
                 logger.warning(
                     f"Gender '{gender_str}' not found in DB. Auto-creating default entry."
                 )
-                gender_obj, _ = Gender.objects.get_or_create(
+                gender_obj, _ = Gender.objects.get_or_create_by_name(
                     name="unknown",
                     defaults={
                         "abbreviation": "?",
@@ -695,18 +698,17 @@ def create_sensitive_meta_from_dict(
         pass
     elif isinstance(patient_gender_input, str):
         # Input is a string (gender name)
-        try:
-            selected_data["patient_gender"] = Gender.objects.get(
-                name=patient_gender_input
-            )
-        except Gender.DoesNotExist:
+        gender_obj = Gender.objects.resolve_by_name(patient_gender_input)
+        if gender_obj is not None:
+            selected_data["patient_gender"] = gender_obj
+        else:
             logger.warning(
                 f"Gender with name '{patient_gender_input}' provided but not found. Attempting to guess or use default."
             )
             # Fall through to guessing logic if provided string name is invalid
             normalized = (patient_gender_input or "").lower()
             if normalized in {"male", "female", "unknown"}:
-                gender_obj, _ = Gender.objects.get_or_create(
+                gender_obj, _ = Gender.objects.get_or_create_by_name(
                     name=normalized,
                     defaults={
                         "abbreviation": normalized[:1].upper() or None,
@@ -726,19 +728,16 @@ def create_sensitive_meta_from_dict(
                 f"Could not guess gender for name '{first_name}'. Setting Gender to unknown."
             )
             gender_name_to_use = "unknown"
-        try:
-            selected_data["patient_gender"] = Gender.objects.get(
-                name=gender_name_to_use
-            )
-        except Gender.DoesNotExist:
-            gender_obj, _ = Gender.objects.get_or_create(
+        gender_obj = Gender.objects.resolve_by_name(gender_name_to_use)
+        if gender_obj is None:
+            gender_obj, _ = Gender.objects.get_or_create_by_name(
                 name=gender_name_to_use,
                 defaults={
                     "abbreviation": gender_name_to_use[:1].upper() or None,
                     "description": "Auto-created default gender entry",
                 },
             )
-            selected_data["patient_gender"] = gender_obj
+        selected_data["patient_gender"] = gender_obj
 
     # Handle Text
     selected_data["text"] = data.get("text") or DEFAULT_UNKNOWN

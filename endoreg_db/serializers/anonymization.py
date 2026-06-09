@@ -52,6 +52,7 @@ class SensitiveMetaValidateSerializer(serializers.Serializer):
         allow_empty=True,
     )
     validation_comment = serializers.CharField(required=False, allow_blank=True)
+    no_more_names_confirmed = serializers.BooleanField(required=False, allow_null=True)
 
     def validate_patient_dob(self, value):
         """

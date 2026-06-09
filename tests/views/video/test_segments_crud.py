@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 # Adjust imports based on your actual project structure
 from endoreg_db.models import (
+    AIDataSet,
     VideoFile,
     Label,
     LabelVideoSegment,
@@ -14,9 +15,11 @@ from endoreg_db.models import (
     ImageClassificationAnnotation,
     InformationSource,
     Center,
+    VideoProcessingHistory,
 )
-from endoreg_db.services.video_post_validation_jobs import JobDispatchResult
-from endoreg_db.services import video_post_validation_jobs as post_validation_jobs
+from endoreg_db.models.state import video_segment_validation as segment_state
+from endoreg_db.services.jobs.video_post_validation_jobs import JobDispatchResult
+from endoreg_db.services.jobs import video_post_validation_jobs as post_validation_jobs
 from endoreg_db.serializers import LabelVideoSegmentSerializer
 from endoreg_db.serializers.video.video_file_list import VideoFileListSerializer
 from endoreg_db.views.video.segments_crud import (
@@ -225,12 +228,40 @@ class LabelVideoSegmentSerializerTest(TestCase):
 
         state = self.video.get_or_create_state()
         state.segment_annotations_validated = True
-        state.save(update_fields=["segment_annotations_validated", "date_modified"])
+        state.outside_segments_removed = True
+        state.save(
+            update_fields=[
+                "segment_annotations_validated",
+                "outside_segments_removed",
+                "date_modified",
+            ]
+        )
 
         serializer = VideoFileListSerializer(self.video)
         self.assertEqual(
             serializer.data["validated_annotators"],
             ["reviewer-one", "reviewer-two"],
+        )
+
+    def test_video_list_serializer_requires_outside_cleanup_for_final_validation(self):
+        state = self.video.get_or_create_state()
+        state.segment_annotations_created = True
+        state.segment_annotations_validated = True
+        state.outside_segments_removed = False
+        state.save(
+            update_fields=[
+                "segment_annotations_created",
+                "segment_annotations_validated",
+                "outside_segments_removed",
+                "date_modified",
+            ]
+        )
+
+        serializer = VideoFileListSerializer(self.video)
+
+        self.assertFalse(serializer.data["segment_annotations_validated"])
+        self.assertEqual(
+            serializer.data["segment_annotation_status"], "cleanup_required"
         )
 
 
@@ -460,7 +491,8 @@ class VideoSegmentValidateAsyncSafetyTest(TestCase):
                 request, pk=self.video.pk, segment_id=self.segment.pk
             )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.data["validation_status"], "scheduled")
         self.assertEqual(response.data["post_processing_job"]["status"], "queued")
         self.assertEqual(
             response.data["post_processing_job"]["video_id"], self.video.pk
@@ -498,16 +530,6 @@ class VideoSegmentValidateAsyncSafetyTest(TestCase):
         )
 
         with (
-            patch.object(LabelVideoSegment, "generate_annotations") as mock_generate,
-            patch(
-                "endoreg_db.views.video.segments_crud.dispatch_video_post_validation_rebuild",
-                return_value=JobDispatchResult(
-                    task_id="job-456",
-                    mode="thread",
-                    status="queued",
-                    video_id=self.video.pk,
-                ),
-            ),
             patch(
                 "endoreg_db.views.video.segments_crud.record_operation",
                 return_value=None,
@@ -516,7 +538,199 @@ class VideoSegmentValidateAsyncSafetyTest(TestCase):
             response = video_segments_validate_bulk(request, pk=self.video.pk)
 
         self.assertEqual(response.status_code, 200)
-        mock_generate.assert_called_once_with(annotator="reviewer-two")
+        self.assertEqual(response.data["validation_status"], "completed")
+        self.assertEqual(response.data["post_processing_job"]["status"], "noop")
+        self.assertEqual(response.data["segment_annotation_status"], "validated")
+        self.assertTrue(response.data["segment_annotations_validated"])
+        self.assertTrue(response.data["outside_segments_removed"])
+        state = self.video.get_or_create_state()
+        state.refresh_from_db()
+        self.assertTrue(state.segment_annotations_validated)
+        self.assertTrue(state.outside_segments_removed)
+        self.assertEqual(
+            ImageClassificationAnnotation.objects.filter(
+                frame__video=self.video,
+                label=self.label,
+                information_source=self.manual_source,
+                model_meta__isnull=True,
+                annotator="reviewer-two",
+            ).count(),
+            3,
+        )
+
+    def test_bulk_validation_queues_cleanup_before_final_validation(self):
+        outside_label, _ = Label.objects.get_or_create(name="outside")
+        outside_segment = LabelVideoSegment.objects.create(
+            video_file=self.video,
+            label=outside_label,
+            start_frame_number=10,
+            end_frame_number=13,
+            source=self.segment_source,
+        )
+        request = self.factory.post(
+            f"/api/media/videos/{self.video.pk}/segments/validate-bulk/",
+            {
+                "segment_ids": [outside_segment.pk],
+                "segments": [
+                    {
+                        "id": outside_segment.pk,
+                        "start_time": outside_segment.start_time,
+                        "end_time": outside_segment.end_time,
+                    }
+                ],
+                "is_validated": True,
+                "information_source_name": "manual_annotation",
+                "annotator": "reviewer-two",
+            },
+            format="json",
+        )
+
+        submitted = []
+        with (
+            patch.dict(os.environ, {"VIDEO_POST_VALIDATION_JOB_MODE": "thread"}),
+            patch.object(
+                post_validation_jobs._executor,
+                "submit",
+                lambda fn: submitted.append(fn) or types.SimpleNamespace(),
+            ),
+            patch(
+                "endoreg_db.views.video.segments_crud.record_operation",
+                return_value=None,
+            ),
+        ):
+            response = video_segments_validate_bulk(request, pk=self.video.pk)
+
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.data["validation_status"], "scheduled")
+        self.assertEqual(response.data["post_processing_job"]["status"], "queued")
+        self.assertEqual(response.data["segment_annotation_status"], "cleanup_queued")
+        self.assertFalse(response.data["segment_annotations_validated"])
+        self.assertFalse(response.data["outside_segments_removed"])
+        self.assertEqual(len(submitted), 1)
+        state = self.video.get_or_create_state()
+        state.refresh_from_db()
+        self.assertTrue(state.segment_annotations_created)
+        self.assertFalse(state.segment_annotations_validated)
+        self.assertFalse(state.outside_segments_removed)
+        history = VideoProcessingHistory.objects.get(
+            pk=response.data["post_processing_job"]["history_id"]
+        )
+        self.assertEqual(history.status, VideoProcessingHistory.STATUS_PENDING)
+
+    def test_bulk_validation_dispatch_failure_stays_non_final(self):
+        outside_label, _ = Label.objects.get_or_create(name="outside")
+        outside_segment = LabelVideoSegment.objects.create(
+            video_file=self.video,
+            label=outside_label,
+            start_frame_number=10,
+            end_frame_number=13,
+            source=self.segment_source,
+        )
+        request = self.factory.post(
+            f"/api/media/videos/{self.video.pk}/segments/validate-bulk/",
+            {
+                "segment_ids": [outside_segment.pk],
+                "segments": [
+                    {
+                        "id": outside_segment.pk,
+                        "start_time": outside_segment.start_time,
+                        "end_time": outside_segment.end_time,
+                    }
+                ],
+                "is_validated": True,
+                "information_source_name": "manual_annotation",
+            },
+            format="json",
+        )
+
+        def failed_dispatch(*, video_id: int, only_validated: bool = False):
+            history = VideoProcessingHistory.objects.create(
+                video_id=video_id,
+                operation=VideoProcessingHistory.OPERATION_REPROCESSING,
+                status=VideoProcessingHistory.STATUS_FAILURE,
+                task_id="failed-cleanup-task",
+                details="broker unavailable",
+                config=segment_state._blackening_history_config(
+                    only_validated=only_validated
+                ),
+            )
+            return JobDispatchResult(
+                task_id="failed-cleanup-task",
+                mode="celery",
+                status="failed",
+                video_id=video_id,
+                history_id=history.pk,
+            )
+
+        with (
+            patch(
+                "endoreg_db.views.video.segments_crud.dispatch_video_post_validation_rebuild",
+                side_effect=failed_dispatch,
+            ),
+            patch(
+                "endoreg_db.views.video.segments_crud.record_operation",
+                return_value=None,
+            ),
+        ):
+            response = video_segments_validate_bulk(request, pk=self.video.pk)
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.data["validation_status"], "failed")
+        self.assertEqual(response.data["post_processing_job"]["status"], "failed")
+        self.assertEqual(response.data["segment_annotation_status"], "cleanup_failed")
+        self.assertFalse(response.data["segment_annotations_validated"])
+        self.assertFalse(response.data["outside_segments_removed"])
+
+    def test_bulk_validation_rejects_incomplete_frame_annotations(self):
+        missing_frame_segment = LabelVideoSegment.objects.create(
+            video_file=self.video,
+            label=self.label,
+            start_frame_number=90,
+            end_frame_number=93,
+            source=self.segment_source,
+        )
+        request = self.factory.post(
+            f"/api/media/videos/{self.video.pk}/segments/validate-bulk/",
+            {
+                "segment_ids": [missing_frame_segment.pk],
+                "segments": [
+                    {
+                        "id": missing_frame_segment.pk,
+                        "start_time": missing_frame_segment.start_time,
+                        "end_time": missing_frame_segment.end_time,
+                    }
+                ],
+                "is_validated": True,
+                "information_source_name": "manual_annotation",
+            },
+            format="json",
+        )
+
+        with (
+            patch(
+                "endoreg_db.views.video.segments_crud.dispatch_video_post_validation_rebuild",
+                side_effect=AssertionError("incomplete annotations must not dispatch"),
+            ),
+            patch(
+                "endoreg_db.views.video.segments_crud.record_operation",
+                return_value=None,
+            ),
+        ):
+            response = video_segments_validate_bulk(request, pk=self.video.pk)
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(
+            response.data["error"],
+            "Segment validation did not create complete frame annotations.",
+        )
+        self.assertEqual(
+            response.data["annotation_errors"][0]["reason"], "missing_frames"
+        )
+        self.assertFalse(response.data["segment_annotations_validated"])
+        self.assertFalse(response.data["outside_segments_removed"])
+        state = self.video.get_or_create_state()
+        state.refresh_from_db()
+        self.assertFalse(state.segment_annotations_validated)
 
 
 class VideoSegmentsBlackenOutsideRouteTest(TestCase):
@@ -552,6 +766,7 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["status"], "noop")
+        self.assertEqual(response.data["validation_status"], "completed")
         self.assertEqual(response.data["outside_segment_count"], 0)
         self.assertEqual(response.data["video_id"], self.video.pk)
         self.assertFalse(response.data["only_validated"])
@@ -582,6 +797,7 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
 
         self.assertEqual(response.status_code, 202)
         self.assertEqual(response.data["status"], "queued")
+        self.assertEqual(response.data["validation_status"], "scheduled")
         self.assertEqual(response.data["outside_segment_count"], 1)
         mock_dispatch.assert_called_once_with(
             video_id=self.video.pk,
@@ -615,6 +831,7 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
 
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.data["status"], "busy")
+        self.assertEqual(response.data["validation_status"], "running")
         self.assertEqual(response.data["operation"], "blacken_outside")
         self.assertEqual(response.data["post_processing_job"]["status"], "busy")
 
@@ -641,6 +858,62 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
         self.assertEqual(response.data["status"], "failed")
         self.assertEqual(response.data["operation"], "blacken_outside")
         self.assertIn("inline rebuild failed", response.data["error"])
+
+    def test_dispatch_failure_clears_stale_final_flags_and_serializes_failed(self):
+        LabelVideoSegment.objects.create(
+            video_file=self.video,
+            label=self.outside_label,
+            start_frame_number=10,
+            end_frame_number=20,
+        )
+        state = self.video.get_or_create_state()
+        state.segment_annotations_created = True
+        state.segment_annotations_validated = True
+        state.outside_segments_removed = True
+        state.save(
+            update_fields=[
+                "segment_annotations_created",
+                "segment_annotations_validated",
+                "outside_segments_removed",
+                "date_modified",
+            ]
+        )
+
+        class BrokenTask:
+            def apply_async(self, *args, **kwargs):
+                raise RuntimeError("broker unavailable")
+
+        request = self.factory.post(
+            f"/api/media/videos/{self.video.pk}/segments/blacken-outside/",
+            {"only_validated": False},
+            format="json",
+        )
+
+        with (
+            patch.dict(os.environ, {"VIDEO_POST_VALIDATION_JOB_MODE": "celery"}),
+            patch(
+                "endoreg_db.tasks.run_video_post_validation_rebuild_task", BrokenTask()
+            ),
+        ):
+            response = video_segments_blacken_outside(request, pk=self.video.pk)
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.data["status"], "failed")
+        self.assertEqual(response.data["validation_status"], "failed")
+        self.assertEqual(response.data["post_processing_job"]["status"], "failed")
+        state.refresh_from_db()
+        self.assertFalse(state.segment_annotations_validated)
+        self.assertFalse(state.outside_segments_removed)
+
+        self.video.refresh_from_db()
+        serialized = VideoFileListSerializer(self.video).data
+        self.assertEqual(serialized["segment_annotation_status"], "cleanup_failed")
+        self.assertFalse(serialized["segment_annotations_validated"])
+        self.assertFalse(serialized["outside_segments_removed"])
+        self.assertEqual(
+            serialized["post_validation_rebuild"]["status"],
+            VideoProcessingHistory.STATUS_FAILURE,
+        )
 
     def test_repeated_call_returns_already_queued(self):
         LabelVideoSegment.objects.create(
@@ -681,9 +954,57 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
 
         self.assertEqual(first.status_code, 202)
         self.assertEqual(first.data["status"], "queued")
+        self.assertEqual(first.data["validation_status"], "scheduled")
         self.assertEqual(second.status_code, 202)
         self.assertEqual(second.data["status"], "already_queued")
+        self.assertEqual(second.data["validation_status"], "scheduled")
         self.assertEqual(len(submitted), 1)
+
+    def test_failed_cleanup_can_be_requeued(self):
+        LabelVideoSegment.objects.create(
+            video_file=self.video,
+            label=self.outside_label,
+            start_frame_number=10,
+            end_frame_number=20,
+        )
+        failed_history = VideoProcessingHistory.objects.create(
+            video=self.video,
+            operation=VideoProcessingHistory.OPERATION_REPROCESSING,
+            status=VideoProcessingHistory.STATUS_FAILURE,
+            task_id="failed-blackening-task",
+            details="broker unavailable",
+            config=segment_state._blackening_history_config(only_validated=False),
+        )
+        submitted = []
+
+        def fake_submit(fn):
+            submitted.append(fn)
+            return types.SimpleNamespace()
+
+        with (
+            patch.dict(
+                os.environ,
+                {"VIDEO_POST_VALIDATION_JOB_MODE": "thread"},
+            ),
+            patch.object(post_validation_jobs._executor, "submit", fake_submit),
+        ):
+            response = video_segments_blacken_outside(
+                self.factory.post(
+                    f"/api/media/videos/{self.video.pk}/segments/blacken-outside/",
+                    {"only_validated": False},
+                    format="json",
+                ),
+                pk=self.video.pk,
+            )
+
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.data["status"], "queued")
+        self.assertEqual(response.data["validation_status"], "scheduled")
+        self.assertEqual(len(submitted), 1)
+        self.assertNotEqual(
+            response.data["post_processing_job"]["history_id"],
+            failed_history.pk,
+        )
 
     def test_only_validated_counts_only_validated_outside_segments(self):
         segment = LabelVideoSegment.objects.create(
@@ -706,6 +1027,7 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["status"], "noop")
+        self.assertEqual(response.data["validation_status"], "completed")
         self.assertEqual(response.data["outside_segment_count"], 0)
 
         segment.mark_validated(
@@ -730,6 +1052,7 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
 
         self.assertEqual(response.status_code, 202)
         self.assertEqual(response.data["status"], "queued")
+        self.assertEqual(response.data["validation_status"], "scheduled")
         self.assertEqual(response.data["outside_segment_count"], 1)
         mock_dispatch.assert_called_once_with(
             video_id=self.video.pk,
@@ -932,6 +1255,52 @@ class VideoSegmentsBulkMutationTest(TestCase):
         state = self.video.get_or_create_state()
         self.assertFalse(state.segment_annotations_created)
         self.assertFalse(state.segment_annotations_validated)
+
+    def test_bulk_mutation_attaches_created_and_updated_segments_to_ai_dataset(self):
+        dataset = AIDataSet.objects.create(
+            name="bulk-segment-dataset",
+            dataset_type=AIDataSet.DATASET_TYPE_VIDEO,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_VIDEO_SEGMENT_CLASSIFICATION,
+        )
+        request = self.factory.post(
+            f"/api/media/videos/{self.video.pk}/segments/bulk/",
+            {
+                "ai_dataset_id": dataset.pk,
+                "defer_annotation_sync": True,
+                "creates": [
+                    {
+                        "client_id": -1,
+                        "label_id": self.label_a.pk,
+                        "start_time": 2.0,
+                        "end_time": 3.0,
+                    }
+                ],
+                "updates": [
+                    {
+                        "id": self.update_segment.pk,
+                        "label_id": self.label_b.pk,
+                        "start_time": 1.0,
+                        "end_time": 1.5,
+                    }
+                ],
+                "deletes": [],
+            },
+            format="json",
+        )
+
+        response = video_segments_bulk_mutation(request, pk=self.video.pk)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["ai_dataset_id"], dataset.pk)
+        created_id = response.data["created"][0]["segment"]["id"]
+        self.assertEqual(
+            response.data["attached_segment_ids"],
+            sorted([created_id, self.update_segment.pk]),
+        )
+        self.assertTrue(dataset.video_annotations.filter(pk=created_id).exists())
+        self.assertTrue(
+            dataset.video_annotations.filter(pk=self.update_segment.pk).exists()
+        )
 
     def test_bulk_mutation_rolls_back_on_invalid_update(self):
         request = self.factory.post(

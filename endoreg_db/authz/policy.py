@@ -99,6 +99,8 @@ ROUTE_RESOURCE = {
     "pdf-list": "patient",
     "pdf-detail": "patient",
     "pdf-stream": "patient",
+    "report-reimport": "patient",
+    "report-llm-job-status": "patient",
     "patient-media-timeline": "patient",
     "sm-pk": "patient",
     "video-sensitive-metadata": "patient",
@@ -107,7 +109,9 @@ ROUTE_RESOURCE = {
     "pdf-sensitive-metadata-verify": "patient",
     "sensitive-metadata-list": "patient",
     "pdf-sensitive-metadata-list": "patient",
+    "media-anonymization-metrics": "anonymization",
     "anonymization_items_overview": "anonymization",
+    "upload_status": "patient",
     # Add more mappings as your API grows
 }
 

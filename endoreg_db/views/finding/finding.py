@@ -3,7 +3,7 @@ from rest_framework.viewsets import ReadOnlyModelViewSet
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from endoreg_db.models import Finding
+from endoreg_db.models.medical.finding.finding import Finding
 from ...serializers.finding import FindingSerializer
 
 
@@ -51,7 +51,7 @@ class FindingViewSet(ReadOnlyModelViewSet):
                             "description": getattr(choice, "description", ""),
                             "description_de": getattr(choice, "description_de", ""),
                             "description_en": getattr(choice, "description_en", ""),
-                            "classificationId": lc.id,
+                            "classification_id": lc.id,
                         }
                     )
 
@@ -99,7 +99,7 @@ class FindingViewSet(ReadOnlyModelViewSet):
                             "description": getattr(choice, "description", ""),
                             "description_de": getattr(choice, "description_de", ""),
                             "description_en": getattr(choice, "description_en", ""),
-                            "classificationId": mc.id,
+                            "classification_id": mc.id,
                         }
                     )
 

@@ -4,6 +4,7 @@ import pandas as pd
 
 from scripts.ntx_data.utils.datamodels import LabData, PatientData, ReadoutData
 from scripts.ntx_data.utils.utils import processed_data_dir
+from endoreg_db.utils.file_operations import atomic_write_file
 
 post_code_distances_cache_path = processed_data_dir / "post_code_distances_cache copy.json"
 lab_jsonl_data_path = processed_data_dir / "lab_data.jsonl"
@@ -116,10 +117,13 @@ if __name__ == "__main__":
     # Export lab_data_list with transplant_id as jsonl
     jsonl_path = lab_export_path.with_suffix(".jsonl")
     ic(f"Exporting lab_data_list with transplant_id to {jsonl_path}...")
-    with open(jsonl_path, "w", encoding="utf-8") as f:
-        for lab_data in tqdm(lab_data_list):
-            f.write(lab_data.model_dump_json())
-            f.write("\n")
+    atomic_write_file(
+        destination=jsonl_path,
+        content=(
+            f"{lab_data.model_dump_json()}\n".encode("utf-8")
+            for lab_data in tqdm(lab_data_list)
+        ),
+    )
 
     # create pandas dataframe from lab_data_list
     ic("Creating pandas dataframe from lab_data_list...")

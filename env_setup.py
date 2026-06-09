@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 from pathlib import Path
 
 from django.core.management.utils import get_random_secret_key
@@ -14,6 +13,11 @@ from endoreg_db.config.env import (
     PROTECTED_ROOT_ENV,
     STORAGE_DIR_ENV,
     build_protected_runtime_env,
+)
+from endoreg_db.utils.file_operations import (
+    atomic_copy_file,
+    atomic_write_file,
+    ensure_directory,
 )
 
 DEFAULT_DB_PASSWORD = "changeme_in_production"
@@ -83,17 +87,23 @@ def write_env(path: Path, lines: list[str], values: dict[str, str]) -> None:
     for key, value in missing:
         output.append(f"{key}={value}\n")
 
-    with path.open("w", encoding="utf-8") as handle:
-        handle.writelines(output)
+    atomic_write_file(
+        destination=path,
+        content=["".join(output).encode("utf-8")],
+    )
 
 
 def ensure_file(path: Path, content: str, *, mode: int = 0o600) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+    ensure_directory(path.parent)
 
     if path.exists():
         return
 
-    path.write_text(content, encoding="utf-8")
+    atomic_write_file(
+        destination=path,
+        content=[content.encode("utf-8")],
+        file_mode=mode,
+    )
     try:
         os.chmod(path, mode)
     except OSError:
@@ -107,10 +117,10 @@ def ensure_env_file(template: Path, target: Path) -> None:
 
     if template.exists():
         print(f"Creating .env file from template: {template}")
-        shutil.copy(template, target)
+        atomic_copy_file(source=template, destination=target, preserve_metadata=False)
     else:
         print(f"No template found at {template}. Creating empty .env.")
-        target.write_text("", encoding="utf-8")
+        atomic_write_file(destination=target, content=[b""])
 
 
 def main() -> None:
@@ -141,7 +151,7 @@ def main() -> None:
     )
 
     print(f"Checking configuration directory: {conf_dir}")
-    conf_dir.mkdir(parents=True, exist_ok=True)
+    ensure_directory(conf_dir)
 
     print(f"Checking database password file: {db_pwd_file}")
     ensure_file(db_pwd_file, DEFAULT_DB_PASSWORD)

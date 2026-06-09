@@ -1,6 +1,7 @@
 # endoreg_db/import_files/video_import_service.py
 import logging
 import shutil
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Optional, Union
 
@@ -28,7 +29,17 @@ from endoreg_db.models import VideoFile
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
-from endoreg_db.utils import paths as path_utils
+from endoreg_db.services.hub.media_integrity import (
+    MediaIntegrityError,
+    MediaIntegrityExpectation,
+    check_video_media_integrity,
+)
+from endoreg_db.services.video_files import (
+    get_or_create_video_state,
+    get_video_by_content_hash,
+    get_video_import_context_names,
+)
+from endoreg_db.utils.filesystem import paths as path_utils
 
 logger = logging.getLogger(__name__)
 PIPELINE_STORAGE_MULTIPLIER = 2.5
@@ -154,7 +165,7 @@ class VideoImportService:
                 ctx.current_video, processed, needs_processing = (
                     create_or_retrieve_video_file(ctx)
                 )
-                ctx.current_video.get_or_create_state()
+                get_or_create_video_state(ctx.current_video)
                 if ctx.current_video.state is None:
                     raise ValueError(
                         f"{ctx.current_video.original_file_name} has no video state after trying."
@@ -188,30 +199,11 @@ class VideoImportService:
                         "Persisted video state as processing before anonymization: video=%s",
                         ctx.current_video.video_hash,
                     )
-                    try:
-                        ctx = self.anonymizer.anonymize_video(ctx)
-                        logger.info(
-                            "Primary video anonymization succeeded for %s",
-                            ctx.file_path,
-                        )
-                    except Exception as primary_exc:
-                        logger.exception(
-                            "Primary video anonymization failed for %s: %s "
-                            "- trying basic anonymization",
-                            ctx.file_path,
-                            primary_exc,
-                        )
-                        try:
-                            ctx = self.anonymizer.anonymize_video(ctx)
-                        except Exception as e:
-                            logger.error(
-                                f"Video Extraction failed for the second time. {e}"
-                            )
-                            raise
-                        logger.info(
-                            "Secondary video anonymization succeeded for %s",
-                            ctx.file_path,
-                        )
+                    ctx = self.anonymizer.anonymize_video(ctx)
+                    logger.info(
+                        "Primary video anonymization succeeded for %s",
+                        ctx.file_path,
+                    )
                     logger.info(
                         f"Anonymized Video is located at: {ctx.anonymized_path}"
                     )
@@ -230,6 +222,87 @@ class VideoImportService:
                     finalize_failure(ctx)
                     raise
 
+    def reanonymize_existing_video(
+        self,
+        video: VideoFile,
+        *,
+        source_path: Union[Path, str, None] = None,
+    ) -> VideoFile:
+        """
+        Re-run anonymization for an existing VideoFile without re-import staging.
+
+        Re-imports already have a canonical raw file attached to the VideoFile.
+        Running them through import_and_anonymize again creates a new sensitive
+        copy and, for videos, transcodes before anonymization. This path keeps
+        the existing VideoFile/state contract while using only one local raw
+        materialization as the frame-cleaning input.
+        """
+        video_hash = getattr(video, "video_hash", None)
+        if source_path is None:
+            ensure_raw = getattr(video, "ensure_local_raw_file", None)
+            if not callable(ensure_raw):
+                raise RuntimeError(
+                    f"Video {video_hash} cannot materialize its raw file."
+                )
+            source_context = ensure_raw()
+        else:
+            source_context = nullcontext(Path(source_path))
+
+        with source_context as local_source_path:
+            if local_source_path is None:
+                raise RuntimeError(f"Video {video_hash} raw source is unavailable.")
+
+            local_source_path = Path(local_source_path)
+            if not local_source_path.exists():
+                raise FileNotFoundError(f"Video file not found: {local_source_path}")
+
+            with file_lock(local_source_path):
+                logger.info("Acquired file lock for re-anonymization: %s", video_hash)
+                center_name, processor_name = get_video_import_context_names(video)
+                ctx = ImportContext(
+                    file_path=local_source_path,
+                    center_name=center_name,
+                    processor_name=processor_name,
+                    file_type="video",
+                )
+                if ctx.file_hash is None:
+                    raise ValueError("File hash missing.")
+                if not isinstance(ctx.file_hash, str):
+                    ctx.file_hash = str(ctx.file_hash)
+
+                with content_hash_lock(ctx.file_hash, _hash_lock_dir()):
+                    logger.info(
+                        "Acquired content-hash lock for re-anonymization: %s",
+                        ctx.file_hash,
+                    )
+                    ctx.original_path = local_source_path
+                    ctx.local_source_path = local_source_path
+                    ctx.current_video = video
+                    ctx.instance = video
+                    ctx.retry = True
+
+                    try:
+                        mark_instance_processing_started(video, ctx)
+                        logger.info(
+                            "Persisted video state as processing before re-anonymization: video=%s",
+                            video_hash,
+                        )
+                        ctx = self.anonymizer.anonymize_video(ctx)
+                        logger.info(
+                            "Existing video re-anonymization succeeded for %s",
+                            video_hash,
+                        )
+                        finalize_video_success(ctx)
+                        return video
+                    except Exception as exc:
+                        logger.exception(
+                            "Existing video re-anonymization failed for %s: %s",
+                            video_hash,
+                            exc,
+                        )
+                        finalize_failure(ctx)
+                        raise
+
     def _get_existing_completed_video(self, ctx: ImportContext) -> VideoFile | None:
         """
         Return an already-successful video for this content hash, if one exists.
@@ -247,13 +320,20 @@ class VideoImportService:
         ):
             return None
 
-        existing_video = VideoFile.get_video_by_content_hash(file_hash)
-        if existing_video is None:
-            logger.warning(
-                "Successful processing history exists for %s but no VideoFile was found.",
+        existing_video = get_video_by_content_hash(file_hash)
+        integrity_result = check_video_media_integrity(
+            existing_video,
+            expectation=MediaIntegrityExpectation.RAW_WATCHER_VIDEO,
+            content_hash=file_hash,
+        )
+        if not integrity_result.ok:
+            logger.error(
+                "Successful processing history exists for %s but media integrity "
+                "failed before staging: %s",
                 file_hash,
+                integrity_result.reason,
             )
-            return None
+            raise MediaIntegrityError(integrity_result)
 
         logger.info(
             "VideoFile already has successful processing history (file_hash=%s) - short-circuiting before staging",

@@ -14,22 +14,29 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
-from endoreg_db.models import (
-    AnonymExaminationReport,
-    Center,
-    Finding,
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.media.pdf.report_file import AnonymExaminationReport
+from endoreg_db.models.medical.finding.finding import Finding
+from endoreg_db.models.medical.finding.finding_classification import (
     FindingClassification,
     FindingClassificationChoice,
-    FindingIntervention,
-    Gender,
-    PatientExamination,
-    PatientExaminationIndication,
-    PatientExaminationReport,
-    PatientFinding,
-    PatientFindingClassification,
-    PatientFindingIntervention,
-    RawPdfFile,
 )
+from endoreg_db.models.medical.finding.finding_intervention import FindingIntervention
+from endoreg_db.models.medical.patient.patient_examination import PatientExamination
+from endoreg_db.models.medical.patient.patient_examination_indication import (
+    PatientExaminationIndication,
+)
+from endoreg_db.models.medical.patient.patient_finding import PatientFinding
+from endoreg_db.models.medical.patient.patient_finding_classification import (
+    PatientFindingClassification,
+)
+from endoreg_db.models.medical.patient.patient_finding_intervention import (
+    PatientFindingIntervention,
+)
+from endoreg_db.models.other.gender import Gender
+from endoreg_db.models.report.patient_examination_report import PatientExaminationReport
+from endoreg_db.schemas import validate_raw_pdf_meta_payload
 from endoreg_db.services.report_history import get_patient_examination_history_context
 
 User = get_user_model()
@@ -204,6 +211,11 @@ def persist_report_pdf_artifact(
     patient_examination: PatientExamination,
     *,
     rendered_text: str = "",
+    section_blocks: list[dict[str, Any]] | None = None,
+    frame_image_paths: list[str] | None = None,
+    frame_captions: list[str] | None = None,
+    patient_identity: dict[str, Any] | None = None,
+    strict_renderer: bool = False,
 ) -> tuple[int | None, int | None]:
     """
     Create/update linked full-report + pdf media artifacts for a persisted report.
@@ -229,6 +241,7 @@ def persist_report_pdf_artifact(
     }
     if report.editor_payload:
         pdf_meta["editor_payload"] = report.editor_payload
+    pdf_meta = validate_raw_pdf_meta_payload(pdf_meta) or {}
 
     pdf_bytes: bytes
     try:
@@ -240,14 +253,18 @@ def persist_report_pdf_artifact(
         payload = build_report_template_pdf_payload(
             report=report,
             patient_examination=patient_examination,
-            section_blocks=None,
-            frame_image_paths=None,
+            section_blocks=section_blocks,
+            frame_image_paths=frame_image_paths,
+            frame_captions=frame_captions,
+            patient_identity=patient_identity,
         )
         with tempfile.TemporaryDirectory(prefix="endoreg_report_pdf_") as tmp_dir:
             out_path = Path(tmp_dir) / "report.pdf"
             render_pdf_with_rust_renderer(payload, output_path=out_path)
             pdf_bytes = out_path.read_bytes()
     except Exception:
+        if strict_renderer:
+            raise
         pdf_bytes = _render_minimal_pdf_bytes(
             title=report_title,
             body_text=pdf_body,

@@ -1,3 +1,5 @@
+# Colonoscopy Requirements Plan
+
 * Patientendaten: Eindeutige Identifikation des Patienten (z.B. Name, Geburtsdatum, Patienten-ID).
 * Indikation: Der klinische Grund für die Durchführung der Endoskopie muss klar dokumentiert sein.
 * Untersucher und Assistenz: Namentliche Nennung des verantwortlichen ärztlichen und des assistierenden Fachpersonals.
@@ -52,4 +54,3 @@ coloreg_colonoscopy_requirements:
     - intervention
         - biopsy / resection?
         - clip?
-

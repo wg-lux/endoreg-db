@@ -4,7 +4,7 @@ import json
 
 from django.core.management.base import BaseCommand, CommandError
 
-from endoreg_db.utils.paths import (
+from endoreg_db.utils.filesystem.paths import (
     DATA_DIR,
     EXPORT_DIR,
     IMPORT_DIR,

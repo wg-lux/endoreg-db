@@ -15,8 +15,13 @@ TEST_DB_DIR.mkdir(parents=True, exist_ok=True)
 # pytest processes can keep WAL/SHM locks open for the next session.
 TEST_DB_REUSE = env_bool("TEST_DB_REUSE", False)
 TEST_DB_WORKER = env_str("PYTEST_XDIST_WORKER", "main")
+REUSED_TEST_DB_NAME = (
+    f"test_db_{TEST_DB_WORKER}.sqlite3"
+    if TEST_DB_WORKER != "main"
+    else "test_db.sqlite3"
+)
 DEFAULT_TEST_DB_PATH = TEST_DB_DIR / (
-    "test_db.sqlite3"
+    REUSED_TEST_DB_NAME
     if TEST_DB_REUSE
     else f"test_db_{TEST_DB_WORKER}_{os.getpid()}.sqlite3"
 )
@@ -86,6 +91,12 @@ CACHES = {
     }
 }
 
+# Tests exercise watcher-local import behavior without requiring a live broker.
+WATCHER_CELERY_INLINE_FALLBACK_ENABLED = env_bool(
+    "WATCHER_CELERY_INLINE_FALLBACK_ENABLED",
+    True,
+)
+
 # Faster password hashing
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 
@@ -103,4 +114,5 @@ if env_str("TEST_DISABLE_MIGRATIONS", "false").lower() == "true":
 
 INSTALLED_APPS = BASE_INSTALLED_APPS + [
     "django.contrib.admin",
+    "django_extensions",
 ]

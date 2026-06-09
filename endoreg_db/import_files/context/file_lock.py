@@ -5,6 +5,8 @@ import time
 from logging import getLogger
 from typing import Generator, Any
 
+from endoreg_db.utils.filesystem.file_operations import ensure_directory
+
 logger = getLogger(__name__)
 
 STALE_LOCK_SECONDS = 6000
@@ -76,7 +78,7 @@ def content_hash_lock(
 
     Lock path: "<lock_root>/<file_hash>.lock"
     """
-    lock_root.mkdir(parents=True, exist_ok=True)
+    ensure_directory(lock_root)
     lock_path = lock_root / f"{file_hash}.lock"
     fd = None
     try:

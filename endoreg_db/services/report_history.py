@@ -4,7 +4,8 @@ from typing import Any
 
 from django.db.models import Prefetch, QuerySet
 
-from endoreg_db.models import PatientExamination, PatientFinding
+from endoreg_db.models.medical.patient.patient_examination import PatientExamination
+from endoreg_db.models.medical.patient.patient_finding import PatientFinding
 
 
 def _serialize_patient_finding_summary(

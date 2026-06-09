@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from endoreg_db.utils.nginx_accel import build_nginx_accel_response
+from endoreg_db.utils.web.nginx_accel import build_nginx_accel_response
 
 
 def test_nginx_accel_rejects_unsafe_relative_path():

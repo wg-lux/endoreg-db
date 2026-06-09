@@ -9,8 +9,16 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.utils import timezone
 
-from endoreg_db.models import Center, Label, LabelVideoSegment, VideoFile, VideoState
+from endoreg_db.models import (
+    Center,
+    Label,
+    LabelVideoSegment,
+    VideoFile,
+    VideoProcessingHistory,
+    VideoState,
+)
 from endoreg_db.models.state.audit_ledger import AuditLedger
+from endoreg_db.models.state import video_segment_validation as segment_state
 
 
 class VideoReadyExportEndpointTests(TestCase):
@@ -33,6 +41,8 @@ class VideoReadyExportEndpointTests(TestCase):
             or VideoState.objects.create(
                 anonymization_validated=True,
                 outside_segments_removed=True,
+                segment_annotations_created=True,
+                segment_annotations_validated=True,
             ),
         )
         video.processed_file = SimpleUploadedFile(
@@ -47,8 +57,15 @@ class VideoReadyExportEndpointTests(TestCase):
             assert video_state is not None
             video_state.anonymization_validated = True
             video_state.outside_segments_removed = True
+            video_state.segment_annotations_created = True
+            video_state.segment_annotations_validated = True
             video_state.save(
-                update_fields=["anonymization_validated", "outside_segments_removed"]
+                update_fields=[
+                    "anonymization_validated",
+                    "outside_segments_removed",
+                    "segment_annotations_created",
+                    "segment_annotations_validated",
+                ]
             )
         return video
 
@@ -56,6 +73,8 @@ class VideoReadyExportEndpointTests(TestCase):
         state = video.get_or_create_state()
         state.anonymization_validated = True
         state.outside_segments_removed = True
+        state.segment_annotations_created = True
+        state.segment_annotations_validated = True
         state.ready_for_export = True
         state.ready_for_export_at = timezone.now()
         state.ready_for_export_by = self.user.username
@@ -119,6 +138,8 @@ class VideoReadyExportEndpointTests(TestCase):
         state = VideoState.objects.create(
             anonymization_validated=True,
             outside_segments_removed=False,
+            segment_annotations_created=True,
+            segment_annotations_validated=False,
         )
         video = self._video(state=state)
         self.client.force_login(self.user)
@@ -132,6 +153,76 @@ class VideoReadyExportEndpointTests(TestCase):
         assert response.status_code == 409, response.content
         video.refresh_from_db()
         assert video.get_or_create_state().ready_for_export is False
+
+    def test_rejects_when_video_is_failed_lost(self):
+        state = VideoState.objects.create(
+            anonymization_validated=True,
+            outside_segments_removed=True,
+            segment_annotations_created=True,
+            segment_annotations_validated=True,
+            processing_error=True,
+        )
+        video = self._video(state=state)
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            f"/api/media/videos/{video.pk}/mark-ready-for-export/",
+            data={"center_key": self.center.center_key},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 409, response.content
+        assert "failed/lost" in response.json()["error"]
+
+    def test_rejects_when_segment_cleanup_is_not_final(self):
+        for history_status, expected_status in (
+            (None, "cleanup_required"),
+            (VideoProcessingHistory.STATUS_PENDING, "cleanup_queued"),
+            (VideoProcessingHistory.STATUS_RUNNING, "cleanup_running"),
+            (VideoProcessingHistory.STATUS_FAILURE, "cleanup_failed"),
+        ):
+            with self.subTest(history_status=history_status):
+                state = VideoState.objects.create(
+                    anonymization_validated=True,
+                    outside_segments_removed=True,
+                    segment_annotations_created=True,
+                    segment_annotations_validated=False,
+                )
+                video = self._video(state=state)
+                state.refresh_from_db()
+                state.outside_segments_removed = True
+                state.segment_annotations_created = True
+                state.segment_annotations_validated = False
+                state.save(
+                    update_fields=[
+                        "outside_segments_removed",
+                        "segment_annotations_created",
+                        "segment_annotations_validated",
+                        "date_modified",
+                    ]
+                )
+                if history_status is not None:
+                    VideoProcessingHistory.objects.create(
+                        video=video,
+                        operation=VideoProcessingHistory.OPERATION_REPROCESSING,
+                        status=history_status,
+                        task_id=f"cleanup-{history_status}",
+                        config=segment_state._blackening_history_config(
+                            only_validated=False
+                        ),
+                    )
+                self.client.force_login(self.user)
+
+                response = self.client.post(
+                    f"/api/media/videos/{video.pk}/mark-ready-for-export/",
+                    data={"center_key": self.center.center_key},
+                    content_type="application/json",
+                )
+
+                assert response.status_code == 409, response.content
+                assert expected_status in response.json()["error"]
+                video.refresh_from_db()
+                assert video.get_or_create_state().ready_for_export is False
 
     def test_rejects_processed_hash_mismatch(self):
         video = self._video()

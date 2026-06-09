@@ -12,7 +12,22 @@ class LabelManager(models.Manager):
 
     def get_by_natural_key(self, name):
         """Retrieves a Label instance by its natural key (name)."""
-        return self.get(name=name)
+        label = self.resolve_by_name(name)
+        if label is None:
+            raise self.model.DoesNotExist(
+                f"{self.model._meta.object_name} matching query does not exist."
+            )
+        return label
+
+    def resolve_by_name(self, name: str, *, case_insensitive: bool = False):
+        """Return the deterministic first label for a natural name."""
+        normalized_name = str(name).strip()
+        lookup = (
+            {"name__iexact": normalized_name}
+            if case_insensitive
+            else {"name": normalized_name}
+        )
+        return self.filter(**lookup).order_by("pk").first()
 
 
 class Label(models.Model):
@@ -56,10 +71,10 @@ class Label(models.Model):
         """
         Returns the label instance for 'outside'.
         """
-        try:
-            return cls.objects.get(name="outside")
-        except Exception as exc:
-            raise ValueError("'outside' label does not exist in the database") from exc
+        label = cls.objects.resolve_by_name("outside")
+        if label is None:
+            raise ValueError("'outside' label does not exist in the database")
+        return label
 
     @classmethod
     def get_low_quality_label(cls):
@@ -69,12 +84,10 @@ class Label(models.Model):
         Raises:
             ValueError: If a label with the name 'low_quality' does not exist.
         """
-        try:
-            return cls.objects.get(name="low_quality")
-        except Exception as exc:
-            raise ValueError(
-                "'low_quality' label does not exist in the database"
-            ) from exc
+        label = cls.objects.resolve_by_name("low_quality")
+        if label is None:
+            raise ValueError("'low_quality' label does not exist in the database")
+        return label
 
     @classmethod
     def get_or_create_from_name(cls, name: str):
@@ -87,5 +100,8 @@ class Label(models.Model):
         Returns:
             tuple: A tuple containing the Label instance and a boolean indicating whether the instance was created (True) or retrieved (False).
         """
-        label, _created = cls.objects.get_or_create(name=name)
-        return label, _created
+        label = cls.objects.resolve_by_name(name)
+        if label is not None:
+            return label, False
+        label = cls.objects.create(name=str(name).strip())
+        return label, True

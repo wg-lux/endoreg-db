@@ -53,7 +53,6 @@ class OperationLog(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
 
-    #
     class Meta:
         verbose_name = "Operation Log"
         verbose_name_plural = "Operation Logs"

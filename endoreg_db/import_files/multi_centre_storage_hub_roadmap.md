@@ -2,364 +2,576 @@
 
 ## Purpose
 
-This document is for engineers extending `endoreg-db` for multi-centre operation.
+This document is for engineers extending `endoreg-db` for multi-centre
+operation.
 
-Its goal is to assess the current export and storage behavior of the repository
-and prescribe the changes required to make `endoreg-db` suitable for hub-grade
-deployment as a central multi-centre data storage system.
+It reflects the current repository state and the remaining roadmap work for
+using `endoreg-db` as a hub-grade storage and ingest component. It is not a
+neutral architecture note: it identifies what is already implemented, what is
+safe to rely on, and what still blocks authoritative multi-centre hub
+operation.
 
-This is an implementation roadmap, not a neutral architecture note. The current
-system is partially suitable for centralized deployment, but it is not yet a
-robust authoritative multi-centre hub without additional work.
+## Current Position
 
-## Current Capabilities
+`endoreg-db` is now hub-aware. The repository implements centre identity,
+upload-job based ingest, local watcher-style ingest functions, and an optional
+node-to-hub transfer ledger.
+
+It is still not a complete federated storage layer. The implemented shape is
+best described as:
+
+- one central ingest-capable deployment
+- optional site-node to central-hub synchronization
+- trusted local drop-folder ingestion for selected deployments
+- protected local filesystem storage, with streaming offload where configured
+
+The current cryptographic phase is Phase 1: transport and authentication.
+Central-hub production settings require secure transport and mTLS metadata for
+hub transfer traffic. Envelope encryption and KMS integration are not
+implemented yet.
+
+## Implemented Capabilities
+
+### Deployment roles
+
+Hub behavior is driven by `ENDOREG_DEPLOYMENT_ROLE`.
+
+Implemented roles:
+
+- `standalone`
+- `site_node`
+- `local_study_server`
+- `central_hub`
+
+Current production settings enforce several fail-closed checks:
+
+- production startup rejects `DJANGO_DEBUG=true`
+- `central_hub` and `local_study_server` reject SQLite
+- `central_hub` requires secure transfer transport
+- `central_hub` requires mTLS configuration for transfer traffic
+- `ENDOREG_ENABLE_HUB_TRANSFERS=true` is allowed only with
+  `ENDOREG_DEPLOYMENT_ROLE=central_hub`
+- `local_study_server` requires explicit protected runtime storage roots
+  inside `LX_ANNOTATE_ENCRYPTED_DATA_DIR`
+
+Relevant files:
+
+- `endoreg_db/services/hub/deployment.py`
+- `endoreg_db/config/settings/prod.py`
+- `tests/deployment/test_prod_settings_contract.py`
+
+### Centre identity
+
+`Center.center_key` is implemented as the durable machine-facing centre
+identifier.
+
+Current behavior:
+
+- generated automatically when absent
+- unique
+- immutable once assigned
+- separate from `display_name`
+- used by API upload, local study server workflows, dataset export scoping, and
+  transfer source-centre resolution
+
+Name-based lookup still exists for compatibility, including natural keys and
+some legacy resolution paths. Machine-facing integrations should use
+`center_key`.
+
+Relevant file:
+
+- `endoreg_db/models/administration/center/center.py`
+
+### Node identity
+
+`NetworkNode` is implemented for deployment-node identity.
+
+Current behavior:
+
+- `node_key` is generated when absent and immutable once assigned
+- node roles include `central_hub`, `site_node`, and `standalone`
+- nodes may be linked to an owning centre
+- shared secrets are stored as password hashes in `shared_secret_hash`
+- shared secrets are used only for request authentication
+
+`NetworkNode.shared_secret_hash` must not be used for payload encryption. It is
+not a data-encryption key and must not replace mTLS or future envelope
+encryption.
+
+Relevant file:
+
+- `endoreg_db/models/hub/network_node.py`
+
+### Upload ingest
+
+The upload API is implemented at:
+
+- `POST /api/upload/`
+- `GET /api/upload/<uuid>/status/`
+
+Current behavior:
+
+- accepts report and video uploads
+- creates or reuses `UploadJob`
+- records `source_center`, `source_system`, `content_hash`,
+  `idempotency_key`, `ingest_mode`, storage lifecycle fields, and typed
+  `processing_provenance`
+- deduplicates first by active content hash, then by scoped idempotency key
+- dispatches processing through Celery when available, otherwise inline
+- preserves API upload source files after successful processing
+- centre-scopes upload status reads for authenticated centre-bound users
+
+Strict centre-scoped API upload mode is active when the role is
+`central_hub` or `local_study_server`.
+
+In strict mode:
+
+- authentication is required
+- `center_key` is required
+- unknown `center_key` is rejected
+- default-centre fallback is disabled for API upload
+- authenticated centre-bound users may not upload outside their centre
+
+In `standalone` and `site_node` modes, default-centre fallback remains for
+compatibility.
+
+Relevant files:
+
+- `endoreg_db/views/misc/upload_views.py`
+- `endoreg_db/services/hub/ingest.py`
+- `endoreg_db/models/hub/upload_job.py`
+- `endoreg_db/serializers/hub/upload_job.py`
+- `tests/views/misc/test_upload_endpoints.py`
+
+### Watcher-style local ingest
+
+The current repository implements watcher-compatible service functions rather
+than a standalone watcher daemon entrypoint in the current file tree.
+
+Implemented entrypoints:
+
+- `process_watcher_file(...)`
+- `process_preanonymized_watcher_file(...)`
+- `create_or_reuse_watcher_upload_job(...)`
+
+Current behavior:
+
+- raw watcher ingest supports report and video files outside
+  `local_study_server`
+- `local_study_server` rejects raw watcher ingest and requires the
+  preanonymized path
+- preanonymized watcher ingest accepts `.pdf`, `.mp4`, and `.txt`
+- local study server preanonymized ingest requires a strict JSON sidecar
+- sidecars are pydantic-validated
+- sidecar hash mismatches, unknown centres, unsafe paths, or missing human
+  validation fail loudly and quarantine the drop where applicable
+- watcher jobs use `UploadJob.IngestMode.WATCHER`
+- watcher source artifacts use `delete_after_success` retention
+- duplicate watcher drops reuse active jobs and remove duplicate drop files
+
+Relevant files:
+
+- `endoreg_db/services/hub/ingest.py`
+- `endoreg_db/services/hub/payloads.py`
+- `tests/services/test_watcher_storage_import.py`
+- `tests/services/test_preanonymized_watcher_ingest.py`
+- `docs/local_study_server_deployment.md`
+
+### Transfer ingest
+
+The transfer API is implemented under the media endpoint namespace:
+
+- `POST /api/media/hub/transfers/`
+- `GET /api/media/hub/transfers/<transfer_key>/status/`
+- `POST /api/media/hub/transfers/<transfer_key>/media/`
+
+Current behavior:
+
+- transfer endpoints are exposed only when
+  `ENDOREG_DEPLOYMENT_ROLE=central_hub` and
+  `ENDOREG_ENABLE_HUB_TRANSFERS=true`
+- endpoints return `404` for `standalone`, `site_node`, and
+  `local_study_server`
+- secure transport is enforced when configured
+- mTLS proxy metadata is enforced when configured
+- node authentication uses `X-Network-Node-Key` and
+  `X-Network-Node-Secret`
+- `TransferJob` records source node, target node, source centre, resource kind,
+  resource hash, transfer mode, processing policy, cleanup policy, status, and
+  typed provenance
+- transfer registration is idempotent by `transfer_key`
+- metadata registration creates or updates placeholder `VideoFile` or
+  `RawPdfFile` records, applies state payloads, records processing history, and
+  attempts case resolution
+- transfer media upload accepts only anonymized `processed` media
+- raw media transfer modes are rejected
+- processed video uploads are hash-checked against
+  `processed_video_hash`
+
+This transfer path is controlled hub synchronization. It is not full mesh
+federation and it does not currently encrypt standalone transfer blobs with
+envelope encryption.
+
+Relevant files:
+
+- `endoreg_db/views/media/hub/transfers.py`
+- `endoreg_db/serializers/hub/transfer_job.py`
+- `endoreg_db/services/hub/transfers.py`
+- `endoreg_db/models/hub/transfer_job.py`
+- `tests/views/media/test_hub_transfer_endpoints.py`
+
+### Provenance, audit, and cleanup
+
+Persisted upload and transfer provenance are validated at the model boundary
+using pydantic-backed schemas.
+
+Implemented provenance schemas:
+
+- `UploadProvenancePayload`
+- `TransferProvenancePayload`
+- `PreanonymizedIngestPayload`
+- `LocalStudyServerPreanonymizedIngestPayload`
+
+Hub services emit structured JSON audit events for centre resolution, upload
+job creation and reuse, transfer job creation and reuse, and selected
+preanonymized drop outcomes.
+
+Upload cleanup is implemented:
+
+- `preserve_source` becomes `cleanup_status=skipped` after success
+- `delete_after_success` becomes `cleanup_status=eligible` after success
+- `reap_upload_job_sources(...)` deletes eligible persisted upload sources
+
+Transfer cleanup is only recorded as policy intent today. Automatic execution
+of transfer cleanup policies is not implemented yet.
+
+Relevant files:
+
+- `endoreg_db/services/hub/payloads.py`
+- `endoreg_db/services/hub/audit.py`
+- `endoreg_db/services/hub/cleanup.py`
+- `endoreg_db/models/hub/upload_job.py`
+- `endoreg_db/models/hub/transfer_job.py`
+
+### Storage and streaming
+
+The repository has moved toward typed storage behavior, but remains mostly
+protected-filesystem based.
+
+Implemented today:
+
+- `VideoStorageMode` models encrypted application storage versus filesystem
+  encrypted streamable storage
+- upload artifacts are routed through typed `UploadJob` storage tier,
+  storage class, and retention policy fields
+- explicit local file moves, copies, writes, quarantine moves, and safe unlink
+  operations in hub ingest paths use wrappers from
+  `endoreg_db.utils.filesystem.file_operations`
+- those wrappers use atomic write, move, and copy semantics and emit structured
+  JSON logs
+- video streaming can use Nginx `X-Accel-Redirect` for streamable protected
+  artifacts
+- report streaming can also hand off to Nginx when a safe local protected path
+  exists
+- raw Django video streaming fallback can be disabled for operational safety
+
+Remaining storage work is still significant:
+
+- many workflows still assume local protected path access under `STORAGE_DIR`
+- not every Django storage mutation is routed through the typed filesystem
+  wrappers yet
+- object-storage-style access is not implemented as the primary abstraction
+- transfer media are not envelope-encrypted
+- KMS-backed key management and key rotation are not implemented
+
+Relevant files:
+
+- `endoreg_db/models/media/video/storage_mode.py`
+- `endoreg_db/utils/filesystem/file_operations.py`
+- `endoreg_db/utils/storage/profile.py`
+- `endoreg_db/views/video/video_stream.py`
+- `endoreg_db/views/report/report_stream.py`
 
 ### Export surfaces
 
-`endoreg-db` already exposes several useful export and retrieval paths:
+Export and retrieval remain product features, not operational replication or
+disaster-recovery mechanisms.
 
-- Django fixture export and import via `export_db.sh` and `import_db.sh`.
-  These scripts use `manage.py dumpdata` and `manage.py loaddata` as a repo-local
-  backup and restore mechanism.
-- Frame and annotation dataset export via
-  `endoreg_db/export/frames/export_frames_with_labels.py`.
-  This supports CSV and JSON export, optional media export, and optional frame
-  transcoding.
-- Media and report streaming and download endpoints.
-  Video streaming supports Nginx offload through `X-Accel-Redirect`, while PDF
-  and report endpoints support inline viewing and download flows.
-- `lx_dtypes` contract-style export via `endoreg_db/services/lx_video_contracts.py`.
-  This maps videos, segments, and sensitive metadata into typed `lx_dtypes`
-  payloads for downstream integration.
+Current export and retrieval paths include:
 
-These capabilities are real product value. They should be preserved, but they
-must be positioned correctly in a hub architecture: as export and integration
-features, not as the primary operational replication or recovery strategy.
+- Django fixture export/import through `export_db.sh` and `import_db.sh`
+- frame and annotation dataset export through
+  `endoreg_db/export/frames/export_frames_with_labels.py`
+- report and video stream endpoints under `/api/media/...`
+- local study server training export scoping with `center_key` or
+  `all_centers`
 
-### Ingestion and storage model
+Fixture export is still development and migration tooling. Hub-grade operations
+must use database-native backup plus protected media backup/versioning.
 
-The current repository also already contains the basic ingredients of a
-centralized application server:
+## Current Blockers To Authoritative Hub Operation
 
-- an upload job API for report and video submission
-- a watcher and import-service flow for filesystem-based ingestion
-- local managed storage rooted under `STORAGE_DIR`
-- centre-scoped filtering already present in some report-facing APIs
+### Read-side centre scoping is incomplete
 
-The import services describe a managed-storage workflow where raw imports are
-staged, canonicalized, anonymized, and then retained as durable managed files.
-The surrounding services use Django transactions in a number of important write
-paths, and the production settings support a non-SQLite database and a real
-authentication and authorization stack.
+Upload status and transfer status paths have centre-aware scope checks, but the
+general report/video read surfaces are not yet uniformly centre-filtered.
+Existing tests explicitly preserve some media reads outside centre scope.
 
-That said, the surrounding architecture is still strongly single-node and
-shared-filesystem oriented. Many code paths assume local path access, local
-filesystem coordination, and storage behavior centered around one application
-host or one shared mount.
+Required outcome:
 
-## Why The Current System Is Not Yet A Multi-Centre Hub
+- all patient-linked, report-linked, video-linked, upload, transfer, export,
+  search, and timeline reads must have consistent centre-aware authorization
+  before the system is considered an authoritative multi-centre hub
 
-The following blockers prevent the current system from being treated as the
-authoritative multi-centre data hub.
+### Envelope encryption is not implemented
 
-### Centre identity is name-based and not strongly unique
+The current transfer architecture is Phase 1. It relies on mTLS and request
+authentication. It does not wrap standalone transfer blobs with per-transfer
+data encryption keys.
 
-The centre model currently relies on `name` as the natural lookup key. That is
-serviceable for a local or lightly managed deployment, but it is not strong
-enough for tenancy, routing, or machine-to-hub ingestion across many centres.
+Required outcome for Phase 2:
 
-For hub-grade operation, centre identity must be immutable, unique, and safe to
-use as a durable integration key. Mutable display labels are not sufficient.
+- generate a per-transfer data encryption key
+- encrypt outbound payloads with that data encryption key
+- wrap the data encryption key with the receiving hub public key
+- never transmit a long-lived master key
 
-### Upload endpoints are not authenticated or tenant-scoped enough
+Until this exists, transfer media must remain constrained to anonymized
+processed media and protected transport.
 
-The repository already has an upload API, but the current shape is not strong
-enough for a remote multi-machine ingest contract. A hub needs authenticated,
-centre-aware ingestion with provenance, authorization, and durable source
-identity for every job.
+### KMS integration is not implemented
 
-Anonymous or weakly-scoped upload/status access is acceptable during local
-development, but not for a central study hub serving multiple centres.
+There is no Vault or KMS-backed key lifecycle in the current repository.
 
-### Ingestion depends on path-based file locks and shared filesystem semantics
+Required outcome for Phase 3:
 
-The import pipeline uses watched import paths and path-based lock files to
-coordinate work. That is useful for workstation and edge-style ingestion, but it
-is not a sufficient distributed coordination model for multiple machines sending
-data to one central authority.
+- delegate long-lived key lifecycle, rotation, and machine identity policy to
+  LuxNix-provided KMS or Vault when available
 
-The existing import services are retry-aware and cleanup-aware, but they do not
-form a full distributed transaction protocol.
+### Storage abstraction is still local-filesystem oriented
 
-### Watcher ingestion remains filesystem-bound
+The runtime storage layout is protected, typed in several places, and safer
+than the older raw path model. It still assumes local or shared filesystem
+access for many workflows.
 
-Watcher-based safe system-dropoff ingestion remains an important supported path,
-but it is still intentionally rooted in watched directories, file stability
-checks, and path-based processing semantics. That is appropriate for trusted
-local ingestion, but it is not sufficient as the sole contract for remote
-multi-machine hub ingest.
+Required outcome:
 
-### Backup and export are fixture-oriented
+- make integration-facing workflows depend on storage services and typed media
+  references rather than direct local path availability
+- define durable shared media semantics for central-hub deployments
+- keep Nginx offload as an implementation detail behind authenticated API
+  authorization
 
-The current `dumpdata` and `loaddata` scripts are useful for development,
-inspection, migration work, and local backups. They are not a sufficient
-production-grade operational story for the authoritative multi-centre hub.
+### Transfer cleanup is deferred
 
-A hub needs database-native backup and restore, plus media storage backup and
-versioning expectations that match the durability requirements of the study.
+Upload source cleanup is implemented. Transfer cleanup policies are recorded
+but not executed automatically.
 
-### Storage assumptions are too local-path oriented
+Required outcome:
 
-Several workflows resolve files directly from `STORAGE_DIR` paths and assume the
-application can inspect and serve media from a directly mounted local or shared
-filesystem. That is convenient, but it couples integrations and exports too
-closely to one storage topology.
+- implement audited cleanup execution for transfer artifacts
+- fail loudly if cleanup intent conflicts with media integrity, retention, or
+  backup requirements
 
-### Conclusion
+### Federation remains limited
 
-`endoreg-db` is suitable as a centralized study application server.
+The transfer layer covers media-related metadata and processed-media
+synchronization. It does not implement peer discovery, topology negotiation,
+full database graph synchronization, or cross-peer conflict resolution.
 
-`endoreg-db` is not yet suitable as the authoritative multi-centre data hub.
+Required outcome:
+
+- define which node is authoritative for each resource class
+- reject ambiguous multi-writer cases unless explicit conflict rules exist
+- keep transfer semantics idempotent and fail-closed
 
 ## Required Architecture Changes
 
-### Identity and tenancy
+### Security and transport
 
-The hub must gain a stronger tenant identity model.
+The current implementation should remain within Phase 1 until Phase 2 is
+designed and implemented.
 
 Required outcomes:
 
-- add an immutable unique centre key separate from display name
-- stop resolving centres purely by mutable `name`
-- attach centre identity and source-system identity to every ingest path
-- define tenant scoping expectations for all read and write APIs, not only a few
-  selected report endpoints
+- keep central-hub production startup fail-closed when mTLS configuration is
+  absent
+- keep `NetworkNode.shared_secret_hash` limited to request authentication
+- reject active hub transfer nodes that have no usable request-auth secret
+  unless a stronger mTLS-only machine identity policy is explicitly modeled
+- continue rejecting raw-media transfer
+- implement envelope encryption before allowing standalone transfer blobs to
+  leave the local storage boundary
 
-The centre key should become the durable integration identifier used by remote
-machines, upload jobs, and authorization policy. Display names should remain
-presentation-oriented.
+### Tenancy and authorization
+
+Centre identity is now in place. Authorization still needs broad coverage.
+
+Required outcomes:
+
+- use `center_key` for all machine-facing centre selection
+- remove remaining name-first integration paths except compatibility-only
+  imports
+- apply centre-aware authorization consistently to media reads, report reads,
+  video reads, timelines, exports, search, upload jobs, transfer jobs, and
+  workflow endpoints
+- ensure list endpoints are filtered, not only detail endpoints
 
 ### Ingestion
 
-The hub must expose one authenticated remote ingestion contract while preserving
-watcher-based safe system-dropoff ingestion as a supported first-class path.
+Upload, watcher-style, and transfer ingest should continue to converge on
+shared ledger and provenance patterns.
 
 Required outcomes:
 
-- establish one authenticated ingestion contract for remote machines
-- keep watcher and dropoff ingestion as a supported ingress mode for trusted
-  system-local workflows
-- make upload jobs carry source centre, source system, idempotency key, and
-  processing provenance
-- ensure watcher ingestion and API ingestion both flow into the same ingest core
-  after mode-specific entry checks
-- require idempotent duplicate protection by logical ingest key, not only by
-  watched file path
-
-This means remote machines should not need to rely on a shared import directory
-as the primary system boundary. The canonical remote boundary should be an
-authenticated API with durable job semantics. At the same time, the watcher path
-must remain available for safe dropoff-based ingestion on trusted systems.
+- keep strict API upload behavior for `central_hub` and `local_study_server`
+- preserve watcher-compatible local ingest for trusted local workflows
+- keep raw watcher ingest disabled in `local_study_server`
+- keep local study server preanonymized sidecars strict and fail-closed
+- add or document the operational watcher daemon/scheduler if drop-folder
+  polling is expected in production
+- keep duplicate detection content-hash first and idempotency-key second
 
 ### Persistence and storage
 
-Hub deployments must be opinionated here.
+Current hub and local study roles reject SQLite in production. That foundation
+should remain.
 
 Required outcomes:
 
-- require PostgreSQL for hub deployments
-- keep media in shared durable storage or object-storage-like semantics rather
-  than assuming node-local paths
-- reduce direct dependence on `STORAGE_DIR` absolute path access for
-  integration-facing workflows
+- require PostgreSQL or an equivalent durable multi-user database for hub
+  deployments
+- define production backup and restore around database-native backups plus
+  protected media backup
+- make storage routing exhaustive and enum-driven
+- continue using typed filesystem wrappers for every filesystem mutation
+- reduce direct dependence on `STORAGE_DIR` absolute paths for integration
+  behavior
 
-The current support for non-SQLite production databases is a good foundation,
-but the hub profile should be explicit: PostgreSQL is required, and media must
-be backed by durable storage semantics compatible with central operation and
-recovery.
+### Operations
 
-### Export and operations
-
-Exports should remain available, but their role must be reframed.
-
-Required outcomes:
-
-- keep fixture export and import for development, testing, and migration work
-- define hub-grade operational backup expectations as database-native backups
-  plus media storage backup and versioning
-- keep dataset export and media/report streaming as product features, but do not
-  position them as disaster recovery or synchronization mechanisms
-
-### Security and access
-
-A hub must tighten both ingest and read access.
+Operational guidance exists for local study server deployment, but central-hub
+runbooks are still incomplete.
 
 Required outcomes:
 
-- remove anonymous upload and upload-status access for hub deployments
-- require authenticated, centre-aware authorization for ingest and media access
-- keep Nginx offload for heavy media delivery
-
-Nginx offload is aligned with the deployment model for large media, so it should
-remain part of the target architecture.
-
-## Important Interfaces And Public Contract Changes
-
-The roadmap requires these public-facing changes:
-
-- the upload API must change from anonymous file drop to authenticated,
-  centre-aware ingest
-- the upload job model must gain source identity and idempotency metadata
-- the centre model must gain a unique immutable key suitable for tenancy and
-  routing
-- the hub deployment contract must require PostgreSQL and durable shared storage
-  semantics
-- watcher-based local drop-folder ingestion remains a supported first-class
-  ingestion mode for safe system dropoff
-- authenticated remote hub ingest is added alongside the watcher path, and both
-  must converge on the same ingest core
-
-These are not internal-only refactors. They change the integration contract of
-the system and should be communicated as such.
+- document central-hub backup and restore
+- document mTLS proxy expectations and headers
+- document node and centre provisioning
+- document transfer cleanup and quarantine handling
+- define health checks for failed/lost upload jobs, inconsistent transfer jobs,
+  quarantine growth, storage capacity, audit logging, and media integrity
 
 ## Implementation Phases
 
-The implementation should proceed in the following order.
-
-### 1. Foundation
-
-Deliver these first:
-
-- unique centre identity
-- PostgreSQL-only hub profile
-- authenticated ingest model
-
-This phase creates the minimum trust and tenancy foundation required for all
-later changes.
-
-### 2. Ingestion hardening
+### 1. Close authorization gaps
 
 Deliver next:
 
-- idempotent upload contract
-- upload job metadata expansion
-- preserve watcher-based safe dropoff ingestion alongside the new hub/API ingest
-- converge watcher and API ingestion on one shared ingest core
+- centre-filtered report and video list endpoints
+- centre checks on report and video detail and stream endpoints
+- centre-scoped timeline, search, export, and workflow endpoints
+- tests proving cross-centre reads are denied or filtered consistently
 
-The goal of this phase is to make both ingestion modes safe and attributable:
-remote-machine ingestion must become repeatable under retries or duplicate
-submissions, while watcher ingestion must keep its current safety properties for
-system dropoff.
-
-### 3. Storage abstraction
+### 2. Harden transfer authentication
 
 Deliver next:
 
-- remove assumptions that all consumers can read local files directly
-- define durable managed media layout
+- explicit active-node credential requirements
+- tests for missing `shared_secret_hash` in central-hub transfer mode
+- documented proxy mTLS metadata contract
+- audit events for all transfer auth failures that can be safely logged
 
-This phase should separate integration behavior from local path layout so the hub
-can evolve toward durable shared storage or object-storage-style access.
-
-### 4. Authorization consistency
+### 3. Add envelope encryption
 
 Deliver next:
 
-- centre scoping across all relevant APIs
+- per-transfer data encryption key generation
+- payload encryption with the data encryption key
+- data encryption key wrapping with receiver public key
+- transfer metadata fields for wrapped keys and encryption parameters
+- tests proving no master key is transmitted or persisted in application config
 
-This includes ingest, read, media retrieval, exports, search, and any workflow
-that exposes patient-linked or centre-linked data.
+### 4. Finish storage abstraction
 
-### 5. Operations
+Deliver next:
+
+- typed storage-service interface for integration-facing media access
+- exhaustive storage-mode branching for video and report artifacts
+- removal of direct local path assumptions from transfer and export boundaries
+- durable shared-media or object-storage-compatible deployment contract
+
+### 5. Complete operations
 
 Deliver last:
 
-- production backup and restore guidance
-- monitoring guidance for hub deployment
-
-By this point the target architecture should be stable enough that the
-operational guidance can describe the real production profile rather than the
-legacy local-development workflow.
+- central-hub backup and restore runbook
+- transfer cleanup executor
+- media integrity reconciliation for hub transfers
+- production monitoring and alerting guidance
 
 ## Acceptance Criteria
 
-The work is only complete when all of the following are true:
+The hub roadmap is complete only when all of the following are true:
 
-- a remote machine can upload report or video data with authenticated centre
-  identity
-- duplicate uploads from multiple machines do not create duplicate logical
-  records
-- a non-privileged user only sees data for allowed centres
-- hub deployment works with PostgreSQL and shared durable media storage
-- backup and restore guidance is production-grade and no longer based on
-  `dumpdata` as the primary operational story
+- a remote site node can submit anonymized metadata and processed media to a
+  central hub with mTLS and node authentication
+- raw media export or raw media transfer is rejected
+- transfer blobs that leave the local storage boundary are envelope-encrypted
+- duplicate upload and transfer submissions resolve idempotently
+- non-privileged users cannot read or list data outside their allowed centre
+- hub deployments run on a durable production database
+- media storage has documented backup, restore, and integrity reconciliation
+- transfer cleanup policies are executed or explicitly deferred with audited
+  state
+- recovery procedures restore both database state and protected media references
 
 ## Verification Plan
 
-The implementation must be verified with these scenarios:
+Required verification scenarios:
 
-- authenticated upload succeeds for an allowed centre and records source metadata
-- unauthenticated upload is rejected
-- the same logical upload from two machines resolves idempotently
-- watcher ingestion still safely processes files from system dropoff
-- watcher and API ingestion both converge on the same canonical managed-storage
-  result
-- centre-scoped users cannot read other centres’ reports, videos, or upload jobs
-- report and video retrieval still work with Nginx offload enabled
-- dataset export still works after tenancy and authentication changes
-- PostgreSQL-backed deployment passes core ingest and retrieval flows
-- the recovery procedure restores both database state and media references
-  correctly
+- central-hub production settings fail without mTLS configuration
+- central-hub production settings fail with SQLite
+- authenticated API upload with valid `center_key` succeeds
+- unauthenticated strict-mode API upload is rejected
+- missing strict-mode `center_key` is rejected
+- same logical upload resolves idempotently by content hash or idempotency key
+- local study server rejects raw watcher ingest
+- local study server accepts only strict validated preanonymized sidecars
+- transfer endpoints return `404` outside enabled central-hub transfer mode
+- transfer registration requires secure transport, mTLS metadata, and matching
+  node credentials
+- transfer registration rejects raw media modes
+- transfer media upload rejects `raw` and accepts only verified `processed`
+  media
+- centre-scoped users cannot read or list other centres' reports, videos,
+  uploads, transfers, timelines, or exports
+- streaming continues to work through Nginx offload after authorization checks
+- database-native restore plus protected-media restore preserves media
+  references and integrity
 
-## Backwards Compatibility Guardrails For File Watcher
+## Compatibility Guardrails
 
-The migration toward hub-grade ingest must not break the trusted local
-filewatcher flow that already exists in this repository.
+The current transition must preserve existing safe workflows while tightening
+hub behavior.
 
-Required guardrails:
+Guardrails:
 
-- keep `scripts/file_watcher.py` as a supported entrypoint for local drop-folder
-  ingestion
-- keep default-centre resolution for watcher ingestion through configured
-  application defaults so existing deployments do not need a new watcher-side
-  centre selector on day one
-- let watcher ingestion keep file-stability checks, path-based polling, and the
-  current import-service cleanup semantics
-- move shared job creation, source metadata, and provenance recording into the
-  shared ingest core so watcher and API ingest diverge only at the boundary
-- tighten API centre validation without forcing watcher clients to send new
-  fields they do not have today
-
-This means "backwards compatible" does not mean freezing the ingest model in its
-current state. It means the watcher remains a first-class supported boundary
-while the authenticated API becomes stricter about declared centre identity and
-tenant scope.
-
-## Current Implementation Status
-
-The repository has already started this transition:
-
-- `Center` now has a durable `center_key`
-- `UploadJob` now records `source_center`, `source_system`, `ingest_mode`,
-  `idempotency_key`, and `processing_provenance`
-- watcher ingestion already creates upload jobs through
-  `endoreg_db.services.hub`
-- API uploads and watcher ingestion now conceptually share the same ingest
-  metadata model
-
-The next safe steps should continue from that base:
-
-- reject invalid declared API centre identities instead of silently falling back
-  to the first centre
-- preserve watcher default-centre behavior until watcher-side explicit centre
-  routing is intentionally introduced
-- extend tests so watcher compatibility remains enforced while hub ingest grows
-  stricter
+- keep `center_key` immutable
+- keep name-based centre resolution only where needed for compatibility
+- keep default-centre fallback outside strict API upload modes
+- keep watcher-compatible service functions for trusted local ingestion
+- keep `local_study_server` raw watcher ingest disabled
+- keep upload source cleanup retention-driven
+- keep fixture export/import available for development and migration work
+- do not position fixture export/import as hub disaster recovery
+- keep all API payload fields snake_case
 
 ## Assumptions
 
 - This document is an engineering roadmap, not user-facing documentation.
-- It intentionally preserves existing export capabilities while reframing which
-  ones are product features versus operational tooling.
-- It is behavior-focused and implementation-oriented, not a file-by-file dump of
-  the repository.
+- It intentionally separates current implementation from remaining target
+  architecture.
+- It preserves export and streaming as product features while treating backup,
+  synchronization, and cryptographic transfer as separate operational
+  concerns.

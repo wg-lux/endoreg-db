@@ -12,8 +12,8 @@ For module/layer naming and architecture context, see:
 
 ## Where YAML Is Used
 Many management commands load model data from YAML files via:
-- canonical: `endoreg_db.utils.yaml_model_loader.load_model_data_from_yaml`
-- legacy compatibility path: `endoreg_db.utils.dataloader.load_model_data_from_yaml`
+- canonical: `endoreg_db.utils.data_loading.yaml_model_loader.load_model_data_from_yaml`
+- legacy compatibility path: `endoreg_db.utils.data_loading.dataloader.load_model_data_from_yaml`
 
 Base bootstrap is typically triggered by:
 - `load_base_db_data`

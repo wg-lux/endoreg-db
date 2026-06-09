@@ -14,7 +14,6 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Mapping, MutableMapping, Optional
 
-
 DJANGO_SETTINGS_MODULE_ENV = "DJANGO_SETTINGS_MODULE"
 PROTECTED_ROOT_ENV = "LX_ANNOTATE_ENCRYPTED_DATA_DIR"
 STORAGE_DIR_ENV = "STORAGE_DIR"
@@ -34,10 +33,24 @@ DEFAULT_WATCHER_POLL_INTERVAL_SECONDS = 5.0
 DEFAULT_WATCHER_STABLE_AFTER_SECONDS = 10.0
 DEFAULT_VIDEO_POST_VALIDATION_JOB_MAX_WORKERS = 2
 DEFAULT_VIDEO_POST_VALIDATION_JOB_MODE = "celery"
+DEFAULT_VIDEO_POST_VALIDATION_DISPATCH_DELAY_SECONDS = 60
+DEFAULT_MEDIA_OPERATION_STREAM_LEASE_SECONDS = 120
+DEFAULT_MEDIA_OPERATION_SEGMENT_UPDATE_GRACE_SECONDS = 75
+DEFAULT_VIDEO_TEMPORAL_INFERENCE_JOB_MODE = "celery"
+DEFAULT_VIDEO_TEMPORAL_INFERENCE_FRAME_SOURCE_MODE = "stream"
 DEFAULT_CELERY_DEFAULT_QUEUE = "default"
 DEFAULT_CELERY_PIPELINE_QUEUE = "pipeline"
+DEFAULT_CELERY_FRAME_EXTRACTION_QUEUE = "frame_extraction"
+DEFAULT_CELERY_FFMPEG_MEDIA_QUEUE = "ffmpeg_media"
+DEFAULT_CELERY_INFERENCE_QUEUE = "inference"
+DEFAULT_CELERY_TRAINING_QUEUE = "model_training"
+DEFAULT_CELERY_LLM_INFERENCE_QUEUE = "llm_inference"
 DEFAULT_CELERY_MAINTENANCE_QUEUE = "maintenance"
 DEFAULT_CELERY_AUDIT_LEDGER_INTEGRITY_INTERVAL_SECONDS = 300
+DEFAULT_MODEL_TRAINING_JOB_MODE = "celery"
+DEFAULT_MODEL_TRAINING_STAGING_ROOT = "/mnt/fast-nvme-cache/endoreg-training"
+SECURE_PROXY_SSL_HEADER_NAME_ENV = "DJANGO_SECURE_PROXY_SSL_HEADER_NAME"
+SECURE_PROXY_SSL_HEADER_VALUE_ENV = "DJANGO_SECURE_PROXY_SSL_HEADER_VALUE"
 ENDOREG_DEPLOYMENT_ROLE_VALUES = (
     "standalone",
     "site_node",
@@ -247,6 +260,31 @@ def env_list(key: str, default: str = "", *, separator: str = ",") -> list[str]:
     return [item.strip() for item in raw_value.split(separator) if item.strip()]
 
 
+def get_secure_proxy_ssl_header() -> tuple[str, str] | None:
+    raw_name = env_str(SECURE_PROXY_SSL_HEADER_NAME_ENV, "").strip()
+    raw_value = env_str(SECURE_PROXY_SSL_HEADER_VALUE_ENV, "").strip()
+    if not raw_name and not raw_value:
+        return None
+    if not raw_name or not raw_value:
+        raise ValueError(
+            f"{SECURE_PROXY_SSL_HEADER_NAME_ENV} and "
+            f"{SECURE_PROXY_SSL_HEADER_VALUE_ENV} must be set together"
+        )
+
+    header_name = raw_name.upper().replace("-", "_")
+    if header_name == "X_FORWARDED_PROTO":
+        header_name = "HTTP_X_FORWARDED_PROTO"
+    if header_name != "HTTP_X_FORWARDED_PROTO":
+        raise ValueError(
+            f"{SECURE_PROXY_SSL_HEADER_NAME_ENV} must be HTTP_X_FORWARDED_PROTO"
+        )
+
+    secure_value = raw_value.lower()
+    if secure_value != "https":
+        raise ValueError(f"{SECURE_PROXY_SSL_HEADER_VALUE_ENV} must be https")
+    return (header_name, secure_value)
+
+
 def get_asset_dir() -> Path:
     return env_path("ASSET_DIR", "tests/assets")
 
@@ -266,6 +304,10 @@ def get_endoreg_deployment_role() -> str:
             f"ENDOREG_DEPLOYMENT_ROLE must be one of: {', '.join(ENDOREG_DEPLOYMENT_ROLE_VALUES)}"
         )
     return role or "standalone"
+
+
+def get_enable_hub_transfers() -> bool:
+    return env_bool("ENDOREG_ENABLE_HUB_TRANSFERS", False)
 
 
 def get_hub_transfer_require_secure_transport() -> bool:
@@ -326,6 +368,26 @@ def get_celery_broker_url() -> str:
     return env_str("CELERY_BROKER_URL", "")
 
 
+def celery_runtime_config_strict(*, deployment_role: str | None = None) -> bool:
+    settings_module = env_str(
+        DJANGO_SETTINGS_MODULE_ENV,
+        DEFAULT_DJANGO_SETTINGS_MODULE,
+    ).strip()
+    role = (deployment_role or get_endoreg_deployment_role()).strip().lower()
+    default = settings_module.endswith(".prod") or role in {
+        "central_hub",
+        "local_study_server",
+    }
+    return env_bool("CELERY_RUNTIME_CONFIG_STRICT", default)
+
+
+def celery_requires_secure_transport(*, deployment_role: str | None = None) -> bool:
+    return env_bool(
+        "CELERY_REQUIRE_SECURE_TRANSPORT",
+        celery_runtime_config_strict(deployment_role=deployment_role),
+    )
+
+
 def get_celery_default_queue() -> str:
     return env_str("CELERY_DEFAULT_QUEUE", DEFAULT_CELERY_DEFAULT_QUEUE).strip()
 
@@ -334,12 +396,93 @@ def get_celery_pipeline_queue() -> str:
     return env_str("CELERY_PIPELINE_QUEUE", DEFAULT_CELERY_PIPELINE_QUEUE).strip()
 
 
+def get_celery_frame_extraction_queue() -> str:
+    return env_str(
+        "CELERY_FRAME_EXTRACTION_QUEUE",
+        DEFAULT_CELERY_FRAME_EXTRACTION_QUEUE,
+    ).strip()
+
+
+def get_celery_ffmpeg_media_queue() -> str:
+    return env_str(
+        "CELERY_FFMPEG_MEDIA_QUEUE",
+        DEFAULT_CELERY_FFMPEG_MEDIA_QUEUE,
+    ).strip()
+
+
+def get_celery_inference_queue() -> str:
+    return env_str("CELERY_INFERENCE_QUEUE", DEFAULT_CELERY_INFERENCE_QUEUE).strip()
+
+
+def get_celery_training_queue() -> str:
+    return env_str("CELERY_TRAINING_QUEUE", DEFAULT_CELERY_TRAINING_QUEUE).strip()
+
+
+def get_celery_llm_inference_queue() -> str:
+    return env_str(
+        "CELERY_LLM_INFERENCE_QUEUE",
+        DEFAULT_CELERY_LLM_INFERENCE_QUEUE,
+    ).strip()
+
+
 def get_celery_maintenance_queue() -> str:
     return env_str("CELERY_MAINTENANCE_QUEUE", DEFAULT_CELERY_MAINTENANCE_QUEUE).strip()
 
 
+def celery_broker_url_uses_secure_transport(broker_url: str | None = None) -> bool:
+    raw_url = broker_url if broker_url is not None else get_celery_broker_url()
+    scheme = raw_url.split(":", 1)[0].strip().lower()
+    return scheme in {"amqps", "rediss"}
+
+
+def celery_broker_secure_transport_confirmed() -> bool:
+    return env_bool("CELERY_BROKER_SECURE_TRANSPORT_CONFIRMED", False)
+
+
+def celery_broker_transport_error(
+    *,
+    broker_url: str | None = None,
+    require_broker: bool = False,
+    require_secure_transport: bool = False,
+    workload: str = "Celery",
+) -> str | None:
+    raw_url = (
+        broker_url if broker_url is not None else get_celery_broker_url()
+    ).strip()
+    if require_broker and not raw_url:
+        return f"{workload} dispatch requires CELERY_BROKER_URL."
+    if not raw_url or not require_secure_transport:
+        return None
+    if celery_broker_secure_transport_confirmed():
+        return None
+    if celery_broker_url_uses_secure_transport(raw_url):
+        return None
+    return (
+        f"{workload} dispatch requires secure broker transport "
+        "or CELERY_BROKER_SECURE_TRANSPORT_CONFIRMED=1."
+    )
+
+
+def celery_frame_extraction_requires_secure_transport() -> bool:
+    return env_bool(
+        "CELERY_FRAME_EXTRACTION_REQUIRE_SECURE_TRANSPORT",
+        celery_requires_secure_transport(),
+    )
+
+
+def celery_ffmpeg_media_requires_secure_transport() -> bool:
+    return env_bool(
+        "CELERY_FFMPEG_MEDIA_REQUIRE_SECURE_TRANSPORT",
+        celery_frame_extraction_requires_secure_transport(),
+    )
+
+
 def celery_audit_ledger_integrity_beat_enabled() -> bool:
     return env_bool("CELERY_BEAT_AUDIT_LEDGER_INTEGRITY_ENABLED", True)
+
+
+def watcher_celery_inline_fallback_enabled() -> bool:
+    return env_bool("WATCHER_CELERY_INLINE_FALLBACK_ENABLED", False)
 
 
 def get_celery_audit_ledger_integrity_interval_seconds() -> int:
@@ -470,6 +613,82 @@ def get_video_post_validation_job_mode() -> str:
     return mode
 
 
+def get_video_post_validation_dispatch_delay_seconds() -> int:
+    return max(
+        0,
+        env_int(
+            "VIDEO_POST_VALIDATION_DISPATCH_DELAY_SECONDS",
+            DEFAULT_VIDEO_POST_VALIDATION_DISPATCH_DELAY_SECONDS,
+        ),
+    )
+
+
+def get_media_operation_stream_lease_seconds() -> int:
+    return max(
+        1,
+        env_int(
+            "MEDIA_OPERATION_STREAM_LEASE_SECONDS",
+            DEFAULT_MEDIA_OPERATION_STREAM_LEASE_SECONDS,
+        ),
+    )
+
+
+def get_media_operation_segment_update_grace_seconds() -> int:
+    return max(
+        1,
+        env_int(
+            "MEDIA_OPERATION_SEGMENT_UPDATE_GRACE_SECONDS",
+            DEFAULT_MEDIA_OPERATION_SEGMENT_UPDATE_GRACE_SECONDS,
+        ),
+    )
+
+
+def get_video_temporal_inference_job_mode() -> str:
+    mode = (
+        env_str(
+            "VIDEO_TEMPORAL_INFERENCE_JOB_MODE",
+            DEFAULT_VIDEO_TEMPORAL_INFERENCE_JOB_MODE,
+        )
+        .strip()
+        .lower()
+    )
+    if mode not in {"celery", "thread", "inline"}:
+        return DEFAULT_VIDEO_TEMPORAL_INFERENCE_JOB_MODE
+    return mode
+
+
+def get_video_temporal_inference_frame_source_mode() -> str:
+    mode = (
+        env_str(
+            "VIDEO_TEMPORAL_INFERENCE_FRAME_SOURCE_MODE",
+            DEFAULT_VIDEO_TEMPORAL_INFERENCE_FRAME_SOURCE_MODE,
+        )
+        .strip()
+        .lower()
+    )
+    if mode not in {"cache", "stream", "auto"}:
+        return DEFAULT_VIDEO_TEMPORAL_INFERENCE_FRAME_SOURCE_MODE
+    return mode
+
+
+def get_model_training_job_mode() -> str:
+    mode = (
+        env_str("MODEL_TRAINING_JOB_MODE", DEFAULT_MODEL_TRAINING_JOB_MODE)
+        .strip()
+        .lower()
+    )
+    if mode not in {"celery", "thread", "inline"}:
+        return DEFAULT_MODEL_TRAINING_JOB_MODE
+    return mode
+
+
+def get_model_training_staging_root() -> Path:
+    return env_path(
+        "MODEL_TRAINING_STAGING_ROOT",
+        DEFAULT_MODEL_TRAINING_STAGING_ROOT,
+    )
+
+
 def get_cache_location() -> str:
     return env_str("CACHE_LOCATION", DEFAULT_CACHE_LOCATION)
 
@@ -537,6 +756,16 @@ def snapshot() -> Dict[str, Any]:
         "RUN_VIDEO_TESTS",
         "SKIP_EXPENSIVE_TESTS",
         "ENDOREG_DEPLOYMENT_ROLE",
+        "ENDOREG_ENABLE_HUB_TRANSFERS",
+        "CELERY_BROKER_URL",
+        "CELERY_REQUIRE_SECURE_TRANSPORT",
+        "CELERY_RUNTIME_CONFIG_STRICT",
+        "CELERY_BROKER_SECURE_TRANSPORT_CONFIRMED",
+        "WATCHER_CELERY_INLINE_FALLBACK_ENABLED",
+        "CELERY_TRAINING_QUEUE",
+        "CELERY_LLM_INFERENCE_QUEUE",
+        "MODEL_TRAINING_JOB_MODE",
+        "MODEL_TRAINING_STAGING_ROOT",
         "CACHE_LOCATION",
         "CACHE_TIMEOUT",
         "DRF_THROTTLE_USER",

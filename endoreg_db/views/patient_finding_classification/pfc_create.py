@@ -1,11 +1,11 @@
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
-from endoreg_db.models import (
-    PatientFinding,
-    FindingClassificationChoice,
+from endoreg_db.models.medical.finding.finding_classification import (
     FindingClassification,
+    FindingClassificationChoice,
 )
+from endoreg_db.models.medical.patient.patient_finding import PatientFinding
 
 
 @api_view(["POST"])

@@ -6,7 +6,7 @@ import pytest
 from django.test.utils import override_settings
 
 from endoreg_db.export.frames import export_frames_with_labels as export_module
-from endoreg_db.utils.file_operations import atomic_write_file
+from endoreg_db.utils.filesystem.file_operations import atomic_write_file
 
 
 class _FakeValuesList:
@@ -114,6 +114,19 @@ def test_export_videos_rejects_unvalidated_media(tmp_path, monkeypatch):
             _FakeAnnotations(video.pk),
             output_dir=tmp_path,
         )
+
+
+def test_export_videos_rejects_failed_lost_media():
+    video = SimpleNamespace(
+        pk=7,
+        state=SimpleNamespace(
+            processing_error=True,
+            anonymization_validated=True,
+        ),
+    )
+
+    with pytest.raises(ValueError, match="failed/lost"):
+        export_module._assert_video_media_export_ready(video)
 
 
 @override_settings(ENDOREG_DEPLOYMENT_ROLE="local_study_server")

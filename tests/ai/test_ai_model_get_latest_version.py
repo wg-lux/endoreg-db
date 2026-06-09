@@ -3,6 +3,11 @@
 import pytest
 from unittest.mock import patch
 from endoreg_db.models import AiModel, ModelMeta, LabelSet
+from endoreg_db.models.administration.ai.ai_model import (
+    DEFAULT_HF_MODEL_ID,
+    DEFAULT_PREDICTION_LABELSET_NAME,
+    DEFAULT_PREDICTION_MODEL_NAME,
+)
 
 
 @pytest.mark.django_db
@@ -98,4 +103,47 @@ def test_get_latest_version_calls_hf_service_when_no_meta():
         meta_version="1",
     )
 
+    assert result is fake_meta
+
+
+@pytest.mark.django_db
+def test_get_latest_version_repairs_default_active_meta_with_missing_weights():
+    labelset = LabelSet.objects.create(
+        name=DEFAULT_PREDICTION_LABELSET_NAME,
+        version=1,
+    )
+    ai_model = AiModel.objects.create(
+        name=DEFAULT_PREDICTION_MODEL_NAME,
+        description="default prediction model",
+    )
+    active_meta = ModelMeta.objects.create(
+        name=DEFAULT_PREDICTION_MODEL_NAME,
+        model=ai_model,
+        version="1",
+        labelset=labelset,
+        weights="model_weights/missing.safetensors",
+    )
+    ai_model.active_meta = active_meta
+    ai_model.save(update_fields=["active_meta"])
+
+    fake_meta = ModelMeta(
+        name=DEFAULT_PREDICTION_MODEL_NAME,
+        model=ai_model,
+        version="1",
+        labelset=labelset,
+    )
+
+    with patch(
+        "endoreg_db.services.model_meta_from_hf.ensure_model_meta_from_hf",
+        return_value=fake_meta,
+    ) as mock_ensure:
+        result = ai_model.get_latest_version()
+
+    mock_ensure.assert_called_once_with(
+        model_id=DEFAULT_HF_MODEL_ID,
+        model_name=DEFAULT_PREDICTION_MODEL_NAME,
+        labelset_name=DEFAULT_PREDICTION_LABELSET_NAME,
+        meta_version="1",
+        labelset_version=1,
+    )
     assert result is fake_meta

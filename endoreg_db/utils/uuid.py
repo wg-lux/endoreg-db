@@ -1,5 +1,7 @@
-import uuid
+"""Compatibility imports for :mod:`endoreg_db.utils.core.uuid`."""
 
+from __future__ import annotations
 
-def get_uuid():
-    return uuid.uuid4()
+from endoreg_db.utils._compat import reexport_public_module
+
+reexport_public_module("endoreg_db.utils.core.uuid", globals())

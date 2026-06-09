@@ -170,11 +170,11 @@ class SensitiveMetaUpdateSerializer(serializers.ModelSerializer):
     def validate_patient_gender_name(self, value):
         """Validate gender exists and return the instance."""
         if value:
-            try:
-                # Return the instance to avoid double query in update()
-                return Gender.objects.get(name=value)
-            except Gender.DoesNotExist:
+            gender = Gender.objects.resolve_by_name(value)
+            if gender is None:
                 raise serializers.ValidationError(f"Gender '{value}' does not exist.")
+            # Return the instance to avoid double query in update()
+            return gender
         return value
 
     def validate(self, data):

@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from endoreg_db.models import Center, UploadJob
+from endoreg_db.models import Center, EndoscopyProcessor, UploadJob, VideoFile
 from endoreg_db.services.hub import ingest
+from endoreg_db.utils.filesystem.file_operations import (
+    atomic_write_file,
+    safe_unlink_file,
+    sha256_file,
+)
+from endoreg_db.utils.storage import save_local_file
 
 
 @pytest.fixture
@@ -15,6 +22,88 @@ def watcher_center() -> Center:
         name="watcher-storage-center",
         display_name="Watcher Storage Center",
     )
+
+
+def _write_test_file(path, content: bytes):
+    return atomic_write_file(
+        destination=path,
+        content=(content,),
+        required_bytes=len(content),
+    )
+
+
+def _create_completed_video_upload(
+    *,
+    tmp_path,
+    watcher_center: Center,
+    filename: str,
+    content: bytes,
+    include_raw: bool,
+    include_processed: bool,
+    storage_tier: str = UploadJob.StorageTier.UPLOAD_WATCHER,
+    source_system: str = "watcher",
+    processing_provenance: ingest.UploadProvenance | None = None,
+) -> tuple[Path, UploadJob, VideoFile]:
+    EndoscopyProcessor.objects.get_or_create(name="watcher-integrity-processor")
+    watched_file = _write_test_file(tmp_path / filename, content)
+    provenance: ingest.UploadProvenance = {"file_type": "video"}
+    if processing_provenance is not None:
+        provenance.update(processing_provenance)
+    upload_job, created = ingest.create_or_reuse_watcher_upload_job(
+        file_path=watched_file,
+        content_type="video/mp4",
+        source_center=watcher_center,
+        source_system=source_system,
+        storage_tier=storage_tier,
+        processing_provenance=provenance,
+    )
+    assert created is True
+
+    file_hash = sha256_file(watched_file)
+    video = VideoFile.objects.create(
+        center=watcher_center,
+        original_file_name=filename,
+        video_hash=file_hash,
+        suffix=".mp4",
+    )
+    update_fields: list[str] = []
+    if include_raw:
+        raw_source = _write_test_file(tmp_path / f"raw-{filename}", content)
+        save_local_file(
+            video.raw_file,
+            raw_source,
+            name=f"{file_hash}.mp4",
+            save=False,
+        )
+        update_fields.append("raw_file")
+    if include_processed:
+        processed_source = _write_test_file(
+            tmp_path / f"processed-{filename}",
+            b"processed:" + content,
+        )
+        processed_hash = sha256_file(processed_source)
+        save_local_file(
+            video.processed_file,
+            processed_source,
+            name=f"{processed_hash}.mp4",
+            save=False,
+        )
+        video.processed_video_hash = processed_hash
+        update_fields.extend(["processed_file", "processed_video_hash"])
+    if update_fields:
+        video.save(update_fields=update_fields)
+    video.get_or_create_state().mark_anonymization_validated()
+    upload_job.mark_completed()
+    return watched_file, upload_job, video
+
+
+def _fake_video_import(video: VideoFile):
+    def _import_and_anonymize(*, file_path, center_name, processor_name, retry):
+        assert Path(file_path).exists()
+        safe_unlink_file(Path(file_path), missing_ok=False)
+        return video
+
+    return _import_and_anonymize
 
 
 @pytest.mark.django_db
@@ -83,6 +172,184 @@ def test_process_watcher_file_reuse_deletes_duplicate_drop_without_reprocessing(
     assert reused_job.id == original_id
     assert reused_job.status == UploadJob.Status.PENDING
     assert not watched_file.exists()
+
+
+@pytest.mark.django_db
+def test_completed_watcher_video_with_intact_media_reuses_duplicate_drop(
+    tmp_path,
+    watcher_center: Center,
+):
+    watched_file, upload_job, _video = _create_completed_video_upload(
+        tmp_path=tmp_path,
+        watcher_center=watcher_center,
+        filename="complete-video.mp4",
+        content=b"complete-video",
+        include_raw=True,
+        include_processed=True,
+    )
+
+    with patch(
+        "endoreg_db.services.hub.ingest.VideoImportService.import_and_anonymize",
+        side_effect=AssertionError("complete media must be reused"),
+    ):
+        reused_job = ingest.process_watcher_file(
+            file_path=watched_file,
+            file_type="video",
+            center=watcher_center,
+        )
+
+    upload_job.refresh_from_db()
+    assert reused_job.id == upload_job.id
+    assert upload_job.status == UploadJob.Status.ANONYMIZED
+    assert not watched_file.exists()
+
+
+@pytest.mark.django_db
+def test_completed_watcher_video_missing_raw_marks_old_job_lost_and_reingests(
+    tmp_path,
+    watcher_center: Center,
+):
+    watched_file, upload_job, video = _create_completed_video_upload(
+        tmp_path=tmp_path,
+        watcher_center=watcher_center,
+        filename="missing-raw.mp4",
+        content=b"missing-raw-video",
+        include_raw=False,
+        include_processed=True,
+    )
+
+    with patch(
+        "endoreg_db.services.hub.ingest.VideoImportService.import_and_anonymize",
+        side_effect=_fake_video_import(video),
+    ):
+        new_job = ingest.process_watcher_file(
+            file_path=watched_file,
+            file_type="video",
+            center=watcher_center,
+        )
+
+    upload_job.refresh_from_db()
+    new_job.refresh_from_db()
+    assert new_job.id != upload_job.id
+    assert upload_job.status == UploadJob.Status.LOST
+    assert new_job.status == UploadJob.Status.ANONYMIZED
+    assert new_job.processing_provenance["previous_upload_job_id"] == str(upload_job.id)
+    assert new_job.processing_provenance["media_integrity_status"] == (
+        "artifact_missing"
+    )
+    assert (
+        "raw_file" in new_job.processing_provenance["media_integrity_missing_artifacts"]
+    )
+
+
+@pytest.mark.django_db
+def test_completed_watcher_video_missing_processed_marks_old_job_lost_and_reingests(
+    tmp_path,
+    watcher_center: Center,
+):
+    watched_file, upload_job, video = _create_completed_video_upload(
+        tmp_path=tmp_path,
+        watcher_center=watcher_center,
+        filename="missing-processed.mp4",
+        content=b"missing-processed-video",
+        include_raw=True,
+        include_processed=False,
+    )
+
+    with patch(
+        "endoreg_db.services.hub.ingest.VideoImportService.import_and_anonymize",
+        side_effect=_fake_video_import(video),
+    ):
+        new_job = ingest.process_watcher_file(
+            file_path=watched_file,
+            file_type="video",
+            center=watcher_center,
+        )
+
+    upload_job.refresh_from_db()
+    new_job.refresh_from_db()
+    assert new_job.id != upload_job.id
+    assert upload_job.status == UploadJob.Status.LOST
+    assert new_job.processing_provenance["media_integrity_status"] == (
+        "artifact_missing"
+    )
+    assert (
+        "processed_file"
+        in new_job.processing_provenance["media_integrity_missing_artifacts"]
+    )
+
+
+@pytest.mark.django_db
+def test_completed_watcher_video_unreadable_artifact_marks_old_job_lost(
+    tmp_path,
+    watcher_center: Center,
+):
+    watched_file, upload_job, video = _create_completed_video_upload(
+        tmp_path=tmp_path,
+        watcher_center=watcher_center,
+        filename="unreadable-artifact.mp4",
+        content=b"unreadable-artifact-video",
+        include_raw=True,
+        include_processed=True,
+    )
+
+    with (
+        patch(
+            "endoreg_db.services.hub.media_integrity.field_file_is_readable",
+            return_value=False,
+        ),
+        patch(
+            "endoreg_db.services.hub.ingest.VideoImportService.import_and_anonymize",
+            side_effect=_fake_video_import(video),
+        ),
+    ):
+        new_job = ingest.process_watcher_file(
+            file_path=watched_file,
+            file_type="video",
+            center=watcher_center,
+        )
+
+    upload_job.refresh_from_db()
+    new_job.refresh_from_db()
+    assert new_job.id != upload_job.id
+    assert upload_job.status == UploadJob.Status.LOST
+    assert new_job.processing_provenance["media_integrity_status"] == (
+        "artifact_unreadable"
+    )
+
+
+@pytest.mark.django_db
+def test_completed_preanonymized_video_does_not_require_raw_file_for_reuse(
+    tmp_path,
+    watcher_center: Center,
+):
+    watched_file, upload_job, _video = _create_completed_video_upload(
+        tmp_path=tmp_path,
+        watcher_center=watcher_center,
+        filename="preanonymized-complete.mp4",
+        content=b"preanonymized-complete-video",
+        include_raw=False,
+        include_processed=True,
+        storage_tier=UploadJob.StorageTier.UPLOAD_PREANONYMIZED,
+        source_system="watcher_preanonymized",
+        processing_provenance={"ingest_variant": "preanonymized"},
+    )
+    sidecar_path = _write_test_file(watched_file.with_suffix(".json"), b"{}")
+
+    with patch(
+        "endoreg_db.services.hub.ingest._finalize_preanonymized_video",
+        side_effect=AssertionError("preanonymized complete media must be reused"),
+    ):
+        reused_job = ingest.process_preanonymized_watcher_file(
+            file_path=watched_file,
+            center=watcher_center,
+        )
+
+    upload_job.refresh_from_db()
+    assert reused_job.id == upload_job.id
+    assert upload_job.status == UploadJob.Status.ANONYMIZED
+    assert not watched_file.exists()
+    assert not sidecar_path.exists()
 
 
 @pytest.mark.unit

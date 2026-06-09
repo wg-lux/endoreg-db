@@ -1,3 +1,4 @@
+
 import json
 import logging
 import os
@@ -10,34 +11,68 @@ from typing import Any, Dict, List, Optional, Tuple, Literal, cast
 from PIL import Image
 import numpy as np
 
-import cv2
-from tqdm import tqdm
+"""Compatibility facade for FFmpeg helpers.
 
-from endoreg_db.config.env import (
-    get_ffmpeg_env_candidates,
-    get_ffmpeg_transcode_timeout_seconds,
+The implementation lives in focused sibling modules. Keep imports from this
+module working for existing callers.
+"""
+
+
+import logging
+
+from .command_construction import (
+    TimestampRepairMode,
+    _TIMESTAMP_REPAIR_SEQUENCE,
+    _build_extract_frame_range_command,
+    _build_extract_frames_command,
+    _build_ffprobe_stream_info_command,
+    _build_filter_transcode_command,
+    _build_transcode_command,
+    _timestamp_repair_input_args,
+    _timestamp_repair_output_args,
+    _update_or_append_ffmpeg_arg,
 )
-from endoreg_db.utils.file_operations import (
-    atomic_copy_file,
-    ensure_directory,
-    safe_unlink_file,
+from .encoder_policy import (
+    _build_encoder_args,
+    _detect_nvenc_support,
+    _get_encoder_config,
+    _get_preferred_encoder,
 )
-
-logger = logging.getLogger("ffmpeg_wrapper")
-FFMPEG_TRANSCODE_TIMEOUT_SECONDS = get_ffmpeg_transcode_timeout_seconds()
-
-
-class TimestampRepairMode(str, Enum):
-    NONE = "none"
-    GENERATE_PTS = "generate_pts"
-    IGNORE_DTS = "ignore_dts"
-    RESET_TO_ZERO = "reset_to_zero"
-
-
-_TIMESTAMP_REPAIR_SEQUENCE = (
-    TimestampRepairMode.GENERATE_PTS,
-    TimestampRepairMode.IGNORE_DTS,
-    TimestampRepairMode.RESET_TO_ZERO,
+from .executable_discovery import (
+    _resolve_ffmpeg_executable,
+    _resolve_ffprobe_executable,
+    check_ffmpeg_availability,
+    is_ffmpeg_available,
+)
+from .frame_extraction import (
+    assemble_video_from_frames,
+    extract_frame_range,
+    extract_frames,
+)
+from .masking_filters import (
+    _blacken_filter_args,
+    _blacken_filter_args_from_normalized,
+    _build_blacken_filter_expression,
+    _build_blacken_filter_expression_from_normalized,
+    _build_roi_mask_and_blacken_filter_expression,
+    _build_roi_mask_filter_expressions,
+    _normalize_blacken_intervals,
+    _normalize_video_roi,
+    _roi_mask_and_blacken_filter_args,
+    blacken_video_frame_intervals,
+    mask_video_to_roi_and_blacken_intervals,
+)
+from .transcode_execution import (
+    FFMPEG_TRANSCODE_TIMEOUT_SECONDS,
+    _delete_partial_output,
+    _run_ffmpeg_command,
+    _stderr_indicates_timestamp_fault,
+    _transcode_output_is_valid,
+    _transcode_video_fallback,
+    _transcode_video_with_timestamp_repair,
+    get_stream_info,
+    transcode_video,
+    transcode_videofile_if_required,
 )
 
 # Global hardware acceleration cache
@@ -1461,13 +1496,47 @@ def extract_frame_range(
 
 
 __all__ = [
-    "is_ffmpeg_available",  # ADDED
-    "check_ffmpeg_availability",  # ADDED
+    "is_ffmpeg_available",
+    "check_ffmpeg_availability",
     "get_stream_info",
-    "assemble_video_from_frames",  # Updated name
+    "assemble_video_from_frames",
     "transcode_video",
     "transcode_videofile_if_required",
+    "blacken_video_frame_intervals",
+    "mask_video_to_roi_and_blacken_intervals",
     "extract_frames",
     "extract_frame_range",
     "extract_selected_frames_streamed",  # Add new function to __all__
+    "TimestampRepairMode",
+    "FFMPEG_TRANSCODE_TIMEOUT_SECONDS",
+    "_TIMESTAMP_REPAIR_SEQUENCE",
+    "_blacken_filter_args",
+    "_blacken_filter_args_from_normalized",
+    "_build_blacken_filter_expression",
+    "_build_blacken_filter_expression_from_normalized",
+    "_build_encoder_args",
+    "_build_extract_frame_range_command",
+    "_build_extract_frames_command",
+    "_build_ffprobe_stream_info_command",
+    "_build_filter_transcode_command",
+    "_build_roi_mask_and_blacken_filter_expression",
+    "_build_roi_mask_filter_expressions",
+    "_build_transcode_command",
+    "_delete_partial_output",
+    "_detect_nvenc_support",
+    "_get_encoder_config",
+    "_get_preferred_encoder",
+    "_normalize_blacken_intervals",
+    "_normalize_video_roi",
+    "_resolve_ffmpeg_executable",
+    "_resolve_ffprobe_executable",
+    "_roi_mask_and_blacken_filter_args",
+    "_run_ffmpeg_command",
+    "_stderr_indicates_timestamp_fault",
+    "_timestamp_repair_input_args",
+    "_timestamp_repair_output_args",
+    "_transcode_output_is_valid",
+    "_transcode_video_fallback",
+    "_transcode_video_with_timestamp_repair",
+    "_update_or_append_ffmpeg_arg",
 ]

@@ -8,7 +8,15 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
-from endoreg_db.models import Center
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.label.label_video_segment.label_video_segment import (
+    LabelVideoSegment,
+)
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.state.video_segment_validation import (
+    resolve_segment_annotation_status,
+    segment_annotations_are_final,
+)
 from endoreg_db.export.frames.export_frames_with_labels import (
     annotation_exporter_client,
     export_config,
@@ -18,7 +26,7 @@ from endoreg_db.services.hub import (
     local_study_server_mode_enabled,
     resolve_allowed_center_id,
 )
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
 
 _BOOLEAN_PAYLOAD_KEYS = {
     "only_true",
@@ -77,6 +85,72 @@ def _api_export_scope_error(request, config: export_config) -> tuple[str, int] |
             return "You do not have access to export center data.", 403
         if allowed_center_id is not None and center.id != allowed_center_id:
             return "Export center is outside the authenticated scope.", 403
+
+    return None
+
+
+def _scoped_video_queryset(queryset, config: export_config):
+    center_key = str(config.center_key or "").strip()
+    if center_key:
+        return queryset.filter(center__center_key=center_key)
+    return queryset
+
+
+def _scoped_segment_queryset(queryset, config: export_config):
+    center_key = str(config.center_key or "").strip()
+    if center_key:
+        return queryset.filter(video_file__center__center_key=center_key)
+    return queryset
+
+
+def _selected_video_ids_for_cleanup_preflight(config: export_config) -> set[int]:
+    video_ids: set[int] = set()
+    if config.video_id is not None:
+        video_ids.add(int(config.video_id))
+
+    if config.segment_ids:
+        segment_queryset = LabelVideoSegment.objects.filter(pk__in=config.segment_ids)
+        segment_queryset = _scoped_segment_queryset(segment_queryset, config)
+        video_ids.update(
+            int(video_id)
+            for video_id in segment_queryset.values_list("video_file_id", flat=True)
+            if video_id is not None
+        )
+    elif config.use_export_flags:
+        flagged_videos = _scoped_video_queryset(
+            VideoFile.objects.filter(export_segments_by_video=True),
+            config,
+        )
+        video_ids.update(
+            int(video_id) for video_id in flagged_videos.values_list("pk", flat=True)
+        )
+
+        flagged_segments = _scoped_segment_queryset(
+            LabelVideoSegment.objects.filter(export_segment=True),
+            config,
+        )
+        video_ids.update(
+            int(video_id)
+            for video_id in flagged_segments.values_list("video_file_id", flat=True)
+            if video_id is not None
+        )
+
+    return video_ids
+
+
+def _api_segment_cleanup_error(config: export_config) -> tuple[str, int] | None:
+    video_ids = _selected_video_ids_for_cleanup_preflight(config)
+    if not video_ids:
+        return None
+
+    for video in VideoFile.objects.select_related("state").filter(pk__in=video_ids):
+        if segment_annotations_are_final(video):
+            continue
+        segment_status = resolve_segment_annotation_status(video)
+        return (
+            f"Video {video.pk} segment cleanup is not complete: {segment_status}.",
+            409,
+        )
 
     return None
 
@@ -152,6 +226,11 @@ def export_annotated_data(request):
     scope_error = _api_export_scope_error(request, config)
     if scope_error is not None:
         error_message, status_code = scope_error
+        return Response({"success": False, "error": error_message}, status=status_code)
+
+    cleanup_error = _api_segment_cleanup_error(config)
+    if cleanup_error is not None:
+        error_message, status_code = cleanup_error
         return Response({"success": False, "error": error_message}, status=status_code)
 
     client = annotation_exporter_client()

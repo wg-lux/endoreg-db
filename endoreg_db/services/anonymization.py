@@ -5,14 +5,35 @@ from typing import Optional, Literal
 
 from django.db import transaction
 
-from endoreg_db.models import RawPdfFile, VideoFile
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.lx_video_contracts import resolve_lx_anonymization_state
 from endoreg_db.services.video_import import VideoImportService
+from endoreg_db.services.video_files import get_or_create_video_state
+from endoreg_db.services.raw_pdf_files import get_or_create_raw_pdf_state
 from endoreg_db.services.report_import import ReportImportService
-from endoreg_db.utils.paths import STORAGE_DIR
+from endoreg_db.utils.filesystem.paths import STORAGE_DIR
 from endoreg_db.utils.storage import ensure_local_file, file_exists
 
 logger = logging.getLogger(__name__)
+
+
+def _video_integrity_status(video: VideoFile) -> tuple[str, str]:
+    payload = video.meta if isinstance(video.meta, dict) else {}
+    integrity_status = str(payload.get("integrity_status") or "").strip()
+    integrity_error = str(payload.get("integrity_error") or "").strip()
+    if not integrity_status and bool(
+        getattr(getattr(video, "state", None), "processing_error", False)
+    ):
+        integrity_status = "lost"
+    return integrity_status, integrity_error
+
+
+def _video_has_integrity_failure(video: VideoFile) -> bool:
+    integrity_status, _ = _video_integrity_status(video)
+    return integrity_status == "lost" or bool(
+        getattr(getattr(video, "state", None), "processing_error", False)
+    )
 
 
 class AnonymizationService:
@@ -56,10 +77,13 @@ class AnonymizationService:
                 .first()
             )
             if vf:
+                integrity_status, integrity_error = _video_integrity_status(vf)
                 return {
-                    "mediaType": "video",
-                    "anonymizationStatus": resolve_lx_anonymization_state(vf).value,
-                    "fileExists": file_exists(vf.raw_file),
+                    "media_type": "video",
+                    "anonymization_status": resolve_lx_anonymization_state(vf).value,
+                    "integrity_status": integrity_status,
+                    "integrity_error": integrity_error,
+                    "file_exists": file_exists(vf.raw_file),
                     "uuid": str(vf.video_hash) if vf.video_hash else None,
                 }
 
@@ -71,12 +95,13 @@ class AnonymizationService:
                 .first()
             )
             if pdf:
+                anonymization_status = (
+                    pdf.state.anonymization_status if pdf.state else "not_started"
+                )
                 return {
-                    "mediaType": "pdf",
-                    "anonymizationStatus": (
-                        pdf.state.anonymization_status if pdf.state else "not_started"
-                    ),
-                    "fileExists": file_exists(pdf.file),
+                    "media_type": "pdf",
+                    "anonymization_status": anonymization_status,
+                    "file_exists": file_exists(pdf.file),
                     "hash": pdf.pdf_hash,
                 }
 
@@ -110,6 +135,18 @@ class AnonymizationService:
                         f"Starting video anonymization for VideoFile ID: {file_id}"
                     )
 
+                    if _video_has_integrity_failure(vf):
+                        integrity_status, integrity_error = _video_integrity_status(vf)
+                        logger.error(
+                            "Refusing anonymization for failed/lost VideoFile %s "
+                            "(hash=%s, integrity_status=%s, reason=%s)",
+                            file_id,
+                            vf.video_hash,
+                            integrity_status,
+                            integrity_error,
+                        )
+                        return None
+
                     # Check if already processed
                     if vf.state and vf.state.anonymized:
                         logger.info(f"VideoFile {file_id} already anonymized, skipping")
@@ -135,8 +172,7 @@ class AnonymizationService:
 
                     # Mark as started
                     if vf.state:
-                        vf.state.processing_started = True
-                        vf.state.save(update_fields=["processing_started"])
+                        vf.state.mark_processing_started()
 
                     # Use VideoImportService for anonymization
                     safe_processor_name = processor_name or "unknown_processor"
@@ -231,14 +267,14 @@ class AnonymizationService:
     def validate(file_id: int) -> None | Literal["video"] | Literal["pdf"]:
         vf = VideoFile.objects.select_related("state").filter(pk=file_id).first()
         if vf:
-            video_state = vf.state or vf.get_or_create_state()
+            video_state = vf.state or get_or_create_video_state(vf)
             if hasattr(video_state, "mark_anonymization_validated"):
                 video_state.mark_anonymization_validated()
             return "video"
 
         pdf = RawPdfFile.objects.select_related("state").filter(pk=file_id).first()
         if pdf:
-            pdf_state = pdf.state or pdf.get_or_create_state()
+            pdf_state = pdf.state or get_or_create_raw_pdf_state(pdf)
             if hasattr(pdf_state, "mark_anonymization_validated"):
                 pdf_state.mark_anonymization_validated()
             return "pdf"
@@ -257,12 +293,12 @@ class AnonymizationService:
             data.append(
                 {
                     "id": vf.pk,
-                    "mediaType": "video",
-                    "anonymizationStatus": (
+                    "media_type": "video",
+                    "anonymization_status": (
                         vf.state.anonymization_status if vf.state else "not_started"
                     ),
-                    "createdAt": vf.date_created,
-                    "updatedAt": vf.date_modified,
+                    "created_at": vf.date_created,
+                    "updated_at": vf.date_modified,
                 }
             )
 
@@ -270,12 +306,12 @@ class AnonymizationService:
             data.append(
                 {
                     "id": pdf.pk,
-                    "mediaType": "pdf",
-                    "anonymizationStatus": (
+                    "media_type": "pdf",
+                    "anonymization_status": (
                         pdf.state.anonymization_status if pdf.state else "not_started"
                     ),
-                    "createdAt": pdf.date_created,
-                    "updatedAt": pdf.date_modified,
+                    "created_at": pdf.date_created,
+                    "updated_at": pdf.date_modified,
                 }
             )
         return data

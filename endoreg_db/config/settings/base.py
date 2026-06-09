@@ -10,10 +10,16 @@ from endoreg_db.config.env import (
     get_asset_dir,
     get_celery_broker_url,
     get_celery_default_queue,
+    get_celery_ffmpeg_media_queue,
+    get_celery_frame_extraction_queue,
+    get_celery_inference_queue,
+    get_celery_llm_inference_queue,
     get_celery_maintenance_queue,
     get_celery_pipeline_queue,
+    get_celery_training_queue,
     celery_audit_ledger_integrity_beat_enabled,
     get_celery_audit_ledger_integrity_interval_seconds,
+    get_enable_hub_transfers,
     get_endoreg_deployment_role,
     get_hub_transfer_mtls_meta_key,
     get_hub_transfer_mtls_meta_value,
@@ -28,13 +34,19 @@ from endoreg_db.config.env import (
     get_lx_dtypes_kb_registry,
     get_media_root,
     get_media_url,
+    get_model_training_job_mode,
+    get_model_training_staging_root,
     get_protected_media_root,
     get_protected_media_url,
     get_static_root,
     get_static_url,
     get_time_zone,
     get_video_default_fps,
+    get_video_temporal_inference_frame_source_mode,
+    celery_requires_secure_transport,
+    celery_runtime_config_strict,
     run_video_tests_enabled,
+    watcher_celery_inline_fallback_enabled,
 )
 
 django_stubs_ext.monkeypatch()
@@ -46,6 +58,7 @@ BASE_DIR = Path(__file__).parent.parent.parent.resolve()
 ASSET_DIR = get_asset_dir()
 RUN_VIDEO_TESTS = run_video_tests_enabled()
 ENDOREG_DEPLOYMENT_ROLE = get_endoreg_deployment_role()
+ENDOREG_ENABLE_HUB_TRANSFERS = get_enable_hub_transfers()
 ENDOREG_HUB_TRANSFER_REQUIRE_SECURE_TRANSPORT = (
     get_hub_transfer_require_secure_transport()
 )
@@ -64,12 +77,29 @@ LOOKUP_REQUIREMENT_LEGACY_FALLBACK_ENABLED = (
 LX_DTYPES_HOST_MODELS_MODULE = get_lx_dtypes_host_models_module()
 LX_DTYPES_KB_REGISTRY = get_lx_dtypes_kb_registry()
 CELERY_BROKER_URL = get_celery_broker_url()
+CELERY_REQUIRE_SECURE_TRANSPORT = celery_requires_secure_transport(
+    deployment_role=ENDOREG_DEPLOYMENT_ROLE
+)
+CELERY_RUNTIME_CONFIG_STRICT = celery_runtime_config_strict(
+    deployment_role=ENDOREG_DEPLOYMENT_ROLE
+)
 CELERY_RESULT_BACKEND = None
 CELERY_TASK_IGNORE_RESULT = True
 CELERY_TASK_DEFAULT_QUEUE = get_celery_default_queue()
 CELERY_PIPELINE_QUEUE = get_celery_pipeline_queue()
+CELERY_FRAME_EXTRACTION_QUEUE = get_celery_frame_extraction_queue()
+CELERY_FFMPEG_MEDIA_QUEUE = get_celery_ffmpeg_media_queue()
+CELERY_INFERENCE_QUEUE = get_celery_inference_queue()
+CELERY_TRAINING_QUEUE = get_celery_training_queue()
+CELERY_LLM_INFERENCE_QUEUE = get_celery_llm_inference_queue()
 CELERY_MAINTENANCE_QUEUE = get_celery_maintenance_queue()
+MODEL_TRAINING_JOB_MODE = get_model_training_job_mode()
+MODEL_TRAINING_STAGING_ROOT = get_model_training_staging_root()
+VIDEO_TEMPORAL_INFERENCE_FRAME_SOURCE_MODE = (
+    get_video_temporal_inference_frame_source_mode()
+)
 CELERY_TASK_CREATE_MISSING_QUEUES = False
+CELERY_BROKER_TRANSPORT_OPTIONS = {"visibility_timeout": 60 * 60 * 25}
 CELERY_TASK_QUEUES = (
     Queue(
         CELERY_TASK_DEFAULT_QUEUE,
@@ -82,19 +112,72 @@ CELERY_TASK_QUEUES = (
         routing_key=CELERY_PIPELINE_QUEUE,
     ),
     Queue(
+        CELERY_FRAME_EXTRACTION_QUEUE,
+        Exchange(CELERY_FRAME_EXTRACTION_QUEUE),
+        routing_key=CELERY_FRAME_EXTRACTION_QUEUE,
+    ),
+    Queue(
+        CELERY_FFMPEG_MEDIA_QUEUE,
+        Exchange(CELERY_FFMPEG_MEDIA_QUEUE),
+        routing_key=CELERY_FFMPEG_MEDIA_QUEUE,
+    ),
+    Queue(
+        CELERY_INFERENCE_QUEUE,
+        Exchange(CELERY_INFERENCE_QUEUE),
+        routing_key=CELERY_INFERENCE_QUEUE,
+    ),
+    Queue(
+        CELERY_TRAINING_QUEUE,
+        Exchange(CELERY_TRAINING_QUEUE),
+        routing_key=CELERY_TRAINING_QUEUE,
+    ),
+    Queue(
+        CELERY_LLM_INFERENCE_QUEUE,
+        Exchange(CELERY_LLM_INFERENCE_QUEUE),
+        routing_key=CELERY_LLM_INFERENCE_QUEUE,
+    ),
+    Queue(
         CELERY_MAINTENANCE_QUEUE,
         Exchange(CELERY_MAINTENANCE_QUEUE),
         routing_key=CELERY_MAINTENANCE_QUEUE,
     ),
 )
 CELERY_TASK_ROUTES = {
+    "endoreg_db.video_upload_import": {
+        "queue": CELERY_FFMPEG_MEDIA_QUEUE,
+        "routing_key": CELERY_FFMPEG_MEDIA_QUEUE,
+    },
+    "endoreg_db.video_reimport": {
+        "queue": CELERY_FFMPEG_MEDIA_QUEUE,
+        "routing_key": CELERY_FFMPEG_MEDIA_QUEUE,
+    },
+    "endoreg_db.frame_extraction_request": {
+        "queue": CELERY_FRAME_EXTRACTION_QUEUE,
+        "routing_key": CELERY_FRAME_EXTRACTION_QUEUE,
+    },
     "endoreg_db.process_upload_job": {
         "queue": CELERY_PIPELINE_QUEUE,
         "routing_key": CELERY_PIPELINE_QUEUE,
     },
     "endoreg_db.video_post_validation_rebuild": {
-        "queue": CELERY_PIPELINE_QUEUE,
-        "routing_key": CELERY_PIPELINE_QUEUE,
+        "queue": CELERY_FFMPEG_MEDIA_QUEUE,
+        "routing_key": CELERY_FFMPEG_MEDIA_QUEUE,
+    },
+    "endoreg_db.video_temporal_inference": {
+        "queue": CELERY_INFERENCE_QUEUE,
+        "routing_key": CELERY_INFERENCE_QUEUE,
+    },
+    "endoreg_db.model_training": {
+        "queue": CELERY_TRAINING_QUEUE,
+        "routing_key": CELERY_TRAINING_QUEUE,
+    },
+    "endoreg_db.report_llm_reimport": {
+        "queue": CELERY_LLM_INFERENCE_QUEUE,
+        "routing_key": CELERY_LLM_INFERENCE_QUEUE,
+    },
+    "endoreg_db.report_llm_import": {
+        "queue": CELERY_LLM_INFERENCE_QUEUE,
+        "routing_key": CELERY_LLM_INFERENCE_QUEUE,
     },
     "endoreg_db.refresh_audit_ledger_integrity_status": {
         "queue": CELERY_MAINTENANCE_QUEUE,
@@ -108,6 +191,7 @@ CELERY_TASK_SOFT_TIME_LIMIT = 60 * 60 * 5
 CELERY_TIMEZONE = get_time_zone()
 CELERY_ENABLE_UTC = True
 CELERY_BEAT_SCHEDULE = {}
+WATCHER_CELERY_INLINE_FALLBACK_ENABLED = watcher_celery_inline_fallback_enabled()
 if celery_audit_ledger_integrity_beat_enabled():
     CELERY_BEAT_SCHEDULE["audit-ledger-integrity-refresh"] = {
         "task": "endoreg_db.refresh_audit_ledger_integrity_status",
@@ -205,10 +289,9 @@ TEST_LOGGER_NAMES = [
     "ffmpeg_wrapper",
     # Video-pipeline modules
     "endoreg_db.models.media.video.video_file",
-    "endoreg_db.models.media.video.video_file_anonymize",
-    "endoreg_db.models.media.video.pipe_1",
-    "endoreg_db.models.media.video.pipe_2",
-    "endoreg_db.utils.pipelines.process_video_dir",
+    "endoreg_db.services.video_files._anonymization",
+    "endoreg_db.services.video_files._pipeline_1",
+    "endoreg_db.services.video_files._pipeline_2",
     "endoreg_db.models.metadata.sensitive_meta",
 ]
 
@@ -223,6 +306,7 @@ __all__ = [
     "ASSET_DIR",
     "RUN_VIDEO_TESTS",
     "ENDOREG_DEPLOYMENT_ROLE",
+    "ENDOREG_ENABLE_HUB_TRANSFERS",
     "ENDOREG_DEPLOYMENT_ROLE_VALUES",
     "ENDOREG_HUB_TRANSFER_REQUIRE_SECURE_TRANSPORT",
     "ENDOREG_HUB_TRANSFER_REQUIRE_MTLS",
@@ -236,12 +320,22 @@ __all__ = [
     "LX_DTYPES_HOST_MODELS_MODULE",
     "LX_DTYPES_KB_REGISTRY",
     "CELERY_BROKER_URL",
+    "CELERY_REQUIRE_SECURE_TRANSPORT",
+    "CELERY_RUNTIME_CONFIG_STRICT",
     "CELERY_RESULT_BACKEND",
     "CELERY_TASK_IGNORE_RESULT",
     "CELERY_TASK_DEFAULT_QUEUE",
     "CELERY_PIPELINE_QUEUE",
+    "CELERY_FRAME_EXTRACTION_QUEUE",
+    "CELERY_FFMPEG_MEDIA_QUEUE",
+    "CELERY_INFERENCE_QUEUE",
+    "CELERY_TRAINING_QUEUE",
+    "CELERY_LLM_INFERENCE_QUEUE",
     "CELERY_MAINTENANCE_QUEUE",
+    "MODEL_TRAINING_JOB_MODE",
+    "MODEL_TRAINING_STAGING_ROOT",
     "CELERY_TASK_CREATE_MISSING_QUEUES",
+    "CELERY_BROKER_TRANSPORT_OPTIONS",
     "CELERY_TASK_QUEUES",
     "CELERY_TASK_ROUTES",
     "CELERY_WORKER_PREFETCH_MULTIPLIER",
@@ -251,6 +345,7 @@ __all__ = [
     "CELERY_TIMEZONE",
     "CELERY_ENABLE_UTC",
     "CELERY_BEAT_SCHEDULE",
+    "WATCHER_CELERY_INLINE_FALLBACK_ENABLED",
     "TEMPLATES",
     "TEST_LOGGER_NAMES",
     "REST_FRAMEWORK",

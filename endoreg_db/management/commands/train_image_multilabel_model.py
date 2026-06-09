@@ -1,28 +1,55 @@
 # endoreg_db/management/commands/train_image_multilabel_model.py
 
 from __future__ import annotations
+
 import json
+
 from django.core.management.base import BaseCommand, CommandError
 
 from endoreg_db.models import AIDataSet
-from endoreg_db.utils.ai.model_training.config import (
-    DEFAULT_LABELSET_VERSION_TO_TRAIN,
-    TrainingConfig,
+from endoreg_db.utils.ai.multilabel_dataset_builder import (
+    ANNOTATION_SOURCE_SCOPE_ALL,
+    VALID_ANNOTATION_SOURCE_SCOPES,
+    normalize_annotation_source_scope,
 )
-from endoreg_db.utils.ai.model_training.trainer_gastronet_multilabel import (
-    train_gastronet_multilabel,
-)
+
+
+def train_gastronet_multilabel(config):
+    try:
+        from endoreg_db.utils.ai.model_training.trainer_gastronet_multilabel import (
+            train_gastronet_multilabel as _train_gastronet_multilabel,
+        )
+    except ImportError as exc:
+        raise CommandError(
+            "Training dependencies are not available. Install the AI training "
+            "dependencies before running train_image_multilabel_model."
+        ) from exc
+    return _train_gastronet_multilabel(config)
 
 
 class Command(BaseCommand):
     help = "Train / fine-tune the image multi-label model on a given AIDataSet."
 
     def add_arguments(self, parser):
+        from endoreg_db.utils.ai.model_training.config import (
+            DEFAULT_LABELSET_VERSION_TO_TRAIN,
+        )
+
         parser.add_argument(
             "--dataset-id",
             type=int,
             required=True,
             help="Primary key of the AIDataSet to use for training.",
+        )
+        parser.add_argument(
+            "--annotation-source-scope",
+            type=str,
+            default=ANNOTATION_SOURCE_SCOPE_ALL,
+            choices=sorted(VALID_ANNOTATION_SOURCE_SCOPES),
+            help=(
+                "Annotation sources within the AIDataSet to use: all, "
+                "frame_only, or segment_only."
+            ),
         )
         parser.add_argument(
             "--backbone-name",
@@ -59,6 +86,12 @@ class Command(BaseCommand):
             help="Only train labels belonging to this LabelSet.version.",
         )
         parser.add_argument(
+            "--device",
+            type=str,
+            default="auto",
+            help="Training device: auto, cpu, cuda, or a torch device string.",
+        )
+        parser.add_argument(
             "--freeze-backbone",
             dest="freeze_backbone",
             action="store_true",
@@ -87,11 +120,18 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         dataset_id = options["dataset_id"]
+        try:
+            annotation_source_scope = normalize_annotation_source_scope(
+                options.get("annotation_source_scope")
+            )
+        except ValueError as exc:
+            raise CommandError(str(exc)) from exc
         backbone_name = str(options["backbone_name"]).strip()
         backbone_checkpoint = options["backbone_checkpoint"]
         epochs = int(options["epochs"])
         batch_size = int(options["batch_size"])
         labelset_version = int(options["labelset_version"])
+        device = str(options["device"] or "auto").strip() or "auto"
         freeze_backbone = bool(options["freeze_backbone"])
         treat_unlabeled_as_negative = bool(options["treat_unlabeled_as_negative"])
 
@@ -127,15 +167,27 @@ class Command(BaseCommand):
                 f"epochs={epochs}, "
                 f"batch_size={batch_size}, "
                 f"labelset_version={labelset_version}, "
+                f"device={device!r}, "
+                f"annotation_source_scope={annotation_source_scope!r}, "
                 f"treat_unlabeled_as_negative={treat_unlabeled_as_negative}"
             )
         )
+        try:
+            from endoreg_db.utils.ai.model_training.config import TrainingConfig
+        except ImportError as exc:
+            raise CommandError(
+                "Training dependencies are not available. Install the AI training "
+                "dependencies before running train_image_multilabel_model."
+            ) from exc
+
         config = TrainingConfig(
             dataset_id=dataset.id,
+            annotation_source_scope=annotation_source_scope,
             labelset_version_to_train=labelset_version,
             backbone_checkpoint=backbone_checkpoint,
             num_epochs=epochs,
             batch_size=batch_size,
+            device=device,
             backbone_name=backbone_name,
             freeze_backbone=freeze_backbone,
             treat_unlabeled_as_negative=treat_unlabeled_as_negative,

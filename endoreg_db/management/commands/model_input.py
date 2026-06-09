@@ -6,13 +6,10 @@ from django.core.management.base import BaseCommand, CommandError
 
 from endoreg_db.models import AIDataSet
 from endoreg_db.utils.ai.data_loader_for_model_input import (
+    ANNOTATION_SOURCE_SCOPE_ALL,
+    VALID_ANNOTATION_SOURCE_SCOPES,
     build_dataset_for_training,
-)
-from endoreg_db.utils.ai.model_training.config import (
-    TrainingConfig,
-)
-from endoreg_db.utils.ai.model_training.trainer_gastronet_multilabel import (
-    train_gastronet_multilabel,
+    normalize_annotation_source_scope,
 )
 
 
@@ -35,6 +32,16 @@ class Command(BaseCommand):
             type=int,
             required=True,
             help="Primary key of the AIDataSet to use for training.",
+        )
+        parser.add_argument(
+            "--annotation-source-scope",
+            type=str,
+            default=ANNOTATION_SOURCE_SCOPE_ALL,
+            choices=sorted(VALID_ANNOTATION_SOURCE_SCOPES),
+            help=(
+                "Annotation sources within the AIDataSet to use: all, "
+                "frame_only, or segment_only."
+            ),
         )
         parser.add_argument(
             "--backbone-checkpoint",
@@ -63,6 +70,12 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         dataset_id = options["dataset_id"]
+        try:
+            annotation_source_scope = normalize_annotation_source_scope(
+                options.get("annotation_source_scope")
+            )
+        except ValueError as exc:
+            raise CommandError(str(exc)) from exc
         backbone_ckpt = options["backbone_checkpoint"]
         backbone_name = options["backbone_name"]
         num_epochs = options["epochs"]
@@ -82,7 +95,10 @@ class Command(BaseCommand):
             )
         )
 
-        data = build_dataset_for_training(dataset)
+        data = build_dataset_for_training(
+            dataset,
+            annotation_source_scope=annotation_source_scope,
+        )
 
         image_paths = data["image_paths"]
         label_vectors = data["label_vectors"]
@@ -154,8 +170,20 @@ class Command(BaseCommand):
             return
 
         # ---- Training ----
+        try:
+            from endoreg_db.utils.ai.model_training.config import TrainingConfig
+            from endoreg_db.utils.ai.model_training.trainer_gastronet_multilabel import (
+                train_gastronet_multilabel,
+            )
+        except ImportError as exc:
+            raise CommandError(
+                "Training dependencies are not available. Install the AI training "
+                "dependencies before running model_input."
+            ) from exc
+
         cfg = TrainingConfig(
             dataset_id=dataset.id,
+            annotation_source_scope=annotation_source_scope,
             backbone_checkpoint=backbone_ckpt,
             backbone_name=backbone_name,
             num_epochs=num_epochs,

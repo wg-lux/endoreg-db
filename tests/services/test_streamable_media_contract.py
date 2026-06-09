@@ -8,11 +8,13 @@ import pytest
 
 from endoreg_db.models import VideoFile
 from endoreg_db.services import streamable_media
-from endoreg_db.utils import paths as paths_module
+from endoreg_db.utils.filesystem import paths as paths_module
 
 
 def test_streamable_materialization_never_moves_canonical_source() -> None:
-    source = Path(streamable_media.__file__).read_text(encoding="utf-8")
+    source_file = streamable_media.__file__
+    assert source_file is not None
+    source = Path(source_file).read_text(encoding="utf-8")
 
     assert "atomic_write_file(" in source
     assert "atomic_move_file(" not in source

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from endoreg_db.models import Center
+from endoreg_db.models.administration.center.center import Center
 
 
 class CenterSerializer(serializers.ModelSerializer):

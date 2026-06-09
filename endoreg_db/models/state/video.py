@@ -12,6 +12,9 @@ from endoreg_db.models.state.anonymization import AnonymizationState
 
 logger = logging.getLogger(__name__)
 
+SHA256_HEX_LENGTH = 64
+SHA256_HEX_DIGITS = frozenset("0123456789abcdef")
+
 if TYPE_CHECKING:
     from ..media import VideoFile
 
@@ -108,6 +111,12 @@ class VideoState(models.Model):
         default=False,
         help_text="True if the processing has started, but not yet completed.",
     )
+    processing_error = models.BooleanField(
+        default=False,
+        help_text=(
+            "True if processing failed or media integrity marked this video lost."
+        ),
+    )
 
     # Timestamps
     date_created = models.DateTimeField(auto_now_add=True)
@@ -133,6 +142,8 @@ class VideoState(models.Model):
         """
         Fast, side‑effect‑free status resolution used by API & UI.
         """
+        if self.processing_error:
+            return AnonymizationState.FAILED
         if self.anonymization_validated:
             return AnonymizationState.VALIDATED  # Validation in Frontend completed -> Views related to this /home/admin/endoreg-db/endoreg_db/views/anonymization/validate.py
         if self.sensitive_meta_processed:
@@ -141,14 +152,98 @@ class VideoState(models.Model):
             return AnonymizationState.PROCESSING_ANONYMIZING
         if self.was_created and not self.frames_extracted:
             return AnonymizationState.EXTRACTING_FRAMES
-        if getattr(self, "processing_error", False):
-            return AnonymizationState.FAILED
         if self.processing_started:
             return AnonymizationState.STARTED
         if self.anonymized:
             return AnonymizationState.ANONYMIZED
 
         return AnonymizationState.NOT_STARTED
+
+    @classmethod
+    def anonymization_status_case(
+        cls,
+        *,
+        relation_prefix: str = "",
+        include_missing_relation: bool = False,
+    ) -> models.Case:
+        """
+        SQL equivalent of ``anonymization_status`` for aggregate queries.
+
+        Keep the condition order aligned with the Python property above. Use
+        ``relation_prefix="state"`` and ``include_missing_relation=True`` when
+        annotating from ``VideoFile``.
+        """
+
+        prefix = f"{relation_prefix}__" if relation_prefix else ""
+        whens = []
+        if include_missing_relation:
+            whens.append(
+                models.When(
+                    **{
+                        f"{prefix}isnull": True,
+                        "then": models.Value(AnonymizationState.NOT_STARTED.value),
+                    }
+                )
+            )
+        whens.extend(
+            [
+                models.When(
+                    **{
+                        f"{prefix}processing_error": True,
+                        "then": models.Value(AnonymizationState.FAILED.value),
+                    }
+                ),
+                models.When(
+                    **{
+                        f"{prefix}anonymization_validated": True,
+                        "then": models.Value(AnonymizationState.VALIDATED.value),
+                    }
+                ),
+                models.When(
+                    **{
+                        f"{prefix}sensitive_meta_processed": True,
+                        "then": models.Value(
+                            AnonymizationState.DONE_PROCESSING_ANONYMIZATION.value
+                        ),
+                    }
+                ),
+                models.When(
+                    **{
+                        f"{prefix}frames_extracted": True,
+                        f"{prefix}anonymized": False,
+                        "then": models.Value(
+                            AnonymizationState.PROCESSING_ANONYMIZING.value
+                        ),
+                    }
+                ),
+                models.When(
+                    **{
+                        f"{prefix}was_created": True,
+                        f"{prefix}frames_extracted": False,
+                        "then": models.Value(
+                            AnonymizationState.EXTRACTING_FRAMES.value
+                        ),
+                    }
+                ),
+                models.When(
+                    **{
+                        f"{prefix}processing_started": True,
+                        "then": models.Value(AnonymizationState.STARTED.value),
+                    }
+                ),
+                models.When(
+                    **{
+                        f"{prefix}anonymized": True,
+                        "then": models.Value(AnonymizationState.ANONYMIZED.value),
+                    }
+                ),
+            ]
+        )
+        return models.Case(
+            *whens,
+            default=models.Value(AnonymizationState.NOT_STARTED.value),
+            output_field=models.CharField(),
+        )
 
     def mark_processing_not_started(self) -> None:
         """
@@ -157,6 +252,12 @@ class VideoState(models.Model):
         Parameters:
             save (bool): If True, persist the change to the database immediately. Defaults to True.
         """
+        if self.processing_error:
+            logger.warning(
+                "Preserving failed/lost VideoState %s during reset request.",
+                self.pk,
+            )
+            return
         with transaction.atomic():
             self.processing_started = False
             self.anonymized = False
@@ -172,7 +273,63 @@ class VideoState(models.Model):
             self.save()
 
     # ---- Single‑responsibility mutators ---------------------------------
+    def _raise_if_processing_error(self, action: str) -> None:
+        if self.processing_error:
+            raise ValueError(f"Video state is marked failed/lost; cannot {action}.")
+
+    def _validate_ready_for_export_transition(
+        self,
+        *,
+        processed_file_sha256: str,
+        ready_for_export_by: str,
+    ) -> tuple[str, str]:
+        errors: list[str] = []
+        if self.processing_error:
+            errors.append("video is marked failed/lost")
+        if not self.anonymization_validated:
+            errors.append("anonymization has not been validated")
+        if not self.outside_segments_removed:
+            errors.append("outside segments have not been removed")
+        if not self.segment_annotations_validated:
+            errors.append("segment annotations have not been validated")
+
+        normalized_sha = str(processed_file_sha256 or "").strip().lower()
+        if len(normalized_sha) != SHA256_HEX_LENGTH or any(
+            character not in SHA256_HEX_DIGITS for character in normalized_sha
+        ):
+            errors.append("processed_file_sha256 must be a SHA-256 hex digest")
+
+        normalized_actor = str(ready_for_export_by or "").strip()
+        if not normalized_actor:
+            errors.append("ready_for_export_by is required")
+
+        if errors:
+            raise ValueError(f"Cannot mark ready for export: {'; '.join(errors)}.")
+
+        return normalized_sha, normalized_actor
+
+    def mark_processing_failed(self, *, save: bool = True) -> None:
+        self.processing_error = True
+        self.processing_started = False
+        self.ready_for_export = False
+        self.ready_for_export_at = None
+        self.ready_for_export_by = ""
+        self.processed_file_sha256 = ""
+        if save:
+            self.save(
+                update_fields=[
+                    "processing_error",
+                    "processing_started",
+                    "ready_for_export",
+                    "ready_for_export_at",
+                    "ready_for_export_by",
+                    "processed_file_sha256",
+                    "date_modified",
+                ]
+            )
+
     def mark_sensitive_meta_processed(self, *, save: bool = True) -> None:
+        self._raise_if_processing_error("mark sensitive metadata processed")
         self.sensitive_meta_processed = True
         if save:
             self.save(update_fields=["sensitive_meta_processed", "date_modified"])
@@ -184,6 +341,7 @@ class VideoState(models.Model):
         Parameters:
             save (bool): If True, persist the change to the database immediately.
         """
+        self._raise_if_processing_error("mark anonymization validated")
         self.anonymization_validated = True
         self.ready_for_export = False
         self.ready_for_export_at = None
@@ -202,6 +360,7 @@ class VideoState(models.Model):
             )
 
     def mark_outside_segments_removed(self, *, save: bool = True) -> None:
+        self._raise_if_processing_error("mark outside segments removed")
         self.outside_segments_removed = True
         self.ready_for_export = False
         self.ready_for_export_at = None
@@ -250,10 +409,14 @@ class VideoState(models.Model):
         ready_for_export_by: str,
         save: bool = True,
     ) -> None:
+        normalized_sha, normalized_actor = self._validate_ready_for_export_transition(
+            processed_file_sha256=processed_file_sha256,
+            ready_for_export_by=ready_for_export_by,
+        )
         self.ready_for_export = True
         self.ready_for_export_at = timezone.now()
-        self.ready_for_export_by = ready_for_export_by
-        self.processed_file_sha256 = processed_file_sha256
+        self.ready_for_export_by = normalized_actor
+        self.processed_file_sha256 = normalized_sha
         if save:
             self.save(
                 update_fields=[
@@ -272,6 +435,7 @@ class VideoState(models.Model):
         Parameters:
             save (bool): If True, persist the change to the database immediately.
         """
+        self._raise_if_processing_error("mark frames extracted")
         self.frames_extracted = True
         if save:
             self.save(update_fields=["frames_extracted", "date_modified"])
@@ -293,6 +457,7 @@ class VideoState(models.Model):
         Parameters:
             save (bool): If True, immediately saves the updated state to the database.
         """
+        self._raise_if_processing_error("mark anonymized")
         with transaction.atomic():
             self.anonymized = True
             self.outside_segments_removed = False
@@ -371,6 +536,7 @@ class VideoState(models.Model):
         Parameters:
             save (bool): If True, immediately saves the updated state to the database.
         """
+        self._raise_if_processing_error("start processing")
         self.processing_started = True
         if save:
             self.save(update_fields=["processing_started", "date_modified"])
@@ -378,3 +544,59 @@ class VideoState(models.Model):
     class Meta:
         verbose_name = "Video Processing State"
         verbose_name_plural = "Video Processing States"
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(processing_error=False)
+                    | models.Q(processing_started=False)
+                ),
+                name="videostate_failed_not_started",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(ready_for_export=False) | models.Q(processing_error=False)
+                ),
+                name="videostate_ready_not_failed",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(ready_for_export=False)
+                    | models.Q(anonymization_validated=True)
+                ),
+                name="videostate_ready_requires_validation",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(ready_for_export=False)
+                    | models.Q(outside_segments_removed=True)
+                ),
+                name="videostate_ready_requires_cleanup",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(ready_for_export=False)
+                    | models.Q(segment_annotations_validated=True)
+                ),
+                name="videostate_ready_requires_segments",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(ready_for_export=False)
+                    | models.Q(ready_for_export_at__isnull=False)
+                ),
+                name="videostate_ready_requires_timestamp",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(ready_for_export=False) | ~models.Q(ready_for_export_by="")
+                ),
+                name="videostate_ready_requires_actor",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(ready_for_export=False)
+                    | ~models.Q(processed_file_sha256="")
+                ),
+                name="videostate_ready_requires_sha",
+            ),
+        ]

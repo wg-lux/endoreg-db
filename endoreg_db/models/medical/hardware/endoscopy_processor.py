@@ -93,6 +93,8 @@ class EndoscopyProcessor(models.Model):
             "y": self.endoscope_image_y,
             "width": self.endoscope_image_width,
             "height": self.endoscope_image_height,
+            "image_width": self.image_width,
+            "image_height": self.image_height,
         }
 
     def get_roi_examination_date(self) -> dict[str, int | None] | None:

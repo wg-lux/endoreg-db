@@ -1,4 +1,4 @@
-from endoreg_db.models import VideoFile
+from endoreg_db.models.media.video.video_file import VideoFile
 
 
 from rest_framework import serializers

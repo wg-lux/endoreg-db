@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from endoreg_db.models import PatientExaminationReport
+from endoreg_db.models.report.patient_examination_report import PatientExaminationReport
 
 
 class PatientExaminationReportSerializer(serializers.ModelSerializer):
@@ -67,4 +67,22 @@ class PatientExaminationReportSubmissionSerializer(serializers.Serializer):
     expected_version = serializers.IntegerField(required=False, min_value=1)
     history_limit = serializers.IntegerField(
         required=False, min_value=1, max_value=50, default=5
+    )
+
+
+class PatientReportIdentitySerializer(serializers.Serializer):
+    first_name = serializers.CharField(max_length=150)
+    last_name = serializers.CharField(max_length=150)
+    dob = serializers.DateField()
+
+
+class PatientExaminationReportMakeReportSerializer(serializers.Serializer):
+    patient_examination_id = serializers.IntegerField()
+    report_id = serializers.IntegerField(required=False)
+    patient = PatientReportIdentitySerializer()
+    max_frames = serializers.IntegerField(
+        required=False,
+        min_value=1,
+        max_value=24,
+        default=12,
     )

@@ -7,18 +7,21 @@ from endoreg_db.views import (
     application_settings_annotators_dropdown,
     application_settings_report_templates_dropdown,
     application_settings_ai_datasets_dropdown,
+    application_settings_ai_dataset_attachments,
+    application_settings_ai_dataset_frame_bucket_distribution,
+    application_settings_ai_dataset_training_manifest,
     application_settings_model_training_options,
     application_settings_model_training_runs,
     application_settings_model_training_run_detail,
     application_settings_video_dimension_backfill_runs,
     application_settings_video_dimension_backfill_run_detail,
     application_settings_ai_dataset_export,
+    application_settings_ai_dataset_export_download,
     application_settings_backup,
     application_settings_network_nodes,
     application_settings_network_node_detail,
     application_settings_network_node_roles_dropdown,
 )
-
 
 urlpatterns = [
     path(
@@ -52,6 +55,21 @@ urlpatterns = [
         name="application_settings_ai_datasets_dropdown",
     ),
     path(
+        "settings/application/ai_datasets/<int:dataset_id>/attachments/",
+        application_settings_ai_dataset_attachments,
+        name="application_settings_ai_dataset_attachments",
+    ),
+    path(
+        "settings/application/ai_datasets/<str:param>/frame_bucket_distribution/",
+        application_settings_ai_dataset_frame_bucket_distribution,
+        name="application_settings_ai_dataset_frame_bucket_distribution",
+    ),
+    path(
+        "settings/application/ai_datasets/<str:param>/training_manifest/",
+        application_settings_ai_dataset_training_manifest,
+        name="application_settings_ai_dataset_training_manifest",
+    ),
+    path(
         "settings/application/model_training/options/",
         application_settings_model_training_options,
         name="application_settings_model_training_options",
@@ -80,6 +98,11 @@ urlpatterns = [
         "settings/application/ai_dataset_export/",
         application_settings_ai_dataset_export,
         name="application_settings_ai_dataset_export",
+    ),
+    path(
+        "settings/application/ai_dataset_export/<str:artifact_id>/download/",
+        application_settings_ai_dataset_export_download,
+        name="application_settings_ai_dataset_export_download",
     ),
     path(
         "settings/application/backup/",

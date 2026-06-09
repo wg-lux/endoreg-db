@@ -18,7 +18,9 @@ from endoreg_db.services.audit_integrity import (
 from endoreg_db.tasks import (
     process_upload_job,
     refresh_audit_ledger_integrity_status_task,
+    run_model_training_task,
     run_video_post_validation_rebuild_task,
+    run_video_temporal_inference_task,
 )
 
 
@@ -36,17 +38,31 @@ def test_celery_beat_routes_integrity_to_separate_queue():
         "endoreg_db.refresh_audit_ledger_integrity_status"
     ]
     beat_entry = settings.CELERY_BEAT_SCHEDULE["audit-ledger-integrity-refresh"]
+    queue_names = {queue.name for queue in settings.CELERY_TASK_QUEUES}
 
     assert route["queue"] == settings.CELERY_MAINTENANCE_QUEUE
     assert beat_entry["task"] == "endoreg_db.refresh_audit_ledger_integrity_status"
     assert beat_entry["options"]["queue"] == settings.CELERY_MAINTENANCE_QUEUE
+    assert settings.CELERY_FRAME_EXTRACTION_QUEUE in queue_names
+    assert settings.CELERY_FFMPEG_MEDIA_QUEUE in queue_names
+    assert settings.CELERY_INFERENCE_QUEUE in queue_names
+    assert settings.CELERY_TRAINING_QUEUE in queue_names
+    assert settings.CELERY_BROKER_TRANSPORT_OPTIONS["visibility_timeout"] == 90000
     assert (
         settings.CELERY_TASK_ROUTES["endoreg_db.process_upload_job"]["queue"]
         == settings.CELERY_PIPELINE_QUEUE
     )
     assert (
         settings.CELERY_TASK_ROUTES["endoreg_db.video_post_validation_rebuild"]["queue"]
-        == settings.CELERY_PIPELINE_QUEUE
+        == settings.CELERY_FFMPEG_MEDIA_QUEUE
+    )
+    assert (
+        settings.CELERY_TASK_ROUTES["endoreg_db.video_temporal_inference"]["queue"]
+        == settings.CELERY_INFERENCE_QUEUE
+    )
+    assert (
+        settings.CELERY_TASK_ROUTES["endoreg_db.model_training"]["queue"]
+        == settings.CELERY_TRAINING_QUEUE
     )
 
 
@@ -184,7 +200,7 @@ def test_refresh_task_delegates_to_locked_refresh():
 
 def test_video_post_validation_task_delegates_to_runner():
     with patch(
-        "endoreg_db.services.video_post_validation_jobs._run_video_post_validation_rebuild",
+        "endoreg_db.services.jobs.video_post_validation_jobs._run_video_post_validation_rebuild",
         return_value=True,
     ) as runner:
         result = run_video_post_validation_rebuild_task.run(
@@ -194,6 +210,57 @@ def test_video_post_validation_task_delegates_to_runner():
 
     assert result is True
     runner.assert_called_once_with(42, only_validated=True, history_id=None)
+
+
+def test_video_temporal_inference_task_delegates_to_runner():
+    with patch(
+        "endoreg_db.services.video_temporal_inference._run_video_temporal_inference",
+        return_value=True,
+    ) as runner:
+        result = run_video_temporal_inference_task.run(
+            "42",
+            "7",
+            history_id="3",
+            replace_prediction_segments=1,
+            delete_frames_after=0,
+            ocr_frame_fraction="0.25",
+            ocr_cap="4",
+            temporal_options={"temporal_model": "markov"},
+            test_run=1,
+            n_test_frames="12",
+        )
+
+    assert result is True
+    runner.assert_called_once_with(
+        42,
+        model_meta_id=7,
+        history_id=3,
+        replace_prediction_segments=True,
+        delete_frames_after=False,
+        ocr_frame_fraction=0.25,
+        ocr_cap=4,
+        temporal_options={"temporal_model": "markov"},
+        test_run=True,
+        n_test_frames=12,
+    )
+
+
+def test_model_training_task_delegates_to_runner():
+    with patch(
+        "endoreg_db.services.jobs.model_training_jobs._execute_model_training_run",
+        return_value=None,
+    ) as runner:
+        result = run_model_training_task.run(
+            "run-1",
+            {"dataset_id": 42},
+        )
+
+    assert result is True
+    runner.assert_called_once_with(
+        "run-1",
+        command_kwargs={"dataset_id": 42},
+        raise_on_error=True,
+    )
 
 
 def test_upload_processing_task_delegates_to_hub_service():

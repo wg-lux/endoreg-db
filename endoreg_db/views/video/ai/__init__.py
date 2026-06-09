@@ -12,6 +12,7 @@ from .frame_annotations import (
     FrameAnnotationRandomTaskView,
     FrameAnnotationSkipView,
 )
+from .frame_box_annotations import FrameBoxAnnotationView
 
 __all__ = [
     "label_list",
@@ -24,4 +25,5 @@ __all__ = [
     "FrameAnnotationBulkUpsertView",
     "FrameAnnotationRandomTaskView",
     "FrameAnnotationSkipView",
+    "FrameBoxAnnotationView",
 ]

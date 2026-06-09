@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
+from endoreg_db.utils.observability.structured_logging import emit_structured_event
 
 logger = logging.getLogger("endoreg_db.hub.audit")
 
@@ -23,10 +23,10 @@ def _request_user_repr(user: Any) -> str | None:
 
 
 def emit_hub_audit_event(event: str, **payload: Any) -> None:
-    body = {"event": event, **payload}
+    body = dict(payload)
     if "request_user" in body:
         body["request_user"] = _request_user_repr(body["request_user"])
     try:
-        logger.info(json.dumps(body, default=str, sort_keys=True))
+        emit_structured_event(logger, event, **body)
     except Exception:
         logger.exception("Failed to emit hub audit event %s", event)

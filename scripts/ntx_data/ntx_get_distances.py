@@ -8,11 +8,12 @@ import time
 from statistics import mean, median
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-import googlemaps
+import googlemaps  # type: ignore[import-untyped]
 import pandas as pd
 from icecream import ic
 
 from scripts.ntx_data.utils.utils import processed_data_dir
+from endoreg_db.utils.file_operations import atomic_write_file
 
 
 reference_address = "Oberdürrbacher Str. 6, 97080 Würzburg, Deutschland"
@@ -105,8 +106,10 @@ def _load_cache() -> Dict[str, Dict[str, Optional[float]]]:
 
 
 def _store_cache(cache: Dict[str, Dict[str, Optional[float]]]) -> None:
-    with open(cache_path, "w", encoding="utf-8") as cache_file:
-        json.dump(cache, cache_file, indent=2)
+    atomic_write_file(
+        destination=cache_path,
+        content=[json.dumps(cache, indent=2).encode("utf-8")],
+    )
 
 
 def _get_reference_location(client: Any) -> Tuple[float, float]:
@@ -298,4 +301,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
