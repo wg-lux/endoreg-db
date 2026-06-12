@@ -1,15 +1,22 @@
 from __future__ import annotations
 
+# pyright: reportPrivateUsage=false
+
 import hashlib
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
 
 from endoreg_db.import_files.report_import_service import ReportImportService
-from endoreg_db.utils.filesystem.file_operations import sha256_file
-from endoreg_db.utils.system.rust_backend import (
+from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.rust_backend import (
     parse_extracted_frame_numbers,
 )
+
+
+def raise_bad_frame_count(*args: object, **kwargs: object) -> NoReturn:
+    raise ValueError("bad frame count")
 
 
 def test_sha256_file_matches_python_hashlib(tmp_path: Path) -> None:
@@ -51,14 +58,17 @@ def test_parse_extracted_frame_numbers_matches_expected_values() -> None:
 def test_build_frame_records_returns_none_when_rust_backend_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import endoreg_db.utils.system.rust_backend as rust_backend_module
+    import endoreg_db.utils.rust_backend as rust_backend_module
+
+    def raise_bad_frame_name(*args: object, **kwargs: object) -> NoReturn:
+        raise ValueError("bad frame name")
 
     frame_paths = [Path("/tmp/frame_0000001.jpg")]
 
     monkeypatch.setattr(
         rust_backend_module,
         "_build_frame_records",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("bad frame name")),
+        raise_bad_frame_name,
     )
 
     assert rust_backend_module.build_frame_records(frame_paths) is None
@@ -67,12 +77,12 @@ def test_build_frame_records_returns_none_when_rust_backend_errors(
 def test_build_expected_frame_records_returns_none_when_rust_backend_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import endoreg_db.utils.system.rust_backend as rust_backend_module
+    import endoreg_db.utils.rust_backend as rust_backend_module
 
     monkeypatch.setattr(
         rust_backend_module,
         "_build_expected_frame_records",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("bad frame count")),
+        raise_bad_frame_count,
     )
 
     assert rust_backend_module.build_expected_frame_records(3) is None

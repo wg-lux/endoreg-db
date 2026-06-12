@@ -3,12 +3,17 @@ from __future__ import annotations
 import errno
 import hashlib
 import logging
+from collections.abc import Iterable
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
+from _pytest.logging import LogCaptureFixture
+from django.db.models.fields.files import FieldFile
+from pytest import MonkeyPatch
 
-from endoreg_db.utils.filesystem import file_operations
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils import file_operations
+from endoreg_db.utils.file_operations import (
     atomic_handoff_file,
     atomic_move_file,
     atomic_write_file,
@@ -20,7 +25,7 @@ from endoreg_db.utils.filesystem.file_operations import (
 
 
 class _StreamingStorage:
-    def __init__(self, payload: bytes):
+    def __init__(self, payload: bytes) -> None:
         self.payload = payload
         self.range_calls: list[tuple[str, int, int, int]] = []
 
@@ -34,35 +39,40 @@ class _StreamingStorage:
         start: int,
         end: int,
         chunk_size: int,
-    ):
+    ) -> Iterable[bytes]:
         self.range_calls.append((name, start, end, chunk_size))
         yield self.payload[start : end + 1]
 
-    def open(self, *args, **kwargs):
+    def open(self, *args: Any, **kwargs: Any) -> None:
         raise AssertionError("sha256_file should stream FieldFile bytes")
 
 
 class _StreamingFieldFile:
-    def __init__(self, payload: bytes, name: str = "processed/video.mp4"):
+    def __init__(self, payload: bytes, name: str = "processed/video.mp4") -> None:
         self.name = name
         self.storage = _StreamingStorage(payload)
 
 
-def _file_operation_events(caplog) -> list[dict[str, object]]:
-    return [
-        record.structured_event
-        for record in caplog.records
-        if record.name == "endoreg_db.utils.filesystem.file_operations"
-        and getattr(record, "structured_event", {}).get("event") == "file_operation"
-    ]
+def _file_operation_events(caplog: LogCaptureFixture) -> list[dict[str, object]]:
+    events: list[dict[str, object]] = []
+    for record in caplog.records:
+        if record.name != "endoreg_db.utils.file_operations":
+            continue
+        structured_event = getattr(record, "structured_event", None)
+        if not isinstance(structured_event, dict):
+            continue
+        event = cast(dict[str, object], structured_event)
+        if event.get("event") == "file_operation":
+            events.append(event)
+    return events
 
 
 @pytest.mark.unit
-def test_sha256_file_hashes_field_file_through_streaming_storage():
+def test_sha256_file_hashes_field_file_through_streaming_storage() -> None:
     payload = b"streamed plaintext payload"
     field_file = _StreamingFieldFile(payload)
 
-    digest = sha256_file(field_file)
+    digest = sha256_file(cast(FieldFile, field_file))
 
     assert digest == hashlib.sha256(payload).hexdigest()
     assert field_file.storage.range_calls == [
@@ -71,8 +81,10 @@ def test_sha256_file_hashes_field_file_through_streaming_storage():
 
 
 @pytest.mark.unit
-def test_atomic_write_file_replaces_destination_and_emits_json_log(caplog, tmp_path):
-    caplog.set_level(logging.INFO, logger="endoreg_db.utils.filesystem.file_operations")
+def test_atomic_write_file_replaces_destination_and_emits_json_log(
+    caplog: LogCaptureFixture, tmp_path: Path
+) -> None:
+    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
     destination = tmp_path / "nested" / "payload.bin"
 
     result = atomic_write_file(
@@ -98,12 +110,12 @@ def test_atomic_write_file_replaces_destination_and_emits_json_log(caplog, tmp_p
 
 @pytest.mark.unit
 def test_atomic_write_file_removes_partial_temp_file_on_generator_failure(
-    caplog, tmp_path
-):
-    caplog.set_level(logging.INFO, logger="endoreg_db.utils.filesystem.file_operations")
+    caplog: LogCaptureFixture, tmp_path: Path
+) -> None:
+    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
     destination = tmp_path / "payload.bin"
 
-    def failing_content():
+    def failing_content() -> Iterable[bytes]:
         yield b"partial"
         raise RuntimeError("write source failed")
 
@@ -122,11 +134,11 @@ def test_atomic_write_file_removes_partial_temp_file_on_generator_failure(
 
 @pytest.mark.unit
 def test_atomic_handoff_file_fsyncs_and_promotes_final_name(
-    caplog,
-    monkeypatch,
-    tmp_path,
-):
-    caplog.set_level(logging.INFO, logger="endoreg_db.utils.filesystem.file_operations")
+    caplog: LogCaptureFixture,
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
     destination = tmp_path / "incoming.mp4"
     fsync_calls: list[int] = []
     original_fsync = file_operations.os.fsync
@@ -160,10 +172,10 @@ def test_atomic_handoff_file_fsyncs_and_promotes_final_name(
 
 @pytest.mark.unit
 def test_atomic_handoff_file_removes_temp_file_on_byte_count_mismatch(
-    caplog,
-    tmp_path,
-):
-    caplog.set_level(logging.INFO, logger="endoreg_db.utils.filesystem.file_operations")
+    caplog: LogCaptureFixture,
+    tmp_path: Path,
+) -> None:
+    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
     destination = tmp_path / "incoming.mp4"
 
     with pytest.raises(ValueError, match="byte count mismatch"):
@@ -184,9 +196,9 @@ def test_atomic_handoff_file_removes_temp_file_on_byte_count_mismatch(
 
 @pytest.mark.unit
 def test_atomic_move_file_falls_back_to_copy_then_unlink_on_cross_device_error(
-    caplog, monkeypatch, tmp_path
-):
-    caplog.set_level(logging.INFO, logger="endoreg_db.utils.filesystem.file_operations")
+    caplog: LogCaptureFixture, monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
     source = tmp_path / "source.bin"
     destination = tmp_path / "other" / "destination.bin"
     source.write_bytes(b"move-me")
@@ -223,8 +235,10 @@ def test_atomic_move_file_falls_back_to_copy_then_unlink_on_cross_device_error(
 
 
 @pytest.mark.unit
-def test_safe_unlink_file_missing_required_path_logs_and_raises(caplog, tmp_path):
-    caplog.set_level(logging.INFO, logger="endoreg_db.utils.filesystem.file_operations")
+def test_safe_unlink_file_missing_required_path_logs_and_raises(
+    caplog: LogCaptureFixture, tmp_path: Path
+) -> None:
+    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
     missing = tmp_path / "missing.bin"
 
     with pytest.raises(FileNotFoundError):
@@ -240,8 +254,10 @@ def test_safe_unlink_file_missing_required_path_logs_and_raises(caplog, tmp_path
 
 
 @pytest.mark.unit
-def test_ensure_directory_and_safe_rmtree_emit_structured_events(caplog, tmp_path):
-    caplog.set_level(logging.INFO, logger="endoreg_db.utils.filesystem.file_operations")
+def test_ensure_directory_and_safe_rmtree_emit_structured_events(
+    caplog: LogCaptureFixture, tmp_path: Path
+) -> None:
+    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
     target = tmp_path / "created" / "nested"
 
     ensure_directory(target, dir_mode=0o700)
@@ -265,15 +281,17 @@ def test_ensure_directory_and_safe_rmtree_emit_structured_events(caplog, tmp_pat
 
 
 @pytest.mark.unit
-def test_safe_rmtree_retries_directory_not_empty_race(monkeypatch, caplog, tmp_path):
-    caplog.set_level(logging.INFO, logger="endoreg_db.utils.filesystem.file_operations")
+def test_safe_rmtree_retries_directory_not_empty_race(
+    monkeypatch: MonkeyPatch, caplog: LogCaptureFixture, tmp_path: Path
+) -> None:
+    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
     target = tmp_path / "racy"
     ensure_directory(target)
     atomic_write_file(destination=target / "child.txt", content=(b"payload",))
     original_rmtree = file_operations.shutil.rmtree
     calls = 0
 
-    def racy_rmtree(path):
+    def racy_rmtree(path: str | Path) -> None:
         nonlocal calls
         calls += 1
         if calls == 1:

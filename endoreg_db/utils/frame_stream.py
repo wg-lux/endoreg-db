@@ -1,21 +1,59 @@
+# pyright: reportPrivateUsage=false
 from __future__ import annotations
 
 import logging
 import subprocess
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import IO, Iterator
+from typing import IO, Callable, Iterator, Protocol, TypedDict, cast
 
 import numpy as np
 
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS
-from endoreg_db.utils.storage import materialize_video_file
-from endoreg_db.utils.video.ffmpeg_wrapper import (
+from endoreg_db.utils.ffmpeg_wrapper import (
     _resolve_ffmpeg_executable,
     get_stream_info,
 )
+from endoreg_db.utils.storage import materialize_video_file as _materialize_video_file
 
 logger = logging.getLogger(__name__)
+
+
+class _VideoStreamInfo(TypedDict):
+    codec_type: str
+    width: int
+    height: int
+    avg_frame_rate: str | None
+    r_frame_rate: str | None
+
+
+class _FfprobeStreamInfo(TypedDict):
+    streams: list[_VideoStreamInfo]
+
+
+class _VideoLike(Protocol):
+    video_hash: str
+
+    def ensure_local_raw_file(self) -> AbstractContextManager[Path]: ...
+
+    def ensure_local_processed_file(self) -> AbstractContextManager[Path]: ...
+
+    raw_file: object
+    processed_file: object
+
+    def get_fps(self) -> float | int | str | None: ...
+
+
+def _materialize_video_file_typed(
+    video: _VideoLike,
+    file_type: str,
+) -> AbstractContextManager[Path]:
+    helper = cast(
+        Callable[[_VideoLike, str], AbstractContextManager[Path]],
+        _materialize_video_file,
+    )
+    return helper(video, file_type)
 
 
 @dataclass(frozen=True)
@@ -52,30 +90,26 @@ def _video_stream_metadata(
     *,
     fps_hint: float | None,
 ) -> tuple[int, int, float]:
-    stream_info = get_stream_info(video_path)
-    if not stream_info or "streams" not in stream_info:
+    stream_info_payload = get_stream_info(video_path)
+    if stream_info_payload is None:
         raise RuntimeError(f"ffprobe returned no streams for {video_path.name}.")
+    stream_info = cast(_FfprobeStreamInfo, stream_info_payload)
     video_stream = next(
         (
             stream
-            for stream in stream_info.get("streams", [])
-            if isinstance(stream, dict) and stream.get("codec_type") == "video"
+            for stream in stream_info["streams"]
+            if stream["codec_type"] == "video"
         ),
         None,
     )
     if video_stream is None:
         raise RuntimeError(f"ffprobe returned no video stream for {video_path.name}.")
-    try:
-        width = int(video_stream["width"])
-        height = int(video_stream["height"])
-    except (KeyError, TypeError, ValueError) as exc:
-        raise RuntimeError(
-            f"ffprobe returned invalid frame dimensions for {video_path.name}."
-        ) from exc
+    width = int(video_stream["width"])
+    height = int(video_stream["height"])
     fps = (
         fps_hint
-        or _parse_frame_rate(video_stream.get("avg_frame_rate"))
-        or _parse_frame_rate(video_stream.get("r_frame_rate"))
+        or _parse_frame_rate(video_stream["avg_frame_rate"])
+        or _parse_frame_rate(video_stream["r_frame_rate"])
         or DEFAULT_VIDEO_FPS
     )
     if fps <= 0:
@@ -132,10 +166,11 @@ def iter_video_path_frame_samples(
         stderr=subprocess.PIPE,
     )
     assert process.stdout is not None
+    stdout = process.stdout
     frame_number = 0
     try:
         while True:
-            frame_bytes = _read_exact(process.stdout, frame_size)
+            frame_bytes = _read_exact(stdout, frame_size)
             if not frame_bytes:
                 break
             if len(frame_bytes) != frame_size:
@@ -155,9 +190,12 @@ def iter_video_path_frame_samples(
 
         return_code = process.wait()
         if return_code != 0:
-            stderr = ""
-            if process.stderr is not None:
-                stderr = process.stderr.read().decode("utf-8", errors="replace")
+            stderr_pipe = process.stderr
+            stderr = (
+                stderr_pipe.read().decode("utf-8", errors="replace")
+                if stderr_pipe is not None
+                else ""
+            )
             raise RuntimeError(
                 f"ffmpeg streaming decode failed for {video_path.name} "
                 f"with exit code {return_code}: {stderr.strip()}"
@@ -170,10 +208,10 @@ def iter_video_path_frame_samples(
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait()
-        if process.stdout is not None:
-            process.stdout.close()
-        if process.stderr is not None:
-            process.stderr.close()
+        assert process.stdout is not None
+        assert process.stderr is not None
+        process.stdout.close()
+        process.stderr.close()
 
 
 def read_video_path_frame_sample(
@@ -224,12 +262,16 @@ def read_video_path_frame_sample(
         stderr=subprocess.PIPE,
     )
     assert process.stdout is not None
+    stdout = process.stdout
     try:
-        frame_bytes = _read_exact(process.stdout, frame_size)
+        frame_bytes = _read_exact(stdout, frame_size)
         return_code = process.wait()
-        stderr = ""
-        if process.stderr is not None:
-            stderr = process.stderr.read().decode("utf-8", errors="replace")
+        stderr_pipe = process.stderr
+        stderr = (
+            stderr_pipe.read().decode("utf-8", errors="replace")
+            if stderr_pipe is not None
+            else ""
+        )
 
         if return_code != 0:
             raise RuntimeError(
@@ -260,45 +302,48 @@ def read_video_path_frame_sample(
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait()
-        if process.stdout is not None:
-            process.stdout.close()
-        if process.stderr is not None:
-            process.stderr.close()
+        assert process.stdout is not None
+        assert process.stderr is not None
+        process.stdout.close()
+        process.stderr.close()
 
 
 def iter_video_file_frame_samples(
-    video,
+    video: _VideoLike,
     *,
     file_type: str = "raw",
 ) -> Iterator[FrameSample]:
     fps_hint = None
-    get_fps = getattr(video, "get_fps", None)
-    if callable(get_fps):
-        try:
-            fps_hint = float(get_fps() or 0.0) or None
-        except (TypeError, ValueError):
-            fps_hint = None
+    try:
+        fps_value = video.get_fps()
+        if isinstance(fps_value, (int, float)):
+            fps_hint = float(fps_value) or None
+        elif isinstance(fps_value, str):
+            fps_hint = float(fps_value) or None
+    except (TypeError, ValueError):
+        fps_hint = None
 
-    with materialize_video_file(video, file_type) as source_path:
+    with _materialize_video_file_typed(video, file_type) as source_path:
         yield from iter_video_path_frame_samples(source_path, fps_hint=fps_hint)
 
 
 def read_video_file_frame_sample(
-    video,
+    video: _VideoLike,
     *,
     frame_number: int,
     file_type: str = "raw",
 ) -> FrameSample:
-    fps_hint: int = None
-    get_fps = getattr(video, "get_fps", None)
-    if callable(get_fps):
-        try:
-            fps = get_fps()
-            fps_hint = int(fps or 50) or None
-        except (TypeError, ValueError):
-            fps_hint = None
+    fps_hint: float | None = None
+    try:
+        fps_value = video.get_fps()
+        if isinstance(fps_value, (int, float)):
+            fps_hint = float(fps_value) or None
+        elif isinstance(fps_value, str):
+            fps_hint = float(fps_value) or None
+    except (TypeError, ValueError):
+        fps_hint = None
 
-    with materialize_video_file(video, file_type) as source_path:
+    with _materialize_video_file_typed(video, file_type) as source_path:
         return read_video_path_frame_sample(
             source_path,
             frame_number=frame_number,

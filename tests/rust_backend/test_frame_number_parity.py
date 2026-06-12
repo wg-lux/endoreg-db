@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
 
-from endoreg_db.utils.system.rust_backend import (
+from endoreg_db.utils.rust_backend import (
     build_expected_frame_records,
     build_frame_records,
     parse_extracted_frame_numbers,
@@ -41,7 +42,10 @@ def test_frame_number_rust_backend_matches_python_reference_for_valid_paths() ->
 def test_frame_number_rust_backend_returns_none_for_invalid_input_to_preserve_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import endoreg_db.utils.system.rust_backend as rust_backend_module
+    import endoreg_db.utils.rust_backend as rust_backend_module
+
+    def raise_bad_frame_name(*args: object, **kwargs: object) -> NoReturn:
+        raise ValueError("bad frame name")
 
     frame_paths = [
         Path("/tmp/frame_0000001.jpg"),
@@ -51,7 +55,7 @@ def test_frame_number_rust_backend_returns_none_for_invalid_input_to_preserve_fa
     monkeypatch.setattr(
         rust_backend_module,
         "_parse_extracted_frame_numbers",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("bad frame name")),
+        raise_bad_frame_name,
     )
 
     assert rust_backend_module.parse_extracted_frame_numbers(frame_paths) is None

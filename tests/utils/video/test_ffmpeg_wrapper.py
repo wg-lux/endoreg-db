@@ -1,9 +1,15 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false
 import subprocess
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
+from endoreg_db.utils.ffmpeg_wrapper import _build_encoder_args, transcode_video
+from lx_dtypes.models.contracts.json_types import JsonObject
 
-from endoreg_db.utils.video import ffmpeg_wrapper
+from endoreg_db.import_files.context.import_context import ImportContext
+from endoreg_db.utils import transcode_execution
+from endoreg_db.utils import ffmpeg_wrapper
 from endoreg_db.utils.video.command_construction import (
     TimestampRepairMode,
     _build_extract_frame_range_command,
@@ -11,20 +17,25 @@ from endoreg_db.utils.video.command_construction import (
     _build_filter_transcode_command,
     _build_transcode_command,
 )
-from endoreg_db.utils.video import transcode_execution
-from endoreg_db.utils.video.ffmpeg_wrapper import _build_encoder_args, transcode_video
 
 
 class FakePopen:
+    command: list[str]
+    returncode: int
+    stderr: str
+    timeout: bool
+    killed: bool
+    kwargs: dict[str, str | int | bool]
+
     def __init__(
         self,
-        command,
+        command: list[str],
         *,
-        returncode=0,
-        stderr_output="",
-        timeout=False,
-        **kwargs,
-    ):
+        returncode: int = 0,
+        stderr_output: str = "",
+        timeout: bool = False,
+        **kwargs: str | int | bool,
+    ) -> None:
         self.command = command
         self.returncode = returncode
         self.stderr = stderr_output
@@ -32,39 +43,92 @@ class FakePopen:
         self.killed = False
         self.kwargs = kwargs
 
-    def communicate(self, timeout=None):
+    def communicate(self, timeout: float = 0.0) -> tuple[str, str]:
         if self.timeout and not self.killed:
             raise subprocess.TimeoutExpired(cmd=self.command, timeout=timeout)
         return "", self.stderr
 
-    def kill(self):
+    def kill(self) -> None:
         self.killed = True
 
 
+def _smart_ffmpeg_path() -> str:
+    return "/smart/bin/ffmpeg"
+
+
+def _valid_h264_stream_info(_path: Path) -> JsonObject:
+    return {"streams": [{"codec_type": "video", "codec_name": "h264"}]}
+
+
+def _empty_stream_info(_path: Path) -> JsonObject:
+    return {"streams": []}
+
+
+def _preferred_nvenc_encoder() -> dict[str, str]:
+    return {
+        "name": "h264_nvenc",
+        "preset_param": "-preset",
+        "preset_value": "p4",
+        "quality_param": "-cq",
+        "quality_value": "20",
+        "type": "nvenc",
+        "fallback_preset": "p1",
+    }
+
+
+def _yuvj420p_full_range_stream_info(_path: Path) -> JsonObject:
+    return {
+        "streams": [
+            {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "pix_fmt": "yuvj420p",
+                "color_range": "pc",
+            }
+        ]
+    }
+
+
+def _yuvj420p_limited_range_stream_info(_path: Path) -> JsonObject:
+    return {
+        "streams": [
+            {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "pix_fmt": "yuvj420p",
+                "color_range": "tv",
+            }
+        ]
+    }
+
+
 @pytest.fixture(autouse=True)
-def _valid_transcode_output_stream(monkeypatch):
+def _valid_transcode_output_stream(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         transcode_execution,
         "get_stream_info",
-        lambda _path: {"streams": [{"codec_type": "video", "codec_name": "h264"}]},
+        _valid_h264_stream_info,
     )
 
 
 @pytest.mark.unit
-def test_transcode_video_timeout_removes_partial_output(monkeypatch, tmp_path):
+def test_transcode_video_timeout_removes_partial_output(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     input_path = tmp_path / "input.mp4"
     output_path = tmp_path / "output.mp4"
     input_path.write_bytes(b"input")
     output_path.write_bytes(b"partial")
     monkeypatch.setattr(
-        "endoreg_db.utils.video.transcode_execution._resolve_ffmpeg_executable",
-        lambda: "/smart/bin/ffmpeg",
+        "endoreg_db.utils.transcode_execution._resolve_ffmpeg_executable",
+        _smart_ffmpeg_path,
     )
 
-    created_processes = []
+    created_processes: list[FakePopen] = []
 
-    def fake_popen(command, **kwargs):
-        process = FakePopen(command, timeout=True, **kwargs)
+    def fake_popen(command: list[str], **_kwargs: str | int | bool) -> FakePopen:
+        process = FakePopen(command, timeout=True)
         created_processes.append(process)
         return process
 
@@ -79,51 +143,44 @@ def test_transcode_video_timeout_removes_partial_output(monkeypatch, tmp_path):
 
 
 @pytest.mark.unit
-def test_transcode_video_force_cpu_uses_cpu_only_flags(monkeypatch, tmp_path):
+def test_transcode_video_force_cpu_uses_cpu_only_flags(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     input_path = tmp_path / "input.mp4"
     output_path = tmp_path / "output.mp4"
     input_path.write_bytes(b"input")
     monkeypatch.setattr(
-        "endoreg_db.utils.video.transcode_execution._resolve_ffmpeg_executable",
-        lambda: "/smart/bin/ffmpeg",
+        "endoreg_db.utils.transcode_execution._resolve_ffmpeg_executable",
+        _smart_ffmpeg_path,
     )
 
-    captured = {}
+    captured_commands: list[list[str]] = []
 
-    def fake_get_preferred_encoder():
-        return {
-            "name": "h264_nvenc",
-            "preset_param": "-preset",
-            "preset_value": "p4",
-            "quality_param": "-cq",
-            "quality_value": "20",
-            "type": "nvenc",
-            "fallback_preset": "p1",
-        }
-
-    def fake_popen(command, **kwargs):
-        captured["command"] = command
+    def fake_popen(command: list[str], **_kwargs: str | int | bool) -> FakePopen:
+        captured_commands.append(command)
         output_path.write_bytes(b"encoded")
-        return FakePopen(command, returncode=0, **kwargs)
+        return FakePopen(command, returncode=0)
 
     monkeypatch.setattr(
         "endoreg_db.utils.video.encoder_policy._get_preferred_encoder",
-        fake_get_preferred_encoder,
+        _preferred_nvenc_encoder,
     )
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
 
     result = transcode_video(input_path, output_path, force_cpu=True)
 
     assert result == output_path
-    assert captured["command"][0] == "/smart/bin/ffmpeg"
-    assert "-c:v" in captured["command"]
-    codec_index = captured["command"].index("-c:v")
-    assert captured["command"][codec_index + 1] == "libx264"
-    assert "-crf" in captured["command"]
-    assert "-cq" not in captured["command"]
-    assert "-gpu" not in captured["command"]
-    assert "-rc" not in captured["command"]
-    assert captured["command"] == [
+    command = captured_commands[0]
+    assert command[0] == "/smart/bin/ffmpeg"
+    assert "-c:v" in command
+    codec_index = command.index("-c:v")
+    assert command[codec_index + 1] == "libx264"
+    assert "-crf" in command
+    assert "-cq" not in command
+    assert "-gpu" not in command
+    assert "-rc" not in command
+    assert command == [
         "/smart/bin/ffmpeg",
         "-i",
         str(input_path),
@@ -145,41 +202,46 @@ def test_transcode_video_force_cpu_uses_cpu_only_flags(monkeypatch, tmp_path):
 
 
 @pytest.mark.unit
-def test_transcode_output_validation_rejects_non_video_payload(monkeypatch, tmp_path):
+def test_transcode_output_validation_rejects_non_video_payload(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     output_path = tmp_path / "output.mp4"
     output_path.write_bytes(b"not empty but not video")
     monkeypatch.setattr(
         transcode_execution,
         "get_stream_info",
-        lambda _path: {"streams": []},
+        _empty_stream_info,
     )
 
     assert ffmpeg_wrapper._transcode_output_is_valid(output_path) is False
 
 
 @pytest.mark.unit
-def test_transcode_video_retries_timestamp_repair(monkeypatch, tmp_path):
+def test_transcode_video_retries_timestamp_repair(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     input_path = tmp_path / "input.mp4"
     output_path = tmp_path / "output.mp4"
     input_path.write_bytes(b"input")
     monkeypatch.setattr(
-        "endoreg_db.utils.video.transcode_execution._resolve_ffmpeg_executable",
-        lambda: "/smart/bin/ffmpeg",
+        "endoreg_db.utils.transcode_execution._resolve_ffmpeg_executable",
+        _smart_ffmpeg_path,
     )
 
-    commands = []
+    commands: list[list[str]] = []
 
-    def fake_popen(command, **kwargs):
+    def fake_popen(command: list[str], **_kwargs: str | int | bool) -> FakePopen:
         commands.append(command)
         if len(commands) == 1:
             return FakePopen(
                 command,
                 returncode=1,
                 stderr_output="invalid dts: timestamp too large and out of range",
-                **kwargs,
             )
         output_path.write_bytes(b"encoded")
-        return FakePopen(command, returncode=0, **kwargs)
+        return FakePopen(command, returncode=0)
 
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
 
@@ -194,33 +256,41 @@ def test_transcode_video_retries_timestamp_repair(monkeypatch, tmp_path):
 
 @pytest.mark.unit
 def test_create_sensitive_copy_fails_when_video_transcode_fails(
-    monkeypatch,
-    tmp_path,
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     from endoreg_db.import_files.file_storage.storage import create_sensitive_copy
 
     input_path = tmp_path / "input.mp4"
     sensitive_root = tmp_path / "sensitive"
     input_path.write_bytes(b"input")
 
+    def fail_video_transcode(_src: Path, _dest: Path) -> None:
+        return None
+
     monkeypatch.setattr(
         "endoreg_db.import_files.file_storage.storage.transcode_videofile_if_required",
-        lambda src, dest: None,
+        fail_video_transcode,
+    )
+    import_context = ImportContext(
+        file_path=input_path,
+        center_name="test-center",
+        file_type="video",
     )
 
     with pytest.raises(RuntimeError, match="Video transcode failed"):
         create_sensitive_copy(
             input_path,
             sensitive_root,
-            type("ImportContext", (), {"file_type": "video"})(),
+            import_context,
         )
 
 
 @pytest.mark.unit
 def test_transcode_videofile_if_required_accepts_full_range_yuvj420p_alias(
-    monkeypatch,
-    tmp_path,
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     input_path = tmp_path / "input.mp4"
     output_path = tmp_path / "output.mp4"
     input_path.write_bytes(b"input")
@@ -228,19 +298,14 @@ def test_transcode_videofile_if_required_accepts_full_range_yuvj420p_alias(
     monkeypatch.setattr(
         transcode_execution,
         "get_stream_info",
-        lambda _path: {
-            "streams": [
-                {
-                    "codec_type": "video",
-                    "codec_name": "h264",
-                    "pix_fmt": "yuvj420p",
-                    "color_range": "pc",
-                }
-            ]
-        },
+        _yuvj420p_full_range_stream_info,
     )
 
-    def fail_if_transcoded(*args, **kwargs):
+    def fail_if_transcoded(
+        _input_path: Path,
+        _output_path: Path,
+        **_kwargs: str | int | bool,
+    ) -> NoReturn:
         raise AssertionError("full-range yuvj420p should not be transcoded")
 
     monkeypatch.setattr(transcode_execution, "transcode_video", fail_if_transcoded)
@@ -256,9 +321,9 @@ def test_transcode_videofile_if_required_accepts_full_range_yuvj420p_alias(
 
 @pytest.mark.unit
 def test_transcode_videofile_if_required_rejects_yuvj420p_without_full_range(
-    monkeypatch,
-    tmp_path,
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     input_path = tmp_path / "input.mp4"
     output_path = tmp_path / "output.mp4"
     input_path.write_bytes(b"input")
@@ -267,19 +332,14 @@ def test_transcode_videofile_if_required_rejects_yuvj420p_without_full_range(
     monkeypatch.setattr(
         transcode_execution,
         "get_stream_info",
-        lambda _path: {
-            "streams": [
-                {
-                    "codec_type": "video",
-                    "codec_name": "h264",
-                    "pix_fmt": "yuvj420p",
-                    "color_range": "tv",
-                }
-            ]
-        },
+        _yuvj420p_limited_range_stream_info,
     )
 
-    def fake_transcode(input_path, output_path, **kwargs):
+    def fake_transcode(
+        _input_path: Path,
+        output_path: Path,
+        **_kwargs: str | int | bool,
+    ) -> Path:
         nonlocal called
         called = True
         output_path.write_bytes(b"transcoded")
@@ -298,21 +358,12 @@ def test_transcode_videofile_if_required_rejects_yuvj420p_without_full_range(
 
 
 @pytest.mark.unit
-def test_build_encoder_args_nvenc_forces_yuv420p_format(monkeypatch):
-    def fake_get_preferred_encoder():
-        return {
-            "name": "h264_nvenc",
-            "preset_param": "-preset",
-            "preset_value": "p4",
-            "quality_param": "-cq",
-            "quality_value": "20",
-            "type": "nvenc",
-            "fallback_preset": "p1",
-        }
-
+def test_build_encoder_args_nvenc_forces_yuv420p_format(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(
         "endoreg_db.utils.video.encoder_policy._get_preferred_encoder",
-        fake_get_preferred_encoder,
+        _preferred_nvenc_encoder,
     )
 
     encoder_args, encoder_type = _build_encoder_args()
@@ -323,7 +374,7 @@ def test_build_encoder_args_nvenc_forces_yuv420p_format(monkeypatch):
 
 
 @pytest.mark.unit
-def test_ffmpeg_timestamp_fault_detection_requires_timestamp_and_fault_signal():
+def test_ffmpeg_timestamp_fault_detection_requires_timestamp_and_fault_signal() -> None:
     assert ffmpeg_wrapper._stderr_indicates_timestamp_fault(
         "Non monotonically increasing DTS in output stream"
     )
@@ -337,7 +388,9 @@ def test_ffmpeg_timestamp_fault_detection_requires_timestamp_and_fault_signal():
 
 
 @pytest.mark.unit
-def test_update_or_append_ffmpeg_arg_replaces_appends_and_repairs_missing_value():
+def test_update_or_append_ffmpeg_arg_replaces_appends_and_repairs_missing_value() -> (
+    None
+):
     args = ["-pix_fmt", "yuv420p"]
 
     ffmpeg_wrapper._update_or_append_ffmpeg_arg(args, "-pix_fmt", "yuv420p")
@@ -355,7 +408,7 @@ def test_update_or_append_ffmpeg_arg_replaces_appends_and_repairs_missing_value(
 
 
 @pytest.mark.unit
-def test_build_transcode_command_preserves_legacy_extra_arg_order():
+def test_build_transcode_command_preserves_legacy_extra_arg_order() -> None:
     command = _build_transcode_command(
         ffmpeg_executable="/smart/bin/ffmpeg",
         input_path=Path("/data/input.mp4"),
@@ -402,7 +455,7 @@ def test_build_transcode_command_preserves_legacy_extra_arg_order():
 
 
 @pytest.mark.unit
-def test_build_transcode_command_preserves_legacy_timestamp_repair_order():
+def test_build_transcode_command_preserves_legacy_timestamp_repair_order() -> None:
     command = _build_transcode_command(
         ffmpeg_executable="/smart/bin/ffmpeg",
         input_path=Path("/data/input.mp4"),
@@ -438,7 +491,7 @@ def test_build_transcode_command_preserves_legacy_timestamp_repair_order():
 
 
 @pytest.mark.unit
-def test_build_frame_extraction_commands_preserve_legacy_order():
+def test_build_frame_extraction_commands_preserve_legacy_order() -> None:
     output_pattern = Path("/data/frames/frame_%07d.jpg")
 
     full_command = _build_extract_frames_command(
@@ -487,7 +540,7 @@ def test_build_frame_extraction_commands_preserve_legacy_order():
 
 
 @pytest.mark.unit
-def test_build_filter_transcode_command_preserves_legacy_order():
+def test_build_filter_transcode_command_preserves_legacy_order() -> None:
     command = _build_filter_transcode_command(
         ffmpeg_executable="/smart/bin/ffmpeg",
         input_path=Path("/data/input.mp4"),
@@ -548,19 +601,25 @@ def test_build_filter_transcode_command_preserves_legacy_order():
 
 
 @pytest.mark.unit
-def test_extract_frame_range_numbers_outputs_by_requested_frame(monkeypatch, tmp_path):
+def test_extract_frame_range_numbers_outputs_by_requested_frame(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     input_path = tmp_path / "input.mp4"
     output_dir = tmp_path / "frames"
     input_path.write_bytes(b"video")
-    captured = {}
+    captured_commands: list[list[str]] = []
 
     monkeypatch.setattr(
         "endoreg_db.utils.video.frame_extraction._resolve_ffmpeg_executable",
-        lambda: "/smart/bin/ffmpeg",
+        _smart_ffmpeg_path,
     )
 
-    def fake_run(command, **kwargs):
-        captured["command"] = command
+    def fake_run(
+        command: list[str],
+        **_kwargs: str | int | bool,
+    ) -> subprocess.CompletedProcess[str]:
+        captured_commands.append(command)
         output_dir.mkdir(parents=True, exist_ok=True)
         for frame_number in range(10, 13):
             (output_dir / f"frame_{frame_number:07d}.jpg").write_bytes(b"frame")
@@ -581,24 +640,31 @@ def test_extract_frame_range_numbers_outputs_by_requested_frame(monkeypatch, tmp
         "frame_0000011.jpg",
         "frame_0000012.jpg",
     ]
-    assert "-start_number" in captured["command"]
-    assert captured["command"][captured["command"].index("-start_number") + 1] == "10"
+    command = captured_commands[0]
+    assert "-start_number" in command
+    assert command[command.index("-start_number") + 1] == "10"
 
 
 @pytest.mark.unit
-def test_extract_frames_numbers_full_extraction_from_zero(monkeypatch, tmp_path):
+def test_extract_frames_numbers_full_extraction_from_zero(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     input_path = tmp_path / "input.mp4"
     output_dir = tmp_path / "frames"
     input_path.write_bytes(b"video")
-    captured = {}
+    captured_commands: list[list[str]] = []
 
     monkeypatch.setattr(
         "endoreg_db.utils.video.frame_extraction._resolve_ffmpeg_executable",
-        lambda: "/smart/bin/ffmpeg",
+        _smart_ffmpeg_path,
     )
 
-    def fake_run(command, **kwargs):
-        captured["command"] = command
+    def fake_run(
+        command: list[str],
+        **_kwargs: str | int | bool,
+    ) -> subprocess.CompletedProcess[str]:
+        captured_commands.append(command)
         output_dir.mkdir(parents=True, exist_ok=True)
         for frame_number in range(2):
             (output_dir / f"frame_{frame_number:07d}.jpg").write_bytes(b"frame")
@@ -616,12 +682,13 @@ def test_extract_frames_numbers_full_extraction_from_zero(monkeypatch, tmp_path)
         "frame_0000000.jpg",
         "frame_0000001.jpg",
     ]
-    assert "-start_number" in captured["command"]
-    assert captured["command"][captured["command"].index("-start_number") + 1] == "0"
+    command = captured_commands[0]
+    assert "-start_number" in command
+    assert command[command.index("-start_number") + 1] == "0"
 
 
 @pytest.mark.unit
-def test_build_blacken_filter_expression_uses_frame_counter_ranges():
+def test_build_blacken_filter_expression_uses_frame_counter_ranges() -> None:
     expression = ffmpeg_wrapper._build_blacken_filter_expression(
         [(120, 240), (800, 900)]
     )
@@ -631,7 +698,7 @@ def test_build_blacken_filter_expression_uses_frame_counter_ranges():
 
 
 @pytest.mark.unit
-def test_normalize_blacken_intervals_sorts_and_merges_ranges():
+def test_normalize_blacken_intervals_sorts_and_merges_ranges() -> None:
     intervals = [(40, 50), (10, 20), (15, 30), (30, 31), (80, 90)]
 
     normalized = ffmpeg_wrapper._normalize_blacken_intervals(intervals)
@@ -640,7 +707,9 @@ def test_normalize_blacken_intervals_sorts_and_merges_ranges():
 
 
 @pytest.mark.unit
-def test_blacken_filter_args_switches_to_script_for_large_interval_sets(tmp_path):
+def test_blacken_filter_args_switches_to_script_for_large_interval_sets(
+    tmp_path: Path,
+) -> None:
     intervals = [(index * 10, index * 10 + 1) for index in range(121)]
 
     args, script_path = ffmpeg_wrapper._blacken_filter_args(
@@ -658,21 +727,24 @@ def test_blacken_filter_args_switches_to_script_for_large_interval_sets(tmp_path
 
 
 @pytest.mark.unit
-def test_blacken_video_frame_intervals_maps_audio_and_filter(monkeypatch, tmp_path):
+def test_blacken_video_frame_intervals_maps_audio_and_filter(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     input_path = tmp_path / "input.mp4"
     output_path = tmp_path / "output.mp4"
     input_path.write_bytes(b"video")
-    captured = {}
+    captured_commands: list[list[str]] = []
 
     monkeypatch.setattr(
         "endoreg_db.utils.video.masking_filters._resolve_ffmpeg_executable",
-        lambda: "/smart/bin/ffmpeg",
+        _smart_ffmpeg_path,
     )
 
-    def fake_popen(command, **kwargs):
-        captured["command"] = command
+    def fake_popen(command: list[str], **_kwargs: str | int | bool) -> FakePopen:
+        captured_commands.append(command)
         output_path.write_bytes(b"encoded")
-        return FakePopen(command, returncode=0, **kwargs)
+        return FakePopen(command, returncode=0)
 
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
 
@@ -684,39 +756,37 @@ def test_blacken_video_frame_intervals_maps_audio_and_filter(monkeypatch, tmp_pa
     )
 
     assert result == output_path
-    assert "-map" in captured["command"]
-    assert captured["command"].count("-map") == 2
-    assert "0:v:0" in captured["command"]
-    assert "0:a?" in captured["command"]
-    assert "-c:a" in captured["command"]
-    assert captured["command"][captured["command"].index("-c:a") + 1] == "copy"
-    assert "-vf" in captured["command"]
-    assert (
-        "(gte(n\\,10)*lt(n\\,20))"
-        in captured["command"][captured["command"].index("-vf") + 1]
-    )
+    command = captured_commands[0]
+    assert "-map" in command
+    assert command.count("-map") == 2
+    assert "0:v:0" in command
+    assert "0:a?" in command
+    assert "-c:a" in command
+    assert command[command.index("-c:a") + 1] == "copy"
+    assert "-vf" in command
+    assert "(gte(n\\,10)*lt(n\\,20))" in command[command.index("-vf") + 1]
 
 
 @pytest.mark.unit
 def test_blacken_video_frame_intervals_uses_video_filter_script_for_large_interval_sets(
-    monkeypatch,
-    tmp_path,
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     input_path = tmp_path / "input.mp4"
     output_path = tmp_path / "output.mp4"
     input_path.write_bytes(b"video")
     intervals = [(index * 10, index * 10 + 1) for index in range(121)]
-    captured = {}
+    captured_commands: list[list[str]] = []
 
     monkeypatch.setattr(
         "endoreg_db.utils.video.masking_filters._resolve_ffmpeg_executable",
-        lambda: "/smart/bin/ffmpeg",
+        _smart_ffmpeg_path,
     )
 
-    def fake_popen(command, **kwargs):
-        captured["command"] = command
+    def fake_popen(command: list[str], **_kwargs: str | int | bool) -> FakePopen:
+        captured_commands.append(command)
         output_path.write_bytes(b"encoded")
-        return FakePopen(command, returncode=0, **kwargs)
+        return FakePopen(command, returncode=0)
 
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
 
@@ -728,17 +798,18 @@ def test_blacken_video_frame_intervals_uses_video_filter_script_for_large_interv
     )
 
     assert result == output_path
-    assert "-filter_script:v" in captured["command"]
-    assert "-filter_complex_script" not in captured["command"]
-    script_path = Path(
-        captured["command"][captured["command"].index("-filter_script:v") + 1]
-    )
+    command = captured_commands[0]
+    assert "-filter_script:v" in command
+    assert "-filter_complex_script" not in command
+    script_path = Path(command[command.index("-filter_script:v") + 1])
     assert script_path.parent == tmp_path
     assert not script_path.exists()
 
 
 @pytest.mark.unit
-def test_build_roi_mask_and_blacken_filter_expression_combines_roi_and_intervals():
+def test_build_roi_mask_and_blacken_filter_expression_combines_roi_and_intervals() -> (
+    None
+):
     expression = ffmpeg_wrapper._build_roi_mask_and_blacken_filter_expression(
         endo_roi={"x": 10, "y": 20, "width": 300, "height": 200},
         intervals=[(120, 240)],
@@ -753,23 +824,23 @@ def test_build_roi_mask_and_blacken_filter_expression_combines_roi_and_intervals
 
 @pytest.mark.unit
 def test_mask_video_to_roi_and_blacken_intervals_maps_audio_and_filter(
-    monkeypatch,
-    tmp_path,
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     input_path = tmp_path / "input.mp4"
     output_path = tmp_path / "output.mp4"
     input_path.write_bytes(b"video")
-    captured = {}
+    captured_commands: list[list[str]] = []
 
     monkeypatch.setattr(
         "endoreg_db.utils.video.masking_filters._resolve_ffmpeg_executable",
-        lambda: "/smart/bin/ffmpeg",
+        _smart_ffmpeg_path,
     )
 
-    def fake_popen(command, **kwargs):
-        captured["command"] = command
+    def fake_popen(command: list[str], **_kwargs: str | int | bool) -> FakePopen:
+        captured_commands.append(command)
         output_path.write_bytes(b"encoded")
-        return FakePopen(command, returncode=0, **kwargs)
+        return FakePopen(command, returncode=0)
 
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
 
@@ -782,12 +853,13 @@ def test_mask_video_to_roi_and_blacken_intervals_maps_audio_and_filter(
     )
 
     assert result == output_path
-    assert captured["command"].count("-map") == 2
-    assert "0:v:0" in captured["command"]
-    assert "0:a?" in captured["command"]
-    assert "-c:a" in captured["command"]
-    assert captured["command"][captured["command"].index("-c:a") + 1] == "copy"
-    assert "-vf" in captured["command"]
-    filter_expression = captured["command"][captured["command"].index("-vf") + 1]
+    command = captured_commands[0]
+    assert command.count("-map") == 2
+    assert "0:v:0" in command
+    assert "0:a?" in command
+    assert "-c:a" in command
+    assert command[command.index("-c:a") + 1] == "copy"
+    assert "-vf" in command
+    filter_expression = command[command.index("-vf") + 1]
     assert "drawbox=x=0:y=0:w=iw:h=20:color=black:t=fill" in filter_expression
     assert "(gte(n\\,10)*lt(n\\,20))" in filter_expression

@@ -4,14 +4,14 @@ import io
 import os
 import tempfile
 from pathlib import Path
-from typing import Any, Iterator, TypeAlias
+from typing import BinaryIO, Iterator, Protocol, TypeAlias, cast, Any
 
 from django.core.exceptions import ImproperlyConfigured
 from django.core.files.base import File
 from django.core.files.storage import FileSystemStorage, Storage
 from django.utils.deconstruct import deconstructible
 
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_move_file,
     ensure_directory,
     safe_unlink_file,
@@ -39,6 +39,14 @@ IndexCacheValue: TypeAlias = tuple[
 ]
 
 
+class _HasFileLike(Protocol):
+    file: BinaryIO
+
+
+class _EncryptedStorageLike(Protocol):
+    def open(self, name: str, mode: str = "rb") -> File[bytes]: ...
+
+
 class EncryptedStorage(FileSystemStorage):
     """
     File-system-backed storage that persists only ciphertext on disk.
@@ -46,12 +54,21 @@ class EncryptedStorage(FileSystemStorage):
 
     def __init__(
         self,
-        *args,
+        location: str | Path | None = None,
+        base_url: str | None = None,
+        file_permissions_mode: int | None = None,
+        directory_permissions_mode: int | None = None,
+        allow_overwrite: bool = False,
         chunk_size: int = DEFAULT_CHUNK_SIZE,
         master_key: bytes | None = None,
-        **kwargs,
     ):
-        super().__init__(*args, **kwargs)
+        super().__init__(
+            location=cast(Any, location),
+            base_url=base_url,
+            file_permissions_mode=file_permissions_mode,
+            directory_permissions_mode=directory_permissions_mode,
+            allow_overwrite=allow_overwrite,
+        )
         self.chunk_size = chunk_size
         self._master_key = self._resolve_master_key(master_key)
         self._index_cache: dict[IndexCacheKey, IndexCacheValue] = {}
@@ -68,7 +85,7 @@ class EncryptedStorage(FileSystemStorage):
             raise ValueError("master_key must be 16, 24, or 32 bytes for AES-GCM.")
         return master_key
 
-    def _open(self, name: str, mode: str = "rb") -> File:
+    def _open(self, name: str, mode: str = "rb") -> File[bytes]:
         if any(flag in mode for flag in ("w", "a", "+")):
             raise ValueError("EncryptedStorage only supports read-only open()")
         full_path = Path(self.path(name))
@@ -77,7 +94,7 @@ class EncryptedStorage(FileSystemStorage):
         buffered = io.BufferedReader(decrypted)
         return File(buffered, name)
 
-    def open_encrypted(self, name: str):
+    def open_encrypted(self, name: str) -> BinaryIO:
         full_path = Path(self.path(name))
         return open(full_path, "rb")
 
@@ -125,7 +142,7 @@ class EncryptedStorage(FileSystemStorage):
                 output_chunk_size=chunk_size,
             )
 
-    def _save(self, name: str, content) -> str:
+    def _save(self, name: str, content: object) -> str:
         clean_name = self.get_available_name(name)
         full_path = Path(self.path(clean_name))
         ensure_directory(full_path.parent)
@@ -137,7 +154,11 @@ class EncryptedStorage(FileSystemStorage):
         )
         tmp_path = Path(tmp_path_str)
         try:
-            source = content.file if hasattr(content, "file") else content
+            source = (
+                cast(_HasFileLike, content).file
+                if hasattr(content, "file")
+                else cast(BinaryIO, content)
+            )
             with os.fdopen(fd, "wb") as tmp_handle:
                 encrypt_stream(
                     source,
@@ -221,19 +242,18 @@ class LazyEncryptedStorage(Storage):
     @property
     def wrapped(self) -> EncryptedStorage:
         if self._wrapped is None:
-            kwargs: dict[str, Any] = {"chunk_size": self.chunk_size}
-            if self.location is not None:
-                kwargs["location"] = self.location
-            if self.base_url is not None:
-                kwargs["base_url"] = self.base_url
-            self._wrapped = EncryptedStorage(**kwargs)
+            self._wrapped = EncryptedStorage(
+                location=self.location,
+                base_url=self.base_url,
+                chunk_size=self.chunk_size,
+            )
         return self._wrapped
 
-    def _open(self, name: str, mode: str = "rb") -> File:
-        return self.wrapped.open(name, mode)
+    def _open(self, name: str, mode: str = "rb") -> File[bytes]:
+        return cast(_EncryptedStorageLike, self.wrapped).open(name, mode)
 
-    def _save(self, name: str, content) -> str:
-        return self.wrapped.save(name, content)
+    def _save(self, name: str, content: object) -> str:
+        return self.wrapped.save(name, cast(BinaryIO, content))
 
     def delete(self, name: str) -> None:
         self.wrapped.delete(name)

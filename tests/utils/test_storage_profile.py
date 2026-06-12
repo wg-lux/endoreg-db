@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from endoreg_db.utils.storage.profile import (
+from pytest import MonkeyPatch
+
+from endoreg_db.utils.storage_profile import (
     PayloadKind,
     StoragePolicy,
     StorageProfile,
@@ -10,7 +12,7 @@ from endoreg_db.utils.storage.profile import (
 )
 
 
-def test_storage_profile_defaults_to_hybrid(monkeypatch):
+def test_storage_profile_defaults_to_hybrid(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.delenv("ENDOREG_STORAGE_PROFILE", raising=False)
     monkeypatch.delenv("LX_ANNOTATE_USE_ENCRYPTED_STORAGE", raising=False)
 
@@ -24,8 +26,8 @@ def test_storage_profile_defaults_to_hybrid(monkeypatch):
 
 
 def test_storage_profile_explicit_strict_profile_routes_videos_to_app_encrypted(
-    monkeypatch,
-):
+    monkeypatch: MonkeyPatch,
+) -> None:
     monkeypatch.setenv("ENDOREG_STORAGE_PROFILE", "strict_app_encrypted")
     monkeypatch.setenv("LX_ANNOTATE_USE_ENCRYPTED_STORAGE", "0")
 
@@ -38,7 +40,9 @@ def test_storage_profile_explicit_strict_profile_routes_videos_to_app_encrypted(
     assert resolve_storage_policy(PayloadKind.REPORT_PDF) == StoragePolicy.APP_ENCRYPTED
 
 
-def test_storage_profile_legacy_env_maps_to_fs_streaming(monkeypatch):
+def test_storage_profile_legacy_env_maps_to_fs_streaming(
+    monkeypatch: MonkeyPatch,
+) -> None:
     monkeypatch.delenv("ENDOREG_STORAGE_PROFILE", raising=False)
     monkeypatch.setenv("LX_ANNOTATE_USE_ENCRYPTED_STORAGE", "0")
 
@@ -51,6 +55,6 @@ def test_storage_profile_legacy_env_maps_to_fs_streaming(monkeypatch):
     assert resolve_storage_policy(PayloadKind.REPORT_PDF) == StoragePolicy.APP_ENCRYPTED
 
 
-def test_storage_profile_warning_only_applies_to_strict_app_profile():
+def test_storage_profile_warning_only_applies_to_strict_app_profile() -> None:
     assert storage_profile_warning(StorageProfile.STRICT_APP_ENCRYPTED) is not None
     assert storage_profile_warning(StorageProfile.HYBRID_DEFAULT) is None

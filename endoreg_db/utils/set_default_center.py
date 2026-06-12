@@ -1,12 +1,26 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Protocol, cast
 
 from django.core.exceptions import ObjectDoesNotExist
 
 from endoreg_db.models import AIDataSet, ApplicationSettings, Center, EndoscopyProcessor
 
 _UNSET = object()
+
+
+class _ApplicationSettingsLike(Protocol):
+    center: Center | None
+    processor: EndoscopyProcessor | None
+    ai_dataset: AIDataSet | None
+    annotator_name: str
+    report_template_name: str
+    ai_dataset_id: int | None
+    ai_dataset_name: str
+    ai_dataset_type: str
+
+    def save(self, *, update_fields: list[str] | None = None) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -27,7 +41,7 @@ def get_application_settings() -> ApplicationSettings:
 
 
 def get_application_defaults() -> application_defaults_snapshot:
-    settings_obj = get_application_settings()
+    settings_obj = cast(_ApplicationSettingsLike, get_application_settings())
     center = settings_obj.center
     processor = settings_obj.processor
     return application_defaults_snapshot(
@@ -50,9 +64,7 @@ def _resolve_center(center: int | str | Center | None) -> Center | None:
         return center
     if isinstance(center, int):
         return Center.objects.filter(pk=center).first()
-    if isinstance(center, str):
-        return Center.objects.filter(name=center).first()
-    raise TypeError(f"Unsupported center value: {type(center)!r}")
+    return Center.objects.filter(name=center).first()
 
 
 def _resolve_processor(
@@ -64,9 +76,7 @@ def _resolve_processor(
         return processor
     if isinstance(processor, int):
         return EndoscopyProcessor.objects.filter(pk=processor).first()
-    if isinstance(processor, str):
-        return EndoscopyProcessor.objects.filter(name=processor).first()
-    raise TypeError(f"Unsupported processor value: {type(processor)!r}")
+    return EndoscopyProcessor.objects.filter(name=processor).first()
 
 
 def _resolve_ai_dataset(ai_dataset: int | AIDataSet | None) -> AIDataSet | None:
@@ -74,16 +84,14 @@ def _resolve_ai_dataset(ai_dataset: int | AIDataSet | None) -> AIDataSet | None:
         return None
     if isinstance(ai_dataset, AIDataSet):
         return ai_dataset
-    if isinstance(ai_dataset, int):
-        return AIDataSet.objects.filter(pk=ai_dataset).first()
-    raise TypeError(f"Unsupported ai_dataset value: {type(ai_dataset)!r}")
+    return AIDataSet.objects.filter(pk=ai_dataset).first()
 
 
 def set_default_center(center: int | str | Center | None) -> ApplicationSettings:
-    settings_obj = get_application_settings()
+    settings_obj = cast(_ApplicationSettingsLike, get_application_settings())
     settings_obj.center = _resolve_center(center)
     settings_obj.save(update_fields=["center", "updated_at"])
-    return settings_obj
+    return cast(ApplicationSettings, settings_obj)
 
 
 def update_application_defaults(
@@ -96,7 +104,7 @@ def update_application_defaults(
     ai_dataset_name: str | None = None,
     ai_dataset_type: str | None = None,
 ) -> ApplicationSettings:
-    settings_obj = get_application_settings()
+    settings_obj = cast(_ApplicationSettingsLike, get_application_settings())
 
     if center is not None:
         settings_obj.center = _resolve_center(center)
@@ -107,18 +115,20 @@ def update_application_defaults(
     if report_template_name is not None:
         settings_obj.report_template_name = report_template_name
     if ai_dataset is not _UNSET:
-        settings_obj.ai_dataset = _resolve_ai_dataset(ai_dataset)  # type: ignore[arg-type]
+        settings_obj.ai_dataset = _resolve_ai_dataset(
+            cast(int | AIDataSet | None, ai_dataset)
+        )
     if ai_dataset_name is not None:
         settings_obj.ai_dataset_name = ai_dataset_name
     if ai_dataset_type is not None:
         settings_obj.ai_dataset_type = ai_dataset_type
 
     settings_obj.save()
-    return settings_obj
+    return cast(ApplicationSettings, settings_obj)
 
 
 def require_default_center() -> Center:
-    settings_obj = get_application_settings()
+    settings_obj = cast(_ApplicationSettingsLike, get_application_settings())
     if settings_obj.center is None:
         raise ObjectDoesNotExist(
             "ApplicationSettings.center is not configured. Set it in the Application Settings admin."
@@ -127,30 +137,32 @@ def require_default_center() -> Center:
 
 
 def get_default_processor() -> EndoscopyProcessor | None:
-    return get_application_settings().processor
+    return cast(_ApplicationSettingsLike, get_application_settings()).processor
 
 
 def get_default_annotator_name(default: str = "") -> str:
-    value = get_application_settings().annotator_name
+    value = cast(_ApplicationSettingsLike, get_application_settings()).annotator_name
     return value or default
 
 
 def get_default_report_template_name(default: str = "") -> str:
-    value = get_application_settings().report_template_name
+    value = cast(
+        _ApplicationSettingsLike, get_application_settings()
+    ).report_template_name
     return value or default
 
 
 def get_default_ai_dataset_name(default: str = "") -> str:
-    value = get_application_settings().ai_dataset_name
+    value = cast(_ApplicationSettingsLike, get_application_settings()).ai_dataset_name
     return value or default
 
 
 def get_default_ai_dataset_id() -> int | None:
-    return get_application_settings().ai_dataset_id
+    return cast(_ApplicationSettingsLike, get_application_settings()).ai_dataset_id
 
 
 def get_default_ai_dataset_type(default: str = "") -> str:
-    value = get_application_settings().ai_dataset_type
+    value = cast(_ApplicationSettingsLike, get_application_settings()).ai_dataset_type
     return value or default
 
 

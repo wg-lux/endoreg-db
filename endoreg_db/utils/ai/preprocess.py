@@ -1,8 +1,10 @@
+from typing import Any
 import numpy as np
-from PIL import Image, ImageOps  # Import the required modules from Pillow
+from numpy.typing import NDArray
+from PIL import Image, ImageOps
 
 
-def crop_img(img, crop):
+def crop_img(img: Image.Image, crop: tuple[int, int, int, int]) -> Image.Image:
     """
     Crops the image based on the specified dimensions and adds padding to maintain aspect ratio.
 
@@ -21,6 +23,7 @@ def crop_img(img, crop):
     width, height = img_cropped.size
     delta = width - height
 
+    padding: tuple[int, int, int, int]
     if delta > 0:
         padding = (
             0,
@@ -40,12 +43,16 @@ def crop_img(img, crop):
 
 
 class Cropper:
-    def __init__(self):
+    def __init__(self) -> None:
         pass
 
     def __call__(
-        self, img, crop=None, scale=None, scale_method=Image.Resampling.LANCZOS
-    ):
+        self,
+        img: Image.Image | NDArray[Any],
+        crop: tuple[int, int, int, int] | None = None,
+        scale: tuple[int, int] | None = None,
+        scale_method: Image.Resampling = Image.Resampling.LANCZOS,
+    ) -> NDArray[Any]:
         """
         Applies cropping and scaling transformations to the input image.
 
@@ -71,6 +78,6 @@ class Cropper:
             img = img.resize(scale, resample=scale_method)
 
         # Convert PIL Image back to numpy array
-        img = np.array(img)
+        img_array: NDArray[Any] = np.array(img)
 
-        return img
+        return img_array

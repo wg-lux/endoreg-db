@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import io
+from collections.abc import Generator
+from pathlib import Path
+from typing import Any, cast
 
 import pytest
+from pytest import MonkeyPatch
 
-from endoreg_db.utils.video import frame_stream
+import endoreg_db.utils.frame_stream as frame_stream
 
 
 class FakeStreamingProcess:
@@ -16,30 +20,27 @@ class FakeStreamingProcess:
         self.killed = False
         self.waited = False
 
-    def wait(self, timeout=None):
+    def wait(self, timeout: float | None = None) -> int:
         self.waited = True
         return self.returncode
 
-    def poll(self):
+    def poll(self) -> int | None:
         if self.waited or self.terminated or self.killed:
             return self.returncode
         return None
 
-    def terminate(self):
+    def terminate(self) -> None:
         self.terminated = True
         self.returncode = -15
 
-    def kill(self):
+    def kill(self) -> None:
         self.killed = True
         self.returncode = -9
 
 
-def _patch_stream_metadata(monkeypatch):
-    monkeypatch.setattr(frame_stream, "_resolve_ffmpeg_executable", lambda: "/ffmpeg")
-    monkeypatch.setattr(
-        frame_stream,
-        "get_stream_info",
-        lambda path: {
+def _patch_stream_metadata(monkeypatch: MonkeyPatch) -> None:
+    def fake_stream_info(path: str | Path) -> dict[str, object]:
+        return {
             "streams": [
                 {
                     "codec_type": "video",
@@ -48,20 +49,22 @@ def _patch_stream_metadata(monkeypatch):
                     "avg_frame_rate": "2/1",
                 }
             ]
-        },
-    )
+        }
+
+    monkeypatch.setattr(frame_stream, "_resolve_ffmpeg_executable", lambda: "/ffmpeg")
+    monkeypatch.setattr(frame_stream, "get_stream_info", fake_stream_info)
 
 
 @pytest.mark.unit
 def test_iter_video_path_frame_samples_yields_frame_numbers_and_timestamps(
-    monkeypatch,
-    tmp_path,
-):
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     _patch_stream_metadata(monkeypatch)
     frame_bytes = bytes(range(12))
     created_processes: list[FakeStreamingProcess] = []
 
-    def fake_popen(command, **kwargs):
+    def fake_popen(command: list[str], **kwargs: Any) -> FakeStreamingProcess:
         process = FakeStreamingProcess(frame_bytes)
         created_processes.append(process)
         return process
@@ -79,11 +82,13 @@ def test_iter_video_path_frame_samples_yields_frame_numbers_and_timestamps(
 
 
 @pytest.mark.unit
-def test_read_video_path_frame_sample_decodes_requested_frame(monkeypatch, tmp_path):
+def test_read_video_path_frame_sample_decodes_requested_frame(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
     _patch_stream_metadata(monkeypatch)
     created_commands: list[list[str]] = []
 
-    def fake_popen(command, **kwargs):
+    def fake_popen(command: list[str], **kwargs: Any) -> FakeStreamingProcess:
         created_commands.append(command)
         return FakeStreamingProcess(bytes(range(6)))
 
@@ -103,12 +108,12 @@ def test_read_video_path_frame_sample_decodes_requested_frame(monkeypatch, tmp_p
 
 @pytest.mark.unit
 def test_read_video_path_frame_sample_raises_when_frame_is_missing(
-    monkeypatch,
-    tmp_path,
-):
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     _patch_stream_metadata(monkeypatch)
 
-    def fake_popen(command, **kwargs):
+    def fake_popen(command: list[str], **kwargs: Any) -> FakeStreamingProcess:
         return FakeStreamingProcess(b"")
 
     monkeypatch.setattr(frame_stream.subprocess, "Popen", fake_popen)
@@ -121,20 +126,23 @@ def test_read_video_path_frame_sample_raises_when_frame_is_missing(
 
 @pytest.mark.unit
 def test_iter_video_path_frame_samples_cleans_process_on_early_close(
-    monkeypatch,
-    tmp_path,
-):
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     _patch_stream_metadata(monkeypatch)
     created_processes: list[FakeStreamingProcess] = []
 
-    def fake_popen(command, **kwargs):
+    def fake_popen(command: list[str], **kwargs: Any) -> FakeStreamingProcess:
         process = FakeStreamingProcess(bytes(range(12)))
         created_processes.append(process)
         return process
 
     monkeypatch.setattr(frame_stream.subprocess, "Popen", fake_popen)
 
-    iterator = frame_stream.iter_video_path_frame_samples(tmp_path / "video.mp4")
+    iterator = cast(
+        Generator[frame_stream.FrameSample, None, None],
+        frame_stream.iter_video_path_frame_samples(tmp_path / "video.mp4"),
+    )
     next(iterator)
     iterator.close()
 
@@ -142,10 +150,12 @@ def test_iter_video_path_frame_samples_cleans_process_on_early_close(
 
 
 @pytest.mark.unit
-def test_iter_video_path_frame_samples_raises_on_ffmpeg_error(monkeypatch, tmp_path):
+def test_iter_video_path_frame_samples_raises_on_ffmpeg_error(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
     _patch_stream_metadata(monkeypatch)
 
-    def fake_popen(command, **kwargs):
+    def fake_popen(command: list[str], **kwargs: Any) -> FakeStreamingProcess:
         return FakeStreamingProcess(b"", returncode=1, stderr=b"decode failed")
 
     monkeypatch.setattr(frame_stream.subprocess, "Popen", fake_popen)

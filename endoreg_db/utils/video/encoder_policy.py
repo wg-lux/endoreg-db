@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false
 import logging
 import subprocess
 from typing import Dict, List, Optional, Tuple

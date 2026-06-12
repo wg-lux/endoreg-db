@@ -1,7 +1,8 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false
 import logging
 from enum import Enum
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 logger = logging.getLogger("ffmpeg_wrapper")
 
@@ -21,15 +22,23 @@ _TIMESTAMP_REPAIR_SEQUENCE = (
 
 
 def _timestamp_repair_input_args(mode: TimestampRepairMode) -> List[str]:
-    if mode == TimestampRepairMode.NONE:
-        return []
-    if mode == TimestampRepairMode.GENERATE_PTS:
-        return ["-fflags", "+genpts"]
-    if mode == TimestampRepairMode.IGNORE_DTS:
-        return ["-fflags", "+genpts+igndts", "-err_detect", "ignore_err"]
-    if mode == TimestampRepairMode.RESET_TO_ZERO:
-        return ["-fflags", "+genpts+igndts", "-err_detect", "ignore_err"]
-    raise ValueError(f"Unhandled timestamp repair mode: {mode}")
+    mapping: dict[TimestampRepairMode, list[str]] = {
+        TimestampRepairMode.NONE: [],
+        TimestampRepairMode.GENERATE_PTS: ["-fflags", "+genpts"],
+        TimestampRepairMode.IGNORE_DTS: [
+            "-fflags",
+            "+genpts+igndts",
+            "-err_detect",
+            "ignore_err",
+        ],
+        TimestampRepairMode.RESET_TO_ZERO: [
+            "-fflags",
+            "+genpts+igndts",
+            "-err_detect",
+            "ignore_err",
+        ],
+    }
+    return mapping[mode]
 
 
 def _timestamp_repair_output_args(mode: TimestampRepairMode) -> List[str]:
@@ -46,7 +55,7 @@ def _build_transcode_command(
     encoder_args: List[str],
     audio_codec: str,
     audio_bitrate: str,
-    extra_args: Optional[List[str]],
+    extra_args: List[str] | None,
     timestamp_repair_mode: TimestampRepairMode,
 ) -> List[str]:
     command = [
@@ -110,7 +119,7 @@ def _build_extract_frames_command(
     video_path: Path,
     output_pattern: Path,
     quality: int,
-    fps: Optional[float],
+    fps: float | None,
 ) -> List[str]:
     cmd = [
         ffmpeg_executable,

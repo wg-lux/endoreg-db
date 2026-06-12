@@ -1,5 +1,3 @@
-"""Filesystem paths and typed file operation wrappers."""
+"""Deprecated package kept only to avoid namespace-package surprises."""
 
-from . import paths
-
-__all__ = ["paths"]
+__all__: list[str] = []

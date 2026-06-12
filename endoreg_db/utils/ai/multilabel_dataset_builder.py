@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, Final, List, Literal, Optional, TypedDict, cast
+from typing import Any, Dict, Final, List, Literal, Optional, TypedDict, cast
 
 from django.db import models
 
@@ -53,7 +53,7 @@ def normalize_annotation_source_scope(
         return ANNOTATION_SOURCE_SCOPE_ALL
     scope = str(value).strip()
     if scope in VALID_ANNOTATION_SOURCE_SCOPES:
-        return cast(AnnotationSourceScope, scope)
+        return scope  # FIXED: Removed unnecessary cast (reportUnnecessaryCast)
     raise ValueError(
         "annotation_source_scope must be one of: "
         f"{', '.join(sorted(VALID_ANNOTATION_SOURCE_SCOPES))}."
@@ -125,18 +125,33 @@ def _infer_labelset_from_dataset(
         raise ValueError("Cannot infer LabelSet: AIDataSet has no labels.")
 
     labels_qs = Label.objects.filter(id__in=label_ids).prefetch_related("label_sets")
-    labelsets_for_each_label = []
+    labelsets_for_each_label: list[
+        set[int]
+    ] = []  # FIXED: Explicitly typed to avoid set[Unknown]
 
     for label in labels_qs:
-        labelset_ids = list(label.label_sets.values_list("id", flat=True))
+        label_any: Any = label
+        labelset_ids: list[int] = list(
+            label_any.label_sets.values_list("id", flat=True)
+        )
         if not labelset_ids:
             raise NotImplementedError(
-                f"Label id={label.id}, name='{label.name}' is not part of any LabelSet. "
+                f"Label id={label_any.id}, name='{label_any.name}' is not part of any LabelSet. "
                 "Explicit LabelSet selection is required."
             )
         labelsets_for_each_label.append(set(labelset_ids))
 
-    common_ids = set.intersection(*labelsets_for_each_label)
+    if not labelsets_for_each_label:
+        raise NotImplementedError(
+            "No common LabelSet across all labels in this AIDataSet. "
+            "Please specify a LabelSet explicitly."
+        )
+
+    # FIXED: Avoided unpacking unknown types into set.intersection
+    common_ids: set[int] = labelsets_for_each_label[0].intersection(
+        *labelsets_for_each_label[1:]
+    )
+
     if not common_ids:
         raise NotImplementedError(
             "No common LabelSet across all labels in this AIDataSet. "
@@ -182,15 +197,19 @@ def _frames_for_video_segments(
 ) -> dict[int, dict[int, Frame]]:
     segments_by_video_id: dict[int, list[LabelVideoSegment]] = defaultdict(list)
     for segment in segments_qs.iterator():
-        if segment.start_frame_number >= segment.end_frame_number:
+        seg_any: Any = segment
+        if seg_any.start_frame_number >= seg_any.end_frame_number:
             continue
-        segments_by_video_id[segment.video_file_id].append(segment)
+        segments_by_video_id[int(seg_any.video_file_id)].append(segment)
 
     frames_by_video_id_and_number: dict[int, dict[int, Frame]] = {}
     for video_id, video_segments in segments_by_video_id.items():
         intervals = _merge_frame_intervals(
             [
-                (int(segment.start_frame_number), int(segment.end_frame_number))
+                (
+                    int(cast(Any, segment).start_frame_number),
+                    int(cast(Any, segment).end_frame_number),
+                )
                 for segment in video_segments
             ]
         )
@@ -223,13 +242,6 @@ def build_image_multilabel_dataset_from_db(
 ) -> ImageMultilabelDataset:
     """
     Build an image multi-label dataset from the AIDataSet selection.
-
-    `AIDataSet.image_annotations` and `AIDataSet.video_annotations` are both
-    canonical training inputs by default. `annotation_source_scope` can restrict
-    the view to explicit frame annotations or segment-derived labels. Video
-    segments are expanded in memory to the existing Frame rows inside their
-    half-open frame ranges; this does not create ImageClassificationAnnotation
-    rows.
     """
     if dataset.dataset_type != AIDataSet.DATASET_TYPE_IMAGE:
         raise ValueError(
@@ -280,14 +292,15 @@ def build_image_multilabel_dataset_from_db(
 
     labels_in_order: List[Label] = labelset.get_labels_in_order()
     if not labels_in_order:
+        labelset_id = int(getattr(labelset, "id"))
         raise ValueError(
-            f"LabelSet id={labelset.id}, name='{labelset.name}' has no labels."
+            f"LabelSet id={labelset_id}, name='{labelset.name}' has no labels."
         )
 
     label_index: Dict[int, int] = {
-        int(label.id): index
+        int(cast(Any, label).id): index
         for index, label in enumerate(labels_in_order)
-        if label.id is not None
+        if cast(Any, label).id is not None
     }
     values_by_frame_label: dict[int, dict[int, set[bool]]] = defaultdict(
         lambda: defaultdict(set)
@@ -305,18 +318,20 @@ def build_image_multilabel_dataset_from_db(
         values_by_frame_label[frame_id][int(label_id)].add(bool(value))
 
     for annotation in annotations_qs.iterator():
-        add_frame_label(
-            annotation.frame, int(annotation.label_id), bool(annotation.value)
-        )
+        ann_any: Any = annotation
+        add_frame_label(ann_any.frame, int(ann_any.label_id), bool(ann_any.value))
 
     frames_by_video_id_and_number = _frames_for_video_segments(segments_qs)
     for segment in segments_qs.iterator():
-        if segment.label_id not in label_index:
+        seg_any: Any = segment
+        if seg_any.label_id not in label_index:
             continue
-        frames_by_number = frames_by_video_id_and_number.get(segment.video_file_id, {})
+        frames_by_number = frames_by_video_id_and_number.get(
+            int(seg_any.video_file_id), {}
+        )
         for frame_number, frame in frames_by_number.items():
-            if segment.start_frame_number <= frame_number < segment.end_frame_number:
-                add_frame_label(frame, int(segment.label_id), True)
+            if seg_any.start_frame_number <= frame_number < seg_any.end_frame_number:
+                add_frame_label(frame, int(seg_any.label_id), True)
 
     if not frame_order:
         raise ValueError(
@@ -324,11 +339,12 @@ def build_image_multilabel_dataset_from_db(
             "Ensure video annotations have initialized Frame rows."
         )
 
+    # FIXED: Type-safe sorting using explicit types or getattr for dynamic fields
     frame_order.sort(
-        key=lambda frame_id: (
-            frame_by_id[frame_id].video_id,
-            frame_by_id[frame_id].frame_number,
-            frame_id,
+        key=lambda f_id: (
+            int(getattr(frame_by_id[f_id], "video_id")),
+            int(frame_by_id[f_id].frame_number),
+            f_id,
         )
     )
 
@@ -357,7 +373,9 @@ def build_image_multilabel_dataset_from_db(
         label_vectors.append(vector)
         label_masks.append(mask)
         frame_ids.append(frame_id)
-        video_ids.append(frame.video_id)
+        video_ids.append(
+            int(getattr(frame, "video_id"))
+        )  # FIXED: Typed video_id safely
 
     return ImageMultilabelDataset(
         image_paths=image_paths,

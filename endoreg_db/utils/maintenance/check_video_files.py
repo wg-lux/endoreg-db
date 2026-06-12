@@ -9,7 +9,13 @@ import sys
 from pathlib import Path
 
 from endoreg_db.config.env import DEFAULT_DJANGO_SETTINGS_MODULE
-from endoreg_db.utils.filesystem.paths import STORAGE_DIR
+from endoreg_db.utils.paths import STORAGE_DIR
+
+VideoFile = None
+file_exists = None
+field_file_is_readable = None
+field_file_size = None
+django_available = False
 
 # Parse command-line arguments and environment variables for configuration
 parser = argparse.ArgumentParser(
@@ -51,20 +57,26 @@ try:
     import django
 
     django.setup()
-    from endoreg_db.models import VideoFile
-    from endoreg_db.utils.storage import field_file_is_readable, file_exists
-    from endoreg_db.utils.storage.streaming import field_file_size
+    from endoreg_db.models import VideoFile as _VideoFile
+    from endoreg_db.utils.storage import (
+        field_file_is_readable as _field_file_is_readable,
+    )
+    from endoreg_db.utils.storage import file_exists as _file_exists
+    from endoreg_db.utils.storage_streaming import field_file_size as _field_file_size
 
-    DJANGO_AVAILABLE = True
+    VideoFile = _VideoFile
+    file_exists = _file_exists
+    field_file_is_readable = _field_file_is_readable
+    field_file_size = _field_file_size
+    django_available = True
 except Exception as e:
     print(f"Django not available: {e}")
-    DJANGO_AVAILABLE = False
 
 
-def find_video_files():
+def find_video_files() -> list[Path]:
     """Find all video files in storage directory."""
     storage_dir = Path(args.storage_dir)
-    video_files = []
+    video_files: list[Path] = []
 
     for pattern in ["**/*.mp4", "**/*.avi", "**/*.mov", "**/*.mkv"]:
         video_files.extend(storage_dir.glob(pattern))
@@ -72,7 +84,7 @@ def find_video_files():
     return video_files
 
 
-def check_video_file_accessibility(file_path):
+def check_video_file_accessibility(file_path: Path) -> tuple[bool, str]:
     """Check if a video file is accessible and valid."""
     try:
         if not file_path.exists():
@@ -96,7 +108,7 @@ def check_video_file_accessibility(file_path):
         return False, f"Error checking file: {e}"
 
 
-def main():
+def main() -> None:
     print("🔍 VIDEO FILE EXISTENCE CHECKER")
     print("=" * 40)
 
@@ -111,7 +123,7 @@ def main():
 
     # Check each file
     print("\n2. Checking file accessibility...")
-    accessible_files = []
+    accessible_files: list[Path] = []
 
     for video_file in video_files[:10]:  # Check first 10
         accessible, message = check_video_file_accessibility(video_file)
@@ -128,10 +140,14 @@ def main():
     print(f"\n✅ Found {len(accessible_files)} accessible video files")
 
     # If Django is available, check database records
-    if DJANGO_AVAILABLE:
+    if django_available:
         print("\n3. Checking database records...")
         try:
-            video_5 = VideoFile.objects.get(pk=5)
+            video_file_model = VideoFile
+            if video_file_model is None:
+                print("❌ Video model unavailable")
+                return
+            video_5 = video_file_model.objects.get(pk=5)
             print("📋 Video ID 5 found in database:")
             print(f"   UUID: {video_5.video_hash}")
 
@@ -141,10 +157,15 @@ def main():
                     file_field = getattr(video_5, attr)
                     if file_field and getattr(file_field, "name", None):
                         try:
-                            accessible = file_exists(
-                                file_field
-                            ) and field_file_is_readable(file_field)
-                            size_mb = field_file_size(file_field) / (1024 * 1024)
+                            accessible = bool(
+                                file_exists and file_exists(file_field)
+                            ) and bool(
+                                field_file_is_readable
+                                and field_file_is_readable(file_field)
+                            )
+                            size_mb = (
+                                field_file_size(file_field) if field_file_size else 0
+                            ) / (1024 * 1024)
                             message = f"OK - {size_mb:.1f} MB"
                             status = "✅" if accessible else "❌"
                             print(f"   {attr}: {status} {file_field.name} ({message})")
@@ -155,7 +176,9 @@ def main():
 
             # Check if UUID matches any found files
             uuid_str = str(video_5.video_hash)
-            matching_files = [f for f in accessible_files if uuid_str in str(f)]
+            matching_files: list[Path] = [
+                f for f in accessible_files if uuid_str in str(f)
+            ]
 
             if matching_files:
                 print(f"\n💡 Found matching files for UUID {uuid_str}:")

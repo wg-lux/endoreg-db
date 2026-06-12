@@ -1,11 +1,17 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false
 import logging
 import subprocess
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional
+from typing import Iterable, Optional
 
-from endoreg_db.utils.filesystem.file_operations import (
+from lx_dtypes.models.contracts.endoscopy_processor import (
+    RoiBoxCore,
+    roi_box_from_object,
+)
+
+from endoreg_db.utils.file_operations import (
     atomic_write_file,
     ensure_directory,
     safe_unlink_file,
@@ -17,7 +23,7 @@ from .command_construction import (
 )
 from .encoder_policy import _build_encoder_args
 from .executable_discovery import _resolve_ffmpeg_executable
-from .transcode_execution import (
+from ..transcode_execution import (
     FFMPEG_TRANSCODE_TIMEOUT_SECONDS,
     _delete_partial_output,
     _run_ffmpeg_command,
@@ -71,13 +77,14 @@ def _build_blacken_filter_expression(
     return _build_blacken_filter_expression_from_normalized(normalized_intervals)
 
 
-def _normalize_video_roi(endo_roi: Dict[str, Any]) -> tuple[int, int, int, int]:
+def _normalize_video_roi(endo_roi: RoiBoxCore | object) -> tuple[int, int, int, int]:
     try:
-        x = int(endo_roi["x"])
-        y = int(endo_roi["y"])
-        width = int(endo_roi["width"])
-        height = int(endo_roi["height"])
-    except (KeyError, TypeError, ValueError) as exc:
+        roi = roi_box_from_object(endo_roi)
+        x = int(roi.x)
+        y = int(roi.y)
+        width = int(roi.width)
+        height = int(roi.height)
+    except (TypeError, ValueError) as exc:
         raise ValueError(
             "Endoscope ROI must define integer x, y, width, and height."
         ) from exc
@@ -89,7 +96,7 @@ def _normalize_video_roi(endo_roi: Dict[str, Any]) -> tuple[int, int, int, int]:
     return x, y, width, height
 
 
-def _build_roi_mask_filter_expressions(endo_roi: Dict[str, Any]) -> list[str]:
+def _build_roi_mask_filter_expressions(endo_roi: RoiBoxCore | object) -> list[str]:
     """Build drawbox filters that keep the ROI visible and blacken the rest."""
 
     x, y, width, height = _normalize_video_roi(endo_roi)
@@ -112,7 +119,7 @@ def _build_roi_mask_filter_expressions(endo_roi: Dict[str, Any]) -> list[str]:
 
 def _build_roi_mask_and_blacken_filter_expression(
     *,
-    endo_roi: Dict[str, Any],
+    endo_roi: RoiBoxCore | object,
     intervals: Iterable[tuple[int, int]] = (),
 ) -> str:
     filter_parts = _build_roi_mask_filter_expressions(endo_roi)
@@ -124,7 +131,7 @@ def _build_roi_mask_and_blacken_filter_expression(
 
 def _roi_mask_and_blacken_filter_args(
     *,
-    endo_roi: Dict[str, Any],
+    endo_roi: RoiBoxCore | object,
     intervals: Iterable[tuple[int, int]] = (),
     inline_threshold: int = 120,
     script_dir: Path | None = None,
@@ -282,7 +289,7 @@ def mask_video_to_roi_and_blacken_intervals(
     input_path: Path,
     output_path: Path,
     *,
-    endo_roi: Dict[str, Any],
+    endo_roi: RoiBoxCore | object,
     intervals: Iterable[tuple[int, int]] = (),
     quality_mode: str = "balanced",
     force_cpu: bool = False,

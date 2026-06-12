@@ -8,8 +8,8 @@ einschließlich Bildverarbeitung, Pfad-Management und Sicherheitsfunktionen.
 import hashlib
 import importlib
 import secrets
+from typing import Protocol, cast
 from pathlib import Path
-from typing import Optional, Dict, List
 from datetime import datetime, timedelta
 import logging
 
@@ -29,9 +29,55 @@ ANONYMIZATION_LEVELS = ["minimal", "faces", "full"]
 MAX_FRAME_SIZE_MB = 50
 
 
+class _AnonymousFrameQuerySetLike(Protocol):
+    def filter(self, **kwargs: object) -> "_AnonymousFrameQuerySetLike": ...
+
+    def first(self) -> "_AnonymousFrameInstanceLike | None": ...
+
+    def count(self) -> int: ...
+
+    def update(self, **kwargs: object) -> int: ...
+
+    def aggregate(self, **kwargs: object) -> dict[str, int]: ...
+
+    def values_list(self, field_name: str, *, flat: bool = False) -> list[object]: ...
+
+
+class _AnonymousFrameInstanceLike(Protocol):
+    id: int
+
+
+class _AnonymousFrameManagerLike(Protocol):
+    def filter(self, **kwargs: object) -> _AnonymousFrameQuerySetLike: ...
+
+    def all(self) -> _AnonymousFrameQuerySetLike: ...
+
+
+class _AnonymousFrameModelLike(Protocol):
+    objects: _AnonymousFrameManagerLike
+
+
+class _FrameAnonymizationRequestQuerySetLike(Protocol):
+    def filter(self, **kwargs: object) -> "_FrameAnonymizationRequestQuerySetLike": ...
+
+    def aggregate(self, **kwargs: object) -> dict[str, int]: ...
+
+    def values_list(self, field_name: str, *, flat: bool = False) -> list[object]: ...
+
+
+class _FrameAnonymizationRequestManagerLike(Protocol):
+    def all(self) -> _FrameAnonymizationRequestQuerySetLike: ...
+
+    def filter(self, **kwargs: object) -> _FrameAnonymizationRequestQuerySetLike: ...
+
+
+class _FrameAnonymizationRequestModelLike(Protocol):
+    objects: _FrameAnonymizationRequestManagerLike
+
+
 def validate_anonymization_request(
-    video_id: int, segment_ids: List[int], anonymization_level: str, output_format: str
-) -> Dict:
+    video_id: int, segment_ids: list[int], anonymization_level: str, output_format: str
+) -> dict[str, object]:
     """
     Validiert eine Frame-Anonymisierungsanfrage.
 
@@ -47,7 +93,7 @@ def validate_anonymization_request(
     Raises:
         ValidationError: Bei ungültigen Parametern
     """
-    errors = []
+    errors: list[str] = []
 
     # Anonymisierungsgrad validieren
     if anonymization_level not in ANONYMIZATION_LEVELS:
@@ -97,7 +143,9 @@ def generate_secure_token(length: int = 32) -> str:
     return secrets.token_urlsafe(length)
 
 
-def create_secure_download_url(frame_id: int, expiry_hours: int = 24) -> Dict:
+def create_secure_download_url(
+    frame_id: int, expiry_hours: int = 24
+) -> dict[str, object]:
     """
     Erstellt eine sichere Download-URL für einen anonymisierten Frame.
 
@@ -135,7 +183,10 @@ def validate_secure_token(token: str, frame_id: int) -> bool:
     """
     try:
         models_mod = importlib.import_module("endoreg_db.models")
-        anonymous_frame_model = getattr(models_mod, "AnonymousFrame", None)
+        anonymous_frame_model = cast(
+            type[_AnonymousFrameModelLike] | None,
+            getattr(models_mod, "AnonymousFrame", None),
+        )
         if anonymous_frame_model is None:
             return False
 
@@ -156,7 +207,7 @@ def validate_secure_token(token: str, frame_id: int) -> bool:
         return False
 
 
-def get_frame_file_info(frame_path: str) -> Optional[Dict]:
+def get_frame_file_info(frame_path: str) -> dict[str, object] | None:
     """
     Holt Dateiinformationen für einen Frame.
 
@@ -191,7 +242,7 @@ def get_frame_file_info(frame_path: str) -> Optional[Dict]:
 
 def calculate_anonymization_progress(
     total_frames: int, processed_frames: int, failed_frames: int
-) -> Dict:
+) -> dict[str, object]:
     """
     Berechnet den Fortschritt der Anonymisierung.
 
@@ -240,7 +291,9 @@ def calculate_anonymization_progress(
     }
 
 
-def estimate_processing_time(total_frames: int, anonymization_level: str) -> Dict:
+def estimate_processing_time(
+    total_frames: int, anonymization_level: str
+) -> dict[str, object]:
     """
     Schätzt die Verarbeitungszeit für die Anonymisierung.
 
@@ -269,7 +322,7 @@ def estimate_processing_time(total_frames: int, anonymization_level: str) -> Dic
     }
 
 
-def cleanup_expired_tokens():
+def cleanup_expired_tokens() -> int:
     """
     Bereinigt abgelaufene Download-Tokens.
 
@@ -277,11 +330,16 @@ def cleanup_expired_tokens():
         Anzahl bereinigter Tokens
     """
     try:
-        from endoreg_db.models import AnonymousFrame
+        models_mod = importlib.import_module("endoreg_db.models")
+        anonymous_frame_model = cast(
+            type[_AnonymousFrameModelLike],
+            getattr(models_mod, "AnonymousFrame"),
+        )
 
         # Frames mit abgelaufenen Tokens finden
-        expired_frames = AnonymousFrame.objects.filter(
-            download_expires_at__lt=timezone.now(), download_token_hash__isnull=False
+        expired_frames = anonymous_frame_model.objects.filter(
+            download_expires_at__lt=timezone.now(),
+            download_token_hash__isnull=False,
         )
 
         count = expired_frames.count()
@@ -295,7 +353,7 @@ def cleanup_expired_tokens():
         return 0
 
 
-def get_anonymization_statistics(video_id: Optional[int] = None) -> Dict:
+def get_anonymization_statistics(video_id: int | None = None) -> dict[str, object]:
     """
     Holt Statistiken zur Frame-Anonymisierung.
 
@@ -307,8 +365,14 @@ def get_anonymization_statistics(video_id: Optional[int] = None) -> Dict:
     """
     try:
         models_mod = importlib.import_module("endoreg_db.models")
-        request_model = getattr(models_mod, "FrameAnonymizationRequest", None)
-        anonymous_frame_model = getattr(models_mod, "AnonymousFrame", None)
+        request_model = cast(
+            type[_FrameAnonymizationRequestModelLike] | None,
+            getattr(models_mod, "FrameAnonymizationRequest", None),
+        )
+        anonymous_frame_model = cast(
+            type[_AnonymousFrameModelLike] | None,
+            getattr(models_mod, "AnonymousFrame", None),
+        )
         if request_model is None or anonymous_frame_model is None:
             return {
                 "error": "frame anonymization models unavailable",
@@ -320,7 +384,7 @@ def get_anonymization_statistics(video_id: Optional[int] = None) -> Dict:
         requests_qs = request_model.objects.all()
         frames_qs = anonymous_frame_model.objects.all()
 
-        if video_id:
+        if video_id is not None:
             requests_qs = requests_qs.filter(video_file_id=video_id)
             frames_qs = frames_qs.filter(video_file_id=video_id)
 
@@ -344,9 +408,9 @@ def get_anonymization_statistics(video_id: Optional[int] = None) -> Dict:
         # Disk-Space Statistiken
         total_size = 0
         for frame in frames_qs.values_list("anonymized_frame_path", flat=True):
-            file_info = get_frame_file_info(frame)
+            file_info = get_frame_file_info(cast(str, frame))
             if file_info:
-                total_size += file_info["size_bytes"]
+                total_size += int(cast(int, file_info["size_bytes"]))
 
         return {
             "requests": request_stats,
@@ -360,7 +424,16 @@ def get_anonymization_statistics(video_id: Optional[int] = None) -> Dict:
 
     except Exception as e:
         logger.error(f"Error getting anonymization statistics: {str(e)}")
-        return {"requests": {}, "frames": {}, "storage": {}, "error": str(e)}
+        return {
+            "requests": {},
+            "frames": {},
+            "storage": {
+                "total_size_bytes": 0,
+                "total_size_mb": 0.0,
+            },
+            "video_id": video_id,
+            "error": str(e),
+        }
 
 
 def validate_frame_path(frame_path: str) -> bool:
@@ -450,8 +523,8 @@ def format_file_size(size_bytes: float) -> str:
 
 
 def log_anonymization_activity(
-    activity_type: str, details: Dict, user_id: Optional[int] = None
-):
+    activity_type: str, details: dict[str, object], user_id: int | None = None
+) -> None:
     """
     Protokolliert Anonymisierungsaktivitäten für Audit-Zwecke.
 

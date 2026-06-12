@@ -1,12 +1,13 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false
 import logging
 import subprocess
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 import cv2
 from tqdm import tqdm
 
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     ensure_directory,
     safe_unlink_file,
 )
@@ -20,13 +21,28 @@ from .executable_discovery import _resolve_ffmpeg_executable
 logger = logging.getLogger("ffmpeg_wrapper")
 
 
+def _resolve_frame_dimensions(
+    width: int | None, height: int | None, frame_path: Path
+) -> tuple[int, int]:
+    if width is not None and height is not None:
+        return width, height
+    first_frame = cv2.imread(str(frame_path))
+    if first_frame is None:
+        raise IOError(f"Could not read first frame: {frame_path}")
+    resolved_width = int(first_frame.shape[1])
+    resolved_height = int(first_frame.shape[0])
+    if resolved_width <= 0 or resolved_height <= 0:
+        raise ValueError("frame dimensions must be > 0")
+    return resolved_width, resolved_height
+
+
 def assemble_video_from_frames(
     frame_paths: List[Path],
     output_path: Path,
     fps: float,
-    width: Optional[int] = None,
-    height: Optional[int] = None,
-) -> Optional[Path]:
+    width: int | None = None,
+    height: int | None = None,
+) -> Path | None:
     """
     Assembles a video from a list of frame image paths using cv2.VideoWriter.
     Determines dimensions from the first frame if not provided.
@@ -37,10 +53,7 @@ def assemble_video_from_frames(
 
     if width is None or height is None:
         try:
-            first_frame = cv2.imread(str(frame_paths[0]))
-            if first_frame is None:
-                raise IOError(f"Could not read first frame: {frame_paths[0]}")
-            height, width, _ = first_frame.shape
+            width, height = _resolve_frame_dimensions(width, height, frame_paths[0])
             logger.info(
                 "Determined video dimensions from first frame: %dx%d", width, height
             )
@@ -54,6 +67,8 @@ def assemble_video_from_frames(
 
     fourcc = cv2.VideoWriter.fourcc(*"mp4v")
     ensure_directory(output_path.parent)
+    assert width is not None
+    assert height is not None
     video_writer = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
 
     if not video_writer.isOpened():
@@ -88,7 +103,7 @@ def extract_frames(
     output_dir: Path,
     quality: int,
     ext: str = "jpg",
-    fps: Optional[float] = None,
+    fps: float | None = None,
 ) -> List[Path]:
     """
     Extracts frames from a video file using FFmpeg.
@@ -113,7 +128,7 @@ def extract_frames(
     ensure_directory(output_dir)
     output_pattern = output_dir / f"frame_%07d.{ext}"
 
-    cmd = _build_extract_frames_command(
+    cmd: list[str] = _build_extract_frames_command(
         ffmpeg_executable=ffmpeg_executable,
         video_path=video_path,
         output_pattern=output_pattern,
@@ -146,7 +161,7 @@ def extract_frames(
         return []
 
     # Collect paths of extracted frames
-    extracted_files = sorted(output_dir.glob(f"frame_*.{ext}"))
+    extracted_files: List[Path] = sorted(output_dir.glob(f"frame_*.{ext}"))
     return extracted_files
 
 
@@ -252,7 +267,7 @@ def extract_frame_range(
     # Collect paths of extracted frames matching the pattern and expected range
     # FFmpeg might create files outside the exact range depending on version/flags,
     # so filter explicitly.
-    extracted_files = []
+    extracted_files: List[Path] = []
     for i in range(start_frame, end_frame):
         frame_file = output_dir / f"frame_{i:07d}.{ext}"
         if frame_file.exists():

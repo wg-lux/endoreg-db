@@ -8,6 +8,7 @@ import struct
 from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO, Iterator
+from collections.abc import Buffer
 
 MAGIC = b"LXENC01\n"
 HEADER_LENGTH_STRUCT = struct.Struct(">I")
@@ -303,7 +304,7 @@ class DecryptedStream(io.RawIOBase):
         self._source.close()
         super().close()
 
-    def readinto(self, b) -> int | None:
+    def readinto(self, b: Buffer) -> int | None:
         if self._closed:
             return 0
         target = memoryview(b)

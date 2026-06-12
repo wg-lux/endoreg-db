@@ -26,7 +26,7 @@ class GastroNetResNet50MultiLabel(nn.Module):
         backbone_checkpoint: Optional[Path] = None,
         freeze_backbone: bool = True,
     ) -> None:
-        super().__init__()
+        super().__init__()  # type: ignore
 
         # reuse the factory to avoid code duplication
         model = create_multilabel_model(

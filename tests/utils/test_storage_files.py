@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from typing import Any, cast
+
 import io
 from pathlib import Path
 
 import pytest
+
+from django.db.models.fields.files import FieldFile
 
 from endoreg_db.utils.storage import ensure_local_file
 
@@ -14,15 +18,15 @@ class _NonSeekableStream(io.BytesIO):
 
 
 class _UnsupportedSeekStream(io.BytesIO):
-    def seek(self, *_args, **_kwargs):
+    def seek(self, *_args: Any, **_kwargs: Any) -> int:
         raise io.UnsupportedOperation("not seekable")
 
 
 class _Storage:
-    def __init__(self, stream: io.BytesIO):
+    def __init__(self, stream: io.BytesIO) -> None:
         self.stream = stream
 
-    def open(self, name: str, mode: str):
+    def open(self, name: str, mode: str) -> io.BytesIO:
         assert name == "remote/video.mp4"
         assert mode == "rb"
         return self.stream
@@ -31,7 +35,7 @@ class _Storage:
 class _PathlessFieldFile:
     name = "remote/video.mp4"
 
-    def __init__(self, stream: io.BytesIO):
+    def __init__(self, stream: io.BytesIO) -> None:
         self.storage = _Storage(stream)
 
     @property
@@ -40,10 +44,10 @@ class _PathlessFieldFile:
 
 
 @pytest.mark.unit
-def test_ensure_local_file_materializes_non_seekable_stream():
+def test_ensure_local_file_materializes_non_seekable_stream() -> None:
     field_file = _PathlessFieldFile(_NonSeekableStream(b"video-payload"))
 
-    with ensure_local_file(field_file) as local_path:
+    with ensure_local_file(cast(FieldFile, field_file)) as local_path:
         materialized_path = local_path
         assert local_path.read_bytes() == b"video-payload"
         assert oct(local_path.stat().st_mode & 0o777) == "0o644"
@@ -52,10 +56,10 @@ def test_ensure_local_file_materializes_non_seekable_stream():
 
 
 @pytest.mark.unit
-def test_ensure_local_file_ignores_unsupported_seek():
+def test_ensure_local_file_ignores_unsupported_seek() -> None:
     field_file = _PathlessFieldFile(_UnsupportedSeekStream(b"video-payload"))
 
-    with ensure_local_file(field_file) as local_path:
+    with ensure_local_file(cast(FieldFile, field_file)) as local_path:
         materialized_path = local_path
         assert local_path.read_bytes() == b"video-payload"
 

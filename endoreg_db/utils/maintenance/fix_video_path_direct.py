@@ -8,27 +8,28 @@ from pathlib import Path
 import argparse
 
 from endoreg_db.config.env import BASE_DIR
-from endoreg_db.utils.filesystem.paths import STORAGE_DIR
+from endoreg_db.utils.paths import STORAGE_DIR
+from lx_dtypes.models.contracts.fix_video_path_direct import DirectVideoPathFileInfo
 
 
-def fix_video_paths_direct(db_path, storage_dir):
+def fix_video_paths_direct(db_path: str, storage_dir: str) -> None:
     """Fix video file paths directly in SQLite database."""
 
-    db_path = Path(db_path)
-    storage_dir = Path(storage_dir)
+    db_path_path = Path(db_path)
+    storage_dir_path = Path(storage_dir)
 
     print("🔧 DIRECT VIDEO PATH FIX")
     print("=" * 40)
 
-    if not db_path.exists():
-        print(f"❌ Database not found at {db_path}")
+    if not db_path_path.exists():
+        print(f"❌ Database not found at {db_path_path}")
         return
 
     # Find actual video files
     print("1. Scanning for video files...")
-    actual_files = {}
+    actual_files: dict[str, DirectVideoPathFileInfo] = {}
     for pattern in ["**/*.mp4", "**/*.avi", "**/*.mov", "**/*.mkv"]:
-        for file_path in storage_dir.glob(pattern):
+        for file_path in storage_dir_path.glob(pattern):
             if file_path.is_file() and file_path.stat().st_size > 0:
                 filename = file_path.name
                 if "_" in filename:
@@ -36,19 +37,19 @@ def fix_video_paths_direct(db_path, storage_dir):
                 else:
                     uuid_part = filename.split(".")[0]
 
-                relative_path = file_path.relative_to(storage_dir)
-                actual_files[uuid_part] = {
-                    "absolute_path": str(file_path),
-                    "relative_path": str(relative_path),
-                    "size_mb": file_path.stat().st_size / (1024 * 1024),
-                }
+                relative_path = file_path.relative_to(storage_dir_path)
+                actual_files[uuid_part] = DirectVideoPathFileInfo(
+                    absolute_path=str(file_path),
+                    relative_path=str(relative_path),
+                    size_mb=file_path.stat().st_size / (1024 * 1024),
+                )
 
     print(f"Found {len(actual_files)} video files")
 
     # Connect to database and check video records
     print("\n2. Checking database records...")
     try:
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect(db_path_path)
         cursor = conn.cursor()
 
         # Find video file table (might be different names)
@@ -90,7 +91,7 @@ def fix_video_paths_direct(db_path, storage_dir):
 
         # Check if current file exists
         if current_raw_file:
-            current_full_path = storage_dir / current_raw_file
+            current_full_path = storage_dir_path / current_raw_file
             file_exists = current_full_path.exists()
             print(f"   File exists: {file_exists}")
             if not file_exists:
@@ -100,20 +101,20 @@ def fix_video_paths_direct(db_path, storage_dir):
         if uuid_str in actual_files:
             file_info = actual_files[uuid_str]
             print("\n4. Found matching file:")
-            print(f"   Path: {file_info['absolute_path']}")
-            print(f"   Size: {file_info['size_mb']:.1f} MB")
-            print(f"   Relative path: {file_info['relative_path']}")
+            print(f"   Path: {file_info.absolute_path}")
+            print(f"   Size: {file_info.size_mb:.1f} MB")
+            print(f"   Relative path: {file_info.relative_path}")
 
-            if current_raw_file != file_info["relative_path"]:
+            if current_raw_file != file_info.relative_path:
                 print("\n5. 🔧 FIXING PATH:")
                 print(f"   FROM: {current_raw_file}")
-                print(f"   TO:   {file_info['relative_path']}")
+                print(f"   TO:   {file_info.relative_path}")
 
                 # Update the database with transaction safety
                 try:
                     cursor.execute(
                         f"UPDATE {video_table} SET raw_file = ? WHERE id = ?",
-                        (file_info["relative_path"], video_id),
+                        (file_info.relative_path, video_id),
                     )
                     conn.commit()
                     print("✅ Database updated successfully!")

@@ -16,7 +16,7 @@ import os
 import shutil
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Any, ContextManager, Iterator, Optional, cast
+from typing import Any, BinaryIO, ContextManager, Generator, Optional, Protocol, cast
 
 from django.core.files import File
 from django.conf import settings
@@ -26,6 +26,38 @@ from endoreg_db.utils.encryption.encryption import MAGIC as LX_ENCRYPTED_MAGIC
 logger = logging.getLogger(__name__)
 
 _DEFAULT_CHUNK_SIZE = 1024 * 1024  # 1 MiB
+
+
+class _VideoMaterializable(Protocol):
+    video_hash: str
+
+    def ensure_local_raw_file(self) -> ContextManager[Path]: ...
+
+    def ensure_local_processed_file(self) -> ContextManager[Path]: ...
+
+    raw_file: FieldFile | None
+    processed_file: FieldFile | None
+
+
+class _StoredFieldFile(Protocol):
+    name: str
+    storage: "_BinaryFileStorage"
+    field: Any
+    instance: Any
+
+    def delete(self, *, save: bool = False) -> None: ...
+
+    def save(self, name: str, content: File[bytes], save: bool = False) -> None: ...
+
+
+class _BinaryFileStorage(Protocol):
+    def open(self, name: str, mode: str = "rb") -> File[bytes]: ...
+
+    def save(self, name: str, content: File[bytes]) -> str: ...
+
+    def delete(self, name: str) -> None: ...
+
+    def exists(self, name: str) -> bool: ...
 
 
 def _has_field_file(field_file: object | None) -> bool:
@@ -97,7 +129,8 @@ def file_exists(field_file: Optional[FieldFile]) -> bool:
     assert field_file is not None
     assert isinstance(field_file.name, str)
     try:
-        return field_file.storage.exists(field_file.name)
+        stored_file = cast(_StoredFieldFile, field_file)
+        return bool(stored_file.storage.exists(stored_file.name))
     except Exception as exc:  # pragma: no cover - storage backend failure
         logger.warning("Failed to check file existence for %s: %s", field_file, exc)
         return False
@@ -115,7 +148,10 @@ def field_file_is_readable(field_file: Optional[FieldFile]) -> bool:
         return False
 
 
-def materialize_video_file(video, file_type: str) -> ContextManager[Path]:
+def materialize_video_file(
+    video: _VideoMaterializable,
+    file_type: str,
+) -> ContextManager[Path]:
     """
     Return a context manager yielding a local plaintext file for a VideoFile payload.
 
@@ -134,7 +170,7 @@ def materialize_video_file(video, file_type: str) -> ContextManager[Path]:
         field_file = getattr(video, "raw_file", None)
 
     if callable(ensure_method):
-        return ensure_method()
+        return cast(ContextManager[Path], ensure_method())
 
     if field_file and getattr(field_file, "name", None):
         return ensure_local_file(field_file)
@@ -151,7 +187,7 @@ def ensure_local_file(
     *,
     suffix: str | None = None,
     chunk_size: int = _DEFAULT_CHUNK_SIZE,
-) -> Iterator[Path]:
+) -> Generator[Path, None, None]:
     if not _has_field_file(field_file):
         raise FileNotFoundError("FieldFile is empty or has no associated storage name.")
     assert isinstance(field_file.name, str)
@@ -166,7 +202,9 @@ def ensure_local_file(
     with NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
         temp_path = Path(tmp_file.name)
         try:
-            with field_file.storage.open(field_file.name, "rb") as source:
+            stored_file = cast(_StoredFieldFile, field_file)
+            source = cast(BinaryIO, stored_file.storage.open(stored_file.name, "rb"))
+            with source:
                 # Reset the cursor when the storage stream supports it.
                 if hasattr(source, "seek"):
                     try:
@@ -254,27 +292,29 @@ def save_local_file(
             filename,
         )
 
+    stored_file = cast(_StoredFieldFile, field_file)
+
     if overwrite:
         try:
-            if field_file.storage.exists(storage_name):
+            if stored_file.storage.exists(storage_name):
                 logger.info(
                     "Replacing existing stored file through storage API: %s",
                     storage_name,
                 )
-                field_file.storage.delete(storage_name)
+                stored_file.storage.delete(storage_name)
         except FileNotFoundError:
             pass
 
     with source_path.open("rb") as source:
-        django_file = File(source, name=filename)
+        django_file: File[bytes] = File(source, name=filename)
         if has_explicit_storage_path or overwrite:
-            saved_name = field_file.storage.save(storage_name, django_file)
-            field_file.name = saved_name
+            saved_name = stored_file.storage.save(storage_name, django_file)
+            stored_file.name = str(saved_name)
             if save:
-                field_file.instance.save(update_fields=[field_file.field.name])
-            return str(field_file.name)
-        field_file.save(filename, django_file, save=save)
-    return str(field_file.name)
+                stored_file.instance.save(update_fields=[stored_file.field.name])
+            return str(stored_file.name)
+        stored_file.save(filename, django_file, save=save)
+    return str(stored_file.name)
 
 
 __all__ = [

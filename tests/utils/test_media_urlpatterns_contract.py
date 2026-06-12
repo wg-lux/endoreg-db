@@ -81,7 +81,7 @@ EXPECTED_MEDIA_ROUTE_CONTRACT: list[RouteContract] = [
     (
         "media/videos/export-annotated/",
         "video-annotated-export",
-        "endoreg_db.views.video.export_annotated.export_annotated_data",
+        "endoreg_db.views.video.export_annotated.export_annotated",
     ),
     (
         "media/videos/video-correction/<int:pk>",

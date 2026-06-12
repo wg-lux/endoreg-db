@@ -29,7 +29,12 @@ from endoreg_db.utils.storage import (
     field_file_is_readable,
     file_exists,
 )
-from endoreg_db.utils.storage.streaming import field_file_size
+from endoreg_db.utils.storage_streaming import field_file_size
+from lx_dtypes.models.contracts.frame_anonymization import (
+    FrameDjangoAccessResult,
+    FrameStreamingCompatibilityResult,
+    FrameVideoAnalysisResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,21 +50,11 @@ def check_ffmpeg_available():
         return False
 
 
-def analyze_video_with_ffmpeg(video_path):
+def analyze_video_with_ffmpeg(video_path: str | Path) -> FrameVideoAnalysisResult:
     """
     Use FFmpeg to analyze video file integrity and get detailed information.
     """
-    analysis_result = {
-        "file_readable": False,
-        "has_video_stream": False,
-        "has_audio_stream": False,
-        "duration": None,
-        "codec": None,
-        "resolution": None,
-        "frame_count": None,
-        "errors": [],
-        "warnings": [],
-    }
+    analysis_result = FrameVideoAnalysisResult()
 
     try:
         # First, try to probe the file
@@ -78,38 +73,38 @@ def analyze_video_with_ffmpeg(video_path):
         result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=30)
 
         if result.returncode == 0:
-            analysis_result["file_readable"] = True
+            analysis_result.file_readable = True
             probe_data = json.loads(result.stdout)
 
             # Analyze streams
             if "streams" in probe_data:
                 for stream in probe_data["streams"]:
                     if stream.get("codec_type") == "video":
-                        analysis_result["has_video_stream"] = True
-                        analysis_result["codec"] = stream.get("codec_name")
-                        analysis_result["resolution"] = (
+                        analysis_result.has_video_stream = True
+                        analysis_result.codec = stream.get("codec_name")
+                        analysis_result.resolution = (
                             f"{stream.get('width', '?')}x{stream.get('height', '?')}"
                         )
-                        analysis_result["frame_count"] = stream.get("nb_frames")
+                        analysis_result.frame_count = stream.get("nb_frames")
                     elif stream.get("codec_type") == "audio":
-                        analysis_result["has_audio_stream"] = True
+                        analysis_result.has_audio_stream = True
 
             # Get format info
             if "format" in probe_data:
-                analysis_result["duration"] = float(
+                analysis_result.duration = float(
                     probe_data["format"].get("duration", 0)
                 )
         else:
-            analysis_result["errors"].append(f"FFprobe failed: {result.stderr}")
+            analysis_result.errors.append(f"FFprobe failed: {result.stderr}")
 
     except subprocess.TimeoutExpired:
-        analysis_result["errors"].append(
+        analysis_result.errors.append(
             "FFprobe timed out - file might be severely corrupted"
         )
     except json.JSONDecodeError:
-        analysis_result["errors"].append("FFprobe returned invalid JSON")
+        analysis_result.errors.append("FFprobe returned invalid JSON")
     except Exception as e:
-        analysis_result["errors"].append(f"FFprobe analysis failed: {e}")
+        analysis_result.errors.append(f"FFprobe analysis failed: {e}")
 
     # Try to validate file integrity
     try:
@@ -134,26 +129,23 @@ def analyze_video_with_ffmpeg(video_path):
         if result.returncode == 0:
             print("✅ Video integrity test passed")
         else:
-            analysis_result["errors"].append(f"Integrity test failed: {result.stderr}")
+            analysis_result.errors.append(f"Integrity test failed: {result.stderr}")
 
     except subprocess.TimeoutExpired:
-        analysis_result["errors"].append("Integrity test timed out")
+        analysis_result.errors.append("Integrity test timed out")
     except Exception as e:
-        analysis_result["errors"].append(f"Integrity test failed: {e}")
+        analysis_result.errors.append(f"Integrity test failed: {e}")
 
     return analysis_result
 
 
-def test_video_streaming_compatibility(video_path):
+def test_video_streaming_compatibility(
+    video_path: str | Path,
+) -> FrameStreamingCompatibilityResult:
     """
     Test if video is compatible with web streaming (H.264 baseline profile recommended).
     """
-    compatibility_result = {
-        "web_compatible": False,
-        "streaming_friendly": False,
-        "needs_conversion": False,
-        "recommendations": [],
-    }
+    compatibility_result = FrameStreamingCompatibilityResult()
 
     try:
         # Check codec and profile
@@ -178,7 +170,7 @@ def test_video_streaming_compatibility(video_path):
                 codec = codec_info[0]
 
                 if codec == "h264":
-                    compatibility_result["web_compatible"] = True
+                    compatibility_result.web_compatible = True
 
                     # Check if moov atom is at the beginning (for streaming)
                     moov_cmd = [
@@ -196,48 +188,40 @@ def test_video_streaming_compatibility(video_path):
                     )
 
                     if "mov,mp4" in moov_result.stdout:
-                        compatibility_result["streaming_friendly"] = True
+                        compatibility_result.streaming_friendly = True
                     else:
-                        compatibility_result["recommendations"].append(
+                        compatibility_result.recommendations.append(
                             "Consider re-encoding with 'faststart' flag for better streaming"
                         )
 
                 elif codec in ["hevc", "h265"]:
-                    compatibility_result["recommendations"].append(
+                    compatibility_result.recommendations.append(
                         "HEVC/H.265 codec may not be supported in all browsers"
                     )
-                    compatibility_result["needs_conversion"] = True
+                    compatibility_result.needs_conversion = True
                 else:
-                    compatibility_result["recommendations"].append(
+                    compatibility_result.recommendations.append(
                         f"Codec '{codec}' may not be web-compatible. Consider H.264"
                     )
-                    compatibility_result["needs_conversion"] = True
+                    compatibility_result.needs_conversion = True
 
     except Exception as e:
-        compatibility_result["recommendations"].append(
+        compatibility_result.recommendations.append(
             f"Could not analyze compatibility: {e}"
         )
 
     return compatibility_result
 
 
-def test_django_video_access(video_id):
+def test_django_video_access(video_id: int) -> FrameDjangoAccessResult:
     """
     Test accessing the video through Django ORM and methods.
     """
-    access_result = {
-        "orm_accessible": False,
-        "has_raw_file": False,
-        "has_processed_file": False,
-        "active_file_attr": None,
-        "active_file_name": None,
-        "file_size": 0,
-        "errors": [],
-    }
+    access_result = FrameDjangoAccessResult()
 
     try:
         video = VideoFile.objects.get(pk=video_id)
-        access_result["orm_accessible"] = True
+        access_result.orm_accessible = True
 
         for attr, flag_name in (
             ("processed_file", "has_processed_file"),
@@ -248,29 +232,27 @@ def test_django_video_access(video_id):
                 continue
             try:
                 if file_exists(field_file):
-                    access_result[flag_name] = True
-                    if access_result["active_file_attr"] is None:
-                        access_result["active_file_attr"] = attr
-                        access_result["active_file_name"] = field_file.name
-                        access_result["file_size"] = field_file_size(field_file)
+                    setattr(access_result, flag_name, True)
+                    if access_result.active_file_attr is None:
+                        access_result.active_file_attr = attr
+                        access_result.active_file_name = field_file.name
+                        access_result.file_size = field_file_size(field_file)
                     if not field_file_is_readable(field_file):
-                        access_result["errors"].append(
+                        access_result.errors.append(
                             f"{attr} exists but could not be materialized"
                         )
             except Exception as e:
-                access_result["errors"].append(f"{attr} access error: {e}")
+                access_result.errors.append(f"{attr} access error: {e}")
 
     except VideoFile.DoesNotExist:
-        access_result["errors"].append(
-            f"Video with ID {video_id} not found in database"
-        )
+        access_result.errors.append(f"Video with ID {video_id} not found in database")
     except Exception as e:
-        access_result["errors"].append(f"Django access error: {e}")
+        access_result.errors.append(f"Django access error: {e}")
 
     return access_result
 
 
-def main():
+def main() -> None:
     import argparse
 
     parser = argparse.ArgumentParser(
@@ -296,21 +278,21 @@ def main():
     print("1️⃣ Testing Django ORM Access...")
     django_result = test_django_video_access(video_id)
 
-    if django_result["orm_accessible"]:
+    if django_result.orm_accessible:
         print("✅ Video found in database")
-        print(f"📁 Active storage object: {django_result['active_file_name']}")
-        print(f"📏 File size: {django_result['file_size'] / (1024 * 1024):.1f} MB")
+        print(f"📁 Active storage object: {django_result.active_file_name}")
+        print(f"📏 File size: {django_result.file_size / (1024 * 1024):.1f} MB")
 
-        if django_result["errors"]:
-            for error in django_result["errors"]:
+        if django_result.errors:
+            for error in django_result.errors:
                 print(f"⚠️  {error}")
     else:
         print("❌ Video not accessible through Django")
-        for error in django_result["errors"]:
+        for error in django_result.errors:
             print(f"❌ {error}")
         return
 
-    active_file_attr = django_result["active_file_attr"]
+    active_file_attr = django_result.active_file_attr
     if not active_file_attr:
         print("❌ No valid video storage object found")
         return
@@ -338,58 +320,58 @@ def main():
         print("\n4️⃣ Video Analysis with FFmpeg...")
         analysis = analyze_video_with_ffmpeg(video_path)
 
-        if analysis["file_readable"]:
+        if analysis.file_readable:
             print("✅ File is readable by FFmpeg")
-            print(f"🎥 Has video stream: {analysis['has_video_stream']}")
-            print(f"🔊 Has audio stream: {analysis['has_audio_stream']}")
+            print(f"🎥 Has video stream: {analysis.has_video_stream}")
+            print(f"🔊 Has audio stream: {analysis.has_audio_stream}")
             print(
-                f"⏱️  Duration: {analysis['duration']:.2f}s"
-                if analysis["duration"]
+                f"⏱️  Duration: {analysis.duration:.2f}s"
+                if analysis.duration
                 else "⏱️  Duration: Unknown"
             )
-            print(f"🎬 Codec: {analysis['codec'] or 'Unknown'}")
-            print(f"📐 Resolution: {analysis['resolution'] or 'Unknown'}")
-            print(f"🖼️  Frame count: {analysis['frame_count'] or 'Unknown'}")
+            print(f"🎬 Codec: {analysis.codec or 'Unknown'}")
+            print(f"📐 Resolution: {analysis.resolution or 'Unknown'}")
+            print(f"🖼️  Frame count: {analysis.frame_count or 'Unknown'}")
         else:
             print("❌ File is NOT readable by FFmpeg")
 
-        if analysis["errors"]:
+        if analysis.errors:
             print("\n❌ Errors found:")
-            for error in analysis["errors"]:
+            for error in analysis.errors:
                 print(f"   • {error}")
 
-        if analysis["warnings"]:
+        if analysis.warnings:
             print("\n⚠️  Warnings:")
-            for warning in analysis["warnings"]:
+            for warning in analysis.warnings:
                 print(f"   • {warning}")
 
         # Test streaming compatibility
         print("\n5️⃣ Testing Web Streaming Compatibility...")
         compatibility = test_video_streaming_compatibility(video_path)
 
-        print(f"🌐 Web compatible: {compatibility['web_compatible']}")
-        print(f"📡 Streaming friendly: {compatibility['streaming_friendly']}")
-        print(f"🔄 Needs conversion: {compatibility['needs_conversion']}")
+        print(f"🌐 Web compatible: {compatibility.web_compatible}")
+        print(f"📡 Streaming friendly: {compatibility.streaming_friendly}")
+        print(f"🔄 Needs conversion: {compatibility.needs_conversion}")
 
-        if compatibility["recommendations"]:
+        if compatibility.recommendations:
             print("\n💡 Recommendations:")
-            for rec in compatibility["recommendations"]:
+            for rec in compatibility.recommendations:
                 print(f"   • {rec}")
 
         # Final diagnosis
         print("\n6️⃣ DIAGNOSIS")
         print("=" * 30)
 
-        if not analysis["file_readable"]:
+        if not analysis.file_readable:
             print("🔴 CRITICAL: Video file is corrupted or unreadable")
             print("📋 Action: Replace or re-encode the video file")
-        elif not analysis["has_video_stream"]:
+        elif not analysis.has_video_stream:
             print("🔴 CRITICAL: No video stream found")
             print("📋 Action: Check if file is actually a video")
-        elif not compatibility["web_compatible"]:
+        elif not compatibility.web_compatible:
             print("🟡 WARNING: Video may not be web-compatible")
             print("📋 Action: Consider re-encoding to H.264")
-        elif not compatibility["streaming_friendly"]:
+        elif not compatibility.streaming_friendly:
             print("🟡 WARNING: Video not optimized for streaming")
             print("📋 Action: Re-encode with faststart flag")
         else:

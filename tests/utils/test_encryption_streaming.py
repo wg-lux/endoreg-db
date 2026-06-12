@@ -1,10 +1,13 @@
 from pathlib import Path
-from types import SimpleNamespace
+from collections.abc import Callable, Iterable, Iterator
+from dataclasses import dataclass
 import hashlib
+from typing import NoReturn
 
 import pytest
 
 from endoreg_db.services import streamable_media as sm
+from endoreg_db.utils.storage_profile import PayloadKind, StoragePolicy
 
 
 class DummyStorageMode:
@@ -12,15 +15,22 @@ class DummyStorageMode:
     ENCRYPTED = "app_encrypted"
 
 
+@dataclass(frozen=True)
 class DummyFieldFile:
-    def __init__(self, name: str):
-        self.name = name
+    name: str
+
+
+@dataclass(frozen=True)
+class StreamableRoots:
+    root: Path
+    raw_root: Path
+    processed_root: Path
 
 
 class DummyVideo:
     StorageMode = DummyStorageMode
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.raw_payload = b"\x00\x00\x00\x20ftypmp42raw"
         self.processed_payload = b"\x00\x00\x00\x20ftypmp42processed"
         self.pk = 1
@@ -31,46 +41,127 @@ class DummyVideo:
         self.raw_streamable_relative_path = ""
         self.processed_streamable_relative_path = ""
         self.storage_mode = DummyStorageMode.ENCRYPTED
-        self.saved_update_fields = None
+        self.saved_update_fields: list[str] = []
 
-    def save(self, update_fields=None):
+    def save(self, update_fields: Iterable[str] = ()) -> None:
         self.saved_update_fields = list(update_fields or [])
 
 
+def _root_provider(path: Path) -> Callable[[], Path]:
+    def provide_path() -> Path:
+        return path
+
+    return provide_path
+
+
+def _relative_path_provider(root: Path) -> Callable[[Path], str]:
+    def relative_path(path: Path) -> str:
+        return Path(path).relative_to(root).as_posix()
+
+    return relative_path
+
+
+def _fs_streamable_policy(kind: PayloadKind) -> StoragePolicy:
+    return StoragePolicy.FS_STREAMABLE
+
+
+def _app_encrypted_policy(kind: PayloadKind) -> StoragePolicy:
+    return StoragePolicy.APP_ENCRYPTED
+
+
+def _constant_field_file_size(size: int) -> Callable[[DummyFieldFile], int]:
+    def field_file_size(field_file: DummyFieldFile) -> int:
+        return size
+
+    return field_file_size
+
+
+def _field_file_payload_reader(
+    payload: bytes,
+) -> Callable[
+    [DummyFieldFile, int, int],
+    Iterator[bytes],
+]:
+    def iter_field_file_bytes(
+        field_file: DummyFieldFile,
+        start: int,
+        end: int,
+    ) -> Iterator[bytes]:
+        return iter([payload])
+
+    return iter_field_file_bytes
+
+
+def _encrypted_payload_reader(
+    field_file: DummyFieldFile,
+    start: int,
+    end: int,
+) -> Iterator[bytes]:
+    return iter([sm.LX_ENCRYPTED_MAGIC, b"ciphertext"])
+
+
+def _fail_materialize_streamable_target(
+    video_field_file: DummyFieldFile,
+    target_path: Path,
+    *,
+    expected_hash: str = "",
+) -> NoReturn:
+    raise AssertionError("should not rematerialize existing plaintext streamable file")
+
+
+def _fail_rewrite_streamable_target(
+    video_field_file: DummyFieldFile,
+    target_path: Path,
+    *,
+    expected_hash: str = "",
+) -> NoReturn:
+    raise AssertionError("should not rewrite existing plaintext file")
+
+
 @pytest.fixture
-def video():
+def video() -> DummyVideo:
     return DummyVideo()
 
 
 @pytest.fixture
-def streamable_roots(tmp_path, monkeypatch):
+def streamable_roots(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> StreamableRoots:
     raw_root = tmp_path / "streamable_videos" / "raw"
     processed_root = tmp_path / "streamable_videos" / "processed"
 
-    monkeypatch.setattr(sm, "_streamable_raw_video_root", lambda: raw_root)
-    monkeypatch.setattr(sm, "_streamable_processed_video_root", lambda: processed_root)
+    monkeypatch.setattr(sm, "_streamable_raw_video_root", _root_provider(raw_root))
+    monkeypatch.setattr(
+        sm,
+        "_streamable_processed_video_root",
+        _root_provider(processed_root),
+    )
 
     monkeypatch.setattr(
         sm,
         "_streamable_relative_path",
-        lambda path: Path(path).relative_to(tmp_path).as_posix(),
+        _relative_path_provider(tmp_path),
     )
 
-    return SimpleNamespace(
+    return StreamableRoots(
         root=tmp_path,
         raw_root=raw_root,
         processed_root=processed_root,
     )
 
 
-def test_materialize_refuses_encrypted_streamable(tmp_path, monkeypatch):
+def test_materialize_refuses_encrypted_streamable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     target = tmp_path / "bad.mp4"
 
-    monkeypatch.setattr(sm, "field_file_size", lambda field_file: 8)
+    monkeypatch.setattr(sm, "field_file_size", _constant_field_file_size(8))
     monkeypatch.setattr(
         sm,
         "iter_field_file_bytes",
-        lambda field_file, start, end: iter([sm.LX_ENCRYPTED_MAGIC, b"ciphertext"]),
+        _encrypted_payload_reader,
     )
 
     with pytest.raises(RuntimeError, match="Refusing encrypted streamable artifact"):
@@ -79,18 +170,20 @@ def test_materialize_refuses_encrypted_streamable(tmp_path, monkeypatch):
 
 
 def test_sync_materializes_plaintext_raw_and_sets_streamable_mode(
-    video, streamable_roots, monkeypatch
-):
+    video: DummyVideo,
+    streamable_roots: StreamableRoots,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(
         sm,
         "resolve_storage_policy",
-        lambda kind: sm.StoragePolicy.FS_STREAMABLE,
+        _fs_streamable_policy,
     )
-    monkeypatch.setattr(sm, "field_file_size", lambda field_file: 12)
+    monkeypatch.setattr(sm, "field_file_size", _constant_field_file_size(12))
     monkeypatch.setattr(
         sm,
         "iter_field_file_bytes",
-        lambda field_file, start, end: iter([video.raw_payload]),
+        _field_file_payload_reader(video.raw_payload),
     )
 
     update_fields = sm.sync_video_streamable_artifacts(
@@ -116,12 +209,14 @@ def test_sync_materializes_plaintext_raw_and_sets_streamable_mode(
 
 
 def test_sync_is_idempotent_and_does_not_rewrite_existing_plaintext(
-    video, streamable_roots, monkeypatch
-):
+    video: DummyVideo,
+    streamable_roots: StreamableRoots,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(
         sm,
         "resolve_storage_policy",
-        lambda kind: sm.StoragePolicy.FS_STREAMABLE,
+        _fs_streamable_policy,
     )
 
     target = streamable_roots.raw_root / f"{video.video_hash}.mp4"
@@ -132,12 +227,11 @@ def test_sync_is_idempotent_and_does_not_rewrite_existing_plaintext(
     video.raw_streamable_relative_path = f"streamable_videos/raw/{video.video_hash}.mp4"
     video.storage_mode = DummyStorageMode.STREAMABLE
 
-    def fail_if_called(*args, **kwargs):
-        raise AssertionError(
-            "should not rematerialize existing plaintext streamable file"
-        )
-
-    monkeypatch.setattr(sm, "_materialize_streamable_target", fail_if_called)
+    monkeypatch.setattr(
+        sm,
+        "_materialize_streamable_target",
+        _fail_materialize_streamable_target,
+    )
 
     update_fields = sm.sync_video_streamable_artifacts(
         video,
@@ -151,12 +245,14 @@ def test_sync_is_idempotent_and_does_not_rewrite_existing_plaintext(
 
 
 def test_sync_updates_db_path_without_rewriting_existing_plaintext(
-    video, streamable_roots, monkeypatch
-):
+    video: DummyVideo,
+    streamable_roots: StreamableRoots,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(
         sm,
         "resolve_storage_policy",
-        lambda kind: sm.StoragePolicy.FS_STREAMABLE,
+        _fs_streamable_policy,
     )
 
     target = streamable_roots.raw_root / f"{video.video_hash}.mp4"
@@ -165,10 +261,11 @@ def test_sync_updates_db_path_without_rewriting_existing_plaintext(
 
     video.raw_streamable_relative_path = ""
 
-    def fail_if_called(*args, **kwargs):
-        raise AssertionError("should not rewrite existing plaintext file")
-
-    monkeypatch.setattr(sm, "_materialize_streamable_target", fail_if_called)
+    monkeypatch.setattr(
+        sm,
+        "_materialize_streamable_target",
+        _fail_rewrite_streamable_target,
+    )
 
     update_fields = sm.sync_video_streamable_artifacts(
         video,
@@ -186,20 +283,24 @@ def test_sync_updates_db_path_without_rewriting_existing_plaintext(
 
 
 def test_sync_repairs_existing_plaintext_with_wrong_hash(
-    video, streamable_roots, monkeypatch
-):
+    video: DummyVideo,
+    streamable_roots: StreamableRoots,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(
         sm,
         "resolve_storage_policy",
-        lambda kind: sm.StoragePolicy.FS_STREAMABLE,
+        _fs_streamable_policy,
     )
     monkeypatch.setattr(
-        sm, "field_file_size", lambda field_file: len(video.raw_payload)
+        sm,
+        "field_file_size",
+        _constant_field_file_size(len(video.raw_payload)),
     )
     monkeypatch.setattr(
         sm,
         "iter_field_file_bytes",
-        lambda field_file, start, end: iter([video.raw_payload]),
+        _field_file_payload_reader(video.raw_payload),
     )
 
     target = streamable_roots.raw_root / f"{video.video_hash}.mp4"
@@ -223,12 +324,14 @@ def test_sync_repairs_existing_plaintext_with_wrong_hash(
 
 
 def test_dry_run_does_not_write_file_or_set_streamable_mode(
-    video, streamable_roots, monkeypatch
-):
+    video: DummyVideo,
+    streamable_roots: StreamableRoots,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(
         sm,
         "resolve_storage_policy",
-        lambda kind: sm.StoragePolicy.FS_STREAMABLE,
+        _fs_streamable_policy,
     )
 
     update_fields = sm.sync_video_streamable_artifacts(
@@ -241,18 +344,20 @@ def test_dry_run_does_not_write_file_or_set_streamable_mode(
     target = streamable_roots.raw_root / f"{video.video_hash}.mp4"
 
     assert not target.exists()
-    assert video.saved_update_fields is None
+    assert video.saved_update_fields == []
     assert video.storage_mode == DummyStorageMode.ENCRYPTED
     assert "storage_mode" not in update_fields
 
 
 def test_skipped_policy_clears_stale_streamable_paths_and_app_encrypted_mode(
-    video, streamable_roots, monkeypatch
-):
+    video: DummyVideo,
+    streamable_roots: StreamableRoots,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(
         sm,
         "resolve_storage_policy",
-        lambda kind: sm.StoragePolicy.APP_ENCRYPTED,
+        _app_encrypted_policy,
     )
 
     video.raw_streamable_relative_path = f"streamable_videos/raw/{video.video_hash}.mp4"
