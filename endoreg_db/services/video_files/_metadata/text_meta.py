@@ -1,10 +1,11 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportUnusedClass=false
 import logging
 from datetime import date
 from typing import TYPE_CHECKING, Protocol, cast
 
 # --- End Fix ---
 from django.db import transaction
-from lx_dtypes.models.contracts.json_types import JsonNull, JsonValue
+from lx_dtypes.models.contracts.video_text_metadata import VideoTextMetaPayload
 
 # --- Fix Imports ---
 from endoreg_db.models.metadata import SensitiveMeta
@@ -17,12 +18,6 @@ if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
 
     # SensitiveMeta is already imported above
-
-
-type VideoTextMetaValue = (
-    JsonValue | JsonNull | list["VideoTextMetaValue"] | dict[str, "VideoTextMetaValue"]
-)
-type VideoTextMetaPayload = dict[str, VideoTextMetaValue]
 
 
 class _VideoTextMetaState(Protocol):
@@ -106,7 +101,7 @@ def _update_text_metadata(
                 frame_fraction=ocr_frame_fraction, cap=cap
             )
             extracted_data_dict = (
-                cast(VideoTextMetaPayload, extracted_text_payload)
+                VideoTextMetaPayload.model_validate(extracted_text_payload)
                 if extracted_text_payload is not None
                 else None
             )
@@ -140,19 +135,24 @@ def _update_text_metadata(
                 return sensitive_meta_instance  # Return existing meta if available
 
             # Add center info if not already present in extracted data
-            if "center_name" not in extracted_data_dict and video.center:
-                extracted_data_dict["center_name"] = video.center.name
+            extracted_data_dict = (
+                extracted_data_dict.model_copy(
+                    update={"center_name": video.center.name}
+                )
+                if "center_name" not in extracted_data_dict.root and video.center
+                else extracted_data_dict
+            )
             logger.debug(
                 "Data for SensitiveMeta update for video %s: %s",
                 video.video_hash,
-                extracted_data_dict,
+                extracted_data_dict.model_dump(mode="python"),
             )
 
             # Pass the Class, the data dict, and the current instance (or None)
             # This function might raise exceptions if data is invalid
             sensitive_meta, created = update_or_create_sensitive_meta_from_dict(
                 SensitiveMeta,  # Pass the class
-                extracted_data_dict,
+                extracted_data_dict.to_dict(),
                 instance=sensitive_meta_instance,  # Pass current instance via keyword
             )
 
@@ -164,7 +164,7 @@ def _update_text_metadata(
                 video.sensitive_meta = sensitive_meta
                 update_fields_video.append("sensitive_meta")
 
-            extracted_date = extracted_data_dict.get("date")
+            extracted_date = extracted_data_dict.root.get("date")
             if not video.date and sensitive_meta and isinstance(extracted_date, date):
                 video.date = extracted_date
                 update_fields_video.append("date")

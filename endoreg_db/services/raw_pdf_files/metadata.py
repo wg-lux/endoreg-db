@@ -9,7 +9,7 @@ from django.core.exceptions import ValidationError
 from lx_dtypes.models.contracts.json_types import JsonNull, JsonValue
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from endoreg_db.utils.security.hashs import get_pdf_hash
+from endoreg_db.utils.hashs import get_pdf_hash
 from endoreg_db.utils.storage import ensure_local_file, file_exists
 
 if TYPE_CHECKING:

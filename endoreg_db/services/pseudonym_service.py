@@ -1,5 +1,5 @@
 """
-Service for generating patient pseudonyms using SensitiveMeta logic.
+Service for generating patient pseudonyms using SensitiveMeta sensitive_meta_logic.
 """
 
 import logging
@@ -8,14 +8,14 @@ from django.db import transaction
 
 from endoreg_db.models.administration.person.patient.patient import Patient
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
-from endoreg_db.models.metadata import sensitive_meta_logic as logic
+from endoreg_db.models.metadata import sensitive_meta_logic
 
 logger = logging.getLogger(__name__)
 
 
 def generate_patient_pseudonym(patient: Patient) -> Tuple[str, bool]:
     """
-    Generate a pseudonym hash for an existing Patient using SensitiveMeta logic.
+    Generate a pseudonym hash for an existing Patient using SensitiveMeta sensitive_meta_logic.
 
     Args:
         patient: The Patient instance to generate a pseudonym for
@@ -37,7 +37,7 @@ def generate_patient_pseudonym(patient: Patient) -> Tuple[str, bool]:
 
     # Use existing patient_hash if it exists and is valid
     if patient.patient_hash and len(patient.patient_hash.strip()) > 0:
-        logger.info(f"Patient {patient.id} already has a hash: {patient.patient_hash}")
+        logger.info(f"Patient {patient.pk} already has a hash: {patient.patient_hash}")
         return patient.patient_hash, True
 
     # Create a transient SensitiveMeta instance to calculate the hash
@@ -51,9 +51,9 @@ def generate_patient_pseudonym(patient: Patient) -> Tuple[str, bool]:
     )
 
     try:
-        # Calculate the hash using the existing logic
-        patient_hash = logic.calculate_patient_hash(
-            sensitive_meta, salt=logic.SECRET_SALT
+        # Calculate the hash using the existing sensitive_meta_logic
+        patient_hash = sensitive_meta_logic.calculate_patient_hash(
+            sensitive_meta, salt=sensitive_meta_logic.SECRET_SALT
         )
 
         # Persist the hash to the Patient model
@@ -61,21 +61,21 @@ def generate_patient_pseudonym(patient: Patient) -> Tuple[str, bool]:
             patient.patient_hash = patient_hash
             patient.save(update_fields=["patient_hash"])
 
-        logger.info(f"Generated and persisted pseudonym for patient {patient.id}")
+        logger.info(f"Generated and persisted pseudonym for patient {patient.pk}")
 
         return patient_hash, True
 
     except ValueError:
         # Known / expected error → client error (400)
         logger.exception(
-            f"Validation error while generating pseudonym for patient {patient.id}"
+            f"Validation error while generating pseudonym for patient {patient.pk}"
         )
         raise
 
     except Exception:
         # Unexpected error → server error (500)
         logger.exception(
-            f"Unexpected error while generating pseudonym for patient {patient.id}"
+            f"Unexpected error while generating pseudonym for patient {patient.pk}"
         )
         raise
 
@@ -90,7 +90,7 @@ def validate_patient_for_pseudonym(patient: Patient) -> list[str]:
     Returns:
         List of missing required fields (empty if all fields present)
     """
-    missing_fields = []
+    missing_fields: list[str] = []
 
     if not patient.dob:
         missing_fields.append("dob")
@@ -98,7 +98,7 @@ def validate_patient_for_pseudonym(patient: Patient) -> list[str]:
     if not patient.center:
         missing_fields.append("center")
 
-    # Note: first_name and last_name can be empty strings according to the logic,
+    # Note: first_name and last_name can be empty strings according to the sensitive_meta_logic,
     # so we don't require them to be non-empty
 
     return missing_fields

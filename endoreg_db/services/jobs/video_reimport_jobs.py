@@ -1,9 +1,10 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportMissingTypeStubs=false
 from __future__ import annotations
 
 import logging
 import os
 import uuid
-from typing import Any, Literal, TypeAlias
+from typing import Any, Literal, TypeAlias, cast
 
 from django.conf import settings
 from django.db import transaction
@@ -38,7 +39,7 @@ from endoreg_db.services.media_operation_gate import defer_if_video_media_busy
 from endoreg_db.services.video_import import VideoImportService
 from endoreg_db.services.video_files import (
     initialize_video_frames,
-    initialize_video_specs,
+    initialize_video_specs as initialize_video_file_specs,
 )
 from endoreg_db.services.video_files.processor_resolution import (
     resolve_processor_name_for_import,
@@ -202,7 +203,11 @@ def _select_reimport_upload_job_ids(video: VideoFile) -> list[Any]:
     )
     for upload_job in queryset:
         total_count += 1
-        scope = (upload_job.source_center_id, upload_job.content_type or "")
+        source_center = upload_job.source_center
+        scope = (
+            int(source_center.pk) if source_center is not None else None,
+            upload_job.content_type or "",
+        )
         selected_job = selected_by_scope.get(scope)
         if selected_job is None:
             selected_by_scope[scope] = upload_job
@@ -268,7 +273,7 @@ def _reset_reimport_state(video: VideoFile) -> int:
     )
 
     logger.info("Re-initializing video specs for %s", video.video_hash)
-    initialize_video_specs(video)
+    initialize_video_file_specs(video)
     initialize_video_frames(video)
     return reset_count
 
@@ -300,13 +305,16 @@ def _mark_upload_jobs_lost(video: VideoFile, error_detail: str) -> int:
 
 def _video_has_integrity_loss(video: VideoFile) -> bool:
     get_state = getattr(video, "get_or_create_state", None)
-    video_state = get_state() if callable(get_state) else getattr(video, "state", None)
-    video_meta = getattr(video, "meta", None)
+    video_state: object | None = (
+        get_state() if callable(get_state) else getattr(video, "state", None)
+    )
+    video_meta: object | None = getattr(video, "meta", None)
     if not isinstance(video_meta, dict):
         video_meta = {}
+    video_meta_dict = cast(dict[str, object], video_meta)
     return bool(
         getattr(video_state, "processing_error", False)
-        or video_meta.get("integrity_status") == "lost"
+        or video_meta_dict.get("integrity_status") == "lost"
     )
 
 

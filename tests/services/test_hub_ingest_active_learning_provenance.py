@@ -2,6 +2,9 @@ from django.test import SimpleTestCase
 
 from endoreg_db.models import UploadJob
 from endoreg_db.services.hub.ingest import record_active_learning_selection_provenance
+from lx_dtypes.models.contracts.hub_active_learning import (
+    ActiveLearningSelectionProvenancePayload,
+)
 
 
 class HubIngestActiveLearningProvenanceTests(SimpleTestCase):
@@ -13,7 +16,7 @@ class HubIngestActiveLearningProvenanceTests(SimpleTestCase):
             }
         }
 
-        provenance = record_active_learning_selection_provenance(
+        raw_provenance = record_active_learning_selection_provenance(
             upload_job,
             candidate_count=120,
             selected_count=24,
@@ -23,27 +26,28 @@ class HubIngestActiveLearningProvenanceTests(SimpleTestCase):
             extra_metadata={"campaign": "round-3"},
             save=False,
         )
+        provenance = ActiveLearningSelectionProvenancePayload.model_validate(
+            raw_provenance
+        )
+        active_learning = provenance.sidecar_payload.active_learning
 
-        self.assertEqual(provenance["ingest_variant"], "active_learning_selection")
-        self.assertEqual(provenance["custom_marker"], "active_learning")
-        self.assertEqual(provenance["sidecar_payload"]["existing"], "value")
+        self.assertEqual(provenance.ingest_variant, "active_learning_selection")
+        self.assertEqual(provenance.custom_marker, "active_learning")
+        self.assertEqual(provenance.sidecar_payload.existing, "value")
         self.assertEqual(
-            provenance["sidecar_payload"]["active_learning"]["selection_strategy"],
+            active_learning.selection_strategy,
             "temporal_segment_hybrid",
         )
         self.assertEqual(
-            provenance["sidecar_payload"]["active_learning"]["candidate_count"],
+            active_learning.candidate_count,
             120,
         )
         self.assertEqual(
-            provenance["sidecar_payload"]["active_learning"]["selected_count"],
+            active_learning.selected_count,
             24,
         )
         self.assertEqual(
-            provenance["sidecar_payload"]["active_learning"]["annotation_budget"],
+            active_learning.annotation_budget,
             24,
         )
-        self.assertEqual(
-            provenance["sidecar_payload"]["active_learning"]["campaign"],
-            "round-3",
-        )
+        self.assertEqual(active_learning.campaign, "round-3")

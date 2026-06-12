@@ -1,41 +1,73 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import Protocol, cast
 
 from endoreg_db.models import Label, LabelVideoSegment
 from endoreg_db.models.media.video.video_file import VideoFile
 
-if TYPE_CHECKING:
-    from tests.media.video.test_video_file_extracted import VideoFileModelExtractedTest
+
+class _AssertTrueLike(Protocol):
+    def assertTrue(self, value: object, message: str = "") -> None: ...
 
 
-def _assert_true(subject, value: bool, message: str) -> None:
+class _AssertIsNotNoneLike(Protocol):
+    def assertIsNotNone(self, value: object, message: str = "") -> None: ...
+
+
+class _VideoFileCarrierLike(Protocol):
+    video_file: object
+
+
+class _ManualValidationLike(Protocol):
+    def simulate_manual_validation(self) -> bool: ...
+
+
+class _LabelManagerLike(Protocol):
+    def resolve_by_name(
+        self,
+        name: str,
+        *,
+        case_insensitive: bool = False,
+    ) -> Label | None: ...
+
+def _assert_true(subject: object, value: bool, message: str) -> None:
     if hasattr(subject, "assertTrue"):
-        subject.assertTrue(value, message)
+        cast(_AssertTrueLike, subject).assertTrue(value, message)
         return
     if not value:
         raise AssertionError(message)
 
 
-def _assert_is_not_none(subject, value, message: str) -> None:
+def _assert_is_not_none(
+    subject: object,
+    value: object | None,
+    message: str,
+) -> None:
     if hasattr(subject, "assertIsNotNone"):
-        subject.assertIsNotNone(value, message)
+        cast(_AssertIsNotNoneLike, subject).assertIsNotNone(value, message)
         return
     if value is None:
         raise AssertionError(message)
 
 
-def _resolve_video_file(subject):
-    return getattr(subject, "video_file", subject)
+def _resolve_video_file(subject: object) -> object:
+    if hasattr(subject, "video_file"):
+        return cast(_VideoFileCarrierLike, subject).video_file
+    return subject
 
 
-def _simulate_manual_validation(video_file) -> bool:
+def _simulate_manual_validation(video_file: object) -> bool:
     if not isinstance(video_file, VideoFile):
         if hasattr(video_file, "simulate_manual_validation"):
-            return bool(video_file.simulate_manual_validation())
+            return bool(
+                cast(_ManualValidationLike, video_file).simulate_manual_validation()
+            )
         return True
 
-    outside_label = Label.objects.resolve_by_name("outside", case_insensitive=True)
+    outside_label = cast(_LabelManagerLike, Label.objects).resolve_by_name(
+        "outside",
+        case_insensitive=True,
+    )
     if outside_label is None:
         return False
 
@@ -72,7 +104,7 @@ def _simulate_manual_validation(video_file) -> bool:
     return True
 
 
-def mock_video_manual_validation(subject: VideoFileModelExtractedTest | VideoFile):
+def mock_video_manual_validation(subject: object) -> None:
     video_file = _resolve_video_file(subject)
     success = _simulate_manual_validation(video_file)
     _assert_true(
@@ -80,6 +112,14 @@ def mock_video_manual_validation(subject: VideoFileModelExtractedTest | VideoFil
         success,
         "Manual validation simulation failed.",
     )
+
+    if not isinstance(video_file, VideoFile):
+        _assert_true(
+            subject,
+            success,
+            "Manual validation simulation failed.",
+        )
+        return
 
     video_file.refresh_from_db()
     sensitive_meta = video_file.sensitive_meta
@@ -108,13 +148,8 @@ def mock_video_manual_validation(subject: VideoFileModelExtractedTest | VideoFil
             "SensitiveMetaState.is_verified should be True",
         )
 
-    # Check Label Video Segments are still present - handle mock vs real objects
-    if not isinstance(video_file, VideoFile):
-        # For mock objects, we simulate that LabelVideoSegments exist
-        lvs_exists = True  # Simulate that segments exist for mock testing
-    else:
-        # For real video files, do the actual database query
-        lvs_exists = LabelVideoSegment.objects.filter(video_file=video_file).exists()
+    # For real video files, do the actual database query.
+    lvs_exists = LabelVideoSegment.objects.filter(video_file=video_file).exists()
 
     _assert_true(
         subject,

@@ -1,3 +1,4 @@
+# pyright: reportUnusedFunction=false, reportUnusedClass=false
 from __future__ import annotations
 import os
 import uuid
@@ -5,9 +6,10 @@ import json
 import logging
 import hashlib
 import time
+from collections.abc import Iterable
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator, NotRequired, Protocol, TypedDict, cast
+from typing import Any, Generator, NotRequired, Protocol, TypedDict, cast
 from datetime import timedelta
 from django.conf import settings
 from django.utils import timezone
@@ -64,20 +66,21 @@ from endoreg_db.services.video_files import get_or_create_video_state
 from endoreg_db.services.video_temporal_inference import (
     dispatch_video_temporal_inference,
 )
-from endoreg_db.utils.defaults.set_default_center import (
+from endoreg_db.utils.set_default_center import (
     get_application_defaults,
     get_default_processor,
 )
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_move_file,
     ensure_directory,
     safe_unlink_file,
     sha256_file,
 )
-from endoreg_db.utils.filesystem import paths as path_utils
-from endoreg_db.utils.filesystem.paths import to_storage_relative
+from endoreg_db.utils import paths as path_utils
+from endoreg_db.utils.paths import to_storage_relative
 from endoreg_db.utils.storage import delete_field_file, ensure_local_file
+from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
 
 STALE_UPLOAD_JOB_AGE = timedelta(hours=2)
 LOCK_RETRY_ATTEMPTS = 10
@@ -91,6 +94,12 @@ class CeleryTaskDispatcher(Protocol):
 
 class DelayTaskDispatcher(Protocol):
     def delay(self, *args: Any, **kwargs: Any) -> Any: ...
+
+
+class _SensitiveMetaLinkIds(Protocol):
+    external_id_id: int | None
+    pseudo_patient_id: int | None
+    pseudo_examination_id: int | None
 
 
 def _video_upload_import_task_dispatcher() -> CeleryTaskDispatcher:
@@ -143,9 +152,12 @@ def _opportunistic_reap_watcher_sources(
 
 
 def _cleanup_persisted_watcher_source(upload_job: UploadJob) -> bool:
-    if upload_job.ingest_mode != UploadJob.IngestMode.WATCHER:
+    if upload_job.ingest_mode != UploadJob.IngestMode.WATCHER.value:
         return False
-    if upload_job.retention_policy != UploadJob.RetentionPolicy.DELETE_AFTER_SUCCESS:
+    if (
+        upload_job.retention_policy
+        != UploadJob.RetentionPolicy.DELETE_AFTER_SUCCESS.value
+    ):
         return False
     if not upload_job.source_file_persisted:
         return False
@@ -154,8 +166,8 @@ def _cleanup_persisted_watcher_source(upload_job: UploadJob) -> bool:
     if upload_job.source_file_delete_eligible_at is None:
         upload_job.source_file_delete_eligible_at = timezone.now()
         update_fields.append("source_file_delete_eligible_at")
-    if upload_job.cleanup_status != UploadJob.CleanupStatus.ELIGIBLE:
-        upload_job.cleanup_status = UploadJob.CleanupStatus.ELIGIBLE
+    if upload_job.cleanup_status != UploadJob.CleanupStatus.ELIGIBLE.value:
+        upload_job.cleanup_status = UploadJob.CleanupStatus.ELIGIBLE.value
         update_fields.append("cleanup_status")
     upload_job.save(update_fields=update_fields)
 
@@ -187,7 +199,7 @@ class UploadProvenance(TypedDict, total=False):
     file_type: str
     ingest_variant: str
     sidecar_path: str
-    sidecar_payload: dict[str, Any]
+    sidecar_payload: JsonObject
     watcher_processing_path: str
     processor_name: str | None
     processing_handoff: str
@@ -211,24 +223,26 @@ class UploadProvenance(TypedDict, total=False):
 
 
 def _upload_provenance(
-    existing: UploadProvenance | None = None,
+    existing: JsonObject | UploadProvenance | None = None,
 ) -> UploadProvenance:
-    provenance: UploadProvenance = {}
+    provenance: dict[str, JsonValue] = {}
     if existing:
-        provenance.update(existing)
-    return provenance
+        provenance.update(cast(JsonObject, existing))
+    return cast(UploadProvenance, provenance)
 
 
 def _update_upload_provenance(
     upload_job: UploadJob,
-    **updates: object,
+    **updates: JsonValue | None,
 ) -> UploadProvenance:
-    provenance = _upload_provenance(upload_job.processing_provenance)
+    provenance: dict[str, JsonValue] = dict(
+        cast(JsonObject, _upload_provenance(upload_job.processing_provenance))
+    )
     for key, value in updates.items():
         if value is not None:
-            cast(Any, provenance)[key] = value
+            provenance[key] = value
     upload_job.processing_provenance = provenance
-    return provenance
+    return cast(UploadProvenance, provenance)
 
 
 def record_active_learning_selection_provenance(
@@ -240,10 +254,10 @@ def record_active_learning_selection_provenance(
     annotation_budget: int,
     ai_dataset_id: int | None = None,
     model_meta_id: int | None = None,
-    extra_metadata: dict[str, Any] | None = None,
+    extra_metadata: JsonObject | None = None,
     save: bool = True,
 ) -> UploadProvenance:
-    active_learning_payload: dict[str, Any] = {
+    active_learning_payload: JsonObject = {
         "selection_strategy": selection_strategy,
         "candidate_count": candidate_count,
         "selected_count": selected_count,
@@ -256,13 +270,10 @@ def record_active_learning_selection_provenance(
     if extra_metadata:
         active_learning_payload.update(extra_metadata)
 
-    existing_sidecar_payload = {}
-    if isinstance(upload_job.processing_provenance, dict):
-        current_sidecar_payload = upload_job.processing_provenance.get(
-            "sidecar_payload"
-        )
-        if isinstance(current_sidecar_payload, dict):
-            existing_sidecar_payload.update(current_sidecar_payload)
+    existing_sidecar_payload: JsonObject = {}
+    current_sidecar_payload = upload_job.processing_provenance.get("sidecar_payload")
+    if isinstance(current_sidecar_payload, dict):
+        existing_sidecar_payload.update(cast(JsonObject, current_sidecar_payload))
     existing_sidecar_payload["active_learning"] = active_learning_payload
 
     provenance = _update_upload_provenance(
@@ -313,23 +324,12 @@ def _get_upload_provenance(upload_job: UploadJob) -> UploadProvenance | None:
     return cast(UploadProvenance | None, upload_job.processing_provenance)
 
 
-def _compute_uploaded_file_content_hash(uploaded_file) -> str:
+def _compute_uploaded_file_content_hash(uploaded_file: UploadedFile) -> str:
     digest = hashlib.sha256()
-    if hasattr(uploaded_file, "seek"):
-        uploaded_file.seek(0)
-    if hasattr(uploaded_file, "chunks"):
-        for chunk in uploaded_file.chunks():
-            digest.update(chunk)
-    elif hasattr(uploaded_file, "read"):
-        while True:
-            chunk = uploaded_file.read(8192)  # Read 8KB chunks
-            if not chunk:
-                break
-            digest.update(chunk)
-    else:
-        raise ValueError("uploaded_file does not have 'chunks' or 'read' method.")
-    if hasattr(uploaded_file, "seek"):
-        uploaded_file.seek(0)
+    uploaded_file.seek(0)
+    for chunk in cast(Iterable[bytes], uploaded_file.chunks()):
+        digest.update(chunk)
+    uploaded_file.seek(0)
     return digest.hexdigest()
 
 
@@ -517,7 +517,7 @@ def resolve_api_upload_context(
         allowed_center_id is not None
         and allowed_center_id >= 0
         and declared_center is not None
-        and declared_center.id != allowed_center_id
+        and declared_center.pk != allowed_center_id
     ):
         return (
             None,
@@ -552,7 +552,7 @@ def resolve_api_upload_context(
         allowed_center_id is not None
         and allowed_center_id >= 0
         and source_center is not None
-        and source_center.id != allowed_center_id
+        and source_center.pk != allowed_center_id
     ):
         return (
             None,
@@ -597,7 +597,7 @@ def _safe_existing_media_root_path(storage_name: str | None) -> Path | None:
 @contextmanager
 def _ensure_upload_job_local_file(
     job: UploadJob,
-) -> Iterator[Path]:
+) -> Generator[Path, None, None]:
     try:
         with ensure_local_file(job.file) as file_path:
             yield Path(file_path)
@@ -631,7 +631,7 @@ def _reserve_video_upload_import_handoff(
     queue: str,
     task_id: str,
 ) -> tuple[UploadJob, bool]:
-    upload_job_manager = cast(Any, getattr(UploadJob, "objects"))
+    upload_job_manager = UploadJob.objects
     with transaction.atomic():
         job = (
             upload_job_manager.select_for_update(of=("self",))
@@ -641,7 +641,7 @@ def _reserve_video_upload_import_handoff(
             )
             .get(id=upload_job_id)
         )
-        if job.status == UploadJob.Status.ANONYMIZED:
+        if job.status == UploadJob.Status.ANONYMIZED.value:
             return job, False
         if not job.file or not job.file.name:
             job.mark_lost("Upload job has no stored file")
@@ -655,13 +655,13 @@ def _reserve_video_upload_import_handoff(
         )
         existing_task_id = provenance.get("video_import_task_id")
         if (
-            job.status == UploadJob.Status.PROCESSING
+            job.status == UploadJob.Status.PROCESSING.value
             and isinstance(existing_task_id, str)
             and existing_task_id.strip()
         ):
             return job, False
 
-        job.status = UploadJob.Status.PROCESSING
+        job.status = UploadJob.Status.PROCESSING.value
         job.error_detail = ""
         _update_upload_provenance(
             job,
@@ -685,8 +685,8 @@ def _media_integrity_provenance(
     result: MediaIntegrityResult,
     *,
     previous_upload_job_id: uuid.UUID | str | None = None,
-) -> dict[str, object]:
-    provenance: dict[str, object] = {
+) -> JsonObject:
+    provenance: JsonObject = {
         "media_integrity_status": result.status.value,
         "media_integrity_reason": result.reason,
     }
@@ -699,27 +699,29 @@ def _media_integrity_provenance(
 
 def create_or_reuse_upload_job(
     *,
-    uploaded_file: UploadedFile | File | None,
+    uploaded_file: UploadedFile | File[bytes] | None,
     content_type: str,
     created_by: object | None = None,
     source_center: Center | None = None,
     source_system: str = "api",
     content_hash: str = "",
     idempotency_key: str = "",
-    ingest_mode: str = UploadJob.IngestMode.API,
-    storage_class: str = UploadJob.StorageClass.INGEST,
-    storage_tier: str = UploadJob.StorageTier.UPLOAD_API,
-    retention_policy: str = UploadJob.RetentionPolicy.PRESERVE_SOURCE,
+    ingest_mode: str = UploadJob.IngestMode.API.value,
+    storage_class: str = UploadJob.StorageClass.INGEST.value,
+    storage_tier: str = UploadJob.StorageTier.UPLOAD_API.value,
+    retention_policy: str = UploadJob.RetentionPolicy.PRESERVE_SOURCE.value,
     source_file_persisted: bool = True,
-    cleanup_status: str = UploadJob.CleanupStatus.PENDING,
+    cleanup_status: str = UploadJob.CleanupStatus.PENDING.value,
     processing_provenance: UploadProvenance | None = None,
     allow_completed_reuse_without_media: bool = False,
 ) -> tuple[UploadJob, bool]:
-    upload_job_manager = cast(Any, getattr(UploadJob, "objects"))
+    upload_job_manager = UploadJob.objects
     base_processing_provenance = _upload_provenance(processing_provenance)
-    reingest_provenance_updates: dict[str, object] = {}
+    reingest_provenance_updates: JsonObject = {}
     normalized_content_hash = (content_hash or "").strip()
     if not normalized_content_hash:
+        if not isinstance(uploaded_file, UploadedFile):
+            raise ValueError("uploaded_file is required when content_hash is blank")
         normalized_content_hash = _compute_uploaded_file_content_hash(uploaded_file)
 
     normalized_idempotency_key = (idempotency_key or "").strip()
@@ -751,7 +753,7 @@ def create_or_reuse_upload_job(
 
     for attempt in range(1, LOCK_RETRY_ATTEMPTS + 1):
         try:
-            invalid_job_id: uuid.UUID | None = None
+            invalid_job_id: str | None = None
             invalid_reason: str | None = None
             invalid_status: str = UploadJob.Status.ERROR
             invalid_integrity_result: MediaIntegrityResult | None = None
@@ -775,7 +777,7 @@ def create_or_reuse_upload_job(
                                 "Existing upload job was stale in pending/processing "
                                 "state. Forcing re-ingest."
                             )
-                    elif existing_job.status == UploadJob.Status.ANONYMIZED:
+                    elif existing_job.status == UploadJob.Status.ANONYMIZED.value:
                         integrity_result = check_upload_job_media_integrity(
                             existing_job
                         )
@@ -814,14 +816,14 @@ def create_or_reuse_upload_job(
                         existing_job.status,
                         invalid_reason,
                     )
-                    invalid_job_id = existing_job.id
+                    invalid_job_id = str(existing_job.id)
                     invalid_reason = (
                         invalid_reason
                         or "Previous upload job was invalid for reuse. Forcing re-ingest."
                     )
                 else:
                     try:
-                        if hasattr(uploaded_file, "seek"):
+                        if isinstance(uploaded_file, UploadedFile):
                             uploaded_file.seek(0)
                         job = upload_job_manager.create(
                             file=uploaded_file,
@@ -880,51 +882,48 @@ def create_or_reuse_upload_job(
                             return conflict_job, False
                         raise
 
-            if invalid_job_id is not None:
-                invalid_job = (
-                    UploadJob.objects.filter(pk=invalid_job_id)
-                    .exclude(status__in=[UploadJob.Status.ERROR, UploadJob.Status.LOST])
-                    .first()
-                )
-                if invalid_job is not None:
-                    if invalid_integrity_result is not None:
-                        provenance_updates = _media_integrity_provenance(
-                            invalid_integrity_result
-                        )
-                        _update_upload_provenance(invalid_job, **provenance_updates)
-                        invalid_job.save(
-                            update_fields=["processing_provenance", "updated_at"]
-                        )
-                        emit_hub_audit_event(
-                            "hub.upload_job_media_integrity_failed",
-                            upload_job_id=str(invalid_job.id),
-                            source_system=invalid_job.source_system,
-                            request_user=created_by,
-                            center_key=(
-                                invalid_job.source_center.center_key
-                                if invalid_job.source_center
-                                else None
-                            ),
-                            ingest_mode=invalid_job.ingest_mode,
-                            content_hash=invalid_job.content_hash,
-                            media_integrity_status=(
-                                invalid_integrity_result.status.value
-                            ),
-                            media_integrity_reason=invalid_integrity_result.reason,
-                            missing_artifacts=list(
-                                invalid_integrity_result.missing_artifacts
-                            ),
-                        )
-                        reingest_provenance_updates = _media_integrity_provenance(
-                            invalid_integrity_result,
-                            previous_upload_job_id=invalid_job.id,
-                        )
-                    if invalid_status == UploadJob.Status.LOST:
-                        invalid_job.mark_lost(invalid_reason)
-                    else:
-                        invalid_job.mark_error(invalid_reason)
-                    _cleanup_persisted_watcher_source(invalid_job)
-                continue
+            invalid_job = (
+                UploadJob.objects.filter(pk=invalid_job_id)
+                .exclude(status__in=[UploadJob.Status.ERROR, UploadJob.Status.LOST])
+                .first()
+            )
+            if invalid_job is not None:
+                if invalid_integrity_result is not None:
+                    provenance_updates = _media_integrity_provenance(
+                        invalid_integrity_result
+                    )
+                    _update_upload_provenance(invalid_job, **provenance_updates)
+                    invalid_job.save(
+                        update_fields=["processing_provenance", "updated_at"]
+                    )
+                    emit_hub_audit_event(
+                        "hub.upload_job_media_integrity_failed",
+                        upload_job_id=str(invalid_job.id),
+                        source_system=invalid_job.source_system,
+                        request_user=created_by,
+                        center_key=(
+                            invalid_job.source_center.center_key
+                            if invalid_job.source_center
+                            else None
+                        ),
+                        ingest_mode=invalid_job.ingest_mode,
+                        content_hash=invalid_job.content_hash,
+                        media_integrity_status=invalid_integrity_result.status.value,
+                        media_integrity_reason=invalid_integrity_result.reason,
+                        missing_artifacts=list(
+                            invalid_integrity_result.missing_artifacts
+                        ),
+                    )
+                    reingest_provenance_updates = _media_integrity_provenance(
+                        invalid_integrity_result,
+                        previous_upload_job_id=invalid_job.id,
+                    )
+                if invalid_status == UploadJob.Status.LOST:
+                    invalid_job.mark_lost(invalid_reason)
+                else:
+                    invalid_job.mark_error(invalid_reason)
+                _cleanup_persisted_watcher_source(invalid_job)
+            continue
         except OperationalError as exc:
             if not _is_retryable_db_lock_error(exc) or attempt == LOCK_RETRY_ATTEMPTS:
                 raise
@@ -1161,10 +1160,14 @@ def _attach_external_id_to_sensitive_meta(
         )
 
     update_fields: list[str] = []
-    if sensitive_meta.external_id_id != existing.pk:
+    external_id_id = cast(int | None, getattr(sensitive_meta, "external_id_id", None))
+    pseudo_patient_id = cast(
+        int | None, getattr(sensitive_meta, "pseudo_patient_id", None)
+    )
+    if external_id_id != existing.pk:
         sensitive_meta.external_id = existing
         update_fields.append("external_id")
-    if sensitive_meta.pseudo_patient_id is None:
+    if pseudo_patient_id is None:
         sensitive_meta.pseudo_patient = existing.patient
         update_fields.append("pseudo_patient")
     if update_fields:
@@ -1372,18 +1375,21 @@ def _finalize_preanonymized_video(
             payload=payload,
         )
         update_fields = []
+        sensitive_meta_patient_id = cast(
+            int | None, getattr(sensitive_meta, "pseudo_patient_id", None)
+        )
+        sensitive_meta_examination_id = cast(
+            int | None, getattr(sensitive_meta, "pseudo_examination_id", None)
+        )
         if sensitive_meta is not None and video.sensitive_meta_id != sensitive_meta.pk:
             video.sensitive_meta = sensitive_meta
             update_fields.append("sensitive_meta")
-        if (
-            sensitive_meta is not None
-            and video.patient_id != sensitive_meta.pseudo_patient_id
-        ):
+        if sensitive_meta is not None and video.patient_id != sensitive_meta_patient_id:
             video.patient = sensitive_meta.pseudo_patient
             update_fields.append("patient")
         if (
             sensitive_meta is not None
-            and video.examination_id != sensitive_meta.pseudo_examination_id
+            and video.examination_id != sensitive_meta_examination_id
         ):
             video.examination = sensitive_meta.pseudo_examination
             update_fields.append("examination")
@@ -1466,18 +1472,24 @@ def _finalize_preanonymized_report(
             payload=payload,
         )
         update_fields = []
+        sensitive_meta_patient_id = cast(
+            int | None, getattr(sensitive_meta, "pseudo_patient_id", None)
+        )
+        sensitive_meta_examination_id = cast(
+            int | None, getattr(sensitive_meta, "pseudo_examination_id", None)
+        )
         if sensitive_meta is not None and report.sensitive_meta_id != sensitive_meta.pk:
             report.sensitive_meta = sensitive_meta
             update_fields.append("sensitive_meta")
         if (
             sensitive_meta is not None
-            and report.patient_id != sensitive_meta.pseudo_patient_id
+            and report.patient_id != sensitive_meta_patient_id
         ):
             report.patient = sensitive_meta.pseudo_patient
             update_fields.append("patient")
         if (
             sensitive_meta is not None
-            and report.examination_id != sensitive_meta.pseudo_examination_id
+            and report.examination_id != sensitive_meta_examination_id
         ):
             report.examination = sensitive_meta.pseudo_examination
             update_fields.append("examination")
@@ -1510,11 +1522,11 @@ def _finalize_preanonymized_report(
 
 
 def process_upload_job(job_id: str) -> bool:
-    upload_job_manager = cast(Any, getattr(UploadJob, "objects"))
+    upload_job_manager = UploadJob.objects
     job = upload_job_manager.select_related("source_center", "sensitive_meta").get(
         id=job_id
     )
-    if job.status == UploadJob.Status.ANONYMIZED:
+    if job.status == UploadJob.Status.ANONYMIZED.value:
         return True
 
     if not job.file or not job.file.name:
@@ -1586,11 +1598,11 @@ def process_upload_job(job_id: str) -> bool:
 
 
 def _run_video_upload_import_job(job_id: str) -> bool:
-    upload_job_manager = cast(Any, getattr(UploadJob, "objects"))
+    upload_job_manager = UploadJob.objects
     job = upload_job_manager.select_related("source_center", "sensitive_meta").get(
         id=job_id
     )
-    if job.status == UploadJob.Status.ANONYMIZED:
+    if job.status == UploadJob.Status.ANONYMIZED.value:
         return True
 
     if not job.file or not job.file.name:
@@ -1789,7 +1801,7 @@ def start_upload_job_processing(
             upload_job.processing_provenance,
         ),
     )
-    upload_job.processing_provenance = provenance
+    upload_job.processing_provenance = cast(JsonObject, provenance)
     handoff_mode = "celery" if task_dispatcher is not None else "inline"
 
     try:
@@ -1813,11 +1825,7 @@ def start_upload_job_processing(
         else:
             processed = process_upload_job(str(upload_job.id))
             if not processed:
-                refreshed_job = (
-                    cast(Any, getattr(UploadJob, "objects"))
-                    .filter(id=upload_job.id)
-                    .first()
-                )
+                refreshed_job = UploadJob.objects.filter(id=upload_job.id).first()
                 error_detail = (
                     getattr(refreshed_job, "error_detail", "") if refreshed_job else ""
                 )
@@ -1912,10 +1920,10 @@ def process_watcher_file(
         watcher_processing_path=str(watched_path),
     )
     upload_job.save(update_fields=["processing_provenance", "updated_at"])
+    effective_processor_name: str | None = processor_name or _default_processor_name()
 
     try:
         if normalized_type == "video":
-            effective_processor_name = processor_name or _default_processor_name()
             if not effective_processor_name:
                 raise ObjectDoesNotExist("No default EndoscopyProcessor is configured")
             _ = _update_upload_provenance(
@@ -2109,7 +2117,7 @@ def process_preanonymized_watcher_file(
         processing_provenance={
             "file_type": normalized_type,
             "ingest_variant": "preanonymized",
-            "sidecar_path": str(sidecar_path) if sidecar_path is not None else "",
+            "sidecar_path": str(sidecar_path),
             "sidecar_payload": (
                 metadata_payload.model_dump(mode="json", exclude_none=True)
                 if metadata_payload is not None
@@ -2119,13 +2127,13 @@ def process_preanonymized_watcher_file(
     )
     if not created:
         safe_unlink_file(watched_path, missing_ok=True)
-        if sidecar_path is not None and sidecar_path.exists():
+        if sidecar_path.exists():
             safe_unlink_file(sidecar_path, missing_ok=True)
         return upload_job
     if upload_job.is_complete:
         if _upload_job_has_usable_media(upload_job):
             safe_unlink_file(watched_path, missing_ok=True)
-            if sidecar_path is not None and sidecar_path.exists():
+            if sidecar_path.exists():
                 safe_unlink_file(sidecar_path, missing_ok=True)
             return upload_job
 
@@ -2164,7 +2172,7 @@ def process_preanonymized_watcher_file(
             )
             sensitive_meta = video.sensitive_meta
 
-        if sidecar_path is not None and sidecar_path.exists():
+        if sidecar_path.exists():
             safe_unlink_file(sidecar_path, missing_ok=True)
         upload_job.save(update_fields=["processing_provenance", "updated_at"])
         upload_job.mark_completed(sensitive_meta=sensitive_meta)
@@ -2176,7 +2184,7 @@ def process_preanonymized_watcher_file(
             request_user=None,
             center_key=source_center.center_key,
             watched_path=str(watched_path),
-            sidecar_path=str(sidecar_path) if sidecar_path is not None else None,
+            sidecar_path=str(sidecar_path),
             content_hash=upload_job.content_hash,
         )
         return upload_job
@@ -2194,7 +2202,7 @@ def process_preanonymized_watcher_file(
             request_user=None,
             center_key=source_center.center_key,
             watched_path=str(watched_path),
-            sidecar_path=str(sidecar_path) if sidecar_path is not None else None,
+            sidecar_path=str(sidecar_path),
             reason=str(exc),
         )
         # Move the failed file to quarantine
@@ -2213,7 +2221,7 @@ def process_preanonymized_watcher_file(
                 move_exc,
             )
         # Also attempt to move the sidecar if it exists
-        if sidecar_path is not None and sidecar_path.exists():
+        if sidecar_path.exists():
             try:
                 quarantine_sidecar_path = _quarantine_dir() / sidecar_path.name
                 atomic_move_file(

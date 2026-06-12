@@ -1,30 +1,32 @@
 from __future__ import annotations
 
-import json
 import os
 from io import StringIO
 from pathlib import Path
 
 import pytest
 from django.core.management import call_command
+from django.db.models.fields.files import FieldFile
 
 from endoreg_db.management.commands import migrate_media_storage as command_module
 from endoreg_db.models import Center, RawPdfFile, VideoFile
 from endoreg_db.utils.encryption.encrypted import MAGIC
-from endoreg_db.utils.filesystem.paths import (
+from endoreg_db.utils.paths import (
     EndoregPathsModel,
     to_protected_media_relative,
 )
 from endoreg_db.utils.storage import save_local_file
-
+from lx_dtypes.models.contracts.migrate_media_storage import (
+    MigrateMediaStorageSummaryPayload,
+)
 
 pytestmark = pytest.mark.django_db
 
 
-def _json_command(*args: str) -> dict:
+def _json_command(*args: str) -> MigrateMediaStorageSummaryPayload:
     output = StringIO()
     call_command("migrate_media_storage", *args, "--json", stdout=output)
-    return json.loads(output.getvalue())
+    return MigrateMediaStorageSummaryPayload.model_validate_json(output.getvalue())
 
 
 @pytest.fixture
@@ -39,7 +41,9 @@ def _create_video(center: Center, video_hash: str) -> VideoFile:
     return VideoFile.objects.create(center=center, video_hash=video_hash)
 
 
-def _write_plaintext_field_file(field_file, name: str, payload: bytes) -> Path:
+def _write_plaintext_field_file(
+    field_file: FieldFile, name: str, payload: bytes
+) -> Path:
     field_file.name = name
     field_file.instance.save(update_fields=[field_file.field.name])
     path = Path(field_file.path)
@@ -63,9 +67,9 @@ def test_migrate_media_storage_dry_run_changes_nothing(media_center: Center) -> 
 
     summary = _json_command("--include-raw")
 
-    assert summary["dry_run"] is True
-    assert summary["would_repair"] == 1
-    assert summary["changed"] == 0
+    assert summary.dry_run is True
+    assert summary.would_repair == 1
+    assert summary.changed == 0
     assert stored_path.stat().st_mtime_ns == before_mtime
     assert not _starts_with_magic(stored_path)
 
@@ -81,10 +85,10 @@ def test_migrate_media_storage_second_run_is_noop(media_center: Center) -> None:
     first = _json_command("--apply", "--include-raw")
     second = _json_command("--apply", "--include-raw")
 
-    assert first["repaired"] == 1
-    assert first["changed"] == 1
-    assert second["changed"] == 0
-    assert second["selected"] == 0
+    assert first.repaired == 1
+    assert first.changed == 1
+    assert second.changed == 0
+    assert second.selected == 0
     assert _starts_with_magic(stored_path)
     video.refresh_from_db()
     with video.raw_file.open("rb") as stored:
@@ -109,9 +113,9 @@ def test_migrate_media_storage_limit_allows_resume(media_center: Center) -> None
     second = _json_command("--apply", "--include-raw", "--limit", "1")
     third = _json_command("--apply", "--include-raw", "--limit", "1")
 
-    assert first["changed"] == 1
-    assert second["changed"] == 1
-    assert third["changed"] == 0
+    assert first.changed == 1
+    assert second.changed == 1
+    assert third.changed == 0
     assert _starts_with_magic(first_path)
     assert _starts_with_magic(second_path)
 
@@ -125,9 +129,9 @@ def test_migrate_media_storage_missing_source_is_reported(
 
     summary = _json_command("--apply", "--include-raw")
 
-    assert summary["failed"] == 1
-    assert summary["records"][0]["reason"] == "missing_source"
-    assert summary["changed"] == 0
+    assert summary.failed == 1
+    assert summary.records[0].reason == "missing_source"
+    assert summary.changed == 0
 
 
 def test_migrate_media_storage_deletes_legacy_source_only_with_explicit_flag(
@@ -142,7 +146,7 @@ def test_migrate_media_storage_deletes_legacy_source_only_with_explicit_flag(
     dry_summary = _json_command("--apply", "--include-raw")
     video.refresh_from_db()
 
-    assert dry_summary["migrated"] == 1
+    assert dry_summary.migrated == 1
     assert source.exists()
     with video.raw_file.open("rb") as stored:
         assert stored.read() == b"\x00\x00\x00\x18ftypmp42delete-legacy"
@@ -159,8 +163,8 @@ def test_migrate_media_storage_deletes_legacy_source_only_with_explicit_flag(
         str(second_video.pk),
     )
 
-    assert delete_summary["migrated"] == 1
-    assert delete_summary["cleanup_deleted"] == 1
+    assert delete_summary.migrated == 1
+    assert delete_summary.cleanup_deleted == 1
     assert not second_source.exists()
 
 
@@ -174,7 +178,7 @@ def test_migrate_media_storage_keeps_legacy_when_verify_breaks(
     source.write_bytes(b"\x00\x00\x00\x18ftypmp42validation-fails")
     video = _create_video(media_center, "validation-fails-video")
 
-    def unreadable_after_save(field_file) -> bool:
+    def unreadable_after_save(field_file: FieldFile) -> bool:
         return False
 
     monkeypatch.setattr(
@@ -192,8 +196,8 @@ def test_migrate_media_storage_keeps_legacy_when_verify_breaks(
         str(video.pk),
     )
 
-    assert summary["failed"] == 1
-    assert summary["records"][0]["reason"] == "validation_failed"
+    assert summary.failed == 1
+    assert summary.records[0].reason == "validation_failed"
     assert source.exists()
 
 
@@ -233,8 +237,8 @@ def test_migrate_media_storage_rewrites_bad_streamable_object(
         str(video.pk),
     )
 
-    assert summary["failed"] == 0, json.dumps(summary, sort_keys=True)
-    assert summary["changed"] == 1
+    assert summary.failed == 0, summary.model_dump_json()
+    assert summary.changed == 1
     assert not _starts_with_magic(streamable_path)
     assert streamable_path.read_bytes() == b"\x00\x00\x00\x18ftypmp42streamable"
 
@@ -251,7 +255,7 @@ def test_migrate_media_storage_migrates_report_fields(media_center: Center) -> N
 
     summary = _json_command("--apply", "--include-reports")
 
-    assert summary["migrated"] == 1
+    assert summary.migrated == 1
     report.refresh_from_db()
     assert report.file.name
     assert Path(report.file.path).read_bytes().startswith(MAGIC)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, time
 
-from endoreg_db.services.hub.payloads import PreanonymizedIngestPayload
+from endoreg_db.schemas import PreanonymizedIngestPayload
 
 
 def test_preanonymized_payload_parses_dates_and_normalizes_blank_strings() -> None:

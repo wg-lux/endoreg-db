@@ -1,13 +1,22 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportUnusedClass=false
+from __future__ import annotations
+
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Set, Tuple
+from typing import TYPE_CHECKING, Protocol, cast
+from collections.abc import Mapping, Sequence
 
 from django.db.models import Q  # Import Q for complex queries
 from icecream import ic
+from lx_dtypes.models.contracts.video_segments import (
+    VideoSegmentsPayload,
+)
 
 if TYPE_CHECKING:
     from django.db.models import QuerySet
 
+    from endoreg_db.models.other.information_source import InformationSource
+    from endoreg_db.models.label import Label
     from endoreg_db.models.label import LabelVideoSegment
     from endoreg_db.models.metadata import VideoPredictionMeta
     from endoreg_db.models.media.frame import Frame
@@ -16,12 +25,49 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# ... [Keep _convert_sequences_to_db_segments and _sequences_to_label_video_segments unchanged] ...
+class _InformationSourceManagerLike(Protocol):
+    def get_or_create_by_name(
+        self, name: str, **defaults: object
+    ) -> tuple["InformationSource", bool]: ...
+
+
+class _LabelManagerLike(Protocol):
+    def resolve_by_name(
+        self, name: str, *, case_insensitive: bool = False
+    ) -> "Label | None": ...
+
+
+def get_outside_frames(
+    video: "VideoFile",
+    outside_label_name: str = "outside",
+    only_validated: bool = False,
+) -> "QuerySet[Frame]":
+    """Public wrapper for frame filtering of outside segments."""
+    return _get_outside_frames(
+        video,
+        outside_label_name=outside_label_name,
+        only_validated=only_validated,
+    )
+
+
+def get_outside_segments(
+    video: "VideoFile",
+    outside_label_name: str = "outside",
+    only_validated: bool = False,
+) -> "QuerySet[LabelVideoSegment]":
+    """Public wrapper for outside segment query."""
+    return _get_outside_segments(
+        video,
+        outside_label_name=outside_label_name,
+        only_validated=only_validated,
+    )
+
+
 def _convert_sequences_to_db_segments(
     video: "VideoFile",
-    sequences: Dict[str, List[Tuple[int, int]]],
+    sequences: Mapping[str, Sequence[tuple[int, int]]],
     video_prediction_meta: "VideoPredictionMeta",
-):
+) -> None:
     """
     Converts predicted sequences into LabelVideoSegment database objects
     and ensures their corresponding state objects are created.
@@ -44,8 +90,10 @@ def _convert_sequences_to_db_segments(
     state_created_count = 0
     state_error_count = 0
 
-    processed_labels = set()
-    prediction_source, _ = InformationSource.objects.get_or_create_by_name("prediction")
+    processed_labels: set[str] = set()
+    prediction_source, _ = cast(
+        _InformationSourceManagerLike, InformationSource.objects
+    ).get_or_create_by_name("prediction")
 
     for label_name, sequence_list in sequences.items():
         if not sequence_list:
@@ -53,13 +101,18 @@ def _convert_sequences_to_db_segments(
 
         processed_labels.add(label_name)
 
-        label = None
+        label: Label | None = None
         model_meta = getattr(video_prediction_meta, "model_meta", None)
         labelset = getattr(model_meta, "labelset", None)
         if labelset is not None:
-            label = labelset.labels.filter(name=label_name).order_by("pk").first()
+            label = cast(
+                Label | None,
+                labelset.labels.filter(name=label_name).order_by("pk").first(),
+            )
         if label is None:
-            label = Label.objects.resolve_by_name(label_name)
+            label = cast(_LabelManagerLike, Label.objects).resolve_by_name(
+                label_name, case_insensitive=True
+            )
         if label is None:
             logger.error(
                 "Could not get Label '%s' while converting prediction sequences",
@@ -68,7 +121,7 @@ def _convert_sequences_to_db_segments(
             error_count += len(sequence_list)
             continue
 
-        segments_to_create = []
+        segments_to_create: list[LabelVideoSegment] = []
         for start_frame, end_frame in sequence_list:
             if start_frame >= end_frame or start_frame < 0:
                 logger.warning(
@@ -160,20 +213,31 @@ def _convert_sequences_to_db_segments(
     )
 
 
+def convert_sequences_to_db_segments(
+    video: "VideoFile",
+    sequences: Mapping[str, Sequence[tuple[int, int]]],
+    video_prediction_meta: "VideoPredictionMeta",
+) -> None:
+    """Public service wrapper for temporal prediction segment materialization."""
+    _convert_sequences_to_db_segments(
+        video=video,
+        sequences=sequences,
+        video_prediction_meta=video_prediction_meta,
+    )
+
+
 def _sequences_to_label_video_segments(
     video: "VideoFile",
     video_prediction_meta: "VideoPredictionMeta",
-):
+) -> None:
     """Converts stored sequences on the video object to LabelVideoSegments."""
     if not video.sequences:
         return
 
-    if not video_prediction_meta:
-        return
-
+    segments_payload = VideoSegmentsPayload.model_validate(video.sequences)
     _convert_sequences_to_db_segments(
         video=video,
-        sequences=video.sequences,
+        sequences=segments_payload.as_dict,
         video_prediction_meta=video_prediction_meta,
     )
 
@@ -211,7 +275,7 @@ def _get_outside_frame_numbers(
     video: "VideoFile",
     outside_label_name: str = "outside",
     only_validated: bool = False,
-) -> Set[int]:
+) -> set[int]:
     """
     Gets a set of frame numbers corresponding to segments labeled as 'outside'.
     """
@@ -258,21 +322,24 @@ def _get_outside_frames(
         only_validated=only_validated,
     )
 
-    q_objects: Q | None = None
+    segment_clauses: list[Q] = []
     for segment in outside_segments:
         # FIX: Use __lte for end_frame_number to include the last frame of the segment
         clause = Q(
             frame_number__gte=segment.start_frame_number,
             frame_number__lte=segment.end_frame_number,
         )
-        q_objects = clause if q_objects is None else q_objects | clause
+        segment_clauses.append(clause)
 
-    if q_objects is None:
+    if not segment_clauses:
         q_objects = Q(
             image_classification_annotations__label__name__iexact=outside_label_name,
             image_classification_annotations__value=True,
         )
     else:
+        q_objects = segment_clauses[0]
+        for clause in segment_clauses[1:]:
+            q_objects = q_objects | clause
         q_objects = q_objects | Q(
             image_classification_annotations__label__name__iexact=outside_label_name,
             image_classification_annotations__value=True,
@@ -294,16 +361,14 @@ def _get_outside_frame_paths(
     video: "VideoFile",
     outside_label_name: str = "outside",
     only_validated: bool = False,
-) -> List["Path"]:
+) -> list[Path]:
     """Gets the file paths of frames that fall within 'outside' segments."""
-    from pathlib import Path  # Local import
-
     frames = _get_outside_frames(
         video,
         outside_label_name=outside_label_name,
         only_validated=only_validated,
     )
-    frame_paths = []
+    frame_paths: list[Path] = []
     for frame in frames:
         try:
             frame_paths.append(Path(frame.relative_path))
@@ -325,7 +390,7 @@ def _get_outside_frame_paths(
     return frame_paths
 
 
-def _label_segments_to_frame_annotations(video: "VideoFile"):
+def _label_segments_to_frame_annotations(video: "VideoFile") -> None:
     """Generates frame annotations based on existing LabelVideoSegments."""
     logger.info(
         "Generating frame annotations from segments for video %s", video.video_hash

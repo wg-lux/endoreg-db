@@ -1,5 +1,9 @@
 from pathlib import Path
+from datetime import date, datetime, time
+from typing import Iterable, Protocol, TypedDict, cast
+from uuid import UUID
 
+from lx_dtypes.models.base.file.ddict.FilesAndDirsDataDict import FilesAndDirsDataDict
 from lx_dtypes.models.ledger.p_video.Pydantic import PatientVideoFile
 from lx_dtypes.models.ledger.p_video.state import (
     AnonymizationState as LxAnonymizationState,
@@ -14,6 +18,48 @@ from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 
 _KNOWN_GENDER_NAMES = {"female", "male", "other", "unknown"}
+
+
+class _ModelPk(Protocol):
+    pk: int | str | UUID
+
+
+class _ExaminerRelationManager(Protocol):
+    def all(self) -> Iterable[_ModelPk]: ...
+
+
+class _SensitiveMetaLxRecord(Protocol):
+    patient_gender: object
+    external_id: object | None
+    pseudo_patient: _ModelPk | None
+    pseudo_examination: _ModelPk | None
+    examination_date: date | datetime | None
+    examination_time: time | None
+    casenumber: str | None
+    patient_first_name: str | None
+    patient_last_name: str | None
+    patient_dob: date | datetime | None
+    endoscope_type: str | None
+    endoscope_sn: str | None
+    text: str | None
+    anonymized_text: str | None
+
+
+class _PatientVideoFileInput(TypedDict, total=False):
+    uuid: str
+    patient: str | None
+    patient_examination: str | None
+    fnd: FilesAndDirsDataDict
+    anonymization_state: LxAnonymizationState
+    sensitive_meta: LxSensitiveMeta | None
+    patient_video_segments: dict[str, PVideoSegment]
+    external_ids: dict[str, str]
+
+
+def _pk_as_str(instance: _ModelPk | None) -> str | None:
+    if instance is None:
+        return None
+    return str(instance.pk)
 
 
 def resolve_lx_anonymization_state(video: VideoFile) -> LxAnonymizationState:
@@ -39,44 +85,44 @@ def build_lx_sensitive_meta(
     if sensitive_meta is None:
         return None
 
-    gender_name = getattr(sensitive_meta.patient_gender, "name", None) or "unknown"
+    sensitive_meta_record = cast(_SensitiveMetaLxRecord, sensitive_meta)
+    gender_name = (
+        getattr(sensitive_meta_record.patient_gender, "name", None) or "unknown"
+    )
     if gender_name not in _KNOWN_GENDER_NAMES:
         gender_name = "unknown"
 
     external_id = None
-    if sensitive_meta.external_id is not None:
-        external_id = sensitive_meta.external_id.external_id
+    if sensitive_meta_record.external_id is not None:
+        external_id = getattr(sensitive_meta_record.external_id, "external_id", None)
 
-    pseudo_examiners = [str(examiner.pk) for examiner in sensitive_meta.examiners.all()]
+    examiners = cast(_ExaminerRelationManager, getattr(sensitive_meta, "examiners"))
+    pseudo_examiners = [str(examiner.pk) for examiner in examiners.all()]
+    pseudo_patient = _pk_as_str(sensitive_meta_record.pseudo_patient)
+    pseudo_examination = _pk_as_str(sensitive_meta_record.pseudo_examination)
 
     return LxSensitiveMeta.model_validate(
         {
-            "examination_date": sensitive_meta.examination_date,
-            "examination_time": sensitive_meta.examination_time,
-            "casenumber": sensitive_meta.casenumber,
-            "pseudo_patient": (
-                str(sensitive_meta.pseudo_patient_id)
-                if sensitive_meta.pseudo_patient_id is not None
-                else None
-            ),
-            "pseudo_examination": (
-                str(sensitive_meta.pseudo_examination_id)
-                if sensitive_meta.pseudo_examination_id is not None
-                else None
-            ),
+            "examination_date": sensitive_meta_record.examination_date,
+            "examination_time": sensitive_meta_record.examination_time,
+            "casenumber": sensitive_meta_record.casenumber,
+            "pseudo_patient": pseudo_patient,
+            "pseudo_examination": pseudo_examination,
             "gender": gender_name,
             "pseudo_examiners": pseudo_examiners,
-            "first_name": sensitive_meta.patient_first_name or "unknown",
-            "last_name": sensitive_meta.patient_last_name or "unknown",
+            "first_name": sensitive_meta_record.patient_first_name or "unknown",
+            "last_name": sensitive_meta_record.patient_last_name or "unknown",
             "dob": (
-                sensitive_meta.patient_dob.date()
-                if sensitive_meta.patient_dob is not None
+                sensitive_meta_record.patient_dob.date()
+                if isinstance(sensitive_meta_record.patient_dob, datetime)
+                else sensitive_meta_record.patient_dob
+                if sensitive_meta_record.patient_dob is not None
                 else None
             ),
-            "endoscope_type": sensitive_meta.endoscope_type,
-            "endoscope_sn": sensitive_meta.endoscope_sn,
-            "text": sensitive_meta.text,
-            "anonymized_text": sensitive_meta.anonymized_text,
+            "endoscope_type": sensitive_meta_record.endoscope_type,
+            "endoscope_sn": sensitive_meta_record.endoscope_sn,
+            "text": sensitive_meta_record.text,
+            "anonymized_text": sensitive_meta_record.anonymized_text,
             "external_id": external_id,
         }
     )
@@ -153,18 +199,19 @@ def build_lx_patient_video_file(
     if video.processed_video_hash:
         external_ids["processed_video_hash"] = video.processed_video_hash
 
-    data = {
+    fnd: FilesAndDirsDataDict = {
+        "file": str(processed_path),
+        "dir": str(Path(processed_path).parent),
+        "files": [],
+        "dirs": [],
+    }
+    data: _PatientVideoFileInput = {
         "uuid": str(video.uuid),
         "patient": str(video.patient_id) if video.patient_id is not None else None,
         "patient_examination": (
             str(video.examination_id) if video.examination_id is not None else None
         ),
-        "fnd": {
-            "file": str(processed_path),
-            "dir": str(Path(processed_path).parent),
-            "files": [],
-            "dirs": [],
-        },
+        "fnd": fnd,
         "anonymization_state": resolve_lx_anonymization_state(video),
         "sensitive_meta": lx_sensitive_meta,
         "patient_video_segments": patient_video_segments,

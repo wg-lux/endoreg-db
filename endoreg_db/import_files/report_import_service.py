@@ -30,9 +30,9 @@ from endoreg_db.services.raw_pdf_files import (
     get_or_create_raw_pdf_state,
     get_raw_pdf_by_content_hash,
 )
-from endoreg_db.utils.filesystem.file_operations import sha256_file
-from endoreg_db.utils.filesystem import paths as path_utils
-from endoreg_db.utils.system.rust_backend import (
+from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils import paths as path_utils
+from endoreg_db.utils.rust_backend import (
     render_single_page_pdf as rust_render_pdf,
 )
 

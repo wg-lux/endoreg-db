@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportUnusedClass=false
 import logging
 from contextlib import nullcontext
 from pathlib import Path
@@ -35,8 +36,8 @@ def _get_import_context_names(video: "VideoFile") -> tuple[str, str]:
     Center is required for import bookkeeping. Processor needs a defined value
     so fallback is applied.
     """
-    center = video.center
-    if center is None or not center.name:
+    center = getattr(video, "center", None)
+    if center is None or not getattr(center, "name", None):
         raise ValueError(f"Video {video.video_hash} has no associated center.")
 
     processor = _get_import_processor(video)
@@ -47,7 +48,7 @@ def _get_import_context_names(video: "VideoFile") -> tuple[str, str]:
         )
 
         processor_name = resolve_processor_name_for_import(processor_name)
-    return str(center.name), str(processor_name or "Unknown")
+    return str(getattr(center, "name")), str(processor_name or "Unknown")
 
 
 def _populate_video_fields_from_meta(video: "VideoFile") -> list[str]:

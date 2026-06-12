@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
+
 from endoreg_db.services import environment_readiness as readiness
 
 
 def test_check_environment_readiness_does_not_report_cross_filesystem_warning(
-    monkeypatch, tmp_path
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     protected = tmp_path / "protected"
     storage = protected / "storage"
     data_root = tmp_path / "public"
@@ -46,8 +51,9 @@ def test_check_environment_readiness_does_not_report_cross_filesystem_warning(
 
 
 def test_assert_environment_readiness_raises_on_missing_directory(
-    monkeypatch, tmp_path
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     protected = tmp_path / "protected"
     protected.mkdir()
 
@@ -81,7 +87,10 @@ def test_assert_environment_readiness_raises_on_missing_directory(
         raise AssertionError("expected readiness assertion to fail")
 
 
-def test_check_environment_readiness_reports_public_media_mount(monkeypatch, tmp_path):
+def test_check_environment_readiness_reports_public_media_mount(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     protected = tmp_path / "protected"
     storage = protected / "storage"
     data_root = tmp_path / "public"
@@ -125,8 +134,9 @@ def test_check_environment_readiness_reports_public_media_mount(monkeypatch, tmp
 
 
 def test_assert_environment_readiness_raises_when_protected_media_root_escapes_runtime(
-    monkeypatch, tmp_path
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     protected = tmp_path / "protected"
     storage = protected / "storage"
     data_root = tmp_path / "public"
@@ -175,8 +185,9 @@ def test_assert_environment_readiness_raises_when_protected_media_root_escapes_r
 
 
 def test_check_environment_readiness_accepts_distinct_streamable_processed_root(
-    monkeypatch, tmp_path
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     protected = tmp_path / "protected"
     storage = protected / "storage"
     data_root = tmp_path / "public"

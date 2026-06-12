@@ -1,7 +1,8 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportMissingTypeStubs=false
 import logging
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, List
 
 from django.db import transaction
 
@@ -9,7 +10,7 @@ from endoreg_db.services.video_files._io import (
     _get_frame_dir_path,
     _get_temp_anonymized_frame_dir,
 )
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_move_path,
     safe_rmtree,
     safe_unlink_file,
@@ -73,10 +74,10 @@ def _delete_frames(video: "VideoFile") -> str:
     """
     from endoreg_db.models.media.frame import Frame
 
-    deleted_messages = []
-    error_messages = []
-    state_updated = False
-    db_updated = False
+    deleted_messages: List[str] = []
+    error_messages: List[str] = []
+    state_updated: bool = False
+    db_updated: bool = False
     cleanup_directories: list[Path] = []
     dataset_frame_ids, dataset_frame_paths = _dataset_backed_frame_ids_with_files(video)
 
@@ -117,7 +118,7 @@ def _delete_frames(video: "VideoFile") -> str:
 
     try:
         state: "VideoState" = video.get_or_create_state()
-        update_fields_state = []
+        update_fields_state: list[str] = []
         if state.frames_extracted:
             state.frames_extracted = False
             update_fields_state.append("frames_extracted")
@@ -237,9 +238,5 @@ def _delete_frames(video: "VideoFile") -> str:
         final_message += "; Errors occurred: " + "; ".join(error_messages)
     elif state_updated and db_updated:
         final_message += "; State flags and Frame objects updated successfully."
-    elif state_updated:
-        final_message += "; State flags updated; Frame object update skipped or failed."
-    else:
-        final_message += "; State/Frame update skipped due to errors."
 
     return final_message

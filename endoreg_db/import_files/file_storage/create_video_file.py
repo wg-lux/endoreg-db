@@ -5,14 +5,13 @@ from pathlib import Path
 from typing import Protocol, cast
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.context.ensure_center import ensure_center
-from endoreg_db.utils.filesystem.file_operations import sha256_file
+from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
 from endoreg_db.import_files.file_storage.state_management import finalize_failure
 from endoreg_db.services.hub.media_integrity import (
-    MediaIntegrityExpectation,
     check_video_media_integrity,
     video_integrity_failure_allows_existing_video_reprocessing,
 )
@@ -63,7 +62,6 @@ def _handle_success_history(ctx: ImportContext, file_hash: str) -> _HistoryDecis
     existing_video = _load_current_video(ctx, file_hash)
     integrity_result = check_video_media_integrity(
         existing_video,
-        expectation=MediaIntegrityExpectation.RAW_WATCHER_VIDEO,
         content_hash=file_hash,
     )
     if integrity_result.ok:

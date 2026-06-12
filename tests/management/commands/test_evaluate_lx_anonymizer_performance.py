@@ -1,3 +1,8 @@
+from __future__ import annotations
+
+# pyright: reportPrivateUsage=false
+
+from pathlib import Path
 from django.core.management.base import CommandError
 import pytest
 
@@ -5,7 +10,7 @@ from endoreg_db.management.commands.evaluate_lx_anonymizer_performance import Co
 from endoreg_db.models import EndoscopyProcessor
 
 
-def test_evaluator_auto_discovery_excludes_text_reports(tmp_path):
+def test_evaluator_auto_discovery_excludes_text_reports(tmp_path: Path) -> None:
     text_report = tmp_path / "report.txt"
     text_report.write_text("report text", encoding="utf-8")
 
@@ -19,7 +24,7 @@ def test_evaluator_auto_discovery_excludes_text_reports(tmp_path):
     assert discovered == []
 
 
-def test_evaluator_forced_report_rejects_text_reports(tmp_path):
+def test_evaluator_forced_report_rejects_text_reports(tmp_path: Path) -> None:
     text_report = tmp_path / "report.txt"
     text_report.write_text("report text", encoding="utf-8")
 
@@ -32,7 +37,7 @@ def test_evaluator_forced_report_rejects_text_reports(tmp_path):
         )
 
 
-def test_evaluator_discovers_pdf_reports(tmp_path):
+def test_evaluator_discovers_pdf_reports(tmp_path: Path) -> None:
     pdf_report = tmp_path / "report.pdf"
     pdf_report.write_bytes(b"%PDF-1.4\n")
 
@@ -47,7 +52,7 @@ def test_evaluator_discovers_pdf_reports(tmp_path):
 
 
 @pytest.mark.django_db
-def test_evaluator_excludes_video_inputs_when_processor_roi_is_missing(tmp_path):
+def test_evaluator_excludes_video_inputs_when_processor_roi_is_missing(tmp_path: Path) -> None:
     video_path = tmp_path / "video.mp4"
     report_path = tmp_path / "report.pdf"
     video_path.write_bytes(b"video")
@@ -63,7 +68,7 @@ def test_evaluator_excludes_video_inputs_when_processor_roi_is_missing(tmp_path)
 
 
 @pytest.mark.django_db
-def test_evaluator_keeps_video_inputs_when_processor_roi_is_configured(tmp_path):
+def test_evaluator_keeps_video_inputs_when_processor_roi_is_configured(tmp_path: Path) -> None:
     video_path = tmp_path / "video.mp4"
     video_path.write_bytes(b"video")
     EndoscopyProcessor.objects.create(

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+# pyright: reportUnknownVariableType=false
+
 import threading
 import uuid
 from datetime import timedelta
 from pathlib import Path
 from unittest.mock import Mock, patch
+from typing import Any, cast
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError
@@ -18,12 +21,12 @@ from endoreg_db.models import (
     UploadJob,
 )
 from endoreg_db.services.hub.ingest import (
-    _run_video_upload_import_job,
+    _run_video_upload_import_job,  # pyright: ignore[reportPrivateUsage]
     create_or_reuse_upload_job,
     process_preanonymized_watcher_file,
     process_watcher_file,
 )
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     ensure_directory,
     safe_rmtree,
     safe_unlink_file,
@@ -313,10 +316,11 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
         filename = "fallback_watcher_report.pdf"
         temp_file_path = self._create_temp_file(filename, self.pdf_content)
 
-        def _inline_fallback(**kwargs):
-            upload_job = kwargs["upload_job"]
+        def _inline_fallback(**kwargs: Any) -> UploadJob:
+            upload_job = cast(UploadJob, kwargs["upload_job"])
+            watched_path = cast(Path, kwargs["watched_path"])
             upload_job.mark_completed()
-            safe_unlink_file(kwargs["watched_path"], missing_ok=True)
+            safe_unlink_file(watched_path, missing_ok=True)
             return upload_job
 
         with (
@@ -364,6 +368,7 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
 
         upload_job = UploadJob.objects.order_by("-created_at").first()
         self.assertIsNotNone(upload_job)
+        assert upload_job is not None
         self.assertEqual(upload_job.status, UploadJob.Status.ERROR)
         self.assertIn("broker down", upload_job.error_detail)
         quarantined_path = self.quarantine_dir / filename
@@ -402,6 +407,7 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
 
         upload_job = UploadJob.objects.order_by("-created_at").first()
         self.assertIsNotNone(upload_job)
+        assert upload_job is not None
         self.assertEqual(upload_job.status, UploadJob.Status.ERROR)
         self.assertIn("Watcher dispatch error", upload_job.error_detail)
 
@@ -453,6 +459,7 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
 
         upload_job = UploadJob.objects.order_by("-created_at").first()
         self.assertIsNotNone(upload_job)
+        assert upload_job is not None
         self.assertEqual(upload_job.status, UploadJob.Status.ERROR)
         self.assertIn("Preanonymized processing error", upload_job.error_detail)
 
@@ -546,7 +553,10 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
         filename = "concurrent_upload.pdf"
         uploaded_file_content = b"concurrent_pdf_data"
 
-        def create_job_in_thread(thread_id, results_list):
+        def create_job_in_thread(
+            thread_id: int,
+            results_list: list[tuple[uuid.UUID | str, bool]],
+        ) -> None:
             thread_uploaded_file = SimpleUploadedFile(
                 name=f"{filename}_{thread_id}",
                 content=uploaded_file_content,
@@ -567,8 +577,8 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
                 results_list.append((f"Error: {e}", False))
 
         num_threads = 5
-        results = []
-        threads = []
+        results: list[tuple[uuid.UUID | str, bool]] = []
+        threads: list[threading.Thread] = []
         for i in range(num_threads):
             thread = threading.Thread(target=create_job_in_thread, args=(i, results))
             threads.append(thread)
@@ -577,7 +587,7 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
         for thread in threads:
             thread.join()
 
-        successful_jobs = [
+        successful_jobs: list[tuple[uuid.UUID, bool]] = [
             (job_id, created)
             for job_id, created in results
             if isinstance(job_id, uuid.UUID)

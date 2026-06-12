@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
+from typing import cast
 
 import pytest
+from pytest import MonkeyPatch
 
 from endoreg_db.models import (
     AIDataSet,
@@ -18,9 +21,9 @@ from endoreg_db.services.jobs import model_training_jobs
 
 @pytest.mark.django_db
 def test_prepare_model_training_inputs_materializes_missing_frames_from_processed_video(
-    tmp_path,
-    monkeypatch,
-):
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
     center = Center.objects.create(
         name=f"training-center-{uuid.uuid4().hex[:8]}",
         display_name="Training Center",
@@ -65,10 +68,12 @@ def test_prepare_model_training_inputs_materializes_missing_frames_from_processe
 
     calls: list[dict[str, object]] = []
 
-    def fake_extract_frame_range_to_directory(video_arg, **kwargs):
-        calls.append(kwargs)
+    def fake_extract_frame_range_to_directory(
+        video_arg: VideoFile, **kwargs: object
+    ) -> list[Path]:
+        calls.append(dict(kwargs))
         calls[-1]["video"] = video_arg
-        output_dir = kwargs["output_dir"]
+        output_dir = cast(Path, kwargs["output_dir"])
         (output_dir / "frame_0000007.jpg").write_bytes(b"frame")
         return [output_dir / "frame_0000007.jpg"]
 
@@ -95,9 +100,9 @@ def test_prepare_model_training_inputs_materializes_missing_frames_from_processe
 
 @pytest.mark.django_db
 def test_prepare_model_training_inputs_rejects_unready_processed_video(
-    tmp_path,
-    monkeypatch,
-):
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
     center = Center.objects.create(
         name=f"training-unready-center-{uuid.uuid4().hex[:8]}",
         display_name="Training Unready Center",
@@ -127,7 +132,7 @@ def test_prepare_model_training_inputs_rejects_unready_processed_video(
     )
     dataset.image_annotations.add(annotation)
 
-    def fail_extract_frame_range_to_directory(**kwargs):
+    def fail_extract_frame_range_to_directory(**kwargs: object) -> None:
         raise AssertionError("unready videos must not be extracted")
 
     monkeypatch.setattr(
@@ -142,9 +147,9 @@ def test_prepare_model_training_inputs_rejects_unready_processed_video(
 
 @pytest.mark.django_db
 def test_prepare_model_training_inputs_materializes_dataset_video_annotation_frames(
-    tmp_path,
-    monkeypatch,
-):
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
     center = Center.objects.create(
         name=f"training-segment-center-{uuid.uuid4().hex[:8]}",
         display_name="Training Segment Center",
@@ -191,10 +196,12 @@ def test_prepare_model_training_inputs_materializes_dataset_video_annotation_fra
 
     calls: list[dict[str, object]] = []
 
-    def fake_extract_frame_range_to_directory(video_arg, **kwargs):
-        calls.append(kwargs)
+    def fake_extract_frame_range_to_directory(
+        video_arg: VideoFile, **kwargs: object
+    ) -> list[Path]:
+        calls.append(dict(kwargs))
         calls[-1]["video"] = video_arg
-        output_dir = kwargs["output_dir"]
+        output_dir = cast(Path, kwargs["output_dir"])
         (output_dir / "frame_0000007.jpg").write_bytes(b"frame")
         return [output_dir / "frame_0000007.jpg"]
 
@@ -221,9 +228,9 @@ def test_prepare_model_training_inputs_materializes_dataset_video_annotation_fra
 
 @pytest.mark.django_db
 def test_prepare_model_training_inputs_skips_segments_for_frame_only_scope(
-    tmp_path,
-    monkeypatch,
-):
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
     center = Center.objects.create(
         name=f"training-frame-only-center-{uuid.uuid4().hex[:8]}",
         display_name="Training Frame Only Center",
@@ -256,7 +263,7 @@ def test_prepare_model_training_inputs_skips_segments_for_frame_only_scope(
     )
     dataset.video_annotations.add(segment)
 
-    def fail_extract_frame_range_to_directory(*args, **kwargs):
+    def fail_extract_frame_range_to_directory(*args: object, **kwargs: object) -> None:
         raise AssertionError("frame_only scope must not materialize segment frames")
 
     monkeypatch.setattr(
@@ -278,9 +285,9 @@ def test_prepare_model_training_inputs_skips_segments_for_frame_only_scope(
 
 @pytest.mark.django_db
 def test_prepare_model_training_inputs_skips_frame_annotations_for_segment_only_scope(
-    tmp_path,
-    monkeypatch,
-):
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
     center = Center.objects.create(
         name=f"training-segment-only-center-{uuid.uuid4().hex[:8]}",
         display_name="Training Segment Only Center",
@@ -312,7 +319,7 @@ def test_prepare_model_training_inputs_skips_frame_annotations_for_segment_only_
     )
     dataset.image_annotations.add(annotation)
 
-    def fail_extract_frame_range_to_directory(*args, **kwargs):
+    def fail_extract_frame_range_to_directory(*args: object, **kwargs: object) -> None:
         raise AssertionError(
             "segment_only scope must not materialize frame annotations"
         )
@@ -336,9 +343,9 @@ def test_prepare_model_training_inputs_skips_frame_annotations_for_segment_only_
 
 @pytest.mark.django_db
 def test_prepare_model_training_inputs_only_materializes_sparse_segment_frames(
-    tmp_path,
-    monkeypatch,
-):
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
     center = Center.objects.create(
         name=f"training-sparse-segment-center-{uuid.uuid4().hex[:8]}",
         display_name="Training Sparse Segment Center",
@@ -399,10 +406,14 @@ def test_prepare_model_training_inputs_only_materializes_sparse_segment_frames(
 
     calls: list[dict[str, object]] = []
 
-    def fake_extract_frame_range_to_directory(video_arg, **kwargs):
+    def fake_extract_frame_range_to_directory(
+        video_arg: VideoFile, **kwargs: object
+    ) -> list[Path]:
         calls.append({**kwargs, "video": video_arg})
-        output_dir = kwargs["output_dir"]
-        for frame_number in range(kwargs["start_frame"], kwargs["end_frame"]):
+        output_dir = cast(Path, kwargs["output_dir"])
+        start_frame = cast(int, kwargs["start_frame"])
+        end_frame = cast(int, kwargs["end_frame"])
+        for frame_number in range(start_frame, end_frame):
             (output_dir / f"frame_{frame_number:07d}.jpg").write_bytes(b"frame")
         return []
 

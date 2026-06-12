@@ -23,7 +23,7 @@ from endoreg_db.services.video_import import VideoImportService
 from endoreg_db.services.video_files import get_or_create_video_state
 from endoreg_db.services.raw_pdf_files import get_or_create_raw_pdf_state
 from endoreg_db.services.report_import import ReportImportService
-from endoreg_db.utils.filesystem.paths import STORAGE_DIR
+from endoreg_db.utils.paths import STORAGE_DIR
 from endoreg_db.utils.storage import ensure_local_file, file_exists
 
 logger = logging.getLogger(__name__)

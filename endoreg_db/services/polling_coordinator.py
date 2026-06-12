@@ -3,9 +3,13 @@
 import logging
 import threading
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from collections.abc import Callable
+from typing import Any, Dict, Optional, cast
+
 from django.core.cache import cache
 from django.utils import timezone
+from rest_framework.request import Request
+from rest_framework.response import Response
 
 logger = logging.getLogger(__name__)
 
@@ -236,7 +240,10 @@ class PollingCoordinator:
 
 
 # Decorator for views that need processing coordination
-def processing_coordination(file_id_param: str = "file_id", file_type: str = "video"):
+def processing_coordination(
+    file_id_param: str = "file_id",
+    file_type: str = "video",
+) -> Callable[[Callable[..., Response]], Callable[..., Response]]:
     """
     Decorator to add automatic processing coordination to views.
 
@@ -245,16 +252,35 @@ def processing_coordination(file_id_param: str = "file_id", file_type: str = "vi
         file_type: Type of media file
     """
 
-    def decorator(view_func):
-        def wrapper(request, *args, **kwargs):
+    def decorator(view_func: Callable[..., Response]) -> Callable[..., Response]:
+        def wrapper(
+            request: Request,
+            *args: object,
+            **kwargs: object,
+        ) -> Response:
             # Extract file_id from kwargs or request
-            file_id = kwargs.get(file_id_param) or request.data.get(file_id_param)
+            file_id_value = kwargs.get(file_id_param)
+            if file_id_value is None:
+                request_data = getattr(request, "data", {})
+                if isinstance(request_data, dict):
+                    request_data_dict = cast(dict[str, object], request_data)
+                    file_id_value = request_data_dict.get(file_id_param)
+
+            file_id: int | None
+            if isinstance(file_id_value, int):
+                file_id = file_id_value
+            elif isinstance(file_id_value, str):
+                try:
+                    file_id = int(file_id_value)
+                except ValueError:
+                    file_id = None
+            else:
+                file_id = None
 
             if file_id is None:
                 logger.error(
                     f"No {file_id_param} found in request for processing coordination"
                 )
-                from rest_framework.response import Response
                 from rest_framework import status
 
                 return Response(
@@ -264,7 +290,6 @@ def processing_coordination(file_id_param: str = "file_id", file_type: str = "vi
 
             # Check if processing is already locked
             if PollingCoordinator.is_processing_locked(file_id, file_type):
-                from rest_framework.response import Response
                 from rest_framework import status
 
                 return Response(
@@ -275,7 +300,7 @@ def processing_coordination(file_id_param: str = "file_id", file_type: str = "vi
             # Proceed with the view
             return view_func(request, *args, **kwargs)
 
-        return wrapper
+        return cast(Callable[..., Response], wrapper)
 
     return decorator
 
@@ -303,13 +328,18 @@ class ProcessingLockContext:
         self.timeout = timeout
         self.acquired = False
 
-    def __enter__(self):
+    def __enter__(self) -> "ProcessingLockContext":
         self.acquired = PollingCoordinator.acquire_processing_lock(
             self.file_id, self.file_type, self.timeout
         )
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: object | None,
+    ) -> bool:
         if self.acquired:
             PollingCoordinator.release_processing_lock(self.file_id, self.file_type)
         return False  # Don't suppress exceptions

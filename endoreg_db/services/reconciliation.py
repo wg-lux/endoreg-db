@@ -22,14 +22,14 @@ from endoreg_db.models.state.processing_history.processing_history import (
 )
 from endoreg_db.models.state.raw_pdf import RawPdfState
 from endoreg_db.models.state.video import VideoState
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_move_file,
     ensure_directory,
     safe_unlink_file,
     sha256_file,
 )
-from endoreg_db.utils.filesystem.paths import data_paths
+from endoreg_db.utils.paths import data_paths
 from endoreg_db.utils.storage import file_exists, save_local_file
 
 logger = logging.getLogger(__name__)
@@ -145,7 +145,7 @@ class ReconciliationService:
 
         recovered = 0
         sensitive_dir = Path(data_paths["sensitive_video"])
-        unresolved = []
+        unresolved: list[VideoFile] = []
         claimed_hashes: set[str] = set()
 
         for video in VideoFile.objects.filter(raw_file__isnull=False).exclude(
@@ -311,7 +311,7 @@ class ReconciliationService:
         if raw_name:
             deterministic_candidates.append(sensitive_dir / raw_name)
 
-        seen = set()
+        seen: set[Path] = set()
         for candidate in deterministic_candidates:
             if candidate in seen:
                 continue
@@ -479,16 +479,16 @@ class ReconciliationService:
 class _exclusive_lock:
     def __init__(self, path: Path):
         self.path = path
-        self.fd = None
+        self.fd: int | None = None
 
-    def __enter__(self):
+    def __enter__(self) -> "_exclusive_lock":
         self.fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
         os.write(self.fd, str(os.getpid()).encode("ascii"))
         os.close(self.fd)
         self.fd = None
         return self
 
-    def __exit__(self, exc_type, exc, tb):
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> bool:
         if self.fd is not None:
             os.close(self.fd)
         safe_unlink_file(self.path, missing_ok=True)

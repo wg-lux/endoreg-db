@@ -1,13 +1,21 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportMissingTypeStubs=false
 import logging
 import os
+from contextlib import AbstractContextManager
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, cast
 from uuid import uuid4
 
 from django.db import transaction
+from django.db.models.fields.files import FieldFile
 
 from endoreg_db.services.video_files._io import _get_frame_dir_path
-from endoreg_db.utils.filesystem.file_operations import (
+
+# Assuming ffmpeg_wrapper has or will have this function
+from endoreg_db.utils.ffmpeg_wrapper import (
+    extract_frame_range as ffmpeg_extract_frame_range,
+)
+from endoreg_db.utils.file_operations import (
     atomic_move_file,
     ensure_directory,
     safe_rmtree,
@@ -15,24 +23,36 @@ from endoreg_db.utils.filesystem.file_operations import (
 )
 from endoreg_db.utils.storage import materialize_video_file
 
-# Assuming ffmpeg_wrapper has or will have this function
-from endoreg_db.utils.video.ffmpeg_wrapper import (
-    extract_frame_range as ffmpeg_extract_frame_range,
-)
-
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
 
 logger = logging.getLogger(__name__)
 
 
-def _raw_video_source_context(video: "VideoFile"):
-    return materialize_video_file(video, "raw")
+class _VideoMaterializableLike(Protocol):
+    video_hash: str
+
+    def ensure_local_raw_file(self) -> AbstractContextManager[Path]: ...
+
+    def ensure_local_processed_file(self) -> AbstractContextManager[Path]: ...
+
+    raw_file: FieldFile | None
+    processed_file: FieldFile | None
 
 
-def _video_source_context(video: "VideoFile", *, from_processed: bool):
+def _raw_video_source_context(video: "VideoFile") -> AbstractContextManager[Path]:
+    return materialize_video_file(cast(_VideoMaterializableLike, video), "raw")
+
+
+def _video_source_context(
+    video: "VideoFile",
+    *,
+    from_processed: bool,
+) -> AbstractContextManager[Path]:
     if from_processed:
-        return materialize_video_file(video, "processed")
+        return materialize_video_file(
+            cast(_VideoMaterializableLike, video), "processed"
+        )
     return _raw_video_source_context(video)
 
 
@@ -51,7 +71,7 @@ def _ensure_stable_frame_rows(
     start_frame: int,
     end_frame: int,
     ext: str,
-):
+) -> None:
     from endoreg_db.models.media.frame import Frame
 
     existing_frames = {
@@ -145,7 +165,7 @@ def extract_frame_range_to_directory(
                 f"video {video.video_hash}: missing_sample={missing_files[:10]}"
             )
 
-        installed_paths = []
+        installed_paths: list[Path] = []
         for frame_number in range(start_frame, end_frame):
             relative_path = _expected_relative_path(frame_number, ext)
             source_path = staged_output_dir / relative_path
@@ -157,7 +177,7 @@ def extract_frame_range_to_directory(
         safe_rmtree(staged_output_dir, missing_ok=True)
 
 
-def _delete_frame_range(video: "VideoFile", start_frame: int, end_frame: int):
+def _delete_frame_range(video: "VideoFile", start_frame: int, end_frame: int) -> None:
     """
     Deletes frame image files within the specified range [start_frame, end_frame)
     and updates their is_extracted status to False. Runs within the caller's transaction.
@@ -175,7 +195,7 @@ def _delete_frame_range(video: "VideoFile", start_frame: int, end_frame: int):
     )
 
     deleted_count = 0
-    paths_to_delete = [
+    paths_to_delete: list[Path] = [
         frame.file_path for frame in frames_to_delete
     ]  # Get paths before potential DB changes
 
@@ -221,8 +241,8 @@ def _extract_frame_range(
     end_frame: int,
     quality: int = 2,
     overwrite: bool = False,
-    ext="jpg",
-    verbose=False,
+    ext: str = "jpg",
+    verbose: bool = False,
 ) -> bool:
     """
     Extract frames within [start_frame, end_frame) using ffmpeg.
@@ -300,7 +320,7 @@ def _extract_frame_range(
             _delete_frame_range(video, start_frame, end_frame)
 
     ensure_directory(frame_dir)
-    extracted_paths = []
+    extracted_paths: list[Path] = []
 
     try:
         logger.info(

@@ -1,20 +1,18 @@
+# pyright: reportPrivateUsage=false
 from __future__ import annotations
 
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from lx_dtypes.models.contracts.json_types import JsonNull, JsonValue
+from lx_dtypes.models.contracts.video_text_metadata import (
+    VideoTextMetaPayload,
+)
+from lx_dtypes.models.contracts import RoiBoxCore
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
     from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
     from endoreg_db.models.metadata.video_meta import FFMpegMeta
-
-
-type VideoTextMetaValue = (
-    JsonValue | JsonNull | list["VideoTextMetaValue"] | dict[str, "VideoTextMetaValue"]
-)
-type VideoTextMetaPayload = dict[str, VideoTextMetaValue]
 
 
 def get_video_ffmpeg_meta(video: "VideoFile") -> "FFMpegMeta":
@@ -61,10 +59,10 @@ def get_video_fps(video: "VideoFile") -> float:
     return _get_fps(video)
 
 
-def get_video_endo_roi(video: "VideoFile") -> dict[str, int] | None:
-    from ._metadata import _get_endo_roi
+def get_video_endo_roi(video: "VideoFile") -> RoiBoxCore | None:
+    from ._metadata import get_endo_roi
 
-    return _get_endo_roi(video)
+    return get_endo_roi(video)
 
 
 def get_video_crop_template(video: "VideoFile") -> list[int] | None:
@@ -110,7 +108,7 @@ def ensure_default_video_fps(video: "VideoFile") -> float:
 
 
 def get_video_duration(video: "VideoFile") -> float:
-    from endoreg_db.utils.video.calc_duration_seconds import _calc_duration_vf
+    from endoreg_db.utils.calc_duration_seconds import _calc_duration_vf
 
     return _calc_duration_vf(video)
 

@@ -582,7 +582,9 @@ def _quality_payload(
     )
 
 
-def _phi_region_payload(filters: MetricsFilters) -> AnonymizationPhiRegionMetricsPayload:
+def _phi_region_payload(
+    filters: MetricsFilters,
+) -> AnonymizationPhiRegionMetricsPayload:
     if filters.media_type == "pdf":
         return AnonymizationPhiRegionMetricsPayload(
             proposal_count=0,
@@ -663,14 +665,14 @@ def _annotation_box_rows(
     return cast(
         list[Mapping[str, object]],
         list(
-        queryset.order_by("frame_id", "id").values(
-            "id",
-            "frame_id",
-            "x",
-            "y",
-            "width",
-            "height",
-        )[:MAX_PHI_REGION_MATCH_ANNOTATIONS]
+            queryset.order_by("frame_id", "id").values(
+                "id",
+                "frame_id",
+                "x",
+                "y",
+                "width",
+                "height",
+            )[:MAX_PHI_REGION_MATCH_ANNOTATIONS]
         ),
     )
 

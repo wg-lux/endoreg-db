@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportMissingTypeStubs=false
 import logging
 import time
 from pathlib import Path
@@ -5,10 +6,10 @@ from typing import TYPE_CHECKING, List, Optional
 
 from django.db import OperationalError
 from tqdm import tqdm
-from endoreg_db.utils.system.rust_backend import (
+from endoreg_db.utils.rust_backend import (
     build_expected_frame_records as rust_build_expected_frame_records,
 )
-from endoreg_db.utils.system.rust_backend import (
+from endoreg_db.utils.rust_backend import (
     build_frame_records as rust_build_frame_records,
 )
 
@@ -45,7 +46,7 @@ def _initialize_frames(video: "VideoFile", frame_paths: Optional[List[Path]] = N
         _create_frame_object,
     )
 
-    frames_to_create = []
+    frames_to_create: List[Frame] = []
     num_expected_or_provided = 0
     mark_as_extracted = False
 
@@ -97,7 +98,8 @@ def _initialize_frames(video: "VideoFile", frame_paths: Optional[List[Path]] = N
             )
             try:
                 state = video.get_or_create_state()
-                if state.frames_initialized or state.frame_count is not None:
+                frames_initialized: bool = state.frames_initialized
+                if frames_initialized or state.frame_count is not None:
                     state.frames_initialized = False
                     state.frame_count = None
                     state.save(update_fields=["frames_initialized", "frame_count"])

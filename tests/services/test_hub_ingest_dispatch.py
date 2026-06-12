@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# pyright: reportUnknownVariableType=false
+
 from unittest.mock import Mock, patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -7,7 +9,7 @@ from django.test import TestCase
 
 from endoreg_db.models import Center, ReportLlmInferenceJob, UploadJob
 from endoreg_db.services.hub.ingest import (
-    _reserve_video_upload_import_handoff,
+    _reserve_video_upload_import_handoff,  # pyright: ignore[reportPrivateUsage]
     create_or_reuse_upload_job,
     process_upload_job,
     start_upload_job_processing,

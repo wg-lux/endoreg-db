@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
+from pytest import MonkeyPatch
 from django.core.files.uploadedfile import SimpleUploadedFile
 
 from endoreg_db.models import Center, RawPdfFile, ReportLlmInferenceJob, UploadJob
@@ -16,7 +18,7 @@ pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture
-def center():
+def center() -> Center:
     return Center.objects.create(name="Report LLM Job Test Center")
 
 
@@ -42,11 +44,13 @@ def _make_upload_job(center: Center) -> UploadJob:
     )
 
 
-def test_report_reimport_dispatches_to_llm_queue(monkeypatch, center):
+def test_report_reimport_dispatches_to_llm_queue(
+    monkeypatch: MonkeyPatch, center: Center
+) -> None:
     report = _make_report(center)
     captured: dict[str, object] = {}
 
-    def apply_async(*args, **kwargs):
+    def apply_async(*args: object, **kwargs: object) -> SimpleNamespace:
         captured["args"] = args
         captured["kwargs"] = kwargs
         return SimpleNamespace(id="report-llm-reimport-task")
@@ -64,12 +68,16 @@ def test_report_reimport_dispatches_to_llm_queue(monkeypatch, center):
     assert result.operation == ReportLlmInferenceJob.OPERATION_REIMPORT
     assert result.queue == "llm_inference"
     assert result.task_id == "report-llm-reimport-task"
+    assert result.poll_url is not None
     assert result.poll_url.endswith(f"/llm-jobs/{result.job_id}/")
-    assert captured["kwargs"]["queue"] == "llm_inference"
-    assert captured["kwargs"]["routing_key"] == "llm_inference"
+    captured_kwargs = cast(dict[str, object], captured["kwargs"])
+    assert captured_kwargs["queue"] == "llm_inference"
+    assert captured_kwargs["routing_key"] == "llm_inference"
 
 
-def test_report_reimport_duplicate_is_idempotent(monkeypatch, center):
+def test_report_reimport_duplicate_is_idempotent(
+    monkeypatch: MonkeyPatch, center: Center
+) -> None:
     report = _make_report(center)
     existing = ReportLlmInferenceJob.objects.create(
         pdf=report,
@@ -88,10 +96,12 @@ def test_report_reimport_duplicate_is_idempotent(monkeypatch, center):
     assert result.job_id == existing.job_key
 
 
-def test_report_upload_import_dispatches_to_llm_queue(monkeypatch, center):
+def test_report_upload_import_dispatches_to_llm_queue(
+    monkeypatch: MonkeyPatch, center: Center
+) -> None:
     upload_job = _make_upload_job(center)
 
-    def apply_async(*_args, **_kwargs):
+    def apply_async(*_args: object, **_kwargs: object) -> SimpleNamespace:
         return SimpleNamespace(id="report-llm-import-task")
 
     monkeypatch.setenv("REPORT_LLM_JOB_MODE", "celery")
@@ -112,9 +122,9 @@ def test_report_upload_import_dispatches_to_llm_queue(monkeypatch, center):
 
 
 def test_report_upload_import_inline_returns_report_poll_url_after_completion(
-    monkeypatch,
-    center,
-):
+    monkeypatch: MonkeyPatch,
+    center: Center,
+) -> None:
     upload_job = _make_upload_job(center)
     report = RawPdfFile.objects.create(
         center=center,
@@ -127,9 +137,12 @@ def test_report_upload_import_inline_returns_report_poll_url_after_completion(
     )
 
     monkeypatch.setenv("REPORT_LLM_JOB_MODE", "inline")
+    def fake_import_and_anonymize(*_args: object, **_kwargs: object) -> RawPdfFile:
+        return report
+
     monkeypatch.setattr(
         "endoreg_db.services.jobs.report_llm_jobs.ReportImportService.import_and_anonymize",
-        lambda *_args, **_kwargs: report,
+        fake_import_and_anonymize,
     )
 
     result = dispatch_report_llm_import(upload_job_id=str(upload_job.pk), payload={})
@@ -139,5 +152,5 @@ def test_report_upload_import_inline_returns_report_poll_url_after_completion(
     assert result.poll_url == f"/api/media/pdfs/{report.pk}/llm-jobs/{result.job_id}/"
 
     job = ReportLlmInferenceJob.objects.get(upload_job=upload_job)
-    assert job.pdf_id == report.pk
+    assert getattr(job, "pdf_id") == report.pk
     assert report_llm_job_payload(job)["report_id"] == report.pk

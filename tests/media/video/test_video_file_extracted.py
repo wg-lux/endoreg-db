@@ -1,20 +1,22 @@
+# pyright: reportPrivateUsage=false
+import logging
+import os
+import unittest
+from logging import getLogger
+from typing import Union, cast
+
+import pytest
+from django.conf import settings
+from django.test import TestCase
+from endoreg_db.utils.ffmpeg_wrapper import is_ffmpeg_available
+
+from endoreg_db.models import VideoFile
+
 from .mock_video_anonym_annotation import mock_video_manual_validation
-from .test_video_anonymization import _test_video_anonymization
 from .test_temporal_prediction_materialization import (
     _test_temporal_prediction_materialization,
 )
-
-from django.test import TestCase
-from logging import getLogger
-import unittest
-import pytest
-import os
-from typing import Union, cast
-from endoreg_db.utils.video.ffmpeg_wrapper import is_ffmpeg_available
-
-from endoreg_db.models import VideoFile
-import logging
-from django.conf import settings
+from .test_video_anonymization import _test_video_anonymization
 
 RUN_VIDEO_TESTS = settings.RUN_VIDEO_TESTS
 assert isinstance(RUN_VIDEO_TESTS, bool), "RUN_VIDEO_TESTS must be a boolean value"
@@ -27,8 +29,7 @@ logger = getLogger("video_file")
 logger.setLevel(logging.WARNING)
 
 from ...helpers.default_objects import get_latest_segmentation_model
-
-from ...helpers.optimized_video_fixtures import get_cached_or_create, MockVideoFile
+from ...helpers.optimized_video_fixtures import MockVideoFile, get_cached_or_create
 
 FFMPEG_AVAILABLE = is_ffmpeg_available()
 

@@ -1,9 +1,11 @@
-from django.test import SimpleTestCase
-from pathlib import Path
 import shutil
+from pathlib import Path
+
+from django.test import SimpleTestCase
+
 from endoreg_db.models.aidataset.aidataset import (
     AIDataSet,
-    AIDataSetActiveLearningConfig,
+    AIDataSetActiveLearningConfigContract,
 )
 
 
@@ -38,7 +40,7 @@ class AIDataSetActiveLearningTests(SimpleTestCase):
             quality_scores=[0.95, 0.92, 0.90, 0.88, 0.97],
             labeled_embeddings=[[1.0, 0.0]],
             class_frequencies=[0.40, 0.05],
-            config=AIDataSetActiveLearningConfig(
+            config=AIDataSetActiveLearningConfigContract(
                 budget=3,
                 segment_gap_frames=100,
                 temporal_spacing_frames=50,
@@ -61,7 +63,7 @@ class AIDataSetActiveLearningTests(SimpleTestCase):
             embeddings=[[0.0, 1.0], [1.0, 0.0]],
             quality_scores=[0.10, 0.95],
             class_frequencies=[0.50, 0.50],
-            config=AIDataSetActiveLearningConfig(
+            config=AIDataSetActiveLearningConfigContract(
                 budget=2,
                 segment_gap_frames=50,
                 temporal_spacing_frames=25,

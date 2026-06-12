@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Protocol, cast
 from typing import Sequence
 from django.db.models import Q
 
@@ -13,6 +14,14 @@ from endoreg_db.models.other.information_source import InformationSource
 from endoreg_db.models.state.frame_annotation import (
     segment_derived_external_annotation_id,
 )
+
+
+class _SegmentSourceLike(Protocol):
+    source_id: int | None
+
+
+class _InformationSourceLike(Protocol):
+    pk: int
 
 
 def ensure_segment_annotations(
@@ -43,6 +52,7 @@ def ensure_segment_annotations(
             "description": "Automatic segment annotation generator",
         },
     )
+    information_source_view = cast(_InformationSourceLike, information_source)
 
     segments = LabelVideoSegment.objects.select_related("label")
     if segment_ids:
@@ -60,6 +70,7 @@ def ensure_segment_annotations(
     }
 
     for segment in segments.order_by("pk"):
+        segment_view = cast(_SegmentSourceLike, segment)
         label = segment.label
         if not label:
             summary["skipped_no_label"] += 1
@@ -88,7 +99,7 @@ def ensure_segment_annotations(
         if not commit:
             continue
 
-        if segment.source_id != information_source.id:
+        if segment_view.source_id != information_source_view.pk:
             segment.source = information_source
             segment.save(update_fields=["source"])
 
@@ -122,6 +133,7 @@ def ensure_prediction_segment_annotations(
             "description": "Frame annotations derived from AI-generated segments",
         },
     )
+    information_source_view = cast(_InformationSourceLike, information_source)
 
     segments = LabelVideoSegment.objects.select_related(
         "label", "source", "prediction_meta", "prediction_meta__model_meta"
@@ -196,7 +208,7 @@ def ensure_prediction_segment_annotations(
                         segment_id=segment.pk,
                         frame_id=frame_id,
                         label_id=label.pk,
-                        information_source_id=information_source.pk,
+                        information_source_id=information_source_view.pk,
                         model_meta_id=model_meta_id,
                     ),
                 )

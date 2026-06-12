@@ -7,22 +7,22 @@ import shutil
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, cast
 from uuid import uuid4
 
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_move_file,
     ensure_disk_capacity,
     safe_unlink_file,
 )
-from endoreg_db.utils.filesystem.paths import (
+from endoreg_db.utils.paths import (
     ANONYM_VIDEO_DIR_NAME,
     EndoregPathsModel,
     SENSITIVE_VIDEO_DIR_NAME,
     ensure_within_data_root,
     ensure_within_protected_root,
 )
-from endoreg_db.utils.video import ffmpeg_wrapper
+from endoreg_db.utils import ffmpeg_wrapper
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +62,18 @@ class VideoFormatAction(StrEnum):
     SKIP_REPAIR = "skip_repair"
 
 
+def _new_str_list() -> list[str]:
+    return []
+
+
+def _new_root_report_list() -> list["VideoFormatRootReport"]:
+    return []
+
+
+def _new_file_report_list() -> list["VideoFormatFileReport"]:
+    return []
+
+
 @dataclass(slots=True)
 class VideoFormatFileReport:
     path: str
@@ -70,7 +82,7 @@ class VideoFormatFileReport:
     codec_name: str | None = None
     pixel_format: str | None = None
     color_range: str | None = None
-    reasons: list[str] = field(default_factory=list)
+    reasons: list[str] = field(default_factory=_new_str_list)
     action: VideoFormatAction = VideoFormatAction.NONE
     bytes_before: int | None = None
     bytes_after: int | None = None
@@ -119,8 +131,8 @@ class VideoFormatSummary:
     repaired_files: int = 0
     repair_failed_files: int = 0
     skipped_files: int = 0
-    roots: list[VideoFormatRootReport] = field(default_factory=list)
-    reports: list[VideoFormatFileReport] = field(default_factory=list)
+    roots: list[VideoFormatRootReport] = field(default_factory=_new_root_report_list)
+    reports: list[VideoFormatFileReport] = field(default_factory=_new_file_report_list)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -286,19 +298,17 @@ def classify_video_format(path: Path) -> VideoFormatFileReport:
         report.error = str(exc)
         return report
 
-    stream_info = ffmpeg_wrapper.get_stream_info(path)
+    stream_info = cast(dict[str, Any] | None, ffmpeg_wrapper.get_stream_info(path))
     if not stream_info or "streams" not in stream_info:
         report.error = "ffprobe returned no stream metadata"
         return report
 
-    video_stream = next(
-        (
-            stream
-            for stream in stream_info["streams"]
-            if stream.get("codec_type") == "video"
-        ),
-        None,
-    )
+    streams = stream_info.get("streams")
+    if not isinstance(streams, list):
+        report.error = "ffprobe returned malformed stream metadata"
+        return report
+
+    video_stream = _first_video_stream(cast(list[Any], streams))
     if video_stream is None:
         report.error = "ffprobe returned no video stream"
         return report
@@ -371,7 +381,7 @@ def _repair_file(
             {
                 "path": str(input_path),
                 "temp_path": str(temp_path),
-                "reasons": report.reasons,
+                "reasons": list(report.reasons),
             },
         )
         result = ffmpeg_wrapper.transcode_videofile_if_required(
@@ -458,6 +468,15 @@ def _format_mismatch_reasons(
 
 def _has_required_pixel_format(pixel_format: str | None) -> bool:
     return pixel_format in FULL_RANGE_YUV420P_PIXEL_FORMATS
+
+
+def _first_video_stream(streams: list[object]) -> dict[str, Any] | None:
+    for stream in streams:
+        if isinstance(stream, dict):
+            stream_dict = cast(dict[str, Any], stream)
+            if stream_dict.get("codec_type") == "video":
+                return stream_dict
+    return None
 
 
 def _iter_video_files(root: Path, extensions: frozenset[str]) -> Iterable[Path]:

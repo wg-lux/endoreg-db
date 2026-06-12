@@ -2,14 +2,45 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
+from pytest import MonkeyPatch
 
 from endoreg_db.services import video_transcoding
 
 
+def _fake_compliant_video_format(path: Path) -> SimpleNamespace:
+    return SimpleNamespace(compliant=True, reasons=[], error="")
+
+
+def _fake_50_fps_stream_info(path: Path) -> dict[str, object]:
+    return {
+        "streams": [
+            {
+                "codec_type": "video",
+                "avg_frame_rate": "50/1",
+            }
+        ]
+    }
+
+
+def _fake_30000_1001_stream_info(path: Path) -> dict[str, object]:
+    return {
+        "streams": [
+            {
+                "codec_type": "video",
+                "avg_frame_rate": "30000/1001",
+            }
+        ]
+    }
+
+
+
 @pytest.mark.unit
-def test_transcode_video_directory_stages_and_moves_output(monkeypatch, tmp_path):
+def test_transcode_video_directory_stages_and_moves_output(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
     input_dir = tmp_path / "input"
     output_dir = tmp_path / "output"
     input_dir.mkdir()
@@ -21,7 +52,7 @@ def test_transcode_video_directory_stages_and_moves_output(monkeypatch, tmp_path
     def fake_transcode_video(
         input_path: Path,
         output_path: Path,
-        **kwargs,
+        **kwargs: Any,
     ) -> Path:
         captured["input_path"] = input_path
         captured["output_path"] = output_path
@@ -37,19 +68,12 @@ def test_transcode_video_directory_stages_and_moves_output(monkeypatch, tmp_path
     monkeypatch.setattr(
         video_transcoding,
         "classify_video_format",
-        lambda path: SimpleNamespace(compliant=True, reasons=[], error=""),
+        _fake_compliant_video_format,
     )
     monkeypatch.setattr(
         video_transcoding.ffmpeg_wrapper,
         "get_stream_info",
-        lambda path: {
-            "streams": [
-                {
-                    "codec_type": "video",
-                    "avg_frame_rate": "50/1",
-                }
-            ]
-        },
+        _fake_50_fps_stream_info,
     )
 
     summary = video_transcoding.transcode_video_directory(
@@ -76,7 +100,9 @@ def test_transcode_video_directory_stages_and_moves_output(monkeypatch, tmp_path
 
 
 @pytest.mark.unit
-def test_transcode_video_directory_dry_run_does_not_create_output_dir(tmp_path):
+def test_transcode_video_directory_dry_run_does_not_create_output_dir(
+    tmp_path: Path,
+) -> None:
     input_dir = tmp_path / "input"
     output_dir = tmp_path / "output"
     input_dir.mkdir()
@@ -97,7 +123,9 @@ def test_transcode_video_directory_dry_run_does_not_create_output_dir(tmp_path):
 
 
 @pytest.mark.unit
-def test_transcode_video_directory_uses_configured_target_fps(monkeypatch, tmp_path):
+def test_transcode_video_directory_uses_configured_target_fps(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
     input_dir = tmp_path / "input"
     output_dir = tmp_path / "output"
     input_dir.mkdir()
@@ -108,7 +136,7 @@ def test_transcode_video_directory_uses_configured_target_fps(monkeypatch, tmp_p
     def fake_transcode_video(
         input_path: Path,
         output_path: Path,
-        **kwargs,
+        **kwargs: Any,
     ) -> Path:
         captured["kwargs"] = kwargs
         output_path.write_bytes(b"standardized-video")
@@ -123,19 +151,12 @@ def test_transcode_video_directory_uses_configured_target_fps(monkeypatch, tmp_p
     monkeypatch.setattr(
         video_transcoding,
         "classify_video_format",
-        lambda path: SimpleNamespace(compliant=True, reasons=[], error=""),
+        _fake_compliant_video_format,
     )
     monkeypatch.setattr(
         video_transcoding.ffmpeg_wrapper,
         "get_stream_info",
-        lambda path: {
-            "streams": [
-                {
-                    "codec_type": "video",
-                    "avg_frame_rate": "30000/1001",
-                }
-            ]
-        },
+        _fake_30000_1001_stream_info,
     )
 
     summary = video_transcoding.transcode_video_directory(
@@ -154,7 +175,9 @@ def test_transcode_video_directory_uses_configured_target_fps(monkeypatch, tmp_p
 
 
 @pytest.mark.unit
-def test_transcode_video_directory_skips_existing_destination(tmp_path):
+def test_transcode_video_directory_skips_existing_destination(
+    tmp_path: Path,
+) -> None:
     input_dir = tmp_path / "input"
     output_dir = tmp_path / "output"
     input_dir.mkdir()

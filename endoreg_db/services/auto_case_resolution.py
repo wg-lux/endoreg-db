@@ -94,11 +94,11 @@ def _link_video_primary_examination(
     except PatientExamination.DoesNotExist:
         existing_primary = None
 
-    if (
-        _model_optional_int(patient_examination, "video_id") is not None
-        and _model_optional_int(patient_examination, "video_id")
-        != _model_required_int(video, "pk")
-    ):
+    if _model_optional_int(
+        patient_examination, "video_id"
+    ) is not None and _model_optional_int(
+        patient_examination, "video_id"
+    ) != _model_required_int(video, "pk"):
         raise ValueError(
             "patient_examination is already linked to a different primary video"
         )
@@ -161,11 +161,17 @@ def _hydrate_inferred_patient_examination(
     update_fields: list[str] = []
     inferred_examination = _resolved_examination(media_obj)
 
-    if _model_optional_int(patient_examination, "patient_id") is None and _model_optional_int(
+    if _model_optional_int(
+        patient_examination, "patient_id"
+    ) is None and _model_optional_int(
         sensitive_meta,
         "pseudo_patient_id",
     ):
-        setattr(patient_examination, "patient", _model_relation(sensitive_meta, "pseudo_patient"))
+        setattr(
+            patient_examination,
+            "patient",
+            _model_relation(sensitive_meta, "pseudo_patient"),
+        )
         update_fields.append("patient")
     if (
         _model_optional_int(patient_examination, "examination_id") is None

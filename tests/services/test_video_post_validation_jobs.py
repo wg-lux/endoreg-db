@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import types
 import uuid
+from collections.abc import Callable, Sequence
 from datetime import timedelta
+from pathlib import Path
+from types import TracebackType
 from unittest.mock import Mock
 
 import pytest
 from django.utils import timezone
+from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
 
 from endoreg_db.models import (
     Center,
@@ -18,15 +22,15 @@ from endoreg_db.models import (
     VideoProcessingHistory,
 )
 from endoreg_db.models.state import video_segment_validation as segment_state
+from endoreg_db.services import video_temporal_inference as temporal_jobs
+from endoreg_db.services.jobs import video_post_validation_jobs as jobs
 from endoreg_db.services.media_operation_gate import (
     MediaOperationDeferred,
     create_video_stream_lease,
 )
-from endoreg_db.services.jobs import video_post_validation_jobs as jobs
-from endoreg_db.services import video_temporal_inference as temporal_jobs
 
 
-def _create_video_for_post_validation(tmp_path):
+def _create_video_for_post_validation(tmp_path: Path) -> VideoFile:
     center = Center.objects.create(
         name=f"post-validation-center-{uuid.uuid4().hex[:8]}",
         display_name="Post Validation Center",
@@ -44,8 +48,57 @@ def _create_video_for_post_validation(tmp_path):
     return video
 
 
+class _FakeFuture:
+    def done(self) -> bool:
+        return True
+
+
+class _ProcessedVideoContext:
+    def __init__(self, path: Path) -> None:
+        self._path = path
+
+    def __enter__(self) -> Path:
+        self._path.write_bytes(b"video")
+        return self._path
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> bool:
+        return False
+
+
+def _valid_video_stream_info(_path: Path) -> JsonObject:
+    return {"streams": [{"codec_type": "video"}]}
+
+
+def _audio_stream_info(_path: Path) -> JsonObject:
+    return {"streams": [{"codec_type": "audio"}]}
+
+
+def _blackening_config_json(*, only_validated: bool) -> JsonValue:
+    config = segment_state.blackening_history_config(only_validated=only_validated)
+    return {
+        "kind": config["kind"],
+        "only_validated": config["only_validated"],
+        "queue": config["queue"],
+    }
+
+
+def _ensure_local_processed_context(
+    video: VideoFile, tmp_path: Path
+) -> _ProcessedVideoContext:
+    assert video.pk is not None
+    return _ProcessedVideoContext(tmp_path / "rebuilt.mp4")
+
+
 @pytest.mark.django_db
-def test_dispatch_video_post_validation_rebuild_inline(monkeypatch, tmp_path):
+def test_dispatch_video_post_validation_rebuild_inline(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     video = _create_video_for_post_validation(tmp_path)
     runner = Mock(return_value=True)
     monkeypatch.setattr(jobs, "_run_video_post_validation_rebuild", runner)
@@ -66,21 +119,19 @@ def test_dispatch_video_post_validation_rebuild_inline(monkeypatch, tmp_path):
 
 
 @pytest.mark.django_db
-def test_dispatch_video_post_validation_rebuild_thread(monkeypatch, tmp_path):
+def test_dispatch_video_post_validation_rebuild_thread(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     video = _create_video_for_post_validation(tmp_path)
     runner = Mock(return_value=True)
     monkeypatch.setattr(jobs, "_run_video_post_validation_rebuild", runner)
     monkeypatch.setenv("VIDEO_POST_VALIDATION_JOB_MODE", "thread")
 
-    submitted = {}
+    submitted: dict[str, Callable[[], bool]] = {}
 
-    def _fake_submit(fn):
+    def _fake_submit(fn: Callable[[], bool]) -> _FakeFuture:
         submitted["fn"] = fn
-
-        class _FakeFuture:
-            def done(self):
-                return True
-
         return _FakeFuture()
 
     monkeypatch.setattr(jobs._executor, "submit", _fake_submit)
@@ -103,7 +154,10 @@ def test_dispatch_video_post_validation_rebuild_thread(monkeypatch, tmp_path):
 
 
 @pytest.mark.django_db
-def test_dispatch_video_post_validation_rebuild_celery(monkeypatch, tmp_path):
+def test_dispatch_video_post_validation_rebuild_celery(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     video = _create_video_for_post_validation(tmp_path)
     monkeypatch.setenv("VIDEO_POST_VALIDATION_JOB_MODE", "celery")
 
@@ -140,9 +194,9 @@ def test_dispatch_video_post_validation_rebuild_celery(monkeypatch, tmp_path):
 
 @pytest.mark.django_db
 def test_dispatch_video_post_validation_rebuild_celery_failure_does_not_fall_back_to_thread(
-    monkeypatch,
-    tmp_path,
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     video = _create_video_for_post_validation(tmp_path)
     state = video.get_or_create_state()
     state.segment_annotations_created = True
@@ -159,7 +213,19 @@ def test_dispatch_video_post_validation_rebuild_celery_failure_does_not_fall_bac
     monkeypatch.setenv("VIDEO_POST_VALIDATION_JOB_MODE", "celery")
 
     class _BrokenTask:
-        def apply_async(self, *args, **kwargs):
+        def apply_async(
+            self,
+            *,
+            args: tuple[int],
+            kwargs: dict[str, int | bool],
+            queue: str,
+            routing_key: str,
+            countdown: int,
+        ) -> None:
+            assert args == (video.pk,)
+            assert kwargs["only_validated"] is False
+            assert queue == routing_key
+            assert countdown >= 0
             raise RuntimeError("broker unavailable")
 
     monkeypatch.setattr(
@@ -192,9 +258,9 @@ def test_dispatch_video_post_validation_rebuild_celery_failure_does_not_fall_bac
 
 @pytest.mark.django_db
 def test_dispatch_video_post_validation_rebuild_celery_fails_without_required_secure_transport(
-    monkeypatch,
-    tmp_path,
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     video = _create_video_for_post_validation(tmp_path)
     monkeypatch.setenv("VIDEO_POST_VALIDATION_JOB_MODE", "celery")
     monkeypatch.setenv("CELERY_FFMPEG_MEDIA_REQUIRE_SECURE_TRANSPORT", "1")
@@ -222,11 +288,13 @@ def test_dispatch_video_post_validation_rebuild_celery_fails_without_required_se
     assert "secure broker transport" in history.details
 
 
-def test_blackening_history_config_schema_accepts_valid_config(monkeypatch):
+def test_blackening_history_config_schema_accepts_valid_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("CELERY_FFMPEG_MEDIA_QUEUE", "ffmpeg_media_hi")
 
-    config = segment_state._blackening_history_config(only_validated=True)
-    parsed = segment_state._parse_blackening_history_config(config)
+    config = _blackening_config_json(only_validated=True)
+    parsed = segment_state._parse_blackening_history_config(config)  # pyright: ignore[reportPrivateUsage]
 
     assert parsed is not None
     assert parsed.kind == segment_state.OUTSIDE_FRAME_BLACKENING_KIND
@@ -248,24 +316,31 @@ def test_blackening_history_config_schema_accepts_valid_config(monkeypatch):
         },
     ],
 )
-def test_blackening_history_config_schema_rejects_invalid_config(config):
+def test_blackening_history_config_schema_rejects_invalid_config(
+    config: JsonValue,
+) -> None:
     with pytest.raises(segment_state.OutsideFrameBlackeningConfigError):
-        segment_state._parse_blackening_history_config(config)
+        segment_state._parse_blackening_history_config(config)  # pyright: ignore[reportPrivateUsage]
 
 
 @pytest.mark.django_db
 def test_dispatch_video_post_validation_rebuild_reuses_active_history(
-    monkeypatch,
-    tmp_path,
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     video = _create_video_for_post_validation(tmp_path)
     monkeypatch.setenv("VIDEO_POST_VALIDATION_JOB_MODE", "thread")
 
-    submitted = []
+    submitted: list[Callable[[], bool]] = []
+
+    def fake_submit(fn: Callable[[], bool]) -> types.SimpleNamespace:
+        submitted.append(fn)
+        return types.SimpleNamespace()
+
     monkeypatch.setattr(
         jobs._executor,
         "submit",
-        lambda fn: submitted.append(fn) or types.SimpleNamespace(),
+        fake_submit,
     )
 
     first = jobs.dispatch_video_post_validation_rebuild(video_id=video.pk)
@@ -279,9 +354,9 @@ def test_dispatch_video_post_validation_rebuild_reuses_active_history(
 
 @pytest.mark.django_db
 def test_dispatch_video_post_validation_rebuild_returns_busy_for_other_reprocessing(
-    monkeypatch,
-    tmp_path,
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     video = _create_video_for_post_validation(tmp_path)
     monkeypatch.setenv("VIDEO_POST_VALIDATION_JOB_MODE", "thread")
     other_history = VideoProcessingHistory.objects.create(
@@ -304,9 +379,9 @@ def test_dispatch_video_post_validation_rebuild_returns_busy_for_other_reprocess
 
 @pytest.mark.django_db
 def test_dispatch_video_post_validation_rebuild_expires_stale_history(
-    monkeypatch,
-    tmp_path,
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     video = _create_video_for_post_validation(tmp_path)
     monkeypatch.setenv("VIDEO_POST_VALIDATION_JOB_MODE", "thread")
     stale_history = VideoProcessingHistory.objects.create(
@@ -314,15 +389,19 @@ def test_dispatch_video_post_validation_rebuild_expires_stale_history(
         operation=VideoProcessingHistory.OPERATION_REPROCESSING,
         status=VideoProcessingHistory.STATUS_PENDING,
         task_id="stale-task",
-        config=segment_state._blackening_history_config(only_validated=False),
+        config=segment_state.blackening_history_config(only_validated=False),
     )
     VideoProcessingHistory.objects.filter(pk=stale_history.pk).update(
         created_at=timezone.now() - jobs.STALE_REBUILD_TIMEOUT - timedelta(minutes=1)
     )
+
+    def fake_submit(_fn: Callable[[], bool]) -> types.SimpleNamespace:
+        return types.SimpleNamespace()
+
     monkeypatch.setattr(
         jobs._executor,
         "submit",
-        lambda fn: types.SimpleNamespace(),
+        fake_submit,
     )
 
     result = jobs.dispatch_video_post_validation_rebuild(video_id=video.pk)
@@ -335,9 +414,9 @@ def test_dispatch_video_post_validation_rebuild_expires_stale_history(
 
 @pytest.mark.django_db(transaction=True)
 def test_dispatch_video_post_validation_rebuild_expires_stale_running_history_and_rolls_back_frames(
-    monkeypatch,
-    tmp_path,
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     video = _create_video_for_post_validation(tmp_path)
     frame_dir = video.get_frame_dir_path()
     assert frame_dir is not None
@@ -365,17 +444,21 @@ def test_dispatch_video_post_validation_rebuild_expires_stale_running_history_an
         operation=VideoProcessingHistory.OPERATION_REPROCESSING,
         status=VideoProcessingHistory.STATUS_RUNNING,
         task_id="running-blackening-task",
-        config=segment_state._blackening_history_config(only_validated=False),
+        config=segment_state.blackening_history_config(only_validated=False),
     )
     VideoProcessingHistory.objects.filter(pk=running_history.pk).update(
         created_at=timezone.now()
         - jobs.STALE_REBUILD_RUNNING_TIMEOUT
         - timedelta(minutes=1)
     )
+
+    def fake_submit(_fn: Callable[[], bool]) -> types.SimpleNamespace:
+        return types.SimpleNamespace()
+
     monkeypatch.setattr(
         jobs._executor,
         "submit",
-        lambda fn: types.SimpleNamespace(),
+        fake_submit,
     )
 
     result = jobs.dispatch_video_post_validation_rebuild(video_id=video.pk)
@@ -392,16 +475,21 @@ def test_dispatch_video_post_validation_rebuild_expires_stale_running_history_an
 
 @pytest.mark.django_db(transaction=True)
 def test_run_video_post_validation_rebuild_rolls_back_frames_when_rebuild_returns_false(
-    monkeypatch,
-    tmp_path,
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     video = _create_video_for_post_validation(tmp_path)
     frame_dir = video.get_frame_dir_path()
     assert frame_dir is not None
 
     def fake_create_video_without_outside_frames(
-        video_obj, *, only_validated=False, outside_intervals=None
-    ):
+        video_obj: VideoFile,
+        *,
+        only_validated: bool = False,
+        outside_intervals: Sequence[tuple[int, int]] | None = None,
+    ) -> bool:
+        assert only_validated is False
+        assert outside_intervals is None
         (frame_dir / "frame_0000000.jpg").write_bytes(b"blackened")
         Frame.objects.create(
             video=video_obj,
@@ -431,7 +519,7 @@ def test_run_video_post_validation_rebuild_rolls_back_frames_when_rebuild_return
         video=video,
         operation=VideoProcessingHistory.OPERATION_REPROCESSING,
         status=VideoProcessingHistory.STATUS_PENDING,
-        config=segment_state._blackening_history_config(only_validated=False),
+        config=segment_state.blackening_history_config(only_validated=False),
     )
 
     assert (
@@ -450,9 +538,9 @@ def test_run_video_post_validation_rebuild_rolls_back_frames_when_rebuild_return
 
 @pytest.mark.django_db
 def test_run_video_post_validation_rebuild_defers_when_stream_lease_active(
-    monkeypatch,
-    tmp_path,
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     video = _create_video_for_post_validation(tmp_path)
     create_video_stream_lease(video, file_type="processed", ttl_seconds=120)
     rebuild = Mock(side_effect=AssertionError("must not rebuild during stream"))
@@ -461,7 +549,7 @@ def test_run_video_post_validation_rebuild_defers_when_stream_lease_active(
         video=video,
         operation=VideoProcessingHistory.OPERATION_REPROCESSING,
         status=VideoProcessingHistory.STATUS_PENDING,
-        config=segment_state._blackening_history_config(only_validated=False),
+        config=segment_state.blackening_history_config(only_validated=False),
     )
 
     with pytest.raises(MediaOperationDeferred):
@@ -475,9 +563,9 @@ def test_run_video_post_validation_rebuild_defers_when_stream_lease_active(
 
 @pytest.mark.django_db
 def test_run_video_post_validation_rebuild_accepts_valid_processed_output(
-    monkeypatch,
-    tmp_path,
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     video = _create_video_for_post_validation(tmp_path)
     outside_label, _ = Label.objects.get_or_create(name="outside")
     source, _ = InformationSource.objects.get_or_create(name="manual_annotation")
@@ -495,19 +583,19 @@ def test_run_video_post_validation_rebuild_accepts_valid_processed_output(
     )
 
     def fake_create_video_without_outside_frames(
-        video_obj, *, only_validated=False, outside_intervals=None
-    ):
+        _video_obj: VideoFile,
+        *,
+        only_validated: bool = False,
+        outside_intervals: Sequence[tuple[int, int]] | None = None,
+    ) -> bool:
+        assert only_validated is False
         assert outside_intervals == [(0, 1)]
         return True
 
-    class _Context:
-        def __enter__(self):
-            path = tmp_path / "rebuilt.mp4"
-            path.write_bytes(b"video")
-            return path
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
+    def fake_ensure_local_processed_video_file(
+        video_obj: VideoFile,
+    ) -> _ProcessedVideoContext:
+        return _ensure_local_processed_context(video_obj, tmp_path)
 
     monkeypatch.setattr(
         jobs,
@@ -515,15 +603,17 @@ def test_run_video_post_validation_rebuild_accepts_valid_processed_output(
         fake_create_video_without_outside_frames,
     )
     monkeypatch.setattr(
-        jobs, "ensure_local_processed_video_file", lambda _video: _Context()
+        jobs,
+        "ensure_local_processed_video_file",
+        fake_ensure_local_processed_video_file,
     )
     monkeypatch.setattr(
-        "endoreg_db.utils.video.ffmpeg_wrapper.get_stream_info",
-        lambda _path: {"streams": [{"codec_type": "video"}]},
+        "endoreg_db.utils.ffmpeg_wrapper.get_stream_info",
+        _valid_video_stream_info,
     )
-    sampled_frame_numbers = []
+    sampled_frame_numbers: list[int] = []
 
-    def fake_capture_frame(_path, frame_number):
+    def fake_capture_frame(_path: Path, frame_number: int):
         sampled_frame_numbers.append(frame_number)
         return __import__("numpy").zeros((4, 4, 3), dtype="uint8")
 
@@ -533,7 +623,7 @@ def test_run_video_post_validation_rebuild_accepts_valid_processed_output(
         video=video,
         operation=VideoProcessingHistory.OPERATION_REPROCESSING,
         status=VideoProcessingHistory.STATUS_PENDING,
-        config=segment_state._blackening_history_config(only_validated=False),
+        config=segment_state.blackening_history_config(only_validated=False),
     )
 
     assert (
@@ -550,28 +640,39 @@ def test_run_video_post_validation_rebuild_accepts_valid_processed_output(
 
 @pytest.mark.django_db
 def test_run_video_post_validation_rebuild_reuses_merged_intervals(
-    monkeypatch,
-    tmp_path,
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     video = _create_video_for_post_validation(tmp_path)
     merged_intervals = [(10, 20), (40, 50)]
-    merge_calls = []
-    create_calls = []
-    verify_calls = []
+    merge_calls: list[tuple[int | None, bool]] = []
+    create_calls: list[tuple[bool, Sequence[tuple[int, int]] | None]] = []
+    verify_calls: list[tuple[bool, Sequence[tuple[int, int]] | None, int]] = []
 
-    def fake_merge(video_obj, *, only_validated=False):
+    def fake_merge(
+        video_obj: VideoFile,
+        *,
+        only_validated: bool = False,
+    ) -> list[tuple[int, int]]:
         merge_calls.append((video_obj.pk, only_validated))
         return list(merged_intervals)
 
     def fake_create_video_without_outside_frames(
-        video_obj, *, only_validated=False, outside_intervals=None
-    ):
+        _video_obj: VideoFile,
+        *,
+        only_validated: bool = False,
+        outside_intervals: Sequence[tuple[int, int]] | None = None,
+    ) -> bool:
         create_calls.append((only_validated, outside_intervals))
         return True
 
     def fake_verify_processed_video_contract(
-        video_obj, *, only_validated=False, outside_intervals=None, tolerance=8
-    ):
+        _video_obj: VideoFile,
+        *,
+        only_validated: bool = False,
+        outside_intervals: Sequence[tuple[int, int]] | None = None,
+        tolerance: int = 8,
+    ) -> None:
         verify_calls.append((only_validated, outside_intervals, tolerance))
 
     monkeypatch.setattr(jobs, "_merge_outside_frame_intervals", fake_merge)
@@ -590,7 +691,7 @@ def test_run_video_post_validation_rebuild_reuses_merged_intervals(
         video=video,
         operation=VideoProcessingHistory.OPERATION_REPROCESSING,
         status=VideoProcessingHistory.STATUS_PENDING,
-        config=segment_state._blackening_history_config(only_validated=False),
+        config=segment_state.blackening_history_config(only_validated=False),
     )
 
     assert (
@@ -603,26 +704,32 @@ def test_run_video_post_validation_rebuild_reuses_merged_intervals(
 
 @pytest.mark.django_db
 def test_run_video_post_validation_rebuild_queues_deferred_temporal_inference(
-    monkeypatch,
-    tmp_path,
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     video = _create_video_for_post_validation(tmp_path)
 
     def fake_create_video_without_outside_frames(
-        video_obj, *, only_validated=False, outside_intervals=None
-    ):
+        _video_obj: VideoFile,
+        *,
+        only_validated: bool = False,
+        outside_intervals: Sequence[tuple[int, int]] | None = None,
+    ) -> bool:
+        assert only_validated is False
+        assert outside_intervals is None
         return True
 
-    class _Context:
-        def __enter__(self):
-            path = tmp_path / "rebuilt.mp4"
-            path.write_bytes(b"video")
-            return path
+    def fake_ensure_local_processed_video_file(
+        video_obj: VideoFile,
+    ) -> _ProcessedVideoContext:
+        return _ensure_local_processed_context(video_obj, tmp_path)
 
-        def __exit__(self, exc_type, exc, tb):
-            return False
+    submitted: list[Callable[[], bool]] = []
 
-    submitted = []
+    def fake_submit(fn: Callable[[], bool]) -> types.SimpleNamespace:
+        submitted.append(fn)
+        return types.SimpleNamespace()
+
     monkeypatch.setenv("VIDEO_TEMPORAL_INFERENCE_JOB_MODE", "thread")
     monkeypatch.setattr(
         jobs,
@@ -630,23 +737,25 @@ def test_run_video_post_validation_rebuild_queues_deferred_temporal_inference(
         fake_create_video_without_outside_frames,
     )
     monkeypatch.setattr(
-        jobs, "ensure_local_processed_video_file", lambda _video: _Context()
+        jobs,
+        "ensure_local_processed_video_file",
+        fake_ensure_local_processed_video_file,
     )
     monkeypatch.setattr(
-        "endoreg_db.utils.video.ffmpeg_wrapper.get_stream_info",
-        lambda _path: {"streams": [{"codec_type": "video"}]},
+        "endoreg_db.utils.ffmpeg_wrapper.get_stream_info",
+        _valid_video_stream_info,
     )
     monkeypatch.setattr(
         temporal_jobs._executor,
         "submit",
-        lambda fn: submitted.append(fn) or types.SimpleNamespace(),
+        fake_submit,
     )
 
     rebuild_history = VideoProcessingHistory.objects.create(
         video=video,
         operation=VideoProcessingHistory.OPERATION_REPROCESSING,
         status=VideoProcessingHistory.STATUS_PENDING,
-        config=segment_state._blackening_history_config(only_validated=False),
+        config=segment_state.blackening_history_config(only_validated=False),
     )
     deferred_history = VideoProcessingHistory.objects.create(
         video=video,
@@ -691,14 +800,19 @@ def test_run_video_post_validation_rebuild_queues_deferred_temporal_inference(
 
 @pytest.mark.django_db
 def test_run_video_post_validation_rebuild_failure_fails_deferred_temporal_inference(
-    monkeypatch,
-    tmp_path,
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     video = _create_video_for_post_validation(tmp_path)
 
     def fake_create_video_without_outside_frames(
-        video_obj, *, only_validated=False, outside_intervals=None
-    ):
+        _video_obj: VideoFile,
+        *,
+        only_validated: bool = False,
+        outside_intervals: Sequence[tuple[int, int]] | None = None,
+    ) -> bool:
+        assert only_validated is False
+        assert outside_intervals is None
         return False
 
     monkeypatch.setattr(
@@ -710,7 +824,7 @@ def test_run_video_post_validation_rebuild_failure_fails_deferred_temporal_infer
         video=video,
         operation=VideoProcessingHistory.OPERATION_REPROCESSING,
         status=VideoProcessingHistory.STATUS_PENDING,
-        config=segment_state._blackening_history_config(only_validated=False),
+        config=segment_state.blackening_history_config(only_validated=False),
     )
     deferred_history = VideoProcessingHistory.objects.create(
         video=video,
@@ -747,24 +861,25 @@ def test_run_video_post_validation_rebuild_failure_fails_deferred_temporal_infer
 
 @pytest.mark.django_db
 def test_run_video_post_validation_rebuild_rejects_processed_output_without_video_stream(
-    monkeypatch,
-    tmp_path,
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     video = _create_video_for_post_validation(tmp_path)
 
     def fake_create_video_without_outside_frames(
-        video_obj, *, only_validated=False, outside_intervals=None
-    ):
+        _video_obj: VideoFile,
+        *,
+        only_validated: bool = False,
+        outside_intervals: Sequence[tuple[int, int]] | None = None,
+    ) -> bool:
+        assert only_validated is False
+        assert outside_intervals is None
         return True
 
-    class _Context:
-        def __enter__(self):
-            path = tmp_path / "rebuilt.mp4"
-            path.write_bytes(b"video")
-            return path
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
+    def fake_ensure_local_processed_video_file(
+        video_obj: VideoFile,
+    ) -> _ProcessedVideoContext:
+        return _ensure_local_processed_context(video_obj, tmp_path)
 
     monkeypatch.setattr(
         jobs,
@@ -772,18 +887,20 @@ def test_run_video_post_validation_rebuild_rejects_processed_output_without_vide
         fake_create_video_without_outside_frames,
     )
     monkeypatch.setattr(
-        jobs, "ensure_local_processed_video_file", lambda _video: _Context()
+        jobs,
+        "ensure_local_processed_video_file",
+        fake_ensure_local_processed_video_file,
     )
     monkeypatch.setattr(
-        "endoreg_db.utils.video.ffmpeg_wrapper.get_stream_info",
-        lambda _path: {"streams": [{"codec_type": "audio"}]},
+        "endoreg_db.utils.ffmpeg_wrapper.get_stream_info",
+        _audio_stream_info,
     )
 
     history = VideoProcessingHistory.objects.create(
         video=video,
         operation=VideoProcessingHistory.OPERATION_REPROCESSING,
         status=VideoProcessingHistory.STATUS_PENDING,
-        config=segment_state._blackening_history_config(only_validated=False),
+        config=segment_state.blackening_history_config(only_validated=False),
     )
 
     with pytest.raises(RuntimeError, match="no probeable video stream"):
@@ -797,7 +914,9 @@ def test_run_video_post_validation_rebuild_rejects_processed_output_without_vide
 
 
 @pytest.mark.django_db
-def test_outside_blackening_verification_uses_frame_annotation_targets(tmp_path):
+def test_outside_blackening_verification_uses_frame_annotation_targets(
+    tmp_path: Path,
+) -> None:
     video = _create_video_for_post_validation(tmp_path)
     frame_dir = video.get_frame_dir_path()
     assert frame_dir is not None

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from lx_dtypes.models.meta.VideoMetadata import (
+from lx_dtypes.models.meta.VideoMeta import (
     VideoFpsDetailsPayload,
     VideoFpsErrorPayload,
     VideoFpsPayload,
@@ -9,7 +9,6 @@ from lx_dtypes.models.meta.VideoMetadata import (
     VideoMetadataStatsPayload,
     VideoMetadataStatus,
 )
-
 
 __all__ = [
     "VideoFpsDetailsPayload",

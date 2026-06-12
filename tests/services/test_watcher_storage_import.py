@@ -1,12 +1,18 @@
+# pyright: reportPrivateUsage=false
 from __future__ import annotations
 
 import os
 import threading
 import time
 from pathlib import Path
+from typing import Protocol
 from unittest.mock import patch
 
 import pytest
+from lx_dtypes.models.contracts.hub_ingest import (
+    UploadProvenancePayload,
+    parse_upload_provenance_payload,
+)
 
 from endoreg_db.models import Center, EndoscopyProcessor, UploadJob, VideoFile
 from endoreg_db.services.hub import ingest
@@ -14,12 +20,18 @@ from endoreg_db.services.hub.watcher_handoff import (
     WatcherFileNotReadyError,
     is_in_progress_handoff_path,
 )
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_write_file,
     safe_unlink_file,
     sha256_file,
 )
 from endoreg_db.utils.storage import save_local_file
+
+
+class _VideoImportCallable(Protocol):
+    def __call__(
+        self, *, file_path: Path, center_name: str, processor_name: str, retry: bool
+    ) -> VideoFile: ...
 
 
 @pytest.fixture
@@ -30,7 +42,7 @@ def watcher_center() -> Center:
     )
 
 
-def _write_test_file(path, content: bytes):
+def _write_test_file(path: Path, content: bytes) -> Path:
     return atomic_write_file(
         destination=path,
         content=(content,),
@@ -38,9 +50,13 @@ def _write_test_file(path, content: bytes):
     )
 
 
+def _validated_upload_provenance(upload_job: UploadJob) -> UploadProvenancePayload:
+    return parse_upload_provenance_payload(upload_job.processing_provenance)
+
+
 def _create_completed_video_upload(
     *,
-    tmp_path,
+    tmp_path: Path,
     watcher_center: Center,
     filename: str,
     content: bytes,
@@ -103,8 +119,10 @@ def _create_completed_video_upload(
     return watched_file, upload_job, video
 
 
-def _fake_video_import(video: VideoFile):
-    def _import_and_anonymize(*, file_path, center_name, processor_name, retry):
+def _fake_video_import(video: VideoFile) -> _VideoImportCallable:
+    def _import_and_anonymize(
+        *, file_path: Path, center_name: str, processor_name: str, retry: bool
+    ) -> VideoFile:
         assert Path(file_path).exists()
         safe_unlink_file(Path(file_path), missing_ok=False)
         return video
@@ -126,9 +144,9 @@ def _fake_video_import(video: VideoFile):
 )
 @pytest.mark.unit
 def test_wait_for_watcher_file_ready_rejects_atomic_handoff_marker(
-    tmp_path,
+    tmp_path: Path,
     filename: str,
-):
+) -> None:
     watched_file = tmp_path / filename
     watched_file.write_bytes(b"partial-video")
 
@@ -143,10 +161,10 @@ def test_wait_for_watcher_file_ready_rejects_atomic_handoff_marker(
 
 @pytest.mark.django_db
 def test_process_watcher_file_waits_for_direct_slow_writer(
-    tmp_path,
+    tmp_path: Path,
     watcher_center: Center,
-    monkeypatch,
-):
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     initial_content = b"partial-"
     final_suffix = b"complete"
     expected_content = initial_content + final_suffix
@@ -169,10 +187,17 @@ def test_process_watcher_file_waits_for_direct_slow_writer(
     EndoscopyProcessor.objects.get_or_create(name="slow-writer-processor")
     monkeypatch.setenv("WATCHER_STABLE_AFTER_SECONDS", "0.12")
     monkeypatch.setenv("WATCHER_POLL_INTERVAL_SECONDS", "0.01")
+
+    def fake_start_upload_job_processing(
+        *, upload_job: UploadJob, task_dispatcher: object
+    ) -> str:
+        _ = task_dispatcher
+        return "test-handoff"
+
     monkeypatch.setattr(
         ingest,
         "start_upload_job_processing",
-        lambda **kwargs: "test-handoff",
+        fake_start_upload_job_processing,
         raising=True,
     )
 
@@ -195,9 +220,9 @@ def test_process_watcher_file_waits_for_direct_slow_writer(
 
 @pytest.mark.django_db
 def test_create_or_reuse_watcher_upload_job_records_storage_contract(
-    tmp_path,
+    tmp_path: Path,
     watcher_center: Center,
-):
+) -> None:
     watched_file = tmp_path / "incoming-report.pdf"
     watched_file.write_bytes(b"%PDF-1.4\n%%EOF\n")
 
@@ -216,23 +241,21 @@ def test_create_or_reuse_watcher_upload_job_records_storage_contract(
     assert upload_job.cleanup_status == UploadJob.CleanupStatus.PENDING
     assert upload_job.source_file_persisted is True
     assert upload_job.original_filename == watched_file.name
-    assert upload_job.processing_provenance["entrypoint"] == "watcher"
-    assert upload_job.processing_provenance["watched_path"] == str(watched_file)
-    assert upload_job.processing_provenance["file_type"] == "report"
-    assert (
-        upload_job.processing_provenance["storage_tier"]
-        == UploadJob.StorageTier.UPLOAD_WATCHER
-    )
-    assert upload_job.processing_provenance["retention_policy"] == (
+    provenance = _validated_upload_provenance(upload_job)
+    assert provenance.entrypoint == "watcher"
+    assert provenance.watched_path == str(watched_file)
+    assert provenance.file_type == "report"
+    assert provenance.storage_tier == UploadJob.StorageTier.UPLOAD_WATCHER
+    assert provenance.retention_policy == (
         UploadJob.RetentionPolicy.DELETE_AFTER_SUCCESS
     )
 
 
 @pytest.mark.django_db
 def test_process_watcher_file_reuse_deletes_duplicate_drop_without_reprocessing(
-    tmp_path,
+    tmp_path: Path,
     watcher_center: Center,
-):
+) -> None:
     watched_file = tmp_path / "duplicate-report.pdf"
     watched_file.write_bytes(b"%PDF-1.4\n%%EOF\n")
 
@@ -263,9 +286,9 @@ def test_process_watcher_file_reuse_deletes_duplicate_drop_without_reprocessing(
 
 @pytest.mark.django_db
 def test_completed_watcher_video_with_intact_media_reuses_duplicate_drop(
-    tmp_path,
+    tmp_path: Path,
     watcher_center: Center,
-):
+) -> None:
     watched_file, upload_job, _video = _create_completed_video_upload(
         tmp_path=tmp_path,
         watcher_center=watcher_center,
@@ -293,9 +316,9 @@ def test_completed_watcher_video_with_intact_media_reuses_duplicate_drop(
 
 @pytest.mark.django_db
 def test_completed_watcher_video_missing_raw_marks_old_job_lost_and_reingests(
-    tmp_path,
+    tmp_path: Path,
     watcher_center: Center,
-):
+) -> None:
     watched_file, upload_job, video = _create_completed_video_upload(
         tmp_path=tmp_path,
         watcher_center=watcher_center,
@@ -320,20 +343,17 @@ def test_completed_watcher_video_missing_raw_marks_old_job_lost_and_reingests(
     assert new_job.id != upload_job.id
     assert upload_job.status == UploadJob.Status.LOST
     assert new_job.status == UploadJob.Status.ANONYMIZED
-    assert new_job.processing_provenance["previous_upload_job_id"] == str(upload_job.id)
-    assert new_job.processing_provenance["media_integrity_status"] == (
-        "artifact_missing"
-    )
-    assert (
-        "raw_file" in new_job.processing_provenance["media_integrity_missing_artifacts"]
-    )
+    provenance = _validated_upload_provenance(new_job)
+    assert provenance.previous_upload_job_id == str(upload_job.id)
+    assert provenance.media_integrity_status == "artifact_missing"
+    assert "raw_file" in provenance.media_integrity_missing_artifacts
 
 
 @pytest.mark.django_db
 def test_completed_watcher_video_missing_processed_marks_old_job_lost_and_reingests(
-    tmp_path,
+    tmp_path: Path,
     watcher_center: Center,
-):
+) -> None:
     watched_file, upload_job, video = _create_completed_video_upload(
         tmp_path=tmp_path,
         watcher_center=watcher_center,
@@ -357,20 +377,16 @@ def test_completed_watcher_video_missing_processed_marks_old_job_lost_and_reinge
     new_job.refresh_from_db()
     assert new_job.id != upload_job.id
     assert upload_job.status == UploadJob.Status.LOST
-    assert new_job.processing_provenance["media_integrity_status"] == (
-        "artifact_missing"
-    )
-    assert (
-        "processed_file"
-        in new_job.processing_provenance["media_integrity_missing_artifacts"]
-    )
+    provenance = _validated_upload_provenance(new_job)
+    assert provenance.media_integrity_status == "artifact_missing"
+    assert "processed_file" in provenance.media_integrity_missing_artifacts
 
 
 @pytest.mark.django_db
 def test_completed_watcher_video_unreadable_artifact_marks_old_job_lost(
-    tmp_path,
+    tmp_path: Path,
     watcher_center: Center,
-):
+) -> None:
     watched_file, upload_job, video = _create_completed_video_upload(
         tmp_path=tmp_path,
         watcher_center=watcher_center,
@@ -400,16 +416,15 @@ def test_completed_watcher_video_unreadable_artifact_marks_old_job_lost(
     new_job.refresh_from_db()
     assert new_job.id != upload_job.id
     assert upload_job.status == UploadJob.Status.LOST
-    assert new_job.processing_provenance["media_integrity_status"] == (
-        "artifact_unreadable"
-    )
+    provenance = _validated_upload_provenance(new_job)
+    assert provenance.media_integrity_status == "artifact_unreadable"
 
 
 @pytest.mark.django_db
 def test_completed_preanonymized_video_does_not_require_raw_file_for_reuse(
-    tmp_path,
+    tmp_path: Path,
     watcher_center: Center,
-):
+) -> None:
     watched_file, upload_job, _video = _create_completed_video_upload(
         tmp_path=tmp_path,
         watcher_center=watcher_center,
@@ -440,7 +455,9 @@ def test_completed_preanonymized_video_does_not_require_raw_file_for_reuse(
 
 
 @pytest.mark.unit
-def test_persist_preanonymized_file_moves_source_when_delete_source_requested(tmp_path):
+def test_persist_preanonymized_file_moves_source_when_delete_source_requested(
+    tmp_path: Path,
+) -> None:
     source = tmp_path / "drop" / "video.mp4"
     target = tmp_path / "managed" / "video.mp4"
     source.parent.mkdir(parents=True)
@@ -457,7 +474,9 @@ def test_persist_preanonymized_file_moves_source_when_delete_source_requested(tm
 
 
 @pytest.mark.unit
-def test_persist_preanonymized_file_copies_source_when_delete_source_is_false(tmp_path):
+def test_persist_preanonymized_file_copies_source_when_delete_source_is_false(
+    tmp_path: Path,
+) -> None:
     source = tmp_path / "drop" / "report.pdf"
     target = tmp_path / "managed" / "report.pdf"
     source.parent.mkdir(parents=True)
@@ -475,8 +494,8 @@ def test_persist_preanonymized_file_copies_source_when_delete_source_is_false(tm
 
 @pytest.mark.unit
 def test_persist_preanonymized_file_unlinks_duplicate_source_when_target_exists(
-    tmp_path,
-):
+    tmp_path: Path,
+) -> None:
     source = tmp_path / "drop" / "video.mp4"
     target = tmp_path / "managed" / "video.mp4"
     source.parent.mkdir(parents=True)
@@ -495,7 +514,9 @@ def test_persist_preanonymized_file_unlinks_duplicate_source_when_target_exists(
 
 
 @pytest.mark.unit
-def test_load_preanonymized_sidecar_rejects_non_object_payload(tmp_path):
+def test_load_preanonymized_sidecar_rejects_non_object_payload(
+    tmp_path: Path,
+) -> None:
     watched_file = tmp_path / "preanonymized.pdf"
     sidecar = watched_file.with_suffix(".json")
     watched_file.write_bytes(b"%PDF-1.4\n%%EOF\n")
@@ -506,11 +527,16 @@ def test_load_preanonymized_sidecar_rejects_non_object_payload(tmp_path):
 
 
 @pytest.mark.unit
-def test_opportunistic_reap_watcher_sources_fails_open_for_ingest(monkeypatch):
+def test_opportunistic_reap_watcher_sources_fails_open_for_ingest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_reap_upload_job_sources(*, limit: int) -> int:
+        raise RuntimeError("cleanup unavailable")
+
     monkeypatch.setattr(
         ingest,
         "reap_upload_job_sources",
-        lambda *, limit: (_ for _ in ()).throw(RuntimeError("cleanup unavailable")),
+        fail_reap_upload_job_sources,
     )
 
     assert ingest._opportunistic_reap_watcher_sources(limit=7) == 0
@@ -518,9 +544,9 @@ def test_opportunistic_reap_watcher_sources_fails_open_for_ingest(monkeypatch):
 
 @pytest.mark.django_db
 def test_create_or_reuse_watcher_upload_job_uses_file_stat_in_idempotency_key(
-    tmp_path,
+    tmp_path: Path,
     watcher_center: Center,
-):
+) -> None:
     watched_file = tmp_path / "stable-report.pdf"
     watched_file.write_bytes(b"%PDF-1.4\n%%EOF\n")
     os.utime(watched_file, ns=(123_000_000_000, 456_000_000_000))
@@ -539,14 +565,14 @@ def test_create_or_reuse_watcher_upload_job_uses_file_stat_in_idempotency_key(
 
 @pytest.mark.django_db
 def test_create_or_reuse_watcher_upload_job_defers_when_file_changes_after_hash(
-    tmp_path,
+    tmp_path: Path,
     watcher_center: Center,
-    monkeypatch,
-):
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     watched_file = tmp_path / "changing-report.pdf"
     watched_file.write_bytes(b"%PDF-1.4\n%%EOF\n")
 
-    def mutate_during_hash(path):
+    def mutate_during_hash(path: Path) -> str:
         with Path(path).open("ab") as handle:
             handle.write(b"late-bytes")
         os.utime(path, None)

@@ -126,7 +126,10 @@ class TransferJobContractTests(TestCase):
             TransferJob.ProcessingPolicy.PRESERVE_PROCESSING_STATE
         )
         transfer_job.processing_snapshot = {"sender_processing_success": True}
-        storage = SimpleNamespace(exists=lambda name: True)
+        def storage_exists(name: str) -> bool:
+            return True
+
+        storage = SimpleNamespace(exists=storage_exists)
 
         video = cast(
             VideoFile,
@@ -153,10 +156,10 @@ class TransferJobContractTests(TestCase):
             patch.object(
                 transfers,
                 "_save_transfer_job_state",
-                side_effect=lambda **kwargs: kwargs["transfer_job"],
+                side_effect=lambda **kwargs: cast(TransferJob, kwargs["transfer_job"]),  # pyright: ignore[reportUnknownLambdaType]
             ) as save_state,
         ):
-            result = transfers._handle_video_processing_after_raw_upload(
+            result = transfers._handle_video_processing_after_raw_upload(  # pyright: ignore[reportPrivateUsage]  # pyright: ignore[reportPrivateUsage]
                 transfer_job=transfer_job,
                 video=video,
                 import_path=Path("/tmp/raw-upload.mp4"),
@@ -180,7 +183,7 @@ class TransferJobContractTests(TestCase):
         )
         state = video.get_or_create_state()
 
-        transfers._apply_video_state_payload(
+        transfers._apply_video_state_payload(  # pyright: ignore[reportPrivateUsage]  # pyright: ignore[reportPrivateUsage]
             state,
             {
                 "anonymized": True,
@@ -195,7 +198,7 @@ class TransferJobContractTests(TestCase):
         assert state.outside_segments_removed is True
 
     def test_video_processing_error_overrides_transfer_eligible_state(self) -> None:
-        resolved = TransferJobCreateSerializer._resolve_video_anonymization_status(
+        resolved = TransferJobCreateSerializer._resolve_video_anonymization_status(  # pyright: ignore[reportPrivateUsage]  # pyright: ignore[reportPrivateUsage]
             {
                 "anonymized": True,
                 "anonymization_validated": True,

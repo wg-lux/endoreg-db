@@ -1,17 +1,133 @@
+# pyright: reportPrivateUsage=false
 import os
 import time
 import uuid
+from collections.abc import Generator, Sequence
 from contextlib import contextmanager
+from pathlib import Path
 from types import SimpleNamespace
+from types import TracebackType
+from typing import Generic, TypeVar
 
 import pytest
+from _pytest.monkeypatch import MonkeyPatch
 
 from endoreg_db.import_files.context.file_lock import STALE_LOCK_SECONDS
 from endoreg_db.services.reconciliation import ReconciliationService
 
+T = TypeVar("T")
+
+
+class _FakeQuerySet(Generic[T]):
+    def __init__(self, items: Sequence[T]) -> None:
+        self._items = list(items)
+
+    def filter(self, **kwargs: object) -> "_FakeQuerySet[T]":
+        return self
+
+    def exclude(self, **kwargs: object) -> list[T]:
+        return list(self._items)
+
+
+class _FakeManager(Generic[T]):
+    def __init__(self, items: Sequence[T]) -> None:
+        self._items = list(items)
+
+    def select_related(self, *args: str, **kwargs: object) -> "_FakeManager[T]":
+        return self
+
+    def filter(self, **kwargs: object) -> list[T]:
+        return list(self._items)
+
+
+class _DummyRawFile:
+    name: str
+    storage: object | None
+
+    def __init__(self, name: str, storage: object | None = None) -> None:
+        self.name = name
+        self.storage = storage
+
+
+class _DummyVideo:
+    video_hash: str
+    raw_file: _DummyRawFile
+    suffix: str
+    saved: list[tuple[str, ...]]
+
+    def __init__(
+        self, video_hash: str, raw_file_name: str, suffix: str = ".mp4"
+    ) -> None:
+        self.video_hash = video_hash
+        self.raw_file = _DummyRawFile(raw_file_name)
+        self.suffix = suffix
+        self.saved = []
+
+    def get_raw_file_path(self) -> None:
+        return None
+
+    def save(self, update_fields: Sequence[str] | None = None) -> None:
+        if update_fields is None:
+            self.saved.append(())
+        else:
+            self.saved.append(tuple(update_fields))
+
+
+class _VideoFileRef:
+    video_hash: str
+    pk: int
+
+    def __init__(self, video_hash: str, pk: int = 11) -> None:
+        self.video_hash = video_hash
+        self.pk = pk
+
+
+class _PdfFileRef:
+    pdf_hash: str
+    pk: int
+
+    def __init__(self, pdf_hash: str, pk: int = 22) -> None:
+        self.pdf_hash = pdf_hash
+        self.pk = pk
+
+
+class _DummyVideoState:
+    video_file: _VideoFileRef
+
+    def __init__(self, video_hash: str) -> None:
+        self.video_file = _VideoFileRef(video_hash)
+
+    def mark_processing_not_started(self) -> None:
+        return None
+
+
+class _DummyPdfState:
+    raw_pdf_file: _PdfFileRef
+
+    def __init__(self, pdf_hash: str) -> None:
+        self.raw_pdf_file = _PdfFileRef(pdf_hash)
+
+    def mark_processing_not_started(self) -> None:
+        return None
+
+
+class _FakeAtomic:
+    def __enter__(self) -> "_FakeAtomic":
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> bool:
+        return False
+
 
 @pytest.mark.unit
-def test_reconciliation_removes_stale_lock_files(monkeypatch, tmp_path):
+def test_reconciliation_removes_stale_lock_files(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
     import endoreg_db.services.reconciliation as reconciliation_module
 
     import_video = tmp_path / "import_video"
@@ -46,7 +162,9 @@ def test_reconciliation_removes_stale_lock_files(monkeypatch, tmp_path):
 
 
 @pytest.mark.unit
-def test_reconciliation_cleans_orphaned_temp_and_uuid_files(monkeypatch, tmp_path):
+def test_reconciliation_cleans_orphaned_temp_and_uuid_files(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
     import endoreg_db.services.reconciliation as reconciliation_module
 
     sensitive_dir = tmp_path / "sensitive_videos"
@@ -85,7 +203,9 @@ def test_reconciliation_cleans_orphaned_temp_and_uuid_files(monkeypatch, tmp_pat
 
 
 @pytest.mark.unit
-def test_cleanup_ignores_recent_part_files(monkeypatch, tmp_path):
+def test_cleanup_ignores_recent_part_files(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
     import endoreg_db.services.reconciliation as reconciliation_module
 
     sensitive_dir = tmp_path / "sensitive_videos"
@@ -116,7 +236,9 @@ def test_cleanup_ignores_recent_part_files(monkeypatch, tmp_path):
 
 
 @pytest.mark.unit
-def test_cleanup_removes_stale_part_files(monkeypatch, tmp_path):
+def test_cleanup_removes_stale_part_files(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
     import endoreg_db.services.reconciliation as reconciliation_module
 
     sensitive_dir = tmp_path / "sensitive_videos"
@@ -149,35 +271,56 @@ def test_cleanup_removes_stale_part_files(monkeypatch, tmp_path):
 
 
 @pytest.mark.unit
-def test_startup_reconciliation_delegates_recovery_to_media_integrity(monkeypatch):
+def test_startup_reconciliation_delegates_recovery_to_media_integrity(
+    monkeypatch: MonkeyPatch,
+) -> None:
     import endoreg_db.services.reconciliation as reconciliation_module
 
     calls: list[str] = []
 
+    def fake_clear_stale_lock_files(self: ReconciliationService) -> int:
+        calls.append("locks")
+        return 0
+
+    def fake_relink_broken_video_raw_files(self: ReconciliationService) -> int:
+        calls.append("raw")
+        return 0
+
+    def fake_cleanup_orphaned_artifacts(self: ReconciliationService) -> int:
+        calls.append("cleanup")
+        return 0
+
+    def fake_reset_incomplete_processing_states(self: ReconciliationService) -> int:
+        calls.append("states")
+        return 0
+
+    def fake_reconcile_media_integrity() -> None:
+        calls.append("media_integrity")
+
     monkeypatch.setattr(
         ReconciliationService,
         "clear_stale_lock_files",
-        lambda self: calls.append("locks") or 0,
+        fake_clear_stale_lock_files,
     )
     monkeypatch.setattr(
         ReconciliationService,
         "relink_broken_video_raw_files",
-        lambda self: calls.append("raw") or 0,
+        fake_relink_broken_video_raw_files,
     )
     monkeypatch.setattr(
         ReconciliationService,
         "cleanup_orphaned_artifacts",
-        lambda self: calls.append("cleanup") or 0,
+        fake_cleanup_orphaned_artifacts,
     )
     monkeypatch.setattr(
         ReconciliationService,
         "reset_incomplete_processing_states",
-        lambda self: calls.append("states") or 0,
+        fake_reset_incomplete_processing_states,
     )
     monkeypatch.setattr(
         reconciliation_module,
         "reconcile_media_integrity",
-        lambda: calls.append("media_integrity"),
+        fake_reconcile_media_integrity,
         raising=True,
     )
 
@@ -188,8 +331,8 @@ def test_startup_reconciliation_delegates_recovery_to_media_integrity(monkeypatc
 
 @pytest.mark.unit
 def test_reconciliation_relinks_broken_raw_file_to_canonical_name(
-    monkeypatch, tmp_path
-):
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
     import endoreg_db.services.reconciliation as reconciliation_module
 
     storage_dir = tmp_path / "storage"
@@ -199,35 +342,29 @@ def test_reconciliation_relinks_broken_raw_file_to_canonical_name(
     legacy_path = sensitive_dir / "legacy_name.mp4"
     legacy_path.write_bytes(b"legacy-video")
 
-    saved = []
+    saved: list[tuple[str, ...]] = []
 
-    class DummyRawFile:
-        def __init__(self, name):
-            self.name = name
+    class DummyVideo(_DummyVideo):
+        def __init__(self) -> None:
+            super().__init__(
+                video_hash="abc123",
+                raw_file_name="sensitive_videos/legacy_name.mp4",
+            )
 
-    class DummyVideo:
-        def __init__(self):
-            self.video_hash = "abc123"
-            self.raw_file = DummyRawFile("sensitive_videos/legacy_name.mp4")
-            self.suffix = ".mp4"
-
-        def get_raw_file_path(self):
-            return None
-
-        def save(self, update_fields=None):
-            saved.append(tuple(update_fields or ()))
+        def save(self, update_fields: Sequence[str] | None = None) -> None:
+            if update_fields is None:
+                saved.append(())
+            else:
+                saved.append(tuple(update_fields))
 
     video = DummyVideo()
 
-    class FakeQuerySet:
-        def filter(self, **kwargs):
-            return self
-
-        def exclude(self, **kwargs):
-            return [video]
+    class FakeQuerySet(_FakeQuerySet[DummyVideo]):
+        def __init__(self) -> None:
+            super().__init__([video])
 
     @contextmanager
-    def fake_atomic():
+    def fake_atomic() -> Generator[None, None, None]:
         yield
 
     monkeypatch.setattr(
@@ -246,10 +383,14 @@ def test_reconciliation_relinks_broken_raw_file_to_canonical_name(
         SimpleNamespace(objects=FakeQuerySet()),
         raising=True,
     )
+
+    def fake_sha256_file(_path: Path) -> str:
+        return "no-match"
+
     monkeypatch.setattr(
         reconciliation_module,
         "sha256_file",
-        lambda path: "no-match",
+        fake_sha256_file,
         raising=True,
     )
     monkeypatch.setattr(
@@ -271,8 +412,8 @@ def test_reconciliation_relinks_broken_raw_file_to_canonical_name(
 
 @pytest.mark.unit
 def test_reconciliation_relinks_by_content_hash_for_legacy_overwrite(
-    monkeypatch, tmp_path
-):
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
     import endoreg_db.services.reconciliation as reconciliation_module
 
     storage_dir = tmp_path / "storage"
@@ -282,34 +423,27 @@ def test_reconciliation_relinks_by_content_hash_for_legacy_overwrite(
     recovered_source = sensitive_dir / "old_import_name.mp4"
     recovered_source.write_bytes(b"legacy-original-bytes")
 
-    class DummyRawFile:
-        def __init__(self, name):
-            self.name = name
+    class DummyVideo(_DummyVideo):
+        def __init__(self) -> None:
+            super().__init__(
+                video_hash="expected-hash",
+                raw_file_name="sensitive_videos/missing.mp4",
+            )
 
-    class DummyVideo:
-        def __init__(self):
-            self.video_hash = "expected-hash"
-            self.raw_file = DummyRawFile("sensitive_videos/missing.mp4")
-            self.suffix = ".mp4"
-            self.saved = []
-
-        def get_raw_file_path(self):
-            return None
-
-        def save(self, update_fields=None):
-            self.saved.append(tuple(update_fields or ()))
+        def save(self, update_fields: Sequence[str] | None = None) -> None:
+            if update_fields is None:
+                self.saved.append(())
+            else:
+                self.saved.append(tuple(update_fields))
 
     video = DummyVideo()
 
-    class FakeQuerySet:
-        def filter(self, **kwargs):
-            return self
-
-        def exclude(self, **kwargs):
-            return [video]
+    class FakeQuerySet(_FakeQuerySet[DummyVideo]):
+        def __init__(self) -> None:
+            super().__init__([video])
 
     @contextmanager
-    def fake_atomic():
+    def fake_atomic() -> Generator[None, None, None]:
         yield
 
     monkeypatch.setattr(
@@ -328,10 +462,14 @@ def test_reconciliation_relinks_by_content_hash_for_legacy_overwrite(
         SimpleNamespace(objects=FakeQuerySet()),
         raising=True,
     )
+
+    def fake_sha256_file(path: Path) -> str:
+        return "expected-hash" if path == recovered_source else "other"
+
     monkeypatch.setattr(
         reconciliation_module,
         "sha256_file",
-        lambda path: "expected-hash" if path == recovered_source else "other",
+        fake_sha256_file,
         raising=True,
     )
     monkeypatch.setattr(
@@ -352,8 +490,8 @@ def test_reconciliation_relinks_by_content_hash_for_legacy_overwrite(
 
 @pytest.mark.unit
 def test_reconciliation_skips_relink_when_multiple_content_hash_candidates(
-    monkeypatch, tmp_path
-):
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
     import endoreg_db.services.reconciliation as reconciliation_module
 
     storage_dir = tmp_path / "storage"
@@ -365,31 +503,18 @@ def test_reconciliation_skips_relink_when_multiple_content_hash_candidates(
     first.write_bytes(b"a")
     second.write_bytes(b"b")
 
-    class DummyRawFile:
-        def __init__(self, name):
-            self.name = name
-
-    class DummyVideo:
-        def __init__(self):
-            self.video_hash = "dupe-hash"
-            self.raw_file = DummyRawFile("sensitive_videos/missing.mp4")
-            self.suffix = ".mp4"
-            self.saved = []
-
-        def get_raw_file_path(self):
-            return None
-
-        def save(self, update_fields=None):
-            self.saved.append(tuple(update_fields or ()))
+    class DummyVideo(_DummyVideo):
+        def __init__(self) -> None:
+            super().__init__(
+                video_hash="dupe-hash",
+                raw_file_name="sensitive_videos/missing.mp4",
+            )
 
     video = DummyVideo()
 
-    class FakeQuerySet:
-        def filter(self, **kwargs):
-            return self
-
-        def exclude(self, **kwargs):
-            return [video]
+    class FakeQuerySet(_FakeQuerySet[DummyVideo]):
+        def __init__(self) -> None:
+            super().__init__([video])
 
     monkeypatch.setattr(
         reconciliation_module,
@@ -407,10 +532,14 @@ def test_reconciliation_skips_relink_when_multiple_content_hash_candidates(
         SimpleNamespace(objects=FakeQuerySet()),
         raising=True,
     )
+
+    def fake_sha256_file(_path: Path) -> str:
+        return "dupe-hash"
+
     monkeypatch.setattr(
         reconciliation_module,
         "sha256_file",
-        lambda path: "dupe-hash",
+        fake_sha256_file,
         raising=True,
     )
 
@@ -423,7 +552,9 @@ def test_reconciliation_skips_relink_when_multiple_content_hash_candidates(
 
 
 @pytest.mark.unit
-def test_relink_skips_if_canonical_taken(monkeypatch, tmp_path):
+def test_relink_skips_if_canonical_taken(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
     import endoreg_db.services.reconciliation as reconciliation_module
 
     storage_dir = tmp_path / "storage"
@@ -435,31 +566,17 @@ def test_relink_skips_if_canonical_taken(monkeypatch, tmp_path):
     lost_path = sensitive_dir / "lost_video.mp4"
     lost_path.write_bytes(b"recover-me")
 
-    class DummyRawFile:
-        def __init__(self, name):
-            self.name = name
-
-    class DummyVideo:
-        def __init__(self):
-            self.video_hash = "abc"
-            self.raw_file = DummyRawFile("sensitive_videos/missing.mp4")
-            self.suffix = ".mp4"
-            self.saved = []
-
-        def get_raw_file_path(self):
-            return None
-
-        def save(self, update_fields=None):
-            self.saved.append(tuple(update_fields or ()))
+    class DummyVideo(_DummyVideo):
+        def __init__(self) -> None:
+            super().__init__(
+                video_hash="abc", raw_file_name="sensitive_videos/missing.mp4"
+            )
 
     video = DummyVideo()
 
-    class FakeQuerySet:
-        def filter(self, **kwargs):
-            return self
-
-        def exclude(self, **kwargs):
-            return [video]
+    class FakeQuerySet(_FakeQuerySet[DummyVideo]):
+        def __init__(self) -> None:
+            super().__init__([video])
 
     monkeypatch.setattr(
         reconciliation_module,
@@ -477,10 +594,14 @@ def test_relink_skips_if_canonical_taken(monkeypatch, tmp_path):
         SimpleNamespace(objects=FakeQuerySet()),
         raising=True,
     )
+
+    def fake_sha256_file(path: Path) -> str:
+        return "abc" if path == lost_path else "other"
+
     monkeypatch.setattr(
         reconciliation_module,
         "sha256_file",
-        lambda path: "abc" if path == lost_path else "other",
+        fake_sha256_file,
         raising=True,
     )
 
@@ -493,7 +614,9 @@ def test_relink_skips_if_canonical_taken(monkeypatch, tmp_path):
 
 
 @pytest.mark.unit
-def test_relink_first_winner_for_duplicate_hash(monkeypatch, tmp_path):
+def test_relink_first_winner_for_duplicate_hash(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
     import endoreg_db.services.reconciliation as reconciliation_module
 
     storage_dir = tmp_path / "storage"
@@ -503,35 +626,22 @@ def test_relink_first_winner_for_duplicate_hash(monkeypatch, tmp_path):
     legacy_path = sensitive_dir / "legacy.mp4"
     legacy_path.write_bytes(b"recover")
 
-    class DummyRawFile:
-        def __init__(self, name):
-            self.name = name
-
-    class DummyVideo:
-        def __init__(self, label):
-            self.video_hash = "xyz"
-            self.raw_file = DummyRawFile(f"sensitive_videos/{label}.mp4")
-            self.suffix = ".mp4"
-            self.saved = []
-
-        def get_raw_file_path(self):
-            return None
-
-        def save(self, update_fields=None):
-            self.saved.append(tuple(update_fields or ()))
+    class DummyVideo(_DummyVideo):
+        def __init__(self, label: str) -> None:
+            super().__init__(
+                video_hash="xyz",
+                raw_file_name=f"sensitive_videos/{label}.mp4",
+            )
 
     first_video = DummyVideo("missing_a")
     second_video = DummyVideo("missing_b")
 
-    class FakeQuerySet:
-        def filter(self, **kwargs):
-            return self
-
-        def exclude(self, **kwargs):
-            return [first_video, second_video]
+    class FakeQuerySet(_FakeQuerySet[DummyVideo]):
+        def __init__(self) -> None:
+            super().__init__([first_video, second_video])
 
     @contextmanager
-    def fake_atomic():
+    def fake_atomic() -> Generator[None, None, None]:
         yield
 
     monkeypatch.setattr(
@@ -550,10 +660,14 @@ def test_relink_first_winner_for_duplicate_hash(monkeypatch, tmp_path):
         SimpleNamespace(objects=FakeQuerySet()),
         raising=True,
     )
+
+    def fake_sha256_file(path: Path) -> str:
+        return "xyz" if path == legacy_path else "other"
+
     monkeypatch.setattr(
         reconciliation_module,
         "sha256_file",
-        lambda path: "xyz" if path == legacy_path else "other",
+        fake_sha256_file,
         raising=True,
     )
     monkeypatch.setattr(
@@ -574,8 +688,8 @@ def test_relink_first_winner_for_duplicate_hash(monkeypatch, tmp_path):
 
 @pytest.mark.unit
 def test_recovery_after_partial_success_updates_db_to_existing_canonical_path(
-    monkeypatch, tmp_path
-):
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
     import endoreg_db.services.reconciliation as reconciliation_module
 
     storage_dir = tmp_path / "storage"
@@ -585,34 +699,21 @@ def test_recovery_after_partial_success_updates_db_to_existing_canonical_path(
     canonical_path = sensitive_dir / "crash-hash.mp4"
     canonical_path.write_bytes(b"canonical")
 
-    class DummyRawFile:
-        def __init__(self, name):
-            self.name = name
-
-    class DummyVideo:
-        def __init__(self):
-            self.video_hash = "crash-hash"
-            self.raw_file = DummyRawFile("pending/old.mp4")
-            self.suffix = ".mp4"
-            self.saved = []
-
-        def get_raw_file_path(self):
-            return None
-
-        def save(self, update_fields=None):
-            self.saved.append(tuple(update_fields or ()))
+    class DummyVideo(_DummyVideo):
+        def __init__(self) -> None:
+            super().__init__(
+                video_hash="crash-hash",
+                raw_file_name="pending/old.mp4",
+            )
 
     video = DummyVideo()
 
-    class FakeQuerySet:
-        def filter(self, **kwargs):
-            return self
-
-        def exclude(self, **kwargs):
-            return [video]
+    class FakeQuerySet(_FakeQuerySet[DummyVideo]):
+        def __init__(self) -> None:
+            super().__init__([video])
 
     @contextmanager
-    def fake_atomic():
+    def fake_atomic() -> Generator[None, None, None]:
         yield
 
     monkeypatch.setattr(
@@ -648,8 +749,8 @@ def test_recovery_after_partial_success_updates_db_to_existing_canonical_path(
 
 @pytest.mark.unit
 def test_build_content_hash_index_skips_part_named_candidates_and_hash_errors(
-    monkeypatch, tmp_path
-):
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
     import endoreg_db.services.reconciliation as reconciliation_module
 
     sensitive_dir = tmp_path / "sensitive_videos"
@@ -662,7 +763,7 @@ def test_build_content_hash_index_skips_part_named_candidates_and_hash_errors(
     bad = sensitive_dir / "bad.mp4"
     bad.write_bytes(b"bad")
 
-    def fake_hash(path):
+    def fake_hash(path: Path) -> str:
         if path == bad:
             raise OSError("broken link")
         if path == good:
@@ -680,66 +781,47 @@ def test_build_content_hash_index_skips_part_named_candidates_and_hash_errors(
 
 
 @pytest.mark.unit
-def test_reconciliation_resets_incomplete_processing_states(monkeypatch):
+def test_reconciliation_resets_incomplete_processing_states(
+    monkeypatch: MonkeyPatch,
+) -> None:
     import endoreg_db.services.reconciliation as reconciliation_module
 
-    events = []
+    events: list[tuple[str, str]] = []
 
-    class DummyVideoState:
-        def __init__(self, video_hash):
-            self.video_file = SimpleNamespace(video_hash=video_hash, pk=11)
-
-        def mark_processing_not_started(self):
+    class DummyVideoState(_DummyVideoState):
+        def mark_processing_not_started(self) -> None:
             events.append(("video_reset", self.video_file.video_hash))
 
-    class DummyPdfState:
-        def __init__(self, pdf_hash):
-            self.raw_pdf_file = SimpleNamespace(pdf_hash=pdf_hash, pk=22)
-
-        def mark_processing_not_started(self):
+    class DummyPdfState(_DummyPdfState):
+        def mark_processing_not_started(self) -> None:
             events.append(("pdf_reset", self.raw_pdf_file.pdf_hash))
-
-    class FakeManager:
-        def __init__(self, items):
-            self.items = items
-
-        def select_related(self, *args, **kwargs):
-            return self
-
-        def filter(self, **kwargs):
-            return self.items
-
-    class FakeAtomic:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
 
     monkeypatch.setattr(
         reconciliation_module.VideoState,
         "objects",
-        FakeManager([DummyVideoState("video-1")]),
+        _FakeManager([DummyVideoState("video-1")]),
         raising=True,
     )
     monkeypatch.setattr(
         reconciliation_module.RawPdfState,
         "objects",
-        FakeManager([DummyPdfState("pdf-1")]),
+        _FakeManager([DummyPdfState("pdf-1")]),
         raising=True,
     )
     monkeypatch.setattr(
         reconciliation_module.transaction,
         "atomic",
-        FakeAtomic,
+        _FakeAtomic,
         raising=True,
     )
+
+    def fake_mark_failure(*, file_hash: str, obj: object) -> None:
+        events.append(("mark_failure", file_hash))
+
     monkeypatch.setattr(
         reconciliation_module.ProcessingHistory,
         "mark_failure",
-        staticmethod(
-            lambda **kwargs: events.append(("mark_failure", kwargs["file_hash"]))
-        ),
+        staticmethod(fake_mark_failure),
         raising=True,
     )
 
@@ -752,7 +834,9 @@ def test_reconciliation_resets_incomplete_processing_states(monkeypatch):
     assert ("mark_failure", "pdf-1") in events
 
 
-def test_should_run_startup_reconciliation_skips_pytest_entrypoints(monkeypatch):
+def test_should_run_startup_reconciliation_skips_pytest_entrypoints(
+    monkeypatch: MonkeyPatch,
+) -> None:
     import endoreg_db.services.reconciliation as reconciliation_module
 
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
@@ -771,7 +855,9 @@ def test_should_run_startup_reconciliation_skips_pytest_entrypoints(monkeypatch)
     )
 
 
-def test_should_run_startup_reconciliation_only_allows_runtime_commands(monkeypatch):
+def test_should_run_startup_reconciliation_only_allows_runtime_commands(
+    monkeypatch: MonkeyPatch,
+) -> None:
     import endoreg_db.services.reconciliation as reconciliation_module
 
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)

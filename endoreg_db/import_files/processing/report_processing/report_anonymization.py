@@ -6,15 +6,15 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Protocol, cast
 
-from lx_dtypes.models import SensitiveMeta
+from lx_dtypes.models.meta.SensitiveMeta import SensitiveMeta as LxSensitiveMeta
 from lx_dtypes.models.contracts.report_anonymization import ReportAnonymizationResult
 
 from endoreg_db.import_files.context import ImportContext
 from endoreg_db.import_files.file_storage.sensitive_meta_storage import (
     sensitive_meta_storage,
 )
-from endoreg_db.utils.filesystem import paths as path_utils
-from endoreg_db.utils.filesystem.file_operations import ensure_directory
+from endoreg_db.utils import paths as path_utils
+from endoreg_db.utils.file_operations import ensure_directory
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +58,9 @@ class ReportAnonymizer:
         self._ensure_report_reading_available()
 
     @staticmethod
-    def _coerce_extracted_metadata(extracted_metadata: SensitiveMeta) -> SensitiveMeta:
+    def _coerce_extracted_metadata(
+        extracted_metadata: LxSensitiveMeta,
+    ) -> LxSensitiveMeta:
         return extracted_metadata
 
     @staticmethod
@@ -90,7 +92,7 @@ class ReportAnonymizer:
             txt_content = self._read_txt_content(source_path)
             ctx.original_text = txt_content
             ctx.anonymized_text = txt_content
-            ctx.extracted_metadata = SensitiveMeta()
+            ctx.extracted_metadata = LxSensitiveMeta()
             ctx.anonymized_path = None
         else:
             # Setup anonymized directory

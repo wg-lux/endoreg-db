@@ -1,7 +1,9 @@
 from pathlib import Path
+from typing import Protocol, cast
 
 import pytest
-from django.core.files.base import ContentFile
+from pytest import MonkeyPatch
+from django.core.files.base import ContentFile, File
 
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.file_storage.create_report_file import (
@@ -19,12 +21,16 @@ from endoreg_db.import_files.file_storage.state_management import (
 )
 from endoreg_db.models import Center, EndoscopyProcessor, VideoFile
 from endoreg_db.services.video_files import _imports as video_create_module
-from endoreg_db.utils.filesystem import paths as paths_module
+from endoreg_db.utils import paths as paths_module
 from endoreg_db.utils.encryption.encrypted import MAGIC
-from endoreg_db.utils.filesystem.file_operations import sha256_file
+from endoreg_db.utils.file_operations import sha256_file
 
 
 pytestmark = pytest.mark.django_db
+
+
+class _BytesFieldFile(Protocol):
+    def save(self, name: str, content: File[bytes], save: bool = True) -> None: ...
 
 
 def _runtime_paths() -> paths_module.EndoregPathsModel:
@@ -53,7 +59,10 @@ def _write_minimal_pdf(path: Path, marker: bytes) -> bytes:
     return payload
 
 
-def test_report_import_persists_raw_pdf_as_encrypted_bytes(tmp_path, base_db_data):
+def test_report_import_persists_raw_pdf_as_encrypted_bytes(
+    tmp_path: Path,
+    base_db_data: object,
+) -> None:
     source = tmp_path / "raw-report.pdf"
     plaintext = _write_minimal_pdf(source, b"report-import-encryption")
     center_name = _default_center_name()
@@ -66,7 +75,9 @@ def test_report_import_persists_raw_pdf_as_encrypted_bytes(tmp_path, base_db_dat
     assert needs_processing is True
     runtime_paths = _runtime_paths()
     stored_path = Path(report.file.path)
-    assert report.file.name.startswith(f"{runtime_paths.sensitive_report.name}/")
+    report_file_name = report.file.name
+    assert report_file_name is not None
+    assert report_file_name.startswith(f"{runtime_paths.sensitive_report.name}/")
     assert stored_path.is_relative_to(runtime_paths.sensitive_report)
     assert stored_path.read_bytes().startswith(MAGIC)
     with report.file.open("rb") as stored:
@@ -75,16 +86,18 @@ def test_report_import_persists_raw_pdf_as_encrypted_bytes(tmp_path, base_db_dat
 
 
 def test_video_import_persists_raw_video_as_encrypted_bytes(
-    tmp_path, monkeypatch, base_db_data
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+    base_db_data: object,
 ) -> None:
-    def fake_initialize(self):
+    def fake_initialize(self: VideoFile) -> VideoFile:
         return self
 
     def fake_transcode(input_path: Path, output_path: Path) -> Path:
         output_path.write_bytes(input_path.read_bytes())
         return output_path
 
-    def fake_get_stream_info(_path: Path) -> dict:
+    def fake_get_stream_info(_path: Path) -> dict[str, list[dict[str, str]]]:
         return {
             "streams": [
                 {
@@ -139,9 +152,9 @@ def test_video_import_persists_raw_video_as_encrypted_bytes(
     assert sha256_file(source) == sha256_file(video.raw_file)
     assert not list(stored_path.parent.glob("*.part.*"))
 
-    video.processed_file.save(
+    cast(_BytesFieldFile, video.processed_file).save(
         "processed-video.mp4",
-        ContentFile(b"\x00\x00\x00\x20ftypmp42processed"),
+        cast(File[bytes], ContentFile(b"\x00\x00\x00\x20ftypmp42processed")),
         save=False,
     )
     processed_path = Path(video.processed_file.path)
@@ -152,8 +165,9 @@ def test_video_import_persists_raw_video_as_encrypted_bytes(
 
 
 def test_report_finalize_persists_processed_pdf_as_encrypted_bytes(
-    tmp_path, base_db_data
-):
+    tmp_path: Path,
+    base_db_data: object,
+) -> None:
     source = tmp_path / "raw-report.pdf"
     _write_minimal_pdf(source, b"report-processed-encryption-raw")
     center_name = _default_center_name()
@@ -173,14 +187,16 @@ def test_report_finalize_persists_processed_pdf_as_encrypted_bytes(
 
     runtime_paths = _runtime_paths()
     stored_path = Path(report.processed_file.path)
-    assert report.processed_file.name.startswith(f"{runtime_paths.anonym_report.name}/")
+    processed_report_name = report.processed_file.name
+    assert processed_report_name is not None
+    assert processed_report_name.startswith(f"{runtime_paths.anonym_report.name}/")
     assert stored_path.is_relative_to(runtime_paths.anonym_report)
     assert stored_path.read_bytes().startswith(MAGIC)
     with report.processed_file.open("rb") as stored:
         assert stored.read() == processed_plaintext
 
 
-def test_staging_cleanup_rejects_paths_outside_known_roots(tmp_path):
+def test_staging_cleanup_rejects_paths_outside_known_roots(tmp_path: Path) -> None:
     outside_file = tmp_path / "outside.bin"
     outside_file.write_bytes(b"do-not-delete")
 
@@ -194,11 +210,12 @@ def test_staging_cleanup_rejects_paths_outside_known_roots(tmp_path):
     assert outside_file.read_bytes() == b"do-not-delete"
 
 
-def test_is_safe_staging_path_is_explicitly_root_scoped(tmp_path):
+def test_is_safe_staging_path_is_explicitly_root_scoped(tmp_path: Path) -> None:
     staging_root = tmp_path / "staging"
     staging_root.mkdir()
     staged_file = staging_root / "payload.bin"
     outside_file = tmp_path / "outside.bin"
 
-    assert is_safe_staging_path(staged_file, allowed_roots=[staging_root])
-    assert not is_safe_staging_path(outside_file, allowed_roots=[staging_root])
+    allowed_roots: list[Path] = [staging_root]
+    assert is_safe_staging_path(staged_file, allowed_roots=allowed_roots)
+    assert not is_safe_staging_path(outside_file, allowed_roots=allowed_roots)

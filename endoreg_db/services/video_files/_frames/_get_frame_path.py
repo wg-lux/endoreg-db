@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportMissingTypeStubs=false
 # --- Frame Creation/Deletion ---
 import logging
 from pathlib import Path

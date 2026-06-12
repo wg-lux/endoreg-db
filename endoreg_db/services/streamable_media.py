@@ -3,28 +3,30 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
-from endoreg_db.utils.filesystem import paths as path_utils
-from endoreg_db.utils.filesystem.file_operations import (
+from django.db.models.fields.files import FieldFile
+
+from endoreg_db.utils import paths as path_utils
+from endoreg_db.utils.file_operations import (
     atomic_move_path,
     atomic_write_file,
     ensure_file_mtime_after,
     safe_unlink_file,
     sha256_file,
 )
-from endoreg_db.utils.filesystem.paths import (
+from endoreg_db.utils.paths import (
     protected_media_root,
     to_protected_media_relative,
     to_storage_relative,
 )
-from endoreg_db.utils.storage.profile import (
+from endoreg_db.utils.storage_profile import (
     PayloadKind,
     StoragePolicy,
     resolve_storage_policy,
 )
-from endoreg_db.utils.storage.streaming import field_file_size, iter_field_file_bytes
+from endoreg_db.utils.storage_streaming import field_file_size, iter_field_file_bytes
 from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
 
 logger = logging.getLogger(__name__)
@@ -112,7 +114,7 @@ def _is_sha256_hex(value: str) -> bool:
 def _streamable_target_matches_source(
     *,
     target_path: Path,
-    video_field_file,
+    video_field_file: FieldFile | Any,
     expected_hash: str,
 ) -> bool:
     if not target_path.exists() or _is_encrypted_file(target_path):
@@ -130,7 +132,7 @@ def _streamable_target_matches_source(
 
 
 def _materialize_streamable_target(
-    video_field_file,
+    video_field_file: FieldFile | Any,
     target_path: Path,
     *,
     expected_hash: str = "",
@@ -212,7 +214,7 @@ def _video_streamable_target(
 
 def _sync_one_streamable(
     *,
-    video_field_file,
+    video_field_file: FieldFile | Any,
     target_path: Path,
     current_relative_path: str,
     expected_hash: str,
@@ -270,12 +272,16 @@ def sync_video_streamable_artifacts(
     processed_storage_policy = resolve_storage_policy(PayloadKind.VIDEO_PROCESSED)
     synced_raw = False
     synced_processed = False
+
     raw_file = getattr(video, "raw_file", None)
-    raw_file_name = getattr(raw_file, "name", None)
+    # Replaced strict isinstance constraint with duck typing `hasattr` to support mocked files
+    raw_field_file = raw_file if hasattr(raw_file, "name") else None
+    raw_file_name = raw_field_file.name if raw_field_file is not None else None
+
     if (
         raw_storage_policy == StoragePolicy.FS_STREAMABLE
         and include_raw
-        and raw_file
+        and raw_field_file is not None
         and isinstance(raw_file_name, str)
         and raw_file_name
     ):
@@ -285,7 +291,7 @@ def sync_video_streamable_artifacts(
             suffix=Path(raw_file_name).suffix or ".mp4",
         )
         relative_path, synced_raw = _sync_one_streamable(
-            video_field_file=raw_file,
+            video_field_file=raw_field_file,
             target_path=target_path,
             current_relative_path=video.raw_streamable_relative_path,
             expected_hash=(getattr(video, "video_hash", "") or "").strip(),
@@ -306,12 +312,18 @@ def sync_video_streamable_artifacts(
             video.raw_streamable_relative_path = ""
             update_fields.append("raw_streamable_relative_path")
         synced_raw = False
+
     processed_file = getattr(video, "processed_file", None)
-    processed_file_name = getattr(processed_file, "name", None)
+    # Replaced strict isinstance constraint with duck typing `hasattr`
+    processed_field_file = processed_file if hasattr(processed_file, "name") else None
+    processed_file_name = (
+        processed_field_file.name if processed_field_file is not None else None
+    )
+
     if (
         processed_storage_policy == StoragePolicy.FS_STREAMABLE
         and include_processed
-        and processed_file
+        and processed_field_file is not None
         and isinstance(processed_file_name, str)
         and processed_file_name
     ):
@@ -321,7 +333,7 @@ def sync_video_streamable_artifacts(
             suffix=Path(processed_file_name).suffix or ".mp4",
         )
         relative_path, synced_processed = _sync_one_streamable(
-            video_field_file=processed_file,
+            video_field_file=processed_field_file,
             target_path=target_path,
             current_relative_path=video.processed_streamable_relative_path,
             expected_hash=(getattr(video, "processed_video_hash", "") or "").strip(),

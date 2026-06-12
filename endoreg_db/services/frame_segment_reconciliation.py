@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Any, Literal
+from collections.abc import Iterable
+from typing import Literal, Protocol, cast
 
 from django.db import models, transaction
 from django.db.models import Q
@@ -30,6 +31,65 @@ FrameSegmentTrack = Literal["all", "manual", "prediction"]
 VALID_FRAME_SEGMENT_TRACKS: set[str] = {"all", "manual", "prediction"}
 
 
+class _ModelMetaLike(Protocol):
+    pk: int
+
+
+class _FrameLike(Protocol):
+    pk: int
+    frame_number: int
+    video_id: int
+
+
+class _AnnotationInformationSourceTypeQuerySetLike(Protocol):
+    def filter(
+        self, *args: object, **kwargs: object
+    ) -> "_AnnotationInformationSourceTypeQuerySetLike": ...
+
+    def exists(self) -> bool: ...
+
+
+class _AnnotationInformationSourceLike(Protocol):
+    name: str
+    information_source_types: _AnnotationInformationSourceTypeQuerySetLike
+
+
+class _LabelLike(Protocol):
+    pk: int
+
+
+class _SegmentLike(Protocol):
+    pk: int
+    label_id: int | None
+    source_id: int | None
+    video_file_id: int
+
+    def get_model_meta(self) -> _ModelMetaLike | None: ...
+
+    def get_frames(self) -> "_FrameQuerySetLike": ...
+
+
+class _FrameQuerySetLike(Protocol):
+    def only(self, *fields: str) -> Iterable[_FrameLike]: ...
+
+
+class _AnnotationLike(Protocol):
+    pk: int
+    frame: _FrameLike
+    frame_id: int
+    label: _LabelLike
+    label_id: int
+    information_source: _AnnotationInformationSourceLike | None
+    information_source_id: int | None
+    model_meta_id: int | None
+    annotator: str | None
+    external_annotation_id: str | None
+
+
+def _frame_segment_reconciliation_issues() -> list[FrameSegmentReconciliationIssue]:
+    return []
+
+
 @dataclass(frozen=True)
 class FrameSegmentReconciliationSpec:
     video_ids: tuple[int, ...] = ()
@@ -38,7 +98,7 @@ class FrameSegmentReconciliationSpec:
     track: FrameSegmentTrack = "all"
     apply: bool = False
 
-    def as_dict(self) -> dict[str, Any]:
+    def as_dict(self) -> dict[str, object]:
         return {
             "video_ids": list(self.video_ids),
             "segment_ids": list(self.segment_ids),
@@ -75,7 +135,7 @@ class FrameSegmentReconciliationIssue:
     external_annotation_id: str | None = None
     action: str = "report_only"
 
-    def as_dict(self) -> dict[str, Any]:
+    def as_dict(self) -> dict[str, object]:
         return asdict(self)
 
 
@@ -104,9 +164,11 @@ class FrameSegmentReconciliationSummary:
 class FrameSegmentReconciliationReport:
     spec: FrameSegmentReconciliationSpec
     summary: FrameSegmentReconciliationSummary
-    issues: list[FrameSegmentReconciliationIssue] = field(default_factory=list)
+    issues: list[FrameSegmentReconciliationIssue] = field(
+        default_factory=_frame_segment_reconciliation_issues
+    )
 
-    def as_dict(self) -> dict[str, Any]:
+    def as_dict(self) -> dict[str, object]:
         return {
             "spec": self.spec.as_dict(),
             "summary": self.summary.as_dict(),
@@ -141,15 +203,17 @@ def _segment_track(segment: LabelVideoSegment) -> str:
 
 
 def _segment_model_meta_id(segment: LabelVideoSegment) -> int | None:
+    segment_view = cast(_SegmentLike, segment)
     try:
-        model_meta = segment.get_model_meta()
+        model_meta = segment_view.get_model_meta()
     except Exception:
         return None
     return model_meta.pk if model_meta else None
 
 
 def _annotation_source_name(annotation: ImageClassificationAnnotation) -> str:
-    source = getattr(annotation, "information_source", None)
+    annotation_view = cast(_AnnotationLike, annotation)
+    source = annotation_view.information_source
     return (source.name if source is not None else "").strip().lower()
 
 
@@ -157,16 +221,18 @@ def _annotation_has_source_type(
     annotation: ImageClassificationAnnotation,
     source_type_name: str,
 ) -> bool:
-    source = getattr(annotation, "information_source", None)
+    annotation_view = cast(_AnnotationLike, annotation)
+    source = annotation_view.information_source
     if source is None:
         return False
     return source.information_source_types.filter(name=source_type_name).exists()
 
 
 def _annotation_track(annotation: ImageClassificationAnnotation) -> str:
+    annotation_view = cast(_AnnotationLike, annotation)
     source_name = _annotation_source_name(annotation)
     if (
-        annotation.model_meta_id is not None
+        annotation_view.model_meta_id is not None
         or source_name in PREDICTION_INFORMATION_SOURCE_NAMES
         or source_name.startswith("prediction")
         or source_name.startswith("model")
@@ -208,18 +274,19 @@ def _annotation_key(
     *,
     track: str | None = None,
 ) -> AnnotationMatchKey:
+    annotation_view = cast(_AnnotationLike, annotation)
     resolved_track = track or _annotation_track(annotation)
     return AnnotationMatchKey(
         track=resolved_track,
-        frame_id=annotation.frame_id,
-        label_id=annotation.label_id,
+        frame_id=annotation_view.frame_id,
+        label_id=annotation_view.label_id,
         information_source_id=(
             None
             if resolved_track in {"manual", "prediction"}
-            else annotation.information_source_id
+            else annotation_view.information_source_id
         ),
-        model_meta_id=annotation.model_meta_id,
-        annotator=_annotator_key(annotation.annotator),
+        model_meta_id=annotation_view.model_meta_id,
+        annotator=_annotator_key(annotation_view.annotator),
     )
 
 
@@ -262,14 +329,15 @@ def _existing_annotations_for_segment(
     model_meta_id: int | None,
     annotator: str | None,
 ) -> list[ImageClassificationAnnotation]:
+    segment_view = cast(_SegmentLike, segment)
     queryset = ImageClassificationAnnotation.objects.select_related(
         "information_source", "frame", "label"
     ).filter(
         frame_id__in=frame_ids,
     )
-    if segment.label_id is None:
+    if segment_view.label_id is None:
         return []
-    queryset = queryset.filter(label_id=segment.label_id)
+    queryset = queryset.filter(label_id=segment_view.label_id)
     if model_meta_id is None:
         queryset = queryset.filter(model_meta__isnull=True)
     else:
@@ -356,20 +424,21 @@ def reconcile_frame_segment_annotations(
     summary.total_segments = len(segments)
 
     for segment in segments:
-        scope_video_ids.add(segment.video_file_id)
+        segment_view = cast(_SegmentLike, segment)
+        scope_video_ids.add(segment_view.video_file_id)
         track = _segment_track(segment)
         if not _track_allowed(spec.track, track):
             continue
 
         summary.eligible_segments += 1
-        if segment.label_id is None:
+        if segment_view.label_id is None:
             summary.skipped_no_label += 1
             issues.append(
                 FrameSegmentReconciliationIssue(
                     issue_type="skipped_no_label",
                     track=track,
-                    video_id=segment.video_file_id,
-                    segment_id=segment.pk,
+                    video_id=segment_view.video_file_id,
+                    segment_id=segment_view.pk,
                 )
             )
             continue
@@ -382,15 +451,15 @@ def reconcile_frame_segment_annotations(
                 FrameSegmentReconciliationIssue(
                     issue_type="skipped_no_frames",
                     track=track,
-                    video_id=segment.video_file_id,
-                    segment_id=segment.pk,
-                    label_id=segment.label_id,
+                    video_id=segment_view.video_file_id,
+                    segment_id=segment_view.pk,
+                    label_id=segment_view.label_id,
                 )
             )
             continue
 
         model_meta_id = _segment_model_meta_id(segment)
-        create_source_id = segment.source_id
+        create_source_id = segment_view.source_id
         if track == "prediction":
             prediction_source = _prediction_annotation_source(create=spec.apply)
             create_source_id = prediction_source.pk if prediction_source else None
@@ -400,9 +469,9 @@ def reconcile_frame_segment_annotations(
                 FrameSegmentReconciliationIssue(
                     issue_type="skipped_no_source",
                     track=track,
-                    video_id=segment.video_file_id,
-                    segment_id=segment.pk,
-                    label_id=segment.label_id,
+                    video_id=segment_view.video_file_id,
+                    segment_id=segment_view.pk,
+                    label_id=segment_view.label_id,
                 )
             )
             continue
@@ -427,8 +496,8 @@ def reconcile_frame_segment_annotations(
             expected_key = _expected_key(
                 track=track,
                 frame_id=frame.pk,
-                label_id=segment.label_id,
-                information_source_id=segment.source_id,
+                label_id=segment_view.label_id,
+                information_source_id=segment_view.source_id,
                 model_meta_id=model_meta_id,
                 annotator=spec.annotator,
             )
@@ -443,23 +512,24 @@ def reconcile_frame_segment_annotations(
                     for annotation in matching_annotations
                 ):
                     summary.legacy_matched_annotations += 1
+                    matching_annotation = cast(_AnnotationLike, matching_annotations[0])
                     issues.append(
                         FrameSegmentReconciliationIssue(
                             issue_type="legacy_matched_annotation",
                             track=track,
-                            video_id=segment.video_file_id,
-                            segment_id=segment.pk,
-                            annotation_id=matching_annotations[0].pk,
+                            video_id=segment_view.video_file_id,
+                            segment_id=segment_view.pk,
+                            annotation_id=matching_annotation.pk,
                             frame_id=frame.pk,
                             frame_number=frame.frame_number,
-                            label_id=segment.label_id,
+                            label_id=segment_view.label_id,
                             information_source_id=(
-                                matching_annotations[0].information_source_id
+                                matching_annotation.information_source_id
                             ),
                             model_meta_id=model_meta_id,
-                            annotator=_annotator_key(matching_annotations[0].annotator),
+                            annotator=_annotator_key(matching_annotation.annotator),
                             external_annotation_id=(
-                                matching_annotations[0].external_annotation_id
+                                matching_annotation.external_annotation_id
                             ),
                             action="report_only",
                         )
@@ -476,11 +546,11 @@ def reconcile_frame_segment_annotations(
                 FrameSegmentReconciliationIssue(
                     issue_type="missing_annotation",
                     track=track,
-                    video_id=segment.video_file_id,
-                    segment_id=segment.pk,
+                    video_id=segment_view.video_file_id,
+                    segment_id=segment_view.pk,
                     frame_id=frame.pk,
                     frame_number=frame.frame_number,
-                    label_id=segment.label_id,
+                    label_id=segment_view.label_id,
                     information_source_id=create_source_id,
                     model_meta_id=model_meta_id,
                     annotator=_annotator_key(spec.annotator),
@@ -491,16 +561,16 @@ def reconcile_frame_segment_annotations(
                 annotations_to_create.append(
                     ImageClassificationAnnotation(
                         frame_id=frame.pk,
-                        label_id=segment.label_id,
+                        label_id=segment_view.label_id,
                         value=True,
                         information_source_id=create_source_id,
                         model_meta_id=model_meta_id,
                         annotator=_normalize_annotator(spec.annotator),
                         external_annotation_id=(
                             segment_derived_external_annotation_id(
-                                segment_id=segment.pk,
+                                segment_id=segment_view.pk,
                                 frame_id=frame.pk,
-                                label_id=segment.label_id,
+                                label_id=segment_view.label_id,
                                 information_source_id=create_source_id,
                                 model_meta_id=model_meta_id,
                                 annotator=_normalize_annotator(spec.annotator),
@@ -513,6 +583,7 @@ def reconcile_frame_segment_annotations(
         spec=spec,
         scope_video_ids=scope_video_ids,
     ).iterator():
+        annotation_view = cast(_AnnotationLike, annotation)
         track = _annotation_track(annotation)
         if not _track_allowed(spec.track, track):
             continue
@@ -526,15 +597,15 @@ def reconcile_frame_segment_annotations(
             FrameSegmentReconciliationIssue(
                 issue_type="stale_generated_annotation",
                 track=track,
-                video_id=annotation.frame.video_id,
-                annotation_id=annotation.pk,
-                frame_id=annotation.frame_id,
-                frame_number=annotation.frame.frame_number,
-                label_id=annotation.label_id,
-                information_source_id=annotation.information_source_id,
-                model_meta_id=annotation.model_meta_id,
-                annotator=_annotator_key(annotation.annotator),
-                external_annotation_id=annotation.external_annotation_id,
+                video_id=annotation_view.frame.video_id,
+                annotation_id=annotation_view.pk,
+                frame_id=annotation_view.frame_id,
+                frame_number=annotation_view.frame.frame_number,
+                label_id=annotation_view.label_id,
+                information_source_id=annotation_view.information_source_id,
+                model_meta_id=annotation_view.model_meta_id,
+                annotator=_annotator_key(annotation_view.annotator),
+                external_annotation_id=annotation_view.external_annotation_id,
                 action="delete" if spec.apply else "report_only",
             )
         )
@@ -544,6 +615,7 @@ def reconcile_frame_segment_annotations(
         scope_video_ids=scope_video_ids,
         scope_frame_ids=scope_frame_ids,
     ).iterator():
+        annotation_view = cast(_AnnotationLike, annotation)
         track = _annotation_track(annotation)
         if not _track_allowed(spec.track, track):
             continue
@@ -555,15 +627,15 @@ def reconcile_frame_segment_annotations(
             FrameSegmentReconciliationIssue(
                 issue_type="suspicious_unmarked_annotation",
                 track=track,
-                video_id=annotation.frame.video_id,
-                annotation_id=annotation.pk,
-                frame_id=annotation.frame_id,
-                frame_number=annotation.frame.frame_number,
-                label_id=annotation.label_id,
-                information_source_id=annotation.information_source_id,
-                model_meta_id=annotation.model_meta_id,
-                annotator=_annotator_key(annotation.annotator),
-                external_annotation_id=annotation.external_annotation_id,
+                video_id=annotation_view.frame.video_id,
+                annotation_id=annotation_view.pk,
+                frame_id=annotation_view.frame_id,
+                frame_number=annotation_view.frame.frame_number,
+                label_id=annotation_view.label_id,
+                information_source_id=annotation_view.information_source_id,
+                model_meta_id=annotation_view.model_meta_id,
+                annotator=_annotator_key(annotation_view.annotator),
+                external_annotation_id=annotation_view.external_annotation_id,
                 action="report_only",
             )
         )

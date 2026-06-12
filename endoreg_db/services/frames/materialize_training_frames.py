@@ -1,7 +1,7 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportMissingTypeStubs=false
 from __future__ import annotations
 
 from pathlib import Path
-from typing import cast
 from endoreg_db.export.frames.export_frames_with_labels import (
     DEFAULT_TRANSCODE_FPS,
     _frame_pk_filename,
@@ -49,9 +49,10 @@ def materialize_frames_for_annotation_ids(
     if not annotations.exists():
         return {}
 
+    resolved_fps = DEFAULT_TRANSCODE_FPS if fps is None else fps
     transcode_videos_for_annotations(
         annotations,
-        fps=cast(float, fps),
+        fps=resolved_fps,
         quality=2,
         ext=ext,
         overwrite=overwrite,
@@ -62,12 +63,7 @@ def materialize_frames_for_annotation_ids(
 
     for annotation in annotations:
         frame = annotation.frame
-        if frame is None:
-            continue
-
         video = frame.video
-        if video is None:
-            continue
 
         expected_path = (
             output_root / f"video_{video.pk}" / _frame_pk_filename(frame.pk, ext)

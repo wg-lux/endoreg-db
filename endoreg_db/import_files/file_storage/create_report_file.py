@@ -5,7 +5,7 @@ from typing import Protocol, cast
 
 from endoreg_db.import_files.context.ensure_center import ensure_center
 from endoreg_db.import_files.context.import_context import ImportContext  #
-from endoreg_db.utils.filesystem.file_operations import sha256_file
+from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.services.raw_pdf_files.imports import (
     create_initialized_raw_pdf_file_from_path,

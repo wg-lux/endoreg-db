@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+# pyright: reportUnknownMemberType=false
+
 import json
 import hashlib
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
 from unittest.mock import patch
 
@@ -131,12 +134,11 @@ class PreanonymizedWatcherIngestTests(TestCase):
             upload_job.processing_provenance["source_center_key"]
             == self.center.center_key
         )
-        assert (
-            upload_job.processing_provenance["sidecar_payload"][
-                "human_anonymization_validated"
-            ]
-            is True
-        )
+        processing_provenance = upload_job.processing_provenance
+        assert isinstance(processing_provenance, Mapping)
+        sidecar_payload = processing_provenance["sidecar_payload"]
+        assert isinstance(sidecar_payload, Mapping)
+        assert sidecar_payload["human_anonymization_validated"] is True
         assert report.get_or_create_state().anonymization_validated is True
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="local_study_server")

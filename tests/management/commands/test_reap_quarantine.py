@@ -4,11 +4,40 @@ import json
 import os
 import time
 from io import StringIO
+from pathlib import Path
+from typing import Any, cast
 
+from pytest import MonkeyPatch
 from django.core.management import call_command
+from lx_dtypes.models.contracts.management_command import (
+    ReapQuarantineCommandOptionsPayload,
+)
 
 
-def test_reap_quarantine_defaults_to_dry_run(tmp_path, monkeypatch):
+def _json_payload(output: StringIO) -> dict[str, Any]:
+    return cast(dict[str, Any], json.loads(output.getvalue()))
+
+
+def _reap_options(
+    *,
+    older_than_days: int = 30,
+    dry_run: bool = True,
+    confirm: bool = False,
+    json_output: bool = True,
+) -> dict[str, object]:
+    return ReapQuarantineCommandOptionsPayload(
+        older_than_days=older_than_days,
+        dry_run=dry_run,
+        confirm=confirm,
+        json=json_output,
+    ).model_dump(mode="python")
+
+
+
+def test_reap_quarantine_defaults_to_dry_run(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
     quarantine_dir = tmp_path / "quarantine"
     quarantine_dir.mkdir()
     stale_file = quarantine_dir / "stale.bin"
@@ -21,9 +50,13 @@ def test_reap_quarantine_defaults_to_dry_run(tmp_path, monkeypatch):
     )
 
     output = StringIO()
-    call_command("reap_quarantine", "--older-than-days", "30", "--json", stdout=output)
+    call_command(
+        "reap_quarantine",
+        stdout=output,
+        **_reap_options(older_than_days=30, dry_run=True, confirm=False),
+    )
 
-    payload = json.loads(output.getvalue())
+    payload = _json_payload(output)
     assert payload["dry_run"] is True
     assert payload["candidate_count"] == 1
     assert payload["candidate_bytes"] == len(b"stale")
@@ -31,7 +64,10 @@ def test_reap_quarantine_defaults_to_dry_run(tmp_path, monkeypatch):
     assert stale_file.exists()
 
 
-def test_reap_quarantine_confirm_deletes_only_stale_files(tmp_path, monkeypatch):
+def test_reap_quarantine_confirm_deletes_only_stale_files(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
     quarantine_dir = tmp_path / "quarantine"
     quarantine_dir.mkdir()
     stale_file = quarantine_dir / "stale.bin"
@@ -48,14 +84,11 @@ def test_reap_quarantine_confirm_deletes_only_stale_files(tmp_path, monkeypatch)
     output = StringIO()
     call_command(
         "reap_quarantine",
-        "--older-than-days",
-        "30",
-        "--confirm",
-        "--json",
         stdout=output,
+        **_reap_options(older_than_days=30, dry_run=False, confirm=True),
     )
 
-    payload = json.loads(output.getvalue())
+    payload = _json_payload(output)
     assert payload["dry_run"] is False
     assert payload["candidate_count"] == 1
     assert payload["candidate_bytes"] == len(b"stale")

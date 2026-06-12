@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 
 from lx_dtypes.models.contracts import CaseResolutionRequest
@@ -31,7 +33,10 @@ def test_persist_case_resolution_state_uses_contract_request() -> None:
 
     pdf.refresh_from_db()
     assert isinstance(pdf.raw_meta, dict)
-    case_resolution_meta = pdf.raw_meta[CASE_RESOLUTION_META_KEY]
+    case_resolution_meta = cast(
+        dict[str, object],
+        pdf.raw_meta[CASE_RESOLUTION_META_KEY],
+    )
     assert case_resolution_meta["last_action"] == "attach"
     assert case_resolution_meta["is_explicitly_resolved"] is True
     assert case_resolution_meta["linked_patient_examination_id"] == 42

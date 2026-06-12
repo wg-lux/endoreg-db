@@ -1,21 +1,26 @@
 from contextlib import contextmanager
+from pathlib import Path
 from types import SimpleNamespace
+from typing import  NoReturn, cast
 
 import pytest
+from pytest import MonkeyPatch
 
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.file_storage.state_management import finalize_video_success
-from endoreg_db.utils.filesystem import paths as paths_module
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.utils import paths as paths_module
 
 
-def _runtime_storage_root():
+def _runtime_storage_root() -> Path:
     return paths_module.EndoregPathsModel.from_environment().storage
 
 
 @pytest.mark.unit
 def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
-    tmp_path, monkeypatch
-):
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
     import endoreg_db.import_files.file_storage.cleanup as cleanup_module
     import endoreg_db.import_files.file_storage.state_management as state_management_module
 
@@ -40,32 +45,32 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
     class DummyState:
         processing_started = False
 
-        def mark_processing_started(self):
+        def mark_processing_started(self) -> None:
             self.processing_started = True
 
-        def mark_anonymized(self):
+        def mark_anonymized(self) -> None:
             self.anonymized = True
 
-        def mark_sensitive_meta_processed(self):
+        def mark_sensitive_meta_processed(self) -> None:
             self.sensitive_meta_processed = True
 
-        def save(self):
+        def save(self) -> None:
             return None
 
     class DummyVideo:
-        def __init__(self):
+        def __init__(self) -> None:
             self.pk = 1
             self.video_hash = "video_hash"
             self.processed_file = SimpleNamespace(name=None)
             self.state = DummyState()
 
-        def get_raw_file_path(self):
+        def get_raw_file_path(self) -> Path:
             return raw_path
 
-        def save(self):
+        def save(self) -> None:
             return None
 
-        def get_or_create_state(self):
+        def get_or_create_state(self) -> object:
             return self.state
 
     @contextmanager
@@ -78,18 +83,22 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
         DummyVideo,
         raising=True,
     )
+    def fake_processed_video_dir() -> Path:
+        return anonym_dir
+
+    def fail_nuke_transcoding_dir(*args: object, **kwargs: object) -> NoReturn:
+        raise AssertionError("finalize_video_success must not nuke global transcoding")
+
     monkeypatch.setattr(
         state_management_module,
         "_processed_video_dir",
-        lambda: anonym_dir,
+        fake_processed_video_dir,
         raising=True,
     )
     monkeypatch.setattr(
         state_management_module,
         "nuke_transcoding_dir",
-        lambda *args, **kwargs: (_ for _ in ()).throw(
-            AssertionError("finalize_video_success must not nuke global transcoding")
-        ),
+        fail_nuke_transcoding_dir,
         raising=True,
     )
     monkeypatch.setattr(
@@ -98,22 +107,31 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
         fake_atomic,
         raising=True,
     )
+    def fake_get_or_create_for_hash(**kwargs: object) -> None:
+        return None
+
+    def fake_get_stream_info(path: str | Path) -> dict[str, object]:
+        return {"streams": [{"codec_type": "video"}]}
+
+    def fake_staging_cleanup_roots() -> tuple[Path, ...]:
+        return (sensitive_dir,)
+
     monkeypatch.setattr(
         state_management_module.ProcessingHistory,
         "get_or_create_for_hash",
-        staticmethod(lambda **kwargs: None),
+        staticmethod(fake_get_or_create_for_hash),
         raising=True,
     )
     monkeypatch.setattr(
         state_management_module,
         "get_stream_info",
-        lambda path: {"streams": [{"codec_type": "video"}]},
+        fake_get_stream_info,
         raising=True,
     )
     monkeypatch.setattr(
         cleanup_module,
         "staging_cleanup_roots",
-        lambda: (sensitive_dir,),
+        fake_staging_cleanup_roots,
         raising=True,
     )
 
@@ -124,7 +142,7 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
         processor_name="olympus_cv_1500",
     )
     ctx.file_hash = "file-hash"
-    ctx.current_video = video
+    ctx.current_video = cast(VideoFile, video)
     ctx.sensitive_path = sensitive_working_copy
     ctx.anonymized_path = temp_anonymized
 
@@ -138,7 +156,10 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
 
 
 @pytest.mark.unit
-def test_finalize_video_success_rejects_unprobeable_final_output(tmp_path, monkeypatch):
+def test_finalize_video_success_rejects_unprobeable_final_output(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
     import endoreg_db.import_files.file_storage.state_management as state_management_module
 
     storage_root = _runtime_storage_root() / "pytest_finalize_video_invalid_output"
@@ -159,37 +180,37 @@ def test_finalize_video_success_rejects_unprobeable_final_output(tmp_path, monke
     import_file.parent.mkdir(parents=True, exist_ok=True)
     import_file.write_bytes(b"import")
 
-    history_calls = []
+    history_calls: list[dict[str, object]] = []
 
     class DummyState:
         processing_started = False
 
-        def mark_processing_started(self):
+        def mark_processing_started(self) -> None:
             self.processing_started = True
 
-        def mark_anonymized(self):
+        def mark_anonymized(self) -> None:
             self.anonymized = True
 
-        def mark_sensitive_meta_processed(self):
+        def mark_sensitive_meta_processed(self) -> None:
             self.sensitive_meta_processed = True
 
-        def save(self):
+        def save(self) -> None:
             return None
 
     class DummyVideo:
-        def __init__(self):
+        def __init__(self) -> None:
             self.pk = 1
             self.video_hash = "video_hash"
             self.processed_file = SimpleNamespace(name=None)
             self.state = DummyState()
 
-        def get_raw_file_path(self):
+        def get_raw_file_path(self) -> Path:
             return raw_path
 
-        def save(self):
+        def save(self) -> None:
             return None
 
-        def get_or_create_state(self):
+        def get_or_create_state(self) -> object:
             return self.state
 
     @contextmanager
@@ -202,18 +223,22 @@ def test_finalize_video_success_rejects_unprobeable_final_output(tmp_path, monke
         DummyVideo,
         raising=True,
     )
+    def fake_processed_video_dir() -> Path:
+        return anonym_dir
+
+    def fail_nuke_transcoding_dir(*args: object, **kwargs: object) -> NoReturn:
+        raise AssertionError("finalize_video_success must not nuke global transcoding")
+
     monkeypatch.setattr(
         state_management_module,
         "_processed_video_dir",
-        lambda: anonym_dir,
+        fake_processed_video_dir,
         raising=True,
     )
     monkeypatch.setattr(
         state_management_module,
         "nuke_transcoding_dir",
-        lambda *args, **kwargs: (_ for _ in ()).throw(
-            AssertionError("finalize_video_success must not nuke global transcoding")
-        ),
+        fail_nuke_transcoding_dir,
         raising=True,
     )
     monkeypatch.setattr(
@@ -222,16 +247,22 @@ def test_finalize_video_success_rejects_unprobeable_final_output(tmp_path, monke
         fake_atomic,
         raising=True,
     )
+    def fake_get_stream_info(path: str | Path) -> None:
+        return None
+
+    def fake_get_or_create_for_hash(**kwargs: object) -> None:
+        history_calls.append(kwargs)
+
     monkeypatch.setattr(
         state_management_module,
         "get_stream_info",
-        lambda path: None,
+        fake_get_stream_info,
         raising=True,
     )
     monkeypatch.setattr(
         state_management_module.ProcessingHistory,
         "get_or_create_for_hash",
-        staticmethod(lambda **kwargs: history_calls.append(kwargs)),
+        staticmethod(fake_get_or_create_for_hash),
         raising=True,
     )
 
@@ -242,7 +273,7 @@ def test_finalize_video_success_rejects_unprobeable_final_output(tmp_path, monke
         processor_name="olympus_cv_1500",
     )
     ctx.file_hash = "file-hash"
-    ctx.current_video = video
+    ctx.current_video = cast(VideoFile, video)
     ctx.sensitive_path = sensitive_working_copy
     ctx.anonymized_path = temp_anonymized
 
@@ -265,15 +296,18 @@ def test_finalize_video_success_rejects_unprobeable_final_output(tmp_path, monke
     ],
 )
 def test_finalize_video_success_rejects_missing_anonymized_output(
-    tmp_path, monkeypatch, path_case, message
-):
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+    path_case: str,
+    message: str,
+) -> None:
     import endoreg_db.import_files.file_storage.state_management as state_management_module
 
     import_file = tmp_path / "import" / "exam.mp4"
     import_file.parent.mkdir(parents=True, exist_ok=True)
     import_file.write_bytes(b"import")
 
-    history_calls = []
+    history_calls: list[dict[str, object]] = []
 
     class DummyState:
         processing_started = False
@@ -281,33 +315,33 @@ def test_finalize_video_success_rejects_missing_anonymized_output(
         sensitive_meta_processed = False
         saved = False
 
-        def mark_processing_started(self):
+        def mark_processing_started(self) -> None:
             self.processing_started = True
 
-        def mark_anonymized(self):
+        def mark_anonymized(self) -> None:
             self.anonymized = True
 
-        def mark_sensitive_meta_processed(self):
+        def mark_sensitive_meta_processed(self) -> None:
             self.sensitive_meta_processed = True
 
-        def save(self):
+        def save(self) -> None:
             self.saved = True
 
     class DummyVideo:
-        def __init__(self):
+        def __init__(self) -> None:
             self.pk = 1
             self.video_hash = "video_hash"
             self.processed_file = SimpleNamespace(name=None)
             self.state = DummyState()
             self.saved = False
 
-        def get_raw_file_path(self):
+        def get_raw_file_path(self) -> Path:
             return tmp_path / "sensitive" / "video_hash.mp4"
 
-        def save(self):
+        def save(self) -> None:
             self.saved = True
 
-        def get_or_create_state(self):
+        def get_or_create_state(self) -> object:
             return self.state
 
     monkeypatch.setattr(
@@ -316,16 +350,22 @@ def test_finalize_video_success_rejects_missing_anonymized_output(
         DummyVideo,
         raising=True,
     )
+    def fake_processed_video_dir() -> Path:
+        return tmp_path / "anonymized_videos"
+
+    def fake_get_or_create_for_hash(**kwargs: object) -> None:
+        history_calls.append(kwargs)
+
     monkeypatch.setattr(
         state_management_module,
         "_processed_video_dir",
-        lambda: tmp_path / "anonymized_videos",
+        fake_processed_video_dir,
         raising=True,
     )
     monkeypatch.setattr(
         state_management_module.ProcessingHistory,
         "get_or_create_for_hash",
-        staticmethod(lambda **kwargs: history_calls.append(kwargs)),
+        staticmethod(fake_get_or_create_for_hash),
         raising=True,
     )
 
@@ -336,7 +376,7 @@ def test_finalize_video_success_rejects_missing_anonymized_output(
         processor_name="olympus_cv_1500",
     )
     ctx.file_hash = "file-hash"
-    ctx.current_video = video
+    ctx.current_video = cast(VideoFile, video)
     ctx.anonymized_path = (
         None if path_case == "none" else tmp_path / "processing" / "missing.mp4"
     )

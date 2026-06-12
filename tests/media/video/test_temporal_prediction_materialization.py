@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportUnusedImport=false, reportUnusedClass=false
+
+from typing import Protocol, cast
+
 from importlib import import_module
 from importlib.util import find_spec
 from typing import TYPE_CHECKING
@@ -8,6 +12,21 @@ from endoreg_db.models import VideoPredictionMeta
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.video_temporal_inference import _run_video_temporal_inference
 
+class _MaterializesPredictionSegments(Protocol):
+    def materialize_prediction_segments(
+        self,
+        model_name: str | None = None,
+        model: object | None = None,
+        model_meta_version: object | None = None,
+        delete_frames_after: bool = False,
+        ocr_frame_fraction: float = 0.001,
+        ocr_cap: int = 10,
+        smooth_window_size_s: int = 1,
+        binarize_threshold: float = 0.5,
+        test_run: bool = False,
+        n_test_frames: int = 100,
+        **kwargs: object,
+    ) -> bool: ...
 if TYPE_CHECKING:
     from .test_video_file_extracted import VideoFileModelExtractedTest
 

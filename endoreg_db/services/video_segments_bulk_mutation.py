@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, Protocol, TypedDict, cast
 
 from django.db import transaction
 from django.shortcuts import get_object_or_404
@@ -10,6 +10,7 @@ from rest_framework import status
 from rest_framework.exceptions import ValidationError as DRFValidationError
 
 from endoreg_db.models.aidataset.aidataset import AIDataSet
+from endoreg_db.models.label.label import Label
 from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
 )
@@ -31,7 +32,7 @@ DeleteFrameAnnotations = Callable[..., int]
 
 
 class BulkSegmentMutationServiceError(Exception):
-    def __init__(self, response_data: Mapping[str, Any], status_code: int) -> None:
+    def __init__(self, response_data: Mapping[str, object], status_code: int) -> None:
         super().__init__(str(response_data.get("error", "Bulk mutation failed.")))
         self.response_data = dict(response_data)
         self.status_code = status_code
@@ -40,24 +41,50 @@ class BulkSegmentMutationServiceError(Exception):
 @dataclass(frozen=True)
 class BulkSegmentMutationRequest:
     defer_annotation_sync: bool
-    creates: list[Any]
-    updates: list[Any]
-    deletes: list[Any]
+    creates: list[object]
+    updates: list[object]
+    deletes: list[object]
     ai_dataset: AIDataSet | None
+
+
+class _ModelMetaLike(Protocol):
+    pk: int
+
+
+class _BulkSegmentLike(Protocol):
+    pk: int
+    source_id: int | None
+    video_file: VideoFile
+    start_frame_number: int
+    end_frame_number: int
+    label: Label | None
+
+    def get_model_meta(self) -> _ModelMetaLike | None: ...
+
+    def delete(self) -> tuple[int, dict[str, int]]: ...
+
+
+class _SegmentSnapshot(TypedDict):
+    video: VideoFile
+    start_frame_number: int
+    end_frame_number: int
+    label: object | None
+    information_source_id: int | None
+    model_meta_id: int | None
 
 
 def bulk_mutate_video_segments(
     *,
     video: VideoFile,
-    payload: Mapping[str, Any],
+    payload: Mapping[str, object],
     sync_frame_annotations: SyncFrameAnnotations = default_sync_frame_annotations,
     delete_frame_annotations_for_segment: DeleteFrameAnnotations = (
         default_delete_frame_annotations
     ),
-) -> dict[str, Any]:
+) -> dict[str, object]:
     mutation_request = validate_bulk_segment_mutation_payload(payload)
 
-    created_segments: list[dict[str, Any]] = []
+    created_segments: list[dict[str, object]] = []
     created_segment_objects: list[LabelVideoSegment] = []
     updated_segments: list[LabelVideoSegment] = []
     deleted_segment_ids: list[int] = []
@@ -113,7 +140,7 @@ def bulk_mutate_video_segments(
 
 
 def validate_bulk_segment_mutation_payload(
-    payload: Mapping[str, Any],
+    payload: Mapping[str, object],
 ) -> BulkSegmentMutationRequest:
     try:
         creates = _require_bulk_list(payload, "creates")
@@ -141,7 +168,7 @@ def validate_bulk_segment_mutation_payload(
     )
 
 
-def _invalid_bulk_payload(detail: Any) -> BulkSegmentMutationServiceError:
+def _invalid_bulk_payload(detail: object) -> BulkSegmentMutationServiceError:
     return BulkSegmentMutationServiceError(
         {"error": "Invalid bulk segment payload", "details": detail},
         status.HTTP_400_BAD_REQUEST,
@@ -151,28 +178,34 @@ def _invalid_bulk_payload(detail: Any) -> BulkSegmentMutationServiceError:
 def _create_segments(
     *,
     video: VideoFile,
-    creates: list[Any],
+    creates: list[object],
     defer_annotation_sync: bool,
-    created_segments: list[dict[str, Any]],
+    created_segments: list[dict[str, object]],
     created_segment_objects: list[LabelVideoSegment],
     sync_frame_annotations: SyncFrameAnnotations,
 ) -> None:
     for index, item in enumerate(creates):
-        if not isinstance(item, dict):
+        if not isinstance(item, Mapping):
             raise _bulk_item_validation_error(
                 "creates",
                 index,
                 "Each create entry must be an object.",
             )
 
-        client_id = item.get("client_id")
-        segment_payload = dict(item)
+        item_map = cast(Mapping[str, object], item)
+        client_id = item_map.get("client_id")
+        segment_payload: dict[str, object] = dict(item_map)
         segment_payload.pop("client_id", None)
         segment_payload["video_id"] = video.pk
 
         serializer = LabelVideoSegmentSerializer(data=segment_payload)
         if not serializer.is_valid():
-            raise _bulk_item_validation_error("creates", index, serializer.errors)
+            validation_errors = getattr(serializer, "errors")
+            raise _bulk_item_validation_error(
+                "creates",
+                index,
+                validation_errors,
+            )
 
         segment = serializer.save()
         if not defer_annotation_sync:
@@ -189,20 +222,21 @@ def _create_segments(
 def _update_segments(
     *,
     video: VideoFile,
-    updates: list[Any],
+    updates: list[object],
     defer_annotation_sync: bool,
     updated_segments: list[LabelVideoSegment],
     sync_frame_annotations: SyncFrameAnnotations,
     delete_frame_annotations_for_segment: DeleteFrameAnnotations,
 ) -> None:
     for index, item in enumerate(updates):
-        if not isinstance(item, dict):
+        if not isinstance(item, Mapping):
             raise _bulk_item_validation_error(
                 "updates",
                 index,
                 "Each update entry must be an object.",
             )
-        if "id" not in item:
+        item_map = cast(Mapping[str, object], item)
+        if "id" not in item_map:
             raise _bulk_item_validation_error(
                 "updates",
                 index,
@@ -210,7 +244,10 @@ def _update_segments(
             )
 
         try:
-            segment_id = int(item["id"])
+            segment_id_value = item_map["id"]
+            if not isinstance(segment_id_value, (int, float, str, bytes, bytearray)):
+                raise TypeError
+            segment_id = int(segment_id_value)
         except (TypeError, ValueError):
             raise _bulk_item_validation_error(
                 "updates",
@@ -218,22 +255,32 @@ def _update_segments(
                 {"id": "Must be an integer."},
             )
 
-        segment = get_object_or_404(
-            LabelVideoSegment.objects.select_related("video_file", "label", "source"),
-            id=segment_id,
-            video_file=video,
+        segment = cast(
+            _BulkSegmentLike,
+            get_object_or_404(
+                LabelVideoSegment.objects.select_related(
+                    "video_file", "label", "source"
+                ),
+                id=segment_id,
+                video_file=video,
+            ),
         )
         old_snapshot = _segment_snapshot(segment)
 
-        segment_payload = dict(item)
+        segment_payload: dict[str, object] = dict(item_map)
         segment_payload.pop("id", None)
         serializer = LabelVideoSegmentSerializer(
-            segment,
+            cast(LabelVideoSegment, segment),
             data=segment_payload,
             partial=True,
         )
         if not serializer.is_valid():
-            raise _bulk_item_validation_error("updates", index, serializer.errors)
+            validation_errors = getattr(serializer, "errors")
+            raise _bulk_item_validation_error(
+                "updates",
+                index,
+                validation_errors,
+            )
 
         updated_segment = serializer.save()
         if defer_annotation_sync:
@@ -256,16 +303,21 @@ def _update_segments(
 def _delete_segments(
     *,
     video: VideoFile,
-    deletes: list[Any],
+    deletes: list[object],
     deleted_segment_ids: list[int],
     delete_frame_annotations_for_segment: DeleteFrameAnnotations,
 ) -> None:
     for index, item in enumerate(deletes):
         segment_id = _bulk_delete_segment_id(item, index)
-        segment = get_object_or_404(
-            LabelVideoSegment.objects.select_related("video_file", "label", "source"),
-            id=segment_id,
-            video_file=video,
+        segment = cast(
+            _BulkSegmentLike,
+            get_object_or_404(
+                LabelVideoSegment.objects.select_related(
+                    "video_file", "label", "source"
+                ),
+                id=segment_id,
+                video_file=video,
+            ),
         )
         if segment.label is not None:
             delete_model_meta = segment.get_model_meta()
@@ -284,18 +336,24 @@ def _delete_segments(
 def _bulk_mutation_response_payload(
     *,
     mutation_request: BulkSegmentMutationRequest,
-    created_segments: list[dict[str, Any]],
+    created_segments: list[dict[str, object]],
     updated_segments: list[LabelVideoSegment],
     deleted_segment_ids: list[int],
     attached_segment_ids: list[int],
-) -> dict[str, Any]:
+) -> dict[str, object]:
     ai_dataset = mutation_request.ai_dataset
     return {
         "created": created_segments,
-        "updated": LabelVideoSegmentTimelineSerializer(
-            updated_segments,
-            many=True,
-        ).data,
+        "updated": cast(
+            list[dict[str, object]],
+            getattr(
+                LabelVideoSegmentTimelineSerializer(
+                    updated_segments,
+                    many=True,
+                ),
+                "data",
+            ),
+        ),
         "deleted": deleted_segment_ids,
         "created_count": len(created_segments),
         "updated_count": len(updated_segments),
@@ -309,8 +367,8 @@ def _bulk_mutation_response_payload(
     }
 
 
-def _resolve_optional_ai_dataset(payload: Mapping[str, Any]) -> AIDataSet | None:
-    raw_value = payload.get("ai_dataset_id")
+def _resolve_optional_ai_dataset(payload: Mapping[str, object]) -> AIDataSet | None:
+    raw_value: object | None = payload.get("ai_dataset_id")
     if raw_value in (None, ""):
         return None
     try:
@@ -333,17 +391,20 @@ def _resolve_optional_ai_dataset(payload: Mapping[str, Any]) -> AIDataSet | None
     return dataset
 
 
-def _require_bulk_list(data: Mapping[str, Any], field_name: str) -> list[Any]:
-    value = data.get(field_name, [])
+def _require_bulk_list(data: Mapping[str, object], field_name: str) -> list[object]:
+    value: object | None = data.get(field_name, [])
     if value is None:
         return []
     if not isinstance(value, list):
         raise DRFValidationError({field_name: "Must be a list."})
-    return value
+    return cast(list[object], value)
 
 
-def _bulk_delete_segment_id(item: Any, index: int) -> int:
-    raw_id = item.get("id") if isinstance(item, dict) else item
+def _bulk_delete_segment_id(item: object, index: int) -> int:
+    if isinstance(item, Mapping):
+        raw_id: object | None = cast(Mapping[str, object], item).get("id")
+    else:
+        raw_id = item
     if raw_id is None:
         raise _bulk_item_validation_error(
             "deletes",
@@ -351,6 +412,8 @@ def _bulk_delete_segment_id(item: Any, index: int) -> int:
             "Each delete entry must be a segment id.",
         )
     try:
+        if not isinstance(raw_id, (int, float, str, bytes, bytearray)):
+            raise TypeError
         segment_id = int(raw_id)
     except (TypeError, ValueError):
         raise _bulk_item_validation_error(
@@ -370,20 +433,20 @@ def _bulk_delete_segment_id(item: Any, index: int) -> int:
 def _bulk_item_validation_error(
     field_name: str,
     index: int,
-    detail: Any,
+    detail: object,
 ) -> DRFValidationError:
-    indexed_errors: Mapping[str, Any] = {str(index): detail}
-    bulk_errors: Mapping[str, Mapping[str, Any]] = {field_name: indexed_errors}
-    return DRFValidationError(bulk_errors)
+    indexed_errors: dict[str, object] = {str(index): detail}
+    bulk_errors: dict[str, dict[str, object]] = {field_name: indexed_errors}
+    return DRFValidationError(cast(Any, bulk_errors))
 
 
-def _query_param_as_bool(value: Any, *, default: bool = False) -> bool:
+def _query_param_as_bool(value: object, *, default: bool = False) -> bool:
     if value is None:
         return default
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _segment_snapshot(segment: LabelVideoSegment) -> dict[str, Any]:
+def _segment_snapshot(segment: _BulkSegmentLike) -> _SegmentSnapshot:
     model_meta = segment.get_model_meta()
     return {
         "video": segment.video_file,
@@ -395,5 +458,8 @@ def _segment_snapshot(segment: LabelVideoSegment) -> dict[str, Any]:
     }
 
 
-def _timeline_segment_data(segment: LabelVideoSegment) -> dict[str, Any]:
-    return LabelVideoSegmentTimelineSerializer(segment).data
+def _timeline_segment_data(segment: LabelVideoSegment) -> dict[str, object]:
+    return cast(
+        dict[str, object],
+        getattr(LabelVideoSegmentTimelineSerializer(segment), "data"),
+    )

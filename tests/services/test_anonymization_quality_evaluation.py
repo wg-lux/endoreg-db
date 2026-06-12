@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+# pyright: reportUnusedFunction=false, reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false
+
 from datetime import date, datetime
+from pathlib import Path
 from uuid import uuid4
 
 from django.core.files.base import ContentFile
 from django.utils import timezone
 import pytest
+from pytest import MonkeyPatch
 
 from endoreg_db.models import (
     AnonymizationValidationMetric,
@@ -17,11 +21,11 @@ from endoreg_db.services.anonymization_quality_evaluation import (
     SensitiveMetaHandlingPolicy,
     evaluate_media_object,
 )
-from endoreg_db.utils.filesystem.file_operations import atomic_write_file
+from endoreg_db.utils.file_operations import atomic_write_file
 
 
 @pytest.fixture(autouse=True)
-def _reference_data(base_db_data):
+def _reference_data(base_db_data: object) -> object:
     return base_db_data
 
 
@@ -74,7 +78,7 @@ def _validated_video(
 
 
 @pytest.mark.django_db
-def test_quality_evaluation_detects_residual_values_without_persisting_them():
+def test_quality_evaluation_detects_residual_values_without_persisting_them() -> None:
     center = _center()
     sensitive_meta = _sensitive_meta(
         center,
@@ -122,15 +126,18 @@ def test_quality_evaluation_detects_residual_values_without_persisting_them():
 
 @pytest.mark.django_db
 def test_quality_evaluation_reports_raw_file_and_raw_streamable_residuals(
-    tmp_path,
-    monkeypatch,
-):
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
     center = _center()
     sensitive_meta = _sensitive_meta(center)
     video = _validated_video(center, sensitive_meta, raw_file=True)
     raw_stream_path = tmp_path / "raw_stream.mp4"
     atomic_write_file(destination=raw_stream_path, content=[b"streamable-raw"])
-    monkeypatch.setattr(VideoFile, "get_raw_stream_path", lambda self: raw_stream_path)
+    def fake_get_raw_stream_path(self: VideoFile) -> Path:
+        return raw_stream_path
+
+    monkeypatch.setattr(VideoFile, "get_raw_stream_path", fake_get_raw_stream_path)
 
     result = evaluate_media_object(
         media_obj=video,
@@ -144,7 +151,7 @@ def test_quality_evaluation_reports_raw_file_and_raw_streamable_residuals(
 
 
 @pytest.mark.django_db
-def test_quality_evaluation_without_processed_artifact_is_not_measurable():
+def test_quality_evaluation_without_processed_artifact_is_not_measurable() -> None:
     center = _center()
     sensitive_meta = _sensitive_meta(center, anonymized_text="No residual names here.")
     video = _validated_video(center, sensitive_meta, processed_file=False)
@@ -163,7 +170,7 @@ def test_quality_evaluation_without_processed_artifact_is_not_measurable():
 
 
 @pytest.mark.django_db
-def test_quality_evaluation_delete_sensitive_meta_ignores_derived_metric_reference():
+def test_quality_evaluation_delete_sensitive_meta_ignores_derived_metric_reference() -> None:
     center = _center()
     sensitive_meta = _sensitive_meta(center)
     sensitive_meta_id = sensitive_meta.pk
@@ -183,12 +190,12 @@ def test_quality_evaluation_delete_sensitive_meta_ignores_derived_metric_referen
     video.refresh_from_db()
     metric.refresh_from_db()
     assert video.sensitive_meta_id is None
-    assert metric.sensitive_meta_id is None
+    assert getattr(metric, "sensitive_meta_id") is None
     assert metric.sensitive_meta_deletion_status == "deleted"
 
 
 @pytest.mark.django_db
-def test_quality_evaluation_failed_lost_media_is_not_successful():
+def test_quality_evaluation_failed_lost_media_is_not_successful() -> None:
     center = _center()
     sensitive_meta = _sensitive_meta(center)
     video = _validated_video(center, sensitive_meta)

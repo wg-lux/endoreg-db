@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import types
 import uuid
+from collections.abc import Callable
 from datetime import timedelta
 from pathlib import Path
+from typing import NoReturn, TypedDict, Unpack
 from unittest.mock import Mock
 
+import numpy as np
 import pytest
 from django.utils import timezone
+from numpy.typing import NDArray
+from pytest import MonkeyPatch
 
 from endoreg_db.models.administration.ai.ai_model import AiModel
 from endoreg_db.models.administration.center.center import Center
@@ -24,6 +29,110 @@ from endoreg_db.models.metadata.model_meta import ModelMeta
 from endoreg_db.models.metadata.video_prediction_meta import VideoPredictionMeta
 from endoreg_db.models.other.information_source import InformationSource
 from endoreg_db.services import video_temporal_inference as jobs
+from lx_dtypes.models.contracts.video_temporal_inference import (
+    TemporalInferenceHistoryResultPayload,
+    parse_temporal_inference_history_config_payload,
+)
+
+
+class _PredictVideoKwargs(TypedDict, total=False):
+    return_frame_scores: bool
+    frame_source_mode: str
+    frame_source_file_type: str
+
+
+class _TextMetadataKwargs(TypedDict, total=False):
+    ocr_frame_fraction: float
+    ocr_cap: int
+    frame_source_mode: str
+
+
+class _LxTemporalOptions(TypedDict, total=False):
+    include_score_vectors: bool
+
+
+class _LxCoreKwargs(TypedDict, total=False):
+    lx_options: _LxTemporalOptions
+    score_result: VideoFrameScoreResult
+
+
+def _score_array(rows: list[list[float]]) -> NDArray[np.float64]:
+    return np.asarray(rows, dtype=np.float64)
+
+
+def _raise_runtime(error: RuntimeError) -> NoReturn:
+    raise error
+
+
+def _update_video_meta_noop(video_obj: VideoFile) -> None:
+    return None
+
+
+def _update_video_text_metadata_success(
+    video_obj: VideoFile, **kwargs: Unpack[_TextMetadataKwargs]
+) -> bool:
+    return True
+
+
+def _has_extracted_frame_files_true(video_obj: VideoFile) -> bool:
+    return True
+
+
+def _submit_noop(fn: Callable[[], bool]) -> types.SimpleNamespace:
+    return types.SimpleNamespace()
+
+
+def _extract_video_frames_success(
+    video_obj: VideoFile, overwrite: bool = False
+) -> bool:
+    return True
+
+
+def _extract_video_frames_forbidden(
+    video_obj: VideoFile, overwrite: bool = False
+) -> NoReturn:
+    _raise_runtime(RuntimeError("temporal inference must not extract frames"))
+
+
+def _update_video_text_metadata_forbidden(
+    video_obj: VideoFile, **kwargs: Unpack[_TextMetadataKwargs]
+) -> NoReturn:
+    _raise_runtime(RuntimeError("temporal inference must not require frame OCR"))
+
+
+def _has_extracted_frame_files_forbidden(video_obj: VideoFile) -> NoReturn:
+    _raise_runtime(RuntimeError("temporal inference must not inspect frame cache"))
+
+
+def _predict_video_streaming_decode_failure(
+    video_obj: VideoFile, **kwargs: Unpack[_PredictVideoKwargs]
+) -> NoReturn:
+    _raise_runtime(RuntimeError("streaming decode failed"))
+
+
+def _predict_video_prediction_failure(
+    video_obj: VideoFile, **kwargs: Unpack[_PredictVideoKwargs]
+) -> NoReturn:
+    _raise_runtime(RuntimeError("prediction failed"))
+
+
+def _lx_core_empty(**kwargs: Unpack[_LxCoreKwargs]) -> types.SimpleNamespace:
+    return types.SimpleNamespace(
+        temporal_segments=[],
+        backend="torch",
+        device="cpu",
+        duration_ms=1.0,
+        provenance={"local_only": True},
+    )
+
+
+def _history_result(
+    history: VideoProcessingHistory,
+) -> TemporalInferenceHistoryResultPayload:
+    config = parse_temporal_inference_history_config_payload(history.config)
+    result = config.result
+    assert result is not None
+    return result
 
 
 def _create_model_meta() -> tuple[ModelMeta, Label, Label]:
@@ -149,7 +258,9 @@ def test_coerce_lx_temporal_inference_result_rejects_malformed_segment():
 
 
 @pytest.mark.django_db
-def test_dispatch_video_temporal_inference_uses_inference_queue(monkeypatch, tmp_path):
+def test_dispatch_video_temporal_inference_uses_inference_queue(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+):
     video = _create_video(tmp_path)
     model_meta, _label_a, _label_b = _create_model_meta()
     monkeypatch.setenv("VIDEO_TEMPORAL_INFERENCE_JOB_MODE", "celery")
@@ -173,21 +284,29 @@ def test_dispatch_video_temporal_inference_uses_inference_queue(monkeypatch, tmp
     fake_task.apply_async.assert_called_once()
     assert fake_task.apply_async.call_args.kwargs["queue"] == "inference_hi"
     history = VideoProcessingHistory.objects.get(pk=result.history_id)
+    history_config = parse_temporal_inference_history_config_payload(history.config)
     assert history.operation == VideoProcessingHistory.OPERATION_AI_TEMPORAL_INFERENCE
-    assert history.config["kind"] == jobs.TEMPORAL_INFERENCE_KIND
-    assert history.config["frame_source_mode"] == "stream"
+    assert history_config.kind == jobs.TEMPORAL_INFERENCE_KIND
+    assert history_config.frame_source_mode == "stream"
 
 
 @pytest.mark.django_db
-def test_dispatch_video_temporal_inference_reuses_active_history(monkeypatch, tmp_path):
+def test_dispatch_video_temporal_inference_reuses_active_history(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+):
     video = _create_video(tmp_path)
     model_meta, _label_a, _label_b = _create_model_meta()
-    submitted = []
+    submitted: list[Callable[[], bool]] = []
+
+    def submit_once(fn: Callable[[], bool]) -> types.SimpleNamespace:
+        submitted.append(fn)
+        return types.SimpleNamespace()
+
     monkeypatch.setenv("VIDEO_TEMPORAL_INFERENCE_JOB_MODE", "thread")
     monkeypatch.setattr(
         jobs._executor,
         "submit",
-        lambda fn: submitted.append(fn) or types.SimpleNamespace(),
+        submit_once,
     )
 
     first = jobs.dispatch_video_temporal_inference(
@@ -207,8 +326,8 @@ def test_dispatch_video_temporal_inference_reuses_active_history(monkeypatch, tm
 
 @pytest.mark.django_db
 def test_dispatch_video_temporal_inference_defers_for_blackening_rebuild(
-    monkeypatch,
-    tmp_path,
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
 ):
     video = _create_video(tmp_path)
     model_meta, _label_a, _label_b = _create_model_meta()
@@ -235,22 +354,23 @@ def test_dispatch_video_temporal_inference_defers_for_blackening_rebuild(
     assert result.blocked_by_history_id == rebuild_history.pk
     submitted.assert_not_called()
     history = VideoProcessingHistory.objects.get(pk=result.history_id)
+    history_config = parse_temporal_inference_history_config_payload(history.config)
     assert history.operation == VideoProcessingHistory.OPERATION_AI_TEMPORAL_INFERENCE
     assert history.status == VideoProcessingHistory.STATUS_PENDING
     assert history.task_id == ""
     assert (
-        history.config["deferred_reason"]
+        history_config.deferred_reason
         == jobs.TEMPORAL_INFERENCE_DEFERRED_REASON_REPROCESSING
     )
-    assert history.config["blocked_by_history_id"] == rebuild_history.pk
-    assert history.config["raw_temporal_options"] == {"temporal_model": "markov"}
-    assert history.config["delete_frames_after"] is False
+    assert history_config.blocked_by_history_id == rebuild_history.pk
+    assert history_config.raw_temporal_options == {"temporal_model": "markov"}
+    assert history_config.delete_frames_after is False
 
 
 @pytest.mark.django_db
 def test_dispatch_video_temporal_inference_reuses_same_deferred_request(
-    monkeypatch,
-    tmp_path,
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
 ):
     video = _create_video(tmp_path)
     model_meta, _label_a, _label_b = _create_model_meta()
@@ -292,8 +412,8 @@ def test_dispatch_video_temporal_inference_reuses_same_deferred_request(
 
 @pytest.mark.django_db
 def test_dispatch_video_temporal_inference_latest_deferred_request_wins(
-    monkeypatch,
-    tmp_path,
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
 ):
     video = _create_video(tmp_path)
     model_meta, _label_a, _label_b = _create_model_meta()
@@ -326,17 +446,18 @@ def test_dispatch_video_temporal_inference_latest_deferred_request_wins(
     assert second.history_id != first.history_id
     old_history = VideoProcessingHistory.objects.get(pk=first.history_id)
     new_history = VideoProcessingHistory.objects.get(pk=second.history_id)
+    new_history_config = parse_temporal_inference_history_config_payload(
+        new_history.config
+    )
     assert old_history.status == VideoProcessingHistory.STATUS_CANCELLED
     assert new_history.status == VideoProcessingHistory.STATUS_PENDING
-    assert new_history.config["raw_temporal_options"] == {
-        "temporal_model": "hysteresis"
-    }
+    assert new_history_config.raw_temporal_options == {"temporal_model": "hysteresis"}
 
 
 @pytest.mark.django_db
 def test_dispatch_video_temporal_inference_busy_for_non_blackening_reprocessing(
-    monkeypatch,
-    tmp_path,
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
 ):
     video = _create_video(tmp_path)
     model_meta, _label_a, _label_b = _create_model_meta()
@@ -366,8 +487,8 @@ def test_dispatch_video_temporal_inference_busy_for_non_blackening_reprocessing(
 
 @pytest.mark.django_db(transaction=True)
 def test_dispatch_video_temporal_inference_expires_stale_running_history_and_rolls_back_frames(
-    monkeypatch,
-    tmp_path,
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
 ):
     video = _create_video(tmp_path)
     model_meta, _label_a, _label_b = _create_model_meta()
@@ -416,7 +537,7 @@ def test_dispatch_video_temporal_inference_expires_stale_running_history_and_rol
     monkeypatch.setattr(
         jobs._executor,
         "submit",
-        lambda fn: types.SimpleNamespace(),
+        _submit_noop,
     )
 
     result = jobs.dispatch_video_temporal_inference(
@@ -436,7 +557,7 @@ def test_dispatch_video_temporal_inference_expires_stale_running_history_and_rol
 
 @pytest.mark.django_db(transaction=True)
 def test_run_video_temporal_inference_redelivered_stream_success_preserves_frames(
-    tmp_path,
+    tmp_path: Path,
 ):
     video = _create_video(tmp_path)
     model_meta, _label_a, _label_b = _create_model_meta()
@@ -492,8 +613,8 @@ def test_run_video_temporal_inference_redelivered_stream_success_preserves_frame
 
 @pytest.mark.django_db
 def test_dispatch_video_temporal_inference_celery_failure_does_not_fallback(
-    monkeypatch,
-    tmp_path,
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
 ):
     video = _create_video(tmp_path)
     model_meta, _label_a, _label_b = _create_model_meta()
@@ -524,8 +645,8 @@ def test_dispatch_video_temporal_inference_celery_failure_does_not_fallback(
 
 @pytest.mark.django_db
 def test_run_video_temporal_inference_materializes_lx_core_segments(
-    monkeypatch,
-    tmp_path,
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
 ):
     video = _create_video(tmp_path)
     model_meta, label_a, label_b = _create_model_meta()
@@ -544,37 +665,45 @@ def test_run_video_temporal_inference_materializes_lx_core_segments(
         config={"kind": jobs.TEMPORAL_INFERENCE_KIND},
     )
 
-    monkeypatch.setattr(jobs, "update_video_meta", lambda video_obj: None)
+    monkeypatch.setattr(jobs, "update_video_meta", _update_video_meta_noop)
     monkeypatch.setattr(
         jobs,
         "extract_video_frames",
-        lambda video_obj, overwrite=False: True,
+        _extract_video_frames_success,
     )
     monkeypatch.setattr(
         jobs,
         "update_video_text_metadata",
-        lambda video_obj, **kwargs: True,
+        _update_video_text_metadata_success,
     )
-    monkeypatch.setattr(jobs, "_has_extracted_frame_files", lambda video_obj: True)
+    monkeypatch.setattr(
+        jobs, "_has_extracted_frame_files", _has_extracted_frame_files_true
+    )
 
-    def _fake_predict_video(self, **kwargs):
-        assert kwargs["return_frame_scores"] is True
+    def _fake_predict_video(
+        self: VideoFile, **kwargs: Unpack[_PredictVideoKwargs]
+    ) -> VideoFrameScoreResult:
+        assert kwargs.get("return_frame_scores") is True
         return VideoFrameScoreResult(
             labels=[label_a.name, label_b.name],
-            frame_scores=[
-                [0.1, 0.8],
-                [0.2, 0.9],
-                [0.9, 0.1],
-                [0.95, 0.2],
-            ],
+            frame_scores=_score_array(
+                [
+                    [0.1, 0.8],
+                    [0.2, 0.9],
+                    [0.9, 0.1],
+                    [0.95, 0.2],
+                ]
+            ),
             device="cpu",
             frame_count=4,
         )
 
     monkeypatch.setattr(jobs, "predict_video", _fake_predict_video)
 
-    def _fake_lx_core(**kwargs):
-        assert kwargs["lx_options"]["include_score_vectors"] is False
+    def _fake_lx_core(**kwargs: Unpack[_LxCoreKwargs]) -> types.SimpleNamespace:
+        lx_options = kwargs.get("lx_options")
+        assert lx_options is not None
+        assert lx_options.get("include_score_vectors") is False
         return types.SimpleNamespace(
             temporal_segments=[
                 types.SimpleNamespace(label=label_a.name, start_frame=2, end_frame=3),
@@ -608,16 +737,17 @@ def test_run_video_temporal_inference_materializes_lx_core_segments(
     assert state.initial_prediction_completed is True
     assert state.lvs_created is True
     history.refresh_from_db()
+    result_payload = _history_result(history)
     assert history.status == VideoProcessingHistory.STATUS_SUCCESS
-    assert history.config["result"]["score_vectors_stored"] is False
-    assert history.config["result"]["deleted_prediction_segments"] == 1
-    assert history.config["result"]["frame_source_mode"] == "stream"
+    assert result_payload.score_vectors_stored is False
+    assert result_payload.deleted_prediction_segments == 1
+    assert result_payload.frame_source_mode == "stream"
 
 
 @pytest.mark.django_db
 def test_run_video_temporal_inference_stream_succeeds_when_extract_frames_would_fail(
-    monkeypatch,
-    tmp_path,
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
 ):
     video = _create_video(tmp_path)
     model_meta, label_a, _label_b = _create_model_meta()
@@ -628,36 +758,32 @@ def test_run_video_temporal_inference_stream_succeeds_when_extract_frames_would_
         config={"kind": jobs.TEMPORAL_INFERENCE_KIND},
     )
 
-    monkeypatch.setattr(jobs, "update_video_meta", lambda video_obj: None)
+    monkeypatch.setattr(jobs, "update_video_meta", _update_video_meta_noop)
     monkeypatch.setattr(
         jobs,
         "extract_video_frames",
-        lambda video_obj, overwrite=False: (_ for _ in ()).throw(
-            AssertionError("streaming temporal inference must not extract frames")
-        ),
+        _extract_video_frames_forbidden,
     )
     monkeypatch.setattr(
         jobs,
         "update_video_text_metadata",
-        lambda video_obj, **kwargs: (_ for _ in ()).throw(
-            AssertionError("streaming temporal inference must not require frame OCR")
-        ),
+        _update_video_text_metadata_forbidden,
     )
     monkeypatch.setattr(
         jobs,
         "_has_extracted_frame_files",
-        lambda video_obj: (_ for _ in ()).throw(
-            AssertionError("streaming temporal inference must not inspect frame cache")
-        ),
+        _has_extracted_frame_files_forbidden,
     )
 
-    def _fake_predict_video(self, **kwargs):
-        assert kwargs["return_frame_scores"] is True
-        assert kwargs["frame_source_mode"] == "stream"
-        assert kwargs["frame_source_file_type"] == "raw"
+    def _fake_predict_video(
+        self: VideoFile, **kwargs: Unpack[_PredictVideoKwargs]
+    ) -> VideoFrameScoreResult:
+        assert kwargs.get("return_frame_scores") is True
+        assert kwargs.get("frame_source_mode") == "stream"
+        assert kwargs.get("frame_source_file_type") == "raw"
         return VideoFrameScoreResult(
             labels=[label_a.name],
-            frame_scores=[[0.1], [0.9], [0.95]],
+            frame_scores=_score_array([[0.1], [0.9], [0.95]]),
             device="cpu",
             frame_count=3,
             frame_numbers=[0, 1, 2],
@@ -666,8 +792,9 @@ def test_run_video_temporal_inference_stream_succeeds_when_extract_frames_would_
 
     monkeypatch.setattr(jobs, "predict_video", _fake_predict_video)
 
-    def _fake_lx_core(**kwargs):
-        score_result = kwargs["score_result"]
+    def _fake_lx_core(**kwargs: Unpack[_LxCoreKwargs]) -> types.SimpleNamespace:
+        score_result = kwargs.get("score_result")
+        assert score_result is not None
         assert score_result.frame_numbers == [0, 1, 2]
         assert score_result.timestamps == [0.0, 0.04, 0.08]
         return types.SimpleNamespace(
@@ -691,10 +818,13 @@ def test_run_video_temporal_inference_stream_succeeds_when_extract_frames_would_
     )
 
     history.refresh_from_db()
+    result_payload = _history_result(history)
     assert history.status == VideoProcessingHistory.STATUS_SUCCESS
-    assert history.config["result"]["score_frame_numbers_present"] is True
-    assert history.config["result"]["score_timestamps_present"] is True
-    assert video.get_frame_dir_path().exists()
+    assert result_payload.score_frame_numbers_present is True
+    assert result_payload.score_timestamps_present is True
+    frame_dir = video.get_frame_dir_path()
+    assert frame_dir is not None
+    assert frame_dir.exists()
     state = video.get_or_create_state()
     state.refresh_from_db()
     assert state.frames_extracted is False
@@ -702,8 +832,8 @@ def test_run_video_temporal_inference_stream_succeeds_when_extract_frames_would_
 
 @pytest.mark.django_db
 def test_run_video_temporal_inference_stream_failure_does_not_create_frame_cache_state(
-    monkeypatch,
-    tmp_path,
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
 ):
     video = _create_video(tmp_path)
     model_meta, _label_a, _label_b = _create_model_meta()
@@ -714,20 +844,16 @@ def test_run_video_temporal_inference_stream_failure_does_not_create_frame_cache
         config={"kind": jobs.TEMPORAL_INFERENCE_KIND},
     )
 
-    monkeypatch.setattr(jobs, "update_video_meta", lambda video_obj: None)
+    monkeypatch.setattr(jobs, "update_video_meta", _update_video_meta_noop)
     monkeypatch.setattr(
         jobs,
         "extract_video_frames",
-        lambda video_obj, overwrite=False: (_ for _ in ()).throw(
-            AssertionError("streaming temporal inference must not extract frames")
-        ),
+        _extract_video_frames_forbidden,
     )
     monkeypatch.setattr(
         jobs,
         "predict_video",
-        lambda video_obj, **kwargs: (_ for _ in ()).throw(
-            RuntimeError("streaming decode failed")
-        ),
+        _predict_video_streaming_decode_failure,
     )
 
     with pytest.raises(RuntimeError, match="streaming decode failed"):
@@ -742,7 +868,9 @@ def test_run_video_temporal_inference_stream_failure_does_not_create_frame_cache
     history.refresh_from_db()
     assert history.status == VideoProcessingHistory.STATUS_FAILURE
     assert "streaming decode failed" in history.details
-    assert video.get_frame_dir_path().exists()
+    frame_dir = video.get_frame_dir_path()
+    assert frame_dir is not None
+    assert frame_dir.exists()
     state = video.get_or_create_state()
     state.refresh_from_db()
     assert state.frames_extracted is False
@@ -751,8 +879,8 @@ def test_run_video_temporal_inference_stream_failure_does_not_create_frame_cache
 
 @pytest.mark.django_db
 def test_run_video_temporal_inference_explicit_cache_uses_frame_cache(
-    monkeypatch,
-    tmp_path,
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
 ):
     video = _create_video(tmp_path)
     model_meta, label_a, _label_b = _create_model_meta()
@@ -764,24 +892,40 @@ def test_run_video_temporal_inference_explicit_cache_uses_frame_cache(
     )
     calls: list[str] = []
 
-    monkeypatch.setattr(jobs, "update_video_meta", lambda video_obj: None)
+    def extract_video_frames_cache(
+        video_obj: VideoFile, overwrite: bool = False
+    ) -> bool:
+        calls.append("extract_frames")
+        return True
+
+    def update_video_text_metadata_cache(
+        video_obj: VideoFile, **kwargs: Unpack[_TextMetadataKwargs]
+    ) -> bool:
+        calls.append("update_text_metadata")
+        return True
+
+    monkeypatch.setattr(jobs, "update_video_meta", _update_video_meta_noop)
     monkeypatch.setattr(
         jobs,
         "extract_video_frames",
-        lambda video_obj, overwrite=False: calls.append("extract_frames") or True,
+        extract_video_frames_cache,
     )
     monkeypatch.setattr(
         jobs,
         "update_video_text_metadata",
-        lambda video_obj, **kwargs: calls.append("update_text_metadata") or True,
+        update_video_text_metadata_cache,
     )
-    monkeypatch.setattr(jobs, "_has_extracted_frame_files", lambda video_obj: True)
+    monkeypatch.setattr(
+        jobs, "_has_extracted_frame_files", _has_extracted_frame_files_true
+    )
 
-    def _fake_predict_video(self, **kwargs):
-        assert kwargs["frame_source_mode"] == "cache"
+    def _fake_predict_video(
+        self: VideoFile, **kwargs: Unpack[_PredictVideoKwargs]
+    ) -> VideoFrameScoreResult:
+        assert kwargs.get("frame_source_mode") == "cache"
         return VideoFrameScoreResult(
             labels=[label_a.name],
-            frame_scores=[[0.7]],
+            frame_scores=_score_array([[0.7]]),
             device="cpu",
             frame_count=1,
         )
@@ -790,13 +934,7 @@ def test_run_video_temporal_inference_explicit_cache_uses_frame_cache(
     monkeypatch.setattr(
         jobs,
         "_run_lx_ai_core_temporal_inference",
-        lambda **kwargs: types.SimpleNamespace(
-            temporal_segments=[],
-            backend="torch",
-            device="cpu",
-            duration_ms=1.0,
-            provenance={"local_only": True},
-        ),
+        _lx_core_empty,
     )
 
     assert jobs._run_video_temporal_inference(
@@ -809,15 +947,17 @@ def test_run_video_temporal_inference_explicit_cache_uses_frame_cache(
 
     assert calls == ["extract_frames", "update_text_metadata"]
     history.refresh_from_db()
-    assert history.config["requested_frame_source_mode"] == "cache"
-    assert history.config["resolved_frame_source_mode"] == "cache"
-    assert history.config["result"]["resolved_frame_source_mode"] == "cache"
+    history_config = parse_temporal_inference_history_config_payload(history.config)
+    result_payload = _history_result(history)
+    assert history_config.requested_frame_source_mode == "cache"
+    assert history_config.resolved_frame_source_mode == "cache"
+    assert result_payload.resolved_frame_source_mode == "cache"
 
 
 @pytest.mark.django_db
 def test_run_video_temporal_inference_auto_uses_stream_even_when_frame_cache_exists(
-    monkeypatch,
-    tmp_path,
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
 ):
     video = _create_video(tmp_path)
     model_meta, label_a, _label_b = _create_model_meta()
@@ -828,28 +968,28 @@ def test_run_video_temporal_inference_auto_uses_stream_even_when_frame_cache_exi
         config={"kind": jobs.TEMPORAL_INFERENCE_KIND, "frame_source_mode": "auto"},
     )
 
-    monkeypatch.setattr(jobs, "update_video_meta", lambda video_obj: None)
+    monkeypatch.setattr(jobs, "update_video_meta", _update_video_meta_noop)
     monkeypatch.setattr(
         jobs,
         "extract_video_frames",
-        lambda video_obj, overwrite=False: (_ for _ in ()).throw(
-            AssertionError("auto stream mode must not extract frames")
-        ),
+        _extract_video_frames_forbidden,
     )
     monkeypatch.setattr(
         jobs,
         "update_video_text_metadata",
-        lambda video_obj, **kwargs: (_ for _ in ()).throw(
-            AssertionError("auto stream mode must not require frame OCR")
-        ),
+        _update_video_text_metadata_forbidden,
     )
-    monkeypatch.setattr(jobs, "_has_extracted_frame_files", lambda video_obj: True)
+    monkeypatch.setattr(
+        jobs, "_has_extracted_frame_files", _has_extracted_frame_files_true
+    )
 
-    def _fake_predict_video(self, **kwargs):
-        assert kwargs["frame_source_mode"] == "stream"
+    def _fake_predict_video(
+        self: VideoFile, **kwargs: Unpack[_PredictVideoKwargs]
+    ) -> VideoFrameScoreResult:
+        assert kwargs.get("frame_source_mode") == "stream"
         return VideoFrameScoreResult(
             labels=[label_a.name],
-            frame_scores=[[0.2]],
+            frame_scores=_score_array([[0.2]]),
             device="cpu",
             frame_count=1,
             frame_numbers=[0],
@@ -860,13 +1000,7 @@ def test_run_video_temporal_inference_auto_uses_stream_even_when_frame_cache_exi
     monkeypatch.setattr(
         jobs,
         "_run_lx_ai_core_temporal_inference",
-        lambda **kwargs: types.SimpleNamespace(
-            temporal_segments=[],
-            backend="torch",
-            device="cpu",
-            duration_ms=1.0,
-            provenance={"local_only": True},
-        ),
+        _lx_core_empty,
     )
 
     assert jobs._run_video_temporal_inference(
@@ -878,19 +1012,23 @@ def test_run_video_temporal_inference_auto_uses_stream_even_when_frame_cache_exi
     )
 
     history.refresh_from_db()
-    assert history.config["requested_frame_source_mode"] == "auto"
-    assert history.config["resolved_frame_source_mode"] == "stream"
-    assert history.config["result"]["resolved_frame_source_mode"] == "stream"
+    history_config = parse_temporal_inference_history_config_payload(history.config)
+    result_payload = _history_result(history)
+    assert history_config.requested_frame_source_mode == "auto"
+    assert history_config.resolved_frame_source_mode == "stream"
+    assert result_payload.resolved_frame_source_mode == "stream"
 
 
 @pytest.mark.django_db
 def test_run_video_temporal_inference_fails_when_current_meta_materializes_nothing(
-    monkeypatch,
-    tmp_path,
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
 ):
     video = _create_video(tmp_path)
     model_meta, label_a, label_b = _create_model_meta()
-    prediction_source, _ = InformationSource.objects.get_or_create_by_name("prediction")
+    prediction_source = InformationSource.objects.create(
+        name=f"prediction-{uuid.uuid4().hex[:8]}"
+    )
     LabelVideoSegment.objects.create(
         video_file=video,
         label=label_b,
@@ -905,32 +1043,33 @@ def test_run_video_temporal_inference_fails_when_current_meta_materializes_nothi
         config={"kind": jobs.TEMPORAL_INFERENCE_KIND},
     )
 
-    monkeypatch.setattr(jobs, "update_video_meta", lambda video_obj: None)
+    monkeypatch.setattr(jobs, "update_video_meta", _update_video_meta_noop)
     monkeypatch.setattr(
         jobs,
         "extract_video_frames",
-        lambda video_obj, overwrite=False: True,
+        _extract_video_frames_success,
     )
     monkeypatch.setattr(
         jobs,
         "update_video_text_metadata",
-        lambda video_obj, **kwargs: True,
+        _update_video_text_metadata_success,
     )
-    monkeypatch.setattr(jobs, "_has_extracted_frame_files", lambda video_obj: True)
     monkeypatch.setattr(
-        jobs,
-        "predict_video",
-        lambda video_obj, **kwargs: VideoFrameScoreResult(
+        jobs, "_has_extracted_frame_files", _has_extracted_frame_files_true
+    )
+
+    def predict_video_missing_label(
+        video_obj: VideoFile, **kwargs: Unpack[_PredictVideoKwargs]
+    ) -> VideoFrameScoreResult:
+        return VideoFrameScoreResult(
             labels=[label_a.name],
-            frame_scores=[[0.8], [0.9], [0.7], [0.1]],
+            frame_scores=_score_array([[0.8], [0.9], [0.7], [0.1]]),
             device="cpu",
             frame_count=4,
-        ),
-    )
-    monkeypatch.setattr(
-        jobs,
-        "_run_lx_ai_core_temporal_inference",
-        lambda **kwargs: types.SimpleNamespace(
+        )
+
+    def lx_core_missing_label(**kwargs: Unpack[_LxCoreKwargs]) -> types.SimpleNamespace:
+        return types.SimpleNamespace(
             temporal_segments=[
                 types.SimpleNamespace(
                     label=f"missing-{uuid.uuid4().hex[:8]}",
@@ -942,7 +1081,17 @@ def test_run_video_temporal_inference_fails_when_current_meta_materializes_nothi
             device="cpu",
             duration_ms=1.5,
             provenance={"local_only": True},
-        ),
+        )
+
+    monkeypatch.setattr(
+        jobs,
+        "predict_video",
+        predict_video_missing_label,
+    )
+    monkeypatch.setattr(
+        jobs,
+        "_run_lx_ai_core_temporal_inference",
+        lx_core_missing_label,
     )
 
     with pytest.raises(RuntimeError, match="no LabelVideoSegment rows"):
@@ -972,8 +1121,8 @@ def test_run_video_temporal_inference_fails_when_current_meta_materializes_nothi
 
 @pytest.mark.django_db(transaction=True)
 def test_run_video_temporal_inference_rolls_back_frames_on_failure(
-    monkeypatch,
-    tmp_path,
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
 ):
     video = _create_video(tmp_path)
     model_meta, _label_a, _label_b = _create_model_meta()
@@ -986,9 +1135,9 @@ def test_run_video_temporal_inference_rolls_back_frames_on_failure(
         config={"kind": jobs.TEMPORAL_INFERENCE_KIND},
     )
 
-    monkeypatch.setattr(jobs, "update_video_meta", lambda video_obj: None)
+    monkeypatch.setattr(jobs, "update_video_meta", _update_video_meta_noop)
 
-    def fake_extract_frames(video_obj, overwrite=False):
+    def fake_extract_frames(video_obj: VideoFile, overwrite: bool = False) -> bool:
         frame_dir.mkdir(parents=True, exist_ok=True)
         (frame_dir / "frame_0000000.jpg").write_bytes(b"frame")
         Frame.objects.update_or_create(
@@ -1016,15 +1165,15 @@ def test_run_video_temporal_inference_rolls_back_frames_on_failure(
     monkeypatch.setattr(
         jobs,
         "update_video_text_metadata",
-        lambda video_obj, **kwargs: True,
+        _update_video_text_metadata_success,
     )
-    monkeypatch.setattr(jobs, "_has_extracted_frame_files", lambda video_obj: True)
+    monkeypatch.setattr(
+        jobs, "_has_extracted_frame_files", _has_extracted_frame_files_true
+    )
     monkeypatch.setattr(
         jobs,
         "predict_video",
-        lambda video_obj, **kwargs: (_ for _ in ()).throw(
-            RuntimeError("prediction failed")
-        ),
+        _predict_video_prediction_failure,
     )
 
     with pytest.raises(RuntimeError, match="prediction failed"):
@@ -1047,7 +1196,7 @@ def test_run_video_temporal_inference_rolls_back_frames_on_failure(
 
 @pytest.mark.django_db(transaction=True)
 def test_run_video_temporal_inference_cleans_frames_for_redelivered_success(
-    tmp_path,
+    tmp_path: Path,
 ):
     video = _create_video(tmp_path)
     model_meta, _label_a, _label_b = _create_model_meta()

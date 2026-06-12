@@ -1,34 +1,53 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportMissingTypeStubs=false
 import json
 import logging
 import os
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Protocol, cast
 from uuid import uuid4
 
+from django.db import transaction
+from django.db.models.fields.files import FieldFile
+from lx_dtypes.models.contracts.video_frame_cache import (
+    FrameCacheLogPayload,
+    FrameCacheManifestLogPayload,
+    FrameCacheValidationLogPayload,
+)
+from lx_dtypes.models.contracts.video_state import VideoFrameStateContract
+
 from endoreg_db.services.video_files._io import _get_frame_dir_path
-from endoreg_db.utils.storage import materialize_video_file
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.ffmpeg_wrapper import (
+    extract_frames as ffmpeg_extract_frames,
+)
+from endoreg_db.utils.file_operations import (
     atomic_move_file,
     atomic_move_path,
     ensure_directory,
     safe_rmtree,
     safe_unlink_file,
 )
-from endoreg_db.utils.video.ffmpeg_wrapper import (
-    extract_frames as ffmpeg_extract_frames,
+from endoreg_db.utils.rust_backend import (
+    parse_extracted_frame_numbers as rust_parse,
 )
+from endoreg_db.utils.storage import materialize_video_file
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
 
-from django.db import transaction
 
-from endoreg_db.utils.system.rust_backend import (
-    parse_extracted_frame_numbers as rust_parse,
-)
+class _VideoMaterializableLike(Protocol):
+    video_hash: str
 
-logger = logging.getLogger(__name__)
+    def ensure_local_raw_file(self) -> AbstractContextManager[Path]: ...
+
+    def ensure_local_processed_file(self) -> AbstractContextManager[Path]: ...
+
+    raw_file: FieldFile | None
+    processed_file: FieldFile | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,17 +89,23 @@ class FrameCacheManifest:
             and set(self.actual_names) == expected_names
         )
 
-    def as_log_payload(self) -> dict[str, Any]:
-        return {
-            "frame_dir": str(self.frame_dir),
-            "expected_count": self.expected_count,
-            "file_count": self.file_count,
-            "missing_frame_numbers": self.missing_frame_numbers[:50],
-            "extra_frame_numbers": self.extra_frame_numbers[:50],
-            "invalid_file_names": self.invalid_file_names[:50],
-            "duplicate_frame_numbers": self.duplicate_frame_numbers[:50],
-            "unexpected_file_names": self.unexpected_file_names[:50],
-        }
+    def as_log_payload_model(self) -> FrameCacheManifestLogPayload:
+        return FrameCacheManifestLogPayload(
+            frame_dir=str(self.frame_dir),
+            file_count=self.file_count,
+            expected_count=self.expected_count,
+            missing_frame_numbers=self.missing_frame_numbers[:50],
+            extra_frame_numbers=self.extra_frame_numbers[:50],
+            invalid_file_names=self.invalid_file_names[:50],
+            duplicate_frame_numbers=self.duplicate_frame_numbers[:50],
+            unexpected_file_names=self.unexpected_file_names[:50],
+        )
+
+    def as_log_payload(self) -> FrameCacheLogPayload:
+        return cast(
+            FrameCacheLogPayload,
+            self.as_log_payload_model().model_dump(mode="python", exclude_none=True),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,28 +127,35 @@ class FrameCacheValidation:
             and not self.db_missing_file_frame_numbers
         )
 
-    def as_log_payload(self) -> dict[str, Any]:
-        payload = self.manifest.as_log_payload()
-        payload.update(
-            {
-                "db_extracted_frame_count": self.db_extracted_frame_count,
-                "db_missing_frame_numbers": self.db_missing_frame_numbers[:50],
-                "db_extra_frame_numbers": self.db_extra_frame_numbers[:50],
-                "db_path_mismatch_frame_numbers": (
-                    self.db_path_mismatch_frame_numbers[:50]
-                ),
-                "db_missing_file_frame_numbers": (
-                    self.db_missing_file_frame_numbers[:50]
-                ),
-                "valid": self.valid,
-            }
+    def as_log_payload(self) -> FrameCacheLogPayload:
+        manifest = self.manifest.as_log_payload_model()
+        payload = FrameCacheValidationLogPayload(
+            frame_dir=manifest.frame_dir,
+            file_count=manifest.file_count,
+            expected_count=manifest.expected_count,
+            missing_frame_numbers=manifest.missing_frame_numbers,
+            extra_frame_numbers=manifest.extra_frame_numbers,
+            invalid_file_names=manifest.invalid_file_names,
+            duplicate_frame_numbers=manifest.duplicate_frame_numbers,
+            unexpected_file_names=manifest.unexpected_file_names,
+            db_extracted_frame_count=self.db_extracted_frame_count,
+            db_missing_frame_numbers=self.db_missing_frame_numbers[:50],
+            db_extra_frame_numbers=self.db_extra_frame_numbers[:50],
+            db_path_mismatch_frame_numbers=self.db_path_mismatch_frame_numbers[:50],
+            db_missing_file_frame_numbers=self.db_missing_file_frame_numbers[:50],
+            valid=self.valid,
         )
-        return payload
+        return cast(
+            FrameCacheLogPayload,
+            payload.model_dump(mode="python", exclude_none=True),
+        )
 
 
-def _video_source_context(video: "VideoFile", *, from_processed: bool):
+def _video_source_context(
+    video: "VideoFile", *, from_processed: bool
+) -> AbstractContextManager[Path]:
     return materialize_video_file(
-        video,
+        cast(_VideoMaterializableLike, video),
         "processed" if from_processed else "raw",
     )
 
@@ -138,19 +170,29 @@ def _log_frame_cache_event(
     video: "VideoFile",
     status: str,
     detail: str,
-    **extra: Any,
+    extra: FrameCacheLogPayload,
 ) -> None:
-    payload = {
+    payload: FrameCacheLogPayload = {
         "event": event,
         "video_hash": str(video.video_hash),
         "status": status,
         "detail": detail,
     }
-    payload.update(extra)
-    logger.warning(json.dumps(payload, sort_keys=True, default=str))
+    logger.warning(
+        json.dumps(
+            {
+                **payload,
+                **extra,
+            },
+            sort_keys=True,
+            default=str,
+        )
+    )
 
 
-def _expected_frame_count(video: "VideoFile", state) -> int | None:
+def _expected_frame_count(
+    video: "VideoFile", state: VideoFrameStateContract
+) -> int | None:
     for value in (
         getattr(video, "frame_count", None),
         getattr(state, "frame_count", None),
@@ -273,7 +315,7 @@ def _resolve_verified_frame_count(
             video=video,
             status="invalid",
             detail="staged frame cache contains invalid or duplicate frame names",
-            **manifest.as_log_payload(),
+            extra=manifest.as_log_payload(),
         )
         raise RuntimeError(
             "Extracted frame set contains invalid or duplicate frame filenames "
@@ -288,7 +330,7 @@ def _resolve_verified_frame_count(
             video=video,
             status="invalid",
             detail="staged frame cache is not contiguous zero-based",
-            **manifest.as_log_payload(),
+            extra=manifest.as_log_payload(),
         )
         raise RuntimeError(
             f"Extracted frame set for {video.video_hash} is not contiguous zero-based."
@@ -327,7 +369,7 @@ def _resolve_verified_frame_count(
         video=video,
         status="invalid",
         detail="staged frame cache does not match expected frame count",
-        **manifest.as_log_payload(),
+        extra=manifest.as_log_payload(),
     )
     raise RuntimeError(
         "Extracted frame set does not match expected video frame count "
@@ -349,7 +391,7 @@ def _assert_exact_installed_manifest(
         video=video,
         status="invalid",
         detail="installed frame cache failed final exact completeness check",
-        **manifest.as_log_payload(),
+        extra=manifest.as_log_payload(),
     )
     raise RuntimeError(
         "Installed frame cache does not match the verified frame set "
@@ -384,7 +426,10 @@ def validate_video_frame_cache(
     from endoreg_db.models.media.frame import Frame
 
     state = video.get_or_create_state()
-    expected_count = _expected_frame_count(video, state)
+    expected_count = _expected_frame_count(
+        video,
+        VideoFrameStateContract.model_validate(state),
+    )
     frame_dir = _get_frame_dir_path(video)
     if frame_dir is None:
         raise ValueError(
@@ -613,8 +658,8 @@ def _extract_frames(
     video: "VideoFile",
     quality: int = 2,
     overwrite: bool = False,
-    ext="jpg",
-    verbose=False,
+    ext: str = "jpg",
+    verbose: bool = False,
     from_processed: bool = False,
 ) -> bool:
     """
@@ -648,7 +693,10 @@ def _extract_frames(
         )
 
     state = video.get_or_create_state()
-    expected_count = _expected_frame_count(video, state)
+    expected_count = _expected_frame_count(
+        video,
+        VideoFrameStateContract.model_validate(state),
+    )
     files_exist_on_disk = frame_dir.exists() and any(frame_dir.glob(f"frame_*.{ext}"))
     existing_manifest: FrameCacheManifest | None = None
     existing_full_extraction_complete = False

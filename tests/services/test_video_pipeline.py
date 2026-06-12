@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# pyright: reportUnknownMemberType=false
 """
 Corrected Video Import and Anonymization Test Script
 
@@ -13,7 +14,7 @@ from pathlib import Path
 
 from endoreg_db.models import VideoFile
 from endoreg_db.services.video_import import VideoImportService
-from endoreg_db.services.video_temporal_inference import _run_video_temporal_inference
+from endoreg_db.services.video_temporal_inference import _run_video_temporal_inference  # pyright: ignore[reportPrivateUsage]
 from tests.helpers.default_objects import get_latest_segmentation_model
 from tests.media.video.mock_video_anonym_annotation import mock_video_manual_validation
 
@@ -26,7 +27,7 @@ vis = VideoImportService()
 import_and_anonymize = vis.import_and_anonymize
 
 
-def main():
+def main() -> None:
     """Execute the complete video processing pipeline."""
 
     print("=== Video Import and Anonymization Pipeline ===")
@@ -44,7 +45,9 @@ def main():
             center_name=DEFAULT_CENTER_NAME,
             processor_name=DEFAULT_ENDOSCOPY_PROCESSOR_NAME,
         )
+        assert video_file is not None
         model_meta = get_latest_segmentation_model()
+        assert model_meta is not None
         _run_video_temporal_inference(
             video_file.pk,
             model_meta_id=model_meta.pk,
@@ -63,7 +66,7 @@ def main():
         print(f"✓ Label video segments created: {state.lvs_created}")
         # Check sensitive metadata
         if video_file.sensitive_meta:
-            print(f"✓ Sensitive metadata created: {video_file.sensitive_meta.id}")
+            print(f"✓ Sensitive metadata created: {video_file.sensitive_meta.pk}")
         else:
             print("⚠ No sensitive metadata found")
 

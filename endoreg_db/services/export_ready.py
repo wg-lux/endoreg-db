@@ -3,10 +3,11 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, cast
 
 from django.db import transaction
 from django.db.utils import OperationalError, ProgrammingError
+from django.db.models.fields.files import FieldFile
 
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.media.video.video_file import VideoFile
@@ -18,10 +19,14 @@ from endoreg_db.models.state.video_segment_validation import (
 from endoreg_db.services.hub import resolve_allowed_center_id
 from endoreg_db.services.hub.audit import emit_hub_audit_event
 from endoreg_db.services.video_files import get_or_create_video_state
-from endoreg_db.utils.filesystem.file_operations import sha256_file
-from endoreg_db.utils.filesystem.paths import ensure_within_protected_media_root
+from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.paths import ensure_within_protected_media_root
 
 logger = logging.getLogger(__name__)
+
+
+class _CenterIdentity(Protocol):
+    pk: int
 
 
 class ReadyForExportError(ValueError):
@@ -78,7 +83,8 @@ def _resolve_center(center_key: str | None) -> Center:
 
 
 def _verify_center_scope(*, user: Any, video: VideoFile, center: Center) -> None:
-    if video.center_id != center.id:
+    center_pk = cast(_CenterIdentity, center).pk
+    if video.center_id != center_pk:
         raise ReadyForExportError(
             "center_key does not match the video center.",
             status_code=403,
@@ -90,24 +96,24 @@ def _verify_center_scope(*, user: Any, video: VideoFile, center: Center) -> None
             "Authenticated user is not assigned to a center.",
             status_code=403,
         )
-    if allowed_center_id is not None and allowed_center_id != center.id:
+    if allowed_center_id is not None and allowed_center_id != center_pk:
         raise ReadyForExportError(
             "Video center is outside the authenticated scope.",
             status_code=403,
         )
 
 
-def _processed_file(video: VideoFile):
+def _processed_file(video: VideoFile) -> FieldFile:
     processed_file = getattr(video, "processed_file", None)
     if not processed_file or not getattr(processed_file, "name", None):
         raise ReadyForExportError(
             "Video has no managed processed_file artifact.",
             status_code=409,
         )
-    return processed_file
+    return cast(FieldFile, processed_file)
 
 
-def _verify_processed_path(processed_file) -> Path:
+def _verify_processed_path(processed_file: FieldFile) -> Path:
     try:
         path = Path(processed_file.path).resolve(strict=True)
     except (AttributeError, NotImplementedError, OSError, ValueError) as exc:

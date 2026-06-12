@@ -13,7 +13,7 @@ from endoreg_db.services.streamable_media import (
     STREAMABLE_RAW_VIDEO_ROOT,
     STREAMABLE_VIDEO_ROOT,
 )
-from endoreg_db.utils.filesystem.paths import (
+from endoreg_db.utils.paths import (
     DATA_DIR,
     PROTECTED_DATA_ROOT,
     STORAGE_DIR,

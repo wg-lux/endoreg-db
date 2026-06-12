@@ -7,7 +7,7 @@ from lx_dtypes.models.contracts.pseudonymization import (
     QuasiIdentifierSubset,
 )
 
-from .k_anonymity import _build_sensitive_meta_qi_queryset
+from .k_anonymity import build_sensitive_meta_qi_queryset
 from .fake import fake_name_with_similar_dob_and_gender
 
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
@@ -76,7 +76,7 @@ def k_pseudonymize(
     use_dob_band = "dob_band" in qi_subset
     pseudonym_record = cast(_MutableSensitiveMetaPseudonymRecord, instance)
 
-    qs_before = _build_sensitive_meta_qi_queryset(
+    qs_before = build_sensitive_meta_qi_queryset(
         instance,
         dob_year_tolerance=dob_year_tolerance,
         include_self=True,
@@ -129,7 +129,7 @@ def k_pseudonymize(
         )
 
     # --- 3) Recompute k AFTER pseudonymization ---
-    qs_after = _build_sensitive_meta_qi_queryset(
+    qs_after = build_sensitive_meta_qi_queryset(
         instance,
         dob_year_tolerance=dob_year_tolerance,
         include_self=True,

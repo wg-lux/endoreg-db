@@ -1,38 +1,22 @@
-# --- Add Imports ---
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportUnusedClass=false
 import logging
 from contextlib import nullcontext
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
-from endoreg_db.utils.filesystem.file_operations import _emit_file_operation_event
-from endoreg_db.utils.storage import ensure_local_file
-import cv2
-
-# --- End Add Imports ---
-
-if TYPE_CHECKING:
-    from endoreg_db.models.media.video.video_file import (
-        VideoFile,
-    )  # Correct import path
-
-# --- Add Logger ---
-logger = logging.getLogger(__name__)
-# --- End Add Logger ---
-
-
-# --- Add Imports ---
-import logging
 from typing import TYPE_CHECKING
 
-# --- End Add Imports ---
+import cv2
+from django.db.models.fields.files import FieldFile
+
+from endoreg_db.utils.file_operations import _emit_file_operation_event
+from endoreg_db.utils.storage import ensure_local_file
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import (
         VideoFile,
     )  # Correct import path
 
-# --- Add Logger ---
+
 logger = logging.getLogger(__name__)
-# --- End Add Logger ---
 
 
 def _initialize_video_specs(
@@ -43,82 +27,106 @@ def _initialize_video_specs(
     """
     Initializes video specifications using OpenCV, aligned with storage-agnostic I/O patterns.
     """
-    # 1. Target File Resolution (Use file objects, not direct path properties)
-    target_file = None
-    if local_video_path is not None:
-        target_file = Path(local_video_path)
-    elif use_raw and getattr(video, "has_raw", False):
-        target_file = video.raw_file
-    elif getattr(video, "active_file", None):
-        target_file = video.active_file
+    source_file: Path | None = local_video_path
+    target_field_file: FieldFile | None = None
 
-    if not target_file:
+    if local_video_path is None and use_raw and getattr(video, "has_raw", False):
+        target_field_file = getattr(video, "raw_file", None)
+    elif local_video_path is None and getattr(video, "active_file", None) is not None:
+        target_field_file = getattr(video, "active_file", None)
+
+    if source_file is None and target_field_file is None:
         logger.error(
             "No suitable video file found for hash %s",
             getattr(video, "video_hash", "<unknown>"),
         )
         return False
 
+    observed_video_path: Path | None = source_file
+
     try:
-        # 2. Storage-Agnostic File Staging
-        source_context = (
-            nullcontext(Path(local_video_path))
-            if local_video_path is not None
-            else ensure_local_file(target_file)
-        )
-        with source_context as video_path:
-            # Defensive check on the temporarily staged file
-            if not video_path.exists():
-                _emit_file_operation_event(
-                    operation="metadata_read",
-                    status="error",
-                    source=video_path,
-                    detail="Staged file does not exist",
-                )
-                raise FileNotFoundError(f"Staged file missing: {video_path}")
+        if source_file is not None:
+            with nullcontext(source_file) as video_path:
+                observed_video_path = video_path
+                if not video_path.exists():
+                    _emit_file_operation_event(
+                        operation="metadata_read",
+                        status="error",
+                        source=video_path,
+                        detail="Staged file does not exist",
+                    )
+                    raise FileNotFoundError(f"Staged file missing: {video_path}")
 
-            # 3. OpenCV Extraction (Requires POSIX path, which is safe here)
-            video_cap = cast(Any, cv2.VideoCapture)(video_path.as_posix())
+                video_cap = cv2.VideoCapture(video_path.as_posix())
+                if not video_cap.isOpened():
+                    video_cap.release()
+                    raise RuntimeError(
+                        f"OpenCV could not open staged file {video_path}"
+                    )
 
-            if not video_cap.isOpened():
-                video_cap.release()
-                raise RuntimeError(f"OpenCV could not open staged file {video_path}")
+                try:
+                    file_fps = float(video_cap.get(cv2.CAP_PROP_FPS))
+                    file_w = int(video_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                    file_h = int(video_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                    file_cnt = int(video_cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                finally:
+                    video_cap.release()
+        else:
+            assert target_field_file is not None
+            with ensure_local_file(target_field_file) as video_path:
+                observed_video_path = video_path
+                if not video_path.exists():
+                    _emit_file_operation_event(
+                        operation="metadata_read",
+                        status="error",
+                        source=video_path,
+                        detail="Staged file does not exist",
+                    )
+                    raise FileNotFoundError(f"Staged file missing: {video_path}")
 
-            try:
-                file_fps = video_cap.get(cv2.CAP_PROP_FPS)
-                file_w = int(video_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                file_h = int(video_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                file_cnt = int(video_cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            finally:
-                video_cap.release()
+                video_cap = cv2.VideoCapture(video_path.as_posix())
+                if not video_cap.isOpened():
+                    video_cap.release()
+                    raise RuntimeError(
+                        f"OpenCV could not open staged file {video_path}"
+                    )
 
-        # Context manager exits here: The local temp file is safely cleaned up.
+                try:
+                    file_fps = float(video_cap.get(cv2.CAP_PROP_FPS))
+                    file_w = int(video_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                    file_h = int(video_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                    file_cnt = int(video_cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                finally:
+                    video_cap.release()
 
-        # 4. State Management & Conditional Updates
-        fields_to_update = []
-        updates = {
-            "fps": (video.fps, file_fps),
-            "width": (video.width, file_w),
-            "height": (video.height, file_h),
-            "frame_count": (video.frame_count, file_cnt),
-        }
+        fields_to_update: list[str] = []
+        if video.fps is None and file_fps > 0:
+            video.fps = file_fps
+            fields_to_update.append("fps")
+        if video.width is None and file_w > 0:
+            video.width = file_w
+            fields_to_update.append("width")
+        if video.height is None and file_h > 0:
+            video.height = file_h
+            fields_to_update.append("height")
+        if video.frame_count is None and file_cnt > 0:
+            video.frame_count = file_cnt
+            fields_to_update.append("frame_count")
 
-        for field, (current, new) in updates.items():
-            if current is None and new and new > 0:
-                setattr(video, field, new)
-                fields_to_update.append(field)
-
-        # Handle Duration separately (derived field)
-        if video.duration is None and video.frame_count and video.fps:
+        if (
+            video.duration is None
+            and video.frame_count is not None
+            and video.fps is not None
+            and video.fps > 0
+        ):
             video.duration = video.frame_count / video.fps
             fields_to_update.append("duration")
 
-        # 5. Atomic-style Saving
         if fields_to_update:
             _emit_file_operation_event(
                 operation="metadata_update",
                 status="ok",
-                source=getattr(target_file, "name", None),
+                source=observed_video_path,
                 detail=f"Updated: {', '.join(fields_to_update)}",
             )
             video.save(update_fields=fields_to_update)
@@ -129,7 +137,7 @@ def _initialize_video_specs(
         _emit_file_operation_event(
             operation="metadata_read",
             status="error",
-            source=getattr(target_file, "name", None),
+            source=observed_video_path,
             detail=str(e),
         )
         logger.error(

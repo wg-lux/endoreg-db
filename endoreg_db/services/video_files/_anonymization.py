@@ -1,31 +1,39 @@
+# pyright: reportUnusedFunction=false, reportPrivateUsage=false, reportMissingTypeStubs=false
+
 import json
 import logging
 from contextlib import AbstractContextManager
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional, Protocol, Set, Tuple, cast
-
+from typing import TYPE_CHECKING, Optional, Protocol, cast
+from lx_dtypes.models.contracts.endoscopy_processor import (
+    RoiBoxCore,
+    all_black_fallback_roi_box,
+    roi_box_or_none_from_object,
+)
 from django.db import transaction
 from tqdm import tqdm
 
 from endoreg_db.import_files.file_storage.cleanup import safe_cleanup_staging_file
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
-from endoreg_db.utils.security.hashs import get_video_hash
-from endoreg_db.utils.filesystem import paths as path_utils
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.hashs import get_video_hash
+from endoreg_db.utils import paths as path_utils
+from endoreg_db.utils.file_operations import (
     ensure_directory,
     safe_rmtree,
     safe_unlink_file,
 )
 from endoreg_db.utils.storage import save_local_file
-from endoreg_db.utils.validation.endo_roi import validate_endo_roi
+from endoreg_db.utils.validate_endo_roi import validate_endo_roi
 
-from endoreg_db.utils.video.ffmpeg_wrapper import (
+from endoreg_db.utils.ffmpeg_wrapper import (
     assemble_video_from_frames,
     mask_video_to_roi_and_blacken_intervals,
 )
 from endoreg_db.models.utils import anonymize_frame  # Import from models.utils
 from endoreg_db.services.video_files.frames import extract_video_frames
-from endoreg_db.services.video_files._frames._extract_frames import validate_video_frame_cache
+from endoreg_db.services.video_files._frames._extract_frames import (
+    validate_video_frame_cache,
+)
 from endoreg_db.services.video_files._segments import (
     _get_outside_frame_numbers,
     _get_outside_frames,
@@ -128,11 +136,11 @@ def _ensure_valid_frame_cache_for_frame_anonymization(video: "VideoFile") -> Non
 def _create_anonymized_frame_files(
     video: "VideoFile",
     anonymized_frame_dir: Path,
-    endo_roi: Dict[str, int],
+    endo_roi: RoiBoxCore,
     frames: "QuerySet[Frame]",
-    outside_frame_numbers: Set[int],
-    censor_color: Tuple[int, int, int] = (0, 0, 0),
-) -> List[Path]:
+    outside_frame_numbers: set[int],
+    censor_color: tuple[int, int, int] = (0, 0, 0),
+) -> list[Path]:
     """
     Creates anonymized versions of frames, censoring outside the ROI or using censor_color for 'outside' frames.
 
@@ -150,7 +158,7 @@ def _create_anonymized_frame_files(
     Raises:
         RuntimeError: If anonymization fails for any frame.
     """
-    generated_paths = []
+    generated_paths: list[Path] = []
     frame_iterator = frames.filter(is_extracted=True).iterator()
     total_frames = frames.filter(is_extracted=True).count()
     progress_bar = tqdm(
@@ -169,7 +177,7 @@ def _create_anonymized_frame_files(
 
             try:
                 source_path = frame_obj.file_path
-                if not isinstance(source_path, Path):
+                if not source_path:
                     raise TypeError(
                         f"Frame.file_path did not return a Path object for frame {frame_obj.frame_number}"
                     )
@@ -238,7 +246,7 @@ def _censor_outside_frames(
     video: "VideoFile",
     outside_label_name: str = "outside",
     only_validated: bool = False,
-    censor_color: Tuple[int, int, int] = (0, 0, 0),
+    censor_color: tuple[int, int, int] = (0, 0, 0),
 ) -> bool:
     """
     Overwrites frame files marked as 'outside' with a censored version (e.g., black).
@@ -293,7 +301,7 @@ def _censor_outside_frames(
             anonymize_frame(
                 raw_frame_path=frame_path,
                 target_frame_path=frame_path,
-                endo_roi={},
+                endo_roi=all_black_fallback_roi_box(),
                 all_black=True,
                 censor_color=censor_color,
             )
@@ -319,8 +327,8 @@ def _censor_outside_frames(
 
 
 def _make_temporary_anonymized_frames(
-    video: "VideoFile", roi_processing=True
-) -> Tuple[Path, List[Path]]:
+    video: "VideoFile", roi_processing: bool = True
+) -> tuple[Path, list[Path]]:
     """
     Creates temporary anonymized frames in a separate directory.
     Requires raw file and extracted frames. Raises ValueError or RuntimeError on failure.
@@ -346,17 +354,11 @@ def _make_temporary_anonymized_frames(
         temp_anonym_frame_dir,
     )
     if roi_processing:
-        endo_roi = video.get_endo_roi()
-        if not validate_endo_roi(endo_roi_dict=endo_roi):
+        endo_roi = roi_box_or_none_from_object(video.get_endo_roi())
+        if endo_roi is None or not validate_endo_roi(endo_roi):
             raise ValueError(f"Endoscope ROI is not valid for video {video.video_hash}")
     else:
-        endo_roi = {
-            "x": 0,
-            "y": 0,
-            "width": 0,
-            "height": 0,
-        }  # Dummy ROI to skip processing
-    assert endo_roi is not None  # For type checker
+        endo_roi = all_black_fallback_roi_box()
 
     state = video.get_or_create_state()
     if not state.frames_extracted:
@@ -495,10 +497,9 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> bool:
             f"Sensitive metadata for video {video.video_hash} is not validated. Cannot anonymize."
         )
 
-    endo_roi = video.get_endo_roi()
-    if not validate_endo_roi(endo_roi_dict=endo_roi):
+    endo_roi = roi_box_or_none_from_object(video.get_endo_roi())
+    if endo_roi is None or not validate_endo_roi(endo_roi):
         raise ValueError(f"Endoscope ROI is not valid for video {video.video_hash}")
-    assert endo_roi is not None
 
     final_storage_path = video.get_target_anonymized_video_path()
     anonymized_video_path = (
@@ -697,10 +698,6 @@ def _anonymize_from_frame_cache(
         )
 
         fps = video.get_fps()
-        if fps is None:
-            raise ValueError(
-                f"FPS could not be determined for {video.video_hash}, cannot assemble video."
-            )
 
         logger.info(
             "Assembling anonymized video for %s at %s",
@@ -851,7 +848,8 @@ def _cleanup_raw_assets(
                 "Deleting original raw video FieldFile through storage: %s",
                 raw_file_name,
             )
-            video_file.raw_file.storage.delete(raw_file_name)
+            video_file.raw_file.name = raw_file_name
+            video_file.raw_file.delete(save=False)
         elif raw_file_path and raw_file_path.exists():
             logger.info("Deleting original raw video path: %s", raw_file_path)
             safe_unlink_file(raw_file_path, missing_ok=True)

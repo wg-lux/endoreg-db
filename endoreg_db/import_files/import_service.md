@@ -36,7 +36,7 @@ The current intended flow is:
 External producers and uploaders that bypass the lx-annotate file watcher must use an atomic handoff pattern:
 
 1. Write into a name outside the watched final pattern, for example `exam.mp4.part` or `exam.mp4.tmp`.
-2. Finish writing, call `flush()` and `fsync()` on the file descriptor, close the file, and fsync the containing directory when the platform allows it. Producers in Python should use `endoreg_db.utils.filesystem.file_operations.atomic_handoff_file(...)`.
+2. Finish writing, call `flush()` and `fsync()` on the file descriptor, close the file, and fsync the containing directory when the platform allows it. Producers in Python should use `endoreg_db.utils.file_operations.atomic_handoff_file(...)`.
 3. Promote the completed file with an atomic same-filesystem rename to the final watched name, for example `exam.mp4`.
 4. Never append to or rewrite the final watched `*.mp4` after rename.
 

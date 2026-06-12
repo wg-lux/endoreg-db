@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from contextlib import ExitStack
 from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
+from typing import Any, cast
 
 import pytest
 from django.core.management import call_command
@@ -28,7 +30,7 @@ def _prepare_health_paths(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
 def _health_command_patches(
     *,
     tmp_path: Path,
-    audit_status: dict[str, object],
+    audit_status: Mapping[str, object],
 ):
     protected_root, protected_media_root, storage_root, quarantine_root = (
         _prepare_health_paths(tmp_path)
@@ -82,14 +84,17 @@ def _health_command_patches(
     ]
 
 
-def _run_health_with_patches(tmp_path: Path, audit_status: dict[str, object]) -> dict:
+def _run_health_with_patches(
+    tmp_path: Path,
+    audit_status: Mapping[str, object],
+) -> dict[str, Any]:
     output = StringIO()
     patches = _health_command_patches(tmp_path=tmp_path, audit_status=audit_status)
     with ExitStack() as stack:
         for active_patch in patches:
             stack.enter_context(active_patch)
         call_command("check_system_health", "--json", stdout=output)
-    return json.loads(output.getvalue())
+    return cast(dict[str, Any], json.loads(output.getvalue()))
 
 
 @pytest.mark.django_db
@@ -130,6 +135,6 @@ def test_check_system_health_rejects_local_profile_on_unverified_audit_ledger(
         with pytest.raises(CommandError):
             call_command("check_system_health", "--json", stdout=output)
 
-    payload = json.loads(output.getvalue())
+    payload = cast(dict[str, Any], json.loads(output.getvalue()))
     assert not payload["checks"]["local_study_server_audit_ledger_integrity_verified"]
     assert payload["local_study_server"]["audit_ledger_integrity"] == audit_status

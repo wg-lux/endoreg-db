@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportUnusedClass=false
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -26,7 +27,7 @@ def _frame_number_to_s(video: "VideoFile", frame_number: int) -> float:
     """
     fps = video.fps
     if fps is None or fps <= 0:
-        fps = video.get_fps()
-    if fps is None or fps <= 0:
+        fps = float(video.get_fps())
+    if fps <= 0:
         raise ValueError("FPS must be set and greater than zero.")
     return frame_number / fps

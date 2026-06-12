@@ -1,14 +1,19 @@
+# pyright: reportPrivateUsage=false
 import os
 from pathlib import Path
+from typing import cast
 
 import pytest
 from django.conf import settings
+from lx_dtypes.models.contracts.model_meta_logic import (
+    ModelMetaCreateFromFileKwargsData,
+    ModelMetaCreateFromFilePayload,
+)
+from endoreg_db.utils.ffmpeg_wrapper import is_ffmpeg_available
 
 from endoreg_db.models import ModelMeta
 from endoreg_db.models.metadata import VideoPredictionMeta
 from endoreg_db.services.video_files._ai import _is_stub_weights_file
-from endoreg_db.utils.video.ffmpeg_wrapper import is_ffmpeg_available
-
 from tests.helpers.data_loader import load_ai_model_data, load_ai_model_label_data
 from tests.helpers.default_objects import get_default_video_file
 
@@ -16,7 +21,7 @@ SKIP_EXPENSIVE_TESTS = os.environ.get("SKIP_EXPENSIVE_TESTS", "true").lower() ==
 FFMPEG_AVAILABLE = is_ffmpeg_available()
 
 
-def _skip_unless_video_tests_enabled():
+def _skip_unless_video_tests_enabled() -> None:
     if SKIP_EXPENSIVE_TESTS:
         pytest.skip("Skipping expensive inference test (SKIP_EXPENSIVE_TESTS=true)")
     if not settings.RUN_VIDEO_TESTS:
@@ -33,7 +38,7 @@ def _prepare_video_file():
 @pytest.mark.video
 @pytest.mark.ai
 @pytest.mark.django_db(transaction=True)
-def test_predict_video_with_huggingface_weights(base_db_data):
+def test_predict_video_with_huggingface_weights(base_db_data: object) -> None:
     _skip_unless_video_tests_enabled()
 
     load_ai_model_label_data()
@@ -77,13 +82,12 @@ def test_predict_video_with_huggingface_weights(base_db_data):
         )
 
     finally:
-        weight_name = model_meta.weights.name
-        storage = model_meta.weights.storage
         ai_model = model_meta.model
+        weights = model_meta.weights
         video_file.delete_with_file()
+        if weights.name:
+            weights.delete(save=False)
         model_meta.delete()
-        if weight_name:
-            storage.delete(weight_name)
         if ai_model and not ai_model.metadata_versions.exists():
             ai_model.delete()
 
@@ -92,7 +96,7 @@ def test_predict_video_with_huggingface_weights(base_db_data):
 @pytest.mark.video
 @pytest.mark.ai
 @pytest.mark.django_db(transaction=True)
-def test_predict_video_with_local_fixture_weights(base_db_data):
+def test_predict_video_with_local_fixture_weights(base_db_data: object) -> None:
     _skip_unless_video_tests_enabled()
 
     load_ai_model_label_data()
@@ -106,6 +110,20 @@ def test_predict_video_with_local_fixture_weights(base_db_data):
     meta_name = "test_local_colonoscopy_inference"
     ModelMeta.objects.filter(name=meta_name).delete()
 
+    create_kwargs = cast(
+        ModelMetaCreateFromFileKwargsData,
+        ModelMetaCreateFromFilePayload(
+            activation="sigmoid",
+            mean="0.45211223,0.27139644,0.19264949",
+            std="0.31418097,0.21088019,0.16059452",
+            size_x=716,
+            size_y=716,
+            axes="2,0,1",
+            batchsize=4,
+            num_workers=0,
+            description="Local fixture weights for inference integration test",
+        ).model_dump(mode="python"),
+    )
     model_meta = ModelMeta.create_from_file(
         meta_name=meta_name,
         model_name="image_multilabel_classification_colonoscopy_default",
@@ -114,15 +132,7 @@ def test_predict_video_with_local_fixture_weights(base_db_data):
         weights_file=str(fixture_path),
         requested_version="1",
         bump_if_exists=True,
-        activation="sigmoid",
-        mean="0.45211223,0.27139644,0.19264949",
-        std="0.31418097,0.21088019,0.16059452",
-        size_x=716,
-        size_y=716,
-        axes="2,0,1",
-        batchsize=4,
-        num_workers=0,
-        description="Local fixture weights for inference integration test",
+        **create_kwargs,
     )
 
     weights_path = Path(model_meta.weights.path)
@@ -159,9 +169,8 @@ def test_predict_video_with_local_fixture_weights(base_db_data):
         )
 
     finally:
-        weight_name = model_meta.weights.name
-        storage = model_meta.weights.storage
+        weights = model_meta.weights
         video_file.delete_with_file()
+        if weights.name:
+            weights.delete(save=False)
         model_meta.delete()
-        if weight_name:
-            storage.delete(weight_name)

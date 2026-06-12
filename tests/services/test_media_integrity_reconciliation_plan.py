@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import uuid
 from pathlib import Path
+from typing import Any
 
 import pytest
+from pytest import MonkeyPatch
 
 import endoreg_db.services.media_integrity as media_integrity
 from endoreg_db.models import (
@@ -14,7 +16,7 @@ from endoreg_db.models import (
     VideoFile,
 )
 from endoreg_db.services.media_integrity import reconcile_media_integrity
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_write_file,
     ensure_directory,
 )
@@ -123,7 +125,7 @@ def test_dry_run_does_not_create_missing_stable_frame(
     assert not (frame_dir / "frame_0000000.jpg").exists()
 
 
-def test_targeted_frame_zero_fix_uses_staged_output(monkeypatch, tmp_path: Path):
+def test_targeted_frame_zero_fix_uses_staged_output(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
     video = _video_with_initialized_frames(
         tmp_path,
         frame_count=3,
@@ -139,7 +141,14 @@ def test_targeted_frame_zero_fix_uses_staged_output(monkeypatch, tmp_path: Path)
 
     seen_output_dirs: list[Path] = []
 
-    def fake_extract_range(video_arg, *, output_dir, start_frame, end_frame, **_kwargs):
+    def fake_extract_range(
+        video_arg: VideoFile,
+        *,
+        output_dir: Path | str,
+        start_frame: int,
+        end_frame: int,
+        **_kwargs: Any,
+    ) -> list[Path]:
         assert video_arg == video
         assert start_frame == 0
         assert end_frame == 1
@@ -250,14 +259,14 @@ def test_ffmpeg_report_records_db_fps_source(tmp_path: Path):
     assert report["action"] == "probe_unavailable"
 
 
-def test_ffmpeg_report_uses_streamable_fallback_source(monkeypatch, tmp_path: Path):
+def test_ffmpeg_report_uses_streamable_fallback_source(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
     video = _video_with_initialized_frames(tmp_path, frame_count=3)
     streamable_path = tmp_path / "streamable" / "processed" / "fallback.mp4"
     _write_test_file(streamable_path, b"video")
     video.processed_streamable_relative_path = "streamable/processed/fallback.mp4"
     video.save(update_fields=["processed_streamable_relative_path"])
 
-    probe_data = {
+    probe_data: dict[str, object] = {
         "streams": [
             {
                 "codec_type": "video",
@@ -268,10 +277,13 @@ def test_ffmpeg_report_uses_streamable_fallback_source(monkeypatch, tmp_path: Pa
     }
 
     monkeypatch.setattr(media_integrity, "STORAGE_DIR", tmp_path)
+    def fake_probe_video_path(path: Path) -> tuple[bool, dict[str, object], str]:
+        return True, probe_data, ""
+
     monkeypatch.setattr(
         media_integrity,
         "_probe_video_path",
-        lambda path: (True, probe_data, ""),
+        fake_probe_video_path,
     )
 
     summary = reconcile_media_integrity(
@@ -288,8 +300,8 @@ def test_ffmpeg_report_uses_streamable_fallback_source(monkeypatch, tmp_path: Pa
 
 
 def test_corrupt_streamable_with_valid_canonical_is_rebuild_only(
-    monkeypatch, tmp_path: Path
-):
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
     video = _video_with_initialized_frames(tmp_path, frame_count=3)
     streamable_path = tmp_path / "streamable" / "processed" / "fallback.mp4"
     _write_test_file(
@@ -302,20 +314,38 @@ def test_corrupt_streamable_with_valid_canonical_is_rebuild_only(
     video.save(update_fields=["processed_file", "processed_streamable_relative_path"])
 
     monkeypatch.setattr(media_integrity, "STORAGE_DIR", tmp_path)
+    def fake_corrupt_probe_video_path(
+        path: Path,
+    ) -> tuple[bool, dict[str, object], str]:
+        return False, {"streams": []}, "corrupt streamable"
+
+    def fake_verify_canonical_probe(
+        video_arg: VideoFile,
+        *,
+        processed: bool,
+    ) -> tuple[bool, str]:
+        return True, ""
+
     monkeypatch.setattr(
         media_integrity,
         "_probe_video_path",
-        lambda path: (False, {"streams": []}, "corrupt streamable"),
+        fake_corrupt_probe_video_path,
     )
     monkeypatch.setattr(
         media_integrity,
         "_verify_canonical_probe",
-        lambda video_arg, *, processed: (True, ""),
+        fake_verify_canonical_probe,
     )
 
     called: list[dict[str, bool]] = []
 
-    def fake_sync(video_arg, *, include_raw, include_processed, save):
+    def fake_sync(
+        video_arg: VideoFile,
+        *,
+        include_raw: bool,
+        include_processed: bool,
+        save: bool,
+    ) -> list[object]:
         called.append(
             {
                 "include_raw": include_raw,

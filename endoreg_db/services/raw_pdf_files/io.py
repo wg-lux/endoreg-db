@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING
 from django.db import models
 from django.urls import reverse
 
-from endoreg_db.utils.security.hashs import get_pdf_hash
-from endoreg_db.utils.filesystem import paths as path_utils
+from endoreg_db.utils.hashs import get_pdf_hash
+from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.storage import delete_field_file, save_local_file
-from endoreg_db.utils.storage.streaming import maybe_local_plaintext_path
-from endoreg_db.utils.observability.structured_logging import emit_structured_event
+from endoreg_db.utils.storage_streaming import maybe_local_plaintext_path
+from endoreg_db.utils.structured_logging import emit_structured_event
 
 from .types import ReportPdfArtifactKind
 
@@ -33,17 +33,29 @@ def _emit_report_file_event(
     storage_name: str | None = None,
     detail: str = "",
 ) -> None:
-    emit_structured_event(
-        logger,
-        event,
-        status=status,
-        report_id=report.pk,
-        pdf_hash=report.pdf_hash,
-        artifact_kind=artifact_kind.value,
-        source_path=source,
-        storage_name=storage_name,
-        detail=detail,
-    )
+    if source is not None:
+        emit_structured_event(
+            logger,
+            event,
+            status=status,
+            report_id=report.pk,
+            pdf_hash=report.pdf_hash,
+            artifact_kind=artifact_kind.value,
+            source_path=source.as_posix(),
+            storage_name=storage_name,
+            detail=detail,
+        )
+    else:
+        emit_structured_event(
+            logger,
+            event,
+            status=status,
+            report_id=report.pk,
+            pdf_hash=report.pdf_hash,
+            artifact_kind=artifact_kind.value,
+            storage_name=storage_name,
+            detail=detail,
+        )
 
 
 def get_raw_pdf_plaintext_path(report: "RawPdfFile") -> Path | None:

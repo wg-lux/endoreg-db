@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from os import PathLike, fspath
 from pathlib import Path
-from typing import TYPE_CHECKING, TypeGuard
+from typing import TYPE_CHECKING, TypeGuard, cast
 
 from django.db.models.fields.files import FieldFile
 from django.urls import reverse
@@ -12,9 +13,9 @@ from endoreg_db.models.media.video.storage_mode import (
 )
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
-from endoreg_db.utils.filesystem.paths import normalize_protected_media_relative_path
+from endoreg_db.utils.paths import normalize_protected_media_relative_path
 from endoreg_db.utils.storage import file_exists
-from endoreg_db.utils.storage.streaming import maybe_local_plaintext_path
+from endoreg_db.utils.storage_streaming import maybe_local_plaintext_path
 
 from .io import (
     get_processed_video_file_path,
@@ -49,10 +50,17 @@ def _legacy_fake_local_path(video: "VideoFile", method_name: str) -> Path | None
     method = vars(video).get(method_name)
     if not callable(method):
         return None
-    path = method()
-    if path is None:
+    path_like = method()
+    if path_like is None:
         return None
-    path = Path(path)
+    if isinstance(path_like, Path):
+        return path_like if path_like.exists() else None
+    if isinstance(path_like, str):
+        path = Path(path_like)
+    elif isinstance(path_like, PathLike):
+        path = Path(fspath(cast(PathLike[str], path_like)))
+    else:
+        return None
     if path.exists():
         return path
     return None

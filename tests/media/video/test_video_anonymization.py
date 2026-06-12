@@ -1,3 +1,4 @@
+# pyright: reportUnusedFunction=false
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:

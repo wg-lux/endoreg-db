@@ -1,11 +1,17 @@
+from pathlib import Path
+
 import pytest
+from pytest import MonkeyPatch
 
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.file_storage import storage
 
 
 @pytest.mark.unit
-def test_create_sensitive_copy_raises_when_video_transcode_fails(monkeypatch, tmp_path):
+def test_create_sensitive_copy_raises_when_video_transcode_fails(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     source = tmp_path / "input.mp4"
     sensitive_root = tmp_path / "sensitive"
     source.write_bytes(b"video")
@@ -15,10 +21,20 @@ def test_create_sensitive_copy_raises_when_video_transcode_fails(monkeypatch, tm
         file_type="video",
     )
 
+    def fake_failed_transcode(
+        source_path: Path,
+        destination_path: Path,
+        **kwargs: object,
+    ) -> None:
+        _ = source_path
+        _ = destination_path
+        _ = kwargs
+        return None
+
     monkeypatch.setattr(
         storage,
         "transcode_videofile_if_required",
-        lambda *_args, **_kwargs: None,
+        fake_failed_transcode,
     )
 
     with pytest.raises(RuntimeError, match="Video transcode failed"):
@@ -26,7 +42,10 @@ def test_create_sensitive_copy_raises_when_video_transcode_fails(monkeypatch, tm
 
 
 @pytest.mark.unit
-def test_create_sensitive_copy_returns_transcoded_video_path(monkeypatch, tmp_path):
+def test_create_sensitive_copy_returns_transcoded_video_path(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     source = tmp_path / "input.mp4"
     sensitive_root = tmp_path / "sensitive"
     source.write_bytes(b"video")
@@ -36,7 +55,7 @@ def test_create_sensitive_copy_returns_transcoded_video_path(monkeypatch, tmp_pa
         file_type="video",
     )
 
-    def fake_transcode(_source, dest):
+    def fake_transcode(_source: Path, dest: Path) -> Path:
         dest.write_bytes(b"transcoded")
         return dest
 
@@ -51,8 +70,9 @@ def test_create_sensitive_copy_returns_transcoded_video_path(monkeypatch, tmp_pa
 
 @pytest.mark.unit
 def test_create_sensitive_copy_uses_unique_staging_paths_for_same_basename(
-    monkeypatch, tmp_path
-):
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     source_a = tmp_path / "a" / "input.mp4"
     source_b = tmp_path / "b" / "input.mp4"
     sensitive_root = tmp_path / "sensitive"
@@ -71,7 +91,7 @@ def test_create_sensitive_copy_uses_unique_staging_paths_for_same_basename(
         file_type="video",
     )
 
-    def fake_transcode(source, dest):
+    def fake_transcode(source: Path, dest: Path) -> Path:
         dest.write_bytes(source.read_bytes())
         return dest
 

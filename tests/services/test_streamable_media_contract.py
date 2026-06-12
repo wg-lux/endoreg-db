@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+from collections.abc import Iterable
 from pathlib import Path
 from typing import cast
 
@@ -8,7 +9,16 @@ import pytest
 
 from endoreg_db.models import VideoFile
 from endoreg_db.services import streamable_media
-from endoreg_db.utils.filesystem import paths as paths_module
+from endoreg_db.utils import paths as paths_module
+from endoreg_db.utils.storage_profile import StoragePolicy
+
+
+def _streamable_policy(_payload_kind: object) -> StoragePolicy:
+    return StoragePolicy.FS_STREAMABLE
+
+
+def _app_encrypted_policy(_payload_kind: object) -> StoragePolicy:
+    return StoragePolicy.APP_ENCRYPTED
 
 
 def test_streamable_materialization_never_moves_canonical_source() -> None:
@@ -64,7 +74,7 @@ class FakeEncryptedStorage:
         start: int,
         end: int,
         chunk_size: int,
-    ):
+    ) -> Iterable[bytes]:
         if end < start:
             return iter(())
         selected = self.payload[start : end + 1]
@@ -73,12 +83,12 @@ class FakeEncryptedStorage:
 
 
 class StubFieldFile:
-    def __init__(self, storage, name: str):
+    def __init__(self, storage: FakeEncryptedStorage, name: str) -> None:
         self.storage = storage
         self.name = name
 
     @property
-    def size(self):
+    def size(self) -> int:
         return self.storage.get_plaintext_size(self.name)
 
 
@@ -87,7 +97,12 @@ class StubVideo:
         ENCRYPTED = "app_encrypted"
         STREAMABLE = "fs_encrypted_streamable"
 
-    def __init__(self, *, raw_file, processed_file):
+    def __init__(
+        self,
+        *,
+        raw_file: StubFieldFile,
+        processed_file: StubFieldFile | None,
+    ) -> None:
         self.pk = 123
         self.video_hash = "rawhash"
         self.processed_video_hash = "processedhash"
@@ -97,7 +112,7 @@ class StubVideo:
         self.processed_streamable_relative_path = ""
         self.storage_mode = self.StorageMode.ENCRYPTED
 
-    def save(self, update_fields):
+    def save(self, update_fields: list[str]) -> None:
         self.saved_update_fields = update_fields
 
 
@@ -139,7 +154,7 @@ def test_sync_video_streamable_artifacts_materializes_plaintext_from_encrypted_s
     monkeypatch.setattr(
         streamable_media,
         "resolve_storage_policy",
-        lambda payload_kind: streamable_media.StoragePolicy.FS_STREAMABLE,
+        _streamable_policy,
     )
 
     update_fields = streamable_media.sync_video_streamable_artifacts(
@@ -180,7 +195,7 @@ def test_sync_video_streamable_artifacts_clears_paths_when_not_streamable(
     monkeypatch.setattr(
         streamable_media,
         "resolve_storage_policy",
-        lambda payload_kind: streamable_media.StoragePolicy.APP_ENCRYPTED,
+        _app_encrypted_policy,
     )
 
     update_fields = streamable_media.sync_video_streamable_artifacts(
@@ -217,7 +232,7 @@ def test_sync_video_streamable_artifacts_is_idempotent(
     monkeypatch.setattr(
         streamable_media,
         "resolve_storage_policy",
-        lambda payload_kind: streamable_media.StoragePolicy.FS_STREAMABLE,
+        _streamable_policy,
     )
 
     # first run

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from django.db.models.fields.files import FieldFile
 
@@ -20,6 +21,9 @@ from .streaming import (
 )
 from .types import VideoArtifactKind
 
+if TYPE_CHECKING:
+    from endoreg_db.models.media.video.video_file import VideoFile
+
 
 def _artifact_kind_from_file_type(file_type: str) -> VideoArtifactKind:
     if file_type == "processed":
@@ -27,42 +31,42 @@ def _artifact_kind_from_file_type(file_type: str) -> VideoArtifactKind:
     return VideoArtifactKind.RAW
 
 
-def _active_raw_file(video) -> FieldFile:
+def _active_raw_file(video: "VideoFile") -> FieldFile:
     return get_active_raw_video_file(video)
 
 
-def _protected_stream_url(video, *, file_type: str) -> str | None:
+def _protected_stream_url(video: "VideoFile", *, file_type: str) -> str | None:
     return get_protected_video_stream_url(
         video,
         artifact_kind=_artifact_kind_from_file_type(file_type),
     )
 
 
-def _active_raw_file_url(video) -> str | None:
+def _active_raw_file_url(video: "VideoFile") -> str | None:
     return get_active_raw_video_file_url(video)
 
 
-def _active_file(video) -> FieldFile:
+def _active_file(video: "VideoFile") -> FieldFile:
     return get_active_video_file(video)
 
 
-def _active_file_path(video) -> Path:
+def _active_file_path(video: "VideoFile") -> Path:
     return get_active_video_file_path(video)
 
 
-def _active_file_url(video) -> str | None:
+def _active_file_url(video: "VideoFile") -> str | None:
     return get_active_video_file_url(video)
 
 
-def _get_raw_stream_relative_path(video) -> str | None:
+def _get_raw_stream_relative_path(video: "VideoFile") -> str | None:
     return get_raw_video_stream_relative_path(video)
 
 
-def _get_processed_stream_relative_path(video) -> str | None:
+def _get_processed_stream_relative_path(video: "VideoFile") -> str | None:
     return get_processed_video_stream_relative_path(video)
 
 
-def _get_stream_relative_path(video, file_type: str) -> str | None:
+def _get_stream_relative_path(video: "VideoFile", file_type: str) -> str | None:
     return get_video_stream_relative_path(
         video,
         _artifact_kind_from_file_type(file_type),
@@ -70,7 +74,7 @@ def _get_stream_relative_path(video, file_type: str) -> str | None:
 
 
 def _resolve_video_stream_source(
-    video,
+    video: "VideoFile",
     file_type: str,
     *,
     materialize_if_missing: bool = False,
@@ -82,7 +86,7 @@ def _resolve_video_stream_source(
     )
 
 
-def _can_offload_stream_with_nginx(video, file_type: str) -> bool:
+def _can_offload_stream_with_nginx(video: "VideoFile", file_type: str) -> bool:
     return can_offload_video_stream(video, _artifact_kind_from_file_type(file_type))
 
 

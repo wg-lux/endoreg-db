@@ -107,10 +107,14 @@ class FrameSegmentReconciliationServiceTest(TestCase):
             "frame__frame_number"
         )
         self.assertEqual(annotations.count(), 2)
+        
         self.assertTrue(
             all(
-                annotation.external_annotation_id.startswith(
-                    f"{SEGMENT_DERIVED_EXTERNAL_ANNOTATION_PREFIX}:"
+                (
+                    annotation.external_annotation_id is not None
+                    and annotation.external_annotation_id.startswith(
+                        f"{SEGMENT_DERIVED_EXTERNAL_ANNOTATION_PREFIX}:"
+                    )
                 )
                 for annotation in annotations
             )
@@ -134,8 +138,8 @@ class FrameSegmentReconciliationServiceTest(TestCase):
         self.assertEqual(annotations.count(), 2)
         self.assertTrue(
             all(
-                annotation.model_meta_id == self.model_meta.pk
-                and annotation.information_source_id
+                getattr(annotation, "model_meta_id", None) == self.model_meta.pk
+                and getattr(annotation, "information_source_id", None)
                 == self.prediction_annotation_source.pk
                 for annotation in annotations
             )

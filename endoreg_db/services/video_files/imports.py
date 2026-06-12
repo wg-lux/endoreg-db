@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportUnusedClass=false
 from __future__ import annotations
 
 import logging
@@ -6,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Optional, TypedDict, Union, Unpack
 
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
-from endoreg_db.utils.filesystem.paths import IMPORT_VIDEO_DIR
+from endoreg_db.utils.paths import IMPORT_VIDEO_DIR
 
 from .frames import initialize_video_frames
 from .io import set_video_frame_dir
@@ -38,7 +39,7 @@ def create_video_file_from_path(
     model_cls: type["VideoFile"] | None = None,
     **kwargs: Unpack[_CreateVideoFileFromPathKwargs],
 ) -> Optional["VideoFile"]:
-    from endoreg_db.utils.security.hashs import get_video_hash
+    from endoreg_db.utils.hashs import get_video_hash
 
     from ._imports import _create_from_file
 

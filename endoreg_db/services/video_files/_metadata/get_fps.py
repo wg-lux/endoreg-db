@@ -1,20 +1,26 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportUnusedClass=false
 from __future__ import annotations
 
 import logging
 import math
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, cast
+from typing import TYPE_CHECKING, Optional
 
 import cv2
+from pydantic import ValidationError
 
 from endoreg_db.utils.storage import ensure_local_file
-from endoreg_db.utils.video import ffmpeg_wrapper
+from endoreg_db.utils import ffmpeg_wrapper
+from lx_dtypes.models.contracts.media_streaming import (
+    FfmpegStreamInfo,
+    validate_ffmpeg_stream_info,
+)
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
 
 
-def _validate_video_path(video_path: Path):
+def _validate_video_path(video_path: Path | str) -> Path:
     """
     Validates that the provided path is an existing video file.
 
@@ -23,18 +29,19 @@ def _validate_video_path(video_path: Path):
         FileNotFoundError: If the file does not exist at the specified path.
         IsADirectoryError: If the path points to a directory instead of a file.
     """
-    if not isinstance(video_path, Path):
-        raise TypeError("video_path must be a Path object")
+    if isinstance(video_path, str):
+        video_path = Path(video_path)
     if not video_path.exists():
         raise FileNotFoundError(f"Video file not found at {video_path}")
     if not video_path.is_file():
         raise IsADirectoryError(f"Path is a directory, not a file: {video_path}")
+    return video_path
 
 
 logger = logging.getLogger(__name__)
 
 
-def _is_valid_fps(value: Any) -> bool:
+def _is_valid_fps(value: str | int | float) -> bool:
     try:
         fps = float(value)
     except (TypeError, ValueError):
@@ -42,58 +49,74 @@ def _is_valid_fps(value: Any) -> bool:
     return math.isfinite(fps) and fps > 0
 
 
-def _parse_frame_rate(frame_rate: Any) -> Optional[float]:
+def _parse_frame_rate(frame_rate: str | int | float | None) -> Optional[float]:
     if frame_rate is None:
         return None
 
-    if isinstance(frame_rate, (int, float)):
-        fps = float(frame_rate)
-        return fps if _is_valid_fps(fps) else None
+    value = str(frame_rate).strip()
+    if not value:
+        return None
 
-    if isinstance(frame_rate, str):
-        value = frame_rate.strip()
-        if not value:
-            return None
-        if "/" in value:
-            num_str, den_str = value.split("/", 1)
-            try:
-                numerator = float(num_str)
-                denominator = float(den_str)
-            except ValueError:
-                return None
-            if denominator == 0:
-                return None
-            fps = numerator / denominator
-            return fps if _is_valid_fps(fps) else None
+    if "/" in value:
+        num_str, den_str = value.split("/", 1)
         try:
-            fps = float(value)
+            numerator = float(num_str)
+            denominator = float(den_str)
         except ValueError:
             return None
+        if denominator == 0:
+            return None
+        fps = numerator / denominator
         return fps if _is_valid_fps(fps) else None
+
+    try:
+        fps = float(value)
+    except ValueError:
+        return None
+    return fps if _is_valid_fps(fps) else None
+
+
+def _get_fps_from_ffprobe(video_path: Path) -> Optional[float]:
+    stream_info_payload = ffmpeg_wrapper.get_stream_info(video_path)
+    if stream_info_payload is None:
+        return None
+
+    stream_info: FfmpegStreamInfo
+    try:
+        stream_info = validate_ffmpeg_stream_info(stream_info_payload)
+    except ValidationError as exc:
+        logger.debug(
+            "Invalid ffprobe stream info for %s: %s",
+            video_path,
+            exc,
+        )
+        return None
+
+    video_stream = next(
+        (
+            stream
+            for stream in stream_info.video_streams
+            if stream.codec_type == "video"
+        ),
+        None,
+    )
+    if video_stream is None:
+        return None
+
+    avg_rate = _parse_frame_rate(video_stream.avg_frame_rate)
+    if avg_rate is not None:
+        return avg_rate
+
+    raw_rate = _parse_frame_rate(video_stream.r_frame_rate)
+    if raw_rate is not None:
+        return raw_rate
 
     return None
 
 
-def _get_fps_from_ffprobe(video_path: Path) -> Optional[float]:
-    stream_info = ffmpeg_wrapper.get_stream_info(video_path)
-    if not stream_info or "streams" not in stream_info:
-        return None
-
-    video_stream = next(
-        (s for s in stream_info["streams"] if s.get("codec_type") == "video"),
-        None,
-    )
-    if not isinstance(video_stream, dict):
-        return None
-
-    avg_rate = _parse_frame_rate(video_stream.get("avg_frame_rate"))
-    if avg_rate is not None:
-        return avg_rate
-
-    raw_rate = _parse_frame_rate(video_stream.get("r_frame_rate"))
-    if raw_rate is not None:
-        return raw_rate
-
+def _coerce_fps_value(value: object) -> Optional[str | int | float]:
+    if isinstance(value, (str, int, float)):
+        return value
     return None
 
 
@@ -110,14 +133,14 @@ def _get_fps_from_video_file(video: "VideoFile") -> Optional[float]:
         return None
 
     try:
-        with ensure_local_file(active_file) as video_path:
-            _validate_video_path(video_path)
+        with ensure_local_file(active_file) as active_path:
+            video_path = _validate_video_path(active_path)
 
             ffprobe_fps = _get_fps_from_ffprobe(video_path)
             if ffprobe_fps is not None:
                 return ffprobe_fps
 
-            cap = cast(Any, cv2.VideoCapture)(video_path.as_posix())
+            cap = cv2.VideoCapture(video_path.as_posix())
             if not cap.isOpened():
                 logger.warning("Cannot open video file for FPS read: %s", video_path)
                 cap.release()
@@ -141,12 +164,17 @@ def _get_fps_from_video_file(video: "VideoFile") -> Optional[float]:
 
 def _persist_video_fps(video: "VideoFile", fps: float) -> float:
     fps_value = float(fps)
+    current_fps = video.fps
 
-    if _is_valid_fps(video.fps) and math.isclose(
-        float(cast(Any, video.fps)),
-        fps_value,
-        rel_tol=1e-6,
-        abs_tol=1e-6,
+    if (
+        current_fps is not None
+        and _is_valid_fps(current_fps)
+        and math.isclose(
+            float(current_fps),
+            fps_value,
+            rel_tol=1e-6,
+            abs_tol=1e-6,
+        )
     ):
         setattr(video, "_fps_verified", True)
         return fps_value
@@ -172,8 +200,10 @@ def _get_fps(video: "VideoFile") -> float:
     """
     from .video_meta import _update_video_meta
 
-    if getattr(video, "_fps_verified", False) and _is_valid_fps(video.fps):
-        return float(cast(Any, video.fps))
+    if getattr(video, "_fps_verified", False):
+        current_verified_fps = _coerce_fps_value(video.fps)
+        if current_verified_fps is not None and _is_valid_fps(current_verified_fps):
+            return float(current_verified_fps)
 
     file_fps = _get_fps_from_video_file(video)
     if file_fps is not None:
@@ -184,13 +214,14 @@ def _get_fps(video: "VideoFile") -> float:
         )
         return _persist_video_fps(video, file_fps)
 
-    if _is_valid_fps(video.fps):
+    current_fps = _coerce_fps_value(video.fps)
+    if current_fps is not None and _is_valid_fps(current_fps):
         logger.warning(
             "Using cached FPS %.6f for %s because active file was unavailable.",
-            float(cast(Any, video.fps)),
+            float(current_fps),
             video.video_hash,
         )
-        return float(cast(Any, video.fps))
+        return float(current_fps)
 
     logger.debug("FPS not available on %s, checking VideoMeta.", video.video_hash)
 
@@ -205,14 +236,16 @@ def _get_fps(video: "VideoFile") -> float:
                 exc,
             )
 
-    meta_fps = getattr(getattr(video, "video_meta", None), "fps", None)
-    if _is_valid_fps(meta_fps):
+    meta_fps = _coerce_fps_value(
+        getattr(getattr(video, "video_meta", None), "fps", None)
+    )
+    if meta_fps is not None and _is_valid_fps(meta_fps):
         logger.info(
             "Retrieved FPS %.6f from VideoMeta for %s.",
-            float(cast(Any, meta_fps)),
+            float(meta_fps),
             video.video_hash,
         )
-        return _persist_video_fps(video, float(cast(Any, meta_fps)))
+        return _persist_video_fps(video, float(meta_fps))
 
     if getattr(video, "use_default_fps", False):
         default_fps = float(video.ensure_default_fps())

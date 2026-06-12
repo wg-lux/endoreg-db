@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from collections.abc import Callable
 from typing import Any
 
 from endoreg_db.services.tabular_import_formats import (
@@ -16,11 +17,23 @@ from endoreg_db.services.tabular_import_formats import (
     normalize_document_row,
     resolve_document_template,
 )
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_write_file,
     ensure_directory,
 )
-from endoreg_db.utils.filesystem.paths import ensure_within_data_root
+from endoreg_db.utils.paths import ensure_within_data_root
+from lx_dtypes.models.contracts.sap_ish_import import (
+    SapIshImportPayload,
+    SapIshImportPayloadValue,
+    SapIshDropFilePayload,
+    dump_sap_ish_drop_file_payload,
+    validate_sap_ish_drop_file_payload,
+)
+
+_validate_sap_ish_drop_file_payload: Callable[
+    [SapIshImportPayload],
+    SapIshDropFilePayload,
+] = validate_sap_ish_drop_file_payload
 
 TEXT_DOCUMENT_TYPES = ("cwd", "briefe", "radiologie")
 ANCHOR_DOCUMENT_TYPES = (
@@ -62,7 +75,7 @@ class SapIshNormalizedRow:
 class GeneratedDropFile:
     carrier_path: Path
     sidecar_path: Path
-    payload: dict[str, Any]
+    payload: SapIshDropFilePayload
     document_type: str
 
 
@@ -327,13 +340,13 @@ def _build_payload_for_case(
     source_system: str,
     center_name: str | None,
     center_key: str | None,
-) -> tuple[dict[str, Any], str]:
+) -> tuple[SapIshDropFilePayload, str]:
     normalized_document = {
         "document_type": primary_row.document_type,
         "canonical_row": primary_row.canonical_row,
         "raw_columns": primary_row.raw_columns,
     }
-    payload = build_preanonymized_payload(
+    payload_data: dict[str, SapIshImportPayloadValue] = build_preanonymized_payload(
         normalized_document,
         source_system=source_system,
         center_name=center_name,
@@ -344,41 +357,38 @@ def _build_payload_for_case(
         related_rows
     )
     if summary_text:
-        payload["anonymized_text"] = summary_text
-        payload.setdefault("text", summary_text)
+        payload_data["anonymized_text"] = summary_text
+        payload_data.setdefault("text", summary_text)
 
-    if not payload.get("patient_gender"):
+    if not payload_data.get("patient_gender"):
         patient_gender = _derive_patient_gender(related_rows)
         if patient_gender:
-            payload["patient_gender"] = patient_gender
+            payload_data["patient_gender"] = patient_gender
 
-    if not payload.get("examination_date"):
+    if not payload_data.get("examination_date"):
         timestamp = _derive_examination_timestamp(related_rows)
         if timestamp is not None:
-            payload["examination_date"] = timestamp.date().isoformat()
-            payload["examination_time"] = (
+            payload_data["examination_date"] = timestamp.date().isoformat()
+            payload_data["examination_time"] = (
                 timestamp.time().replace(microsecond=0).isoformat()
             )
 
-    payload["raw_columns"] = _build_enriched_raw_columns(
+    payload_data["raw_columns"] = _build_enriched_raw_columns(
         primary_row=primary_row,
         related_rows=related_rows,
     )
-    payload["source_document_type"] = primary_row.document_type
-    return payload, summary_text
+    payload_data["source_document_type"] = primary_row.document_type
+    return _validate_sap_ish_drop_file_payload(payload_data), summary_text
 
 
 def _slugify_token(value: str | None, *, fallback: str) -> str:
     if not isinstance(value, str) or not value.strip():
         return fallback
-    allowed = []
-    for char in value.strip():
-        if char.isalnum():
-            allowed.append(char.lower())
-        elif char in {"-", "_"}:
-            allowed.append(char)
-        else:
-            allowed.append("_")
+    token = value.strip()
+    allowed: list[str] = [
+        char.lower() if char.isalnum() else (char if char in {"-", "_"} else "_")
+        for char in token
+    ]
     collapsed = "".join(allowed).strip("_")
     return collapsed or fallback
 
@@ -388,13 +398,20 @@ def _write_drop_file(
     output_dir: Path,
     case_index: int,
     primary_row: SapIshNormalizedRow,
-    payload: dict[str, Any],
+    payload: SapIshDropFilePayload,
     carrier_text: str,
 ) -> GeneratedDropFile:
     ensure_directory(output_dir)
-    patient_token = _slugify_token(payload.get("external_id"), fallback="patient")
+    payload_dict: SapIshImportPayload = dump_sap_ish_drop_file_payload(payload)
+    external_id_raw = payload_dict.get("external_id")
+    case_number_raw = payload_dict.get("casenumber")
+    patient_token = _slugify_token(
+        external_id_raw if isinstance(external_id_raw, str) else None,
+        fallback="patient",
+    )
     case_token = _slugify_token(
-        payload.get("casenumber"), fallback=f"case_{case_index:04d}"
+        case_number_raw if isinstance(case_number_raw, str) else None,
+        fallback=f"case_{case_index:04d}",
     )
     document_token = _slugify_token(primary_row.document_type, fallback="document")
     stem = f"sap_ish_{case_index:04d}_{document_token}_{patient_token}_{case_token}"
@@ -407,9 +424,9 @@ def _write_drop_file(
     atomic_write_file(
         destination=sidecar_path,
         content=[
-            json.dumps(payload, ensure_ascii=True, indent=2, sort_keys=True).encode(
-                "utf-8"
-            )
+            json.dumps(
+                payload_dict, ensure_ascii=True, indent=2, sort_keys=True
+            ).encode("utf-8")
         ],
     )
     return GeneratedDropFile(

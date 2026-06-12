@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, time
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping, cast
 
 import yaml
 
@@ -98,6 +98,38 @@ def _coerce_value(value: Any, declared_type: str) -> Any:
     return value
 
 
+def _yaml_mapping(value: object, *, field_name: str) -> Mapping[str, object]:
+    if not isinstance(value, dict):
+        raise ValueError(f"{field_name} must be a mapping")
+    rows = cast(dict[object, object], value)
+    if not all(isinstance(key, str) for key in rows):
+        raise ValueError(f"{field_name} keys must be strings")
+    return cast(Mapping[str, object], rows)
+
+
+def _yaml_mapping_sequence(
+    value: object, *, field_name: str
+) -> tuple[Mapping[str, object], ...]:
+    if not isinstance(value, list):
+        raise ValueError(f"{field_name} must be a list")
+    rows = cast(list[object], value)
+    return tuple(
+        _yaml_mapping(item, field_name=f"{field_name}[{index}]")
+        for index, item in enumerate(rows)
+    )
+
+
+def _yaml_string_sequence(value: object, *, field_name: str) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ValueError(f"{field_name} must be a list")
+    rows = cast(list[object], value)
+    if not all(isinstance(item, str) for item in rows):
+        raise ValueError(f"{field_name} entries must be strings")
+    return tuple(cast(list[str], rows))
+
+
 @dataclass(frozen=True, slots=True)
 class ColumnTemplate:
     source_column: str
@@ -130,24 +162,38 @@ class TemplateMatch:
 
 
 def _load_template_file(path: Path) -> list[DocumentTemplate]:
-    payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    template_rows = payload.get("templates") or []
+    loaded_payload: object = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    payload = _yaml_mapping(loaded_payload, field_name="tabular import template file")
+    template_rows = _yaml_mapping_sequence(
+        payload.get("templates") or [],
+        field_name="templates",
+    )
     templates: list[DocumentTemplate] = []
 
     for template_row in template_rows:
+        columns = _yaml_mapping(template_row.get("columns") or {}, field_name="columns")
         column_specs = tuple(
             ColumnTemplate(
                 source_column=source_column,
                 target=str(spec["target"]),
                 value_type=str(spec.get("type", "str")),
             )
-            for source_column, spec in (template_row.get("columns") or {}).items()
+            for source_column, spec in (
+                (
+                    source_column,
+                    _yaml_mapping(spec, field_name=f"columns.{source_column}"),
+                )
+                for source_column, spec in columns.items()
+            )
         )
         templates.append(
             DocumentTemplate(
                 document_type=str(template_row["document_type"]),
                 description=str(template_row.get("description", "")),
-                required_columns=tuple(template_row.get("required_columns") or ()),
+                required_columns=_yaml_string_sequence(
+                    template_row.get("required_columns"),
+                    field_name=f"{template_row['document_type']}.required_columns",
+                ),
                 columns=column_specs,
             )
         )

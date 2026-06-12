@@ -34,7 +34,6 @@ from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
 from endoreg_db.services.hub.media_integrity import (
-    MediaIntegrityExpectation,
     check_video_media_integrity,
     video_integrity_failure_allows_existing_video_reprocessing,
 )
@@ -42,11 +41,12 @@ from endoreg_db.services.video_files import (
     get_or_create_video_state,
     get_video_by_content_hash,
     get_video_import_context_names,
+    ensure_local_raw_video_file,
     initialize_video_file,
 )
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
-from endoreg_db.utils.filesystem import paths as path_utils
-from endoreg_db.utils.filesystem.file_operations import sha256_file
+from endoreg_db.utils import paths as path_utils
+from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.utils.storage import file_exists
 
 if TYPE_CHECKING:
@@ -74,8 +74,8 @@ class _RawPathVideo(Protocol):
     def get_raw_file_path(self) -> Path | str | None: ...
 
 
-class _LocalRawFileProvider(Protocol):
-    def ensure_local_raw_file(self) -> AbstractContextManager[Path]: ...
+class _LocalRawSourceProvider(Protocol):
+    def __call__(self) -> AbstractContextManager[Path]: ...
 
 
 try:
@@ -124,9 +124,17 @@ def _hash_lock_dir() -> Path:
 def _local_raw_source_context(
     video: object, *, fallback_path: Path | None = None
 ) -> AbstractContextManager[Path]:
-    ensure_local_raw_file = getattr(video, "ensure_local_raw_file", None)
-    if callable(ensure_local_raw_file):
-        return cast(_LocalRawFileProvider, video).ensure_local_raw_file()
+    provider_name = "ensure_local_raw_file"
+    instance_provider = vars(video).get(provider_name)
+    if callable(instance_provider):
+        return cast(_LocalRawSourceProvider, instance_provider)()
+
+    if isinstance(video, VideoFile):
+        return ensure_local_raw_video_file(video)
+
+    provider = getattr(video, provider_name, None)
+    if callable(provider):
+        return cast(_LocalRawSourceProvider, provider)()
 
     get_raw_file_path = getattr(video, "get_raw_file_path", None)
     if callable(get_raw_file_path):
@@ -145,6 +153,15 @@ def _local_raw_source_context(
 
 def _supports_video_file_initialization(video: object) -> bool:
     return isinstance(video, VideoFile)
+
+
+def _supports_reanonymization_metadata_initialization(video: VideoFile) -> bool:
+    if getattr(video, "video_meta_id", None) is not None:
+        return True
+    return (
+        getattr(video, "center_id", None) is not None
+        and getattr(video, "processor_id", None) is not None
+    )
 
 
 def _video_meta_stream_contract(video: VideoFile | None) -> SourceStreamData:
@@ -457,7 +474,7 @@ class VideoImportService:
                     ctx.instance = video
                     ctx.retry = True
                     before_identity = _raw_source_identity(local_source_path)
-                    if _supports_video_file_initialization(video):
+                    if _supports_reanonymization_metadata_initialization(video):
                         ctx.current_video = initialize_video_file(
                             video,
                             local_raw_path=local_source_path,
@@ -523,7 +540,6 @@ class VideoImportService:
 
         integrity_result = check_video_media_integrity(
             existing_video if isinstance(existing_video, VideoFile) else None,
-            expectation=MediaIntegrityExpectation.RAW_WATCHER_VIDEO,
             content_hash=file_hash,
         )
         if not integrity_result.ok:

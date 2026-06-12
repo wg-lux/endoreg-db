@@ -4,6 +4,9 @@ from functools import lru_cache
 from pathlib import Path
 
 from django.conf import settings
+from lx_dtypes.models.interface.KnowledgeBaseResolver import (
+    get_knowledge_base_identity,
+)
 
 
 def _project_root() -> Path:
@@ -56,16 +59,7 @@ def get_configured_knowledge_base_identity() -> tuple[str, str] | None:
     if data_root is None:
         return None
 
-    try:
-        from lx_dtypes.models.interface.DataLoader import DataLoader
-
-        loader = DataLoader(input_dirs=[data_root])
-        loader.load_module_configs()
-        module_config = loader.get_initialized_config(module_name)
-    except Exception:
-        return None
-
-    return module_config.name, module_config.version
+    return get_knowledge_base_identity(module_name, input_dirs=[data_root])
 
 
 __all__ = [

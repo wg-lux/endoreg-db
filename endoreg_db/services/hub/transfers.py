@@ -1,7 +1,9 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportMissingTypeStubs=false
 from __future__ import annotations
 
 import logging
 from datetime import datetime
+from collections.abc import Iterable
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, Literal, NotRequired, TypedDict, cast
@@ -10,6 +12,7 @@ from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
 from django.utils.dateparse import parse_datetime
 from django.utils import timezone
+from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
 
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.hub.network_node import NetworkNode
@@ -23,7 +26,10 @@ from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
-from endoreg_db.models.other.information_source import InformationSource
+from endoreg_db.models.other.information_source import (
+    InformationSource,
+    InformationSourceManager,
+)
 from endoreg_db.models.report.patient_examination_report import PatientExaminationReport
 from endoreg_db.models.state.raw_pdf import RawPdfState
 from endoreg_db.models.state.video import VideoState
@@ -35,15 +41,15 @@ from endoreg_db.services.auto_case_resolution import auto_resolve_media_case
 from endoreg_db.services.hub.audit import emit_hub_audit_event
 from endoreg_db.services.raw_pdf_files import get_or_create_raw_pdf_state
 from endoreg_db.services.video_files import get_or_create_video_state
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     ensure_directory,
     safe_unlink_file,
     sha256_file,
 )
-from endoreg_db.utils.security.hashs import get_pdf_hash
-from endoreg_db.utils.filesystem.paths import TRANSCODING_DIR
+from endoreg_db.utils.hashs import get_pdf_hash
+from endoreg_db.utils.paths import TRANSCODING_DIR
 from endoreg_db.utils.storage import delete_field_file, file_exists, save_local_file
-from endoreg_db.utils.observability.structured_logging import hash_identifier
+from endoreg_db.utils.structured_logging import hash_identifier
 from .ingest import _default_processor_name
 
 logger = logging.getLogger(__name__)
@@ -57,18 +63,97 @@ class TransferProvenance(TypedDict, total=False):
     transfer_mode: str
     processing_policy: str
     cleanup_policy: str
-    media_uploads: list[dict[str, str]]
-    case_resolution: dict[str, Any]
+    media_uploads: list[dict[str, JsonValue]]
+    case_resolution: dict[str, JsonValue]
     custom_marker: NotRequired[str]
 
 
 def _transfer_provenance(
-    existing: TransferProvenance | None = None,
+    existing: JsonObject | TransferProvenance | None = None,
 ) -> TransferProvenance:
     provenance: TransferProvenance = {}
     if existing:
-        provenance.update(existing)
+        provenance.update(cast(TransferProvenance, dict(existing)))
     return provenance
+
+
+def _json_object(value: JsonValue | None, *, field_name: str) -> JsonObject:
+    if not isinstance(value, dict):
+        raise ValueError(f"{field_name} must be a JSON object")
+    return cast(JsonObject, value)
+
+
+def _json_object_list(
+    value: JsonValue | None,
+    *,
+    field_name: str,
+) -> list[JsonObject]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError(f"{field_name} must be a JSON list")
+    items: list[JsonObject] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, dict):
+            raise ValueError(f"{field_name}[{index}] must be a JSON object")
+        items.append(cast(JsonObject, item))
+    return items
+
+
+def _json_int(
+    value: JsonValue | None,
+    *,
+    field_name: str,
+    default: int | None = None,
+) -> int:
+    if value is None or value == "":
+        if default is not None:
+            return default
+        raise ValueError(f"{field_name} must be an integer")
+    if isinstance(value, bool):
+        raise ValueError(f"{field_name} must be an integer")
+    if not isinstance(value, (int, float, str)):
+        raise ValueError(f"{field_name} must be an integer")
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} must be an integer") from exc
+
+
+def _json_float(
+    value: JsonValue | None,
+    *,
+    field_name: str,
+) -> float | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        raise ValueError(f"{field_name} must be a number")
+    if not isinstance(value, (int, float, str)):
+        raise ValueError(f"{field_name} must be a number")
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} must be a number") from exc
+
+
+def _json_str(
+    value: JsonValue | None,
+    *,
+    field_name: str,
+) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be a string")
+    stripped = value.strip()
+    return stripped or None
+
+
+def _json_bool(value: JsonValue | None, *, field_name: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    raise ValueError(f"{field_name} must be a boolean")
 
 
 def _update_transfer_provenance(
@@ -79,7 +164,7 @@ def _update_transfer_provenance(
     for key, value in updates.items():
         if value is not None:
             cast(Any, provenance)[key] = value
-    transfer_job.provenance = provenance
+    transfer_job.provenance = cast(JsonObject, provenance)
     return provenance
 
 
@@ -150,10 +235,12 @@ def create_or_reuse_transfer_job(
 ) -> tuple[TransferJob, bool]:
     transfer_job_manager = cast(Any, TransferJob.objects)
     existing = transfer_job_manager.filter(transfer_key=transfer_key).first()
+    source_node_pk = cast(int, source_node.pk)
+    target_node_pk = cast(int, target_node.pk)
     if existing is not None:
         if (
-            existing.source_node_id != source_node.id
-            or existing.target_node_id != target_node.id
+            existing.source_node_id != source_node_pk
+            or existing.target_node_id != target_node_pk
             or existing.resource_kind != resource_kind
             or existing.resource_hash != resource_hash
         ):
@@ -196,7 +283,7 @@ def create_or_reuse_transfer_job(
         ),
         cleanup_status=(
             TransferJob.CleanupStatus.NOT_REQUESTED
-            if cleanup_policy == TransferJob.CleanupPolicy.RETAIN_ALL
+            if cleanup_policy == TransferJob.CleanupPolicy.RETAIN_ALL.value
             else TransferJob.CleanupStatus.DEFERRED
         ),
         created_by=(
@@ -241,7 +328,7 @@ def authenticate_network_node(
             reason="node_key_mismatch",
             source_node_key=source_node.node_key,
             provided_node_key=normalized_key,
-            source_node_id=source_node.id,
+            source_node_id=cast(int, source_node.pk),
             source_node_role=source_node.role,
         )
         return None
@@ -251,7 +338,7 @@ def authenticate_network_node(
             reason="missing_shared_secret_hash",
             source_node_key=source_node.node_key,
             provided_node_key=normalized_key,
-            source_node_id=source_node.id,
+            source_node_id=cast(int, source_node.pk),
             source_node_role=source_node.role,
         )
         return None
@@ -261,7 +348,7 @@ def authenticate_network_node(
             reason="shared_secret_mismatch",
             source_node_key=source_node.node_key,
             provided_node_key=normalized_key,
-            source_node_id=source_node.id,
+            source_node_id=cast(int, source_node.pk),
             source_node_role=source_node.role,
         )
         return None
@@ -293,9 +380,9 @@ def _log_transfer_node_auth_failure(
 
 
 def apply_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
-    if transfer_job.resource_kind == TransferJob.ResourceKind.VIDEO:
+    if transfer_job.resource_kind == TransferJob.ResourceKind.VIDEO.value:
         return _apply_video_transfer_metadata(transfer_job)
-    if transfer_job.resource_kind == TransferJob.ResourceKind.REPORT:
+    if transfer_job.resource_kind == TransferJob.ResourceKind.REPORT.value:
         return _apply_report_transfer_metadata(transfer_job)
 
     transfer_job.transfer_status = TransferJob.TransferStatus.FAILED
@@ -324,7 +411,7 @@ def attach_transfer_media(
         raise ValueError("media_role must be either 'raw' or 'processed'")
 
     default_suffix = ".mp4"
-    if transfer_job.resource_kind == TransferJob.ResourceKind.REPORT:
+    if transfer_job.resource_kind == TransferJob.ResourceKind.REPORT.value:
         default_suffix = ".pdf"
 
     temp_path = _write_uploaded_file_to_temp(
@@ -332,14 +419,14 @@ def attach_transfer_media(
         default_suffix=default_suffix,
     )
     try:
-        if transfer_job.resource_kind == TransferJob.ResourceKind.VIDEO:
+        if transfer_job.resource_kind == TransferJob.ResourceKind.VIDEO.value:
             return _attach_video_transfer_media(
                 transfer_job=transfer_job,
                 uploaded_file=uploaded_file,
                 temp_path=temp_path,
                 media_role=media_role,
             )
-        if transfer_job.resource_kind == TransferJob.ResourceKind.REPORT:
+        if transfer_job.resource_kind == TransferJob.ResourceKind.REPORT.value:
             return _attach_report_transfer_media(
                 transfer_job=transfer_job,
                 uploaded_file=uploaded_file,
@@ -352,11 +439,20 @@ def attach_transfer_media(
 
 
 def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
-    resource_rows = transfer_job.resource_rows or {}
-    video_file_payload = resource_rows.get("video_file") or {}
-    video_state_payload = resource_rows.get("video_state") or {}
-    processing_history_payload = resource_rows.get("processing_history") or {}
-    processing_snapshot = transfer_job.processing_snapshot or {}
+    resource_rows = transfer_job.resource_rows
+    video_file_payload = _json_object(
+        resource_rows.get("video_file") or {},
+        field_name="resource_rows.video_file",
+    )
+    video_state_payload = _json_object(
+        resource_rows.get("video_state") or {},
+        field_name="resource_rows.video_state",
+    )
+    processing_history_payload = _json_object(
+        resource_rows.get("processing_history") or {},
+        field_name="resource_rows.processing_history",
+    )
+    processing_snapshot = transfer_job.processing_snapshot
     source_center = transfer_job.source_center
 
     if source_center is None:
@@ -392,7 +488,7 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
         if isinstance(sensitive_meta_payload, dict) and sensitive_meta_payload:
             sensitive_meta = _upsert_sensitive_meta(
                 existing=video.sensitive_meta if video.pk else None,
-                payload=sensitive_meta_payload,
+                payload=cast(JsonObject, sensitive_meta_payload),
                 center=source_center,
             )
             video.sensitive_meta = sensitive_meta
@@ -421,11 +517,17 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
         _apply_frame_annotation_rows(
             transfer_job=transfer_job,
             video=video,
-            rows=resource_rows.get("frame_annotations") or [],
+            rows=_json_object_list(
+                resource_rows.get("frame_annotations"),
+                field_name="resource_rows.frame_annotations",
+            ),
         )
         _apply_patient_examination_report_rows(
             transfer_job=transfer_job,
-            rows=resource_rows.get("reports") or [],
+            rows=_json_object_list(
+                resource_rows.get("reports"),
+                field_name="resource_rows.reports",
+            ),
         )
 
         processing_decision, transfer_status, status_detail = _decide_video_processing(
@@ -457,10 +559,19 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
 
 
 def _apply_report_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
-    resource_rows = transfer_job.resource_rows or {}
-    report_payload = resource_rows.get("raw_pdf_file") or {}
-    report_state_payload = resource_rows.get("raw_pdf_state") or {}
-    processing_history_payload = resource_rows.get("processing_history") or {}
+    resource_rows = transfer_job.resource_rows
+    report_payload = _json_object(
+        resource_rows.get("raw_pdf_file") or {},
+        field_name="resource_rows.raw_pdf_file",
+    )
+    report_state_payload = _json_object(
+        resource_rows.get("raw_pdf_state") or {},
+        field_name="resource_rows.raw_pdf_state",
+    )
+    processing_history_payload = _json_object(
+        resource_rows.get("processing_history") or {},
+        field_name="resource_rows.processing_history",
+    )
     source_center = transfer_job.source_center
 
     if source_center is None:
@@ -495,7 +606,7 @@ def _apply_report_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
         if isinstance(sensitive_meta_payload, dict) and sensitive_meta_payload:
             sensitive_meta = _upsert_sensitive_meta(
                 existing=report.sensitive_meta if report.pk else None,
-                payload=sensitive_meta_payload,
+                payload=cast(JsonObject, sensitive_meta_payload),
                 center=source_center,
             )
             report.sensitive_meta = sensitive_meta
@@ -523,7 +634,10 @@ def _apply_report_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
         )
         _apply_patient_examination_report_rows(
             transfer_job=transfer_job,
-            rows=resource_rows.get("reports") or [],
+            rows=_json_object_list(
+                resource_rows.get("reports"),
+                field_name="resource_rows.reports",
+            ),
         )
 
         processing_decision, transfer_status, status_detail = _decide_report_processing(
@@ -556,7 +670,7 @@ def _apply_report_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
 def _attach_video_transfer_media(
     *,
     transfer_job: TransferJob,
-    uploaded_file,
+    uploaded_file: UploadedFile,
     temp_path: Path,
     media_role: str,
 ) -> TransferJob:
@@ -657,7 +771,7 @@ def _attach_video_transfer_media(
 def _attach_report_transfer_media(
     *,
     transfer_job: TransferJob,
-    uploaded_file,
+    uploaded_file: UploadedFile,
     temp_path: Path,
     media_role: str,
 ) -> TransferJob:
@@ -750,7 +864,7 @@ def _handle_video_processing_after_raw_upload(
 
     if (
         transfer_job.processing_policy
-        == TransferJob.ProcessingPolicy.INGEST_ONLY_NO_PROCESSING
+        == TransferJob.ProcessingPolicy.INGEST_ONLY_NO_PROCESSING.value
     ):
         return _save_transfer_job_state(
             transfer_job=transfer_job,
@@ -762,7 +876,7 @@ def _handle_video_processing_after_raw_upload(
 
     if (
         transfer_job.processing_policy
-        == TransferJob.ProcessingPolicy.PRESERVE_PROCESSING_STATE
+        == TransferJob.ProcessingPolicy.PRESERVE_PROCESSING_STATE.value
         and sender_success
     ):
         if local_processed_present:
@@ -787,16 +901,19 @@ def _handle_video_processing_after_raw_upload(
         )
 
     should_process = False
-    if transfer_job.processing_policy == TransferJob.ProcessingPolicy.REPROCESS_ALWAYS:
+    if (
+        transfer_job.processing_policy
+        == TransferJob.ProcessingPolicy.REPROCESS_ALWAYS.value
+    ):
         should_process = True
     elif (
         transfer_job.processing_policy
-        == TransferJob.ProcessingPolicy.REPROCESS_IF_MISSING_OUTPUTS
+        == TransferJob.ProcessingPolicy.REPROCESS_IF_MISSING_OUTPUTS.value
     ):
         should_process = not local_processed_present
     elif (
         transfer_job.processing_policy
-        == TransferJob.ProcessingPolicy.PRESERVE_PROCESSING_STATE
+        == TransferJob.ProcessingPolicy.PRESERVE_PROCESSING_STATE.value
     ):
         should_process = not bool(sender_success)
 
@@ -871,7 +988,7 @@ def _handle_report_processing_after_raw_upload(
 
     if (
         transfer_job.processing_policy
-        == TransferJob.ProcessingPolicy.INGEST_ONLY_NO_PROCESSING
+        == TransferJob.ProcessingPolicy.INGEST_ONLY_NO_PROCESSING.value
     ):
         return _save_transfer_job_state(
             transfer_job=transfer_job,
@@ -883,7 +1000,7 @@ def _handle_report_processing_after_raw_upload(
 
     if (
         transfer_job.processing_policy
-        == TransferJob.ProcessingPolicy.PRESERVE_PROCESSING_STATE
+        == TransferJob.ProcessingPolicy.PRESERVE_PROCESSING_STATE.value
         and sender_success
     ):
         if local_processed_present:
@@ -908,16 +1025,19 @@ def _handle_report_processing_after_raw_upload(
         )
 
     should_process = False
-    if transfer_job.processing_policy == TransferJob.ProcessingPolicy.REPROCESS_ALWAYS:
+    if (
+        transfer_job.processing_policy
+        == TransferJob.ProcessingPolicy.REPROCESS_ALWAYS.value
+    ):
         should_process = True
     elif (
         transfer_job.processing_policy
-        == TransferJob.ProcessingPolicy.REPROCESS_IF_MISSING_OUTPUTS
+        == TransferJob.ProcessingPolicy.REPROCESS_IF_MISSING_OUTPUTS.value
     ):
         should_process = not local_processed_present
     elif (
         transfer_job.processing_policy
-        == TransferJob.ProcessingPolicy.PRESERVE_PROCESSING_STATE
+        == TransferJob.ProcessingPolicy.PRESERVE_PROCESSING_STATE.value
     ):
         should_process = not bool(sender_success)
 
@@ -1000,7 +1120,7 @@ def _save_transfer_job_state(
 
 def _store_model_file(
     *,
-    instance,
+    instance: Any,
     field_name: str,
     source_path: Path,
     stored_name: str,
@@ -1018,7 +1138,9 @@ def _stored_field_name(field_file: object) -> str:
     return stored_name
 
 
-def _write_uploaded_file_to_temp(*, uploaded_file, default_suffix: str) -> Path:
+def _write_uploaded_file_to_temp(
+    *, uploaded_file: UploadedFile, default_suffix: str
+) -> Path:
     ensure_directory(TRANSCODING_DIR)
     upload_name = Path(str(getattr(uploaded_file, "name", "") or "upload")).name
     suffix = _normalized_suffix(upload_name, default_suffix)
@@ -1028,7 +1150,7 @@ def _write_uploaded_file_to_temp(*, uploaded_file, default_suffix: str) -> Path:
         suffix=suffix,
     ) as handle:
         if hasattr(uploaded_file, "chunks"):
-            for chunk in uploaded_file.chunks():
+            for chunk in cast(Iterable[bytes], uploaded_file.chunks()):
                 handle.write(chunk)
         else:
             handle.write(uploaded_file.read())
@@ -1085,7 +1207,7 @@ def _expected_processed_video_hash(
     transfer_job: TransferJob,
     video: VideoFile,
 ) -> str:
-    resource_rows = transfer_job.resource_rows or {}
+    resource_rows = transfer_job.resource_rows
     video_payload = resource_rows.get("video_file") or {}
     if not isinstance(video_payload, dict):
         return str(video.processed_video_hash or "").strip()
@@ -1114,14 +1236,14 @@ def _mark_report_transfer_as_processed(report: RawPdfFile) -> None:
 
 
 def _sender_processing_success(transfer_job: TransferJob) -> bool | None:
-    processing_snapshot = transfer_job.processing_snapshot or {}
+    processing_snapshot = transfer_job.processing_snapshot
     sender_processing_success = _coerce_optional_bool(
         processing_snapshot.get("sender_processing_success")
     )
     if sender_processing_success is not None:
         return sender_processing_success
 
-    resource_rows = transfer_job.resource_rows or {}
+    resource_rows = transfer_job.resource_rows
     processing_history_payload = resource_rows.get("processing_history") or {}
     if isinstance(processing_history_payload, dict):
         return _coerce_optional_bool(processing_history_payload.get("success"))
@@ -1139,27 +1261,29 @@ def _apply_frame_annotation_rows(
     *,
     transfer_job: TransferJob,
     video: VideoFile,
-    rows: list[dict[str, Any]],
+    rows: list[JsonObject],
 ) -> None:
     if not rows:
         return
-    if not isinstance(rows, list):
-        raise ValueError("resource_rows.frame_annotations must be a list")
 
     for row in rows:
-        if not isinstance(row, dict):
-            raise ValueError("resource_rows.frame_annotations entries must be objects")
         row_video_hash = str(row.get("video_hash") or "").strip()
         if row_video_hash and row_video_hash != video.video_hash:
             raise ValueError(
                 "resource_rows.frame_annotations video_hash does not match transfer video"
             )
 
-        frame_number = int(row["frame_number"])
+        frame_number = _json_int(
+            row["frame_number"],
+            field_name="resource_rows.frame_annotations.frame_number",
+        )
         relative_path = str(row["frame_relative_path"]).strip()
         label_name = str(row["label_name"]).strip()
         information_source_name = str(row["information_source_name"]).strip()
-        frame_timestamp = row.get("frame_timestamp")
+        frame_timestamp = _json_float(
+            row.get("frame_timestamp"),
+            field_name="resource_rows.frame_annotations.frame_timestamp",
+        )
 
         frame, _ = Frame.objects.get_or_create(
             video=video,
@@ -1180,7 +1304,9 @@ def _apply_frame_annotation_rows(
             frame.save(update_fields=frame_update_fields)
 
         label, _ = Label.get_or_create_from_name(label_name)
-        information_source, _ = InformationSource.objects.get_or_create_by_name(
+        information_source, _ = cast(
+            InformationSourceManager, InformationSource.objects
+        ).get_or_create_by_name(
             information_source_name,
             description="Imported from hub transfer frame annotations",
         )
@@ -1192,9 +1318,18 @@ def _apply_frame_annotation_rows(
             frame=frame,
             label=label,
             information_source=information_source,
-            annotator=row.get("annotator"),
-            value=bool(row["value"]),
-            float_value=row.get("float_value"),
+            annotator=_json_str(
+                row.get("annotator"),
+                field_name="resource_rows.frame_annotations.annotator",
+            ),
+            value=_json_bool(
+                row["value"],
+                field_name="resource_rows.frame_annotations.value",
+            ),
+            float_value=_json_float(
+                row.get("float_value"),
+                field_name="resource_rows.frame_annotations.float_value",
+            ),
             external_annotation_id=external_annotation_id,
         )
 
@@ -1207,7 +1342,7 @@ def _apply_frame_annotation_rows(
 def _transfer_annotation_external_id(
     *,
     transfer_job: TransferJob,
-    row: dict[str, Any],
+    row: JsonObject,
 ) -> str | None:
     external_annotation_id = row.get("external_annotation_id")
     if external_annotation_id:
@@ -1282,12 +1417,10 @@ def _upsert_frame_annotation(
 def _apply_patient_examination_report_rows(
     *,
     transfer_job: TransferJob,
-    rows: list[dict[str, Any]],
+    rows: list[JsonObject],
 ) -> None:
     if not rows:
         return
-    if not isinstance(rows, list):
-        raise ValueError("resource_rows.reports must be a list")
     if transfer_job.linked_patient_examination_id is None:
         raise ValueError("report rows require a linked patient examination")
 
@@ -1298,8 +1431,6 @@ def _apply_patient_examination_report_rows(
         raise ValueError("linked patient examination could not be resolved")
 
     for row in rows:
-        if not isinstance(row, dict):
-            raise ValueError("resource_rows.reports entries must be objects")
         _upsert_patient_examination_report(
             patient_examination=patient_examination,
             row=row,
@@ -1309,12 +1440,16 @@ def _apply_patient_examination_report_rows(
 def _upsert_patient_examination_report(
     *,
     patient_examination: PatientExamination,
-    row: dict[str, Any],
+    row: JsonObject,
 ) -> None:
     template_name = str(row["template_name"]).strip()
     template_version = str(row.get("template_version") or "")
     template_hash = str(row.get("template_hash") or "")
-    version = int(row.get("version") or 1)
+    version = _json_int(
+        row.get("version"),
+        field_name="resource_rows.reports.version",
+        default=1,
+    )
 
     report = (
         PatientExaminationReport.objects.filter(
@@ -1336,31 +1471,36 @@ def _upsert_patient_examination_report(
             version=version,
         )
 
-    report.patient_examination = patient_examination
-    report.template_name = template_name
-    report.template_version = template_version
-    report.template_hash = template_hash
-    report.version = version
+    report_any = cast(Any, report)
+    report_any.patient_examination = patient_examination
+    report_any.template_name = template_name
+    report_any.template_version = template_version
+    report_any.template_hash = template_hash
+    report_any.version = version
     if "title" in row:
-        report.title = str(row.get("title") or "")
+        report_any.title = str(row.get("title") or "")
     if "status" in row:
-        report.status = str(row["status"])
+        report_any.status = str(row["status"])
     if "editor_payload" in row:
-        report.editor_payload = row.get("editor_payload") or {}
+        report_any.editor_payload = cast(JsonObject, row.get("editor_payload") or {})
     if "patient_context_snapshot" in row:
-        report.patient_context_snapshot = row.get("patient_context_snapshot") or {}
+        report_any.patient_context_snapshot = cast(
+            JsonObject, row.get("patient_context_snapshot") or {}
+        )
     if "history_context_snapshot" in row:
-        report.history_context_snapshot = row.get("history_context_snapshot") or {}
+        report_any.history_context_snapshot = cast(
+            JsonObject, row.get("history_context_snapshot") or {}
+        )
     if "rendered_text" in row:
-        report.rendered_text = str(row.get("rendered_text") or "")
+        report_any.rendered_text = str(row.get("rendered_text") or "")
     if "is_active" in row:
-        report.is_active = bool(row["is_active"])
+        report_any.is_active = bool(row["is_active"])
     if "finalized_at" in row:
-        report.finalized_at = _parse_transfer_datetime(row.get("finalized_at"))
-    elif report.status != PatientExaminationReport.Status.FINAL:
-        report.finalized_at = None
+        report_any.finalized_at = _parse_transfer_datetime(row.get("finalized_at"))
+    elif report_any.status != PatientExaminationReport.Status.FINAL.value:
+        report_any.finalized_at = None
 
-    report.save()
+    report_any.save()
 
 
 def _parse_transfer_datetime(value: Any) -> datetime | None:
@@ -1377,7 +1517,7 @@ def _parse_transfer_datetime(value: Any) -> datetime | None:
     return parsed
 
 
-def _apply_video_file_payload(video: VideoFile, payload: dict[str, Any]) -> None:
+def _apply_video_file_payload(video: VideoFile, payload: JsonObject) -> None:
     sync_fields = [
         "processed_video_hash",
         "original_file_name",
@@ -1391,12 +1531,10 @@ def _apply_video_file_payload(video: VideoFile, payload: dict[str, Any]) -> None
     ]
     for field_name in sync_fields:
         if field_name in payload:
-            setattr(video, field_name, payload[field_name])
+            setattr(video, field_name, cast(Any, payload[field_name]))
 
 
-def _apply_video_state_payload(
-    video_state: VideoState, payload: dict[str, Any]
-) -> None:
+def _apply_video_state_payload(video_state: VideoState, payload: JsonObject) -> None:
     sync_fields = [
         "frames_extracted",
         "frames_initialized",
@@ -1419,14 +1557,14 @@ def _apply_video_state_payload(
     updated_fields: list[str] = []
     for field_name in sync_fields:
         if field_name in payload:
-            setattr(video_state, field_name, payload[field_name])
+            setattr(video_state, field_name, cast(Any, payload[field_name]))
             updated_fields.append(field_name)
     if updated_fields:
         updated_fields.append("date_modified")
         video_state.save(update_fields=updated_fields)
 
 
-def _apply_report_file_payload(report: RawPdfFile, payload: dict[str, Any]) -> None:
+def _apply_report_file_payload(report: RawPdfFile, payload: JsonObject) -> None:
     sync_fields = [
         "text",
         "anonymized_text",
@@ -1436,12 +1574,10 @@ def _apply_report_file_payload(report: RawPdfFile, payload: dict[str, Any]) -> N
     ]
     for field_name in sync_fields:
         if field_name in payload:
-            setattr(report, field_name, payload[field_name])
+            setattr(report, field_name, cast(Any, payload[field_name]))
 
 
-def _apply_report_state_payload(
-    report_state: RawPdfState, payload: dict[str, Any]
-) -> None:
+def _apply_report_state_payload(report_state: RawPdfState, payload: JsonObject) -> None:
     sync_fields = [
         "text_meta_extracted",
         "initial_prediction_completed",
@@ -1456,7 +1592,7 @@ def _apply_report_state_payload(
     updated_fields: list[str] = []
     for field_name in sync_fields:
         if field_name in payload:
-            setattr(report_state, field_name, payload[field_name])
+            setattr(report_state, field_name, cast(Any, payload[field_name]))
             updated_fields.append(field_name)
     if updated_fields:
         updated_fields.append("date_modified")
@@ -1466,7 +1602,7 @@ def _apply_report_state_payload(
 def _upsert_sensitive_meta(
     *,
     existing: SensitiveMeta | None,
-    payload: dict[str, Any],
+    payload: JsonObject,
     center: Center,
 ) -> SensitiveMeta:
     safe_fields = [
@@ -1554,10 +1690,12 @@ def _apply_case_resolution_for_media(
     resolution = auto_resolve_media_case(media_type=media_type, media_obj=media_obj)
     transfer_job.case_resolution_status = resolution.status
     transfer_job.linked_patient_examination_id = (
-        resolution.patient_examination.pk if resolution.patient_examination else None
+        cast(int, resolution.patient_examination.pk)
+        if resolution.patient_examination is not None
+        else None
     )
     transfer_job.linked_patient_id = (
-        resolution.patient_examination.patient_id
+        cast(int | None, getattr(resolution.patient_examination, "patient_id", None))
         if resolution.patient_examination is not None
         else None
     )
@@ -1578,7 +1716,7 @@ def _decide_video_processing(
     transfer_job: TransferJob,
     video: VideoFile,
     processing_success: bool | None,
-    processing_snapshot: dict[str, Any],
+    processing_snapshot: JsonObject,
 ) -> tuple[str, str, str]:
     local_history_success = ProcessingHistory.has_history_for_hash(
         file_hash=transfer_job.resource_hash,
@@ -1599,10 +1737,10 @@ def _decide_video_processing(
             "Existing local processing history and artifacts allow replay suppression",
         )
 
-    if transfer_job.transfer_mode == TransferJob.TransferMode.METADATA_ONLY:
+    if transfer_job.transfer_mode == TransferJob.TransferMode.METADATA_ONLY.value:
         if (
             transfer_job.processing_policy
-            == TransferJob.ProcessingPolicy.PRESERVE_PROCESSING_STATE
+            == TransferJob.ProcessingPolicy.PRESERVE_PROCESSING_STATE.value
             and sender_processing_success
             and not local_processed_present
             and not local_raw_present
@@ -1645,10 +1783,10 @@ def _decide_report_processing(
             "Existing local processing history and artifacts allow replay suppression",
         )
 
-    if transfer_job.transfer_mode == TransferJob.TransferMode.METADATA_ONLY:
+    if transfer_job.transfer_mode == TransferJob.TransferMode.METADATA_ONLY.value:
         if (
             transfer_job.processing_policy
-            == TransferJob.ProcessingPolicy.PRESERVE_PROCESSING_STATE
+            == TransferJob.ProcessingPolicy.PRESERVE_PROCESSING_STATE.value
             and processing_success
             and not local_raw_present
             and not local_processed_present

@@ -3,9 +3,11 @@ import json
 import logging
 import os
 import uuid
-from contextlib import AbstractContextManager, nullcontext
+from contextlib import nullcontext
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
+
+from pydantic import ValidationError
 
 logger = logging.getLogger(__name__)
 PHI_REGION_LABEL_NAME = "phi_region"
@@ -26,13 +28,18 @@ def _temp_media_path(final_path: Path, marker: str = "part") -> Path:
     return final_path.with_name(f"{final_path.stem}.{marker}{final_path.suffix}")
 
 
+from endoreg_db.utils.ffmpeg_wrapper import (
+    get_stream_info,
+    resolve_ffmpeg_executable as _resolve_ffmpeg_executable,
+    resolve_ffprobe_executable as _resolve_ffprobe_executable,
+)
 from lx_anonymizer.frame_cleaner import FrameCleaner
 from lx_dtypes.models import SensitiveMeta
+from lx_dtypes.models.contracts.json_types import JsonObject
 from lx_dtypes.models.contracts.media_streaming import (
     FfmpegStreamProbeEntry,
     validate_ffmpeg_stream_info,
 )
-from lx_dtypes.models.contracts.json_types import JsonObject
 from lx_dtypes.models.contracts.video_frame_box_annotations import (
     VideoPhiFrameObservationPayload,
     VideoPhiRegionPayload,
@@ -54,19 +61,17 @@ from endoreg_db.models.medical.hardware.endoscopy_processor import (
     EndoscopyProcessor,
 )
 from endoreg_db.models.other.information_source import InformationSource
-from endoreg_db.services.video_files import get_or_create_video_state
-from endoreg_db.utils.filesystem import paths as path_utils
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.services.video_files import (
+    ensure_local_raw_video_file,
+    get_or_create_video_state,
+)
+from endoreg_db.utils import paths as path_utils
+from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_move_file,
     ensure_directory,
     safe_unlink_file,
     sha256_file,
-)
-from endoreg_db.utils.video.ffmpeg_wrapper import (
-    _resolve_ffmpeg_executable,
-    _resolve_ffprobe_executable,
-    get_stream_info,
 )
 
 if TYPE_CHECKING:
@@ -76,8 +81,6 @@ if TYPE_CHECKING:
 class _VideoAnonymizationVideo(Protocol):
     video_hash: str
     meta: JsonObject | None
-
-    def ensure_local_raw_file(self) -> AbstractContextManager[Path]: ...
 
 
 class _FrameCleaner(Protocol):
@@ -91,6 +94,11 @@ class _FrameCleaner(Protocol):
     ) -> tuple[Path, JsonObject | None]: ...
 
 
+@runtime_checkable
+class _PydanticDumpable(Protocol):
+    def model_dump(self, *, mode: str) -> dict[str, object]: ...
+
+
 class _InformationSourceManager(Protocol):
     def get_or_create_by_name(
         self,
@@ -100,9 +108,9 @@ class _InformationSourceManager(Protocol):
 
 
 class _EndoscopyProcessor(Protocol):
-    def get_roi_endoscope_image(self) -> dict[str, int | None] | None: ...
+    def get_roi_endoscope_image(self) -> object: ...
 
-    def get_sensitive_rois(self) -> dict[str, dict[str, int | None] | None]: ...
+    def get_sensitive_rois(self) -> dict[str, object]: ...
 
 
 class _EndoscopyProcessorClass(Protocol):
@@ -164,7 +172,7 @@ def _positive_int(value: object) -> int | None:
 
 
 def _require_endoscope_image_roi(
-    roi: dict[str, int | None] | None,
+    roi: object,
     *,
     processor_name: str,
 ) -> dict[str, int]:
@@ -172,11 +180,20 @@ def _require_endoscope_image_roi(
         raise RuntimeError(
             f"Endoscopy processor {processor_name!r} has no endoscope image ROI configured."
         )
+    if isinstance(roi, _PydanticDumpable):
+        roi = roi.model_dump(mode="python")
+    if not isinstance(roi, dict):
+        raise RuntimeError(
+            f"Endoscopy processor {processor_name!r} has invalid endoscope image ROI type."
+        )
+    roi_data = cast(dict[str, object], roi)
 
-    missing_keys = [key for key in ENDOSCOPE_IMAGE_ROI_REQUIRED_KEYS if key not in roi]
+    missing_keys = [
+        key for key in ENDOSCOPE_IMAGE_ROI_REQUIRED_KEYS if key not in roi_data
+    ]
     invalid_value_keys: list[str] = []
     complete_roi: dict[str, int] = {}
-    for key, value in roi.items():
+    for key, value in roi_data.items():
         if isinstance(value, bool) or not isinstance(value, int):
             invalid_value_keys.append(key)
             continue
@@ -220,6 +237,32 @@ def _require_endoscope_image_roi(
         )
 
     return complete_roi
+
+
+def _require_sensitive_roi_box(
+    name: str,
+    roi: object,
+    *,
+    processor_name: str,
+) -> dict[str, int | None]:
+    if isinstance(roi, _PydanticDumpable):
+        roi = roi.model_dump(mode="python")
+    if not isinstance(roi, dict):
+        raise RuntimeError(
+            f"Endoscopy processor {processor_name!r} has invalid sensitive ROI {name!r} type."
+        )
+    roi_data = cast(dict[str, object], roi)
+    normalized: dict[str, int | None] = {}
+    for key, value in roi_data.items():
+        if value is None:
+            normalized[key] = None
+        elif isinstance(value, bool) or not isinstance(value, int):
+            raise RuntimeError(
+                f"Endoscopy processor {processor_name!r} has non-integer value for sensitive ROI {name!r} key {key!r}."
+            )
+        else:
+            normalized[key] = value
+    return normalized
 
 
 def _first_video_stream(
@@ -474,10 +517,12 @@ class VideoAnonymizer:
 
         endoscope_roi, endoscope_roi_nested = self._get_processor_roi_info(ctx)
         explicit_source_path = getattr(ctx, "local_source_path", None)
+        if explicit_source_path is None:
+            explicit_source_path = getattr(ctx, "file_path", None)
         if explicit_source_path is not None:
             source_context = nullcontext(Path(explicit_source_path))
         else:
-            source_context = video.ensure_local_raw_file()
+            source_context = ensure_local_raw_video_file(ctx.current_video)
 
         # Process with enhanced process_report method (returns 4-tuple now)
         with source_context as source_path:
@@ -717,13 +762,25 @@ class VideoAnonymizer:
                 f"Endoscopy processor {processor_name!r} not found for video {video_hash}."
             ) from exc
 
+        try:
+            raw_endoscope_image_roi = processor.get_roi_endoscope_image()
+            raw_sensitive_rois = processor.get_sensitive_rois()
+        except ValidationError as exc:
+            raise RuntimeError(
+                f"Endoscopy processor {processor_name!r} has invalid endoscope image ROI."
+            ) from exc
+
         endoscope_image_roi = _require_endoscope_image_roi(
-            processor.get_roi_endoscope_image(),
+            raw_endoscope_image_roi,
             processor_name=processor_name,
         )
         endoscope_data_roi_nested = {
-            name: roi
-            for name, roi in processor.get_sensitive_rois().items()
+            name: _require_sensitive_roi_box(
+                name,
+                roi,
+                processor_name=processor_name,
+            )
+            for name, roi in raw_sensitive_rois.items()
             if roi is not None
         }
         logger.info(

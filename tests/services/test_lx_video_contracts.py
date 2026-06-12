@@ -1,4 +1,7 @@
+# pyright: reportUnknownMemberType=false
+
 from datetime import date, datetime, time
+from typing import Any
 
 import pytest
 from django.core.files.base import ContentFile
@@ -16,6 +19,7 @@ from endoreg_db.models import (
     VideoFile,
     VideoPredictionMeta,
     VideoState,
+    Center
 )
 from endoreg_db.services.lx_video_contracts import (
     build_lx_p_video_segment,
@@ -28,7 +32,7 @@ from endoreg_db.services.lx_video_contracts import (
 
 def _create_video(
     *,
-    center,
+    center: Center,
     video_hash: str,
     patient: Patient | None = None,
     patient_examination: PatientExamination | None = None,
@@ -53,7 +57,7 @@ def _create_video(
 
 
 @pytest.mark.django_db
-def test_build_lx_sensitive_meta_maps_django_fields(base_db_data) -> None:
+def test_build_lx_sensitive_meta_maps_django_fields(base_db_data: object,) -> None:
     from tests.helpers.default_objects import get_default_center
 
     center = get_default_center()
@@ -107,8 +111,8 @@ def test_build_lx_sensitive_meta_maps_django_fields(base_db_data) -> None:
 
 @pytest.mark.django_db
 def test_build_lx_p_video_segment_prefers_prediction_meta_labelset(
-    base_db_data,
-    unique_ai_model,
+    base_db_data: object,
+    unique_ai_model: Any,
     base_labelset: LabelSet,
 ) -> None:
     from tests.helpers.default_objects import get_default_center
@@ -142,7 +146,7 @@ def test_build_lx_p_video_segment_prefers_prediction_meta_labelset(
 
 
 @pytest.mark.django_db
-def test_build_lx_patient_video_file_skips_invalid_segments(base_db_data) -> None:
+def test_build_lx_patient_video_file_skips_invalid_segments(base_db_data: object,) -> None:
     from tests.helpers.default_objects import get_default_center
 
     center = get_default_center()
@@ -204,7 +208,7 @@ def test_build_lx_patient_video_file_skips_invalid_segments(base_db_data) -> Non
 
 
 @pytest.mark.django_db
-def test_build_lx_patient_video_file_strict_segments_raises(base_db_data) -> None:
+def test_build_lx_patient_video_file_strict_segments_raises(base_db_data: object,) -> None:
     from tests.helpers.default_objects import get_default_center
 
     center = get_default_center()
@@ -221,7 +225,7 @@ def test_build_lx_patient_video_file_strict_segments_raises(base_db_data) -> Non
 
 @pytest.mark.django_db
 def test_resolve_segment_labelset_name_falls_back_to_label_membership(
-    base_db_data,
+    base_db_data: object,
 ) -> None:
     from tests.helpers.default_objects import get_default_center
 
@@ -242,8 +246,8 @@ def test_resolve_segment_labelset_name_falls_back_to_label_membership(
 
 @pytest.mark.django_db
 def test_segment_resolve_labelset_name_falls_back_to_video_model_meta(
-    base_db_data,
-    unique_ai_model,
+    base_db_data: object,
+    unique_ai_model: Any,
 ) -> None:
     from tests.helpers.default_objects import get_default_center
 

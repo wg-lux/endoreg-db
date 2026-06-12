@@ -8,7 +8,7 @@ from endoreg_db.services.video_files import (
     delete_video_frames,
     get_video_frame_dir_path,
 )
-from endoreg_db.utils.filesystem.file_operations import safe_rmtree
+from endoreg_db.utils.file_operations import safe_rmtree
 
 logger = logging.getLogger(__name__)
 

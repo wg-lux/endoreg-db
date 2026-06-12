@@ -1,8 +1,12 @@
+# pyright: reportPrivateUsage=false
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from celery import shared_task
+
+if TYPE_CHECKING:
+    from celery import Task
 
 
 @shared_task(
@@ -14,7 +18,7 @@ from celery import shared_task
     time_limit=60 * 60 * 6,
     soft_time_limit=60 * 60 * 5,
 )
-def run_video_upload_import_task(_task, job_id: str) -> bool:
+def run_video_upload_import_task(_task: Task[[str], bool], job_id: str) -> bool:
     from endoreg_db.services.hub.ingest import _run_video_upload_import_job
 
     return _run_video_upload_import_job(str(job_id))
@@ -30,7 +34,7 @@ def run_video_upload_import_task(_task, job_id: str) -> bool:
     soft_time_limit=60 * 60 * 5,
 )
 def run_video_reimport_task(
-    _task,
+    _task: Task[[int, int | None], bool],
     video_id: int,
     history_id: int | None = None,
 ) -> bool:
@@ -59,7 +63,7 @@ def run_video_reimport_task(
     track_started=True,
 )
 def run_frame_extraction_request_task(
-    _task,
+    _task: Task[[int, int, int], bool],
     request_id: int,
     video_id: int,
     frame_number: int,
@@ -83,7 +87,7 @@ def run_frame_extraction_request_task(
     track_started=True,
 )
 def run_video_post_validation_rebuild_task(
-    _task,
+    _task: Task[[int, bool, int | None], bool],
     video_id: int,
     only_validated: bool = False,
     history_id: int | None = None,
@@ -116,7 +120,22 @@ def run_video_post_validation_rebuild_task(
     track_started=True,
 )
 def run_video_temporal_inference_task(
-    _task,
+    _task: Task[
+        [
+            int,
+            int,
+            int | None,
+            bool,
+            bool,
+            float,
+            int,
+            dict[str, Any] | None,
+            bool,
+            int,
+            str | None,
+        ],
+        bool,
+    ],
     video_id: int,
     model_meta_id: int,
     history_id: int | None = None,
@@ -160,7 +179,7 @@ def run_video_temporal_inference_task(
     soft_time_limit=60 * 60 * 24 - 300,
 )
 def run_model_training_task(
-    _task,
+    _task: Task[[str, dict[str, Any]], bool],
     run_id: str,
     command_kwargs: dict[str, Any],
 ) -> bool:
@@ -183,7 +202,7 @@ def run_model_training_task(
     time_limit=60 * 60 * 6,
     soft_time_limit=60 * 60 * 5,
 )
-def run_report_llm_reimport_task(_task, job_id: str) -> bool:
+def run_report_llm_reimport_task(_task: Task[[str], bool], job_id: str) -> bool:
     from endoreg_db.services.jobs.report_llm_jobs import _run_report_llm_reimport_job
 
     return _run_report_llm_reimport_job(str(job_id))
@@ -198,7 +217,7 @@ def run_report_llm_reimport_task(_task, job_id: str) -> bool:
     time_limit=60 * 60 * 6,
     soft_time_limit=60 * 60 * 5,
 )
-def run_report_llm_import_task(_task, job_id: str) -> bool:
+def run_report_llm_import_task(_task: Task[[str], bool], job_id: str) -> bool:
     from endoreg_db.services.jobs.report_llm_jobs import _run_report_llm_import_job
 
     return _run_report_llm_import_job(str(job_id))
@@ -211,7 +230,7 @@ def run_report_llm_import_task(_task, job_id: str) -> bool:
     reject_on_worker_lost=True,
     track_started=True,
 )
-def process_upload_job(_task, job_id: str) -> bool:
+def process_upload_job(_task: Task[[str], bool], job_id: str) -> bool:
     from endoreg_db.services.hub import process_upload_job as _process_upload_job
 
     return _process_upload_job(str(job_id))
@@ -224,7 +243,9 @@ def process_upload_job(_task, job_id: str) -> bool:
     reject_on_worker_lost=True,
     track_started=True,
 )
-def refresh_audit_ledger_integrity_status_task(_task) -> dict[str, Any]:
+def refresh_audit_ledger_integrity_status_task(
+    _task: Task[[], dict[str, Any]],
+) -> dict[str, Any]:
     from endoreg_db.services.audit_integrity import (
         refresh_audit_ledger_integrity_status_once,
     )

@@ -1,8 +1,8 @@
 import re
 from pathlib import Path
-from typing import Literal, TypedDict
+from typing import Literal, Self, TypedDict
 
-from lx_dtypes.models import SensitiveMeta
+from lx_dtypes.models.meta.SensitiveMeta import SensitiveMeta as LxSensitiveMeta
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -10,14 +10,17 @@ from pydantic import (
     SkipValidation,
     ValidationInfo,
     field_validator,
+    model_validator,
 )
 
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.utils.filesystem.file_operations import sha256_file
+from endoreg_db.utils.file_operations import sha256_file
 
 
 _SHA256_PATTERN = re.compile(r"^[0-9a-fA-F]{64}$")
+_REPORT_SUFFIXES = frozenset({".pdf", ".txt"})
+_VIDEO_SUFFIXES = frozenset({".avi", ".m4v", ".mkv", ".mov", ".mp4", ".mpeg", ".mpg"})
 
 
 class SourceStreamData(TypedDict, total=False):
@@ -81,7 +84,7 @@ class ImportContext(BaseModel):
 
     current_report: SkipValidation[RawPdfFile | None] = None
     current_video: SkipValidation[VideoFile | None] = None
-    current_meta: SensitiveMeta | None = None
+    current_meta: LxSensitiveMeta | None = None
 
     instance: SkipValidation[RawPdfFile | VideoFile | None] = None
     file_type: Literal["undefined", "video", "report"] = "undefined"
@@ -91,11 +94,20 @@ class ImportContext(BaseModel):
 
     original_text: str | None = None
     anonymized_text: str | None = None
-    extracted_metadata: SensitiveMeta = Field(default_factory=SensitiveMeta)
+    extracted_metadata: LxSensitiveMeta = Field(default_factory=LxSensitiveMeta)
 
     def model_post_init(self, __context: object) -> None:
         """Compute the raw file hash after validation/coercion."""
         self.file_hash = sha256_file(self.file_path)
+
+    @model_validator(mode="after")
+    def _validate_file_type_matches_path(self) -> Self:
+        suffix = self.file_path.suffix.lower()
+        if self.file_type == "report" and suffix not in _REPORT_SUFFIXES:
+            raise ValueError("file_type report requires a PDF or text source file")
+        if self.file_type == "video" and suffix not in _VIDEO_SUFFIXES:
+            raise ValueError("file_type video requires a supported video source file")
+        return self
 
     @field_validator(
         "file_path",
@@ -146,7 +158,7 @@ class ImportContext(BaseModel):
 
     @field_validator("extracted_metadata", mode="before")
     @classmethod
-    def _validate_extracted_metadata(cls, value: object) -> SensitiveMeta:
-        if isinstance(value, SensitiveMeta):
+    def _validate_extracted_metadata(cls, value: object) -> LxSensitiveMeta:
+        if isinstance(value, LxSensitiveMeta):
             return value
         raise ValueError("extracted_metadata must be an lx_dtypes SensitiveMeta")

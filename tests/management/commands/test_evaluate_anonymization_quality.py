@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-import json
+import re
+from collections.abc import Mapping, Sequence
 from datetime import date, datetime, timedelta
 from io import StringIO
+from pathlib import Path
+from typing import Protocol, cast
 from uuid import uuid4
 
-from django.core.files.base import ContentFile
+from django.core.files.base import ContentFile, File
 from django.core.management import call_command
 from django.utils import timezone
 import pytest
@@ -16,15 +19,26 @@ from endoreg_db.models import (
     SensitiveMeta,
     VideoFile,
 )
+from lx_dtypes.models.contracts.anonymization_quality import (
+    AnonymizationQualityPayload,
+)
 
 
-@pytest.fixture(autouse=True)
-def _reference_data(base_db_data):
-    return base_db_data
+class _WritableFieldFile(Protocol):
+    def save(self, name: str, content: File[bytes], save: bool = True) -> None: ...
+
+
+def _save_processed_video_file(video: VideoFile) -> None:
+    processed_content: File[bytes] = ContentFile(b"processed")
+    processed_file = cast(_WritableFieldFile, video.processed_file)
+    processed_file.save("processed.mp4", processed_content, save=True)
 
 
 @pytest.mark.django_db
-def test_quality_command_json_output_is_derived_only_and_snake_case(tmp_path):
+def test_quality_command_json_output_is_derived_only_and_snake_case(
+    tmp_path: Path, base_db_data: bool
+) -> None:
+    assert base_db_data is not None
     center = Center.objects.create(name=f"quality-command-center-{uuid4().hex[:8]}")
     sensitive_meta = SensitiveMeta.objects.create(
         center=center,
@@ -40,7 +54,7 @@ def test_quality_command_json_output_is_derived_only_and_snake_case(tmp_path):
         sensitive_meta=sensitive_meta,
         video_hash=f"quality-command-video-{uuid4().hex}",
     )
-    video.processed_file.save("processed.mp4", ContentFile(b"processed"), save=True)
+    _save_processed_video_file(video)
     video.get_or_create_state().mark_anonymization_validated()
     AnonymizationValidationMetric.objects.create(
         media_type="video",
@@ -66,23 +80,28 @@ def test_quality_command_json_output_is_derived_only_and_snake_case(tmp_path):
         stdout=stdout,
     )
 
-    payload = json.loads(stdout.getvalue())
-    file_payload = json.loads(output_path.read_text(encoding="utf-8"))
+    payload = AnonymizationQualityPayload.model_validate_json(stdout.getvalue())
+    file_payload = AnonymizationQualityPayload.model_validate_json(
+        output_path.read_text(encoding="utf-8")
+    )
     assert payload == file_payload
-    assert payload["summary"]["total"] == 1
-    assert payload["summary"]["residual_phi_detected_count"] == 1
-    assert payload["summary"]["missing_sensitive_meta_deletion_count"] > 0
-    assert payload["results"][0]["checked_fields"]
+    assert payload.summary.total == 1
+    assert payload.summary.residual_phi_detected_count == 1
+    assert payload.summary.missing_sensitive_meta_deletion_count > 0
+    assert payload.results[0].checked_fields
 
-    payload_text = json.dumps(payload)
+    payload_text = payload.model_dump_json()
     assert "CommandAlice" not in payload_text
     assert "CommandPatient" not in payload_text
     assert "COMMAND-CASE-17" not in payload_text
-    _assert_snake_case_keys(payload)
+    _assert_snake_case_keys(payload.model_dump(mode="json"))
 
 
 @pytest.mark.django_db
-def test_quality_command_apply_policy_clears_direct_identifiers():
+def test_quality_command_apply_policy_clears_direct_identifiers(
+    base_db_data: bool,
+) -> None:
+    assert base_db_data is not None
     center = Center.objects.create(name=f"quality-apply-center-{uuid4().hex[:8]}")
     sensitive_meta = SensitiveMeta.objects.create(
         center=center,
@@ -97,7 +116,7 @@ def test_quality_command_apply_policy_clears_direct_identifiers():
         sensitive_meta=sensitive_meta,
         video_hash=f"quality-apply-video-{uuid4().hex}",
     )
-    video.processed_file.save("processed.mp4", ContentFile(b"processed"), save=True)
+    _save_processed_video_file(video)
     video.get_or_create_state().mark_anonymization_validated()
     AnonymizationValidationMetric.objects.create(
         media_type="video",
@@ -122,14 +141,15 @@ def test_quality_command_apply_policy_clears_direct_identifiers():
     assert sensitive_meta.patient_hash
 
 
-def _assert_snake_case_keys(value):
-    import re
-
+def _assert_snake_case_keys(value: object) -> None:
     snake_case = re.compile(r"^[a-z][a-z0-9_]*$")
-    if isinstance(value, dict):
-        for key, child in value.items():
+    if isinstance(value, Mapping):
+        mapping = cast(Mapping[object, object], value)
+        for key, child in mapping.items():
+            assert isinstance(key, str), key
             assert snake_case.match(key), key
             _assert_snake_case_keys(child)
-    elif isinstance(value, list):
-        for child in value:
+    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        sequence = cast(Sequence[object], value)
+        for child in sequence:
             _assert_snake_case_keys(child)

@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+
 import logging
 import os
 from pathlib import Path
+from typing import Protocol, cast
+from django.core.files.storage import Storage
 from typing import TYPE_CHECKING, Protocol, TypedDict, Unpack, cast
 
-from endoreg_db.utils.filesystem.file_operations import get_content_hash_filename
-from endoreg_db.utils.security.hashs import get_pdf_hash
+from endoreg_db.utils.file_operations import get_content_hash_filename
+from endoreg_db.utils.hashs import get_pdf_hash
 from endoreg_db.utils.storage import save_local_file
-from endoreg_db.utils.observability.structured_logging import emit_structured_event
+from endoreg_db.utils.structured_logging import (
+    emit_structured_event,
+    path_reference,
+)
 
 from .state import get_or_create_raw_pdf_state
 from .types import ReportPdfArtifactKind
@@ -18,6 +24,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+class _StoredFileLike(Protocol):
+    name: str
+    storage: Storage
 
 class _RawPdfFileCreateKwargs(TypedDict, total=False):
     pass
@@ -86,7 +95,7 @@ def create_raw_pdf_file_from_path(
 
         field_file = existing_pdf_file.file
         file_name = field_file.name if field_file else None
-        if file_name and field_file.storage.exists(file_name):
+        if file_name and cast(_StoredFileLike, field_file).storage.exists(file_name):
             logger.warning("File is present. Returning existing instance.")
             return existing_pdf_file
 
@@ -123,7 +132,7 @@ def create_raw_pdf_file_from_path(
             report_id=raw_pdf.pk,
             pdf_hash=raw_pdf_persistence.pdf_hash,
             artifact_kind=ReportPdfArtifactKind.RAW.value,
-            source_path=file_path,
+            source_path=path_reference(file_path),
             storage_name=saved_name,
         )
         return raw_pdf

@@ -291,15 +291,14 @@ def _expectation_for_upload_job(
 ) -> MediaIntegrityExpectation | None:
     content_type = (upload_job.content_type or "").split(";", maxsplit=1)[0].strip()
     provenance = upload_job.processing_provenance
-    provenance_dict = provenance if isinstance(provenance, dict) else {}
 
     if content_type in {"application/pdf", "export/txt", "text/plain"}:
         return MediaIntegrityExpectation.REPORT
 
     if content_type.startswith("video/"):
         if (
-            upload_job.storage_tier == UploadJob.StorageTier.UPLOAD_PREANONYMIZED
-            or provenance_dict.get("ingest_variant") == "preanonymized"
+            upload_job.storage_tier == UploadJob.StorageTier.UPLOAD_PREANONYMIZED.value
+            or provenance.get("ingest_variant") == "preanonymized"
             or upload_job.source_system == "watcher_preanonymized"
         ):
             return MediaIntegrityExpectation.PREANONYMIZED_VIDEO

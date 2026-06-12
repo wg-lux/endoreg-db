@@ -80,14 +80,21 @@ class VideoSegmentsBulkMutationServiceTest(TestCase):
             },
         )
 
-        created_id = response_data["created"][0]["segment"]["id"]
+        created_id: int = response_data["created"][0]["segment"]["id"]  # pyright: ignore[reportUnknownVariableType,reportIndexIssue]
+        if not isinstance(created_id, int):
+            return ValueError
+        update_segment_id: int = int(self.update_segment.pk)
+        expected_attached_segment_ids: list[int] = sorted(
+            [created_id, update_segment_id]
+        )
+
         self.assertEqual(response_data["created_count"], 1)
         self.assertEqual(response_data["updated_count"], 1)
         self.assertEqual(response_data["deleted_count"], 0)
         self.assertEqual(response_data["ai_dataset_id"], dataset.pk)
         self.assertEqual(
             response_data["attached_segment_ids"],
-            sorted([created_id, self.update_segment.pk]),
+            expected_attached_segment_ids,
         )
         self.assertEqual(response_data["dataset_video_annotation_count"], 2)
         self.assertTrue(dataset.video_annotations.filter(pk=created_id).exists())

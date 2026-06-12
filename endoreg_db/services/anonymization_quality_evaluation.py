@@ -4,7 +4,7 @@ import logging
 import re
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Iterable, Literal, Mapping, cast
+from typing import Any, Iterable, Literal, Mapping, Protocol, cast
 
 from django.db import transaction
 from django.db.models import Q
@@ -32,7 +32,7 @@ from endoreg_db.services.anonymization_metrics import (
     annotation_box_rows,
     matched_phi_region_count,
 )
-from endoreg_db.utils.filesystem.file_operations import sha256_file
+from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.utils.storage import file_exists
 
 logger = logging.getLogger(__name__)
@@ -56,6 +56,24 @@ DIRECT_IDENTIFIER_FIELDS: tuple[str, ...] = (
     "external_id",
     "validation_comment",
 )
+
+
+class _ExaminerRelationManager(Protocol):
+    def exists(self) -> bool: ...
+
+    def clear(self) -> None: ...
+
+
+class _SensitiveMetaIdentifierRecord(Protocol):
+    patient_hash: str | None
+    examination_hash: str | None
+    patient_first_name: str | None
+    patient_last_name: str | None
+    patient_dob: date | datetime | None
+    examination_date: date | datetime | None
+    casenumber: str | None
+    examiner_first_name: str | None
+    examiner_last_name: str | None
 
 
 def evaluate_anonymization_quality(
@@ -219,7 +237,11 @@ def evaluate_media_object(
             allow_sensitive_meta_delete=allow_sensitive_meta_delete,
         )
     )
-    if sensitive_meta.patient_hash or sensitive_meta.examination_hash:
+    sensitive_meta_identifiers = cast(_SensitiveMetaIdentifierRecord, sensitive_meta)
+    if (
+        sensitive_meta_identifiers.patient_hash
+        or sensitive_meta_identifiers.examination_hash
+    ):
         warnings.append("pseudonym_hashes_retained_as_controlled_linkage")
 
     residual_phi_detected = bool(leaked_fields) or phi_region_false_negative_count > 0
@@ -368,28 +390,35 @@ def _identifier_values(
     media_obj: VideoFile | RawPdfFile,
 ) -> dict[str, list[str]]:
     candidates: dict[str, list[str]] = {}
+    sensitive_meta_identifiers = cast(_SensitiveMetaIdentifierRecord, sensitive_meta)
     _append_identifier(
-        candidates, "patient_first_name", sensitive_meta.patient_first_name
+        candidates,
+        "patient_first_name",
+        sensitive_meta_identifiers.patient_first_name,
     )
     _append_identifier(
-        candidates, "patient_last_name", sensitive_meta.patient_last_name
+        candidates,
+        "patient_last_name",
+        sensitive_meta_identifiers.patient_last_name,
     )
-    _append_date_identifiers(candidates, "patient_dob", sensitive_meta.patient_dob)
+    _append_date_identifiers(
+        candidates, "patient_dob", sensitive_meta_identifiers.patient_dob
+    )
     _append_date_identifiers(
         candidates,
         "examination_date",
-        sensitive_meta.examination_date,
+        sensitive_meta_identifiers.examination_date,
     )
-    _append_identifier(candidates, "casenumber", sensitive_meta.casenumber)
+    _append_identifier(candidates, "casenumber", sensitive_meta_identifiers.casenumber)
     _append_identifier(
         candidates,
         "examiner_first_name",
-        sensitive_meta.examiner_first_name,
+        sensitive_meta_identifiers.examiner_first_name,
     )
     _append_identifier(
         candidates,
         "examiner_last_name",
-        sensitive_meta.examiner_last_name,
+        sensitive_meta_identifiers.examiner_last_name,
     )
     _append_identifier(
         candidates, "center_name", _center_name(media_obj, sensitive_meta)
@@ -687,8 +716,9 @@ def _clear_sensitive_meta_direct_identifiers(
         cleared_fields.append(field_name)
 
     cleared_examiners = False
-    if sensitive_meta.pk and sensitive_meta.examiners.exists():
-        sensitive_meta.examiners.clear()
+    examiners = cast(_ExaminerRelationManager, getattr(sensitive_meta, "examiners"))
+    if sensitive_meta.pk and examiners.exists():
+        examiners.clear()
         cleared_examiners = True
 
     cleared_at = timezone.now()
@@ -703,7 +733,10 @@ def _clear_sensitive_meta_direct_identifiers(
                 "cleared_fields_count": len(cleared_fields),
                 "cleared_examiners": cleared_examiners,
                 "pseudonym_hashes_retained": bool(
-                    sensitive_meta.patient_hash or sensitive_meta.examination_hash
+                    cast(_SensitiveMetaIdentifierRecord, sensitive_meta).patient_hash
+                    or cast(
+                        _SensitiveMetaIdentifierRecord, sensitive_meta
+                    ).examination_hash
                 ),
             },
         }
@@ -725,7 +758,8 @@ def _direct_identifier_residual_count(sensitive_meta: SensitiveMeta) -> int:
             getattr(sensitive_meta, field_name)
         ):
             count += 1
-    if sensitive_meta.pk and sensitive_meta.examiners.exists():
+    examiners = cast(_ExaminerRelationManager, getattr(sensitive_meta, "examiners"))
+    if sensitive_meta.pk and examiners.exists():
         count += 1
     return count
 

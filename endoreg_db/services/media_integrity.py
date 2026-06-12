@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportMissingTypeStubs=false
 from __future__ import annotations
 
 import logging
@@ -6,11 +7,12 @@ import os
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from django.db import transaction
 from django.db.models import Q
+from django.db.models.fields.files import FieldFile
 from django.utils import timezone
 
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS
@@ -36,24 +38,25 @@ from endoreg_db.services.streamable_media import (
     sync_video_streamable_artifacts,
 )
 from endoreg_db.services.video_files import (
+    ensure_local_processed_video_file,
+    ensure_local_raw_video_file,
     get_or_create_video_state,
     get_video_frame_dir_path,
 )
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_move_file,
     atomic_move_path,
     ensure_directory,
     safe_rmtree,
     sha256_file,
 )
-from endoreg_db.utils.filesystem.paths import STORAGE_DIR
-from endoreg_db.utils.storage import materialize_video_file
-from endoreg_db.utils.observability.structured_logging import (
+from endoreg_db.utils.paths import STORAGE_DIR
+from endoreg_db.utils.structured_logging import (
     emit_structured_event,
     hash_identifier,
     safe_log_value,
 )
-from endoreg_db.utils.video import ffmpeg_wrapper
+from endoreg_db.utils import ffmpeg_wrapper
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +74,38 @@ class FpsProvenance(StrEnum):
     FROM_EXISTING_DB = "fps_from_existing_db"
     DEFAULTED = "fps_defaulted"
     UNAVAILABLE = "fps_unavailable"
+
+
+def _coerce_int(value: Any) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _first_video_stream(streams: list[object]) -> dict[str, Any] | None:
+    for stream in streams:
+        if isinstance(stream, dict):
+            stream_dict = cast(dict[str, Any], stream)
+            if stream_dict.get("codec_type") == "video":
+                return stream_dict
+    return None
+
+
+def _new_int_list() -> list[int]:
+    return []
+
+
+def _new_str_list() -> list[str]:
+    return []
+
+
+def _new_video_report_list() -> list[dict[str, Any]]:
+    return []
+
+
+def _new_upload_report_list() -> list[dict[str, Any]]:
+    return []
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,11 +133,11 @@ class FrameCacheClassification:
     cache_status: FrameCacheStatus
     db_extracted_frame_count: int = 0
     db_extracted_frame_contract_valid: bool = False
-    db_extracted_missing_file_numbers: list[int] = field(default_factory=list)
-    missing_frame_numbers: list[int] = field(default_factory=list)
-    extra_frame_numbers: list[int] = field(default_factory=list)
-    invalid_file_names: list[str] = field(default_factory=list)
-    unexpected_file_names: list[str] = field(default_factory=list)
+    db_extracted_missing_file_numbers: list[int] = field(default_factory=_new_int_list)
+    missing_frame_numbers: list[int] = field(default_factory=_new_int_list)
+    extra_frame_numbers: list[int] = field(default_factory=_new_int_list)
+    invalid_file_names: list[str] = field(default_factory=_new_str_list)
+    unexpected_file_names: list[str] = field(default_factory=_new_str_list)
     has_manual_annotations: bool = False
     repair_action: str = ""
     repair_detail: str = ""
@@ -180,8 +215,10 @@ class MediaIntegritySummary:
     streamable_artifacts_checked: int = 0
     streamable_artifacts_repaired: int = 0
     stale_artifacts_removed: int = 0
-    video_reports: list[dict[str, Any]] = field(default_factory=list)
-    upload_job_reports: list[dict[str, Any]] = field(default_factory=list)
+    video_reports: list[dict[str, Any]] = field(default_factory=_new_video_report_list)
+    upload_job_reports: list[dict[str, Any]] = field(
+        default_factory=_new_upload_report_list
+    )
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -217,7 +254,7 @@ def _file_mode(path: Path) -> int:
     return path.stat().st_mode & 0o777
 
 
-def _field_hash(field_file) -> str:
+def _field_hash(field_file: FieldFile) -> str:
     return sha256_file(field_file)
 
 
@@ -226,9 +263,9 @@ def _record_report(report: dict[str, Any], key: str, payload: dict[str, Any]) ->
     if existing is None:
         report[key] = payload
     elif isinstance(existing, list):
-        existing.append(payload)
+        cast(list[dict[str, Any]], existing).append(payload)
     else:
-        report[key] = [existing, payload]
+        report[key] = [cast(dict[str, Any], existing), payload]
 
 
 def _video_integrity_detail(video: VideoFile) -> str:
@@ -448,20 +485,16 @@ def _verify_streamable_artifact(
 
 def _probe_video_path(path: Path) -> tuple[bool, dict[str, Any] | None, str]:
     try:
-        probe_data = ffmpeg_wrapper.get_stream_info(path)
+        probe_data = cast(dict[str, Any] | None, ffmpeg_wrapper.get_stream_info(path))
     except Exception as exc:
         return False, None, str(exc)
     if not probe_data or "streams" not in probe_data:
         return False, probe_data, "ffprobe returned no streams"
-    video_stream = next(
-        (
-            stream
-            for stream in probe_data.get("streams", [])
-            if isinstance(stream, dict) and stream.get("codec_type") == "video"
-        ),
-        None,
-    )
-    if not video_stream:
+    streams = probe_data.get("streams")
+    if not isinstance(streams, list):
+        return False, probe_data, "ffprobe returned malformed stream metadata"
+    video_stream = _first_video_stream(cast(list[Any], streams))
+    if video_stream is None:
         return False, probe_data, "ffprobe returned no video stream"
     return True, probe_data, ""
 
@@ -1033,15 +1066,11 @@ def _parse_frame_rate(frame_rate: Any) -> tuple[int | None, int | None]:
 def _probe_fps(probe_data: dict[str, Any] | None) -> float | None:
     if not probe_data:
         return None
-    video_stream = next(
-        (
-            stream
-            for stream in probe_data.get("streams", [])
-            if isinstance(stream, dict) and stream.get("codec_type") == "video"
-        ),
-        None,
-    )
-    if not video_stream:
+    streams = probe_data.get("streams")
+    if not isinstance(streams, list):
+        return None
+    video_stream = _first_video_stream(cast(list[Any], streams))
+    if video_stream is None:
         return None
     for key in ("avg_frame_rate", "r_frame_rate"):
         numerator, denominator = _parse_frame_rate(video_stream.get(key))
@@ -1079,7 +1108,11 @@ def _select_ffmpeg_probe_source(
         if not getattr(field_file, "name", ""):
             continue
         try:
-            with materialize_video_file(video, file_type) as path:
+            with (
+                ensure_local_processed_video_file(video)
+                if file_type == "processed"
+                else ensure_local_raw_video_file(video)
+            ) as path:
                 ok, probe_data, detail = _probe_video_path(path)
                 if ok:
                     return (
@@ -1137,20 +1170,17 @@ def _float_or_none(value: Any) -> float | None:
 
 
 def _create_ffmpeg_meta_from_probe_data(probe_data: dict[str, Any]) -> FFMpegMeta:
-    video_stream = next(
-        (
-            stream
-            for stream in probe_data.get("streams", [])
-            if isinstance(stream, dict) and stream.get("codec_type") == "video"
-        ),
-        None,
-    )
+    streams = probe_data.get("streams")
+    if not isinstance(streams, list):
+        raise RuntimeError("Cannot create FFMpegMeta without stream metadata")
+    video_stream = _first_video_stream(cast(list[Any], streams))
     if video_stream is None:
         raise RuntimeError("Cannot create FFMpegMeta without a video stream")
 
     duration_value = video_stream.get("duration")
-    if duration_value is None and isinstance(probe_data.get("format"), dict):
-        duration_value = probe_data["format"].get("duration")
+    format_value = probe_data.get("format")
+    if duration_value is None and isinstance(format_value, dict):
+        duration_value = cast(dict[str, Any], format_value).get("duration")
 
     frame_rate_str = video_stream.get("r_frame_rate")
     if not frame_rate_str or frame_rate_str == "0/0":
@@ -1158,8 +1188,8 @@ def _create_ffmpeg_meta_from_probe_data(probe_data: dict[str, Any]) -> FFMpegMet
     frame_rate_num, frame_rate_den = _parse_frame_rate(frame_rate_str)
 
     bit_rate_value = video_stream.get("bit_rate")
-    if bit_rate_value is None and isinstance(probe_data.get("format"), dict):
-        bit_rate_value = probe_data["format"].get("bit_rate")
+    if bit_rate_value is None and isinstance(format_value, dict):
+        bit_rate_value = cast(dict[str, Any], format_value).get("bit_rate")
 
     return FFMpegMeta.objects.create(
         width=_int_or_none(video_stream.get("width")),
@@ -1260,7 +1290,11 @@ def _verify_canonical_probe(video: VideoFile, *, processed: bool) -> tuple[bool,
     if not getattr(field_file, "name", ""):
         return False, f"missing canonical {file_type} file"
     try:
-        with materialize_video_file(video, file_type) as path:
+        with (
+            ensure_local_processed_video_file(video)
+            if processed
+            else ensure_local_raw_video_file(video)
+        ) as path:
             ok, _, detail = _probe_video_path(path)
             return ok, detail
     except Exception as exc:
@@ -1590,7 +1624,8 @@ def reconcile_media_integrity(
             summary.frame_caches_checked += 1
             frame_report = report.get("frame_cache")
             if isinstance(frame_report, dict):
-                match frame_report.get("cache_status"):
+                frame_report_dict = cast(dict[str, Any], frame_report)
+                match frame_report_dict.get("cache_status"):
                     case FrameCacheStatus.MISSING.value:
                         summary.frame_cache_missing += 1
                     case FrameCacheStatus.COMPLETE.value:
@@ -1601,32 +1636,40 @@ def reconcile_media_integrity(
                         summary.frame_cache_shifted += 1
                     case FrameCacheStatus.CORRUPT.value:
                         summary.frame_cache_corrupt += 1
-                if frame_report.get("repair_action") == "manual_review_required":
+                    case _:
+                        pass
+                if frame_report_dict.get("repair_action") == "manual_review_required":
                     summary.frame_cache_manual_review_required += 1
-                repaired_frames = int(frame_report.get("repaired_frames") or 0)
+                repaired_frames = _coerce_int(frame_report_dict.get("repaired_frames"))
                 summary.repaired_frames += repaired_frames
                 if repaired_frames > 0:
                     summary.frame_caches_repaired += 1
         if options.check_ffmpeg_meta or options.repair_ffmpeg_meta:
             summary.ffmpeg_metadata_checked += 1
             ffmpeg_report = report.get("ffmpeg_metadata")
-            if isinstance(ffmpeg_report, dict) and ffmpeg_report.get("action") in {
-                "would_backfill_ffmpeg_meta",
-                "backfilled_ffmpeg_meta",
-            }:
-                summary.ffmpeg_metadata_repaired += 1
+            if isinstance(ffmpeg_report, dict):
+                ffmpeg_report_dict = cast(dict[str, Any], ffmpeg_report)
+                if ffmpeg_report_dict.get("action") in {
+                    "would_backfill_ffmpeg_meta",
+                    "backfilled_ffmpeg_meta",
+                }:
+                    summary.ffmpeg_metadata_repaired += 1
         if options.check_streamable_probe:
             summary.streamable_artifacts_checked += 1
             streamable_report = report.get("streamable_probe")
             if isinstance(streamable_report, dict):
-                artifacts = streamable_report.get("artifacts") or []
-                summary.streamable_artifacts_repaired += sum(
-                    1
-                    for artifact in artifacts
-                    if isinstance(artifact, dict)
-                    and artifact.get("action")
-                    in {"would_rebuild_streamable", "rebuilt_streamable"}
-                )
+                streamable_report_dict = cast(dict[str, Any], streamable_report)
+                artifacts = streamable_report_dict.get("artifacts")
+                if isinstance(artifacts, list):
+                    for artifact in cast(list[object], artifacts):
+                        if not isinstance(artifact, dict):
+                            continue
+                        artifact_dict = cast(dict[str, Any], artifact)
+                        if artifact_dict.get("action") in {
+                            "would_rebuild_streamable",
+                            "rebuilt_streamable",
+                        }:
+                            summary.streamable_artifacts_repaired += 1
         if (
             options.dry_run
             or options.check_frames

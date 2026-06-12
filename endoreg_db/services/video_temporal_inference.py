@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass, replace
 from datetime import timedelta
 from importlib import import_module
 from importlib.metadata import PackageNotFoundError, version
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 from django.db import transaction
 from django.utils import timezone
@@ -35,7 +35,7 @@ from endoreg_db.services.video_files._ai import (
     VideoFrameScoreResult,
 )
 from endoreg_db.services.video_files._segments import (
-    _convert_sequences_to_db_segments,
+    convert_sequences_to_db_segments,
 )
 from endoreg_db.models.state.frame_annotation import (
     mark_frame_prediction_completed,
@@ -43,7 +43,7 @@ from endoreg_db.models.state.frame_annotation import (
     mark_prediction_segments_created,
 )
 from endoreg_db.models.state.video_segment_validation import (
-    _is_outside_frame_blackening_history,
+    is_outside_frame_blackening_history,
 )
 from endoreg_db.services.video_files import (
     delete_video_frames,
@@ -55,6 +55,13 @@ from endoreg_db.services.video_files import (
     update_video_text_metadata,
 )
 from endoreg_db.services.jobs.video_task_cleanup import rollback_video_frame_artifacts
+from lx_dtypes.models.contracts.video_temporal_inference import (
+    TemporalInferenceHistoryConfigPayload,
+    TemporalInferenceHistoryResultPayload,
+    parse_temporal_inference_history_config_payload,
+    parse_temporal_inference_history_result_payload,
+)
+from lx_dtypes.models.contracts.video_file import VideoFileMetaJsonObject
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +124,12 @@ class TemporalInferenceDispatchResult:
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
+
+
+class _ModelMetaRuntimeSpec(Protocol):
+    pk: int
+    name: str
+    version: int | str
 
 
 @dataclass(frozen=True)
@@ -276,14 +289,16 @@ def _coerce_probability_map_or_sequence(value: Any, *, name: str) -> Any:
     if value is None or value == "":
         return None
     if isinstance(value, Mapping):
+        mapping_value = cast(Mapping[str, Any], value)
         return {
             str(key): _coerce_probability(item, name=f"{name}.{key}")
-            for key, item in value.items()
+            for key, item in mapping_value.items()
         }
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        sequence_value = cast(Sequence[Any], value)
         return [
             _coerce_probability(item, name=f"{name}[{index}]")
-            for index, item in enumerate(value)
+            for index, item in enumerate(sequence_value)
         ]
     return _coerce_probability(value, name=name)
 
@@ -310,7 +325,7 @@ def build_lx_temporal_options(
     segment extraction; disabling smoothing does not turn temporal inference
     into a no-op.
     """
-    raw = raw_options or {}
+    raw: Mapping[str, Any] = raw_options or {}
     temporal_model = str(raw.get("temporal_model") or "hysteresis").strip().lower()
     if temporal_model not in SUPPORTED_TEMPORAL_MODELS:
         supported = ", ".join(sorted(SUPPORTED_TEMPORAL_MODELS))
@@ -471,7 +486,7 @@ def _run_lx_ai_core_temporal_inference(
     TaskKind = lx_ai_core.TaskKind
     run_inference = lx_ai_core_runtime.run_inference
 
-    metadata = {
+    metadata: dict[str, object] = {
         "frame_count": score_result.frame_count,
         "score_device": score_result.device,
     }
@@ -480,15 +495,16 @@ def _run_lx_ai_core_temporal_inference(
     if score_result.timestamps is not None:
         metadata["timestamps"] = list(score_result.timestamps)
 
+    model_meta_runtime = cast(_ModelMetaRuntimeSpec, model_meta)
     request = InferenceRequest(
         model_spec=ModelSpec(
-            name=model_meta.name,
-            version=str(model_meta.version),
+            name=model_meta_runtime.name,
+            version=str(model_meta_runtime.version),
             modality=Modality.VIDEO,
             task_kind=TaskKind.TEMPORAL_MULTILABEL_SEGMENTATION,
             backend=BackendName.TORCH,
             labels=list(score_result.labels),
-            parameters={"model_meta_id": model_meta.pk},
+            parameters={"model_meta_id": model_meta_runtime.pk},
         ),
         inputs=InferenceInput(
             frame_scores=score_result.frame_scores,
@@ -552,11 +568,13 @@ def _coerce_lx_temporal_inference_result(
         backend=str(backend or "unknown"),
         device=str(device or "unknown"),
         duration_ms=duration_ms,
-        provenance=dict(provenance),
+        provenance=dict(cast(Mapping[str, Any], provenance)),
     )
 
 
-def _segments_to_sequences(segments: Sequence[Any]) -> dict[str, list[tuple[int, int]]]:
+def _segments_to_sequences(
+    segments: Sequence[Any],
+) -> Mapping[str, list[tuple[int, int]]]:
     sequences: dict[str, list[tuple[int, int]]] = {}
     for segment in segments:
         label = str(getattr(segment, "label"))
@@ -618,27 +636,24 @@ def _coerce_int_config(value: Any, *, name: str, default: int | None = None) -> 
         raise TemporalInferenceConfigError(f"{name} must be an integer.") from exc
 
 
-def _mapping_config(value: Any, *, name: str) -> dict[str, Any]:
-    if value is None:
-        return {}
-    if not isinstance(value, Mapping):
-        raise TemporalInferenceConfigError(f"{name} must be a mapping.")
-    return dict(value)
-
-
 def _parse_temporal_history_config(
-    config: object,
+    config: dict[str, object] | TemporalInferenceHistoryConfigPayload | None,
 ) -> TemporalInferenceHistoryConfig | None:
-    if not isinstance(config, Mapping):
+    if config is None:
         return None
-    if config.get("kind") != TEMPORAL_INFERENCE_KIND:
+    config_payload = (
+        config
+        if isinstance(config, TemporalInferenceHistoryConfigPayload)
+        else parse_temporal_inference_history_config_payload(config)
+    )
+    if config_payload.kind != TEMPORAL_INFERENCE_KIND:
         return None
 
-    queue = str(config.get("queue") or get_celery_inference_queue()).strip()
+    queue = str(config_payload.queue or get_celery_inference_queue()).strip()
     if not queue:
         raise TemporalInferenceConfigError("queue must not be empty.")
 
-    blocked_by_history_id = config.get("blocked_by_history_id")
+    blocked_by_history_id = config_payload.blocked_by_history_id
     parsed_blocked_by_history_id = (
         _coerce_int_config(
             blocked_by_history_id,
@@ -647,43 +662,42 @@ def _parse_temporal_history_config(
         if blocked_by_history_id is not None
         else None
     )
-    deferred_reason = config.get("deferred_reason")
+    deferred_reason = config_payload.deferred_reason
     if deferred_reason is not None:
         deferred_reason = str(deferred_reason).strip() or None
 
     return TemporalInferenceHistoryConfig(
         model_meta_id=_coerce_int_config(
-            config.get("model_meta_id"), name="model_meta_id"
+            config_payload.model_meta_id,
+            name="model_meta_id",
         ),
         replace_prediction_segments=_coerce_bool(
-            config.get("replace_prediction_segments"),
+            config_payload.replace_prediction_segments,
             default=True,
         ),
         delete_frames_after=_coerce_bool(
-            config.get("delete_frames_after"),
+            config_payload.delete_frames_after,
             default=True,
         ),
         ocr_frame_fraction=_coerce_float(
-            config.get("ocr_frame_fraction"),
+            config_payload.ocr_frame_fraction,
             name="ocr_frame_fraction",
             default=0.001,
         ),
-        ocr_cap=_coerce_int_config(config.get("ocr_cap"), name="ocr_cap", default=10),
-        temporal_options=_mapping_config(
-            config.get("temporal_options"),
-            name="temporal_options",
+        ocr_cap=_coerce_int_config(
+            config_payload.ocr_cap,
+            name="ocr_cap",
+            default=10,
         ),
-        raw_temporal_options=_mapping_config(
-            config.get("raw_temporal_options"),
-            name="raw_temporal_options",
-        ),
+        temporal_options=dict(config_payload.temporal_options),
+        raw_temporal_options=dict(config_payload.raw_temporal_options),
         queue=queue,
         frame_source_mode=_normalize_temporal_frame_source_mode(
-            config.get("frame_source_mode")
+            config_payload.frame_source_mode
         ),
-        test_run=_coerce_bool(config.get("test_run"), default=False),
+        test_run=_coerce_bool(config_payload.test_run, default=False),
         n_test_frames=_coerce_int_config(
-            config.get("n_test_frames"),
+            config_payload.n_test_frames,
             name="n_test_frames",
             default=10,
         ),
@@ -698,7 +712,7 @@ def _is_deferred_temporal_inference_history(
     try:
         parsed_config = _parse_temporal_history_config(history.config)
     except TemporalInferenceConfigError:
-        config = history.config if isinstance(history.config, Mapping) else {}
+        config = history.config or {}
         return (
             config.get("deferred_reason")
             == TEMPORAL_INFERENCE_DEFERRED_REASON_REPROCESSING
@@ -734,21 +748,36 @@ def _mark_history_cancelled(history: VideoProcessingHistory, reason: str) -> Non
 
 
 def _history_delete_frames_after(history: VideoProcessingHistory) -> bool:
-    config = history.config if isinstance(history.config, Mapping) else {}
+    config = history.config or {}
     return bool(config.get("delete_frames_after", True))
 
 
 def _history_cleanup_frame_source_mode(
     history: VideoProcessingHistory,
 ) -> str | None:
-    config = history.config if isinstance(history.config, Mapping) else {}
-    result = config.get("result") if isinstance(config.get("result"), Mapping) else {}
-    for source in (result, config):
+    config_payload = parse_temporal_inference_history_config_payload(history.config)
+    result_payload = (
+        config_payload.result
+        if isinstance(config_payload.result, TemporalInferenceHistoryResultPayload)
+        else None
+    )
+    result = parse_temporal_inference_history_result_payload(
+        result_payload.model_dump() if result_payload is not None else None
+    )
+    for source in (
+        {
+            "resolved_frame_source_mode": result.resolved_frame_source_mode,
+            "frame_source_mode": result.frame_source_mode,
+        },
+        {
+            "resolved_frame_source_mode": config_payload.resolved_frame_source_mode,
+            "frame_source_mode": config_payload.frame_source_mode,
+        },
+    ):
         for key in ("resolved_frame_source_mode", "frame_source_mode"):
-            if source is not None:
-                value = source.get(key)
-                if value is None:
-                    continue
+            value = source.get(key)
+            if value is None:
+                continue
             normalized = str(value).strip().lower()
             if normalized:
                 return normalized
@@ -823,7 +852,7 @@ def _reserve_temporal_inference_history(
             .select_for_update()
         )
         for history in active_reprocessing:
-            if _is_outside_frame_blackening_history(history):
+            if is_outside_frame_blackening_history(history):
                 if outside_rebuild_history is None:
                     outside_rebuild_history = history
                 continue
@@ -1014,7 +1043,11 @@ def _dispatch_temporal_inference_history(
             frame_source_mode=dispatch_config.frame_source_mode,
         )
         history.refresh_from_db()
-        result = (history.config or {}).get("result") or {}
+        parsed_config = parse_temporal_inference_history_config_payload(history.config)
+        result = (
+            parsed_config.result
+            or parse_temporal_inference_history_result_payload(None)
+        )
         return TemporalInferenceDispatchResult(
             task_id=task_id,
             mode=mode,
@@ -1023,8 +1056,8 @@ def _dispatch_temporal_inference_history(
             model_meta_id=int(dispatch_config.model_meta_id),
             queue=dispatch_config.queue,
             history_id=history.pk,
-            deleted_prediction_segments=result.get("deleted_prediction_segments"),
-            prediction_segments_count=result.get("materialized_segment_count"),
+            deleted_prediction_segments=result.deleted_prediction_segments,
+            prediction_segments_count=result.materialized_segment_count,
         )
 
     if mode == "celery":
@@ -1223,13 +1256,9 @@ def _run_video_temporal_inference(
     frame_source_mode: str | None = None,
 ) -> bool:
     history = _get_processing_history(history_id)
-    history_config = (
-        history.config
-        if history is not None and isinstance(history.config, Mapping)
-        else {}
-    )
+    history_config = history.config or {} if history is not None else {}
     requested_frame_source_mode = _normalize_temporal_frame_source_mode(
-        frame_source_mode or history_config.get("frame_source_mode")
+        cast(str | None, frame_source_mode or history_config.get("frame_source_mode"))
     )
     if history is not None:
         if history.status == VideoProcessingHistory.STATUS_SUCCESS:
@@ -1348,7 +1377,7 @@ def _run_video_temporal_inference(
                 video=video,
                 prediction_meta=video_prediction_meta,
             ).count()
-            _convert_sequences_to_db_segments(
+            convert_sequences_to_db_segments(
                 video=video,
                 sequences=sequences,
                 video_prediction_meta=video_prediction_meta,
@@ -1365,7 +1394,13 @@ def _run_video_temporal_inference(
                     f"{video_prediction_meta.pk}."
                 )
 
-            video.sequences = sequences
+            video.sequences = cast(
+                VideoFileMetaJsonObject,
+                {
+                    label: [[start, end] for start, end in ranges]
+                    for label, ranges in sequences.items()
+                },
+            )
             video.save(update_fields=["sequences"])
             mark_frame_prediction_completed(video)
             mark_prediction_segments_created(

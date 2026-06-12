@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportMissingTypeStubs=false
 from __future__ import annotations
 
 import logging
@@ -9,11 +10,11 @@ from typing import TYPE_CHECKING, Optional
 from django.db.models.fields.files import FieldFile
 from django.db import transaction
 
-from endoreg_db.utils.filesystem import paths as path_utils
+from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
-from endoreg_db.utils.filesystem.file_operations import safe_unlink_file
+from endoreg_db.utils.file_operations import safe_unlink_file
 from endoreg_db.utils.storage import delete_field_file, ensure_local_file, file_exists
-from endoreg_db.utils.storage.streaming import maybe_local_plaintext_path
+from endoreg_db.utils.storage_streaming import maybe_local_plaintext_path
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile

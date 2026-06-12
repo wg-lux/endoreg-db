@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportUnusedClass=false
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -5,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from django.db.models import QuerySet
+from lx_dtypes.models.contracts import RoiBoxCore
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.frame.frame import Frame
@@ -27,10 +29,12 @@ def create_anonymized_video_frame_files(
 ) -> list[Path]:
     from ._anonymization import _create_anonymized_frame_files
 
+    validated_endo_roi = RoiBoxCore.model_validate(endo_roi)
+
     return _create_anonymized_frame_files(
         video,
         anonymized_frame_dir=anonymized_frame_dir,
-        endo_roi=endo_roi,
+        endo_roi=validated_endo_roi,
         frames=frames,
         outside_frame_numbers=outside_frame_numbers,
         censor_color=censor_color,
@@ -44,7 +48,7 @@ def cleanup_video_raw_assets(
     raw_file_path: Path | None = None,
     raw_frame_dir: Path | None = None,
 ) -> None:
-    from ._anonymization import _cleanup_raw_assets
+    from endoreg_db.services.video_files._anonymization import _cleanup_raw_assets
 
     _cleanup_raw_assets(
         video_hash=video_hash,

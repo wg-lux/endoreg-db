@@ -160,7 +160,7 @@ def test_defer_if_video_media_busy_marks_history_without_running_rebuild() -> No
         video=video,
         operation=VideoProcessingHistory.OPERATION_REPROCESSING,
         status=VideoProcessingHistory.STATUS_PENDING,
-        config=segment_state._blackening_history_config(only_validated=False),
+        config=segment_state.blackening_history_config(only_validated=False),
     )
 
     with pytest.raises(MediaOperationDeferred, match="media operation leases"):

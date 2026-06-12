@@ -161,6 +161,29 @@ def _build_sensitive_meta_qi_queryset(
     return qs
 
 
+def build_sensitive_meta_qi_queryset(
+    instance: SensitiveMeta,
+    *,
+    dob_year_tolerance: int = 1,
+    include_self: bool = True,
+    use_first_name: bool = True,
+    use_last_name: bool = True,
+    use_center: bool = True,
+    use_gender: bool = True,
+    use_dob_band: bool = True,
+) -> QuerySet[SensitiveMeta]:
+    return _build_sensitive_meta_qi_queryset(
+        instance,
+        dob_year_tolerance=dob_year_tolerance,
+        include_self=include_self,
+        use_first_name=use_first_name,
+        use_last_name=use_last_name,
+        use_center=use_center,
+        use_gender=use_gender,
+        use_dob_band=use_dob_band,
+    )
+
+
 def get_k_anonymity_for_sensitive_meta(
     pk: int,
     *,

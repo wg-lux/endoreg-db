@@ -11,7 +11,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
-from endoreg_db.models.media.pdf.report_llm_job import ReportLlmInferenceJob
+from endoreg_db.models.media.pdf.report_llm_job import (
+    ReportLlmInferenceJob,
+    ReportLlmJobJsonObject,
+    ReportLlmJobJsonValue,
+)
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.services.jobs.heavy_jobs import (
     HeavyJobKind,
@@ -35,7 +39,7 @@ REPORT_LLM_JOB_MODE_DEFAULT = "celery"
 REPORT_LLM_DISPATCH_DELAY_SECONDS_DEFAULT = 0
 
 
-JsonValue = Any
+JsonValue = ReportLlmJobJsonValue
 
 
 class ReportLlmJobConfig(BaseModel):
@@ -104,16 +108,19 @@ def _json_safe(value: Any) -> JsonValue:
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
     if isinstance(value, dict):
-        return {str(key): _json_safe(item) for key, item in value.items()}
+        mapping = cast(dict[object, object], value)
+        return {str(key): _json_safe(item) for key, item in mapping.items()}
     if isinstance(value, (list, tuple)):
-        return [_json_safe(item) for item in value]
+        sequence = cast(list[object] | tuple[object, ...], value)
+        return [_json_safe(item) for item in sequence]
     return str(value)
 
 
-def _json_safe_dict(payload: Any) -> dict[str, JsonValue]:
+def _json_safe_dict(payload: Any) -> ReportLlmJobJsonObject:
     if not hasattr(payload, "items"):
         return {}
-    return {str(key): _json_safe(value) for key, value in payload.items()}
+    mapping = cast(dict[object, object], payload)
+    return {str(key): _json_safe(value) for key, value in mapping.items()}
 
 
 def _report_llm_poll_url(*, report_id: int, job_id: str) -> str:
@@ -275,7 +282,8 @@ def _set_report_llm_task_id(job: ReportLlmInferenceJob, task_id: str) -> None:
 
 
 def report_llm_job_payload(job: ReportLlmInferenceJob) -> dict[str, JsonValue]:
-    report_id = int(job.pdf_id) if job.pdf_id is not None else None
+    pdf = job.pdf
+    report_id = int(pdf.pk) if pdf is not None else None
     payload: dict[str, JsonValue] = {
         "status": job.status,
         "operation": job.operation,
@@ -309,17 +317,15 @@ def _dispatch_result(
     message: str | None = None,
     reason: str | None = None,
 ) -> ReportLlmDispatchResult:
-    poll_url = (
-        _report_llm_poll_url(report_id=int(report_id), job_id=job_id)
-        if report_id is not None
-        else None
-    )
+    poll_url = None
+    if report_id is not None:
+        poll_url = _report_llm_poll_url(report_id=report_id, job_id=job_id)
     return ReportLlmDispatchResult(
         task_id=task_id,
         mode=mode,
         status=status,
         operation=operation,
-        report_id=int(report_id) if report_id is not None else None,
+        report_id=report_id,
         queue=queue,
         job_id=job_id,
         poll_url=poll_url,
@@ -337,7 +343,8 @@ def _get_report_llm_job(job_id: str) -> ReportLlmInferenceJob:
 
 
 def _job_report_id(job: ReportLlmInferenceJob) -> int | None:
-    return int(job.pdf_id) if job.pdf_id is not None else None
+    pdf = job.pdf
+    return int(pdf.pk) if pdf is not None else None
 
 
 def _clear_existing_sensitive_meta(pdf: RawPdfFile) -> int | None:
@@ -417,19 +424,22 @@ def _run_report_llm_reimport_job(job_id: str) -> bool:
 
         pdf.refresh_from_db()
         anonymized_upload_jobs = _mark_report_upload_jobs_anonymized(pdf)
-        result = {
-            "pdf_id": int(pdf.pk),
-            "pdf_hash": str(pdf.pdf_hash),
-            "sensitive_meta_created": pdf.sensitive_meta_id is not None,
-            "sensitive_meta_id": int(pdf.sensitive_meta_id)
-            if pdf.sensitive_meta_id is not None
-            else None,
-            "text_extracted": bool(pdf.text),
-            "anonymized": bool(getattr(pdf, "anonymized", False)),
-            "old_sensitive_meta_id": old_meta_id,
-            "processing_upload_jobs": int(processing_upload_jobs),
-            "anonymized_upload_jobs": int(anonymized_upload_jobs),
-        }
+        result: ReportLlmJobJsonObject = cast(
+            ReportLlmJobJsonObject,
+            {
+                "pdf_id": int(pdf.pk),
+                "pdf_hash": str(pdf.pdf_hash),
+                "sensitive_meta_created": pdf.sensitive_meta_id is not None,
+                "sensitive_meta_id": int(pdf.sensitive_meta_id)
+                if pdf.sensitive_meta_id is not None
+                else None,
+                "text_extracted": bool(pdf.text),
+                "anonymized": bool(getattr(pdf, "anonymized", False)),
+                "old_sensitive_meta_id": old_meta_id,
+                "processing_upload_jobs": int(processing_upload_jobs),
+                "anonymized_upload_jobs": int(anonymized_upload_jobs),
+            },
+        )
         job.mark_success(result=result)
         logger.info(
             "Report LLM re-import job %s completed for report %s",
@@ -502,16 +512,21 @@ def _run_report_llm_import_job(job_id: str) -> bool:
             job.save(update_fields=["pdf", "updated_at"])
         upload_job.mark_completed(sensitive_meta=sensitive_meta)
         cleanup_upload_job_source(upload_job)
-        result = {
-            "upload_job_id": str(upload_job.pk),
-            "pdf_id": int(report.pk) if isinstance(report, RawPdfFile) else None,
-            "pdf_hash": str(report.pdf_hash) if isinstance(report, RawPdfFile) else "",
-            "sensitive_meta_id": (
-                int(sensitive_meta.pk) if sensitive_meta is not None else None
-            ),
-            "text_extracted": bool(getattr(report, "text", "")),
-            "anonymized": bool(getattr(report, "anonymized", False)),
-        }
+        result: ReportLlmJobJsonObject = cast(
+            ReportLlmJobJsonObject,
+            {
+                "upload_job_id": str(upload_job.pk),
+                "pdf_id": int(report.pk) if isinstance(report, RawPdfFile) else None,
+                "pdf_hash": str(report.pdf_hash)
+                if isinstance(report, RawPdfFile)
+                else "",
+                "sensitive_meta_id": (
+                    int(sensitive_meta.pk) if sensitive_meta is not None else None
+                ),
+                "text_extracted": bool(getattr(report, "text", "")),
+                "anonymized": bool(getattr(report, "anonymized", False)),
+            },
+        )
         job.mark_success(result=result)
         logger.info(
             "Report LLM import job %s completed for upload job %s",

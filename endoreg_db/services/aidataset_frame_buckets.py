@@ -27,6 +27,7 @@ class _LabelRelationManager(Protocol):
 
     def exists(self) -> bool: ...
 
+
 __all__ = [
     "AIDataSetFrameBucketCount",
     "AIDataSetFrameBucketDistribution",
@@ -137,7 +138,10 @@ def _build_target_frame_buckets(
     *,
     target_label: Label | None,
 ) -> dict[AIDataSetTargetFrameBucket, set[int]]:
-    if _model_text(dataset, "dataset_type") != dataset.DATASET_TYPE_IMAGE or target_label is None:
+    if (
+        _model_text(dataset, "dataset_type") != dataset.DATASET_TYPE_IMAGE
+        or target_label is None
+    ):
         return {}
 
     annotations = dataset.image_annotations.select_related("frame", "label").filter(
@@ -158,7 +162,9 @@ def _build_target_frame_buckets(
     for annotation in annotations.iterator():
         frame_id = _model_int(annotation, "frame_id")
         seen_frame_ids.add(frame_id)
-        if _model_optional_int(annotation, "label_id") == _model_int(target_label, "id"):
+        if _model_optional_int(annotation, "label_id") == _model_int(
+            target_label, "id"
+        ):
             target_values_by_frame_id[frame_id].append(_model_bool(annotation, "value"))
 
     for frame_id in seen_frame_ids:
@@ -285,8 +291,12 @@ def _build_segment_frame_buckets(
         segments_by_video_id[_model_int(segment, "video_file_id")].append(segment)
 
     for video_id, video_segments in segments_by_video_id.items():
-        min_start = min(_model_int(segment, "start_frame_number") for segment in video_segments)
-        max_end = max(_model_int(segment, "end_frame_number") for segment in video_segments)
+        min_start = min(
+            _model_int(segment, "start_frame_number") for segment in video_segments
+        )
+        max_end = max(
+            _model_int(segment, "end_frame_number") for segment in video_segments
+        )
         frame_rows = Frame.objects.filter(
             video_id=video_id,
             frame_number__gte=min_start,

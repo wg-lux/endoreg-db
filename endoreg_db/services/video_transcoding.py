@@ -16,18 +16,18 @@ from endoreg_db.services.video_format_reconciliation import (
     VIDEO_EXTENSIONS,
     classify_video_format,
 )
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_move_file,
     ensure_disk_capacity,
     ensure_directory,
     safe_unlink_file,
 )
-from endoreg_db.utils.filesystem.paths import (
+from endoreg_db.utils.paths import (
     ensure_within_data_root,
     ensure_within_protected_root,
 )
-from endoreg_db.utils.video import ffmpeg_wrapper
+from endoreg_db.utils import ffmpeg_wrapper
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +83,9 @@ class VideoTranscodeSummary:
     skipped_files: int = 0
     failed_files: int = 0
     target_fps: float = 0.0
-    reports: list[VideoTranscodeReport] = field(default_factory=list)
+    reports: list[VideoTranscodeReport] = field(
+        default_factory=list[VideoTranscodeReport]
+    )
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -149,7 +151,9 @@ def transcode_video_directory(
             extensions=normalized_extensions,
         )
     )
-    summary = VideoTranscodeSummary(
+
+    # Explicit definition satisfies type checker regarding field generics
+    summary: VideoTranscodeSummary = VideoTranscodeSummary(
         input_dir=str(input_root),
         output_dir=str(output_root),
         dry_run=dry_run,
@@ -374,23 +378,26 @@ def _verify_standard_video(path: Path) -> None:
 
 def _verify_target_fps(path: Path, *, target_fps: float) -> None:
     stream_info = ffmpeg_wrapper.get_stream_info(path)
-    if not stream_info or "streams" not in stream_info:
+    if not isinstance(stream_info, dict) or "streams" not in stream_info:
         raise RuntimeError(f"Could not verify output fps for {path}")
 
-    video_stream = next(
-        (
-            stream
-            for stream in stream_info["streams"]
-            if stream.get("codec_type") == "video"
-        ),
-        None,
-    )
+    streams = stream_info["streams"]
+    if not isinstance(streams, list):
+        raise RuntimeError(
+            f"Could not verify output fps for {path}: streams is not a list"
+        )
+
+    video_stream: dict[str, Any] | None = None
+    for stream in streams:
+        if isinstance(stream, dict) and stream.get("codec_type") == "video":
+            video_stream = stream
+            break
+
     if video_stream is None:
         raise RuntimeError(f"Could not verify output fps for {path}: no video stream")
 
-    probed_fps = _parse_frame_rate(
-        video_stream.get("avg_frame_rate") or video_stream.get("r_frame_rate")
-    )
+    fps_raw = video_stream.get("avg_frame_rate") or video_stream.get("r_frame_rate")
+    probed_fps = _parse_frame_rate(fps_raw)
     if probed_fps is None:
         raise RuntimeError(f"Could not verify output fps for {path}: missing fps")
     if not math.isclose(probed_fps, target_fps, rel_tol=0.001, abs_tol=0.01):
