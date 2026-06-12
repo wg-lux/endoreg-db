@@ -65,10 +65,10 @@ class CenterShift(models.Model):
     # TODO add validator; the value should be between 0 and 1
     estimated_presence_fraction: models.DecimalField[Decimal, Decimal] = (
         models.DecimalField(
-        max_digits=5,
-        decimal_places=4,
-        default=Decimal("0"),
-    )
+            max_digits=5,
+            decimal_places=4,
+            default=Decimal("0"),
+        )
     )
 
     if TYPE_CHECKING:

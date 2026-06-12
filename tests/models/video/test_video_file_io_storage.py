@@ -1,9 +1,11 @@
+# pyright: reportPrivateUsage=false
 """Integration-style tests for video file I/O helpers using real assets."""
 
 from __future__ import annotations
 
 import uuid
 from pathlib import Path
+from typing import Protocol, cast
 from unittest.mock import patch
 
 import pytest
@@ -18,6 +20,22 @@ from endoreg_db.services.video_files._io import (
 from endoreg_db.utils import delete_field_file
 
 pytestmark = pytest.mark.django_db
+
+
+class _CenterRelation(Protocol):
+    def add(self, *objs: Center | int) -> None: ...
+
+
+class _WritableFieldFile(Protocol):
+    def save(self, name: str, content: File[bytes], save: bool = True) -> None: ...
+
+
+def _add_center(processor: EndoscopyProcessor, center: Center) -> None:
+    cast(_CenterRelation, processor.centers).add(center)
+
+
+def _field_file(field: object) -> _WritableFieldFile:
+    return cast(_WritableFieldFile, field)
 
 
 @pytest.fixture
@@ -67,7 +85,7 @@ def processor(center: Center) -> EndoscopyProcessor:
         endoscope_sn_width=100,
         endoscope_sn_height=50,
     )
-    processor.centers.add(center)
+    _add_center(processor, center)
     return processor
 
 
@@ -87,10 +105,14 @@ def video_with_files(
     processed_name = f"anonym_videos/{video.video_hash}_processed.mp4"
 
     with video_asset_file.open("rb") as raw_handle:
-        video.raw_file.save(raw_name, File(raw_handle), save=True)
+        _field_file(video.raw_file).save(raw_name, File(raw_handle), save=True)
 
     with video_asset_file.open("rb") as processed_handle:
-        video.processed_file.save(processed_name, File(processed_handle), save=True)
+        _field_file(video.processed_file).save(
+            processed_name,
+            File(processed_handle),
+            save=True,
+        )
 
     video.refresh_from_db()
 

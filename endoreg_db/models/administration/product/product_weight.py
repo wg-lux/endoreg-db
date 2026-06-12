@@ -34,15 +34,15 @@ class ProductWeight(models.Model):
     product: models.ForeignKey[Product, Product] = models.ForeignKey(
         "Product", on_delete=models.CASCADE
     )
-    measured: models.FloatField[
-        ProductWeightValue, ProductWeightValue
-    ] = models.FloatField(null=True)
-    verified: models.FloatField[
-        ProductWeightValue, ProductWeightValue
-    ] = models.FloatField(null=True)
-    manufacturer: models.FloatField[
-        ProductWeightValue, ProductWeightValue
-    ] = models.FloatField(null=True)
+    measured: models.FloatField[ProductWeightValue, ProductWeightValue] = (
+        models.FloatField(null=True)
+    )
+    verified: models.FloatField[ProductWeightValue, ProductWeightValue] = (
+        models.FloatField(null=True)
+    )
+    manufacturer: models.FloatField[ProductWeightValue, ProductWeightValue] = (
+        models.FloatField(null=True)
+    )
     unit: models.ForeignKey[
         Unit | NoProductWeightValue,
         Unit | NoProductWeightValue,

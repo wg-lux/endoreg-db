@@ -6,8 +6,8 @@ if TYPE_CHECKING:
     from ..administration import Patient
 
 
-class GenderManager(models.Manager):
-    def get_by_natural_key(self, name):
+class GenderManager(models.Manager["Gender"]):
+    def get_by_natural_key(self, name: str) -> "Gender":
         gender = self.resolve_by_name(name)
         if gender is None:
             raise self.model.DoesNotExist(
@@ -15,7 +15,9 @@ class GenderManager(models.Manager):
             )
         return gender
 
-    def resolve_by_name(self, name: str, *, case_insensitive: bool = True):
+    def resolve_by_name(
+        self, name: str, *, case_insensitive: bool = True
+    ) -> "Gender | None":
         normalized_name = str(name).strip()
         lookup = (
             {"name__iexact": normalized_name}
@@ -24,7 +26,9 @@ class GenderManager(models.Manager):
         )
         return self.filter(**lookup).order_by("pk").first()
 
-    def get_or_create_by_name(self, name: str, *, defaults: dict | None = None):
+    def get_or_create_by_name(
+        self, name: str, *, defaults: dict[str, object] | None = None
+    ) -> tuple["Gender", bool]:
         normalized_name = str(name).strip()
         gender = self.resolve_by_name(normalized_name)
         if gender is not None:
@@ -37,17 +41,21 @@ class Gender(models.Model):
 
     objects = GenderManager()
 
-    name = models.CharField(max_length=255)
-    abbreviation = models.CharField(max_length=255, null=True)
-    description = models.TextField(blank=True, null=True)
+    name: models.CharField[str, str] = models.CharField(max_length=255)
+    abbreviation: models.CharField[str | None, str | None] = models.CharField(
+        max_length=255, null=True
+    )
+    description: models.TextField[str | None, str | None] = models.TextField(
+        blank=True, null=True
+    )
 
     if TYPE_CHECKING:
 
         @property
         def patients(self) -> models.QuerySet["Patient"]: ...
 
-    def natural_key(self):
-        return (self.name,)
+    def natural_key(self) -> tuple[str]:
+        return (str(self.name),)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return str(self.name)

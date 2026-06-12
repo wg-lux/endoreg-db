@@ -1,29 +1,33 @@
-from typing import TYPE_CHECKING
+import datetime as dt
+from typing import TYPE_CHECKING, ClassVar, cast
 
 from django.db import models
 
-
-def get_prediction_information_source():
+def get_prediction_information_source() -> "InformationSource":
     """
     Returns the InformationSource instance with the name "prediction".
 
     Raises:
         AssertionError: If no InformationSource with the name "prediction" exists.
     """
-    _source = InformationSource.objects.resolve_by_name("prediction")
+    _source = cast(InformationSourceManager, InformationSource.objects).resolve_by_name(
+        "prediction"
+    )
 
     # make sure to return only one object
     assert _source is not None, "No prediction information source found"
     return _source
 
 
-class InformationSourceManager(models.Manager):
-    def resolve_by_name(self, name: str):
+class InformationSourceManager(models.Manager["InformationSource"]):
+    def resolve_by_name(self, name: str) -> "InformationSource | None":
         """Return the deterministic first source for a natural name."""
         normalized_name = str(name).strip()
         return self.filter(name=normalized_name).order_by("pk").first()
 
-    def get_or_create_by_name(self, name: str, **defaults):
+    def get_or_create_by_name(
+        self, name: str, **defaults: object
+    ) -> tuple["InformationSource", bool]:
         """Return an existing source by name before creating a new row."""
         normalized_name = str(name).strip()
         source = self.resolve_by_name(normalized_name)
@@ -31,7 +35,7 @@ class InformationSourceManager(models.Manager):
             return source, False
         return self.get_or_create(name=normalized_name, defaults=defaults)
 
-    def get_by_natural_key(self, name):
+    def get_by_natural_key(self, name: str) -> "InformationSource":
         """
         Retrieves a model instance using its natural key.
 
@@ -50,16 +54,28 @@ class InformationSourceManager(models.Manager):
 
 
 class InformationSource(models.Model):
-    objects = InformationSourceManager()
+    objects: ClassVar[models.Manager["InformationSource"]] = InformationSourceManager()  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    name = models.CharField(max_length=100)
+    name: models.CharField[str, str] = models.CharField(max_length=100)
 
-    url = models.URLField(blank=True, null=True)
-    description = models.TextField(blank=True, null=True)
-    date = models.DateField(blank=True, null=True)
-    date_created = models.DateField(auto_now_add=True)
-    date_modified = models.DateField(auto_now=True)
-    abbreviation = models.CharField(max_length=100, blank=True, null=True, unique=True)
+    url: models.URLField[str | None, str | None] = models.URLField(
+        blank=True, null=True
+    )
+    description: models.TextField[str | None, str | None] = models.TextField(
+        blank=True, null=True
+    )
+    date: models.DateField[dt.date | None, dt.date | None] = models.DateField(
+        blank=True, null=True
+    )
+    date_created: models.DateField[dt.date, dt.date] = models.DateField(
+        auto_now_add=True
+    )
+    date_modified: models.DateField[dt.date, dt.date] = models.DateField(
+        auto_now=True
+    )
+    abbreviation: models.CharField[str | None, str | None] = models.CharField(
+        max_length=100, blank=True, null=True, unique=True
+    )
 
     if TYPE_CHECKING:
         from endoreg_db.models import (
@@ -108,24 +124,24 @@ class InformationSource(models.Model):
             models.Index(fields=["abbreviation"]),
         ]
 
-    def natural_key(self):
+    def natural_key(self) -> tuple[str]:
         """
         Returns the natural key tuple for the information source.
 
         The tuple contains the object's name, which uniquely identifies it for
         serialization and natural key lookup.
         """
-        return (self.name,)
+        return (str(self.name),)
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Return the name of the InformationSource as its string representation.
         """
         return str(self.name)
 
 
-class InformationSourceTypeManager(models.Manager):
-    def get_by_natural_key(self, name):
+class InformationSourceTypeManager(models.Manager["InformationSourceType"]):
+    def get_by_natural_key(self, name: str) -> "InformationSourceType":
         """
         Retrieve an instance of the model by its natural key, which is the 'name' field.
 
@@ -141,10 +157,17 @@ class InformationSourceTypeManager(models.Manager):
 class InformationSourceType(models.Model):
     objects = InformationSourceTypeManager()
 
-    name = models.CharField(max_length=100, unique=True)
-    description = models.TextField(blank=True, null=True)
+    name: models.CharField[str, str] = models.CharField(
+        max_length=100, unique=True
+    )
+    description: models.TextField[str | None, str | None] = (
+        models.TextField(blank=True, null=True)
+    )
 
-    information_sources = models.ManyToManyField(
+    information_sources: models.ManyToManyField[
+        InformationSource,
+        InformationSource,
+    ] = models.ManyToManyField(
         InformationSource,
         related_name="information_source_types",
         blank=True,
@@ -195,13 +218,13 @@ class InformationSourceType(models.Model):
                 "The 'manual_annotation' InformationSourceType was not found. Please check your data fixtures or initial data migrations."
             ) from e
 
-    def natural_key(self):
+    def natural_key(self) -> tuple[str]:
         """
         Return a tuple containing the name of the information source type for natural key serialization.
         """
-        return (self.name,)
+        return (str(self.name),)
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Return the name of the InformationSourceType as its string representation.
         """

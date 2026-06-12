@@ -1,13 +1,19 @@
 from typing import TYPE_CHECKING
+from datetime import date, datetime
 
 from django.db import models
+from lx_dtypes.models.contracts.subcategory_validation import (
+    NumericalDescriptorContract,
+    SubcategoryDictContract,
+)
 
 if TYPE_CHECKING:
-    from endoreg_db.utils.links import (
-        ModelLinks,
-    )  # Added ModelLinks
-
-    from ..disease import Disease, DiseaseClassificationChoice
+    from endoreg_db.models.medical.disease import (
+        Disease,
+        DiseaseClassificationChoice,
+    )
+    from endoreg_db.models.administration.person.patient.patient import Patient
+    from endoreg_db.utils.links import ModelLinks
 
 
 class PatientDisease(models.Model):
@@ -18,34 +24,43 @@ class PatientDisease(models.Model):
     and stores associated subcategory values and numerical descriptors.
     """
 
-    patient = models.ForeignKey(
+    patient: models.ForeignKey["Patient", "Patient"] = models.ForeignKey(
         "Patient", on_delete=models.CASCADE, related_name="diseases"
     )
-    disease = models.ForeignKey(
+    disease: models.ForeignKey["Disease", "Disease"] = models.ForeignKey(
         "Disease", on_delete=models.CASCADE, related_name="patient_diseases"
     )
     classification_choices: "models.ManyToManyField[DiseaseClassificationChoice, DiseaseClassificationChoice]" = models.ManyToManyField(
         "DiseaseClassificationChoice"
     )
-    start_date = models.DateField(blank=True, null=True)
-    end_date = models.DateField(blank=True, null=True)
-    numerical_descriptors = models.JSONField(default=dict)
-    subcategories = models.JSONField(default=dict)
+    start_date: models.DateField[date | None, date | None] = models.DateField(
+        blank=True, null=True
+    )
+    end_date: models.DateField[date | None, date | None] = models.DateField(
+        blank=True, null=True
+    )
+    numerical_descriptors: models.JSONField[
+        dict[str, NumericalDescriptorContract],
+        dict[str, NumericalDescriptorContract],
+    ] = models.JSONField(default=dict)
+    subcategories: models.JSONField[
+        dict[str, SubcategoryDictContract], dict[str, SubcategoryDictContract]
+    ] = models.JSONField(default=dict)
 
-    last_update = models.DateTimeField(auto_now=True)
+    last_update: models.DateTimeField[datetime, datetime] = models.DateTimeField(
+        auto_now=True
+    )
 
     if TYPE_CHECKING:
         pass
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Returns a string representation including the patient and disease name."""
         return f"{self.patient} - {self.disease}"
 
     @property
     def links(self) -> "ModelLinks":
-        from endoreg_db.utils.links import (
-            ModelLinks,
-        )  # Added ModelLinks
+        from endoreg_db.utils.links import ModelLinks
 
         """
         Aggregates and returns related model instances for linked-model traversal

@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 
 from django.db import models
 
@@ -6,10 +6,10 @@ if TYPE_CHECKING:
     from .patient import PatientDisease
 
 
-class DiseaseManager(models.Manager):
+class DiseaseManager(models.Manager["Disease"]):
     """Manager for Disease with natural key support."""
 
-    def get_by_natural_key(self, name):
+    def get_by_natural_key(self, name: str) -> "Disease":
         """
         Retrieve a Disease instance by its natural key (name).
 
@@ -29,9 +29,13 @@ class Disease(models.Model):
     Can define associated subcategories and numerical descriptors applicable to the disease itself.
     """
 
-    name = models.CharField(max_length=255, unique=True)
-    subcategories = models.JSONField(default=dict)
-    numerical_descriptors = models.JSONField(default=dict)
+    name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
+    subcategories: models.JSONField[object, dict[str, object]] = (
+        models.JSONField(default=dict)
+    )
+    numerical_descriptors: models.JSONField[object, dict[str, object]] = (
+        models.JSONField(default=dict)
+    )
 
     objects = DiseaseManager()
 
@@ -40,36 +44,36 @@ class Disease(models.Model):
         @property
         def disease_classifications(
             self,
-        ) -> models.QuerySet["DiseaseClassification"]: ...
+        ) -> models.QuerySet["DiseaseClassification", "DiseaseClassification"]: ...
 
         @property
-        def patient_diseases(self) -> models.QuerySet["PatientDisease"]: ...
+        def patient_diseases(
+            self,
+        ) -> models.QuerySet["PatientDisease", "PatientDisease"]: ...
 
-    def natural_key(self):
+    def natural_key(self) -> tuple[str]:
         """Returns the natural key (name) as a tuple."""
-        return (self.name,)
+        return (str(self.name),)
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Returns the name of the disease."""
         return str(self.name)
 
-    def get_classifications(self) -> List["DiseaseClassification"]:
+    def get_classifications(self) -> list["DiseaseClassification"]:
         """
         Retrieves all classification systems associated with this disease.
 
         Returns:
             List[DiseaseClassification]: A list of related disease classification objects.
         """
-        classifications: List[DiseaseClassification] = [
-            _ for _ in self.disease_classifications.all()
-        ]
+        classifications = [item for item in self.disease_classifications.all()]
         return classifications
 
 
-class DiseaseClassificationManager(models.Manager):
+class DiseaseClassificationManager(models.Manager["DiseaseClassification"]):
     """Manager for DiseaseClassification with natural key support."""
 
-    def get_by_natural_key(self, name):
+    def get_by_natural_key(self, name: str) -> "DiseaseClassification":
         """
         Retrieve a DiseaseClassification instance by its natural key (name).
 
@@ -87,47 +91,44 @@ class DiseaseClassification(models.Model):
     Represents a classification system applicable to a specific disease (e.g., Forrest classification for ulcers).
     """
 
-    name = models.CharField(max_length=255, unique=True)
+    name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
 
-    disease = models.ForeignKey(
+    disease: models.ForeignKey[Disease, Disease] = models.ForeignKey(
         Disease, on_delete=models.CASCADE, related_name="disease_classifications"
     )
 
     objects = DiseaseClassificationManager()
 
     if TYPE_CHECKING:
-        pass
 
         @property
         def disease_classification_choices(
             self,
         ) -> models.Manager["DiseaseClassificationChoice"]: ...
 
-    def natural_key(self):
+    def natural_key(self) -> tuple[str]:
         """Returns the natural key (name) as a tuple."""
-        return (self.name,)
+        return (str(self.name),)
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Returns the name of the classification."""
         return str(self.name)
 
-    def get_choices(self) -> List["DiseaseClassificationChoice"]:
+    def get_choices(self) -> list["DiseaseClassificationChoice"]:
         """
         Retrieves all choices within this classification system.
 
         Returns:
             List[DiseaseClassificationChoice]: A list of related disease classification choices.
         """
-        choices: List[DiseaseClassificationChoice] = [
-            _ for _ in self.disease_classification_choices.all()
-        ]
+        choices = [item for item in self.disease_classification_choices.all()]
         return choices
 
 
-class DiseaseClassificationChoiceManager(models.Manager):
+class DiseaseClassificationChoiceManager(models.Manager["DiseaseClassificationChoice"]):
     """Manager for DiseaseClassificationChoice with natural key support."""
 
-    def get_by_natural_key(self, name):
+    def get_by_natural_key(self, name: str) -> "DiseaseClassificationChoice":
         """
         Retrieve a DiseaseClassificationChoice instance by its natural key (name).
 
@@ -147,9 +148,11 @@ class DiseaseClassificationChoice(models.Model):
     Represents a specific choice within a disease classification system (e.g., Forrest IIa).
     """
 
-    name = models.CharField(max_length=255, unique=True)
+    name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
 
-    disease_classification = models.ForeignKey(
+    disease_classification: models.ForeignKey[
+        DiseaseClassification, DiseaseClassification
+    ] = models.ForeignKey(
         DiseaseClassification,
         on_delete=models.CASCADE,
         related_name="disease_classification_choices",
@@ -165,10 +168,10 @@ class DiseaseClassificationChoice(models.Model):
             self,
         ) -> models.Manager["PatientDisease"]: ...
 
-    def natural_key(self):
+    def natural_key(self) -> tuple[str]:
         """Returns the natural key (name) as a tuple."""
-        return (self.name,)
+        return (str(self.name),)
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Returns the name of the classification choice."""
         return str(self.name)

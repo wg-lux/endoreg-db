@@ -12,9 +12,9 @@ from lx_dtypes.models.contracts.json_types import JsonObject
 
 from endoreg_db.schemas import (
     validate_transfer_processing_snapshot,
+    validate_transfer_provenance_payload,
     validate_transfer_resource_rows,
 )
-from endoreg_db.services.hub.payloads import validate_transfer_provenance_payload
 
 if TYPE_CHECKING:
     from endoreg_db.models.administration.center.center import Center
@@ -136,12 +136,14 @@ class TransferJob(models.Model):
         on_delete=models.PROTECT,
         related_name="received_transfer_jobs",
     )
-    source_center: models.ForeignKey[TransferJobCenter, TransferJobCenter] = models.ForeignKey(
-        "Center",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="transfer_jobs",
+    source_center: models.ForeignKey[TransferJobCenter, TransferJobCenter] = (
+        models.ForeignKey(
+            "Center",
+            null=True,
+            blank=True,
+            on_delete=models.SET_NULL,
+            related_name="transfer_jobs",
+        )
     )
     resource_kind: models.CharField[str, str] = models.CharField(
         max_length=16, choices=ResourceKind.choices
@@ -214,12 +216,14 @@ class TransferJob(models.Model):
         choices=CaseResolutionStatus.choices,
         default=CaseResolutionStatus.PENDING,
     )
-    upload_job: models.ForeignKey[TransferJobUploadJob, TransferJobUploadJob] = models.ForeignKey(
-        "UploadJob",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="transfer_jobs",
+    upload_job: models.ForeignKey[TransferJobUploadJob, TransferJobUploadJob] = (
+        models.ForeignKey(
+            "UploadJob",
+            null=True,
+            blank=True,
+            on_delete=models.SET_NULL,
+            related_name="transfer_jobs",
+        )
     )
     created_by: models.ForeignKey[TransferJobUser, TransferJobUser] = models.ForeignKey(
         User,

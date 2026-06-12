@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from datetime import date
 
 import pytest
@@ -72,8 +73,21 @@ def test_transfer_job_resource_rows_accept_frame_annotations_and_reports() -> No
 
     job.clean()
 
-    assert job.resource_rows["frame_annotations"][0]["label_name"] == "lesion_visible"
-    assert job.resource_rows["reports"][0]["template_name"] == "star_upper_gi_main"
+    frame_annotations = job.resource_rows["frame_annotations"]
+    reports = job.resource_rows["reports"]
+
+    assert isinstance(frame_annotations, Sequence)
+    assert not isinstance(frame_annotations, (str, bytes))
+    assert isinstance(reports, Sequence)
+    assert not isinstance(reports, (str, bytes))
+
+    frame_annotation = frame_annotations[0]
+    report = reports[0]
+
+    assert isinstance(frame_annotation, Mapping)
+    assert isinstance(report, Mapping)
+    assert frame_annotation["label_name"] == "lesion_visible"
+    assert report["template_name"] == "star_upper_gi_main"
 
 
 def test_transfer_job_processing_snapshot_rejects_unknown_keys() -> None:

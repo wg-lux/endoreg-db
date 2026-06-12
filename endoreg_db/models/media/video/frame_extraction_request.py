@@ -34,9 +34,9 @@ class FrameExtractionRequest(models.Model):
     frame_number: models.IntegerField[int, int] = models.IntegerField()
     status: models.CharField[FrameExtractionStatus, FrameExtractionStatus] = (
         models.CharField(
-        max_length=20,
-        choices=STATUS_CHOICES,
-        default=STATUS_PENDING,
+            max_length=20,
+            choices=STATUS_CHOICES,
+            default=STATUS_PENDING,
         )
     )
     task_id: models.CharField[str, str] = models.CharField(max_length=100, blank=True)

@@ -1,22 +1,23 @@
+from typing import ClassVar
+
 from django.db import models
 
 
-class TagManager(models.Manager):
-    def get_by_natural_key(self, name):
+class TagManager(models.Manager["Tag"]):
+    def get_by_natural_key(self, name: str) -> "Tag":
         return self.get(name=name)
 
 
 class Tag(models.Model):
-    name = models.CharField(max_length=100, unique=True)
+    name: models.CharField[str, str] = models.CharField(max_length=100, unique=True)
 
-    objects = TagManager()
+    objects: ClassVar[TagManager] = TagManager()  # pyright: ignore[reportIncompatibleVariableOverride]
 
     class Meta:
         verbose_name = "Tag"
         verbose_name_plural = "Tags"
 
-    def __str__(self):
-        return self.name
-
-    def natural_key(self):
-        return (self.name,)
+    def __str__(self) -> str:
+        return str(self.name)
+    def natural_key(self) -> tuple[str]:
+        return (str(self.name),)

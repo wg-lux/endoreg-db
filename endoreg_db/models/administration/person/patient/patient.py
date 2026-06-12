@@ -88,15 +88,11 @@ class Patient(Person):
     gender: models.ForeignKey[
         PersonGenderValue,
         PersonGenderValue,
-    ] = models.ForeignKey(
-        "Gender", on_delete=models.SET_NULL, null=True, blank=True
-    )
+    ] = models.ForeignKey("Gender", on_delete=models.SET_NULL, null=True, blank=True)
     center: models.ForeignKey[
         PatientCenterInput,
         PatientCenterInput,
-    ] = models.ForeignKey(
-        "Center", on_delete=models.SET_NULL, null=True, blank=True
-    )
+    ] = models.ForeignKey("Center", on_delete=models.SET_NULL, null=True, blank=True)
     patient_hash: models.CharField[
         PatientTextValue,
         PatientTextValue,
@@ -105,6 +101,8 @@ class Patient(Person):
     objects = cast(models.Manager["Patient"], models.Manager())
 
     if TYPE_CHECKING:
+        center_id: int | None
+        gender_id: int | None
 
         @property
         def events(self) -> models.Manager[PatientEvent]: ...
@@ -567,13 +565,15 @@ class Patient(Person):
                 list(medication_source.intake_times.all())
             )  # pm_instance.intake_times is a ManyRelatedManager for MedicationIntakeTime
 
-        return ModelLinks(
-            diseases=list(set(actual_diseases)),
-            patient_diseases=patient_disease_instances,
-            disease_classification_choices=list(set(all_classification_choices)),
-            patient_lab_values=patient_lab_value_instances,
-            medications=list(set(actual_medications)),
-            patient_medications=patient_medication_instances,
-            medication_indications=list(set(med_indications)),
-            medication_intake_times=list(set(med_intake_times)),
+        return ModelLinks.model_validate(
+            {
+                "diseases": list(set(actual_diseases)),
+                "patient_diseases": patient_disease_instances,
+                "disease_classification_choices": list(set(all_classification_choices)),
+                "patient_lab_values": patient_lab_value_instances,
+                "medications": list(set(actual_medications)),
+                "patient_medications": patient_medication_instances,
+                "medication_indications": list(set(med_indications)),
+                "medication_intake_times": list(set(med_intake_times)),
+            }
         )

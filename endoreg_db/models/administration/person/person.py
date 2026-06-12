@@ -38,9 +38,7 @@ class Person(models.Model):
     gender: models.ForeignKey[
         PersonGenderValue,
         PersonGenderValue,
-    ] = models.ForeignKey(
-        "endoreg_db.Gender", on_delete=models.SET_NULL, null=True
-    )
+    ] = models.ForeignKey("endoreg_db.Gender", on_delete=models.SET_NULL, null=True)
     email: models.EmailField[PersonTextValue, PersonTextValue] = models.EmailField(
         max_length=255,
         blank=True,

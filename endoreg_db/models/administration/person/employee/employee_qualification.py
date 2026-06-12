@@ -21,9 +21,9 @@ class EmployeeQualification(models.Model):
     )
     qualifications: models.ManyToManyField[Qualification, Qualification] = (
         models.ManyToManyField(
-        "Qualification",
-        related_name="employee_qualifications",
-    )
+            "Qualification",
+            related_name="employee_qualifications",
+        )
     )
 
     if TYPE_CHECKING:

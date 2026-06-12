@@ -25,11 +25,11 @@ class VideoSegmentationAnnotation(models.Model):
         related_name="video_segmentation_annotations",
     )
 
-    label: models.ForeignKey[
-        VideoSegmentationLabel, VideoSegmentationLabel
-    ] = models.ForeignKey(
-        "VideoSegmentationLabel",
-        on_delete=models.CASCADE,
+    label: models.ForeignKey[VideoSegmentationLabel, VideoSegmentationLabel] = (
+        models.ForeignKey(
+            "VideoSegmentationLabel",
+            on_delete=models.CASCADE,
+        )
     )
 
     # times in seconds

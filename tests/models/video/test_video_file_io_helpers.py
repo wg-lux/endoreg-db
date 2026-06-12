@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+# pyright: reportPrivateUsage=false
+
+from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import Mock, patch
 
 import pytest
 
+from endoreg_db.models import VideoFile
 from endoreg_db.services.video_files import _io as video_file_io
 
 
@@ -18,7 +23,7 @@ class _PathlessFieldFile:
 
 
 @pytest.mark.unit
-def test_get_raw_file_path_returns_none_for_pathless_storage(tmp_path):
+def test_get_raw_file_path_returns_none_for_pathless_storage(tmp_path: Path) -> None:
     sensitive_dir = tmp_path / "sensitive"
     sensitive_dir.mkdir()
     raw_path = sensitive_dir / "raw-video.mp4"
@@ -29,22 +34,22 @@ def test_get_raw_file_path_returns_none_for_pathless_storage(tmp_path):
         video_hash="raw-hash",
     )
 
-    resolved = video_file_io._get_raw_file_path(video)
+    resolved = video_file_io._get_raw_file_path(cast(VideoFile, video))
 
     assert resolved is None
 
 
 @pytest.mark.unit
-def test_get_raw_file_path_returns_none_without_raw_reference():
+def test_get_raw_file_path_returns_none_without_raw_reference() -> None:
     video = SimpleNamespace(
         has_raw=False, raw_file=_PathlessFieldFile(""), video_hash="none"
     )
 
-    assert video_file_io._get_raw_file_path(video) is None
+    assert video_file_io._get_raw_file_path(cast(VideoFile, video)) is None
 
 
 @pytest.mark.unit
-def test_get_processed_file_path_returns_none_for_pathless_storage(tmp_path):
+def test_get_processed_file_path_returns_none_for_pathless_storage(tmp_path: Path) -> None:
     storage_dir = tmp_path / "storage"
     processed_path = storage_dir / "processed" / "video.mp4"
     processed_path.parent.mkdir(parents=True)
@@ -55,13 +60,13 @@ def test_get_processed_file_path_returns_none_for_pathless_storage(tmp_path):
         video_hash="processed-hash",
     )
 
-    resolved = video_file_io._get_processed_file_path(video)
+    resolved = video_file_io._get_processed_file_path(cast(VideoFile, video))
 
     assert resolved is None
 
 
 @pytest.mark.unit
-def test_get_processed_file_path_reports_remote_only_storage_without_local_path():
+def test_get_processed_file_path_reports_remote_only_storage_without_local_path() -> None:
     field_file = _PathlessFieldFile("remote/video.mp4")
     video = SimpleNamespace(
         is_processed=True,
@@ -70,14 +75,14 @@ def test_get_processed_file_path_reports_remote_only_storage_without_local_path(
     )
 
     with patch.object(video_file_io, "file_exists", return_value=True) as exists:
-        resolved = video_file_io._get_processed_file_path(video)
+        resolved = video_file_io._get_processed_file_path(cast(VideoFile, video))
 
     assert resolved is None
     exists.assert_not_called()
 
 
 @pytest.mark.unit
-def test_get_processed_stream_path_materializes_when_requested(tmp_path):
+def test_get_processed_stream_path_materializes_when_requested(tmp_path: Path) -> None:
     stream_path = tmp_path / "streamable.mp4"
     stream_path.write_bytes(b"streamable")
     video = SimpleNamespace(processed_streamable_relative_path="")
@@ -94,7 +99,7 @@ def test_get_processed_stream_path_materializes_when_requested(tmp_path):
         ) as sync_mock,
     ):
         resolved = video_file_io._get_processed_stream_path(
-            video,
+            cast(VideoFile, video),
             materialize_if_missing=True,
         )
 
@@ -108,21 +113,21 @@ def test_get_processed_stream_path_materializes_when_requested(tmp_path):
 
 
 @pytest.mark.unit
-def test_ensure_local_helpers_fail_when_required_file_state_is_missing():
+def test_ensure_local_helpers_fail_when_required_file_state_is_missing() -> None:
     rawless = SimpleNamespace(has_raw=False, video_hash="rawless")
     processedless = SimpleNamespace(is_processed=False, video_hash="processedless")
 
     with pytest.raises(ValueError, match="has no raw file"):
-        with video_file_io._ensure_local_raw_file(rawless):
+        with video_file_io._ensure_local_raw_file(cast(VideoFile, rawless)):
             pass
 
     with pytest.raises(ValueError, match="has no processed file"):
-        with video_file_io._ensure_local_processed_file(processedless):
+        with video_file_io._ensure_local_processed_file(cast(VideoFile, processedless)):
             pass
 
 
 @pytest.mark.unit
-def test_delete_raw_file_after_validation_deletes_field_file_via_storage():
+def test_delete_raw_file_after_validation_deletes_field_file_via_storage() -> None:
     raw_field = SimpleNamespace(name="raw.mp4")
     video = SimpleNamespace(
         raw_file=raw_field, raw_streamable_relative_path="", save=Mock()
@@ -132,7 +137,7 @@ def test_delete_raw_file_after_validation_deletes_field_file_via_storage():
         patch.object(video_file_io, "_get_raw_stream_path", return_value=None),
         patch.object(video_file_io, "delete_field_file", return_value=True) as delete,
     ):
-        deleted = video_file_io._delete_raw_file_after_validation(video)
+        deleted = video_file_io._delete_raw_file_after_validation(cast(VideoFile, video))
 
     assert deleted is True
     delete.assert_called_once_with(video, "raw_file", missing_ok=True, save=True)

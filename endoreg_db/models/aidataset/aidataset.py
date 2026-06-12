@@ -1,19 +1,18 @@
 from __future__ import annotations
 
+import uuid
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from datetime import datetime
 from pathlib import Path
 from types import NoneType
 from typing import TYPE_CHECKING, Any, Protocol, TypeAlias, TypeVar, cast
-import uuid
 
 import numpy as np
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import QuerySet
 from django.utils import timezone
-from pydantic import BaseModel, ConfigDict, Field
 from lx_dtypes.models.contracts.json_types import JsonObject
 
 from endoreg_db.schemas import (
@@ -43,9 +42,9 @@ from endoreg_db.services.aidataset_frame_buckets import (
 
 __all__ = [
     "AIDataSet",
-    "AIDataSetActiveLearningCandidate",
-    "AIDataSetActiveLearningConfig",
-    "AIDataSetActiveLearningSelection",
+    "AIDataSetActiveLearningCandidateContract",
+    "AIDataSetActiveLearningConfigContract",
+    "AIDataSetActiveLearningSelectionContract",
     "AIDataSetExportArtifact",
     "AIDataSetExportPayload",
     "AIDataSetExportSummary",
@@ -56,7 +55,7 @@ __all__ = [
     "AIDataSetFrameLabelExport",
     "AIDataSetLabelDistributionEntry",
     "AIDataSetLabelFrameBucketCount",
-    "AIDataSetScoredActiveLearningCandidate",
+    "AIDataSetScoredActiveLearningCandidateContract",
     "AIDataSetTargetFrameBucket",
     "AIModelTrainingRun",
 ]
@@ -127,74 +126,12 @@ class _TrainingImageAnnotation(Protocol):
     information_source: _TrainingInformationSource | None
 
 
-def _empty_selected_sample_indices() -> list[int]:
-    return []
-
-
-def _empty_selected_frame_ids() -> list[int]:
-    return []
-
-
-def _empty_selected_candidates() -> list[AIDataSetScoredActiveLearningCandidate]:
-    return []
-
-
-class AIDataSetActiveLearningConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    budget: int = 32
-    segment_gap_frames: int = 150
-    temporal_spacing_frames: int = 75
-    min_quality_score: float = 0.35
-    max_samples_per_segment: int = 1
-    max_rarity_boost: float = 2.0
-    max_label_weight: float = 3.0
-
-
-class AIDataSetActiveLearningCandidate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    sample_index: int
-    video_id: int
-    frame_number: int
-    frame_id: int | None = None
-    timestamp: float | None = None
-    probs: list[float]
-    embedding: list[float]
-    quality_score: float | None = None
-
-
-class AIDataSetScoredActiveLearningCandidate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    sample_index: int
-    video_id: int
-    frame_number: int
-    frame_id: int | None = None
-    timestamp: float | None = None
-    segment_id: int
-    probs: list[float]
-    quality_score: float | None = None
-    uncertainty: float
-    diversity: float
-    rarity: float
-    quality_gate: float
-    frame_score: float
-
-
-class AIDataSetActiveLearningSelection(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    config: AIDataSetActiveLearningConfig
-    candidate_count: int
-    segment_count: int
-    selected_sample_indices: list[int] = Field(
-        default_factory=_empty_selected_sample_indices
-    )
-    selected_frame_ids: list[int] = Field(default_factory=_empty_selected_frame_ids)
-    selected_candidates: list[AIDataSetScoredActiveLearningCandidate] = Field(
-        default_factory=_empty_selected_candidates
-    )
+from lx_dtypes.models.contracts.ai_dataset import (
+    AIDataSetActiveLearningCandidateContract,
+    AIDataSetActiveLearningConfigContract,
+    AIDataSetActiveLearningSelectionContract,
+    AIDataSetScoredActiveLearningCandidateContract,
+)
 
 
 class AIDataSet(models.Model):
@@ -259,16 +196,16 @@ class AIDataSet(models.Model):
             "Frame-level annotations collected from the frame annotation workflow."
         ),
     )
-    video_annotations: models.ManyToManyField[
-        LabelVideoSegment, LabelVideoSegment
-    ] = models.ManyToManyField(
-        "LabelVideoSegment",
-        related_name="video_ai_datasets",
-        blank=True,
-        help_text=(
-            "Video-segment annotations collected from the video examination "
-            "annotation workflow."
-        ),
+    video_annotations: models.ManyToManyField[LabelVideoSegment, LabelVideoSegment] = (
+        models.ManyToManyField(
+            "LabelVideoSegment",
+            related_name="video_ai_datasets",
+            blank=True,
+            help_text=(
+                "Video-segment annotations collected from the video examination "
+                "annotation workflow."
+            ),
+        )
     )
     created_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
         auto_now_add=True,
@@ -362,13 +299,13 @@ class AIDataSet(models.Model):
     @classmethod
     def _coerce_active_learning_candidates(
         cls,
-        candidates: Sequence[AIDataSetActiveLearningCandidate | dict[str, Any]],
-    ) -> list[AIDataSetActiveLearningCandidate]:
+        candidates: Sequence[AIDataSetActiveLearningCandidateContract | dict[str, Any]],
+    ) -> list[AIDataSetActiveLearningCandidateContract]:
         return [
             (
                 candidate
-                if isinstance(candidate, AIDataSetActiveLearningCandidate)
-                else AIDataSetActiveLearningCandidate.model_validate(candidate)
+                if isinstance(candidate, AIDataSetActiveLearningCandidateContract)
+                else AIDataSetActiveLearningCandidateContract.model_validate(candidate)
             )
             for candidate in candidates
         ]
@@ -391,7 +328,7 @@ class AIDataSet(models.Model):
     @classmethod
     def _build_segment_ids(
         cls,
-        candidates: Sequence[AIDataSetActiveLearningCandidate],
+        candidates: Sequence[AIDataSetActiveLearningCandidateContract],
         *,
         segment_gap_frames: int,
     ) -> list[int]:
@@ -472,16 +409,16 @@ class AIDataSet(models.Model):
     @classmethod
     def _select_active_learning_candidates_locally(
         cls,
-        candidates: Sequence[AIDataSetActiveLearningCandidate | dict[str, Any]],
+        candidates: Sequence[AIDataSetActiveLearningCandidateContract | dict[str, Any]],
         *,
         labeled_embeddings: np.ndarray | Sequence[Sequence[float]] | None = None,
         class_frequencies: np.ndarray | Sequence[float] | None = None,
-        config: AIDataSetActiveLearningConfig | None = None,
-    ) -> AIDataSetActiveLearningSelection:
-        resolved_config = config or AIDataSetActiveLearningConfig()
+        config: AIDataSetActiveLearningConfigContract | None = None,
+    ) -> AIDataSetActiveLearningSelectionContract:
+        resolved_config = config or AIDataSetActiveLearningConfigContract()
         normalized_candidates = cls._coerce_active_learning_candidates(candidates)
         if not normalized_candidates:
-            return AIDataSetActiveLearningSelection(
+            return AIDataSetActiveLearningSelectionContract(
                 config=resolved_config,
                 candidate_count=0,
                 segment_count=0,
@@ -574,11 +511,7 @@ class AIDataSet(models.Model):
 
         quality_scores = np.asarray(
             [
-                (
-                    1.0
-                    if candidate.quality_score is None
-                    else float(candidate.quality_score)
-                )
+                float(candidate.quality_score)
                 for candidate in normalized_candidates
             ],
             dtype=np.float64,
@@ -670,7 +603,7 @@ class AIDataSet(models.Model):
                 break
 
         selected_candidates = [
-            AIDataSetScoredActiveLearningCandidate.model_validate(
+            AIDataSetScoredActiveLearningCandidateContract.model_validate(
                 {
                     key: value
                     for key, value in candidate.items()
@@ -680,7 +613,7 @@ class AIDataSet(models.Model):
             for candidate in selected
         ]
 
-        return AIDataSetActiveLearningSelection(
+        return AIDataSetActiveLearningSelectionContract(
             config=resolved_config,
             candidate_count=len(normalized_candidates),
             segment_count=len(segments),
@@ -690,7 +623,6 @@ class AIDataSet(models.Model):
             selected_frame_ids=[
                 candidate.frame_id
                 for candidate in selected_candidates
-                if candidate.frame_id is not None
             ],
             selected_candidates=selected_candidates,
         )
@@ -698,13 +630,13 @@ class AIDataSet(models.Model):
     @classmethod
     def select_active_learning_frame_indices_from_candidates(
         cls,
-        candidates: Sequence[AIDataSetActiveLearningCandidate | dict[str, Any]],
+        candidates: Sequence[AIDataSetActiveLearningCandidateContract | dict[str, Any]],
         *,
         labeled_embeddings: np.ndarray | Sequence[Sequence[float]] | None = None,
         class_frequencies: np.ndarray | Sequence[float] | None = None,
-        config: AIDataSetActiveLearningConfig | None = None,
-    ) -> AIDataSetActiveLearningSelection:
-        resolved_config = config or AIDataSetActiveLearningConfig()
+        config: AIDataSetActiveLearningConfigContract | None = None,
+    ) -> AIDataSetActiveLearningSelectionContract:
+        resolved_config = config or AIDataSetActiveLearningConfigContract()
         normalized_candidates = cls._coerce_active_learning_candidates(candidates)
         reference_embeddings = (
             None
@@ -735,7 +667,7 @@ class AIDataSet(models.Model):
             class_frequencies=frequencies,
             config=resolved_config.model_dump(mode="json"),
         )
-        return AIDataSetActiveLearningSelection.model_validate(
+        return AIDataSetActiveLearningSelectionContract.model_validate(
             selection.model_dump(mode="json")
         )
 
@@ -753,8 +685,8 @@ class AIDataSet(models.Model):
         quality_scores: Sequence[float | None] | None = None,
         labeled_embeddings: np.ndarray | Sequence[Sequence[float]] | None = None,
         class_frequencies: np.ndarray | Sequence[float] | None = None,
-        config: AIDataSetActiveLearningConfig | None = None,
-    ) -> AIDataSetActiveLearningSelection:
+        config: AIDataSetActiveLearningConfigContract | None = None,
+    ) -> AIDataSetActiveLearningSelectionContract:
         candidate_count = len(sample_indices)
         if not (
             len(video_ids)
@@ -765,18 +697,48 @@ class AIDataSet(models.Model):
         ):
             raise ValueError("All active learning arrays must have the same length.")
 
-        resolved_frame_ids: Sequence[int | None] = (
-            frame_ids if frame_ids is not None else [None] * candidate_count
+        if frame_ids is None or quality_scores is None:
+            raise ValueError(
+                "frame_ids and quality_scores are required by "
+                "AIDataSetActiveLearningCandidateContract."
+            )
+
+        def _required_int_values(
+            values: Sequence[int | None],
+            *,
+            name: str,
+        ) -> list[int]:
+            result: list[int] = []
+            for value in values:
+                if value is None:
+                    raise ValueError(f"{name} must not contain None values.")
+                result.append(int(value))
+            return result
+
+        def _required_float_values(
+            values: Sequence[float | None],
+            *,
+            name: str,
+        ) -> list[float]:
+            result: list[float] = []
+            for value in values:
+                if value is None:
+                    raise ValueError(f"{name} must not contain None values.")
+                result.append(float(value))
+            return result
+
+        resolved_frame_ids = _required_int_values(frame_ids, name="frame_ids")
+        resolved_timestamps = (
+            _required_float_values(timestamps, name="timestamps")
+            if timestamps is not None
+            else [float(frame_number) for frame_number in frame_numbers]
         )
-        resolved_timestamps: Sequence[float | None] = (
-            timestamps if timestamps is not None else [None] * candidate_count
-        )
-        resolved_quality_scores: Sequence[float | None] = (
-            quality_scores if quality_scores is not None else [None] * candidate_count
+        resolved_quality_scores = _required_float_values(
+            quality_scores, name="quality_scores"
         )
 
         candidates = [
-            AIDataSetActiveLearningCandidate(
+            AIDataSetActiveLearningCandidateContract(
                 sample_index=sample_indices[idx],
                 frame_id=resolved_frame_ids[idx],
                 video_id=video_ids[idx],
@@ -904,7 +866,9 @@ class AIDataSet(models.Model):
         labels = Label.objects.filter(pk__in=label_ids).prefetch_related("label_sets")
         labelset_id_sets: list[set[int]] = []
         for label in labels:
-            labelset_ids = set(cast(_TrainingLabel, label).label_sets.values_list("pk", flat=True))
+            labelset_ids = set(
+                cast(_TrainingLabel, label).label_sets.values_list("pk", flat=True)
+            )
             if not labelset_ids:
                 raise ValueError(
                     f"Cannot infer LabelSet: label id={label.pk} "
@@ -1093,7 +1057,8 @@ class AIDataSet(models.Model):
 
         resolved_label_set = cast(
             _TrainingLabelSet,
-            label_set or self._infer_training_label_set_from_annotations(annotations_qs),
+            label_set
+            or self._infer_training_label_set_from_annotations(annotations_qs),
         )
         labels = resolved_label_set.get_labels_in_order()
         if not labels:
@@ -1388,44 +1353,78 @@ class AIModelTrainingRun(models.Model):
     run_id: models.UUIDField[uuid.UUID, uuid.UUID] = models.UUIDField(
         default=uuid.uuid4, editable=False, unique=True
     )
-    dataset: models.ForeignKey[AIDataSetRelation, AIDataSetRelation] = models.ForeignKey(
-        AIDataSet,
-        blank=True,
-        null=True,
-        on_delete=models.SET_NULL,
-        related_name="model_training_runs",
+    dataset: models.ForeignKey[AIDataSetRelation, AIDataSetRelation] = (
+        models.ForeignKey(
+            AIDataSet,
+            blank=True,
+            null=True,
+            on_delete=models.SET_NULL,
+            related_name="model_training_runs",
+        )
     )
     dataset_name: models.CharField[AIDataSetText, AIDataSetText] = models.CharField(
         max_length=255, blank=True, null=True
     )
-    dataset_type: models.CharField[str, str] = models.CharField(max_length=32, blank=True)
-    ai_model_type: models.CharField[str, str] = models.CharField(max_length=255, blank=True)
+    dataset_type: models.CharField[str, str] = models.CharField(
+        max_length=32, blank=True
+    )
+    ai_model_type: models.CharField[str, str] = models.CharField(
+        max_length=255, blank=True
+    )
     backbone_name: models.CharField[str, str] = models.CharField(max_length=128)
     feature_mode: models.CharField[str, str] = models.CharField(max_length=64)
     freeze_backbone: models.BooleanField[bool, bool] = models.BooleanField(default=True)
-    epochs: models.PositiveIntegerField[int, int] = models.PositiveIntegerField(default=10)
-    batch_size: models.PositiveIntegerField[int, int] = models.PositiveIntegerField(default=32)
-    labelset_version: models.PositiveIntegerField[int, int] = models.PositiveIntegerField(default=1)
-    treat_unlabeled_as_negative: models.BooleanField[bool, bool] = models.BooleanField(default=True)
-    backbone_checkpoint: models.TextField[AIDataSetText, AIDataSetText] = models.TextField(blank=True, null=True)
-    request_payload: models.JSONField[JsonObject, JsonObject] = models.JSONField(default=dict, blank=True)
-    command_kwargs: models.JSONField[JsonObject, JsonObject] = models.JSONField(default=dict, blank=True)
+    epochs: models.PositiveIntegerField[int, int] = models.PositiveIntegerField(
+        default=10
+    )
+    batch_size: models.PositiveIntegerField[int, int] = models.PositiveIntegerField(
+        default=32
+    )
+    labelset_version: models.PositiveIntegerField[int, int] = (
+        models.PositiveIntegerField(default=1)
+    )
+    treat_unlabeled_as_negative: models.BooleanField[bool, bool] = models.BooleanField(
+        default=True
+    )
+    backbone_checkpoint: models.TextField[AIDataSetText, AIDataSetText] = (
+        models.TextField(blank=True, null=True)
+    )
+    request_payload: models.JSONField[JsonObject, JsonObject] = models.JSONField(
+        default=dict, blank=True
+    )
+    command_kwargs: models.JSONField[JsonObject, JsonObject] = models.JSONField(
+        default=dict, blank=True
+    )
     status: models.CharField[str, str] = models.CharField(
         max_length=16,
         choices=STATUS_CHOICES,
         default=STATUS_QUEUED,
         db_index=True,
     )
-    server_instance_id: models.CharField[str, str] = models.CharField(max_length=64, blank=True, db_index=True)
-    result: models.JSONField[JsonObject | None, JsonObject | None] = models.JSONField(blank=True, null=True)
-    artifact_paths: models.JSONField[dict[str, str], dict[str, str]] = models.JSONField(default=dict, blank=True)
+    server_instance_id: models.CharField[str, str] = models.CharField(
+        max_length=64, blank=True, db_index=True
+    )
+    result: models.JSONField[JsonObject | None, JsonObject | None] = models.JSONField(
+        blank=True, null=True
+    )
+    artifact_paths: models.JSONField[dict[str, str], dict[str, str]] = models.JSONField(
+        default=dict, blank=True
+    )
     error: models.TextField[str, str] = models.TextField(blank=True)
     stdout: models.TextField[str, str] = models.TextField(blank=True)
     stderr: models.TextField[str, str] = models.TextField(blank=True)
-    created_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(auto_now_add=True)
-    updated_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(auto_now=True)
-    started_at: models.DateTimeField[AIDataSetDateTime, AIDataSetDateTime] = models.DateTimeField(blank=True, null=True)
-    finished_at: models.DateTimeField[AIDataSetDateTime, AIDataSetDateTime] = models.DateTimeField(blank=True, null=True)
+    created_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
+        auto_now_add=True
+    )
+    updated_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
+        auto_now=True
+    )
+    started_at: models.DateTimeField[AIDataSetDateTime, AIDataSetDateTime] = (
+        models.DateTimeField(blank=True, null=True)
+    )
+    finished_at: models.DateTimeField[AIDataSetDateTime, AIDataSetDateTime] = (
+        models.DateTimeField(blank=True, null=True)
+    )
 
     class Meta:
         indexes = [
@@ -1488,18 +1487,30 @@ class AIDataSetExportArtifact(models.Model):
     artifact_id: models.UUIDField[uuid.UUID, uuid.UUID] = models.UUIDField(
         default=uuid.uuid4, editable=False, unique=True
     )
-    dataset: models.ForeignKey[AIDataSetRelation, AIDataSetRelation] = models.ForeignKey(
-        AIDataSet,
-        blank=True,
-        null=True,
-        on_delete=models.SET_NULL,
-        related_name="export_artifacts",
+    dataset: models.ForeignKey[AIDataSetRelation, AIDataSetRelation] = (
+        models.ForeignKey(
+            AIDataSet,
+            blank=True,
+            null=True,
+            on_delete=models.SET_NULL,
+            related_name="export_artifacts",
+        )
     )
-    dataset_name: models.CharField[AIDataSetText, AIDataSetText] = models.CharField(max_length=255, blank=True, null=True)
-    dataset_type: models.CharField[str, str] = models.CharField(max_length=32, blank=True)
-    ai_model_type: models.CharField[str, str] = models.CharField(max_length=255, blank=True)
-    request_payload: models.JSONField[JsonObject, JsonObject] = models.JSONField(default=dict, blank=True)
-    center_key: models.CharField[AIDataSetText, AIDataSetText] = models.CharField(max_length=255, blank=True, null=True)
+    dataset_name: models.CharField[AIDataSetText, AIDataSetText] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
+    dataset_type: models.CharField[str, str] = models.CharField(
+        max_length=32, blank=True
+    )
+    ai_model_type: models.CharField[str, str] = models.CharField(
+        max_length=255, blank=True
+    )
+    request_payload: models.JSONField[JsonObject, JsonObject] = models.JSONField(
+        default=dict, blank=True
+    )
+    center_key: models.CharField[AIDataSetText, AIDataSetText] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
     all_centers: models.BooleanField[bool, bool] = models.BooleanField(default=False)
     only_validated: models.BooleanField[bool, bool] = models.BooleanField(default=True)
     status: models.CharField[str, str] = models.CharField(
@@ -1509,14 +1520,26 @@ class AIDataSetExportArtifact(models.Model):
         db_index=True,
     )
     output_path: models.TextField[str, str] = models.TextField(blank=True)
-    download_filename: models.CharField[str, str] = models.CharField(max_length=255, blank=True)
+    download_filename: models.CharField[str, str] = models.CharField(
+        max_length=255, blank=True
+    )
     sha256: models.CharField[str, str] = models.CharField(max_length=64, blank=True)
-    byte_size: models.PositiveBigIntegerField[int, int] = models.PositiveBigIntegerField(default=0)
-    summary: models.JSONField[JsonObject, JsonObject] = models.JSONField(default=dict, blank=True)
+    byte_size: models.PositiveBigIntegerField[int, int] = (
+        models.PositiveBigIntegerField(default=0)
+    )
+    summary: models.JSONField[JsonObject, JsonObject] = models.JSONField(
+        default=dict, blank=True
+    )
     error: models.TextField[str, str] = models.TextField(blank=True)
-    created_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(auto_now_add=True)
-    updated_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(auto_now=True)
-    finished_at: models.DateTimeField[AIDataSetDateTime, AIDataSetDateTime] = models.DateTimeField(blank=True, null=True)
+    created_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
+        auto_now_add=True
+    )
+    updated_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
+        auto_now=True
+    )
+    finished_at: models.DateTimeField[AIDataSetDateTime, AIDataSetDateTime] = (
+        models.DateTimeField(blank=True, null=True)
+    )
 
     class Meta:
         indexes = [

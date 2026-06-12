@@ -1,7 +1,16 @@
 from django.test import TestCase  # Import TestCase
-from typing import cast
+from collections.abc import Mapping
+from typing import Protocol, cast
 from endoreg_db.models import AiModel, ModelType
 from endoreg_db.serializers.administration.ai import AiModelSerializer
+from lx_dtypes.models.contracts import (
+    AiModelSerializerInputPayload,
+    validate_ai_model_serializer_output_payload,
+)
+
+
+class _SerializerDataCarrier(Protocol):
+    data: Mapping[str, object]
 
 
 # Create a class inheriting from TestCase
@@ -18,22 +27,21 @@ class AiModelSerializerTest(TestCase):
         )
 
         # 2. Arrange: Prepare data for the new AiModel
-        ai_model_data = {
-            "name": "Test AI Model 2",
-            "description": "A second test model created via serializer.",
-            "model_type": model_type_name,  # Provide name as string
-            # Add other required fields if any, or ensure they allow null/blank
-        }
+        ai_model_data = AiModelSerializerInputPayload(
+            name="Test AI Model 2",
+            description="A second test model created via serializer.",
+            model_type=model_type_name,
+        )
 
         # 3. Act: Instantiate and validate the serializer
-        serializer = AiModelSerializer(data=ai_model_data)
+        serializer = AiModelSerializer(data=ai_model_data.model_dump())
         is_valid = serializer.is_valid()
 
         # 4. Assert: Validation passes (use self.assertTrue)
-        self.assertTrue(is_valid, f"Serializer validation failed: {serializer.errors}")
+        self.assertTrue(is_valid, "Serializer validation failed")
 
         # 5. Act: Save the serializer to create the object
-        ai_model_instance = cast(AiModel, serializer.save())
+        ai_model_instance = serializer.save()
 
         self.assertIsInstance(
             ai_model_instance, AiModel, "Serializer did not return an AiModel instance"
@@ -57,21 +65,21 @@ class AiModelSerializerTest(TestCase):
         )
 
         # 2. Arrange: Prepare data for the new AiModel
-        ai_model_data = {
-            "name": "Test AI Model 3",
-            "description": "A third test model created via serializer with object.",
-            "model_type": model_type.name,  # Pass the name (string) instead of the object
-        }
+        ai_model_data = AiModelSerializerInputPayload(
+            name="Test AI Model 3",
+            description="A third test model created via serializer with object.",
+            model_type=model_type.name,
+        )
 
         # 3. Act: Instantiate and validate the serializer
-        serializer = AiModelSerializer(data=ai_model_data)
+        serializer = AiModelSerializer(data=ai_model_data.model_dump())
         is_valid = serializer.is_valid()
 
         # 4. Assert: Validation passes (use self.assertTrue)
-        self.assertTrue(is_valid, f"Serializer validation failed: {serializer.errors}")
+        self.assertTrue(is_valid, "Serializer validation failed")
 
         # 5. Act: Save the serializer to create the object
-        ai_model_instance = cast(AiModel, serializer.save())
+        ai_model_instance = serializer.save()
 
         # 6. Assert: Check the created instance (use self.assertEqual)
         self.assertEqual(ai_model_instance.name, "Test AI Model 3")
@@ -96,13 +104,16 @@ class AiModelSerializerTest(TestCase):
 
         # 2. Act: Serialize the instance
         serializer = AiModelSerializer(instance=ai_model)
-        serialized_data = cast(dict, serializer.data)
+        serializer_payload = cast(_SerializerDataCarrier, serializer)
+        serialized_data = validate_ai_model_serializer_output_payload(
+            dict[str, object](serializer_payload.data)
+        )
 
         # 3. Assert: Check the serialized data (use self.assertEqual)
-        self.assertEqual(serialized_data["name"], "Test AI Model 4")
+        self.assertEqual(serialized_data.name, "Test AI Model 4")
         self.assertEqual(
-            serialized_data["model_type"], model_type.name
+            serialized_data.model_type, model_type.name
         )  # SlugRelatedField serializes to the slug field value
         self.assertEqual(
-            serialized_data["description"], "A fourth test model for serialization."
+            serialized_data.description, "A fourth test model for serialization."
         )

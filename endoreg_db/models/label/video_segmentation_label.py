@@ -35,9 +35,9 @@ class VideoSegmentationLabel(models.Model):
     description: models.TextField[
         VideoSegmentationLabelText, VideoSegmentationLabelText
     ] = models.TextField(blank=True, null=True)
-    color: models.CharField[
-        VideoSegmentationLabelText, VideoSegmentationLabelText
-    ] = models.CharField(max_length=255, blank=True, null=True)
+    color: models.CharField[VideoSegmentationLabelText, VideoSegmentationLabelText] = (
+        models.CharField(max_length=255, blank=True, null=True)
+    )
     order_priority: models.IntegerField[int, int] = models.IntegerField(default=0)
 
     def natural_key(self) -> tuple[str]:

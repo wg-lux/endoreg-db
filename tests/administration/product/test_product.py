@@ -60,7 +60,13 @@ class ProductModelTest(TestCase):
 
         for product in products:
             # check if the product has a product weight
-            product_weight, _unit = product.get_product_weight()
+            product_weight_result = product.get_product_weight()
+            if product_weight_result is None:
+                raise self.failureException(
+                    "product.get_product_weight() must return a metric tuple"
+                )
+
+            product_weight, _unit = product_weight_result
             self.assertIsNotNone(product_weight)
 
     def test_package_weight(self):
@@ -72,5 +78,11 @@ class ProductModelTest(TestCase):
 
         for product in products:
             # check if the product has a package weight
-            package_weight, _unit = product.get_package_weight()
+            package_weight_result = product.get_package_weight()
+            if package_weight_result is None:
+                raise self.failureException(
+                    "product.get_package_weight() must return a metric tuple"
+                )
+
+            package_weight, _unit = package_weight_result
             self.assertIsNotNone(package_weight)

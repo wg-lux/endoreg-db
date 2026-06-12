@@ -32,7 +32,7 @@ class Case(models.Model):
         updated_at (datetime): Timestamp of last case update.
     """
 
-    patient: models.ForeignKey[Patient] = models.ForeignKey(
+    patient: models.ForeignKey[Patient, Patient] = models.ForeignKey(
         "Patient",
         on_delete=models.CASCADE,
         related_name="cases",

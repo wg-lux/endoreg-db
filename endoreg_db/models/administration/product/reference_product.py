@@ -34,9 +34,9 @@ class ReferenceProduct(models.Model):
     )
     product_group: models.OneToOneField[ProductGroup, ProductGroup] = (
         models.OneToOneField(
-        "ProductGroup",
-        on_delete=models.CASCADE,
-        related_name="reference_product",  # Changed from "reference_products"
+            "ProductGroup",
+            on_delete=models.CASCADE,
+            related_name="reference_product",  # Changed from "reference_products"
         )
     )
     emission_factor_total: models.ForeignKey[

@@ -1,6 +1,8 @@
+# pyright: reportPrivateUsage=false
+from pathlib import Path
+
 import pytest
 
-from endoreg_db.services.video_files import _segments as segments_module
 from endoreg_db.models import (
     AiModel,
     Center,
@@ -13,10 +15,11 @@ from endoreg_db.models import (
     VideoFile,
     VideoPredictionMeta,
 )
+from endoreg_db.services.video_files import _segments as segments_module
 
 
 @pytest.mark.django_db
-def test_convert_sequences_creates_segments():
+def test_convert_sequences_creates_segments() -> None:
     center = Center.objects.create(
         name="segments-center", display_name="Segments Center"
     )
@@ -48,11 +51,15 @@ def test_convert_sequences_creates_segments():
     )
     assert created.count() == 2
     assert all(segment.state is not None for segment in created)
-    assert {segment.source.name for segment in created} == {"prediction"}
+    source_names: set[str] = set()
+    for segment in created:
+        assert segment.source is not None
+        source_names.add(str(segment.source.name))
+    assert source_names == {"prediction"}
 
 
 @pytest.mark.django_db
-def test_convert_sequences_skips_single_frame_segments():
+def test_convert_sequences_skips_single_frame_segments() -> None:
     center = Center.objects.create(
         name="singleton-center", display_name="Singleton Center"
     )
@@ -85,12 +92,13 @@ def test_convert_sequences_skips_single_frame_segments():
     segment = created.get()
     assert segment.start_frame_number == 10
     assert segment.end_frame_number == 12
+    assert segment.source is not None
     assert segment.source.name == "prediction"
     assert segment.state is not None
 
 
 @pytest.mark.django_db
-def test_get_outside_helpers_return_expected_frames(tmp_path):
+def test_get_outside_helpers_return_expected_frames(tmp_path: Path) -> None:
     center = Center.objects.create(name="outside-center", display_name="Outside Center")
     video = VideoFile.objects.create(center=center, video_hash="outside-hash")
     frame_dir = tmp_path / "frames"

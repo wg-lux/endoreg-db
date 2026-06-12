@@ -1,3 +1,5 @@
+from django.core.files.storage import Storage
+from typing import Protocol, cast
 from pathlib import Path
 
 import pytest
@@ -9,6 +11,10 @@ from ...helpers.data_loader import load_data
 from ...helpers.default_objects import (
     get_latest_segmentation_model,
 )
+
+class _WeightsFileLike(Protocol):
+    name: str
+    storage: Storage
 
 
 class AiModelTest(TestCase):
@@ -43,6 +49,10 @@ def test_setup_default_model_meta_from_huggingface_downloads_safetensors():
     assert model_meta.model.active_meta == model_meta
 
     try:
-        model_meta.weights.storage.delete(model_meta.weights.name)
+        weights_file = cast(_WeightsFileLike, model_meta.weights)
+        weights_name = weights_file.name
+        if not weights_name:
+            raise ValueError("Model meta download did not persist a weight file name")
+        weights_file.storage.delete(weights_name)
     except Exception:
         pass

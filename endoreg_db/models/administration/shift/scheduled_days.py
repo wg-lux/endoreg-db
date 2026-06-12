@@ -39,12 +39,12 @@ class ScheduledDays(models.Model):
         unique=True,
         help_text="Name of the scheduled days.",
     )
-    working_days: models.BooleanField[
-        ScheduledDaysBoolean, ScheduledDaysBoolean
-    ] = models.BooleanField(
-        null=True,
-        blank=True,
-        default=True,
+    working_days: models.BooleanField[ScheduledDaysBoolean, ScheduledDaysBoolean] = (
+        models.BooleanField(
+            null=True,
+            blank=True,
+            default=True,
+        )
     )
 
     non_working_days: models.BooleanField[
@@ -55,17 +55,19 @@ class ScheduledDays(models.Model):
         default=False,
     )
 
-    limited_time: models.BooleanField[
-        ScheduledDaysBoolean, ScheduledDaysBoolean
-    ] = models.BooleanField(
-        null=True,
-        blank=True,
-        default=False,
+    limited_time: models.BooleanField[ScheduledDaysBoolean, ScheduledDaysBoolean] = (
+        models.BooleanField(
+            null=True,
+            blank=True,
+            default=False,
+        )
     )
 
-    start_date: models.DateField[ScheduledDaysDate, ScheduledDaysDate] = models.DateField(
-        null=True,
-        blank=True,
+    start_date: models.DateField[ScheduledDaysDate, ScheduledDaysDate] = (
+        models.DateField(
+            null=True,
+            blank=True,
+        )
     )
 
     end_date: models.DateField[ScheduledDaysDate, ScheduledDaysDate] = models.DateField(

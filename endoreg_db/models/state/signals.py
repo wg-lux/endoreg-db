@@ -1,5 +1,11 @@
+from __future__ import annotations
+
+from typing import cast
+
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
+from lx_dtypes.models.contracts.json_types import JsonObject
+
 from endoreg_db.models import VideoFile, RawPdfFile, UploadJob
 import logging
 
@@ -21,16 +27,18 @@ def _mark_upload_jobs_lost_for_deleted_media(
     )
     missing_artifact = "raw_pdf_file" if media_kind == "RawPdfFile" else "video_file"
     for upload_job in active_jobs.iterator():
-        provenance = (
-            upload_job.processing_provenance
-            if isinstance(upload_job.processing_provenance, dict)
-            else {}
+        provenance: JsonObject = upload_job.processing_provenance
+        provenance_update = cast(
+            JsonObject,
+            {
+                "media_integrity_status": "media_record_missing",
+                "media_integrity_reason": error_detail,
+                "media_integrity_missing_artifacts": [missing_artifact],
+            },
         )
         upload_job.processing_provenance = {
             **provenance,
-            "media_integrity_status": "media_record_missing",
-            "media_integrity_reason": error_detail,
-            "media_integrity_missing_artifacts": [missing_artifact],
+            **provenance_update,
         }
         upload_job.status = UploadJob.Status.LOST
         upload_job.error_detail = error_detail
@@ -54,7 +62,11 @@ def _mark_upload_jobs_lost_for_deleted_media(
 
 
 @receiver(post_delete, sender=VideoFile)
-def cleanup_video_upload_jobs(sender, instance, **kwargs):
+def cleanup_video_upload_jobs(
+    sender: type[VideoFile],
+    instance: VideoFile,
+    **kwargs: object,
+) -> None:
     """
     Preserve UploadJob provenance when managed video media is deleted.
     """
@@ -66,7 +78,11 @@ def cleanup_video_upload_jobs(sender, instance, **kwargs):
 
 
 @receiver(post_delete, sender=RawPdfFile)
-def cleanup_pdf_upload_jobs(sender, instance, **kwargs):
+def cleanup_pdf_upload_jobs(
+    sender: type[RawPdfFile],
+    instance: RawPdfFile,
+    **kwargs: object,
+) -> None:
     """
     Preserve UploadJob provenance when managed report media is deleted.
     """

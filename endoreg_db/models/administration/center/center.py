@@ -58,6 +58,7 @@ class Center(models.Model):
     )
 
     if TYPE_CHECKING:
+
         @property
         def center_products(self) -> models.Manager[CenterProduct]: ...
 

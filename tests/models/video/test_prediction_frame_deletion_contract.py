@@ -1,6 +1,13 @@
+from __future__ import annotations
+
+# pyright: reportPrivateUsage=false
+
 import uuid
+from pathlib import Path
+from typing import Any, Callable, Protocol, cast
 
 import pytest
+from pytest import MonkeyPatch
 
 from endoreg_db.models import (
     AIDataSet,
@@ -14,10 +21,18 @@ from endoreg_db.models import (
 from endoreg_db.services.video_files._io import _get_temp_anonymized_frame_dir
 
 
+class _CenterRelation(Protocol):
+    def add(self, *objs: Center | int) -> None: ...
+
+
+def _add_center(processor: EndoscopyProcessor, center: Center) -> None:
+    cast(_CenterRelation, processor.centers).add(center)
+
+
 @pytest.mark.django_db
 def test_prediction_frame_deletion_keeps_db_frames_and_clears_extracted_flags(
-    tmp_path,
-):
+    tmp_path: Path,
+) -> None:
     """
     Contract test for frame behavior in the pipeline deletion step.
 
@@ -71,7 +86,7 @@ def test_prediction_frame_deletion_keeps_db_frames_and_clears_extracted_flags(
         endoscope_sn_width=100,
         endoscope_sn_height=50,
     )
-    processor.centers.add(center)
+    _add_center(processor, center)
 
     expected_final_frame_count = 12
     frame_dir = tmp_path / f"frames-{uuid.uuid4().hex[:8]}"
@@ -90,7 +105,7 @@ def test_prediction_frame_deletion_keeps_db_frames_and_clears_extracted_flags(
 
     # Simulate pipeline pre-delete state: extracted files exist and flags are set.
     for frame in Frame.objects.filter(video=video):
-        frame_path = frame_dir / frame.relative_path
+        frame_path = frame_dir / str(frame.relative_path)
         frame_path.write_bytes(b"dummy-frame-content")
     Frame.objects.filter(video=video).update(is_extracted=True)
     state = video.get_or_create_state()
@@ -121,9 +136,9 @@ def test_prediction_frame_deletion_keeps_db_frames_and_clears_extracted_flags(
 
 @pytest.mark.django_db
 def test_delete_frames_preserves_dataset_backed_frame_files(
-    tmp_path,
-    django_capture_on_commit_callbacks,
-):
+    tmp_path: Path,
+    django_capture_on_commit_callbacks: Callable[..., Any],
+) -> None:
     center = Center.objects.create(
         name=f"frame-preserve-center-{uuid.uuid4().hex[:8]}",
         display_name="Frame Preserve Center",
@@ -165,7 +180,7 @@ def test_delete_frames_preserves_dataset_backed_frame_files(
         endoscope_sn_width=100,
         endoscope_sn_height=50,
     )
-    processor.centers.add(center)
+    _add_center(processor, center)
     frame_dir = tmp_path / f"frames-{uuid.uuid4().hex[:8]}"
     frame_dir.mkdir(parents=True, exist_ok=True)
     video = VideoFile.objects.create(
@@ -216,9 +231,9 @@ def test_delete_frames_preserves_dataset_backed_frame_files(
 
 @pytest.mark.django_db
 def test_delete_frames_restores_staged_directories_when_state_update_fails(
-    tmp_path,
-    monkeypatch,
-):
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
     center = Center.objects.create(
         name=f"frame-restore-center-{uuid.uuid4().hex[:8]}",
         display_name="Frame Restore Center",
@@ -260,7 +275,7 @@ def test_delete_frames_restores_staged_directories_when_state_update_fails(
         endoscope_sn_width=100,
         endoscope_sn_height=50,
     )
-    processor.centers.add(center)
+    _add_center(processor, center)
 
     frame_dir = tmp_path / f"frames-{uuid.uuid4().hex[:8]}"
     frame_dir.mkdir(parents=True, exist_ok=True)
@@ -274,7 +289,7 @@ def test_delete_frames_restores_staged_directories_when_state_update_fails(
 
     video.initialize_frames()
     frame = Frame.objects.get(video=video)
-    frame_path = frame_dir / frame.relative_path
+    frame_path = frame_dir / str(frame.relative_path)
     frame_path.parent.mkdir(parents=True, exist_ok=True)
     frame_path.write_bytes(b"dummy-frame-content")
 
@@ -290,10 +305,25 @@ def test_delete_frames_restores_staged_directories_when_state_update_fails(
 
     original_state_save = type(state).save
 
-    def failing_save(self, *args, **kwargs):
-        if self.pk == state.pk and kwargs.get("update_fields") == ["frames_extracted"]:
+    def failing_save(
+        self: object,
+        force_insert: bool = False,
+        force_update: bool = False,
+        using: str | None = None,
+        update_fields: list[str] | None = None,
+    ) -> object:
+        if (
+            getattr(self, "pk", None) == state.pk
+            and update_fields == ["frames_extracted"]
+        ):
             raise RuntimeError("simulated state persistence failure")
-        return original_state_save(self, *args, **kwargs)
+        return original_state_save(
+            cast(Any, self),
+            force_insert=force_insert,
+            force_update=force_update,
+            using=using,
+            update_fields=update_fields,
+        )
 
     monkeypatch.setattr(type(state), "save", failing_save)
 
@@ -313,6 +343,10 @@ def test_delete_frames_restores_staged_directories_when_state_update_fails(
     assert state.frames_extracted is True
     assert frame.is_extracted is True
 
-    pending_delete_paths = list(frame_dir.parent.glob("*.pending_delete.*"))
-    pending_delete_paths.extend(temp_anonym_dir.parent.glob("*.pending_delete.*"))
+    pending_delete_paths: list[Path] = list(
+        frame_dir.parent.glob("*.pending_delete.*")
+    )
+    pending_delete_paths.extend(
+        temp_anonym_dir.parent.glob("*.pending_delete.*")
+    )
     assert list(pending_delete_paths) == []

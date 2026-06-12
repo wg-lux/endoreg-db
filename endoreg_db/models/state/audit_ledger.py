@@ -1,41 +1,23 @@
-# stats/models.py
-import hashlib
-import json
+# state/audit_ledger.py
+from __future__ import annotations
+
+import logging
 import uuid
+from collections.abc import Iterable
+from datetime import datetime
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from django.conf import settings
-from django.db import models
+from django.db import models, transaction
+from django.db.models.base import ModelBase
 from django.db.utils import OperationalError, ProgrammingError
 from django.utils import timezone
-from django.db import transaction
-import logging
+from lx_dtypes.models.contracts.audit_ledger import AuditLedgerHashPayload
+from lx_dtypes.models.contracts.json_types import JsonObject
 
-"""
+if TYPE_CHECKING:
+    from django.contrib.auth.models import User
 
-AuditLedger Model
-
-AuditLedger is a model that tracks changes to other models in the database.
-It stores a hash of the previous state, the current state, and the action taken.
-This allows for a complete audit trail of changes made to the database.
-The model includes fields for the timestamp, user who made the change, object type,
-object primary key, action taken, and the data associated with the change.
-The save method computes the hash of the current state and the previous state
-before saving the record to the database.
-The hash is computed using SHA-256 and includes the timestamp, user ID,
-object type, object primary key, action taken, and the data associated with the change.
-The hash is stored in the database to ensure data integrity and to allow for
-verification of the data.
-The model also includes a method to retrieve the last hash from the database
-to ensure that the current hash is always based on the most recent state of the database.
-The model is designed to be immutable, meaning that once a record is created,
-it cannot be modified. This ensures that the audit trail is complete and accurate.
-
-Raises:
-    RuntimeError: _description_
-
-Returns:
-    _type_: _description_
-"""
 
 logger = logging.getLogger(__name__)
 
@@ -50,62 +32,100 @@ def _ledger_table_unavailable(exc: Exception) -> bool:
     )
 
 
+def _json_object(value: object) -> JsonObject:
+    if not isinstance(value, dict):
+        return {}
+    return cast(JsonObject, value)
+
+
 class AuditLedger(models.Model):
-    objects: "models.Manager[AuditLedger]" = models.Manager()
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    ts = models.DateTimeField(default=timezone.now, editable=False, db_index=True)
-    user = models.ForeignKey(
+    """
+    Immutable audit ledger row.
+
+    The cryptographic hash calculation is centralized in
+    lx_dtypes.models.contracts.audit_ledger.AuditLedgerHashPayload.
+    """
+
+    objects: ClassVar[models.Manager["AuditLedger"]] = models.Manager()  # pyright: ignore[reportIncompatibleVariableOverride]
+
+    id: models.UUIDField[uuid.UUID, uuid.UUID] = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False,
+    )
+    ts: models.DateTimeField[datetime, datetime] = models.DateTimeField(
+        default=timezone.now,
+        editable=False,
+        db_index=True,
+    )
+    user: models.ForeignKey["User | None", "User | None"] = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,
         blank=True,
         on_delete=models.PROTECT,
     )
-    object_type = models.CharField(max_length=80)  # e.g. 'VideoFile'
-    object_pk = models.CharField(max_length=40)  # UUID or int
-    action = models.CharField(max_length=40)  # 'created' | 'validated' | …
-    data = models.JSONField()  # snapshot / diff / metadata
-    prev_hash = models.CharField(max_length=64, editable=False)
-    hash = models.CharField(max_length=64, editable=False)
+    object_type: models.CharField[str, str] = models.CharField(max_length=80)
+    object_pk: models.CharField[str, str] = models.CharField(max_length=40)
+    action: models.CharField[str, str] = models.CharField(max_length=40)
+    data: models.JSONField[JsonObject, JsonObject] = models.JSONField()
+    prev_hash: models.CharField[str, str] = models.CharField(
+        max_length=64,
+        editable=False,
+    )
+    hash: models.CharField[str, str] = models.CharField(
+        max_length=64,
+        editable=False,
+    )
 
     class Meta:
         ordering = ["ts"]
         indexes = [models.Index(fields=["object_type", "object_pk"])]
 
-    # ------------------------------------------------------
-    def save(self, *args, **kw):
+    def save(
+        self,
+        *,
+        force_insert: bool | tuple[ModelBase, ...] = False,
+        force_update: bool = False,
+        using: str | None = None,
+        update_fields: Iterable[str] | None = None,
+    ) -> None:
         """
-        Saves a new immutable audit record, computing and linking cryptographic hashes.
+        Save a new immutable audit record, computing and linking cryptographic hashes.
 
         Raises:
             RuntimeError: If an attempt is made to modify an existing audit record.
         """
         with transaction.atomic():
             try:
-                if self._state.adding:  # only on INSERT
+                if self._state.adding:
                     head = LedgerHead.lock()
-                    self.prev_hash = head.current_hash
-                    self.hash = self._compute_hash()
+                    object.__setattr__(self, "prev_hash", head.current_hash)
+                    object.__setattr__(self, "hash", self._compute_hash())
                 else:
                     raise RuntimeError("AuditLedger rows are immutable")
-                super().save(*args, **kw)
-                head.current_hash = self.hash
-                head.last_entry = self
+
+                super().save(
+                    force_insert=force_insert,
+                    force_update=force_update,
+                    using=using,
+                    update_fields=update_fields,
+                )
+
+                object.__setattr__(head, "current_hash", self.hash)
+                object.__setattr__(head, "last_entry", self)
                 head.save(update_fields=["current_hash", "last_entry", "updated_at"])
             except (OperationalError, ProgrammingError) as exc:
                 if _ledger_table_unavailable(exc):
                     logger.warning(
-                        "AuditLedger table unavailable; skipping audit write: %s", exc
+                        "AuditLedger table unavailable; skipping audit write: %s",
+                        exc,
                     )
                     return
                 raise
 
-    # ------------------------------------------------------
     def _last_hash(self) -> str:
         """
-        Retrieves the hash of the most recent audit record.
-
-        Returns:
-            The SHA-256 hash of the latest `AuditLedger` entry by timestamp, or a string of 64 zeros if no records exist.
+        Return the current ledger head hash, or zero hash if no head exists.
         """
         try:
             head = LedgerHead.objects.first()
@@ -121,10 +141,7 @@ class AuditLedger(models.Model):
     @classmethod
     def verify_chain(cls) -> bool:
         """
-        Verify that every ledger row still matches its stored hash and previous link.
-
-        The final hash is compared with LedgerHead as well, so deleting the most
-        recent row is detectable even though no following row can reference it.
+        Verify every ledger row still matches its stored hash and previous link.
         """
         expected_prev_hash = "0" * 64
         for record in cls.objects.order_by("ts", "id").iterator():
@@ -139,37 +156,32 @@ class AuditLedger(models.Model):
         return head_hash == expected_prev_hash
 
     def _compute_hash(self) -> str:
+        user = getattr(self, "user", None)
+        uid = None if user is None else str(getattr(user, "pk", None))
+
+        payload = AuditLedgerHashPayload(
+            ts=self.ts.isoformat(),
+            id=str(self.id),
+            uid=uid,
+            obj=f"{self.object_type}:{self.object_pk}",
+            act=self.action,
+            data=_json_object(self.data),
+            prev=self.prev_hash,
+        )
+        return payload.sha256_hex()
+
+    def log_validation(
+        self,
+        user: models.Model | None,
+        instance: models.Model,
+        action: str,
+        extra: JsonObject | None = None,
+    ) -> None:
         """
-        Computes the SHA-256 hash of the current audit record's data.
-
-        The hash is generated from a JSON-serialized payload containing the timestamp, user ID, object type and primary key, action, associated data, and the previous record's hash. This ensures the integrity and immutability of the audit trail.
-
-        Returns:
-            The hexadecimal SHA-256 hash string representing the current audit record.
-        """
-        payload = {
-            "ts": self.ts.isoformat(),
-            "id": str(self.id),
-            "uid": str(self.user_id) if self.user_id is not None else None,
-            "obj": f"{self.object_type}:{self.object_pk}",
-            "act": self.action,
-            "data": self.data,
-            "prev": self.prev_hash,
-        }
-        return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
-
-    def log_validation(self, user, instance, action: str, extra=None):
-        """
-        Creates an audit record for a validation action performed by a user on a specific model instance.
-
-        Args:
-            user: The user performing the action.
-            instance: The model instance being validated.
-            action: The action performed (e.g., 'validated').
-            extra: Optional additional data to include in the audit record.
+        Create an audit record for a validation action.
         """
         AuditLedger.objects.create(
-            user=user,
+            user=cast(Any, user),
             object_type=instance.__class__.__name__,
             object_pk=str(instance.pk),
             action=action,
@@ -180,20 +192,22 @@ class AuditLedger(models.Model):
     def append_identity_commit(
         cls,
         *,
-        user=None,
+        user: object | None = None,
         object_type: str,
         object_pk: str,
-        data: dict,
+        data: JsonObject,
     ) -> "AuditLedger | None":
         """
         Append an immutable identity commit without requiring a user context.
-
-        The caller must pass only non-PII identity metadata, typically hashes and
-        object ids. The ledger hash-chain then makes later tampering detectable.
         """
         try:
+            audit_user = (
+                cast(models.Model, user)
+                if getattr(user, "is_authenticated", False)
+                else None
+            )
             return cls.objects.create(
-                user=user if getattr(user, "is_authenticated", False) else None,
+                user=cast(Any, audit_user),
                 object_type=object_type,
                 object_pk=object_pk,
                 action="identity_committed",
@@ -202,22 +216,16 @@ class AuditLedger(models.Model):
         except (OperationalError, ProgrammingError) as exc:
             if _ledger_table_unavailable(exc):
                 logger.warning(
-                    "AuditLedger table unavailable; skipping identity commit: %s", exc
+                    "AuditLedger table unavailable; skipping identity commit: %s",
+                    exc,
                 )
                 return None
             raise
 
     @classmethod
-    def _distinct(self, object_type: str, action: str):
+    def _distinct(cls, object_type: str, action: str) -> int:
         """
-        Returns the number of distinct objects of a given type that have a specific audit action recorded.
-
-        Args:
-            object_type: The type of object to filter by (e.g., 'VideoFile').
-            action: The audit action to filter by (e.g., 'validated').
-
-        Returns:
-            The count of unique object primary keys matching the specified type and action.
+        Return the number of distinct objects for an audit action.
         """
         try:
             return (
@@ -234,13 +242,9 @@ class AuditLedger(models.Model):
                 return 0
             raise
 
-    def collect_counters(self):
+    def collect_counters(self) -> dict[str, int]:
         """
-        Aggregates and returns summary statistics for audit actions and object types.
-
-        Returns:
-            dict: A dictionary containing counts of distinct cases, videos, annotations,
-            anonymizations, images, and breakdowns of video statuses based on audit records.
+        Aggregate summary statistics for audit actions and object types.
         """
         return {
             "totalCases": AuditLedger._distinct("PatientExamination", "created"),
@@ -260,13 +264,19 @@ class LedgerHead(models.Model):
     Singleton pointer to the current AuditLedger hash.
 
     Writers lock this row before appending, preventing concurrent ledger forks.
-    This avoids scanning the full ledger for every append and provides a lock
-    target that serializes concurrent writers.
     """
 
-    id = models.PositiveSmallIntegerField(primary_key=True, default=1, editable=False)
-    current_hash = models.CharField(max_length=64, default="0" * 64, editable=False)
-    last_entry = models.ForeignKey(
+    id: models.PositiveSmallIntegerField[int, int] = models.PositiveSmallIntegerField(
+        primary_key=True,
+        default=1,
+        editable=False,
+    )
+    current_hash: models.CharField[str, str] = models.CharField(
+        max_length=64,
+        default="0" * 64,
+        editable=False,
+    )
+    last_entry: models.ForeignKey[AuditLedger | None, AuditLedger | None] = models.ForeignKey(
         AuditLedger,
         null=True,
         blank=True,
@@ -274,9 +284,14 @@ class LedgerHead(models.Model):
         editable=False,
         related_name="+",
     )
-    updated_at = models.DateTimeField(auto_now=True)
+    updated_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
+        auto_now=True,
+    )
 
-    objects: "models.Manager[LedgerHead]" = models.Manager()
+    objects: ClassVar[models.Manager["LedgerHead"]] = models.Manager()  # pyright: ignore[reportIncompatibleVariableOverride]
+
+    if TYPE_CHECKING:
+        last_entry_id: int | None
 
     class Meta:
         verbose_name = "Ledger Head"

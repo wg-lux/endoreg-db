@@ -1,22 +1,51 @@
 import logging
+from collections.abc import Iterable
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Protocol, cast
 
 # import endoreg_center_id from django settings
 from django.conf import settings
 from django.db import models
+from django.db.models.base import ModelBase
 
 # check if endoreg_center_id is set
 ENDOREG_CENTER_ID = int(getattr(settings, "ENDOREG_CENTER_ID", 9999))
 
 # Import the new utility function
-from ...utils.video import ffmpeg_wrapper
+import endoreg_db.utils.ffmpeg_wrapper as ffmpeg_wrapper
+from lx_dtypes.models.contracts.ffmpeg_metadata import (
+    FfmpegMetaPayload,
+    FfmpegProbeDataPayload,
+    FfmpegProbeJsonObject,
+)
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from ..administration import Center
     from ..medical.hardware import Endoscope, EndoscopyProcessor
+
+
+class _NamedRelation(Protocol):
+    name: str
+
+
+def _as_int(value: int | float | str | None) -> int | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_float(value: int | float | str | None) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 # VideoMeta
@@ -27,40 +56,30 @@ class VideoMeta(models.Model):
     Links to hardware (processor, endoscope), center, import details, and FFmpeg technical specs.
     """
 
-    processor = models.ForeignKey(
+    processor: models.ForeignKey["EndoscopyProcessor | None", "EndoscopyProcessor | None"] = models.ForeignKey(
         "EndoscopyProcessor", on_delete=models.CASCADE, blank=True, null=True
     )
-    endoscope = models.ForeignKey(
+    endoscope: models.ForeignKey["Endoscope | None", "Endoscope | None"] = models.ForeignKey(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
         "Endoscope", on_delete=models.CASCADE, blank=True, null=True
     )
-    center = models.ForeignKey("Center", on_delete=models.CASCADE)
-    import_meta = models.OneToOneField(
+    center: models.ForeignKey["Center", "Center"] = models.ForeignKey(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+        "Center", on_delete=models.CASCADE
+    )
+    import_meta: models.OneToOneField["VideoImportMeta | None", "VideoImportMeta | None"] = models.OneToOneField(
         "VideoImportMeta", on_delete=models.CASCADE, blank=True, null=True
     )
-    ffmpeg_meta = models.OneToOneField(
+    ffmpeg_meta: models.OneToOneField["FFMpegMeta | None", "FFMpegMeta | None"] = models.OneToOneField(
         "FFMpegMeta", on_delete=models.CASCADE, blank=True, null=True
     )
 
-    if TYPE_CHECKING:
-        processor: models.ForeignKey["EndoscopyProcessor|None"]
-        endoscope: models.ForeignKey["Endoscope|None"]
-        center: models.ForeignKey["Center|None"]
-        import_meta: models.OneToOneField["VideoImportMeta|None"]
-        ffmpeg_meta: models.OneToOneField["FFMpegMeta|None"]
-
     @property
     def center_safe(self) -> "Center":
-        center = self.center
-        if not center:
-            raise Center.DoesNotExist(
-                "Center does not exist for this VideoMeta instance."
-            )
-        return center
+        return self.center
 
     @property
     def processor_safe(self) -> "EndoscopyProcessor":
         processor = self.processor
-        if not processor:
+        if processor is None:
             raise EndoscopyProcessor.DoesNotExist(
                 "EndoscopyProcessor does not exist for this VideoMeta instance."
             )
@@ -69,7 +88,7 @@ class VideoMeta(models.Model):
     @property
     def ffmpeg_meta_safe(self) -> "FFMpegMeta":
         ffmpeg_meta = self.ffmpeg_meta
-        if not ffmpeg_meta:
+        if ffmpeg_meta is None:
             raise FFMpegMeta.DoesNotExist(
                 "FFMpegMeta does not exist for this VideoMeta instance."
             )
@@ -80,16 +99,14 @@ class VideoMeta(models.Model):
         cls,
         video_path: Path,
         center: "Center",
-        processor: Optional["EndoscopyProcessor"] = None,
-        endoscope: Optional["Endoscope"] = None,
+        processor: "EndoscopyProcessor | None" = None,
+        endoscope: "Endoscope | None" = None,
         save_instance: bool = True,
     ) -> "VideoMeta":
         """
         Create a new VideoMeta from a video file path, initializing FFMpegMeta.
         Raises FileNotFoundError, TypeError, or RuntimeError on failure.
         """
-        if not isinstance(video_path, Path):
-            raise TypeError("video_path must be a Path object")
         if not video_path.exists():
             raise FileNotFoundError(f"Video file not found at {video_path}")
 
@@ -123,11 +140,19 @@ class VideoMeta(models.Model):
 
         return meta
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Returns a string summary of the video metadata."""
-        processor_name = self.processor.name if self.processor is not None else "None"
-        endoscope_name = self.endoscope.name if self.endoscope is not None else "None"
-        center_name = self.center.name if self.center is not None else "None"
+        processor_name = (
+            cast(_NamedRelation, self.processor).name
+            if self.processor is not None
+            else "None"
+        )
+        endoscope_name = (
+            cast(_NamedRelation, self.endoscope).name
+            if self.endoscope is not None
+            else "None"
+        )
+        center_name = self.center.name
         ffmpeg_meta_str = self.ffmpeg_meta.__str__()
         import_meta_str = self.import_meta.__str__()
 
@@ -141,13 +166,26 @@ class VideoMeta(models.Model):
 
         return result_html
 
-    def save(self, *args, **kwargs):
+    def save(
+        self,
+        *args: object,
+        force_insert: bool | tuple[ModelBase, ...] = False,
+        force_update: bool = False,
+        using: str | None = None,
+        update_fields: Iterable[str] | None = None,
+    ) -> None:
         """Ensures VideoImportMeta exists before saving."""
         if self.import_meta is None:
             self.import_meta = VideoImportMeta.objects.create()
-        super(VideoMeta, self).save(*args, **kwargs)
+        super().save(
+            *args,
+            force_insert=force_insert,
+            force_update=force_update,
+            using=using,
+            update_fields=update_fields,
+        )
 
-    def initialize_ffmpeg_meta(self, video_path: Path):
+    def initialize_ffmpeg_meta(self, video_path: Path) -> None:
         """
         Initializes FFMpeg metadata for the video file if not already done.
         Raises RuntimeError if FFMpegMeta creation fails.
@@ -190,7 +228,7 @@ class VideoMeta(models.Model):
                 f"Failed to create FFMpeg metadata from {video_path}"
             ) from e
 
-    def update_meta(self, video_path: Path):
+    def update_meta(self, video_path: Path) -> None:
         """
         Updates the FFMpeg metadata from the file, replacing existing data.
         Raises RuntimeError if FFMpegMeta creation fails.
@@ -214,7 +252,7 @@ class VideoMeta(models.Model):
         # initialize_ffmpeg_meta handles creation, linking, saving the link, and raises exceptions
         self.initialize_ffmpeg_meta(video_path)
 
-    def get_endo_roi(self):
+    def get_endo_roi(self) -> object:
         """Retrieves the endoscope region of interest (ROI) from the associated processor."""
         from ..medical.hardware import EndoscopyProcessor
 
@@ -223,7 +261,7 @@ class VideoMeta(models.Model):
         return endo_roi
 
     @property
-    def fps(self) -> Optional[float]:
+    def fps(self) -> float | None:
         """Returns the frame rate (FPS) from the linked FFMpegMeta."""
         if not self.ffmpeg_meta:
             logger.warning(
@@ -233,22 +271,22 @@ class VideoMeta(models.Model):
         return self.ffmpeg_meta.fps
 
     @property
-    def duration(self) -> Optional[float]:
+    def duration(self) -> float | None:
         """Returns the duration in seconds from the linked FFMpegMeta."""
         return self.ffmpeg_meta.duration if self.ffmpeg_meta else None
 
     @property
-    def width(self) -> Optional[int]:
+    def width(self) -> int | None:
         """Returns the video width in pixels from the linked FFMpegMeta."""
         return self.ffmpeg_meta.width if self.ffmpeg_meta else None
 
     @property
-    def height(self) -> Optional[int]:
+    def height(self) -> int | None:
         """Returns the video height in pixels from the linked FFMpegMeta."""
         return self.ffmpeg_meta.height if self.ffmpeg_meta else None
 
     @property
-    def frame_count(self) -> Optional[int]:
+    def frame_count(self) -> int | None:
         """Calculates frame count based on duration and FPS from FFMpegMeta."""
         if (
             self.ffmpeg_meta
@@ -265,26 +303,37 @@ class FFMpegMeta(models.Model):
     Stores technical video stream information extracted using FFmpeg (ffprobe).
     """
 
-    width = models.IntegerField(null=True, blank=True)
-    height = models.IntegerField(null=True, blank=True)
-    duration = models.FloatField(null=True, blank=True)  # Duration in seconds
-    frame_rate_num = models.IntegerField(
+    width: models.IntegerField[int | None, int | None] = models.IntegerField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
         null=True, blank=True
-    )  # Numerator for frame rate
-    frame_rate_den = models.IntegerField(
+    )
+    height: models.IntegerField[int | None, int | None] = models.IntegerField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
         null=True, blank=True
-    )  # Denominator for frame rate
-    codec_name = models.CharField(max_length=50, null=True, blank=True)
-    pixel_format = models.CharField(max_length=50, null=True, blank=True)
-    bit_rate = models.BigIntegerField(
+    )
+    duration: models.FloatField[float | None, float | None] = models.FloatField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
         null=True, blank=True
-    )  # Bit rate in bits per second
-    raw_probe_data = models.JSONField(
+    )
+    frame_rate_num: models.IntegerField[int | None, int | None] = models.IntegerField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
         null=True, blank=True
-    )  # Store the full JSON output for debugging or future use
+    )
+    frame_rate_den: models.IntegerField[int | None, int | None] = models.IntegerField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+        null=True, blank=True
+    )
+    codec_name: models.CharField[str | None, str | None] = models.CharField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+        max_length=50, null=True, blank=True
+    )
+    pixel_format: models.CharField[str | None, str | None] = models.CharField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+        max_length=50, null=True, blank=True
+    )
+    bit_rate: models.BigIntegerField[int | None, int | None] = models.BigIntegerField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+        null=True, blank=True
+    )
+    raw_probe_data: models.JSONField[
+        FfmpegProbeJsonObject | None,
+        FfmpegProbeJsonObject | None,
+    ] = models.JSONField(null=True, blank=True)
 
     @property
-    def fps(self) -> Optional[float]:
+    def fps(self) -> float | None:
         """Calculates and returns the frames per second (FPS) if possible."""
         if (
             self.frame_rate_num is not None
@@ -295,7 +344,7 @@ class FFMpegMeta(models.Model):
         return None
 
     @classmethod
-    def create_from_file(cls, file_path: Path):
+    def create_from_file(cls, file_path: Path) -> "FFMpegMeta":
         """
         Creates an FFMpegMeta instance by running ffprobe on the given file path.
         Raises RuntimeError on failure.
@@ -316,44 +365,32 @@ class FFMpegMeta(models.Model):
                 f"ffprobe execution failed for {file_path}"
             ) from probe_err
 
-        if not probe_data or "streams" not in probe_data:
+        if not probe_data:
             logger.error(
                 "Failed to get valid stream info from ffprobe for %s", file_path
             )
-            # Raise exception instead of returning None
             raise RuntimeError(f"Invalid stream info from ffprobe for {file_path}")
 
-        video_stream = next(
-            (s for s in probe_data["streams"] if s.get("codec_type") == "video"), None
-        )
+        probe_payload = FfmpegProbeDataPayload.model_validate(probe_data)
+        video_stream = next(iter(probe_payload.video_streams), None)
 
         if not video_stream:
             logger.warning("No video stream found in ffprobe output for %s", file_path)
             # Raise exception instead of returning None
             raise RuntimeError(f"No video stream found in {file_path}")
 
-        # Extract data safely using .get()
-        width = video_stream.get("width")
-        height = video_stream.get("height")
-        duration_str = video_stream.get("duration")
-        # --- FIX: Handle potential format key ---
-        if (
-            duration_str is None
-            and "format" in probe_data
-            and "duration" in probe_data["format"]
-        ):
-            duration_str = probe_data["format"]["duration"]
+        width = video_stream.width
+        height = video_stream.height
+        duration_str = video_stream.duration
+        if duration_str is None and probe_payload.format is not None:
+            duration_str = probe_payload.format.duration
             logger.debug("Using duration from format block: %s", duration_str)
-        # --- End Fix ---
-        duration = float(duration_str) if duration_str else None
+        duration = _as_float(duration_str)
 
-        # Frame rate can be tricky, often represented as "num/den"
-        frame_rate_str = video_stream.get("r_frame_rate")
-        # --- FIX: Fallback to avg_frame_rate if r_frame_rate is invalid ---
+        frame_rate_str = video_stream.r_frame_rate or ""
         if not frame_rate_str or frame_rate_str == "0/0":
-            frame_rate_str = video_stream.get("avg_frame_rate")
+            frame_rate_str = video_stream.avg_frame_rate or ""
             logger.debug("Using avg_frame_rate as fallback: %s", frame_rate_str)
-        # --- End Fix ---
         frame_rate_num, frame_rate_den = None, None
         if frame_rate_str and "/" in frame_rate_str:
             try:
@@ -371,19 +408,24 @@ class FFMpegMeta(models.Model):
                 )
                 frame_rate_num, frame_rate_den = None, None
 
-        codec_name = video_stream.get("codec_name")
-        pixel_format = video_stream.get("pix_fmt")
-        bit_rate_str = video_stream.get("bit_rate")
-        # --- FIX: Handle potential format key for bit_rate ---
-        if (
-            bit_rate_str is None
-            and "format" in probe_data
-            and "bit_rate" in probe_data["format"]
-        ):
-            bit_rate_str = probe_data["format"]["bit_rate"]
+        codec_name = video_stream.codec_name
+        pixel_format = video_stream.pix_fmt
+        bit_rate_str = video_stream.bit_rate
+        if bit_rate_str is None and probe_payload.format is not None:
+            bit_rate_str = probe_payload.format.bit_rate
             logger.debug("Using bit_rate from format block: %s", bit_rate_str)
-        # --- End Fix ---
-        bit_rate = int(bit_rate_str) if bit_rate_str else None
+        bit_rate = _as_int(bit_rate_str)
+        normalized_probe_data = FfmpegMetaPayload(
+            width=width,
+            height=height,
+            duration=duration,
+            frame_rate_num=frame_rate_num,
+            frame_rate_den=frame_rate_den,
+            codec_name=codec_name,
+            pixel_format=pixel_format,
+            bit_rate=bit_rate,
+            raw_probe_data=probe_payload.model_dump(mode="python"),
+        )
 
         try:
             instance = cls.objects.create(
@@ -395,7 +437,7 @@ class FFMpegMeta(models.Model):
                 codec_name=codec_name,
                 pixel_format=pixel_format,
                 bit_rate=bit_rate,
-                raw_probe_data=probe_data,
+                raw_probe_data=normalized_probe_data.raw_probe_data,
             )
             logger.info(
                 "Successfully created FFMpegMeta for %s (ID: %d)",
@@ -415,7 +457,7 @@ class FFMpegMeta(models.Model):
                 f"Database error creating FFMpegMeta for {file_path.name}"
             ) from e
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Returns a string summary of the FFmpeg metadata."""
         result_html = ""
 
@@ -435,14 +477,26 @@ class VideoImportMeta(models.Model):
     Stores metadata related to the import and processing status of a video.
     """
 
-    file_name = models.CharField(max_length=255, blank=True, null=True)
-    video_anonymized = models.BooleanField(default=False)
-    video_patient_data_detected = models.BooleanField(default=False)
-    outside_detected = models.BooleanField(default=False)
-    patient_data_removed = models.BooleanField(default=False)
-    outside_removed = models.BooleanField(default=False)
+    file_name: models.CharField[str | None, str | None] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
+    video_anonymized: models.BooleanField[bool, bool] = models.BooleanField(
+        default=False
+    )
+    video_patient_data_detected: models.BooleanField[bool, bool] = models.BooleanField(
+        default=False
+    )
+    outside_detected: models.BooleanField[bool, bool] = models.BooleanField(
+        default=False
+    )
+    patient_data_removed: models.BooleanField[bool, bool] = models.BooleanField(
+        default=False
+    )
+    outside_removed: models.BooleanField[bool, bool] = models.BooleanField(
+        default=False
+    )
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Returns a string summary of the import metadata."""
         result_html = ""
 

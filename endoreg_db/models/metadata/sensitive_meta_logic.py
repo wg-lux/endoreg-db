@@ -1,10 +1,11 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportUnusedClass=false
 import logging
 import os
 import random
 import re  # Neu hinzugefügt für Regex-Pattern
 from datetime import date, datetime, timedelta
 from hashlib import sha256
-from typing import TYPE_CHECKING, Any, Dict, Optional, Type
+from typing import TYPE_CHECKING, Mapping, Optional, Protocol, Type, cast
 
 from django.db import transaction
 from django.utils import timezone
@@ -12,7 +13,7 @@ from django.utils import timezone
 from endoreg_db.utils import guess_name_gender
 
 # Assuming these utils are correctly located
-from endoreg_db.utils.security.hashs import (
+from endoreg_db.utils.hashs import (
     get_patient_examination_hash,
     get_patient_hash,
 )
@@ -24,6 +25,20 @@ from ..other import Gender
 
 if TYPE_CHECKING:
     from .sensitive_meta import SensitiveMeta  # Import model for type hinting
+
+
+class _GenderManager(Protocol):
+    def resolve_by_name(self, name: str) -> Gender | None: ...
+
+    def get_or_create_by_name(
+        self, *, name: str, defaults: dict[str, object]
+    ) -> tuple[Gender, bool]: ...
+
+
+class _SensitiveMetaIdentityLike(Protocol):
+    pseudo_patient_id: int | None
+    pseudo_examination_id: int | None
+
 
 logger = logging.getLogger(__name__)
 SECRET_SALT = os.getenv("DJANGO_SALT", "default_salt")
@@ -414,7 +429,7 @@ def perform_save_logic(instance: "SensitiveMeta") -> "Examiner":
                 "Patient gender could not be determined and must be set before saving."
             )
         # Convert string to Gender object
-        gender_obj = Gender.objects.resolve_by_name(gender_str)
+        gender_obj = cast(_GenderManager, Gender.objects).resolve_by_name(gender_str)
         if gender_obj is not None:
             instance.patient_gender = gender_obj
         else:
@@ -427,7 +442,9 @@ def perform_save_logic(instance: "SensitiveMeta") -> "Examiner":
                 logger.warning(
                     f"Gender '{gender_str}' not found in DB. Auto-creating default entry."
                 )
-                gender_obj, _ = Gender.objects.get_or_create_by_name(
+                gender_obj, _ = cast(
+                    _GenderManager, Gender.objects
+                ).get_or_create_by_name(
                     name="unknown",
                     defaults={
                         "abbreviation": "?",
@@ -475,7 +492,7 @@ def perform_save_logic(instance: "SensitiveMeta") -> "Examiner":
 
 
 def create_sensitive_meta_from_dict(
-    cls: Type["SensitiveMeta"], data: Dict[str, Any]
+    cls: Type["SensitiveMeta"], data: Mapping[str, object]
 ) -> "SensitiveMeta":
     """
     Create a SensitiveMeta instance from a dictionary.
@@ -686,8 +703,8 @@ def create_sensitive_meta_from_dict(
         )
 
     # Handle Names and Gender
-    first_name = selected_data.get("patient_first_name") or DEFAULT_UNKNOWN
-    last_name = selected_data.get("patient_last_name") or DEFAULT_UNKNOWN
+    first_name = cast(str, selected_data.get("patient_first_name") or DEFAULT_UNKNOWN)
+    last_name = cast(str, selected_data.get("patient_last_name") or DEFAULT_UNKNOWN)
     selected_data["patient_first_name"] = first_name  # Ensure defaults are set
     selected_data["patient_last_name"] = last_name
 
@@ -698,7 +715,9 @@ def create_sensitive_meta_from_dict(
         pass
     elif isinstance(patient_gender_input, str):
         # Input is a string (gender name)
-        gender_obj = Gender.objects.resolve_by_name(patient_gender_input)
+        gender_obj = cast(_GenderManager, Gender.objects).resolve_by_name(
+            patient_gender_input
+        )
         if gender_obj is not None:
             selected_data["patient_gender"] = gender_obj
         else:
@@ -708,7 +727,9 @@ def create_sensitive_meta_from_dict(
             # Fall through to guessing logic if provided string name is invalid
             normalized = (patient_gender_input or "").lower()
             if normalized in {"male", "female", "unknown"}:
-                gender_obj, _ = Gender.objects.get_or_create_by_name(
+                gender_obj, _ = cast(
+                    _GenderManager, Gender.objects
+                ).get_or_create_by_name(
                     name=normalized,
                     defaults={
                         "abbreviation": normalized[:1].upper() or None,
@@ -728,9 +749,11 @@ def create_sensitive_meta_from_dict(
                 f"Could not guess gender for name '{first_name}'. Setting Gender to unknown."
             )
             gender_name_to_use = "unknown"
-        gender_obj = Gender.objects.resolve_by_name(gender_name_to_use)
+        gender_obj = cast(_GenderManager, Gender.objects).resolve_by_name(
+            gender_name_to_use
+        )
         if gender_obj is None:
-            gender_obj, _ = Gender.objects.get_or_create_by_name(
+            gender_obj, _ = cast(_GenderManager, Gender.objects).get_or_create_by_name(
                 name=gender_name_to_use,
                 defaults={
                     "abbreviation": gender_name_to_use[:1].upper() or None,
@@ -801,7 +824,7 @@ def create_sensitive_meta_from_dict(
 
 
 def update_sensitive_meta_from_dict(
-    instance: "SensitiveMeta", data: Dict[str, Any]
+    instance: "SensitiveMeta", data: Mapping[str, object]
 ) -> "SensitiveMeta":
     """
     Updates a SensitiveMeta instance from a dictionary of new values.
@@ -891,8 +914,8 @@ def update_sensitive_meta_from_dict(
     # If both are None/missing, keep existing center (no update needed)
 
     # Set examiner names if provided, before calling save
-    examiner_first_name = data.get("examiner_first_name")
-    examiner_last_name = data.get("examiner_last_name")
+    examiner_first_name = cast(str | None, data.get("examiner_first_name"))
+    examiner_last_name = cast(str | None, data.get("examiner_last_name"))
     if examiner_first_name is not None:  # Allow setting empty strings
         instance.examiner_first_name = examiner_first_name
     if examiner_last_name is not None:
@@ -1104,7 +1127,7 @@ def update_sensitive_meta_from_dict(
 
 def update_or_create_sensitive_meta_from_dict(
     cls: Type["SensitiveMeta"],
-    data: Dict[str, Any],
+    data: Mapping[str, object],
     instance: Optional["SensitiveMeta"] = None,
 ):
     """Logic to update or create a SensitiveMeta instance from a dictionary."""
@@ -1139,8 +1162,8 @@ def _map_gender_string_to_standard(gender_str: str) -> Optional[str]:
 
 def _create_anonymized_record(
     instance: "SensitiveMeta",
-    DEFAULT_ANONYMIZED=None,
-    DEFAULT_ANONYMIZED_DATE=timezone.make_aware(datetime(1900, 1, 1)),
+    DEFAULT_ANONYMIZED: str = "None",
+    DEFAULT_ANONYMIZED_DATE: datetime = timezone.make_aware(datetime(1900, 1, 1)),
     *,
     preserve_identity: bool = True,
 ) -> None:
@@ -1155,11 +1178,15 @@ def _create_anonymized_record(
     """
 
     instance.refresh_from_db()
-    committed_identity = {
+    committed_identity: dict[str, str | int | None] = {
         "patient_hash": instance.patient_hash,
         "examination_hash": instance.examination_hash,
-        "pseudo_patient_id": instance.pseudo_patient_id,
-        "pseudo_examination_id": instance.pseudo_examination_id,
+        "pseudo_patient_id": cast(
+            _SensitiveMetaIdentityLike, instance
+        ).pseudo_patient_id,
+        "pseudo_examination_id": cast(
+            _SensitiveMetaIdentityLike, instance
+        ).pseudo_examination_id,
     }
     patient_hash = instance.get_patient_hash()
     instance.get_patient_examination_hash()
@@ -1220,7 +1247,7 @@ def _create_anonymized_record(
         # The anonymized fields must not become the new case identity. Restore the
         # validated hash/FK identity directly so SensitiveMeta.save() cannot
         # recalculate it from anonymized placeholders.
-        update_fields = {
+        update_fields: dict[str, str | int] = {
             key: value for key, value in committed_identity.items() if value is not None
         }
         if update_fields:

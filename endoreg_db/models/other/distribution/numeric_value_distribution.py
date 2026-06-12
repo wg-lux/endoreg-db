@@ -3,18 +3,23 @@
 import numpy as np
 from django.db import models
 from scipy.stats import skewnorm
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable, cast
 
 from .base_value_distribution import BaseValueDistribution
+from lx_dtypes.models.contracts.numeric_value_distribution import (
+    NumericValueDescriptorOperator,
+    NumericValueDistributionPayload,
+    NumericValueDistributionType,
+)
 
 if TYPE_CHECKING:
     from endoreg_db.models import LabValue, Patient
 
 
-class NumericValueDistributionManager(models.Manager):
+class NumericValueDistributionManager(models.Manager["NumericValueDistribution"]):
     """Object manager for NumericValueDistribution"""
 
-    def get_by_natural_key(self, name):
+    def get_by_natural_key(self, name: str) -> "NumericValueDistribution":
         """Retrieve a NumericValueDistribution by its natural key."""
         return self.get(name=name)
 
@@ -27,82 +32,94 @@ class NumericValueDistribution(BaseValueDistribution):
 
     objects = NumericValueDistributionManager()
     DISTRIBUTION_CHOICES = [
-        ("uniform", "Uniform"),
-        ("normal", "Normal"),
-        ("skewed_normal", "Skewed Normal"),
+        (NumericValueDistributionType.UNIFORM.value, "Uniform"),
+        (NumericValueDistributionType.NORMAL.value, "Normal"),
+        (NumericValueDistributionType.SKEWED_NORMAL.value, "Skewed Normal"),
     ]
 
-    distribution_type = models.CharField(max_length=20, choices=DISTRIBUTION_CHOICES)
-    min_descriptor = models.CharField(max_length=20)
-    max_descriptor = models.CharField(max_length=20)
-    min_value = models.FloatField(
+    distribution_type: models.CharField[str, str] = models.CharField(
+        max_length=20, choices=DISTRIBUTION_CHOICES
+    )
+    min_descriptor: models.CharField[str, str] = models.CharField(max_length=20)
+    max_descriptor: models.CharField[str, str] = models.CharField(max_length=20)
+    min_value: models.FloatField[float | None, float | None] = models.FloatField(
         blank=True, null=True, help_text="Lower hard limit for generated values"
     )
-    max_value = models.FloatField(
+    max_value: models.FloatField[float | None, float | None] = models.FloatField(
         blank=True, null=True, help_text="Upper hard limit for generated values"
     )
-    mean = models.FloatField(
+    mean: models.FloatField[float | None, float | None] = models.FloatField(
         blank=True,
         null=True,
         help_text="Mean used for normal or skewed normal distributions",
     )
-    std_dev = models.FloatField(
+    std_dev: models.FloatField[float | None, float | None] = models.FloatField(
         blank=True,
         null=True,
         help_text="Standard deviation for bell-shaped distributions",
     )
-    skewness = models.FloatField(
+    skewness: models.FloatField[float | None, float | None] = models.FloatField(
         blank=True,
         null=True,
         help_text="Shape parameter for skewed normal distributions",
     )
 
     @property
-    def min_value_safe(self):
+    def min_value_safe(self) -> float:
         if self.min_value is None:
             raise ValueError("min_value is not set")
         return self.min_value
 
     @property
-    def max_value_safe(self):
+    def max_value_safe(self) -> float:
         if self.max_value is None:
             raise ValueError("max_value is not set")
         return self.max_value
 
     @property
-    def mean_safe(self):
+    def mean_safe(self) -> float:
         if self.mean is None:
             raise ValueError("mean is not set")
         return self.mean
 
     @property
-    def std_dev_safe(self):
+    def std_dev_safe(self) -> float:
         if self.std_dev is None:
             raise ValueError("std_dev is not set")
         return self.std_dev
 
     @property
-    def skewness_safe(self):
+    def skewness_safe(self) -> float:
         if self.skewness is None:
             raise ValueError("skewness is not set")
         return self.skewness
 
-    def generate_value(self, lab_value: "LabValue", patient: "Patient"):
+    def generate_value(
+        self,
+        *args: object,
+        **kwargs: object,
+    ) -> float:
         """Generate a value based on the distribution rules."""
+        if "lab_value" not in kwargs or "patient" not in kwargs:
+            raise ValueError("lab_value and patient are required")
 
-        default_normal_range_dict = lab_value.get_normal_range(
-            patient.age_safe, patient.gender
+        lab_value = cast("LabValue", kwargs["lab_value"])
+        patient = cast("Patient", kwargs["patient"])
+
+        default_normal_range_dict = cast(
+            NumericValueDistributionPayload,
+            lab_value.get_normal_range(patient.age_safe, patient.gender),
         )
-        assert isinstance(default_normal_range_dict, dict)
+        default_normal_range_data = default_normal_range_dict.model_dump(mode="python")
 
-        if self.distribution_type == "uniform":
+        if self.distribution_type == NumericValueDistributionType.UNIFORM.value:
             assert self.min_descriptor and self.max_descriptor
 
             min_key_needed = self.min_descriptor.split("_")[0]
             max_key_needed = self.max_descriptor.split("_")[0]
 
-            min_val_from_range = default_normal_range_dict.get(min_key_needed)
-            max_val_from_range = default_normal_range_dict.get(max_key_needed)
+            min_val_from_range = default_normal_range_data.get(min_key_needed)
+            max_val_from_range = default_normal_range_data.get(max_key_needed)
 
             if min_val_from_range is None:
                 raise ValueError(
@@ -110,7 +127,7 @@ class NumericValueDistribution(BaseValueDistribution):
                     f"'{getattr(self, 'name', self.pk)}'. "
                     f"Required normal range component '{min_key_needed}' derived from min_descriptor "
                     f"'{self.min_descriptor}' is None. "
-                    f"Patient context: age={patient.age()}, gender='{patient.gender.name if patient.gender else None}'. "
+                    f"Patient context: age={patient.age()}, gender='{getattr(patient.gender, 'name', None)}'. "
                     f"LabValue '{lab_value.name}' is gender-dependent: {lab_value.normal_range_gender_dependent}. "
                     f"Check LabValue's default_normal_range definition for this patient context."
                 )
@@ -121,7 +138,7 @@ class NumericValueDistribution(BaseValueDistribution):
                     f"'{getattr(self, 'name', self.pk)}'. "
                     f"Required normal range component '{max_key_needed}' derived from max_descriptor "
                     f"'{self.max_descriptor}' is None. "
-                    f"Patient context: age={patient.age()}, gender='{patient.gender.name if patient.gender else None}'. "
+                    f"Patient context: age={patient.age()}, gender='{getattr(patient.gender, 'name', None)}'. "
                     f"LabValue '{lab_value.name}' is gender-dependent: {lab_value.normal_range_gender_dependent}. "
                     f"Check LabValue's default_normal_range definition for this patient context."
                 )
@@ -130,13 +147,13 @@ class NumericValueDistribution(BaseValueDistribution):
 
             return value
 
-        elif self.distribution_type == "normal":
+        elif self.distribution_type == NumericValueDistributionType.NORMAL.value:
             self._validate_normal_parameters()
             assert self.mean is not None
             assert self.std_dev is not None
             value = np.random.normal(self.mean, self.std_dev)
             return self._clip_to_bounds(value)
-        elif self.distribution_type == "skewed_normal":
+        elif self.distribution_type == NumericValueDistributionType.SKEWED_NORMAL.value:
             self._validate_skewed_normal_parameters()
             assert self.mean is not None
             assert self.std_dev is not None
@@ -146,30 +163,34 @@ class NumericValueDistribution(BaseValueDistribution):
         else:
             raise ValueError("Unsupported distribution type")
 
-    def parse_value_descriptor(self, value_descriptor: str):
+    def parse_value_descriptor(
+        self, value_descriptor: str
+    ) -> dict[str, Callable[[float], float]]:
         """Parse the value descriptor string into a dict with a lambda function."""
         # strings of shape f"{value_key}_{operator}_{value}"
         # extract value_key, operator, value
         value_key, operator, value = value_descriptor.split("_")
         value = float(value)
 
-        operator_functions = {
-            "+": lambda x: x + value,
-            "-": lambda x: x - value,
-            "x": lambda x: x * value,
-            "/": lambda x: x / value,
+        operator_functions: dict[str, Callable[[float], float]] = {
+            NumericValueDescriptorOperator.ADD.value: lambda x: x + value,
+            NumericValueDescriptorOperator.SUBTRACT.value: lambda x: x - value,
+            NumericValueDescriptorOperator.MULTIPLY.value: lambda x: x * value,
+            NumericValueDescriptorOperator.DIVIDE.value: lambda x: x / value,
         }
 
         return {value_key: operator_functions[operator]}
 
         # create dict with {value_key: lambda x: x operator value}
 
-    def _generate_value_uniform(self, default_normal_range_dict: dict):
+    def _generate_value_uniform(
+        self, default_normal_range_dict: NumericValueDistributionPayload
+    ) -> float:
         value_function_dict = self.parse_value_descriptor(self.min_descriptor)
         value_function_dict.update(self.parse_value_descriptor(self.max_descriptor))
 
         result_dict = {
-            key: value_function(default_normal_range_dict[key])
+            key: value_function(getattr(default_normal_range_dict, key))
             for key, value_function in value_function_dict.items()
         }
 
@@ -177,12 +198,12 @@ class NumericValueDistribution(BaseValueDistribution):
         return float(np.random.uniform(result_dict["min"], result_dict["max"]))
 
     @property
-    def stddev(self):
+    def stddev(self) -> float | None:
         """Alias to std_dev for backwards compatibility."""
         return self.std_dev
 
     @stddev.setter
-    def stddev(self, value):
+    def stddev(self, value: float | None) -> None:
         self.std_dev = value
 
     def _clip_to_bounds(self, value: float) -> float:

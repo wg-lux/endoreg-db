@@ -22,6 +22,8 @@ from .finding import (
     FindingInterventionType,
 )
 
+FindingMorphologyClassification = FindingClassification
+
 from .patient import (
     PatientExamination,
     PatientFinding,

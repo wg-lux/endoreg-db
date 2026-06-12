@@ -37,12 +37,13 @@ class EmployeeType(models.Model):
 
     qualifications: models.ManyToManyField[Qualification, Qualification] = (
         models.ManyToManyField(
-        "Qualification",
-        related_name="employee_types",
-    )
+            "Qualification",
+            related_name="employee_types",
+        )
     )
 
     if TYPE_CHECKING:
+
         @property
         def employees(self) -> models.QuerySet["Employee"]: ...
 

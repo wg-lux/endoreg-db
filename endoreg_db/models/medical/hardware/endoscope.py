@@ -1,26 +1,28 @@
 from typing import TYPE_CHECKING
 
-from django.db import models  #
+from django.db import models
 
 
-class EndoscopeManager(models.Manager):
-    def get_by_natural_key(self, name, sn):
+class EndoscopeManager(models.Manager["Endoscope"]):
+    def get_by_natural_key(self, name: str, sn: str) -> "Endoscope":
         return self.get(name=name, sn=sn)
 
 
 class Endoscope(models.Model):
     objects = EndoscopeManager()
 
-    name = models.CharField(max_length=255)
-    sn = models.CharField(max_length=255)
-    center = models.ForeignKey(
+    name: models.CharField[str, str] = models.CharField(max_length=255)
+    sn: models.CharField[str, str] = models.CharField(max_length=255)
+    center: models.ForeignKey["Center | None", "Center | None"] = models.ForeignKey(
         "Center",
         blank=True,
         null=True,
         on_delete=models.CASCADE,
         related_name="endoscopes",
     )
-    endoscope_type = models.ForeignKey(
+    endoscope_type: models.ForeignKey[
+        "EndoscopeType | None", "EndoscopeType | None"
+    ] = models.ForeignKey(
         "EndoscopeType",
         blank=True,
         null=True,
@@ -31,12 +33,10 @@ class Endoscope(models.Model):
     if TYPE_CHECKING:
         from endoreg_db.models import Center
 
-        pass
+    def natural_key(self) -> tuple[str, str]:
+        return (str(self.name), str(self.sn))
 
-    def natural_key(self):
-        return (self.name, self.sn)
-
-    def __str__(self):
+    def __str__(self) -> str:
         return str(self.name)
 
     class Meta:
@@ -51,23 +51,23 @@ class Endoscope(models.Model):
         return self.center
 
 
-class EndoscopeTypeManager(models.Manager):
-    def get_by_natural_key(self, name):
+class EndoscopeTypeManager(models.Manager["EndoscopeType"]):
+    def get_by_natural_key(self, name: str) -> "EndoscopeType":
         return self.get(name=name)
 
 
 class EndoscopeType(models.Model):
     objects = EndoscopeTypeManager()
 
-    name = models.CharField(max_length=255, unique=True)
+    name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
 
     if TYPE_CHECKING:
-        endoscopes: models.QuerySet["Endoscope"]
+        endoscopes: models.QuerySet["Endoscope", "Endoscope"]
 
     def natural_key(self) -> tuple[str]:
-        return (self.name,)
+        return (str(self.name),)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return str(self.name)
 
     class Meta:

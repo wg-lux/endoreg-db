@@ -1,11 +1,11 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportMissingTypeStubs=false
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from types import NoneType
-from typing import TYPE_CHECKING, Protocol, TypeAlias, cast
+from typing import TYPE_CHECKING, Literal, Protocol, cast
 
 from lx_dtypes.models.contracts.json_types import JsonValue
 from lx_dtypes.models.contracts.video_segment_validation import (
@@ -13,7 +13,9 @@ from lx_dtypes.models.contracts.video_segment_validation import (
     OutsideFrameBlackeningHistoryConfigPayload,
     PostValidationRebuildSummaryData,
     PostValidationRebuildSummaryPayload,
+    VideoSegmentValidationNull,
 )
+from pydantic import ValidationError
 
 from endoreg_db.config.env import get_celery_ffmpeg_media_queue
 from endoreg_db.services.video_files import get_or_create_video_state
@@ -24,20 +26,19 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 OUTSIDE_FRAME_BLACKENING_KIND = "outside_frame_blackening"
+OutsideFrameBlackeningKind = Literal["outside_frame_blackening"]
 LEGACY_BLACKENING_QUEUE = "inline_or_thread"
-
-NoVideoSegmentValidationValue: TypeAlias = NoneType
 
 
 class _VideoProcessingHistoryRecord(Protocol):
     pk: int
     status: str
-    task_id: str | NoVideoSegmentValidationValue
+    task_id: str | VideoSegmentValidationNull
     details: str
     output_file: str
     config: JsonValue
-    created_at: datetime | NoVideoSegmentValidationValue
-    completed_at: datetime | NoVideoSegmentValidationValue
+    created_at: datetime | VideoSegmentValidationNull
+    completed_at: datetime | VideoSegmentValidationNull
 
 
 class _VideoSegmentValidationState(Protocol):
@@ -45,7 +46,7 @@ class _VideoSegmentValidationState(Protocol):
     segment_annotations_validated: bool
     outside_segments_removed: bool
     ready_for_export: bool
-    ready_for_export_at: NoVideoSegmentValidationValue
+    ready_for_export_at: VideoSegmentValidationNull
     ready_for_export_by: str
     processed_file_sha256: str
 
@@ -77,7 +78,7 @@ class OutsideFrameBlackeningConfigError(ValueError):
 class OutsideFrameBlackeningConfig:
     only_validated: bool
     queue: str
-    kind: str = OUTSIDE_FRAME_BLACKENING_KIND
+    kind: OutsideFrameBlackeningKind = OUTSIDE_FRAME_BLACKENING_KIND
 
     def to_dict(self) -> OutsideFrameBlackeningHistoryConfigData:
         return OutsideFrameBlackeningHistoryConfigPayload(
@@ -99,36 +100,34 @@ def _validate_blackening_queue(queue: JsonValue) -> str:
     normalized = queue.strip()
     if not normalized:
         raise OutsideFrameBlackeningConfigError("Blackening queue must not be empty.")
+
     return normalized
 
 
 def _parse_blackening_history_config(
     config: JsonValue,
-) -> OutsideFrameBlackeningConfig | NoVideoSegmentValidationValue:
+) -> OutsideFrameBlackeningConfig | VideoSegmentValidationNull:
     if not isinstance(config, dict):
         return None
     if config.get("kind") != OUTSIDE_FRAME_BLACKENING_KIND:
         return None
-
-    only_validated = config.get("only_validated", False)
-    if not isinstance(only_validated, bool):
+    try:
+        payload = OutsideFrameBlackeningHistoryConfigPayload.model_validate(config)
+    except ValidationError as e:
         raise OutsideFrameBlackeningConfigError(
-            "Blackening only_validated must be a boolean."
+            f"Config for blackening did not pass the validation. {e}"
         )
-
-    queue = _validate_blackening_queue(
-        config.get("queue", get_celery_ffmpeg_media_queue())
-    )
     return OutsideFrameBlackeningConfig(
-        only_validated=only_validated,
-        queue=queue,
+        only_validated=payload.only_validated,
+        queue=payload.queue,
+        kind=payload.kind,
     )
 
 
-def _blackening_history_config(
+def blackening_history_config(
     *,
     only_validated: bool,
-    queue: str | NoVideoSegmentValidationValue = None,
+    queue: str | VideoSegmentValidationNull = None,
 ) -> OutsideFrameBlackeningHistoryConfigData:
     resolved_queue = queue if queue is not None else get_celery_ffmpeg_media_queue()
     return OutsideFrameBlackeningConfig(
@@ -145,7 +144,10 @@ def _is_outside_frame_blackening_history(
         return _parse_blackening_history_config(history_record.config) is not None
     except OutsideFrameBlackeningConfigError:
         config = history_record.config
-        if isinstance(config, dict) and config.get("kind") == OUTSIDE_FRAME_BLACKENING_KIND:
+        if (
+            isinstance(config, dict)
+            and config.get("kind") == OUTSIDE_FRAME_BLACKENING_KIND
+        ):
             logger.error(
                 "Malformed outside-frame blackening config on VideoProcessingHistory %s.",
                 history_record.pk,
@@ -154,9 +156,16 @@ def _is_outside_frame_blackening_history(
         return False
 
 
+def is_outside_frame_blackening_history(
+    history: VideoProcessingHistory,
+) -> bool:
+    """Public predicate for outside-frame blackening processing histories."""
+    return _is_outside_frame_blackening_history(history)
+
+
 def _resolve_blackening_run_config(
     *,
-    history: VideoProcessingHistory | NoVideoSegmentValidationValue,
+    history: VideoProcessingHistory | VideoSegmentValidationNull,
     only_validated: bool,
 ) -> OutsideFrameBlackeningConfig:
     if history is None:
@@ -176,7 +185,7 @@ def _resolve_blackening_run_config(
 
 def latest_post_validation_rebuild(
     video: VideoFile,
-) -> VideoProcessingHistory | NoVideoSegmentValidationValue:
+) -> VideoProcessingHistory | VideoSegmentValidationNull:
     VideoProcessingHistory = _video_processing_history_model()
     histories = VideoProcessingHistory.objects.filter(
         video=video,
@@ -190,7 +199,7 @@ def latest_post_validation_rebuild(
 
 def post_validation_rebuild_summary(
     video: VideoFile,
-) -> PostValidationRebuildSummaryData | NoVideoSegmentValidationValue:
+) -> PostValidationRebuildSummaryData | VideoSegmentValidationNull:
     history = latest_post_validation_rebuild(video)
     if history is None:
         return None
@@ -211,17 +220,18 @@ def post_validation_rebuild_summary(
 
 
 def _segment_status_for_history(
-    history: VideoProcessingHistory | NoVideoSegmentValidationValue,
-) -> SegmentAnnotationStatus | NoVideoSegmentValidationValue:
+    history: VideoProcessingHistory | VideoSegmentValidationNull,
+) -> SegmentAnnotationStatus | VideoSegmentValidationNull:
     if history is None:
         return None
 
     VideoProcessingHistory = _video_processing_history_model()
-    if history.status == VideoProcessingHistory.STATUS_PENDING:
+    history_status = cast(_VideoProcessingHistoryRecord, history).status
+    if history_status == VideoProcessingHistory.STATUS_PENDING:
         return SegmentAnnotationStatus.CLEANUP_QUEUED
-    if history.status == VideoProcessingHistory.STATUS_RUNNING:
+    if history_status == VideoProcessingHistory.STATUS_RUNNING:
         return SegmentAnnotationStatus.CLEANUP_RUNNING
-    if history.status == VideoProcessingHistory.STATUS_FAILURE:
+    if history_status == VideoProcessingHistory.STATUS_FAILURE:
         return SegmentAnnotationStatus.CLEANUP_FAILED
     return None
 

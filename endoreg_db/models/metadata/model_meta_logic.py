@@ -1,24 +1,67 @@
+from importlib import import_module
 from logging import getLogger
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterable, Optional, Type
+from collections.abc import Iterable, Sequence
+from typing import TYPE_CHECKING, Protocol, Unpack, cast
 
 from django.db import transaction
-from huggingface_hub import hf_hub_download
+from torch import nn
 
 # Assuming ModelMeta, AiModel, LabelSet are importable from the correct locations
 # Adjust imports based on your project structure if necessary
 from ..administration.ai.ai_model import AiModel
 from ..label.label_set import LabelSet
 from ..utils import STORAGE_DIR, WEIGHTS_DIR
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     ensure_directory,
+)
+from lx_dtypes.models.contracts import model_meta as model_meta_contract
+from lx_dtypes.models.contracts.model_meta_logic import (
+    ModelMetaCreateFromFileKwargsData,
+    ModelMetaCreateFromFileKwargsPayload,
+    ModelMetaInferredDefaultsPayload,
 )
 
 logger = getLogger("ai_model")
 
 if TYPE_CHECKING:
-    from .model_meta import ModelMeta  # Import ModelMeta for type hinting
+    from endoreg_db.models.metadata.model_meta import ModelMeta
+
+
+class _AiModelActiveMetaLike(Protocol):
+    active_meta_id: int | None
+    active_meta: "ModelMeta"
+    name: str
+
+    def save(self, *, update_fields: Sequence[str]) -> None: ...
+
+
+class _HfHubDownload(Protocol):
+    def __call__(
+        self,
+        *,
+        repo_id: str,
+        filename: str,
+        local_dir: str | Path,
+    ) -> str: ...
+
+
+def hf_hub_download(
+    *,
+    repo_id: str,
+    filename: str,
+    local_dir: str | Path,
+) -> str:
+    hf_hub_download_typed = cast(
+        _HfHubDownload,
+        getattr(import_module("huggingface_hub"), "hf_hub_download"),
+    )
+    return hf_hub_download_typed(
+        repo_id=repo_id,
+        filename=filename,
+        local_dir=local_dir,
+    )
 
 
 def _get_model_meta_class():
@@ -29,7 +72,7 @@ def _get_model_meta_class():
 
 
 def get_latest_version_number_logic(
-    cls: Type["ModelMeta"], meta_name: str, model_name: str
+    cls: type["ModelMeta"], meta_name: str, model_name: str
 ) -> int:
     """
     Finds the highest numerical version for a given meta_name and model_name.
@@ -63,15 +106,15 @@ def get_latest_version_number_logic(
 
 @transaction.atomic
 def create_from_file_logic(
-    cls: Type["ModelMeta"],  # cls is ModelMeta
+    cls: type["ModelMeta"],
     meta_name: str,
     model_name: str,
     labelset_name: str,
     weights_file: str,
-    labelset_version: Optional[int | str] = None,
-    requested_version: Optional[str] = None,
+    labelset_version: int | str | None = None,
+    requested_version: str | None = None,
     bump_if_exists: bool = False,
-    **kwargs: Any,
+    **kwargs: Unpack[ModelMetaCreateFromFileKwargsData],
 ) -> "ModelMeta":
     """
     Logic to create or update a ModelMeta instance from a weights file.
@@ -154,14 +197,12 @@ def create_from_file_logic(
         raise IOError(f"Failed to copy weights file: {e}") from e
 
     # --- Create/Update ModelMeta Instance ---
+    model_meta_kwargs = ModelMetaCreateFromFileKwargsPayload.model_validate(kwargs)
     defaults = {
         "labelset": label_set,
-        "weights": relative_dest_path.as_posix(),  # Store relative path for FileField
-        **kwargs,  # Pass through other fields like activation, mean, std, etc.
+        "weights": relative_dest_path.as_posix(),
+        **model_meta_kwargs.model_dump(mode="python"),
     }
-
-    # Remove None values from defaults to avoid overriding model defaults unnecessarily
-    defaults = {k: v for k, v in defaults.items() if v is not None}
 
     model_meta, created = cls.objects.update_or_create(
         name=meta_name,
@@ -187,9 +228,7 @@ def create_from_file_logic(
 # --- Add other logic functions referenced by ModelMeta here ---
 # (get_latest_version_number_logic, get_activation_function_logic, etc.)
 # Placeholder for get_activation_function_logic
-def get_activation_function_logic(activation_name: str):
-    import torch.nn as nn  # Import locally as it's specific to this function
-
+def get_activation_function_logic(activation_name: str) -> nn.Module:
     if activation_name.lower() == "sigmoid":
         return nn.Sigmoid()
     elif activation_name.lower() == "softmax":
@@ -202,37 +241,28 @@ def get_activation_function_logic(activation_name: str):
         raise ValueError(f"Unsupported activation function: {activation_name}")
 
 
-# Placeholder for get_inference_dataset_config_logic
-def _normalise_scalar_sequence(value: Any) -> str | None:
-    """Serialise sequence-like values into the canonical comma-separated form."""
-
-    if value in (None, ""):
-        return None
-    if isinstance(value, str):
-        return value
-    if isinstance(value, (list, tuple)):
-        return ",".join(str(item) for item in value)
-    return str(value)
-
-
-def _parse_float_sequence(value: Any, *, fallback: Iterable[float]) -> list[float]:
+def _parse_float_sequence(
+    value: str | int | float | Iterable[str | int | float],
+    *,
+    fallback: Iterable[float],
+) -> list[float]:
     """Coerce stored normalisation strings/iterables to float lists."""
 
-    if value in (None, ""):
+    if value == "":
         return list(fallback)
 
-    tokens: Iterable[Any]
+    tokens: Sequence[str | int | float]
     if isinstance(value, str):
         tokens = [tok.strip() for tok in value.split(",") if tok.strip()]
-    elif isinstance(value, (list, tuple)):
-        tokens = value
+    elif isinstance(value, Iterable):
+        tokens = list(value)
     else:
         tokens = [value]
 
     parsed: list[float] = []
     for token in tokens:
         try:
-            parsed.append(float(token))
+            parsed.append(float(str(token)))
         except (TypeError, ValueError):
             logger.warning(
                 "Failed to parse normalisation value %r; using fallback", token
@@ -242,7 +272,7 @@ def _parse_float_sequence(value: Any, *, fallback: Iterable[float]) -> list[floa
     return parsed or list(fallback)
 
 
-def _parse_axes(axes_value: str | Iterable[Any]) -> list[int]:
+def _parse_axes(axes_value: str | Iterable[str | int]) -> list[int]:
     """Normalise stored axis notation to integer indices.
 
     Historic metadata mixes numeric strings ("2,0,1") with symbolic tokens
@@ -281,49 +311,57 @@ def _parse_axes(axes_value: str | Iterable[Any]) -> list[int]:
     return parsed_axes or [0, 1, 2]
 
 
-def get_inference_dataset_config_logic(model_meta: "ModelMeta") -> dict:
+def get_inference_dataset_config_logic(
+    model_meta: "ModelMeta",
+) -> model_meta_contract.ModelMetaInferenceDatasetConfigPayload:
     # This would typically extract relevant fields from model_meta
     # for configuring a dataset during inference
     DEFAULT_MEAN = (0.45211223, 0.27139644, 0.19264949)
     DEFAULT_STD = (0.31418097, 0.21088019, 0.16059452)
 
-    return {
-        "mean": _parse_float_sequence(model_meta.mean, fallback=DEFAULT_MEAN),
-        "std": _parse_float_sequence(model_meta.std, fallback=DEFAULT_STD),
-        "size_y": int(model_meta.size_y) if model_meta.size_y else 716,
-        "size_x": int(model_meta.size_x) if model_meta.size_x else 716,
-        "axes": _parse_axes(model_meta.axes),
-    }
+    return model_meta_contract.ModelMetaInferenceDatasetConfigPayload.model_validate(
+        {
+            "mean": tuple(
+                _parse_float_sequence(model_meta.mean, fallback=DEFAULT_MEAN)
+            ),
+            "std": tuple(_parse_float_sequence(model_meta.std, fallback=DEFAULT_STD)),
+            "size_y": int(model_meta.size_y) if model_meta.size_y else 716,
+            "size_x": int(model_meta.size_x) if model_meta.size_x else 716,
+            "axes": tuple(_parse_axes(model_meta.axes)),
+        }
+    )
 
 
-# Placeholder for get_config_dict_logic
-def get_config_dict_logic(model_meta: "ModelMeta") -> dict:
+def get_config_dict_logic(
+    model_meta: "ModelMeta",
+) -> model_meta_contract.ModelMetaConfigPayload:
     # Returns a dictionary representation of the model's configuration
-    return {
-        "name": model_meta.name,
-        "version": model_meta.version,
-        "model_name": model_meta.model.name,
-        "labelset_name": model_meta.labelset.name,
-        "activation": model_meta.activation,
-        "weights_path": model_meta.weights.path if model_meta.weights else None,
-        "mean": model_meta.mean,
-        "std": model_meta.std,
-        "size_x": model_meta.size_x,
-        "size_y": model_meta.size_y,
-        "axes": model_meta.axes,
-        "batchsize": model_meta.batchsize,
-        "num_workers": model_meta.num_workers,
-        "description": model_meta.description,
-        # Add any other relevant fields
-    }
+    return model_meta_contract.ModelMetaConfigPayload.model_validate(
+        {
+            "name": model_meta.name,
+            "version": model_meta.version,
+            "model_name": model_meta.model.name,
+            "labelset_name": model_meta.labelset.name,
+            "activation": model_meta.activation,
+            "weights_path": model_meta.weights.path if model_meta.weights else "",
+            "mean": model_meta.mean,
+            "std": model_meta.std,
+            "size_x": model_meta.size_x,
+            "size_y": model_meta.size_y,
+            "axes": model_meta.axes,
+            "batchsize": model_meta.batchsize,
+            "num_workers": model_meta.num_workers,
+            "description": model_meta.description or "",
+        }
+    )
 
 
 # Placeholder for get_model_meta_by_name_version_logic
 def get_model_meta_by_name_version_logic(
-    cls: Type["ModelMeta"],
+    cls: type["ModelMeta"],
     meta_name: str,
     model_name: str,
-    version: Optional[str] = None,
+    version: str | None = None,
 ) -> "ModelMeta":
     """
     Retrieves a ModelMeta instance by name, model name, and optionally version.
@@ -383,7 +421,7 @@ def _copy_weights_to_existing_model_meta(
 
     ensure_directory(full_dest_path.parent)
     atomic_copy_file(source=source_weights_path, destination=full_dest_path)
-    model_meta.weights = relative_dest_path.as_posix()
+    model_meta.weights.name = relative_dest_path.as_posix()
     model_meta.save(update_fields=["weights"])
     return model_meta
 
@@ -393,7 +431,9 @@ import re
 from huggingface_hub import model_info
 
 
-def infer_default_model_meta_from_hf(model_id: str) -> dict[str, Any]:
+def infer_default_model_meta_from_hf(
+    model_id: str,
+) -> ModelMetaInferredDefaultsPayload:
     """
     Infers default model metadata (activation, normalization, input size)
     from a Hugging Face model_id using its tags and architecture.
@@ -406,15 +446,17 @@ def infer_default_model_meta_from_hf(model_id: str) -> dict[str, Any]:
         logger.info(
             f"Could not retrieve model info for {model_id}, using ColoReg segmentation defaults."
         )
-        return {
-            "name": "wg-lux/colo_segmentation_RegNetX800MF_base",
-            "activation": "sigmoid",
-            "mean": (0.45211223, 0.27139644, 0.19264949),
-            "std": (0.31418097, 0.21088019, 0.16059452),
-            "size_x": 716,
-            "size_y": 716,
-            "description": f"Defaults for unknown model {model_id}",
-        }
+        return ModelMetaInferredDefaultsPayload.model_validate(
+            {
+                "name": "wg-lux/colo_segmentation_RegNetX800MF_base",
+                "activation": "sigmoid",
+                "mean": (0.45211223, 0.27139644, 0.19264949),
+                "std": (0.31418097, 0.21088019, 0.16059452),
+                "size_x": 716,
+                "size_y": 716,
+                "description": f"Defaults for unknown model {model_id}",
+            }
+        )
 
     # Extract architecture from tags or model_id ---
     tags = info.tags or []
@@ -443,27 +485,31 @@ def infer_default_model_meta_from_hf(model_id: str) -> dict[str, Any]:
     else:
         arch = re.sub(r"[^a-z0-9]+", "_", model_name)
 
-    return {
-        "name": arch,
-        "activation": activation,
-        "mean": mean,
-        "std": std,
-        "size_x": size_x,
-        "size_y": size_y,
-        "description": f"Inferred defaults for {model_id}",
-    }
+    return ModelMetaInferredDefaultsPayload.model_validate(
+        {
+            "name": arch,
+            "activation": activation,
+            "mean": mean,
+            "std": std,
+            "size_x": size_x,
+            "size_y": size_y,
+            "description": f"Inferred defaults for {model_id}",
+        }
+    )
 
 
 def setup_default_from_huggingface_logic(
-    cls,
+    cls: type["ModelMeta"],
     model_id: str,
     labelset_name: str | None = None,
-    labelset_version: Optional[int | str] = None,
-):
+    labelset_version: int | str | None = None,
+) -> "ModelMeta":
     """
     Downloads model weights from Hugging Face and auto-fills ModelMeta fields.
     """
-    meta = infer_default_model_meta_from_hf(model_id)
+    meta = ModelMetaInferredDefaultsPayload.model_validate(
+        infer_default_model_meta_from_hf(model_id)
+    )
 
     def _download_weights() -> str:
         try:
@@ -477,7 +523,8 @@ def setup_default_from_huggingface_logic(
                 "Failed to download safetensor weights from Hugging Face; ensure the repository provides a .safetensors artifact."
             ) from exc
 
-    ai_model, _ = AiModel.objects.get_or_create(name=meta["name"])
+    ai_model, _ = AiModel.objects.get_or_create(name=meta.name)
+    ai_model_like = cast(_AiModelActiveMetaLike, ai_model)
     if not labelset_name:
         labelset = LabelSet.objects.first()
         if not labelset:
@@ -499,45 +546,46 @@ def setup_default_from_huggingface_logic(
                 f"LabelSet '{labelset_name}' with version '{labelset_version}' not found."
             )
 
-    ModelMeta = _get_model_meta_class()
-    model_meta = ModelMeta.objects.filter(name=meta["name"], model=ai_model).first()
+    model_meta = (
+        _get_model_meta_class().objects.filter(name=meta.name, model=ai_model).first()
+    )
     if model_meta:
         if _model_meta_weights_exist(model_meta):
             logger.info(
-                f"ModelMeta {meta['name']} for model {ai_model.name} already exists with available weights. Skipping creation."
+                f"ModelMeta {meta.name} for model {ai_model.name} already exists with available weights. Skipping creation."
             )
-            if ai_model.active_meta_id != model_meta.pk:
-                ai_model.active_meta = model_meta
-                ai_model.save(update_fields=["active_meta"])
+            if ai_model_like.active_meta_id != model_meta.pk:
+                ai_model_like.active_meta = model_meta
+                ai_model_like.save(update_fields=["active_meta"])
             return model_meta
         weights_path = _download_weights()
         logger.warning(
             "ModelMeta %s for model %s exists but its weights file is missing; "
             "repairing from Hugging Face download.",
-            meta["name"],
+            meta.name,
             ai_model.name,
         )
         _copy_weights_to_existing_model_meta(
             model_meta,
             source_weights_path=Path(weights_path).resolve(),
         )
-        if ai_model.active_meta_id != model_meta.pk:
-            ai_model.active_meta = model_meta
-            ai_model.save(update_fields=["active_meta"])
+        if ai_model_like.active_meta_id != model_meta.pk:
+            ai_model_like.active_meta = model_meta
+            ai_model_like.save(update_fields=["active_meta"])
         return model_meta
 
     weights_path = _download_weights()
     return create_from_file_logic(
         cls,
-        meta_name=meta["name"],
+        meta_name=meta.name,
         model_name=ai_model.name,
         labelset_name=labelset.name,
         labelset_version=labelset.version,
         weights_file=weights_path,
-        activation=meta["activation"],
-        mean=meta["mean"],
-        std=meta["std"],
-        size_x=meta["size_x"],
-        size_y=meta["size_y"],
-        description=meta["description"],
+        activation=meta.activation,
+        mean=",".join(str(value) for value in meta.mean),
+        std=",".join(str(value) for value in meta.std),
+        size_x=meta.size_x,
+        size_y=meta.size_y,
+        description=meta.description,
     )

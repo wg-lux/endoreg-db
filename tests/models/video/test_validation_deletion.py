@@ -5,17 +5,37 @@ This test ensures the critical bug fix where validate_metadata_annotation()
 was incorrectly deleting the processed video instead of the raw video.
 """
 
+from pathlib import Path
 import shutil
 from datetime import date
 from unittest.mock import Mock, patch
+from typing import Protocol, cast
 
 import pytest
+from django.core.files.base import File
+from lx_dtypes.models.contracts.video_text_metadata import VideoTextMetaPayload
 
 from endoreg_db.models import Center, EndoscopyProcessor, VideoFile
 
 
+class _CenterRelation(Protocol):
+    def add(self, *objs: Center | int) -> None: ...
+
+
+class _WritableFieldFile(Protocol):
+    def save(self, name: str, content: File[bytes], save: bool = True) -> None: ...
+
+
+def _add_center(processor: EndoscopyProcessor, center: Center) -> None:
+    cast(_CenterRelation, processor.centers).add(center)
+
+
+def _field_file(field: object) -> _WritableFieldFile:
+    return cast(_WritableFieldFile, field)
+
+
 @pytest.fixture(autouse=True)
-def ensure_reference_data(base_db_data):
+def ensure_reference_data(base_db_data: object) -> object:
     """Populate default lookup data (centers, genders, etc.) required by validation flows."""
     return base_db_data
 
@@ -32,14 +52,14 @@ class TestVideoValidationDeletionBehavior:
     """
 
     @pytest.fixture
-    def center(self):
+    def center(self) -> Center:
         """Create test center."""
         return Center.objects.create(
             name="test_center_validation", display_name="Test Center Validation"
         )
 
     @pytest.fixture
-    def processor(self, center):
+    def processor(self, center: Center) -> EndoscopyProcessor:
         """Create test processor."""
         processor = EndoscopyProcessor.objects.create(
             name="test_processor_validation",
@@ -78,12 +98,16 @@ class TestVideoValidationDeletionBehavior:
             endoscope_sn_width=100,
             endoscope_sn_height=50,
         )
-        processor.centers.add(center)
+        _add_center(processor, center)
         return processor
 
     def test_validation_deletes_raw_video_only(
-        self, center, processor, tmp_path, video_asset_file
-    ):
+        self,
+        center: Center,
+        processor: EndoscopyProcessor,
+        tmp_path: Path,
+        video_asset_file: Path,
+    ) -> None:
         """
         Test that validation deletes RAW video but preserves PROCESSED video.
 
@@ -129,11 +153,13 @@ class TestVideoValidationDeletionBehavior:
             )
 
             # Run validation
-            validation_data = {
-                "patient_first_name": "Max",
-                "patient_last_name": "Mustermann",
-                "patient_dob": date(1990, 1, 1),
-            }
+            validation_data = VideoTextMetaPayload.model_validate(
+                {
+                    "patient_first_name": "Max",
+                    "patient_last_name": "Mustermann",
+                    "patient_dob": date(1990, 1, 1).isoformat(),
+                }
+            )
             result = video.validate_metadata_annotation(validation_data)
 
             # Assert validation succeeded
@@ -148,7 +174,7 @@ class TestVideoValidationDeletionBehavior:
                 "✅ CORRECT: Processed (anonymized) video should be PRESERVED after validation"
             )
 
-    def test_validation_handles_missing_raw_video(self, center, processor):
+    def test_validation_handles_missing_raw_video(self, center: Center, processor: EndoscopyProcessor) -> None:
         """
         Test that validation gracefully handles case where raw video doesn't exist.
 
@@ -177,7 +203,9 @@ class TestVideoValidationDeletionBehavior:
 
             # Run validation
             result = video.validate_metadata_annotation(
-                {"patient_first_name": "Test", "patient_last_name": "User"}
+                VideoTextMetaPayload.model_validate(
+                    {"patient_first_name": "Test", "patient_last_name": "User"}
+                )
             )
 
             # Should succeed even without raw file
@@ -185,7 +213,7 @@ class TestVideoValidationDeletionBehavior:
                 "Validation should succeed even when raw file is missing"
             )
 
-    def test_validation_with_only_raw_video(self, center, processor, tmp_path):
+    def test_validation_with_only_raw_video(self, center: Center, processor: EndoscopyProcessor, tmp_path: Path) -> None:
         """
         Test validation when only raw video exists (no processed yet).
 
@@ -223,7 +251,7 @@ class TestVideoValidationDeletionBehavior:
             assert raw_video_path.exists(), "Raw video should exist before validation"
 
             # Run validation
-            result = video.validate_metadata_annotation({})
+            result = video.validate_metadata_annotation(VideoTextMetaPayload.model_validate({}))
 
             # Verify raw is deleted
             assert not raw_video_path.exists(), (
@@ -242,11 +270,11 @@ class TestActiveFileLogicWithValidation:
     """
 
     @pytest.fixture
-    def center(self):
+    def center(self) -> Center:
         return Center.objects.create(name="test_center_active")
 
     @pytest.fixture
-    def processor(self, center):
+    def processor(self, center: Center) -> EndoscopyProcessor:
         processor = EndoscopyProcessor.objects.create(
             name="test_processor_active",
             image_width=1920,
@@ -272,10 +300,10 @@ class TestActiveFileLogicWithValidation:
             patient_dob_width=200,
             patient_dob_height=30,
         )
-        processor.centers.add(center)
+        _add_center(processor, center)
         return processor
 
-    def test_active_file_returns_processed_when_both_exist(self, center, processor):
+    def test_active_file_returns_processed_when_both_exist(self, center: Center, processor: EndoscopyProcessor) -> None:
         """
         Verify that active_file returns processed file when both files exist.
 
@@ -288,8 +316,8 @@ class TestActiveFileLogicWithValidation:
         )
 
         # Simulate both files existing
-        video.raw_file.save("raw.mp4", ContentFile(b"raw"), save=False)
-        video.processed_file.save(
+        _field_file(video.raw_file).save("raw.mp4", ContentFile(b"raw"), save=False)
+        _field_file(video.processed_file).save(
             "processed.mp4", ContentFile(b"processed"), save=False
         )
         video.save()
@@ -301,8 +329,8 @@ class TestActiveFileLogicWithValidation:
         )
 
     def test_validation_uses_raw_file_path_not_active(
-        self, center, processor, tmp_path
-    ):
+        self, center: Center, processor: EndoscopyProcessor, tmp_path: Path
+    ) -> None:
         """
         Verify that validation explicitly uses raw_file_path, not active_file_path.
 
@@ -338,7 +366,7 @@ class TestActiveFileLogicWithValidation:
             assert processed_path.exists()
 
             # Validate
-            video.validate_metadata_annotation({})
+            video.validate_metadata_annotation(VideoTextMetaPayload.model_validate({}))
 
             # After validation
             assert not raw_path.exists(), "Raw should be deleted"
@@ -354,14 +382,14 @@ class TestValidationDeletion:
     """
 
     @pytest.fixture
-    def center(self):
+    def center(self) -> Center:
         """Create test center."""
         return Center.objects.create(
             name="test_center_validation_del", display_name="Test Center Validation Del"
         )
 
     @pytest.fixture
-    def processor(self, center):
+    def processor(self, center: Center) -> EndoscopyProcessor:
         """Create test processor."""
         processor = EndoscopyProcessor.objects.create(
             name="test_processor_validation_del",
@@ -400,10 +428,10 @@ class TestValidationDeletion:
             endoscope_sn_width=100,
             endoscope_sn_height=50,
         )
-        processor.centers.add(center)
+        _add_center(processor, center)
         return processor
 
-    def test_validation_deletes_raw_video_only(self, center, processor, tmp_path):
+    def test_validation_deletes_raw_video_only(self, center: Center, processor: EndoscopyProcessor, tmp_path: Path) -> None:
         """
         Test that validation deletes RAW video but preserves PROCESSED video.
 
@@ -451,11 +479,13 @@ class TestValidationDeletion:
             )
 
             # Run validation
-            validation_data = {
-                "patient_first_name": "Max",
-                "patient_last_name": "Mustermann",
-                "patient_dob": date(1990, 1, 1),
-            }
+            validation_data = VideoTextMetaPayload.model_validate(
+                {
+                    "patient_first_name": "Max",
+                    "patient_last_name": "Mustermann",
+                    "patient_dob": date(1990, 1, 1).isoformat(),
+                }
+            )
             result = video.validate_metadata_annotation(validation_data)
 
             # Assert validation succeeded
@@ -470,7 +500,7 @@ class TestValidationDeletion:
                 "✅ CORRECT: Processed (anonymized) video should be PRESERVED after validation"
             )
 
-    def test_validation_handles_missing_raw_video(self, center, processor):
+    def test_validation_handles_missing_raw_video(self, center: Center, processor: EndoscopyProcessor) -> None:
         """
         Test that validation gracefully handles case where raw video doesn't exist.
 
@@ -499,7 +529,9 @@ class TestValidationDeletion:
 
             # Run validation
             result = video.validate_metadata_annotation(
-                {"patient_first_name": "Test", "patient_last_name": "User"}
+                VideoTextMetaPayload.model_validate(
+                    {"patient_first_name": "Test", "patient_last_name": "User"}
+                )
             )
 
             # Should succeed even without raw file
@@ -507,7 +539,7 @@ class TestValidationDeletion:
                 "Validation should succeed even when raw file is missing"
             )
 
-    def test_validation_with_only_raw_video(self, center, processor, tmp_path):
+    def test_validation_with_only_raw_video(self, center: Center, processor: EndoscopyProcessor, tmp_path: Path) -> None:
         """
         Test validation when only raw video exists (no processed yet).
 
@@ -545,7 +577,7 @@ class TestValidationDeletion:
             assert raw_video_path.exists(), "Raw video should exist before validation"
 
             # Run validation
-            result = video.validate_metadata_annotation({})
+            result = video.validate_metadata_annotation(VideoTextMetaPayload.model_validate({}))
 
             # Verify raw is deleted
             assert not raw_video_path.exists(), (
@@ -555,8 +587,12 @@ class TestValidationDeletion:
             assert result is True, "Validation should succeed"
 
     def test_validation_extracts_frames_before_deleting_raw(
-        self, center, processor, tmp_path, base_db_data
-    ):
+        self,
+        center: Center,
+        processor: EndoscopyProcessor,
+        tmp_path: Path,
+        base_db_data: object,
+    ) -> None:
         """
         Test that frame extraction happens BEFORE raw video deletion.
 
@@ -589,7 +625,7 @@ class TestValidationDeletion:
         extraction_attempted = False
         raw_existed_during_extraction = False
 
-        def mock_extract_frames(overwrite=False):
+        def mock_extract_frames(overwrite: bool = False) -> bool:
             nonlocal extraction_attempted, raw_existed_during_extraction
             # Record that extraction was attempted
             extraction_attempted = True
@@ -616,7 +652,11 @@ class TestValidationDeletion:
             ) as mock_update_meta,
         ):
             # Mock sensitive meta update - ensure it calls extract_frames
-            def mock_update_text_metadata(video_obj, data, overwrite=False):
+            def mock_update_text_metadata(
+                video_obj: VideoFile,
+                data: VideoTextMetaPayload,
+                overwrite: bool = False,
+            ) -> object:
                 # This simulates the real behavior: attempt frame extraction if needed
                 state = video_obj.get_or_create_state()
                 if not state.frames_extracted:
@@ -627,11 +667,13 @@ class TestValidationDeletion:
             mock_update_meta.side_effect = mock_update_text_metadata
 
             # Create mock extracted data
-            validation_data = {
-                "patient_first_name": "Test",
-                "patient_last_name": "Patient",
-                "patient_dob": date(1990, 1, 1),
-            }  # Run validation
+            validation_data = VideoTextMetaPayload.model_validate(
+                {
+                    "patient_first_name": "Test",
+                    "patient_last_name": "Patient",
+                    "patient_dob": date(1990, 1, 1).isoformat(),
+                }
+            )  # Run validation
             result = video.validate_metadata_annotation(validation_data)
 
             # Verify extraction was attempted (metadata update triggered it)

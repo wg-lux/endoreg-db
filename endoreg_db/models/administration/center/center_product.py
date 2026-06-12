@@ -54,8 +54,8 @@ class CenterProduct(models.Model):
     )
 
     if TYPE_CHECKING:
-        product: models.ForeignKey["Product"]
-        center: models.ForeignKey["Center"]
+        product: models.ForeignKey["Product", "Product"]
+        center: models.ForeignKey["Center", "Center"]
 
     class Meta:
         ordering = ["center", "-date_used", "product"]

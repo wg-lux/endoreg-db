@@ -4,8 +4,10 @@ from django.db import models
 from .base_value_distribution import BaseValueDistribution
 
 
-class SingleCategoricalValueDistributionManager(models.Manager):
-    def get_by_natural_key(self, name):
+class SingleCategoricalValueDistributionManager(
+    models.Manager["SingleCategoricalValueDistribution"]
+):
+    def get_by_natural_key(self, name: str) -> "SingleCategoricalValueDistribution":
         return self.get(name=name)
 
 
@@ -16,8 +18,8 @@ class SingleCategoricalValueDistribution(BaseValueDistribution):
     """
 
     objects = SingleCategoricalValueDistributionManager()
-    categories = models.JSONField()  # { "category": "probability", ... }
+    categories: models.JSONField[dict[str, float], dict[str, float]] = models.JSONField()
 
-    def generate_value(self):
+    def generate_value(self, *args: object, **kwargs: object) -> object:
         categories, probabilities = zip(*self.categories.items())
         return np.random.choice(categories, p=probabilities)

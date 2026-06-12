@@ -13,7 +13,7 @@ class SensitiveMetaState(AbstractState):
         default=False
     )
 
-    origin: "models.OneToOneField[SensitiveMeta | None]" = models.OneToOneField(
+    origin: "models.OneToOneField[SensitiveMeta | None, SensitiveMeta | None]" = models.OneToOneField(
         "SensitiveMeta",
         on_delete=models.CASCADE,
         related_name="state",
@@ -47,6 +47,6 @@ class SensitiveMetaState(AbstractState):
         self.names_verified = True
         self.save(update_fields=["names_verified"])
 
-    class Meta:
+    class Meta(AbstractState.Meta):
         verbose_name = "Sensitive Meta State"
         verbose_name_plural = "Sensitive Meta States"

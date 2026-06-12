@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from endoreg_db.utils.storage.profile import (
+from endoreg_db.utils.storage_profile import (
     PayloadKind,
     StoragePolicy,
     resolve_storage_policy,

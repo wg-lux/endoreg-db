@@ -3,6 +3,9 @@ from collections import defaultdict
 from pathlib import Path
 
 
+ImportKey = tuple[str, str]
+ImportMap = dict[ImportKey, frozenset[str]]
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PACKAGE_ROOT = PROJECT_ROOT / "endoreg_db"
 MODELS_ROOT = PROJECT_ROOT / "endoreg_db" / "models"
@@ -53,14 +56,6 @@ ALLOWLISTED_MODEL_TO_SERVICE_IMPORTS = {
             "build_frame_bucket_distribution",
         }
     ),
-    (
-        "endoreg_db/models/hub/transfer_job.py",
-        "endoreg_db.services.hub.payloads",
-    ): frozenset({"validate_transfer_provenance_payload"}),
-    (
-        "endoreg_db/models/hub/upload_job.py",
-        "endoreg_db.services.hub.payloads",
-    ): frozenset({"validate_upload_provenance_payload"}),
     (
         "endoreg_db/models/label/label_video_segment/label_video_segment.py",
         "endoreg_db.services.video_files",
@@ -172,10 +167,6 @@ ALLOWLISTED_MODEL_TO_SERVICE_IMPORTS = {
         }
     ),
     (
-        "endoreg_db/models/media/video/video_file.py",
-        "endoreg_db.services.video_post_validation_blackening",
-    ): frozenset({"merge_outside_frame_intervals"}),
-    (
         "endoreg_db/models/medical/patient/patient_examination.py",
         "endoreg_db.services.knowledge_base_identity",
     ): frozenset({"get_configured_knowledge_base_identity"}),
@@ -198,14 +189,14 @@ ALLOWLISTED_MODEL_TO_SERVICE_IMPORTS = {
 }
 
 
-def _imported_name(alias):
+def _imported_name(alias: ast.alias) -> str:
     if alias.asname is None:
         return alias.name
     return f"{alias.name} as {alias.asname}"
 
 
-def _model_to_service_imports():
-    imports = defaultdict(set)
+def _model_to_service_imports() -> ImportMap:
+    imports: defaultdict[ImportKey, set[str]] = defaultdict(set)
 
     for path in sorted(MODELS_ROOT.rglob("*.py")):
         tree = ast.parse(path.read_text(), filename=str(path))
@@ -237,8 +228,8 @@ def _is_banned_model_implementation_import(module: str) -> bool:
     )
 
 
-def _service_to_model_implementation_imports():
-    imports = defaultdict(set)
+def _service_to_model_implementation_imports() -> ImportMap:
+    imports: defaultdict[ImportKey, set[str]] = defaultdict(set)
 
     for path in sorted(SERVICES_ROOT.rglob("*.py")):
         tree = ast.parse(path.read_text(), filename=str(path))
@@ -263,8 +254,8 @@ def _service_to_model_implementation_imports():
     return {key: frozenset(names) for key, names in imports.items()}
 
 
-def _project_to_model_implementation_references():
-    references = defaultdict(set)
+def _project_to_model_implementation_references() -> ImportMap:
+    references: defaultdict[ImportKey, set[str]] = defaultdict(set)
 
     for path in sorted(PACKAGE_ROOT.rglob("*.py")):
         tree = ast.parse(path.read_text(), filename=str(path))
@@ -297,7 +288,7 @@ def _project_to_model_implementation_references():
     return {key: frozenset(names) for key, names in references.items()}
 
 
-def test_models_do_not_add_new_service_imports():
+def test_models_do_not_add_new_service_imports() -> None:
     current_imports = _model_to_service_imports()
 
     unexpected_import_keys = set(current_imports) - set(
@@ -322,9 +313,9 @@ def test_models_do_not_add_new_service_imports():
     assert not changed_import_names, changed_import_names
 
 
-def test_services_do_not_import_model_media_implementation_modules():
+def test_services_do_not_import_model_media_implementation_modules() -> None:
     assert not _service_to_model_implementation_imports()
 
 
-def test_project_code_does_not_reference_model_media_implementation_modules():
+def test_project_code_does_not_reference_model_media_implementation_modules() -> None:
     assert not _project_to_model_implementation_references()

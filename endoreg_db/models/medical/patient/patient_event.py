@@ -1,10 +1,18 @@
-from typing import TYPE_CHECKING
+from __future__ import annotations
+
+from datetime import date, datetime
+from typing import TYPE_CHECKING, cast
 
 from django.db import models
+from lx_dtypes.models.contracts.subcategory_validation import (
+    NumericalDescriptorContract,
+    SubcategoryDictContract,
+)
 
 if TYPE_CHECKING:
-    from ...administration.person.patient.patient import Patient
-    from ..event import Event
+    from endoreg_db.models.administration.person.patient.patient import Patient
+    from endoreg_db.models.medical.event import Event, EventClassificationChoice
+    from endoreg_db.utils.links import ModelLinks
 
 
 class PatientEvent(models.Model):
@@ -15,33 +23,46 @@ class PatientEvent(models.Model):
     subcategories, and numerical descriptors.
     """
 
-    if TYPE_CHECKING:
-        patient: models.ForeignKey[Patient]
-        event: models.ForeignKey[Event]
-
-    patient = models.ForeignKey(
+    patient: models.ForeignKey["Patient", "Patient"] = models.ForeignKey(
         "Patient", on_delete=models.CASCADE, related_name="events"
     )
-    event = models.ForeignKey(
+    event: models.ForeignKey["Event", "Event"] = models.ForeignKey(
         "Event", on_delete=models.CASCADE, related_name="patient_events"
     )
-    date_start = models.DateField()
-    date_end = models.DateField(blank=True, null=True)
-    description = models.TextField(blank=True, null=True)
-    classification_choice = models.ForeignKey(
-        "EventClassificationChoice", on_delete=models.CASCADE, blank=True, null=True
+    date_start: models.DateField[date, date] = models.DateField()
+    date_end: models.DateField[date | None, date | None] = models.DateField(
+        blank=True, null=True
+    )
+    description: models.TextField[str | None, str | None] = models.TextField(
+        blank=True, null=True
+    )
+    classification_choice: models.ForeignKey[
+        "EventClassificationChoice | None",
+        "EventClassificationChoice | None",
+    ] = models.ForeignKey(
+        "EventClassificationChoice",
+        on_delete=models.CASCADE,
+        blank=True,
+        null=True,
     )
 
-    subcategories = models.JSONField(default=dict)
-    numerical_descriptors = models.JSONField(default=dict)
+    subcategories: models.JSONField[
+        dict[str, SubcategoryDictContract], dict[str, SubcategoryDictContract]
+    ] = models.JSONField(default=dict)
+    numerical_descriptors: models.JSONField[
+        dict[str, NumericalDescriptorContract],
+        dict[str, NumericalDescriptorContract],
+    ] = models.JSONField(default=dict)
 
-    last_update = models.DateTimeField(auto_now=True)
+    last_update: models.DateTimeField[datetime, datetime] = models.DateTimeField(
+        auto_now=True
+    )
 
     if TYPE_CHECKING:
         pass
 
     @property
-    def links(self):
+    def links(self) -> "ModelLinks":
         """
         Returns a dictionary of links related to this PatientEvent.
         Currently, it only includes the patient and event.
@@ -51,31 +72,39 @@ class PatientEvent(models.Model):
         return ModelLinks(patient_events=[self], events=[self.event])
 
     @property
-    def date(self):
+    def date(self) -> date:
         """
         Returns the start date of the event.
         """
         return self.date_start
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Returns a string representation of the event's start date and name.
         """
         return str(self.date_start) + ": " + self.event.name
 
-    def set_subcategories_from_classification_choice(self):
+    def set_subcategories_from_classification_choice(
+        self,
+    ) -> dict[str, SubcategoryDictContract]:
         """Copies subcategory definitions from the linked classification choice."""
         if self.classification_choice:
-            self.subcategories = self.classification_choice.subcategories
+            self.subcategories = cast(
+                dict[str, SubcategoryDictContract],
+                self.classification_choice.subcategories,
+            )
             self.save()
 
         return self.subcategories
 
-    def set_numerical_descriptors_from_classification_choice(self):
+    def set_numerical_descriptors_from_classification_choice(
+        self,
+    ) -> dict[str, NumericalDescriptorContract]:
         """Copies numerical descriptor definitions from the linked classification choice."""
         if self.classification_choice:
-            self.numerical_descriptors = (
-                self.classification_choice.numerical_descriptors
+            self.numerical_descriptors = cast(
+                dict[str, NumericalDescriptorContract],
+                self.classification_choice.numerical_descriptors,
             )
             self.save()
 

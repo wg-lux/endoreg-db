@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from django.db import models
 
@@ -12,7 +12,7 @@ class ExaminationTimeManager(models.Manager["ExaminationTime"]):
     """
 
     def get_by_natural_key(self, name: str) -> "ExaminationTime":
-        return cast("ExaminationTime", self.get(name=name))
+        return self.get(name=name)
 
 
 class ExaminationTime(models.Model):
@@ -26,7 +26,7 @@ class ExaminationTime(models.Model):
         time_types (ManyToManyField): The types associated with this examination time.
     """
 
-    name = models.CharField(max_length=100, unique=True)
+    name: models.CharField[str, str] = models.CharField(max_length=100, unique=True)
     time_types: "models.ManyToManyField[ExaminationTimeType, ExaminationTimeType]" = (
         models.ManyToManyField("ExaminationTimeType", blank=True)
     )
@@ -48,16 +48,16 @@ class ExaminationTime(models.Model):
         Returns:
             str: The name of the examination time.
         """
-        return self.name
+        return str(self.name)
 
-    def natural_key(self) -> tuple:
+    def natural_key(self) -> tuple[str]:
         """
         Returns the natural key for the examination time.
 
         Returns:
             tuple: The natural key consisting of the name.
         """
-        return (self.name,)
+        return (str(self.name),)
 
     class Meta:
         verbose_name = "Examination Time"

@@ -51,12 +51,12 @@ class FrameBoxAnnotation(models.Model):
     image_width: models.PositiveIntegerField[int, int] = models.PositiveIntegerField()
     image_height: models.PositiveIntegerField[int, int] = models.PositiveIntegerField()
     value: models.BooleanField[bool, bool] = models.BooleanField(default=True)
-    float_value: models.FloatField[
-        FrameBoxAnnotationFloat, FrameBoxAnnotationFloat
-    ] = models.FloatField(blank=True, null=True)
-    annotator: models.CharField[
-        FrameBoxAnnotationText, FrameBoxAnnotationText
-    ] = models.CharField(max_length=255, blank=True, null=True)
+    float_value: models.FloatField[FrameBoxAnnotationFloat, FrameBoxAnnotationFloat] = (
+        models.FloatField(blank=True, null=True)
+    )
+    annotator: models.CharField[FrameBoxAnnotationText, FrameBoxAnnotationText] = (
+        models.CharField(max_length=255, blank=True, null=True)
+    )
     external_annotation_id: models.CharField[
         FrameBoxAnnotationText, FrameBoxAnnotationText
     ] = models.CharField(

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Protocol, cast
+
 import pytest
 
 from endoreg_db.models import NetworkNode
@@ -57,7 +59,7 @@ def test_network_node_manager_get_by_node_key_returns_matching_node():
         node_key="lookup-node",
     )
 
-    assert NetworkNode.objects.get_by_node_key("lookup-node") == node
+    assert cast(_NetworkNodeManagerLike, NetworkNode.objects).get_by_node_key("lookup-node") == node
 
 
 @pytest.mark.django_db
@@ -90,3 +92,9 @@ def test_network_node_rejects_empty_shared_secret():
         node.set_shared_secret("   ")
 
     assert node.shared_secret_hash == ""
+
+
+class _NetworkNodeManagerLike(Protocol):
+    def get_by_node_key(self, node_key: str):
+        ...
+

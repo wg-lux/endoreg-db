@@ -3,8 +3,8 @@ from typing import TYPE_CHECKING
 from django.db import models
 
 
-class FindingTypeManager(models.Manager):
-    def get_by_natural_key(self, name):
+class FindingTypeManager(models.Manager["FindingType"]):
+    def get_by_natural_key(self, name: str) -> "FindingType":
         """
         Retrieve a FindingType instance by its unique name for natural key deserialization.
 
@@ -18,21 +18,23 @@ class FindingTypeManager(models.Manager):
 
 
 class FindingType(models.Model):
-    name = models.CharField(max_length=100, unique=True)
-    description = models.TextField(blank=True, null=True)
+    name: models.CharField[str, str] = models.CharField(max_length=100, unique=True)
+    description: models.TextField[str | None, str | None] = models.TextField(
+        blank=True, null=True
+    )
 
-    objects = FindingTypeManager()
+    objects: models.Manager["FindingType"] = FindingTypeManager()  # pyright: ignore[reportIncompatibleVariableOverride]
 
     if TYPE_CHECKING:
-        from endoreg_db.models import Examination, Finding, FindingClassification
+        from endoreg_db.models import FindingClassification
 
         @property
         def finding_classifications(
             self,
         ) -> "models.Manager[FindingClassification]": ...
 
-    def natural_key(self):
-        return (self.name,)
+    def natural_key(self) -> tuple[str]:
+        return (str(self.name),)
 
-    def __str__(self):
-        return self.name
+    def __str__(self) -> str:
+        return str(self.name)

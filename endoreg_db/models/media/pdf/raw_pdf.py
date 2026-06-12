@@ -17,13 +17,13 @@ from django.db import models
 from lx_dtypes.models.contracts.json_types import JsonNull, JsonValue
 
 from endoreg_db.schemas import validate_raw_pdf_meta_payload
-from endoreg_db.utils.filesystem import paths as path_utils
-from endoreg_db.utils.filesystem.paths import (
+from endoreg_db.utils import paths as path_utils
+from endoreg_db.utils.paths import (
     ANONYM_REPORT_DIR,
     SENSITIVE_REPORT_DIR,
 )
 from endoreg_db.utils.encryption.encrypted import LazyEncryptedStorage
-from endoreg_db.utils.storage.profile import (
+from endoreg_db.utils.storage_profile import (
     PayloadKind,
     StoragePolicy,
     resolve_storage_policy,

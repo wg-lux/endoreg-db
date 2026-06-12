@@ -1,18 +1,17 @@
 from __future__ import annotations
 
-import logging
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, TypeAlias
 
 from django.db import models
 
 if TYPE_CHECKING:
     from .video_file import VideoFile
 
-logger = logging.getLogger(__name__)
+VideoFileQuerySet: TypeAlias = models.QuerySet["VideoFile", "VideoFile"]
 
 
-class VideoQuerySet(models.QuerySet):
-    def next_after(self, last_id=None):
+class VideoQuerySet(models.QuerySet["VideoFile", "VideoFile"]):
+    def next_after(self, last_id: int | str | None = None) -> VideoFile | None:
         """
         Return the next VideoFile instance with a primary key greater than the given last_id.
         """
@@ -32,14 +31,14 @@ def _check_hash_exists(cls: type["VideoFile"], video_hash: str) -> bool:
     return cls.objects.filter(video_hash=video_hash).exists()
 
 
-def _get_all_videos(cls: type["VideoFile"]) -> models.QuerySet["VideoFile"]:
+def _get_all_videos(cls: type["VideoFile"]) -> VideoFileQuerySet:
     """
     Returns a queryset containing all VideoFile records.
     """
-    return cast(models.QuerySet["VideoFile"], cls.objects.all())
+    return cls.objects.all()
 
 
-def _get_video_by_pk(pk: int) -> "VideoFile":
+def _get_video_by_pk(pk: int) -> VideoFile:
     """
     Retrieve a VideoFile instance by its primary key.
     """
@@ -48,11 +47,7 @@ def _get_video_by_pk(pk: int) -> "VideoFile":
     return VideoFile.objects.get(pk=pk)
 
 
-def _get_video_by_content_hash(hash: str) -> "VideoFile":
+def _get_video_by_content_hash(hash: str) -> VideoFile:
     from .video_file import VideoFile
 
-    try:
-        return VideoFile.objects.get(video_hash=hash)
-    except Exception as exc:
-        logger.error("Video cant be returned for known hash. %s", exc)
-        raise
+    return VideoFile.objects.get(video_hash=hash)

@@ -7,7 +7,9 @@ from django.db import models
 
 if TYPE_CHECKING:
     from endoreg_db.models.administration.center.center_shift import CenterShift
-    from endoreg_db.models.administration.qualification.qualification import Qualification
+    from endoreg_db.models.administration.qualification.qualification import (
+        Qualification,
+    )
     from .shift_type import ShiftType
 
 NoShiftDescriptionValue: TypeAlias = NoneType
@@ -40,14 +42,15 @@ class Shift(models.Model):
         related_name="shifts",
     )
 
-    required_qualifications: models.ManyToManyField[
-        Qualification, Qualification
-    ] = models.ManyToManyField(
-        "Qualification",
-        related_name="shifts",
+    required_qualifications: models.ManyToManyField[Qualification, Qualification] = (
+        models.ManyToManyField(
+            "Qualification",
+            related_name="shifts",
+        )
     )
 
     if TYPE_CHECKING:
+
         @property
         def center_shifts(self) -> models.QuerySet["CenterShift"]: ...
 

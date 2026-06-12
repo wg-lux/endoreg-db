@@ -45,9 +45,7 @@ class CenterWaste(models.Model):
     emission_factor: models.ForeignKey[
         EmissionFactor | NoCenterWasteValue,
         EmissionFactor | NoCenterWasteValue,
-    ] = models.ForeignKey(
-        "EmissionFactor", on_delete=models.SET_NULL, null=True
-    )
+    ] = models.ForeignKey("EmissionFactor", on_delete=models.SET_NULL, null=True)
 
     def __str__(self) -> str:
         """

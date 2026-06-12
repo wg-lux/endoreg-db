@@ -3,8 +3,8 @@ from typing import TYPE_CHECKING
 from django.db import models
 
 
-class RiskManager(models.Manager):
-    def get_by_natural_key(self, name):
+class RiskManager(models.Manager["Risk"]):
+    def get_by_natural_key(self, name: str) -> "Risk":
         """
         Retrieve a risk instance using its natural key.
 
@@ -28,18 +28,24 @@ class Risk(models.Model):
         description (str): A description of the risk.
     """
 
-    name = models.CharField(max_length=100, unique=True)
-    name_de = models.CharField(max_length=100, blank=True, null=True)
-    name_en = models.CharField(max_length=100, blank=True, null=True)
-    description = models.TextField(blank=True, null=True)
+    name: models.CharField[str, str] = models.CharField(max_length=100, unique=True)
+    name_de: models.CharField[str | None, str | None] = models.CharField(
+        max_length=100, blank=True, null=True
+    )
+    name_en: models.CharField[str | None, str | None] = models.CharField(
+        max_length=100, blank=True, null=True
+    )
+    description: models.TextField[str | None, str | None] = models.TextField(
+        blank=True, null=True
+    )
 
-    risk_value = models.FloatField(
+    risk_value: models.FloatField[float | None, float | None] = models.FloatField(
         blank=True,
         null=True,
         help_text="Risk value for the risk. If not set, the risk is not used in calculations.",
     )
 
-    risk_type = models.ForeignKey(
+    risk_type: models.ForeignKey["RiskType", "RiskType"] = models.ForeignKey(
         "RiskType",
         on_delete=models.CASCADE,
         related_name="risks",
@@ -52,18 +58,18 @@ class Risk(models.Model):
     if TYPE_CHECKING:
         from endoreg_db.models import RiskType
 
-        risk_types: RiskType
+        risk_types: models.QuerySet[RiskType]
 
-    def natural_key(self):
+    def natural_key(self) -> tuple[str]:
         """
         Return a tuple containing the natural key of the risk instance.
 
         The tuple consists of the unique 'name' attribute, which enables natural key lookups
         and serialization within Django.
         """
-        return (self.name,)
+        return (str(self.name),)
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Return the string representation of the risk.
 

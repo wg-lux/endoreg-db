@@ -1,8 +1,9 @@
-from typing import Optional
+from datetime import datetime
+from typing import Optional, cast
 from logging import getLogger
 from pathlib import Path
 from django.db import models
-from endoreg_db.utils.filesystem.file_operations import get_content_hash_filename
+from endoreg_db.utils.file_operations import get_content_hash_filename
 
 logger = getLogger(__name__)
 
@@ -18,17 +19,23 @@ class ProcessingHistory(models.Model):
     (content_type, object_id), but the logical identity is file_hash.
     """
 
-    file_hash = models.CharField(
+    file_hash: models.CharField[str, str] = models.CharField(
         max_length=64,
         primary_key=True,
         help_text="Content hash of the original file (e.g. video_hash/pdf_hash).",
         blank=True,
     )
 
-    created_at = models.DateTimeField(auto_now_add=True)
-    success = models.BooleanField(default=False, blank=True)
+    created_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
+        auto_now_add=True
+    )
+    success: models.BooleanField[bool, bool] = models.BooleanField(
+        default=False, blank=True
+    )
 
-    object_id = models.PositiveBigIntegerField(null=True, blank=True)
+    object_id: models.PositiveBigIntegerField[int | None, int | None] = (
+        models.PositiveBigIntegerField(null=True, blank=True)
+    )
 
     if False:  # pragma: no cover
         objects: models.Manager["ProcessingHistory"]
@@ -72,7 +79,7 @@ class ProcessingHistory(models.Model):
 
         if obj is not None:
             if ph.object_id != obj.pk:
-                ph.object_id = obj.pk
+                ph.object_id = cast(int, obj.pk)
                 changed.append("object_id")
 
         if success is not None and ph.success != success:
@@ -86,7 +93,7 @@ class ProcessingHistory(models.Model):
             logger.info(
                 "Created ProcessingHistory for hash=%s (success=%s).",
                 file_hash,
-                ph.success,
+                bool(ph.success),
             )
 
         return ph

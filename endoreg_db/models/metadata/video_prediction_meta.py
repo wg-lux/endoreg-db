@@ -1,8 +1,11 @@
 import logging
 import pickle
-from typing import TYPE_CHECKING, List, Optional, Tuple
+from datetime import datetime
+from typing import TYPE_CHECKING, Protocol, cast
+from typing import List, Optional, Tuple
 
 import numpy as np
+import numpy.typing as npt
 from django.db import models
 
 from endoreg_db.models.label import LabelSet
@@ -22,6 +25,18 @@ if TYPE_CHECKING:
     from ..media.video.video_file import VideoFile
 
 
+class _InformationSourceManagerLike(Protocol):
+    def get_or_create_by_name(self, name: str) -> tuple[object, bool]: ...
+
+
+class _NamedModelMeta(Protocol):
+    name: str
+
+
+PredictionArray = npt.NDArray[np.float64]
+ConfidenceArray = npt.NDArray[np.float64]
+
+
 class VideoPredictionMeta(models.Model):
     """
     Stores metadata about predictions made by a model for a specific video.
@@ -29,10 +44,20 @@ class VideoPredictionMeta(models.Model):
     Must be associated with exactly one `VideoFile`.
     """
 
-    model_meta = models.ForeignKey("ModelMeta", on_delete=models.CASCADE)
-    date_created = models.DateTimeField(auto_now_add=True)
-    date_modified = models.DateTimeField(auto_now=True)
-    prediction_array = models.BinaryField(blank=True, null=True)
+    model_meta: models.ForeignKey["ModelMeta", "ModelMeta"] = models.ForeignKey(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+        "ModelMeta", on_delete=models.CASCADE
+    )
+    date_created: models.DateTimeField[datetime, datetime] = models.DateTimeField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+        auto_now_add=True
+    )
+    date_modified: models.DateTimeField[datetime, datetime] = models.DateTimeField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+        auto_now=True
+    )
+    prediction_array: models.BinaryField[bytes | None, bytes | None] = (
+        models.BinaryField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+            blank=True, null=True
+        )
+    )
 
     video_file = models.ForeignKey(
         "VideoFile",
@@ -43,8 +68,8 @@ class VideoPredictionMeta(models.Model):
     )
 
     if TYPE_CHECKING:
-        model_meta: models.ForeignKey["ModelMeta"]
-        video_file: models.ForeignKey["VideoFile|None"]
+        model_meta: models.ForeignKey["ModelMeta", "ModelMeta"]
+        video_file: models.ForeignKey["VideoFile|None", "VideoFile|None"]
         label_video_segments: "models.Manager[LabelVideoSegment]"
 
     class Meta:
@@ -74,11 +99,12 @@ class VideoPredictionMeta(models.Model):
             raise ValueError("VideoPredictionMeta is not associated with a VideoFile.")
 
     def __str__(self):
+        model_meta_name = cast(_NamedModelMeta, self.model_meta).name
         try:
             video_obj = self.get_video()
-            return f"Prediction Meta for Video {video_obj.video_hash} - {self.model_meta.name}"
+            return f"Prediction Meta for Video {video_obj.video_hash} - {model_meta_name}"
         except ValueError:
-            return f"Prediction Meta {self.pk} (Error: No VideoFile) - {self.model_meta.name}"
+            return f"Prediction Meta {self.pk} (Error: No VideoFile) - {model_meta_name}"
         except Exception as e:
             logger.warning(
                 "Error generating string representation for VideoPredictionMeta %s: %s",
@@ -98,14 +124,14 @@ class VideoPredictionMeta(models.Model):
             return labelset.get_labels_in_order()
         return []
 
-    def save_prediction_array(self, prediction_array: np.typing.NDArray):
+    def save_prediction_array(self, prediction_array: PredictionArray) -> None:
         """
         Save the prediction array to the database.
         """
         self.prediction_array = pickle.dumps(prediction_array)
         self.save(update_fields=["prediction_array", "date_modified"])
 
-    def get_prediction_array(self):
+    def get_prediction_array(self) -> PredictionArray | None:
         """
         Get the prediction array from the database.
         """
@@ -118,7 +144,9 @@ class VideoPredictionMeta(models.Model):
                 logger.error(f"Error unpickling prediction array for {self}: {e}")
                 return None
 
-    def calculate_prediction_array(self, window_size_in_seconds: Optional[int] = None):
+    def calculate_prediction_array(
+        self, window_size_in_seconds: Optional[int] = None
+    ) -> None:
         """
         Fetches all predictions for the associated video, labelset, and model meta,
         applies smoothing, and saves the resulting binary prediction array.
@@ -142,7 +170,9 @@ class VideoPredictionMeta(models.Model):
             )
             return
 
-        prediction_array = np.zeros((num_frames, len(label_list)))
+        prediction_array: PredictionArray = np.zeros(
+            (num_frames, len(label_list)), dtype=np.float64
+        )
 
         base_pred_qs = ImageClassificationAnnotation.objects.filter(
             model_meta=model_meta, frame__video_file=video_obj
@@ -155,7 +185,7 @@ class VideoPredictionMeta(models.Model):
                 .values_list("frame__frame_number", "float_value")
             )
 
-            confidences = np.full(num_frames, 0.5)
+            confidences: ConfidenceArray = np.full(num_frames, 0.5, dtype=np.float64)
             found_predictions = False
             for frame_num, confidence in predictions:
                 if 0 <= frame_num < num_frames:
@@ -181,8 +211,10 @@ class VideoPredictionMeta(models.Model):
         logger.info(f"Calculated and saved prediction array for {self}")
 
     def apply_running_mean(
-        self, confidence_array, window_size_in_seconds: Optional[float] = None
-    ):
+        self,
+        confidence_array: ConfidenceArray,
+        window_size_in_seconds: Optional[float] = None,
+    ) -> ConfidenceArray:
         """
         Apply a running mean filter to the confidence array for smoothing, assuming a padding
         of 0.5 for the edges.
@@ -190,13 +222,13 @@ class VideoPredictionMeta(models.Model):
         video_obj = self.get_video()
         fps = get_video_fps(video_obj)
 
-        if fps is None or fps <= 0:
+        if fps <= 0:
             logger.warning(
                 f"Invalid FPS ({fps}) for {video_obj}. Cannot apply running mean. Returning original array."
             )
             return confidence_array
 
-        if not window_size_in_seconds:
+        if window_size_in_seconds is None:
             window_size_in_seconds = DEFAULT_WINDOW_SIZE_IN_SECONDS_FOR_RUNNING_MEAN
 
         window_size_in_frames = int(window_size_in_seconds * fps)
@@ -234,13 +266,13 @@ class VideoPredictionMeta(models.Model):
         from endoreg_db.models import InformationSource
 
         video_obj = self.get_video()
-        information_source, _ = InformationSource.objects.get_or_create_by_name(
-            name="prediction"
-        )
+        information_source, _ = cast(
+            _InformationSourceManagerLike, InformationSource.objects
+        ).get_or_create_by_name("prediction")
 
-        segments_to_create = []
+        segments_to_create: list[LabelVideoSegment] = []
         for start_frame, end_frame in segments:
-            segment_data = {
+            segment_data: dict[str, object] = {
                 "start_frame_number": start_frame,
                 "end_frame_number": end_frame,
                 "source": information_source,
@@ -269,17 +301,17 @@ class VideoPredictionMeta(models.Model):
 
     def create_video_segments(
         self, segment_length_threshold_in_s: Optional[float] = None
-    ):
+    ) -> None:
         """
         Generates LabelVideoSegments based on the stored prediction array.
         """
-        if not segment_length_threshold_in_s:
+        if segment_length_threshold_in_s is None:
             segment_length_threshold_in_s = DEFAULT_VIDEO_SEGMENT_LENGTH_THRESHOLD_IN_S
 
         video_obj = self.get_video()
         fps = get_video_fps(video_obj)
 
-        if fps is None or fps <= 0:
+        if fps <= 0:
             logger.warning(
                 f"Cannot create video segments for {video_obj} with invalid FPS ({fps})."
             )

@@ -1,4 +1,9 @@
 import uuid
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
+from pathlib import Path
+from types import TracebackType
+from typing import NoReturn, Protocol, cast
 
 import pytest
 
@@ -16,10 +21,84 @@ from endoreg_db.services.media_operation_gate import (
     MediaOperationDeferred,
     create_video_stream_lease,
 )
-from endoreg_db.utils.filesystem.paths import data_paths, to_storage_relative
+from endoreg_db.utils.paths import data_paths, to_storage_relative
 
 
-def _create_video(tmp_path):
+@dataclass(frozen=True)
+class _BlackeningCall:
+    input_path: Path
+    output_path: Path
+    intervals: list[tuple[int, int]]
+    quality_mode: str
+    force_cpu: bool
+
+
+class _CenterRelation(Protocol):
+    def add(self, *objs: Center | int) -> None: ...
+
+
+def _add_center(processor: EndoscopyProcessor, center: Center) -> None:
+    cast(_CenterRelation, processor.centers).add(center)
+
+
+class _ProcessedFileContext:
+    def __init__(self, processed_path: Path) -> None:
+        self._processed_path = processed_path
+
+    def __enter__(self) -> Path:
+        return self._processed_path
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> bool:
+        return False
+
+
+def _ensure_processed_file_context(
+    processed_path: Path,
+) -> Callable[[VideoFile], _ProcessedFileContext]:
+    def ensure_local_processed_video_file(
+        video_obj: VideoFile,
+    ) -> _ProcessedFileContext:
+        return _ProcessedFileContext(processed_path)
+
+    return ensure_local_processed_video_file
+
+
+def _constant_video_hash(hash_value: str) -> Callable[[Path], str]:
+    def get_video_hash(path: Path) -> str:
+        return hash_value
+
+    return get_video_hash
+
+
+def _sync_streamable_noop(
+    video_obj: VideoFile,
+    *,
+    include_raw: bool = True,
+    include_processed: bool = True,
+    save: bool = True,
+) -> list[str]:
+    return []
+
+
+def _write_filtered_video(output_path: Path) -> Path:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_bytes(b"filtered-video")
+    return output_path
+
+
+def _fail_active_stream_save_local_file(
+    *args: object,
+    **kwargs: object,
+) -> NoReturn:
+    raise AssertionError("must not swap active stream artifact")
+
+
+def _create_video(tmp_path: Path) -> tuple[VideoFile, Path]:
     center = Center.objects.create(
         name=f"outside-stream-center-{uuid.uuid4().hex[:8]}",
         display_name="Outside Stream Center",
@@ -61,7 +140,7 @@ def _create_video(tmp_path):
         endoscope_sn_width=100,
         endoscope_sn_height=50,
     )
-    processor.centers.add(center)
+    _add_center(processor, center)
     video = VideoFile.objects.create(
         center=center,
         processor=processor,
@@ -84,8 +163,9 @@ def _create_video(tmp_path):
 
 @pytest.mark.django_db
 def test_create_video_without_outside_frames_uses_streamed_rebuild(
-    monkeypatch, tmp_path
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     video, processed_path = _create_video(tmp_path)
     outside_label, _ = Label.objects.get_or_create(name="outside")
     LabelVideoSegment.objects.create(
@@ -95,36 +175,30 @@ def test_create_video_without_outside_frames_uses_streamed_rebuild(
         end_frame_number=20,
     )
 
-    captured = {}
-
-    class _Context:
-        def __enter__(self):
-            return processed_path
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
+    captured: list[_BlackeningCall] = []
     monkeypatch.setattr(
         "endoreg_db.services.video_post_validation_blackening.ensure_local_processed_video_file",
-        lambda video_obj: _Context(),
+        _ensure_processed_file_context(processed_path),
     )
 
     def fake_blacken_video_frame_intervals(
-        input_path,
-        output_path,
+        input_path: Path,
+        output_path: Path,
         *,
-        intervals,
-        quality_mode="balanced",
-        force_cpu=False,
-    ):
-        captured["input_path"] = input_path
-        captured["output_path"] = output_path
-        captured["intervals"] = intervals
-        captured["quality_mode"] = quality_mode
-        captured["force_cpu"] = force_cpu
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_bytes(b"filtered-video")
-        return output_path
+        intervals: Iterable[tuple[int, int]],
+        quality_mode: str = "balanced",
+        force_cpu: bool = False,
+    ) -> Path:
+        captured.append(
+            _BlackeningCall(
+                input_path=input_path,
+                output_path=output_path,
+                intervals=list(intervals),
+                quality_mode=quality_mode,
+                force_cpu=force_cpu,
+            )
+        )
+        return _write_filtered_video(output_path)
 
     monkeypatch.setattr(
         "endoreg_db.services.video_post_validation_blackening.blacken_video_frame_intervals",
@@ -132,12 +206,23 @@ def test_create_video_without_outside_frames_uses_streamed_rebuild(
     )
     monkeypatch.setattr(
         "endoreg_db.services.video_post_validation_blackening.get_video_hash",
-        lambda path: "new-processed-hash",
+        _constant_video_hash("new-processed-hash"),
     )
-    streamable_sync = []
+    streamable_sync: list[tuple[VideoFile, bool, bool, bool]] = []
+
+    def fake_sync_video_streamable_artifacts(
+        video_obj: VideoFile,
+        *,
+        include_raw: bool = True,
+        include_processed: bool = True,
+        save: bool = True,
+    ) -> list[str]:
+        streamable_sync.append((video_obj, include_raw, include_processed, save))
+        return []
+
     monkeypatch.setattr(
         "endoreg_db.services.video_post_validation_blackening.sync_video_streamable_artifacts",
-        lambda *args, **kwargs: streamable_sync.append((args, kwargs)),
+        fake_sync_video_streamable_artifacts,
     )
 
     ok = VideoFile.create_video_without_outside_frames(video)
@@ -147,11 +232,12 @@ def test_create_video_without_outside_frames_uses_streamed_rebuild(
         data_paths["transcoding"]
         / f"{video.video_hash}.outside_frame_blackening.staged.mp4"
     )
-    assert captured["input_path"] == processed_path
-    assert captured["output_path"] == expected_output_path
-    assert captured["intervals"] == [(10, 20)]
-    assert captured["quality_mode"] == "balanced"
-    assert captured["force_cpu"] is False
+    assert len(captured) == 1
+    assert captured[0].input_path == processed_path
+    assert captured[0].output_path == expected_output_path
+    assert captured[0].intervals == [(10, 20)]
+    assert captured[0].quality_mode == "balanced"
+    assert captured[0].force_cpu is False
     assert not expected_output_path.exists()
 
     video.refresh_from_db()
@@ -165,8 +251,9 @@ def test_create_video_without_outside_frames_uses_streamed_rebuild(
 
 @pytest.mark.django_db
 def test_create_video_without_outside_frames_defers_swap_when_stream_active(
-    monkeypatch, tmp_path
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     video, processed_path = _create_video(tmp_path)
     original_processed_name = video.processed_file.name
     outside_label, _ = Label.objects.get_or_create(name="outside")
@@ -178,22 +265,18 @@ def test_create_video_without_outside_frames_defers_swap_when_stream_active(
     )
     create_video_stream_lease(video, file_type="processed", ttl_seconds=120)
 
-    class _Context:
-        def __enter__(self):
-            return processed_path
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
     monkeypatch.setattr(
         "endoreg_db.services.video_post_validation_blackening.ensure_local_processed_video_file",
-        lambda video_obj: _Context(),
+        _ensure_processed_file_context(processed_path),
     )
 
-    def fake_blacken_video_frame_intervals(input_path, output_path, *, intervals):
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_bytes(b"filtered-video")
-        return output_path
+    def fake_blacken_video_frame_intervals(
+        input_path: Path,
+        output_path: Path,
+        *,
+        intervals: Iterable[tuple[int, int]],
+    ) -> Path:
+        return _write_filtered_video(output_path)
 
     monkeypatch.setattr(
         "endoreg_db.services.video_post_validation_blackening.blacken_video_frame_intervals",
@@ -201,15 +284,11 @@ def test_create_video_without_outside_frames_defers_swap_when_stream_active(
     )
     monkeypatch.setattr(
         "endoreg_db.services.video_post_validation_blackening.get_video_hash",
-        lambda path: "new-processed-hash",
+        _constant_video_hash("new-processed-hash"),
     )
-
-    def fail_save_local_file(*args, **kwargs):
-        raise AssertionError("must not swap active stream artifact")
-
     monkeypatch.setattr(
         "endoreg_db.services.video_post_validation_blackening.save_local_file",
-        fail_save_local_file,
+        _fail_active_stream_save_local_file,
     )
     with pytest.raises(MediaOperationDeferred):
         VideoFile.create_video_without_outside_frames(video)
@@ -221,8 +300,9 @@ def test_create_video_without_outside_frames_defers_swap_when_stream_active(
 
 @pytest.mark.django_db
 def test_create_video_without_outside_frames_merges_adjacent_intervals_and_noops_when_empty(
-    monkeypatch, tmp_path
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     video, processed_path = _create_video(tmp_path)
     outside_label, _ = Label.objects.get_or_create(name="outside")
     LabelVideoSegment.objects.create(
@@ -244,32 +324,23 @@ def test_create_video_without_outside_frames_merges_adjacent_intervals_and_noops
         end_frame_number=110,
     )
 
-    class _Context:
-        def __enter__(self):
-            return processed_path
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
     monkeypatch.setattr(
         "endoreg_db.services.video_post_validation_blackening.ensure_local_processed_video_file",
-        lambda video_obj: _Context(),
+        _ensure_processed_file_context(processed_path),
     )
 
-    calls = []
+    calls: list[list[tuple[int, int]]] = []
 
     def fake_blacken_video_frame_intervals(
-        input_path,
-        output_path,
+        input_path: Path,
+        output_path: Path,
         *,
-        intervals,
-        quality_mode="balanced",
-        force_cpu=False,
-    ):
-        calls.append(intervals)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_bytes(b"filtered-video")
-        return output_path
+        intervals: Iterable[tuple[int, int]],
+        quality_mode: str = "balanced",
+        force_cpu: bool = False,
+    ) -> Path:
+        calls.append(list(intervals))
+        return _write_filtered_video(output_path)
 
     monkeypatch.setattr(
         "endoreg_db.services.video_post_validation_blackening.blacken_video_frame_intervals",
@@ -277,11 +348,11 @@ def test_create_video_without_outside_frames_merges_adjacent_intervals_and_noops
     )
     monkeypatch.setattr(
         "endoreg_db.services.video_post_validation_blackening.get_video_hash",
-        lambda path: "merged-hash",
+        _constant_video_hash("merged-hash"),
     )
     monkeypatch.setattr(
         "endoreg_db.services.video_post_validation_blackening.sync_video_streamable_artifacts",
-        lambda *args, **kwargs: None,
+        _sync_streamable_noop,
     )
 
     assert VideoFile.create_video_without_outside_frames(video) is True
@@ -295,37 +366,28 @@ def test_create_video_without_outside_frames_merges_adjacent_intervals_and_noops
 
 @pytest.mark.django_db
 def test_create_video_without_outside_frames_uses_supplied_intervals(
-    monkeypatch,
-    tmp_path,
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     video, processed_path = _create_video(tmp_path)
-
-    class _Context:
-        def __enter__(self):
-            return processed_path
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
 
     monkeypatch.setattr(
         "endoreg_db.services.video_post_validation_blackening.ensure_local_processed_video_file",
-        lambda video_obj: _Context(),
+        _ensure_processed_file_context(processed_path),
     )
 
-    calls = []
+    calls: list[list[tuple[int, int]]] = []
 
     def fake_blacken_video_frame_intervals(
-        input_path,
-        output_path,
+        input_path: Path,
+        output_path: Path,
         *,
-        intervals,
-        quality_mode="balanced",
-        force_cpu=False,
-    ):
-        calls.append(intervals)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_bytes(b"filtered-video")
-        return output_path
+        intervals: Iterable[tuple[int, int]],
+        quality_mode: str = "balanced",
+        force_cpu: bool = False,
+    ) -> Path:
+        calls.append(list(intervals))
+        return _write_filtered_video(output_path)
 
     monkeypatch.setattr(
         "endoreg_db.services.video_post_validation_blackening.blacken_video_frame_intervals",
@@ -333,11 +395,11 @@ def test_create_video_without_outside_frames_uses_supplied_intervals(
     )
     monkeypatch.setattr(
         "endoreg_db.services.video_post_validation_blackening.get_video_hash",
-        lambda path: "supplied-interval-hash",
+        _constant_video_hash("supplied-interval-hash"),
     )
     monkeypatch.setattr(
         "endoreg_db.services.video_post_validation_blackening.sync_video_streamable_artifacts",
-        lambda *args, **kwargs: None,
+        _sync_streamable_noop,
     )
 
     assert (
@@ -352,9 +414,9 @@ def test_create_video_without_outside_frames_uses_supplied_intervals(
 
 @pytest.mark.django_db
 def test_create_video_without_outside_frames_includes_frame_level_outside_annotations(
-    monkeypatch,
-    tmp_path,
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     video, processed_path = _create_video(tmp_path)
     outside_label, _ = Label.objects.get_or_create(name="outside")
     source, _ = InformationSource.objects.get_or_create(name="manual_annotation")
@@ -371,32 +433,23 @@ def test_create_video_without_outside_frames_includes_frame_level_outside_annota
         value=True,
     )
 
-    class _Context:
-        def __enter__(self):
-            return processed_path
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
     monkeypatch.setattr(
         "endoreg_db.services.video_post_validation_blackening.ensure_local_processed_video_file",
-        lambda video_obj: _Context(),
+        _ensure_processed_file_context(processed_path),
     )
 
-    calls = []
+    calls: list[list[tuple[int, int]]] = []
 
     def fake_blacken_video_frame_intervals(
-        input_path,
-        output_path,
+        input_path: Path,
+        output_path: Path,
         *,
-        intervals,
-        quality_mode="balanced",
-        force_cpu=False,
-    ):
-        calls.append(intervals)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_bytes(b"filtered-video")
-        return output_path
+        intervals: Iterable[tuple[int, int]],
+        quality_mode: str = "balanced",
+        force_cpu: bool = False,
+    ) -> Path:
+        calls.append(list(intervals))
+        return _write_filtered_video(output_path)
 
     monkeypatch.setattr(
         "endoreg_db.services.video_post_validation_blackening.blacken_video_frame_intervals",
@@ -404,11 +457,11 @@ def test_create_video_without_outside_frames_includes_frame_level_outside_annota
     )
     monkeypatch.setattr(
         "endoreg_db.services.video_post_validation_blackening.get_video_hash",
-        lambda path: "annotation-hash",
+        _constant_video_hash("annotation-hash"),
     )
     monkeypatch.setattr(
         "endoreg_db.services.video_post_validation_blackening.sync_video_streamable_artifacts",
-        lambda *args, **kwargs: None,
+        _sync_streamable_noop,
     )
 
     assert VideoFile.create_video_without_outside_frames(video) is True

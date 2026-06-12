@@ -1,13 +1,27 @@
 from __future__ import annotations
 
 import uuid
+from typing import Literal
 
 import pytest
+
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
 from endoreg_db.models.state import SegmentAnnotationStatus
 from endoreg_db.models.state import video_segment_validation as segment_state
+
+
+SegmentStateValues = dict[str, bool]
+HistoryStatus = str | None
+SegmentStatusValue = str
+SegmentMutatorName = Literal[
+    "mark_segment_annotations_stale",
+    "mark_segment_annotations_pending_cleanup",
+    "mark_segment_annotations_complete_without_cleanup",
+    "mark_post_validation_incomplete",
+    "mark_post_validation_complete",
+]
 
 
 def _create_video() -> VideoFile:
@@ -27,7 +41,7 @@ def _blackening_history(video: VideoFile, *, status: str) -> VideoProcessingHist
         operation=VideoProcessingHistory.OPERATION_REPROCESSING,
         status=status,
         task_id=f"segment-state-{uuid.uuid4().hex}",
-        config=segment_state._blackening_history_config(only_validated=False),
+        config=segment_state.blackening_history_config(only_validated=False),
     )
 
 
@@ -60,16 +74,17 @@ def _blackening_history(video: VideoFile, *, status: str) -> VideoProcessingHist
     ],
 )
 def test_resolve_segment_annotation_status_states(
-    state_values,
-    history_status,
-    expected_status,
-):
+    state_values: SegmentStateValues,
+    history_status: HistoryStatus,
+    expected_status: SegmentStatusValue,
+) -> None:
     video = _create_video()
     if state_values:
         state = video.get_or_create_state()
         for field_name, value in state_values.items():
             setattr(state, field_name, value)
-        state.save(update_fields=[*state_values.keys(), "date_modified"])
+        update_fields: list[str] = [*state_values.keys(), "date_modified"]
+        state.save(update_fields=update_fields)
     if history_status is not None:
         _blackening_history(video, status=history_status)
 
@@ -77,7 +92,7 @@ def test_resolve_segment_annotation_status_states(
 
 
 @pytest.mark.django_db
-def test_latest_post_validation_rebuild_ignores_other_reprocessing_jobs():
+def test_latest_post_validation_rebuild_ignores_other_reprocessing_jobs() -> None:
     video = _create_video()
     VideoProcessingHistory.objects.create(
         video=video,
@@ -147,9 +162,9 @@ def test_latest_post_validation_rebuild_ignores_other_reprocessing_jobs():
     ],
 )
 def test_segment_state_mutators_clear_export_readiness(
-    mutator_name,
-    expected_values,
-):
+    mutator_name: SegmentMutatorName,
+    expected_values: SegmentStateValues,
+) -> None:
     video = _create_video()
     state = video.get_or_create_state()
     state.segment_annotations_created = True

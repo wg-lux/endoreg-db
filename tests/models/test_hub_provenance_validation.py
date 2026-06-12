@@ -116,5 +116,12 @@ class HubProvenanceValidationTests(TestCase):
         )
 
         assert transfer_job.provenance["entrypoint"] == "transfer"
-        assert transfer_job.provenance["media_uploads"][0]["media_role"] == "processed"
-        assert transfer_job.provenance["case_resolution"]["status"] == "linked"
+        media_uploads = transfer_job.provenance["media_uploads"]
+        assert isinstance(media_uploads, list)
+        first_media_upload = media_uploads[0]
+        assert isinstance(first_media_upload, dict)
+        assert first_media_upload["media_role"] == "processed"
+
+        case_resolution = transfer_job.provenance["case_resolution"]
+        assert isinstance(case_resolution, dict)
+        assert case_resolution["status"] == "linked"

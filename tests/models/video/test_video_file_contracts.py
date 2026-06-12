@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Any, Protocol, cast
 from unittest.mock import Mock, patch
 
 import pytest
-from django.core.files.base import ContentFile
+from django.core.files.base import ContentFile, File
 
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS
 from endoreg_db.models.administration.center.center import Center
@@ -17,19 +19,28 @@ from endoreg_db.services.video_files import (
 )
 
 
+class _WritableFieldFile(Protocol):
+    def save(self, name: str, content: File[bytes], save: bool = True) -> None: ...
+
+
+def _field_file(field: object) -> _WritableFieldFile:
+    return cast(_WritableFieldFile, field)
+
+
 @pytest.fixture
 def video_center() -> Center:
     return Center.objects.create(name="video-contracts", display_name="Video Contracts")
 
 
 @pytest.mark.django_db
-def test_video_queryset_next_after_orders_by_primary_key(video_center: Center):
+def test_video_queryset_next_after_orders_by_primary_key(video_center: Center) -> None:
     first = VideoFile.objects.create(center=video_center, video_hash="query-first")
     second = VideoFile.objects.create(center=video_center, video_hash="query-second")
 
-    assert VideoFile.objects.next_after() == first
-    assert VideoFile.objects.next_after(first.pk) == second
-    assert VideoFile.objects.next_after("not-an-int") is None
+    video_manager = cast(Any, VideoFile.objects)
+    assert video_manager.next_after() == first
+    assert video_manager.next_after(first.pk) == second
+    assert video_manager.next_after("not-an-int") is None
 
 
 @pytest.mark.django_db
@@ -91,8 +102,8 @@ def test_video_file_import_context_names_fall_back_to_video_meta_processor(
 @pytest.mark.django_db
 def test_video_file_active_file_prefers_processed_over_raw(video_center: Center):
     video = VideoFile.objects.create(center=video_center, video_hash="active-file")
-    video.raw_file.save("raw/active.mp4", ContentFile(b"raw"), save=True)
-    video.processed_file.save(
+    _field_file(video.raw_file).save("raw/active.mp4", ContentFile(b"raw"), save=True)
+    _field_file(video.processed_file).save(
         "processed/active.mp4", ContentFile(b"processed"), save=True
     )
 
@@ -118,8 +129,8 @@ def test_video_file_active_file_raises_when_no_media_is_available(video_center: 
 
 @pytest.mark.django_db
 def test_video_file_active_file_path_uses_processed_stream_path(
-    video_center: Center, tmp_path
-):
+    video_center: Center, tmp_path: Path
+) -> None:
     processed_path = tmp_path / "processed.mp4"
     processed_path.write_bytes(b"processed")
     video = VideoFile.objects.create(center=video_center, video_hash="active-path")
@@ -196,8 +207,8 @@ def test_video_file_stream_relative_paths_reject_unsafe_values(video_center: Cen
 @pytest.mark.django_db
 def test_video_file_can_offload_stream_only_in_streamable_mode(
     video_center: Center,
-    tmp_path,
-):
+    tmp_path: Path,
+) -> None:
     video = VideoFile.objects.create(
         center=video_center,
         video_hash="can-offload",
@@ -220,8 +231,8 @@ def test_video_file_can_offload_stream_only_in_streamable_mode(
 @pytest.mark.django_db
 def test_video_file_resolve_processed_stream_source_prefers_streamable_path(
     video_center: Center,
-    tmp_path,
-):
+    tmp_path: Path,
+) -> None:
     stream_path = tmp_path / "streamable-processed.mp4"
     stream_path.write_bytes(b"processed")
     video = VideoFile.objects.create(
@@ -239,8 +250,8 @@ def test_video_file_resolve_processed_stream_source_prefers_streamable_path(
 @pytest.mark.django_db
 def test_video_file_resolve_raw_stream_source_materializes_when_requested(
     video_center: Center,
-    tmp_path,
-):
+    tmp_path: Path,
+) -> None:
     stream_path = tmp_path / "streamable-raw.mp4"
     stream_path.write_bytes(b"raw")
     video = VideoFile.objects.create(center=video_center, video_hash="resolve-raw")

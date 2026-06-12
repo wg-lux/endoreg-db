@@ -1,5 +1,6 @@
 import logging
 import uuid
+from collections.abc import Callable
 from datetime import datetime
 from types import NoneType
 from typing import TYPE_CHECKING, Protocol, TypeAlias, cast
@@ -10,12 +11,12 @@ from django.db import models
 from django.utils import timezone
 from lx_dtypes.models.contracts.json_types import JsonObject
 
-from endoreg_db.services.hub.payloads import validate_upload_provenance_payload
-from endoreg_db.utils.filesystem.paths import (
+from endoreg_db.schemas import validate_upload_provenance_payload
+from endoreg_db.utils.paths import (
     EndoregPathsModel,
     build_upload_job_relative_path,
 )
-from endoreg_db.utils.observability.structured_logging import (
+from endoreg_db.utils.structured_logging import (
     emit_structured_event,
     hash_identifier,
     safe_log_value,
@@ -36,24 +37,29 @@ UploadJobSensitiveMeta: TypeAlias = "SensitiveMeta | NoUploadJobRelationValue"
 UploadJobDateTime: TypeAlias = "datetime | NoUploadJobDateTimeValue"
 
 
-class _UploadJobStorage(Protocol):
-    _location: str
-
-    def _clear_cached_properties(self, *names: str) -> None: ...
-
-
 class _UploadJobFileField(Protocol):
-    storage: _UploadJobStorage
+    storage: object
+
+
+def _storage_location(storage: object) -> str | None:
+    location = getattr(storage, "_location", None)
+    return location if isinstance(location, str) else None
+
+
+def _set_storage_location(storage: object, target_location: str) -> None:
+    setattr(storage, "_location", target_location)
+    clear_cached_properties = getattr(storage, "_clear_cached_properties", None)
+    if callable(clear_cached_properties):
+        cast(Callable[[str], None], clear_cached_properties)("MEDIA_ROOT")
 
 
 def _sync_upload_job_storage_location(instance: "UploadJob") -> None:
     file_field = cast(_UploadJobFileField, instance._meta.get_field("file"))
     storage = file_field.storage
     target_location = str(EndoregPathsModel.from_environment().storage.resolve())
-    if storage._location == target_location:
+    if _storage_location(storage) == target_location:
         return
-    storage._location = target_location
-    storage._clear_cached_properties("MEDIA_ROOT")
+    _set_storage_location(storage, target_location)
 
 
 def upload_job_upload_to(instance: "UploadJob", filename: str) -> str:
@@ -126,13 +132,15 @@ class UploadJob(models.Model):
         max_length=100, blank=True, help_text="MIME type of the uploaded file"
     )
 
-    source_center: models.ForeignKey[UploadJobCenter, UploadJobCenter] = models.ForeignKey(
-        "Center",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="upload_jobs",
-        help_text="Center identity attached to the ingest request",
+    source_center: models.ForeignKey[UploadJobCenter, UploadJobCenter] = (
+        models.ForeignKey(
+            "Center",
+            null=True,
+            blank=True,
+            on_delete=models.SET_NULL,
+            related_name="upload_jobs",
+            help_text="Center identity attached to the ingest request",
+        )
     )
 
     source_system: models.CharField[str, str] = models.CharField(
@@ -332,9 +340,7 @@ class UploadJob(models.Model):
         self.status = self.Status.PROCESSING.value
         self.save(update_fields=["status", "updated_at"])
 
-    def mark_completed(
-        self, sensitive_meta: UploadJobSensitiveMeta = None
-    ) -> None:
+    def mark_completed(self, sensitive_meta: UploadJobSensitiveMeta = None) -> None:
         """Mark the job as successfully completed."""
         self.status = self.Status.ANONYMIZED.value
         if sensitive_meta:

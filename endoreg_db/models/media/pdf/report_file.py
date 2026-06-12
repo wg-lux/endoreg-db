@@ -153,6 +153,9 @@ class AbstractExaminationReport(AbstractDocument):
 
 
 class AnonymExaminationReport(AbstractExaminationReport):
+    if TYPE_CHECKING:
+        patient_examination_id: int | None
+
     def get_or_create_examiner(
         self, examiner_first_name: str, examiner_last_name: str
     ) -> tuple["Examiner", bool]:

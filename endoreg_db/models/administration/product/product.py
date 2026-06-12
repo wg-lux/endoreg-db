@@ -39,9 +39,7 @@ class Product(models.Model):
     transport_route: models.ForeignKey[
         TransportRoute | NoProductValue,
         TransportRoute | NoProductValue,
-    ] = models.ForeignKey(
-        "TransportRoute", on_delete=models.SET_NULL, null=True
-    )
+    ] = models.ForeignKey("TransportRoute", on_delete=models.SET_NULL, null=True)
     product_group: models.ForeignKey[
         ProductGroup | NoProductValue,
         ProductGroup | NoProductValue,

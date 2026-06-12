@@ -35,9 +35,7 @@ class Examiner(Person):
     center: models.ForeignKey[
         Center | NoExaminerValue,
         Center | NoExaminerValue,
-    ] = models.ForeignKey(
-        "Center", on_delete=models.CASCADE, blank=True, null=True
-    )
+    ] = models.ForeignKey("Center", on_delete=models.CASCADE, blank=True, null=True)
     hash: "models.CharField[str, str]" = models.CharField(max_length=255, unique=True)
 
     if TYPE_CHECKING:

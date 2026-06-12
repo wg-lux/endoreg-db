@@ -1,4 +1,7 @@
+from django.core.files.storage import Storage
+from typing import Protocol, cast
 import random
+from datetime import date
 from logging import getLogger
 
 from django.test import TestCase
@@ -9,6 +12,11 @@ from endoreg_db.models import (
     PatientExamination,
     PatientLabSample,
 )
+
+class _StoredFileLike(Protocol):
+    name: str
+    storage: Storage
+
 
 logger = getLogger(__name__)
 
@@ -24,23 +32,31 @@ from ...helpers.data_loader import (
     load_unit_data,
 )
 from ...helpers.default_objects import (
-    generate_patient,
     get_default_egd_pdf,
     get_random_default_examination,
     get_random_gender,
 )
 
 
+def _as_center(center: Center | str | None) -> Center:
+    if isinstance(center, Center):
+        return center
+    if center is None:
+        raise ValueError("Patient center is required for this test setup.")
+    return Center.objects.get(name=center)
+
+
 class PatientModelTest(TestCase):
     def setUp(self):
         load_center_data()
         load_gender_data()
-        self.patient = generate_patient(
+        self.patient = Patient.objects.create(
             first_name="John",
             last_name="Doe",
-            birth_date="1990-01-01",
+            dob=date(1990, 1, 1),
+            center=_as_center("university_hospital_wuerzburg"),
+            gender=get_random_gender(),
         )
-        self.patient.save()
 
     def test_patient_creation(self):
         """Test if the patient is created correctly."""
@@ -65,11 +81,13 @@ class PatientModelWithExaminationTest(TestCase):
         load_examination_data()
         load_examination_indication_data()
 
-        self.patient = generate_patient(
-            gender="male",
-            center="university_hospital_wuerzburg",
+        self.patient = Patient.objects.create(
+            first_name="John",
+            last_name="Doe",
+            dob=date(1985, 1, 1),
+            center=_as_center("university_hospital_wuerzburg"),
+            gender=get_random_gender(),
         )
-        self.patient.save()
 
         self.sample_examination_object = get_random_default_examination()
         self.patient_examination = self.patient.create_examination(
@@ -101,7 +119,10 @@ class PatientModelWithExaminationTest(TestCase):
         # make sure the pdf file exists
         files = sample_examination_3.raw_pdf_files.all()
         self.assertEqual(len(files), 1)
-        self.assertTrue(files[0].file.storage.exists(files[0].file.name))
+        stored_file = cast(_StoredFileLike, files[0].file)
+        raw_file_name = stored_file.name
+        self.assertTrue(raw_file_name)
+        self.assertTrue(stored_file.storage.exists(raw_file_name))
 
     def test_get_random_age(self):
         """Test if the get_random_age method returns a valid age."""
@@ -111,7 +132,7 @@ class PatientModelWithExaminationTest(TestCase):
         self.assertLessEqual(age, 100)
 
     def test_get_random_dob(self):
-        center = self.patient.center
+        center = _as_center(self.patient.center)
 
         age = Patient.get_random_age()
         dob = Patient.get_dob_from_age(age)
@@ -134,13 +155,12 @@ class PatientModelWithExaminationTest(TestCase):
         self.assertIsNotNone(patient.last_name)
         self.assertIsNotNone(patient.dob)
         # Assert the correct center is assigned
-        self.assertIsNotNone(patient.center)
-        if patient.center is not None:
-            self.assertEqual(patient.center.name, "gplay_case_generator")
+        patient_center = _as_center(patient.center)
+        self.assertEqual(patient_center.name, "gplay_case_generator")
 
     def test_get_or_create_pseudo_patient_by_hash(self):
         """Test if the get_or_create_pseudo_patient_by_hash method creates a patient with a random name and dob."""
-        center = self.patient.center
+        center = _as_center(self.patient.center)
 
         gender = get_random_gender()
         patient_hash = "test_hash"

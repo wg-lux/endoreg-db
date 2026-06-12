@@ -42,12 +42,14 @@ class NetworkNode(models.Model):
     shared_secret_hash: models.CharField[str, str] = models.CharField(
         max_length=255, blank=True, default=""
     )
-    owning_center: models.ForeignKey[NetworkNodeCenter, NetworkNodeCenter] = models.ForeignKey(
-        "Center",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="network_nodes",
+    owning_center: models.ForeignKey[NetworkNodeCenter, NetworkNodeCenter] = (
+        models.ForeignKey(
+            "Center",
+            null=True,
+            blank=True,
+            on_delete=models.SET_NULL,
+            related_name="network_nodes",
+        )
     )
     created_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
         auto_now_add=True

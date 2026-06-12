@@ -77,10 +77,7 @@ class ProductMaterial(models.Model):
         if emission_unit_source is not None:
             if self.unit != emission_factor_source.unit:
                 raise Exception(
-                    "Unit mismatch: "
-                    + unit.name
-                    + " != "
-                    + emission_unit_source.name
+                    "Unit mismatch: " + unit.name + " != " + emission_unit_source.name
                 )
 
         emission_value = emission_factor_source.value * self.quantity

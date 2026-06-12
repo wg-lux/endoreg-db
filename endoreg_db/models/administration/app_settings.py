@@ -49,12 +49,12 @@ class ApplicationSettings(models.Model):
     )
     processor: models.ForeignKey[EndoscopyProcessor, EndoscopyProcessor] = (
         models.ForeignKey(
-        "EndoscopyProcessor",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="+",
-    )
+            "EndoscopyProcessor",
+            on_delete=models.SET_NULL,
+            null=True,
+            blank=True,
+            related_name="+",
+        )
     )
     annotator_name: models.CharField[str, str] = models.CharField(
         max_length=255,

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from contextlib import nullcontext
+from contextlib import AbstractContextManager, nullcontext
 import importlib
 from pathlib import Path
+from typing import NoReturn
 import uuid
 
 import pytest
@@ -33,10 +34,25 @@ def _video(tmp_path: Path, *, frame_count: int = 3) -> VideoFile:
     return video
 
 
+def _video_has_raw(_video: VideoFile) -> bool:
+    return True
+
+
+def _unexpected_full_extraction(
+    _video_path: Path,
+    _output_dir: Path,
+    _quality: int,
+    _ext: str = "jpg",
+    _fps: float | None = None,
+) -> NoReturn:
+    raise AssertionError("complete extraction should have been reused")
+
+
 @pytest.mark.django_db
 def test_full_extraction_reextracts_when_only_partial_files_exist(
-    monkeypatch, tmp_path
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     video = _video(tmp_path, frame_count=3)
     frame_dir = video.get_frame_dir_path()
     assert frame_dir is not None
@@ -47,20 +63,37 @@ def test_full_extraction_reextracts_when_only_partial_files_exist(
     source_path.write_bytes(b"video")
     calls: list[Path] = []
 
-    def fake_extract_frames(source, output_dir, **kwargs):
+    def fake_extract_frames(
+        source: Path,
+        output_dir: Path,
+        quality: int,
+        ext: str = "jpg",
+        fps: float | None = None,
+    ) -> list[Path]:
+        assert quality > 0
+        assert ext == "jpg"
+        assert fps is None
         calls.append(Path(source))
-        paths = []
+        paths: list[Path] = []
         for frame_number in range(3):
             path = output_dir / f"frame_{frame_number:07d}.jpg"
             path.write_bytes(f"frame-{frame_number}".encode())
             paths.append(path)
         return paths
 
-    monkeypatch.setattr(VideoFile, "has_raw", property(lambda _self: True))
+    def fake_video_source_context(
+        _video: VideoFile,
+        *,
+        from_processed: bool,
+    ) -> AbstractContextManager[Path]:
+        assert from_processed is False
+        return nullcontext(source_path)
+
+    monkeypatch.setattr(VideoFile, "has_raw", property(_video_has_raw))
     monkeypatch.setattr(
         extract_frames_module,
         "_video_source_context",
-        lambda _video, *, from_processed: nullcontext(source_path),
+        fake_video_source_context,
     )
     monkeypatch.setattr(
         extract_frames_module,
@@ -94,9 +127,9 @@ def test_full_extraction_reextracts_when_only_partial_files_exist(
 
 @pytest.mark.django_db
 def test_full_extraction_error_preserves_existing_cache_until_replacement_verified(
-    monkeypatch,
-    tmp_path,
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     video = _video(tmp_path, frame_count=3)
     frame_dir = video.get_frame_dir_path()
     assert frame_dir is not None
@@ -107,14 +140,28 @@ def test_full_extraction_error_preserves_existing_cache_until_replacement_verifi
     source_path = tmp_path / "source.mp4"
     source_path.write_bytes(b"video")
 
-    def fake_extract_frames(*_args, **_kwargs):
+    def fake_extract_frames(
+        _video_path: Path,
+        _output_dir: Path,
+        _quality: int,
+        _ext: str = "jpg",
+        _fps: float | None = None,
+    ) -> NoReturn:
         raise RuntimeError("ffmpeg failed before replacement was verified")
 
-    monkeypatch.setattr(VideoFile, "has_raw", property(lambda _self: True))
+    def fake_video_source_context(
+        _video: VideoFile,
+        *,
+        from_processed: bool,
+    ) -> AbstractContextManager[Path]:
+        assert from_processed is False
+        return nullcontext(source_path)
+
+    monkeypatch.setattr(VideoFile, "has_raw", property(_video_has_raw))
     monkeypatch.setattr(
         extract_frames_module,
         "_video_source_context",
-        lambda _video, *, from_processed: nullcontext(source_path),
+        fake_video_source_context,
     )
     monkeypatch.setattr(
         extract_frames_module,
@@ -133,9 +180,9 @@ def test_full_extraction_error_preserves_existing_cache_until_replacement_verifi
 
 @pytest.mark.django_db
 def test_full_extraction_skips_only_when_expected_files_are_complete(
-    monkeypatch,
-    tmp_path,
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     video = _video(tmp_path, frame_count=2)
     frame_dir = video.get_frame_dir_path()
     assert frame_dir is not None
@@ -151,18 +198,24 @@ def test_full_extraction_skips_only_when_expected_files_are_complete(
     source_path = tmp_path / "source.mp4"
     source_path.write_bytes(b"video")
 
-    monkeypatch.setattr(VideoFile, "has_raw", property(lambda _self: True))
+    def fake_video_source_context(
+        _video: VideoFile,
+        *,
+        from_processed: bool,
+    ) -> AbstractContextManager[Path]:
+        assert from_processed is False
+        return nullcontext(source_path)
+
+    monkeypatch.setattr(VideoFile, "has_raw", property(_video_has_raw))
     monkeypatch.setattr(
         extract_frames_module,
         "_video_source_context",
-        lambda _video, *, from_processed: nullcontext(source_path),
+        fake_video_source_context,
     )
     monkeypatch.setattr(
         extract_frames_module,
         "ffmpeg_extract_frames",
-        lambda *args, **kwargs: (_ for _ in ()).throw(
-            AssertionError("complete extraction should have been reused")
-        ),
+        _unexpected_full_extraction,
     )
 
     assert video.extract_frames(overwrite=False) is True
@@ -173,16 +226,25 @@ def test_full_extraction_skips_only_when_expected_files_are_complete(
 
 @pytest.mark.django_db
 def test_full_extraction_rejects_extractor_returned_paths_missing_on_disk(
-    monkeypatch,
-    tmp_path,
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     video = _video(tmp_path, frame_count=3)
 
     source_path = tmp_path / "source.mp4"
     source_path.write_bytes(b"video")
 
-    def fake_extract_frames(_source, output_dir, **_kwargs):
-        paths = []
+    def fake_extract_frames(
+        _source: Path,
+        output_dir: Path,
+        quality: int,
+        ext: str = "jpg",
+        fps: float | None = None,
+    ) -> list[Path]:
+        assert quality > 0
+        assert ext == "jpg"
+        assert fps is None
+        paths: list[Path] = []
         for frame_number in range(3):
             path = output_dir / f"frame_{frame_number:07d}.jpg"
             if frame_number != 2:
@@ -190,11 +252,19 @@ def test_full_extraction_rejects_extractor_returned_paths_missing_on_disk(
             paths.append(path)
         return paths
 
-    monkeypatch.setattr(VideoFile, "has_raw", property(lambda _self: True))
+    def fake_video_source_context(
+        _video: VideoFile,
+        *,
+        from_processed: bool,
+    ) -> AbstractContextManager[Path]:
+        assert from_processed is False
+        return nullcontext(source_path)
+
+    monkeypatch.setattr(VideoFile, "has_raw", property(_video_has_raw))
     monkeypatch.setattr(
         extract_frames_module,
         "_video_source_context",
-        lambda _video, *, from_processed: nullcontext(source_path),
+        fake_video_source_context,
     )
     monkeypatch.setattr(
         extract_frames_module,
@@ -213,9 +283,9 @@ def test_full_extraction_rejects_extractor_returned_paths_missing_on_disk(
 
 @pytest.mark.django_db
 def test_full_extraction_fast_path_repairs_stale_db_from_complete_disk(
-    monkeypatch,
-    tmp_path,
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     video = _video(tmp_path, frame_count=3)
     frame_dir = video.get_frame_dir_path()
     assert frame_dir is not None
@@ -238,9 +308,7 @@ def test_full_extraction_fast_path_repairs_stale_db_from_complete_disk(
     monkeypatch.setattr(
         extract_frames_module,
         "ffmpeg_extract_frames",
-        lambda *args, **kwargs: (_ for _ in ()).throw(
-            AssertionError("complete disk cache should repair DB without FFmpeg")
-        ),
+        _unexpected_full_extraction,
     )
 
     assert video.extract_frames(overwrite=False) is True
@@ -261,27 +329,44 @@ def test_full_extraction_fast_path_repairs_stale_db_from_complete_disk(
 
 @pytest.mark.django_db
 def test_full_extraction_corrects_single_trailing_frame_from_manifest(
-    monkeypatch,
-    tmp_path,
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     video = _video(tmp_path, frame_count=2)
 
     source_path = tmp_path / "source.mp4"
     source_path.write_bytes(b"video")
 
-    def fake_extract_frames(_source, output_dir, **_kwargs):
-        paths = []
+    def fake_extract_frames(
+        _source: Path,
+        output_dir: Path,
+        quality: int,
+        ext: str = "jpg",
+        fps: float | None = None,
+    ) -> list[Path]:
+        assert quality > 0
+        assert ext == "jpg"
+        assert fps is None
+        paths: list[Path] = []
         for frame_number in range(3):
             path = output_dir / f"frame_{frame_number:07d}.jpg"
             path.write_bytes(f"frame-{frame_number}".encode())
             paths.append(path)
         return paths
 
-    monkeypatch.setattr(VideoFile, "has_raw", property(lambda _self: True))
+    def fake_video_source_context(
+        _video: VideoFile,
+        *,
+        from_processed: bool,
+    ) -> AbstractContextManager[Path]:
+        assert from_processed is False
+        return nullcontext(source_path)
+
+    monkeypatch.setattr(VideoFile, "has_raw", property(_video_has_raw))
     monkeypatch.setattr(
         extract_frames_module,
         "_video_source_context",
-        lambda _video, *, from_processed: nullcontext(source_path),
+        fake_video_source_context,
     )
     monkeypatch.setattr(
         extract_frames_module,
@@ -299,7 +384,10 @@ def test_full_extraction_corrects_single_trailing_frame_from_manifest(
 
 
 @pytest.mark.django_db
-def test_range_extraction_recreates_stale_extracted_flag_file(monkeypatch, tmp_path):
+def test_range_extraction_recreates_stale_extracted_flag_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     video = _video(tmp_path, frame_count=10)
     frame_dir = video.get_frame_dir_path()
     assert frame_dir is not None
@@ -311,22 +399,31 @@ def test_range_extraction_recreates_stale_extracted_flag_file(monkeypatch, tmp_p
     calls: list[tuple[int, int]] = []
 
     def fake_extract_frame_range(
-        source,
-        output_dir,
-        start_frame,
-        end_frame,
-        **kwargs,
-    ):
+        source: Path,
+        output_dir: Path,
+        start_frame: int,
+        end_frame: int,
+        quality: int,
+        ext: str = "jpg",
+    ) -> list[Path]:
+        assert source == source_path
+        assert quality > 0
+        assert ext == "jpg"
         calls.append((start_frame, end_frame))
         path = output_dir / "frame_0000007.jpg"
         path.write_bytes(b"frame-seven")
         return [path]
 
-    monkeypatch.setattr(VideoFile, "has_raw", property(lambda _self: True))
+    def fake_raw_video_source_context(
+        _video: VideoFile,
+    ) -> AbstractContextManager[Path]:
+        return nullcontext(source_path)
+
+    monkeypatch.setattr(VideoFile, "has_raw", property(_video_has_raw))
     monkeypatch.setattr(
         frame_range_module,
         "_raw_video_source_context",
-        lambda _video: nullcontext(source_path),
+        fake_raw_video_source_context,
     )
     monkeypatch.setattr(
         frame_range_module,
@@ -344,7 +441,7 @@ def test_range_extraction_recreates_stale_extracted_flag_file(monkeypatch, tmp_p
 
 
 @pytest.mark.django_db
-def test_anonymize_refuses_video_marked_integrity_lost(tmp_path):
+def test_anonymize_refuses_video_marked_integrity_lost(tmp_path: Path) -> None:
     video = _video(tmp_path, frame_count=3)
 
     mark_video_integrity_lost(video, "frame cache remains invalid")

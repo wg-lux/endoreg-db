@@ -1,6 +1,8 @@
 from unittest.mock import patch
+from typing import Any, cast
 
 from django.test import TestCase
+from lx_dtypes.models.contracts.frame_annotation import FrameAnnotationQueueSpecPayload
 
 from endoreg_db.models import (
     AIDataSet,
@@ -13,8 +15,10 @@ from endoreg_db.models import (
     LabelVideoSegment,
     VideoFile,
 )
+from endoreg_db.services.queue.frame_annotation_queue import (
+    frame_annotation_queue_spec_from_payload,
+)
 from endoreg_db.models.state.frame_annotation import (
-    FrameAnnotationQueueSpec,
     FrameAnnotationStatus,
     FrameSamplingStrategy,
     build_frame_task_queue,
@@ -26,6 +30,76 @@ from endoreg_db.models.state.frame_annotation import (
     resolve_ai_dataset_for_queue,
     segment_derived_external_annotation_id,
 )
+
+
+def _task_payload(task: object) -> dict[str, Any]:
+    if isinstance(task, dict):
+        return cast(dict[str, Any], task)
+    model_dump = getattr(task, "model_dump", None)
+    if callable(model_dump):
+        return cast(dict[str, Any], model_dump(mode="python"))
+    return cast(dict[str, Any], task)
+
+
+
+def _payload_dict(value: object) -> dict[str, Any]:
+    return _task_payload(value)
+
+
+
+def _model_pk(value: object | None) -> int | None:
+    if value is None:
+        return None
+    pk = getattr(value, "pk", None)
+    return int(pk) if pk is not None else None
+
+
+def _model_name(value: object | None) -> str:
+    if value is None:
+        return "manual_annotation"
+    return str(getattr(value, "name", value))
+
+
+def _queue_spec(
+    *,
+    limit: int,
+    task_mode: object = "random",
+    video_id: int | None = None,
+    label_set: object | None = None,
+    target_label: object | None = None,
+    filter_label: object | None = None,
+    information_source_name: object = "manual_annotation",
+    annotator: str = "",
+    exclude_annotated: bool = True,
+    ai_dataset: object | None = None,
+    sampling_strategy: object = "balanced",
+    prediction_segments_only: bool = True,
+    exclude_frame_ids: set[int] | None = None,
+    require_extracted_frames: bool = True,
+    require_raw_video: bool = False,
+    require_processed_video: bool = False,
+    require_streamable_video_artifact: bool = False,
+):
+    payload = FrameAnnotationQueueSpecPayload(
+        limit=limit,
+        task_mode=str(task_mode),
+        video_id=video_id,
+        label_set_id=_model_pk(label_set),
+        target_label_id=_model_pk(target_label),
+        filter_label_id=_model_pk(filter_label),
+        information_source_name=_model_name(information_source_name),
+        annotator=annotator,
+        exclude_annotated=exclude_annotated,
+        ai_dataset_id=_model_pk(ai_dataset),
+        sampling_strategy=str(sampling_strategy),
+        prediction_segments_only=prediction_segments_only,
+        exclude_frame_ids=exclude_frame_ids or set(),
+        require_extracted_frames=require_extracted_frames,
+        require_raw_video=require_raw_video,
+        require_processed_video=require_processed_video,
+        require_streamable_video_artifact=require_streamable_video_artifact,
+    )
+    return frame_annotation_queue_spec_from_payload(payload)
 
 
 class FrameAnnotationStateTest(TestCase):
@@ -109,11 +183,11 @@ class FrameAnnotationStateTest(TestCase):
         )
 
     def test_plain_queue_uses_extracted_frames_only(self):
-        spec = FrameAnnotationQueueSpec(
+        spec = _queue_spec(
             limit=10,
             video_id=self.video.pk,
             information_source_name=self.manual_source.name,
-            sampling_strategy=FrameSamplingStrategy.NONE,
+            sampling_strategy=FrameSamplingStrategy.NONE.value,
             exclude_annotated=False,
         )
 
@@ -123,7 +197,7 @@ class FrameAnnotationStateTest(TestCase):
         ):
             result = build_frame_task_queue(spec)
 
-        frame_ids = {task["frame_id"] for task in result.tasks}
+        frame_ids = {int(_task_payload(task)["frame_id"]) for task in result.tasks}
         self.assertEqual(frame_ids, {frame.pk for frame in self.frames})
         self.assertNotIn(self.unextracted_frame.pk, frame_ids)
 
@@ -136,22 +210,28 @@ class FrameAnnotationStateTest(TestCase):
             annotator="model",
         )
 
-        spec = FrameAnnotationQueueSpec(
+        spec = _queue_spec(
             limit=1,
             video_id=self.video.pk,
             label_set=self.label_set,
             target_label=self.target_label,
             filter_label=self.filter_label,
             information_source_name=self.manual_source.name,
-            sampling_strategy=FrameSamplingStrategy.NONE,
+            sampling_strategy=FrameSamplingStrategy.NONE.value,
             annotator="alice",
         )
 
         result = build_frame_task_queue(spec)
 
-        self.assertEqual(result.tasks[0]["frame_id"], self.frames[2].pk)
+        self.assertEqual(int(_task_payload(result.tasks[0])["frame_id"]), self.frames[2].pk)
+        label_options = _task_payload(result.tasks[0])["label_options"]
+        assert isinstance(label_options, list)
+        label_option_payloads = cast(list[object], label_options)
+        label_option_ids = {
+            int(_payload_dict(label)["id"]) for label in label_option_payloads
+        }
         self.assertEqual(
-            {label["id"] for label in result.tasks[0]["label_options"]},
+            label_option_ids,
             {self.target_label.pk, self.filter_label.pk, self.segment_label.pk},
         )
 
@@ -217,13 +297,13 @@ class FrameAnnotationStateTest(TestCase):
             information_source=frontend_source,
         )
 
-        spec = FrameAnnotationQueueSpec(
+        spec = _queue_spec(
             limit=1,
             video_id=self.video.pk,
             label_set=self.label_set,
             target_label=self.target_label,
             information_source_name=self.manual_source.name,
-            sampling_strategy=FrameSamplingStrategy.NONE,
+            sampling_strategy=FrameSamplingStrategy.NONE.value,
             exclude_annotated=False,
         )
 
@@ -233,9 +313,9 @@ class FrameAnnotationStateTest(TestCase):
         ):
             result = build_frame_task_queue(spec)
 
-        self.assertEqual(result.tasks[0]["frame_id"], self.frames[0].pk)
-        self.assertEqual(result.tasks[0]["manual_positive_label_ids"], [])
-        self.assertEqual(result.tasks[0]["suggested_label_ids"], [])
+        self.assertEqual(int(_task_payload(result.tasks[0])["frame_id"]), self.frames[0].pk)
+        self.assertEqual(_task_payload(result.tasks[0])["manual_positive_label_ids"], [])
+        self.assertEqual(_task_payload(result.tasks[0])["suggested_label_ids"], [])
 
     def test_exclude_annotated_is_scoped_to_target_label_and_annotator(self):
         ImageClassificationAnnotation.objects.create(
@@ -246,20 +326,20 @@ class FrameAnnotationStateTest(TestCase):
             annotator="alice",
         )
 
-        alice_spec = FrameAnnotationQueueSpec(
+        alice_spec = _queue_spec(
             limit=1,
             video_id=self.video.pk,
             target_label=self.target_label,
             information_source_name=self.manual_source.name,
-            sampling_strategy=FrameSamplingStrategy.NONE,
+            sampling_strategy=FrameSamplingStrategy.NONE.value,
             annotator="alice",
         )
-        bob_spec = FrameAnnotationQueueSpec(
+        bob_spec = _queue_spec(
             limit=1,
             video_id=self.video.pk,
             target_label=self.target_label,
             information_source_name=self.manual_source.name,
-            sampling_strategy=FrameSamplingStrategy.NONE,
+            sampling_strategy=FrameSamplingStrategy.NONE.value,
             annotator="bob",
         )
 
@@ -270,8 +350,8 @@ class FrameAnnotationStateTest(TestCase):
             alice_result = build_frame_task_queue(alice_spec)
             bob_result = build_frame_task_queue(bob_spec)
 
-        self.assertEqual(alice_result.tasks[0]["frame_id"], self.frames[1].pk)
-        self.assertEqual(bob_result.tasks[0]["frame_id"], self.frames[0].pk)
+        self.assertEqual(int(_task_payload(alice_result.tasks[0])["frame_id"]), self.frames[1].pk)
+        self.assertEqual(int(_task_payload(bob_result.tasks[0])["frame_id"]), self.frames[0].pk)
 
     def test_dataset_annotation_sampling_strategy_is_configurable(self):
         dataset = AIDataSet.objects.create(
@@ -288,20 +368,20 @@ class FrameAnnotationStateTest(TestCase):
         )
         dataset.image_annotations.add(annotation)
 
-        spec = FrameAnnotationQueueSpec(
+        spec = _queue_spec(
             limit=1,
             video_id=self.video.pk,
             label_set=self.label_set,
             information_source_name=self.manual_source.name,
             ai_dataset=dataset,
-            sampling_strategy=FrameSamplingStrategy.ANNOTATIONS,
+            sampling_strategy=FrameSamplingStrategy.ANNOTATIONS.value,
             exclude_annotated=False,
         )
 
         result = build_frame_task_queue(spec)
 
         self.assertEqual(result.selection_strategy, "dataset_annotations")
-        self.assertEqual(result.tasks[0]["frame_id"], self.frames[1].pk)
+        self.assertEqual(int(_task_payload(result.tasks[0])["frame_id"]), self.frames[1].pk)
         self.assertEqual(
             result.annotation_bucket_counts,
             {str(self.target_label.pk): 1},
@@ -329,13 +409,13 @@ class FrameAnnotationStateTest(TestCase):
         )
         dataset.video_annotations.add(prediction_segment, manual_segment)
 
-        spec = FrameAnnotationQueueSpec(
+        spec = _queue_spec(
             limit=1,
             video_id=self.video.pk,
             label_set=self.label_set,
             information_source_name=self.manual_source.name,
             ai_dataset=dataset,
-            sampling_strategy=FrameSamplingStrategy.SEGMENTS,
+            sampling_strategy=FrameSamplingStrategy.SEGMENTS.value,
             prediction_segments_only=True,
             exclude_annotated=False,
         )
@@ -343,7 +423,7 @@ class FrameAnnotationStateTest(TestCase):
         result = build_frame_task_queue(spec)
 
         self.assertEqual(result.selection_strategy, "dataset_segments")
-        self.assertEqual(result.tasks[0]["frame_id"], self.frames[3].pk)
+        self.assertEqual(int(_task_payload(result.tasks[0])["frame_id"]), self.frames[3].pk)
         self.assertEqual(
             result.segment_bucket_counts,
             {str(self.segment_label.pk): 1},
@@ -393,11 +473,11 @@ class FrameAnnotationStateTest(TestCase):
             ),
         )
 
-        spec = FrameAnnotationQueueSpec(
+        spec = _queue_spec(
             limit=10,
             information_source_name=self.manual_source.name,
             ai_dataset=dataset,
-            sampling_strategy=FrameSamplingStrategy.NONE,
+            sampling_strategy=FrameSamplingStrategy.NONE.value,
             exclude_annotated=False,
         )
 
@@ -407,7 +487,7 @@ class FrameAnnotationStateTest(TestCase):
         ):
             result = build_frame_task_queue(spec)
 
-        frame_ids = {task["frame_id"] for task in result.tasks}
+        frame_ids = {int(_task_payload(task)["frame_id"]) for task in result.tasks}
         self.assertIn(raw_frame.pk, frame_ids)
         self.assertNotIn(rawless_frame.pk, frame_ids)
 
@@ -459,12 +539,12 @@ class FrameAnnotationStateTest(TestCase):
             annotator="dataset",
         )
 
-        spec = FrameAnnotationQueueSpec(
+        spec = _queue_spec(
             limit=4,
             label_set=self.label_set,
             information_source_name=self.manual_source.name,
             ai_dataset=dataset,
-            sampling_strategy=FrameSamplingStrategy.NONE,
+            sampling_strategy=FrameSamplingStrategy.NONE.value,
             exclude_annotated=False,
         )
 
@@ -475,5 +555,5 @@ class FrameAnnotationStateTest(TestCase):
             result = build_frame_task_queue(spec)
 
         self.assertEqual(
-            [task["frame_id"] for task in result.tasks], [self.frames[0].pk]
+            [int(_task_payload(task)["frame_id"]) for task in result.tasks], [self.frames[0].pk]
         )

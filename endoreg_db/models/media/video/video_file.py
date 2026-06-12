@@ -8,13 +8,27 @@ from collections.abc import Iterable
 from contextlib import AbstractContextManager
 from datetime import date, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Never, Sequence, TypedDict, Unpack, cast
+from typing import (
+    TYPE_CHECKING,
+    Never,
+    Protocol,
+    Sequence,
+    TypedDict,
+    Unpack,
+    cast,
+)
 
+import numpy as np
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.db import models
-from lx_dtypes.models.contracts.json_types import JsonNull, JsonValue
-from lx_dtypes.models.meta.SensitiveMeta import SensitiveMeta as LxSensitiveMeta
+from lx_dtypes.models.contracts.video_file import (
+    FrameSourceMode,
+    VideoFileMetaJsonObject,
+)
+from lx_dtypes.models.contracts.video_text_metadata import VideoTextMetaPayload
+from lx_dtypes.models.contracts.endoscopy_processor import RoiBoxCore
+from numpy.typing import NDArray
 
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS
 from endoreg_db.models.media.video.storage_mode import (
@@ -22,7 +36,7 @@ from endoreg_db.models.media.video.storage_mode import (
     VideoStorageMode,
     get_default_video_storage_mode_value,
 )
-from endoreg_db.utils.filesystem.paths import (
+from endoreg_db.utils.paths import (
     ANONYM_VIDEO_DIR,
     SENSITIVE_VIDEO_DIR,
 )
@@ -52,14 +66,26 @@ if TYPE_CHECKING:
     from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
     from endoreg_db.models.metadata.video_meta import VideoMeta
     from endoreg_db.models.state.video import VideoState
-    from endoreg_db.services.video_files.ai import FrameSourceMode
-    from endoreg_db.services.video_files._ai import VideoFrameScoreResult
 
 
-type VideoMetaJsonValue = (
-    JsonValue | JsonNull | list["VideoMetaJsonValue"] | dict[str, "VideoMetaJsonValue"]
-)
-type VideoMetaJsonObject = dict[str, VideoMetaJsonValue]
+class VideoFrameScoreResult(Protocol):
+    @property
+    def labels(self) -> list[str]: ...
+
+    @property
+    def frame_scores(self) -> NDArray[np.float64]: ...
+
+    @property
+    def device(self) -> str: ...
+
+    @property
+    def frame_count(self) -> int: ...
+
+    @property
+    def frame_numbers(self) -> list[int] | None: ...
+
+    @property
+    def timestamps(self) -> list[float] | None: ...
 
 
 class _VideoFileCreateKwargs(TypedDict, total=False):
@@ -69,7 +95,7 @@ class _VideoFileCreateKwargs(TypedDict, total=False):
 class VideoFile(models.Model):
     StorageMode = VideoStorageMode
 
-    objects = cast(models.Manager["VideoFile"], VideoQuerySet.as_manager())
+    objects = VideoQuerySet.as_manager()
     default_fps: float = DEFAULT_VIDEO_FPS
     use_default_fps = True
 
@@ -219,7 +245,7 @@ class VideoFile(models.Model):
     suffix: models.CharField[str | None, str | None] = models.CharField(
         max_length=10, blank=True, null=True
     )
-    sequences: models.JSONField[VideoMetaJsonObject, VideoMetaJsonObject] = (
+    sequences: models.JSONField[VideoFileMetaJsonObject, VideoFileMetaJsonObject] = (
         models.JSONField(
             default=dict,
             blank=True,
@@ -233,7 +259,7 @@ class VideoFile(models.Model):
     date: models.DateField[date | None, date | None] = models.DateField(
         blank=True, null=True
     )
-    meta: models.JSONField[VideoMetaJsonObject | None, VideoMetaJsonObject | None] = (
+    meta: models.JSONField[VideoFileMetaJsonObject | None, VideoFileMetaJsonObject | None] = (
         models.JSONField(blank=True, null=True)
     )
     date_created: models.DateTimeField[datetime, datetime] = models.DateTimeField(
@@ -338,7 +364,7 @@ class VideoFile(models.Model):
 
         return get_video_fps(self)
 
-    def get_endo_roi(self) -> dict[str, int] | None:
+    def get_endo_roi(self) -> RoiBoxCore | None:
         from endoreg_db.services.video_files import get_video_endo_roi
 
         return get_video_endo_roi(self)
@@ -350,16 +376,24 @@ class VideoFile(models.Model):
 
     def update_text_metadata(
         self,
-        extracted_data_dict: VideoMetaJsonObject | None = None,
+        extracted_data_dict: VideoFileMetaJsonObject | None = None,
         ocr_frame_fraction: float = 0.1,
         cap: int = 50,
         overwrite: bool = False,
     ) -> "SensitiveMeta | None":
         from endoreg_db.services.video_files import update_video_text_metadata
+        from lx_dtypes.models.contracts.video_text_metadata import (
+            VideoTextMetaPayload as LxVideoTextMetaPayload,
+        )
 
+        contract_payload = (
+            LxVideoTextMetaPayload.model_validate(extracted_data_dict)
+            if extracted_data_dict is not None
+            else None
+        )
         return update_video_text_metadata(
             self,
-            extracted_data_dict=extracted_data_dict,
+            extracted_data_dict=contract_payload,
             ocr_frame_fraction=ocr_frame_fraction,
             cap=cap,
             overwrite=overwrite,
@@ -703,11 +737,16 @@ class VideoFile(models.Model):
         return self.delete_with_file(using=using, keep_parents=keep_parents)
 
     def validate_metadata_annotation(
-        self, extracted_data_dict: LxSensitiveMeta | None = None
+        self, extracted_data_dict: VideoTextMetaPayload | None = None
     ) -> bool:
         from endoreg_db.services.video_files import validate_video_metadata_annotation
 
-        return validate_video_metadata_annotation(self, extracted_data_dict)
+        payload: VideoTextMetaPayload | None = (
+            extracted_data_dict.model_dump()
+            if extracted_data_dict is not None
+            else None
+        )
+        return validate_video_metadata_annotation(self, payload)
 
     def initialize(self) -> "VideoFile":
         from endoreg_db.services.video_files import initialize_video_file
@@ -766,7 +805,7 @@ class VideoFile(models.Model):
             validated_meta = validate_video_file_meta_payload(self.meta)
         except ValueError as exc:
             raise ValidationError({"meta": str(exc)}) from exc
-        self.meta = cast(VideoMetaJsonObject | None, validated_meta)
+        self.meta = cast(VideoFileMetaJsonObject | None, validated_meta)
 
     def save(
         self,

@@ -1,13 +1,21 @@
+# pyright: reportUnusedFunction=false
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator, Mapping
 from datetime import date
 
 import pytest
-from django.contrib.auth import get_user_model
+from django.contrib.auth.models import User
 from django.test import Client
-from rest_framework.test import APIRequestFactory, force_authenticate
+from lx_dtypes.django.api.findings_routes import clear_findings_route_caches
+from lx_dtypes.models.contracts.dtypes_record_persistence import (
+    DtypesRecordPersistencePayload,
+    parse_dtypes_record_persistence_payload,
+)
+from lx_dtypes.models.contracts.json_types import JsonValue
 
+from endoreg_db.helpers.model_ids import model_pk
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.administration.person.patient.patient import Patient
 from endoreg_db.models.medical.examination.examination import Examination
@@ -18,18 +26,33 @@ from endoreg_db.models.medical.finding.finding_classification import (
 )
 from endoreg_db.models.medical.finding.finding_intervention import FindingIntervention
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
+from endoreg_db.models.medical.patient.patient_finding import PatientFinding
 from endoreg_db.models.medical.patient.patient_finding_classification import (
     PatientFindingClassification,
 )
 from endoreg_db.models.other.gender import Gender
 from endoreg_db.services.report_persistence import save_report_submission
-from endoreg_db.views.report.patient_examination_report import (
-    PatientExaminationReportViewSet,
-)
-from lx_dtypes.django.api.findings_routes import clear_findings_route_caches
-
 
 pytestmark = pytest.mark.django_db
+
+
+def _dtypes_record(
+    patient_examination: PatientExamination,
+) -> DtypesRecordPersistencePayload:
+    return parse_dtypes_record_persistence_payload(patient_examination.dtypes_record)
+
+
+def _json_mapping(value: JsonValue) -> Mapping[str, JsonValue]:
+    if not isinstance(value, dict):
+        raise AssertionError(f"Expected JSON object, got {type(value).__name__}")
+    return value
+
+
+def _json_int(payload: Mapping[str, JsonValue], key: str) -> int:
+    value = payload[key]
+    if not isinstance(value, int):
+        raise AssertionError(f"Expected integer JSON field {key!r}")
+    return value
 
 
 def _create_patient_examination() -> PatientExamination:
@@ -46,7 +69,7 @@ def _create_patient_examination() -> PatientExamination:
     return PatientExamination.objects.create(
         patient=patient,
         examination=examination,
-        hash=f"dtypes-record-{patient.id}-{examination.id}",
+        hash=f"dtypes-record-{model_pk(patient)}-{model_pk(examination)}",
     )
 
 
@@ -81,7 +104,9 @@ def _create_dtypes_exam_graph() -> tuple[
 
 
 @pytest.fixture(autouse=True)
-def _use_report_template_examples_findings_module(monkeypatch: pytest.MonkeyPatch):
+def _use_report_template_examples_findings_module(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[None]:
     monkeypatch.setenv("LX_DTYPES_FINDINGS_MODULE", "report_template_examples")
     clear_findings_route_caches()
     yield
@@ -91,7 +116,7 @@ def _use_report_template_examples_findings_module(monkeypatch: pytest.MonkeyPatc
 def test_base_api_persists_full_dtypes_record() -> None:
     client = Client()
     patient_examination = _create_patient_examination()
-    payload = {
+    payload: dict[str, str | list[JsonValue]] = {
         "patient": str(patient_examination.patient_id),
         "examiners": [],
         "examination": "colonoscopy",
@@ -102,7 +127,7 @@ def test_base_api_persists_full_dtypes_record() -> None:
     }
 
     response = client.post(
-        f"/base_api/patient-examinations/{patient_examination.id}/dtypes-record/",
+        f"/base_api/patient-examinations/{model_pk(patient_examination)}/dtypes-record/",
         data=json.dumps(payload),
         content_type="application/json",
         secure=True,
@@ -110,16 +135,15 @@ def test_base_api_persists_full_dtypes_record() -> None:
 
     assert response.status_code == 200, response.content.decode()
     patient_examination.refresh_from_db()
-    assert patient_examination.dtypes_record["examination"] == "colonoscopy"
-    assert patient_examination.dtypes_record["knowledge_base_module"] == (
-        "report_template_examples"
-    )
+    record = _dtypes_record(patient_examination)
+    assert record.examination == "colonoscopy"
+    assert record.knowledge_base_module == "report_template_examples"
     assert patient_examination.knowledge_base_module == "report_template_examples"
     assert patient_examination.knowledge_base_version == "0.1.0"
     assert patient_examination.dtypes_record_updated_at is not None
 
     get_response = client.get(
-        f"/base_api/patient-examinations/{patient_examination.id}/dtypes-record/",
+        f"/base_api/patient-examinations/{model_pk(patient_examination)}/dtypes-record/",
         secure=True,
     )
 
@@ -132,7 +156,7 @@ def test_base_api_rejects_dtypes_record_for_wrong_examination() -> None:
     patient_examination = _create_patient_examination()
 
     response = client.post(
-        f"/base_api/patient-examinations/{patient_examination.id}/dtypes-record/",
+        f"/base_api/patient-examinations/{model_pk(patient_examination)}/dtypes-record/",
         data=json.dumps(
             {
                 "patient": str(patient_examination.patient_id),
@@ -159,10 +183,13 @@ def test_patient_finding_create_updates_dtypes_record() -> None:
         "/base_api/patient-findings/",
         data=json.dumps(
             {
-                "patient_examination": patient_examination.id,
-                "finding": finding.id,
+                "patient_examination": model_pk(patient_examination),
+                "finding": model_pk(finding),
                 "classifications": [
-                    {"classification": classification.id, "choice": choice.id}
+                    {
+                        "classification": model_pk(classification),
+                        "choice": model_pk(choice),
+                    }
                 ],
             }
         ),
@@ -172,14 +199,16 @@ def test_patient_finding_create_updates_dtypes_record() -> None:
 
     assert response.status_code == 200, response.content.decode()
     patient_examination.refresh_from_db()
-    patient_findings = patient_examination.dtypes_record["patient_findings"]
+    patient_findings = _dtypes_record(patient_examination).patient_findings
     assert len(patient_findings) == 1
-    assert patient_findings[0]["finding"] == "colon_polyp"
-    classification_choices = patient_findings[0]["patient_finding_classifications"][0][
-        "patient_finding_classification_choices"
-    ]
-    assert classification_choices[0]["classification"] == "lesion_size_mm"
-    assert classification_choices[0]["classification_choice"] == "lesion_size_oval_mm"
+    assert patient_findings[0].finding == "colon_polyp"
+    classification_choices = (
+        patient_findings[0]
+        .patient_finding_classifications[0]
+        .patient_finding_classification_choices
+    )
+    assert classification_choices[0].classification == "lesion_size_mm"
+    assert classification_choices[0].classification_choice == "lesion_size_oval_mm"
 
 
 def test_patient_finding_delete_refreshes_dtypes_record() -> None:
@@ -191,21 +220,25 @@ def test_patient_finding_delete_refreshes_dtypes_record() -> None:
     create_response = client.post(
         "/base_api/patient-findings/",
         data=json.dumps(
-            {"patient_examination": patient_examination.id, "finding": finding.id}
+            {
+                "patient_examination": model_pk(patient_examination),
+                "finding": model_pk(finding),
+            }
         ),
         content_type="application/json",
         secure=True,
     )
     assert create_response.status_code == 200, create_response.content.decode()
 
+    create_payload = _json_mapping(create_response.json())
+    patient_finding_id = _json_int(create_payload, "id")
     delete_response = client.delete(
-        f"/base_api/patient-findings/{create_response.json()['id']}/",
-        secure=True,
+        f"/base_api/patient-findings/{patient_finding_id}/", secure=True
     )
 
     assert delete_response.status_code == 200, delete_response.content.decode()
     patient_examination.refresh_from_db()
-    assert patient_examination.dtypes_record["patient_findings"] == []
+    assert _dtypes_record(patient_examination).patient_findings == []
 
 
 def test_patient_finding_classification_append_is_idempotent() -> None:
@@ -217,17 +250,22 @@ def test_patient_finding_classification_append_is_idempotent() -> None:
     create_response = client.post(
         "/base_api/patient-findings/",
         data=json.dumps(
-            {"patient_examination": patient_examination.id, "finding": finding.id}
+            {
+                "patient_examination": model_pk(patient_examination),
+                "finding": model_pk(finding),
+            }
         ),
         content_type="application/json",
         secure=True,
     )
     assert create_response.status_code == 200, create_response.content.decode()
-    patient_finding_id = create_response.json()["id"]
+    patient_finding_id = _json_int(_json_mapping(create_response.json()), "id")
 
-    payload = {
+    payload: dict[str, bool | list[dict[str, int]]] = {
         "replace": False,
-        "classifications": [{"classification": classification.id, "choice": choice.id}],
+        "classifications": [
+            {"classification": model_pk(classification), "choice": model_pk(choice)}
+        ],
     }
     first_response = client.post(
         f"/base_api/patient-findings/{patient_finding_id}/classifications/",
@@ -254,10 +292,48 @@ def test_patient_finding_classification_append_is_idempotent() -> None:
         == 1
     )
     patient_examination.refresh_from_db()
-    classification_choices = patient_examination.dtypes_record["patient_findings"][0][
-        "patient_finding_classifications"
-    ][0]["patient_finding_classification_choices"]
+    classification_choices = (
+        _dtypes_record(patient_examination)
+        .patient_findings[0]
+        .patient_finding_classifications[0]
+        .patient_finding_classification_choices
+    )
     assert len(classification_choices) == 1
+
+
+def test_patient_finding_classification_save_populates_choice_defaults() -> None:
+    patient_examination, finding, classification, choice, _intervention = (
+        _create_dtypes_exam_graph()
+    )
+    choice.subcategories = {
+        "location": {"required": True, "choices": ["cecum"], "value": "cecum"}
+    }
+    choice.numerical_descriptors = {
+        "size": {
+            "min": 0.0,
+            "max": 10.0,
+            "distribution": "normal",
+            "mean": 5.0,
+            "std": 1.0,
+            "value": 4.0,
+        }
+    }
+    choice.save(update_fields=["subcategories", "numerical_descriptors"])
+
+    patient_finding = PatientFinding.objects.create(
+        patient_examination=patient_examination,
+        finding=finding,
+    )
+    patient_finding_classification = PatientFindingClassification.objects.create(
+        finding=patient_finding,
+        classification=classification,
+        classification_choice=choice,
+    )
+
+    assert patient_finding_classification.subcategories == choice.subcategories
+    assert patient_finding_classification.numerical_descriptors == (
+        choice.numerical_descriptors
+    )
 
 
 def test_report_submission_refreshes_dtypes_record_with_interventions() -> None:
@@ -266,7 +342,7 @@ def test_report_submission_refreshes_dtypes_record_with_interventions() -> None:
     )
 
     save_report_submission(
-        patient_examination_id=patient_examination.id,
+        patient_examination_id=model_pk(patient_examination),
         template_name="colonoscopy_training_basic",
         findings=[
             {
@@ -288,32 +364,33 @@ def test_report_submission_refreshes_dtypes_record_with_interventions() -> None:
     )
 
     patient_examination.refresh_from_db()
-    patient_findings = patient_examination.dtypes_record["patient_findings"]
+    patient_findings = _dtypes_record(patient_examination).patient_findings
     assert len(patient_findings) == 1
-    intervention_groups = patient_findings[0]["patient_finding_interventions"]
+    intervention_groups = patient_findings[0].patient_finding_interventions
     assert len(intervention_groups) == 1
-    interventions = intervention_groups[0]["patient_finding_interventions"]
+    interventions = intervention_groups[0].patient_finding_interventions
     assert len(interventions) == 1
-    assert interventions[0]["patient_finding_interventions"]
-    assert interventions[0]["intervention"] == "endoscopy_biopsy_grasper_generic"
+    assert interventions[0].patient_finding_interventions
+    assert interventions[0].intervention == "endoscopy_biopsy_grasper_generic"
 
 
-def test_report_submission_api_returns_and_retrieves_persisted_dtypes_record() -> None:
-    factory = APIRequestFactory()
-    user_model = get_user_model()
-    user = user_model.objects.create_user(
+def test_report_submission_api_returns_and_retrieves_persisted_dtypes_record(
+    client: Client,
+) -> None:
+    user = User.objects.create_user(
         username="dtypes-report-viewer",
         password="pw",
         is_staff=True,
     )
+    client.force_login(user)
     patient_examination, _finding, _classification, _choice, _intervention = (
         _create_dtypes_exam_graph()
     )
 
-    request = factory.post(
-        "/api/patient-examination-reports/save-submission/",
+    response = client.post(
+        "/api/patient-examination-reports/save-submission",
         data={
-            "patient_examination_id": patient_examination.id,
+            "patient_examination_id": model_pk(patient_examination),
             "template_name": "colonoscopy_training_basic",
             "findings": [
                 {
@@ -333,29 +410,27 @@ def test_report_submission_api_returns_and_retrieves_persisted_dtypes_record() -
                 }
             ],
         },
-        format="json",
+        content_type="application/json",
+        secure=True,
     )
-    force_authenticate(request, user=user)
-    save_view = PatientExaminationReportViewSet.as_view({"post": "save_submission"})
-    response = save_view(request)
 
-    assert response.status_code == 201, response.data
-    payload = response.data
-    persisted_record = payload["persisted_dtypes_record"]
-    assert persisted_record["examination"] == "colonoscopy"
-    assert persisted_record["patient_findings"][0]["finding"] == "colon_polyp"
+    assert response.status_code == 201, response.content.decode()
+    payload = _json_mapping(response.json())
+    persisted_record = _json_mapping(payload["persisted_dtypes_record"])
+    persisted_record_model = parse_dtypes_record_persistence_payload(persisted_record)
+    assert persisted_record_model.examination == "colonoscopy"
+    assert persisted_record_model.patient_findings[0].finding == "colon_polyp"
     assert payload["persisted_dtypes_record_updated_at"]
-    assert payload["report"]["dtypes_record"] == persisted_record
-    assert payload["report"]["dtypes_record_updated_at"]
+    report_payload = _json_mapping(payload["report"])
+    assert report_payload["dtypes_record"] == persisted_record
+    assert report_payload["dtypes_record_updated_at"]
 
-    detail_request = factory.get(
-        f"/api/patient-examination-reports/{payload['report']['id']}/",
+    detail_response = client.get(
+        f"/api/patient-examination-reports/{_json_int(report_payload, 'id')}",
+        secure=True,
     )
-    force_authenticate(detail_request, user=user)
-    detail_view = PatientExaminationReportViewSet.as_view({"get": "retrieve"})
-    detail_response = detail_view(detail_request, pk=payload["report"]["id"])
 
-    assert detail_response.status_code == 200, detail_response.data
-    detail_payload = detail_response.data
+    assert detail_response.status_code == 200, detail_response.content.decode()
+    detail_payload = _json_mapping(detail_response.json())
     assert detail_payload["dtypes_record"] == persisted_record
     assert detail_payload["dtypes_record_updated_at"]

@@ -1,5 +1,5 @@
 import logging
-from typing import TYPE_CHECKING, List, Optional, Tuple
+from typing import TYPE_CHECKING, List, Optional, Protocol, Tuple, cast
 
 import numpy as np
 
@@ -9,6 +9,9 @@ from ..label.label_video_segment import LabelVideoSegment
 
 # Import necessary models and utils used by the logic
 from ..utils import find_segments_in_prediction_array
+from lx_dtypes.models.contracts.video_prediction_logic import (
+    PredictionSegmentCreatePayload,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +22,10 @@ DEFAULT_VIDEO_SEGMENT_LENGTH_THRESHOLD_IN_S = 1.0
 if TYPE_CHECKING:
     from ..label import Label
     from .video_prediction_meta import VideoPredictionMeta
+
+
+class _InformationSourceManagerLike(Protocol):
+    def get_or_create_by_name(self, name: str) -> tuple[object, bool]: ...
 
 
 def apply_running_mean_logic(
@@ -32,7 +39,7 @@ def apply_running_mean_logic(
     video_obj = instance.get_video()
     fps = get_video_fps(video_obj)
 
-    if fps is None or fps <= 0:
+    if fps <= 0:
         logger.warning(
             f"Invalid FPS ({fps}) for {video_obj}. Cannot apply running mean. Returning original array."
         )
@@ -144,20 +151,22 @@ def create_video_segments_for_label_logic(
     from ..other import InformationSource
 
     video_obj = instance.get_video()
-    information_source, _ = InformationSource.objects.get_or_create_by_name(
-        "prediction"
-    )
+    information_source, _ = cast(
+        _InformationSourceManagerLike, InformationSource.objects
+    ).get_or_create_by_name("prediction")
 
-    segments_to_create = []
+    segments_to_create: list[LabelVideoSegment] = []
     for start_frame, end_frame in segments:
-        segment_data = {
-            "start_frame_number": start_frame,
-            "end_frame_number": end_frame,
-            "source": information_source,
-            "label": label,
-            "prediction_meta": instance,
-            "video_file": video_obj,
-        }
+        segment_data = PredictionSegmentCreatePayload.model_validate(
+            {
+                "start_frame_number": start_frame,
+                "end_frame_number": end_frame,
+                "source": information_source,
+                "label": label,
+                "prediction_meta": instance,
+                "video_file": video_obj,
+            }
+        )
         # Check for existence before creating the object instance
         if not LabelVideoSegment.objects.filter(
             video_file=video_obj,
@@ -166,7 +175,9 @@ def create_video_segments_for_label_logic(
             start_frame_number=start_frame,
             end_frame_number=end_frame,
         ).exists():
-            segments_to_create.append(LabelVideoSegment(**segment_data))
+            segments_to_create.append(
+                LabelVideoSegment(**segment_data.model_dump(mode="python"))
+            )
 
     if segments_to_create:
         LabelVideoSegment.objects.bulk_create(segments_to_create)
@@ -192,7 +203,7 @@ def create_video_segments_logic(
     video_obj = instance.get_video()
     fps = get_video_fps(video_obj)
 
-    if fps is None or fps <= 0:
+    if fps <= 0:
         logger.warning(
             f"Cannot create video segments for {video_obj} with invalid FPS ({fps})."
         )
