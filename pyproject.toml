@@ -91,7 +91,6 @@ dependencies = [
     "celery-types>=0.26.0",
     "lx-ai-core[torch]==0.0.1",
     "lightning-fabric>=2.6.5",
-    "de-core-news-sm",
     "lx-dtypes==0.2.0",
 ]
 
@@ -138,6 +137,9 @@ cpu-runtime = [
 ]
 gpu-runtime = [
     "onnxruntime-gpu>=1.26.0"
+]
+spacy = [
+    "de-core-news-sm",
 ]
 
 [tool.setuptools]

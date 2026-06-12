@@ -8,26 +8,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 
 from pydantic import ValidationError
-
-logger = logging.getLogger(__name__)
-PHI_REGION_LABEL_NAME = "phi_region"
-PHI_REGION_INFORMATION_SOURCE_NAME = "lx_anonymizer_phi_detector"
-PHI_REGION_ANNOTATOR = "system:lx_anonymizer"
-ENDOSCOPE_IMAGE_ROI_REQUIRED_KEYS = ("x", "y", "width", "height")
-ENDOSCOPE_IMAGE_ROI_POSITIVE_KEYS = (
-    "width",
-    "height",
-    "image_width",
-    "image_height",
-)
-ENDOSCOPE_IMAGE_ROI_NON_NEGATIVE_KEYS = ("x", "y")
-
-
-def _temp_media_path(final_path: Path, marker: str = "part") -> Path:
-    """Keep the media suffix last so FFmpeg can infer the container."""
-    return final_path.with_name(f"{final_path.stem}.{marker}{final_path.suffix}")
-
-
 from endoreg_db.utils.ffmpeg_wrapper import (
     get_stream_info,
     resolve_ffmpeg_executable as _resolve_ffmpeg_executable,
@@ -73,6 +53,25 @@ from endoreg_db.utils.file_operations import (
     safe_unlink_file,
     sha256_file,
 )
+
+logger = logging.getLogger(__name__)
+PHI_REGION_LABEL_NAME = "phi_region"
+PHI_REGION_INFORMATION_SOURCE_NAME = "lx_anonymizer_phi_detector"
+PHI_REGION_ANNOTATOR = "system:lx_anonymizer"
+ENDOSCOPE_IMAGE_ROI_REQUIRED_KEYS = ("x", "y", "width", "height")
+ENDOSCOPE_IMAGE_ROI_POSITIVE_KEYS = (
+    "width",
+    "height",
+    "image_width",
+    "image_height",
+)
+ENDOSCOPE_IMAGE_ROI_NON_NEGATIVE_KEYS = ("x", "y")
+
+
+def _temp_media_path(final_path: Path, marker: str = "part") -> Path:
+    """Keep the media suffix last so FFmpeg can infer the container."""
+    return final_path.with_name(f"{final_path.stem}.{marker}{final_path.suffix}")
+
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
@@ -237,6 +236,114 @@ def _require_endoscope_image_roi(
         )
 
     return complete_roi
+
+
+def _scale_coordinate(value: int, *, source_size: int, target_size: int) -> int:
+    return round((value * target_size) / source_size)
+
+
+def _scale_length(value: int, *, source_size: int, target_size: int) -> int:
+    return max(1, round((value * target_size) / source_size))
+
+
+def _scale_roi_box(
+    roi: dict[str, int],
+    *,
+    source_width: int,
+    source_height: int,
+    target_width: int,
+    target_height: int,
+) -> dict[str, int]:
+    x = _scale_coordinate(
+        roi["x"],
+        source_size=source_width,
+        target_size=target_width,
+    )
+    y = _scale_coordinate(
+        roi["y"],
+        source_size=source_height,
+        target_size=target_height,
+    )
+    width = _scale_length(
+        roi["width"],
+        source_size=source_width,
+        target_size=target_width,
+    )
+    height = _scale_length(
+        roi["height"],
+        source_size=source_height,
+        target_size=target_height,
+    )
+
+    if x >= target_width or y >= target_height:
+        raise RuntimeError(
+            "Scaled endoscope ROI starts outside anonymizer source dimensions."
+        )
+    return {
+        **roi,
+        "x": x,
+        "y": y,
+        "width": min(width, target_width - x),
+        "height": min(height, target_height - y),
+    }
+
+
+def _normalize_roi_to_source_dimensions(
+    *,
+    endoscope_roi: dict[str, int],
+    sensitive_rois: dict[str, dict[str, int | None]],
+    source_width: int,
+    source_height: int,
+) -> tuple[dict[str, int], dict[str, dict[str, int | None]]]:
+    roi_width = _positive_int(endoscope_roi.get("image_width"))
+    roi_height = _positive_int(endoscope_roi.get("image_height"))
+    if roi_width is None or roi_height is None:
+        normalized_endoscope_roi = {
+            **endoscope_roi,
+            "image_width": source_width,
+            "image_height": source_height,
+        }
+        return normalized_endoscope_roi, sensitive_rois
+    if roi_width == source_width and roi_height == source_height:
+        return endoscope_roi, sensitive_rois
+
+    normalized_endoscope_roi = _scale_roi_box(
+        endoscope_roi,
+        source_width=roi_width,
+        source_height=roi_height,
+        target_width=source_width,
+        target_height=source_height,
+    )
+    normalized_endoscope_roi["image_width"] = source_width
+    normalized_endoscope_roi["image_height"] = source_height
+
+    normalized_sensitive_rois: dict[str, dict[str, int | None]] = {}
+    for name, roi in sensitive_rois.items():
+        normalized_roi: dict[str, int | None] = roi.copy()
+        if (
+            isinstance(roi.get("x"), int)
+            and isinstance(roi.get("y"), int)
+            and isinstance(roi.get("width"), int)
+            and isinstance(roi.get("height"), int)
+        ):
+            scaled_roi = _scale_roi_box(
+                cast(dict[str, int], roi),
+                source_width=roi_width,
+                source_height=roi_height,
+                target_width=source_width,
+                target_height=source_height,
+            )
+            normalized_roi.update(scaled_roi)
+        normalized_sensitive_rois[name] = normalized_roi
+
+    logger.info(
+        "Scaled processor ROI from configured dimensions %sx%s to anonymizer source %sx%s.",
+        roi_width,
+        roi_height,
+        source_width,
+        source_height,
+    )
+    return normalized_endoscope_roi, normalized_sensitive_rois
 
 
 def _require_sensitive_roi_box(
@@ -527,7 +634,21 @@ class VideoAnonymizer:
         # Process with enhanced process_report method (returns 4-tuple now)
         with source_context as source_path:
             verified_source = Path(source_path).resolve()
-            _verify_anonymizer_source(ctx, verified_source, video_hash=video_hash)
+            source_snapshot = _verify_anonymizer_source(
+                ctx, verified_source, video_hash=video_hash
+            )
+            source_width = _positive_int(source_snapshot.get("width"))
+            source_height = _positive_int(source_snapshot.get("height"))
+            if source_width is None or source_height is None:
+                raise RuntimeError(
+                    "Anonymizer source dimensions are unavailable after verification."
+                )
+            endoscope_roi, endoscope_roi_nested = _normalize_roi_to_source_dimensions(
+                endoscope_roi=endoscope_roi,
+                sensitive_rois=endoscope_roi_nested,
+                source_width=source_width,
+                source_height=source_height,
+            )
             ctx.anonymized_path, extracted_metadata = (
                 self._frame_cleaning_class.clean_video(
                     video_path=verified_source,

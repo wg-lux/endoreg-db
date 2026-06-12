@@ -121,6 +121,10 @@ def _stream_info_for_path(path: Path) -> JsonObject:
     return _valid_stream_info()
 
 
+def _small_stream_info_for_path(path: Path) -> JsonObject:
+    return _valid_stream_info(width=640, height=480)
+
+
 def _path_string_resolver(path: Path) -> Callable[[], str]:
     def resolve_path() -> str:
         return str(path)
@@ -661,3 +665,82 @@ def test_anonymize_video_uses_local_source_path_override(
     assert result_ctx.anonymized_path == output_dir / "local-source-video.mp4"
     assert result_ctx.anonymized_path is not None
     assert result_ctx.anonymized_path.read_bytes() == b"anonymized-video"
+
+
+@pytest.mark.django_db
+def test_anonymize_video_scales_processor_roi_to_source_dimensions(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    center = Center.objects.create(
+        name="scaled-roi-video-center",
+        display_name="Scaled ROI Video Center",
+    )
+    video = VideoFile.objects.create(center=center, video_hash="scaled-roi-video")
+    processor = _create_processor_with_roi("scaled_roi_video_processor", center)
+    source_video = tmp_path / "source.mp4"
+    source_video.write_bytes(b"source-video")
+    output_dir = tmp_path / "anonymized"
+    observed_endoscope_rois: list[dict[str, int]] = []
+    observed_sensitive_rois: list[dict[str, dict[str, int | None]]] = []
+
+    class FakeFrameCleaner:
+        def clean_video(
+            self,
+            *,
+            video_path: Path,
+            endoscope_image_roi: dict[str, int],
+            endoscope_data_roi_nested: dict[str, dict[str, int | None]],
+            output_path: Path,
+        ) -> tuple[Path, JsonObject]:
+            observed_endoscope_rois.append(endoscope_image_roi)
+            observed_sensitive_rois.append(endoscope_data_roi_nested)
+            output_path.write_bytes(b"anonymized-video")
+            return output_path, {}
+
+    monkeypatch.setattr(video_anonymization, "FrameCleaner", FakeFrameCleaner)
+    monkeypatch.setattr(
+        video_anonymization, "_ensure_ffmpeg_tools_on_path", _ensure_ffmpeg_tools_noop
+    )
+    monkeypatch.setattr(
+        video_anonymization,
+        "_processed_video_dir",
+        _processed_video_dir_for(output_dir),
+    )
+    monkeypatch.setattr(
+        video_anonymization,
+        "get_stream_info",
+        _small_stream_info_for_path,
+    )
+    monkeypatch.setattr(
+        video_anonymization,
+        "sensitive_meta_storage",
+        _sensitive_meta_storage_noop,
+    )
+
+    ctx = _create_import_context(
+        file_path=source_video,
+        center=center,
+        video=video,
+        processor_name=processor.name,
+    )
+    anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
+
+    anonymizer.anonymize_video(ctx)
+
+    assert observed_endoscope_rois == [
+        {
+            "x": 183,
+            "y": 0,
+            "width": 450,
+            "height": 480,
+            "image_width": 640,
+            "image_height": 480,
+        }
+    ]
+    assert observed_sensitive_rois[0]["examination_date"] == {
+        "x": 33,
+        "y": 4,
+        "width": 67,
+        "height": 18,
+    }
