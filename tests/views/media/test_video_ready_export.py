@@ -51,10 +51,10 @@ class VideoReadyExportEndpointTests(TestCase):
         video.processed_file.save(
             "processed.mp4",
             SimpleUploadedFile(
-            "ready-processed.mp4",
-            content,
-            content_type="video/mp4",
-        ),
+                "ready-processed.mp4",
+                content,
+                content_type="video/mp4",
+            ),
             save=True,
         )
         video.save(update_fields=["processed_file"])
@@ -263,8 +263,7 @@ class VideoReadyExportEndpointTests(TestCase):
     def test_processed_file_replacement_clears_export_readiness(self):
         video = self._video()
         self._mark_ready_state(video)
-        
-        
+
         video.processed_file.save(
             "replacement-processed.mp4",
             ContentFile(b"replacement-processed-video"),

@@ -414,7 +414,7 @@ class DecodedFrameStreamView(APIView):
             )
 
         buffer = BytesIO()
-        Image.fromarray(sample.rgb_frame.astype("uint8"), "RGB").save(
+        Image.fromarray(sample.rgb_frame.astype("uint8")).save(
             buffer,
             format="JPEG",
             quality=90,

@@ -19,7 +19,7 @@ from endoreg_db.models import (
     VideoFile,
     VideoPredictionMeta,
     VideoState,
-    Center
+    Center,
 )
 from endoreg_db.services.lx_video_contracts import (
     build_lx_p_video_segment,
@@ -57,7 +57,9 @@ def _create_video(
 
 
 @pytest.mark.django_db
-def test_build_lx_sensitive_meta_maps_django_fields(base_db_data: object,) -> None:
+def test_build_lx_sensitive_meta_maps_django_fields(
+    base_db_data: object,
+) -> None:
     from tests.helpers.default_objects import get_default_center
 
     center = get_default_center()
@@ -146,7 +148,9 @@ def test_build_lx_p_video_segment_prefers_prediction_meta_labelset(
 
 
 @pytest.mark.django_db
-def test_build_lx_patient_video_file_skips_invalid_segments(base_db_data: object,) -> None:
+def test_build_lx_patient_video_file_skips_invalid_segments(
+    base_db_data: object,
+) -> None:
     from tests.helpers.default_objects import get_default_center
 
     center = get_default_center()
@@ -208,7 +212,9 @@ def test_build_lx_patient_video_file_skips_invalid_segments(base_db_data: object
 
 
 @pytest.mark.django_db
-def test_build_lx_patient_video_file_strict_segments_raises(base_db_data: object,) -> None:
+def test_build_lx_patient_video_file_strict_segments_raises(
+    base_db_data: object,
+) -> None:
     from tests.helpers.default_objects import get_default_center
 
     center = get_default_center()

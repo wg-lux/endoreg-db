@@ -56,20 +56,28 @@ class VideoMeta(models.Model):
     Links to hardware (processor, endoscope), center, import details, and FFmpeg technical specs.
     """
 
-    processor: models.ForeignKey["EndoscopyProcessor | None", "EndoscopyProcessor | None"] = models.ForeignKey(
+    processor: models.ForeignKey[
+        "EndoscopyProcessor | None", "EndoscopyProcessor | None"
+    ] = models.ForeignKey(
         "EndoscopyProcessor", on_delete=models.CASCADE, blank=True, null=True
     )
-    endoscope: models.ForeignKey["Endoscope | None", "Endoscope | None"] = models.ForeignKey(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
-        "Endoscope", on_delete=models.CASCADE, blank=True, null=True
+    endoscope: models.ForeignKey["Endoscope | None", "Endoscope | None"] = (
+        models.ForeignKey(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+            "Endoscope", on_delete=models.CASCADE, blank=True, null=True
+        )
     )
     center: models.ForeignKey["Center", "Center"] = models.ForeignKey(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
         "Center", on_delete=models.CASCADE
     )
-    import_meta: models.OneToOneField["VideoImportMeta | None", "VideoImportMeta | None"] = models.OneToOneField(
+    import_meta: models.OneToOneField[
+        "VideoImportMeta | None", "VideoImportMeta | None"
+    ] = models.OneToOneField(
         "VideoImportMeta", on_delete=models.CASCADE, blank=True, null=True
     )
-    ffmpeg_meta: models.OneToOneField["FFMpegMeta | None", "FFMpegMeta | None"] = models.OneToOneField(
-        "FFMpegMeta", on_delete=models.CASCADE, blank=True, null=True
+    ffmpeg_meta: models.OneToOneField["FFMpegMeta | None", "FFMpegMeta | None"] = (
+        models.OneToOneField(
+            "FFMpegMeta", on_delete=models.CASCADE, blank=True, null=True
+        )
     )
 
     @property

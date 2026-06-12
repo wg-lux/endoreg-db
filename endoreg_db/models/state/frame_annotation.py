@@ -699,7 +699,6 @@ class FrameAnnotationQueueResult:
     bucket_counts: dict[str, int] = field(default_factory=dict)
 
 
-
 def _pick_random_frame(
     *,
     spec: FrameAnnotationQueueSpec,
@@ -711,7 +710,9 @@ def _pick_random_frame(
         filter_label_id=cast(int | None, getattr(spec.filter_label, "id", None))
         if spec.filter_label is not None
         else None,
-        information_source_name=resolve_frame_information_source_name(spec.information_source_name),
+        information_source_name=resolve_frame_information_source_name(
+            spec.information_source_name
+        ),
         annotator=spec.annotator,
         exclude_annotated=spec.exclude_annotated,
         target_label_id=cast(int | None, getattr(spec.target_label, "id", None))
@@ -1143,7 +1144,9 @@ def serialize_frame_task(
             frame_manual_annotations(
                 frame=frame,
                 label_set=spec.label_set,
-                information_source_name=resolve_frame_information_source_name(spec.information_source_name),
+                information_source_name=resolve_frame_information_source_name(
+                    spec.information_source_name
+                ),
                 annotator=spec.annotator,
             )
         ),

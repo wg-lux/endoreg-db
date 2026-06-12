@@ -30,6 +30,7 @@ class _LabelManagerLike(Protocol):
         case_insensitive: bool = False,
     ) -> Label | None: ...
 
+
 def _assert_true(subject: object, value: bool, message: str) -> None:
     if hasattr(subject, "assertTrue"):
         cast(_AssertTrueLike, subject).assertTrue(value, message)

@@ -141,7 +141,9 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
         assert data["is_complete"] is True
         assert data["output_file"] == "processed/video_123.mp4"
 
-    def test_get_download_url_with_success_and_output(self, video_file: VideoFile, factory: APIRequestFactory) -> None:
+    def test_get_download_url_with_success_and_output(
+        self, video_file: VideoFile, factory: APIRequestFactory
+    ) -> None:
         """Test download URL generation for successful operation."""
         history = VideoProcessingHistory.objects.create(
             video=video_file,
@@ -159,7 +161,9 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
         expected_url = f"/api/media/videos/{int(video_file.pk)}/stream/?type=processed"
         assert expected_url in cast(str, data["download_url"])
 
-    def test_get_download_url_without_output_file(self, video_file: VideoFile, factory: APIRequestFactory) -> None:
+    def test_get_download_url_without_output_file(
+        self, video_file: VideoFile, factory: APIRequestFactory
+    ) -> None:
         """Test download URL is None without output file."""
         history = VideoProcessingHistory.objects.create(
             video=video_file,
@@ -175,7 +179,9 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
 
         assert data["download_url"] is None
 
-    def test_get_download_url_for_non_success_status(self, video_file: VideoFile, factory: APIRequestFactory) -> None:
+    def test_get_download_url_for_non_success_status(
+        self, video_file: VideoFile, factory: APIRequestFactory
+    ) -> None:
         """Test download URL is None for non-success status."""
         history = VideoProcessingHistory.objects.create(
             video=video_file,
@@ -192,7 +198,9 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
 
         assert data["download_url"] is None
 
-    def test_get_download_url_without_request_context(self, video_file: VideoFile) -> None:
+    def test_get_download_url_without_request_context(
+        self, video_file: VideoFile
+    ) -> None:
         """Test download URL without request in context."""
         history = VideoProcessingHistory.objects.create(
             video=video_file,

@@ -259,9 +259,9 @@ class VideoFile(models.Model):
     date: models.DateField[date | None, date | None] = models.DateField(
         blank=True, null=True
     )
-    meta: models.JSONField[VideoFileMetaJsonObject | None, VideoFileMetaJsonObject | None] = (
-        models.JSONField(blank=True, null=True)
-    )
+    meta: models.JSONField[
+        VideoFileMetaJsonObject | None, VideoFileMetaJsonObject | None
+    ] = models.JSONField(blank=True, null=True)
     date_created: models.DateTimeField[datetime, datetime] = models.DateTimeField(
         auto_now_add=True
     )

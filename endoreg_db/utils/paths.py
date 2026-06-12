@@ -62,6 +62,7 @@ QUARANTINE_DIR_NAME = "quarantine"
 MIGRATION_STAGING_DIR_NAME = "migration_staging"
 MANIFEST_DIR_NAME = "manifests"
 
+
 class EndoregPathsModel(FilesAndDirsModel):
     """Pydantic-backed container for all application directories."""
 
@@ -213,6 +214,7 @@ class EndoregPathsModel(FilesAndDirsModel):
 
     def values(self) -> Iterable[Path]:
         return (self[key] for key in self.legacy_key_map)
+
 
 class StorageTier(StrEnum):
     UPLOAD_API = "upload_api"
@@ -466,8 +468,6 @@ def _sanitize_path_token(value: str) -> str:
             allowed.append("_")
     collapsed = "".join(allowed).strip("_")
     return collapsed or "artifact"
-
-
 
 
 LEGACY_KEY_EXCLUDE_FIELDS = {"protected_root"}

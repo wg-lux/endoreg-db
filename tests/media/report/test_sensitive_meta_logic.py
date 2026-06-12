@@ -199,12 +199,8 @@ def test_date_conversion():
     print(f"✅ Date {test_date} converted to datetime: {aware_datetime}")
 
     assert aware_datetime.hour == 0, "Converted datetime should be at start of day"
-    assert aware_datetime.minute == 0, (
-        "Converted datetime should be at start of day"
-    )
-    assert aware_datetime.second == 0, (
-        "Converted datetime should be at start of day"
-    )
+    assert aware_datetime.minute == 0, "Converted datetime should be at start of day"
+    assert aware_datetime.second == 0, "Converted datetime should be at start of day"
 
 
 def test_name_processing():

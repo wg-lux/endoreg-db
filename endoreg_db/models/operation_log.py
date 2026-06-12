@@ -62,10 +62,8 @@ class OperationLog(models.Model):
     )
 
     # Extra info
-    meta: models.JSONField[JsonObject | None, JsonObject | None] = (
-        models.JSONField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
-            null=True, blank=True
-        )
+    meta: models.JSONField[JsonObject | None, JsonObject | None] = models.JSONField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+        null=True, blank=True
     )
 
     created_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]

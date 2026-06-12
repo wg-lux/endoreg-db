@@ -79,7 +79,7 @@ class Command(BaseCommand):
             "deleted": [str(path) for path in deleted],
         }
 
-        if command_options.json:
+        if command_options.json_output:
             self.stdout.write(json.dumps(payload, indent=2, sort_keys=True))
             return
 

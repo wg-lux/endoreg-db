@@ -19,10 +19,10 @@ def _fake_hf_download_factory(source_weights: Path) -> object:
     return fake_hf_download
 
 
-
-
 @pytest.mark.django_db
-def test_ensure_model_meta_from_hf_repairs_existing_missing_weights(monkeypatch: MonkeyPatch, settings: LazySettings, tmp_path: Path) -> None:
+def test_ensure_model_meta_from_hf_repairs_existing_missing_weights(
+    monkeypatch: MonkeyPatch, settings: LazySettings, tmp_path: Path
+) -> None:
     settings.MEDIA_ROOT = tmp_path
     source_weights = tmp_path / "downloaded.safetensors"
     source_weights.write_bytes(b"downloaded weights")
@@ -70,7 +70,9 @@ def test_ensure_model_meta_from_hf_repairs_existing_missing_weights(monkeypatch:
 
 
 @pytest.mark.django_db
-def test_ensure_model_meta_from_hf_reuses_ai_model_after_unique_race(monkeypatch: MonkeyPatch, settings: LazySettings, tmp_path: Path) -> None:
+def test_ensure_model_meta_from_hf_reuses_ai_model_after_unique_race(
+    monkeypatch: MonkeyPatch, settings: LazySettings, tmp_path: Path
+) -> None:
     settings.MEDIA_ROOT = tmp_path
     source_weights = tmp_path / "downloaded.safetensors"
     source_weights.write_bytes(b"downloaded weights")

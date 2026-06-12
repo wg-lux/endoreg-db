@@ -13,6 +13,7 @@ from endoreg_db.models import (
     PatientLabSample,
 )
 
+
 class _StoredFileLike(Protocol):
     name: str
     storage: Storage

@@ -33,7 +33,9 @@ class FrameExtractionJobsTest(TestCase):
     def tearDown(self) -> None:
         shutil.rmtree(self.frame_dir, ignore_errors=True)
 
-    def test_request_frame_extraction_dispatches_to_frame_extraction_queue(self) -> None:
+    def test_request_frame_extraction_dispatches_to_frame_extraction_queue(
+        self,
+    ) -> None:
         calls: list[dict[str, object]] = []
 
         class _FakeAsyncResult:
@@ -45,6 +47,7 @@ class FrameExtractionJobsTest(TestCase):
             "_ensure_frame_extraction_broker_transport_allowed",
             lambda: None,
         )
+
         def fake_apply_async(**kwargs: object) -> _FakeAsyncResult:
             calls.append(dict(kwargs))
             return _FakeAsyncResult()
@@ -96,7 +99,9 @@ class FrameExtractionJobsTest(TestCase):
         request.refresh_from_db()
         assert request.task_id == "running-task"
 
-    def test_run_frame_extraction_request_marks_success_and_frame_extracted(self) -> None:
+    def test_run_frame_extraction_request_marks_success_and_frame_extracted(
+        self,
+    ) -> None:
         request = FrameExtractionRequest.objects.create(
             video=self.video,
             frame_number=9,

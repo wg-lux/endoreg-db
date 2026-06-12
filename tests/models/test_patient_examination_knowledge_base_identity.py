@@ -27,7 +27,9 @@ def _serializer_errors(
 
 
 @pytest.mark.django_db
-def test_patient_examination_save_stamps_knowledge_base_identity(monkeypatch: MonkeyPatch) -> None:
+def test_patient_examination_save_stamps_knowledge_base_identity(
+    monkeypatch: MonkeyPatch,
+) -> None:
     patient = Patient.objects.create(
         patient_hash="kb-patient-save",
         first_name="KB",
@@ -116,6 +118,7 @@ def test_configured_knowledge_base_identity_uses_resolver_input_dirs(
     get_configured_knowledge_base_identity.cache_clear()
     configured_root = tmp_path / "configured-data"
     configured_root.mkdir(parents=True)
+
     def fake_resolve_dtypes_data_root() -> Path:
         return configured_root
 

@@ -10,11 +10,10 @@ from django.contrib.auth.models import AnonymousUser, User
 from django.core.exceptions import PermissionDenied, ValidationError
 
 from lx_dtypes.models.contracts.export_annotated import ExportAnnotatedConfigContract
+from lx_dtypes.models.contracts.video_frame_export import export_config, export_result
 from endoreg_db.export.frames.export_frames_with_labels import (
     annotation_exporter_client,
-    export_config,
     export_job_failed_error,
-    export_result,
 )
 from endoreg_db.models import Center, VideoFile
 from endoreg_db.services.hub.deployment import local_study_server_mode_enabled

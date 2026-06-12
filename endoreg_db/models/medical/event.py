@@ -1,6 +1,7 @@
 from typing import TYPE_CHECKING
 
 from django.db import models
+
 if TYPE_CHECKING:
     from endoreg_db.models import PatientEvent
 
@@ -132,7 +133,9 @@ class EventClassificationChoice(models.Model):
     """
 
     name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
-    subcategories: models.JSONField[object, dict[str, object]] = models.JSONField(default=dict)
+    subcategories: models.JSONField[object, dict[str, object]] = models.JSONField(
+        default=dict
+    )
     numerical_descriptors: models.JSONField[object, dict[str, object]] = (
         models.JSONField(default=dict)
     )

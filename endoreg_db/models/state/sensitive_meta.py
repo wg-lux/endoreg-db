@@ -13,12 +13,14 @@ class SensitiveMetaState(AbstractState):
         default=False
     )
 
-    origin: "models.OneToOneField[SensitiveMeta | None, SensitiveMeta | None]" = models.OneToOneField(
-        "SensitiveMeta",
-        on_delete=models.CASCADE,
-        related_name="state",
-        null=True,
-        blank=True,
+    origin: "models.OneToOneField[SensitiveMeta | None, SensitiveMeta | None]" = (
+        models.OneToOneField(
+            "SensitiveMeta",
+            on_delete=models.CASCADE,
+            related_name="state",
+            null=True,
+            blank=True,
+        )
     )
 
     if TYPE_CHECKING:

@@ -106,7 +106,7 @@ class Command(BaseCommand):
             violations=violations,
         )
 
-        if options_payload.json:
+        if options_payload.json_output:
             self.stdout.write(
                 json.dumps(payload.model_dump(mode="json"), indent=2, sort_keys=True)
             )

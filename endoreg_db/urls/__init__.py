@@ -17,6 +17,7 @@ from endoreg_db.views.report import patient_examination_report
 from .anonymization import url_patterns as anonymization_url_patterns
 from .auth import urlpatterns as auth_url_patterns
 from .classification import url_patterns as _classification_url_patterns  # pyright: ignore[reportUnknownVariableType]
+
 classification_url_patterns = cast(Iterable[object], _classification_url_patterns)
 from .examination import urlpatterns as examination_url_patterns
 from .media import urlpatterns as media_url_patterns
@@ -78,13 +79,10 @@ ninja_api.add_router(
 
 urlpatterns: list[URLPattern | URLResolver] = [
     path("auth/bootstrap", auth_bootstrap, name="auth-bootstrap"),
-
     # Existing non-router URL modules
     path("", include(api_urls)),
-
     # Ninja API routes
     path("", ninja_api.urls),
-
     # DRF ViewSet routes
     path("", include(router.urls)),
 ]

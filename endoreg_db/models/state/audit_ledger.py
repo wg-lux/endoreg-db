@@ -276,13 +276,15 @@ class LedgerHead(models.Model):
         default="0" * 64,
         editable=False,
     )
-    last_entry: models.ForeignKey[AuditLedger | None, AuditLedger | None] = models.ForeignKey(
-        AuditLedger,
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        editable=False,
-        related_name="+",
+    last_entry: models.ForeignKey[AuditLedger | None, AuditLedger | None] = (
+        models.ForeignKey(
+            AuditLedger,
+            null=True,
+            blank=True,
+            on_delete=models.SET_NULL,
+            editable=False,
+            related_name="+",
+        )
     )
     updated_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
         auto_now=True,

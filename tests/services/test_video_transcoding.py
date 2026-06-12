@@ -36,7 +36,6 @@ def _fake_30000_1001_stream_info(path: Path) -> dict[str, object]:
     }
 
 
-
 @pytest.mark.unit
 def test_transcode_video_directory_stages_and_moves_output(
     monkeypatch: MonkeyPatch, tmp_path: Path

@@ -98,7 +98,9 @@ def test_create_ai_dataset_export_returns_validation_errors(tmp_path: Path) -> N
 
 
 @pytest.mark.django_db
-def test_create_ai_dataset_export_marks_artifact_failed_on_export_error(tmp_path: Path) -> None:
+def test_create_ai_dataset_export_marks_artifact_failed_on_export_error(
+    tmp_path: Path,
+) -> None:
     dataset = _dataset()
 
     with patch.object(
@@ -126,7 +128,9 @@ def test_create_ai_dataset_export_marks_artifact_failed_on_export_error(tmp_path
 
 @pytest.mark.django_db
 @override_settings(ENDOREG_DEPLOYMENT_ROLE="local_study_server")
-def test_create_ai_dataset_export_enforces_local_scope_before_artifact(tmp_path: Path) -> None:
+def test_create_ai_dataset_export_enforces_local_scope_before_artifact(
+    tmp_path: Path,
+) -> None:
     dataset = _dataset()
     user_model = get_user_model()
     user = cast(_UserManager, user_model.objects).create_user(
@@ -151,7 +155,9 @@ def test_create_ai_dataset_export_enforces_local_scope_before_artifact(tmp_path:
 
 
 @pytest.mark.django_db
-def test_prepare_ai_dataset_export_download_returns_file_metadata(tmp_path: Path) -> None:
+def test_prepare_ai_dataset_export_download_returns_file_metadata(
+    tmp_path: Path,
+) -> None:
     dataset = _dataset()
     output_path = tmp_path / "ai_datasets" / "export.json"
     content = b'{"summary": {}}\n'
@@ -186,7 +192,9 @@ def test_prepare_ai_dataset_export_download_returns_file_metadata(tmp_path: Path
 
 
 @pytest.mark.django_db
-def test_prepare_ai_dataset_export_download_marks_missing_file_failed(tmp_path: Path) -> None:
+def test_prepare_ai_dataset_export_download_marks_missing_file_failed(
+    tmp_path: Path,
+) -> None:
     dataset = _dataset()
     artifact = AIDataSetExportArtifact.objects.create(
         dataset=dataset,
@@ -216,7 +224,9 @@ def test_prepare_ai_dataset_export_download_marks_missing_file_failed(tmp_path: 
 
 
 @pytest.mark.django_db
-def test_prepare_ai_dataset_export_download_rejects_paths_outside_export_root(tmp_path: Path) -> None:
+def test_prepare_ai_dataset_export_download_rejects_paths_outside_export_root(
+    tmp_path: Path,
+) -> None:
     dataset = _dataset()
     export_root = tmp_path / "export_root"
     outside_path = tmp_path / "outside.json"

@@ -27,7 +27,9 @@ def test_resolve_processor_name_uses_application_default_for_unknown() -> None:
     assert resolve_processor_name_for_import(None) == processor.name
 
 
-def test_resolve_processor_name_uses_named_fallback_when_no_application_default() -> None:
+def test_resolve_processor_name_uses_named_fallback_when_no_application_default() -> (
+    None
+):
     processor = EndoscopyProcessor.objects.create(name=DEFAULT_PROCESSOR_FALLBACK_NAME)
     settings = ApplicationSettings.get_solo()
     settings.processor = cast(EndoscopyProcessor, None)

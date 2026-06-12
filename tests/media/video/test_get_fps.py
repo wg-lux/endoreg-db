@@ -14,10 +14,10 @@ from endoreg_db.models.media.video.video_file import VideoFile
 
 
 def _build_video(
-        *,
-        fps: float | None = False,
-        use_default_fps: bool=False,
-    ):
+    *,
+    fps: float | None = False,
+    use_default_fps: bool = False,
+):
     return SimpleNamespace(
         fps=fps,
         use_default_fps=use_default_fps,
@@ -30,7 +30,9 @@ def _build_video(
     )
 
 
-def test_get_fps_module_imports_when_cv2_video_capture_is_unavailable(monkeypatch: MonkeyPatch) -> None:
+def test_get_fps_module_imports_when_cv2_video_capture_is_unavailable(
+    monkeypatch: MonkeyPatch,
+) -> None:
     monkeypatch.delattr(cv2, "VideoCapture", raising=False)
 
     importlib.reload(get_fps_module)

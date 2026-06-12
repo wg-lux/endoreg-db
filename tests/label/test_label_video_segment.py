@@ -313,7 +313,8 @@ class LabelVideoSegmentModelTest(TestCase):
         )
         self.assertEqual(len(frames_without_anno), self.segment_frame_count)
         self.assertListEqual(
-            sorted([_frame_id(f) for f in frames_without_anno]), sorted([_frame_id(f) for f in frames])
+            sorted([_frame_id(f) for f in frames_without_anno]),
+            sorted([_frame_id(f) for f in frames]),
         )
 
         if frames:
@@ -332,14 +333,18 @@ class LabelVideoSegmentModelTest(TestCase):
             self.assertEqual(
                 len(frames_without_anno_after), self.segment_frame_count - 1
             )
-            self.assertNotIn(_frame_id(first_frame), [_frame_id(f) for f in frames_without_anno_after])
+            self.assertNotIn(
+                _frame_id(first_frame),
+                [_frame_id(f) for f in frames_without_anno_after],
+            )
 
             frames_without_anno_limited = self.segment.get_frames_without_annotation(
                 n_frames=1
             )
             self.assertEqual(len(frames_without_anno_limited), 1)
             self.assertNotIn(
-                _frame_id(first_frame), [_frame_id(f) for f in frames_without_anno_limited]
+                _frame_id(first_frame),
+                [_frame_id(f) for f in frames_without_anno_limited],
             )
 
     def test_generate_annotations(self):
@@ -431,7 +436,8 @@ class LabelVideoSegmentModelTest(TestCase):
             label=self.segment.label,
         )
         self.assertEqual(
-            list(segment_annotations.order_by("pk")), list(manual_annotations.order_by("pk"))
+            list(segment_annotations.order_by("pk")),
+            list(manual_annotations.order_by("pk")),
         )
 
     def test_lvs_serializer_base(self) -> None:

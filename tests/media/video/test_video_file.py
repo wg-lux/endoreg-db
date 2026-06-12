@@ -38,7 +38,6 @@ def _assert_float_not_none(value: float | None) -> float:
     return float(value)
 
 
-
 class VideoFileModelTest(TestCase):
     def setUp(self):
         load_disease_data()
@@ -102,7 +101,9 @@ class VideoFileModelTest(TestCase):
             self.assertEqual(video_file.width, 1920)
             self.assertEqual(video_file.height, 1080)
             # Duration might be slightly off due to float precision, check within a tolerance
-            self.assertAlmostEqual(_assert_float_not_none(video_file.duration), 10.0, delta=0.1)
+            self.assertAlmostEqual(
+                _assert_float_not_none(video_file.duration), 10.0, delta=0.1
+            )
             # Frame count might also vary slightly depending on calculation method
             # self.assertEqual(video_file.frame_count, 500) # Example, adjust if needed
 

@@ -39,8 +39,8 @@ class DateValueDistribution(BaseValueDistribution):
         ("timedelta", "Timedelta"),
     ]
 
-    distribution_type: models.CharField[str, str] = (
-        models.CharField(max_length=20, choices=DISTRIBUTION_CHOICES)
+    distribution_type: models.CharField[str, str] = models.CharField(
+        max_length=20, choices=DISTRIBUTION_CHOICES
     )
     mode: models.CharField[str, str] = models.CharField(
         max_length=20, choices=MODE_CHOICES

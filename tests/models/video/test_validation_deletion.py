@@ -174,7 +174,9 @@ class TestVideoValidationDeletionBehavior:
                 "✅ CORRECT: Processed (anonymized) video should be PRESERVED after validation"
             )
 
-    def test_validation_handles_missing_raw_video(self, center: Center, processor: EndoscopyProcessor) -> None:
+    def test_validation_handles_missing_raw_video(
+        self, center: Center, processor: EndoscopyProcessor
+    ) -> None:
         """
         Test that validation gracefully handles case where raw video doesn't exist.
 
@@ -213,7 +215,9 @@ class TestVideoValidationDeletionBehavior:
                 "Validation should succeed even when raw file is missing"
             )
 
-    def test_validation_with_only_raw_video(self, center: Center, processor: EndoscopyProcessor, tmp_path: Path) -> None:
+    def test_validation_with_only_raw_video(
+        self, center: Center, processor: EndoscopyProcessor, tmp_path: Path
+    ) -> None:
         """
         Test validation when only raw video exists (no processed yet).
 
@@ -251,7 +255,9 @@ class TestVideoValidationDeletionBehavior:
             assert raw_video_path.exists(), "Raw video should exist before validation"
 
             # Run validation
-            result = video.validate_metadata_annotation(VideoTextMetaPayload.model_validate({}))
+            result = video.validate_metadata_annotation(
+                VideoTextMetaPayload.model_validate({})
+            )
 
             # Verify raw is deleted
             assert not raw_video_path.exists(), (
@@ -303,7 +309,9 @@ class TestActiveFileLogicWithValidation:
         _add_center(processor, center)
         return processor
 
-    def test_active_file_returns_processed_when_both_exist(self, center: Center, processor: EndoscopyProcessor) -> None:
+    def test_active_file_returns_processed_when_both_exist(
+        self, center: Center, processor: EndoscopyProcessor
+    ) -> None:
         """
         Verify that active_file returns processed file when both files exist.
 
@@ -431,7 +439,9 @@ class TestValidationDeletion:
         _add_center(processor, center)
         return processor
 
-    def test_validation_deletes_raw_video_only(self, center: Center, processor: EndoscopyProcessor, tmp_path: Path) -> None:
+    def test_validation_deletes_raw_video_only(
+        self, center: Center, processor: EndoscopyProcessor, tmp_path: Path
+    ) -> None:
         """
         Test that validation deletes RAW video but preserves PROCESSED video.
 
@@ -500,7 +510,9 @@ class TestValidationDeletion:
                 "✅ CORRECT: Processed (anonymized) video should be PRESERVED after validation"
             )
 
-    def test_validation_handles_missing_raw_video(self, center: Center, processor: EndoscopyProcessor) -> None:
+    def test_validation_handles_missing_raw_video(
+        self, center: Center, processor: EndoscopyProcessor
+    ) -> None:
         """
         Test that validation gracefully handles case where raw video doesn't exist.
 
@@ -539,7 +551,9 @@ class TestValidationDeletion:
                 "Validation should succeed even when raw file is missing"
             )
 
-    def test_validation_with_only_raw_video(self, center: Center, processor: EndoscopyProcessor, tmp_path: Path) -> None:
+    def test_validation_with_only_raw_video(
+        self, center: Center, processor: EndoscopyProcessor, tmp_path: Path
+    ) -> None:
         """
         Test validation when only raw video exists (no processed yet).
 
@@ -577,7 +591,9 @@ class TestValidationDeletion:
             assert raw_video_path.exists(), "Raw video should exist before validation"
 
             # Run validation
-            result = video.validate_metadata_annotation(VideoTextMetaPayload.model_validate({}))
+            result = video.validate_metadata_annotation(
+                VideoTextMetaPayload.model_validate({})
+            )
 
             # Verify raw is deleted
             assert not raw_video_path.exists(), (

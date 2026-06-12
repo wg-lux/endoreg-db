@@ -1,7 +1,7 @@
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
-from typing import  NoReturn, cast
+from typing import NoReturn, cast
 
 import pytest
 from pytest import MonkeyPatch
@@ -83,6 +83,7 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
         DummyVideo,
         raising=True,
     )
+
     def fake_processed_video_dir() -> Path:
         return anonym_dir
 
@@ -107,6 +108,7 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
         fake_atomic,
         raising=True,
     )
+
     def fake_get_or_create_for_hash(**kwargs: object) -> None:
         return None
 
@@ -223,6 +225,7 @@ def test_finalize_video_success_rejects_unprobeable_final_output(
         DummyVideo,
         raising=True,
     )
+
     def fake_processed_video_dir() -> Path:
         return anonym_dir
 
@@ -247,6 +250,7 @@ def test_finalize_video_success_rejects_unprobeable_final_output(
         fake_atomic,
         raising=True,
     )
+
     def fake_get_stream_info(path: str | Path) -> None:
         return None
 
@@ -350,6 +354,7 @@ def test_finalize_video_success_rejects_missing_anonymized_output(
         DummyVideo,
         raising=True,
     )
+
     def fake_processed_video_dir() -> Path:
         return tmp_path / "anonymized_videos"
 

@@ -89,7 +89,9 @@ def commit_validated_media_identity(
         case_resolution_reason=resolution.reason,
         case_resolution_created=resolution.created,
     )
-    commit_payload_data = cast(JsonObject, dump_validated_identity_payload(commit_payload))
+    commit_payload_data = cast(
+        JsonObject, dump_validated_identity_payload(commit_payload)
+    )
     commit_payload_data["payload_hash"] = _canonical_payload_hash(commit_payload_data)
 
     AuditLedger.append_identity_commit(

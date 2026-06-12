@@ -29,7 +29,7 @@ def _command_options() -> dict[str, object]:
         min_free_bytes=0,
         force_cpu=False,
         fail_on_non_compliant=False,
-        json=True,
+        json_output=True,
     ).model_dump(mode="python")
 
 

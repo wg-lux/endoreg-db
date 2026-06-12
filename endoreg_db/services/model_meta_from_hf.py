@@ -60,7 +60,6 @@ def _store_downloaded_weights(
     model_name: str,
     meta_version: str,
 ) -> None:
-
     filename = f"{model_name}_v{meta_version}.safetensors"
     relative_name = f"{WEIGHTS_DIR.name}/{filename}"
 

@@ -18,7 +18,9 @@ if TYPE_CHECKING:
 
 
 class PatientFinding(models.Model):
-    patient_examination: models.ForeignKey["PatientExamination", "PatientExamination"] = models.ForeignKey(
+    patient_examination: models.ForeignKey[
+        "PatientExamination", "PatientExamination"
+    ] = models.ForeignKey(
         "PatientExamination",
         on_delete=models.CASCADE,
         related_name="patient_findings",
@@ -134,4 +136,6 @@ class PatientFinding(models.Model):
         @property
         def active_interventions(
             self,
-        ) -> "models.QuerySet[PatientFindingIntervention, PatientFindingIntervention]": ...
+        ) -> (
+            "models.QuerySet[PatientFindingIntervention, PatientFindingIntervention]"
+        ): ...

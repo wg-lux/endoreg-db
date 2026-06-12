@@ -39,7 +39,9 @@ def test_atomic_copy_file_removes_partial_temp_artifact_on_enospc(
 
 
 @pytest.mark.unit
-def test_reconciliation_cleans_stale_streamable_temp_artifacts(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+def test_reconciliation_cleans_stale_streamable_temp_artifacts(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
     import endoreg_db.services.reconciliation as reconciliation_module
 
     sensitive_dir = tmp_path / "sensitive_videos"

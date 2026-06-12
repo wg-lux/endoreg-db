@@ -807,8 +807,12 @@ class FrameAnnotationRandomTaskView(APIView):
             task_mode=task_mode.value,
             video_id=video_id,
             label_set_id=_label_set_id(label_set) if label_set is not None else None,
-            target_label_id=model_pk(target_label) if target_label is not None else None,
-            filter_label_id=model_pk(filter_label) if filter_label is not None else None,
+            target_label_id=model_pk(target_label)
+            if target_label is not None
+            else None,
+            filter_label_id=model_pk(filter_label)
+            if filter_label is not None
+            else None,
             information_source_name=information_source_name,
             annotator=annotator,
             exclude_annotated=exclude_annotated,
@@ -872,11 +876,19 @@ class FrameAnnotationRandomTaskView(APIView):
             prediction_segments_only=only_prediction_segments,
             frame_file_type=requested_frame_file_type,
             label_group_id=_label_set_id(label_set) if label_set is not None else None,
-            target_label=_label_name(target_label) if target_label is not None else None,
-            filter_label=_label_name(filter_label) if filter_label is not None else None,
+            target_label=_label_name(target_label)
+            if target_label is not None
+            else None,
+            filter_label=_label_name(filter_label)
+            if filter_label is not None
+            else None,
             ai_dataset_id=_dataset_id(ai_dataset) if ai_dataset is not None else None,
-            ai_dataset_name=_dataset_name(ai_dataset) if ai_dataset is not None else None,
-            ai_dataset_type=_dataset_type(ai_dataset) if ai_dataset is not None else None,
+            ai_dataset_name=_dataset_name(ai_dataset)
+            if ai_dataset is not None
+            else None,
+            ai_dataset_type=_dataset_type(ai_dataset)
+            if ai_dataset is not None
+            else None,
             label_distribution=(
                 queue_result.label_distribution if ai_dataset is not None else []
             ),

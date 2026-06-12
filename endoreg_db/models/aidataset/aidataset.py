@@ -510,10 +510,7 @@ class AIDataSet(models.Model):
         )
 
         quality_scores = np.asarray(
-            [
-                float(candidate.quality_score)
-                for candidate in normalized_candidates
-            ],
+            [float(candidate.quality_score) for candidate in normalized_candidates],
             dtype=np.float64,
         )
         quality_gate = np.asarray(
@@ -621,8 +618,7 @@ class AIDataSet(models.Model):
                 candidate.sample_index for candidate in selected_candidates
             ],
             selected_frame_ids=[
-                candidate.frame_id
-                for candidate in selected_candidates
+                candidate.frame_id for candidate in selected_candidates
             ],
             selected_candidates=selected_candidates,
         )

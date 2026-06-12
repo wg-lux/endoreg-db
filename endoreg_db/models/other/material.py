@@ -16,9 +16,9 @@ class Material(models.Model):
     objects: ClassVar[MaterialManager] = MaterialManager()  # pyright: ignore[reportIncompatibleVariableOverride]
 
     name: models.CharField[str, str] = models.CharField(max_length=255)
-    emission_factor: models.ForeignKey["EmissionFactor | None", "EmissionFactor | None"] = models.ForeignKey(
-        "EmissionFactor", on_delete=models.SET_NULL, null=True
-    )
+    emission_factor: models.ForeignKey[
+        "EmissionFactor | None", "EmissionFactor | None"
+    ] = models.ForeignKey("EmissionFactor", on_delete=models.SET_NULL, null=True)
 
     if TYPE_CHECKING:
         emission_factor: models.ForeignKey["EmissionFactor|None", "EmissionFactor|None"]

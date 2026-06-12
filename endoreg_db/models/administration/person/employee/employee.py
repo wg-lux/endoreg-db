@@ -24,7 +24,9 @@ class Employee(Person):
 
     if TYPE_CHECKING:
         # qualification is a OneToOneField defined in the EmployeeQualification model
-        qualification: models.OneToOneField["EmployeeQualification", "EmployeeQualification"]
+        qualification: models.OneToOneField[
+            "EmployeeQualification", "EmployeeQualification"
+        ]
 
     def __str__(self) -> str:
         """

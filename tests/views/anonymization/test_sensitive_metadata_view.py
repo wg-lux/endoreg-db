@@ -10,6 +10,7 @@ import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.http.response import HttpResponseBase
 from django.test import Client as DjangoClient
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.request import Request
 from rest_framework.response import Response as DRFResponse
@@ -58,7 +59,7 @@ class TestSensitiveMetadataEndpoints:
         return SensitiveMeta.objects.create(
             patient_first_name="Max",
             patient_last_name="Mustermann",
-            patient_dob=datetime(1994, 3, 21, 0, 0),
+            patient_dob=timezone.make_aware(datetime(1994, 3, 21, 0, 0)),
             examination_date=date(2025, 11, 27),
             examination_time=time(9, 30),
             casenumber=f"CASE-{suffix}",

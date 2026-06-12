@@ -98,7 +98,7 @@ class Command(BaseCommand):
         payload["orphaned_candidates"] = orphaned_candidates
 
         if not options_payload.apply:
-            if options_payload.json:
+            if options_payload.json_output:
                 self.stdout.write(json.dumps(payload, sort_keys=True))
             self.stdout.write("Dry run only. Re-run with --apply.")
             return
@@ -162,7 +162,7 @@ class Command(BaseCommand):
         payload["marked_lost"] = marked_lost
         payload["repaired_orphaned"] = repaired_orphaned
 
-        if options_payload.json:
+        if options_payload.json_output:
             self.stdout.write(json.dumps(payload, sort_keys=True))
         self.stdout.write(
             self.style.SUCCESS(

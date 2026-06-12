@@ -137,6 +137,7 @@ def test_report_upload_import_inline_returns_report_poll_url_after_completion(
     )
 
     monkeypatch.setenv("REPORT_LLM_JOB_MODE", "inline")
+
     def fake_import_and_anonymize(*_args: object, **_kwargs: object) -> RawPdfFile:
         return report
 

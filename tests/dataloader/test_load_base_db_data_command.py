@@ -14,8 +14,6 @@ def _warning_style(message: str) -> str:
     return message
 
 
-
-
 class LoadBaseDbDataCommandTests(TestCase):
     @patch.object(Command, "_endoreg_db_schema_is_ready", return_value=False)
     @patch("endoreg_db.management.commands.load_base_db_data.call_command")
@@ -51,8 +49,6 @@ class LoadBaseDbDataCommandTests(TestCase):
             command.handle(**options.model_dump(mode="python"))
 
         invoked_commands = [
-            str(args[0])
-            for args, _kwargs in mocked_call_command.call_args_list
-            if args
+            str(args[0]) for args, _kwargs in mocked_call_command.call_args_list if args
         ]
         assert "load_requirement_data" not in invoked_commands

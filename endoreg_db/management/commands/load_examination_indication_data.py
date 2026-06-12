@@ -269,9 +269,9 @@ class Command(BaseCommand):
             interventions: list[FindingIntervention] = list(
                 FindingIntervention.objects.filter(name__in=intervention_names)
             )
-            cast(
-                _DtypesIndicationRecord, db_indication
-            ).expected_interventions.set(interventions)
+            cast(_DtypesIndicationRecord, db_indication).expected_interventions.set(
+                interventions
+            )
 
             found_intervention_names: set[str] = {
                 cast(NamedRecord, intervention).name for intervention in interventions

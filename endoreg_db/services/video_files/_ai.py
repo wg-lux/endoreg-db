@@ -59,8 +59,6 @@ logger = logging.getLogger(__name__)
 # ==========================================
 
 
-
-
 # ==========================================
 # DATA STRUCUTES & TYPES
 # ==========================================
@@ -468,7 +466,7 @@ def _stream_predictions_from_video(
                 crop_template,
                 scale=(classifier_config.size_x, classifier_config.size_y),
             )
-            cropped_pil = Image.fromarray(cropped.astype("uint8"), "RGB")
+            cropped_pil = Image.fromarray(cropped.astype("uint8"))
             batch_tensors.append(cast(torch.Tensor, image_transforms(cropped_pil)))
             frame_numbers.append(sample.frame_number)
             timestamps.append(sample.timestamp)

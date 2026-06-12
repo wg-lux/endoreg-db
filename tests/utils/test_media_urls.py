@@ -58,8 +58,10 @@ def test_build_video_frame_decoded_stream_path_supports_file_type() -> None:
 
 
 def test_build_absolute_media_url_uses_request_when_available() -> None:
-    request = SimpleNamespace(build_absolute_uri=lambda path:  # pyright: ignore[reportUnknownLambdaType]
-         f"https://hub.test{path}")
+    request = SimpleNamespace(
+        build_absolute_uri=lambda path:  # pyright: ignore[reportUnknownLambdaType]
+        f"https://hub.test{path}"
+    )
     assert (
         build_absolute_media_url(request, "/api/media/pdfs/11/stream/?type=processed")
         == "https://hub.test/api/media/pdfs/11/stream/?type=processed"

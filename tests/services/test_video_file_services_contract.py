@@ -49,7 +49,9 @@ def video(video_center: Center) -> VideoFile:
 
 
 @pytest.mark.django_db
-def test_video_query_and_state_services_preserve_wrapper_behavior(video: VideoFile) -> None:
+def test_video_query_and_state_services_preserve_wrapper_behavior(
+    video: VideoFile,
+) -> None:
     assert video_hash_exists(video.video_hash) is True
     assert get_video_by_pk(video.pk) == video
     assert get_video_by_content_hash(video.video_hash) == video
@@ -95,7 +97,7 @@ def test_video_active_file_and_stream_services_preserve_wrapper_behavior(
         monkeypatch.setattr(
             video,
             "get_processed_stream_path",
-            lambda *, materialize_if_missing=False: stream_path  # pyright: ignore[reportUnknownLambdaType]  # pyright: ignore[reportUnknownLambdaType],
+            lambda *, materialize_if_missing=False: stream_path,  # pyright: ignore[reportUnknownLambdaType]  # pyright: ignore[reportUnknownLambdaType],
         )
         assert resolve_video_stream_source(
             video,
@@ -122,9 +124,7 @@ def test_video_frame_services_preserve_wrapper_behavior(
     range_calls: list[dict[str, object]] = []
     deletion_calls: list[dict[str, object]] = []
 
-    def fake_extract(
-        video_obj: VideoFile, *args: object, **kwargs: object
-    ) -> str:
+    def fake_extract(video_obj: VideoFile, *args: object, **kwargs: object) -> str:
         extraction_calls.append((video_obj, args, kwargs))
         return "full-extraction"
 
@@ -238,7 +238,9 @@ def test_video_pipeline_and_anonymization_services_preserve_wrappers(
     ]
 
 
-def test_application_code_uses_video_file_services_for_high_risk_facade_methods() -> None:
+def test_application_code_uses_video_file_services_for_high_risk_facade_methods() -> (
+    None
+):
     repo_root = Path(__file__).resolve().parents[2]
     scan_roots = [
         repo_root / "endoreg_db" / "export",

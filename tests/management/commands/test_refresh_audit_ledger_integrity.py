@@ -16,7 +16,6 @@ from lx_dtypes.models.contracts.management_command import (
 )
 
 
-
 def _status_payload(
     *,
     status: str,

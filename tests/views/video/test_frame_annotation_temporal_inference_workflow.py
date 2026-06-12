@@ -28,7 +28,7 @@ from endoreg_db.services.segment_annotations import (
     ensure_prediction_segment_annotations,
 )
 from endoreg_db.services import video_temporal_inference as temporal_jobs
-from endoreg_db.services.video_temporal_inference import (
+from lx_dtypes.models.contracts.video_temporal_inference import (
     TemporalInferenceDispatchResult,
 )
 from endoreg_db.services.video_files._ai import VideoFrameScoreResult
@@ -466,7 +466,7 @@ class FrameAnnotationTemporalInferenceWorkflowIntegrationTest(TestCase):
         )
 
         upsert_response = self.bulk_upsert_view(request)
-        upsert_data =json.loads(upsert_response.content)
+        upsert_data = json.loads(upsert_response.content)
         self.assertEqual(upsert_response.status_code, 200, upsert_data)
         self.assertEqual(upsert_data["upserted_count"], len(annotations))
         self.assertTrue(

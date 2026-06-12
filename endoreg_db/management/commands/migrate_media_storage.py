@@ -392,7 +392,7 @@ class Command(BaseCommand):
             if iteration_summary["changed"] == 0:
                 break
 
-        if options_payload.json:
+        if options_payload.json_output:
             self.stdout.write(json.dumps(summary, sort_keys=True, default=str))
         else:
             self.stdout.write(

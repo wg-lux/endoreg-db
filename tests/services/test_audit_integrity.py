@@ -206,10 +206,13 @@ def test_video_post_validation_task_delegates_to_runner():
         "endoreg_db.services.jobs.video_post_validation_jobs._run_video_post_validation_rebuild",
         return_value=True,
     ) as runner:
-        result = cast(bool, cast(Any, run_video_post_validation_rebuild_task.run)(
-            "42",
-            only_validated=1,
-        ))
+        result = cast(
+            bool,
+            cast(Any, run_video_post_validation_rebuild_task.run)(
+                "42",
+                only_validated=1,
+            ),
+        )
 
     assert result is True
     runner.assert_called_once_with(42, only_validated=True, history_id=None)
@@ -220,18 +223,21 @@ def test_video_temporal_inference_task_delegates_to_runner():
         "endoreg_db.services.video_temporal_inference._run_video_temporal_inference",
         return_value=True,
     ) as runner:
-        result = cast(bool, cast(Any, run_video_temporal_inference_task.run)(
-            "42",
-            "7",
-            history_id="3",
-            replace_prediction_segments=1,
-            delete_frames_after=0,
-            ocr_frame_fraction="0.25",
-            ocr_cap="4",
-            temporal_options={"temporal_model": "markov"},
-            test_run=1,
-            n_test_frames="12",
-        ))
+        result = cast(
+            bool,
+            cast(Any, run_video_temporal_inference_task.run)(
+                "42",
+                "7",
+                history_id="3",
+                replace_prediction_segments=1,
+                delete_frames_after=0,
+                ocr_frame_fraction="0.25",
+                ocr_cap="4",
+                temporal_options={"temporal_model": "markov"},
+                test_run=1,
+                n_test_frames="12",
+            ),
+        )
 
     assert result is True
     runner.assert_called_once_with(

@@ -195,8 +195,8 @@ class ExaminationIndicationClassificationChoice(models.Model):
     """
 
     name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
-    subcategories: models.JSONField[object, dict[str, object]] = (
-        models.JSONField(default=dict)
+    subcategories: models.JSONField[object, dict[str, object]] = models.JSONField(
+        default=dict
     )
     numerical_descriptors: models.JSONField[object, dict[str, object]] = (
         models.JSONField(default=dict)

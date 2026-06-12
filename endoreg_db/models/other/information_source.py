@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, ClassVar, cast
 
 from django.db import models
 
+
 def get_prediction_information_source() -> "InformationSource":
     """
     Returns the InformationSource instance with the name "prediction".
@@ -70,9 +71,7 @@ class InformationSource(models.Model):
     date_created: models.DateField[dt.date, dt.date] = models.DateField(
         auto_now_add=True
     )
-    date_modified: models.DateField[dt.date, dt.date] = models.DateField(
-        auto_now=True
-    )
+    date_modified: models.DateField[dt.date, dt.date] = models.DateField(auto_now=True)
     abbreviation: models.CharField[str | None, str | None] = models.CharField(
         max_length=100, blank=True, null=True, unique=True
     )
@@ -157,11 +156,9 @@ class InformationSourceTypeManager(models.Manager["InformationSourceType"]):
 class InformationSourceType(models.Model):
     objects = InformationSourceTypeManager()
 
-    name: models.CharField[str, str] = models.CharField(
-        max_length=100, unique=True
-    )
-    description: models.TextField[str | None, str | None] = (
-        models.TextField(blank=True, null=True)
+    name: models.CharField[str, str] = models.CharField(max_length=100, unique=True)
+    description: models.TextField[str | None, str | None] = models.TextField(
+        blank=True, null=True
     )
 
     information_sources: models.ManyToManyField[

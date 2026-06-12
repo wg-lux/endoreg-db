@@ -173,6 +173,8 @@ MODEL_TRAINING_SERVER_INSTANCE_ID = _MODEL_TRAINING_SERVER_INSTANCE_ID
 launch_model_training_run = _launch_model_training_run
 mark_lost_model_training_runs = _mark_lost_model_training_runs
 model_training_run_payload = _model_training_run_payload
+
+
 class _RequestUserWithUsername(Protocol):
     is_authenticated: bool
     username: str
@@ -662,6 +664,7 @@ def _get_video_dimension_backfill_run(run_id: str) -> dict[str, Any] | None:
         run = _VIDEO_DIMENSION_BACKFILL_RUNS.get(run_id)
         return dict(run) if run is not None else None
 
+
 def store_video_dimension_backfill_run(
     run_key: str,
     **updates: object,
@@ -679,6 +682,8 @@ def launch_video_dimension_backfill_run(
 
 def required_backup_sources() -> list[Path]:
     return _required_backup_sources()
+
+
 def _isoformat(value: datetime | None) -> str | None:
     if value is None:
         return None

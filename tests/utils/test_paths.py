@@ -87,7 +87,9 @@ def test_legacy_paths_import_reexports_filesystem_paths(
 
     assert legacy_paths.data_paths is reloaded.data_paths
     assert legacy_paths.LOG_DIR == module_path(reloaded, "LOG_DIR")
-    assert legacy_paths.IMPORT_PREANONYMIZED_DIR == module_path(reloaded, "IMPORT_PREANONYMIZED_DIR")
+    assert legacy_paths.IMPORT_PREANONYMIZED_DIR == module_path(
+        reloaded, "IMPORT_PREANONYMIZED_DIR"
+    )
     assert legacy_paths.EndoregPathsModel is reloaded.EndoregPathsModel
 
 
@@ -144,10 +146,22 @@ def test_paths_module_resolves_relative_env_paths(
     assert module_path(reloaded, "DATA_DIR") == expected_data
     assert module_path(reloaded, "LOG_DIR") == expected_data / "logs"
     assert module_path(reloaded, "QUARANTINE_DIR") == expected_data / "quarantine"
-    assert module_path(reloaded, "MIGRATION_STAGING_DIR") == expected_data / "migration_staging"
-    assert module_path(reloaded, "UPLOAD_API_DIR") == expected_storage / "upload_jobs" / "api"
-    assert module_path(reloaded, "SAP_IMPORT_DROP_DIR") == expected_data / "import" / "sap_import"
-    assert module_path(reloaded, "IMPORT_VIDEO_DIR") == expected_data / "import" / "video_import"
+    assert (
+        module_path(reloaded, "MIGRATION_STAGING_DIR")
+        == expected_data / "migration_staging"
+    )
+    assert (
+        module_path(reloaded, "UPLOAD_API_DIR")
+        == expected_storage / "upload_jobs" / "api"
+    )
+    assert (
+        module_path(reloaded, "SAP_IMPORT_DROP_DIR")
+        == expected_data / "import" / "sap_import"
+    )
+    assert (
+        module_path(reloaded, "IMPORT_VIDEO_DIR")
+        == expected_data / "import" / "video_import"
+    )
     assert (
         module_path(reloaded, "IMPORT_PREANONYMIZED_DIR")
         == expected_data / "import" / "preanonymized_import"
@@ -161,10 +175,22 @@ def test_paths_module_resolves_relative_env_paths(
         == expected_data / "import" / "anonymized_report_import"
     )
     assert module_path(reloaded, "EXPORT_DIR") == expected_data / "export"
-    assert module_path(reloaded, "SENSITIVE_VIDEO_DIR") == expected_storage / "sensitive_videos"
-    assert module_path(reloaded, "SENSITIVE_REPORT_DIR") == expected_storage / "sensitive_reports"
-    assert module_path(reloaded, "ANONYM_VIDEO_DIR") == expected_storage / "processed_videos_final"
-    assert module_path(reloaded, "ANONYM_REPORT_DIR") == expected_storage / "processed_reports_final"
+    assert (
+        module_path(reloaded, "SENSITIVE_VIDEO_DIR")
+        == expected_storage / "sensitive_videos"
+    )
+    assert (
+        module_path(reloaded, "SENSITIVE_REPORT_DIR")
+        == expected_storage / "sensitive_reports"
+    )
+    assert (
+        module_path(reloaded, "ANONYM_VIDEO_DIR")
+        == expected_storage / "processed_videos_final"
+    )
+    assert (
+        module_path(reloaded, "ANONYM_REPORT_DIR")
+        == expected_storage / "processed_reports_final"
+    )
     assert module_path(reloaded, "RAW_FRAME_DIR") == expected_storage / "raw_frames"
     assert module_path(reloaded, "FRAME_DIR") == expected_storage / "frames"
     assert module_path(reloaded, "WEIGHTS_DIR") == expected_storage / "model_weights"
@@ -263,7 +289,9 @@ def test_protected_media_path_helpers_honor_configured_root(
         == "streamable_videos/raw/video.mp4"
     )
     assert (
-        module_callable(reloaded, "resolve_protected_media_path")("streamable_videos/raw/video.mp4")
+        module_callable(reloaded, "resolve_protected_media_path")(
+            "streamable_videos/raw/video.mp4"
+        )
         == asset_path.resolve()
     )
 
@@ -288,9 +316,15 @@ def test_watcher_intake_dirs_are_distinct_from_protected_media_root(
     )
 
     assert module_callable(reloaded, "protected_media_root")() == storage_root.resolve()
-    assert module_path(reloaded, "WATCHER_VIDEO_DROP_DIR").is_relative_to(data_root / "import")
-    assert module_path(reloaded, "WATCHER_REPORT_DROP_DIR").is_relative_to(data_root / "import")
-    assert module_path(reloaded, "WATCHER_PREANONYMIZED_DROP_DIR").is_relative_to(data_root / "import")
+    assert module_path(reloaded, "WATCHER_VIDEO_DROP_DIR").is_relative_to(
+        data_root / "import"
+    )
+    assert module_path(reloaded, "WATCHER_REPORT_DROP_DIR").is_relative_to(
+        data_root / "import"
+    )
+    assert module_path(reloaded, "WATCHER_PREANONYMIZED_DROP_DIR").is_relative_to(
+        data_root / "import"
+    )
     assert not module_path(reloaded, "WATCHER_VIDEO_DROP_DIR").is_relative_to(
         module_callable(reloaded, "protected_media_root")()
     )
@@ -320,11 +354,16 @@ def test_resolve_existing_protected_media_path_rejects_intake_and_accepts_manage
     intake_file.parent.mkdir(parents=True, exist_ok=True)
     intake_file.write_bytes(b"%PDF-1.4 intake")
 
-    managed_file = module_path(reloaded, "UPLOAD_WATCHER_DIR") / "job-123" / "incoming.pdf"
+    managed_file = (
+        module_path(reloaded, "UPLOAD_WATCHER_DIR") / "job-123" / "incoming.pdf"
+    )
     managed_file.parent.mkdir(parents=True, exist_ok=True)
     managed_file.write_bytes(b"%PDF-1.4 managed")
 
-    assert module_callable(reloaded, "resolve_existing_protected_media_path")(intake_file) is None
+    assert (
+        module_callable(reloaded, "resolve_existing_protected_media_path")(intake_file)
+        is None
+    )
     assert (
         module_callable(reloaded, "resolve_existing_protected_media_path")(managed_file)
         == managed_file.resolve()

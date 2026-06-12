@@ -79,7 +79,7 @@ class PdfMediaTextVisibilityTests(TestCase):
             self.assertEqual(report_obj.text, txt_content)
             self.assertEqual(report_obj.anonymized_text, txt_content)
 
-            response = self.client.get(f"/api/media/pdfs/{report_obj.pk}/")        
+            response = self.client.get(f"/api/media/pdfs/{report_obj.pk}/")
             data = json.loads(response.content)
 
             self.assertEqual(response.status_code, 200)
@@ -132,7 +132,7 @@ class PdfMediaTextVisibilityTests(TestCase):
 
             response = self.client.get(f"/api/media/pdfs/{report_obj.pk}/")
             data = json.loads(response.content)
-    
+
             self.assertEqual(response.status_code, 200)
             self.assertEqual(data["anonymized_text"], "pdf anonymized text")
             self.assertTrue(data["has_anonymized_text"])

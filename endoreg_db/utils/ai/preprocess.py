@@ -67,7 +67,7 @@ class Cropper:
         """
         # Convert numpy array to PIL Image if necessary
         if isinstance(img, np.ndarray):
-            img = Image.fromarray(img.astype("uint8"), "RGB")
+            img = Image.fromarray(img.astype("uint8"))
 
         if crop is not None:
             img = crop_img(img, crop)

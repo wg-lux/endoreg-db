@@ -19,5 +19,6 @@ class Tag(models.Model):
 
     def __str__(self) -> str:
         return str(self.name)
+
     def natural_key(self) -> tuple[str]:
         return (str(self.name),)

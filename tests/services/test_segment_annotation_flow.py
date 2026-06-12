@@ -7,6 +7,7 @@ from endoreg_db.config.env import DEFAULT_VIDEO_FPS
 from endoreg_db.models import VideoFile, Label, LabelVideoSegment, InformationSource
 from lx_dtypes.models.contracts.video_segments import parse_segment_annotation_input
 import endoreg_db.services.segment_sync as segment_sync
+
 create_user_segment_from_annotation = segment_sync.create_user_segment_from_annotation
 
 
@@ -57,6 +58,7 @@ class TestSegmentAnnotationFlow(TestCase):
         )
         self.mock_video_get = self.video_get_patcher.start()
         self.addCleanup(self.video_get_patcher.stop)
+
         def fake_get_video_fps(video: VideoFile) -> float:
             return self.video_fps
 

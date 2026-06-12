@@ -312,10 +312,9 @@ def test_delete_frames_restores_staged_directories_when_state_update_fails(
         using: str | None = None,
         update_fields: list[str] | None = None,
     ) -> object:
-        if (
-            getattr(self, "pk", None) == state.pk
-            and update_fields == ["frames_extracted"]
-        ):
+        if getattr(self, "pk", None) == state.pk and update_fields == [
+            "frames_extracted"
+        ]:
             raise RuntimeError("simulated state persistence failure")
         return original_state_save(
             cast(Any, self),
@@ -343,10 +342,6 @@ def test_delete_frames_restores_staged_directories_when_state_update_fails(
     assert state.frames_extracted is True
     assert frame.is_extracted is True
 
-    pending_delete_paths: list[Path] = list(
-        frame_dir.parent.glob("*.pending_delete.*")
-    )
-    pending_delete_paths.extend(
-        temp_anonym_dir.parent.glob("*.pending_delete.*")
-    )
+    pending_delete_paths: list[Path] = list(frame_dir.parent.glob("*.pending_delete.*"))
+    pending_delete_paths.extend(temp_anonym_dir.parent.glob("*.pending_delete.*"))
     assert list(pending_delete_paths) == []

@@ -163,7 +163,6 @@ class _PatientFindingLike(Protocol):
     def save(self, *args: object, **kwargs: object) -> None: ...
 
 
-
 class _PatientFindingClassificationManager(Protocol):
     def filter(self, **kwargs: object) -> Sequence[PatientFindingClassification]: ...
 

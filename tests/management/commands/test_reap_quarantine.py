@@ -29,9 +29,8 @@ def _reap_options(
         older_than_days=older_than_days,
         dry_run=dry_run,
         confirm=confirm,
-        json=json_output,
+        json_output=json_output,
     ).model_dump(mode="python")
-
 
 
 def test_reap_quarantine_defaults_to_dry_run(

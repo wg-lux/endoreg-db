@@ -185,7 +185,7 @@ class FrameStreamViewTests(TestCase):
             )
         finally:
             monkeypatches.undo()
-        
+
         data = json.loads(resp.content)
         assert resp.status_code == 409
         assert data["status"] == "frame_extraction_failed"

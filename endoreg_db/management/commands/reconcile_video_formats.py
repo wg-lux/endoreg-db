@@ -165,7 +165,7 @@ class Command(BaseCommand):
         )
 
         payload = summary.as_dict()
-        if options_payload.json:
+        if options_payload.json_output:
             self.stdout.write(json.dumps(payload, indent=2, sort_keys=True))
         else:
             self.stdout.write(

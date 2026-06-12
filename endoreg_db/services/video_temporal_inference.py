@@ -4,7 +4,7 @@ import logging
 import uuid
 from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass, replace
+from dataclasses import dataclass, replace
 from datetime import timedelta
 from importlib import import_module
 from importlib.metadata import PackageNotFoundError, version
@@ -56,6 +56,7 @@ from endoreg_db.services.video_files import (
 )
 from endoreg_db.services.jobs.video_task_cleanup import rollback_video_frame_artifacts
 from lx_dtypes.models.contracts.video_temporal_inference import (
+    TemporalInferenceDispatchResult,
     TemporalInferenceHistoryConfigPayload,
     TemporalInferenceHistoryResultPayload,
     parse_temporal_inference_history_config_payload,
@@ -105,25 +106,6 @@ _executor = ThreadPoolExecutor(max_workers=1)
 
 class TemporalInferenceConfigError(ValueError):
     """Raised when temporal inference options are invalid."""
-
-
-@dataclass(frozen=True)
-class TemporalInferenceDispatchResult:
-    task_id: str
-    mode: str
-    status: str
-    video_id: int
-    model_meta_id: int
-    queue: str
-    history_id: int | None = None
-    deleted_prediction_segments: int | None = None
-    prediction_segments_count: int | None = None
-    reason: str | None = None
-    message: str | None = None
-    blocked_by_history_id: int | None = None
-
-    def to_dict(self) -> dict[str, object]:
-        return asdict(self)
 
 
 class _ModelMetaRuntimeSpec(Protocol):

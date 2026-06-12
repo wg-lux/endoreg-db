@@ -829,4 +829,3 @@ class ForParisClassificationSerializer(BaseClassificationSerializer):
             )
 
         return {"message": "PARIS classification data generated.", "data": results}
-

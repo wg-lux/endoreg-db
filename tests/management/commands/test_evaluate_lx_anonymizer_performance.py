@@ -52,7 +52,9 @@ def test_evaluator_discovers_pdf_reports(tmp_path: Path) -> None:
 
 
 @pytest.mark.django_db
-def test_evaluator_excludes_video_inputs_when_processor_roi_is_missing(tmp_path: Path) -> None:
+def test_evaluator_excludes_video_inputs_when_processor_roi_is_missing(
+    tmp_path: Path,
+) -> None:
     video_path = tmp_path / "video.mp4"
     report_path = tmp_path / "report.pdf"
     video_path.write_bytes(b"video")
@@ -68,7 +70,9 @@ def test_evaluator_excludes_video_inputs_when_processor_roi_is_missing(tmp_path:
 
 
 @pytest.mark.django_db
-def test_evaluator_keeps_video_inputs_when_processor_roi_is_configured(tmp_path: Path) -> None:
+def test_evaluator_keeps_video_inputs_when_processor_roi_is_configured(
+    tmp_path: Path,
+) -> None:
     video_path = tmp_path / "video.mp4"
     video_path.write_bytes(b"video")
     EndoscopyProcessor.objects.create(

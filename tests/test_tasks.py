@@ -20,7 +20,6 @@ class _TaskLike(Protocol):
     def retry(self, *args: Any, **kwargs: Any) -> object: ...
 
 
-
 def _current_task(task: object) -> _TaskLike:
     getter = getattr(task, "_get_current_object", None)
     if callable(getter):
@@ -74,7 +73,9 @@ def test_frame_extraction_task_delegates_with_normalized_ids() -> None:
         "endoreg_db.services.jobs.frame_extraction_jobs.run_frame_extraction_request",
         return_value=True,
     ) as runner:
-        result = cast(Any, tasks.run_frame_extraction_request_task).run("11", "22", "33")
+        result = cast(Any, tasks.run_frame_extraction_request_task).run(
+            "11", "22", "33"
+        )
 
     assert result is True
     runner.assert_called_once_with(

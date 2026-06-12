@@ -37,7 +37,9 @@ def test_load_model_data_from_yaml_skips_when_model_table_is_missing(
     def no_tables() -> list[str]:
         return []
 
-    monkeypatch.setattr(_dataloader_connection().introspection, "table_names", no_tables)
+    monkeypatch.setattr(
+        _dataloader_connection().introspection, "table_names", no_tables
+    )
     monkeypatch.setattr(
         dataloader,
         "_record_warning",

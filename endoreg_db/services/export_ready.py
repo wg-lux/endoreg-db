@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, cast
 
@@ -21,6 +20,7 @@ from endoreg_db.services.hub.audit import emit_hub_audit_event
 from endoreg_db.services.video_files import get_or_create_video_state
 from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.utils.paths import ensure_within_protected_media_root
+from lx_dtypes.models.contracts.export_ready import ReadyForExportResult
 
 logger = logging.getLogger(__name__)
 
@@ -33,24 +33,6 @@ class ReadyForExportError(ValueError):
     def __init__(self, message: str, *, status_code: int = 400) -> None:
         super().__init__(message)
         self.status_code = status_code
-
-
-@dataclass(frozen=True, slots=True)
-class ReadyForExportResult:
-    video_id: int
-    ready_for_export: bool
-    ready_for_export_at: str | None
-    ready_for_export_by: str
-    processed_file_sha256: str
-
-    def to_dict(self) -> dict[str, object | None]:
-        return {
-            "video_id": self.video_id,
-            "ready_for_export": self.ready_for_export,
-            "ready_for_export_at": self.ready_for_export_at,
-            "ready_for_export_by": self.ready_for_export_by,
-            "processed_file_sha256": self.processed_file_sha256,
-        }
 
 
 def _user_identifier(user: Any) -> str:

@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from pytest import MonkeyPatch
-from pytest import MonkeyPatch
+
 
 @contextmanager
 def _context_path(path: Path) -> Any:
@@ -63,7 +63,6 @@ def test_async_reimport_uses_in_place_reanonymization(
     def _fake_atomic() -> Any:
         yield
 
-
     def fake_ensure_local_file(field_file: object) -> Any:
         return _context_path(raw_path)
 
@@ -75,15 +74,29 @@ def test_async_reimport_uses_in_place_reanonymization(
         events.append(("mark_anonymized", target_video))
         return 1
 
-    def fake_run_prediction_refresh(*, video: object, config: object) -> dict[str, object]:
+    def fake_run_prediction_refresh(
+        *, video: object, config: object
+    ) -> dict[str, object]:
         return {"status": "skipped", "queued": False}
 
     monkeypatch.setattr(module, "VideoFile", _FakeVideoModel, raising=True)
-    monkeypatch.setattr(module, "ensure_local_file", fake_ensure_local_file, raising=True)
+    monkeypatch.setattr(
+        module, "ensure_local_file", fake_ensure_local_file, raising=True
+    )
     monkeypatch.setattr(module.transaction, "atomic", _fake_atomic, raising=True)
-    monkeypatch.setattr(module, "_reset_reimport_state", fake_reset_reimport_state, raising=True)
-    monkeypatch.setattr(module, "_mark_upload_jobs_anonymized", fake_mark_upload_jobs_anonymized, raising=True)
-    monkeypatch.setattr(module, "_run_prediction_refresh", fake_run_prediction_refresh, raising=True)
+    monkeypatch.setattr(
+        module, "_reset_reimport_state", fake_reset_reimport_state, raising=True
+    )
+    monkeypatch.setattr(
+        module,
+        "_mark_upload_jobs_anonymized",
+        fake_mark_upload_jobs_anonymized,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        module, "_run_prediction_refresh", fake_run_prediction_refresh, raising=True
+    )
+
     def fake_video_import_service_factory() -> _FakeService:
         return _FakeService()
 

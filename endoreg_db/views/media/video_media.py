@@ -214,7 +214,9 @@ class VideoMediaView(APIView):
                 _video_contract_payload(video)
 
             serializer = VideoFileListSerializer(videos, many=True)
-            serialized_data = _serialize_response_data(cast(_SerializerLike, serializer))
+            serialized_data = _serialize_response_data(
+                cast(_SerializerLike, serializer)
+            )
             include_unresolved = _query_bool_param(query_params, "include_unresolved")
             return Response(
                 {

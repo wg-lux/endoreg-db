@@ -119,7 +119,9 @@ class LegacyLoadCommandBackfillTest(TransactionTestCase):
                     },
                 ]
                 for row in rows:
-                    (images_root / _legacy_row_filename(row)).write_bytes(b"legacy-image")
+                    (images_root / _legacy_row_filename(row)).write_bytes(
+                        b"legacy-image"
+                    )
 
                 jsonl_path = tmp_path / "legacy.jsonl"
                 jsonl_path.write_text(

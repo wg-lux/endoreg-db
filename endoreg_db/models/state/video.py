@@ -97,12 +97,12 @@ class VideoState(models.Model):
             "ready-for-export validation."
         ),
     )
-    ready_for_export_at: models.DateTimeField[datetime.datetime | None, datetime.datetime | None] = (
-        models.DateTimeField(
-            null=True,
-            blank=True,
-            help_text="Server-side timestamp for the ready-for-export promotion.",
-        )
+    ready_for_export_at: models.DateTimeField[
+        datetime.datetime | None, datetime.datetime | None
+    ] = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Server-side timestamp for the ready-for-export promotion.",
     )
     ready_for_export_by: models.CharField[str, str] = models.CharField(
         max_length=255,

@@ -10,7 +10,7 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 from django.test.utils import override_settings
 
-from endoreg_db.export.frames.export_frames_with_labels import export_config
+from lx_dtypes.models.contracts.video_frame_export import export_config
 from endoreg_db.models import (
     Center,
     Frame,

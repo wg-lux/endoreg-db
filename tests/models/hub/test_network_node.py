@@ -59,7 +59,12 @@ def test_network_node_manager_get_by_node_key_returns_matching_node():
         node_key="lookup-node",
     )
 
-    assert cast(_NetworkNodeManagerLike, NetworkNode.objects).get_by_node_key("lookup-node") == node
+    assert (
+        cast(_NetworkNodeManagerLike, NetworkNode.objects).get_by_node_key(
+            "lookup-node"
+        )
+        == node
+    )
 
 
 @pytest.mark.django_db
@@ -95,6 +100,4 @@ def test_network_node_rejects_empty_shared_secret():
 
 
 class _NetworkNodeManagerLike(Protocol):
-    def get_by_node_key(self, node_key: str):
-        ...
-
+    def get_by_node_key(self, node_key: str): ...

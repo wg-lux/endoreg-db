@@ -68,7 +68,5 @@ class ExaminationSerializer(serializers.ModelSerializer[Examination]):
             _ExaminationTypeManagerLike, getattr(obj, "examination_types")
         ).all()
         return list(
-            _serializer_data(
-                ExaminationTypeSerializer(examination_types, many=True)
-            )
+            _serializer_data(ExaminationTypeSerializer(examination_types, many=True))
         )

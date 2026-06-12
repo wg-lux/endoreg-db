@@ -45,7 +45,6 @@ def _image_roi(
     )
 
 
-
 class _Processor:
     def get_roi_endoscope_image(self) -> EndoscopeImageRoiCore:
         return _image_roi()
@@ -205,9 +204,13 @@ def test_backfill_fixes_cropped_processed_video(
 
     def fake_detect(path: Path) -> EndoscopeImageRoiCore:
         if path == raw_path:
-            return _image_roi(width=1920, height=1080, image_width=1920, image_height=1080)
+            return _image_roi(
+                width=1920, height=1080, image_width=1920, image_height=1080
+            )
         if path == processed_path:
-            return _image_roi(width=1350, height=1080, image_width=1350, image_height=1080)
+            return _image_roi(
+                width=1350, height=1080, image_width=1350, image_height=1080
+            )
         return _image_roi(width=1920, height=1080, image_width=1920, image_height=1080)
 
     def fake_sha256_file(path: Path) -> str:
@@ -243,7 +246,9 @@ def test_backfill_dry_run_reports_without_mutation(
 
     def fake_detect(path: Path) -> EndoscopeImageRoiCore:
         if path == raw_path:
-            return _image_roi(width=1920, height=1080, image_width=1920, image_height=1080)
+            return _image_roi(
+                width=1920, height=1080, image_width=1920, image_height=1080
+            )
         return _image_roi(width=1350, height=1080, image_width=1350, image_height=1080)
 
     monkeypatch.setattr(service.video_utils, "detect_video_format", fake_detect)
@@ -273,9 +278,13 @@ def test_backfill_refuses_bad_output_dimensions(
 
     def fake_detect(path: Path) -> EndoscopeImageRoiCore:
         if path == raw_path:
-            return _image_roi(width=1920, height=1080, image_width=1920, image_height=1080)
+            return _image_roi(
+                width=1920, height=1080, image_width=1920, image_height=1080
+            )
         if path == processed_path:
-            return _image_roi(width=1350, height=1080, image_width=1350, image_height=1080)
+            return _image_roi(
+                width=1350, height=1080, image_width=1350, image_height=1080
+            )
         return _image_roi(width=1350, height=1080, image_width=1350, image_height=1080)
 
     monkeypatch.setattr(service.video_utils, "detect_video_format", fake_detect)
@@ -301,7 +310,9 @@ def test_backfill_reports_unsupported_lx_anonymizer(
 
     def fake_detect(path: Path) -> EndoscopeImageRoiCore:
         if path == raw_path:
-            return _image_roi(width=1920, height=1080, image_width=1920, image_height=1080)
+            return _image_roi(
+                width=1920, height=1080, image_width=1920, image_height=1080
+            )
         return _image_roi(width=1350, height=1080, image_width=1350, image_height=1080)
 
     monkeypatch.setattr(service.video_utils, "detect_video_format", fake_detect)

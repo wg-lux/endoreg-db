@@ -12,6 +12,7 @@ from ...helpers.default_objects import (
     get_latest_segmentation_model,
 )
 
+
 class _WeightsFileLike(Protocol):
     name: str
     storage: Storage

@@ -126,6 +126,7 @@ class TransferJobContractTests(TestCase):
             TransferJob.ProcessingPolicy.PRESERVE_PROCESSING_STATE
         )
         transfer_job.processing_snapshot = {"sender_processing_success": True}
+
         def storage_exists(name: str) -> bool:
             return True
 

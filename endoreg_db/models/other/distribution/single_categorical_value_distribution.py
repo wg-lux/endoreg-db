@@ -18,7 +18,9 @@ class SingleCategoricalValueDistribution(BaseValueDistribution):
     """
 
     objects = SingleCategoricalValueDistributionManager()
-    categories: models.JSONField[dict[str, float], dict[str, float]] = models.JSONField()
+    categories: models.JSONField[dict[str, float], dict[str, float]] = (
+        models.JSONField()
+    )
 
     def generate_value(self, *args: object, **kwargs: object) -> object:
         categories, probabilities = zip(*self.categories.items())

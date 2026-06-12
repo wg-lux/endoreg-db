@@ -118,7 +118,7 @@ class PatientExaminationReportSchema(Schema):
 
     @staticmethod
     def resolve_patient_examination_id(obj: PatientExaminationReport) -> int:
-        value = getattr(obj, 'patient_examination_id', None)
+        value = getattr(obj, "patient_examination_id", None)
         return int(value) if isinstance(value, int) else 0
 
     @staticmethod
@@ -145,15 +145,15 @@ class PatientExaminationReportSchema(Schema):
 
     @staticmethod
     def resolve_created_by_id(obj: PatientExaminationReport) -> int | None:
-        return cast(int | None, getattr(obj, 'created_by_id', None))
+        return cast(int | None, getattr(obj, "created_by_id", None))
 
     @staticmethod
     def resolve_updated_by_id(obj: PatientExaminationReport) -> int | None:
-        return cast(int | None, getattr(obj, 'updated_by_id', None))
+        return cast(int | None, getattr(obj, "updated_by_id", None))
 
     @staticmethod
     def resolve_finalized_by_id(obj: PatientExaminationReport) -> int | None:
-        return cast(int | None, getattr(obj, 'finalized_by_id', None))
+        return cast(int | None, getattr(obj, "finalized_by_id", None))
 
 
 class PatientReportIdentitySchema(Schema):

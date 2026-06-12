@@ -49,7 +49,9 @@ def test_get_raw_file_path_returns_none_without_raw_reference() -> None:
 
 
 @pytest.mark.unit
-def test_get_processed_file_path_returns_none_for_pathless_storage(tmp_path: Path) -> None:
+def test_get_processed_file_path_returns_none_for_pathless_storage(
+    tmp_path: Path,
+) -> None:
     storage_dir = tmp_path / "storage"
     processed_path = storage_dir / "processed" / "video.mp4"
     processed_path.parent.mkdir(parents=True)
@@ -66,7 +68,9 @@ def test_get_processed_file_path_returns_none_for_pathless_storage(tmp_path: Pat
 
 
 @pytest.mark.unit
-def test_get_processed_file_path_reports_remote_only_storage_without_local_path() -> None:
+def test_get_processed_file_path_reports_remote_only_storage_without_local_path() -> (
+    None
+):
     field_file = _PathlessFieldFile("remote/video.mp4")
     video = SimpleNamespace(
         is_processed=True,
@@ -137,7 +141,9 @@ def test_delete_raw_file_after_validation_deletes_field_file_via_storage() -> No
         patch.object(video_file_io, "_get_raw_stream_path", return_value=None),
         patch.object(video_file_io, "delete_field_file", return_value=True) as delete,
     ):
-        deleted = video_file_io._delete_raw_file_after_validation(cast(VideoFile, video))
+        deleted = video_file_io._delete_raw_file_after_validation(
+            cast(VideoFile, video)
+        )
 
     assert deleted is True
     delete.assert_called_once_with(video, "raw_file", missing_ok=True, save=True)

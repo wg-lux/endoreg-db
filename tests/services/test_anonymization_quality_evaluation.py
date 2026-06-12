@@ -134,6 +134,7 @@ def test_quality_evaluation_reports_raw_file_and_raw_streamable_residuals(
     video = _validated_video(center, sensitive_meta, raw_file=True)
     raw_stream_path = tmp_path / "raw_stream.mp4"
     atomic_write_file(destination=raw_stream_path, content=[b"streamable-raw"])
+
     def fake_get_raw_stream_path(self: VideoFile) -> Path:
         return raw_stream_path
 
@@ -170,7 +171,9 @@ def test_quality_evaluation_without_processed_artifact_is_not_measurable() -> No
 
 
 @pytest.mark.django_db
-def test_quality_evaluation_delete_sensitive_meta_ignores_derived_metric_reference() -> None:
+def test_quality_evaluation_delete_sensitive_meta_ignores_derived_metric_reference() -> (
+    None
+):
     center = _center()
     sensitive_meta = _sensitive_meta(center)
     sensitive_meta_id = sensitive_meta.pk

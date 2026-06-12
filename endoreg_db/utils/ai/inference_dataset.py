@@ -50,7 +50,7 @@ class InferenceDataset(Dataset[torch.Tensor]):
             )
 
         # Convert cropped numpy array back to PIL image for torchvision transforms
-        cropped_pil = Image.fromarray(cropped.astype("uint8"), "RGB")
+        cropped_pil = Image.fromarray(cropped.astype("uint8"))
 
         # Apply the transformations
         img = cast(Image, self.transforms(cropped_pil))

@@ -125,7 +125,9 @@ def test_dry_run_does_not_create_missing_stable_frame(
     assert not (frame_dir / "frame_0000000.jpg").exists()
 
 
-def test_targeted_frame_zero_fix_uses_staged_output(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+def test_targeted_frame_zero_fix_uses_staged_output(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
     video = _video_with_initialized_frames(
         tmp_path,
         frame_count=3,
@@ -259,7 +261,9 @@ def test_ffmpeg_report_records_db_fps_source(tmp_path: Path):
     assert report["action"] == "probe_unavailable"
 
 
-def test_ffmpeg_report_uses_streamable_fallback_source(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+def test_ffmpeg_report_uses_streamable_fallback_source(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
     video = _video_with_initialized_frames(tmp_path, frame_count=3)
     streamable_path = tmp_path / "streamable" / "processed" / "fallback.mp4"
     _write_test_file(streamable_path, b"video")
@@ -277,6 +281,7 @@ def test_ffmpeg_report_uses_streamable_fallback_source(monkeypatch: MonkeyPatch,
     }
 
     monkeypatch.setattr(media_integrity, "STORAGE_DIR", tmp_path)
+
     def fake_probe_video_path(path: Path) -> tuple[bool, dict[str, object], str]:
         return True, probe_data, ""
 
@@ -314,6 +319,7 @@ def test_corrupt_streamable_with_valid_canonical_is_rebuild_only(
     video.save(update_fields=["processed_file", "processed_streamable_relative_path"])
 
     monkeypatch.setattr(media_integrity, "STORAGE_DIR", tmp_path)
+
     def fake_corrupt_probe_video_path(
         path: Path,
     ) -> tuple[bool, dict[str, object], str]:

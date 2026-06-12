@@ -41,10 +41,8 @@ def _task_payload(task: object) -> dict[str, Any]:
     return cast(dict[str, Any], task)
 
 
-
 def _payload_dict(value: object) -> dict[str, Any]:
     return _task_payload(value)
-
 
 
 def _model_pk(value: object | None) -> int | None:
@@ -223,7 +221,9 @@ class FrameAnnotationStateTest(TestCase):
 
         result = build_frame_task_queue(spec)
 
-        self.assertEqual(int(_task_payload(result.tasks[0])["frame_id"]), self.frames[2].pk)
+        self.assertEqual(
+            int(_task_payload(result.tasks[0])["frame_id"]), self.frames[2].pk
+        )
         label_options = _task_payload(result.tasks[0])["label_options"]
         assert isinstance(label_options, list)
         label_option_payloads = cast(list[object], label_options)
@@ -313,8 +313,12 @@ class FrameAnnotationStateTest(TestCase):
         ):
             result = build_frame_task_queue(spec)
 
-        self.assertEqual(int(_task_payload(result.tasks[0])["frame_id"]), self.frames[0].pk)
-        self.assertEqual(_task_payload(result.tasks[0])["manual_positive_label_ids"], [])
+        self.assertEqual(
+            int(_task_payload(result.tasks[0])["frame_id"]), self.frames[0].pk
+        )
+        self.assertEqual(
+            _task_payload(result.tasks[0])["manual_positive_label_ids"], []
+        )
         self.assertEqual(_task_payload(result.tasks[0])["suggested_label_ids"], [])
 
     def test_exclude_annotated_is_scoped_to_target_label_and_annotator(self):
@@ -350,8 +354,12 @@ class FrameAnnotationStateTest(TestCase):
             alice_result = build_frame_task_queue(alice_spec)
             bob_result = build_frame_task_queue(bob_spec)
 
-        self.assertEqual(int(_task_payload(alice_result.tasks[0])["frame_id"]), self.frames[1].pk)
-        self.assertEqual(int(_task_payload(bob_result.tasks[0])["frame_id"]), self.frames[0].pk)
+        self.assertEqual(
+            int(_task_payload(alice_result.tasks[0])["frame_id"]), self.frames[1].pk
+        )
+        self.assertEqual(
+            int(_task_payload(bob_result.tasks[0])["frame_id"]), self.frames[0].pk
+        )
 
     def test_dataset_annotation_sampling_strategy_is_configurable(self):
         dataset = AIDataSet.objects.create(
@@ -381,7 +389,9 @@ class FrameAnnotationStateTest(TestCase):
         result = build_frame_task_queue(spec)
 
         self.assertEqual(result.selection_strategy, "dataset_annotations")
-        self.assertEqual(int(_task_payload(result.tasks[0])["frame_id"]), self.frames[1].pk)
+        self.assertEqual(
+            int(_task_payload(result.tasks[0])["frame_id"]), self.frames[1].pk
+        )
         self.assertEqual(
             result.annotation_bucket_counts,
             {str(self.target_label.pk): 1},
@@ -423,7 +433,9 @@ class FrameAnnotationStateTest(TestCase):
         result = build_frame_task_queue(spec)
 
         self.assertEqual(result.selection_strategy, "dataset_segments")
-        self.assertEqual(int(_task_payload(result.tasks[0])["frame_id"]), self.frames[3].pk)
+        self.assertEqual(
+            int(_task_payload(result.tasks[0])["frame_id"]), self.frames[3].pk
+        )
         self.assertEqual(
             result.segment_bucket_counts,
             {str(self.segment_label.pk): 1},
@@ -555,5 +567,6 @@ class FrameAnnotationStateTest(TestCase):
             result = build_frame_task_queue(spec)
 
         self.assertEqual(
-            [int(_task_payload(task)["frame_id"]) for task in result.tasks], [self.frames[0].pk]
+            [int(_task_payload(task)["frame_id"]) for task in result.tasks],
+            [self.frames[0].pk],
         )

@@ -89,7 +89,7 @@ class Command(BaseCommand):
         )
         report = reconcile_frame_segment_annotations(spec)
         payload = report.as_dict()
-        if command_options.json:
+        if command_options.json_output:
             self.stdout.write(json.dumps(payload, indent=2, sort_keys=True))
             return
 

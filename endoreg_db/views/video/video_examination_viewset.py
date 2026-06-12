@@ -242,9 +242,7 @@ class VideoExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):
             with transaction.atomic():
                 patient_exam = serializer.save()
                 response_serializer = VideoExaminationSerializer(patient_exam)
-                return Response(
-                    cast(_SerializerDataLike, response_serializer).data
-                )
+                return Response(cast(_SerializerDataLike, response_serializer).data)
         except Exception as exc:
             logger.exception("Error updating video examination %s", instance.pk)
             return Response(

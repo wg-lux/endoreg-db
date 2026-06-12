@@ -107,7 +107,7 @@ class FrameSegmentReconciliationServiceTest(TestCase):
             "frame__frame_number"
         )
         self.assertEqual(annotations.count(), 2)
-        
+
         self.assertTrue(
             all(
                 (

@@ -12,7 +12,6 @@ from django.db import models, transaction
 from django.db.models import Q, QuerySet
 from django.http import HttpRequest
 from django.utils import timezone
-from lx_dtypes.models.contracts.json_types import JsonObject
 from lx_dtypes.models.contracts.patient_examination_report import (
     PatientExaminationReportMakeReportData,
     PatientExaminationReportMakeReportPayload,
@@ -197,7 +196,7 @@ def _assign_report_editor_payload(
     # Django JSONField stubs use JsonObject, while the report contract allows
     # JSON null. The payload is produced by report_json_safe_dict and is safe at
     # this persistence boundary.
-    cast(Any, report).editor_payload = cast(JsonObject, payload)
+    cast(Any, report).editor_payload = payload
 
 
 def _assign_report_user_fields(

@@ -68,7 +68,9 @@ class CenterScopedReadTests(TestCase):
     ) -> None:
         mock_allowed_center_id.return_value = self._pk(self.center_b)
 
-        response = self.client.get(f"/api/media/patients/{self._pk(self.patient)}/timeline/")
+        response = self.client.get(
+            f"/api/media/patients/{self._pk(self.patient)}/timeline/"
+        )
 
         assert response.status_code == 200, response.content
         payload = cast(dict[str, Any], response.json())

@@ -19,17 +19,17 @@ class PatientExaminationReport(models.Model):
         DRAFT = "draft", "Draft"
         FINAL = "final", "Final"
 
-    patient_examination: models.ForeignKey["PatientExamination", "PatientExamination"] = models.ForeignKey(
+    patient_examination: models.ForeignKey[
+        "PatientExamination", "PatientExamination"
+    ] = models.ForeignKey(
         "PatientExamination",
         on_delete=models.CASCADE,
         related_name="reports",
     )
 
-    template_name: models.CharField[str, str] = models.CharField(
-        max_length=255
-    )
-    template_version: models.CharField[str, str] = (
-        models.CharField(max_length=64, blank=True, default="")
+    template_name: models.CharField[str, str] = models.CharField(max_length=255)
+    template_version: models.CharField[str, str] = models.CharField(
+        max_length=64, blank=True, default=""
     )
     template_hash: models.CharField[str, str] = models.CharField(
         max_length=128, blank=True, default=""
@@ -54,9 +54,7 @@ class PatientExaminationReport(models.Model):
     history_context_snapshot: models.JSONField[JsonObject, JsonObject] = (
         models.JSONField(default=dict, blank=True)
     )
-    rendered_text: models.TextField[str, str] = models.TextField(
-        blank=True, default=""
-    )
+    rendered_text: models.TextField[str, str] = models.TextField(blank=True, default="")
 
     version: models.PositiveIntegerField[int, int] = models.PositiveIntegerField(
         default=1

@@ -18,7 +18,9 @@ class MultipleCategoricalValueDistribution(BaseValueDistribution):
     """
 
     objects = MultipleCategoricalValueDistributionManager()
-    categories: models.JSONField[dict[str, float], dict[str, float]] = models.JSONField()
+    categories: models.JSONField[dict[str, float], dict[str, float]] = (
+        models.JSONField()
+    )
     min_count: models.IntegerField[int, int] = models.IntegerField()
     max_count: models.IntegerField[int, int] = models.IntegerField()
     count_distribution_type: models.CharField[str, str] = models.CharField(

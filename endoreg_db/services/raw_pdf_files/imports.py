@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import Protocol, cast
 from django.core.files.storage import Storage
-from typing import TYPE_CHECKING, Protocol, TypedDict, Unpack, cast
+from typing import TYPE_CHECKING, TypedDict, Unpack
 
 from endoreg_db.utils.file_operations import get_content_hash_filename
 from endoreg_db.utils.hashs import get_pdf_hash
@@ -24,9 +24,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
 class _StoredFileLike(Protocol):
     name: str
     storage: Storage
+
 
 class _RawPdfFileCreateKwargs(TypedDict, total=False):
     pass

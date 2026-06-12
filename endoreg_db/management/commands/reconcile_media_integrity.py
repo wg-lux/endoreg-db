@@ -94,7 +94,7 @@ class Command(BaseCommand):
             cleanup_stale_artifacts=command_options.cleanup_stale_artifacts,
         )
         summary.dry_run = command_options.dry_run
-        if command_options.json:
+        if command_options.json_output:
             self.stdout.write(json.dumps(summary.as_dict(), indent=2, sort_keys=True))
             return
         self.stdout.write(

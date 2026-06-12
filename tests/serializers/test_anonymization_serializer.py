@@ -26,7 +26,9 @@ class _SerializerErrors(Protocol):
     errors: Mapping[str, object]
 
 
-def _serializer_errors(serializer: SensitiveMetaValidateSerializer) -> Mapping[str, object]:
+def _serializer_errors(
+    serializer: SensitiveMetaValidateSerializer,
+) -> Mapping[str, object]:
     return cast(_SerializerErrors, serializer).errors
 
 
@@ -68,7 +70,7 @@ class TestDateParsingUtilities:
 
     def test_parse_none(self):
         """Test parsing None returns None."""
-        result = parse_any_date('')
+        result = parse_any_date("")
         assert result is None
 
     def test_parse_whitespace_only(self):
