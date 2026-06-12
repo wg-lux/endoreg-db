@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportUnusedClass=false
 import logging
 import os

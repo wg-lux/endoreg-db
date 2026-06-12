@@ -1,3 +1,4 @@
+from __future__ import annotations
 from .label_video_segment import LabelVideoSegmentState
 from .raw_pdf import RawPdfState
 from .sensitive_meta import SensitiveMetaState

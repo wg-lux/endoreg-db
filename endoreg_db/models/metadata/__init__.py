@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Models for storing metadata associated with other data entities."""
 
 from .sensitive_meta import SensitiveMeta

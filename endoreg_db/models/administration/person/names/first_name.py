@@ -1,6 +1,6 @@
 # class to represent unique first-names
 # name attribute is natural key
-
+from __future__ import annotations
 from django.db import models
 
 

@@ -1,3 +1,4 @@
+from __future__ import annotations
 from .disease import Disease, DiseaseClassification, DiseaseClassificationChoice
 from .event import Event, EventClassification, EventClassificationChoice
 

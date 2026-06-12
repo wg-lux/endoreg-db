@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Module for Organ models."""
 
 from django.db import models

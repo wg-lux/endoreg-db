@@ -1,3 +1,4 @@
+from __future__ import annotations
 from .video import (
     FrameExtractionRequest,
     VideoFile,

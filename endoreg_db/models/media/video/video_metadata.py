@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Video metadata model for analysis results and correction UI metrics."""
 
 from datetime import datetime

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Model for the medication schedule."""
 
 from typing import TYPE_CHECKING, ClassVar

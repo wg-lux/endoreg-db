@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Model for medication intake time"""
 
 from typing import TYPE_CHECKING

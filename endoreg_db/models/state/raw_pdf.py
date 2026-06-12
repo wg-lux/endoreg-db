@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Defines state tracking models related to report processing, including extraction of text and metadata, AI predictions, and anonymization status for RawPdfFile instances.
 """

@@ -1,3 +1,4 @@
+from __future__ import annotations
 import logging
 import random
 from datetime import date, datetime, timedelta
@@ -510,19 +511,8 @@ class Patient(Person):
         as ModelLinks. For a Patient, this includes their diseases, associated classification choices,
         all their lab values, and medication information.
         """
-        from endoreg_db.models.medical.disease import (
-            Disease,
-            DiseaseClassificationChoice,
-        )
 
         # Imports for medication related models
-        from endoreg_db.models.medical.medication.medication import Medication
-        from endoreg_db.models.medical.medication.medication_indication import (
-            MedicationIndication,
-        )
-        from endoreg_db.models.medical.medication.medication_intake_time import (
-            MedicationIntakeTime,
-        )
         from endoreg_db.utils.links import ModelLinks
 
         # PatientMedication objects are retrieved via self.patientmedication_set

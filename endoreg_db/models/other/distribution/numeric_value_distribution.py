@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Model for numeric value distribution"""
 
 import numpy as np

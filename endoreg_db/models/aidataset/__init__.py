@@ -1,3 +1,4 @@
+from __future__ import annotations
 from endoreg_db.models.aidataset.aidataset import (
     AIDataSet,
     AIDataSetActiveLearningSelectionContract,

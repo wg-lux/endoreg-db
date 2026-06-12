@@ -1,3 +1,4 @@
+from __future__ import annotations
 from .person import Person
 from .patient import (
     Patient,

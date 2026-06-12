@@ -1,11 +1,8 @@
+from __future__ import annotations
+
 """
 Defines state tracking models related to video processing.
 """
-
-from __future__ import (
-    annotations,
-)  # <-- CRITICAL: Prevents runtime "unsubscriptable" errors
-
 import datetime
 import logging
 from typing import TYPE_CHECKING

@@ -978,13 +978,12 @@ sdist = { url = "https://files.pythonhosted.org/packages/62/59/e47bbd0542d0e6f4c
 
 [[package]]
 name = "endoreg-db"
-version = "1.0.2.4"
+version = "1.0.2.7"
 source = { editable = "." }
 dependencies = [
     { name = "celery" },
     { name = "celery-types" },
     { name = "cryptography" },
-    { name = "de-core-news-sm" },
     { name = "decord" },
     { name = "django" },
     { name = "django-bootstrap5" },
@@ -1079,6 +1078,9 @@ docs = [
     { name = "sphinx-autodoc-typehints" },
     { name = "sphinx-copybutton" },
 ]
+spacy = [
+    { name = "de-core-news-sm" },
+]
 
 [package.dev-dependencies]
 cpu-runtime = [
@@ -1095,7 +1097,7 @@ requires-dist = [
     { name = "celery", specifier = ">=5.5.3" },
     { name = "celery-types", specifier = ">=0.26.0" },
     { name = "cryptography", specifier = ">=44.0.2" },
-    { name = "de-core-news-sm", url = "https://github.com/explosion/spacy-models/releases/download/de_core_news_sm-3.8.0/de_core_news_sm-3.8.0-py3-none-any.whl" },
+    { name = "de-core-news-sm", marker = "extra == 'spacy'", url = "https://github.com/explosion/spacy-models/releases/download/de_core_news_sm-3.8.0/de_core_news_sm-3.8.0-py3-none-any.whl" },
     { name = "decord", specifier = "==0.6.0" },
     { name = "django", specifier = ">=5.2.4" },
     { name = "django-bootstrap5", specifier = ">=25.2" },
@@ -1182,7 +1184,7 @@ requires-dist = [
     { name = "whitenoise", specifier = ">=6.10.0" },
     { name = "ziglang", specifier = ">=0.15.2" },
 ]
-provides-extras = ["dev", "docs"]
+provides-extras = ["dev", "docs", "spacy"]
 
 [package.metadata.requires-dev]
 cpu-runtime = [{ name = "onnxruntime", specifier = ">=1.25.1" }]

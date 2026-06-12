@@ -1,3 +1,4 @@
+from __future__ import annotations
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Optional, Protocol, cast
 
@@ -7,7 +8,7 @@ from lx_dtypes.models.contracts.json_types import JsonObject
 from endoreg_db.schemas import validate_dtypes_p_examination_payload
 
 if TYPE_CHECKING:
-    from endoreg_db.models.administration.person.patient.patient import Patient
+    from endoreg_db.models.administration.person.patient.patient import Patient  # pyright: ignore
     from endoreg_db.models.medical.examination.examination import Examination
     from endoreg_db.models.medical.examination.examination_indication import (
         ExaminationIndication,
@@ -208,7 +209,6 @@ class PatientExamination(models.Model):
         """
         Returns the patient's age at the time of the examination.
         """
-        from ...administration.person.patient import Patient
 
         patient = cast(Patient, self.patient)
         dob = patient.get_dob()

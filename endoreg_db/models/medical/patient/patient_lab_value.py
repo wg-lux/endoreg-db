@@ -1,3 +1,4 @@
+from __future__ import annotations
 import numbers
 from datetime import datetime as dt_datetime
 from collections.abc import Iterable

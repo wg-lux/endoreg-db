@@ -1,3 +1,4 @@
+from __future__ import annotations
 import logging
 from collections.abc import Iterable
 from pathlib import Path
@@ -262,7 +263,6 @@ class VideoMeta(models.Model):
 
     def get_endo_roi(self) -> object:
         """Retrieves the endoscope region of interest (ROI) from the associated processor."""
-        from ..medical.hardware import EndoscopyProcessor
 
         processor: EndoscopyProcessor = self.processor_safe
         endo_roi = processor.get_roi_endoscope_image()

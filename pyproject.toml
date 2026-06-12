@@ -17,7 +17,7 @@ maintainers = [
 ]
 name = "endoreg_db"
 readme = "README.md"
-version = "1.0.2.4"
+version = "1.0.2.7"
 requires-python = ">=3.12,<3.13"
 
 classifiers = [
@@ -129,7 +129,9 @@ docs = [
   "sphinx>=8.2.3,<9.0",
   "furo>=2025.9.25",
 ]
-
+spacy = [
+    "de-core-news-sm",
+]
 [dependency-groups]
 # Hardware explicitly controlled via uv groups
 cpu-runtime = [
@@ -138,9 +140,7 @@ cpu-runtime = [
 gpu-runtime = [
     "onnxruntime-gpu>=1.26.0"
 ]
-spacy = [
-    "de-core-news-sm",
-]
+
 
 [tool.setuptools]
 packages = ["endoreg_db"]

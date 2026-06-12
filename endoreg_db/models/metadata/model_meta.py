@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Defines the ModelMeta model and its manager for storing metadata related to AI models,
 including versioning, configuration, and associated weights files.

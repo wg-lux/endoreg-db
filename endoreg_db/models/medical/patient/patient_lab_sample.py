@@ -1,3 +1,4 @@
+from __future__ import annotations
 from datetime import datetime as dt
 from datetime import timezone
 from typing import TYPE_CHECKING, ClassVar
