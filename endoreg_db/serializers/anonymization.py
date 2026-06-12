@@ -4,6 +4,8 @@ Serializers für Anonymisierungs-Validierung mit deutschem Datumsformat.
 Unterstützt DD.MM.YYYY als Primärformat und YYYY-MM-DD als Fallback.
 """
 
+from __future__ import annotations
+
 from rest_framework import serializers
 from endoreg_db.models.metadata.sensitive_meta_logic import parse_any_date
 

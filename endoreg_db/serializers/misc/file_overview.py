@@ -1,4 +1,6 @@
 # pyright: reportUnusedClass=false
+from __future__ import annotations
+
 import re
 from pathlib import Path
 from datetime import datetime

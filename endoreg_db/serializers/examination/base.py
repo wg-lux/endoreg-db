@@ -1,4 +1,6 @@
 # eendoreg_db/serializers/examination/base.py
+from __future__ import annotations
+
 from typing import Protocol, cast, TYPE_CHECKING
 
 from django.db.models.query import QuerySet

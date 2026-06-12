@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from rest_framework import serializers
 
 from endoreg_db.models.medical.examination.examination import Examination

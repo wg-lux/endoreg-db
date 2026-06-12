@@ -1,4 +1,6 @@
 # endoreg_db/serializers/video/video_file_list.py
+from __future__ import annotations
+
 from typing import Literal, cast, TYPE_CHECKING
 import logging
 

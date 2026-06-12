@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from endoreg_db.models.medical.patient.patient_finding import PatientFinding
 from typing import TYPE_CHECKING
 

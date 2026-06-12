@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Protocol, TYPE_CHECKING
 
 from rest_framework import serializers

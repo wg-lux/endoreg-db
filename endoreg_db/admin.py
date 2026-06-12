@@ -20,11 +20,6 @@ from endoreg_db.models import (
     PatientFindingIntervention,
 )
 
-# from endoreg_db.forms.patient_finding_intervention_form import (
-#     PatientFindingInterventionForm,
-# )
-from endoreg_db.forms.patient_form import PatientForm
-
 
 class FindingClassificationChoiceAdminJson(TypedDict):
     id: int
@@ -32,21 +27,6 @@ class FindingClassificationChoiceAdminJson(TypedDict):
 
 
 type FindingClassificationChoiceDbRow = tuple[int, str]
-
-
-@admin.register(Patient)
-class PatientAdmin(admin.ModelAdmin[Patient]):
-    form = PatientForm
-    list_display = (
-        "id",
-        "first_name",
-        "last_name",
-        "dob",
-        "center",
-    )
-    search_fields = ("first_name", "last_name", "email", "phone")
-    list_filter = ("dob", "center")
-    ordering = ("last_name",)
 
 
 @admin.register(Examination)

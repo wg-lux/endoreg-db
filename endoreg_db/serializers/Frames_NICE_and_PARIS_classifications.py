@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections.abc import Callable, Iterable
 from itertools import combinations
 from pathlib import Path

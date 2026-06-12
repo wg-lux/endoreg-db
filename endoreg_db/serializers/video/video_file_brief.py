@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from endoreg_db.models.media.video.video_file import VideoFile
 
 

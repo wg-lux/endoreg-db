@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.serializers.administration import CenterSerializer
 
