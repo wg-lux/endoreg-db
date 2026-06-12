@@ -12,7 +12,7 @@ from pydantic import ValidationError
 
 from endoreg_db.models import VideoFile
 from endoreg_db.utils.storage import field_file_is_readable, file_exists
-from endoreg_db.utils.storage.streaming import field_file_size
+from endoreg_db.utils.storage_streaming import field_file_size
 from lx_dtypes.models.contracts.management_command import (
     ValidateVideoFileStatusPayload,
     ValidateVideoFilesCommandOptionsPayload,

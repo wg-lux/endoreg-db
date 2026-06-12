@@ -5,16 +5,18 @@ Provides CRUD-like operations for video files including listing, detail
 retrieval, and metadata management for the media management system.
 """
 
+from __future__ import annotations
+
 import logging
 from collections.abc import Mapping
+from typing import Any, Protocol, TypeAlias, cast
 from urllib.parse import urlencode
-
-from typing import Protocol, TypeAlias, cast
 
 from django.db import models
 from django.db.models import Prefetch, Q
 from django.db.models.query import QuerySet
 from django.http import Http404
+from lx_dtypes.models.contracts.video_file import VideoFilePayload
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
@@ -74,6 +76,47 @@ def _query_bool_param(params: Mapping[str, str], key: str) -> bool | None:
     return None
 
 
+def _video_contract_payload(video: VideoFile) -> VideoFilePayload:
+    """
+    Validate stable scalar VideoFile fields through the shared lx_dtypes contract.
+
+    The endpoint still returns the existing serializer payload; this contract
+    call keeps the view aligned with the cross-package VideoFile boundary.
+    """
+    return VideoFilePayload.model_validate(
+        {
+            "pk": video.pk,
+            "id": video.pk,
+            "video_hash": str(video.video_hash),
+            "original_file_name": getattr(video, "original_file_name", None),
+            "fps": getattr(video, "fps", None),
+            "duration": getattr(video, "duration", None),
+            "frame_count": getattr(video, "frame_count", None),
+            "width": getattr(video, "width", None),
+            "height": getattr(video, "height", None),
+            "suffix": getattr(video, "suffix", None),
+            "frame_dir": getattr(video, "frame_dir", ""),
+            "storage_mode": getattr(video, "storage_mode", ""),
+            "raw_streamable_relative_path": getattr(
+                video,
+                "raw_streamable_relative_path",
+                "",
+            ),
+            "processed_streamable_relative_path": getattr(
+                video,
+                "processed_streamable_relative_path",
+                "",
+            ),
+            "has_raw": bool(getattr(video, "raw_file", None)),
+            "is_processed": bool(getattr(video, "processed_file", None)),
+            "uploaded_at": getattr(video, "uploaded_at", None),
+            "date_created": getattr(video, "date_created", None),
+            "date_modified": getattr(video, "date_modified", None),
+            "meta": getattr(video, "meta", None),
+        }
+    )
+
+
 class VideoMediaView(APIView):
     """
     Video media management API for listing and detail operations.
@@ -105,7 +148,7 @@ class VideoMediaView(APIView):
             models.Model.save(video, update_fields=["export_segments_by_video"])
             serializer = VideoDetailSerializer(video, context={"request": request})
             return Response(
-                _serialize_response_data(serializer),
+                _serialize_response_data(cast(_SerializerLike, serializer)),
                 status=status.HTTP_200_OK,
             )
 
@@ -119,13 +162,16 @@ class VideoMediaView(APIView):
             video = VideoFile.objects.select_related("state", "sensitive_meta").get(
                 pk=pk
             )
+            _video_contract_payload(video)
             serializer = VideoDetailSerializer(video, context={"request": request})
-            return Response(_serialize_response_data(serializer))
+            return Response(_serialize_response_data(cast(_SerializerLike, serializer)))
         except VideoFile.DoesNotExist:
             raise Http404(f"Video with ID {pk} not found")
         except Exception as exc:
             logger.error(
-                f"Unexpected error in video detail view for ID {pk}: {str(exc)}"
+                "Unexpected error in video detail view for ID %s: %s",
+                pk,
+                exc,
             )
             return Response(
                 {"error": "Failed to retrieve video details"},
@@ -134,11 +180,15 @@ class VideoMediaView(APIView):
 
     def _list_videos(self, request: Request) -> Response:
         try:
-            segments_prefetch = Prefetch(
-                "label_video_segments",
-                queryset=LabelVideoSegment.objects.select_related(
-                    "label", "video_file"
-                ).order_by("start_frame_number"),
+            segments_prefetch = cast(
+                Prefetch[Any],
+                Prefetch(
+                    "label_video_segments",
+                    queryset=LabelVideoSegment.objects.select_related(
+                        "label",
+                        "video_file",
+                    ).order_by("start_frame_number"),
+                ),
             )
             queryset: QuerySet[VideoFile] = (
                 VideoFile.objects.select_related("state", "sensitive_meta")
@@ -158,10 +208,13 @@ class VideoMediaView(APIView):
             limit = min(_query_int_param(query_params, "limit", 50), 100)
             offset = _query_int_param(query_params, "offset", 0)
             total_count = queryset.count()
-            videos = queryset[offset : offset + limit]
+            videos = list(queryset[offset : offset + limit])
+
+            for video in videos:
+                _video_contract_payload(video)
 
             serializer = VideoFileListSerializer(videos, many=True)
-            serialized_data = _serialize_response_data(serializer)
+            serialized_data = _serialize_response_data(cast(_SerializerLike, serializer))
             include_unresolved = _query_bool_param(query_params, "include_unresolved")
             return Response(
                 {
@@ -179,14 +232,16 @@ class VideoMediaView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         except Exception as exc:
-            logger.error(f"Unexpected error in video list view: {str(exc)}")
+            logger.error("Unexpected error in video list view: %s", exc)
             return Response(
                 {"error": "Failed to retrieve video list"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
     def _apply_filters(
-        self, queryset: QuerySet[VideoFile], query_params: Mapping[str, str]
+        self,
+        queryset: QuerySet[VideoFile],
+        query_params: Mapping[str, str],
     ) -> QuerySet[VideoFile]:
         status_filter = _query_str_param(query_params, "status", "").strip().lower()
         failed_query = Q(state__processing_error=True) | Q(
@@ -196,19 +251,25 @@ class VideoMediaView(APIView):
         if status_filter == "not_started":
             queryset = queryset.filter(
                 Q(state__isnull=True)
-                | Q(state__frames_extracted=False, state__sensitive_meta_processed=False)
+                | Q(
+                    state__frames_extracted=False,
+                    state__sensitive_meta_processed=False,
+                )
             ).exclude(failed_query)
         elif status_filter == "processing":
             queryset = queryset.filter(
-                state__frames_extracted=True, state__sensitive_meta_processed=False
+                state__frames_extracted=True,
+                state__sensitive_meta_processed=False,
             ).exclude(failed_query)
         elif status_filter == "done_processing_anonymization":
             queryset = queryset.filter(
-                state__anonymized=True, sensitive_meta__is_verified=False
+                state__anonymized=True,
+                sensitive_meta__is_verified=False,
             ).exclude(failed_query)
         elif status_filter == "validated":
             queryset = queryset.filter(
-                state__anonymized=True, sensitive_meta__is_verified=True
+                state__anonymized=True,
+                sensitive_meta__is_verified=True,
             ).exclude(failed_query)
         elif status_filter == "failed":
             queryset = queryset.filter(failed_query)
@@ -216,14 +277,21 @@ class VideoMediaView(APIView):
         return queryset
 
     def _get_next_url(
-        self, request: Request, offset: int, limit: int, total_count: int
+        self,
+        request: Request,
+        offset: int,
+        limit: int,
+        total_count: int,
     ) -> str | None:
         if offset + limit >= total_count:
             return None
         return self._build_paginated_url(request, offset + limit, limit)
 
     def _get_previous_url(
-        self, request: Request, offset: int, limit: int
+        self,
+        request: Request,
+        offset: int,
+        limit: int,
     ) -> str | None:
         if offset <= 0:
             return None

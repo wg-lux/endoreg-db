@@ -9,7 +9,7 @@ from rest_framework.response import Response
 
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.serializers.patient_examination import PatientExaminationSerializer
-from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +58,9 @@ class ExaminationCreateView(generics.CreateAPIView[PatientExamination]):
             logger.info(f"Creating examination with data: {request.data}")
 
             # Use the serializer for validation and creation
-            serializer = self.get_serializer(data=request.data)
+            serializer = cast(
+                PatientExaminationSerializer, self.get_serializer(data=request.data)
+            )
 
             if serializer.is_valid():
                 # The serializer handles patient lookup/creation in validate_patient
@@ -69,9 +71,7 @@ class ExaminationCreateView(generics.CreateAPIView[PatientExamination]):
                 )
                 response_data["message"] = "Examination created successfully"
 
-                logger.info(
-                    f"Examination created successfully with ID: {instance.pk}"
-                )
+                logger.info(f"Examination created successfully with ID: {instance.pk}")
                 return Response(response_data, status=status.HTTP_201_CREATED)
             else:
                 validation_errors = _serializer_errors(

@@ -10,7 +10,7 @@ import csv
 from io import BytesIO, StringIO
 from pathlib import Path
 
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_write_file,
     ensure_directory,
 )
@@ -164,7 +164,9 @@ class Command(BaseCommand):
                     "record_date",
                 ]
                 for field_obj in model._meta.get_fields():
-                    if not isinstance(field_obj, (fields.DateField, fields.DateTimeField)):
+                    if not isinstance(
+                        field_obj, (fields.DateField, fields.DateTimeField)
+                    ):
                         continue
 
                     if field_obj.name in date_fields_to_check:

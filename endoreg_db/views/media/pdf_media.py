@@ -23,7 +23,7 @@ from rest_framework.views import APIView
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
-from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.pdf.report_file import AnonymExaminationReport
@@ -135,15 +135,23 @@ class PdfMediaView(APIView):
                 ),
             }
 
-            sensitive_meta = cast(SensitiveMeta | None, getattr(pdf, "sensitive_meta", None))
+            sensitive_meta = cast(
+                SensitiveMeta | None, getattr(pdf, "sensitive_meta", None)
+            )
             if sensitive_meta is not None:
-                patient_dob = cast(date | datetime | None, getattr(sensitive_meta, "patient_dob", None))
+                patient_dob = cast(
+                    date | datetime | None, getattr(sensitive_meta, "patient_dob", None)
+                )
                 examination_date = cast(
                     date | datetime | None,
                     getattr(sensitive_meta, "examination_date", None),
                 )
-                patient_first_name = cast(str | None, getattr(sensitive_meta, "patient_first_name", None))
-                patient_last_name = cast(str | None, getattr(sensitive_meta, "patient_last_name", None))
+                patient_first_name = cast(
+                    str | None, getattr(sensitive_meta, "patient_first_name", None)
+                )
+                patient_last_name = cast(
+                    str | None, getattr(sensitive_meta, "patient_last_name", None)
+                )
                 pdf_data.update(
                     {
                         "patient_first_name": patient_first_name,
@@ -190,10 +198,14 @@ class PdfMediaView(APIView):
             results: list[dict[str, JsonValue]] = []
             for pdf in pdfs:
                 file_obj = cast(FieldFile | None, getattr(pdf, "file", None))
-                sensitive_meta = cast(SensitiveMeta | None, getattr(pdf, "sensitive_meta", None))
-                is_verified = bool(
-                    cast(bool, getattr(sensitive_meta, "is_verified", False))
-                ) if sensitive_meta is not None else False
+                sensitive_meta = cast(
+                    SensitiveMeta | None, getattr(pdf, "sensitive_meta", None)
+                )
+                is_verified = (
+                    bool(cast(bool, getattr(sensitive_meta, "is_verified", False)))
+                    if sensitive_meta is not None
+                    else False
+                )
                 resolved_anonymized_text = self._resolved_anonymized_text(pdf)
 
                 result: dict[str, JsonValue] = {
@@ -285,9 +297,7 @@ class PdfMediaView(APIView):
             return None
         return self._build_paginated_url(request, max(0, offset - limit), limit)
 
-    def _build_paginated_url(
-        self, request: Request, offset: int, limit: int
-    ) -> str:
+    def _build_paginated_url(self, request: Request, offset: int, limit: int) -> str:
         params: dict[str, str] = dict(_query_params(request))
         params["offset"] = str(offset)
         params["limit"] = str(limit)

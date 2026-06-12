@@ -1,9 +1,11 @@
+from datetime import timedelta
+
 import pytest
 from django.utils import timezone
 from rest_framework.test import APIRequestFactory
 from rest_framework import status
 from django.core.files.uploadedfile import SimpleUploadedFile  # <--- Import this
-
+import json
 # Import your models
 from endoreg_db.models import (
     VideoFile,
@@ -57,7 +59,7 @@ def test_anonymization_overview_mixed_content():
     )
     # Force older date
     VideoFile.objects.filter(pk=video.pk).update(
-        uploaded_at=timezone.now() - timezone.timedelta(days=1)
+        uploaded_at=timezone.now() - timedelta(days=1)
     )
 
     # --- Create PDF (Status: DONE_PROCESSING -> Needs Validation) ---
@@ -98,7 +100,7 @@ def test_anonymization_overview_mixed_content():
 
     # 3. Assertions
     assert response.status_code == status.HTTP_200_OK
-    data = response.data
+    data = json.loads(response.content)
 
     assert len(data) == 2
 

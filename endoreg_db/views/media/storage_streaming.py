@@ -1,4 +1,4 @@
-from endoreg_db.utils.storage.streaming import (
+from endoreg_db.utils.storage_streaming import (
     ByteRange,
     add_cors_headers,
     build_partial_content_response,

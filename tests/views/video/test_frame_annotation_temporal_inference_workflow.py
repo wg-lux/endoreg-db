@@ -1,8 +1,12 @@
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false
+
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
+from typing import TypedDict, Unpack
 from unittest.mock import patch
-
+import json
+import numpy as np
 from django.test import TestCase
 from rest_framework.test import APIRequestFactory
 
@@ -36,8 +40,12 @@ from endoreg_db.views.video.ai import (
 )
 
 
+class _TemporalPredictionKwargs(TypedDict):
+    frame_source_mode: str
+
+
 class FrameAnnotationTemporalInferenceWorkflowIntegrationTest(TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.factory = APIRequestFactory()
         self.random_task_view = FrameAnnotationRandomTaskView.as_view()
         self.bulk_upsert_view = FrameAnnotationBulkUpsertView.as_view()
@@ -92,17 +100,26 @@ class FrameAnnotationTemporalInferenceWorkflowIntegrationTest(TestCase):
             ai_model_type=AIDataSet.AI_MODEL_TYPE_VIDEO_SEGMENT_CLASSIFICATION,
         )
 
-    def _predict_temporal_frame_scores(self, video_file, *, model_meta, **kwargs):
+    def _predict_temporal_frame_scores(
+        self,
+        video_file: VideoFile,
+        *,
+        model_meta: ModelMeta,
+        **kwargs: Unpack[_TemporalPredictionKwargs],
+    ) -> VideoFrameScoreResult:
         self.assertEqual(video_file, self.video)
         self.assertEqual(model_meta.pk, self.model_meta.pk)
         self.assertEqual(kwargs["frame_source_mode"], "stream")
         return VideoFrameScoreResult(
             labels=[self.predicted_label.name, self.other_label.name],
-            frame_scores=[
-                [0.95, 0.05],
-                [0.93, 0.05],
-                [0.91, 0.04],
-            ],
+            frame_scores=np.asarray(
+                [
+                    [0.95, 0.05],
+                    [0.93, 0.05],
+                    [0.91, 0.04],
+                ],
+                dtype=np.float64,
+            ),
             device="cpu",
             frame_count=3,
             frame_numbers=[10, 11, 12],
@@ -188,12 +205,12 @@ class FrameAnnotationTemporalInferenceWorkflowIntegrationTest(TestCase):
         request = self.factory.get(
             "/api/media/annotations/frames/random-task/",
             {
-                "video_id": self.video.pk,
-                "label_group_id": self.label_set.pk,
+                "video_id": str(self.video.pk),
+                "label_group_id": str(self.label_set.pk),
                 "target_label": self.predicted_label.name,
-                "limit": 1,
-                "ai_dataset_name": self.dataset.name,
-                "ai_dataset_type": self.dataset.dataset_type,
+                "limit": "1",
+                "ai_dataset_name": str(self.dataset.name),
+                "ai_dataset_type": str(self.dataset.dataset_type),
                 "dataset_frame_filter": "segments",
                 "prediction_segments_only": "true",
                 "information_source_name": self.manual_source.name,
@@ -211,17 +228,18 @@ class FrameAnnotationTemporalInferenceWorkflowIntegrationTest(TestCase):
         self._materialize_temporal_prediction_annotations()
 
         response = self._load_temporal_frame_task()
+        data = json.loads(response.content)
 
-        self.assertEqual(response.status_code, 200, response.data)
-        self.assertEqual(response.data["selection_strategy"], "dataset_segments")
+        self.assertEqual(response.status_code, 200, data)
+        self.assertEqual(data["selection_strategy"], "dataset_segments")
         self.assertEqual(
-            response.data["segment_bucket_counts"], {str(self.predicted_label.pk): 3}
+            data["segment_bucket_counts"], {str(self.predicted_label.pk): 3}
         )
         self.assertEqual(
-            response.data["selected_label_counts"], {str(self.predicted_label.pk): 1}
+            data["selected_label_counts"], {str(self.predicted_label.pk): 1}
         )
 
-        task = response.data["task"]
+        task = data["task"]
         self.assertEqual(task["frame_id"], self.frames[0].pk)
         self.assertEqual(task["dataset_selection_label_id"], self.predicted_label.pk)
         self.assertEqual(task["suggested_label_ids"], [self.predicted_label.pk])
@@ -242,20 +260,21 @@ class FrameAnnotationTemporalInferenceWorkflowIntegrationTest(TestCase):
         request = self.factory.get("/api/media/videos/prediction-models/list/")
 
         response = prediction_model_list(request)
+        data = json.loads(response.content)
 
-        self.assertEqual(response.status_code, 200, response.data)
-        model_ids = {model["id"] for model in response.data["models"]}
+        self.assertEqual(response.status_code, 200, data)
+        model_ids = {model["id"] for model in data["models"]}
         self.assertIn(self.model_meta.pk, model_ids)
         self.assertEqual(
-            response.data["default_huggingface_model_id"],
+            data["default_huggingface_model_id"],
             "wg-lux/colo_segmentation_RegNetX800MF_base",
         )
         self.assertEqual(
-            response.data["default_labelset_name"],
+            data["default_labelset_name"],
             "multilabel_classification_colonoscopy_default",
         )
         self.assertEqual(
-            response.data["huggingface_models"][0]["model_id"],
+            data["huggingface_models"][0]["model_id"],
             "wg-lux/colo_segmentation_RegNetX800MF_base",
         )
 
@@ -300,12 +319,13 @@ class FrameAnnotationTemporalInferenceWorkflowIntegrationTest(TestCase):
             ),
         ) as dispatch:
             response = rerun_prediction_segments(request, self.video.pk)
+        data = json.loads(response.content)
 
-        self.assertEqual(response.status_code, 202, response.data)
-        self.assertEqual(response.data["status"], "queued")
-        self.assertEqual(response.data["job"]["task_id"], "temporal-task")
-        self.assertEqual(response.data["prediction_segments_count"], 1)
-        self.assertEqual(response.data["model_meta"]["id"], self.model_meta.pk)
+        self.assertEqual(response.status_code, 202, data)
+        self.assertEqual(data["status"], "queued")
+        self.assertEqual(data["job"]["task_id"], "temporal-task")
+        self.assertEqual(data["prediction_segments_count"], 1)
+        self.assertEqual(data["model_meta"]["id"], self.model_meta.pk)
         self.assertTrue(LabelVideoSegment.objects.filter(pk=old_segment.pk).exists())
         dispatch.assert_called_once_with(
             video_id=self.video.pk,
@@ -344,11 +364,12 @@ class FrameAnnotationTemporalInferenceWorkflowIntegrationTest(TestCase):
             ),
         ):
             response = rerun_prediction_segments(request, self.video.pk)
+        data = json.loads(response.content)
 
-        self.assertEqual(response.status_code, 200, response.data)
-        self.assertEqual(response.data["status"], "completed")
-        self.assertEqual(response.data["deleted_prediction_segments"], 2)
-        self.assertEqual(response.data["prediction_segments_count"], 3)
+        self.assertEqual(response.status_code, 200, data)
+        self.assertEqual(data["status"], "completed")
+        self.assertEqual(data["deleted_prediction_segments"], 2)
+        self.assertEqual(data["prediction_segments_count"], 3)
 
     def test_rerun_prediction_segments_reports_pending_after_rebuild(self):
         request = self.factory.post(
@@ -373,16 +394,17 @@ class FrameAnnotationTemporalInferenceWorkflowIntegrationTest(TestCase):
             ),
         ):
             response = rerun_prediction_segments(request, self.video.pk)
+        data = json.loads(response.content)
 
-        self.assertEqual(response.status_code, 202, response.data)
-        self.assertTrue(response.data["success"])
-        self.assertFalse(response.data["queued"])
-        self.assertTrue(response.data["pending"])
-        self.assertEqual(response.data["status"], "pending_after_rebuild")
-        self.assertEqual(response.data["reason"], "video_reprocessing_active")
-        self.assertEqual(response.data["blocked_by_history_id"], 123)
-        self.assertEqual(response.data["job"]["task_id"], "")
-        self.assertEqual(response.data["job"]["history_id"], 456)
+        self.assertEqual(response.status_code, 202, data)
+        self.assertTrue(data["success"])
+        self.assertFalse(data["queued"])
+        self.assertTrue(data["pending"])
+        self.assertEqual(data["status"], "pending_after_rebuild")
+        self.assertEqual(data["reason"], "video_reprocessing_active")
+        self.assertEqual(data["blocked_by_history_id"], 123)
+        self.assertEqual(data["job"]["task_id"], "")
+        self.assertEqual(data["job"]["history_id"], 456)
 
     def test_rerun_prediction_segments_reports_busy_reprocessing_conflict(self):
         request = self.factory.post(
@@ -407,22 +429,24 @@ class FrameAnnotationTemporalInferenceWorkflowIntegrationTest(TestCase):
             ),
         ):
             response = rerun_prediction_segments(request, self.video.pk)
+        data = json.loads(response.content)
 
-        self.assertEqual(response.status_code, 409, response.data)
-        self.assertFalse(response.data["success"])
-        self.assertFalse(response.data["queued"])
-        self.assertFalse(response.data["pending"])
-        self.assertEqual(response.data["status"], "busy")
-        self.assertEqual(response.data["reason"], "video_reprocessing_active")
-        self.assertEqual(response.data["blocked_by_history_id"], 789)
+        self.assertEqual(response.status_code, 409, data)
+        self.assertFalse(data["success"])
+        self.assertFalse(data["queued"])
+        self.assertFalse(data["pending"])
+        self.assertEqual(data["status"], "busy")
+        self.assertEqual(data["reason"], "video_reprocessing_active")
+        self.assertEqual(data["blocked_by_history_id"], 789)
 
     def test_manual_frame_annotation_after_temporal_prediction_excludes_completed_target(
         self,
     ):
         self._materialize_temporal_prediction_annotations()
         first_response = self._load_temporal_frame_task()
-        self.assertEqual(first_response.status_code, 200, first_response.data)
-        first_task = first_response.data["task"]
+        data = json.loads(first_response.content)
+        self.assertEqual(first_response.status_code, 200, data)
+        first_task = data["task"]
 
         annotations = [
             {
@@ -442,9 +466,9 @@ class FrameAnnotationTemporalInferenceWorkflowIntegrationTest(TestCase):
         )
 
         upsert_response = self.bulk_upsert_view(request)
-
-        self.assertEqual(upsert_response.status_code, 200, upsert_response.data)
-        self.assertEqual(upsert_response.data["upserted_count"], len(annotations))
+        upsert_data =json.loads(upsert_response.content)
+        self.assertEqual(upsert_response.status_code, 200, upsert_data)
+        self.assertEqual(upsert_data["upserted_count"], len(annotations))
         self.assertTrue(
             ImageClassificationAnnotation.objects.filter(
                 frame_id=first_task["frame_id"],
@@ -456,8 +480,8 @@ class FrameAnnotationTemporalInferenceWorkflowIntegrationTest(TestCase):
         )
 
         next_response = self._load_temporal_frame_task(exclude_annotated=True)
-
-        self.assertEqual(next_response.status_code, 200, next_response.data)
-        next_task = next_response.data["task"]
+        next_data = json.loads(next_response.content)
+        self.assertEqual(next_response.status_code, 200, next_data)
+        next_task = next_data["task"]
         self.assertNotEqual(next_task["frame_id"], first_task["frame_id"])
         self.assertEqual(next_task["frame_id"], self.frames[1].pk)

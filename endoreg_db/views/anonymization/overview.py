@@ -1,12 +1,21 @@
 # endoreg_db/api/views/anonymization_overview.py
 
-from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.response import Response
-from rest_framework.views import APIView
+from typing import Any, Protocol, cast
+
 from django.db import transaction
 from django.db.models import Q
-from endoreg_db.utils.web.permissions import DEBUG_PERMISSIONS
+from rest_framework import status
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.request import Request
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework.pagination import PageNumberPagination
+
+from endoreg_db.models.hub.upload_job import UploadJob
+from endoreg_db.authz.permissions import PolicyPermission
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
 from endoreg_db.services.anonymization import AnonymizationService
 from endoreg_db.services.polling_coordinator import (
     PollingCoordinator,
@@ -18,23 +27,21 @@ from endoreg_db.services.video_files import (
     get_video_by_pk,
     validate_video_metadata_annotation,
 )
-from rest_framework.generics import ListAPIView
-from rest_framework.pagination import PageNumberPagination
-from endoreg_db.models.hub.upload_job import UploadJob
-from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
-from endoreg_db.models.media.video.video_file import VideoFile
-from ...serializers import FileOverviewSerializer, VoPPatientDataSerializer
-from django.http import JsonResponse
-from endoreg_db.utils.observability.operation_log import (
+from endoreg_db.serializers.misc.file_overview import FileOverviewSerializer
+from ...serializers import VoPPatientDataSerializer
+from endoreg_db.utils.operation_log import (
     record_operation,
     ACTION_ANONYMIZATION_START,
     STATUS_NOT_STARTED,
     STATUS_PROCESSING,
 )
-
-
-from endoreg_db.authz.permissions import PolicyPermission  #  import RBAC
 import logging
+
+from lx_dtypes.models.contracts.anonymization_overview import (
+    AnonymizationStatusInfoData,
+)
+from endoreg_db.services.raw_pdf_files.metadata import ReportMetaJsonObject
+from endoreg_db.services.video_files.metadata import VideoTextMetaPayload
 
 logger = logging.getLogger(__name__)
 PERMS = DEBUG_PERMISSIONS  # shorten
@@ -45,22 +52,39 @@ class NoPagination(PageNumberPagination):
     page_size = None
 
 
-def _overview_content_hash(item) -> str:
+class _OverviewItem(Protocol):
+    sensitive_meta_id: int | None
+
+
+class _OverviewUploadJobLike(Protocol):
+    sensitive_meta_id: int | None
+    content_hash: str
+
+
+class _OverviewUploadJobCarrier(Protocol):
+    overview_upload_job: UploadJob | None
+
+
+class _SerializerDataCarrier(Protocol):
+    data: dict[str, object]
+
+
+def _overview_content_hash(item: VideoFile | RawPdfFile) -> str:
     if isinstance(item, VideoFile):
         return getattr(item, "video_hash", "") or ""
-    if isinstance(item, RawPdfFile):
-        return getattr(item, "pdf_hash", "") or ""
-    return ""
+    return getattr(item, "pdf_hash", "") or ""
 
 
-def _attach_overview_upload_jobs(items):
+def _attach_overview_upload_jobs(
+    items: list[VideoFile | RawPdfFile],
+) -> None:
     sensitive_meta_ids = {
-        sensitive_meta_id
+        cast(_OverviewItem, item).sensitive_meta_id
         for item in items
-        if (sensitive_meta_id := getattr(item, "sensitive_meta_id", None)) is not None
+        if cast(_OverviewItem, item).sensitive_meta_id is not None
     }
     content_hashes = {
-        content_hash for item in items if (content_hash := _overview_content_hash(item))
+        _overview_content_hash(item) for item in items if _overview_content_hash(item)
     }
 
     if not sensitive_meta_ids and not content_hashes:
@@ -78,41 +102,56 @@ def _attach_overview_upload_jobs(items):
         .order_by("-updated_at", "-created_at")
     )
 
-    by_sensitive_meta_id = {}
-    by_content_hash = {}
+    by_sensitive_meta_id: dict[int, UploadJob] = {}
+    by_content_hash: dict[str, UploadJob] = {}
     for upload_job in upload_jobs:
+        upload_job_like = cast(_OverviewUploadJobLike, upload_job)
         if (
-            upload_job.sensitive_meta_id
-            and upload_job.sensitive_meta_id not in by_sensitive_meta_id
+            upload_job_like.sensitive_meta_id
+            and upload_job_like.sensitive_meta_id not in by_sensitive_meta_id
         ):
-            by_sensitive_meta_id[upload_job.sensitive_meta_id] = upload_job
-        if upload_job.content_hash and upload_job.content_hash not in by_content_hash:
-            by_content_hash[upload_job.content_hash] = upload_job
+            by_sensitive_meta_id[upload_job_like.sensitive_meta_id] = upload_job
+        if (
+            upload_job_like.content_hash
+            and upload_job_like.content_hash not in by_content_hash
+        ):
+            by_content_hash[upload_job_like.content_hash] = upload_job
 
     for item in items:
-        sensitive_meta_id = getattr(item, "sensitive_meta_id", None)
+        overview_item = cast(_OverviewItem, item)
+        sensitive_meta_id = overview_item.sensitive_meta_id
         content_hash = _overview_content_hash(item)
         upload_job = (
             by_sensitive_meta_id.get(sensitive_meta_id)
             if sensitive_meta_id is not None
             else None
         ) or by_content_hash.get(content_hash)
-        setattr(item, "_overview_upload_job", upload_job)
+        carrier = cast(_OverviewUploadJobCarrier, item)
+        setattr(carrier, "_overview_upload_job", upload_job)
 
 
-class AnonymizationOverviewView(ListAPIView):
+class AnonymizationOverviewView(APIView):
     """
     GET /api/anonymization/items/overview/
     --------------------------------------
     Returns a flat list (Video + PDF) ordered by newest upload first.
     """
 
-    serializer_class = FileOverviewSerializer
-    # permission_classes = DEBUG_PERMISSIONS
     permission_classes = [PolicyPermission]
-    pagination_class = NoPagination
 
-    def get_queryset(self):
+    def get(self, request: Request) -> Response:
+        serializer = FileOverviewSerializer(
+            cast(Any, self.get_queryset()),
+            many=True,
+            context={"request": request},
+        )
+        serializer_data = cast(Any, serializer).data
+        return Response(
+            cast(list[dict[str, object]], serializer_data),
+            status=status.HTTP_200_OK,
+        )
+
+    def get_queryset(self) -> list[VideoFile | RawPdfFile]:
         """
         Returns a combined queryset of VideoFile and RawPdfFile instances.
         """
@@ -154,12 +193,10 @@ class AnonymizationOverviewView(ListAPIView):
         combined = list(qs_video) + list(qs_pdf)
         _attach_overview_upload_jobs(combined)
 
-        def _created_at(item):
+        def _created_at(item: VideoFile | RawPdfFile):
             if isinstance(item, VideoFile):
                 return getattr(item, "uploaded_at", None)
-            if isinstance(item, RawPdfFile):
-                return getattr(item, "date_created", None)
-            return None
+            return getattr(item, "date_created", None)
 
         combined.sort(
             key=lambda item: (_created_at(item) is not None, _created_at(item)),
@@ -184,15 +221,15 @@ class AnonymizationValidateView(APIView):
     """
 
     @transaction.atomic
-    def post(self, request, item_id: int):
-        payload = request.data or {}
+    def post(self, request: Request, item_id: int) -> Response:
+        payload = request.data
         payload.setdefault("is_verified", True)
 
         # Try Video first
         video = VideoFile.objects.filter(pk=item_id).first()
         if video:
             video_state = get_or_create_video_state(video)
-            video_meta = video.meta if isinstance(video.meta, dict) else {}
+            video_meta = cast(dict[str, object], getattr(video, "meta", {}))
             if getattr(video_state, "processing_error", False) or (
                 video_meta.get("integrity_status") == "lost"
             ):
@@ -200,7 +237,9 @@ class AnonymizationValidateView(APIView):
                     {"error": "Video is marked failed/lost by media integrity."},
                     status=status.HTTP_409_CONFLICT,
                 )
-            ok = validate_video_metadata_annotation(video, payload)
+            ok = validate_video_metadata_annotation(
+                video, cast(VideoTextMetaPayload, payload)
+            )
             if not ok:
                 return Response(
                     {"error": "Video validation failed."},
@@ -211,7 +250,9 @@ class AnonymizationValidateView(APIView):
         # Then PDF
         pdf = RawPdfFile.objects.filter(pk=item_id).first()
         if pdf:
-            ok = validate_report_metadata_annotation(pdf, payload)
+            ok = validate_report_metadata_annotation(
+                pdf, cast(ReportMetaJsonObject, payload)
+            )
             if not ok:
                 return Response(
                     {"error": "PDF validation failed."},
@@ -228,7 +269,7 @@ class AnonymizationValidateView(APIView):
 # ---------- status with polling protection ------------------------------
 @api_view(["GET"])
 @permission_classes(PERMS)
-def anonymization_status(request, file_id: int):
+def anonymization_status(request: Request, file_id: int) -> Response:
     """
     Get anonymization status with polling rate limiting.
     """
@@ -237,7 +278,8 @@ def anonymization_status(request, file_id: int):
     if not info:
         return Response({"detail": "File not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    file_type = info.get("media_type") or info.get("type") or "video"
+    status_info = cast(AnonymizationStatusInfoData, info)
+    file_type = status_info.get("media_type") or status_info.get("type") or "video"
 
     # Wende Rate-Limiting auf den echten Typ an (nicht auf einen evtl. falschen request-Parameter)
     if not PollingCoordinator.can_check_status(file_id, file_type):
@@ -250,7 +292,11 @@ def anonymization_status(request, file_id: int):
             status=status.HTTP_429_TOO_MANY_REQUESTS,
         )
 
-    status_val = info.get("anonymization_status") or info.get("status") or "not_started"
+    status_val = (
+        status_info.get("anonymization_status")
+        or status_info.get("status")
+        or "not_started"
+    )
 
     # processing_locked als Ableitung des Status interpretieren
     processing_statuses = {
@@ -265,8 +311,8 @@ def anonymization_status(request, file_id: int):
             "file_id": file_id,
             "file_type": file_type,
             "anonymization_status": status_val,
-            "integrity_status": info.get("integrity_status", ""),
-            "integrity_error": info.get("integrity_error", ""),
+            "integrity_status": status_info.get("integrity_status", ""),
+            "integrity_error": status_info.get("integrity_error", ""),
             "processing_locked": processing_locked_derived,
         }
     )
@@ -275,7 +321,7 @@ def anonymization_status(request, file_id: int):
 # ---------- start with processing lock ----------------------------------
 @api_view(["POST"])
 @permission_classes(PERMS)
-def start_anonymization(request, file_id: int):
+def start_anonymization(request: Request, file_id: int) -> Response:
     """
     Start anonymization with processing lock to prevent duplicates.
     """
@@ -284,16 +330,21 @@ def start_anonymization(request, file_id: int):
     if not info:
         return Response({"detail": "File not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    file_type = info.get("media_type") or "unknown"
-    status_val = info.get("anonymization_status") or info.get("status") or "not_started"
-    if info.get("integrity_status") == "lost" or status_val == "failed":
+    status_info = cast(AnonymizationStatusInfoData, info)
+    file_type = status_info.get("media_type") or "unknown"
+    status_val = (
+        status_info.get("anonymization_status")
+        or status_info.get("status")
+        or "not_started"
+    )
+    if status_info.get("integrity_status") == "lost" or status_val == "failed":
         return Response(
             {
                 "detail": "File is marked failed/lost and cannot be anonymized",
                 "file_id": file_id,
                 "file_type": file_type,
-                "integrity_status": info.get("integrity_status", ""),
-                "integrity_error": info.get("integrity_error", ""),
+                "integrity_status": status_info.get("integrity_status", ""),
+                "integrity_error": status_info.get("integrity_error", ""),
             },
             status=status.HTTP_409_CONFLICT,
         )
@@ -348,26 +399,40 @@ def start_anonymization(request, file_id: int):
                 "processing_locked": True,
             }
         )
+    return Response(
+        {
+            "detail": "Unable to start anonymization",
+            "file_id": file_id,
+            "file_type": status_info.get("media_type") or "unknown",
+        },
+        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    )
 
 
 # ---------- current with coordination ------------------------------------
 @api_view(["GET", "POST", "PUT"])
 @permission_classes(DEBUG_PERMISSIONS)
-def anonymization_current(request, file_id):
+def anonymization_current(request: Request, file_id: int) -> Response:
     """
     Set current file for validation and return patient data
     """
     # Try to find the file in VideoFile first
     try:
         video_file = VideoFile.objects.select_related("sensitive_meta").get(id=file_id)
-        serializer = VoPPatientDataSerializer(video_file, context={"request": request})
+        serializer = cast(
+            _SerializerDataCarrier,
+            VoPPatientDataSerializer(video_file, context={"request": request}),
+        )
         return Response(serializer.data)
     except VideoFile.DoesNotExist:
         pass
     # Try to find the file in RawPdfFile
     try:
         pdf_file = RawPdfFile.objects.select_related("sensitive_meta").get(id=file_id)
-        serializer = VoPPatientDataSerializer(pdf_file, context={"request": request})
+        serializer = cast(
+            _SerializerDataCarrier,
+            VoPPatientDataSerializer(pdf_file, context={"request": request}),
+        )
         return Response(serializer.data)
 
     except RawPdfFile.DoesNotExist:
@@ -375,15 +440,15 @@ def anonymization_current(request, file_id):
 
     except (ValueError, TypeError, AttributeError) as e:
         logger.error(f"Error in set_current_for_validation: {e}")
-        return JsonResponse({"status": "error", "message": str(e)}, status=500)
+        return Response({"status": "error", "message": str(e)}, status=500)
 
-    return JsonResponse({"status": "error", "message": "File not found"}, status=404)
+    return Response({"status": "error", "message": "File not found"}, status=404)
 
 
 # ---------- polling coordinator info ------------------------------------
 @api_view(["GET"])
 @permission_classes(DEBUG_PERMISSIONS)
-def polling_coordinator_info(request):
+def polling_coordinator_info(request: Request) -> Response:
     """
     GET /api/anonymization/polling-info/
     Get information about polling coordinator status
@@ -402,15 +467,14 @@ def polling_coordinator_info(request):
 # ---------- emergency lock management -----------------------------------
 @api_view(["DELETE"])
 @permission_classes(DEBUG_PERMISSIONS)
-def clear_processing_locks(request):
+def clear_processing_locks(request: Request) -> Response:
     """
     DELETE /api/anonymization/clear-locks/
     Emergency endpoint to clear all processing locks
     """
     try:
-        file_type = request.query_params.get("type", None)
+        file_type = request.query_params.get("type")
         cleared_count = PollingCoordinator.clear_all_locks(file_type)
-
         return Response(
             {
                 "detail": "Processing locks cleared",
@@ -428,7 +492,7 @@ def clear_processing_locks(request):
 
 @api_view(["GET"])
 @permission_classes(PERMS)
-def has_raw_video_file(request, file_id: int):
+def has_raw_video_file(request: Request, file_id: int) -> Response:
     """
     Return whether the video still has a raw video file.
     """

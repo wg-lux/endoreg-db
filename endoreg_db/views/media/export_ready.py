@@ -20,7 +20,7 @@ from endoreg_db.services.export_ready import (
     mark_video_ready_for_export,
 )
 from endoreg_db.utils.pydantic_drf import drf_validation_error_detail
-from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 
 class VideoMarkReadyForExportView(APIView):

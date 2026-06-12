@@ -1,6 +1,6 @@
 from django.test import TestCase
 from rest_framework.test import APIRequestFactory
-
+import json
 from endoreg_db.models import (
     Center,
     Frame,
@@ -73,9 +73,10 @@ class FrameBoxAnnotationViewTest(TestCase):
             format="json",
         )
         response = self.view(request)
+        data = json.loads(response.content)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["upserted_count"], 1)
+        self.assertEqual(data["upserted_count"], 1)
         annotation = FrameBoxAnnotation.objects.get()
         self.assertEqual(annotation.frame, self.frame)
         self.assertEqual(annotation.label, self.label)
@@ -122,10 +123,11 @@ class FrameBoxAnnotationViewTest(TestCase):
             },
         )
         response = self.view(request)
+        data = json.loads(response.content)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["count"], 1)
-        self.assertEqual(response.data["annotations"][0]["label_name"], self.label.name)
+        self.assertEqual(data["count"], 1)
+        self.assertEqual(data["annotations"][0]["label_name"], self.label.name)
 
     def test_box_replace_removes_stale_boxes_only_for_scope(self):
         FrameBoxAnnotation.objects.create(
@@ -215,9 +217,10 @@ class FrameBoxAnnotationViewTest(TestCase):
             format="json",
         )
         response = self.view(request)
+        data = json.loads(response.content)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["deleted_count"], 1)
+        self.assertEqual(data["deleted_count"], 1)
         self.assertEqual(FrameBoxAnnotation.objects.count(), 0)
 
     def test_box_annotation_rejects_out_of_bounds_box(self):
@@ -243,8 +246,10 @@ class FrameBoxAnnotationViewTest(TestCase):
         )
         response = self.view(request)
 
+        data = json.loads(response.content)
+
         self.assertEqual(response.status_code, 400)
-        self.assertIn("width", str(response.data))
+        self.assertIn("width", str(data))
 
     def test_box_annotation_rejects_frames_outside_requested_video(self):
         payload = {
@@ -269,6 +274,6 @@ class FrameBoxAnnotationViewTest(TestCase):
             format="json",
         )
         response = self.view(request)
-
+        data = json.loads(response.content)
         self.assertEqual(response.status_code, 400)
-        self.assertIn("invalid_frame_ids", response.data["details"])
+        self.assertIn("invalid_frame_ids", data["details"])

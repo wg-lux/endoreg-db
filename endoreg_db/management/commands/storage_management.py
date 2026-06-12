@@ -10,14 +10,14 @@ from django.core.management.base import BaseCommand, CommandError, CommandParser
 from pydantic import ValidationError
 
 from endoreg_db.models import VideoFile
-from endoreg_db.utils.filesystem.paths import PROTECTED_DATA_ROOT, data_paths
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.paths import PROTECTED_DATA_ROOT, data_paths
+from endoreg_db.utils.file_operations import (
     atomic_write_file,
     safe_rmtree,
     safe_unlink_file,
 )
 from endoreg_db.utils.storage import delete_field_file
-from endoreg_db.utils.storage.streaming import field_file_size
+from endoreg_db.utils.storage_streaming import field_file_size
 from lx_dtypes.models.contracts.management_command import (
     StorageManagementCommandOptionsPayload,
     StorageManagementInfoPayload,
@@ -230,7 +230,9 @@ class Command(BaseCommand):
         self.stdout.write(f"Total Space: {storage_info.total_gb:.1f} GB")
         self.stdout.write(f"Used Space:  {storage_info.used_gb:.1f} GB")
         self.stdout.write(f"Free Space:  {storage_info.free_gb:.1f} GB")
-        self.stdout.write(status_color(f"Usage:       {storage_info.usage_percent:.1f}%"))
+        self.stdout.write(
+            status_color(f"Usage:       {storage_info.usage_percent:.1f}%")
+        )
         self.stdout.write(f"Project Size: {storage_info.project_storage_gb:.1f} GB")
 
         if storage_info.critical:
@@ -337,7 +339,9 @@ class Command(BaseCommand):
                         )
 
             except Exception as e:
-                logger.warning(f"Failed to clean frames for video {_video_uuid_text(video)}: {e}")
+                logger.warning(
+                    f"Failed to clean frames for video {_video_uuid_text(video)}: {e}"
+                )
                 continue
 
         self.stdout.write(f"✅ Frames cleanup: {total_freed / (1024**3):.2f} GB freed")
@@ -501,7 +505,9 @@ class Command(BaseCommand):
                     )
 
             except Exception as e:
-                logger.warning(f"Failed to clean processed video {_video_uuid_text(video)}: {e}")
+                logger.warning(
+                    f"Failed to clean processed video {_video_uuid_text(video)}: {e}"
+                )
                 continue
 
         self.stdout.write(
@@ -612,7 +618,9 @@ class Command(BaseCommand):
                     freed = self._cleanup_processed_video_file(video)
                     total_freed += freed
                 except Exception as e:
-                    logger.warning(f"Failed to clean processed video {_video_uuid_text(video)}: {e}")
+                    logger.warning(
+                        f"Failed to clean processed video {_video_uuid_text(video)}: {e}"
+                    )
                     continue
 
         except Exception as e:

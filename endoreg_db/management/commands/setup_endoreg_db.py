@@ -13,8 +13,8 @@ from lx_dtypes.models.contracts.management_command import (
     SetupEndoregDbCommandOptionsPayload,
 )
 
-from endoreg_db.models import ModelMeta
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.models.metadata.model_meta import ModelMeta
+from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     ensure_directory,
 )
@@ -137,7 +137,7 @@ class Command(BaseCommand):
             self.stdout.write("\n📋 Step 5: Creating AI model metadata...")
             try:
                 # Load setup configuration
-                from endoreg_db.utils.data_loading.setup_config import setup_config
+                from endoreg_db.utils.setup_config import setup_config
 
                 # Get primary model from configuration
                 default_model_name = setup_config.get_primary_model_name()
@@ -235,7 +235,7 @@ class Command(BaseCommand):
     def _find_model_weights_file(self):
         """Find the model weights file using configurable search patterns and directories."""
         # Load setup configuration
-        from endoreg_db.utils.data_loading.setup_config import setup_config
+        from endoreg_db.utils.setup_config import setup_config
 
         # First try to find weights using configured patterns
         found_files = setup_config.find_model_weights_files()
@@ -245,20 +245,15 @@ class Command(BaseCommand):
 
         # If no local weights found and HuggingFace fallback is enabled
         hf_config = setup_config.get_huggingface_config()
-        if hf_config.get("enabled", True):
+        if hf_config.enabled:
             self.stdout.write(
                 "📦 No local model weights found — attempting HuggingFace download..."
             )
             try:
                 if not ModelMeta.objects.exists():
                     ModelMeta.setup_default_from_huggingface(
-                        hf_config.get(
-                            "repo_id", "wg-lux/colo_segmentation_RegNetX800MF_base"
-                        ),
-                        labelset_name=hf_config.get(
-                            "labelset_name",
-                            "multilabel_classification_colonoscopy_default",
-                        ),
+                        hf_config.repo_id,
+                        labelset_name=hf_config.labelset_name,
                     )
                     self.stdout.write("✅ Default ModelMeta created from HuggingFace.")
 
@@ -323,7 +318,7 @@ class Command(BaseCommand):
             yaml_only (bool): If True, only set active metadata but don't create new metadata
         """
         from endoreg_db.models import AiModel, LabelSet, ModelMeta
-        from endoreg_db.utils.data_loading.setup_config import setup_config
+        from endoreg_db.utils.setup_config import setup_config
 
         all_models = AiModel.objects.all()
         fixed_count = 0
@@ -366,7 +361,7 @@ class Command(BaseCommand):
                 weights_path = ""
                 if weights_file:
                     # If we have weights, set up the relative path
-                    from endoreg_db.utils.filesystem.paths import STORAGE_DIR
+                    from endoreg_db.utils.paths import STORAGE_DIR
 
                     try:
                         weights_path = str(Path(weights_file).relative_to(STORAGE_DIR))
@@ -389,14 +384,14 @@ class Command(BaseCommand):
                     model=model,
                     labelset=labelset,
                     weights=weights_path,  # Set weights if available
-                    activation=defaults.get("activation", "sigmoid"),
-                    mean=defaults.get("mean", "0.485,0.456,0.406"),
-                    std=defaults.get("std", "0.229,0.224,0.225"),
-                    size_x=defaults.get("size_x", 224),
-                    size_y=defaults.get("size_y", 224),
-                    axes=defaults.get("axes", "CHW"),
-                    batchsize=defaults.get("batchsize", 32),
-                    num_workers=defaults.get("num_workers", 4),
+                    activation=defaults.activation,
+                    mean=defaults.mean,
+                    std=defaults.std,
+                    size_x=defaults.size_x,
+                    size_y=defaults.size_y,
+                    axes=defaults.axes,
+                    batchsize=defaults.batchsize,
+                    num_workers=defaults.num_workers,
                     description=f"Auto-generated metadata for {model.name}",
                 )
 
@@ -419,7 +414,7 @@ class Command(BaseCommand):
                         )
                         weights_file = self._find_model_weights_file()
                         if weights_file:
-                            from endoreg_db.utils.filesystem.paths import STORAGE_DIR
+                            from endoreg_db.utils.paths import STORAGE_DIR
 
                             try:
                                 weights_path = str(

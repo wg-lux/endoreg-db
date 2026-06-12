@@ -16,7 +16,7 @@ REPORT_DOCUMENT_TYPE_CHOICES = [
 ]
 
 
-class SensitiveMetaValidateSerializer(serializers.Serializer):
+class SensitiveMetaValidateSerializer(serializers.Serializer[dict[str, object]]):
     """
     Serializer für SensitiveMeta-Validierung mit deutscher Datums-Priorität.
 
@@ -54,7 +54,7 @@ class SensitiveMetaValidateSerializer(serializers.Serializer):
     validation_comment = serializers.CharField(required=False, allow_blank=True)
     no_more_names_confirmed = serializers.BooleanField(required=False, allow_null=True)
 
-    def validate_patient_dob(self, value):
+    def validate_patient_dob(self, value: str):
         """
         Validiert patient_dob mit deutscher Format-Priorität.
 
@@ -75,7 +75,7 @@ class SensitiveMetaValidateSerializer(serializers.Serializer):
             )
         return parsed_date
 
-    def validate_examination_date(self, value):
+    def validate_examination_date(self, value: str):
         """
         Validiert examination_date mit deutscher Format-Priorität.
 

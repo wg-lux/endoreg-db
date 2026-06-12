@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+# pyright: reportUnknownMemberType=false
+
 import re
 from contextlib import contextmanager
 from datetime import date, timedelta
+from typing import Any, Generator
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -365,7 +368,7 @@ class AnonymizationMetricsEndpointTests(TestCase):
             was_empty_after_validation=False,
         )
 
-    def _assert_snake_case_keys(self, value):
+    def _assert_snake_case_keys(self, value: str | dict[str, Any] | list[str]) -> None:
         snake_case = re.compile(r"^[a-z][a-z0-9_]*$")
         if isinstance(value, dict):
             for key, child in value.items():
@@ -376,9 +379,9 @@ class AnonymizationMetricsEndpointTests(TestCase):
                 self._assert_snake_case_keys(child)
 
     @contextmanager
-    def _production_permissions(self):
+    def _production_permissions(self) -> Generator[None, Any, None]:
         with (
-            patch("endoreg_db.utils.web.permissions.is_debug_mode", return_value=False),
+            patch("endoreg_db.utils.permissions.is_debug_mode", return_value=False),
             patch("endoreg_db.authz.permissions.is_debug_mode", return_value=False),
         ):
             yield

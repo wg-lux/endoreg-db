@@ -1,8 +1,13 @@
 # endoreg_db/serializers/video/video_file_list.py
-from typing import Literal
+from typing import Literal, cast, TYPE_CHECKING
 import logging
 
 from rest_framework import serializers
+
+if TYPE_CHECKING:
+    _ModelSerializerMeta = serializers.ModelSerializer.Meta
+else:
+    _ModelSerializerMeta = object
 
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.state.frame_annotation import validated_annotators_for_video
@@ -14,11 +19,14 @@ from endoreg_db.models.state.video_segment_validation import (
 from endoreg_db.serializers.label_video_segment.label_video_segment import (
     LabelVideoSegmentTimelineSerializer,
 )
+from lx_dtypes.models.contracts.video_segment_validation import (
+    PostValidationRebuildSummaryData,
+)
 
 logger = logging.getLogger(__name__)
 
 
-class VideoFileListSerializer(serializers.ModelSerializer):
+class VideoFileListSerializer(serializers.ModelSerializer[VideoFile]):
     """
     Minimal serializer to return only basic video information
     for the video selection dropdown in Vue.js.
@@ -43,8 +51,8 @@ class VideoFileListSerializer(serializers.ModelSerializer):
         many=True, read_only=True, source="label_video_segments"
     )
 
-    class Meta:
-        model = VideoFile
+    class Meta(_ModelSerializerMeta):
+        model = VideoFile  # pyright: ignore[reportAssignmentType]
         fields = [
             "id",
             "original_file_name",
@@ -147,7 +155,11 @@ class VideoFileListSerializer(serializers.ModelSerializer):
 
     def get_integrity_status(self, obj: VideoFile) -> str:
         payload_obj = getattr(obj, "meta", None)
-        payload = payload_obj if isinstance(payload_obj, dict) else {}
+        payload = (
+            cast(dict[str, object], payload_obj)
+            if isinstance(payload_obj, dict)
+            else {}
+        )
         status = str(payload.get("integrity_status") or "").strip()
         if status:
             return status
@@ -158,7 +170,11 @@ class VideoFileListSerializer(serializers.ModelSerializer):
 
     def get_integrity_error(self, obj: VideoFile) -> str:
         payload_obj = getattr(obj, "meta", None)
-        payload = payload_obj if isinstance(payload_obj, dict) else {}
+        payload = (
+            cast(dict[str, object], payload_obj)
+            if isinstance(payload_obj, dict)
+            else {}
+        )
         return str(payload.get("integrity_error") or "").strip()
 
     def get_segment_annotations_validated(self, obj: VideoFile) -> bool:
@@ -196,7 +212,9 @@ class VideoFileListSerializer(serializers.ModelSerializer):
             return False
         return bool(getattr(state, "outside_segments_removed", False))
 
-    def get_post_validation_rebuild(self, obj: VideoFile) -> dict | None:
+    def get_post_validation_rebuild(
+        self, obj: VideoFile
+    ) -> PostValidationRebuildSummaryData | None:
         try:
             return post_validation_rebuild_summary(obj)
         except Exception as exc:

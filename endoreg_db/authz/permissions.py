@@ -11,7 +11,7 @@
 # ---------------
 # Add this class to DRF's global permission chain in settings:
 #   REST_FRAMEWORK["DEFAULT_PERMISSION_CLASSES"] = (
-#       "endoreg_db.utils.web.permissions.EnvironmentAwarePermission",
+#       "endoreg_db.utils.permissions.EnvironmentAwarePermission",
 #       "endoreg_db.authz.permissions.PolicyPermission",
 #   )
 # The first class gates "auth required in prod"; this class enforces *which role*
@@ -36,7 +36,7 @@ from rest_framework.permissions import BasePermission
 from rest_framework.request import Request
 from rest_framework.views import APIView
 
-from endoreg_db.utils.web.permissions import is_debug_mode
+from endoreg_db.utils.permissions import is_debug_mode
 from endoreg_db.authz.policy import REQUIRED_ROLES, satisfies, get_needed_role
 import logging
 

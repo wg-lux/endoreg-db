@@ -22,8 +22,17 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.request import Request
 from rest_framework.response import Response
-
-from endoreg_db.models.aidataset.aidataset import AIDataSet
+from lx_dtypes.models.contracts.video_segments import (
+    validate_segment_annotation_ensure_payload,
+    validate_segment_blacken_outside_payload,
+    validate_segment_bulk_validation_payload,
+    validate_segment_crud_payload,
+    validate_segment_list_query,
+    validate_segment_prediction_import_payload,
+    validate_segment_validation_payload,
+    validate_segment_validation_status_payload,
+)
+from endoreg_db.models.aidataset import AIDataSet
 from endoreg_db.models.label.annotation.image_classification import (
     ImageClassificationAnnotation,
 )
@@ -45,16 +54,7 @@ from endoreg_db.services.segment_annotations import (
     ensure_prediction_segment_annotations,
     ensure_segment_annotations,
 )
-from endoreg_db.services.segment_contracts import (
-    validate_segment_annotation_ensure_payload,
-    validate_segment_blacken_outside_payload,
-    validate_segment_bulk_validation_payload,
-    validate_segment_crud_payload,
-    validate_segment_list_query,
-    validate_segment_prediction_import_payload,
-    validate_segment_validation_payload,
-    validate_segment_validation_status_payload,
-)
+
 from endoreg_db.services.video_segments_bulk_mutation import (
     BulkSegmentMutationServiceError,
     bulk_mutate_video_segments,
@@ -67,13 +67,13 @@ from endoreg_db.services.jobs.video_post_validation_jobs import (
     dispatch_video_post_validation_rebuild,
 )
 from endoreg_db.services.video_files import get_or_create_video_state, get_video_fps
-from endoreg_db.serializers.label_video_segment.label_video_segment import (
+from endoreg_db.serializers.label_video_segment import (
     LabelVideoSegmentTimelineSerializer,
     LabelVideoSegmentSerializer,
 )
-from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
-from endoreg_db.utils.observability.operation_log import (
+from endoreg_db.utils.operation_log import (
     record_operation,
     ACTION_SEGMENT_ANNOTATED,
     STATUS_VALIDATED,
@@ -566,7 +566,7 @@ def video_segments_collection(request: Request) -> Response:
             serializer = LabelVideoSegmentSerializer(data=data)
             if serializer.is_valid():
                 try:
-                    segment = cast(LabelVideoSegment, serializer.save())
+                    segment = serializer.save()
                     _sync_frame_annotations(segment=segment)
                     if ai_dataset is not None:
                         ai_dataset.add_video_annotations([segment])
@@ -709,7 +709,7 @@ def video_segments_by_video(request: Request, pk: int) -> Response:
             serializer = LabelVideoSegmentSerializer(data=data)
             if serializer.is_valid():
                 try:
-                    segment = cast(LabelVideoSegment, serializer.save())
+                    segment = serializer.save()
                     _sync_frame_annotations(segment=segment)
                     if ai_dataset is not None:
                         ai_dataset.add_video_annotations([segment])
@@ -862,7 +862,7 @@ def import_prediction_segments_to_manual(request: Request, pk: int) -> Response:
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            segment = cast(LabelVideoSegment, serializer.save())
+            segment = serializer.save()
             if getattr(segment, "source_id", None) != getattr(manual_source, "pk"):
                 segment.source = manual_source
                 _save_segment(segment, update_fields=["source"])
@@ -933,7 +933,7 @@ def video_segment_detail(request: Request, pk: int, segment_id: int) -> Response
             serializer = LabelVideoSegmentSerializer(segment, data=data, partial=True)
             if serializer.is_valid():
                 try:
-                    segment = cast(LabelVideoSegment, serializer.save())
+                    segment = serializer.save()
                     _sync_frame_annotations(
                         segment=segment,
                         old_snapshot=old_snapshot,

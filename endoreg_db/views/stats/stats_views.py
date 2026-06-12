@@ -25,7 +25,7 @@ from ...models import (
     SensitiveMeta,
     VideoFile,
 )
-from ...utils.web.permissions import EnvironmentAwarePermission
+from ...utils.permissions import EnvironmentAwarePermission
 
 StatsDistribution = list[dict[str, object]]
 

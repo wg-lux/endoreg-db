@@ -146,8 +146,8 @@ class Command(BaseCommand):
 
     def handle(self, *args: object, **options: object) -> None:
         try:
-            options_payload = TrainImageMultilabelModelCommandOptionsPayload.model_validate(
-                options
+            options_payload = (
+                TrainImageMultilabelModelCommandOptionsPayload.model_validate(options)
             )
         except ValidationError as exc:
             raise CommandError(str(exc)) from exc
@@ -229,8 +229,7 @@ class Command(BaseCommand):
 
         self.stdout.write(
             self.style.SUCCESS(
-                "Training completed successfully. "
-                f"Model saved to: {result.model_path}"
+                f"Training completed successfully. Model saved to: {result.model_path}"
             )
         )
 

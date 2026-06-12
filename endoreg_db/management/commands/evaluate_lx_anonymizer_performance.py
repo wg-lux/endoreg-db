@@ -31,6 +31,11 @@ from lx_dtypes.models.contracts import (
     LxAnonymizerPerformanceSummaryPayload,
     dump_lx_anonymizer_performance_run_csv_row,
 )
+from lx_dtypes.models.contracts.endoscopy_processor import (
+    RoiBoxCore,
+    roi_box_or_none_from_object,
+)
+from pydantic import ValidationError
 
 from endoreg_db.models import EndoscopyProcessor
 from endoreg_db.import_files.context.import_context import ImportContext
@@ -38,8 +43,8 @@ from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.report_import import ReportImportService
 from endoreg_db.services.video_import import VideoImportService
-from endoreg_db.utils.filesystem import paths as path_utils
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils import paths as path_utils
+from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_write_file,
     ensure_directory,
@@ -52,7 +57,7 @@ logger = logging.getLogger(__name__)
 JsonNull: TypeAlias = NoneType
 MediaType: TypeAlias = LxAnonymizerPerformanceMediaType
 ForcedMediaType: TypeAlias = Literal["auto", "video", "report"]
-ProcessorRoi: TypeAlias = dict[str, int | JsonNull]
+ProcessorRoi: TypeAlias = RoiBoxCore | dict[str, int | JsonNull]
 ImportedMedia: TypeAlias = VideoFile | RawPdfFile
 TimedParameters = ParamSpec("TimedParameters")
 TimedReturn = TypeVar("TimedReturn")
@@ -125,28 +130,22 @@ class _ReportEvaluationMedia(Protocol):
 def _roi_is_configured(roi: ProcessorRoi | JsonNull) -> bool:
     if roi is None:
         return False
-    required_keys = {"x", "y", "width", "height"}
-    if not required_keys.issubset(roi):
+    try:
+        roi_box = roi_box_or_none_from_object(roi)
+    except ValidationError:
         return False
-    x = roi["x"]
-    y = roi["y"]
-    width = roi["width"]
-    height = roi["height"]
-    coordinates_are_valid = (
-        x is not None
-        and y is not None
-        and width is not None
-        and height is not None
-        and x >= 0
-        and y >= 0
-        and width > 0
-        and height > 0
-    )
+    if roi_box is None:
+        return False
+    x = roi_box.x
+    y = roi_box.y
+    width = roi_box.width
+    height = roi_box.height
+    coordinates_are_valid = x >= 0 and y >= 0 and width > 0 and height > 0
     if not coordinates_are_valid:
         return False
 
-    image_width = roi.get("image_width")
-    image_height = roi.get("image_height")
+    image_width = getattr(roi_box, "image_width", None)
+    image_height = getattr(roi_box, "image_height", None)
     image_dimensions_are_valid = (image_width is None or image_width > 0) and (
         image_height is None or image_height > 0
     )

@@ -10,11 +10,12 @@ from lx_dtypes.models.contracts.management_command import (
 from ...data import QUALIFICATION_DATA_DIR
 from ...models import Qualification, QualificationType
 from ...utils import load_model_data_from_yaml
-from ...utils.data_loading.yaml_model_loader import LoadModelDataMetadata
+from ...utils.yaml_model_loader import LoadModelDataMetadata
 
 
 class LoadQualificationCommandOptions(TypedDict):
     verbose: bool
+
 
 SOURCE_DIR = QUALIFICATION_DATA_DIR  # qualification data directory
 

@@ -32,7 +32,7 @@ from endoreg_db.schemas import UploadApiRequestPayload
 from endoreg_db.schemas import validate_upload_api_request_payload
 from endoreg_db.services.hub import ingest
 from endoreg_db.authz.permissions import PolicyPermission
-from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 if TYPE_CHECKING:
     from endoreg_db.services.hub.ingest import CeleryTaskDispatcher, UploadProvenance
@@ -125,9 +125,9 @@ def _upload_api_request_mapping(request: Request) -> Mapping[str, str]:
 
 def _celery_upload_task_available() -> bool:
     try:
-        from endoreg_db.tasks import process_upload_job as _process_upload_job_task
+        import endoreg_db.tasks as tasks
 
-        return _process_upload_job_task is not None
+        return hasattr(tasks, "process_upload_job")
     except ImportError:
         return False
 
@@ -188,7 +188,7 @@ class UploadFileView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        uploaded_file = request.FILES["file"]
+        uploaded_file = cast(UploadedFile | object, request.FILES["file"])
         if not isinstance(uploaded_file, UploadedFile):
             return Response(
                 {"error": "Uploaded file must be a valid uploaded file."},
@@ -206,9 +206,11 @@ class UploadFileView(APIView):
 
         # Validate file is not empty
         uploaded_file_size = uploaded_file.size
-        
         if uploaded_file_size is None:
-            uploaded_file_size = 0
+            return Response(
+                {"error": "Uploaded file size is unavailable."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         if uploaded_file_size == 0:
             return Response(
@@ -374,8 +376,6 @@ class UploadFileView(APIView):
         fallback to mimetypes module.
         """
         uploaded_file_name = uploaded_file.name
-        if uploaded_file_name is None:
-            return ""
 
         try:
             # Reset file pointer
@@ -395,6 +395,7 @@ class UploadFileView(APIView):
                     pass  # Fall back to mimetypes
 
             # Fallback to mimetypes module
+            uploaded_file_name = uploaded_file_name or ""
             mime_guess, _ = mimetypes.guess_type(uploaded_file_name)
             if isinstance(mime_guess, str):
                 return mime_guess

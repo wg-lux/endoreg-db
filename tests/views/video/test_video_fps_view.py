@@ -1,8 +1,8 @@
 from unittest.mock import patch
-
+from django.http.response import HttpResponse
 from django.test import TestCase
 from rest_framework.test import APIRequestFactory
-
+import json
 from endoreg_db.models import Center, VideoFile
 from endoreg_db.views.video.video_fps import VideoFpsView
 
@@ -26,9 +26,11 @@ class VideoFpsViewTest(TestCase):
 
         response = self.view(request, pk=self.video.pk)
 
+        data = json.loads(response.content.decode())
+
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["video_id"], self.video.pk)
-        self.assertEqual(response.data["fps"], 25.0)
+        self.assertEqual(data["video_id"], self.video.pk)
+        self.assertEqual(data["fps"], 25.0)
 
     def test_uses_video_fps_service(self):
         request = self.factory.get(f"/api/media/videos/{self.video.pk}/fps/")
@@ -38,9 +40,11 @@ class VideoFpsViewTest(TestCase):
             return_value=29.97,
         ) as mocked_get_video_fps:
             response = self.view(request, pk=self.video.pk)
+        assert isinstance(response, HttpResponse)
+        data = json.loads(response.content.decode())
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["fps"], 29.97)
+        self.assertEqual(data["fps"], 29.97)
         mocked_get_video_fps.assert_called_once()
 
     def test_returns_422_when_fps_missing(self):
@@ -51,10 +55,12 @@ class VideoFpsViewTest(TestCase):
             side_effect=ValueError("fps unavailable"),
         ):
             response = self.view(request, pk=self.video.pk)
+        data = json.loads(response.content.decode())
 
         self.assertEqual(response.status_code, 422)
         self.assertEqual(
-            response.data["error"],
+            data["error"],
             "Could not determine fps for the requested video.",
         )
-        self.assertEqual(response.data["details"]["video_id"], self.video.pk)
+
+        self.assertEqual(data["details"]["video_id"], self.video.pk)

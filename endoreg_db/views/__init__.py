@@ -1,7 +1,7 @@
 from __future__ import annotations
 # pyright: reportUnknownVariableType=false
 
-from endoreg_db.utils.core.translation import build_multilingual_response
+from endoreg_db.utils.translation import build_multilingual_response
 
 from .anonymization import (
     AnonymizationOverviewView,
@@ -62,7 +62,7 @@ from .patient_examination import (
     PatientExaminationViewSet,
 )
 from .report import (
-    PatientExaminationReportViewSet,
+    PatientExaminationReportApi,
     ReportLlmJobStatusView,
     ReportReimportView,
     ReportStreamView,
@@ -124,7 +124,7 @@ __all__ = [
     "ReportReimportView",
     "ReportLlmJobStatusView",
     "ReportStreamView",
-    "PatientExaminationReportViewSet",
+    "PatientExaminationReportApi",
     "VideoApplyMaskView",
     "VideoRemoveFramesView",
     "VideoCorrectionView",

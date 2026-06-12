@@ -1,13 +1,18 @@
 import math
-from typing import Any
+from typing import Any, cast, TYPE_CHECKING
 
 from rest_framework import serializers
+
+if TYPE_CHECKING:
+    _ModelSerializerMeta = serializers.ModelSerializer.Meta
+else:
+    _ModelSerializerMeta = object
 
 from endoreg_db.models.label.annotation.frame_box import FrameBoxAnnotation
 from endoreg_db.models.label.label import Label
 
 
-class FrameBoxAnnotationSerializer(serializers.ModelSerializer):
+class FrameBoxAnnotationSerializer(serializers.ModelSerializer[FrameBoxAnnotation]):
     label_name = serializers.CharField(source="label.name", read_only=True)
     information_source_name = serializers.CharField(
         source="information_source.name",
@@ -17,8 +22,8 @@ class FrameBoxAnnotationSerializer(serializers.ModelSerializer):
     label_id = serializers.IntegerField(read_only=True)
     model_meta_id = serializers.IntegerField(read_only=True, allow_null=True)
 
-    class Meta:
-        model = FrameBoxAnnotation
+    class Meta(_ModelSerializerMeta):
+        model = FrameBoxAnnotation  # pyright: ignore[reportAssignmentType]
         fields = [
             "id",
             "frame_id",
@@ -41,7 +46,7 @@ class FrameBoxAnnotationSerializer(serializers.ModelSerializer):
         ]
 
 
-class FrameBoxAnnotationBulkItemSerializer(serializers.Serializer):
+class FrameBoxAnnotationBulkItemSerializer(serializers.Serializer[dict[str, object]]):
     """
     Payload item for general frame box annotation persistence.
     """
@@ -86,7 +91,21 @@ class FrameBoxAnnotationBulkItemSerializer(serializers.Serializer):
             )
         return value
 
-    def validate(self, attrs):
+    @staticmethod
+    def _positive_int(value: object, field_name: str) -> int:
+        if isinstance(value, bool):
+            raise serializers.ValidationError(
+                {field_name: f"{field_name} must be an integer."}
+            )
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str) and value.strip():
+            return int(value.strip())
+        raise serializers.ValidationError(
+            {field_name: f"{field_name} must be an integer."}
+        )
+
+    def validate(self, attrs: dict[str, object]) -> dict[str, object]:
         label_id = attrs.get("label_id")
         choice_name = str(attrs.get("choice_name", "") or "").strip()
 
@@ -110,7 +129,7 @@ class FrameBoxAnnotationBulkItemSerializer(serializers.Serializer):
                     {"choice_name": f"Unknown label name: {label_name}"}
                 )
 
-            attrs["label_id"] = label.id
+            attrs["label_id"] = cast(int, label.pk)
             if inferred_value is not None:
                 attrs["value"] = inferred_value
 
@@ -118,8 +137,8 @@ class FrameBoxAnnotationBulkItemSerializer(serializers.Serializer):
         y = self._finite_float(attrs, "y")
         width = self._finite_float(attrs, "width")
         height = self._finite_float(attrs, "height")
-        image_width = int(attrs["image_width"])
-        image_height = int(attrs["image_height"])
+        image_width = self._positive_int(attrs["image_width"], "image_width")
+        image_height = self._positive_int(attrs["image_height"], "image_height")
 
         if image_width <= 0:
             raise serializers.ValidationError(

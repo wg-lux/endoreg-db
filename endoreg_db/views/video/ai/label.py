@@ -28,6 +28,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from endoreg_db.helpers.model_ids import model_pk
 from endoreg_db.models.administration.ai.ai_model import AiModel
 from endoreg_db.models.label.label import Label
 from endoreg_db.models.label.label_set import LabelSet
@@ -42,7 +43,7 @@ from endoreg_db.services.video_temporal_inference import (
     dispatch_video_temporal_inference,
     extract_temporal_options,
 )
-from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,14 @@ class _LabelRelation(Protocol):
     def all(self) -> Iterable[_LabelSource]: ...
 
 
+class _LabelQuerySet(Protocol):
+    def order_by(self, *fields: str) -> Iterable[_LabelSource]: ...
+
+
+class _LabelManagerSource(Protocol):
+    def all(self) -> _LabelQuerySet: ...
+
+
 class _LabelSetSource(Protocol):
     pk: int
     name: str
@@ -78,6 +87,13 @@ class _AiModelSource(Protocol):
     pk: int
     name: str
     active_meta_id: int | None
+    metadata_versions: _ModelMetaQuerySet
+
+    def get_latest_version(self) -> _ModelMetaSource: ...
+
+
+class _AiModelManagerSource(Protocol):
+    def get(self, **kwargs: object) -> _AiModelSource: ...
 
 
 class _ModelMetaSource(Protocol):
@@ -90,15 +106,18 @@ class _ModelMetaSource(Protocol):
     weights: object | None
 
 
-def _model_pk(instance: object) -> int:
-    pk = cast(object | None, getattr(instance, "pk", None))
-    if pk is None:
-        raise ValueError(f"{type(instance).__name__} instance has no primary key.")
-    if isinstance(pk, int):
-        return pk
-    if isinstance(pk, str):
-        return int(pk)
-    raise ValueError(f"{type(instance).__name__} primary key is not an integer.")
+class _ModelMetaQuerySet(Protocol):
+    def select_related(self, *fields: str) -> "_ModelMetaQuerySet": ...
+
+    def all(self) -> "_ModelMetaQuerySet": ...
+
+    def order_by(self, *fields: str) -> Iterable[_ModelMetaSource]: ...
+
+    def get(self, **kwargs: object) -> _ModelMetaSource: ...
+
+
+class _ModelMetaManagerSource(Protocol):
+    def select_related(self, *fields: str) -> _ModelMetaQuerySet: ...
 
 
 def _request_payload_data(request: Request) -> VideoAiJsonObject:
@@ -117,14 +136,14 @@ def _error_response(
     *,
     status_code: int,
     error_type: str | None = None,
-) -> Response[VideoAiJsonObject]:
+) -> Response:
     payload: VideoAiJsonObject = {"error": error}
     if error_type is not None:
         payload["error_type"] = error_type
     return Response(payload, status=status_code)
 
 
-def _missing_required_field_response(field_name: str) -> Response[VideoAiJsonObject]:
+def _missing_required_field_response(field_name: str) -> Response:
     return _error_response(
         f"Field '{field_name}' is required",
         status_code=status.HTTP_400_BAD_REQUEST,
@@ -148,8 +167,9 @@ def _serialize_label_set(label_set: LabelSet) -> VideoAiLabelSetPayload:
     )
 
 
-def _serialize_model_meta(model_meta: ModelMeta) -> VideoAiPredictionModelMetaPayload:
-    model_meta_source = cast(_ModelMetaSource, model_meta)
+def _serialize_model_meta(
+    model_meta_source: _ModelMetaSource,
+) -> VideoAiPredictionModelMetaPayload:
     ai_model = model_meta_source.model
     label_set = model_meta_source.labelset
     return VideoAiPredictionModelMetaPayload(
@@ -179,8 +199,11 @@ def _resolve_prediction_model_meta(
     payload: VideoAiRerunPredictionRequestPayload,
 ) -> ModelMeta:
     if payload.model_meta_id is not None:
-        return ModelMeta.objects.select_related("model", "labelset").get(
-            pk=payload.model_meta_id
+        return cast(
+            ModelMeta,
+            cast(_ModelMetaManagerSource, cast(object, ModelMeta.objects))
+            .select_related("model", "labelset")
+            .get(pk=payload.model_meta_id),
         )
 
     hf_model_id = payload.resolved_huggingface_model_id
@@ -193,22 +216,28 @@ def _resolve_prediction_model_meta(
         )
 
     model_name = payload.model_name or DEFAULT_SEGMENTATION_MODEL_NAME
-    ai_model = AiModel.objects.get(name=model_name)
+    ai_model = cast(
+        _AiModelManagerSource,
+        AiModel.objects,
+    ).get(name=model_name)
     if payload.model_meta_version is not None:
-        return ai_model.metadata_versions.select_related("model", "labelset").get(
-            version=payload.model_meta_version
+        return cast(
+            ModelMeta,
+            ai_model.metadata_versions.select_related("model", "labelset").get(
+                version=payload.model_meta_version
+            ),
         )
-    return ai_model.get_latest_version()
+    return cast(ModelMeta, ai_model.get_latest_version())
 
 
 @api_view(["GET"])
 @permission_classes([EnvironmentAwarePermission])
-def label_list(request: Request) -> Response[VideoAiResponseData]:
+def label_list(request: Request) -> Response:
     """
     List all annotation labels used for video segments.
     """
     try:
-        labels = cast(Iterable[_LabelSource], Label.objects.all().order_by("name"))
+        labels = cast(_LabelManagerSource, Label.objects).all().order_by("name")
         payload = [
             _serialize_label_payload(label).model_dump(mode="json") for label in labels
         ]
@@ -223,17 +252,20 @@ def label_list(request: Request) -> Response[VideoAiResponseData]:
 
 @api_view(["GET"])
 @permission_classes([EnvironmentAwarePermission])
-def prediction_model_list(request: Request) -> Response[VideoAiJsonObject]:
+def prediction_model_list(request: Request) -> Response:
     """
     List locally registered video prediction ModelMeta records and known
     Hugging Face defaults that can be materialized on demand.
     """
     try:
-        model_metas = cast(
-            Iterable[ModelMeta],
-            ModelMeta.objects.select_related("model", "labelset")
+        model_metas = (
+            cast(
+                _ModelMetaManagerSource,
+                cast(object, ModelMeta.objects),
+            )
+            .select_related("model", "labelset")
             .all()
-            .order_by("model__name", "name", "-version", "id"),
+            .order_by("model__name", "name", "-version", "id")
         )
         payload = VideoAiPredictionModelListPayload(
             models=[_serialize_model_meta(model_meta) for model_meta in model_metas],
@@ -262,7 +294,7 @@ def prediction_model_list(request: Request) -> Response[VideoAiJsonObject]:
 def rerun_prediction_segments(
     request: Request,
     pk: int,
-) -> Response[VideoAiJsonObject]:
+) -> Response:
     """
     Rerun temporal prediction segment materialization for a single video.
     """
@@ -294,8 +326,8 @@ def rerun_prediction_segments(
             error_type="model_preparation_failed",
         )
 
-    video_id = _model_pk(video)
-    model_meta_id = _model_pk(model_meta)
+    video_id = model_pk(video)
+    model_meta_id = model_pk(model_meta)
     try:
         dispatch_result = dispatch_video_temporal_inference(
             video_id=video_id,
@@ -347,7 +379,7 @@ def rerun_prediction_segments(
         queued=dispatch_result.status in queued_statuses,
         pending=pending_after_rebuild,
         video_id=video_id,
-        model_meta=_serialize_model_meta(model_meta),
+        model_meta=_serialize_model_meta(cast(_ModelMetaSource, model_meta)),
         job=VideoAiPredictionJobPayload(
             task_id=dispatch_result.task_id,
             history_id=dispatch_result.history_id,
@@ -366,7 +398,7 @@ def rerun_prediction_segments(
 
 @api_view(["GET"])
 @permission_classes([EnvironmentAwarePermission])
-def label_set_list(request: Request) -> Response[VideoAiResponseData]:
+def label_set_list(request: Request) -> Response:
     """
     List annotation label groups as LabelSet records.
     """
@@ -392,7 +424,7 @@ def label_set_list(request: Request) -> Response[VideoAiResponseData]:
 
 @api_view(["POST"])
 @permission_classes([EnvironmentAwarePermission])
-def add_label(request: Request) -> Response[VideoAiJsonObject]:
+def add_label(request: Request) -> Response:
     try:
         payload = validate_video_ai_label_name_payload(_request_payload_data(request))
     except ValidationError:
@@ -420,7 +452,7 @@ def add_label(request: Request) -> Response[VideoAiJsonObject]:
 
 
 @api_view(["DELETE"])
-def delete_label(request: Request) -> Response[VideoAiJsonObject]:
+def delete_label(request: Request) -> Response:
     try:
         payload = validate_video_ai_label_name_payload(_request_payload_data(request))
     except ValidationError:
@@ -448,7 +480,7 @@ def delete_label(request: Request) -> Response[VideoAiJsonObject]:
 
 @api_view(["PATCH", "POST"])
 @permission_classes([EnvironmentAwarePermission])
-def update_label(request: Request) -> Response[VideoAiJsonObject]:
+def update_label(request: Request) -> Response:
     """
     Update/rename a label.
     """

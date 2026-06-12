@@ -39,8 +39,8 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args: object, **options: object) -> None:
-        options_payload = RefreshAuditLedgerIntegrityCommandOptionsPayload.model_validate(
-            options
+        options_payload = (
+            RefreshAuditLedgerIntegrityCommandOptionsPayload.model_validate(options)
         )
         if options_payload.once:
             payload = cast(JsonObject, refresh_audit_ledger_integrity_status_once())
@@ -55,10 +55,7 @@ class Command(BaseCommand):
             )
         )
 
-        if (
-            options_payload.fail_on_non_verified
-            and payload.get("status") != "verified"
-        ):
+        if options_payload.fail_on_non_verified and payload.get("status") != "verified":
             raise CommandError(
                 "Audit ledger integrity is not verified: "
                 f"status={payload.get('status')} error={payload.get('error')}"

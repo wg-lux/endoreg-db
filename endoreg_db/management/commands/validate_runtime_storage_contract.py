@@ -6,7 +6,7 @@ from pathlib import Path
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 from pydantic import ValidationError
 
-from endoreg_db.utils.filesystem.paths import (
+from endoreg_db.utils.paths import (
     DATA_DIR,
     EXPORT_DIR,
     IMPORT_DIR,

@@ -21,13 +21,13 @@ from lx_dtypes.models.contracts.migrate_data_dir import (
 
 from endoreg_db.models import RawPdfFile, UploadJob, VideoFile
 from endoreg_db.models.media.video.storage_mode import VideoStorageMode
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_write_file,
     ensure_directory,
     sha256_file,
 )
-from endoreg_db.utils.filesystem.paths import (
+from endoreg_db.utils.paths import (
     DOCUMENT_DIR,
     FRAME_DIR,
     FRAME_IMPORT_DIR,
@@ -53,7 +53,7 @@ from endoreg_db.utils.filesystem.paths import (
     ensure_within_protected_root,
     to_storage_relative,
 )
-from endoreg_db.utils.storage.profile import (
+from endoreg_db.utils.storage_profile import (
     PayloadKind,
     requires_app_encrypted_storage,
 )
@@ -703,7 +703,9 @@ class Command(BaseCommand):
                     logger.info(
                         f"No existing DB records found for {source_path.name} to sync."
                     )
-                migrated_entries.append(entry.model_copy(update={"upload_job_id": job_id}))
+                migrated_entries.append(
+                    entry.model_copy(update={"upload_job_id": job_id})
+                )
 
         manifest = MigrateDataDirManifestPayload(
             command="migrate_data_dir",
@@ -1047,7 +1049,9 @@ class Command(BaseCommand):
         return changed
 
     @classmethod
-    def _update_video_if_changed(cls, video: VideoFile, **fields: MigrationFieldValue) -> int:
+    def _update_video_if_changed(
+        cls, video: VideoFile, **fields: MigrationFieldValue
+    ) -> int:
         changed = cls._changed_fields(cast(PersistedMigrationModel, video), fields)
         if not changed:
             return 0

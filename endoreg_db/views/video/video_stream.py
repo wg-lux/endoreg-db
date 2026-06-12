@@ -42,13 +42,13 @@ from endoreg_db.services.media_operation_gate import (
     wrap_iterator_with_media_lease,
 )
 from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
-from endoreg_db.utils.web.nginx_accel import (
+from endoreg_db.utils.nginx_accel import (
     build_nginx_accel_response,
     nginx_offload_enabled,
 )
-from endoreg_db.utils.filesystem.paths import resolve_existing_protected_media_path
-from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
-from endoreg_db.utils.storage.streaming import (
+from endoreg_db.utils.paths import resolve_existing_protected_media_path
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.storage_streaming import (
     add_cors_headers,
     build_partial_content_response,
     build_partial_content_response_from_path,
@@ -56,7 +56,7 @@ from endoreg_db.utils.storage.streaming import (
     maybe_local_plaintext_path,
     parse_byte_range,
 )
-from endoreg_db.utils.web.cors import resolve_response_origin
+from endoreg_db.utils.cors import resolve_response_origin
 
 logger = logging.getLogger(__name__)
 

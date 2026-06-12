@@ -1,12 +1,16 @@
-from endoreg_db.utils.media.extract_specific_frames import extract_selected_frames
+from collections.abc import Callable, Iterable
+from itertools import combinations
+from pathlib import Path
+from typing import Protocol, TypedDict, cast
+
+from django.conf import settings
 from rest_framework import serializers
+
 from endoreg_db.models.label.label import Label
 from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
 )
-from itertools import combinations
-from pathlib import Path
-from django.conf import settings
+from endoreg_db.utils.extract_specific_frames import extract_selected_frames
 
 # === CONFIGURABLE PARAMETERS - ForNiceClassificationSerializer ===
 POLYP_LABEL_NAME = "polyp"
@@ -27,10 +31,47 @@ FRAMES_PER_SEQUENCE = 3  # Number of frames to select per matched sequence
 
 # === Frame Filtering Rules ===
 # All rules must return True to accept the frame
-FRAME_SELECTION_RULES = [
-    lambda pred: pred.get("low_quality", 1.0) < 0.1,
-    lambda pred: pred.get("outside", 1.0) < 0.1,
-    lambda pred: pred.get("snare", 1.0) < 0.1,
+class FramePrediction(TypedDict, total=False):
+    low_quality: float
+    outside: float
+    snare: float
+    polyp: float
+
+
+class SequenceItem(TypedDict):
+    polyp: LabelVideoSegment
+
+
+class FrameSelectionItem(TypedDict):
+    frame_number: int
+    frame_path: str
+
+
+class VideoLike(Protocol):
+    id: int
+    original_file_name: str
+    frame_dir: str
+
+
+FrameSelectionRule = Callable[[FramePrediction], bool]
+
+
+def _rule_low_quality(pred: FramePrediction) -> bool:
+    return pred.get("low_quality", 1.0) < 0.1
+
+
+def _rule_outside(pred: FramePrediction) -> bool:
+    return pred.get("outside", 1.0) < 0.1
+
+
+def _rule_snare(pred: FramePrediction) -> bool:
+    return pred.get("snare", 1.0) < 0.1
+
+
+FRAME_SELECTION_RULES: list[FrameSelectionRule] = [
+    _rule_low_quality,
+    _rule_outside,
+    _rule_snare,
     # Add more rules easily here
 ]
 
@@ -48,7 +89,7 @@ POLYP_CONFIDENCE_THRESHOLDS = [
 INSTRUMENT_LABEL_NAMES = ["instrument", "snare", "needle"]  # Add more as needed later
 
 
-class BaseClassificationSerializer(serializers.Serializer):
+class BaseClassificationSerializer(serializers.Serializer[object]):
     """
     Base class for NICE and PARIS serializers.
     Handles label lookup, chromo/instrument segment filtering, and shared utilities.
@@ -59,26 +100,28 @@ class BaseClassificationSerializer(serializers.Serializer):
     LABEL_NAME = "polyp"  # default (can be overridden)
     INSTRUMENT_LABEL_NAME = "instrument"  # TODO @Hamzaukw we should define frequently used labels in a utils file
 
-    def get_label_id_by_name(self, label_name):
+    def get_label_id_by_name(self, label_name: str) -> int:
         """
         Get the ID of a label by its name.
         Raises a validation error if not found.
         """
         try:
             label = Label.objects.get(name=label_name)
-            return label.id
+            return cast(int, label.pk)
         except Label.DoesNotExist:
             raise serializers.ValidationError(
                 {"error": f"Label with name '{label_name}' does not exist."}
             )
 
-    def get_label_ids_by_names(self, label_names):
+    def get_label_ids_by_names(self, label_names: list[str]) -> list[int]:
         """
         Get a list of label IDs for a given list of label names.
         Ensures all names exist in the database.
         """
         labels = Label.objects.filter(name__in=label_names)
-        label_map = {label.name: label.id for label in labels}
+        label_map: dict[str, int] = {
+            label.name: cast(int, label.pk) for label in labels
+        }
 
         missing = set(label_names) - set(label_map.keys())
         if missing:
@@ -88,7 +131,7 @@ class BaseClassificationSerializer(serializers.Serializer):
 
         return list(label_map.values())
 
-    def get_chromo_segments(self, video_id):
+    def get_chromo_segments(self, video_id: int) -> list[LabelVideoSegment]:
         """
         Fetch all segments that match chromo-like labels (e.g., chromo or NBI).
         Used in both NICE and PARIS, but interpreted differently:
@@ -96,54 +139,36 @@ class BaseClassificationSerializer(serializers.Serializer):
         - PARIS: chromo overlap is disqualifying
         """
         chromo_label_ids = self.get_label_ids_by_names(CHROMO_LABEL_NAMES)
-        return LabelVideoSegment.objects.filter(
-            label_id__in=chromo_label_ids, video_file_id=video_id
+        return list(
+            LabelVideoSegment.objects.filter(
+                label_id__in=chromo_label_ids, video_file_id=video_id
+            )
         )
 
-    def get_filtered_polyp_segments(self, video_id):
+    def get_filtered_polyp_segments(self, video_id: int) -> list[LabelVideoSegment]:
         """
         Return polyp segments that do NOT overlap with 'instrument' segments.
         """
         polyp_label_id = self.get_label_id_by_name(self.LABEL_NAME)
         instrument_label_id = self.get_label_id_by_name(self.INSTRUMENT_LABEL_NAME)
 
-        print(
-            "polyp label id is :-",
-            polyp_label_id,
-            "and - instrument_label_id is ,",
-            instrument_label_id,
-        )
-
-        polyp_segments = LabelVideoSegment.objects.filter(
-            label_id=polyp_label_id, video_file_id=video_id
+        polyp_segments = list(
+            LabelVideoSegment.objects.filter(
+                label_id=polyp_label_id, video_file_id=video_id
+            )
         )
 
         instrument_segments = LabelVideoSegment.objects.filter(
             label_id=instrument_label_id, video_file_id=video_id
         )
-        print(
-            "------------------------ --------------------------------- -------------------------------"
-        )
-        print(
-            "polyp label id is :-",
-            polyp_label_id,
-            "and - instrument_label_id is ,",
-            instrument_label_id,
-        )
-        print(
-            "polyp segments are",
-            polyp_segments,
-            "instrument_segments are",
-            instrument_segments,
-        )
 
-        def overlaps(seg1, seg2):
+        def overlaps(seg1: LabelVideoSegment, seg2: LabelVideoSegment) -> bool:
             return (
                 seg1.start_frame_number <= seg2.end_frame_number
                 and seg1.end_frame_number >= seg2.start_frame_number
             )
 
-        filtered_polyp_segments = []
+        filtered_polyp_segments: list[LabelVideoSegment] = []
         for polyp_seg in polyp_segments:
             if not any(
                 overlaps(polyp_seg, instr_seg) for instr_seg in instrument_segments
@@ -152,19 +177,23 @@ class BaseClassificationSerializer(serializers.Serializer):
 
         return filtered_polyp_segments
 
-    def get_polyp_segments(self, video_id):
+    def get_polyp_segments(self, video_id: int) -> list[LabelVideoSegment]:
         polyp_label_id = self.get_label_id_by_name(self.LABEL_NAME)
-        return LabelVideoSegment.objects.filter(
-            label_id=polyp_label_id, video_file_id=video_id
+        return list(
+            LabelVideoSegment.objects.filter(
+                label_id=polyp_label_id, video_file_id=video_id
+            )
         )
 
-    def apply_sequence_diversity(self, matching_segments):
+    def apply_sequence_diversity(
+        self, matching_segments: list[SequenceItem]
+    ) -> list[SequenceItem]:
         if not matching_segments:
             return []
 
         matching_segments.sort(key=lambda seg: seg["polyp"].start_frame_number)
 
-        valid_segments = [
+        valid_segments: list[SequenceItem] = [
             seg
             for seg in matching_segments
             if (seg["polyp"].end_frame_number - seg["polyp"].start_frame_number)
@@ -212,7 +241,9 @@ class BaseClassificationSerializer(serializers.Serializer):
         )
         return valid_segments[:3]
 
-    def select_frames_for_sequence(self, sequence):
+    def select_frames_for_sequence(
+        self, sequence: SequenceItem
+    ) -> list[FrameSelectionItem]:
         """
         Selects evenly spaced representative frames from a polyp segment.
 
@@ -230,7 +261,7 @@ class BaseClassificationSerializer(serializers.Serializer):
             return []
 
         # Just create frames assuming predictions aren't available
-        segment_frames = [
+        segment_frames: list[FrameSelectionItem] = [
             {
                 "frame_number": idx,
                 "frame_path": f"{frame_dir}/frame_{str(idx).zfill(7)}.png",
@@ -238,27 +269,22 @@ class BaseClassificationSerializer(serializers.Serializer):
             for idx in range(start_frame, end_frame + 1)
         ]
 
-        selected_frames = []
-        last_selected_frame = -float("inf")
+        selected_frames: list[FrameSelectionItem] = []
+        last_selected_frame = -(10**9)
 
         for frame in segment_frames:
             if len(selected_frames) >= FRAMES_PER_SEQUENCE:
                 break
 
             if frame["frame_number"] - last_selected_frame >= MIN_FRAME_GAP_IN_SEQUENCE:
-                selected_frames.append(
-                    {
-                        "frame_number": frame["frame_number"],
-                        "frame_path": frame["frame_path"],
-                    }
-                )
+                selected_frames.append(frame)
                 last_selected_frame = frame["frame_number"]
 
         return selected_frames
 
     def extract_and_save_selected_frames(
-        self, video, frame_numbers, classification_type: str
-    ):
+        self, video: VideoLike, frame_numbers: list[int], classification_type: str
+    ) -> None:
         """
         Extract specific frames from the original video file and save them
         into a structured folder path based on the classification type.
@@ -269,7 +295,11 @@ class BaseClassificationSerializer(serializers.Serializer):
             classification_type (str): Either "nice" or "paris".
         """
         # Resolve the path to the original video
-        original_path = Path(video.original_file_name)
+        original_file_name = video.original_file_name
+        frame_dir = video.frame_dir
+        video_id = video.id
+
+        original_path = Path(original_file_name)
         if not original_path.is_absolute():
             base_video_dir = (
                 settings.BASE_DIR.parent.parent
@@ -281,7 +311,7 @@ class BaseClassificationSerializer(serializers.Serializer):
             original_path = base_video_dir / original_path
 
         # Define output directory based on classification and video ID
-        output_path = Path(video.frame_dir) / classification_type / f"video_{video.id}"
+        output_path = Path(frame_dir) / classification_type / f"video_{video_id}"
 
         # Extract frames using the shared utility
         extract_selected_frames(
@@ -428,7 +458,7 @@ class ForNiceClassificationSerializer(BaseClassificationSerializer):
     - Selects diverse sequences and representative frames from each
     """
 
-    def get_matching_sequences(self, video_id):
+    def get_matching_sequences(self, video_id: int) -> list[SequenceItem]:
         """
         1. Fetch all polyp segments in a video
         2. Remove parts overlapping with any instrument-type labels
@@ -440,33 +470,31 @@ class ForNiceClassificationSerializer(BaseClassificationSerializer):
         # chromo_label_id = self.get_label_id_by_name(CHROMO_LABEL_NAME)
         chromo_segments = self.get_chromo_segments(video_id)
 
-        polyp_segments = LabelVideoSegment.objects.filter(
-            label_id=polyp_label_id, video_file_id=video_id
+        polyp_segments = list(
+            LabelVideoSegment.objects.filter(
+                label_id=polyp_label_id, video_file_id=video_id
+            )
         )
         instrument_segments = LabelVideoSegment.objects.filter(
             label_id__in=instrument_label_ids, video_file_id=video_id
         )
 
         # chromo_segments = LabelVideoSegment.objects.filter(label_id=chromo_label_id, video_file_id=video_id)
-        print(
-            "polyp_label_id is", polyp_label_id, "and ployp_segment is ", polyp_segments
-        )
-        print("instrument_segments is", instrument_segments)
-        # print("chromo_segments is ",chromo_segments)
-
-        def overlaps(seg1, seg2):
+        def overlaps(seg1: LabelVideoSegment, seg2: LabelVideoSegment) -> bool:
             return (
                 seg1.start_frame_number <= seg2.end_frame_number
                 and seg1.end_frame_number >= seg2.start_frame_number
             )
 
-        def subtract_overlap(seg, overlaps):
+        def subtract_overlap(
+            seg: LabelVideoSegment, overlaps: Iterable[LabelVideoSegment]
+        ) -> list[tuple[int, int]]:
             start = seg.start_frame_number
             end = seg.end_frame_number
             blocks = [(o.start_frame_number, o.end_frame_number) for o in overlaps]
             blocks.sort()
 
-            safe_ranges = []
+            safe_ranges: list[tuple[int, int]] = []
             curr = start
 
             for o_start, o_end in blocks:
@@ -483,7 +511,7 @@ class ForNiceClassificationSerializer(BaseClassificationSerializer):
 
             return safe_ranges
 
-        matching_segments = []
+        matching_segments: list[SequenceItem] = []
 
         for polyp in polyp_segments:
             overlapping_instr = [
@@ -513,7 +541,7 @@ class ForNiceClassificationSerializer(BaseClassificationSerializer):
 
         return matching_segments
 
-    def to_representation(self, videos):
+    def to_representation(self, instance: object) -> dict[str, object]:
         """
         Processes a list of videos:
         - Applies NICE/PARIS rules to find segments
@@ -522,11 +550,17 @@ class ForNiceClassificationSerializer(BaseClassificationSerializer):
         - Extracts all frames for a video in a single call
         - Returns structured output with messages per video
         """
-        results = []
+        results: list[dict[str, object]] = []
 
-        for video in videos:
+        if not isinstance(instance, Iterable):
+            return {
+                "message": "No classification data generated for any videos.",
+                "data": [],
+            }
+
+        for video in cast(Iterable[VideoLike], instance):
             try:
-                video_id = video.id
+                video_id = cast(int, getattr(video, "id"))
                 print("video-id is", video_id)
 
                 matching_segments = self.get_matching_sequences(video_id)
@@ -551,8 +585,8 @@ class ForNiceClassificationSerializer(BaseClassificationSerializer):
                     continue
 
                 # Collect all frame numbers to extract only once per video
-                all_frames = []
-                segment_results = []
+                all_frames: list[FrameSelectionItem] = []
+                segment_results: list[dict[str, object]] = []
 
                 for segment in diverse_segments:
                     frames = self.select_frames_for_sequence(segment)
@@ -579,14 +613,10 @@ class ForNiceClassificationSerializer(BaseClassificationSerializer):
 
                 # Extract once per video
                 if all_frames:
-                    unique_frame_numbers = sorted(
+                    unique_frame_numbers: list[int] = sorted(
                         {f["frame_number"] for f in all_frames}
                     )
-                    classification_type = (
-                        "nice"
-                        if isinstance(self, ForNiceClassificationSerializer)
-                        else "paris"
-                    )
+                    classification_type = "nice"
                     self.extract_and_save_selected_frames(
                         video, unique_frame_numbers, classification_type
                     )
@@ -597,14 +627,11 @@ class ForNiceClassificationSerializer(BaseClassificationSerializer):
                 results.append({"video_id": video.id, "error": str(e)})
 
         if not results:
-            return [{"message": "No classification data generated for any videos."}]
+            results.append(
+                {"message": "No classification data generated for any videos."}
+            )
 
-        return {
-            "message": "NICE classification data generated."
-            if isinstance(self, ForNiceClassificationSerializer)
-            else "PARIS classification data generated.",
-            "data": results,
-        }
+        return {"message": "NICE classification data generated.", "data": results}
 
 
 class ForParisClassificationSerializer(BaseClassificationSerializer):
@@ -617,7 +644,7 @@ class ForParisClassificationSerializer(BaseClassificationSerializer):
     - Selects frames from each valid segment
     """
 
-    def get_filtered_polyp_segments(self, video_id):
+    def get_filtered_polyp_segments(self, video_id: int) -> list[LabelVideoSegment]:
         """
         1. Fetch all polyp segments
         2. Subtract any overlap with chromo or instrument segments
@@ -637,13 +664,15 @@ class ForParisClassificationSerializer(BaseClassificationSerializer):
         # chromo_segments = LabelVideoSegment.objects.filter(label_id=chromo_label_id, video_file_id=video_id)
         chromo_segments = self.get_chromo_segments(video_id)
 
-        def overlaps(seg1, seg2):
+        def overlaps(seg1: LabelVideoSegment, seg2: LabelVideoSegment) -> bool:
             return (
                 seg1.start_frame_number <= seg2.end_frame_number
                 and seg1.end_frame_number >= seg2.start_frame_number
             )
 
-        def subtract_overlap(seg, overlaps):
+        def subtract_overlap(
+            seg: LabelVideoSegment, overlaps: Iterable[LabelVideoSegment]
+        ) -> list[tuple[int, int]]:
             """
             Given a base segment and list of overlapping segments,
             returns list of non-overlapping sub-segments.
@@ -653,7 +682,7 @@ class ForParisClassificationSerializer(BaseClassificationSerializer):
             blocks = [(o.start_frame_number, o.end_frame_number) for o in overlaps]
             blocks.sort()
 
-            safe_ranges = []
+            safe_ranges: list[tuple[int, int]] = []
             curr = start
 
             for o_start, o_end in blocks:
@@ -671,7 +700,7 @@ class ForParisClassificationSerializer(BaseClassificationSerializer):
             return safe_ranges
 
         # Final valid sub-segments
-        trimmed_segments = []
+        trimmed_segments: list[LabelVideoSegment] = []
 
         for polyp_seg in polyp_segments:
             # Collect all overlapping regions with instrument or chromo
@@ -695,7 +724,7 @@ class ForParisClassificationSerializer(BaseClassificationSerializer):
 
             return trimmed_segments
 
-        filtered_segments = []
+        filtered_segments: list[LabelVideoSegment] = []
         for polyp_seg in polyp_segments:
             if not any(
                 overlaps(polyp_seg, instr_seg) for instr_seg in instrument_segments
@@ -706,7 +735,7 @@ class ForParisClassificationSerializer(BaseClassificationSerializer):
 
         return filtered_segments
 
-    def get_matching_sequences(self, video_id):
+    def get_matching_sequences(self, video_id: int) -> list[SequenceItem]:
         """
         Wraps all valid polyp subsegments into a uniform data structure.
         This is needed for consistent downstream processing.
@@ -714,18 +743,24 @@ class ForParisClassificationSerializer(BaseClassificationSerializer):
         segments = self.get_filtered_polyp_segments(video_id)
         return [{"polyp": seg} for seg in segments]
 
-    def to_representation(self, videos):
+    def to_representation(self, instance: object) -> dict[str, object]:
         """
         Processes videos for PARIS classification.
         Filters segments, selects diverse sequences, and picks valid frames.
         Extracts all selected frames once per video.
         Returns detailed per-video feedback or results.
         """
-        results = []
+        results: list[dict[str, object]] = []
 
-        for video in videos:
+        if not isinstance(instance, Iterable):
+            return {
+                "message": "No valid classification results could be generated for any video.",
+                "data": [],
+            }
+
+        for video in cast(Iterable[VideoLike], instance):
             try:
-                video_id = video.id
+                video_id = cast(int, getattr(video, "id"))
                 matching_segments = self.get_matching_sequences(video_id)
 
                 if not matching_segments:
@@ -747,8 +782,8 @@ class ForParisClassificationSerializer(BaseClassificationSerializer):
                     )
                     continue
 
-                all_frames = []
-                segment_results = []
+                all_frames: list[FrameSelectionItem] = []
+                segment_results: list[dict[str, object]] = []
 
                 for segment in diverse_segments:
                     frames = self.select_frames_for_sequence(segment)
@@ -774,7 +809,7 @@ class ForParisClassificationSerializer(BaseClassificationSerializer):
                         all_frames.extend(frames)
 
                 if all_frames:
-                    unique_frame_numbers = sorted(
+                    unique_frame_numbers: list[int] = sorted(
                         {f["frame_number"] for f in all_frames}
                     )
                     self.extract_and_save_selected_frames(
@@ -787,80 +822,11 @@ class ForParisClassificationSerializer(BaseClassificationSerializer):
                 results.append({"video_id": video.id, "error": str(e)})
 
         if not results:
-            return [
+            results.append(
                 {
                     "message": "No valid classification results could be generated for any video."
                 }
-            ]
+            )
 
         return {"message": "PARIS classification data generated.", "data": results}
 
-
-"""
-NICE Classification Serializer
-------------------------------
-
-This serializer identifies clean polyp segments for NICE classification:
-- Filters out segments overlapping with instruments
-- Requires overlap with digital chromo or NBI
-- Applies sequence diversity and selects clean frames
-
-Configurable via:
-- INSTRUMENT_LABEL_NAMES: defines what tools to exclude
-- CHROMO_LABEL_NAMES: defines what chromo types to include
-
-Returns:
-    {
-        "video_id": int,
-        "segment_start": int,
-        "segment_end": int,
-        "frames": [{ frame_number, frame_path }]
-    }
-"""
-
-
-"""
-PARIS Classification Serializer
--------------------------------
-
-This serializer identifies clean polyp segments for PARIS classification:
-- Filters out segments that overlap with any instrument-type labels
-- Also excludes any segments that overlap with digital chromo or NBI imaging
-- Trims overlapping regions and returns only clean, usable subsegments
-- Applies sequence diversity to avoid redundant or closely positioned segments
-- Selects clean, representative frames from each remaining valid segment
-
-Configurable via:
-- INSTRUMENT_LABEL_NAMES: defines all instrument labels that must be excluded (e.g., 'instrument', 'snare', 'needle')
-- CHROMO_LABEL_NAMES: defines chromo-like labels that should also be excluded (e.g., 'digital_chromo_endoscopy', 'nbi')
-
-Returns:
-    {
-        "video_id": int,
-        "segment_start": int,
-        "segment_end": int,
-        "frames": [{ frame_number: int, frame_path: str }]
-    }
-"""
-
-
-"""
-await import('https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js');
-const fetchNiceClassification = async () => {
-    try {
-        const response = await axios.get("http://localhost:8000/videos/nice-classification/", {
-            headers: { "Accept": "application/json" }
-        });
-
-        console.log(" NICE Classification Response:", response.data);
-        alert("NICE Classification data fetched!");
-        return response.data;
-    } catch (error) {
-        console.error(" Error fetching NICE classification:", error.response?.data || error);
-        alert("Failed to fetch NICE classification data.");
-        return error.response?.data || { error: "Unknown error" };
-    }
-};
-
-fetchNiceClassification().then(data => console.log("Final Output:", data));
-"""

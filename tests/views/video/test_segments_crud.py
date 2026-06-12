@@ -1,36 +1,57 @@
 import os
 import types
+from collections.abc import Callable, Mapping
+from typing import Any, cast
+from typing import Protocol
+from unittest.mock import patch
+
 from django.test import TestCase
 from django.urls import resolve
 from rest_framework.test import APIRequestFactory
-from unittest.mock import patch
+import json
 
 # Adjust imports based on your actual project structure
 from endoreg_db.models import (
     AIDataSet,
-    VideoFile,
-    Label,
-    LabelVideoSegment,
+    Center,
     Frame,
     ImageClassificationAnnotation,
     InformationSource,
-    Center,
+    Label,
+    LabelVideoSegment,
+    VideoFile,
     VideoProcessingHistory,
 )
 from endoreg_db.models.state import video_segment_validation as segment_state
-from endoreg_db.services.jobs.video_post_validation_jobs import JobDispatchResult
-from endoreg_db.services.jobs import video_post_validation_jobs as post_validation_jobs
 from endoreg_db.serializers import LabelVideoSegmentSerializer
 from endoreg_db.serializers.video.video_file_list import VideoFileListSerializer
+from endoreg_db.services.jobs import video_post_validation_jobs as post_validation_jobs
+from endoreg_db.services.jobs.video_post_validation_jobs import JobDispatchResult
 from endoreg_db.views.video.segments_crud import (
     ensure_prediction_segment_annotations_for_video,
     import_prediction_segments_to_manual,
+    video_segment_validate,
     video_segments_blacken_outside,
     video_segments_bulk_mutation,
-    video_segments_validate_bulk,
-    video_segment_validate,
     video_segments_by_video,
+    video_segments_validate_bulk,
 )
+
+
+class _SerializerErrorsCarrier(Protocol):
+    errors: Mapping[str, object]
+
+
+class _SerializerDataCarrier(Protocol):
+    data: Mapping[str, object]
+
+
+def _serializer_errors(serializer: object) -> Mapping[str, object]:
+    return cast(_SerializerErrorsCarrier, serializer).errors
+
+
+def _serializer_data(serializer: object) -> Mapping[str, object]:
+    return cast(_SerializerDataCarrier, serializer).data
 
 
 class LabelVideoSegmentSerializerTest(TestCase):
@@ -84,27 +105,24 @@ class LabelVideoSegmentSerializerTest(TestCase):
             # Frontend might send end_time same as old one, but required by logic validation
             "end_time": self.segment.end_time,
         }
-
         serializer = LabelVideoSegmentSerializer(
             instance=self.segment, data=payload, partial=True
         )
-        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertTrue(serializer.is_valid(), str(_serializer_errors(serializer)))
         updated_segment = serializer.save()
 
-        # EXPECTATION: The serializer correctly rounded the float back to the integer frame
         self.assertEqual(updated_segment.start_frame_number, 7)
 
     def test_partial_time_update_reuses_existing_boundary(self):
         payload = {
             "end_time": self.segment.start_time,
         }
-
         serializer = LabelVideoSegmentSerializer(
             instance=self.segment, data=payload, partial=True
         )
-
         self.assertFalse(serializer.is_valid())
-        self.assertIn("end_time", serializer.errors)
+        # Fix: Cast errors to a dict to allow safe membership check
+        self.assertIn("end_time", _serializer_errors(serializer))
 
     def test_video_store_creation_payload(self):
         """
@@ -127,7 +145,7 @@ class LabelVideoSegmentSerializerTest(TestCase):
         }
 
         serializer = LabelVideoSegmentSerializer(data=payload)
-        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertTrue(serializer.is_valid(), str(_serializer_errors(serializer)))
         new_segment = serializer.save()
 
         self.assertEqual(new_segment.start_frame_number, 90)
@@ -140,21 +158,17 @@ class LabelVideoSegmentSerializerTest(TestCase):
         The serializer method `get_time_segments` iterates over frames.
         We must ensure it doesn't fire a DB query for every single frame to get annotations.
         """
-        # 1. Create 50 frames for the segment [0-50]
-        # (Assuming your Frame model is linked to VideoFile and has frame_number)
-        frames = []
+        frames: list[Frame] = []
         for i in range(50):
             frames.append(Frame(video=self.video, frame_number=i))
         Frame.objects.bulk_create(frames)
 
-        # 2. Update segment to cover these frames
         self.segment.end_frame_number = 50
         self.segment.save()
 
-        # 3. Create Annotations for these frames (to trigger the potential N+1 fetch)
-        # We need to fetch these to prove we aren't querying 50 times
         saved_frames = Frame.objects.filter(video=self.video)
-        annotations = []
+        # Fix: Explicitly type the annotations list
+        annotations: list[ImageClassificationAnnotation] = []
         for frame in saved_frames:
             annotations.append(
                 ImageClassificationAnnotation(
@@ -166,25 +180,17 @@ class LabelVideoSegmentSerializerTest(TestCase):
             )
         ImageClassificationAnnotation.objects.bulk_create(annotations)
         if frames:
-            _ = frames[0].file_path
-
-        # 4. Measure Queries
-        # Expected Queries:
-        # 1. Fetch Segment
-        # 2. Fetch Frames (filtered by segment range)
-        # 3. Prefetch Annotations (1 query for all frames)
-        # Total should be low single digits, NOT 50+.
+            # Fix: Avoid type checking unknown attributes on Frame
+            _ = cast(Any, frames[0]).file_path
 
         with self.assertNumQueries(2):
-            # Note: The exact number depends on how `get_time_segments` is implemented.
-            # If using `prefetch_related` inside the method, it might be 2 or 3.
-            # If N+1 exists, this will be 52+.
-
             serializer = LabelVideoSegmentSerializer(self.segment)
-            # We explicitly call the method to trigger the logic
-            data = serializer.get_time_segments(self.segment)
+            # Fix: Cast self.segment to Any to satisfy LabelVideoSegmentLike Protocol
+            # and explicitly cast the return dictionary structure
+            data = cast(
+                dict[str, Any], serializer.get_time_segments(cast(Any, self.segment))
+            )
 
-            # Verify data integrity just in case
             self.assertEqual(len(data["frames"]), 50)
             self.assertTrue(len(data["frames"][0]["all_classifications"]) > 0)
 
@@ -224,7 +230,8 @@ class LabelVideoSegmentSerializerTest(TestCase):
         )
 
         serializer = VideoFileListSerializer(self.video)
-        self.assertEqual(serializer.data["validated_annotators"], [])
+        data = _serializer_data(serializer)
+        self.assertEqual(data["validated_annotators"], [])
 
         state = self.video.get_or_create_state()
         state.segment_annotations_validated = True
@@ -238,9 +245,9 @@ class LabelVideoSegmentSerializerTest(TestCase):
         )
 
         serializer = VideoFileListSerializer(self.video)
+        data_after = _serializer_data(serializer)
         self.assertEqual(
-            serializer.data["validated_annotators"],
-            ["reviewer-one", "reviewer-two"],
+            data_after["validated_annotators"], ["reviewer-one", "reviewer-two"]
         )
 
     def test_video_list_serializer_requires_outside_cleanup_for_final_validation(self):
@@ -259,10 +266,10 @@ class LabelVideoSegmentSerializerTest(TestCase):
 
         serializer = VideoFileListSerializer(self.video)
 
-        self.assertFalse(serializer.data["segment_annotations_validated"])
-        self.assertEqual(
-            serializer.data["segment_annotation_status"], "cleanup_required"
-        )
+        data = _serializer_data(serializer)
+
+        self.assertFalse(data["segment_annotations_validated"])
+        self.assertEqual(data["segment_annotation_status"], "cleanup_required")
 
 
 class PredictionSegmentAnnotationsRouteTest(TestCase):
@@ -321,9 +328,10 @@ class PredictionSegmentAnnotationsRouteTest(TestCase):
         response = ensure_prediction_segment_annotations_for_video(
             request, pk=self.video.pk
         )
+        data = json.loads(response.content)
 
         self.assertEqual(response.status_code, 202)
-        stats = response.data["stats"]
+        stats = data["stats"]
         self.assertEqual(stats["eligible_prediction_segments"], 1)
         self.assertEqual(stats["annotations_created"], 3)
 
@@ -391,11 +399,12 @@ class VideoSegmentsByVideoPayloadModeTest(TestCase):
     def test_default_list_payload_skips_annotation_expansion(self):
         request = self.factory.get(f"/api/media/videos/{self.video.pk}/segments/")
         response = video_segments_by_video(request, pk=self.video.pk)
+        data = json.loads(response.content.decode())
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 1)
+        self.assertEqual(len(data), 1)
 
-        payload = response.data[0]
+        payload = data[0]
         self.assertEqual(payload["manual_frame_annotations"], [])
         self.assertEqual(payload["frame_predictions"], [])
         self.assertEqual(payload["time_segments"]["frames"], [])
@@ -405,11 +414,12 @@ class VideoSegmentsByVideoPayloadModeTest(TestCase):
             f"/api/media/videos/{self.video.pk}/segments/?include_annotation_payload=1"
         )
         response = video_segments_by_video(request, pk=self.video.pk)
+        data = json.loads(response.content.decode())
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 1)
+        self.assertEqual(len(data), 1)
 
-        payload = response.data[0]
+        payload = data[0]
         self.assertEqual(len(payload["time_segments"]["frames"]), 3)
 
 
@@ -490,13 +500,12 @@ class VideoSegmentValidateAsyncSafetyTest(TestCase):
             response = video_segment_validate(
                 request, pk=self.video.pk, segment_id=self.segment.pk
             )
+        data = json.loads(response.content.decode())
 
         self.assertEqual(response.status_code, 202)
-        self.assertEqual(response.data["validation_status"], "scheduled")
-        self.assertEqual(response.data["post_processing_job"]["status"], "queued")
-        self.assertEqual(
-            response.data["post_processing_job"]["video_id"], self.video.pk
-        )
+        self.assertEqual(data["validation_status"], "scheduled")
+        self.assertEqual(data["post_processing_job"]["status"], "queued")
+        self.assertEqual(data["post_processing_job"]["video_id"], self.video.pk)
         mock_dispatch.assert_called_once_with(video_id=self.video.pk)
 
         after = list(
@@ -537,12 +546,14 @@ class VideoSegmentValidateAsyncSafetyTest(TestCase):
         ):
             response = video_segments_validate_bulk(request, pk=self.video.pk)
 
+        data = json.loads(response.content.decode())
+
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["validation_status"], "completed")
-        self.assertEqual(response.data["post_processing_job"]["status"], "noop")
-        self.assertEqual(response.data["segment_annotation_status"], "validated")
-        self.assertTrue(response.data["segment_annotations_validated"])
-        self.assertTrue(response.data["outside_segments_removed"])
+        self.assertEqual(data["validation_status"], "completed")
+        self.assertEqual(data["post_processing_job"]["status"], "noop")
+        self.assertEqual(data["segment_annotation_status"], "validated")
+        self.assertTrue(data["segment_annotations_validated"])
+        self.assertTrue(data["outside_segments_removed"])
         state = self.video.get_or_create_state()
         state.refresh_from_db()
         self.assertTrue(state.segment_annotations_validated)
@@ -585,13 +596,18 @@ class VideoSegmentValidateAsyncSafetyTest(TestCase):
             format="json",
         )
 
-        submitted = []
+        submitted: list[Callable[[], None]] = []
+
+        def fake_submit(fn: Callable[[], None]) -> types.SimpleNamespace:
+            submitted.append(fn)
+            return types.SimpleNamespace()
+
         with (
             patch.dict(os.environ, {"VIDEO_POST_VALIDATION_JOB_MODE": "thread"}),
             patch.object(
                 post_validation_jobs._executor,
                 "submit",
-                lambda fn: submitted.append(fn) or types.SimpleNamespace(),
+                fake_submit,
             ),
             patch(
                 "endoreg_db.views.video.segments_crud.record_operation",
@@ -600,12 +616,14 @@ class VideoSegmentValidateAsyncSafetyTest(TestCase):
         ):
             response = video_segments_validate_bulk(request, pk=self.video.pk)
 
+        data = json.loads(response.content.decode())
+
         self.assertEqual(response.status_code, 202)
-        self.assertEqual(response.data["validation_status"], "scheduled")
-        self.assertEqual(response.data["post_processing_job"]["status"], "queued")
-        self.assertEqual(response.data["segment_annotation_status"], "cleanup_queued")
-        self.assertFalse(response.data["segment_annotations_validated"])
-        self.assertFalse(response.data["outside_segments_removed"])
+        self.assertEqual(data["validation_status"], "scheduled")
+        self.assertEqual(data["post_processing_job"]["status"], "queued")
+        self.assertEqual(data["segment_annotation_status"], "cleanup_queued")
+        self.assertFalse(data["segment_annotations_validated"])
+        self.assertFalse(data["outside_segments_removed"])
         self.assertEqual(len(submitted), 1)
         state = self.video.get_or_create_state()
         state.refresh_from_db()
@@ -613,7 +631,7 @@ class VideoSegmentValidateAsyncSafetyTest(TestCase):
         self.assertFalse(state.segment_annotations_validated)
         self.assertFalse(state.outside_segments_removed)
         history = VideoProcessingHistory.objects.get(
-            pk=response.data["post_processing_job"]["history_id"]
+            pk=data["post_processing_job"]["history_id"]
         )
         self.assertEqual(history.status, VideoProcessingHistory.STATUS_PENDING)
 
@@ -650,7 +668,7 @@ class VideoSegmentValidateAsyncSafetyTest(TestCase):
                 status=VideoProcessingHistory.STATUS_FAILURE,
                 task_id="failed-cleanup-task",
                 details="broker unavailable",
-                config=segment_state._blackening_history_config(
+                config=segment_state.blackening_history_config(
                     only_validated=only_validated
                 ),
             )
@@ -674,12 +692,14 @@ class VideoSegmentValidateAsyncSafetyTest(TestCase):
         ):
             response = video_segments_validate_bulk(request, pk=self.video.pk)
 
+        data = json.loads(response.content.decode())
+
         self.assertEqual(response.status_code, 503)
-        self.assertEqual(response.data["validation_status"], "failed")
-        self.assertEqual(response.data["post_processing_job"]["status"], "failed")
-        self.assertEqual(response.data["segment_annotation_status"], "cleanup_failed")
-        self.assertFalse(response.data["segment_annotations_validated"])
-        self.assertFalse(response.data["outside_segments_removed"])
+        self.assertEqual(data["validation_status"], "failed")
+        self.assertEqual(data["post_processing_job"]["status"], "failed")
+        self.assertEqual(data["segment_annotation_status"], "cleanup_failed")
+        self.assertFalse(data["segment_annotations_validated"])
+        self.assertFalse(data["outside_segments_removed"])
 
     def test_bulk_validation_rejects_incomplete_frame_annotations(self):
         missing_frame_segment = LabelVideoSegment.objects.create(
@@ -718,16 +738,16 @@ class VideoSegmentValidateAsyncSafetyTest(TestCase):
         ):
             response = video_segments_validate_bulk(request, pk=self.video.pk)
 
+        data = json.loads(response.content.decode())
+
         self.assertEqual(response.status_code, 409)
         self.assertEqual(
-            response.data["error"],
+            data["error"],
             "Segment validation did not create complete frame annotations.",
         )
-        self.assertEqual(
-            response.data["annotation_errors"][0]["reason"], "missing_frames"
-        )
-        self.assertFalse(response.data["segment_annotations_validated"])
-        self.assertFalse(response.data["outside_segments_removed"])
+        self.assertEqual(data["annotation_errors"][0]["reason"], "missing_frames")
+        self.assertFalse(data["segment_annotations_validated"])
+        self.assertFalse(data["outside_segments_removed"])
         state = self.video.get_or_create_state()
         state.refresh_from_db()
         self.assertFalse(state.segment_annotations_validated)
@@ -764,12 +784,14 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
         ):
             response = video_segments_blacken_outside(request, pk=self.video.pk)
 
+        data = json.loads(response.content.decode())
+
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["status"], "noop")
-        self.assertEqual(response.data["validation_status"], "completed")
-        self.assertEqual(response.data["outside_segment_count"], 0)
-        self.assertEqual(response.data["video_id"], self.video.pk)
-        self.assertFalse(response.data["only_validated"])
+        self.assertEqual(data["status"], "noop")
+        self.assertEqual(data["validation_status"], "completed")
+        self.assertEqual(data["outside_segment_count"], 0)
+        self.assertEqual(data["video_id"], self.video.pk)
+        self.assertFalse(data["only_validated"])
 
     def test_outside_segments_dispatch_rebuild(self):
         LabelVideoSegment.objects.create(
@@ -794,11 +816,12 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
             ),
         ) as mock_dispatch:
             response = video_segments_blacken_outside(request, pk=self.video.pk)
+        data = json.loads(response.content.decode())
 
         self.assertEqual(response.status_code, 202)
-        self.assertEqual(response.data["status"], "queued")
-        self.assertEqual(response.data["validation_status"], "scheduled")
-        self.assertEqual(response.data["outside_segment_count"], 1)
+        self.assertEqual(data["status"], "queued")
+        self.assertEqual(data["validation_status"], "scheduled")
+        self.assertEqual(data["outside_segment_count"], 1)
         mock_dispatch.assert_called_once_with(
             video_id=self.video.pk,
             only_validated=False,
@@ -829,11 +852,13 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
         ):
             response = video_segments_blacken_outside(request, pk=self.video.pk)
 
+        data = json.loads(response.content.decode())
+
         self.assertEqual(response.status_code, 409)
-        self.assertEqual(response.data["status"], "busy")
-        self.assertEqual(response.data["validation_status"], "running")
-        self.assertEqual(response.data["operation"], "blacken_outside")
-        self.assertEqual(response.data["post_processing_job"]["status"], "busy")
+        self.assertEqual(data["status"], "busy")
+        self.assertEqual(data["validation_status"], "running")
+        self.assertEqual(data["operation"], "blacken_outside")
+        self.assertEqual(data["post_processing_job"]["status"], "busy")
 
     def test_dispatch_error_returns_error_response(self):
         LabelVideoSegment.objects.create(
@@ -853,11 +878,12 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
             side_effect=RuntimeError("inline rebuild failed"),
         ):
             response = video_segments_blacken_outside(request, pk=self.video.pk)
+        data = json.loads(response.content.decode())
 
         self.assertEqual(response.status_code, 500)
-        self.assertEqual(response.data["status"], "failed")
-        self.assertEqual(response.data["operation"], "blacken_outside")
-        self.assertIn("inline rebuild failed", response.data["error"])
+        self.assertEqual(data["status"], "failed")
+        self.assertEqual(data["operation"], "blacken_outside")
+        self.assertIn("inline rebuild failed", data["error"])
 
     def test_dispatch_failure_clears_stale_final_flags_and_serializes_failed(self):
         LabelVideoSegment.objects.create(
@@ -880,7 +906,7 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
         )
 
         class BrokenTask:
-            def apply_async(self, *args, **kwargs):
+            def apply_async(self, *args: tuple[Any], **kwargs: tuple[Any]) -> Any:
                 raise RuntimeError("broker unavailable")
 
         request = self.factory.post(
@@ -896,23 +922,28 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
             ),
         ):
             response = video_segments_blacken_outside(request, pk=self.video.pk)
+        data = json.loads(response.content.decode())
 
         self.assertEqual(response.status_code, 500)
-        self.assertEqual(response.data["status"], "failed")
-        self.assertEqual(response.data["validation_status"], "failed")
-        self.assertEqual(response.data["post_processing_job"]["status"], "failed")
+        self.assertEqual(data["status"], "failed")
+        self.assertEqual(data["validation_status"], "failed")
+        self.assertEqual(data["post_processing_job"]["status"], "failed")
         state.refresh_from_db()
         self.assertFalse(state.segment_annotations_validated)
         self.assertFalse(state.outside_segments_removed)
 
         self.video.refresh_from_db()
-        serialized = VideoFileListSerializer(self.video).data
+        serializer = VideoFileListSerializer(self.video)
+        serialized = _serializer_data(serializer)
         self.assertEqual(serialized["segment_annotation_status"], "cleanup_failed")
         self.assertFalse(serialized["segment_annotations_validated"])
         self.assertFalse(serialized["outside_segments_removed"])
+        post_validation_rebuild = cast(
+            Mapping[str, object],
+            serialized["post_validation_rebuild"],
+        )
         self.assertEqual(
-            serialized["post_validation_rebuild"]["status"],
-            VideoProcessingHistory.STATUS_FAILURE,
+            post_validation_rebuild["status"], VideoProcessingHistory.STATUS_FAILURE
         )
 
     def test_repeated_call_returns_already_queued(self):
@@ -922,9 +953,9 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
             start_frame_number=10,
             end_frame_number=20,
         )
-        submitted = []
+        submitted: list[Any] = []
 
-        def fake_submit(fn):
+        def fake_submit(fn: Any) -> types.SimpleNamespace:
             submitted.append(fn)
             return types.SimpleNamespace()
 
@@ -935,15 +966,7 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
             ),
             patch.object(post_validation_jobs._executor, "submit", fake_submit),
         ):
-            first = video_segments_blacken_outside(
-                self.factory.post(
-                    f"/api/media/videos/{self.video.pk}/segments/blacken-outside/",
-                    {"only_validated": False},
-                    format="json",
-                ),
-                pk=self.video.pk,
-            )
-            second = video_segments_blacken_outside(
+            first_response = video_segments_blacken_outside(
                 self.factory.post(
                     f"/api/media/videos/{self.video.pk}/segments/blacken-outside/",
                     {"only_validated": False},
@@ -952,12 +975,24 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
                 pk=self.video.pk,
             )
 
-        self.assertEqual(first.status_code, 202)
-        self.assertEqual(first.data["status"], "queued")
-        self.assertEqual(first.data["validation_status"], "scheduled")
-        self.assertEqual(second.status_code, 202)
-        self.assertEqual(second.data["status"], "already_queued")
-        self.assertEqual(second.data["validation_status"], "scheduled")
+            first_data = json.loads(first_response.content.decode())
+
+            second_response = video_segments_blacken_outside(
+                self.factory.post(
+                    f"/api/media/videos/{self.video.pk}/segments/blacken-outside/",
+                    {"only_validated": False},
+                    format="json",
+                ),
+                pk=self.video.pk,
+            )
+            second_data = json.loads(second_response.content.decode())
+
+        self.assertEqual(first_response.status_code, 202)
+        self.assertEqual(first_data["status"], "queued")
+        self.assertEqual(first_data["validation_status"], "scheduled")
+        self.assertEqual(second_response.status_code, 202)
+        self.assertEqual(second_data["status"], "already_queued")
+        self.assertEqual(second_data["validation_status"], "scheduled")
         self.assertEqual(len(submitted), 1)
 
     def test_failed_cleanup_can_be_requeued(self):
@@ -973,11 +1008,13 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
             status=VideoProcessingHistory.STATUS_FAILURE,
             task_id="failed-blackening-task",
             details="broker unavailable",
-            config=segment_state._blackening_history_config(only_validated=False),
+            config=segment_state.blackening_history_config(only_validated=False),
         )
         submitted = []
 
-        def fake_submit(fn):
+        submitted: list[Any] = []
+
+        def fake_submit(fn: Any) -> types.SimpleNamespace:
             submitted.append(fn)
             return types.SimpleNamespace()
 
@@ -996,13 +1033,14 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
                 ),
                 pk=self.video.pk,
             )
+        data = json.loads(response.content.decode())
 
         self.assertEqual(response.status_code, 202)
-        self.assertEqual(response.data["status"], "queued")
-        self.assertEqual(response.data["validation_status"], "scheduled")
+        self.assertEqual(data["status"], "queued")
+        self.assertEqual(data["validation_status"], "scheduled")
         self.assertEqual(len(submitted), 1)
         self.assertNotEqual(
-            response.data["post_processing_job"]["history_id"],
+            data["post_processing_job"]["history_id"],
             failed_history.pk,
         )
 
@@ -1024,11 +1062,12 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
             side_effect=AssertionError("unvalidated segment must not dispatch"),
         ):
             response = video_segments_blacken_outside(request, pk=self.video.pk)
+        data = json.loads(response.content.decode())
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["status"], "noop")
-        self.assertEqual(response.data["validation_status"], "completed")
-        self.assertEqual(response.data["outside_segment_count"], 0)
+        self.assertEqual(data["status"], "noop")
+        self.assertEqual(data["validation_status"], "completed")
+        self.assertEqual(data["outside_segment_count"], 0)
 
         segment.mark_validated(
             is_validated=True,
@@ -1049,11 +1088,12 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
             ),
         ) as mock_dispatch:
             response = video_segments_blacken_outside(request, pk=self.video.pk)
+        data = json.loads(response.content.decode())
 
         self.assertEqual(response.status_code, 202)
-        self.assertEqual(response.data["status"], "queued")
-        self.assertEqual(response.data["validation_status"], "scheduled")
-        self.assertEqual(response.data["outside_segment_count"], 1)
+        self.assertEqual(data["status"], "queued")
+        self.assertEqual(data["validation_status"], "scheduled")
+        self.assertEqual(data["outside_segment_count"], 1)
         mock_dispatch.assert_called_once_with(
             video_id=self.video.pk,
             only_validated=True,
@@ -1095,12 +1135,13 @@ class VideoSegmentsSourceKindFilterTest(TestCase):
             f"/api/media/videos/{self.video.pk}/segments/?source_kind=manual"
         )
         response = video_segments_by_video(request, pk=self.video.pk)
+        data = json.loads(response.content.decode())
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]["id"], self.manual_segment.pk)
-        self.assertEqual(response.data[0]["segment_origin"], "manual")
-        self.assertEqual(response.data[0]["source_name"], "manual_annotation")
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["id"], self.manual_segment.pk)
+        self.assertEqual(data[0]["segment_origin"], "manual")
+        self.assertEqual(data[0]["source_name"], "manual_annotation")
 
     def test_source_kind_prediction_returns_only_prediction_segments(self):
         request = self.factory.get(
@@ -1108,11 +1149,13 @@ class VideoSegmentsSourceKindFilterTest(TestCase):
         )
         response = video_segments_by_video(request, pk=self.video.pk)
 
+        data = json.loads(response.content.decode())
+
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]["id"], self.prediction_segment.pk)
-        self.assertEqual(response.data[0]["segment_origin"], "prediction")
-        self.assertEqual(response.data[0]["source_name"], "prediction")
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["id"], self.prediction_segment.pk)
+        self.assertEqual(data[0]["segment_origin"], "prediction")
+        self.assertEqual(data[0]["source_name"], "prediction")
 
 
 class VideoSegmentsBulkMutationTest(TestCase):
@@ -1205,25 +1248,24 @@ class VideoSegmentsBulkMutationTest(TestCase):
         ) as sync:
             response = video_segments_bulk_mutation(request, pk=self.video.pk)
 
+        data = json.loads(response.content.decode())
         self.assertEqual(response.status_code, 200)
         sync.assert_not_called()
-        self.assertEqual(response.data["created_count"], 1)
-        self.assertEqual(response.data["updated_count"], 1)
-        self.assertEqual(response.data["deleted_count"], 1)
-        self.assertEqual(response.data["created"][0]["client_id"], -1)
-        self.assertEqual(
-            response.data["created"][0]["segment"]["label_id"], self.label_a.pk
-        )
-        self.assertEqual(response.data["deleted"], [self.delete_segment.pk])
+        self.assertEqual(data["created_count"], 1)
+        self.assertEqual(data["updated_count"], 1)
+        self.assertEqual(data["deleted_count"], 1)
+        self.assertEqual(data["created"][0]["client_id"], -1)
+        self.assertEqual(data["created"][0]["segment"]["label_id"], self.label_a.pk)
+        self.assertEqual(data["deleted"], [self.delete_segment.pk])
 
-        created_id = response.data["created"][0]["segment"]["id"]
+        created_id = data["created"][0]["segment"]["id"]
         created_segment = LabelVideoSegment.objects.get(pk=created_id)
         self.assertEqual(created_segment.start_frame_number, 50)
         self.assertEqual(created_segment.end_frame_number, 75)
         self.assertTrue(created_segment.export_segment)
 
         self.update_segment.refresh_from_db()
-        self.assertEqual(self.update_segment.label_id, self.label_b.pk)
+        self.assertEqual(getattr(self.update_segment, "label_id"), self.label_b.pk)
         self.assertEqual(self.update_segment.start_frame_number, 25)
         self.assertEqual(self.update_segment.end_frame_number, 38)
         self.assertTrue(self.update_segment.export_segment)
@@ -1289,12 +1331,13 @@ class VideoSegmentsBulkMutationTest(TestCase):
         )
 
         response = video_segments_bulk_mutation(request, pk=self.video.pk)
+        data = json.loads(response.content.decode())
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["ai_dataset_id"], dataset.pk)
-        created_id = response.data["created"][0]["segment"]["id"]
+        self.assertEqual(data["ai_dataset_id"], dataset.pk)
+        created_id = data["created"][0]["segment"]["id"]
         self.assertEqual(
-            response.data["attached_segment_ids"],
+            data["attached_segment_ids"],
             sorted([created_id, self.update_segment.pk]),
         )
         self.assertTrue(dataset.video_annotations.filter(pk=created_id).exists())
@@ -1397,12 +1440,13 @@ class ImportPredictionSegmentsToManualTest(TestCase):
         )
 
         response = import_prediction_segments_to_manual(request, pk=self.video.pk)
+        data = json.loads(response.content.decode())
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["created_count"], 2)
-        self.assertTrue(response.data["replaced_existing"])
+        self.assertEqual(data["created_count"], 2)
+        self.assertTrue(data["replaced_existing"])
         self.assertEqual(
-            [segment["segment_origin"] for segment in response.data["segments"]],
+            [segment["segment_origin"] for segment in data["segments"]],
             ["manual", "manual"],
         )
 

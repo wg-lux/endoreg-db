@@ -3,7 +3,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
-
+import json
 from django.test import TestCase
 from lx_dtypes.models import SensitiveMeta
 
@@ -79,10 +79,12 @@ class PdfMediaTextVisibilityTests(TestCase):
             self.assertEqual(report_obj.text, txt_content)
             self.assertEqual(report_obj.anonymized_text, txt_content)
 
-            response = self.client.get(f"/api/media/pdfs/{report_obj.pk}/")
+            response = self.client.get(f"/api/media/pdfs/{report_obj.pk}/")        
+            data = json.loads(response.content)
+
             self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.data["anonymized_text"], txt_content)
-            self.assertTrue(response.data["has_anonymized_text"])
+            self.assertEqual(data["anonymized_text"], txt_content)
+            self.assertTrue(data["has_anonymized_text"])
         finally:
             txt_path.unlink(missing_ok=True)
 
@@ -129,8 +131,10 @@ class PdfMediaTextVisibilityTests(TestCase):
             self.assertEqual(report_obj.anonymized_text, "pdf anonymized text")
 
             response = self.client.get(f"/api/media/pdfs/{report_obj.pk}/")
+            data = json.loads(response.content)
+    
             self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.data["anonymized_text"], "pdf anonymized text")
-            self.assertTrue(response.data["has_anonymized_text"])
+            self.assertEqual(data["anonymized_text"], "pdf anonymized text")
+            self.assertTrue(data["has_anonymized_text"])
         finally:
             pdf_path.unlink(missing_ok=True)

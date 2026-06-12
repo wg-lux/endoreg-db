@@ -68,7 +68,9 @@ class _UserManager(Protocol):
 
     def none(self) -> QuerySet[AbstractUser, AbstractUser]: ...
 
-    def filter(self, *, username__iexact: str) -> QuerySet[AbstractUser, AbstractUser]: ...
+    def filter(
+        self, *, username__iexact: str
+    ) -> QuerySet[AbstractUser, AbstractUser]: ...
 
 
 class _UserModel(Protocol):
@@ -217,4 +219,6 @@ class KeycloakOIDCBackend(OIDCAuthenticationBackend):
         if not username:
             # No usable identifier → no match
             return cast(_UserModel, self.UserModel).objects.none()
-        return cast(_UserModel, self.UserModel).objects.filter(username__iexact=username)
+        return cast(_UserModel, self.UserModel).objects.filter(
+            username__iexact=username
+        )

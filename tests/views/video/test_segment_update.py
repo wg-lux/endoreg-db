@@ -1,3 +1,5 @@
+# pyright: reportUnknownMemberType=false
+
 """
 Unit tests for segment update logic after frame removal.
 
@@ -163,13 +165,15 @@ class SegmentUpdateAfterFrameRemovalTest(TestCase):
             end_frame_number=105,
             label=self.label1,
         )
+        segment_pk = segment.pk
+        assert segment_pk is not None
 
         # Remove all frames in segment
         removed_frames = [100, 101, 102, 103, 104, 105]
         result = update_segments_after_frame_removal(self.video, removed_frames)
 
         # Verify segment was deleted
-        assert not LabelVideoSegment.objects.filter(id=segment.id).exists()
+        assert not LabelVideoSegment.objects.filter(pk=segment_pk).exists()
         assert result["segments_updated"] == 0
         assert result["segments_deleted"] == 1
 
@@ -198,6 +202,8 @@ class SegmentUpdateAfterFrameRemovalTest(TestCase):
             end_frame_number=260,
             label=self.label1,
         )
+        seg3_pk = seg3.pk
+        assert seg3_pk is not None
 
         # Remove frames: 10,20 (before seg1), 170,180 (within seg2), 250-260 (all of seg3)
         removed_frames = [
@@ -229,7 +235,7 @@ class SegmentUpdateAfterFrameRemovalTest(TestCase):
         assert seg2.end_frame_number == 196  # 200 - 2 (before) - 2 (within)
 
         # Segment 3 should be deleted
-        assert not LabelVideoSegment.objects.filter(id=seg3.id).exists()
+        assert not LabelVideoSegment.objects.filter(pk=seg3_pk).exists()
 
         assert result["segments_updated"] == 2  # seg1 and seg2
         assert result["segments_deleted"] == 1  # seg3
@@ -325,11 +331,13 @@ class SegmentUpdateAfterFrameRemovalTest(TestCase):
             end_frame_number=101,
             label=self.label1,
         )
+        segment_pk = segment.pk
+        assert segment_pk is not None
 
         # Remove frame 100 (the only frame in segment)
         removed_frames = [100]
         result = update_segments_after_frame_removal(self.video, removed_frames)
 
         # Verify segment deleted
-        assert not LabelVideoSegment.objects.filter(id=segment.id).exists()
+        assert not LabelVideoSegment.objects.filter(pk=segment_pk).exists()
         assert result["segments_deleted"] == 1

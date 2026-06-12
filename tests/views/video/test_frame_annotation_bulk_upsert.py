@@ -1,6 +1,6 @@
 from django.test import TestCase
 from rest_framework.test import APIRequestFactory
-
+import json
 from endoreg_db.models import (
     Center,
     Frame,
@@ -79,8 +79,10 @@ class FrameAnnotationBulkUpsertViewTest(TestCase):
             format="json",
         )
         response = self.view(request)
+        data = json.loads(response.content)
+
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["upserted_count"], 2)
+        self.assertEqual(data["upserted_count"], 2)
         self.assertEqual(
             ImageClassificationAnnotation.objects.filter(
                 label=self.label,
@@ -110,8 +112,10 @@ class FrameAnnotationBulkUpsertViewTest(TestCase):
             format="json",
         )
         response = self.view(request)
+        data = json.loads(response.content)
+
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["upserted_count"], 1)
+        self.assertEqual(data["upserted_count"], 1)
 
         self.assertEqual(
             ImageClassificationAnnotation.objects.filter(
@@ -146,8 +150,10 @@ class FrameAnnotationBulkUpsertViewTest(TestCase):
         )
 
         response = self.view(request)
+        data = json.loads(response.content)
+
         self.assertEqual(response.status_code, 400)
-        self.assertIn("missing_information_source_names", response.data["details"])
+        self.assertIn("missing_information_source_names", data["details"])
 
     def test_bulk_upsert_rejects_frames_outside_requested_video(self):
         payload = {
@@ -168,8 +174,10 @@ class FrameAnnotationBulkUpsertViewTest(TestCase):
         )
 
         response = self.view(request)
+        data = json.loads(response.content)
+
         self.assertEqual(response.status_code, 400)
-        self.assertIn("invalid_frame_ids", response.data["details"])
+        self.assertIn("invalid_frame_ids", data["details"])
 
     def test_bulk_upsert_accepts_choice_name_and_inferrs_boolean_value(self):
         payload = {
@@ -195,8 +203,10 @@ class FrameAnnotationBulkUpsertViewTest(TestCase):
             format="json",
         )
         response = self.view(request)
+        data = json.loads(response.content)
+
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["upserted_count"], 2)
+        self.assertEqual(data["upserted_count"], 2)
 
         ann_present = ImageClassificationAnnotation.objects.get(
             frame=self.frame_1,
@@ -229,5 +239,7 @@ class FrameAnnotationBulkUpsertViewTest(TestCase):
         )
 
         response = self.view(request)
+        data = json.loads(response.content)
+
         self.assertEqual(response.status_code, 400)
-        self.assertIn("choice_name", str(response.data))
+        self.assertIn("choice_name", str(data))

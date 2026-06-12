@@ -14,7 +14,7 @@ from ...data import (
 )
 from ...models import Center, Endoscope, EndoscopeType, EndoscopyProcessor
 from ...utils import load_model_data_from_yaml
-from ...utils.data_loading.yaml_model_loader import LoadModelDataMetadata
+from ...utils.yaml_model_loader import LoadModelDataMetadata
 
 SOURCE_DIR = ENDOSCOPE_TYPE_DATA_DIR  # e.g. settings.DATA_DIR_INTERVENTION
 

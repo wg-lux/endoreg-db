@@ -13,7 +13,7 @@ from endoreg_db.models import NumericValueDistribution, PatientLabSampleType, Un
 from ...data import LAB_VALUE_DATA_DIR as SOURCE_DIR
 from ...data import PATIENT_LAB_SAMPLE_TYPE_DATA_DIR
 from ...utils import load_model_data_from_yaml
-from ...utils.data_loading.yaml_model_loader import LoadModelDataMetadata
+from ...utils.yaml_model_loader import LoadModelDataMetadata
 
 
 class LoadLabValueCommandOptions(TypedDict):

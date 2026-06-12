@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from typing import Literal, TypedDict
 
-from endoreg_db.utils.filesystem.paths import LOG_DIR
+from endoreg_db.utils.paths import LOG_DIR
 
 DEFAULT_FILE_LOG_LEVEL = "INFO"
 DEFAULT_CONSOLE_LOG_LEVEL = "WARNING"

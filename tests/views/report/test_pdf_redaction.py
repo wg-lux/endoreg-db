@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+# pyright: reportUnknownMemberType=false
+
 import json
+from typing import TypedDict, cast
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -13,7 +16,7 @@ from endoreg_db.models.media.pdf.pdf_processing_history import PdfProcessingHist
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.operation_log import OperationLog
 from endoreg_db.models.state.raw_pdf import RawPdfState
-from endoreg_db.utils.filesystem.file_operations import sha256_file
+from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.utils.storage import ensure_local_file
 
 MINIMAL_PDF_BYTES = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
@@ -34,6 +37,11 @@ MINIMAL_PDF_MANIFEST = {
     ],
     "normalized": True,
 }
+
+
+class PdfProcessingHistoryResponseItem(TypedDict):
+    operation: str
+    revision_id: int
 
 
 @pytest.mark.django_db(transaction=True)
@@ -100,8 +108,12 @@ class TestPdfRedactionEndpoints:
         )
 
         pdf.refresh_from_db()
-        assert pdf.file.name.endswith(".pdf")
-        assert pdf.processed_file.name.endswith(".pdf")
+        raw_file_name = pdf.file.name
+        processed_file_name = pdf.processed_file.name
+        assert raw_file_name is not None
+        assert processed_file_name is not None
+        assert raw_file_name.endswith(".pdf")
+        assert processed_file_name.endswith(".pdf")
         assert pdf.state is not None
         assert pdf.state.anonymized is True
         assert pdf.state.anonymization_validated is False
@@ -126,7 +138,10 @@ class TestPdfRedactionEndpoints:
 
         history_response = client.get(f"/api/media/pdfs/{pdf.pk}/processing-history/")
         assert history_response.status_code == 200
-        history_data = history_response.json()
+        history_data = cast(
+            list[PdfProcessingHistoryResponseItem],
+            history_response.json(),
+        )
         assert isinstance(history_data, list)
         assert len(history_data) == 1
         assert history_data[0]["operation"] == "pdf_redaction"

@@ -7,8 +7,8 @@ from pathlib import Path
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 from pydantic import ValidationError
 
-from endoreg_db.utils.filesystem.file_operations import safe_unlink_file
-from endoreg_db.utils.filesystem.paths import QUARANTINE_DIR
+from endoreg_db.utils.file_operations import safe_unlink_file
+from endoreg_db.utils.paths import QUARANTINE_DIR
 from lx_dtypes.models.contracts.json_types import JsonObject
 from lx_dtypes.models.contracts.management_command import (
     ReapQuarantineCommandOptionsPayload,

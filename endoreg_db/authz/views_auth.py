@@ -10,6 +10,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from lx_dtypes.models.contracts.authz import validate_authz_route_lookup
+
 from .policy import satisfies, get_needed_role
 
 # Map frontend page keys → (DRF route name, HTTP method)
@@ -60,11 +62,16 @@ def auth_bootstrap(request: Request) -> Response:
     capabilities: dict[str, CapabilityFlags] = {}
 
     for cap_key, (route_name, method) in PAGE_CAPS.items():
-        method = method.upper()
+        lookup = validate_authz_route_lookup(
+            {
+                "route_name": route_name,
+                "method": method,
+            }
+        )
 
         # Look up which role is needed for this route/method
         # needed = REQUIRED_ROLES.get(route_name) or DEFAULT_ROLE_BY_METHOD.get(method)
-        needed = get_needed_role(route_name, method)
+        needed = get_needed_role(lookup.route_name, lookup.method)
 
         if not needed:
             # No role mapping defined → secure default: deny

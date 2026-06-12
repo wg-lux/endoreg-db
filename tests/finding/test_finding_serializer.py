@@ -1,3 +1,6 @@
+from collections.abc import Mapping, Sequence
+from typing import Protocol, cast
+
 from django.test import TestCase
 from logging import getLogger
 
@@ -22,6 +25,11 @@ logger = getLogger(__name__)
 logger.setLevel(
     logging.INFO
 )  # Changed to INFO for more verbose logging during test development
+
+
+class _SerializerData(Protocol):
+    @property
+    def data(self) -> Mapping[str, object]: ...
 
 
 class FindingSerializerTest(TestCase):
@@ -49,20 +57,24 @@ class FindingSerializerTest(TestCase):
 
     def test_finding_serializer(self):
         serializer_polyp = FindingSerializer(instance=self.colo_finding_polyp)
-        data = serializer_polyp.data
+        data = cast(_SerializerData, serializer_polyp).data
 
         self.assertIn("id", data)
         self.assertIn("name", data)
         self.assertIn("classifications", data)
 
-        serialized_morphology_classifications = data["morphology_classifications"]
+        serialized_morphology_classifications = cast(
+            Sequence[object], data["morphology_classifications"]
+        )
         self.assertGreater(
             len(serialized_morphology_classifications),
             0,
             "Serialized morphology classifications should not be empty",
         )
 
-        serialized_location_classifications = data["location_classifications"]
+        serialized_location_classifications = cast(
+            Sequence[object], data["location_classifications"]
+        )
         self.assertGreater(
             len(serialized_location_classifications),
             0,

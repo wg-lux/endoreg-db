@@ -6,7 +6,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from endoreg_db.services.audit_integrity import get_audit_ledger_integrity_status
-from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 
 class AuditLedgerIntegrityStatusView(APIView):

@@ -93,17 +93,17 @@ class Command(BaseCommand):
             self.stdout.write(json.dumps(payload, indent=2, sort_keys=True))
             return
 
-        summary = payload["summary"]
+        summary = report.summary
         mode = "applied" if apply_changes else "dry-run"
         self.stdout.write(
             self.style.SUCCESS(
                 "frame/segment annotation reconciliation complete "
-                f"({mode}): segments={summary['eligible_segments']} "
-                f"expected={summary['expected_annotations']} "
-                f"missing={summary['missing_annotations']} "
-                f"created={summary['created_annotations']} "
-                f"stale_generated={summary['stale_generated_annotations']} "
-                f"deleted={summary['deleted_stale_generated_annotations']} "
-                f"suspicious_unmarked={summary['suspicious_unmarked_annotations']}"
+                f"({mode}): segments={summary.eligible_segments} "
+                f"expected={summary.expected_annotations} "
+                f"missing={summary.missing_annotations} "
+                f"created={summary.created_annotations} "
+                f"stale_generated={summary.stale_generated_annotations} "
+                f"deleted={summary.deleted_stale_generated_annotations} "
+                f"suspicious_unmarked={summary.suspicious_unmarked_annotations}"
             )
         )

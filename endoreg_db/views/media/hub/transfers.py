@@ -32,9 +32,12 @@ from endoreg_db.services.hub import (
     resolve_allowed_center_id,
     transfer_api_enabled,
 )
-from endoreg_db.utils.observability.structured_logging import (
+from endoreg_db.utils.structured_logging import (
     emit_structured_event,
     hash_identifier,
+)
+from lx_dtypes.models.contracts.transfer_validation import (
+    TransferValidationFailureLogPayload,
 )
 
 if TYPE_CHECKING:
@@ -51,6 +54,16 @@ _TransferPayloadValue: TypeAlias = (
     | None
     | list["_TransferPayloadValue"]
     | dict[str, "_TransferPayloadValue"]
+)
+
+_StructuredLogValue: TypeAlias = (
+    str
+    | int
+    | float
+    | bool
+    | None
+    | list["_StructuredLogValue"]
+    | dict[str, "_StructuredLogValue"]
 )
 
 
@@ -123,12 +136,24 @@ def _log_transfer_validation_failure(
     if transfer_job is not None:
         payload["transfer_job_id"] = str(transfer_job.pk)
         payload["resource_kind"] = str(getattr(transfer_job, "resource_kind", ""))
+    structured_payload = TransferValidationFailureLogPayload(
+        error_fields=error_fields,
+        request_method=str(payload["request_method"] or ""),
+        remote_addr_sha256=payload["remote_addr_sha256"],
+        transfer_key_sha256=payload.get("transfer_key_sha256"),
+        transfer_job_id=payload.get("transfer_job_id"),
+        resource_kind=payload.get("resource_kind"),
+    )
     emit_structured_event(
         logger,
         event,
         level=logging.WARNING,
-        error_fields=error_fields,
-        **payload,
+        error_fields=cast(list[_StructuredLogValue], structured_payload.error_fields),
+        request_method=structured_payload.request_method,
+        remote_addr_sha256=structured_payload.remote_addr_sha256,
+        transfer_key_sha256=structured_payload.transfer_key_sha256,
+        transfer_job_id=structured_payload.transfer_job_id,
+        resource_kind=structured_payload.resource_kind,
     )
 
 

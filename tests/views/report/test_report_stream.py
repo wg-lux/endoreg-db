@@ -1,42 +1,65 @@
+# pyright: reportPrivateUsage=false
 from __future__ import annotations
 
 import tempfile
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 from types import SimpleNamespace
-from typing import IO
-
+from typing import IO, Protocol, cast
+from rest_framework.response import Response
 import pytest
 from django.test import TestCase
 
-from endoreg_db.utils.filesystem.paths import ANONYM_REPORT_DIR, protected_media_root
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.utils.paths import ANONYM_REPORT_DIR, protected_media_root
 from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
 
 
+class _ReportStorageReader(Protocol):
+    def get_plaintext_size(self, name: str) -> int: ...
+
+    def iter_decrypted_range(
+        self,
+        name: str,
+        *,
+        start: int,
+        end: int,
+        chunk_size: int,
+    ) -> Iterator[bytes]: ...
+
+
 class FakeStorage:
-    def __init__(self, payload: bytes):
+    def __init__(self, payload: bytes) -> None:
         self.payload = payload
 
     def get_plaintext_size(self, name: str) -> int:
         return len(self.payload)
 
-    def iter_decrypted_range(self, name: str, *, start: int, end: int, chunk_size: int):
+    def iter_decrypted_range(
+        self,
+        name: str,
+        *,
+        start: int,
+        end: int,
+        chunk_size: int,
+    ) -> Iterator[bytes]:
         selected = self.payload[start : end + 1]
         for offset in range(0, len(selected), chunk_size):
             yield selected[offset : offset + chunk_size]
 
 
 class StubFieldFile:
-    def __init__(self, storage, name: str):
+    def __init__(self, storage: _ReportStorageReader, name: str) -> None:
         self.storage = storage
         self.name = name
 
     @property
-    def size(self):
+    def size(self) -> int:
         return self.storage.get_plaintext_size(self.name)
 
 
 class LocalStubFieldFile:
-    def __init__(self, name: str):
+    def __init__(self, name: str) -> None:
         self.name = name
         self.file: IO[bytes] | None = None
 
@@ -56,13 +79,24 @@ class LocalStubFieldFile:
             self.file.close()
             self.file = None
 
-    def chunks(self, chunk_size: int = 64 * 1024):
+    def chunks(self, chunk_size: int = 64 * 1024) -> Iterator[bytes]:
         with open(self.path, "rb") as handle:
             while True:
                 chunk = handle.read(chunk_size)
                 if not chunk:
                     break
                 yield chunk
+
+
+def _sync_streaming_body(response: object) -> bytes:
+    from django.http import StreamingHttpResponse
+
+    streaming_response = cast(StreamingHttpResponse, response)
+    return b"".join(cast(Iterable[bytes], streaming_response.streaming_content))
+
+
+def _resolve_local_path_stub(field_file: LocalStubFieldFile) -> Path:
+    return Path(field_file.path)
 
 
 class ReportStreamViewTests(TestCase):
@@ -94,7 +128,7 @@ class ReportStreamViewTests(TestCase):
             monkeypatches.setattr(
                 view_module,
                 "_resolve_local_path_for_nginx",
-                lambda field_file: tmp_file_path,
+                _resolve_local_path_stub,
             )
 
             resp = view_module._serve_with_nginx(
@@ -110,7 +144,7 @@ class ReportStreamViewTests(TestCase):
 
         assert resp is not None
         assert resp.status_code == 200
-        assert "X-Accel-Redirect" in resp
+        assert "X-Accel-Redirect" in resp.headers
         assert resp["X-Accel-Redirect"].startswith("/protected_media/")
         assert resp["Content-Disposition"].startswith("attachment;")
         assert "filename=" in resp["Content-Disposition"]
@@ -123,7 +157,7 @@ class ReportStreamViewTests(TestCase):
         fake_storage = FakeStorage(payload)
         fake_field = StubFieldFile(fake_storage, "reports/test.pdf")
 
-        response = view_module._build_eager_content_response(
+        response = view_module.build_eager_content_response(
             field_file=fake_field,
             content_type="application/pdf",
             file_size=len(payload),
@@ -134,7 +168,7 @@ class ReportStreamViewTests(TestCase):
 
         assert response.status_code == 206
         assert response["Content-Range"] == f"bytes 10-49/{len(payload)}"
-        assert b"".join(response.streaming_content) == payload[10:50]
+        assert _sync_streaming_body(response) == payload[10:50]
 
     def test_pdf_stream_encrypted_storage_falls_back_to_django_streaming(self):
         from endoreg_db.views.report import report_stream as view_module
@@ -153,7 +187,7 @@ class ReportStreamViewTests(TestCase):
                 disposition="inline",
                 frontend_origin=None,
             )
-            response = view_module._build_eager_content_response(
+            response = view_module.build_eager_content_response(
                 field_file=fake_pdf_obj.file,
                 content_type="application/pdf",
                 file_size=len(payload),
@@ -166,8 +200,8 @@ class ReportStreamViewTests(TestCase):
 
         assert nginx_response is None
         assert response.status_code == 200
-        assert "X-Accel-Redirect" not in response
-        assert b"".join(response.streaming_content) == payload
+        assert "X-Accel-Redirect" not in response.headers
+        assert _sync_streaming_body(response) == payload
 
     def test_pdf_stream_encrypted_storage_does_not_offload_by_storage_name_only(self):
         from endoreg_db.views.report import report_stream as view_module
@@ -193,7 +227,7 @@ class ReportStreamViewTests(TestCase):
                 disposition="inline",
                 frontend_origin=None,
             )
-            response = view_module._build_eager_content_response(
+            response = view_module.build_eager_content_response(
                 field_file=fake_pdf_obj.file,
                 content_type="application/pdf",
                 file_size=len(payload),
@@ -206,9 +240,10 @@ class ReportStreamViewTests(TestCase):
             disk_path.unlink(missing_ok=True)
 
         assert nginx_response is None
+        cast(Response, response)
         assert response.status_code == 200
-        assert "X-Accel-Redirect" not in response
-        assert b"".join(response.streaming_content) == payload
+        assert "X-Accel-Redirect" not in response.headers
+        assert _sync_streaming_body(response) == payload
 
     def test_pdf_stream_local_lxenc_file_without_decrypting_storage_is_rejected(self):
         from endoreg_db.views.report import report_stream as view_module
@@ -245,11 +280,11 @@ class ReportStreamViewTests(TestCase):
         )
 
         try:
-            recovered = view_module._recover_missing_report_field_path(
-                fake_pdf_obj,
+            recovered = view_module.recover_missing_report_field_path(
+                cast(RawPdfFile, fake_pdf_obj),
                 "raw",
             )
-            response = view_module._build_eager_content_response(
+            response = view_module.build_eager_content_response(
                 field_file=recovered,
                 content_type="application/pdf",
                 file_size=len(payload),
@@ -257,7 +292,7 @@ class ReportStreamViewTests(TestCase):
                 disposition="inline",
                 filename="fallback-raw.pdf",
             )
-            body = b"".join(response.streaming_content)
+            body = _sync_streaming_body(response)
         finally:
             fallback_path.unlink(missing_ok=True)
 
@@ -283,11 +318,11 @@ class ReportStreamViewTests(TestCase):
         )
 
         try:
-            recovered = view_module._recover_missing_report_field_path(
-                fake_pdf_obj,
+            recovered = view_module.recover_missing_report_field_path(
+                cast(RawPdfFile, fake_pdf_obj),
                 "processed",
             )
-            response = view_module._build_eager_content_response(
+            response = view_module.build_eager_content_response(
                 field_file=recovered,
                 content_type="application/pdf",
                 file_size=len(payload),
@@ -300,7 +335,7 @@ class ReportStreamViewTests(TestCase):
 
         assert recovered is fake_pdf_obj.processed_file
         assert response.status_code == 200
-        assert b"".join(response.streaming_content) == payload
+        assert _sync_streaming_body(response) == payload
 
     def test_pdf_stream_invalid_range_returns_416_with_content_range(self):
         from django.http import HttpResponse

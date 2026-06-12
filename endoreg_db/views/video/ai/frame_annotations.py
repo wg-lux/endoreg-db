@@ -6,6 +6,11 @@ from typing import Any, TypeAlias, cast
 
 from django.db import transaction
 from django.utils import timezone
+from lx_dtypes.models.contracts.frame_annotation import (
+    FrameAnnotationQueueSpecPayload,
+    FrameAnnotationRandomTaskResponsePayload,
+    FrameAnnotationSkipResponsePayload,
+)
 from lx_dtypes.models.contracts.video_frame_annotations import (
     FrameAnnotationBulkItemData,
     FrameAnnotationPayloadMapping,
@@ -16,6 +21,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from endoreg_db.helpers.model_ids import model_pk
 from endoreg_db.models.aidataset.aidataset import AIDataSet
 from endoreg_db.models.label.annotation.image_classification import (
     ImageClassificationAnnotation,
@@ -31,7 +37,7 @@ from endoreg_db.models.state.frame_annotation import (
     DEFAULT_FRAME_INFORMATION_SOURCE_NAME,
     SUPPORTED_FRAME_SAMPLING_STRATEGIES,
     SUPPORTED_FRAME_TASK_MODES,
-    FrameAnnotationQueueSpec,
+    FrameAnnotationTaskPayload,
     ai_dataset_requires_raw_frames,
     build_frame_task_queue,
     normalize_frame_sampling_strategy,
@@ -45,9 +51,12 @@ from endoreg_db.serializers.label_video_segment.frame_annotation_bulk import (
 from endoreg_db.services.frame_retention import (
     prune_unused_validated_outside_frames,
 )
+from endoreg_db.services.queue.frame_annotation_queue import (
+    frame_annotation_queue_spec_from_payload,
+)
 from endoreg_db.services.video_files import VideoArtifactKind
-from endoreg_db.utils.web.media_urls import build_video_frame_decoded_stream_path
-from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.media_urls import build_video_frame_decoded_stream_path
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 logger = logging.getLogger(__name__)
 
@@ -88,19 +97,12 @@ def _optional_non_empty_string(value: object) -> str | None:
     return normalized or None
 
 
-def _model_pk(instance: object) -> int:
-    raw_value = cast(object | None, getattr(instance, "pk", None))
-    if raw_value is None:
-        raw_value = cast(object, getattr(instance, "id"))
-    return _coerce_int(raw_value)
-
-
 def _object_name(instance: object) -> str:
     return str(cast(object, getattr(instance, "name")))
 
 
 def _information_source_id(source: InformationSource) -> int:
-    return _model_pk(source)
+    return model_pk(source)
 
 
 def _information_source_name(source: InformationSource) -> str:
@@ -108,7 +110,7 @@ def _information_source_name(source: InformationSource) -> str:
 
 
 def _frame_id(frame: Frame) -> int:
-    return _model_pk(frame)
+    return model_pk(frame)
 
 
 def _frame_video_id(frame: Frame) -> int:
@@ -128,27 +130,27 @@ def _annotation_key(annotation: ImageClassificationAnnotation) -> FrameAnnotatio
     )
 
 
-def _label_set_id(label_set: LabelSet) -> int:
-    return _model_pk(label_set)
+def _label_set_id(label_set: object) -> int:
+    return model_pk(label_set)
 
 
-def _label_name(label: Label) -> str:
+def _label_name(label: object) -> str:
     return _object_name(label)
 
 
-def _dataset_id(ai_dataset: AIDataSet) -> int:
-    return _model_pk(ai_dataset)
+def _dataset_id(ai_dataset: object) -> int:
+    return model_pk(ai_dataset)
 
 
-def _dataset_name(ai_dataset: AIDataSet) -> str:
+def _dataset_name(ai_dataset: object) -> str:
     return str(cast(object, getattr(ai_dataset, "name")))
 
 
-def _dataset_type(ai_dataset: AIDataSet) -> str:
+def _dataset_type(ai_dataset: object) -> str:
     return str(cast(object, getattr(ai_dataset, "dataset_type")))
 
 
-def _dataset_model_type(ai_dataset: AIDataSet) -> str:
+def _dataset_model_type(ai_dataset: object) -> str:
     return str(cast(object, getattr(ai_dataset, "ai_model_type")))
 
 
@@ -377,7 +379,7 @@ def _build_bulk_upsert_response(
                 ]
                 ai_dataset.add_frame_annotations(persisted_annotations)
                 attached_frame_annotation_ids = [
-                    _model_pk(annotation) for annotation in persisted_annotations
+                    model_pk(annotation) for annotation in persisted_annotations
                 ]
     except Exception as exc:
         logger.error("Bulk frame annotation upsert failed: %s", exc, exc_info=True)
@@ -482,29 +484,22 @@ def _resolve_task_artifact_kind(
 
 
 def _attach_decoded_frame_stream_paths(
-    tasks: list[dict[str, Any]],
+    tasks: list[FrameAnnotationTaskPayload],
     *,
     requested_frame_file_type: str | None,
-) -> list[dict[str, Any]]:
+) -> list[FrameAnnotationTaskPayload]:
     if requested_frame_file_type is None:
         return tasks
 
-    video_ids = {
-        int(task["video_id"]) for task in tasks if task.get("video_id") is not None
-    }
+    video_ids = {int(task.video_id) for task in tasks}
     videos_by_id = VideoFile.objects.in_bulk(video_ids)
 
-    stream_tasks: list[dict[str, Any]] = []
+    stream_tasks: list[FrameAnnotationTaskPayload] = []
     for task in tasks:
-        video_id = task.get("video_id")
-        frame_number = task.get("frame_number")
-        if video_id is None or frame_number is None:
-            continue
-        try:
-            video_id_int = int(video_id)
-            frame_number_int = int(frame_number)
-        except (TypeError, ValueError):
-            continue
+        video_id = task.video_id
+        frame_number = task.frame_number
+        video_id_int = int(video_id)
+        frame_number_int = int(frame_number)
 
         artifact_kind = _resolve_task_artifact_kind(
             video=videos_by_id.get(video_id_int),
@@ -513,14 +508,15 @@ def _attach_decoded_frame_stream_paths(
         if artifact_kind is None:
             continue
 
-        task_with_stream = dict(task)
-        task_with_stream["frame_file_type"] = artifact_kind.value
-        task_with_stream["decoded_frame_stream_path"] = (
-            build_video_frame_decoded_stream_path(
-                video_id_int,
-                frame_number_int,
-                file_type=artifact_kind.value,
-            )
+        task_with_stream = task.model_copy(
+            update={
+                "frame_file_type": artifact_kind.value,
+                "decoded_frame_stream_path": build_video_frame_decoded_stream_path(
+                    video_id_int,
+                    frame_number_int,
+                    file_type=artifact_kind.value,
+                ),
+            }
         )
         stream_tasks.append(task_with_stream)
 
@@ -806,18 +802,18 @@ class FrameAnnotationRandomTaskView(APIView):
         if raw_video_required and requested_frame_file_type is not None:
             requested_frame_file_type = VideoArtifactKind.RAW.value
         stream_backed_tasks = requested_frame_file_type is not None
-        queue_spec = FrameAnnotationQueueSpec(
+        queue_spec_payload = FrameAnnotationQueueSpecPayload(
             limit=limit,
-            task_mode=task_mode,
+            task_mode=task_mode.value,
             video_id=video_id,
-            label_set=label_set,
-            target_label=target_label,
-            filter_label=filter_label,
+            label_set_id=_label_set_id(label_set) if label_set is not None else None,
+            target_label_id=model_pk(target_label) if target_label is not None else None,
+            filter_label_id=model_pk(filter_label) if filter_label is not None else None,
             information_source_name=information_source_name,
             annotator=annotator,
             exclude_annotated=exclude_annotated,
-            ai_dataset=ai_dataset,
-            sampling_strategy=sampling_strategy,
+            ai_dataset_id=_dataset_id(ai_dataset) if ai_dataset is not None else None,
+            sampling_strategy=sampling_strategy.value,
             prediction_segments_only=only_prediction_segments,
             require_extracted_frames=not stream_backed_tasks,
             require_raw_video=requested_frame_file_type == VideoArtifactKind.RAW.value,
@@ -828,6 +824,7 @@ class FrameAnnotationRandomTaskView(APIView):
                 requested_frame_file_type == FRAME_FILE_TYPE_AUTO
             ),
         )
+        queue_spec = frame_annotation_queue_spec_from_payload(queue_spec_payload)
         queue_result = build_frame_task_queue(queue_spec)
         tasks = _attach_decoded_frame_stream_paths(
             queue_result.tasks,
@@ -865,38 +862,38 @@ class FrameAnnotationRandomTaskView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        response_data: dict[str, Any] = {
-            "status": "success",
-            "task": tasks[0],
-            "tasks": tasks,
-            "count": len(tasks),
-            "task_mode": task_mode.value,
-            "selection_strategy": queue_result.selection_strategy,
-            "dataset_frame_filter": sampling_strategy.value,
-            "prediction_segments_only": only_prediction_segments,
-        }
-        if requested_frame_file_type is not None:
-            response_data["frame_file_type"] = requested_frame_file_type
-        if label_set is not None:
-            response_data["label_group_id"] = _label_set_id(label_set)
-        if target_label is not None:
-            response_data["target_label"] = _label_name(target_label)
-        if filter_label is not None:
-            response_data["filter_label"] = _label_name(filter_label)
-        if ai_dataset is not None:
-            response_data["ai_dataset_id"] = _dataset_id(ai_dataset)
-            response_data["ai_dataset_name"] = _dataset_name(ai_dataset)
-            response_data["ai_dataset_type"] = _dataset_type(ai_dataset)
-            response_data["label_distribution"] = queue_result.label_distribution
-            response_data["selected_label_counts"] = queue_result.selected_label_counts
-            response_data["segment_bucket_counts"] = queue_result.segment_bucket_counts
-            response_data["annotation_bucket_counts"] = (
-                queue_result.annotation_bucket_counts
-            )
-            response_data["bucket_counts"] = queue_result.bucket_counts
+        response_payload = FrameAnnotationRandomTaskResponsePayload(
+            task=tasks[0],
+            tasks=tasks,
+            count=len(tasks),
+            task_mode=task_mode.value,
+            selection_strategy=queue_result.selection_strategy,
+            dataset_frame_filter=sampling_strategy.value,
+            prediction_segments_only=only_prediction_segments,
+            frame_file_type=requested_frame_file_type,
+            label_group_id=_label_set_id(label_set) if label_set is not None else None,
+            target_label=_label_name(target_label) if target_label is not None else None,
+            filter_label=_label_name(filter_label) if filter_label is not None else None,
+            ai_dataset_id=_dataset_id(ai_dataset) if ai_dataset is not None else None,
+            ai_dataset_name=_dataset_name(ai_dataset) if ai_dataset is not None else None,
+            ai_dataset_type=_dataset_type(ai_dataset) if ai_dataset is not None else None,
+            label_distribution=(
+                queue_result.label_distribution if ai_dataset is not None else []
+            ),
+            selected_label_counts=(
+                queue_result.selected_label_counts if ai_dataset is not None else {}
+            ),
+            segment_bucket_counts=(
+                queue_result.segment_bucket_counts if ai_dataset is not None else {}
+            ),
+            annotation_bucket_counts=(
+                queue_result.annotation_bucket_counts if ai_dataset is not None else {}
+            ),
+            bucket_counts=queue_result.bucket_counts if ai_dataset is not None else {},
+        )
 
         return Response(
-            response_data,
+            response_payload.to_response_dict(),
             status=status.HTTP_200_OK,
         )
 
@@ -969,15 +966,17 @@ class FrameAnnotationSkipView(APIView):
         )
 
         exclude_annotated = _as_bool(payload.get("exclude_annotated"), default=True)
-        queue_spec = FrameAnnotationQueueSpec(
+        excluded_frame_ids: set[int] = {_frame_id(frame)}
+        queue_spec_payload = FrameAnnotationQueueSpecPayload(
             limit=1,
             video_id=video_id if video_id is not None else frame_video_id,
             information_source_name=information_source_name,
             annotator=annotator,
             exclude_annotated=exclude_annotated,
-            sampling_strategy=normalize_frame_sampling_strategy("none"),
-            exclude_frame_ids=frozenset({_frame_id(frame)}),
+            sampling_strategy="none",
+            exclude_frame_ids=excluded_frame_ids,
         )
+        queue_spec = frame_annotation_queue_spec_from_payload(queue_spec_payload)
         queue_result = build_frame_task_queue(queue_spec)
 
         logger.info(
@@ -988,17 +987,15 @@ class FrameAnnotationSkipView(APIView):
             reason,
         )
 
-        response_data: dict[str, Any] = {
-            "status": "success",
-            "skipped_frame_id": _frame_id(frame),
-            "video_id": frame_video_id,
-            "annotator": annotator,
-            "reason": reason,
-        }
-        if queue_result.tasks:
-            response_data["next_task"] = queue_result.tasks[0]
-        response_data["pruned_unused_frames"] = prune_unused_validated_outside_frames(
-            _frame_video(frame)
+        response_payload = FrameAnnotationSkipResponsePayload(
+            skipped_frame_id=_frame_id(frame),
+            video_id=frame_video_id,
+            annotator=annotator,
+            reason=reason,
+            next_task=queue_result.tasks[0] if queue_result.tasks else None,
+            pruned_unused_frames=prune_unused_validated_outside_frames(
+                _frame_video(frame)
+            ),
         )
 
-        return Response(response_data, status=status.HTTP_200_OK)
+        return Response(response_payload.to_response_dict(), status=status.HTTP_200_OK)

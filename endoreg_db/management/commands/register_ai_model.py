@@ -40,7 +40,9 @@ class Command(BaseCommand):
             raw_model_meta: object = json.loads(model_meta_path.read_text())
             model_meta = RegisterAiModelMetaPayload.model_validate(raw_model_meta)
         except OSError as exc:
-            raise CommandError(f"Failed to read model metadata: {model_meta_path}") from exc
+            raise CommandError(
+                f"Failed to read model metadata: {model_meta_path}"
+            ) from exc
         except ValueError as exc:
             raise CommandError(f"Invalid model metadata: {exc}") from exc
 

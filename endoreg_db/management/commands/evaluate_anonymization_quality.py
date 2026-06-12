@@ -12,7 +12,7 @@ from endoreg_db.services.anonymization_quality_evaluation import (
     evaluate_anonymization_quality,
     parse_quality_datetime,
 )
-from endoreg_db.utils.filesystem.file_operations import atomic_write_file
+from endoreg_db.utils.file_operations import atomic_write_file
 
 
 QualityMediaType: TypeAlias = Literal["all", "video", "pdf"]

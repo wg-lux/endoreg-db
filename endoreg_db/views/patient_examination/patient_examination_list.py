@@ -9,7 +9,7 @@ from endoreg_db.serializers.patient_examination import PatientExaminationSeriali
 from rest_framework import generics, status
 from rest_framework.request import Request
 from rest_framework.response import Response
-from endoreg_db.utils.web.permissions import DEBUG_PERMISSIONS
+from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
 
 logger = logging.getLogger(__name__)
 
@@ -46,9 +46,11 @@ class PatientExaminationListView(generics.ListAPIView[PatientExamination]):
     permission_classes = DEBUG_PERMISSIONS
 
     def get_queryset(self) -> QuerySet[PatientExamination]:
-        queryset: QuerySet[PatientExamination] = PatientExamination.objects.select_related(
-            "patient", "examination"
-        ).order_by("-date_start", "-id")
+        queryset: QuerySet[PatientExamination] = (
+            PatientExamination.objects.select_related(
+                "patient", "examination"
+            ).order_by("-date_start", "-id")
+        )
 
         # Apply filters
         patient_id = _query_params(self.request).get("patient_id")
@@ -73,11 +75,14 @@ class PatientExaminationListView(generics.ListAPIView[PatientExamination]):
             total_count = queryset.count()
             paginated_queryset = queryset[offset : offset + limit]
 
-            serializer = self.get_serializer(paginated_queryset, many=True)
+            serializer: _SerializerDataLike = cast(
+                _SerializerDataLike,
+                self.get_serializer(paginated_queryset, many=True),
+            )
 
             return Response(
                 {
-                    "results": _serializer_data(cast(_SerializerDataLike, serializer)),
+                    "results": _serializer_data(serializer),
                     "total_count": total_count,
                     "limit": limit,
                     "offset": offset,

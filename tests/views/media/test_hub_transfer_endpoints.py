@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+# pyright: reportUnknownMemberType=false
+
+import logging
 import hashlib
+from collections.abc import Mapping
+from typing import Protocol, cast
 
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -22,7 +27,25 @@ from endoreg_db.models import (
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
+from lx_dtypes.models.contracts.hub_transfer import (
+    HubTransferVideoFilePayloadData,
+    HubTransferReportTransferPayloadData,
+    HubTransferVideoTransferPayloadData,
+    validate_hub_transfer_report_payload,
+    validate_hub_transfer_video_payload,
+)
 from tests.helpers.data_loader import load_gender_data
+
+
+class _ResponseLike(Protocol):
+    status_code: int
+    content: bytes
+
+    def json(self) -> dict[str, object]: ...
+
+
+class _StructuredEventRecord(Protocol):
+    structured_event: dict[str, object]
 
 
 @override_settings(ENDOREG_ENABLE_HUB_TRANSFERS=True)
@@ -76,25 +99,46 @@ class HubTransferEndpointTests(TestCase):
 
     def _auth_headers(self) -> dict[str, str]:
         return {
-            "HTTP_X_NETWORK_NODE_KEY": self.source_node.node_key,
-            "HTTP_X_NETWORK_NODE_SECRET": self.source_secret,
-            "HTTP_X_CLIENT_CERT_VERIFIED": "SUCCESS",
+            "X-Network-Node-Key": self.source_node.node_key,
+            "X-Network-Node-Secret": self.source_secret,
+            "X-Client-Cert-Verified": "SUCCESS",
         }
 
     def _secure_post(
-        self, path: str, *, data, content_type: str | None = None, **extra
-    ):
-        request_kwargs = {
-            "data": data,
-            "secure": True,
-            **extra,
-        }
-        if content_type is not None:
-            request_kwargs["content_type"] = content_type
-        return self.client.post(path, **request_kwargs)
+        self,
+        path: str,
+        *,
+        data: Mapping[str, object] | None,
+        content_type: str | None = None,
+        headers: Mapping[str, str] | None = None,
+    ) -> _ResponseLike:
+        if content_type is None:
+            return cast(
+                _ResponseLike,
+                self.client.post(path, data=data, secure=True, headers=headers),
+            )
+        return cast(
+            _ResponseLike,
+            self.client.post(
+                path,
+                data=data,
+                secure=True,
+                content_type=content_type,
+                headers=headers,
+            ),
+        )
 
-    def _secure_get(self, path: str, **extra):
-        return self.client.get(path, secure=True, **extra)
+    def _secure_get(
+        self,
+        path: str,
+        *,
+        headers: Mapping[str, str] | None = None,
+    ) -> _ResponseLike:
+        return cast(_ResponseLike, self.client.get(path, secure=True, headers=headers))
+
+    @staticmethod
+    def _structured_event(record: logging.LogRecord) -> dict[str, object]:
+        return cast(_StructuredEventRecord, record).structured_event
 
     @staticmethod
     def _sha256(content: bytes) -> str:
@@ -110,8 +154,8 @@ class HubTransferEndpointTests(TestCase):
         sender_processing_success: bool = False,
         processed_video_hash: str | None = None,
         examination_date: str = "2026-03-20",
-    ) -> dict:
-        video_file_payload = {
+    ) -> HubTransferVideoTransferPayloadData:
+        video_file_payload: HubTransferVideoFilePayloadData = {
             "video_hash": video_hash,
             "original_file_name": "example.mp4",
             "suffix": ".mp4",
@@ -125,7 +169,7 @@ class HubTransferEndpointTests(TestCase):
         if processed_video_hash:
             video_file_payload["processed_video_hash"] = processed_video_hash
 
-        return {
+        payload: dict[str, object] = {
             "transfer_key": transfer_key,
             "source_node_key": self.source_node.node_key,
             "target_node_key": self.target_node.node_key,
@@ -158,6 +202,7 @@ class HubTransferEndpointTests(TestCase):
                 "sender_processing_success": sender_processing_success,
             },
         }
+        return validate_hub_transfer_video_payload(payload)
 
     def _report_transfer_payload(
         self,
@@ -167,8 +212,8 @@ class HubTransferEndpointTests(TestCase):
         transfer_mode: str = "metadata_only",
         processing_policy: str = "reprocess_if_missing_outputs",
         sender_processing_success: bool = False,
-    ) -> dict:
-        return {
+    ) -> HubTransferReportTransferPayloadData:
+        payload: dict[str, object] = {
             "transfer_key": transfer_key,
             "source_node_key": self.source_node.node_key,
             "target_node_key": self.target_node.node_key,
@@ -204,6 +249,7 @@ class HubTransferEndpointTests(TestCase):
                 "sender_processing_success": sender_processing_success,
             },
         }
+        return validate_hub_transfer_report_payload(payload)
 
     @override_settings(
         ENDOREG_DEPLOYMENT_ROLE="central_hub",
@@ -219,7 +265,7 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            **self._auth_headers(),
+            headers=self._auth_headers(),
         )
 
         assert response.status_code == 404, response.content
@@ -238,7 +284,7 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            **self._auth_headers(),
+            headers=self._auth_headers(),
         )
 
         assert response.status_code == 404, response.content
@@ -257,7 +303,7 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            **self._auth_headers(),
+            headers=self._auth_headers(),
         )
 
         assert response.status_code == 201, response.content
@@ -328,7 +374,7 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            **self._auth_headers(),
+            headers=self._auth_headers(),
         )
 
         assert response.status_code == 201, response.content
@@ -343,6 +389,7 @@ class HubTransferEndpointTests(TestCase):
             "information_source",
         ).get(frame=frame)
         assert annotation.label.name == "lesion_visible"
+        assert annotation.information_source is not None
         assert annotation.information_source.name == "manual_annotation"
         assert annotation.value is True
         assert annotation.float_value == 0.91
@@ -350,6 +397,7 @@ class HubTransferEndpointTests(TestCase):
             annotation.external_annotation_id
             == f"hub_transfer:{self.source_node.node_key}:annotation:42"
         )
+        assert video.state is not None
         video.state.refresh_from_db()
         assert video.state.frame_annotations_generated is True
 
@@ -376,9 +424,11 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            HTTP_X_NETWORK_NODE_KEY="wrong-node",
-            HTTP_X_NETWORK_NODE_SECRET=self.source_secret,
-            HTTP_X_CLIENT_CERT_VERIFIED="SUCCESS",
+            headers={
+                "X-Network-Node-Key": "wrong-node",
+                "X-Network-Node-Secret": self.source_secret,
+                "X-Client-Cert-Verified": "SUCCESS",
+            },
         )
 
         assert response.status_code == 403, response.content
@@ -400,11 +450,12 @@ class HubTransferEndpointTests(TestCase):
                 "/api/media/hub/transfers/",
                 data=payload,
                 content_type="application/json",
-                **self._auth_headers(),
+                headers=self._auth_headers(),
             )
 
         assert response.status_code == 403, response.content
-        assert "Invalid network node credentials" in response.json()["detail"]
+        detail = cast(str, response.json()["detail"])
+        assert "Invalid network node credentials" in detail
         assert not TransferJob.objects.filter(
             transfer_key="site-a__video__missing-secret-hash"
         ).exists()
@@ -417,11 +468,12 @@ class HubTransferEndpointTests(TestCase):
     def test_transfer_registration_does_not_allow_authenticated_user_to_bypass_node_auth(
         self,
     ):
-        user = User.objects.create_superuser(
+        user = User.objects.create(
             username="hub-admin",
             email="hub-admin@example.org",
-            password="secret",
         )
+        user.set_password("secret")
+        user.save(update_fields=["password"])
         self.client.force_login(user)
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__user-bypass-denied",
@@ -435,7 +487,8 @@ class HubTransferEndpointTests(TestCase):
         )
 
         assert response.status_code == 403, response.content
-        assert "Invalid network node credentials" in response.json()["detail"]
+        detail = cast(str, response.json()["detail"])
+        assert "Invalid network node credentials" in detail
         assert not TransferJob.objects.filter(
             transfer_key="site-a__video__user-bypass-denied"
         ).exists()
@@ -444,10 +497,11 @@ class HubTransferEndpointTests(TestCase):
     def test_transfer_registration_rejects_authenticated_user_without_center_scope(
         self,
     ):
-        user = User.objects.create_user(
+        user = User.objects.create(
             username="unscoped-transfer-user",
-            password="secret",
         )
+        user.set_password("secret")
+        user.save(update_fields=["password"])
         self.client.force_login(user)
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__unscoped-user",
@@ -458,11 +512,12 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            **self._auth_headers(),
+            headers=self._auth_headers(),
         )
 
         assert response.status_code == 403, response.content
-        assert "do not have access" in response.json()["detail"]
+        detail = cast(str, response.json()["detail"])
+        assert "do not have access" in detail
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfer_registration_requires_secure_transport(self):
@@ -479,12 +534,13 @@ class HubTransferEndpointTests(TestCase):
                 "/api/media/hub/transfers/",
                 data=payload,
                 content_type="application/json",
-                **self._auth_headers(),
+                headers=self._auth_headers(),
             )
 
         assert response.status_code == 403, response.content
-        assert "requires HTTPS" in response.json()["detail"]
-        event = transfer_logs.records[-1].structured_event
+        detail = cast(str, response.json()["detail"])
+        assert "requires HTTPS" in detail
+        event = self._structured_event(transfer_logs.records[-1])
         assert event["event"] == "hub.transfer_secure_transport_failed"
         assert event["reason"] == "insecure_request"
         assert self.source_secret not in "\n".join(transfer_logs.output)
@@ -504,8 +560,7 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            HTTP_X_FORWARDED_PROTO="https",
-            **self._auth_headers(),
+            headers={**self._auth_headers(), "X-Forwarded-Proto": "https"},
         )
 
         assert response.status_code == 201, response.content
@@ -531,13 +586,16 @@ class HubTransferEndpointTests(TestCase):
                 "/api/media/hub/transfers/",
                 data=payload,
                 content_type="application/json",
-                HTTP_X_NETWORK_NODE_KEY=self.source_node.node_key,
-                HTTP_X_NETWORK_NODE_SECRET=self.source_secret,
+                headers={
+                    "X-Network-Node-Key": self.source_node.node_key,
+                    "X-Network-Node-Secret": self.source_secret,
+                },
             )
 
         assert response.status_code == 403, response.content
-        assert "mutual TLS" in response.json()["detail"]
-        event = transfer_logs.records[-1].structured_event
+        detail = cast(str, response.json()["detail"])
+        assert "mutual TLS" in detail
+        event = self._structured_event(transfer_logs.records[-1])
         assert event["event"] == "hub.transfer_mtls_check_failed"
         assert event["reason"] == "mtls_proxy_verification_failed"
         assert event["mtls_actual_value_present"] is False
@@ -555,13 +613,13 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            **self._auth_headers(),
+            headers=self._auth_headers(),
         )
         second = self._secure_post(
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            **self._auth_headers(),
+            headers=self._auth_headers(),
         )
 
         assert first.status_code == 201, first.content
@@ -594,7 +652,7 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            **self._auth_headers(),
+            headers=self._auth_headers(),
         )
 
         assert response.status_code == 201, response.content
@@ -604,7 +662,7 @@ class HubTransferEndpointTests(TestCase):
 
         status_response = self._secure_get(
             f"/api/media/hub/transfers/{payload['transfer_key']}/status/",
-            **self._auth_headers(),
+            headers=self._auth_headers(),
         )
         assert status_response.status_code == 200, status_response.content
         assert (
@@ -628,13 +686,13 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=first_payload,
             content_type="application/json",
-            **self._auth_headers(),
+            headers=self._auth_headers(),
         )
         second_response = self._secure_post(
             "/api/media/hub/transfers/",
             data=second_payload,
             content_type="application/json",
-            **self._auth_headers(),
+            headers=self._auth_headers(),
         )
 
         assert first_response.status_code == 201, first_response.content
@@ -667,7 +725,7 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            **self._auth_headers(),
+            headers=self._auth_headers(),
         )
 
         assert response.status_code == 400, response.content
@@ -699,7 +757,7 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            **self._auth_headers(),
+            headers=self._auth_headers(),
         )
 
         assert response.status_code == 201, response.content
@@ -729,7 +787,7 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            **self._auth_headers(),
+            headers=self._auth_headers(),
         )
 
         assert response.status_code == 400, response.content
@@ -748,7 +806,7 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            **self._auth_headers(),
+            headers=self._auth_headers(),
         )
         assert create_response.status_code == 201, create_response.content
 
@@ -766,14 +824,14 @@ class HubTransferEndpointTests(TestCase):
                         content_type="video/mp4",
                     ),
                 },
-                **self._auth_headers(),
+                headers=self._auth_headers(),
             )
 
         assert upload_response.status_code == 400, upload_response.content
         assert "Only anonymized processed media may be uploaded" in str(
             upload_response.json()
         )
-        event = transfer_logs.records[-1].structured_event
+        event = self._structured_event(transfer_logs.records[-1])
         assert event["event"] == "hub.transfer_media_upload_validation_failed"
         assert event["error_fields"] == ["media_role"]
         log_output = "\n".join(transfer_logs.output)
@@ -795,14 +853,14 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            **self._auth_headers(),
+            headers=self._auth_headers(),
         )
         assert create_response.status_code == 201, create_response.content
 
         upload_response = self._secure_post(
             f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
             data={"media_role": "processed"},
-            **self._auth_headers(),
+            headers=self._auth_headers(),
         )
 
         assert upload_response.status_code == 400, upload_response.content
@@ -826,7 +884,7 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            **self._auth_headers(),
+            headers=self._auth_headers(),
         )
         assert create_response.status_code == 201, create_response.content
 
@@ -840,7 +898,7 @@ class HubTransferEndpointTests(TestCase):
                     content_type="video/mp4",
                 ),
             },
-            **self._auth_headers(),
+            headers=self._auth_headers(),
         )
 
         assert upload_response.status_code == 200, upload_response.content
@@ -865,7 +923,7 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            **self._auth_headers(),
+            headers=self._auth_headers(),
         )
         assert create_response.status_code == 201, create_response.content
 
@@ -879,7 +937,7 @@ class HubTransferEndpointTests(TestCase):
                     content_type="application/pdf",
                 ),
             },
-            **self._auth_headers(),
+            headers=self._auth_headers(),
         )
 
         assert upload_response.status_code == 400, upload_response.content
@@ -899,10 +957,11 @@ class HubTransferEndpointTests(TestCase):
             hash="scoped-transfer-user-hash",
             center=other_center,
         )
-        user = User.objects.create_user(
+        user = User.objects.create(
             username="scoped-transfer-user",
-            password="secret",
         )
+        user.set_password("secret")
+        user.save(update_fields=["password"])
         PortalUserInfo.objects.create(user=user, examiner=examiner)
 
         processed_bytes = b"processed-video"
@@ -920,7 +979,7 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            **self._auth_headers(),
+            headers=self._auth_headers(),
         )
         assert create_response.status_code == 201, create_response.content
 
@@ -935,7 +994,7 @@ class HubTransferEndpointTests(TestCase):
                     content_type="video/mp4",
                 ),
             },
-            **self._auth_headers(),
+            headers=self._auth_headers(),
         )
 
         assert upload_response.status_code == 404, upload_response.content

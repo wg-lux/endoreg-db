@@ -13,7 +13,7 @@ from django.core.management.base import BaseCommand, CommandParser
 
 from endoreg_db.helpers.data_load_orchestrator import load_all_reference_data
 from endoreg_db.services.report_import import ReportImportService
-from endoreg_db.utils.filesystem.file_operations import ensure_directory
+from endoreg_db.utils.file_operations import ensure_directory
 
 
 # python manage.py import_report tests/assets/lux-gastro-report.pdf --verbose --start_ollama
@@ -85,7 +85,9 @@ def _load_init_ollama_service() -> _InitOllamaService | JsonNull:
     try:
         module = importlib.import_module("lx_anonymizer.ollama.ollama_service")
     except ImportError:
-        print("Could not import init_ollama_service from local or installed lx_anonymizer")
+        print(
+            "Could not import init_ollama_service from local or installed lx_anonymizer"
+        )
         return None
     service_module = cast(_OllamaServiceModule, module)
     return service_module.init_ollama_service
@@ -349,7 +351,9 @@ class Command(BaseCommand):
                 )
             )
             sensitive_meta = report.sensitive_meta
-            sensitive_meta_id = sensitive_meta.pk if sensitive_meta is not None else None
+            sensitive_meta_id = (
+                sensitive_meta.pk if sensitive_meta is not None else None
+            )
             self.stdout.write(
                 self.style.SUCCESS(
                     "Import summary: "

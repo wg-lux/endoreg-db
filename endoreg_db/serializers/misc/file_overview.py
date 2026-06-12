@@ -1,5 +1,8 @@
+# pyright: reportUnusedClass=false
 import re
 from pathlib import Path
+from datetime import datetime
+from typing import Protocol, TypedDict, cast
 
 from rest_framework import serializers
 
@@ -14,7 +17,77 @@ PATH_PATTERN = re.compile(r"([A-Za-z]:\\[^\s]+|/[^\s]+)")
 DOCUMENT_TYPE_VALUES = {document_type.value for document_type in DocumentTypeContract}
 
 
-class FileOverviewSerializer(serializers.Serializer):
+class _FileOverviewUploadJobSummary(TypedDict, total=False):
+    id: str
+    status: str
+    ingest_mode: str
+    source_system: str
+    source_center_key: str | None
+    original_filename: str
+    source_file_persisted: bool
+    cleanup_status: str
+    created_at: str | None
+    updated_at: str | None
+    error_detail: str
+
+
+class _FileOverviewPayload(TypedDict):
+    id: int | str | None
+    filename: str
+    media_type: str
+    anonymization_status: AnonymizationState
+    annotation_status: str
+    created_at: datetime
+    sensitive_meta_id: int | None
+    file_size: int
+    upload_job: _FileOverviewUploadJobSummary | None
+    document_type: str | None
+    patient_hash_display: str | None
+    examination_hash_display: str | None
+    pseudo_patient_id: int | None
+    pseudo_examination_id: int | None
+
+
+class _FileOverviewInstanceLike(Protocol):
+    pk: int | str | None
+    state: object | None
+    sensitive_meta: object | None
+
+
+class _FileOverviewVideoLike(_FileOverviewInstanceLike, Protocol):
+    raw_file: object | None
+    original_file_name: str | None
+    uploaded_at: datetime
+
+
+class _FileOverviewPdfLike(_FileOverviewInstanceLike, Protocol):
+    file: object | None
+    date_created: datetime
+
+
+class _FileOverviewUploadJobLike(Protocol):
+    id: int | str
+    status: str
+    ingest_mode: str
+    source_system: str
+    source_center: object | None
+    original_filename: str | None
+    source_file_persisted: bool
+    cleanup_status: str
+    created_at: datetime | None
+    updated_at: datetime | None
+    error_detail: str | None
+
+
+class _FileOverviewSensitiveMetaLike(Protocol):
+    pk: int | None
+    patient_hash: str | None
+    examination_hash: str | None
+    pseudo_patient_id: int | None
+    pseudo_examination_id: int | None
+
+
+class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
     id = serializers.IntegerField(read_only=True)
     filename = serializers.CharField(read_only=True)
     media_type = serializers.CharField(read_only=True)
@@ -40,16 +113,16 @@ class FileOverviewSerializer(serializers.Serializer):
         read_only=True, allow_null=True, required=False
     )
 
-    def _datetime_value(self, value):
+    def _datetime_value(self, value: datetime | None) -> str | None:
         return value.isoformat() if value else None
 
-    def _safe_original_filename(self, upload_job: UploadJob) -> str:
+    def _safe_original_filename(self, upload_job: _FileOverviewUploadJobLike) -> str:
         if not upload_job.original_filename:
             return ""
         normalized_name = str(upload_job.original_filename).replace("\\", "/")
         return Path(normalized_name).name
 
-    def _safe_error_detail(self, upload_job: UploadJob) -> str:
+    def _safe_error_detail(self, upload_job: _FileOverviewUploadJobLike) -> str:
         if upload_job.status not in {UploadJob.Status.ERROR, UploadJob.Status.LOST}:
             return ""
 
@@ -59,13 +132,18 @@ class FileOverviewSerializer(serializers.Serializer):
             return f"{detail[:237]}..."
         return detail
 
-    def _upload_job_summary(self, instance):
-        upload_job = getattr(instance, "_overview_upload_job", None)
+    def _upload_job_summary(
+        self, instance: object
+    ) -> _FileOverviewUploadJobSummary | None:
+        upload_job = cast(
+            _FileOverviewUploadJobLike | None,
+            getattr(instance, "_overview_upload_job", None),
+        )
         if upload_job is None:
             return None
 
         source_center = getattr(upload_job, "source_center", None)
-        summary = {
+        summary: _FileOverviewUploadJobSummary = {
             "id": str(upload_job.id),
             "status": upload_job.status,
             "ingest_mode": upload_job.ingest_mode,
@@ -109,7 +187,7 @@ class FileOverviewSerializer(serializers.Serializer):
 
         return None
 
-    def to_representation(self, instance):
+    def to_representation(self, instance: object) -> dict[str, object]:
         # 1. Extract Type-Specific Data
         if isinstance(instance, VideoFile):
             media_type = "video"
@@ -119,8 +197,10 @@ class FileOverviewSerializer(serializers.Serializer):
             )
             created_at = instance.uploaded_at
             # Use the state relation optimized in the View
-            state_obj = instance.state
-            sensitive_meta = instance.sensitive_meta
+            state_obj = cast(object | None, instance.state)
+            sensitive_meta = cast(
+                _FileOverviewSensitiveMetaLike | None, instance.sensitive_meta
+            )
             document_type = None
             try:
                 file_size = instance.raw_file.size if instance.raw_file else 0
@@ -136,8 +216,10 @@ class FileOverviewSerializer(serializers.Serializer):
                 else "unknown_report"
             )
             created_at = instance.date_created
-            state_obj = instance.state
-            sensitive_meta = instance.sensitive_meta
+            state_obj = cast(object | None, instance.state)
+            sensitive_meta = cast(
+                _FileOverviewSensitiveMetaLike | None, instance.sensitive_meta
+            )
             document_type = self._pdf_document_type(instance)
             try:
                 file_size = instance.file.size if instance.file else 0
@@ -149,10 +231,8 @@ class FileOverviewSerializer(serializers.Serializer):
 
         # 2. Determine Status (Single Source of Truth: The State Model)
         # This uses the @property .anonymization_status from VideoState/RawPdfState
-        raw_status = (
-            state_obj.anonymization_status
-            if state_obj
-            else AnonymizationState.NOT_STARTED
+        raw_status = getattr(
+            state_obj, "anonymization_status", AnonymizationState.NOT_STARTED
         )
 
         # 3. Map to frontend annotation_status

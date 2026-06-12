@@ -46,7 +46,7 @@ class EndoregDbConfig(AppConfig):
         ensure_keycloak_settings()
         import_module("endoreg_db.checks")
 
-        from endoreg_db.utils.filesystem.paths import validate_runtime_storage_contract
+        from endoreg_db.utils.paths import validate_runtime_storage_contract
 
         validate_runtime_storage_contract()
         executable = Path(sys.argv[0]).name if sys.argv else ""
@@ -82,7 +82,9 @@ class EndoregDbConfig(AppConfig):
             ) -> None:
                 ReconciliationService().run_once()
 
-            typed_connection_created = cast(_ConnectionCreatedSignal, connection_created)
+            typed_connection_created = cast(
+                _ConnectionCreatedSignal, connection_created
+            )
             typed_connection_created.connect(
                 _run_reconciliation,
                 dispatch_uid="endoreg_db_startup_reconciliation",

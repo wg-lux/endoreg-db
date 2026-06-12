@@ -1,12 +1,15 @@
+# pyright: reportPrivateUsage=false, reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Protocol, cast
 from unittest.mock import patch
 from uuid import uuid4
-
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AbstractBaseUser
 from django.core.management import call_command
 from django.test import TestCase
 from django.test.utils import override_settings
@@ -29,6 +32,24 @@ from endoreg_db.models import (
 )
 from endoreg_db.services.jobs import model_training_jobs
 from endoreg_db.views.misc import application_settings as view_module
+
+
+class _TextWriter(Protocol):
+    def write(self, text: str) -> object: ...
+
+
+class _UserManager(Protocol):
+    def create_user(
+        self,
+        username: str,
+        password: str | None = None,
+        **extra_fields: object,
+    ) -> AbstractBaseUser: ...
+
+
+def _writer_from_kwargs(kwargs: Mapping[str, object], key: str) -> _TextWriter:
+    writer = kwargs[key]
+    return cast(_TextWriter, writer)
 
 
 class ApplicationSettingsEndpointTests(TestCase):
@@ -243,7 +264,9 @@ class ApplicationSettingsEndpointTests(TestCase):
 
     def test_get_application_settings_uses_authenticated_username_as_fallback(self):
         user_model = get_user_model()
-        user = user_model.objects.create_user(username="keycloak_user")
+        user = cast(_UserManager, user_model.objects).create_user(
+            username="keycloak_user",
+        )
         self.client.force_login(user)
 
         response = self.client.get("/api/settings/application/")
@@ -322,8 +345,9 @@ class ApplicationSettingsEndpointTests(TestCase):
         assert isinstance(datasets_response.json(), list)
 
     def test_ai_dataset_export_endpoint_exports_selected_dataset(self):
+        dataset_name = f"dataset-export-{uuid4().hex[:8]}"
         dataset = AIDataSet.objects.create(
-            name=f"dataset-export-{uuid4().hex[:8]}",
+            name=dataset_name,
             dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
             ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
         )
@@ -346,7 +370,7 @@ class ApplicationSettingsEndpointTests(TestCase):
         output_path = Path(payload["output_path"])
         assert output_path.exists()
         exported = output_path.read_text(encoding="utf-8")
-        assert dataset.name in exported
+        assert dataset_name in exported
         artifact = AIDataSetExportArtifact.objects.get(
             artifact_id=payload["artifact_id"]
         )
@@ -447,7 +471,7 @@ class ApplicationSettingsEndpointTests(TestCase):
         )
 
         class StubFrameFormat:
-            def model_dump(self, **kwargs):
+            def model_dump(self, **kwargs: object):
                 return {
                     "status": "not_checked",
                     "preprocessing_strategy": "crop_to_endoscope_roi",
@@ -459,7 +483,7 @@ class ApplicationSettingsEndpointTests(TestCase):
             class_frequencies = [0.0, 1.0]
             frame_format = StubFrameFormat()
 
-            def model_dump(self, **kwargs):
+            def model_dump(self, **kwargs: object):
                 return {"schema_version": "1.0", "labels": ["a", "b"]}
 
             def to_lx_ai_core_dict(self):
@@ -552,7 +576,9 @@ class ApplicationSettingsEndpointTests(TestCase):
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="local_study_server")
     def test_dataset_export_rejects_unprivileged_all_centers_scope(self):
         user_model = get_user_model()
-        user = user_model.objects.create_user(username="dataset-scope-user")
+        user = cast(_UserManager, user_model.objects).create_user(
+            username="dataset-scope-user",
+        )
         self.client.force_login(user)
         dataset = AIDataSet.objects.create(
             name=f"dataset-scope-{uuid4().hex[:8]}",
@@ -576,7 +602,7 @@ class ApplicationSettingsEndpointTests(TestCase):
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="local_study_server")
     def test_dataset_export_passes_resolved_scope_to_standard_export(self):
         user_model = get_user_model()
-        user = user_model.objects.create_user(
+        user = cast(_UserManager, user_model.objects).create_user(
             username="dataset-scope-staff",
             is_staff=True,
         )
@@ -921,8 +947,8 @@ class ApplicationSettingsEndpointTests(TestCase):
             patch.object(model_training_jobs, "call_command") as mocked_call_command,
         ):
 
-            def fake_call_command(*args, **kwargs):
-                kwargs["stdout"].write(
+            def fake_call_command(*args: object, **kwargs: object) -> None:
+                _writer_from_kwargs(kwargs, "stdout").write(
                     'log line\n{"model_path": "/tmp/model.pth", '
                     '"manifest_path": "/tmp/manifest.json", '
                     '"meta_path": "/tmp/meta.json"}\n'
@@ -937,8 +963,11 @@ class ApplicationSettingsEndpointTests(TestCase):
         assert mocked_call_command.call_args.args[0] == "train_image_multilabel_model"
         run.refresh_from_db()
         assert run.status == AIModelTrainingRun.STATUS_COMPLETED
-        assert run.result["model_path"] == "/tmp/model.pth"
-        assert run.artifact_paths["manifest_path"] == "/tmp/manifest.json"
+        result = cast(dict[str, object], run.result)
+        artifact_paths = cast(dict[str, object], run.artifact_paths)
+
+        assert result["model_path"] == "/tmp/model.pth"
+        assert artifact_paths["manifest_path"] == "/tmp/manifest.json"
 
     def test_model_training_run_execution_stores_failure_logs(self):
         dataset = AIDataSet.objects.create(
@@ -968,9 +997,9 @@ class ApplicationSettingsEndpointTests(TestCase):
             patch.object(model_training_jobs, "call_command") as mocked_call_command,
         ):
 
-            def fake_call_command(*args, **kwargs):
-                kwargs["stdout"].write("training started")
-                kwargs["stderr"].write("stderr detail")
+            def fake_call_command(*args: object, **kwargs: object) -> None:
+                _writer_from_kwargs(kwargs, "stdout").write("training started")
+                _writer_from_kwargs(kwargs, "stderr").write("stderr detail")
                 raise RuntimeError("boom")
 
             mocked_call_command.side_effect = fake_call_command
@@ -1060,7 +1089,7 @@ class ApplicationSettingsEndpointTests(TestCase):
         from endoreg_db.views.misc import application_settings as view_module
 
         def fake_launch(run_id: str, *, command_kwargs: dict[str, object]) -> None:
-            view_module._store_video_dimension_backfill_run(
+            view_module.store_video_dimension_backfill_run(
                 run_id,
                 status="completed",
                 started_at="2026-04-29T10:00:01Z",

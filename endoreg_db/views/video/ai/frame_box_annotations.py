@@ -20,6 +20,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from endoreg_db.helpers.model_ids import model_pk
 from endoreg_db.models.label.annotation.frame_box import FrameBoxAnnotation
 from endoreg_db.models.label.label import Label
 from endoreg_db.models.media.frame.frame import Frame
@@ -34,7 +35,7 @@ from endoreg_db.serializers.label_video_segment.frame_box_annotation import (
     FrameBoxAnnotationBulkItemSerializer,
     FrameBoxAnnotationSerializer,
 )
-from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 logger = logging.getLogger(__name__)
 
@@ -74,21 +75,10 @@ class _MutableFrameBoxAnnotation(Protocol):
     def save(self) -> None: ...
 
 
-def _model_pk(instance: object) -> int:
-    pk = cast(object | None, getattr(instance, "pk", None))
-    if pk is None:
-        raise ValueError(f"{type(instance).__name__} instance has no primary key.")
-    if isinstance(pk, int):
-        return pk
-    if isinstance(pk, str):
-        return int(pk)
-    raise ValueError(f"{type(instance).__name__} primary key is not an integer.")
-
-
 def _as_int(
     value: object,
     field_name: str,
-) -> tuple[int | None, Response[VideoFrameBoxJsonObject] | None]:
+) -> tuple[int | None, Response | None]:
     if value is None or value == "":
         return None, None
     if isinstance(value, int):
@@ -222,14 +212,14 @@ def _payload_has_annotation_list(raw_payload: object) -> bool:
     return isinstance(payload.get("annotations"), list)
 
 
-def _missing_annotations_response() -> Response[VideoFrameBoxJsonObject]:
+def _missing_annotations_response() -> Response:
     return Response(
         {"error": "Field 'annotations' is required when payload is an object."},
         status=status.HTTP_400_BAD_REQUEST,
     )
 
 
-def _annotations_must_be_list_response() -> Response[VideoFrameBoxJsonObject]:
+def _annotations_must_be_list_response() -> Response:
     return Response(
         {"error": "annotations must be a list."},
         status=status.HTTP_400_BAD_REQUEST,
@@ -251,7 +241,7 @@ class FrameBoxAnnotationView(APIView):
         request: Request,
         *args: object,
         **kwargs: object,
-    ) -> Response[VideoFrameBoxJsonObject]:
+    ) -> Response:
         frame_id, error = _as_int(_query_param(request, "frame_id"), "frame_id")
         if error is not None:
             return error
@@ -322,7 +312,7 @@ class FrameBoxAnnotationView(APIView):
         request: Request,
         *args: object,
         **kwargs: object,
-    ) -> Response[VideoFrameBoxJsonObject]:
+    ) -> Response:
         raw_payload = _request_data(request)
         if isinstance(raw_payload, Mapping) and "annotations" not in raw_payload:
             return _missing_annotations_response()
@@ -410,7 +400,7 @@ class FrameBoxAnnotationView(APIView):
         information_source_name: str | None,
         annotator: str | None,
         request: Request,
-    ) -> Response[VideoFrameBoxJsonObject]:
+    ) -> Response:
         if frame_id is None:
             return Response(
                 {"error": "frame_id is required when replace=true."},
@@ -460,7 +450,7 @@ class FrameBoxAnnotationView(APIView):
         requested_video_id: int | None,
         replace: bool,
         request: Request,
-    ) -> Response[VideoFrameBoxJsonObject]:
+    ) -> Response:
         frame_ids = {_item_int(item, "frame_id") for item in validated_items}
         label_ids = {_item_int(item, "label_id") for item in validated_items}
         source_names = {
@@ -648,7 +638,7 @@ class FrameBoxAnnotationView(APIView):
             source_name = resolve_frame_information_source_name(
                 _item_str(item, "information_source_name")
             )
-            source_id = _model_pk(source_by_name[source_name])
+            source_id = model_pk(source_by_name[source_name])
             annotator = self._item_annotator(item, fallback_annotator)
             annotation_model = self._resolve_existing_annotation(
                 item=item,

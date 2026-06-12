@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 from unittest.mock import Mock, patch
@@ -11,6 +12,7 @@ from endoreg_db.authz.auth import KeycloakJWTAuthentication
 
 def test_extract_roles_merges_flat_realm_and_resource_roles() -> None:
     claims: dict[str, JsonValue] = {
+        "preferred_username": "test-user",
         "roles": ["flat-role"],
         "realm_access": {"roles": ["realm-role"]},
         "resource_access": {
@@ -19,7 +21,7 @@ def test_extract_roles_merges_flat_realm_and_resource_roles() -> None:
         },
     }
 
-    roles = KeycloakJWTAuthentication._extract_roles(claims)
+    roles = KeycloakJWTAuthentication.extract_roles(claims)
 
     assert roles == {
         "flat-role",
@@ -36,9 +38,7 @@ def test_extract_roles_merges_flat_realm_and_resource_roles() -> None:
     OIDC_VERIFY_SSL=True,
 )
 def test_init_uses_ssl_verify_for_discovery() -> None:
-    KeycloakJWTAuthentication._jwks_client = None
-    KeycloakJWTAuthentication._iss = None
-    KeycloakJWTAuthentication._aud = None
+    KeycloakJWTAuthentication.reset_cached_oidc_metadata()
 
     response = Mock()
     response.json.return_value = {
@@ -50,7 +50,7 @@ def test_init_uses_ssl_verify_for_discovery() -> None:
         patch("endoreg_db.authz.auth.requests.get", return_value=response) as get_mock,
         patch("endoreg_db.authz.auth.PyJWKClient", return_value=Mock()),
     ):
-        KeycloakJWTAuthentication._init()
+        KeycloakJWTAuthentication.initialize_oidc_client()
 
     get_mock.assert_called_once_with(
         "https://kc.example/realms/test/.well-known/openid-configuration",

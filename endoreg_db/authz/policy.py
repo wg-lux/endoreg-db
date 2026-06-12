@@ -32,6 +32,8 @@ Goals
 type ResourceRoles = dict[str, dict[str, str]]
 type RouteResourceMap = dict[str, str]
 type RouteRoles = dict[str, dict[str, str]]
+from lx_dtypes.models.contracts.authz import validate_authz_route_lookup
+
 type MethodRoles = dict[str, str]
 
 # ------------------------------------------------------------
@@ -228,7 +230,14 @@ def get_needed_role(route_name: str, method: str) -> str:
       3) DEFAULT_ROLE_BY_METHOD[method] as final fallback
          - e.g. "data:read"/"data:write" if you keep those as global roles.
     """
-    method = (method or "").upper()
+    lookup = validate_authz_route_lookup(
+        {
+            "route_name": route_name,
+            "method": method,
+        }
+    )
+    route_name = lookup.route_name
+    method = lookup.method
 
     # 1) explicit per-route overrides
     per_route = REQUIRED_ROLES.get(route_name, {})

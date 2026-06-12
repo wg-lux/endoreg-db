@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from datetime import date as dt_date, datetime, time as dt_time
 from uuid import UUID
-from typing import TypeAlias, cast
+from typing import Protocol, TypeAlias, cast
 
 from django.db.models import Q
 from django.db.models.fields.files import FieldFile
@@ -30,13 +30,22 @@ from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.services.video_files import get_active_video_file
-from endoreg_db.utils.web.media_urls import (
+from endoreg_db.utils.media_urls import (
     build_absolute_media_url,
     build_pdf_stream_path,
     build_video_frame_stream_path,
     build_video_stream_path,
 )
-from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
+
+
+class _InterventionRows(Protocol):
+    def all(self) -> Iterable[object]: ...
+
+
+class _PatientFindingInterventionsSource(Protocol):
+    interventions: _InterventionRows
+
 
 logger = logging.getLogger(__name__)
 
@@ -177,7 +186,10 @@ def _segment_category(segment: LabelVideoSegment) -> str | None:
     has_active_intervention = any(
         bool(getattr(intervention, "is_active", False))
         for pf in patient_findings
-        for intervention in pf.interventions.all()
+        for intervention in cast(
+            _PatientFindingInterventionsSource,
+            pf,
+        ).interventions.all()
     )
     if has_intervention_label or has_active_intervention:
         return "intervention"
@@ -328,18 +340,18 @@ class PatientMediaTimelineView(APIView):
 
         items: list[TimelineItem] = []
 
-        reports_qs: QuerySet[
-            AnonymExaminationReport
-        ] = AnonymExaminationReport.objects.select_related(
-            "patient",
-            "patient_examination",
-            "sensitive_meta",
-            "center",
-            "type",
-        ).filter(
-            Q(patient_id=patient_id)
-            | Q(sensitive_meta__pseudo_patient_id=patient_id)
-            | Q(patient_examination__patient_id=patient_id)
+        reports_qs: QuerySet[AnonymExaminationReport] = (
+            AnonymExaminationReport.objects.select_related(
+                "patient",
+                "patient_examination",
+                "sensitive_meta",
+                "center",
+                "type",
+            ).filter(
+                Q(patient_id=patient_id)
+                | Q(sensitive_meta__pseudo_patient_id=patient_id)
+                | Q(patient_examination__patient_id=patient_id)
+            )
         )
         if pe_filter_id is not None:
             reports_qs = reports_qs.filter(patient_examination_id=pe_filter_id)

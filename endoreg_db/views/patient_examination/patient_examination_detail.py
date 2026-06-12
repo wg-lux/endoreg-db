@@ -10,7 +10,7 @@ from rest_framework import generics, status
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from endoreg_db.utils.web.permissions import DEBUG_PERMISSIONS
+from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ class PatientExaminationDetailView(generics.RetrieveUpdateAPIView[PatientExamina
     def get(self, request: Request, *args: str, **kwargs: str) -> Response:
         try:
             instance = self.get_object()
-            serializer = self.get_serializer(instance)
+            serializer = PatientExaminationSerializer(instance)
             return Response(_serializer_data(cast(_SerializerDataLike, serializer)))
         except Exception as e:
             logger.error(f"Error retrieving examination: {str(e)}")
@@ -63,7 +63,9 @@ class PatientExaminationDetailView(generics.RetrieveUpdateAPIView[PatientExamina
     def patch(self, request: Request, *args: str, **kwargs: str) -> Response:
         try:
             instance = self.get_object()
-            serializer = self.get_serializer(instance, data=request.data, partial=True)
+            serializer = PatientExaminationSerializer(
+                instance, data=request.data, partial=True
+            )
 
             if serializer.is_valid():
                 serializer.save()

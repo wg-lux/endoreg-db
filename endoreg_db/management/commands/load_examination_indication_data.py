@@ -26,7 +26,7 @@ from ...models import (
     InformationSource,
 )
 from ...utils import load_model_data_from_yaml
-from ...utils.data_loading.yaml_model_loader import LoadModelDataMetadata
+from ...utils.yaml_model_loader import LoadModelDataMetadata
 
 NullValue: TypeAlias = NoneType
 TextOrNull: TypeAlias = str | NullValue
@@ -65,6 +65,27 @@ class DescriptionRecord(Protocol):
     description: TextOrNull
 
     def save(self, *, update_fields: list[str]) -> None: ...
+
+
+class _FindingInterventionRelation(Protocol):
+    def set(self, objs: Sequence[FindingIntervention]) -> None: ...
+
+
+class _ExaminationIndicationClassificationRelation(Protocol):
+    def set(self, objs: Sequence[ExaminationIndicationClassification]) -> None: ...
+
+
+class _ExaminationIndicationRelation(Protocol):
+    def set(self, objs: Sequence[ExaminationIndication]) -> None: ...
+
+
+class _DtypesIndicationRecord(Protocol):
+    expected_interventions: _FindingInterventionRelation
+    classifications: _ExaminationIndicationClassificationRelation
+
+
+class _DtypesExaminationRecord(Protocol):
+    indications: _ExaminationIndicationRelation
 
 
 IMPORT_METADATA: dict[str, LoadModelDataMetadata] = {
@@ -248,7 +269,9 @@ class Command(BaseCommand):
             interventions: list[FindingIntervention] = list(
                 FindingIntervention.objects.filter(name__in=intervention_names)
             )
-            db_indication.expected_interventions.set(interventions)
+            cast(
+                _DtypesIndicationRecord, db_indication
+            ).expected_interventions.set(interventions)
 
             found_intervention_names: set[str] = {
                 cast(NamedRecord, intervention).name for intervention in interventions
@@ -296,7 +319,9 @@ class Command(BaseCommand):
                     )
                 classifications.append(classification)
 
-            db_indication.classifications.set(classifications)
+            cast(_DtypesIndicationRecord, db_indication).classifications.set(
+                classifications
+            )
 
         if verbose:
             self.stdout.write(
@@ -330,7 +355,9 @@ class Command(BaseCommand):
             indication_qs = ExaminationIndication.objects.filter(
                 name__in=indication_names
             )
-            db_examination.indications.set(indication_qs)
+            cast(_DtypesExaminationRecord, db_examination).indications.set(
+                list(indication_qs)
+            )
             updated_exam_count += 1
 
             found_indication_names: set[str] = {

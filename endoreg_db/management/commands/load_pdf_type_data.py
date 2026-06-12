@@ -11,7 +11,7 @@ from ...data import REPORT_TYPE_DATA_DIR
 
 from ...models import PdfType, ReportReaderFlag
 from ...utils import load_model_data_from_yaml
-from ...utils.data_loading.yaml_model_loader import LoadModelDataMetadata
+from ...utils.yaml_model_loader import LoadModelDataMetadata
 
 SOURCE_DIR = REPORT_TYPE_DATA_DIR  # e.g. settings.DATA_DIR_INTERVENTION
 

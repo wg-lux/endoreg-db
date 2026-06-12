@@ -1,10 +1,10 @@
 from endoreg_db.models import Gender
-from rest_framework import viewsets
+from rest_framework.viewsets import ReadOnlyModelViewSet
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
 from ...serializers.administration import GenderSerializer
 
 
-class GenderViewSet(viewsets.ReadOnlyModelViewSet[Gender]):
+class GenderViewSet(ReadOnlyModelViewSet[Gender]):
     """
     API endpoint for Gender options.
     Provides read-only access to gender choices for patient forms.

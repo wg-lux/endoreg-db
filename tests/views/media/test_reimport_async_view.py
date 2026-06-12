@@ -1,10 +1,12 @@
 from __future__ import annotations
-
+import json
 from types import SimpleNamespace
 from unittest.mock import patch
 from uuid import uuid4
 
+from django.test import Client
 import pytest
+from pytest import MonkeyPatch
 
 from endoreg_db.models import Center, VideoFile, VideoProcessingHistory, VideoState
 from endoreg_db.services.video_import import VideoImportService
@@ -34,13 +36,13 @@ def _make_source_record(center: Center) -> VideoFile:
 
 
 def test_reimport_endpoint_queues_without_inline_import(
-    monkeypatch,
-    client,
-    center,
+    monkeypatch: MonkeyPatch,
+    client: Client,
+    center: Center,
 ):
     source_record = _make_source_record(center)
 
-    def apply_async(*_args, **_kwargs):
+    def apply_async(*_args: object, **_kwargs: object) -> SimpleNamespace:
         return SimpleNamespace(id="queued-view-task")
 
     monkeypatch.setenv("VIDEO_REIMPORT_JOB_MODE", "celery")
@@ -59,7 +61,7 @@ def test_reimport_endpoint_queues_without_inline_import(
         )
 
     assert response.status_code == 202
-    payload = response.json()
+    payload = json.loads(response.content)
     assert payload["status"] == "queued"
     assert payload["task_id"] == "queued-view-task"
     assert payload["queue"] == "ffmpeg_media"

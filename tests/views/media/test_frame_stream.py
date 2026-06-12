@@ -1,25 +1,46 @@
 from __future__ import annotations
 
+# pyright: reportUnknownMemberType=false
+
 import importlib
+import importlib.util
+import json
 import shutil
 import uuid
-import importlib.util
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import numpy as np
 import pytest
+from django.core.files.base import ContentFile
 from django.test import TestCase
 from rest_framework.test import APIRequestFactory
 
 from endoreg_db.models import Center, Frame, FrameExtractionRequest, VideoFile
-from endoreg_db.utils.filesystem.paths import protected_media_root
+from endoreg_db.utils.paths import protected_media_root
+
+
+def _load_frame_media_module(module_name: str) -> ModuleType:
+    module_path = (
+        Path(__file__).resolve().parents[3]
+        / "endoreg_db"
+        / "views"
+        / "media"
+        / "frame_media.py"
+    )
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    assert spec is not None
+    assert spec.loader is not None
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class FrameStreamViewTests(TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.center = Center.objects.create(
-            name=f"frame-stream-center-{uuid.uuid4().hex[:8]}"
+            name=f"frame-stream-center-{uuid.uuid4().hex[:8]}",
         )
         self.video = VideoFile.objects.create(
             center=self.center,
@@ -42,23 +63,11 @@ class FrameStreamViewTests(TestCase):
             is_extracted=False,
         )
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         shutil.rmtree(self.frame_dir, ignore_errors=True)
 
-    def test_frame_stream_serves_existing_frame_and_nginx_offload(self):
-        module_path = (
-            Path(__file__).resolve().parents[3]
-            / "endoreg_db"
-            / "views"
-            / "media"
-            / "frame_media.py"
-        )
-        spec = importlib.util.spec_from_file_location(
-            "test_frame_media_module", module_path
-        )
-        assert spec is not None and spec.loader is not None
-        frame_media_module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(frame_media_module)
+    def test_frame_stream_serves_existing_frame_and_nginx_offload(self) -> None:
+        frame_media_module = _load_frame_media_module("test_frame_media_module")
 
         target_path = self.frame.file_path
         target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -72,14 +81,18 @@ class FrameStreamViewTests(TestCase):
             "http://frontend.test",
         )
         monkeypatches.setenv("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
+
         try:
             factory = APIRequestFactory()
             req = factory.get(
-                f"/api/media/videos/{self.video.pk}/frames/{self.frame.frame_number}/stream/"
+                f"/api/media/videos/{self.video.pk}/frames/"
+                f"{self.frame.frame_number}/stream/",
             )
             view = frame_media_module.FrameStreamView.as_view()
             resp = view(
-                req, video_id=self.video.pk, frame_number=self.frame.frame_number
+                req,
+                video_id=self.video.pk,
+                frame_number=self.frame.frame_number,
             )
         finally:
             monkeypatches.undo()
@@ -87,6 +100,7 @@ class FrameStreamViewTests(TestCase):
         if resp.status_code != 200:
             body = getattr(resp, "data", None) or getattr(resp, "content", b"")
             raise AssertionError(f"Expected 200, got {resp.status_code}. body={body!r}")
+
         assert resp.status_code == 200
         self.frame.refresh_from_db()
         assert self.frame.is_extracted is True
@@ -98,107 +112,106 @@ class FrameStreamViewTests(TestCase):
         assert resp["X-Accel-Buffering"] == "no"
         assert resp["Access-Control-Allow-Origin"] == "http://frontend.test"
 
-    def test_frame_stream_queues_async_extraction_when_frame_missing(self):
-        module_path = (
-            Path(__file__).resolve().parents[3]
-            / "endoreg_db"
-            / "views"
-            / "media"
-            / "frame_media.py"
-        )
-        spec = importlib.util.spec_from_file_location(
-            "test_frame_media_pending_module", module_path
-        )
-        assert spec is not None and spec.loader is not None
-        frame_media_module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(frame_media_module)
+    def test_frame_stream_queues_async_extraction_when_frame_missing(self) -> None:
+        frame_media_module = _load_frame_media_module("test_frame_media_pending_module")
 
-        monkeypatches = pytest.MonkeyPatch()
-        monkeypatches.setattr(
-            frame_media_module,
-            "request_frame_extraction",
-            lambda **kwargs: frame_media_module.FrameExtractionDispatchResult(
+        def fake_request_frame_extraction(**kwargs: object) -> object:
+            return frame_media_module.FrameExtractionDispatchResult(
                 request_id=17,
                 task_id="task-17",
                 status="queued",
                 video_id=self.video.pk,
                 frame_number=self.frame.frame_number,
-            ),
-        )
-        try:
-            factory = APIRequestFactory()
-            req = factory.get(
-                f"/api/media/videos/{self.video.pk}/frames/{self.frame.frame_number}/stream/"
             )
-            view = frame_media_module.FrameStreamView.as_view()
-            resp = view(
-                req, video_id=self.video.pk, frame_number=self.frame.frame_number
-            )
-        finally:
-            monkeypatches.undo()
-
-        assert resp.status_code == 202
-        assert resp.data["status"] == "frame_extraction_pending"
-        assert resp.data["request_id"] == 17
-        assert resp.data["task_id"] == "task-17"
-
-    def test_frame_stream_reports_failed_extraction_request(self):
-        module_path = (
-            Path(__file__).resolve().parents[3]
-            / "endoreg_db"
-            / "views"
-            / "media"
-            / "frame_media.py"
-        )
-        spec = importlib.util.spec_from_file_location(
-            "test_frame_media_failed_module", module_path
-        )
-        assert spec is not None and spec.loader is not None
-        frame_media_module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(frame_media_module)
 
         monkeypatches = pytest.MonkeyPatch()
         monkeypatches.setattr(
             frame_media_module,
             "request_frame_extraction",
-            lambda **kwargs: frame_media_module.FrameExtractionDispatchResult(
+            fake_request_frame_extraction,
+        )
+
+        try:
+            factory = APIRequestFactory()
+            req = factory.get(
+                f"/api/media/videos/{self.video.pk}/frames/"
+                f"{self.frame.frame_number}/stream/",
+            )
+            view = frame_media_module.FrameStreamView.as_view()
+            resp = view(
+                req,
+                video_id=self.video.pk,
+                frame_number=self.frame.frame_number,
+            )
+        finally:
+            monkeypatches.undo()
+        data = json.loads(resp.content)
+
+        assert resp.status_code == 202
+        assert data["status"] == "frame_extraction_pending"
+        assert data["request_id"] == 17
+        assert data["task_id"] == "task-17"
+
+    def test_frame_stream_reports_failed_extraction_request(self) -> None:
+        frame_media_module = _load_frame_media_module("test_frame_media_failed_module")
+
+        def fake_failed_request_frame_extraction(**kwargs: object) -> object:
+            return frame_media_module.FrameExtractionDispatchResult(
                 request_id=18,
                 task_id="task-18",
                 status="failed",
                 video_id=self.video.pk,
                 frame_number=self.frame.frame_number,
-            ),
+            )
+
+        monkeypatches = pytest.MonkeyPatch()
+        monkeypatches.setattr(
+            frame_media_module,
+            "request_frame_extraction",
+            fake_failed_request_frame_extraction,
         )
+
         try:
             factory = APIRequestFactory()
             req = factory.get(
-                f"/api/media/videos/{self.video.pk}/frames/{self.frame.frame_number}/stream/"
+                f"/api/media/videos/{self.video.pk}/frames/"
+                f"{self.frame.frame_number}/stream/",
             )
             view = frame_media_module.FrameStreamView.as_view()
             resp = view(
-                req, video_id=self.video.pk, frame_number=self.frame.frame_number
+                req,
+                video_id=self.video.pk,
+                frame_number=self.frame.frame_number,
             )
         finally:
             monkeypatches.undo()
-
+        
+        data = json.loads(resp.content)
         assert resp.status_code == 409
-        assert resp.data["status"] == "frame_extraction_failed"
-        assert resp.data["request_id"] == 18
+        assert data["status"] == "frame_extraction_failed"
+        assert data["request_id"] == 18
 
-    def test_frame_stream_rejects_out_of_range_frame_number(self):
+    def test_frame_stream_rejects_out_of_range_frame_number(self) -> None:
         factory = APIRequestFactory()
         req = factory.get(
-            f"/api/media/videos/{self.video.pk}/frames/{self.video.frame_count}/stream/"
+            f"/api/media/videos/{self.video.pk}/frames/"
+            f"{self.video.frame_count}/stream/",
         )
+
         from endoreg_db.views.media.frame_media import FrameStreamView
 
         view = FrameStreamView.as_view()
-        resp = view(req, video_id=self.video.pk, frame_number=self.video.frame_count)
+        resp = view(
+            req,
+            video_id=self.video.pk,
+            frame_number=self.video.frame_count,
+        )
         assert resp.status_code == 404
 
-    def test_frame_stream_rejects_path_outside_video_frame_dir(self):
+    def test_frame_stream_rejects_path_outside_video_frame_dir(self) -> None:
         escaped_target = protected_media_root() / f"frame_escape_{uuid.uuid4().hex}.jpg"
         escaped_target.write_bytes(b"\xff\xd8\xff\xdbfakejpg")
+
         try:
             self.frame.relative_path = f"../{escaped_target.name}"
             self.frame.is_extracted = True
@@ -206,47 +219,68 @@ class FrameStreamViewTests(TestCase):
 
             factory = APIRequestFactory()
             req = factory.get(
-                f"/api/media/videos/{self.video.pk}/frames/{self.frame.frame_number}/stream/"
+                f"/api/media/videos/{self.video.pk}/frames/"
+                f"{self.frame.frame_number}/stream/",
             )
+
             from endoreg_db.views.media.frame_media import FrameStreamView
 
             view = FrameStreamView.as_view()
             resp = view(
-                req, video_id=self.video.pk, frame_number=self.frame.frame_number
+                req,
+                video_id=self.video.pk,
+                frame_number=self.frame.frame_number,
             )
             assert resp.status_code == 404
         finally:
             escaped_target.unlink(missing_ok=True)
 
-    def test_frame_stream_requires_auth_in_production_mode(self):
+    def test_frame_stream_requires_auth_in_production_mode(self) -> None:
         frame_media_module = importlib.import_module(
-            "endoreg_db.views.media.frame_media"
+            "endoreg_db.views.media.frame_media",
         )
         authz_permissions_module = importlib.import_module(
-            "endoreg_db.authz.permissions"
+            "endoreg_db.authz.permissions",
         )
         util_permissions_module = importlib.import_module(
-            "endoreg_db.utils.web.permissions"
+            "endoreg_db.utils.permissions",
         )
 
+        def fake_is_debug_mode() -> bool:
+            return False
+
         monkeypatches = pytest.MonkeyPatch()
-        monkeypatches.setattr(util_permissions_module, "is_debug_mode", lambda: False)
-        monkeypatches.setattr(authz_permissions_module, "is_debug_mode", lambda: False)
+        monkeypatches.setattr(
+            util_permissions_module,
+            "is_debug_mode",
+            fake_is_debug_mode,
+        )
+        monkeypatches.setattr(
+            authz_permissions_module,
+            "is_debug_mode",
+            fake_is_debug_mode,
+        )
+
         try:
             factory = APIRequestFactory()
             req = factory.get(
-                f"/api/media/videos/{self.video.pk}/frames/{self.frame.frame_number}/stream/"
+                f"/api/media/videos/{self.video.pk}/frames/"
+                f"{self.frame.frame_number}/stream/",
             )
             view = frame_media_module.FrameStreamView.as_view()
             resp = view(
-                req, video_id=self.video.pk, frame_number=self.frame.frame_number
+                req,
+                video_id=self.video.pk,
+                frame_number=self.frame.frame_number,
             )
         finally:
             monkeypatches.undo()
 
         assert resp.status_code in {401, 403}
 
-    def test_frame_stream_does_not_create_duplicate_request_rows_for_same_frame(self):
+    def test_frame_stream_does_not_create_duplicate_request_rows_for_same_frame(
+        self,
+    ) -> None:
         request = FrameExtractionRequest.objects.create(
             video=self.video,
             frame_number=self.frame.frame_number,
@@ -255,42 +289,65 @@ class FrameStreamViewTests(TestCase):
         )
         factory = APIRequestFactory()
         req = factory.get(
-            f"/api/media/videos/{self.video.pk}/frames/{self.frame.frame_number}/stream/"
+            f"/api/media/videos/{self.video.pk}/frames/"
+            f"{self.frame.frame_number}/stream/",
         )
+
         from endoreg_db.views.media.frame_media import FrameStreamView
 
         view = FrameStreamView.as_view()
-        resp = view(req, video_id=self.video.pk, frame_number=self.frame.frame_number)
+        resp = view(
+            req,
+            video_id=self.video.pk,
+            frame_number=self.frame.frame_number,
+        )
 
         assert resp.status_code == 202
         assert FrameExtractionRequest.objects.count() == 1
         request.refresh_from_db()
         assert request.task_id == "existing-task"
 
-    def test_decoded_frame_stream_serves_single_decoded_frame(self):
+    def test_decoded_frame_stream_serves_single_decoded_frame(self) -> None:
         from endoreg_db.views.media import frame_media as frame_media_module
 
-        self.video.raw_file = "videos/raw_frame_stream_test.mp4"
+        self.video.raw_file.save(
+            "videos/raw_frame_stream_test.mp4",
+            ContentFile(b"fake raw video"),
+            save=True,
+        )
         self.video.save(update_fields=["raw_file"])
+
+        def fake_read_video_file_frame_sample(
+            *args: object,
+            **kwargs: object,
+        ) -> object:
+            frame_number = kwargs["frame_number"]
+            assert isinstance(frame_number, int)
+
+            return SimpleNamespace(
+                frame_number=frame_number,
+                timestamp=1.25,
+                rgb_frame=np.zeros((2, 2, 3), dtype=np.uint8),
+            )
 
         monkeypatches = pytest.MonkeyPatch()
         monkeypatches.setattr(
             frame_media_module,
             "read_video_file_frame_sample",
-            lambda *args, **kwargs: SimpleNamespace(
-                frame_number=kwargs["frame_number"],
-                timestamp=1.25,
-                rgb_frame=np.zeros((2, 2, 3), dtype=np.uint8),
-            ),
+            fake_read_video_file_frame_sample,
         )
+
         try:
             factory = APIRequestFactory()
             req = factory.get(
-                f"/api/media/videos/{self.video.pk}/frames/{self.frame.frame_number}/decoded-stream/?file_type=raw"
+                f"/api/media/videos/{self.video.pk}/frames/"
+                f"{self.frame.frame_number}/decoded-stream/?file_type=raw",
             )
             view = frame_media_module.DecodedFrameStreamView.as_view()
             resp = view(
-                req, video_id=self.video.pk, frame_number=self.frame.frame_number
+                req,
+                video_id=self.video.pk,
+                frame_number=self.frame.frame_number,
             )
         finally:
             monkeypatches.undo()
@@ -301,45 +358,65 @@ class FrameStreamViewTests(TestCase):
         assert resp["X-Frame-Number"] == str(self.frame.frame_number)
         assert resp.content.startswith(b"\xff\xd8")
 
-    def test_decoded_frame_stream_rejects_invalid_file_type(self):
+    def test_decoded_frame_stream_rejects_invalid_file_type(self) -> None:
         from endoreg_db.views.media.frame_media import DecodedFrameStreamView
 
         factory = APIRequestFactory()
         req = factory.get(
-            f"/api/media/videos/{self.video.pk}/frames/{self.frame.frame_number}/decoded-stream/?file_type=preview"
+            f"/api/media/videos/{self.video.pk}/frames/"
+            f"{self.frame.frame_number}/decoded-stream/?file_type=preview",
         )
         view = DecodedFrameStreamView.as_view()
-        resp = view(req, video_id=self.video.pk, frame_number=self.frame.frame_number)
+        resp = view(
+            req,
+            video_id=self.video.pk,
+            frame_number=self.frame.frame_number,
+        )
+        data = json.loads(resp.content)
 
         assert resp.status_code == 400
-        assert "file_type" in resp.data["error"]
+        assert "file_type" in data["error"]
 
-    def test_decoded_frame_stream_reports_decode_failure(self):
+    def test_decoded_frame_stream_reports_decode_failure(self) -> None:
         from endoreg_db.views.media import frame_media as frame_media_module
 
-        self.video.processed_file = "videos/processed_frame_stream_test.mp4"
+        self.video.processed_file.save(
+            "videos/processed_frame_stream_test.mp4",
+            ContentFile(b"fake processed video"),
+            save=True,
+        )
         self.video.save(update_fields=["processed_file"])
+
+        def fake_failing_read_video_file_frame_sample(
+            *args: object,
+            **kwargs: object,
+        ) -> object:
+            raise RuntimeError("decode failed")
 
         monkeypatches = pytest.MonkeyPatch()
         monkeypatches.setattr(
             frame_media_module,
             "read_video_file_frame_sample",
-            lambda *args, **kwargs: (_ for _ in ()).throw(
-                RuntimeError("decode failed")
-            ),
+            fake_failing_read_video_file_frame_sample,
         )
+
         try:
             factory = APIRequestFactory()
             req = factory.get(
-                f"/api/media/videos/{self.video.pk}/frames/{self.frame.frame_number}/decoded-stream/?file_type=processed"
+                f"/api/media/videos/{self.video.pk}/frames/"
+                f"{self.frame.frame_number}/decoded-stream/?file_type=processed",
             )
             view = frame_media_module.DecodedFrameStreamView.as_view()
             resp = view(
-                req, video_id=self.video.pk, frame_number=self.frame.frame_number
+                req,
+                video_id=self.video.pk,
+                frame_number=self.frame.frame_number,
             )
         finally:
             monkeypatches.undo()
 
+        data = json.loads(resp.content)
+
         assert resp.status_code == 409
-        assert resp.data["status"] == "frame_decode_failed"
-        assert resp.data["file_type"] == "processed"
+        assert data["status"] == "frame_decode_failed"
+        assert data["file_type"] == "processed"

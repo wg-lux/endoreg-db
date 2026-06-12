@@ -5,6 +5,7 @@ from typing import Protocol, TypeAlias, cast
 from django.db import models
 from django.db.models import QuerySet
 from django.utils import timezone
+from lx_dtypes.models.contracts.json_types import JsonObject
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.request import Request
@@ -150,7 +151,7 @@ class PatientExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):
             serializer = PatientExaminationDraftResponseSerializer(
                 {
                     "patient_examination_id": cast(int, examination.pk),
-                    "draft": cast(dict[str, JsonValue], examination.report_draft or {}),
+                    "draft": examination.report_draft or {},
                     "updated_at": cast(
                         datetime | None,
                         getattr(examination, "draft_updated_at"),
@@ -161,9 +162,11 @@ class PatientExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):
 
         serializer = PatientExaminationDraftSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        examination.report_draft = cast(dict[str, JsonValue], serializer.validated_data)
+        examination.report_draft = cast(JsonObject, serializer.validated_data)
         examination.draft_updated_at = timezone.now()
-        models.Model.save(examination, update_fields=["report_draft", "draft_updated_at"])
+        models.Model.save(
+            examination, update_fields=["report_draft", "draft_updated_at"]
+        )
 
         response_serializer = PatientExaminationDraftResponseSerializer(
             {
@@ -194,7 +197,9 @@ class PatientExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):
             try:
                 self.perform_create(serializer)
                 response_data = _serializer_data(cast(_SerializerDataLike, serializer))
-                headers = self.get_success_headers(cast(dict[str, JsonValue], response_data))
+                headers = self.get_success_headers(
+                    cast(dict[str, JsonValue], response_data)
+                )
                 return Response(
                     response_data, status=status.HTTP_201_CREATED, headers=headers
                 )

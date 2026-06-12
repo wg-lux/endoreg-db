@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import date, datetime
-from typing import Any, Literal, cast
+from typing import Any, Literal, Protocol, cast
 import json
 import logging
 
@@ -44,9 +44,19 @@ from endoreg_db.serializers.meta import (
     SensitiveMetaUpdateSerializer,
 )
 from endoreg_db.serializers.patient import PatientSerializer
-from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 logger = logging.getLogger(__name__)
+
+
+class _PageNumberPaginatorLike(Protocol):
+    page_size: int
+
+    def paginate_queryset(
+        self, queryset: object, request: Request
+    ) -> list[SensitiveMeta] | None: ...
+
+    def get_paginated_response(self, data: object) -> Response: ...
 
 
 def _as_int(value: object) -> int | None:
@@ -335,7 +345,7 @@ def _resolve_case_resolution_patient(
             patient_payload["center_key"] = center_key
         patient_serializer = PatientSerializer(data=patient_payload)
         patient_serializer.is_valid(raise_exception=True)
-        return cast(Patient, patient_serializer.save())
+        return patient_serializer.save()
 
     raise ValueError("patient_id or new_patient is required for create action")
 
@@ -599,7 +609,7 @@ def video_sensitive_metadata(request: Request, pk: int) -> Response:
         )
 
         if serializer.is_valid():
-            updated_instance = cast(SensitiveMeta, serializer.save())
+            updated_instance = serializer.save()
             response_serializer = SensitiveMetaDetailSerializer(updated_instance)
             response_data = _serialize_response_data(response_serializer)
             video_pk = _get_int_field(video, "pk")
@@ -758,7 +768,7 @@ def pdf_sensitive_metadata(request: Request, pk: int) -> Response:
         )
 
         if serializer.is_valid():
-            updated_instance = cast(SensitiveMeta, serializer.save())
+            updated_instance = serializer.save()
             response_serializer = SensitiveMetaDetailSerializer(updated_instance)
             response_data = cast(
                 dict[str, Any], _serialize_response_data(response_serializer)
@@ -939,7 +949,7 @@ def sensitive_metadata_list(request: Request) -> Response:
     # Pagination
     from rest_framework.pagination import PageNumberPagination
 
-    paginator = PageNumberPagination()
+    paginator = cast(_PageNumberPaginatorLike, PageNumberPagination())
     paginator.page_size = 20
     page = paginator.paginate_queryset(queryset, request)
 
@@ -985,7 +995,7 @@ def pdf_sensitive_metadata_list(request: Request) -> Response:
     # Pagination
     from rest_framework.pagination import PageNumberPagination
 
-    paginator = PageNumberPagination()
+    paginator = cast(_PageNumberPaginatorLike, PageNumberPagination())
     paginator.page_size = 20
     page = paginator.paginate_queryset(queryset, request)
 

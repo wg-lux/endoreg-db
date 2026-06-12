@@ -96,7 +96,9 @@ class Command(BaseCommand):
 
     def handle(self, *args: object, **options: object) -> None:
         try:
-            options_payload = TranscodeVideoCommandOptionsPayload.model_validate(options)
+            options_payload = TranscodeVideoCommandOptionsPayload.model_validate(
+                options
+            )
         except ValidationError as exc:
             raise CommandError(str(exc)) from exc
 

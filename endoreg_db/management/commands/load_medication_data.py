@@ -28,7 +28,7 @@ from ...data import (
     MEDICATION_SCHEDULE_DATA_DIR,
 )
 from ...utils import load_model_data_from_yaml
-from ...utils.data_loading.yaml_model_loader import LoadModelDataMetadata
+from ...utils.yaml_model_loader import LoadModelDataMetadata
 
 
 class LoadMedicationCommandOptions(TypedDict):

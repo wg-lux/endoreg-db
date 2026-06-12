@@ -1,6 +1,7 @@
 import importlib
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, TYPE_CHECKING, cast
+from typing import Any, TYPE_CHECKING, Protocol, cast
 
 from rest_framework import serializers
 
@@ -18,18 +19,34 @@ from rest_framework.exceptions import ValidationError
 
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS
 from endoreg_db.services.video_files import get_active_video_file, get_video_fps
-from endoreg_db.utils.web.media_urls import (
+from endoreg_db.utils.media_urls import (
     build_absolute_media_url,
     build_video_stream_path,
 )
 from endoreg_db.utils.storage import ensure_local_file
-from endoreg_db.utils.storage.streaming import maybe_local_plaintext_path
+from endoreg_db.utils.storage_streaming import maybe_local_plaintext_path
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
 
+    _ModelSerializerMeta = serializers.ModelSerializer.Meta
+else:
+    _ModelSerializerMeta = object
 
-class VideoFileSerializer(serializers.ModelSerializer):
+
+class _VideoFileSerializerLike(Protocol):
+    id: int
+    video_hash: str
+    frame_dir: str
+    duration: float | None
+    fps: float | None
+    sequences: dict[str, list[Sequence[int]]]
+
+    @property
+    def original_file_name(self) -> str | None: ...
+
+
+class VideoFileSerializer(serializers.ModelSerializer[VideoFile]):
     """
     Serializer that dynamically handles video retrieval and streaming.
     Ensures file returns the relative file path (not MEDIA_URL)
@@ -53,8 +70,8 @@ class VideoFileSerializer(serializers.ModelSerializer):
     original_file_name = serializers.CharField(read_only=True)
     duration = serializers.SerializerMethodField()
 
-    class Meta:
-        model = VideoFile
+    class Meta(_ModelSerializerMeta):
+        model = VideoFile  # pyright: ignore[reportAssignmentType]
         # he fields list defines which data should be included in the API response.
         fields = [
             "id",
@@ -71,7 +88,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
     # @staticmethod #using @staticmethod makes it reusable without needing to create a serializer instance.
     #  Without @staticmethod, you would need to instantiate the serializer before calling the method, which is unnecessary her
-    def get_video_selection_field(self, obj: "VideoFile"):
+    def get_video_selection_field(self, obj: _VideoFileSerializerLike) -> str:
         """
         Return the UUID of the video for use as a selection value in frontend dropdowns.
 
@@ -84,8 +101,8 @@ class VideoFileSerializer(serializers.ModelSerializer):
         return obj.video_hash
 
     def get_video_url(
-        self, obj
-    ):  # when we serialize a RawVideoFile object (video metadata), the get_video_url method is automatically invoked by DRF
+        self, obj: _VideoFileSerializerLike
+    ) -> object:  # when we serialize a RawVideoFile object (video metadata), the get_video_url method is automatically invoked by DRF
         """
         Return the absolute API URL for accessing the video file.
 
@@ -102,7 +119,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
         return {"error": "Video URL not available"}
 
-    def get_duration(self, obj: "VideoFile"):
+    def get_duration(self, obj: _VideoFileSerializerLike) -> float | None:
         """
         Return the duration of the video in seconds, using the stored value if available or extracting it dynamically with OpenCV.
 
@@ -117,7 +134,9 @@ class VideoFileSerializer(serializers.ModelSerializer):
             return None
 
         try:
-            with ensure_local_file(get_active_video_file(obj)) as video_path:
+            with ensure_local_file(
+                get_active_video_file(cast(VideoFile, obj))
+            ) as video_path:
                 cap = cv2_mod.VideoCapture(str(video_path))
                 try:
                     if not cap.isOpened():
@@ -134,7 +153,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
         except Exception:
             return None
 
-    def get_file(self, obj: "VideoFile"):
+    def get_file(self, obj: _VideoFileSerializerLike) -> object:
         """
         Returns the relative file path of the active video file, or an error message if the file is missing or invalid.
 
@@ -145,7 +164,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
             str or dict: The relative file path as a string, or a dictionary with an error message if the file is missing or invalid.
         """
         try:
-            active_file = get_active_video_file(obj)
+            active_file = get_active_video_file(cast(VideoFile, obj))
         except ValueError:
             return {"error": "No file  associated with this entry"}
         file_name = getattr(active_file, "name", None)
@@ -154,14 +173,14 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
         return file_name.strip()  #  Only return the file path, no URL
 
-    def get_full_video_path(self, obj: "VideoFile"):
+    def get_full_video_path(self, obj: _VideoFileSerializerLike) -> object:
         """
         Return the absolute filesystem path to the video's active file.
 
         If the file does not exist or an error occurs during path construction, returns a dictionary with an error message.
         """
         try:
-            active_file = get_active_video_file(obj)
+            active_file = get_active_video_file(cast(VideoFile, obj))
         except ValueError:
             return {"error": "No video file associated with this entry"}
 
@@ -178,7 +197,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
         except Exception as e:
             return {"error": f"Error constructing file path: {str(e)}"}
 
-    def get_sequences(self, obj: "VideoFile"):
+    def get_sequences(self, obj: _VideoFileSerializerLike) -> object:
         """
         Retrieve frame sequences for each label from the video object.
 
@@ -189,7 +208,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
             "error": "no sequence found, check database first"
         }  #  Get from sequences, return {} if missing
 
-    def get_label_names(self, obj: "VideoFile"):
+    def get_label_names(self, obj: _VideoFileSerializerLike) -> list[str]:
         """
         Return a list of label names present in the video's frame sequences.
 
@@ -199,10 +218,9 @@ class VideoFileSerializer(serializers.ModelSerializer):
         Returns:
             list[str]: List of label names, or an empty list if no sequences are found.
         """
-        sequences = self.get_sequences(obj)
-        return list(sequences.keys()) if sequences else []
+        return list(obj.sequences.keys()) if obj.sequences else []
 
-    def get_label_time_segments(self, obj: "VideoFile"):
+    def get_label_time_segments(self, obj: _VideoFileSerializerLike) -> object:
         """
         Convert frame sequences for each label into time segments with frame-level metadata.
 
@@ -214,7 +232,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
         fps = getattr(obj, "fps", None)
         if fps is None:
-            fps = get_video_fps(obj)
+            fps = get_video_fps(cast(VideoFile, obj))
 
         if not fps or fps <= 0:
             # Strict by default — only use fallback if explicitly enabled and > 0
@@ -236,7 +254,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
                     }
                 )
 
-        sequences = self.get_sequences(obj)  # Fetch sequence data
+        sequences = obj.sequences
         frame_dir = Path(
             str(obj.frame_dir or "")
         )  # Get the correct directory from the model

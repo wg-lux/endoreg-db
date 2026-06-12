@@ -5,10 +5,24 @@ This file configures pytest-django and sets up test fixtures and configurations.
 Includes session-scoped fixtures for video files and database optimization.
 """
 
+from __future__ import annotations
+
 import logging
 import os
 import sys
+from collections.abc import Iterator, Mapping
+from contextlib import AbstractContextManager
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, Protocol, cast
+from django.core.files.storage import Storage
+from django.test import Client as DjangoClient
+from endoreg_db.import_files.context import ImportContext
+from lx_dtypes.models.contracts.ffmpeg_metadata import FfmpegProbeDataPayload
+from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
+from tests.plugins.cache import CacheManager
+
+if TYPE_CHECKING:
+    from endoreg_db.models import AiModel, LabelSet, VideoFile
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 TEST_WORKER_ID = os.environ.get("PYTEST_XDIST_WORKER", "main")
@@ -18,6 +32,185 @@ TEST_DATA_DIR = TEST_RUN_ROOT / "runtime"
 TEST_STORAGE_DIR = TEST_PROTECTED_ROOT / "storage"
 TEST_ASSET_DIR = Path(__file__).parent / "assets"
 LOGGER = logging.getLogger(__name__)
+
+
+class _CacheNamespace(Protocol):
+    def get(self, key: str) -> object: ...
+
+    def set(self, key: str, value: object) -> None: ...
+
+    def invalidate(self, key: str) -> None: ...
+
+
+class _Cache(Protocol):
+    def namespace(self, name: str) -> _CacheNamespace: ...
+
+
+class _DjangoDbBlocker(Protocol):
+    def unblock(self) -> AbstractContextManager[None]: ...
+
+
+class _PytestDbFixture(Protocol):
+    pass
+
+
+class _PytestMark(Protocol):
+    name: str
+
+
+class _PytestNode(Protocol):
+    nodeid: str
+
+    def iter_markers(self) -> Iterator[_PytestMark]: ...
+
+
+class _SqliteRawConnection(Protocol):
+    _endoreg_test_pragmas_applied: bool
+
+
+class _SqlCursor(Protocol):
+    def execute(self, sql: str) -> object: ...
+
+
+class _SqlCursorContext(Protocol):
+    def __enter__(self) -> _SqlCursor: ...
+
+    def __exit__(self, exc_type: object, exc: object, traceback: object) -> bool: ...
+
+
+class _SqliteTestConnection(Protocol):
+    vendor: str
+    connection: _SqliteRawConnection
+
+    def cursor(self) -> _SqlCursorContext: ...
+
+
+class _SqliteConnectionReceiver(Protocol):
+    def __call__(
+        self,
+        sender: type[_SqliteTestConnection],
+        connection: _SqliteTestConnection,
+        **kwargs: JsonValue,
+    ) -> None: ...
+
+
+class _ConnectionCreatedSignal(Protocol):
+    def connect(
+        self,
+        receiver: _SqliteConnectionReceiver,
+        *,
+        dispatch_uid: str,
+    ) -> None: ...
+
+    def disconnect(self, *, dispatch_uid: str) -> bool: ...
+
+
+class _GetStreamInfoCallable(Protocol):
+    def __call__(self, file_path: Path) -> JsonObject: ...
+
+
+class _StorageField(Protocol):
+    storage: Storage
+
+
+def _request_node(request: pytest.FixtureRequest) -> pytest.Item:
+    return cast(pytest.Item, getattr(request, "node"))
+
+
+def _test_paths_from_environment_factory(
+    fake_paths_model: _TestPathsModel,
+) -> Any:
+    def _from_environment(cls: type[object]) -> _TestPathsModel:
+        return fake_paths_model
+
+    return classmethod(_from_environment)
+
+
+def _json_payload_contains_none(data: dict[str, JsonValue | None]) -> bool:
+    return any(value is None for value in data.values())
+
+
+def _ffmpeg_probe_payload_as_json(payload: FfmpegProbeDataPayload) -> JsonObject:
+    return cast(JsonObject, payload.model_dump(mode="python", exclude_none=True))
+
+
+def _mock_probe_stream_info() -> JsonObject:
+    payload = FfmpegProbeDataPayload.model_validate(
+        {
+            "streams": [
+                {
+                    "codec_name": "h264",
+                    "codec_type": "video",
+                    "pix_fmt": "yuv420p",
+                    "color_range": "pc",
+                    "width": 1920,
+                    "height": 1080,
+                    "r_frame_rate": f"{int(DEFAULT_VIDEO_FPS)}/1",
+                    "duration": "10.0",
+                    "nb_frames": str(MAX_MOCK_VIDEO_FRAMES),
+                }
+            ]
+        }
+    )
+    return _ffmpeg_probe_payload_as_json(payload)
+
+
+def _mock_flat_video_metadata() -> JsonObject:
+    return {
+        "width": 1920,
+        "height": 1080,
+        "fps": 25.0,
+        "duration": MAX_MOCK_VIDEO_FRAMES / 25.0,
+        "frame_count": MAX_MOCK_VIDEO_FRAMES,
+    }
+
+
+class _TestPathsModel(Protocol):
+    protected_root: Path
+    data: Path
+    storage: Path
+    import_dir: Path
+    export_dir: Path
+    import_video: Path
+    import_report: Path
+    import_preanonymized: Path
+    import_anonymized_video: Path
+    import_anonymized_report: Path
+    video_export: Path
+    report_export: Path
+    documents: Path
+    transcoding: Path
+    anonym_video: Path
+    sensitive_video: Path
+    anonym_report: Path
+    sensitive_report: Path
+    frame: Path
+    weights: Path
+    raw_frame: Path
+    weights_import: Path
+    weights_export: Path
+    import_frame: Path
+    frame_export: Path
+    logs: Path
+    quarantine: Path
+    migration_staging: Path
+    manifest_dir: Path
+    upload_api: Path
+    upload_watcher: Path
+    upload_preanonymized: Path
+    watcher_video_drop: Path
+    watcher_report_drop: Path
+    watcher_preanonymized_drop: Path
+    sap_import_drop: Path
+    sap_import_processed: Path
+    sap_import_failed: Path
+    ingest_uploads: Path
+    ingest_preanonymized: Path
+    managed_anonymized_videos: Path
+    managed_anonymized_reports: Path
+    managed_sensitive_sidecars: Path
+    quarantine_failed: Path
+    staging_migration: Path
 
 
 def _configure_test_path_env(protected_root: Path) -> None:
@@ -52,11 +245,15 @@ if str(PROJECT_ROOT) not in sys.path:
 os.environ["DJANGO_SETTINGS_MODULE"] = "endoreg_db.config.settings.test"
 _configure_test_path_env(TEST_PROTECTED_ROOT)
 
+import pytest
+from django.db.backends.signals import connection_created
+from django.test import override_settings
+
+from endoreg_db.config.env import DEFAULT_VIDEO_FPS, env_bool
 from endoreg_db.models import AiModel, Label, ModelMeta, ModelType
 from endoreg_db.models.label import LabelSet, LabelType
-from endoreg_db.config.env import DEFAULT_VIDEO_FPS, env_bool
-from endoreg_db.utils.filesystem import paths as paths_module
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils import paths as paths_module
+from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_write_file,
     ensure_directory,
@@ -68,17 +265,13 @@ from tests.helpers.model_weights import (
     ensure_managed_stub_weights,
 )
 
-import pytest
-from django.db.backends.signals import connection_created
-from django.test import override_settings
-
 pytest_plugins = [
     "tests.plugins.cache",
 ]
 
 
 # Disable faker logging immediately on import
-def disable_faker_logging():
+def disable_faker_logging() -> None:
     """Completely disable faker logging"""
     faker_logger = logging.getLogger("faker")
     faker_logger.disabled = True
@@ -109,11 +302,11 @@ ensure_directory(TEST_STORAGE_DIR)
 ensure_directory(TEST_DATA_DIR)
 
 
-def _rebind_paths_module(fake_paths_model) -> None:
+def _rebind_paths_module(fake_paths_model: _TestPathsModel) -> None:
     paths_module.data_paths_model = fake_paths_model
     paths_module.data_paths = fake_paths_model
 
-    path_constant_map = {
+    path_constant_map: dict[str, Path] = {
         "PROTECTED_DATA_ROOT": fake_paths_model.protected_root,
         "DATA_DIR": fake_paths_model.data,
         "STORAGE_DIR": fake_paths_model.storage,
@@ -165,7 +358,7 @@ def _rebind_paths_module(fake_paths_model) -> None:
 
 
 @pytest.fixture
-def unique_ai_model(db):
+def unique_ai_model(db: _PytestDbFixture) -> AiModel:
     """
     Returns a guaranteed unique AiModel for isolated unit testing.
     Use this instead of the default model to avoid unique constraint collisions
@@ -182,7 +375,7 @@ def unique_ai_model(db):
 
 
 @pytest.fixture
-def base_labelset(db):
+def base_labelset(db: _PytestDbFixture) -> LabelSet:
     """
     Returns a valid LabelSet with all required fields (including version).
     """
@@ -194,7 +387,7 @@ def base_labelset(db):
 
 
 @pytest.fixture
-def video_asset_path():
+def video_asset_path() -> Path:
     """Return a representative test video asset bundled with the test suite."""
     from django.conf import settings
 
@@ -215,7 +408,7 @@ def video_asset_path():
 
 
 @pytest.fixture
-def video_asset_file(tmp_path, video_asset_path):
+def video_asset_file(tmp_path: Path, video_asset_path: Path) -> Path:
     """Provide a writable copy of the default video asset for file-operation tests."""
     ensure_directory(tmp_path)
     target = tmp_path / video_asset_path.name
@@ -229,35 +422,50 @@ def video_asset_file(tmp_path, video_asset_path):
 
 
 @pytest.fixture
-def client():
+def client() -> DjangoClient:
     """Safe Django test client that can handle None values by switching to JSON."""
     import json
 
     from django.test import Client as DjangoClient
 
     class SafeClient(DjangoClient):
-        def post(
+        def post(  # type: ignore[override]
             self,
-            path,
-            data=None,
-            content_type=None,
-            follow=False,
-            secure=False,
-            **extra,
-        ):
-            if isinstance(data, dict) and any(v is None for v in data.values()):
+            path: str,
+            data: Any = "",
+            content_type: str = "",
+            follow: bool = False,
+            secure: bool = False,
+            *,
+            headers: Mapping[str, Any] | None = None,
+            query_params: Any = None,
+            **extra: Any,
+        ) -> Any:
+            post_data = data
+            if isinstance(post_data, dict) and _json_payload_contains_none(
+                cast(dict[str, JsonValue | None], post_data)
+            ):
                 return super().post(
                     path,
-                    data=json.dumps(data),
+                    data=json.dumps(cast(dict[str, object], post_data)),
                     content_type="application/json",
                     follow=follow,
                     secure=secure,
+                    headers=headers,
+                    query_params=query_params,
                     **extra,
                 )
             # Ensure content_type is a string to satisfy type checkers
             ct = content_type or "application/x-www-form-urlencoded"
             return super().post(
-                path, data=data, content_type=ct, follow=follow, secure=secure, **extra
+                path,
+                data=cast(object, post_data),
+                content_type=ct,
+                follow=follow,
+                secure=secure,
+                headers=headers,
+                query_params=query_params,
+                **extra,
             )
 
     return SafeClient()
@@ -271,17 +479,12 @@ def client():
 # Base data loading - now using centralized caching
 
 
-def _load_base_db_data_impl(cache):
+def _load_base_db_data_impl(cache: CacheManager) -> bool:
     """
     Load base database data once per session using global caching.
     This reduces repeated database loading in individual tests.
     """
     from endoreg_db.models import Center
-    from tests.helpers.default_objects import (
-        DEFAULT_CENTER_NAME,
-        DEFAULT_SEGMENTATION_MODEL_NAME,
-    )
-
     from tests.helpers.data_loader import (
         load_ai_model_data,
         load_ai_model_label_data,
@@ -294,6 +497,10 @@ def _load_base_db_data_impl(cache):
         load_examination_data,
         load_gender_data,
         load_information_source_data,
+    )
+    from tests.helpers.default_objects import (
+        DEFAULT_CENTER_NAME,
+        DEFAULT_SEGMENTATION_MODEL_NAME,
     )
 
     db_cache = cache.namespace("db")
@@ -442,14 +649,18 @@ def _load_base_db_data_impl(cache):
 
 
 @pytest.fixture(scope="session")
-def seeded_base_db_data(django_db_setup, django_db_blocker, cache):
+def seeded_base_db_data(
+    django_db_setup: object,
+    django_db_blocker: _DjangoDbBlocker,
+    cache: CacheManager,
+) -> bool:
     """Seed base database data once per pytest worker, outside test rollbacks."""
     with django_db_blocker.unblock():
         return _load_base_db_data_impl(cache)
 
 
 @pytest.fixture(scope="function")
-def base_db_data(seeded_base_db_data):
+def base_db_data(seeded_base_db_data: bool) -> bool:
     return seeded_base_db_data
 
 
@@ -459,7 +670,7 @@ def base_db_data(seeded_base_db_data):
 
 
 @pytest.fixture(scope="function")
-def sample_video_file(base_db_data, cache):
+def sample_video_file(base_db_data: bool, cache: CacheManager) -> VideoFile:
     """
     Create a single video file for the entire test session with caching.
     This eliminates repeated video initialization across tests.
@@ -470,11 +681,12 @@ def sample_video_file(base_db_data, cache):
     video_cache = cache.namespace("video")
     cached = video_cache.get("sample")
     if cached is not None:
+        cached_video = cast(VideoFile, cached)
         try:
-            cached.refresh_from_db()
+            cached_video.refresh_from_db()
         except Exception:
             pass
-        return cached
+        return cached_video
 
     from tests.helpers.default_objects import get_default_video_file
 
@@ -485,7 +697,7 @@ def sample_video_file(base_db_data, cache):
 
 
 @pytest.fixture(scope="session", autouse=True)
-def configure_optimized_video_helper_cache(cache):
+def configure_optimized_video_helper_cache(cache: CacheManager) -> Iterator[None]:
     """Bind optimized video helpers to the shared cache namespace."""
 
     from tests.helpers import optimized_video_fixtures as optimized_helpers
@@ -498,7 +710,9 @@ def configure_optimized_video_helper_cache(cache):
 
 
 @pytest.fixture(scope="function")
-def processed_video_file(sample_video_file, base_db_data, cache):
+def processed_video_file(
+    sample_video_file: VideoFile, base_db_data: bool, cache: CacheManager
+) -> VideoFile:
     """
     Create a fully processed video file for the entire test session with caching.
     This eliminates repeated pipeline processing across tests.
@@ -509,16 +723,15 @@ def processed_video_file(sample_video_file, base_db_data, cache):
     video_cache = cache.namespace("video")
     cached = video_cache.get("processed")
     if cached is not None:
+        cached_video = cast(VideoFile, cached)
         try:
-            cached.refresh_from_db()
+            cached_video.refresh_from_db()
         except Exception:
             pass
-        return cached
+        return cached_video
 
+    from endoreg_db.services import video_temporal_inference
     from tests.helpers.default_objects import get_latest_segmentation_model
-    from endoreg_db.services.video_temporal_inference import (
-        _run_video_temporal_inference,
-    )
     from tests.media.video.mock_video_anonym_annotation import (
         mock_video_manual_validation,
     )
@@ -530,7 +743,11 @@ def processed_video_file(sample_video_file, base_db_data, cache):
         # Get AI model - ensure model metadata exists
         ai_model_meta = get_latest_segmentation_model()
 
-        _run_video_temporal_inference(
+        run_video_temporal_inference = getattr(
+            video_temporal_inference,
+            "_run_video_temporal_inference",
+        )
+        run_video_temporal_inference(
             video_file.pk,
             model_meta_id=ai_model_meta.pk,
             delete_frames_after=False,
@@ -550,7 +767,7 @@ def processed_video_file(sample_video_file, base_db_data, cache):
 
 
 @pytest.fixture
-def mock_video_file(base_db_data):
+def mock_video_file(base_db_data: bool) -> Iterator[object]:
     """
     Create a lightweight mock video file for fast testing.
     This avoids actual file operations while providing the model structure.
@@ -596,14 +813,48 @@ def mock_video_file(base_db_data):
 
 
 @pytest.fixture(autouse=True)
-def enable_db_access_for_all_tests(request):
+def enable_db_access_for_all_tests(request: pytest.FixtureRequest) -> None:
     """
     Allow database access for all tests, unless explicitly opted out.
     This fixture is automatically used for all tests.
     """
-    if request.node.get_closest_marker("no_db"):
+    node = _request_node(request)
+    if node.get_closest_marker("no_db"):
         return
     request.getfixturevalue("db")
+
+
+@pytest.fixture(autouse=True)
+def render_drf_response_content_on_direct_access(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Direct view-call tests often inspect DRF Response.content without going
+    through the test client. Render the response lazily for those tests only.
+    """
+    from rest_framework.response import Response
+
+    original_content = Response.content
+    original_getter = original_content.fget
+
+    def rendered_content(response: Response) -> bytes:
+        if not response.is_rendered:
+            response.render()
+        if original_getter is None:
+            raise AttributeError("unreadable attribute")
+        return original_getter(response)
+
+    monkeypatch.setattr(
+        Response,
+        "content",
+        property(
+            rendered_content,
+            original_content.fset,
+            original_content.fdel,
+            original_content.__doc__,
+        ),
+        raising=True,
+    )
 
 
 @pytest.fixture
@@ -649,19 +900,17 @@ def video_test_mode():
     return RUN_VIDEO_TESTS
 
 
-def _apply_sqlite_test_pragmas(db_connection):
+def _apply_sqlite_test_pragmas(db_connection: _SqliteTestConnection) -> None:
     """
     Configure SQLite connections once at creation time so Django's test
     transaction wrappers inherit the settings without mutating live handles.
     """
     from django.db.utils import DatabaseError, InterfaceError, OperationalError
 
-    if getattr(db_connection, "vendor", "") != "sqlite":
+    if db_connection.vendor != "sqlite":
         return
 
-    raw_connection = getattr(db_connection, "connection", None)
-    if raw_connection is None:
-        return
+    raw_connection = db_connection.connection
 
     if getattr(raw_connection, "_endoreg_test_pragmas_applied", False):
         return
@@ -673,12 +922,16 @@ def _apply_sqlite_test_pragmas(db_connection):
             cursor.execute("PRAGMA synchronous=NORMAL;")
             cursor.execute("PRAGMA cache_size=10000;")
             cursor.execute("PRAGMA temp_store=MEMORY;")
-        raw_connection._endoreg_test_pragmas_applied = True
+        setattr(raw_connection, "_endoreg_test_pragmas_applied", True)
     except (AttributeError, DatabaseError, InterfaceError, OperationalError):
         return
 
 
-def _configure_sqlite_test_connection(sender, connection, **kwargs):
+def _configure_sqlite_test_connection(
+    sender: type[_SqliteTestConnection],
+    connection: _SqliteTestConnection,
+    **kwargs: JsonValue,
+) -> None:
     _apply_sqlite_test_pragmas(connection)
 
 
@@ -689,14 +942,15 @@ def optimize_database_queries():
     lazily after pytest-django starts wrapping tests in transactions.
     """
     dispatch_uid = "endoreg.tests.sqlite_pragmas"
-    connection_created.connect(
+    sqlite_connection_created = cast(_ConnectionCreatedSignal, connection_created)
+    sqlite_connection_created.connect(
         _configure_sqlite_test_connection,
         dispatch_uid=dispatch_uid,
     )
 
     yield
 
-    connection_created.disconnect(dispatch_uid=dispatch_uid)
+    sqlite_connection_created.disconnect(dispatch_uid=dispatch_uid)
 
 
 def _cleanup_test_lock_files() -> None:
@@ -720,7 +974,7 @@ def session_mocker():
 
 
 @pytest.fixture(scope="session", autouse=True)
-def setup_test_environment(cache):
+def setup_test_environment(cache: CacheManager) -> Iterator[None]:
     """
     Set up the test environment once per session.
     """
@@ -731,7 +985,7 @@ def setup_test_environment(cache):
     disable_faker_logging()
 
     # Set environment variables for tests from one authoritative protected root,
-    # matching the runtime contract in endoreg_db.utils.filesystem.paths.
+    # matching the runtime contract in endoreg_db.utils.paths.
     _configure_test_path_env(TEST_PROTECTED_ROOT)
     os.environ["DJANGO_SETTINGS_MODULE"] = "endoreg_db.config.settings.test"
 
@@ -770,7 +1024,7 @@ def setup_test_environment(cache):
     safe_rmtree(TEST_PROTECTED_ROOT, missing_ok=True)
 
 
-def _apply_global_video_mocks(cache):
+def _apply_global_video_mocks(cache: CacheManager) -> None:
     """Apply comprehensive video mocking system with intelligent caching and real-code-first approach."""
 
     # Import here to avoid import issues
@@ -779,24 +1033,22 @@ def _apply_global_video_mocks(cache):
 
     ffmpeg_cache = cache.namespace("ffmpeg")
 
-    def cached_get_stream_info_with_fallback(file_path):
+    def cached_get_stream_info_with_fallback(file_path: Path) -> JsonObject:
         """
         Smart caching system that tries real operations first, falls back to mocks.
         Caches successful real results for reuse.
         """
         LOGGER.debug("mock get_stream_info called for %s", file_path)
-        file_path = Path(file_path) if not isinstance(file_path, Path) else file_path
         cache_key = f"stream_info_{file_path}"
         cached = ffmpeg_cache.get(cache_key)
-        if cached is not None:
+        if isinstance(cached, dict):
             LOGGER.debug("ffmpeg cache hit: %s", cache_key)
-            return cached
+            return cast(JsonObject, cached)
 
         try:
             # Try real operation first - direct call to avoid import loops
             if RUN_VIDEO_TESTS and not SKIP_EXPENSIVE_TESTS and file_path.exists():
                 LOGGER.debug("trying real ffprobe for %s", file_path)
-                import json
                 import subprocess
 
                 command = [
@@ -811,7 +1063,9 @@ def _apply_global_video_mocks(cache):
                 result = subprocess.run(
                     command, capture_output=True, text=True, check=True
                 )
-                stream_info = json.loads(result.stdout)
+                stream_info = _ffmpeg_probe_payload_as_json(
+                    FfmpegProbeDataPayload.model_validate_json(result.stdout)
+                )
 
                 # Cache successful real result
                 LOGGER.debug("real ffprobe succeeded for %s", file_path)
@@ -823,60 +1077,52 @@ def _apply_global_video_mocks(cache):
 
         # Return mock data as fallback
         LOGGER.debug("using mock stream info for %s", file_path)
-        mock_stream_info = {
-            "streams": [
+        mock_stream_info = _ffmpeg_probe_payload_as_json(
+            FfmpegProbeDataPayload.model_validate(
                 {
-                    "codec_name": "h264",
-                    "codec_type": "video",
-                    "pix_fmt": "yuv420p",
-                    "color_range": "pc",
-                    "width": 1920,
-                    "height": 1080,
-                    "r_frame_rate": f"{int(DEFAULT_VIDEO_FPS)}/1",
-                    "duration": "10.0",
+                    "streams": [
+                        {
+                            "codec_name": "h264",
+                            "codec_type": "video",
+                            "pix_fmt": "yuv420p",
+                            "color_range": "pc",
+                            "width": 1920,
+                            "height": 1080,
+                            "r_frame_rate": f"{int(DEFAULT_VIDEO_FPS)}/1",
+                            "duration": "10.0",
+                        }
+                    ]
                 }
-            ]
-        }
+            )
+        )
         ffmpeg_cache.set(cache_key, mock_stream_info)
         return mock_stream_info
 
-    def safe_transcode_videofile_if_required(input_path, output_path, **kwargs):
+    def safe_transcode_videofile_if_required(
+        input_path: Path, output_path: Path, **kwargs: JsonValue
+    ) -> Path:
         """Smart transcoding that tries real operations with intelligent fallbacks."""
-        input_path = (
-            Path(input_path) if not isinstance(input_path, Path) else input_path
-        )
-        output_path = (
-            Path(output_path) if not isinstance(output_path, Path) else output_path
-        )
-
         cache_key = f"transcode_{input_path}_{output_path}"
         cached = ffmpeg_cache.get(cache_key)
-        if cached is not None:
+        if isinstance(cached, Path):
             return cached
 
         try:
             # For test scenarios, just return input path if it's compliant
             # Use our cached stream info to check compliance
             stream_info = cached_get_stream_info_with_fallback(input_path)
-            if stream_info and "streams" in stream_info:
-                video_stream = next(
-                    (
-                        s
-                        for s in stream_info["streams"]
-                        if s.get("codec_type") == "video"
-                    ),
-                    None,
-                )
-                if video_stream:
-                    codec = video_stream.get("codec_name")
-                    pix_fmt = video_stream.get("pix_fmt")
-                    color_range = video_stream.get("color_range", "tv")
+            probe_payload = FfmpegProbeDataPayload.model_validate(stream_info)
+            if probe_payload.video_streams:
+                video_stream = probe_payload.video_streams[0]
+                codec = video_stream.codec_name
+                pix_fmt = video_stream.pix_fmt
+                color_range = video_stream.color_range or "tv"
 
-                    # Check if transcoding is needed based on standard requirements
-                    if codec == "h264" and pix_fmt == "yuv420p" and color_range == "pc":
-                        # Already compliant, return input
-                        ffmpeg_cache.set(cache_key, input_path)
-                        return input_path
+                # Check if transcoding is needed based on standard requirements
+                if codec == "h264" and pix_fmt == "yuv420p" and color_range == "pc":
+                    # Already compliant, return input
+                    ffmpeg_cache.set(cache_key, input_path)
+                    return input_path
         except Exception as e:
             LOGGER.debug("smart transcoding check failed for %s: %s", input_path, e)
 
@@ -886,11 +1132,11 @@ def _apply_global_video_mocks(cache):
 
     # Apply smart mocks that preserve real functionality where possible
     mock.patch(
-        "endoreg_db.utils.video.ffmpeg_wrapper.get_stream_info",
+        "endoreg_db.utils.ffmpeg_wrapper.get_stream_info",
         side_effect=cached_get_stream_info_with_fallback,
     ).start()
     mock.patch(
-        "endoreg_db.utils.video.ffmpeg_wrapper.transcode_videofile_if_required",
+        "endoreg_db.utils.ffmpeg_wrapper.transcode_videofile_if_required",
         side_effect=safe_transcode_videofile_if_required,
     ).start()
 
@@ -900,7 +1146,7 @@ def _apply_global_video_mocks(cache):
 # ==========================================
 
 
-def pytest_configure(config):
+def pytest_configure(config: pytest.Config) -> None:
     """
     Configure pytest with custom markers for performance optimization.
     """
@@ -940,13 +1186,17 @@ def pytest_configure(config):
         pass
 
 
-def _node_matches(item, *needles: str) -> bool:
+def _node_matches(item: pytest.Item, *needles: str) -> bool:
     nodeid = item.nodeid.lower()
-    class_name = str(item.cls).lower() if item.cls else ""
+    item_class = getattr(item, "cls", None)
+    class_name = str(item_class).lower() if item_class else ""
     return any(needle in nodeid or needle in class_name for needle in needles)
 
 
-def pytest_collection_modifyitems(config, items):
+def pytest_collection_modifyitems(
+    config: pytest.Config,
+    items: list[pytest.Item],
+) -> None:
     """
     Modify test collection to add markers and skip expensive tests conditionally.
     """
@@ -996,34 +1246,31 @@ def pytest_collection_modifyitems(config, items):
 
 
 @pytest.fixture
-def mock_ffmpeg(monkeypatch):
+def mock_ffmpeg(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     Mock FFmpeg operations for faster testing.
     Returns mock metadata and frame paths.
     """
-    from pathlib import Path
-
-    # Store original functions for fallback
-    original_extract_frames = None
-    original_get_stream_info = None
+    original_get_stream_info: list[_GetStreamInfoCallable] = []
 
     try:
-        from endoreg_db.utils.video.ffmpeg_wrapper import extract_frames as orig_extract
-        from endoreg_db.utils.video.ffmpeg_wrapper import get_stream_info as orig_info
+        from endoreg_db.utils.ffmpeg_wrapper import get_stream_info as orig_info
 
-        original_extract_frames = orig_extract
-        original_get_stream_info = orig_info
+        original_get_stream_info.append(cast(_GetStreamInfoCallable, orig_info))
     except ImportError:
         pass
 
     # Mock ffmpeg extract frames function
-    def mock_extract_frames(source_path, output_dir, **kwargs):
+    def mock_extract_frames(
+        source_path: Path,
+        output_dir: Path,
+        **kwargs: JsonValue,
+    ) -> list[Path]:
         """Mock frame extraction - just create dummy frame files"""
-        output_dir = Path(output_dir)
         ensure_directory(output_dir)
 
         # Keep mocked frame extraction minimal to speed up video-oriented tests.
-        frame_paths = []
+        frame_paths: list[Path] = []
         for i in range(MAX_MOCK_VIDEO_FRAMES):
             frame_path = output_dir / f"frame_{i:07d}.jpg"
             atomic_write_file(destination=frame_path, content=(b"mock-frame",))
@@ -1032,43 +1279,32 @@ def mock_ffmpeg(monkeypatch):
         return frame_paths
 
     # Mock ffmpeg probe function with fallback to real implementation
-    def mock_get_stream_info(file_path):
+    def mock_get_stream_info(file_path: Path) -> JsonObject:
         """Mock video metadata extraction with fallback"""
         # In video test mode, try real implementation first for some files
         if RUN_VIDEO_TESTS and not SKIP_EXPENSIVE_TESTS:
             try:
-                if original_get_stream_info and Path(file_path).exists():
-                    return original_get_stream_info(file_path)
-            except Exception:
+                if original_get_stream_info and file_path.exists():
+                    return original_get_stream_info[0](file_path)
+            except (OSError, RuntimeError, ValueError):
                 pass  # Fall back to mock
 
         # Return mock data
-        return {
-            "width": 1920,
-            "height": 1080,
-            "fps": 25.0,
-            "duration": MAX_MOCK_VIDEO_FRAMES / 25.0,
-            "frame_count": MAX_MOCK_VIDEO_FRAMES,
-        }
+        return _mock_flat_video_metadata()
 
     # Apply mocks - use the actual function names from the module
     monkeypatch.setattr(
-        "endoreg_db.utils.video.ffmpeg_wrapper.extract_frames", mock_extract_frames
+        "endoreg_db.utils.ffmpeg_wrapper.extract_frames", mock_extract_frames
     )
     monkeypatch.setattr(
-        "endoreg_db.utils.video.ffmpeg_wrapper.get_stream_info", mock_get_stream_info
+        "endoreg_db.utils.ffmpeg_wrapper.get_stream_info", mock_get_stream_info
     )
 
-    return {
-        "extract_frames": mock_extract_frames,
-        "get_stream_info": mock_get_stream_info,
-        "original_extract_frames": original_extract_frames,
-        "original_get_stream_info": original_get_stream_info,
-    }
+    return None
 
 
 @pytest.fixture
-def mock_ai_model(base_db_data):
+def mock_ai_model(base_db_data: bool):
     """
     Create a mock AI model for testing without requiring real model files.
     """
@@ -1081,12 +1317,12 @@ def mock_ai_model(base_db_data):
     )
 
     # Create or get AI model
-    ai_model, created = AiModel.objects.get_or_create(
+    ai_model, _ = AiModel.objects.get_or_create(
         name="test_segmentation_model", defaults={"model_type": model_type}
     )
 
     # Create model metadata with proper defaults
-    model_meta, created = ModelMeta.objects.get_or_create(
+    model_meta, _ = ModelMeta.objects.get_or_create(
         ai_model=ai_model,
         version=1,
         defaults={
@@ -1107,21 +1343,23 @@ def mock_ai_model(base_db_data):
 
 
 @pytest.fixture
-def mock_ai_inference(monkeypatch):
+def mock_ai_inference(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     Mock AI model inference for faster testing.
     """
 
-    def mock_classifier_pipe(*args, **kwargs):
+    def mock_classifier_pipe(
+        paths: list[Path] | tuple[Path, ...] = (),
+        **kwargs: JsonValue,
+    ) -> list[list[float]]:
         """Mock classifier.pipe - returns dummy predictions"""
         # Return prediction data for each input path/frame
-        paths = args[0] if args else kwargs.get("paths", [])
         num_predictions = len(paths) if paths else 10
 
         # Return list of predictions (one per frame)
         return [[0.1, 0.8, 0.3, 0.2, 0.9] for _ in range(num_predictions)]
 
-    def mock_classifier_readable(prediction):
+    def mock_classifier_readable(prediction: list[float]) -> dict[str, float]:
         """Mock classifier.readable - converts predictions to label dict"""
         labels = ["blood", "polyp", "normal", "abnormal", "artifact"]
         return {label: pred for label, pred in zip(labels, prediction)}
@@ -1134,36 +1372,43 @@ def mock_ai_inference(monkeypatch):
         "endoreg_db.utils.ai.predict.Classifier.readable", mock_classifier_readable
     )
 
-    return {"pipe": mock_classifier_pipe, "readable": mock_classifier_readable}
+    return None
 
 
 @pytest.fixture(autouse=True)
-def auto_mock_ffmpeg_for_video_tests(request, monkeypatch):
+def auto_mock_ffmpeg_for_video_tests(
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """
     Automatically apply FFmpeg mocking for video-related tests to prevent failures.
     This ensures video tests can run without requiring working FFmpeg installation.
     """
-    nodeid = request.node.nodeid.lower()
+    node = cast(_PytestNode, _request_node(request))
+    nodeid = node.nodeid.lower()
     if "tests/utils/video/test_ffmpeg_wrapper.py" in nodeid:
         return
 
     # Check if this is a video test
+    item_class = getattr(node, "cls", None)
     is_video_test = (
-        "video" in nodeid or "Video" in str(request.cls)
-        if request.cls
-        else False or any(mark.name == "video" for mark in request.node.iter_markers())
+        "video" in nodeid
+        or "Video" in str(item_class)
+        or any(mark.name == "video" for mark in node.iter_markers())
     )
 
     if is_video_test:
-        from pathlib import Path
 
-        def safe_extract_frames(source_path, output_dir, **kwargs):
+        def safe_extract_frames(
+            source_path: Path,
+            output_dir: Path,
+            **kwargs: JsonValue,
+        ) -> list[Path]:
             """Safe frame extraction with fallback"""
-            output_dir = Path(output_dir)
             ensure_directory(output_dir)
 
             # Create mock frame files
-            frame_paths = []
+            frame_paths: list[Path] = []
             for i in range(MAX_MOCK_VIDEO_FRAMES):
                 frame_path = output_dir / f"frame_{i:07d}.jpg"
                 atomic_write_file(destination=frame_path, content=(b"mock-frame",))
@@ -1171,74 +1416,61 @@ def auto_mock_ffmpeg_for_video_tests(request, monkeypatch):
 
             return frame_paths
 
-        def safe_get_stream_info(file_path):
+        def safe_get_stream_info(file_path: Path) -> JsonObject:
             """Safe stream info extraction with fallback"""
-            return {
-                "streams": [
-                    {
-                        "codec_name": "h264",
-                        "codec_type": "video",
-                        "pix_fmt": "yuv420p",
-                        "color_range": "pc",
-                        "width": 1920,
-                        "height": 1080,
-                        "r_frame_rate": f"{int(DEFAULT_VIDEO_FPS)}/1",
-                        "duration": "10.0",
-                        "nb_frames": str(MAX_MOCK_VIDEO_FRAMES),
-                    }
-                ]
-            }
+            return _mock_probe_stream_info()
 
-        def safe_transcode_videofile_if_required(input_path, output_path, **kwargs):
+        def safe_transcode_videofile_if_required(
+            input_path: Path,
+            output_path: Path,
+            **kwargs: JsonValue,
+        ) -> Path:
             """Safe transcoding that always returns the input path (no transcoding needed)"""
-            from pathlib import Path
-
-            input_path = (
-                Path(input_path) if not isinstance(input_path, Path) else input_path
-            )
             # Always return input path (assume video is already compliant)
             return input_path
 
         # Apply safe mocks for video tests
         monkeypatch.setattr(
-            "endoreg_db.utils.video.ffmpeg_wrapper.extract_frames", safe_extract_frames
+            "endoreg_db.utils.ffmpeg_wrapper.extract_frames", safe_extract_frames
         )
         monkeypatch.setattr(
-            "endoreg_db.utils.video.ffmpeg_wrapper.get_stream_info",
+            "endoreg_db.utils.ffmpeg_wrapper.get_stream_info",
             safe_get_stream_info,
         )
         monkeypatch.setattr(
-            "endoreg_db.utils.video.ffmpeg_wrapper.transcode_videofile_if_required",
+            "endoreg_db.utils.ffmpeg_wrapper.transcode_videofile_if_required",
             safe_transcode_videofile_if_required,
         )
 
 
 @pytest.fixture(autouse=True)
 def auto_mock_video_anonymizer_for_non_integration_video_tests(
-    request, monkeypatch, tmp_path
-):
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     """
     Prevent unit-style video tests from invoking the real lx_anonymizer/Ollama stack.
 
     Real anonymization is still allowed for tests explicitly marked as integration or
     expensive.
     """
-    is_video_test = "video" in request.node.nodeid.lower() or any(
-        mark.name == "video" for mark in request.node.iter_markers()
+    node = cast(_PytestNode, _request_node(request))
+    is_video_test = "video" in node.nodeid.lower() or any(
+        mark.name == "video" for mark in node.iter_markers()
     )
     allows_real_stack = any(
-        mark.name in {"integration", "expensive"}
-        for mark in request.node.iter_markers()
+        mark.name in {"integration", "expensive"} for mark in node.iter_markers()
     )
 
     if not is_video_test or allows_real_stack:
         return
 
     class DummyVideoAnonymizer:
-        def __init__(self, *args, **kwargs):
+        def __init__(self, *args: JsonValue, **kwargs: JsonValue) -> None:
             pass
 
-        def anonymize_video(self, ctx):
+        def anonymize_video(self, ctx: ImportContext) -> ImportContext:
             assert ctx.current_video is not None
             output_dir = tmp_path / "mock_anonymized_videos"
             ensure_directory(output_dir)
@@ -1260,89 +1492,68 @@ def auto_mock_video_anonymizer_for_non_integration_video_tests(
 
 
 @pytest.fixture
-def smart_video_mocks(monkeypatch, cache):
+def smart_video_mocks(
+    monkeypatch: pytest.MonkeyPatch,
+    cache: _Cache,
+) -> Iterator[None]:
     """
     Intelligent video operation mocks with real-code-first caching.
     This fixture takes precedence over other video mocks.
     """
-    from pathlib import Path
-
     ffmpeg_cache = cache.namespace("ffmpeg")
 
-    def cached_get_stream_info_with_fallback(file_path):
+    def cached_get_stream_info_with_fallback(file_path: Path) -> JsonObject:
         """
         Smart caching system that tries real operations first, falls back to mocks.
         Caches successful real results for reuse.
         """
         LOGGER.debug("smart mock get_stream_info called for %s", file_path)
-        file_path = Path(file_path) if not isinstance(file_path, Path) else file_path
         cache_key = f"stream_info_{file_path}"
         cached = ffmpeg_cache.get(cache_key)
-        if cached is not None:
+        if isinstance(cached, dict):
             LOGGER.debug("ffmpeg cache hit: %s", cache_key)
-            return cached
+            return cast(JsonObject, cached)
 
         # For tests, use mock data immediately - don't try real operations
         # since that's what's causing the failures
         LOGGER.debug("using mock stream info for %s", file_path)
-        mock_stream_info = {
-            "streams": [
-                {
-                    "codec_name": "h264",
-                    "codec_type": "video",
-                    "pix_fmt": "yuv420p",
-                    "color_range": "pc",
-                    "width": 1920,
-                    "height": 1080,
-                    "r_frame_rate": f"{int(DEFAULT_VIDEO_FPS)}/1",
-                    "duration": "10.0",
-                }
-            ]
-        }
+        mock_stream_info = _mock_probe_stream_info()
         ffmpeg_cache.set(cache_key, mock_stream_info)
         return mock_stream_info
 
-    def safe_transcode_videofile_if_required(input_path, output_path, **kwargs):
+    def safe_transcode_videofile_if_required(
+        input_path: Path,
+        output_path: Path,
+        **kwargs: JsonValue,
+    ) -> Path:
         """Smart transcoding that provides mock functionality for tests."""
         LOGGER.debug(
             "smart mock transcode called for %s -> %s", input_path, output_path
         )
-        input_path = (
-            Path(input_path) if not isinstance(input_path, Path) else input_path
-        )
-        output_path = (
-            Path(output_path) if not isinstance(output_path, Path) else output_path
-        )
 
         cache_key = f"transcode_{input_path}_{output_path}"
         cached = ffmpeg_cache.get(cache_key)
-        if cached is not None:
+        if isinstance(cached, Path):
             LOGGER.debug("transcode cache hit: %s", cache_key)
             return cached
 
         # Get mock stream info to determine if transcoding would be needed
         stream_info = cached_get_stream_info_with_fallback(input_path)
 
-        if stream_info and "streams" in stream_info:
-            video_stream = next(
-                (s for s in stream_info["streams"] if s.get("codec_type") == "video"),
-                None,
-            )
-            if video_stream:
-                codec = video_stream.get("codec_name")
-                pix_fmt = video_stream.get("pix_fmt")
-                color_range = video_stream.get(
-                    "color_range", "pc"
-                )  # Default to "pc" for our mock
+        payload = FfmpegProbeDataPayload.model_validate(stream_info)
+        video_streams = payload.video_streams
+        if video_streams:
+            video_stream = video_streams[0]
+            codec = video_stream.codec_name
+            pix_fmt = video_stream.pix_fmt
+            color_range = video_stream.color_range or "pc"
 
-                # Check if transcoding is needed based on standard requirements
-                if codec == "h264" and pix_fmt == "yuv420p" and color_range == "pc":
-                    # Already compliant, return input
-                    LOGGER.debug(
-                        "video is compliant; returning input path: %s", input_path
-                    )
-                    ffmpeg_cache.set(cache_key, input_path)
-                    return input_path
+            # Check if transcoding is needed based on standard requirements
+            if codec == "h264" and pix_fmt == "yuv420p" and color_range == "pc":
+                # Already compliant, return input
+                LOGGER.debug("video is compliant; returning input path: %s", input_path)
+                ffmpeg_cache.set(cache_key, input_path)
+                return input_path
 
         # If transcoding is needed, simulate it by copying to output path
         try:
@@ -1370,11 +1581,11 @@ def smart_video_mocks(monkeypatch, cache):
 
     # 1. Patch the original functions in the ffmpeg_wrapper module
     monkeypatch.setattr(
-        "endoreg_db.utils.video.ffmpeg_wrapper.get_stream_info",
+        "endoreg_db.utils.ffmpeg_wrapper.get_stream_info",
         cached_get_stream_info_with_fallback,
     )
     monkeypatch.setattr(
-        "endoreg_db.utils.video.ffmpeg_wrapper.transcode_videofile_if_required",
+        "endoreg_db.utils.ffmpeg_wrapper.transcode_videofile_if_required",
         safe_transcode_videofile_if_required,
     )
     LOGGER.debug("patched ffmpeg_wrapper module")
@@ -1396,7 +1607,7 @@ def smart_video_mocks(monkeypatch, cache):
     try:
         import sys
 
-        patched_modules = []
+        patched_modules: list[str] = []
         for module_name, module in sys.modules.items():
             if "endoreg_db" in module_name and hasattr(
                 module, "transcode_videofile_if_required"
@@ -1428,7 +1639,10 @@ def smart_video_mocks(monkeypatch, cache):
 
 
 @pytest.fixture
-def mock_storage(tmp_path, monkeypatch):
+def mock_storage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[object]:
     # 1. Define the fake root
     fake_root = tmp_path / "fake_protected_root"
     ensure_directory(fake_root)
@@ -1462,20 +1676,21 @@ def mock_storage(tmp_path, monkeypatch):
     monkeypatch.setattr(
         paths_module.EndoregPathsModel,
         "from_environment",
-        classmethod(lambda cls: fake_paths_model),
+        _test_paths_from_environment_factory(fake_paths_model),
     )
 
     # 4. Patch the historical constants (for legacy code support)
     # Keep alias exports and import-time path constants in sync for modules that
     # imported path constants by value before this fixture runs.
-    import endoreg_db.utils as utils_module
+    from django.core.files.storage import FileSystemStorage
+
     import endoreg_db.models.media.pdf.raw_pdf as raw_pdf_module
-    import endoreg_db.services.video_files._imports as video_create_module
     import endoreg_db.models.media.video.video_file as video_file_module
     import endoreg_db.services.streamable_media as streamable_media_module
-    import endoreg_db.views.video.video_stream as video_stream_module
+    import endoreg_db.services.video_files._imports as video_create_module
+    import endoreg_db.utils as utils_module
     import endoreg_db.views.report.report_stream as report_stream_module
-    from django.core.files.storage import FileSystemStorage
+    import endoreg_db.views.video.video_stream as video_stream_module
 
     monkeypatch.setattr(utils_module, "data_paths", fake_paths_model)
     monkeypatch.setattr(
@@ -1518,18 +1733,26 @@ def mock_storage(tmp_path, monkeypatch):
     )
 
     # Ensure Django FileField storage roots also point to the mocked storage tree.
-    raw_pdf_file_field = raw_pdf_module.RawPdfFile._meta.get_field("file")
-    raw_pdf_processed_field = raw_pdf_module.RawPdfFile._meta.get_field(
-        "processed_file"
+    raw_pdf_file_field = cast(
+        _StorageField,
+        raw_pdf_module.RawPdfFile._meta.get_field("file"),
     )
-    video_raw_field = video_file_module.VideoFile._meta.get_field("raw_file")
-    video_processed_field = video_file_module.VideoFile._meta.get_field(
-        "processed_file"
+    raw_pdf_processed_field = cast(
+        _StorageField,
+        raw_pdf_module.RawPdfFile._meta.get_field("processed_file"),
     )
-    previous_report_storage = raw_pdf_file_field.storage
-    previous_report_processed_storage = raw_pdf_processed_field.storage
-    previous_video_storage = video_raw_field.storage
-    previous_video_processed_storage = video_processed_field.storage
+    video_raw_field = cast(
+        _StorageField,
+        video_file_module.VideoFile._meta.get_field("raw_file"),
+    )
+    video_processed_field = cast(
+        _StorageField,
+        video_file_module.VideoFile._meta.get_field("processed_file"),
+    )
+    previous_report_storage: Storage = raw_pdf_file_field.storage
+    previous_report_processed_storage: Storage = raw_pdf_processed_field.storage
+    previous_video_storage: Storage = video_raw_field.storage
+    previous_video_processed_storage: Storage = video_processed_field.storage
 
     report_storage = FileSystemStorage(location=str(fake_paths_model.storage))
     raw_pdf_file_field.storage = report_storage

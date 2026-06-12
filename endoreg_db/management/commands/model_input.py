@@ -7,6 +7,11 @@ from importlib import import_module
 from typing import Protocol, cast
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
+from lx_dtypes.models.contracts.json_types import JsonObject
+from lx_dtypes.models.contracts.management_command import (
+    ModelInputCommandOptionsPayload,
+    validate_model_training_result,
+)
 from pydantic import ValidationError
 
 from endoreg_db.models import AIDataSet
@@ -16,11 +21,6 @@ from endoreg_db.utils.ai.data_loader_for_model_input import (
     build_dataset_for_training,
     normalize_annotation_source_scope,
 )
-from lx_dtypes.models.contracts.management_command import (
-    ModelInputCommandOptionsPayload,
-    validate_model_training_result,
-)
-from lx_dtypes.models.contracts.json_types import JsonObject
 
 
 class _AIDataSetFields(Protocol):
@@ -41,7 +41,7 @@ class _LabelFields(Protocol):
     name: str
 
 
-def _model_pk_as_int(value: object, *, model_name: str) -> int:
+def model_pk(value: object, *, model_name: str) -> int:
     if isinstance(value, int):
         return value
     raise CommandError(f"{model_name} primary key must be an integer.")
@@ -124,7 +124,7 @@ class Command(BaseCommand):
         except AIDataSet.DoesNotExist:
             raise CommandError(f"AIDataSet with id={dataset_id} does not exist.")
         dataset_fields = cast(_AIDataSetFields, dataset)
-        dataset_pk = _model_pk_as_int(dataset_fields.pk, model_name="AIDataSet")
+        dataset_pk = model_pk(dataset_fields.pk, model_name="AIDataSet")
 
         # Basic info
         self.stdout.write(
@@ -149,7 +149,7 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.NOTICE("Inferred LabelSet for this AIDataSet:"))
         labelset_fields = cast(_LabelSetFields, labelset)
-        labelset_pk = _model_pk_as_int(labelset_fields.pk, model_name="LabelSet")
+        labelset_pk = model_pk(labelset_fields.pk, model_name="LabelSet")
         self.stdout.write(
             f"  LabelSet id={labelset_pk}, "
             f"name={labelset_fields.name!r}, "
@@ -158,7 +158,7 @@ class Command(BaseCommand):
         self.stdout.write("  Labels (index, id, name):")
         for idx, lbl in enumerate(labels):
             label_fields = cast(_LabelFields, lbl)
-            label_pk = _model_pk_as_int(label_fields.pk, model_name="Label")
+            label_pk = model_pk(label_fields.pk, model_name="Label")
             self.stdout.write(f"    [{idx}] id={label_pk}, name={label_fields.name!r}")
 
         self.stdout.write(

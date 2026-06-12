@@ -24,8 +24,8 @@ from endoreg_db.services.hub.deployment import (
     get_deployment_role,
     transfer_api_enabled,
 )
-from endoreg_db.utils.filesystem.file_operations import atomic_write_file
-from endoreg_db.utils.filesystem.paths import (
+from endoreg_db.utils.file_operations import atomic_write_file
+from endoreg_db.utils.paths import (
     LOG_DIR,
     PROTECTED_DATA_ROOT,
     QUARANTINE_DIR,

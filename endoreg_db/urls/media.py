@@ -34,7 +34,7 @@ from endoreg_db.views.video.video_stream import VideoStreamView
 from endoreg_db.views.video import (
     VideoReimportView,
     VideoFpsView,
-    export_annotated_data,
+    export_annotated,
     video_segment_detail,
     video_segment_validate,
     video_segments_blacken_outside,
@@ -158,7 +158,7 @@ VIDEO_MEDIA_URLPATTERNS: list[URLPattern] = [
 VIDEO_ANNOTATION_URLPATTERNS: list[URLPattern] = [
     path(
         "media/videos/export-annotated/",
-        export_annotated_data,
+        export_annotated,
         name="video-annotated-export",
     ),
     path("media/videos/labels/list/", label_list, name="get_lvs_list"),

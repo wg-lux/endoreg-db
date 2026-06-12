@@ -1,10 +1,13 @@
 import logging
 from datetime import date as dt_date, datetime, time as dt_time
-from typing import Any, Dict, cast
+from typing import Protocol, TypedDict, cast
 
-from django.db import transaction
+from django.contrib.auth.models import AnonymousUser
+from django.db import models, transaction
 from django.utils import timezone
+from endoreg_db.services.raw_pdf_files.metadata import ReportMetaJsonObject
 from lx_dtypes.models.contracts import DocumentType as DocumentTypeContract
+from lx_dtypes.models.contracts.video_text_metadata import VideoTextMetaPayload
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -33,8 +36,8 @@ from endoreg_db.services.video_files import (
     get_or_create_video_state,
 )
 from endoreg_db.services.validated_identity import commit_validated_media_identity
-from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
-from endoreg_db.utils.observability.operation_log import (
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.operation_log import (
     record_operation,
     ACTION_ANONYMIZATION_VALIDATED,
     STATUS_PROCESSING,
@@ -45,9 +48,58 @@ from endoreg_db.utils.observability.operation_log import (
 logger = logging.getLogger(__name__)
 
 
+class _TagRelation(Protocol):
+    def set(
+        self,
+        objs: object,
+        *,
+        clear: bool = False,
+        through_defaults: object | None = None,
+    ) -> None: ...
+
+
+class _ValidationState(Protocol):
+    def refresh_from_db(self) -> None: ...
+
+    def mark_dob_verified(self) -> None: ...
+
+    def mark_names_verified(self) -> None: ...
+
+    def mark_anonymized(self) -> None: ...
+
+    def save(self, *args: object, **kwargs: object) -> None: ...
+
+
+class _ValidatedSensitiveMeta(Protocol):
+    pk: int | None
+    center_id: int | None
+    center: object | None
+    validation_comment: str
+    tags: "_TagRelation"
+    pseudo_patient_id: object
+    pseudo_examination_id: object
+    patient_hash: str | None
+    examination_hash: str | None
+    state: _ValidationState | None
+
+    def save(self, *args: object, **kwargs: object) -> None: ...
+    def create_anonymized_record(self) -> None: ...
+
+
+class ValidationOperationMetaPayload(TypedDict):
+    timestamp: str
+    timestamp_source: str
+    examination_date: str | None
+
+
+class VideoValidationPayload(dict[str, object]):
+    def model_dump(self, *args: object, **kwargs: object) -> dict[str, object]:
+        return dict(self)
+
+
 @api_view(["GET"])
 @permission_classes([EnvironmentAwarePermission])
-def anonymization_document_types_dropdown(_request):
+def anonymization_document_types_dropdown(_request: Request):
     ensure_document_types()
     return Response(
         [{"value": value, "label": value} for value in DOCUMENT_TYPE_VALUES],
@@ -55,7 +107,7 @@ def anonymization_document_types_dropdown(_request):
     )
 
 
-def _state_status_value(state_obj: Any) -> str | None:
+def _state_status_value(state_obj: object) -> str | None:
     """Return anonymization status as string if present, else None."""
     if state_obj is None:
         return None
@@ -65,7 +117,14 @@ def _state_status_value(state_obj: Any) -> str | None:
     return str(getattr(st, "value", st))
 
 
-def _preferred_validation_timestamp(payload: Dict[str, Any]) -> tuple[str, str]:
+def _request_actor(request: Request) -> models.Model | None:
+    user = request.user
+    if isinstance(user, AnonymousUser):
+        return None
+    return cast(models.Model, user)
+
+
+def _preferred_validation_timestamp(payload: ReportMetaJsonObject) -> tuple[str, str]:
     """
     Prefer a manually supplied examination_date as the validation timestamp.
 
@@ -87,11 +146,14 @@ def _preferred_validation_timestamp(payload: Dict[str, Any]) -> tuple[str, str]:
     return now_iso, "request_time"
 
 
-def _validation_operation_meta(payload: Dict[str, Any]) -> Dict[str, Any]:
+def _validation_operation_meta(
+    payload: ReportMetaJsonObject,
+) -> ValidationOperationMetaPayload:
     timestamp, source = _preferred_validation_timestamp(payload)
-    meta: Dict[str, Any] = {
+    meta: ValidationOperationMetaPayload = {
         "timestamp": timestamp,
         "timestamp_source": source,
+        "examination_date": None,
     }
     exam_date = payload.get("examination_date")
     if isinstance(exam_date, (dt_date, datetime)):
@@ -102,24 +164,42 @@ def _validation_operation_meta(payload: Dict[str, Any]) -> Dict[str, Any]:
     return meta
 
 
+def _video_text_meta_payload_data(
+    payload: ReportMetaJsonObject,
+) -> ReportMetaJsonObject:
+    normalized: ReportMetaJsonObject = dict(payload)
+    for field_name in ("patient_dob", "examination_date"):
+        value = normalized.get(field_name)
+        if isinstance(value, datetime):
+            normalized[field_name] = value.date().isoformat()
+        elif isinstance(value, dt_date):
+            normalized[field_name] = value.isoformat()
+    return normalized
+
+
 def _persist_pdf_validation_state(
     *,
     pdf: RawPdfFile,
-    payload: Dict[str, Any],
+    payload: ReportMetaJsonObject,
     validated_at_iso: str,
     document_type: DocumentTypeContract,
 ) -> str:
+    original_anonymized_text = getattr(pdf, "anonymized_text", None)
+    if original_anonymized_text is None:
+        payload_text = payload.get("anonymized_text")
+        pdf.anonymized_text = payload_text if isinstance(payload_text, str) else ""
+
     report_context = build_report_context_from_validation(
         pdf=pdf,
         payload=payload,
         document_type_name=document_type,
     )
     resolved_text = report_context.anonymized_text
-    raw_meta: Dict[str, Any]
+    raw_meta: ReportMetaJsonObject
     if isinstance(pdf.raw_meta, dict):
-        raw_meta = dict(pdf.raw_meta)
+        raw_meta = cast(ReportMetaJsonObject, dict(pdf.raw_meta))
     else:
-        raw_meta = {}
+        raw_meta = cast(ReportMetaJsonObject, {})
 
     sensitive_meta = pdf.sensitive_meta
     raw_meta.update(
@@ -135,15 +215,15 @@ def _persist_pdf_validation_state(
     )
 
     update_fields: list[str] = []
-    if getattr(pdf, "anonymized_text", None) != resolved_text:
+    if original_anonymized_text != resolved_text:
         pdf.anonymized_text = resolved_text
         update_fields.append("anonymized_text")
     if (
-        pdf.center_id is None
+        getattr(pdf, "center_id", None) is None
         and sensitive_meta is not None
-        and sensitive_meta.center_id
+        and getattr(sensitive_meta, "center_id", None)
     ):
-        pdf.center = sensitive_meta.center
+        pdf.center = getattr(sensitive_meta, "center", None)
         update_fields.append("center")
     if pdf.raw_meta != raw_meta:
         pdf.raw_meta = raw_meta
@@ -154,35 +234,36 @@ def _persist_pdf_validation_state(
     return resolved_text
 
 
-def _build_pdf_validation_context(pdf: RawPdfFile) -> Dict[str, Any] | None:
+def _build_pdf_validation_context(pdf: RawPdfFile) -> dict[str, object] | None:
     sensitive_meta = pdf.sensitive_meta
     if sensitive_meta is None:
         return None
+    validated_meta = cast(_ValidatedSensitiveMeta, sensitive_meta)
 
     return {
-        "sensitive_meta_id": sensitive_meta.pk,
+        "sensitive_meta_id": validated_meta.pk,
         "patient_hash_display": (
-            f"...{sensitive_meta.patient_hash[-8:]}"
-            if sensitive_meta.patient_hash
+            f"...{validated_meta.patient_hash[-8:]}"
+            if validated_meta.patient_hash
             else None
         ),
         "examination_hash_display": (
-            f"...{sensitive_meta.examination_hash[-8:]}"
-            if sensitive_meta.examination_hash
+            f"...{validated_meta.examination_hash[-8:]}"
+            if validated_meta.examination_hash
             else None
         ),
-        "pseudo_patient_id": sensitive_meta.pseudo_patient_id,
-        "pseudo_examination_id": sensitive_meta.pseudo_examination_id,
+        "pseudo_patient_id": validated_meta.pseudo_patient_id,
+        "pseudo_examination_id": validated_meta.pseudo_examination_id,
     }
 
 
-def _normalize_tag_names(raw_tags: Any) -> list[str]:
+def _normalize_tag_names(raw_tags: object) -> list[str]:
     if not isinstance(raw_tags, list):
         return []
 
     normalized_tags: list[str] = []
     seen: set[str] = set()
-    for entry in raw_tags:
+    for entry in cast(list[object], raw_tags):
         if not isinstance(entry, str):
             continue
         tag_name = entry.strip()
@@ -199,31 +280,32 @@ def _normalize_tag_names(raw_tags: Any) -> list[str]:
 def _apply_validation_tags(
     *,
     sensitive_meta: SensitiveMeta,
-    payload: Dict[str, Any],
+    payload: ReportMetaJsonObject,
 ) -> None:
+    validated_meta = cast(_ValidatedSensitiveMeta, sensitive_meta)
     update_fields: list[str] = []
 
     if "validation_comment" in payload:
         validation_comment = payload.get("validation_comment")
         if not isinstance(validation_comment, str):
             validation_comment = ""
-        if sensitive_meta.validation_comment != validation_comment:
-            sensitive_meta.validation_comment = validation_comment
+        if validated_meta.validation_comment != validation_comment:
+            validated_meta.validation_comment = validation_comment
             update_fields.append("validation_comment")
 
     if update_fields:
-        sensitive_meta.save(update_fields=update_fields)
+        validated_meta.save(update_fields=update_fields)
 
     if "tags" not in payload:
         return
 
     normalized_tags = _normalize_tag_names(payload.get("tags"))
     tag_objects = [Tag.objects.get_or_create(name=name)[0] for name in normalized_tags]
-    sensitive_meta.tags.set(tag_objects)
+    validated_meta.tags.set(tag_objects)
 
 
 def _validated_pdf_document_type(
-    payload: Dict[str, Any],
+    payload: ReportMetaJsonObject,
 ) -> tuple[str, DocumentTypeContract] | Response:
     document_type_name = payload.get("document_type")
     if not isinstance(document_type_name, str) or not document_type_name:
@@ -274,12 +356,12 @@ class AnonymizationValidateView(APIView):
     """
 
     @transaction.atomic
-    def post(self, request: Request, file_id: int):
+    def post(self, request: Request, file_id: int) -> Response:
         # Serializer-Validierung mit deutscher Datums-Priorität
         serializer = SensitiveMetaValidateSerializer(data=request.data or {})
         serializer.is_valid(raise_exception=True)
-        validated_data = cast(Dict[str, Any], serializer.validated_data)
-        payload: Dict[str, Any] = dict(validated_data)
+        validated_data = serializer.validated_data
+        payload: ReportMetaJsonObject = dict(validated_data)
 
         # Default ist_verified = True
         if "is_verified" not in payload:
@@ -321,9 +403,11 @@ class AnonymizationValidateView(APIView):
                         media_obj=video,
                         media_type="video",
                     )
-                    prepared_payload = self._prepare_payload(payload, video)
+                    prepared_payload = self._prepare_video_payload(payload, video)
                     try:
-                        ok = video.validate_metadata_annotation(prepared_payload)
+                        ok = video.validate_metadata_annotation(
+                            cast(VideoTextMetaPayload, prepared_payload)
+                        )
                     except Exception:  # pragma: no cover - defensive safety net
                         transaction.set_rollback(True)
                         logger.exception("Video validation crashed for id=%s", file_id)
@@ -353,16 +437,19 @@ class AnonymizationValidateView(APIView):
                         payload=payload,
                     )
                     if video.sensitive_meta.state is not None:
-                        video.sensitive_meta.state.refresh_from_db()
-                        video.sensitive_meta.state.mark_dob_verified()
-                        video.sensitive_meta.state.mark_names_verified()
+                        state_obj = cast(_ValidationState, video.sensitive_meta.state)
+                        state_obj.refresh_from_db()
+                        state_obj.mark_dob_verified()
+                        state_obj.mark_names_verified()
                         auto_case_resolution = commit_validated_media_identity(
                             media_type="video",
                             media_obj=video,
-                            user=request.user,
+                            user=_request_actor(request),
                             source="anonymization_validate",
                         )
-                        video.sensitive_meta.create_anonymized_record()
+                        cast(
+                            _ValidatedSensitiveMeta, video.sensitive_meta
+                        ).create_anonymized_record()
                     else:
                         transaction.set_rollback(True)
                         return Response(
@@ -373,7 +460,7 @@ class AnonymizationValidateView(APIView):
                     if video.state is not None:
                         video.state.anonymized = True
                         video.state.save(update_fields=["anonymized"])
-                        video.sensitive_meta.state.save()
+                        cast(_ValidationState, video.sensitive_meta.state).save()
 
                         # --- NEW: status AFTER validation ---
                     status_after = status_before
@@ -388,7 +475,9 @@ class AnonymizationValidateView(APIView):
                             "Failed to read video anonymization_status after validation"
                         )
 
-                    metric_payload = dict(prepared_payload)
+                    metric_payload = prepared_payload.model_dump(
+                        mode="json", exclude_none=True
+                    )
                     metric_payload["no_more_names_confirmed"] = payload.get(
                         "no_more_names_confirmed"
                     )
@@ -411,7 +500,11 @@ class AnonymizationValidateView(APIView):
                         resource_id=file_id,
                         status_before=status_before or STATUS_PROCESSING,
                         status_after=status_after or STATUS_ANONYMIZED,
-                        meta=operation_meta,
+                        meta={
+                            "timestamp": operation_meta["timestamp"],
+                            "timestamp_source": operation_meta["timestamp_source"],
+                            "examination_date": operation_meta["examination_date"],
+                        },
                     )
 
                     return Response(
@@ -494,28 +587,39 @@ class AnonymizationValidateView(APIView):
                             sm = SensitiveMeta.objects.create(center=pdf.center)
                             pdf.sensitive_meta = sm
 
+                        sensitive_meta = cast(SensitiveMeta | None, pdf.sensitive_meta)
+                        if sensitive_meta is None:
+                            transaction.set_rollback(True)
+                            return Response(
+                                {
+                                    "message": "report not validated, failed to create SensitiveMeta."
+                                },
+                                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            )
+
                         pdf.save(update_fields=["sensitive_meta"])
                         pdf.sensitive_meta.get_or_create_state()
                         _apply_validation_tags(
-                            sensitive_meta=pdf.sensitive_meta,
+                            sensitive_meta=sensitive_meta,
                             payload=payload,
                         )
-                        if pdf.sensitive_meta and pdf.sensitive_meta.state:
-                            state_obj = cast(Any, pdf.sensitive_meta.state)
+                        if sensitive_meta.state is not None:
+                            state_obj = sensitive_meta.state
                             state_obj.refresh_from_db()
                             state_obj.mark_dob_verified()
                             state_obj.mark_names_verified()
                             auto_case_resolution = commit_validated_media_identity(
                                 media_type="pdf",
                                 media_obj=pdf,
-                                user=request.user,
+                                user=_request_actor(request),
                                 source="anonymization_validate",
                             )
-                            pdf.sensitive_meta.create_anonymized_record()
+                            sensitive_meta.create_anonymized_record()
 
-                            if pdf.state:
-                                pdf.state.mark_anonymized()
-                                pdf.state.save(update_fields=["anonymized"])
+                            pdf_state = cast(_ValidationState | None, pdf.state)
+                            if pdf_state is not None:
+                                pdf_state.mark_anonymized()
+                                pdf_state.save(update_fields=["anonymized"])
 
                             state_obj.save()
                         else:
@@ -578,7 +682,11 @@ class AnonymizationValidateView(APIView):
                         resource_id=file_id,
                         status_before=status_before or STATUS_PROCESSING,
                         status_after=status_after or STATUS_ANONYMIZED,
-                        meta=operation_meta,
+                        meta={
+                            "timestamp": operation_meta["timestamp"],
+                            "timestamp_source": operation_meta["timestamp_source"],
+                            "examination_date": operation_meta["examination_date"],
+                        },
                     )
 
                     return Response(
@@ -622,7 +730,21 @@ class AnonymizationValidateView(APIView):
         )
 
     @staticmethod
-    def _prepare_payload(base_payload: Dict[str, Any], file_obj: Any) -> Dict[str, Any]:
+    def _prepare_video_payload(
+        base_payload: ReportMetaJsonObject,
+        file_obj: object,
+    ) -> VideoValidationPayload:
+        prepared = AnonymizationValidateView._prepare_payload(base_payload, file_obj)
+        validated_payload = VideoTextMetaPayload.model_validate(
+            _video_text_meta_payload_data(prepared)
+        )
+        return VideoValidationPayload(validated_payload.model_dump(mode="python"))
+
+    @staticmethod
+    def _prepare_payload(
+        base_payload: ReportMetaJsonObject,
+        file_obj: object,
+    ) -> ReportMetaJsonObject:
         """
         Return a fresh payload tailored for the given file object.
 
@@ -630,7 +752,7 @@ class AnonymizationValidateView(APIView):
         - Injects `center_name` from the file's center if not already present.
         - Normalizes `patient_gender` if present, but does NOT require it.
         """
-        prepared: Dict[str, Any] = dict(base_payload)
+        prepared: ReportMetaJsonObject = dict(base_payload)
 
         # never send file_type to validators
         prepared.pop("file_type", None)

@@ -5,7 +5,7 @@ from rest_framework import serializers
 from endoreg_db.models.administration.center.center import Center
 
 
-class CenterKeyRelatedField(serializers.SlugRelatedField):
+class CenterKeyRelatedField(serializers.SlugRelatedField[Center]):
     """
     Canonical machine-facing relation field for Center.
 
@@ -18,7 +18,19 @@ class CenterKeyRelatedField(serializers.SlugRelatedField):
         "invalid": "Expected a center_key string.",
     }
 
-    def __init__(self, **kwargs):
-        kwargs.setdefault("slug_field", "center_key")
-        kwargs.setdefault("queryset", Center.objects.all())
-        super().__init__(**kwargs)
+    def __init__(
+        self,
+        *,
+        source: str | None = None,
+        required: bool | None = None,
+        allow_null: bool = False,
+        read_only: bool = False,
+    ) -> None:
+        super().__init__(
+            slug_field="center_key",
+            queryset=Center.objects.all(),
+            source=source or "",
+            required=bool(required),
+            allow_null=allow_null,
+            read_only=read_only,
+        )

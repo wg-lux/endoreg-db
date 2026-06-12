@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from unittest.mock import patch
+from typing import Any, cast
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -12,6 +13,13 @@ MINIMAL_PDF_BYTES = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
 
 
 class CenterScopedReadTests(TestCase):
+    center_a: Center
+    center_b: Center
+    patient: Patient
+    examination: Examination
+    report: RawPdfFile
+    video: VideoFile
+
     def setUp(self) -> None:
         self.center_a = Center.objects.create(
             name=f"center-a-{uuid4().hex[:8]}",
@@ -50,34 +58,40 @@ class CenterScopedReadTests(TestCase):
             original_file_name="scope.mp4",
         )
 
+    @staticmethod
+    def _pk(model: object) -> int:
+        return cast(int, cast(Any, model).pk)
+
     @patch("endoreg_db.views.access_control.resolve_allowed_center_id")
     def test_patient_timeline_is_available_outside_center_scope(
-        self, mock_allowed_center_id
+        self, mock_allowed_center_id: MagicMock
     ) -> None:
-        mock_allowed_center_id.return_value = self.center_b.id
+        mock_allowed_center_id.return_value = self._pk(self.center_b)
 
-        response = self.client.get(f"/api/media/patients/{self.patient.pk}/timeline/")
+        response = self.client.get(f"/api/media/patients/{self._pk(self.patient)}/timeline/")
 
         assert response.status_code == 200, response.content
-        payload = response.json()
-        assert payload["patient"]["id"] == self.patient.pk
+        payload = cast(dict[str, Any], response.json())
+        patient_payload = cast(dict[str, Any], payload["patient"])
+        assert patient_payload["id"] == self._pk(self.patient)
 
     @patch("endoreg_db.views.access_control.resolve_allowed_center_id")
     def test_pdf_detail_is_available_outside_center_scope(
-        self, mock_allowed_center_id
+        self, mock_allowed_center_id: MagicMock
     ) -> None:
-        mock_allowed_center_id.return_value = self.center_b.id
+        mock_allowed_center_id.return_value = self._pk(self.center_b)
 
-        response = self.client.get(f"/api/media/pdfs/{self.report.pk}/")
+        response = self.client.get(f"/api/media/pdfs/{self._pk(self.report)}/")
 
         assert response.status_code == 200, response.content
-        assert response.json()["id"] == self.report.pk
+        payload = cast(dict[str, Any], response.json())
+        assert payload["id"] == self._pk(self.report)
 
     @patch("endoreg_db.views.access_control.resolve_allowed_center_id")
     def test_pdf_list_is_not_filtered_by_center_scope(
-        self, mock_allowed_center_id
+        self, mock_allowed_center_id: MagicMock
     ) -> None:
-        mock_allowed_center_id.return_value = self.center_a.id
+        mock_allowed_center_id.return_value = self._pk(self.center_a)
         other_patient = Patient.objects.create(
             first_name="Other",
             last_name="Patient",
@@ -100,28 +114,30 @@ class CenterScopedReadTests(TestCase):
         response = self.client.get("/api/media/pdfs/")
 
         assert response.status_code == 200, response.content
-        payload = response.json()
+        payload = cast(dict[str, Any], response.json())
         assert payload["count"] == 2
-        returned_ids = {item["id"] for item in payload["results"]}
-        assert self.report.pk in returned_ids
+
+        results = cast(list[dict[str, Any]], payload["results"])
+        returned_ids = {cast(int, item["id"]) for item in results}
+        assert self._pk(self.report) in returned_ids
 
     @patch("endoreg_db.views.access_control.resolve_allowed_center_id")
     def test_report_stream_is_available_outside_center_scope(
-        self, mock_allowed_center_id
+        self, mock_allowed_center_id: MagicMock
     ) -> None:
-        mock_allowed_center_id.return_value = self.center_b.id
+        mock_allowed_center_id.return_value = self._pk(self.center_b)
 
-        response = self.client.get(f"/api/media/pdfs/{self.report.pk}/stream/")
+        response = self.client.get(f"/api/media/pdfs/{self._pk(self.report)}/stream/")
 
         assert response.status_code == 200
         assert getattr(response, "streaming", False) is True
 
     @patch("endoreg_db.views.access_control.resolve_allowed_center_id")
     def test_video_stream_still_returns_404_without_backing_file(
-        self, mock_allowed_center_id
+        self, mock_allowed_center_id: MagicMock
     ) -> None:
-        mock_allowed_center_id.return_value = self.center_b.id
+        mock_allowed_center_id.return_value = self._pk(self.center_b)
 
-        response = self.client.get(f"/api/media/videos/{self.video.pk}/stream/")
+        response = self.client.get(f"/api/media/videos/{self._pk(self.video)}/stream/")
 
         assert response.status_code == 404, response.content

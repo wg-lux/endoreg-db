@@ -5,9 +5,9 @@ from kombu import Exchange, Queue
 
 from endoreg_db.config.env import (
     ENDOREG_DEPLOYMENT_ROLE_VALUES,
-    build_base_rest_framework_settings,
-    build_default_cache_settings,
     get_asset_dir,
+    get_cache_location,
+    get_cache_timeout_seconds,
     get_celery_broker_url,
     get_celery_default_queue,
     get_celery_ffmpeg_media_queue,
@@ -17,6 +17,8 @@ from endoreg_db.config.env import (
     get_celery_maintenance_queue,
     get_celery_pipeline_queue,
     get_celery_training_queue,
+    get_drf_throttle_anon_rate,
+    get_drf_throttle_user_rate,
     celery_audit_ledger_integrity_beat_enabled,
     get_celery_audit_ledger_integrity_interval_seconds,
     get_enable_hub_transfers,
@@ -48,12 +50,18 @@ from endoreg_db.config.env import (
     run_video_tests_enabled,
     watcher_celery_inline_fallback_enabled,
 )
+from lx_dtypes.models.contracts.django_settings import (
+    DjangoBeatScheduleEntryPayload,
+    DjangoBeatScheduleOptionsPayload,
+    DjangoCacheConfigPayload,
+    DjangoCacheSettingsPayload,
+    DjangoRestFrameworkSettingsPayload,
+    DjangoThrottleRatesPayload,
+    DjangoTemplateConfigPayload,
+    DjangoTemplateOptionsPayload,
+)
 
 django_stubs_ext.monkeypatch()
-
-type DjangoTemplateOptions = dict[str, list[str]]
-type DjangoTemplateSettingValue = str | bool | list[str] | DjangoTemplateOptions
-type DjangoTemplateConfig = dict[str, DjangoTemplateSettingValue]
 
 
 BASE_DIR = Path(__file__).parent.parent.parent.resolve()
@@ -197,15 +205,17 @@ CELERY_ENABLE_UTC = True
 CELERY_BEAT_SCHEDULE = {}
 WATCHER_CELERY_INLINE_FALLBACK_ENABLED = watcher_celery_inline_fallback_enabled()
 if celery_audit_ledger_integrity_beat_enabled():
-    CELERY_BEAT_SCHEDULE["audit-ledger-integrity-refresh"] = {
-        "task": "endoreg_db.refresh_audit_ledger_integrity_status",
-        "schedule": get_celery_audit_ledger_integrity_interval_seconds(),
-        "options": {
-            "queue": CELERY_MAINTENANCE_QUEUE,
-            "routing_key": CELERY_MAINTENANCE_QUEUE,
-            "expires": get_celery_audit_ledger_integrity_interval_seconds(),
-        },
-    }
+    CELERY_BEAT_SCHEDULE["audit-ledger-integrity-refresh"] = (
+        DjangoBeatScheduleEntryPayload(
+            task="endoreg_db.refresh_audit_ledger_integrity_status",
+            schedule=get_celery_audit_ledger_integrity_interval_seconds(),
+            options=DjangoBeatScheduleOptionsPayload(
+                queue=CELERY_MAINTENANCE_QUEUE,
+                routing_key=CELERY_MAINTENANCE_QUEUE,
+                expires=get_celery_audit_ledger_integrity_interval_seconds(),
+            ),
+        ).model_dump(by_alias=True, mode="python")
+    )
 
 # Internationalization
 LANGUAGE_CODE = "de"
@@ -264,24 +274,39 @@ MEDIA_ROOT = get_media_root()
 VIDEO_DEFAULT_FPS = get_video_default_fps()
 
 # Caching: provide a default LocMem cache with explicit TIMEOUT for consistency
-CACHES = build_default_cache_settings()
+CACHES = DjangoCacheSettingsPayload(
+    default=DjangoCacheConfigPayload(
+        BACKEND="django.core.cache.backends.locmem.LocMemCache",
+        LOCATION=get_cache_location(),
+        TIMEOUT=get_cache_timeout_seconds(),
+    ),
+).model_dump(by_alias=True, mode="python")
 
-REST_FRAMEWORK = build_base_rest_framework_settings()
+REST_FRAMEWORK = DjangoRestFrameworkSettingsPayload(
+    DEFAULT_THROTTLE_CLASSES=(
+        "rest_framework.throttling.UserRateThrottle",
+        "rest_framework.throttling.AnonRateThrottle",
+    ),
+    DEFAULT_THROTTLE_RATES=DjangoThrottleRatesPayload(
+        user=get_drf_throttle_user_rate(),
+        anon=get_drf_throttle_anon_rate(),
+    ),
+).model_dump(by_alias=True, mode="python")
 
-TEMPLATES: list[DjangoTemplateConfig] = [
-    {
-        "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
-        "APP_DIRS": True,
-        "OPTIONS": {
-            "context_processors": [
+TEMPLATES = [
+    DjangoTemplateConfigPayload(
+        BACKEND="django.template.backends.django.DjangoTemplates",
+        DIRS=(),
+        APP_DIRS=True,
+        OPTIONS=DjangoTemplateOptionsPayload(
+            context_processors=(
                 "django.template.context_processors.debug",
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
-            ],
-        },
-    },
+            )
+        ),
+    ).model_dump(by_alias=True, mode="python")
 ]
 
 TEST_LOGGER_NAMES = [

@@ -87,6 +87,36 @@ class KeycloakJWTAuthentication(authentication.BaseAuthentication):
         return validate_keycloak_claims(claims).role_names
 
     @classmethod
+    def extract_roles(cls, claims: Mapping[str, JsonValue]) -> set[str]:
+        """
+        Public wrapper for role extraction.
+
+        Tests and non-authentication callers should use this method instead of
+        touching the protected implementation detail.
+        """
+        return cls._extract_roles(claims)
+
+    @classmethod
+    def reset_cached_oidc_metadata(cls) -> None:
+        """
+        Clear cached OIDC discovery/JWKS state.
+
+        Intended for tests that need deterministic initialization behavior.
+        """
+        cls._jwks_client = None
+        cls._iss = None
+        cls._aud = None
+
+    @classmethod
+    def initialize_oidc_client(cls) -> None:
+        """
+        Public wrapper around OIDC/JWKS initialization.
+
+        Keeps tests from calling the protected initializer directly.
+        """
+        cls._init()
+
+    @classmethod
     def _init(cls) -> None:
         ensure_keycloak_settings()
         if cls._jwks_client is None:

@@ -3,10 +3,11 @@ from django.contrib import admin
 from django.urls import path, include
 from django.http import HttpResponse
 from django.conf import settings
-from endoreg_db.utils.web.django_static import static
+from requests import Request
+from endoreg_db.utils.django_static import static
 
 
-def public_home(_request):
+def public_home(_request: Request) -> HttpResponse:
     return HttpResponse("Public home – no login required.")
 
 

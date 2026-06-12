@@ -1,8 +1,8 @@
 import pytest
-from lx_dtypes.models.meta.VideoMetadata import VideoMetadataStatsPayload
+import json
+from lx_dtypes.models.meta.VideoMeta import VideoMetadataStatsPayload
 from pydantic import ValidationError
 from rest_framework.test import APIRequestFactory
-
 from endoreg_db.models import Center, VideoFile
 from endoreg_db.models.state.video import VideoState
 from endoreg_db.views.video.video_metadata import VideoMetadataStatsView
@@ -28,8 +28,12 @@ def test_video_metadata_view_returns_pydantic_validated_payload() -> None:
     request = factory.get(f"/api/media/videos/{video.pk}/metadata/")
     response = VideoMetadataStatsView.as_view()(request, pk=video.pk)
 
+    data = json.loads(response.content.decode())
+
     assert response.status_code == 200
-    payload = VideoMetadataStatsPayload.model_validate(response.data)
+    assert response["content-type"] == "application/json"
+
+    payload = VideoMetadataStatsPayload.model_validate(data)
     assert payload.id == video.pk
     assert payload.original_file_name == "metadata_view.mp4"
     assert payload.status == "anonymized"

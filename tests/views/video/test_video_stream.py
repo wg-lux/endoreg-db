@@ -1,44 +1,71 @@
 from __future__ import annotations
 
 import tempfile
+from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 from types import SimpleNamespace
-from typing import IO, Any
+from typing import BinaryIO, Protocol, cast
 
 import pytest
+from django.http import StreamingHttpResponse
 from django.test import TestCase
 
+from endoreg_db.models.media.video.storage_mode import VideoStorageMode
 from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
-from endoreg_db.utils.filesystem.paths import protected_media_root
+from endoreg_db.utils.paths import protected_media_root
+
+
+class PlaintextStorageProtocol(Protocol):
+    def get_plaintext_size(self, name: str) -> int: ...
+
+    def iter_decrypted_range(
+        self,
+        name: str,
+        *,
+        start: int,
+        end: int,
+        chunk_size: int,
+    ) -> Iterator[bytes]: ...
+
+
+class MediaLeaseProtocol(Protocol):
+    token: str
 
 
 class FakeStorage:
-    def __init__(self, payload: bytes):
+    def __init__(self, payload: bytes) -> None:
         self.payload = payload
 
     def get_plaintext_size(self, name: str) -> int:
         return len(self.payload)
 
-    def iter_decrypted_range(self, name: str, *, start: int, end: int, chunk_size: int):
+    def iter_decrypted_range(
+        self,
+        name: str,
+        *,
+        start: int,
+        end: int,
+        chunk_size: int,
+    ) -> Iterator[bytes]:
         selected = self.payload[start : end + 1]
         for offset in range(0, len(selected), chunk_size):
             yield selected[offset : offset + chunk_size]
 
 
 class StubFieldFile:
-    def __init__(self, storage, name: str):
+    def __init__(self, storage: PlaintextStorageProtocol, name: str) -> None:
         self.storage = storage
         self.name = name
 
     @property
-    def size(self):
+    def size(self) -> int:
         return self.storage.get_plaintext_size(self.name)
 
 
 class LocalStubFieldFile:
-    def __init__(self, name: str):
+    def __init__(self, name: str) -> None:
         self.name = name
-        self.file: IO[Any]
+        self.file: BinaryIO | None = None
 
     @property
     def path(self) -> str:
@@ -49,13 +76,13 @@ class LocalStubFieldFile:
         return Path(self.path).stat().st_size
 
     def open(self, mode: str = "rb") -> None:
-        self.file = open(self.path, mode)
+        self.file = cast(BinaryIO, open(self.path, mode))
 
     def close(self) -> None:
         if self.file is not None:
             self.file.close()
 
-    def chunks(self, chunk_size: int = 64 * 1024):
+    def chunks(self, chunk_size: int = 64 * 1024) -> Iterator[bytes]:
         with open(self.path, "rb") as handle:
             while True:
                 chunk = handle.read(chunk_size)
@@ -64,7 +91,24 @@ class LocalStubFieldFile:
                 yield chunk
 
 
-def attach_video_stream_methods(fake_video_obj, view_module) -> None:
+def stream_response_body(response: object) -> bytes:
+    streaming_response = cast(StreamingHttpResponse, response)
+    return b"".join(cast(Iterable[bytes], streaming_response.streaming_content))
+
+
+def make_get_video_or_404(
+    fake_video_obj: object,
+) -> Callable[[int | str | None], object]:
+    def _get_video_or_404(pk: int | str | None) -> object:
+        return fake_video_obj
+
+    return _get_video_or_404
+
+
+def attach_video_stream_methods(
+    fake_video_obj: SimpleNamespace,
+    view_module: object,
+) -> None:
     def streamable_path_is_safe_plaintext(path: Path) -> bool:
         if not path.exists() or not path.is_file() or path.stat().st_size <= 0:
             return False
@@ -72,17 +116,23 @@ def attach_video_stream_methods(fake_video_obj, view_module) -> None:
             return handle.read(len(LX_ENCRYPTED_MAGIC)) != LX_ENCRYPTED_MAGIC
 
     def get_stream_relative_path(file_type: str) -> str | None:
-        attr_name = (
-            "processed_streamable_relative_path"
-            if file_type == "processed"
-            else "raw_streamable_relative_path"
+        if file_type == "processed":
+            return cast(
+                str | None,
+                getattr(fake_video_obj, "processed_streamable_relative_path", None),
+            )
+        return cast(
+            str | None,
+            getattr(fake_video_obj, "raw_streamable_relative_path", None),
         )
-        return getattr(fake_video_obj, attr_name, None)
 
     def can_offload_stream_with_nginx(file_type: str) -> bool:
+        storage_mode = cast(
+            VideoStorageMode | None,
+            getattr(fake_video_obj, "storage_mode", None),
+        )
         return (
-            getattr(fake_video_obj, "storage_mode", None)
-            == view_module.VideoFile.StorageMode.STREAMABLE
+            storage_mode == VideoStorageMode.STREAMABLE
             and get_stream_relative_path(file_type) is not None
         )
 
@@ -90,14 +140,28 @@ def attach_video_stream_methods(fake_video_obj, view_module) -> None:
         file_type: str,
         *,
         materialize_if_missing: bool = False,  # noqa: ARG001
-    ):
+    ) -> tuple[object, Path | None]:
         if file_type == "processed":
-            field_file = getattr(fake_video_obj, "processed_file", None)
-            fallback = getattr(fake_video_obj, "get_processed_file_path", None)
+            field_file = cast(
+                object | None,
+                getattr(fake_video_obj, "processed_file", None),
+            )
+            fallback = cast(
+                Callable[[], Path | str | None] | None,
+                getattr(fake_video_obj, "get_processed_file_path", None),
+            )
         else:
-            field_file = getattr(fake_video_obj, "active_raw_file", None)
-            fallback = getattr(fake_video_obj, "get_raw_file_path", None)
-        if field_file is None or not getattr(field_file, "name", None):
+            field_file = cast(
+                object | None,
+                getattr(fake_video_obj, "active_raw_file", None),
+            )
+            fallback = cast(
+                Callable[[], Path | str | None] | None,
+                getattr(fake_video_obj, "get_raw_file_path", None),
+            )
+        if field_file is None or not cast(
+            str | None, getattr(field_file, "name", None)
+        ):
             raise FileNotFoundError(f"No {file_type} file")
 
         stream_relative_path = get_stream_relative_path(file_type)
@@ -106,16 +170,16 @@ def attach_video_stream_methods(fake_video_obj, view_module) -> None:
             if streamable_path_is_safe_plaintext(stream_path):
                 return field_file, stream_path
 
-        field_path = getattr(field_file, "path", None)
+        field_path = cast(str | None, getattr(field_file, "path", None))
         if field_path and Path(field_path).exists():
             return field_file, Path(field_path)
 
-        if callable(fallback):
+        if fallback is not None:
             fallback_path = fallback()
             if fallback_path is not None and Path(fallback_path).exists():
                 return field_file, Path(fallback_path)
 
-        if getattr(field_file, "storage", None) is not None:
+        if cast(object | None, getattr(field_file, "storage", None)) is not None:
             return field_file, None
         raise FileNotFoundError(f"{file_type.title()} video file is not available")
 
@@ -153,15 +217,21 @@ class VideoStreamViewTests(TestCase):
             fake_video_obj = SimpleNamespace(
                 active_raw_file=fake_file_field,
                 processed_file=fake_file_field,
-                storage_mode=view_module.VideoFile.StorageMode.STREAMABLE,
+                storage_mode=VideoStorageMode.STREAMABLE,
                 raw_streamable_relative_path="streamable_videos/raw/test.mp4",
                 processed_streamable_relative_path="streamable_videos/processed/test.mp4",
             )
-            fake_lease = SimpleNamespace(token="nginx-lease-token")
-            lease_calls = {}
+            fake_lease = cast(
+                MediaLeaseProtocol, SimpleNamespace(token="nginx-lease-token")
+            )
+            lease_calls: dict[str, object] = {}
             attach_video_stream_methods(fake_video_obj, view_module)
 
-            def fake_create_video_stream_lease(video, *, file_type):
+            def fake_create_video_stream_lease(
+                video: object,
+                *,
+                file_type: str,
+            ) -> MediaLeaseProtocol:
                 lease_calls["video"] = video
                 lease_calls["file_type"] = file_type
                 return fake_lease
@@ -175,7 +245,7 @@ class VideoStreamViewTests(TestCase):
             monkeypatches.setattr(
                 view_module.VideoStreamView,
                 "_get_video_or_404",
-                staticmethod(lambda pk: fake_video_obj),
+                staticmethod(make_get_video_or_404(fake_video_obj)),
             )
             monkeypatches.setattr(
                 view_module,
@@ -192,7 +262,7 @@ class VideoStreamViewTests(TestCase):
                 streamable_path.unlink(missing_ok=True)
 
         assert response.status_code == 200
-        assert "X-Accel-Redirect" in response
+        assert "X-Accel-Redirect" in response.headers
         assert (
             response["X-Accel-Redirect"]
             == "/protected_media/streamable_videos/raw/test.mp4"
@@ -211,7 +281,7 @@ class VideoStreamViewTests(TestCase):
         fake_video_obj = SimpleNamespace(
             active_raw_file=fake_field,
             processed_file=fake_field,
-            storage_mode=view_module.VideoFile.StorageMode.ENCRYPTED,
+            storage_mode=VideoStorageMode.ENCRYPTED,
         )
         attach_video_stream_methods(fake_video_obj, view_module)
 
@@ -220,7 +290,7 @@ class VideoStreamViewTests(TestCase):
             monkeypatches.setattr(
                 view_module.VideoStreamView,
                 "_get_video_or_404",
-                staticmethod(lambda pk: fake_video_obj),
+                staticmethod(make_get_video_or_404(fake_video_obj)),
             )
             response = self.client.get(
                 "/api/media/videos/123/stream/?type=processed",
@@ -231,7 +301,7 @@ class VideoStreamViewTests(TestCase):
 
         assert response.status_code == 206
         assert response["Content-Range"] == f"bytes 25-99/{len(payload)}"
-        assert b"".join(response.streaming_content) == payload[25:100]
+        assert stream_response_body(response) == payload[25:100]
 
     def test_video_stream_wraps_django_stream_with_media_lease(self):
         from endoreg_db.views.video import video_stream as view_module
@@ -242,18 +312,25 @@ class VideoStreamViewTests(TestCase):
         fake_video_obj = SimpleNamespace(
             active_raw_file=fake_field,
             processed_file=fake_field,
-            storage_mode=view_module.VideoFile.StorageMode.ENCRYPTED,
+            storage_mode=VideoStorageMode.ENCRYPTED,
         )
-        fake_lease = SimpleNamespace(token="lease-token")
-        calls = {}
+        fake_lease = cast(MediaLeaseProtocol, SimpleNamespace(token="lease-token"))
+        calls: dict[str, object] = {}
         attach_video_stream_methods(fake_video_obj, view_module)
 
-        def fake_create_video_stream_lease(video, *, file_type):
+        def fake_create_video_stream_lease(
+            video: object,
+            *,
+            file_type: str,
+        ) -> MediaLeaseProtocol:
             calls["video"] = video
             calls["file_type"] = file_type
             return fake_lease
 
-        def fake_wrap_iterator_with_media_lease(chunks, lease):
+        def fake_wrap_iterator_with_media_lease(
+            chunks: Iterable[bytes],
+            lease: MediaLeaseProtocol,
+        ) -> Iterator[bytes]:
             calls["lease"] = lease
             yield from chunks
 
@@ -262,7 +339,7 @@ class VideoStreamViewTests(TestCase):
             monkeypatches.setattr(
                 view_module.VideoStreamView,
                 "_get_video_or_404",
-                staticmethod(lambda pk: fake_video_obj),
+                staticmethod(make_get_video_or_404(fake_video_obj)),
             )
             monkeypatches.setattr(
                 view_module,
@@ -276,7 +353,7 @@ class VideoStreamViewTests(TestCase):
             )
 
             response = self.client.get("/api/media/videos/123/stream/?type=processed")
-            body = b"".join(response.streaming_content)
+            body = stream_response_body(response)
         finally:
             monkeypatches.undo()
 
@@ -310,7 +387,7 @@ class VideoStreamViewTests(TestCase):
             fake_video_obj = SimpleNamespace(
                 active_raw_file=fake_file_field,
                 processed_file=fake_file_field,
-                storage_mode=view_module.VideoFile.StorageMode.STREAMABLE,
+                storage_mode=VideoStorageMode.STREAMABLE,
             )
             attach_video_stream_methods(fake_video_obj, view_module)
 
@@ -318,7 +395,7 @@ class VideoStreamViewTests(TestCase):
             monkeypatches.setattr(
                 view_module.VideoStreamView,
                 "_get_video_or_404",
-                staticmethod(lambda pk: fake_video_obj),
+                staticmethod(make_get_video_or_404(fake_video_obj)),
             )
 
             response = self.client.get("/api/media/videos/123/stream/?type=raw")
@@ -328,7 +405,7 @@ class VideoStreamViewTests(TestCase):
                 tmp_file_path.unlink(missing_ok=True)
 
         assert response.status_code == 200
-        assert "X-Accel-Redirect" not in response
+        assert "X-Accel-Redirect" not in response.headers
 
     def test_video_stream_plaintext_legacy_mode_does_not_emit_nginx_redirect(self):
         from endoreg_db.views.video import video_stream as view_module
@@ -353,7 +430,7 @@ class VideoStreamViewTests(TestCase):
             fake_video_obj = SimpleNamespace(
                 active_raw_file=fake_file_field,
                 processed_file=fake_file_field,
-                storage_mode=view_module.VideoFile.StorageMode.ENCRYPTED,
+                storage_mode=VideoStorageMode.ENCRYPTED,
                 raw_streamable_relative_path="streamable_videos/raw/test.mp4",
                 processed_streamable_relative_path="streamable_videos/processed/test.mp4",
             )
@@ -363,7 +440,7 @@ class VideoStreamViewTests(TestCase):
             monkeypatches.setattr(
                 view_module.VideoStreamView,
                 "_get_video_or_404",
-                staticmethod(lambda pk: fake_video_obj),
+                staticmethod(make_get_video_or_404(fake_video_obj)),
             )
 
             response = self.client.get("/api/media/videos/123/stream/?type=raw")
@@ -373,7 +450,7 @@ class VideoStreamViewTests(TestCase):
                 tmp_file_path.unlink(missing_ok=True)
 
         assert response.status_code == 200
-        assert "X-Accel-Redirect" not in response
+        assert "X-Accel-Redirect" not in response.headers
 
     def test_video_stream_falls_back_when_streamable_artifact_is_not_ready(self):
         from endoreg_db.views.video import video_stream as view_module
@@ -384,7 +461,7 @@ class VideoStreamViewTests(TestCase):
         fake_video_obj = SimpleNamespace(
             active_raw_file=fake_field,
             processed_file=fake_field,
-            storage_mode=view_module.VideoFile.StorageMode.STREAMABLE,
+            storage_mode=VideoStorageMode.STREAMABLE,
             raw_streamable_relative_path="streamable_videos/raw/missing.mp4",
             processed_streamable_relative_path="streamable_videos/processed/missing.mp4",
         )
@@ -395,10 +472,10 @@ class VideoStreamViewTests(TestCase):
             monkeypatches.setattr(
                 view_module.VideoStreamView,
                 "_get_video_or_404",
-                staticmethod(lambda pk: fake_video_obj),
+                staticmethod(make_get_video_or_404(fake_video_obj)),
             )
             response = self.client.get("/api/media/videos/123/stream/?type=processed")
-            body = b"".join(response.streaming_content)
+            body = stream_response_body(response)
         finally:
             monkeypatches.undo()
 
@@ -415,7 +492,7 @@ class VideoStreamViewTests(TestCase):
         fake_video_obj = SimpleNamespace(
             active_raw_file=fake_field,
             processed_file=fake_field,
-            storage_mode=view_module.VideoFile.StorageMode.ENCRYPTED,
+            storage_mode=VideoStorageMode.ENCRYPTED,
         )
         attach_video_stream_methods(fake_video_obj, view_module)
 
@@ -425,7 +502,7 @@ class VideoStreamViewTests(TestCase):
             monkeypatches.setattr(
                 view_module.VideoStreamView,
                 "_get_video_or_404",
-                staticmethod(lambda pk: fake_video_obj),
+                staticmethod(make_get_video_or_404(fake_video_obj)),
             )
             response = self.client.get("/api/media/videos/123/stream/?type=raw")
         finally:
@@ -443,7 +520,7 @@ class VideoStreamViewTests(TestCase):
         fake_video_obj = SimpleNamespace(
             active_raw_file=fake_field,
             processed_file=fake_field,
-            storage_mode=view_module.VideoFile.StorageMode.ENCRYPTED,
+            storage_mode=VideoStorageMode.ENCRYPTED,
         )
         attach_video_stream_methods(fake_video_obj, view_module)
 
@@ -453,10 +530,10 @@ class VideoStreamViewTests(TestCase):
             monkeypatches.setattr(
                 view_module.VideoStreamView,
                 "_get_video_or_404",
-                staticmethod(lambda pk: fake_video_obj),
+                staticmethod(make_get_video_or_404(fake_video_obj)),
             )
             response = self.client.get("/api/media/videos/123/stream/?type=raw")
-            body = b"".join(response.streaming_content)
+            body = stream_response_body(response)
         finally:
             monkeypatches.undo()
 
@@ -473,7 +550,7 @@ class VideoStreamViewTests(TestCase):
             raw_file=fake_field,
             active_raw_file=fake_field,
             processed_file=fake_field,
-            storage_mode=view_module.VideoFile.StorageMode.STREAMABLE,
+            storage_mode=VideoStorageMode.STREAMABLE,
             raw_streamable_relative_path="streamable_videos/raw/encrypted.mp4",
             processed_streamable_relative_path="streamable_videos/processed/encrypted.mp4",
         )
@@ -491,16 +568,16 @@ class VideoStreamViewTests(TestCase):
             monkeypatches.setattr(
                 view_module.VideoStreamView,
                 "_get_video_or_404",
-                staticmethod(lambda pk: fake_video_obj),
+                staticmethod(make_get_video_or_404(fake_video_obj)),
             )
             response = self.client.get("/api/media/videos/123/stream/?type=processed")
-            body = b"".join(response.streaming_content)
+            body = stream_response_body(response)
         finally:
             monkeypatches.undo()
             streamable_path.unlink(missing_ok=True)
 
         assert response.status_code == 200
-        assert "X-Accel-Redirect" not in response
+        assert "X-Accel-Redirect" not in response.headers
         assert response["X-Stream-State"] == "encrypted_streamable_artifact"
         assert not body.startswith(LX_ENCRYPTED_MAGIC)
         assert body == payload
@@ -517,7 +594,7 @@ class VideoStreamViewTests(TestCase):
             raw_file=fake_field,
             active_raw_file=fake_field,
             processed_file=fake_field,
-            storage_mode=view_module.VideoFile.StorageMode.STREAMABLE,
+            storage_mode=VideoStorageMode.STREAMABLE,
             raw_streamable_relative_path="streamable_videos/raw/repaired.mp4",
             processed_streamable_relative_path="streamable_videos/processed/repaired.mp4",
         )
@@ -529,7 +606,13 @@ class VideoStreamViewTests(TestCase):
         streamable_path.parent.mkdir(parents=True, exist_ok=True)
         streamable_path.write_bytes(LX_ENCRYPTED_MAGIC + b"ciphertext")
 
-        def fake_sync(video, *, include_raw, include_processed, save):  # noqa: ARG001
+        def fake_sync(
+            video: object,
+            *,
+            include_raw: bool,
+            include_processed: bool,
+            save: bool,
+        ) -> list[str]:  # noqa: ARG001
             assert include_raw is False
             assert include_processed is True
             assert save is True
@@ -547,7 +630,7 @@ class VideoStreamViewTests(TestCase):
             monkeypatches.setattr(
                 view_module.VideoStreamView,
                 "_get_video_or_404",
-                staticmethod(lambda pk: fake_video_obj),
+                staticmethod(make_get_video_or_404(fake_video_obj)),
             )
             response = self.client.get("/api/media/videos/123/stream/?type=processed")
         finally:
@@ -559,7 +642,7 @@ class VideoStreamViewTests(TestCase):
             response["X-Accel-Redirect"]
             == "/protected_media/streamable_videos/processed/repaired.mp4"
         )
-        assert "X-Stream-State" not in response
+        assert "X-Stream-State" not in response.headers
 
     def test_video_stream_recovers_raw_path_when_field_name_is_stale(self):
         from endoreg_db.views.video import video_stream as view_module
@@ -575,7 +658,7 @@ class VideoStreamViewTests(TestCase):
             raw_file=fake_raw_field,
             active_raw_file=fake_raw_field,
             processed_file=fake_raw_field,
-            storage_mode=view_module.VideoFile.StorageMode.ENCRYPTED,
+            storage_mode=VideoStorageMode.ENCRYPTED,
             get_raw_file_path=lambda: fallback_path,
             get_processed_file_path=lambda: fallback_path,
         )
@@ -586,10 +669,10 @@ class VideoStreamViewTests(TestCase):
             monkeypatches.setattr(
                 view_module.VideoStreamView,
                 "_get_video_or_404",
-                staticmethod(lambda pk: fake_video_obj),
+                staticmethod(make_get_video_or_404(fake_video_obj)),
             )
             response = self.client.get("/api/media/videos/123/stream/?type=raw")
-            body = b"".join(response.streaming_content)
+            body = stream_response_body(response)
         finally:
             monkeypatches.undo()
             fallback_path.unlink(missing_ok=True)
@@ -614,7 +697,7 @@ class VideoStreamViewTests(TestCase):
             raw_file=fake_raw_field,
             active_raw_file=fake_raw_field,
             processed_file=fake_processed_field,
-            storage_mode=view_module.VideoFile.StorageMode.ENCRYPTED,
+            storage_mode=VideoStorageMode.ENCRYPTED,
             get_raw_file_path=lambda: None,
             get_processed_file_path=lambda: fallback_path,
         )
@@ -625,10 +708,10 @@ class VideoStreamViewTests(TestCase):
             monkeypatches.setattr(
                 view_module.VideoStreamView,
                 "_get_video_or_404",
-                staticmethod(lambda pk: fake_video_obj),
+                staticmethod(make_get_video_or_404(fake_video_obj)),
             )
             response = self.client.get("/api/media/videos/123/stream/?type=processed")
-            body = b"".join(response.streaming_content)
+            body = stream_response_body(response)
         finally:
             monkeypatches.undo()
             fallback_path.unlink(missing_ok=True)
@@ -649,7 +732,7 @@ class VideoStreamViewTests(TestCase):
         fake_video_obj = SimpleNamespace(
             active_raw_file=fake_file_field,
             processed_file=fake_file_field,
-            storage_mode=view_module.VideoFile.StorageMode.STREAMABLE,
+            storage_mode=VideoStorageMode.STREAMABLE,
             raw_streamable_relative_path="streamable_videos/raw/test.mp4",
             processed_streamable_relative_path="streamable_videos/processed/test.mp4",
         )
@@ -670,7 +753,7 @@ class VideoStreamViewTests(TestCase):
             monkeypatches.setattr(
                 view_module.VideoStreamView,
                 "_get_video_or_404",
-                staticmethod(lambda pk: fake_video_obj),
+                staticmethod(make_get_video_or_404(fake_video_obj)),
             )
 
             response = self.client.get("/api/media/videos/123/stream/?type=raw")
@@ -694,7 +777,7 @@ class VideoStreamViewTests(TestCase):
         fake_video_obj = SimpleNamespace(
             active_raw_file=fake_field,
             processed_file=fake_field,
-            storage_mode=view_module.VideoFile.StorageMode.ENCRYPTED,
+            storage_mode=VideoStorageMode.ENCRYPTED,
         )
         attach_video_stream_methods(fake_video_obj, view_module)
 
@@ -703,7 +786,7 @@ class VideoStreamViewTests(TestCase):
             monkeypatches.setattr(
                 view_module.VideoStreamView,
                 "_get_video_or_404",
-                staticmethod(lambda pk: fake_video_obj),
+                staticmethod(make_get_video_or_404(fake_video_obj)),
             )
             response = self.client.get(
                 "/api/media/videos/123/stream/?type=processed",

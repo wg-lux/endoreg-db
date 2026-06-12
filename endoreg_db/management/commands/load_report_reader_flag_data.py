@@ -10,11 +10,12 @@ from lx_dtypes.models.contracts.management_command import (
 from ...data import REPORT_READER_FLAG_DATA_DIR
 from ...models import ReportReaderFlag
 from ...utils import load_model_data_from_yaml
-from ...utils.data_loading.yaml_model_loader import LoadModelDataMetadata
+from ...utils.yaml_model_loader import LoadModelDataMetadata
 
 
 class LoadReportReaderFlagCommandOptions(TypedDict):
     verbose: bool
+
 
 SOURCE_DIR = REPORT_READER_FLAG_DATA_DIR  # e.g. settings.DATA_DIR_INTERVENTION
 

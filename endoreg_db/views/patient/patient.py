@@ -18,12 +18,25 @@ from endoreg_db.models.medical.patient.patient_examination import PatientExamina
 from endoreg_db.models.medical.patient.patient_finding import PatientFinding
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.serializers.patient import PatientSerializer
+from lx_dtypes.models.contracts.patient_view import (
+    PatientDeletionRelatedObjectsPayload,
+    PatientDeletionSafetyPayload,
+    PatientPseudonymPayload,
+)
 
 
 class _PatientNameLike(Protocol):
     first_name: str
     last_name: str
     is_real_person: bool | None
+    id: int | str | None
+
+
+class _PatientDeleteLike(_PatientNameLike, Protocol):
+    def delete(self) -> tuple[int, dict[str, int]]: ...
+
+
+class _PatientIdLike(Protocol):
     id: int | str | None
 
 
@@ -44,7 +57,7 @@ class PatientViewSet(viewsets.ModelViewSet[Patient]):
     serializer_class = PatientSerializer
     permission_classes = [PolicyPermission]
 
-    def perform_create(self, serializer: serializers.BaseSerializer[Any]) -> None:
+    def perform_create(self, serializer: serializers.BaseSerializer[Patient]) -> None:  # pyright: ignore[reportIncompatibleMethodOverride]
         """Erweiterte Validierung beim Erstellen eines Patienten"""
         try:
             serializer.save()
@@ -78,7 +91,7 @@ class PatientViewSet(viewsets.ModelViewSet[Patient]):
         Delete a patient with proper error handling and cascade protection.
         """
         patient = self.get_object()
-        patient_record = cast(_PatientNameLike, patient)
+        patient_record = cast(_PatientDeleteLike, patient)
 
         try:
             with transaction.atomic():
@@ -110,7 +123,7 @@ class PatientViewSet(viewsets.ModelViewSet[Patient]):
                     )
 
                 patient_name = f"{patient_record.first_name} {patient_record.last_name}"
-                patient.delete()
+                patient_record.delete()
 
                 return Response(
                     {
@@ -158,6 +171,7 @@ class PatientViewSet(viewsets.ModelViewSet[Patient]):
 
         patient = self.get_object()
         patient_record = cast(_PatientNameLike, patient)
+        patient_record = cast(_PatientNameLike, patient)
 
         examinations = PatientExamination.objects.filter(patient=patient)
         examination_count = examinations.count()
@@ -177,19 +191,18 @@ class PatientViewSet(viewsets.ModelViewSet[Patient]):
         if finding_count > 0:
             warnings.append(f"Patient has {finding_count} finding(s)")
 
-        return Response(
-            {
-                "can_delete": can_delete,
-                "is_real_person": is_real_person,
-                "related_objects": {
-                    "examinations": examination_count,
-                    "findings": finding_count,
-                    "videos": video_count,
-                    "reports": report_count,
-                },
-                "warnings": warnings,
-            }
+        payload = PatientDeletionSafetyPayload(
+            can_delete=can_delete,
+            is_real_person=is_real_person,
+            related_objects=PatientDeletionRelatedObjectsPayload(
+                examinations=examination_count,
+                findings=finding_count,
+                videos=video_count,
+                reports=report_count,
+            ),
+            warnings=warnings,
         )
+        return Response(payload.model_dump(mode="python"))
 
     @action(detail=False, methods=["get"])
     def patient_count(self, request: Request) -> Response:
@@ -218,8 +231,7 @@ class PatientViewSet(viewsets.ModelViewSet[Patient]):
         )
 
         patient = self.get_object()
-        patient_record = cast(_PatientNameLike, patient)
-        patient_id = patient_record.id
+        patient_id = cast(_PatientIdLike, patient).id
 
         try:
             # Validate that patient has required fields
@@ -237,15 +249,18 @@ class PatientViewSet(viewsets.ModelViewSet[Patient]):
             # Generate the pseudonym
             patient_hash, persisted = generate_patient_pseudonym(patient)
 
+            if patient_id is None:
+                raise ValueError("Patient id is required for pseudonym response")
+
+            payload = PatientPseudonymPayload(
+                patient_id=patient_id,
+                patient_hash=patient_hash,
+                source="server",
+                persisted=persisted,
+                message="Pseudonym generated successfully",
+            )
             return Response(
-                {
-                    "patient_id": patient_id,
-                    "patient_hash": patient_hash,
-                    "source": "server",
-                    "persisted": persisted,
-                    "message": "Pseudonym generated successfully",
-                },
-                status=status.HTTP_200_OK,
+                payload.model_dump(mode="python"), status=status.HTTP_200_OK
             )
 
         except ValueError as e:

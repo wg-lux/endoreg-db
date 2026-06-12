@@ -4,16 +4,17 @@ import types
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
-
+from typing import Any, cast
+import json
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIRequestFactory
 
 from endoreg_db.models import Center, UploadJob
+from lx_dtypes.models.contracts.video_correction import VideoCorrectionSegmentUpdateData
 
 
-def _load_video_view_module(module_name: str):
+def _load_video_view_module(module_name: str) -> Any:
     """Load a single video view module without importing the package __init__."""
     base = Path(__file__).resolve().parents[3] / "endoreg_db" / "views"
 
@@ -37,35 +38,46 @@ def _load_video_view_module(module_name: str):
 
 
 @contextmanager
-def _context_path(path: Path):
+def _context_path(path: Path) -> Any:
     yield path
 
 
-def _patch_anonym_video_dir(module, monkeypatch, output_dir: Path):
+def _patch_anonym_video_dir(
+    module: Any, monkeypatch: pytest.MonkeyPatch, output_dir: Path
+) -> None:
+    def _from_environment(cls: Any) -> SimpleNamespace:
+        return SimpleNamespace(anonym_video=output_dir, transcoding=output_dir)
+
     monkeypatch.setattr(
         module.path_utils.EndoregPathsModel,
         "from_environment",
-        classmethod(
-            lambda cls: SimpleNamespace(anonym_video=output_dir, transcoding=output_dir)
-        ),
+        classmethod(_from_environment),
         raising=True,
     )
+
+    def _masked_output_path(video: Any) -> Path:
+        return output_dir / f"{video.video_hash}_masked.mp4"
+
     monkeypatch.setattr(
         module,
         "_masked_output_path",
-        lambda video: output_dir / f"{video.video_hash}_masked.mp4",
+        _masked_output_path,
         raising=True,
     )
+
+    def _cleaned_output_path(video: Any) -> Path:
+        return output_dir / f"{video.video_hash}_cleaned.mp4"
+
     monkeypatch.setattr(
         module,
         "_cleaned_output_path",
-        lambda video: output_dir / f"{video.video_hash}_cleaned.mp4",
+        _cleaned_output_path,
         raising=True,
     )
 
 
-def _patch_processed_file_save(module, monkeypatch):
-    def _save_processed(video, output_path: Path) -> str:
+def _patch_processed_file_save(module: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    def _save_processed(video: Any, output_path: Path) -> str:
         video.processed_file.name = f"processed_videos_final/{output_path.name}"
         return video.processed_file.name
 
@@ -77,40 +89,81 @@ def _patch_processed_file_save(module, monkeypatch):
     )
 
 
+def _fake_get_object_or_404(video: "_FakeVideo") -> object:
+    def _get_object_or_404(model: object, **kwargs: object) -> _FakeVideo:
+        return video
+
+    return _get_object_or_404
+
+
+def _empty_segment_update_result(
+    video: object,
+    removed_frames: object,
+) -> VideoCorrectionSegmentUpdateData:
+    return {
+        "segments_updated": 0,
+        "segments_deleted": 0,
+        "segments_unchanged": 0,
+    }
+
+
 class _FakeHistory:
-    def __init__(self):
+    running: bool
+    success: dict[str, Any] | None
+    failure: Any
+
+    def __init__(self) -> None:
         self.running = False
         self.success = None
         self.failure = None
 
-    def mark_running(self):
+    def mark_running(self) -> None:
         self.running = True
 
-    def mark_success(self, **kwargs):
+    def mark_success(self, **kwargs: Any) -> None:
         self.success = kwargs
 
-    def mark_failure(self, error):
+    def mark_failure(self, error: Any) -> None:
         self.failure = error
 
 
 class _FakeHistoryModel:
-    OPERATION_MASKING = "masking"
-    OPERATION_FRAME_REMOVAL = "frame_removal"
-    STATUS_PENDING = "pending"
+    OPERATION_MASKING: str = "masking"
+    OPERATION_FRAME_REMOVAL: str = "frame_removal"
+    STATUS_PENDING: str = "pending"
 
     class objects:
         @staticmethod
-        def create(**kwargs):
+        def create(**kwargs: Any) -> _FakeHistory:
             return _FakeHistory()
 
 
 class _FakeVideo:
-    def __init__(self, raw_path: Path):
+    id: int
+    pk: int
+    video_hash: str
+    raw_file: SimpleNamespace
+    center: Any
+    center_id: Any
+    video_meta: SimpleNamespace
+    sensitive_meta: Any
+    sensitive_meta_id: Any
+    frame_count: int
+    processed_file: SimpleNamespace
+    _raw_path: Path
+    saved_update_fields: list[Any]
+    refreshed: bool
+    legacy_prediction_called: bool
+    initialize_specs_called: bool
+    initialize_frames_called: bool
+
+    def __init__(self, raw_path: Path) -> None:
         self.id = 1
         self.pk = 1
         self.video_hash = "video-hash"
         self.raw_file = SimpleNamespace(name=raw_path.name, path=str(raw_path))
         self.center = SimpleNamespace(name="university_hospital_wuerzburg")
+        self.center_id = None
         self.video_meta = SimpleNamespace(
             processor=SimpleNamespace(name="olympus_cv_1500")
         )
@@ -121,103 +174,123 @@ class _FakeVideo:
             name="processed_videos_final/original.mp4"
         )
         self._raw_path = raw_path
-        self.saved_update_fields: list[Any] = []
+        self.saved_update_fields = []
         self.refreshed = False
         self.legacy_prediction_called = False
         self.initialize_specs_called = False
         self.initialize_frames_called = False
 
-    def get_raw_file_path(self):
+    def get_raw_file_path(self) -> Path:
         return self._raw_path
 
-    def initialize_video_specs(self):
+    def initialize_video_specs(self) -> None:
         self.initialize_specs_called = True
 
-    def initialize_frames(self):
+    def initialize_frames(self) -> None:
         self.initialize_frames_called = True
 
-    def save(self, update_fields=None):
+    def save(self, update_fields: Any = None) -> None:
         self.saved_update_fields.append(update_fields)
 
-    def refresh_from_db(self):
+    def refresh_from_db(self) -> None:
         self.refreshed = True
 
-    def get_processed_file_path(self):
+    def get_processed_file_path(self) -> str:
         return self.processed_file.name
 
 
 @pytest.mark.django_db
-def test_reimport_returns_clear_error_when_raw_source_is_missing(tmp_path, monkeypatch):
-    module = _load_video_view_module("reimport")
+def test_reimport_returns_clear_error_when_raw_source_is_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module: Any = _load_video_view_module("reimport")
     import endoreg_db.services.video_reimport_orchestrator as reimport_orchestrator
 
     factory = APIRequestFactory()
 
-    missing_raw = tmp_path / "missing.mp4"
+    missing_raw: Path = tmp_path / "missing.mp4"
     video = _FakeVideo(missing_raw)
 
     class _FakeVideoModel:
         DoesNotExist = LookupError
-        objects = SimpleNamespace(
-            select_related=lambda *args: SimpleNamespace(get=lambda **kwargs: video)
-        )
+
+        class objects:
+            @staticmethod
+            def select_related(*args: Any) -> Any:
+                class _Inner:
+                    @staticmethod
+                    def get(**kwargs: Any) -> _FakeVideo:
+                        return video
+
+                return _Inner
 
     monkeypatch.setattr(module, "VideoFile", _FakeVideoModel, raising=True)
+
+    def _ensure_local_file_fail(field_file: Any) -> Any:
+        raise FileNotFoundError("raw source missing from storage")
+
     monkeypatch.setattr(
         reimport_orchestrator,
         "ensure_local_file",
-        lambda field_file: (_ for _ in ()).throw(
-            FileNotFoundError("raw source missing from storage")
-        ),
+        _ensure_local_file_fail,
         raising=True,
     )
 
-    response = module.VideoReimportView.as_view()(factory.post("/reimport/"), pk=1)
-
+    response: Any = module.VideoReimportView.as_view()(factory.post("/reimport/"), pk=1)
+    data = json.loads(response.content)
     assert response.status_code == 404
-    assert "could not be materialized from storage" in response.data["error"]
+    assert "could not be materialized from storage" in data["error"]
 
 
 @pytest.mark.django_db
 def test_reimport_reanonymizes_existing_video_without_full_import(
-    tmp_path, monkeypatch
-):
-    module = _load_video_view_module("reimport")
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module: Any = _load_video_view_module("reimport")
     import endoreg_db.services.jobs.video_reimport_jobs as reimport_jobs
     import endoreg_db.services.video_reimport_orchestrator as reimport_orchestrator
 
     factory = APIRequestFactory()
 
-    raw_path = tmp_path / "raw.mp4"
+    raw_path: Path = tmp_path / "raw.mp4"
     raw_path.write_bytes(b"raw")
     video = _FakeVideo(raw_path)
-    service_calls = []
-    prediction_calls = []
+    service_calls: list[dict[str, Any]] = []
+    prediction_calls: list[tuple[Any, Any]] = []
 
     class _FakeVideoModel:
         DoesNotExist = LookupError
-        objects = SimpleNamespace(
-            select_related=lambda *args: SimpleNamespace(get=lambda **kwargs: video)
-        )
+
+        class objects:
+            @staticmethod
+            def select_related(*args: Any) -> Any:
+                class _Inner:
+                    @staticmethod
+                    def get(**kwargs: Any) -> _FakeVideo:
+                        return video
+
+                return _Inner
 
     class _FakeSensitiveMetaModel:
         class objects:
             @staticmethod
-            def filter(**kwargs):
+            def filter(**kwargs: Any) -> Any:
                 return SimpleNamespace(delete=lambda: None)
 
     @contextmanager
-    def _fake_atomic():
+    def _fake_atomic() -> Any:
         yield
 
     class _FakeService:
-        def reanonymize_existing_video(self, target_video, *, source_path=None):
+        def reanonymize_existing_video(
+            self, target_video: Any, *, source_path: Any = None
+        ) -> _FakeVideo:
             service_calls.append(
                 {"target_video": target_video, "source_path": source_path}
             )
             return video
 
-        def import_and_anonymize(self, **kwargs):
+        def import_and_anonymize(self, **kwargs: Any) -> None:
             raise AssertionError("reimport should not use the full import pipeline")
 
     monkeypatch.setattr(module, "VideoFile", _FakeVideoModel, raising=True)
@@ -230,38 +303,53 @@ def test_reimport_reanonymizes_existing_video_without_full_import(
     monkeypatch.setattr(
         reimport_orchestrator.transaction, "atomic", _fake_atomic, raising=True
     )
+
+    def _ensure_local_file_mock(field_file: Any) -> Any:
+        return _context_path(raw_path)
+
     monkeypatch.setattr(
         reimport_orchestrator,
         "ensure_local_file",
-        lambda field_file: _context_path(raw_path),
+        _ensure_local_file_mock,
         raising=True,
     )
+
+    def _dispatch_prediction_mock(target_video: Any, payload: Any) -> dict[str, Any]:
+        prediction_calls.append((target_video, payload))
+        return {"status": "queued", "queued": True, "history_id": 123}
+
     monkeypatch.setattr(
         reimport_orchestrator,
         "_dispatch_prediction_refresh",
-        lambda target_video, payload: (
-            prediction_calls.append((target_video, payload))
-            or {"status": "queued", "queued": True, "history_id": 123}
-        ),
+        _dispatch_prediction_mock,
         raising=True,
     )
+
+    def _init_specs_mock(target_video: Any) -> None:
+        target_video.initialize_video_specs()
+
     monkeypatch.setattr(
         reimport_jobs,
-        "initialize_video_specs",
-        lambda target_video: target_video.initialize_video_specs(),
+        "initialize_video_file_specs",
+        _init_specs_mock,
         raising=True,
     )
+
+    def _init_frames_mock(target_video: Any) -> None:
+        target_video.initialize_frames()
+
     monkeypatch.setattr(
         reimport_jobs,
         "initialize_video_frames",
-        lambda target_video: target_video.initialize_frames(),
+        _init_frames_mock,
         raising=True,
     )
 
-    view = module.VideoReimportView()
+    view: Any = module.VideoReimportView()
     view.video_service = _FakeService()
 
-    response = view.post(factory.post("/reimport/"), pk=1)
+    response: Any = view.post(factory.post("/reimport/"), pk=1)
+    data = response.data
 
     assert response.status_code == 200
     assert service_calls == [{"target_video": video, "source_path": raw_path}]
@@ -270,52 +358,60 @@ def test_reimport_reanonymizes_existing_video_without_full_import(
     assert video.initialize_frames_called is True
     assert video.refreshed is True
     assert prediction_calls == [(video, {})]
-    assert response.data["prediction_refresh"]["queued"] is True
+    assert data["prediction_refresh"]["queued"] is True
 
 
 @pytest.mark.django_db
 def test_reset_reimport_state_does_not_reactivate_duplicate_upload_jobs(
-    tmp_path,
-    monkeypatch,
-):
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     import endoreg_db.services.jobs.video_reimport_jobs as reimport_jobs
 
-    center = Center.objects.create(name="reimport-center")
-    raw_path = tmp_path / "raw.mp4"
+    center: Any = Center.objects.create(name="reimport-center")
+    raw_path: Path = tmp_path / "raw.mp4"
     raw_path.write_bytes(b"raw")
     video = _FakeVideo(raw_path)
     video.center = center
     video.center_id = center.pk
     video.video_hash = "duplicate-video-hash"
 
-    active_job = UploadJob.objects.create(
+    active_job: Any = UploadJob.objects.create(
         file=SimpleUploadedFile("active.mp4", b"active", content_type="video/mp4"),
         status=UploadJob.Status.ANONYMIZED,
         content_type="video/mp4",
         source_center=center,
         content_hash=video.video_hash,
     )
-    failed_job = UploadJob.objects.create(
+    failed_job: Any = UploadJob.objects.create(
         file=SimpleUploadedFile("failed.mp4", b"failed", content_type="video/mp4"),
         status=UploadJob.Status.ERROR,
         content_type="video/mp4",
         source_center=center,
         content_hash=video.video_hash,
     )
+
+    def _init_specs_mock(target_video: Any) -> None:
+        target_video.initialize_video_specs()
+
     monkeypatch.setattr(
         reimport_jobs,
-        "initialize_video_specs",
-        lambda target_video: target_video.initialize_video_specs(),
-        raising=True,
-    )
-    monkeypatch.setattr(
-        reimport_jobs,
-        "initialize_video_frames",
-        lambda target_video: target_video.initialize_frames(),
+        "initialize_video_file_specs",
+        _init_specs_mock,
         raising=True,
     )
 
-    reset_count = reimport_jobs._reset_reimport_state(video)
+    def _init_frames_mock(target_video: Any) -> None:
+        target_video.initialize_frames()
+
+    monkeypatch.setattr(
+        reimport_jobs,
+        "initialize_video_frames",
+        _init_frames_mock,
+        raising=True,
+    )
+
+    reset_count: Any = getattr(reimport_jobs, "_reset_reimport_state")(cast(Any, video))
 
     active_job.refresh_from_db()
     failed_job.refresh_from_db()
@@ -327,25 +423,27 @@ def test_reset_reimport_state_does_not_reactivate_duplicate_upload_jobs(
 
 
 @pytest.mark.django_db
-def test_mark_upload_jobs_anonymized_leaves_duplicate_failed_jobs_inactive(tmp_path):
+def test_mark_upload_jobs_anonymized_leaves_duplicate_failed_jobs_inactive(
+    tmp_path: Path,
+) -> None:
     import endoreg_db.services.jobs.video_reimport_jobs as reimport_jobs
 
-    center = Center.objects.create(name="reimport-complete-center")
-    raw_path = tmp_path / "raw.mp4"
+    center: Any = Center.objects.create(name="reimport-complete-center")
+    raw_path: Path = tmp_path / "raw.mp4"
     raw_path.write_bytes(b"raw")
     video = _FakeVideo(raw_path)
     video.center = center
     video.center_id = center.pk
     video.video_hash = "complete-duplicate-video-hash"
 
-    active_job = UploadJob.objects.create(
+    active_job: Any = UploadJob.objects.create(
         file=SimpleUploadedFile("active.mp4", b"active", content_type="video/mp4"),
         status=UploadJob.Status.PROCESSING,
         content_type="video/mp4",
         source_center=center,
         content_hash=video.video_hash,
     )
-    failed_job = UploadJob.objects.create(
+    failed_job: Any = UploadJob.objects.create(
         file=SimpleUploadedFile("failed.mp4", b"failed", content_type="video/mp4"),
         status=UploadJob.Status.ERROR,
         content_type="video/mp4",
@@ -353,7 +451,9 @@ def test_mark_upload_jobs_anonymized_leaves_duplicate_failed_jobs_inactive(tmp_p
         content_hash=video.video_hash,
     )
 
-    completed_count = reimport_jobs._mark_upload_jobs_anonymized(video)
+    completed_count: Any = getattr(reimport_jobs, "_mark_upload_jobs_anonymized")(
+        cast(Any, video)
+    )
 
     active_job.refresh_from_db()
     failed_job.refresh_from_db()
@@ -364,43 +464,43 @@ def test_mark_upload_jobs_anonymized_leaves_duplicate_failed_jobs_inactive(tmp_p
 
 @pytest.mark.django_db
 def test_mask_replace_denied_cleans_part_and_preserves_processed_path(
-    tmp_path, monkeypatch
-):
-    module = _load_video_view_module("correction")
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module: Any = _load_video_view_module("correction")
     factory = APIRequestFactory()
 
-    raw_path = tmp_path / "raw.mp4"
+    raw_path: Path = tmp_path / "raw.mp4"
     raw_path.write_bytes(b"raw")
     video = _FakeVideo(raw_path)
     history = _FakeHistory()
-    output_dir = tmp_path / "processed_videos_final"
+    output_dir: Path = tmp_path / "processed_videos_final"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     class _FakeMaskApplication:
-        def __init__(self):
+        def __init__(self) -> None:
             self.device_name = None
 
-        def _load_mask(self):
+        def _load_mask(self) -> dict[str, str]:
             return {"mask": "ok"}
 
-        def mask_video_streaming(self, *, output_video, **kwargs):
+        def mask_video_streaming(self, *, output_video: Any, **kwargs: Any) -> bool:
             output_video.write_bytes(b"new-mask")
             return True
 
     class _FakeFrameCleaner:
-        def __init__(self):
+        def __init__(self) -> None:
             self.mask_application = _FakeMaskApplication()
 
     _patch_anonym_video_dir(module, monkeypatch, output_dir)
     monkeypatch.setattr(
-        module, "get_object_or_404", lambda *args, **kwargs: video, raising=True
+        module, "get_object_or_404", _fake_get_object_or_404(video), raising=True
     )
     monkeypatch.setattr(module, "FrameCleaner", _FakeFrameCleaner, raising=True)
     monkeypatch.setattr(
         module, "VideoProcessingHistory", _FakeHistoryModel, raising=True
     )
 
-    def _create_history(**kwargs):
+    def _create_history(**kwargs: Any) -> _FakeHistory:
         return history
 
     monkeypatch.setattr(
@@ -408,16 +508,16 @@ def test_mask_replace_denied_cleans_part_and_preserves_processed_path(
     )
 
     original_name = video.processed_file.name
-    final_output = output_dir / f"{video.video_hash}_masked.mp4"
-    stale_part = output_dir / f"{video.video_hash}_masked.part.mp4"
+    final_output: Path = output_dir / f"{video.video_hash}_masked.mp4"
+    stale_part: Path = output_dir / f"{video.video_hash}_masked.part.mp4"
     stale_part.write_bytes(b"stale")
 
-    def _replace_fail(*, source, destination):
+    def _replace_fail(*, source: Any, destination: Any) -> None:
         raise PermissionError("replace denied")
 
     monkeypatch.setattr(module, "atomic_move_file", _replace_fail, raising=True)
 
-    response = module.VideoApplyMaskView.as_view()(
+    response: Any = module.VideoApplyMaskView.as_view()(
         factory.post(
             "/apply-mask/",
             {
@@ -438,52 +538,58 @@ def test_mask_replace_denied_cleans_part_and_preserves_processed_path(
 
 
 @pytest.mark.django_db
-def test_mask_overwrites_stale_part_and_updates_processed_file(tmp_path, monkeypatch):
-    module = _load_video_view_module("correction")
+def test_mask_overwrites_stale_part_and_updates_processed_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module: Any = _load_video_view_module("correction")
     factory = APIRequestFactory()
 
-    raw_path = tmp_path / "raw.mp4"
+    raw_path: Path = tmp_path / "raw.mp4"
     raw_path.write_bytes(b"raw")
     video = _FakeVideo(raw_path)
     history = _FakeHistory()
-    output_dir = tmp_path / "processed_videos_final"
+    output_dir: Path = tmp_path / "processed_videos_final"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     class _FakeMaskApplication:
-        def __init__(self):
+        def __init__(self) -> None:
             self.device_name = None
 
-        def _load_mask(self):
+        def _load_mask(self) -> dict[str, str]:
             return {"mask": "ok"}
 
-        def mask_video_streaming(self, *, output_video, **kwargs):
+        def mask_video_streaming(self, *, output_video: Any, **kwargs: Any) -> bool:
             output_video.write_bytes(b"fresh-mask")
             return True
 
     class _FakeFrameCleaner:
-        def __init__(self):
+        def __init__(self) -> None:
             self.mask_application = _FakeMaskApplication()
 
     _patch_anonym_video_dir(module, monkeypatch, output_dir)
     monkeypatch.setattr(
-        module, "get_object_or_404", lambda *args, **kwargs: video, raising=True
+        module, "get_object_or_404", _fake_get_object_or_404(video), raising=True
     )
     monkeypatch.setattr(module, "FrameCleaner", _FakeFrameCleaner, raising=True)
     monkeypatch.setattr(
         module, "VideoProcessingHistory", _FakeHistoryModel, raising=True
     )
+
+    def _create_history_success(**kwargs: Any) -> _FakeHistory:
+        return history
+
     monkeypatch.setattr(
         module.VideoProcessingHistory.objects,
         "create",
-        lambda **kwargs: history,
+        _create_history_success,
         raising=False,
     )
     _patch_processed_file_save(module, monkeypatch)
 
-    stale_part = output_dir / f"{video.video_hash}_masked.part.mp4"
+    stale_part: Path = output_dir / f"{video.video_hash}_masked.part.mp4"
     stale_part.write_bytes(b"stale")
 
-    response = module.VideoApplyMaskView.as_view()(
+    response: Any = module.VideoApplyMaskView.as_view()(
         factory.post(
             "/apply-mask/",
             {
@@ -496,7 +602,7 @@ def test_mask_overwrites_stale_part_and_updates_processed_file(tmp_path, monkeyp
         pk=1,
     )
 
-    final_output = output_dir / f"{video.video_hash}_masked.mp4"
+    final_output: Path = output_dir / f"{video.video_hash}_masked.mp4"
 
     assert response.status_code == 200
     assert final_output.exists()
@@ -508,55 +614,63 @@ def test_mask_overwrites_stale_part_and_updates_processed_file(tmp_path, monkeyp
 
 @pytest.mark.django_db
 def test_remove_frames_replace_denied_keeps_existing_processed_path(
-    tmp_path, monkeypatch
-):
-    module = _load_video_view_module("correction")
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module: Any = _load_video_view_module("correction")
     factory = APIRequestFactory()
 
-    raw_path = tmp_path / "raw.mp4"
+    raw_path: Path = tmp_path / "raw.mp4"
     raw_path.write_bytes(b"raw")
     video = _FakeVideo(raw_path)
     history = _FakeHistory()
-    output_dir = tmp_path / "processed_videos_final"
+    output_dir: Path = tmp_path / "processed_videos_final"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     class _FakeFrameCleaner:
-        def remove_frames_from_video_streaming(self, *, output_video, **kwargs):
+        def remove_frames_from_video_streaming(
+            self, *, output_video: Any, **kwargs: Any
+        ) -> bool:
             output_video.write_bytes(b"cleaned")
             return True
 
     _patch_anonym_video_dir(module, monkeypatch, output_dir)
     monkeypatch.setattr(
-        module, "get_object_or_404", lambda *args, **kwargs: video, raising=True
+        module, "get_object_or_404", _fake_get_object_or_404(video), raising=True
     )
     monkeypatch.setattr(module, "FrameCleaner", _FakeFrameCleaner, raising=True)
     monkeypatch.setattr(
         module, "VideoProcessingHistory", _FakeHistoryModel, raising=True
     )
+
+    def _create_history_rf(**kwargs: Any) -> _FakeHistory:
+        return history
+
     monkeypatch.setattr(
         module.VideoProcessingHistory.objects,
         "create",
-        lambda **kwargs: history,
+        _create_history_rf,
         raising=False,
     )
     monkeypatch.setattr(
         module,
         "update_segments_after_frame_removal",
-        lambda *args, **kwargs: {"segments_updated": 0, "segments_deleted": 0},
+        _empty_segment_update_result,
         raising=True,
     )
+
+    def _atomic_move_fail(*, source: Any, destination: Any) -> None:
+        raise PermissionError("replace denied")
+
     monkeypatch.setattr(
         module,
         "atomic_move_file",
-        lambda *, source, destination: (_ for _ in ()).throw(
-            PermissionError("replace denied")
-        ),
+        _atomic_move_fail,
         raising=True,
     )
 
     original_name = video.processed_file.name
 
-    response = module.VideoRemoveFramesView.as_view()(
+    response: Any = module.VideoRemoveFramesView.as_view()(
         factory.post(
             "/remove-frames/",
             {"frame_list": [1, 2], "processing_method": "direct"},
@@ -565,8 +679,8 @@ def test_remove_frames_replace_denied_keeps_existing_processed_path(
         pk=1,
     )
 
-    part_path = output_dir / f"{video.video_hash}_cleaned.part.mp4"
-    final_output = output_dir / f"{video.video_hash}_cleaned.mp4"
+    part_path: Path = output_dir / f"{video.video_hash}_cleaned.part.mp4"
+    final_output: Path = output_dir / f"{video.video_hash}_cleaned.mp4"
 
     assert response.status_code == 500
     assert video.processed_file.name == original_name

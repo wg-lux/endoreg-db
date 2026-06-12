@@ -1,23 +1,31 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false
 from __future__ import annotations
 
 import json
 import threading
 import traceback
 from collections import Counter
-from datetime import datetime, timezone as datetime_timezone
+from datetime import datetime
+from datetime import timezone as datetime_timezone
 from pathlib import Path
 from typing import Any, Callable, Literal, Protocol, TypeVar, cast
 from uuid import UUID, uuid4
 
-from django.db import models
-from django.db import transaction
+from django.db import models, transaction
 from django.db.models import QuerySet
 from django.http import FileResponse
+from lx_dtypes.models.contracts.application_settings import (
+    ApplicationSettingsBackupSourcePayload,
+    ApplicationSettingsBackupStatusPayload,
+    ApplicationSettingsDataSetEntryPayload,
+    ApplicationSettingsPayload,
+)
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from endoreg_db.helpers.model_ids import model_pk
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.aidataset.aidataset import AIDataSet, AIModelTrainingRun
 from endoreg_db.models.hub.network_node import NetworkNode
@@ -39,6 +47,8 @@ from endoreg_db.services.application_settings.ai_dataset_export import (
 from endoreg_db.services.hub import deployment_profile_payload
 from endoreg_db.services.jobs.model_training_jobs import (
     MODEL_TRAINING_SERVER_INSTANCE_ID as _MODEL_TRAINING_SERVER_INSTANCE_ID,
+)
+from endoreg_db.services.jobs.model_training_jobs import (
     _launch_model_training_run,
     _mark_lost_model_training_runs,
     _model_training_run_payload,
@@ -55,18 +65,18 @@ from endoreg_db.utils.ai.multilabel_dataset_builder import (
     ANNOTATION_SOURCE_SCOPE_ALL,
     normalize_annotation_source_scope,
 )
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_write_file,
     ensure_directory,
 )
-from endoreg_db.utils.defaults.set_default_center import (
+from endoreg_db.utils.paths import PROTECTED_DATA_ROOT, STORAGE_DIR
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.set_default_center import (
     get_application_defaults,
     get_application_settings,
     update_application_defaults,
 )
-from endoreg_db.utils.filesystem.paths import PROTECTED_DATA_ROOT, STORAGE_DIR
-from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
 
 MODEL_TRAINING_BACKBONE_OPTIONS: tuple[dict[str, str], ...] = (
     {
@@ -158,7 +168,11 @@ _VIDEO_DIMENSION_BACKFILL_RUNS: dict[str, dict[str, Any]] = {}
 _VIDEO_DIMENSION_BACKFILL_RUNS_LOCK = threading.Lock()
 _BatchModel = TypeVar("_BatchModel", bound=models.Model)
 
+MODEL_TRAINING_SERVER_INSTANCE_ID = _MODEL_TRAINING_SERVER_INSTANCE_ID
 
+launch_model_training_run = _launch_model_training_run
+mark_lost_model_training_runs = _mark_lost_model_training_runs
+model_training_run_payload = _model_training_run_payload
 class _RequestUserWithUsername(Protocol):
     is_authenticated: bool
     username: str
@@ -170,10 +184,6 @@ class _SaveableNetworkNode(Protocol):
 
 def _request_user_with_username(request: Request) -> _RequestUserWithUsername:
     return cast(_RequestUserWithUsername, request.user)
-
-
-def _model_pk(instance: models.Model) -> int | None:
-    return cast(int | None, instance.pk)
 
 
 def _center_field(value: Center | None) -> Center | None:
@@ -248,25 +258,25 @@ def _backup_source_label(index: int, path: Path) -> str:
     return f"source_{index + 1}"
 
 
-def _backup_status_payload() -> dict[str, Any]:
+def _backup_status_payload() -> ApplicationSettingsBackupStatusPayload:
     required_sources = [path.resolve() for path in _required_backup_sources()]
     missing_paths = [str(path) for path in required_sources if not path.exists()]
     source_roots = [
-        {
-            "label": _backup_source_label(index, path),
-            "path": str(path),
-            "exists": path.exists(),
-            "file_count": _count_files(path) if path.exists() else 0,
-        }
+        ApplicationSettingsBackupSourcePayload(
+            label=_backup_source_label(index, path),
+            path=str(path),
+            exists=path.exists(),
+            file_count=_count_files(path) if path.exists() else 0,
+        )
         for index, path in enumerate(required_sources)
     ]
-    return {
-        "ready": len(missing_paths) == 0,
-        "missing_paths": missing_paths,
-        "required_path_count": len(required_sources),
-        "available_path_count": len(required_sources) - len(missing_paths),
-        "source_roots": source_roots,
-    }
+    return ApplicationSettingsBackupStatusPayload(
+        ready=len(missing_paths) == 0,
+        missing_paths=missing_paths,
+        required_path_count=len(required_sources),
+        available_path_count=len(required_sources) - len(missing_paths),
+        source_roots=source_roots,
+    )
 
 
 def _copy_backup_source_tree(source_root: Path, destination_root: Path) -> int:
@@ -288,7 +298,7 @@ def _copy_backup_source_tree(source_root: Path, destination_root: Path) -> int:
     return copied_count
 
 
-def _settings_payload(request: Request) -> dict[str, Any]:
+def _settings_payload(request: Request) -> ApplicationSettingsPayload:
     settings_obj = get_application_settings()
     snapshot = get_application_defaults()
     annotator_name = snapshot.annotator_name
@@ -298,24 +308,24 @@ def _settings_payload(request: Request) -> dict[str, Any]:
     updated_at = _model_datetime(
         cast(datetime | None, getattr(settings_obj, "updated_at", None))
     )
-    return {
-        "id": _model_pk(settings_obj),
-        "center_id": snapshot.center_id,
-        "center_name": snapshot.center_name,
-        "processor_id": snapshot.processor_id,
-        "processor_name": snapshot.processor_name,
-        "annotator_name": annotator_name,
-        "report_template_name": snapshot.report_template_name,
-        "ai_dataset_id": snapshot.ai_dataset_id,
-        "ai_dataset_name": snapshot.ai_dataset_name,
-        "ai_dataset_type": snapshot.ai_dataset_type,
-        "center_key": (
+    return ApplicationSettingsPayload(
+        id=model_pk(settings_obj),
+        center_id=snapshot.center_id,
+        center_name=snapshot.center_name or "",
+        processor_id=snapshot.processor_id,
+        processor_name=snapshot.processor_name or "",
+        annotator_name=annotator_name,
+        report_template_name=snapshot.report_template_name,
+        ai_dataset_id=snapshot.ai_dataset_id,
+        ai_dataset_name=snapshot.ai_dataset_name or "",
+        ai_dataset_type=snapshot.ai_dataset_type or "",
+        center_key=(
             cast(str, getattr(center, "center_key", "")) if center is not None else None
         ),
-        "updated_at": updated_at.isoformat() if updated_at is not None else None,
-        "deployment_profile": deployment_profile_payload(),
-        "backup_status": _backup_status_payload(),
-    }
+        updated_at=updated_at.isoformat() if updated_at is not None else None,
+        deployment_profile=deployment_profile_payload(),
+        backup_status=_backup_status_payload(),
+    )
 
 
 def _request_payload(data: object) -> dict[str, Any]:
@@ -326,20 +336,22 @@ def _application_settings_ai_dataset_entry(
     dataset: AIDataSet,
     *,
     dataset_counts: Counter[str] | None = None,
-) -> dict[str, Any]:
+) -> ApplicationSettingsDataSetEntryPayload:
     name = _ai_dataset_name(dataset)
-    return {
-        "id": _model_pk(dataset),
-        "value": name,
-        "label": name,
-        "dataset_type": _ai_dataset_type(dataset),
-        "ai_model_type": _ai_dataset_model_type(dataset),
-        "is_active": _ai_dataset_is_active(dataset),
-        "name_count": (dataset_counts or Counter()).get(name, 1),
-    }
+    return ApplicationSettingsDataSetEntryPayload(
+        id=model_pk(dataset),
+        value=name,
+        label=name,
+        dataset_type=_ai_dataset_type(dataset),
+        ai_model_type=_ai_dataset_model_type(dataset),
+        is_active=_ai_dataset_is_active(dataset),
+        name_count=(dataset_counts or Counter()).get(name, 1),
+    )
 
 
-def _application_settings_ai_dataset_entries() -> list[dict[str, Any]]:
+def _application_settings_ai_dataset_entries() -> list[
+    ApplicationSettingsDataSetEntryPayload
+]:
     dataset_counts: Counter[str] = Counter(
         str(name)
         for name in AIDataSet.objects.exclude(name__exact="").values_list(
@@ -348,7 +360,7 @@ def _application_settings_ai_dataset_entries() -> list[dict[str, Any]]:
         )
         if name is not None
     )
-    entries: list[dict[str, Any]] = []
+    entries: list[ApplicationSettingsDataSetEntryPayload] = []
     for dataset in AIDataSet.objects.exclude(name__exact="").order_by(
         "name", "dataset_type", "pk"
     ):
@@ -359,6 +371,25 @@ def _application_settings_ai_dataset_entries() -> list[dict[str, Any]]:
             )
         )
     return entries
+
+
+def _application_settings_payload_data(
+    payload: ApplicationSettingsPayload,
+) -> dict[str, Any]:
+    return payload.model_dump(mode="python")
+
+
+def _application_settings_dataset_entry_data(
+    payload: ApplicationSettingsDataSetEntryPayload,
+) -> dict[str, Any]:
+    return payload.model_dump(mode="python")
+
+
+def _application_settings_dataset_entries_data() -> list[dict[str, Any]]:
+    return [
+        _application_settings_dataset_entry_data(entry)
+        for entry in _application_settings_ai_dataset_entries()
+    ]
 
 
 def _resolve_ai_dataset_param(param: object) -> AIDataSet | None:
@@ -631,7 +662,23 @@ def _get_video_dimension_backfill_run(run_id: str) -> dict[str, Any] | None:
         run = _VIDEO_DIMENSION_BACKFILL_RUNS.get(run_id)
         return dict(run) if run is not None else None
 
+def store_video_dimension_backfill_run(
+    run_key: str,
+    **updates: object,
+) -> dict[str, Any]:
+    return _store_video_dimension_backfill_run(run_key, **updates)
 
+
+def launch_video_dimension_backfill_run(
+    run_id: str,
+    *,
+    command_kwargs: dict[str, Any],
+) -> None:
+    _launch_video_dimension_backfill_run(run_id, command_kwargs=command_kwargs)
+
+
+def required_backup_sources() -> list[Path]:
+    return _required_backup_sources()
 def _isoformat(value: datetime | None) -> str | None:
     if value is None:
         return None
@@ -852,7 +899,7 @@ def _launch_video_dimension_backfill_run(
 
 def _network_node_payload(node: NetworkNode) -> dict[str, Any]:
     owning_center = cast(Center | None, getattr(node, "owning_center", None))
-    owning_center_id = _model_pk(owning_center) if owning_center is not None else None
+    owning_center_id = model_pk(owning_center) if owning_center is not None else None
     node_role = cast(str, getattr(node, "role"))
     try:
         role_label = str(NetworkNode.Role(node_role).label)
@@ -862,7 +909,7 @@ def _network_node_payload(node: NetworkNode) -> dict[str, Any]:
     updated_at = cast(datetime | None, getattr(node, "updated_at", None))
 
     return {
-        "id": _model_pk(node),
+        "id": model_pk(node),
         "node_key": cast(str, getattr(node, "node_key", "")),
         "display_name": cast(str, getattr(node, "display_name", "")),
         "role": node_role,
@@ -919,7 +966,10 @@ def _network_node_roles_payload() -> list[dict[str, str]]:
 @permission_classes([EnvironmentAwarePermission])
 def application_settings_detail(request: Request) -> Response:
     if request.method == "GET":
-        return Response(_settings_payload(request), status=status.HTTP_200_OK)
+        return Response(
+            _application_settings_payload_data(_settings_payload(request)),
+            status=status.HTTP_200_OK,
+        )
 
     data = _request_payload(request.data)
     center_value = data.get("center_id", data.get("center_name"))
@@ -1021,7 +1071,10 @@ def application_settings_detail(request: Request) -> Response:
     if ai_dataset_id_provided:
         update_kwargs["ai_dataset"] = ai_dataset
     update_application_defaults(**update_kwargs)
-    return Response(_settings_payload(request), status=status.HTTP_200_OK)
+    return Response(
+        _application_settings_payload_data(_settings_payload(request)),
+        status=status.HTTP_200_OK,
+    )
 
 
 @api_view(["GET"])
@@ -1149,17 +1202,19 @@ def application_settings_ai_datasets_dropdown(request: Request) -> Response:
             )
 
         return Response(
-            _application_settings_ai_dataset_entry(
-                dataset,
-                dataset_counts=Counter(
-                    {name: AIDataSet.objects.filter(name=name).count()}
+            _application_settings_dataset_entry_data(
+                _application_settings_ai_dataset_entry(
+                    dataset,
+                    dataset_counts=Counter(
+                        {name: AIDataSet.objects.filter(name=name).count()}
+                    ),
                 ),
             ),
             status=status.HTTP_201_CREATED,
         )
 
     return Response(
-        _application_settings_ai_dataset_entries(),
+        _application_settings_dataset_entries_data(),
         status=status.HTTP_200_OK,
     )
 
@@ -1536,10 +1591,10 @@ def application_settings_model_training_options(request: Request) -> Response:
         {
             "training_targets": list(MODEL_TRAINING_TARGET_OPTIONS),
             "ai_datasets": [
-                entry
+                _application_settings_dataset_entry_data(entry)
                 for entry in _application_settings_ai_dataset_entries()
-                if entry["dataset_type"] == AIDataSet.DATASET_TYPE_IMAGE
-                and entry["ai_model_type"] == AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL
+                if entry.dataset_type == AIDataSet.DATASET_TYPE_IMAGE
+                and entry.ai_model_type == AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL
             ],
             "backbones": list(MODEL_TRAINING_BACKBONE_OPTIONS),
             "feature_modes": list(MODEL_TRAINING_FEATURE_MODE_OPTIONS),
@@ -1834,11 +1889,11 @@ def application_settings_ai_dataset_export_download(
 @permission_classes([EnvironmentAwarePermission])
 def application_settings_backup(request: Request) -> Response:
     backup_status = _backup_status_payload()
-    if not backup_status["ready"]:
+    if not backup_status.ready:
         return Response(
             {
                 "detail": "Backup sources are incomplete.",
-                "backup_status": backup_status,
+                "backup_status": backup_status.model_dump(mode="python"),
             },
             status=status.HTTP_409_CONFLICT,
         )
@@ -1884,13 +1939,13 @@ def application_settings_backup(request: Request) -> Response:
         ensure_directory(backup_root)
 
         copied_roots: list[dict[str, Any]] = []
-        for entry in backup_status["source_roots"]:
-            source_path = Path(entry["path"])
-            destination = backup_root / entry["label"]
+        for entry in backup_status.source_roots:
+            source_path = Path(entry.path)
+            destination = backup_root / entry.label
             copied_count = _copy_backup_source_tree(source_path, destination)
             copied_roots.append(
                 {
-                    "label": entry["label"],
+                    "label": entry.label,
                     "source_path": str(source_path),
                     "destination_path": str(destination),
                     "file_count": copied_count,

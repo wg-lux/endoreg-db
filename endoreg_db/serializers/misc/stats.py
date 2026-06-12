@@ -1,7 +1,13 @@
 from rest_framework import serializers
+from typing import TypedDict
 
 
-class StatsSerializer(serializers.Serializer):
+class StatsInputPayload(TypedDict):
+    total_videos: int
+    videos_completed: int
+
+
+class StatsSerializer(serializers.Serializer[StatsInputPayload]):
     """
     Serializer for statistics data from AuditLedger.
 
@@ -20,7 +26,7 @@ class StatsSerializer(serializers.Serializer):
     # You can add additional fields or methods here as needed
     # For example, to calculate derived statistics:
     # TODO
-    def get_completion_percentage(self, obj):
+    def get_completion_percentage(self, obj: StatsInputPayload) -> float:
         """
         Calculates the percentage of completed videos out of the total videos.
 
@@ -32,4 +38,4 @@ class StatsSerializer(serializers.Serializer):
         """
         if obj["total_videos"] > 0:
             return round((obj["videos_completed"] / obj["total_videos"]) * 100, 2)
-        return 0
+        return 0.0

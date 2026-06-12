@@ -14,6 +14,7 @@ from .finding import FindingSerializer
 from .finding_classification import (
     FindingClassificationSerializer,  # FindingClassificationChoiceSerializer,
 )
+from .hub import TransferJobCreateSerializer, TransferJobStatusSerializer
 from .label_video_segment import (
     ImageClassificationAnnotationSerializer,
     LabelSerializer,
@@ -33,7 +34,6 @@ from .misc import (
     UploadJobStatusSerializer,
     VoPPatientDataSerializer,
 )
-from .hub import TransferJobCreateSerializer, TransferJobStatusSerializer
 from .patient import PatientDropdownSerializer, PatientSerializer
 from .patient_examination import PatientExaminationSerializer
 from .patient_finding import (
@@ -42,8 +42,8 @@ from .patient_finding import (
     PatientFindingSerializer,
 )
 from .report import (
-    PatientExaminationReportSerializer,
-    PatientExaminationReportSubmissionSerializer,
+    PatientExaminationReportSchema,
+    PatientExaminationReportSubmissionSchema,
 )
 from .video.video_processing_history import VideoProcessingHistorySerializer
 from .video_examination import (
@@ -93,8 +93,8 @@ __all__ = [
     "PatientFindingSerializer",
     "PatientFindingClassificationSerializer",
     "PatientFindingInterventionSerializer",
-    "PatientExaminationReportSerializer",
-    "PatientExaminationReportSubmissionSerializer",
+    "PatientExaminationReportSchema",
+    "PatientExaminationReportSubmissionSchema",
     # Video Correction (Phase 1.1)
     "VideoProcessingHistorySerializer",
     # Video Examination

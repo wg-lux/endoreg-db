@@ -30,10 +30,10 @@ from endoreg_db.serializers.pdf.pdf_processing_history import (
 )
 from endoreg_db.services.polling_coordinator import ProcessingLockContext
 from endoreg_db.services.raw_pdf_files import get_or_create_raw_pdf_state
-from endoreg_db.utils.filesystem.file_operations import sha256_file
-from endoreg_db.utils.web.media_urls import build_pdf_stream_path
-from endoreg_db.utils.observability.operation_log import record_operation
-from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.media_urls import build_pdf_stream_path
+from endoreg_db.utils.operation_log import record_operation
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 logger = logging.getLogger(__name__)
 
@@ -368,6 +368,11 @@ class PdfApplyRedactionsView(APIView):
                     {"error": "unexpected backend failure while applying redactions."},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
+
+        return Response(
+            {"error": "unexpected processing state while applying redactions."},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
 
 class PdfProcessingHistoryView(APIView):

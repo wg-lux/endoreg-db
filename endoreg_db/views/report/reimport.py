@@ -12,7 +12,7 @@ from rest_framework.views import APIView
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.pdf.report_llm_job import ReportLlmInferenceJob
-from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.views.access_control import assert_center_scope_allowed
 from endoreg_db.views.reimport_helpers import request_payload_dict
 

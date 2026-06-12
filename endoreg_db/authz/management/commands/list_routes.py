@@ -15,7 +15,9 @@ def iter_patterns(patterns: Iterable[UrlPatternNode]) -> Iterator[URLPattern]:
         if isinstance(pattern, URLPattern):
             yield pattern
         else:
-            yield from iter_patterns(cast(Iterable[UrlPatternNode], pattern.url_patterns))
+            yield from iter_patterns(
+                cast(Iterable[UrlPatternNode], pattern.url_patterns)
+            )
 
 
 class Command(BaseCommand):

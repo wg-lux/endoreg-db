@@ -1,14 +1,39 @@
 from __future__ import annotations
 
+from typing import TypedDict, cast
+
 from rest_framework import serializers
 
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.hub.network_node import NetworkNode
 from endoreg_db.models.hub.transfer_job import TransferJob
 from endoreg_db.models.state.anonymization import AnonymizationState
+from lx_dtypes.models.contracts.hub_transfer import (
+    validate_hub_transfer_processing_snapshot,
+    validate_hub_transfer_report_resource_rows,
+    validate_hub_transfer_video_resource_rows,
+)
 
 
-class TransferJobCreateSerializer(serializers.Serializer):
+class _VideoFilePayload(TypedDict):
+    video_hash: str
+    processed_video_hash: str
+
+
+class _ReportFilePayload(TypedDict):
+    pdf_hash: str
+
+
+class _SensitiveMetaPayload(TypedDict, total=False):
+    patient_hash: str
+    examination_hash: str
+    patient_first_name: str
+    patient_last_name: str
+    patient_dob: str
+    examination_date: str
+
+
+class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
     transfer_key = serializers.CharField(max_length=255)
     source_node_key = serializers.CharField(max_length=255)
     target_node_key = serializers.CharField(
@@ -60,12 +85,12 @@ class TransferJobCreateSerializer(serializers.Serializer):
             )
         return normalized
 
-    def validate(self, attrs: dict) -> dict:
-        transfer_mode = attrs["transfer_mode"]
+    def validate(self, attrs: dict[str, object]) -> dict[str, object]:
+        transfer_mode = str(attrs["transfer_mode"])
 
         if transfer_mode in {
-            TransferJob.TransferMode.METADATA_AND_RAW_MEDIA,
-            TransferJob.TransferMode.METADATA_RAW_AND_PROCESSED_MEDIA,
+            TransferJob.TransferMode.METADATA_AND_RAW_MEDIA.value,
+            TransferJob.TransferMode.METADATA_RAW_AND_PROCESSED_MEDIA.value,
         }:
             raise serializers.ValidationError(
                 {
@@ -80,7 +105,7 @@ class TransferJobCreateSerializer(serializers.Serializer):
             node_key=attrs["source_node_key"],
             is_active=True,
         )
-        target_node_key = (attrs.get("target_node_key") or "").strip()
+        target_node_key = str(attrs.get("target_node_key", "")).strip()
         if target_node_key:
             target_node = NetworkNode.objects.filter(
                 node_key=target_node_key,
@@ -112,7 +137,7 @@ class TransferJobCreateSerializer(serializers.Serializer):
                     }
                 )
 
-        source_center_key = (attrs.get("source_center_key") or "").strip()
+        source_center_key = str(attrs.get("source_center_key", "")).strip()
         source_center = None
         if source_center_key:
             source_center = Center.objects.filter(center_key=source_center_key).first()
@@ -120,13 +145,29 @@ class TransferJobCreateSerializer(serializers.Serializer):
                 raise serializers.ValidationError(
                     {"source_center_key": f"Unknown center_key: {source_center_key}"}
                 )
-        elif source_node.owning_center_id is not None:
+        elif source_node.owning_center is not None:
             source_center = source_node.owning_center
 
-        resource_rows = attrs.get("resource_rows") or {}
-        if attrs["resource_kind"] == TransferJob.ResourceKind.VIDEO:
-            video_file = resource_rows.get("video_file")
-            if not isinstance(video_file, dict):
+        resource_rows = cast(dict[str, object], attrs.get("resource_rows", {}))
+        if transfer_mode in {
+            TransferJob.TransferMode.METADATA_AND_RAW_MEDIA.value,
+            TransferJob.TransferMode.METADATA_RAW_AND_PROCESSED_MEDIA.value,
+        }:
+            raise serializers.ValidationError(
+                {
+                    "transfer_mode": (
+                        "Raw media transfer is not permitted. "
+                        "Only anonymized metadata or anonymized processed media may be transferred."
+                    )
+                }
+            )
+
+        if str(attrs["resource_kind"]) == TransferJob.ResourceKind.VIDEO.value:
+            video_file = cast(
+                _VideoFilePayload | None,
+                resource_rows.get("video_file"),
+            )
+            if video_file is None:
                 raise serializers.ValidationError(
                     {
                         "resource_rows": (
@@ -134,7 +175,7 @@ class TransferJobCreateSerializer(serializers.Serializer):
                         )
                     }
                 )
-            video_hash = str(video_file.get("video_hash", "")).strip()
+            video_hash = video_file["video_hash"].strip()
             if not video_hash:
                 raise serializers.ValidationError(
                     {
@@ -153,11 +194,11 @@ class TransferJobCreateSerializer(serializers.Serializer):
                     }
                 )
             if transfer_mode in {
-                TransferJob.TransferMode.METADATA_AND_PROCESSED_MEDIA,
-                TransferJob.TransferMode.METADATA_RAW_AND_PROCESSED_MEDIA,
+                TransferJob.TransferMode.METADATA_AND_PROCESSED_MEDIA.value,
+                TransferJob.TransferMode.METADATA_RAW_AND_PROCESSED_MEDIA.value,
             }:
-                processed_video_hash = str(
-                    video_file.get("processed_video_hash", "")
+                processed_video_hash = video_file.get(
+                    "processed_video_hash", ""
                 ).strip()
                 if not processed_video_hash:
                     raise serializers.ValidationError(
@@ -168,7 +209,9 @@ class TransferJobCreateSerializer(serializers.Serializer):
                             )
                         }
                     )
-            video_state_payload = resource_rows.get("video_state") or {}
+            video_state_payload = cast(
+                dict[str, object], resource_rows.get("video_state", {})
+            )
             anonymization_status = self._resolve_video_anonymization_status(
                 video_state_payload
             )
@@ -176,9 +219,11 @@ class TransferJobCreateSerializer(serializers.Serializer):
                 anonymization_status=anonymization_status,
                 resource_kind="video",
             )
-        elif attrs["resource_kind"] == TransferJob.ResourceKind.REPORT:
-            report_file = resource_rows.get("raw_pdf_file")
-            if not isinstance(report_file, dict):
+        elif str(attrs["resource_kind"]) == TransferJob.ResourceKind.REPORT.value:
+            report_file = cast(
+                _ReportFilePayload | None, resource_rows.get("raw_pdf_file")
+            )
+            if report_file is None:
                 raise serializers.ValidationError(
                     {
                         "resource_rows": (
@@ -186,7 +231,7 @@ class TransferJobCreateSerializer(serializers.Serializer):
                         )
                     }
                 )
-            pdf_hash = str(report_file.get("pdf_hash", "")).strip()
+            pdf_hash = report_file["pdf_hash"].strip()
             if not pdf_hash:
                 raise serializers.ValidationError(
                     {
@@ -204,7 +249,9 @@ class TransferJobCreateSerializer(serializers.Serializer):
                         )
                     }
                 )
-            report_state_payload = resource_rows.get("raw_pdf_state") or {}
+            report_state_payload = cast(
+                dict[str, object], resource_rows.get("raw_pdf_state", {})
+            )
             anonymization_status = self._resolve_report_anonymization_status(
                 report_state_payload
             )
@@ -212,6 +259,18 @@ class TransferJobCreateSerializer(serializers.Serializer):
                 anonymization_status=anonymization_status,
                 resource_kind="report",
             )
+
+        if str(attrs["resource_kind"]) == TransferJob.ResourceKind.VIDEO.value:
+            attrs["resource_rows"] = validate_hub_transfer_video_resource_rows(
+                resource_rows
+            )
+        elif str(attrs["resource_kind"]) == TransferJob.ResourceKind.REPORT.value:
+            attrs["resource_rows"] = validate_hub_transfer_report_resource_rows(
+                resource_rows
+            )
+        attrs["processing_snapshot"] = validate_hub_transfer_processing_snapshot(
+            attrs.get("processing_snapshot", {})
+        )
 
         self._validate_sensitive_meta_linkage(resource_rows)
 
@@ -238,9 +297,9 @@ class TransferJobCreateSerializer(serializers.Serializer):
 
     @staticmethod
     def _resolve_video_anonymization_status(
-        video_state_payload: object,
+        video_state_payload: dict[str, object],
     ) -> AnonymizationState:
-        if not isinstance(video_state_payload, dict):
+        if not video_state_payload:
             return AnonymizationState.NOT_STARTED
         if bool(video_state_payload.get("processing_error")):
             return AnonymizationState.FAILED
@@ -264,9 +323,9 @@ class TransferJobCreateSerializer(serializers.Serializer):
 
     @staticmethod
     def _resolve_report_anonymization_status(
-        report_state_payload: object,
+        report_state_payload: dict[str, object],
     ) -> AnonymizationState:
-        if not isinstance(report_state_payload, dict):
+        if not report_state_payload:
             return AnonymizationState.NOT_STARTED
         if bool(report_state_payload.get("anonymization_validated")):
             return AnonymizationState.VALIDATED
@@ -286,17 +345,21 @@ class TransferJobCreateSerializer(serializers.Serializer):
             return AnonymizationState.ANONYMIZED
         return AnonymizationState.NOT_STARTED
 
-    def _validate_sensitive_meta_linkage(self, resource_rows: dict) -> None:
-        sensitive_meta = resource_rows.get("sensitive_meta")
-        if not isinstance(sensitive_meta, dict) or not sensitive_meta:
+    def _validate_sensitive_meta_linkage(
+        self, resource_rows: dict[str, object]
+    ) -> None:
+        sensitive_meta = cast(
+            _SensitiveMetaPayload | None, resource_rows.get("sensitive_meta")
+        )
+        if sensitive_meta is None or not sensitive_meta:
             return
 
         has_hashes = bool(
-            str(sensitive_meta.get("patient_hash", "")).strip()
-            and str(sensitive_meta.get("examination_hash", "")).strip()
+            sensitive_meta.get("patient_hash", "").strip()
+            and sensitive_meta.get("examination_hash", "").strip()
         )
         has_derivation_fields = all(
-            str(sensitive_meta.get(field, "")).strip()
+            sensitive_meta.get(field, "").strip()
             for field in (
                 "patient_first_name",
                 "patient_last_name",
@@ -318,7 +381,7 @@ class TransferJobCreateSerializer(serializers.Serializer):
             )
 
 
-class TransferJobStatusSerializer(serializers.ModelSerializer):
+class TransferJobStatusSerializer(serializers.ModelSerializer[TransferJob]):
     source_node_key = serializers.CharField(
         source="source_node.node_key", read_only=True
     )
@@ -331,7 +394,7 @@ class TransferJobStatusSerializer(serializers.ModelSerializer):
         allow_null=True,
     )
 
-    class Meta:
+    class Meta:  # type: ignore[reportIncompatibleVariableOverride]
         model = TransferJob
         fields = [
             "id",

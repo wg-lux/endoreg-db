@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+from typing import Any, Protocol, cast
 from unittest.mock import patch
 
 import pytest
@@ -11,10 +12,20 @@ from endoreg_db import tasks
 from endoreg_db.services.media_operation_gate import MediaOperationDeferred
 
 
-def _current_task(task):
-    if hasattr(task, "_get_current_object"):
-        return task._get_current_object()
-    return task
+class _TaskLike(Protocol):
+    acks_late: bool
+    reject_on_worker_lost: bool | None
+    track_started: bool
+
+    def retry(self, *args: Any, **kwargs: Any) -> object: ...
+
+
+
+def _current_task(task: object) -> _TaskLike:
+    getter = getattr(task, "_get_current_object", None)
+    if callable(getter):
+        return cast(_TaskLike, getter())
+    return cast(_TaskLike, task)
 
 
 def test_job_tasks_are_configured_for_worker_loss_redelivery() -> None:
@@ -63,7 +74,7 @@ def test_frame_extraction_task_delegates_with_normalized_ids() -> None:
         "endoreg_db.services.jobs.frame_extraction_jobs.run_frame_extraction_request",
         return_value=True,
     ) as runner:
-        result = tasks.run_frame_extraction_request_task.run("11", "22", "33")
+        result = cast(Any, tasks.run_frame_extraction_request_task).run("11", "22", "33")
 
     assert result is True
     runner.assert_called_once_with(
@@ -79,7 +90,7 @@ def test_video_post_validation_rebuild_task_delegates_with_normalized_args() -> 
         "_run_video_post_validation_rebuild",
         return_value=True,
     ) as runner:
-        result = tasks.run_video_post_validation_rebuild_task.run(
+        result = cast(Any, tasks.run_video_post_validation_rebuild_task).run(
             "42",
             only_validated=1,
             history_id="7",
@@ -107,7 +118,7 @@ def test_video_post_validation_rebuild_task_retries_when_media_busy() -> None:
         patch.object(current_task, "retry", side_effect=retry_exc) as retry,
         pytest.raises(RuntimeError, match="retry requested"),
     ):
-        tasks.run_video_post_validation_rebuild_task.run(
+        cast(Any, tasks.run_video_post_validation_rebuild_task).run(
             "42",
             only_validated=1,
             history_id="7",
@@ -122,7 +133,7 @@ def test_video_temporal_inference_task_delegates_with_bounded_defaults() -> None
         "endoreg_db.services.video_temporal_inference._run_video_temporal_inference",
         return_value=True,
     ) as runner:
-        result = tasks.run_video_temporal_inference_task.run(
+        result = cast(Any, tasks.run_video_temporal_inference_task).run(
             "42",
             "7",
             frame_source_mode="stream",
@@ -151,7 +162,7 @@ def test_model_training_task_delegates_and_returns_small_result() -> None:
         "endoreg_db.services.jobs.model_training_jobs._execute_model_training_run",
         return_value=None,
     ) as runner:
-        result = tasks.run_model_training_task.run("run-1", command_kwargs)
+        result = cast(Any, tasks.run_model_training_task).run("run-1", command_kwargs)
 
     assert result is True
     runner.assert_called_once_with(
@@ -166,7 +177,7 @@ def test_upload_processing_task_delegates_with_normalized_job_id() -> None:
         "endoreg_db.services.hub.process_upload_job",
         return_value=True,
     ) as processor:
-        result = tasks.process_upload_job.run(123)
+        result = cast(Any, tasks.process_upload_job).run(123)
 
     assert result is True
     processor.assert_called_once_with("123")
@@ -180,7 +191,7 @@ def test_refresh_audit_ledger_integrity_task_delegates_to_locked_refresh() -> No
         "refresh_audit_ledger_integrity_status_once",
         return_value=payload,
     ) as refresh:
-        result = tasks.refresh_audit_ledger_integrity_status_task.run()
+        result = cast(Any, tasks.refresh_audit_ledger_integrity_status_task).run()
 
     assert result == payload
     refresh.assert_called_once_with()

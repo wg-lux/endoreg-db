@@ -33,7 +33,9 @@ def ensure_keycloak_settings() -> None:
     _set_str_if_missing("KEYCLOAK_REALM", keycloak_settings.KEYCLOAK_REALM)
 
     _set_str_if_missing("OIDC_RP_CLIENT_ID", keycloak_settings.OIDC_RP_CLIENT_ID)
-    _set_str_if_missing("OIDC_RP_CLIENT_SECRET", keycloak_settings.OIDC_RP_CLIENT_SECRET)
+    _set_str_if_missing(
+        "OIDC_RP_CLIENT_SECRET", keycloak_settings.OIDC_RP_CLIENT_SECRET
+    )
 
     _set_str_if_missing(
         "OIDC_OP_DISCOVERY_ENDPOINT",
@@ -43,9 +45,15 @@ def ensure_keycloak_settings() -> None:
         "OIDC_OP_AUTHORIZATION_ENDPOINT",
         keycloak_settings.OIDC_OP_AUTHORIZATION_ENDPOINT,
     )
-    _set_str_if_missing("OIDC_OP_TOKEN_ENDPOINT", keycloak_settings.OIDC_OP_TOKEN_ENDPOINT)
-    _set_str_if_missing("OIDC_OP_USER_ENDPOINT", keycloak_settings.OIDC_OP_USER_ENDPOINT)
-    _set_str_if_missing("OIDC_OP_JWKS_ENDPOINT", keycloak_settings.OIDC_OP_JWKS_ENDPOINT)
+    _set_str_if_missing(
+        "OIDC_OP_TOKEN_ENDPOINT", keycloak_settings.OIDC_OP_TOKEN_ENDPOINT
+    )
+    _set_str_if_missing(
+        "OIDC_OP_USER_ENDPOINT", keycloak_settings.OIDC_OP_USER_ENDPOINT
+    )
+    _set_str_if_missing(
+        "OIDC_OP_JWKS_ENDPOINT", keycloak_settings.OIDC_OP_JWKS_ENDPOINT
+    )
 
     _set_str_if_missing(
         "OIDC_OP_LOGOUT_ENDPOINT",

@@ -16,11 +16,11 @@ from rest_framework.views import APIView
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.schemas import MediaStreamDisposition, MediaStreamFileKind
-from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
-from endoreg_db.utils.filesystem import paths as path_utils
-from endoreg_db.utils.filesystem.paths import to_storage_relative
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.utils import paths as path_utils
+from endoreg_db.utils.paths import to_storage_relative
 
-from endoreg_db.utils.storage.streaming import (
+from endoreg_db.utils.storage_streaming import (
     add_cors_headers,
     build_partial_content_response,
     field_file_is_local_encrypted_without_reader,
@@ -30,12 +30,12 @@ from endoreg_db.utils.storage.streaming import (
     parse_byte_range,
 )
 
-from endoreg_db.utils.web.nginx_accel import (
+from endoreg_db.utils.nginx_accel import (
     build_nginx_accel_response_for_path,
     nginx_offload_enabled,
 )
 
-from endoreg_db.utils.web.cors import resolve_response_origin
+from endoreg_db.utils.cors import resolve_response_origin
 
 
 logger = logging.getLogger(__name__)
@@ -125,7 +125,7 @@ def _pick_report_field_file(
     raise Http404("Raw report file not available")
 
 
-def _recover_missing_report_field_path(
+def recover_missing_report_field_path(
     report: RawPdfFile, file_type: MediaStreamFileKind
 ) -> FieldFile | None:
     if file_type == "processed":
@@ -184,7 +184,7 @@ def _add_cors_headers_if_configured(
     return add_cors_headers(response, frontend_origin)
 
 
-def _build_eager_content_response(
+def build_eager_content_response(
     *,
     field_file: object,
     content_type: str,
@@ -291,7 +291,7 @@ class ReportStreamView(APIView):
         try:
             file_size = field_file_size(field_file)
         except FileNotFoundError as exc:
-            recovered_field_file = _recover_missing_report_field_path(report, file_type)
+            recovered_field_file = recover_missing_report_field_path(report, file_type)
             if recovered_field_file is None:
                 logger.warning(
                     "Report stream file missing for id=%s type=%s path=%s: %s",
@@ -331,7 +331,7 @@ class ReportStreamView(APIView):
                 return _add_cors_headers_if_configured(response, frontend_origin)
 
         if recovered_from_fallback:
-            streaming_response = _build_eager_content_response(
+            streaming_response = build_eager_content_response(
                 field_file=field_file,
                 content_type=content_type,
                 file_size=file_size,

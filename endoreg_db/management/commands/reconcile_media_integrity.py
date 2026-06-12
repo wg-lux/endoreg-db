@@ -75,8 +75,8 @@ class Command(BaseCommand):
 
     def handle(self, *args: object, **options: object) -> None:
         try:
-            command_options = ReconcileMediaIntegrityCommandOptionsPayload.model_validate(
-                options
+            command_options = (
+                ReconcileMediaIntegrityCommandOptionsPayload.model_validate(options)
             )
         except ValidationError as exc:
             raise CommandError(str(exc)) from exc
@@ -84,8 +84,7 @@ class Command(BaseCommand):
         summary = reconcile_media_integrity(
             dry_run=command_options.dry_run,
             video_ids=command_options.video_id,
-            check_frames=command_options.check_frames
-            or command_options.repair_frames,
+            check_frames=command_options.check_frames or command_options.repair_frames,
             repair_frames=command_options.repair_frames,
             repair_frame_numbers=command_options.repair_frame,
             check_ffmpeg_meta=command_options.check_ffmpeg_meta
