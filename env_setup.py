@@ -14,7 +14,7 @@ from endoreg_db.config.env import (
     STORAGE_DIR_ENV,
     build_protected_runtime_env,
 )
-from endoreg_db.utils import (
+from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_write_file,
     ensure_directory,

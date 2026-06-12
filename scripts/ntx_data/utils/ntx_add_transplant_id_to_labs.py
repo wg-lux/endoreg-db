@@ -1,4 +1,5 @@
-from typing import Dict, List
+from pathlib import Path
+from typing import Callable, Dict, List, cast
 
 import pandas as pd
 
@@ -16,19 +17,24 @@ readout_jsonl_data_path = processed_data_dir / "readout_data.jsonl"
 lab_export_path = processed_data_dir / "lab_df_with_transplant_id.csv"
 
 
+def write_dataframe_to_excel(df: pd.DataFrame, path: Path) -> None:
+    to_excel = cast(Callable[..., None], getattr(df, "to_excel"))
+    to_excel(path, index=False)
+
+
 # Create a helper function to the following for each lab record:
 # - get test_datetime
 # - get patient_id_ntx
-def get_lab_record_info(lab_record: LabData):
+def get_lab_record_info(lab_record: LabData) -> tuple[str, str | None]:
     test_datetime = lab_record.test_datetime
     patient_id_ntx = lab_record.patient_id_ntx
     return test_datetime, patient_id_ntx
 
 
 def get_patient_data_for_lab_record(
-    lab_record, patient_data_by_id_ntx: Dict[str, PatientData]
-):
-    test_datetime, patient_id_ntx = get_lab_record_info(lab_record)
+    lab_record: LabData, patient_data_by_id_ntx: Dict[str, PatientData]
+) -> PatientData | None:
+    _test_datetime, patient_id_ntx = get_lab_record_info(lab_record)
     if not patient_id_ntx:
         return None
     patient_data = patient_data_by_id_ntx.get(patient_id_ntx)
@@ -38,11 +44,12 @@ def get_patient_data_for_lab_record(
 
 
 def get_transplant_id_for_lab_record(
-    lab_record,
+    lab_record: LabData,
     patient_data_by_id_ntx: Dict[str, PatientData],
     readout_data_by_transplant_id: Dict[str, ReadoutData],
-):
+) -> str | None:
     test_datetime, patient_id_ntx = get_lab_record_info(lab_record)
+    _ = patient_id_ntx
     patient_data = get_patient_data_for_lab_record(lab_record, patient_data_by_id_ntx)
     if patient_data is None:
         return None
@@ -52,7 +59,7 @@ def get_transplant_id_for_lab_record(
         return None
 
     # get all transplant_ids and the tx_date from readout_data
-    transplant_id_dates = []
+    transplant_id_dates: list[tuple[str, str | None]] = []
     for transplant_id in transplant_ids:
         readout_data = readout_data_by_transplant_id.get(transplant_id)
         if readout_data is None:
@@ -61,9 +68,9 @@ def get_transplant_id_for_lab_record(
         transplant_id_dates.append((transplant_id, tx_date))
 
     # drop all transplant ids belonging to a date after the test date
-    valid_transplant_ids = []
+    valid_transplant_ids: list[str] = []
     for transplant_id, tx_date in transplant_id_dates:
-        if tx_date is None or test_datetime is None:
+        if tx_date is None:
             valid_transplant_ids.append(transplant_id)
         elif tx_date <= test_datetime:
             valid_transplant_ids.append(transplant_id)
@@ -154,4 +161,4 @@ if __name__ == "__main__":
     # export as xlsx
     xlsx_path = lab_export_path.with_suffix(".xlsx")
     ic(f"Exporting lab dataframe with transplant_id to {xlsx_path}...")
-    lab_df_with_transplant_id.to_excel(xlsx_path, index=False)
+    write_dataframe_to_excel(lab_df_with_transplant_id, xlsx_path)

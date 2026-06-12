@@ -3,6 +3,7 @@ import argparse
 import os
 import sys
 from pathlib import Path
+from typing import cast
 
 import django
 from django.conf import settings
@@ -20,6 +21,7 @@ if __name__ == "__main__":
         help="Optional list of subdirectories under tests/ to run.",
     )
     args = parser.parse_args()
+    dirs = cast(list[str], args.dirs)
 
     tests_dir = Path(__file__).parent / "tests"
 
@@ -28,10 +30,10 @@ if __name__ == "__main__":
     TestRunner = get_runner(settings)
     test_runner = TestRunner()
 
-    test_labels = []
-    if args.dirs:
+    test_labels: list[str] = []
+    if dirs:
         valid_dirs_found = False
-        for dir_name in args.dirs:
+        for dir_name in dirs:
             # Handle potential nested paths like "media/video"
             dir_path = tests_dir / dir_name
             module_path = tests_dir / (dir_name + ".py")

@@ -1,5 +1,6 @@
 from datetime import date, datetime, timedelta
-from typing import TypedDict, cast
+from pathlib import Path
+from typing import Any, Callable, TypedDict, cast
 
 import pandas as pd
 from tqdm import tqdm
@@ -63,6 +64,11 @@ class TransplantLabSummary(TypedDict):
     transplant_date: str
     fu_years: dict[str, FollowUpYearWindow]
     labs_by_fu_year: dict[str, list[LabData]]
+
+
+def write_dataframe_to_excel(df: pd.DataFrame, path: Path) -> None:
+    to_excel = cast(Callable[..., None], getattr(df, "to_excel"))
+    to_excel(path, index=False)
 
 
 def create_fu_years_dict(
@@ -157,7 +163,7 @@ for key, value in summary_dict.items():
     }
 
     for year in fu_years:
-        labs = cast(list[LabData], value["labs_by_fu_year"][str(year)])
+        labs = value["labs_by_fu_year"][str(year)]
         record[f"lab_count_year_{year}"] = len(labs)
         record[f"unique_case_ids_year_{year}"] = len({lab.case_id_ukw for lab in labs})
 
@@ -165,7 +171,7 @@ for key, value in summary_dict.items():
 
     # create pandas dataframe from readout and summary, merge by transplant_id
 
-readout_records = []
+readout_records: list[dict[str, Any]] = []
 for readout_data in readout_data_list:
     record = readout_data.model_dump()
     readout_records.append(record)
@@ -182,5 +188,5 @@ atomic_write_file(
 )
 
 # export to excel and csv
-merged_df.to_excel(readout_df_excel_export_path, index=False)
+write_dataframe_to_excel(merged_df, readout_df_excel_export_path)
 merged_df.to_csv(readout_df_csv_export_path, index=False)

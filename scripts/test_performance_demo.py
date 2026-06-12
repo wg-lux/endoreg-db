@@ -9,9 +9,25 @@ import os
 import subprocess
 import time
 from pathlib import Path
+from typing import TypedDict
 
 
-def run_command(cmd, description, expected_time=None):
+class TestCommand(TypedDict):
+    name: str
+    cmd: str
+    expected_time: float
+
+
+class TestResult(TypedDict):
+    name: str
+    duration: float
+    success: bool
+    expected: float
+
+
+def run_command(
+    cmd: str, description: str, expected_time: float | None = None
+) -> tuple[float, bool]:
     """Run a command and measure its execution time."""
     print(f"\n{'=' * 60}")
     print(f"Running: {description}")
@@ -59,7 +75,7 @@ def run_command(cmd, description, expected_time=None):
         return 0, False
 
 
-def main():
+def main() -> None:
     """Demonstrate test performance optimizations."""
     print("🚀 Test Performance Optimization Demo")
     print("=" * 60)
@@ -69,7 +85,7 @@ def main():
     os.chdir(project_dir)
     print(f"📁 Working directory: {project_dir}")
 
-    tests = [
+    tests: list[TestCommand] = [
         {
             "name": "Fast Tests Only (no video, no expensive)",
             "cmd": 'pytest -m "not expensive and not video" tests/requirement/ -v --tb=short',
@@ -88,7 +104,7 @@ def main():
     ]
 
     # Run optimized tests
-    results = []
+    results: list[TestResult] = []
     for test in tests:
         duration, success = run_command(
             test["cmd"], test["name"], test.get("expected_time")

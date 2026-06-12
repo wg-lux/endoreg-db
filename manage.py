@@ -7,14 +7,15 @@ import subprocess
 import signal
 import atexit
 from pathlib import Path
+from types import FrameType
 
 DJANGO_SETTINGS_MODULE = os.environ.get("DJANGO_SETTINGS_MODULE")
 
 # Global variable to track the token validator process
-token_validator_process = None
+token_validator_process: subprocess.Popen[bytes] | None = None
 
 
-def start_token_validator_service():
+def start_token_validator_service() -> None:
     """Start the token validator service as a subprocess."""
     global token_validator_process
 
@@ -38,9 +39,7 @@ def start_token_validator_service():
                     "KEYCLOAK_SERVER_URL", "https://keycloak.endo-reg.net"
                 ),
                 "KEYCLOAK_CLIENT_ID": env.get("KEYCLOAK_CLIENT_ID", "lx-frontend"),
-                "KEYCLOAK_CLIENT_SECRET": env.get(
-                    "KEYCLOAK_CLIENT_SECRET",
-                ),
+                "KEYCLOAK_CLIENT_SECRET": env.get("KEYCLOAK_CLIENT_SECRET", ""),
                 "TOKEN_VALIDATOR_PORT": env.get("TOKEN_VALIDATOR_PORT", "3001"),
             }
         )
@@ -63,7 +62,7 @@ def start_token_validator_service():
         print(f"🚨 Failed to start Token Validator Service: {e}")
 
 
-def stop_token_validator_service():
+def stop_token_validator_service() -> None:
     """Stop the token validator service."""
     global token_validator_process
 
@@ -90,14 +89,14 @@ def stop_token_validator_service():
             token_validator_process = None
 
 
-def signal_handler(signum, frame):
+def signal_handler(signum: int, frame: FrameType | None) -> None:
     """Handle shutdown signals."""
     print(f"\n🔄 Received signal {signum}, shutting down...")
     stop_token_validator_service()
     sys.exit(0)
 
 
-def main():
+def main() -> None:
     """Run Django administrative tasks.
 
     Imports and executes Django's command-line management utility using system arguments.
