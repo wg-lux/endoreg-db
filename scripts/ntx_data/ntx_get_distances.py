@@ -68,12 +68,16 @@ def _normalize_post_code(value: object) -> Optional[str]:
     except ValueError:
         numeric_candidate = None
 
-    if numeric_candidate is not None and numeric_candidate > 0 and numeric_candidate.is_integer():
+    if (
+        numeric_candidate is not None
+        and numeric_candidate > 0
+        and numeric_candidate.is_integer()
+    ):
         formatted = _format_numeric_post_code(int(numeric_candidate))
         if formatted:
             return formatted
 
-    digits_only = ''.join(ch for ch in candidate if ch.isdigit())
+    digits_only = "".join(ch for ch in candidate if ch.isdigit())
     if not digits_only:
         return None
 
@@ -120,7 +124,9 @@ def _get_reference_location(client: Any) -> Tuple[float, float]:
     return location["lat"], location["lng"]
 
 
-def _haversine_km(origin: Tuple[float, float], destination: Tuple[float, float]) -> float:
+def _haversine_km(
+    origin: Tuple[float, float], destination: Tuple[float, float]
+) -> float:
     lat1, lon1 = origin
     lat2, lon2 = destination
     radius_km = 6371.0
@@ -128,7 +134,10 @@ def _haversine_km(origin: Tuple[float, float], destination: Tuple[float, float])
     phi2 = math.radians(lat2)
     delta_phi = math.radians(lat2 - lat1)
     delta_lambda = math.radians(lon2 - lon1)
-    a = math.sin(delta_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
+    a = (
+        math.sin(delta_phi / 2) ** 2
+        + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
+    )
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return radius_km * c
 
@@ -140,9 +149,7 @@ def _round_or_none(value: Optional[float]) -> Optional[float]:
 
 
 def _compute_distances(
-    client: Any,
-    origin_coords: Tuple[float, float],
-    post_code: str
+    client: Any, origin_coords: Tuple[float, float], post_code: str
 ) -> Dict[str, Optional[float]]:
     destination_query = f"{post_code}, Germany"
     distances_km: List[float] = []
@@ -153,7 +160,7 @@ def _compute_distances(
             origin=reference_address,
             destination=destination_query,
             mode="driving",
-            alternatives=True
+            alternatives=True,
         )
         for route in directions:
             legs = route.get("legs") or []
@@ -166,7 +173,10 @@ def _compute_distances(
             if destination_coords is None:
                 end_location = leg.get("end_location")
                 if end_location:
-                    destination_coords = (end_location.get("lat"), end_location.get("lng"))
+                    destination_coords = (
+                        end_location.get("lat"),
+                        end_location.get("lng"),
+                    )
     except Exception as exc:  # noqa: BLE001
         ic(f"Failed to fetch driving directions for {post_code}: {exc}")
 
@@ -188,29 +198,30 @@ def _compute_distances(
 
     geographic_distance = None
     if destination_coords and all(coord is not None for coord in destination_coords):
-        geographic_distance = _haversine_km(origin_coords, destination_coords)  # straight-line distance
+        geographic_distance = _haversine_km(
+            origin_coords, destination_coords
+        )  # straight-line distance
 
     return {
-    "distance_car_1": _round_or_none(driving_values[0]),
-    "distance_car_2": _round_or_none(driving_values[1]),
-    "distance_car_3": _round_or_none(driving_values[2]),
+        "distance_car_1": _round_or_none(driving_values[0]),
+        "distance_car_2": _round_or_none(driving_values[1]),
+        "distance_car_3": _round_or_none(driving_values[2]),
         "distance_car_mean": _round_or_none(mean_distance),
         "distance_car_median": _round_or_none(median_distance),
         "distance_geographic": _round_or_none(geographic_distance),
     }
 
 
-def _select_post_codes(
-    candidates: Sequence[str],
-    limit: Optional[int]
-) -> List[str]:
+def _select_post_codes(candidates: Sequence[str], limit: Optional[int]) -> List[str]:
     if limit is None:
         return list(candidates)
     return list(candidates)[:limit]
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Compute travel distances for NTX patient post codes.")
+    parser = argparse.ArgumentParser(
+        description="Compute travel distances for NTX patient post codes."
+    )
     parser.add_argument(
         "--post-code",
         dest="post_codes",
@@ -266,7 +277,8 @@ def main() -> None:
         normalized_post_codes = {
             code
             for code in (
-                _normalize_post_code(value) for value in patient_df["post_code"].unique()
+                _normalize_post_code(value)
+                for value in patient_df["post_code"].unique()
             )
             if code
         }
@@ -282,7 +294,9 @@ def main() -> None:
     for index, post_code in enumerate(unique_post_codes, start=1):
         cached_entry = cache.get(post_code)
         if cached_entry and not args.skip_cache:
-            ic(f"[{index}/{len(unique_post_codes)}] Using cached distances for {post_code}")
+            ic(
+                f"[{index}/{len(unique_post_codes)}] Using cached distances for {post_code}"
+            )
             result = dict(cached_entry)
         else:
             ic(f"[{index}/{len(unique_post_codes)}] Fetching distances for {post_code}")

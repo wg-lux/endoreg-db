@@ -6,7 +6,9 @@ from scripts.ntx_data.utils.datamodels import LabData, PatientData, ReadoutData
 from scripts.ntx_data.utils.utils import processed_data_dir
 from endoreg_db.utils.file_operations import atomic_write_file
 
-post_code_distances_cache_path = processed_data_dir / "post_code_distances_cache copy.json"
+post_code_distances_cache_path = (
+    processed_data_dir / "post_code_distances_cache copy.json"
+)
 lab_jsonl_data_path = processed_data_dir / "lab_data.jsonl"
 patient_jsonl_data_path = processed_data_dir / "patient_data.jsonl"
 readout_jsonl_data_path = processed_data_dir / "readout_data.jsonl"
@@ -23,7 +25,9 @@ def get_lab_record_info(lab_record: LabData):
     return test_datetime, patient_id_ntx
 
 
-def get_patient_data_for_lab_record(lab_record, patient_data_by_id_ntx: Dict[str, PatientData]):
+def get_patient_data_for_lab_record(
+    lab_record, patient_data_by_id_ntx: Dict[str, PatientData]
+):
     test_datetime, patient_id_ntx = get_lab_record_info(lab_record)
     if not patient_id_ntx:
         return None
@@ -33,7 +37,11 @@ def get_patient_data_for_lab_record(lab_record, patient_data_by_id_ntx: Dict[str
     return patient_data
 
 
-def get_transplant_id_for_lab_record(lab_record, patient_data_by_id_ntx: Dict[str, PatientData], readout_data_by_transplant_id: Dict[str, ReadoutData]):
+def get_transplant_id_for_lab_record(
+    lab_record,
+    patient_data_by_id_ntx: Dict[str, PatientData],
+    readout_data_by_transplant_id: Dict[str, ReadoutData],
+):
     test_datetime, patient_id_ntx = get_lab_record_info(lab_record)
     patient_data = get_patient_data_for_lab_record(lab_record, patient_data_by_id_ntx)
     if patient_data is None:
@@ -67,7 +75,11 @@ def get_transplant_id_for_lab_record(lab_record, patient_data_by_id_ntx: Dict[st
         return valid_transplant_ids[0]
     else:
         valid_transplant_id_date_tuples = [
-            (transplant_id, readout_data_by_transplant_id[transplant_id].transplant_date) for transplant_id in valid_transplant_ids
+            (
+                transplant_id,
+                readout_data_by_transplant_id[transplant_id].transplant_date,
+            )
+            for transplant_id in valid_transplant_ids
         ]
 
     # sort by date descending and return the first one
@@ -105,13 +117,19 @@ if __name__ == "__main__":
 
     # Create a Lookup to easily get patient_data by patient_id_ntx
     ic("Creating lookups...")
-    patient_data_by_id_ntx = {patient_data.patient_id_ntx: patient_data for patient_data in patient_data_list}
+    patient_data_by_id_ntx = {
+        patient_data.patient_id_ntx: patient_data for patient_data in patient_data_list
+    }
 
-    readout_data_by_transplant_id = {readout_data.transplant_id: readout_data for readout_data in readout_data_list}
+    readout_data_by_transplant_id = {
+        readout_data.transplant_id: readout_data for readout_data in readout_data_list
+    }
 
     ic("Adding transplant_id to lab records...")
     for lab_data in tqdm(lab_data_list):
-        transplant_id = get_transplant_id_for_lab_record(lab_data, patient_data_by_id_ntx, readout_data_by_transplant_id)
+        transplant_id = get_transplant_id_for_lab_record(
+            lab_data, patient_data_by_id_ntx, readout_data_by_transplant_id
+        )
         lab_data.transplant_id = transplant_id
 
     # Export lab_data_list with transplant_id as jsonl
@@ -127,7 +145,9 @@ if __name__ == "__main__":
 
     # create pandas dataframe from lab_data_list
     ic("Creating pandas dataframe from lab_data_list...")
-    lab_df_with_transplant_id = pd.DataFrame([lab_data.model_dump() for lab_data in lab_data_list])
+    lab_df_with_transplant_id = pd.DataFrame(
+        [lab_data.model_dump() for lab_data in lab_data_list]
+    )
     ic(f"Exporting lab dataframe with transplant_id to {lab_export_path}...")
     lab_df_with_transplant_id.to_csv(lab_export_path, index=False)
 

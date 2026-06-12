@@ -64,7 +64,6 @@
   "reportDuplicateImport": "error",
   "reportUnreachable": "error",
   "reportUnsupportedDunderAll": "error",
-  "reportPrivateUsage": "warning",
   "reportPrivateImportUsage": "warning",
   "reportUnknownArgumentType": "error",
   "reportUnknownLambdaType": "error",

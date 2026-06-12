@@ -35,7 +35,9 @@ def main() -> int:
         print(f"startup-smoke: ok ({len(patterns)} root url pattern(s))")
         return 0
     except Exception as exc:
-        print(f"startup-smoke: failed: {exc.__class__.__name__}: {exc}", file=sys.stderr)
+        print(
+            f"startup-smoke: failed: {exc.__class__.__name__}: {exc}", file=sys.stderr
+        )
         raise
 
 

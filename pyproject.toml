@@ -89,6 +89,9 @@ dependencies = [
     "lx-ai-core[torch]==0.0.1",
     "django-types>=0.24.0",
     "djangorestframework-types>=0.9.0",
+    "celery-types>=0.26.0",
+    "lx-ai-core[torch]==0.0.1",
+    "lightning-fabric>=2.6.5",
 ]
 
 [project.urls]
@@ -134,9 +137,6 @@ cpu-runtime = [
 ]
 gpu-runtime = [
     "onnxruntime-gpu>=1.26.0"
-]
-ai-local = [
-  "lx-ai-core[torch]==0.0.1",
 ]
 
 [tool.setuptools]

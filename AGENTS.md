@@ -20,9 +20,23 @@ After implementation:
 2. Run broader integration checks if the change crosses module boundaries.
 3. Report what passed, what failed, and any residual risk.
 ## Tests
-Please run uv sync --extra dev before running pytest.
-This will use source /home/admin/endoreg-db/.devenv/state/venv/bin/activate in your shell before running pytest.
-If that doesnt work: run tests from the shortcuts devenv tasks run test:full or devenv tasks run test:fast
+
+Run tests intentionally from one foreground shell command so the process tree is
+auditable and easy to stop.
+
+- For focused verification, use the project venv directly:
+  `/home/admin/endoreg-db/.devenv/state/venv/bin/pytest <path-or-nodeid>`.
+- For broader lanes, prefer the repository tasks:
+  `devenv tasks run test:fast` or `devenv tasks run test:full`.
+- For code changes, run `/home/admin/endoreg-db/.devenv/state/venv/bin/pyright`
+  before pytest.
+- Do not start tests through editor coverage/test commands or extensions. In
+  particular, avoid VS Code coverage commands that launch `py.test --cov=.` in
+  the background; they can create many long-running coverage suites outside the
+  agent-visible shell.
+- Before starting a broad lane, check for existing pytest processes with
+  `pgrep -af 'pytest|py.test'` and report any unrelated running suites instead
+  of stacking another full run.
 
 ## Codex And Devenv Workflow
 
@@ -90,8 +104,7 @@ Testing expectations:
 - Add invalid-input tests for invariants and boundary validation.
 - Prefer focused unit tests for pure logic and integration tests only where
   contracts cross services, persistence, filesystem, or API boundaries.
-- For code changes, run `.devenv/state/venv/bin/pyright` before pytest. Before
-  pytest, run `uv sync --extra dev` as described in the Tests section.
+- For code changes, run `.devenv/state/venv/bin/pyright` before pytest.
 - Do not use one-off scripts as a substitute for reusable tests when the
   behavior is important.
 

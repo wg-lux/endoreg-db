@@ -9,7 +9,9 @@ from django.conf import settings
 from django.test.utils import get_runner
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run Django tests for specific subdirectories.")
+    parser = argparse.ArgumentParser(
+        description="Run Django tests for specific subdirectories."
+    )
     parser.add_argument(
         "dirs",
         metavar="DIR",
@@ -39,7 +41,10 @@ if __name__ == "__main__":
                 test_labels.append(test_label)
                 valid_dirs_found = True
             else:
-                print(f"Warning: Directory 'tests/{dir_name}' not found. Skipping.", file=sys.stderr)
+                print(
+                    f"Warning: Directory 'tests/{dir_name}' not found. Skipping.",
+                    file=sys.stderr,
+                )
 
         if not valid_dirs_found:
             print("Error: No valid test directories specified.", file=sys.stderr)
@@ -52,7 +57,10 @@ if __name__ == "__main__":
             if dir_path.is_dir():
                 test_labels.append(f"tests.{dir_name}")
             else:
-                print(f"Warning: Default directory 'tests/{dir_name}' not found. Skipping.", file=sys.stderr)
+                print(
+                    f"Warning: Default directory 'tests/{dir_name}' not found. Skipping.",
+                    file=sys.stderr,
+                )
         if not test_labels:
             print("Error: None of the default test directories found.", file=sys.stderr)
             sys.exit(1)

@@ -61,7 +61,9 @@ def main() -> int:
         print(f"[route-matrix] invalid JSON/schema: {exc}", file=sys.stderr)
         return 2
 
-    effective_missing_backend_count = int(data.get("effective_missing_backend_count", 0))
+    effective_missing_backend_count = int(
+        data.get("effective_missing_backend_count", 0)
+    )
     missing_backend_count = int(data.get("missing_backend_count", 0))
     frontend_checked = int(data.get("frontend_checked", 0))
 
@@ -96,4 +98,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

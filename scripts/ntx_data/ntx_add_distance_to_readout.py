@@ -9,7 +9,9 @@ from scripts.ntx_data.utils.datamodels import ReadoutData
 from scripts.ntx_data.utils.utils import processed_data_dir
 from endoreg_db.utils.file_operations import atomic_write_file
 
-post_code_distances_cache_path = processed_data_dir / "post_code_distances_cache copy.json"
+post_code_distances_cache_path = (
+    processed_data_dir / "post_code_distances_cache copy.json"
+)
 readout_data_path = processed_data_dir / "readout_data.jsonl"
 readout_df_excel_export_path = processed_data_dir / "readout_with_distances.xlsx"
 readout_df_csv_export_path = processed_data_dir / "readout_with_distances.csv"
@@ -42,7 +44,9 @@ with open(readout_data_path, "r", encoding="utf-8") as f:
 # > 100 km: ">100 km"
 
 
-def add_distances_to_readout_data(readout_data: ReadoutData, post_code_distances_cache: dict):
+def add_distances_to_readout_data(
+    readout_data: ReadoutData, post_code_distances_cache: dict
+):
     plz = readout_data.post_code
 
     distance_dict = post_code_distances_cache.get(plz, None)

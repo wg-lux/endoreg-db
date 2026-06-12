@@ -9,13 +9,15 @@ import os
 import time
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, cast
+from types import TracebackType
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Protocol, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
 from django.conf import settings
-from django.core.files.base import ContentFile
+from django.core.files.base import ContentFile, File
 from django.db import models
+from collections.abc import Iterable
 
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS
 from endoreg_db.models import (
@@ -42,6 +44,10 @@ _cache_namespace: Optional["CacheNamespace"] = None
 MAX_MOCK_VIDEO_FRAMES = 2
 _fallback_cache: Dict[str, Any] = {}
 _CACHE_SENTINEL = object()
+
+
+class _BytesFieldFile(Protocol):
+    def save(self, name: str, content: File[bytes], save: bool = True) -> None: ...
 
 
 def configure_cache(namespace: Optional["CacheNamespace"]) -> None:
@@ -142,7 +148,9 @@ def _hydrate_segment_video(payload: Dict[str, Any]) -> VideoFile:
                 payload.get("raw_file_name")
                 or f"segment_stub_{str(existing.video_hash).replace('/', '_')}.mp4"
             )
-            existing.raw_file.save(raw_name, ContentFile(b""), save=True)
+            cast(_BytesFieldFile, existing.raw_file).save(
+                raw_name, cast(File[bytes], ContentFile(b"")), save=True
+            )
         return existing
 
     raw_file_name = (
@@ -183,7 +191,7 @@ def _create_segment_stub_video() -> VideoFile:
         load_endoscope_data()
         processor = get_default_processor()
 
-    from endoreg_db.utils.filesystem.paths import data_paths
+    from endoreg_db.utils.paths import data_paths
 
     suffix = uuid.uuid4().hex
     frame_dir = (data_paths["frame"] / f"segment_stub_{suffix}").as_posix()
@@ -217,7 +225,7 @@ def get_segment_test_video(cache_key: str = "segment_api_video") -> VideoFile:
 
     payload = _cache_get(payload_key)
     if isinstance(payload, dict):
-        video = _hydrate_segment_video(payload)
+        video = _hydrate_segment_video(cast(Dict[str, Any], payload))
         _cache_set(cache_key, video.pk)
         return video
 
@@ -233,7 +241,7 @@ def get_segment_test_video(cache_key: str = "segment_api_video") -> VideoFile:
 class MockVideoState:
     """Mock VideoState for testing."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.frames_extracted = False
         self.frames_initialized = False
         self.frame_count = None
@@ -249,23 +257,23 @@ class MockVideoState:
         self.segment_annotations_validated = False
         self.was_created = True
 
-    def refresh_from_db(self):
+    def refresh_from_db(self) -> None:
         """Mock refresh from database - does nothing for mock objects."""
         pass
 
-    def mark_frames_extracted(self, save=True):
+    def mark_frames_extracted(self, save: bool = True) -> None:
         """Mark frames as extracted."""
         self.frames_extracted = True
 
-    def mark_anonymized(self, save=True):
+    def mark_anonymized(self, save: bool = True) -> None:
         """Mark video as anonymized."""
         self.anonymized = True
 
-    def mark_initial_prediction_completed(self, save=True):
+    def mark_initial_prediction_completed(self, save: bool = True) -> None:
         """Mark initial prediction as completed."""
         self.initial_prediction_completed = True
 
-    def mark_video_meta_extracted(self, save=True):
+    def mark_video_meta_extracted(self, save: bool = True) -> None:
         """Mark video metadata as extracted."""
         self.video_meta_extracted = True
 
@@ -372,18 +380,18 @@ class MockVideoFile:
 
     def materialize_prediction_segments(
         self,
-        model_name=None,
-        model=None,
-        model_meta_version=None,
-        delete_frames_after=False,
-        ocr_frame_fraction=0.001,
-        ocr_cap=10,
-        smooth_window_size_s=1,
-        binarize_threshold=0.5,
-        test_run=False,
-        n_test_frames=MAX_MOCK_VIDEO_FRAMES,
-        **kwargs,
-    ):
+        model_name: str | None = None,
+        model: object | None = None,
+        model_meta_version: object | None = None,
+        delete_frames_after: bool = False,
+        ocr_frame_fraction: float = 0.001,
+        ocr_cap: int = 10,
+        smooth_window_size_s: int = 1,
+        binarize_threshold: float = 0.5,
+        test_run: bool = False,
+        n_test_frames: int = MAX_MOCK_VIDEO_FRAMES,
+        **kwargs: object,
+    ) -> bool:
         """Mock temporal prediction segment materialization."""
         self.is_processed = True
         # Update state to match successful processing
@@ -402,7 +410,7 @@ class MockVideoFile:
         self.state.text_meta_extracted = True  # OCR metadata extracted
         return True
 
-    def anonymize(self, delete_original_raw: bool = True):
+    def anonymize(self, delete_original_raw: bool = True) -> bool:
         """Mock video anonymization."""
         # Update state to match successful anonymization
         self.state.mark_anonymized()
@@ -411,19 +419,19 @@ class MockVideoFile:
             self.raw_file = ""
         return True
 
-    def simulate_manual_validation(self):
+    def simulate_manual_validation(self) -> bool:
         """Mock manual validation after prediction segment materialization."""
         return True
 
-    def refresh_from_db(self):
+    def refresh_from_db(self) -> None:
         """Mock refresh from database - no-op for mock objects."""
         pass
 
-    def delete_with_file(self):
+    def delete_with_file(self) -> None:
         """Mock file deletion."""
         pass
 
-    def delete(self):
+    def delete(self) -> None:
         """Mock database deletion."""
         pass
 
@@ -475,7 +483,7 @@ class MockFFmpegOperations:
     """Mock expensive FFmpeg operations."""
 
     @staticmethod
-    def extract_frames(video_path: str, output_dir: str, **kwargs):
+    def extract_frames(video_path: str, output_dir: str, **kwargs: object) -> bool:
         """Mock frame extraction."""
         # Create mock frame files
         output_path = Path(output_dir)
@@ -489,19 +497,29 @@ class MockFFmpegOperations:
         return True
 
     @staticmethod
-    def anonymize_video(input_path: str, output_path: str, **kwargs):
+    def anonymize_video(
+        video_path: str,
+        output_path: str,
+        **kwargs: object,
+    ) -> bool:
         """Mock video anonymization."""
-        # Create mock anonymized video
-        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-        Path(output_path).touch()
-        return output_path
+        _ = video_path
+        _ = kwargs
+        output = Path(output_path)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.touch()
+        return True
 
 
 class MockAIInference:
     """Mock expensive AI inference operations."""
 
     @staticmethod
-    def predict_frames(frames_dir: str, model: ModelMeta, **kwargs):
+    def predict_frames(
+        frames_dir: str,
+        model: ModelMeta,
+        **kwargs: object,
+    ) -> dict[str, object]:
         """Mock AI model inference on frames."""
         return {
             "predictions": [
@@ -526,11 +544,11 @@ def mock_ffmpeg():
     """Mock FFmpeg operations to avoid expensive video processing."""
     with (
         patch(
-            "endoreg_db.utils.video.ffmpeg_wrapper.extract_frames",
+            "endoreg_db.utils.ffmpeg_wrapper.extract_frames",
             MockFFmpegOperations.extract_frames,
         ),
         patch(
-            "endoreg_db.utils.video.ffmpeg_wrapper.anonymize_video",
+            "endoreg_db.utils.ffmpeg_wrapper.anonymize_video",
             MockFFmpegOperations.anonymize_video,
         ),
     ):
@@ -548,13 +566,13 @@ def mock_ai_inference():
 
 
 @pytest.fixture
-def lightweight_video_file(base_db_data):
+def lightweight_video_file(base_db_data: object) -> MockVideoFile:
     """Provide a lightweight video file for testing."""
     return MockVideoFile()
 
 
 @pytest.fixture
-def optimized_video_file(base_db_data):
+def optimized_video_file(base_db_data: object) -> MockVideoFile | VideoFile:
     """
     Provide an optimized video file - real if needed, mock if expensive tests are skipped.
     """
@@ -569,7 +587,7 @@ def optimized_video_file(base_db_data):
         )
 
 
-def _create_real_video_file_for_fixture():
+def _create_real_video_file_for_fixture() -> VideoFile:
     """Helper function to create real video file for fixture."""
     from tests.helpers.default_objects import get_default_video_file
 
@@ -600,12 +618,17 @@ def optimize_database_for_tests():
             print(f"Database optimization warning: {e}")
 
 
-def batch_create_objects(model_class, objects_data, batch_size=100):
+def batch_create_objects(
+    model_class: type[models.Model],
+    objects_data: Iterable[Dict[str, Any]],
+    batch_size: int = 100,
+) -> list[models.Model]:
     """
     Efficiently create multiple objects using batch operations.
     """
     objects = [model_class(**data) for data in objects_data]
-    return model_class.objects.bulk_create(objects, batch_size=batch_size)
+    manager = cast(Any, model_class).objects
+    return cast(list[models.Model], manager.bulk_create(objects, batch_size=batch_size))
 
 
 # ==========================================
@@ -616,18 +639,23 @@ def batch_create_objects(model_class, objects_data, batch_size=100):
 class PerformanceTimer:
     """Simple timer for measuring test performance."""
 
-    def __init__(self, name: str = "operation"):
+    def __init__(self, name: str = "operation") -> None:
         self.name = name
         self.start_time = None
         self.end_time = None
 
-    def __enter__(self):
+    def __enter__(self) -> "PerformanceTimer":
         import time
 
         self.start_time = time.time()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         import time
 
         self.end_time = time.time()
@@ -636,11 +664,11 @@ class PerformanceTimer:
             print(f"⏱️  {self.name} took {duration:.2f} seconds")
 
 
-def measure_test_performance(func):
+def measure_test_performance(func: Callable[..., Any]) -> Callable[..., Any]:
     """Decorator to measure test performance."""
 
-    def wrapper(*args, **kwargs):
-        with PerformanceTimer(func.__name__):
+    def wrapper(*args: object, **kwargs: object) -> Any:
+        with PerformanceTimer(getattr(func, "__name__", "operation")):
             return func(*args, **kwargs)
 
     return wrapper
@@ -651,7 +679,7 @@ def measure_test_performance(func):
 # ==========================================
 
 
-def cleanup_test_files(directory: str):
+def cleanup_test_files(directory: str) -> None:
     """Clean up test files and directories."""
     import shutil
 
