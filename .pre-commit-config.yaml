@@ -20,6 +20,7 @@ repos:
         name: pyright type check
         entry: .devenv/state/venv/bin/pyright
         language: system
+        pass_filenames: false
         types: [python]
       - id: django-startup-smoke
         name: django startup smoke
