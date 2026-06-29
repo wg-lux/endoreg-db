@@ -379,7 +379,10 @@ class FFMpegMeta(models.Model):
             )
             raise RuntimeError(f"Invalid stream info from ffprobe for {file_path}")
 
-        probe_payload = FfmpegProbeDataPayload.model_validate(probe_data)
+        probe_payload = FfmpegProbeDataPayload.model_validate(
+            probe_data,
+            extra="ignore",
+        )
         video_stream = next(iter(probe_payload.video_streams), None)
 
         if not video_stream:

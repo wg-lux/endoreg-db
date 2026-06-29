@@ -28,17 +28,19 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 from django.contrib.auth.models import AnonymousUser
 from django.utils.functional import cached_property
 from rest_framework.permissions import BasePermission
 from rest_framework.request import Request
-from rest_framework.views import APIView
 
 from endoreg_db.utils.permissions import is_debug_mode
 from endoreg_db.authz.policy import REQUIRED_ROLES, satisfies, get_needed_role
 import logging
+
+if TYPE_CHECKING:
+    from rest_framework.views import APIView
 
 logger = logging.getLogger(__name__)
 

@@ -83,8 +83,8 @@ def _resolve_local_path(field_file: FieldFile) -> Optional[Path]:
                     raise IOError(
                         f"{field_file.name} is encrypted but storage has no decrypting reader"
                     )
-        except OSError:
-            raise
+        except OSError as e:
+            raise OSError(f"OS Error: {e}")
         return path
 
     fallback_path = _resolve_media_root_fallback(field_file)

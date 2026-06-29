@@ -996,7 +996,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/62/59/e47bbd0542d0e6f4c
 
 [[package]]
 name = "endoreg-db"
-version = "1.0.2.8"
+version = "1.0.3.4"
 source = { editable = "." }
 dependencies = [
     { name = "celery" },
@@ -1023,7 +1023,7 @@ dependencies = [
     { name = "lightning-fabric" },
     { name = "llvmlite" },
     { name = "lx-ai-core", extra = ["torch"] },
-    { name = "lx-anonymizer", extra = ["gpu", "spacy"] },
+    { name = "lx-anonymizer", extra = ["gpu"] },
     { name = "lx-dtypes" },
     { name = "moviepy" },
     { name = "mozilla-django-oidc" },
@@ -1143,7 +1143,7 @@ requires-dist = [
     { name = "linkify-it-py", marker = "extra == 'docs'", specifier = ">=2.0.3" },
     { name = "llvmlite", specifier = ">=0.44.0" },
     { name = "lx-ai-core", extras = ["torch"], specifier = "==0.0.1" },
-    { name = "lx-anonymizer", extras = ["gpu", "spacy"], specifier = "==0.9.2.5" },
+    { name = "lx-anonymizer", extras = ["gpu"], specifier = "==0.9.2.6" },
     { name = "lx-dtypes", specifier = "==0.2.0" },
     { name = "moviepy", specifier = "==2.2.1" },
     { name = "mozilla-django-oidc", specifier = ">=4.0.1" },
@@ -1161,7 +1161,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.10.6" },
     { name = "pyjwt", specifier = ">=2.10.1" },
     { name = "pylint", marker = "extra == 'dev'", specifier = ">=4.0.5" },
-    { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.410" },
+    { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.411" },
     { name = "pytesseract", specifier = ">=0.3.13" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.5" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.1.1" },
@@ -1952,7 +1952,7 @@ torch = [
 
 [[package]]
 name = "lx-anonymizer"
-version = "0.9.2.5"
+version = "0.9.2.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
@@ -1980,9 +1980,9 @@ dependencies = [
     { name = "transformers" },
     { name = "verovio" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fd/fa/5f0e65d4ed86d389dd1c639b644af822c38de6566ad76a53df40e1646b9b/lx_anonymizer-0.9.2.5.tar.gz", hash = "sha256:c77e7af90cb4b123a1a0eece40acb7b2c70a7efdfdfd82074830d592fb9ea7e1", size = 1350292, upload-time = "2026-06-12T14:00:54.75Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/01/97/86a9eb1a51deee01ad116e133cfeabdf90d2f5e5ff74f5789d9f24cc7fba/lx_anonymizer-0.9.2.6.tar.gz", hash = "sha256:02341b319f4892844735a5214be9016312e529652b6807a0b2bdd4a9de0fa302", size = 1350016, upload-time = "2026-06-12T16:47:42.144Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e1/28/a8019d1141a28a232687bcc10056c7bc79a3e6dd57edaec6698a94094049/lx_anonymizer-0.9.2.5-cp312-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:1b9d1e538cbb7cb8649197ff4745ac371992d0332337c12fb263a568d83df241", size = 1250345, upload-time = "2026-06-12T14:00:51.357Z" },
+    { url = "https://files.pythonhosted.org/packages/16/13/3c1ffcc0ded6b316a417be9b69fc8fc7c781b22584c6481354426a4a3ac1/lx_anonymizer-0.9.2.6-cp312-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:92e6aeeef9a2cb46bceba55b74d2296bea4bc1df4281fc5497a1f540cf45bb8a", size = 1250327, upload-time = "2026-06-12T16:47:38.366Z" },
 ]
 
 [package.optional-dependencies]
@@ -1994,9 +1994,6 @@ gpu = [
     { name = "torchaudio" },
     { name = "torchvision" },
     { name = "ultralytics" },
-]
-spacy = [
-    { name = "de-core-news-sm" },
 ]
 
 [[package]]
@@ -3201,15 +3198,15 @@ wheels = [
 
 [[package]]
 name = "pyright"
-version = "1.1.410"
+version = "1.1.411"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "nodeenv" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/10/53/e4d8ea1391bd4355231be6f91bf239479aa0014260ed3fb5526eeb12a1f2/pyright-1.1.410.tar.gz", hash = "sha256:07a073b8ba6749826773c1269773efa11b93440d9a6aa60419d9a3172d6dc488", size = 4062013, upload-time = "2026-06-01T17:35:48.894Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7e/ab/265f7dc69d28113ebba19092e57b075f41543b2ed048429c5f56e2b88eac/pyright-1.1.411.tar.gz", hash = "sha256:d885a0551f2e763b089a02702174e7f4ba77548cddabc972ab86d1f7f1b0f998", size = 4112861, upload-time = "2026-06-25T02:14:06.37Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d7/33/288b5868fa00846dacf249633719d747893e54aebd196b9968ac1878a5d3/pyright-1.1.410-py3-none-any.whl", hash = "sha256:5e961bed37cacf96b3f7cd7b1da39b350a9239aa2e69138d0e88f728cfaf296c", size = 6082448, upload-time = "2026-06-01T17:35:46.387Z" },
+    { url = "https://files.pythonhosted.org/packages/0a/49/385be530a6a5b78d1cbcd5c2e38debc8959a2fc6bdb716f4e581002979fc/pyright-1.1.411-py3-none-any.whl", hash = "sha256:dc7c72a8e2700c55baa127554040e067041ea53ccfd50bf96308cc4291c7d5d9", size = 6181526, upload-time = "2026-06-25T02:14:04.691Z" },
 ]
 
 [[package]]

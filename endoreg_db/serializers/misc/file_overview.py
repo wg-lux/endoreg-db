@@ -134,13 +134,26 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
             return f"{detail[:237]}..."
         return detail
 
-    def _upload_job_summary(
+    def _overview_upload_job(
         self, instance: object
-    ) -> _FileOverviewUploadJobSummary | None:
-        upload_job = cast(
+    ) -> _FileOverviewUploadJobLike | None:
+        return cast(
             _FileOverviewUploadJobLike | None,
             getattr(instance, "_overview_upload_job", None),
         )
+
+    def _display_filename(self, instance: object, fallback: str) -> str:
+        upload_job = self._overview_upload_job(instance)
+        if upload_job is not None:
+            original_filename = self._safe_original_filename(upload_job)
+            if original_filename:
+                return original_filename
+        return fallback
+
+    def _upload_job_summary(
+        self, instance: object
+    ) -> _FileOverviewUploadJobSummary | None:
+        upload_job = self._overview_upload_job(instance)
         if upload_job is None:
             return None
 
@@ -194,9 +207,10 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
         if isinstance(instance, VideoFile):
             media_type = "video"
             raw_file_name = getattr(instance.raw_file, "name", "") or ""
-            filename = instance.original_file_name or (
+            fallback_filename = instance.original_file_name or (
                 raw_file_name.split("/")[-1] if raw_file_name else "unknown_video"
             )
+            filename = self._display_filename(instance, fallback_filename)
             created_at = instance.uploaded_at
             # Use the state relation optimized in the View
             state_obj = cast(object | None, instance.state)
@@ -212,11 +226,12 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
         elif isinstance(instance, RawPdfFile):
             media_type = "pdf"
             report_file_name = getattr(instance.file, "name", "") or ""
-            filename = (
+            fallback_filename = (
                 report_file_name.split("/")[-1]
                 if report_file_name
                 else "unknown_report"
             )
+            filename = self._display_filename(instance, fallback_filename)
             created_at = instance.date_created
             state_obj = cast(object | None, instance.state)
             sensitive_meta = cast(

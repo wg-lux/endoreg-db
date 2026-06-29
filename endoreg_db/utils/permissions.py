@@ -11,19 +11,20 @@ import logging
 import os
 from collections.abc import Callable
 from functools import wraps
-from typing import ParamSpec, Protocol, TypeAlias, cast
+from typing import TYPE_CHECKING, ParamSpec, Protocol, TypeAlias, cast
 
 from django.conf import settings
 from django.http.response import HttpResponseBase
-from rest_framework.decorators import permission_classes as drf_permission_classes
 from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated
 from rest_framework.request import Request
-from rest_framework.views import APIView
 
 from lx_dtypes.models.contracts.permission_runtime import (
     DynamicPermissionConfigPayload,
     PermissionMode,
 )
+
+if TYPE_CHECKING:
+    from rest_framework.views import APIView
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,8 @@ def dynamic_permission_classes(
     """
     Decorator that applies permission classes based on environment settings.
     """
+    from rest_framework.decorators import permission_classes as drf_permission_classes
+
     config = DynamicPermissionConfigPayload.model_validate({"mode": force_auth})
 
     def decorator(

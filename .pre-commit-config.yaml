@@ -38,3 +38,13 @@ repos:
         language: system
         pass_filenames: false
         stages: [manual]
+      - id: deploy-django
+        name: deploy check for django resolve
+        entry: python manage.py check --deploy
+        language: system
+        pass_filenames: false
+      - id: resolve-django
+        name: resolve all check_django_startup_imports
+        entry: pytest tests/test_resolve.py
+        language: system
+        pass_filenames: false

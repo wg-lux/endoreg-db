@@ -40,7 +40,7 @@ def test_anonymization_overview_mixed_content():
     video = VideoFile.objects.create(
         center=center,
         video_hash="hash123",
-        original_file_name="old_video.mp4",
+        original_file_name="tmpabc123.mp4",
         raw_file=dummy_video,  # <--- Pass the file object, not a string
         state=video_state,
     )
@@ -118,6 +118,7 @@ def test_anonymization_overview_mixed_content():
     # Verify Video (Older)
     assert data[1]["media_type"] == "video"
     assert data[1]["id"] == video.pk
+    assert data[1]["filename"] == "old_video.mp4"
     assert data[1]["upload_job"]["status"] == UploadJob.Status.ANONYMIZED
     assert data[1]["upload_job"]["ingest_mode"] == UploadJob.IngestMode.WATCHER
     assert data[1]["upload_job"]["source_system"] == "watcher-daemon"

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from typing import Any, Protocol, TypeAlias, cast
+from typing import Protocol, TypeAlias, cast
 from urllib.parse import urlencode
 
 from django.db import models
@@ -180,15 +180,19 @@ class VideoMediaView(APIView):
 
     def _list_videos(self, request: Request) -> Response:
         try:
-            segments_prefetch = cast(
-                Prefetch[Any],
-                Prefetch(
-                    "label_video_segments",
-                    queryset=LabelVideoSegment.objects.select_related(
-                        "label",
-                        "video_file",
-                    ).order_by("start_frame_number"),
-                ),
+            segments_queryset: QuerySet[LabelVideoSegment] = (
+                LabelVideoSegment.objects.select_related(
+                    "label",
+                    "video_file",
+                ).order_by("start_frame_number")
+            )
+            segments_prefetch: Prefetch[
+                str,
+                QuerySet[LabelVideoSegment],
+                str,
+            ] = Prefetch(
+                "label_video_segments",
+                queryset=segments_queryset,
             )
             queryset: QuerySet[VideoFile] = (
                 VideoFile.objects.select_related("state", "sensitive_meta")
