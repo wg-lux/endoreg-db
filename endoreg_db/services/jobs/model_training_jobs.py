@@ -63,7 +63,10 @@ class _TrainingResult(TypedDict, total=False):
 
 def _coerce_uuid(value: str) -> UUID | None:
     try:
-        return UUID(str(value))
+        parsed = UUID(str(value))
+        if parsed.version != 4:
+            return None
+        return parsed
     except (TypeError, ValueError):
         return None
 

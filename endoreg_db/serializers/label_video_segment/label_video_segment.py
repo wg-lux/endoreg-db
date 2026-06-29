@@ -9,7 +9,6 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Prefetch
 from pydantic import ValidationError as PydanticValidationError
 from rest_framework import serializers
-from rest_framework.utils.serializer_helpers import ReturnDict
 
 from endoreg_db.models.label.annotation.image_classification import (
     ImageClassificationAnnotation,
@@ -222,10 +221,10 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
         }
 
     @property
-    def errors(self) -> ReturnDict[object, object]:
+    def errors(self) -> dict[str, object]:
         if not hasattr(self, "_errors"):
-            return ReturnDict({}, serializer=self)
-        return cast(ReturnDict[object, object], super().errors)  # pyright: ignore[reportUnknownMemberType]
+            return {}
+        return cast(dict[str, object], super().errors)  # pyright: ignore[reportUnknownMemberType]
 
     def _include_annotation_payload(self) -> bool:
         context = cast(ContextLike, getattr(self, "context", {}))

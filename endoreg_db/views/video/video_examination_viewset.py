@@ -80,7 +80,7 @@ def _request_query(request: Request) -> Mapping[str, Any]:
     return {}
 
 
-class VideoExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):
+class VideoExaminationViewSet(viewsets.ModelViewSet):
     """
     ViewSet for Video Examination CRUD operations.
 
@@ -103,7 +103,7 @@ class VideoExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):
     ```
     """
 
-    queryset = PatientExamination.objects.select_related(
+    queryset: QuerySet[PatientExamination] = PatientExamination.objects.select_related(
         "patient",
         "examination",
         "video",
@@ -127,7 +127,13 @@ class VideoExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):
         - ?patient_id=456 - Get examinations for specific patient
         - ?examination_id=789 - Get examinations of specific type
         """
-        queryset = super().get_queryset()
+        queryset: QuerySet[PatientExamination] = (
+            PatientExamination.objects.select_related(
+                "patient",
+                "examination",
+                "video",
+            ).prefetch_related("patient_findings")
+        )
         try:
             query_payload = validate_video_examination_list_query(
                 _request_query(self.request)

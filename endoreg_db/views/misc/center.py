@@ -8,7 +8,7 @@ from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
 from rest_framework import viewsets
 
 
-class CenterViewSet(viewsets.ReadOnlyModelViewSet[Center]):
+class CenterViewSet(viewsets.ReadOnlyModelViewSet):
     """API endpoint für Center-Optionen (nur lesend)"""
 
     queryset = Center.objects.all()

@@ -19,7 +19,7 @@ def _json_payload(output: StringIO) -> dict[str, Any]:
 
 
 def _media_integrity_options() -> dict[str, object]:
-    return ReconcileMediaIntegrityCommandOptionsPayload(
+    payload = ReconcileMediaIntegrityCommandOptionsPayload(
         dry_run=True,
         json_output=True,
         video_id=[22, 34],
@@ -31,6 +31,8 @@ def _media_integrity_options() -> dict[str, object]:
         check_streamable_probe=True,
         cleanup_stale_artifacts=True,
     ).model_dump(mode="python")
+    payload["json"] = payload.pop("json_output")
+    return payload
 
 
 @pytest.mark.unit

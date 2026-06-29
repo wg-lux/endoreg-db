@@ -36,7 +36,7 @@ def _serializer_errors(serializer: _SerializerErrorsLike) -> JsonValue:
     return serializer.errors
 
 
-class PatientExaminationDetailView(generics.RetrieveUpdateAPIView[PatientExamination]):
+class PatientExaminationDetailView(generics.RetrieveUpdateAPIView):
     """
     Retrieve and update PatientExamination instances.
     GET /api/examinations/{id}/

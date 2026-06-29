@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol, Sequence, cast
+from typing import TYPE_CHECKING, Any, Protocol, Sequence, cast
 
 from pydantic import BaseModel, Field
 
@@ -179,69 +179,55 @@ class ModelLinks(BaseModel):
     """
 
     model_config = {"arbitrary_types_allowed": True}
-    examinations: list[Examination] = Field(default_factory=_empty_examinations)
-    examination_indications: list[ExaminationIndication] = Field(
+    examinations: list[Any] = Field(default_factory=_empty_examinations)
+    examination_indications: list[Any] = Field(
         default_factory=_empty_examination_indications
     )
-    examination_indication_classification_choices: Sequence[
-        ExaminationIndicationClassificationChoice
-    ] = Field(default_factory=_empty_examination_indication_classification_choices)
-    patient_examinations: list[PatientExamination] = Field(
-        default_factory=_empty_patient_examinations
+    examination_indication_classification_choices: list[Any] = Field(
+        default_factory=_empty_examination_indication_classification_choices
     )
+    patient_examinations: list[Any] = Field(default_factory=_empty_patient_examinations)
 
-    patient_examination_indication: list[PatientExaminationIndication] = Field(
+    patient_examination_indication: list[Any] = Field(
         default_factory=_empty_patient_examination_indications
     )
-    lab_values: list[LabValue] = Field(default_factory=_empty_lab_values)
-    patient_lab_values: list[PatientLabValue] = Field(
-        default_factory=_empty_patient_lab_values
-    )
-    patient_lab_samples: list[PatientLabSample] = Field(
-        default_factory=_empty_patient_lab_samples
-    )
-    patient_diseases: list[PatientDisease] = Field(
-        default_factory=_empty_patient_diseases
-    )
-    diseases: list[Disease] = Field(default_factory=_empty_diseases)
-    disease_classification_choices: list[DiseaseClassificationChoice] = Field(
+    lab_values: list[Any] = Field(default_factory=_empty_lab_values)
+    patient_lab_values: list[Any] = Field(default_factory=_empty_patient_lab_values)
+    patient_lab_samples: list[Any] = Field(default_factory=_empty_patient_lab_samples)
+    patient_diseases: list[Any] = Field(default_factory=_empty_patient_diseases)
+    diseases: list[Any] = Field(default_factory=_empty_diseases)
+    disease_classification_choices: list[Any] = Field(
         default_factory=_empty_disease_classification_choices
     )
-    events: list[Event] = Field(default_factory=_empty_events)
-    patient_events: list[PatientEvent] = Field(default_factory=_empty_patient_events)
-    patient_findings: list[PatientFinding] = Field(
-        default_factory=_empty_patient_findings
-    )
-    findings: list[Finding] = Field(default_factory=_empty_findings)
-    finding_classification_choices: list[FindingClassificationChoice] = Field(
+    events: list[Any] = Field(default_factory=_empty_events)
+    patient_events: list[Any] = Field(default_factory=_empty_patient_events)
+    patient_findings: list[Any] = Field(default_factory=_empty_patient_findings)
+    findings: list[Any] = Field(default_factory=_empty_findings)
+    finding_classification_choices: list[Any] = Field(
         default_factory=_empty_finding_classification_choices
     )
-    finding_classifications: list[FindingClassification] = Field(
+    finding_classifications: list[Any] = Field(
         default_factory=_empty_finding_classifications
     )
-    finding_interventions: list[FindingIntervention] = Field(
+    finding_interventions: list[Any] = Field(
         default_factory=_empty_finding_interventions
     )
-    patient_lab_sample_types: list[PatientLabSampleType] = Field(
+    patient_lab_sample_types: list[Any] = Field(
         default_factory=_empty_patient_lab_sample_types
     )
-    patient_medications: list[PatientMedication] = Field(
-        default_factory=_empty_patient_medications
-    )
-    patient_medication_schedules: list[PatientMedicationSchedule] = Field(
+    patient_medications: list[Any] = Field(default_factory=_empty_patient_medications)
+    patient_medication_schedules: list[Any] = Field(
         default_factory=_empty_patient_medication_schedules
     )
     # Added direct medication-related fields
-    medications: list[Medication] = Field(default_factory=_empty_medications)
-    medication_indications: list[MedicationIndication] = Field(
+    medications: list[Any] = Field(default_factory=_empty_medications)
+    medication_indications: list[Any] = Field(
         default_factory=_empty_medication_indications
     )
-    medication_intake_times: list[MedicationIntakeTime] = Field(
+    medication_intake_times: list[Any] = Field(
         default_factory=_empty_medication_intake_times
     )
-    medication_schedules: list[MedicationSchedule] = Field(
-        default_factory=_empty_medication_schedules
-    )
+    medication_schedules: list[Any] = Field(default_factory=_empty_medication_schedules)
 
     def get_first_patient(self) -> Patient | None:
         """

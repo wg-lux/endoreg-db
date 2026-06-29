@@ -67,10 +67,6 @@ startxref
 """
 
 
-def _report_pipeline_ready() -> bool:
-    return bool(os.environ.get("EXPECTED_MODEL_SHA256"))
-
-
 class TestReportImportService(TestCase):
     """Test cases for report (report) import service."""
 
@@ -99,10 +95,6 @@ class TestReportImportService(TestCase):
         if SKIP_EXPENSIVE_TESTS:
             self.skipTest(
                 "Skipping expensive report import test (SKIP_EXPENSIVE_TESTS=true)"
-            )
-        if not _report_pipeline_ready():
-            self.skipTest(
-                "Skipping expensive report import test (EXPECTED_MODEL_SHA256 is not configured)."
             )
 
         # Create a temporary report file
@@ -144,10 +136,6 @@ class TestReportImportService(TestCase):
         if SKIP_EXPENSIVE_TESTS:
             self.skipTest(
                 "Skipping expensive report import test (SKIP_EXPENSIVE_TESTS=true)"
-            )
-        if not _report_pipeline_ready():
-            self.skipTest(
-                "Skipping expensive report import test (EXPECTED_MODEL_SHA256 is not configured)."
             )
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:

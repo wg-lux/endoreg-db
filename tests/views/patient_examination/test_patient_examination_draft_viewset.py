@@ -13,6 +13,10 @@ from endoreg_db.models import Patient, PatientExamination, PatientExaminationRep
 from endoreg_db.services.report_persistence import save_report_submission
 
 
+def _response_body(response: Any) -> dict[str, object]:
+    return cast(dict[str, object], response.data)
+
+
 def _pk(instance: object) -> int:
     return int(cast(Any, instance).pk)
 
@@ -32,7 +36,7 @@ def test_patient_examination_draft_roundtrip(api_client: APIClient) -> None:
     response = api_client.get(url)
     assert response.status_code == 200
 
-    body = response.json()
+    body = _response_body(response)
     assert body["patient_examination_id"] == patient_examination_id
     assert body["draft"] == {}
     assert body["updated_at"] is None
@@ -50,7 +54,7 @@ def test_patient_examination_draft_roundtrip(api_client: APIClient) -> None:
     response = api_client.put(url, data=payload, format="json")
     assert response.status_code == 200
 
-    body = response.json()
+    body = _response_body(response)
     assert body["patient_examination_id"] == patient_examination_id
     assert body["draft"] == payload
     assert body["updated_at"] is not None
@@ -61,7 +65,7 @@ def test_patient_examination_draft_roundtrip(api_client: APIClient) -> None:
 
     response = api_client.get(url)
     assert response.status_code == 200
-    assert response.json()["draft"] == payload
+    assert _response_body(response)["draft"] == payload
 
 
 @pytest.mark.django_db
@@ -125,13 +129,13 @@ def test_patient_examination_draft_put_overwrites_previous_payload(
     first_response = api_client.put(url, data=first_payload, format="json")
     assert first_response.status_code == 200
 
-    first_body = first_response.json()
+    first_body = _response_body(first_response)
     first_updated_at = cast(str, first_body["updated_at"])
 
     second_response = api_client.put(url, data=second_payload, format="json")
     assert second_response.status_code == 200
 
-    second_body = second_response.json()
+    second_body = _response_body(second_response)
     second_updated_at = cast(str, second_body["updated_at"])
 
     assert second_body["draft"] == second_payload
@@ -175,7 +179,7 @@ def test_patient_examination_draft_is_empty_after_final_report_save(
 
     assert response.status_code == 200
 
-    body = response.json()
+    body = _response_body(response)
     assert body["patient_examination_id"] == patient_examination_id
     assert body["draft"] == {}
     assert body["updated_at"] is None

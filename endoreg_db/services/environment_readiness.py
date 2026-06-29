@@ -95,7 +95,7 @@ def _check_protected_media_contract() -> list[ReadinessIssue]:
             )
         )
 
-    if media_url == "/media/" or media_url.startswith("/media/"):
+    if media_url and media_url.startswith("/media/"):
         issues.append(
             ReadinessIssue(
                 severity="critical",
@@ -104,7 +104,8 @@ def _check_protected_media_contract() -> list[ReadinessIssue]:
                 path=media_url,
             )
         )
-    elif media_url and media_url != protected_media_url:
+
+    if media_url and media_url != protected_media_url:
         issues.append(
             ReadinessIssue(
                 severity="critical",

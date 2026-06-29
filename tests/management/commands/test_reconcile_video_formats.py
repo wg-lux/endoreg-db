@@ -14,7 +14,7 @@ from endoreg_db.services.video_format_reconciliation import VideoFormatSummary
 
 
 def _command_options() -> dict[str, object]:
-    return ReconcileVideoFormatsCommandOptionsPayload(
+    payload = ReconcileVideoFormatsCommandOptionsPayload(
         root=[],
         include_default_roots=False,
         no_default_roots=True,
@@ -31,6 +31,8 @@ def _command_options() -> dict[str, object]:
         fail_on_non_compliant=False,
         json_output=True,
     ).model_dump(mode="python")
+    payload["json"] = payload.pop("json_output")
+    return payload
 
 
 @pytest.mark.unit

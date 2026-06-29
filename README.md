@@ -215,7 +215,35 @@ This keeps ingest behavior idempotent, auditable, and safe for production cleanu
    - Explanation: Using the Django shell to fetch all morphology classifications (e.g., NICE, Paris) and their related choices  from the database.
 
 
+## Testing
 
+Before running tests, dev mode needs to be activated.
+
+```
+bash
+direnv allow
+uv sync --extra-dev
+```
+
+This installs pytest and publishing dependencies.
+
+For testing, this repository provides a general skip condition.
+
+```
+bash
+SKIP_EXPENSIVE_TESTS=True
+```
+
+If you want to run a full suite, run in your shell:
+
+```
+bash
+export SKIP_EXPENSIVE_TESTS=False
+```
+
+or change the default.
+
+We offer various devenv tasks t
 
 ---
 ## 📦 Database Backup and Restore

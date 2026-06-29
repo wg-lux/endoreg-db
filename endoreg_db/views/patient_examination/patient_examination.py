@@ -50,7 +50,7 @@ def _serializer_errors(serializer: _SerializerErrorsLike) -> JsonValue:
     return serializer.errors
 
 
-class PatientExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):
+class PatientExaminationViewSet(viewsets.ModelViewSet):
     """
     ViewSet für PatientExamination mit vollständiger CRUD-Unterstützung
     """

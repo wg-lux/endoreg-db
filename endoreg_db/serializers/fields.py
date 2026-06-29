@@ -5,7 +5,7 @@ from rest_framework import serializers
 from endoreg_db.models.administration.center.center import Center
 
 
-class CenterKeyRelatedField(serializers.SlugRelatedField[Center]):
+class CenterKeyRelatedField(serializers.SlugRelatedField):
     """
     Canonical machine-facing relation field for Center.
 

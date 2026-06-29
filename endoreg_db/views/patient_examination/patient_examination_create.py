@@ -35,7 +35,7 @@ def _serializer_errors(serializer: _SerializerErrorsLike) -> JsonValue:
     return serializer.errors
 
 
-class ExaminationCreateView(generics.CreateAPIView[PatientExamination]):
+class ExaminationCreateView(generics.CreateAPIView):
     """
     Create new PatientExamination instances.
     POST /api/examinations/create/

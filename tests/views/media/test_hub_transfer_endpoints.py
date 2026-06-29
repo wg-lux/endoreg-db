@@ -998,3 +998,32 @@ class HubTransferEndpointTests(TestCase):
         )
 
         assert upload_response.status_code == 404, upload_response.content
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_transfer_status_returns_404_for_unknown_transfer(self) -> None:
+        status_response = self._secure_get(
+            "/api/media/hub/transfers/does-not-exist/status/",
+            headers=self._auth_headers(),
+        )
+
+        assert status_response.status_code == 404, status_response.content
+        status_json = status_response.json()
+        assert status_json["detail"] == "Transfer job not found"
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_media_upload_returns_404_for_unknown_transfer_key(self) -> None:
+        upload_response = self._secure_post(
+            "/api/media/hub/transfers/does-not-exist/media/",
+            data={
+                "media_role": "processed",
+                "file": SimpleUploadedFile(
+                    "processed.mp4",
+                    b"processed-video",
+                    content_type="video/mp4",
+                ),
+            },
+            headers=self._auth_headers(),
+        )
+
+        assert upload_response.status_code == 404, upload_response.content
+        assert upload_response.json()["detail"] == "Transfer job not found"

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from endoreg_db.models import Center
 from endoreg_db.models import NetworkNode
 from endoreg_db.services.hub.network_nodes import (
     NetworkNodeValidationError,
@@ -71,3 +72,103 @@ def test_update_network_node_clear_shared_secret_removes_hash():
 
     assert updated.shared_secret_hash == ""
     assert updated.check_shared_secret("request-secret") is False
+
+
+@pytest.mark.django_db
+def test_create_network_node_rejects_non_string_shared_secret():
+    with pytest.raises(NetworkNodeValidationError) as exc_info:
+        create_network_node(
+            {
+                "display_name": "Typed Secret Node",
+                "shared_secret": 1234,
+            }
+        )
+
+    assert exc_info.value.errors == {"shared_secret": "shared_secret must be a string."}
+    assert not NetworkNode.objects.filter(display_name="Typed Secret Node").exists()
+
+
+@pytest.mark.django_db
+def test_update_network_node_rejects_invalid_clear_shared_secret_type():
+    node = NetworkNode.objects.create(
+        display_name="Invalid Clear Flag Node",
+        node_key="invalid-clear-flag",
+    )
+
+    with pytest.raises(NetworkNodeValidationError) as exc_info:
+        update_network_node(node, {"clear_shared_secret": "yes"})
+
+    assert exc_info.value.errors == {
+        "clear_shared_secret": "clear_shared_secret must be a boolean."
+    }
+    node.refresh_from_db()
+    assert node.shared_secret_hash == ""
+
+
+@pytest.mark.django_db
+def test_create_network_node_generates_missing_node_key_and_defaults():
+    center = Center.objects.create(
+        name="default-center-node", display_name="Default Center"
+    )
+    created = create_network_node(
+        {
+            "display_name": "Auto Node",
+            "owning_center_key": center.center_key,
+        }
+    )
+
+    assert created.role == NetworkNode.Role.SITE_NODE
+    assert created.base_url == ""
+    assert created.node_key != ""
+    assert created.owning_center == center
+
+
+@pytest.mark.django_db
+def test_update_network_node_updates_owning_center_by_id_and_allows_clear():
+    center_one = Center.objects.create(name="center-one", display_name="Center One")
+    center_two = Center.objects.create(name="center-two", display_name="Center Two")
+    node = NetworkNode.objects.create(
+        display_name="Center Change Node",
+        node_key="center-change-node",
+        owning_center=center_one,
+    )
+
+    updated = update_network_node(
+        node,
+        {
+            "owning_center_id": center_two.pk,
+            "display_name": "Center Change Node",
+        },
+    )
+    assert updated.owning_center == center_two
+
+    updated = update_network_node(
+        node,
+        {
+            "owning_center_id": 0,
+            "base_url": "https://example.org",
+        },
+    )
+    assert updated.owning_center is None
+    assert updated.base_url == "https://example.org"
+
+
+@pytest.mark.django_db
+def test_update_network_node_updates_display_name_and_role():
+    node = NetworkNode.objects.create(
+        display_name="Initial Name",
+        node_key="identity-update",
+    )
+
+    updated = update_network_node(
+        node,
+        {
+            "display_name": "  Renamed Node  ",
+            "role": NetworkNode.Role.STANDALONE.value,
+            "base_url": "  https://node.internal/  ",
+        },
+    )
+
+    assert updated.display_name == "Renamed Node"
+    assert updated.role == NetworkNode.Role.STANDALONE.value
+    assert updated.base_url == "https://node.internal/"

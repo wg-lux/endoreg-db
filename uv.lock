@@ -996,7 +996,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/62/59/e47bbd0542d0e6f4c
 
 [[package]]
 name = "endoreg-db"
-version = "1.0.3.4"
+version = "1.0.4.0"
 source = { editable = "." }
 dependencies = [
     { name = "celery" },

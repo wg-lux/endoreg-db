@@ -8,7 +8,6 @@ with frame-level anonymization.
 """
 
 import os
-import importlib.util
 import threading
 import shutil
 import pytest
@@ -99,13 +98,6 @@ class _NoopAnonymizer:
         return ctx
 
 
-def _video_pipeline_ready() -> bool:
-    return (
-        importlib.util.find_spec("spacy.lang.de") is not None
-        and importlib.util.find_spec("de_core_news_sm") is not None
-    )
-
-
 def _allow_staging_cleanup_roots(
     monkeypatch: pytest.MonkeyPatch,
     *roots: Path,
@@ -152,10 +144,6 @@ class TestVideoImportService(TestCase):
         if SKIP_EXPENSIVE_TESTS:
             self.skipTest(
                 "Skipping expensive video import test (SKIP_EXPENSIVE_TESTS=true)"
-            )
-        if not _video_pipeline_ready():
-            self.skipTest(
-                "Skipping expensive video import test; German spaCy pipeline is unavailable."
             )
 
         # Create a temporary video file

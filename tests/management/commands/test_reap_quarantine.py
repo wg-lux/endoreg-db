@@ -25,12 +25,14 @@ def _reap_options(
     confirm: bool = False,
     json_output: bool = True,
 ) -> dict[str, object]:
-    return ReapQuarantineCommandOptionsPayload(
+    payload = ReapQuarantineCommandOptionsPayload(
         older_than_days=older_than_days,
         dry_run=dry_run,
         confirm=confirm,
         json_output=json_output,
     ).model_dump(mode="python")
+    payload["json"] = payload.pop("json_output")
+    return payload
 
 
 def test_reap_quarantine_defaults_to_dry_run(

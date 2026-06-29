@@ -50,7 +50,7 @@ def start_examination(request: HttpRequest) -> HttpResponse:
     return render(request, "admin/start_examination.html")  # Loads the simple HTML page
 
 
-class PatientViewSet(viewsets.ModelViewSet[Patient]):
+class PatientViewSet(viewsets.ModelViewSet):
     """API endpoint for managing patients."""
 
     queryset = Patient.objects.all()
