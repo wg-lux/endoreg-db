@@ -19,6 +19,7 @@ staticfiles/
 /lx-report-generator/*
 .lx-terminology-editor/
 /lx-terminology-editor/*
+*.safetensors
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
