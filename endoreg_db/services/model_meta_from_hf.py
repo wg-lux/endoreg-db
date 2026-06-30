@@ -1,10 +1,11 @@
 # endoreg_db/services/model_meta_from_hf.py
 
 from importlib import import_module
-from logging import getLogger
 from pathlib import Path
-from typing import Protocol, cast
+from logging import getLogger
+from typing import Any, Protocol, cast
 
+from django.core.files.base import ContentFile
 from django.db import IntegrityError, transaction
 
 from endoreg_db.models.utils import WEIGHTS_DIR
@@ -24,6 +25,12 @@ logger = getLogger(__name__)
 class _HfHubDownload(Protocol):
     def __call__(
         self, *, repo_id: str, filename: str, local_dir: str | Path
+    ) -> str: ...
+
+
+class _StorageSave(Protocol):
+    def __call__(
+        self, name: str, content: Any, max_length: int | None = None
     ) -> str: ...
 
 
@@ -57,16 +64,30 @@ def _store_downloaded_weights(
     *,
     model_meta: ModelMeta,
     weights_path: Path,
-    model_name: str,
-    meta_version: str,
 ) -> None:
-    filename = f"{model_name}_v{meta_version}.safetensors"
-    relative_name = f"{WEIGHTS_DIR.name}/{filename}"
+    relative_name = ""
+    if model_meta.weights.name:
+        relative_name = str(model_meta.weights.name)
 
-    destination = relative_name
-    atomic_copy_file(source=weights_path, destination=Path(destination))
-    model_meta.weights.name = relative_name
-    model_meta.save(update_fields=["weights"])
+    if not relative_name:
+        relative_name = (
+            f"{WEIGHTS_DIR.name}/{model_meta.name}_v{model_meta.version}.safetensors"
+        )
+
+    try:
+        destination = Path(model_meta.weights.storage.path(relative_name))
+        atomic_copy_file(source=weights_path, destination=destination)
+        model_meta.weights.name = relative_name
+        model_meta.save(update_fields=["weights"])
+    except TypeError:
+        with weights_path.open("rb") as source_file:
+            storage_save = cast(_StorageSave, model_meta.weights.storage.save)
+            saved_name = storage_save(
+                relative_name,
+                ContentFile[bytes](source_file.read()),
+            )
+            model_meta.weights.name = saved_name
+            model_meta.save(update_fields=["weights"])
 
 
 def _get_or_create_ai_model(*, model_name: str, model_id: str) -> AiModel:
@@ -199,8 +220,6 @@ def ensure_model_meta_from_hf(
         _store_downloaded_weights(
             model_meta=model_meta,
             weights_path=Path(weights_path).resolve(),
-            model_name=model_name,
-            meta_version=meta_version,
         )
 
     # Set as active meta

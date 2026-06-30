@@ -30,7 +30,7 @@ def _serializer_data(serializer: _SerializerDataLike) -> JsonValue:
     return serializer.data
 
 
-class PatientExaminationListView(generics.ListAPIView):
+class PatientExaminationListView(generics.ListAPIView[PatientExamination]):  # pyright: ignore[reportInvalidTypeArguments]
     """
     List PatientExamination instances with filtering.
     GET /api/examinations/list/

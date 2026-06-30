@@ -16,7 +16,6 @@ from endoreg_db.services.hub.transfers import (
     authenticate_network_node,
     create_or_reuse_transfer_job,
 )
-from lx_dtypes.models.contracts.json_types import JsonObject
 
 
 def _storage_exists(_name: str) -> bool:
@@ -312,7 +311,9 @@ class TransferJobContractTests(TestCase):
             resource_hash=video.video_hash,
         )
         resource_rows = transfer_job.resource_rows
-        video_file_rows = cast(JsonObject, resource_rows["video_file"])
+        video_file_rows = transfers._json_object(
+            resource_rows.get("video_file"), field_name="resource_rows.video_file"
+        )
         video_file_rows["processed_video_hash"] = "payload-processed-hash"
         resource_rows["video_file"] = video_file_rows
         transfer_job.resource_rows = resource_rows

@@ -17,7 +17,7 @@ class _PatientLike(Protocol):
     def save(self) -> None: ...
 
 
-class GenderNameRelatedField(serializers.SlugRelatedField):
+class GenderNameRelatedField(serializers.SlugRelatedField[Gender]):  # pyright: ignore[reportInvalidTypeArguments]
     def to_internal_value(self, data: object) -> Gender:
         gender = cast(_GenderManager, Gender.objects).resolve_by_name(str(data))
         if gender is None:

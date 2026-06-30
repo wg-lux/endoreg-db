@@ -4,7 +4,7 @@ from rest_framework.permissions import IsAuthenticatedOrReadOnly
 from ...serializers.administration import GenderSerializer
 
 
-class GenderViewSet(ReadOnlyModelViewSet):
+class GenderViewSet(ReadOnlyModelViewSet[Gender]):  # pyright: ignore[reportInvalidTypeArguments]
     """
     API endpoint for Gender options.
     Provides read-only access to gender choices for patient forms.

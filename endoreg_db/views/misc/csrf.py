@@ -1,9 +1,8 @@
-from django.http import HttpRequest
+from django.http import HttpRequest, JsonResponse
 from django.middleware.csrf import get_token
-from rest_framework.response import Response
 
 
 # New view to return the CSRF token in JSON format
-def csrf_token_view(request: HttpRequest) -> Response:
+def csrf_token_view(request: HttpRequest) -> JsonResponse:
     token = get_token(request)
-    return Response({"csrf_token": token})
+    return JsonResponse({"csrf_token": token})

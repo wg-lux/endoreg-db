@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Protocol, Sequence, cast
+from typing import TYPE_CHECKING, Protocol, Sequence, cast
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SkipValidation
 
 from endoreg_db.models.medical.disease import Disease, DiseaseClassificationChoice
 from endoreg_db.models.medical.event import Event
@@ -179,140 +179,166 @@ class ModelLinks(BaseModel):
     """
 
     model_config = {"arbitrary_types_allowed": True}
-    examinations: list[Any] = Field(default_factory=_empty_examinations)
-    examination_indications: list[Any] = Field(
+    examinations: list[SkipValidation[Examination]] = Field(
+        default_factory=_empty_examinations
+    )
+    examination_indications: list[SkipValidation[ExaminationIndication]] = Field(
         default_factory=_empty_examination_indications
     )
-    examination_indication_classification_choices: list[Any] = Field(
-        default_factory=_empty_examination_indication_classification_choices
+    examination_indication_classification_choices: list[
+        SkipValidation[ExaminationIndicationClassificationChoice]
+    ] = Field(default_factory=_empty_examination_indication_classification_choices)
+    patient_examinations: list[SkipValidation[PatientExamination]] = Field(
+        default_factory=_empty_patient_examinations
     )
-    patient_examinations: list[Any] = Field(default_factory=_empty_patient_examinations)
 
-    patient_examination_indication: list[Any] = Field(
-        default_factory=_empty_patient_examination_indications
+    patient_examination_indication: list[
+        SkipValidation[PatientExaminationIndication]
+    ] = Field(default_factory=_empty_patient_examination_indications)
+    lab_values: list[SkipValidation[LabValue]] = Field(
+        default_factory=_empty_lab_values
     )
-    lab_values: list[Any] = Field(default_factory=_empty_lab_values)
-    patient_lab_values: list[Any] = Field(default_factory=_empty_patient_lab_values)
-    patient_lab_samples: list[Any] = Field(default_factory=_empty_patient_lab_samples)
-    patient_diseases: list[Any] = Field(default_factory=_empty_patient_diseases)
-    diseases: list[Any] = Field(default_factory=_empty_diseases)
-    disease_classification_choices: list[Any] = Field(
-        default_factory=_empty_disease_classification_choices
+    patient_lab_values: list[SkipValidation[PatientLabValue]] = Field(
+        default_factory=_empty_patient_lab_values
     )
-    events: list[Any] = Field(default_factory=_empty_events)
-    patient_events: list[Any] = Field(default_factory=_empty_patient_events)
-    patient_findings: list[Any] = Field(default_factory=_empty_patient_findings)
-    findings: list[Any] = Field(default_factory=_empty_findings)
-    finding_classification_choices: list[Any] = Field(
-        default_factory=_empty_finding_classification_choices
+    patient_lab_samples: list[SkipValidation[PatientLabSample]] = Field(
+        default_factory=_empty_patient_lab_samples
     )
-    finding_classifications: list[Any] = Field(
+    patient_diseases: list[SkipValidation[PatientDisease]] = Field(
+        default_factory=_empty_patient_diseases
+    )
+    diseases: list[SkipValidation[Disease]] = Field(default_factory=_empty_diseases)
+    disease_classification_choices: list[
+        SkipValidation[DiseaseClassificationChoice]
+    ] = Field(default_factory=_empty_disease_classification_choices)
+    events: list[SkipValidation[Event]] = Field(default_factory=_empty_events)
+    patient_events: list[SkipValidation[PatientEvent]] = Field(
+        default_factory=_empty_patient_events
+    )
+    patient_findings: list[SkipValidation[PatientFinding]] = Field(
+        default_factory=_empty_patient_findings
+    )
+    findings: list[SkipValidation[Finding]] = Field(default_factory=_empty_findings)
+    finding_classification_choices: list[
+        SkipValidation[FindingClassificationChoice]
+    ] = Field(default_factory=_empty_finding_classification_choices)
+    finding_classifications: list[SkipValidation[FindingClassification]] = Field(
         default_factory=_empty_finding_classifications
     )
-    finding_interventions: list[Any] = Field(
+    finding_interventions: list[SkipValidation[FindingIntervention]] = Field(
         default_factory=_empty_finding_interventions
     )
-    patient_lab_sample_types: list[Any] = Field(
+    patient_lab_sample_types: list[SkipValidation[PatientLabSampleType]] = Field(
         default_factory=_empty_patient_lab_sample_types
     )
-    patient_medications: list[Any] = Field(default_factory=_empty_patient_medications)
-    patient_medication_schedules: list[Any] = Field(
-        default_factory=_empty_patient_medication_schedules
+    patient_medications: list[SkipValidation[PatientMedication]] = Field(
+        default_factory=_empty_patient_medications
+    )
+    patient_medication_schedules: list[SkipValidation[PatientMedicationSchedule]] = (
+        Field(default_factory=_empty_patient_medication_schedules)
     )
     # Added direct medication-related fields
-    medications: list[Any] = Field(default_factory=_empty_medications)
-    medication_indications: list[Any] = Field(
+    medications: list[SkipValidation[Medication]] = Field(
+        default_factory=_empty_medications
+    )
+    medication_indications: list[SkipValidation[MedicationIndication]] = Field(
         default_factory=_empty_medication_indications
     )
-    medication_intake_times: list[Any] = Field(
+    medication_intake_times: list[SkipValidation[MedicationIntakeTime]] = Field(
         default_factory=_empty_medication_intake_times
     )
-    medication_schedules: list[Any] = Field(default_factory=_empty_medication_schedules)
+    medication_schedules: list[SkipValidation[MedicationSchedule]] = Field(
+        default_factory=_empty_medication_schedules
+    )
 
     def get_first_patient(self) -> Patient | None:
         """
         Retrieves the first Patient instance found through the linked patient-specific models.
-        Iterates through various patient-related lists and returns the .patient attribute
-        from the first relevant object found.
+        Iterates through various patient-related lists and returns the first available
+        patient's value.
         """
-        if self.patient_lab_values:
-            for plv in self.patient_lab_values:
-                sample = cast(_PatientSampleLike, plv).sample
-                if sample.patient:
-                    return sample.patient
-        if self.patient_lab_samples:
-            for pls in self.patient_lab_samples:
-                patient_like = cast(_PatientLike, pls)
-                if patient_like.patient:
-                    return patient_like.patient
-        if self.patient_examinations:
-            for pe in self.patient_examinations:
-                patient_like = cast(_PatientLike, pe)
-                if patient_like.patient:
-                    return patient_like.patient
-        if self.patient_diseases:
-            for pd in self.patient_diseases:
-                patient_like = cast(_PatientLike, pd)
-                if patient_like.patient:
-                    return patient_like.patient
-        if self.patient_events:
-            for pev in self.patient_events:
-                patient_like = cast(_PatientLike, pev)
-                if patient_like.patient:
-                    return patient_like.patient
-        if self.patient_findings:
-            for pf in self.patient_findings:
-                patient_like = cast(_PatientLike, pf)
-                if patient_like.patient:
-                    return patient_like.patient
+        for patient_like in self.patient_lab_values:
+            sample = cast(
+                _PatientSampleLike | None, getattr(patient_like, "sample", None)
+            )
+            patient = getattr(sample, "patient", None)
+            if patient is not None:
+                return patient
+
+            direct_patient = getattr(patient_like, "patient", None)
+            if direct_patient is not None:
+                return direct_patient
+
+        for patient_like in self.patient_lab_samples:
+            direct_patient = getattr(patient_like, "patient", None)
+            if direct_patient is not None:
+                return direct_patient
+
+        for patient_like in self.patient_examinations:
+            direct_patient = getattr(patient_like, "patient", None)
+            if direct_patient is not None:
+                return direct_patient
+
+        for patient_like in self.patient_diseases:
+            direct_patient = getattr(patient_like, "patient", None)
+            if direct_patient is not None:
+                return direct_patient
+
+        for patient_like in self.patient_events:
+            direct_patient = getattr(patient_like, "patient", None)
+            if direct_patient is not None:
+                return direct_patient
+
+        for patient_like in self.patient_findings:
+            direct_patient = getattr(patient_like, "patient", None)
+            if direct_patient is not None:
+                return direct_patient
+
         # Check PatientMedication
-        if self.patient_medications:
-            for pm in self.patient_medications:
-                patient_like = cast(_PatientLike, pm)
-                if patient_like.patient:
-                    return patient_like.patient
+        for patient_like in self.patient_medications:
+            direct_patient = getattr(patient_like, "patient", None)
+            if direct_patient is not None:
+                return direct_patient
+
         # Check PatientMedicationSchedule
-        if self.patient_medication_schedules:
-            for pms in self.patient_medication_schedules:
-                patient_like = cast(_PatientLike, pms)
-                if patient_like.patient:
-                    return patient_like.patient
+        for patient_like in self.patient_medication_schedules:
+            direct_patient = getattr(patient_like, "patient", None)
+            if direct_patient is not None:
+                return direct_patient
+
         return None
 
     def match_any(self, other: "ModelLinks") -> bool:
         """
         Determines if any linked model in this instance is also present in another ModelLinks instance.
 
-        Compares each list attribute of both instances and returns True if any element in any list overlaps.
+        Compares live linked objects without serializing the object graph.
         """
-
-        other_dict = other.model_dump()
-        self_dict = self.model_dump()
-        for key in self_dict:
-            # print(f"Checking key: {key}") # This is a debug print, can be removed
-            if key in other_dict and self_dict[key] and other_dict[key]:
-                if any(item in other_dict[key] for item in self_dict[key]):
+        for field_name in type(self).model_fields:
+            self_links = getattr(self, field_name, None)
+            other_links = getattr(other, field_name, None)
+            if self_links and other_links:
+                if any(item in other_links for item in self_links):
                     return True
-        return False  # Ensure False is returned if no match is found
+        return False
 
     def active(self) -> dict[str, Sequence[object]]:
         """
         Returns a dictionary of all non-empty linked model lists.
 
-        Only attributes with non-empty lists are included in the returned dictionary.
+        Only attributes with non-empty lists are included. Returned values preserve
+        live object references.
         """
         active_links_dict: dict[str, Sequence[object]] = {}
-        # Use model_dump() to iterate field data reliably (pydantic v2)
-        for field_name, field_value in self.model_dump().items():
+        for field_name, field_value in self.__dict__.items():
             if isinstance(field_value, list) and field_value:
                 active_links_dict[field_name] = cast(Sequence[object], field_value)
         return active_links_dict
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """
         Returns a concise string summarizing the counts of each linked model list in the instance.
         """
-        data = self.model_dump()
         fields = [
             "examinations",
             "examination_indications",
@@ -335,5 +361,5 @@ class ModelLinks(BaseModel):
             "medication_intake_times",
             "medication_schedules",
         ]
-        parts = [f"{f}={len(data.get(f, []))}" for f in fields]
+        parts = [f"{f}={len(getattr(self, f, []))}" for f in fields]
         return f"ModelLinks({', '.join(parts)})"

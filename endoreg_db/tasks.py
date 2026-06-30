@@ -113,6 +113,48 @@ def run_video_post_validation_rebuild_task(
 
 
 @shared_task(
+    name="endoreg_db.segment_annotation_expansion",
+    bind=True,
+    acks_late=True,
+    reject_on_worker_lost=True,
+    track_started=True,
+    time_limit=60 * 60,
+    soft_time_limit=60 * 55,
+)
+def run_segment_annotation_expansion_task(
+    _task: Task[[int, list[int], str, str | None, bool, bool], dict[str, int]],
+    video_id: int,
+    segment_ids: list[int],
+    information_source_name: str = "manual_annotation",
+    annotator: str | None = None,
+    dispatch_post_validation_rebuild: bool = False,
+    mark_complete_without_rebuild: bool = False,
+) -> dict[str, int]:
+    from endoreg_db.services.segment_annotations import ensure_segment_annotations
+    from endoreg_db.models.media.video.video_file import VideoFile
+    from endoreg_db.models.state.video_segment_validation import (
+        mark_segment_annotations_complete_without_cleanup,
+    )
+    from endoreg_db.services.jobs.video_post_validation_jobs import (
+        dispatch_video_post_validation_rebuild,
+    )
+
+    stats = ensure_segment_annotations(
+        video_ids=[int(video_id)] if not segment_ids else None,
+        segment_ids=[int(segment_id) for segment_id in segment_ids],
+        information_source_name=str(information_source_name),
+        annotator=annotator,
+        commit=True,
+    )
+    if dispatch_post_validation_rebuild:
+        dispatch_video_post_validation_rebuild(video_id=int(video_id))
+    elif mark_complete_without_rebuild:
+        video = VideoFile.objects.get(pk=int(video_id))
+        mark_segment_annotations_complete_without_cleanup(video)
+    return stats
+
+
+@shared_task(
     name="endoreg_db.video_temporal_inference",
     bind=True,
     acks_late=True,

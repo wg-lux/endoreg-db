@@ -88,7 +88,7 @@ in
 
   env = {
     # include runtimePackages as well so runtime native libs (e.g. zlib) are on LD_LIBRARY_PATH
-    LD_LIBRARY_PATH = lib.makeLibraryPath (buildInputs ++ runtimePackages) + ":/run/opengl-driver/lib:/run/opengl-driver-32/lib";
+    LD_LIBRARY_PATH = lib.makeLibraryPath (buildInputs ++ runtimePackages ++ [ pkgs.stdenv.cc.cc.lib ]) + ":/run/opengl-driver/lib:/run/opengl-driver-32/lib";
     PYO3_PYTHON = "${python}/bin/python";
     UV_PYTHON = lib.mkForce "${python}/bin/python";
     UV_PYTHON_DOWNLOADS = "never";

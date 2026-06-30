@@ -102,11 +102,27 @@ def test_filter_labels_by_labelset_version_filters_matching_labels() -> None:
         )
     )
 
+    # 1. Kept indices are the 1st and 3rd labels
     assert kept_indices == [0, 2]
+
+    # 2. Filtered labels contain only the matching label objects
+    assert len(filtered_labels) == 2
     assert filtered_labels[0].name == "target-a"
     assert filtered_labels[1].name == "target-b"
-    assert filtered_vectors == [[1, 0], [1, 1]]
-    assert filtered_masks == [[1, 1], [1, 1]]
+
+    # 3. Vectors keep ALL 3 rows, but filter out the middle column
+    assert filtered_vectors == [
+        [1, 0],  # From [1, 0, 0]
+        [0, 1],  # From [0, 1, 1]
+        [1, 1],  # From [1, 1, 1]
+    ]
+
+    # 4. Masks also keep ALL 3 rows, filtering out the middle column
+    assert filtered_masks == [
+        [1, 1],  # From [1, 1, 1]
+        [1, 1],  # From [1, 1, 1]
+        [1, 1],  # From [1, 1, 1]
+    ]
 
 
 def test_filter_labels_by_labelset_version_raises_for_empty_selection() -> None:

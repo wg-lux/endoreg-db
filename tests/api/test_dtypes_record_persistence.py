@@ -65,7 +65,7 @@ def _create_patient_examination() -> PatientExamination:
         gender=gender,
         center=center,
     )
-    examination = Examination.objects.create(name="colonoscopy")
+    examination, _ = Examination.objects.get_or_create(name="colonoscopy")
     return PatientExamination.objects.create(
         patient=patient,
         examination=examination,
@@ -83,16 +83,20 @@ def _create_dtypes_exam_graph() -> tuple[
     patient_examination = _create_patient_examination()
     assert patient_examination.examination is not None
 
-    finding = Finding.objects.create(name="colon_polyp")
-    classification = FindingClassification.objects.create(name="lesion_size_mm")
-    choice = FindingClassificationChoice.objects.create(
-        name="lesion_size_oval_mm",
-        description="oval lesion size",
-        subcategories={},
-        numerical_descriptors={},
+    finding, _ = Finding.objects.get_or_create(name="colon_polyp")
+    classification, _ = FindingClassification.objects.get_or_create(
+        name="lesion_size_mm"
     )
-    intervention = FindingIntervention.objects.create(
-        name="endoscopy_biopsy_grasper_generic"
+    choice, _ = FindingClassificationChoice.objects.update_or_create(
+        name="lesion_size_oval_mm",
+        defaults={
+            "description": "oval lesion size",
+            "subcategories": {},
+            "numerical_descriptors": {},
+        },
+    )
+    intervention, _ = FindingIntervention.objects.get_or_create(
+        name="endoscopy_biopsy_grasper_generic",
     )
 
     classification.choices.add(choice)

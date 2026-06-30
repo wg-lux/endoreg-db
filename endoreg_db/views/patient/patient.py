@@ -50,7 +50,7 @@ def start_examination(request: HttpRequest) -> HttpResponse:
     return render(request, "admin/start_examination.html")  # Loads the simple HTML page
 
 
-class PatientViewSet(viewsets.ModelViewSet):
+class PatientViewSet(viewsets.ModelViewSet[Patient]):  # pyright: ignore[reportInvalidTypeArguments]
     """API endpoint for managing patients."""
 
     queryset = Patient.objects.all()
@@ -170,7 +170,6 @@ class PatientViewSet(viewsets.ModelViewSet):
             )
 
         patient = self.get_object()
-        patient_record = cast(_PatientNameLike, patient)
         patient_record = cast(_PatientNameLike, patient)
 
         examinations = PatientExamination.objects.filter(patient=patient)

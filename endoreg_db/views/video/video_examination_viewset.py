@@ -80,7 +80,7 @@ def _request_query(request: Request) -> Mapping[str, Any]:
     return {}
 
 
-class VideoExaminationViewSet(viewsets.ModelViewSet):
+class VideoExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):  # pyright: ignore[reportInvalidTypeArguments]
     """
     ViewSet for Video Examination CRUD operations.
 
@@ -102,12 +102,6 @@ class VideoExaminationViewSet(viewsets.ModelViewSet):
     });
     ```
     """
-
-    queryset: QuerySet[PatientExamination] = PatientExamination.objects.select_related(
-        "patient",
-        "examination",
-        "video",
-    ).prefetch_related("patient_findings")
 
     serializer_class = VideoExaminationSerializer
 
@@ -181,7 +175,9 @@ class VideoExaminationViewSet(viewsets.ModelViewSet):
         # Get examinations for this video
         examinations = self.get_queryset().filter(video=video)
 
-        serializer = self.get_serializer(examinations, many=True)
+        serializer = cast(
+            _SerializerDataLike, self.get_serializer(examinations, many=True)
+        )
         return Response(serializer.data)
 
     def create(self, request: Request, *args: Any, **kwargs: Any) -> Response:

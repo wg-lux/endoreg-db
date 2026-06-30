@@ -220,12 +220,6 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
             "export_segment": {"required": False},
         }
 
-    @property
-    def errors(self) -> dict[str, object]:
-        if not hasattr(self, "_errors"):
-            return {}
-        return cast(dict[str, object], super().errors)  # pyright: ignore[reportUnknownMemberType]
-
     def _include_annotation_payload(self) -> bool:
         context = cast(ContextLike, getattr(self, "context", {}))
         return bool(context.get("include_annotation_payload", True))

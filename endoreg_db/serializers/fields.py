@@ -5,7 +5,7 @@ from rest_framework import serializers
 from endoreg_db.models.administration.center.center import Center
 
 
-class CenterKeyRelatedField(serializers.SlugRelatedField):
+class CenterKeyRelatedField(serializers.SlugRelatedField[Center]):  # pyright: ignore[reportInvalidTypeArguments]
     """
     Canonical machine-facing relation field for Center.
 
@@ -26,7 +26,8 @@ class CenterKeyRelatedField(serializers.SlugRelatedField):
         allow_null: bool = False,
         read_only: bool = False,
     ) -> None:
-        super().__init__(
+        serializers.SlugRelatedField.__init__(  # pyright: ignore[reportUnknownMemberType]
+            self,
             slug_field="center_key",
             queryset=Center.objects.all(),
             source=source or "",

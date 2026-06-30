@@ -5,6 +5,7 @@ import json
 import threading
 import traceback
 from collections import defaultdict
+from collections.abc import Mapping
 from datetime import datetime, timedelta
 from io import StringIO
 from pathlib import Path
@@ -52,13 +53,8 @@ MODEL_TRAINING_LOST_TIMEOUT = timedelta(hours=25)
 DEFAULT_MODEL_TRAINING_STAGING_ROOT = Path("/mnt/fast-nvme-cache/endoreg-training")
 
 
-class _TrainingArtifact(TypedDict, total=False):
-    kind: str
-    path: str
-
-
 class _TrainingResult(TypedDict, total=False):
-    artifacts: list[_TrainingArtifact]
+    artifacts: list[object]
 
 
 def _coerce_uuid(value: str) -> UUID | None:
@@ -106,8 +102,12 @@ def _model_training_artifact_paths(result: dict[str, Any] | None) -> dict[str, s
         artifacts = training_result_typed.get("artifacts")
         if artifacts is not None:
             for artifact in artifacts:
-                kind = str(artifact.get("kind") or "").strip().lower()
-                path = artifact.get("path")
+                if not isinstance(artifact, Mapping):
+                    continue
+                artifact_map = cast(Mapping[str, object], artifact)
+                raw_kind = artifact_map.get("kind")
+                kind = str(raw_kind or "").strip().lower()
+                path = artifact_map.get("path")
                 if kind and isinstance(path, str) and path:
                     paths[f"{kind}_path"] = path
     return paths

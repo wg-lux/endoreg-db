@@ -50,7 +50,7 @@ def _serializer_errors(serializer: _SerializerErrorsLike) -> JsonValue:
     return serializer.errors
 
 
-class PatientExaminationViewSet(viewsets.ModelViewSet):
+class PatientExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):  # pyright: ignore[reportInvalidTypeArguments]
     """
     ViewSet für PatientExamination mit vollständiger CRUD-Unterstützung
     """
@@ -96,7 +96,7 @@ class PatientExaminationViewSet(viewsets.ModelViewSet):
         """
         patients = Patient.objects.all().order_by("first_name", "last_name")
         serializer = PatientDropdownSerializer(patients, many=True)
-        return Response(_serializer_data(cast(_SerializerDataLike, serializer)))
+        return Response(_serializer_data(serializer))
 
     @action(detail=False, methods=["get"])
     def examinations_dropdown(self, request: Request) -> Response:
@@ -194,7 +194,9 @@ class PatientExaminationViewSet(viewsets.ModelViewSet):
         """
         Überschreibt die create-Methode für bessere Fehlerbehandlung
         """
-        serializer = self.get_serializer(data=request.data)
+        serializer = cast(
+            PatientExaminationSerializer, self.get_serializer(data=request.data)
+        )
         if serializer.is_valid():
             try:
                 self.perform_create(serializer)
@@ -226,7 +228,10 @@ class PatientExaminationViewSet(viewsets.ModelViewSet):
         """
         partial = kwargs.pop("partial", False) is True
         instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer = cast(
+            PatientExaminationSerializer,
+            self.get_serializer(instance, data=request.data, partial=partial),
+        )
 
         if serializer.is_valid():
             try:
