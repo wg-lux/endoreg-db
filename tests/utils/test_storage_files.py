@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any, BinaryIO, cast
 
 import io
 from pathlib import Path
@@ -10,6 +10,7 @@ import pytest
 from django.db.models.fields.files import FieldFile
 
 from endoreg_db.utils.storage import ensure_local_file
+from endoreg_db.utils.storage import files as storage_files
 
 
 class _NonSeekableStream(io.BytesIO):
@@ -23,10 +24,10 @@ class _UnsupportedSeekStream(io.BytesIO):
 
 
 class _Storage:
-    def __init__(self, stream: io.BytesIO) -> None:
+    def __init__(self, stream: BinaryIO) -> None:
         self.stream = stream
 
-    def open(self, name: str, mode: str) -> io.BytesIO:
+    def open(self, name: str, mode: str) -> BinaryIO:
         assert name == "remote/video.mp4"
         assert mode == "rb"
         return self.stream
@@ -35,7 +36,7 @@ class _Storage:
 class _PathlessFieldFile:
     name = "remote/video.mp4"
 
-    def __init__(self, stream: io.BytesIO) -> None:
+    def __init__(self, stream: BinaryIO) -> None:
         self.storage = _Storage(stream)
 
     @property
@@ -63,4 +64,43 @@ def test_ensure_local_file_ignores_unsupported_seek() -> None:
         materialized_path = local_path
         assert local_path.read_bytes() == b"video-payload"
 
+    assert not materialized_path.exists()
+
+
+@pytest.mark.unit
+def test_ensure_local_file_prefers_rust_fd_copy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_path = tmp_path / "source.mp4"
+    source_path.write_bytes(b"video-payload")
+    source = source_path.open("rb")
+    field_file = _PathlessFieldFile(source)
+    calls: list[tuple[int, Path, int]] = []
+
+    def fake_copy_file_descriptor_to_path(
+        *,
+        source_fd: int,
+        target_path: Path,
+        chunk_size: int,
+    ) -> int:
+        calls.append((source_fd, target_path, chunk_size))
+        assert not source.closed
+        with open(source_fd, "rb", closefd=False) as source_handle:
+            target_path.write_bytes(source_handle.read())
+        return target_path.stat().st_size
+
+    monkeypatch.setattr(
+        storage_files,
+        "copy_file_descriptor_to_path",
+        fake_copy_file_descriptor_to_path,
+    )
+
+    with ensure_local_file(cast(FieldFile, field_file)) as local_path:
+        materialized_path = local_path
+        assert local_path.read_bytes() == b"video-payload"
+
+    assert len(calls) == 1
+    assert calls[0][2] == 1024 * 1024
+    assert source.closed
     assert not materialized_path.exists()

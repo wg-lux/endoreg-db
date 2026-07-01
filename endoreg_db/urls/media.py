@@ -6,6 +6,11 @@ from endoreg_db.views.media.hub import (
     HubTransferCreateView,
     HubTransferMediaUploadView,
     HubTransferStatusView,
+    QuarantineApproveDeletionView,
+    QuarantineItemListView,
+    QuarantineReapApprovedView,
+    QuarantineRetainView,
+    QuarantineSyncView,
 )
 from endoreg_db.views.media.patient_media_timeline import PatientMediaTimelineView
 from endoreg_db.views.media.anonymization_metrics import AnonymizationMetricsView
@@ -81,6 +86,34 @@ HUB_TRANSFER_URLPATTERNS: list[URLPattern] = [
         "media/hub/transfers/<str:transfer_key>/media/",
         HubTransferMediaUploadView.as_view(),
         name="hub-transfer-media-upload",
+    ),
+]
+
+QUARANTINE_URLPATTERNS: list[URLPattern] = [
+    path(
+        "media/quarantine/",
+        QuarantineItemListView.as_view(),
+        name="quarantine-item-list",
+    ),
+    path(
+        "media/quarantine/sync/",
+        QuarantineSyncView.as_view(),
+        name="quarantine-sync",
+    ),
+    path(
+        "media/quarantine/reap-approved/",
+        QuarantineReapApprovedView.as_view(),
+        name="quarantine-reap-approved",
+    ),
+    path(
+        "media/quarantine/<uuid:item_id>/approve-deletion/",
+        QuarantineApproveDeletionView.as_view(),
+        name="quarantine-approve-deletion",
+    ),
+    path(
+        "media/quarantine/<uuid:item_id>/retain/",
+        QuarantineRetainView.as_view(),
+        name="quarantine-retain",
     ),
 ]
 
@@ -345,6 +378,7 @@ PDF_REPORT_MEDIA_URLPATTERNS: list[URLPattern] = [
 
 urlpatterns: list[URLPattern] = [
     *HUB_TRANSFER_URLPATTERNS,
+    *QUARANTINE_URLPATTERNS,
     *MEDIA_OVERVIEW_URLPATTERNS,
     *VIDEO_MEDIA_URLPATTERNS,
     *VIDEO_ANNOTATION_URLPATTERNS,

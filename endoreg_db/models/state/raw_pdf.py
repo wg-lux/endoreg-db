@@ -10,7 +10,10 @@ from typing import TYPE_CHECKING, cast
 
 from django.db import models, transaction
 
-from endoreg_db.models.state.anonymization import AnonymizationState
+from endoreg_db.models.state.anonymization import (
+    AnonymizationState,
+    derive_report_anonymization_state,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -105,29 +108,13 @@ class RawPdfState(models.Model):
         Returns:
             AnonymizationStatus: The current status, reflecting progress or failure in the anonymization process.
         """
-        if self.anonymization_validated:
-            return AnonymizationState.VALIDATED  #  Validation in Frontend completed -> Views related to this /home/admin/endoreg-db/endoreg_db/views/anonymization/validate.py
-        if self.sensitive_meta_processed:
-            return (
-                AnonymizationState.DONE_PROCESSING_ANONYMIZATION
-            )  # /home/admin/endoreg-db/endoreg_db/services/pdf_import.py
-        if (
-            self.processing_started
-            and not self.processing_error
-            and not self.anonymized
-        ):
-            return AnonymizationState.PROCESSING_ANONYMIZING
-        if getattr(self, "processing_error", False):
-            return (
-                AnonymizationState.FAILED
-            )  # /home/admin/endoreg-db/endoreg_db/services/pdf_import.py
-        if self.processing_started:
-            return (
-                AnonymizationState.STARTED
-            )  # /home/admin/endoreg-db/endoreg_db/services/pdf_import.py
-        if self.anonymized:
-            return AnonymizationState.ANONYMIZED
-        return AnonymizationState.NOT_STARTED
+        return derive_report_anonymization_state(
+            processing_error=self.processing_error,
+            anonymization_validated=self.anonymization_validated,
+            sensitive_meta_processed=self.sensitive_meta_processed,
+            anonymized=self.anonymized,
+            processing_started=self.processing_started,
+        )
 
     def mark_processing_not_started(self) -> None:
         """

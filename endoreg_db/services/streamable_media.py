@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 from pathlib import Path
@@ -8,9 +9,29 @@ from uuid import uuid4
 
 from django.db.models.fields.files import FieldFile
 
+from endoreg_db.services.streamable_media_state import build_streamable_media_state
+from endoreg_db.services.streamable_media_transcoding import (
+    LX_ENCRYPTED_MAGIC,
+    is_encrypted_file,
+    is_faststart_mp4,
+    transcode_streamable_mp4,
+)
+from endoreg_db.services.streamable_media_types import (
+    DEFAULT_STREAMABLE_TRANSCODE_PROFILE,
+    MP4_SUFFIX,
+    STREAMABLE_ARTIFACT_SPECS,
+    STREAMABLE_DIRECTORY_MODE,
+    STREAMABLE_FILE_MODE,
+    StreamableArtifactDecision,
+    StreamableArtifactDisposition,
+    StreamableArtifactKind,
+    StreamableArtifactSpec,
+    StreamableMediaState,
+    StreamableTranscodeProfile,
+)
+from endoreg_db.utils import ffmpeg_wrapper
 from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.file_operations import (
-    atomic_move_path,
     atomic_write_file,
     ensure_file_mtime_after,
     safe_unlink_file,
@@ -21,15 +42,40 @@ from endoreg_db.utils.paths import (
     to_protected_media_relative,
     to_storage_relative,
 )
-from endoreg_db.utils.storage_profile import (
-    PayloadKind,
-    StoragePolicy,
-    resolve_storage_policy,
-)
+from endoreg_db.utils.storage_profile import resolve_storage_policy
 from endoreg_db.utils.storage_streaming import field_file_size, iter_field_file_bytes
-from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
+from endoreg_db.utils.storage_streaming import (
+    iter_file_path_bytes,
+    local_plaintext_path_from_name,
+)
 
 logger = logging.getLogger(__name__)
+
+_is_encrypted_file = is_encrypted_file
+_is_faststart_mp4 = is_faststart_mp4
+_transcode_streamable_mp4 = transcode_streamable_mp4
+
+__all__ = (
+    "DEFAULT_STREAMABLE_TRANSCODE_PROFILE",
+    "LX_ENCRYPTED_MAGIC",
+    "MP4_SUFFIX",
+    "STREAMABLE_ARTIFACT_SPECS",
+    "STREAMABLE_DIRECTORY_MODE",
+    "STREAMABLE_FILE_MODE",
+    "STREAMABLE_PROCESSED_VIDEO_ROOT",
+    "STREAMABLE_RAW_VIDEO_ROOT",
+    "STREAMABLE_VIDEO_ROOT",
+    "StreamableArtifactDecision",
+    "StreamableArtifactDisposition",
+    "StreamableArtifactKind",
+    "StreamableArtifactSpec",
+    "StreamableMediaState",
+    "StreamableTranscodeProfile",
+    "ffmpeg_wrapper",
+    "resolve_storage_policy",
+    "resolve_streamable_media_state",
+    "sync_video_streamable_artifacts",
+)
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
@@ -69,8 +115,6 @@ _DEFAULT_STREAMABLE_RAW_VIDEO_ROOT = STREAMABLE_RAW_VIDEO_ROOT
 _DEFAULT_STREAMABLE_PROCESSED_VIDEO_ROOT = STREAMABLE_PROCESSED_VIDEO_ROOT
 _DEFAULT_STREAMABLE_RAW_VIDEO_ROOT_FN = _streamable_raw_video_root
 _DEFAULT_STREAMABLE_PROCESSED_VIDEO_ROOT_FN = _streamable_processed_video_root
-STREAMABLE_DIRECTORY_MODE = 0o750
-STREAMABLE_FILE_MODE = 0o640
 
 
 def _streamable_relative_path(target_path: Path) -> str:
@@ -101,80 +145,138 @@ def _streamable_relative_path(target_path: Path) -> str:
         ) from protected_exc
 
 
-def _is_encrypted_file(path: Path) -> bool:
-    with path.open("rb") as handle:
-        return handle.read(len(LX_ENCRYPTED_MAGIC)) == LX_ENCRYPTED_MAGIC
-
-
 def _is_sha256_hex(value: str) -> bool:
     value = value.strip()
     return len(value) == 64 and all(char in "0123456789abcdefABCDEF" for char in value)
+
+
+def _source_size(video_field_file: FieldFile | Any, source_path: Path | None) -> int:
+    if source_path is not None and source_path.is_file():
+        return source_path.stat().st_size
+    return field_file_size(video_field_file)
+
+
+def _source_bytes(
+    video_field_file: FieldFile | Any,
+    source_path: Path | None,
+    *,
+    start: int,
+    end: int,
+) -> Any:
+    if source_path is not None:
+        return iter_file_path_bytes(source_path, start=start, end=end)
+    return iter_field_file_bytes(video_field_file, start=start, end=end)
+
+
+def _source_hash(video_field_file: FieldFile | Any, source_path: Path | None) -> str:
+    if source_path is not None:
+        return sha256_file(source_path)
+    file_size = _source_size(video_field_file, source_path)
+    digest = hashlib.sha256()
+    if file_size <= 0:
+        return digest.hexdigest()
+    for chunk in _source_bytes(
+        video_field_file,
+        source_path,
+        start=0,
+        end=file_size - 1,
+    ):
+        digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _local_plaintext_source_path(field_file_name: str) -> Path | None:
+    relative_name = Path(field_file_name)
+    if not relative_name.is_absolute():
+        storage_roots = (
+            Path(path_utils.STORAGE_DIR).resolve(),
+            path_utils.EndoregPathsModel.from_environment().storage.resolve(),
+        )
+        for storage_root in dict.fromkeys(storage_roots):
+            storage_candidate = storage_root / relative_name
+            if storage_candidate.exists() and not _is_encrypted_file(storage_candidate):
+                return storage_candidate
+    return local_plaintext_path_from_name(field_file_name)
 
 
 def _streamable_target_matches_source(
     *,
     target_path: Path,
     video_field_file: FieldFile | Any,
+    source_path: Path | None,
     expected_hash: str,
+    verify_source_hash: bool = True,
 ) -> bool:
     if not target_path.exists() or _is_encrypted_file(target_path):
         return False
 
-    if expected_hash and _is_sha256_hex(expected_hash):
-        return sha256_file(target_path) == expected_hash
-
     try:
-        if target_path.stat().st_size != field_file_size(video_field_file):
+        if target_path.stat().st_size <= 0:
             return False
     except OSError:
         return False
-    return sha256_file(target_path) == sha256_file(video_field_file)
+    if not _is_faststart_mp4(target_path):
+        return False
+
+    if verify_source_hash and expected_hash and _is_sha256_hex(expected_hash):
+        try:
+            return _source_hash(video_field_file, source_path) == expected_hash
+        except OSError:
+            return False
+    return True
 
 
 def _materialize_streamable_target(
     video_field_file: FieldFile | Any,
     target_path: Path,
     *,
+    source_path: Path | None = None,
     expected_hash: str = "",
+    transcode_profile: StreamableTranscodeProfile = DEFAULT_STREAMABLE_TRANSCODE_PROFILE,
 ) -> Path:
-    file_size = field_file_size(video_field_file)
-    temp_target = target_path.with_name(
-        f".{target_path.name}.streamable.{os.getpid()}.{uuid4().hex}.tmp"
+    file_size = _source_size(video_field_file, source_path)
+    temp_source = target_path.with_name(
+        f".{target_path.name}.source.{os.getpid()}.{uuid4().hex}.tmp"
     )
 
     try:
-        path = atomic_write_file(
-            destination=temp_target,
-            content=iter_field_file_bytes(
-                video_field_file,
-                start=0,
-                end=file_size - 1,
-            ),
-            required_bytes=file_size,
-            file_mode=STREAMABLE_FILE_MODE,
-            dir_mode=STREAMABLE_DIRECTORY_MODE,
-        )
-
-        if _is_encrypted_file(path):
-            raise RuntimeError(f"Refusing encrypted streamable artifact: {target_path}")
-
+        if file_size <= 0:
+            raise RuntimeError(f"Refusing empty streamable source: {target_path}")
         if (
             expected_hash
             and _is_sha256_hex(expected_hash)
-            and sha256_file(path) != expected_hash
+            and _source_hash(video_field_file, source_path) != expected_hash
         ):
             raise RuntimeError(
-                f"Refusing streamable artifact with unexpected hash: {target_path}"
+                f"Refusing streamable source with unexpected hash: {target_path}"
             )
 
-        return atomic_move_path(
-            source=path,
-            destination=target_path,
-            dir_mode=STREAMABLE_DIRECTORY_MODE,
+        ffmpeg_source_path = source_path
+        if ffmpeg_source_path is None:
+            ffmpeg_source_path = atomic_write_file(
+                destination=temp_source,
+                content=_source_bytes(
+                    video_field_file,
+                    source_path,
+                    start=0,
+                    end=file_size - 1,
+                ),
+                required_bytes=file_size,
+                file_mode=STREAMABLE_FILE_MODE,
+                dir_mode=STREAMABLE_DIRECTORY_MODE,
+            )
+            if _is_encrypted_file(ffmpeg_source_path):
+                raise RuntimeError(
+                    f"Refusing encrypted streamable source: {target_path}"
+                )
+
+        return _transcode_streamable_mp4(
+            ffmpeg_source_path,
+            target_path,
+            profile=transcode_profile,
         )
-    except Exception:
-        safe_unlink_file(temp_target, missing_ok=True)
-        raise
+    finally:
+        safe_unlink_file(temp_source, missing_ok=True)
 
 
 def _configured_streamable_raw_video_root() -> Path:
@@ -196,20 +298,37 @@ def _configured_streamable_processed_video_root() -> Path:
     return Path(_streamable_processed_video_root()).resolve()
 
 
+def _streamable_root_for_kind(kind: StreamableArtifactKind) -> Path:
+    match kind:
+        case StreamableArtifactKind.RAW:
+            return _configured_streamable_raw_video_root()
+        case StreamableArtifactKind.PROCESSED:
+            return _configured_streamable_processed_video_root()
+
+
 def _video_streamable_target(
-    video: "VideoFile", *, processed: bool, suffix: str
+    video: "VideoFile",
+    *,
+    spec: StreamableArtifactSpec,
 ) -> Path:
-    stem = (
-        getattr(video, "processed_video_hash", None) or video.video_hash
-        if processed
-        else video.video_hash
+    stem = getattr(video, spec.hash_attr, None) or video.video_hash
+    root = _streamable_root_for_kind(spec.kind)
+    return root / f"{stem}{MP4_SUFFIX}"
+
+
+def resolve_streamable_media_state(
+    video: "VideoFile",
+    *,
+    include_raw: bool = True,
+    include_processed: bool = True,
+) -> StreamableMediaState:
+    return build_streamable_media_state(
+        video,
+        include_raw=include_raw,
+        include_processed=include_processed,
+        target_path_for_spec=_video_streamable_target,
+        resolve_policy=resolve_storage_policy,
     )
-    root = (
-        _configured_streamable_processed_video_root()
-        if processed
-        else _configured_streamable_raw_video_root()
-    )
-    return root / f"{stem}{suffix}"
 
 
 def _sync_one_streamable(
@@ -225,17 +344,26 @@ def _sync_one_streamable(
         (relative_path, materialized_or_verified)
     """
     relative_path = _streamable_relative_path(target_path)
+    field_file_name = getattr(video_field_file, "name", None)
+    source_path = (
+        _local_plaintext_source_path(field_file_name)
+        if isinstance(field_file_name, str)
+        else None
+    )
 
     if current_relative_path == relative_path and _streamable_target_matches_source(
         target_path=target_path,
         video_field_file=video_field_file,
+        source_path=source_path,
         expected_hash=expected_hash,
+        verify_source_hash=False,
     ):
         return relative_path, True
 
     if _streamable_target_matches_source(
         target_path=target_path,
         video_field_file=video_field_file,
+        source_path=source_path,
         expected_hash=expected_hash,
     ):
         return relative_path, True
@@ -250,6 +378,7 @@ def _sync_one_streamable(
     materialized_path = _materialize_streamable_target(
         video_field_file,
         target_path,
+        source_path=source_path,
         expected_hash=expected_hash,
     )
     if previous_mtime_ns is not None:
@@ -268,111 +397,51 @@ def sync_video_streamable_artifacts(
     save: bool = True,
 ) -> list[str]:
     update_fields: list[str] = []
-    raw_storage_policy = resolve_storage_policy(PayloadKind.VIDEO_RAW)
-    processed_storage_policy = resolve_storage_policy(PayloadKind.VIDEO_PROCESSED)
-    synced_raw = False
-    synced_processed = False
-
-    raw_file = getattr(video, "raw_file", None)
-    # Replaced strict isinstance constraint with duck typing `hasattr` to support mocked files
-    raw_field_file = raw_file if hasattr(raw_file, "name") else None
-    raw_file_name = raw_field_file.name if raw_field_file is not None else None
-
-    if (
-        raw_storage_policy == StoragePolicy.FS_STREAMABLE
-        and include_raw
-        and raw_field_file is not None
-        and isinstance(raw_file_name, str)
-        and raw_file_name
-    ):
-        target_path = _video_streamable_target(
-            video,
-            processed=False,
-            suffix=Path(raw_file_name).suffix or ".mp4",
-        )
-        relative_path, synced_raw = _sync_one_streamable(
-            video_field_file=raw_field_file,
-            target_path=target_path,
-            current_relative_path=video.raw_streamable_relative_path,
-            expected_hash=(getattr(video, "video_hash", "") or "").strip(),
-            save=save,
-        )
-
-        if synced_raw and video.raw_streamable_relative_path != relative_path:
-            video.raw_streamable_relative_path = relative_path
-            update_fields.append("raw_streamable_relative_path")
-    elif include_raw and raw_file and isinstance(raw_file_name, str) and raw_file_name:
-        logger.info(
-            "Skipping raw streamable artifact sync for video %s because "
-            "ENDOREG_STORAGE_PROFILE routes raw video to %s.",
-            video.pk,
-            raw_storage_policy,
-        )
-        if video.raw_streamable_relative_path:
-            video.raw_streamable_relative_path = ""
-            update_fields.append("raw_streamable_relative_path")
-        synced_raw = False
-
-    processed_file = getattr(video, "processed_file", None)
-    # Replaced strict isinstance constraint with duck typing `hasattr`
-    processed_field_file = processed_file if hasattr(processed_file, "name") else None
-    processed_file_name = (
-        processed_field_file.name if processed_field_file is not None else None
+    state = resolve_streamable_media_state(
+        video,
+        include_raw=include_raw,
+        include_processed=include_processed,
     )
+    synced_by_kind = {spec.kind: False for spec in STREAMABLE_ARTIFACT_SPECS}
 
-    if (
-        processed_storage_policy == StoragePolicy.FS_STREAMABLE
-        and include_processed
-        and processed_field_file is not None
-        and isinstance(processed_file_name, str)
-        and processed_file_name
-    ):
-        target_path = _video_streamable_target(
-            video,
-            processed=True,
-            suffix=Path(processed_file_name).suffix or ".mp4",
-        )
-        relative_path, synced_processed = _sync_one_streamable(
-            video_field_file=processed_field_file,
-            target_path=target_path,
-            current_relative_path=video.processed_streamable_relative_path,
-            expected_hash=(getattr(video, "processed_video_hash", "") or "").strip(),
-            save=save,
-        )
+    for decision in state.artifacts:
+        if decision.disposition == StreamableArtifactDisposition.SYNC:
+            if decision.field_file is None or decision.target_path is None:
+                raise RuntimeError(
+                    "Invalid streamable sync decision without source or target"
+                )
+            relative_path, synced = _sync_one_streamable(
+                video_field_file=decision.field_file,
+                target_path=decision.target_path,
+                current_relative_path=decision.current_relative_path,
+                expected_hash=decision.expected_hash,
+                save=save,
+            )
+            synced_by_kind[decision.spec.kind] = synced
+            if synced and decision.current_relative_path != relative_path:
+                setattr(video, decision.spec.relative_path_attr, relative_path)
+                update_fields.append(decision.spec.relative_path_attr)
+            continue
 
-        if (
-            synced_processed
-            and video.processed_streamable_relative_path != relative_path
-        ):
-            video.processed_streamable_relative_path = relative_path
-            update_fields.append("processed_streamable_relative_path")
-    elif (
-        include_processed
-        and processed_file
-        and isinstance(processed_file_name, str)
-        and processed_file_name
-    ):
-        logger.info(
-            "Skipping processed streamable artifact sync for video %s because "
-            "ENDOREG_STORAGE_PROFILE routes processed video to %s.",
-            video.pk,
-            processed_storage_policy,
-        )
-        if video.processed_streamable_relative_path:
-            video.processed_streamable_relative_path = ""
-            update_fields.append("processed_streamable_relative_path")
+        if decision.disposition == StreamableArtifactDisposition.CLEAR_STALE_PATH:
+            logger.info(
+                "Skipping %s streamable artifact sync for video %s because "
+                "ENDOREG_STORAGE_PROFILE routes %s video to %s.",
+                decision.spec.kind.value,
+                getattr(video, "pk", "unknown"),
+                decision.spec.kind.value,
+                decision.storage_policy,
+            )
+            setattr(video, decision.spec.relative_path_attr, "")
+            update_fields.append(decision.spec.relative_path_attr)
 
-        synced_processed = False
-
-    has_verified_streamable = synced_raw or synced_processed
+    has_verified_streamable = any(synced_by_kind.values())
 
     if not has_verified_streamable:
-        if video.raw_streamable_relative_path:
-            video.raw_streamable_relative_path = ""
-            update_fields.append("raw_streamable_relative_path")
-        if video.processed_streamable_relative_path:
-            video.processed_streamable_relative_path = ""
-            update_fields.append("processed_streamable_relative_path")
+        for spec in STREAMABLE_ARTIFACT_SPECS:
+            if getattr(video, spec.relative_path_attr, ""):
+                setattr(video, spec.relative_path_attr, "")
+                update_fields.append(spec.relative_path_attr)
 
     storage_mode_cls = type(video).StorageMode
     preferred_storage_mode = (

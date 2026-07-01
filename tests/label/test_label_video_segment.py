@@ -286,8 +286,7 @@ class LabelVideoSegmentModelTest(TestCase):
             end_time=self.end_frame / fps,
         )
         s = LabelVideoSegmentSerializer(data=data)
-        serializer_errors = cast(_SerializerErrors, s).errors
-        assert s.is_valid(), serializer_errors
+        assert s.is_valid(), cast(_SerializerErrors, s).errors
         segment = s.save()
         assert isinstance(segment.label, Label)
 
@@ -485,8 +484,9 @@ class LabelVideoSegmentModelTest(TestCase):
         )
 
         serializer = LabelVideoSegmentSerializer(data=data)
-        serializer_errors = cast(_SerializerErrors, serializer).errors
-        self.assertTrue(serializer.is_valid(), serializer_errors)
+        self.assertTrue(
+            serializer.is_valid(), cast(_SerializerErrors, serializer).errors
+        )
 
         segment = serializer.create(serializer.validated_data)
         print(f"Created segment: {segment}")
@@ -516,8 +516,9 @@ class LabelVideoSegmentModelTest(TestCase):
             end_time=frame_count / fps,
         )
         serializer = LabelVideoSegmentSerializer(data=data)
-        serializer_errors = cast(_SerializerErrors, serializer).errors
-        self.assertTrue(serializer.is_valid(), serializer_errors)
+        self.assertTrue(
+            serializer.is_valid(), cast(_SerializerErrors, serializer).errors
+        )
         # Expect DRF ValidationError, not ValueError
         with self.assertRaises(serializers.ValidationError) as cm:
             serializer.create(serializer.validated_data)

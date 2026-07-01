@@ -1,7 +1,7 @@
 # endoreg_db/authz/middleware.py
 #
 # Purpose:
-#   - For *browser requests* that hit protected API URLs (e.g., /api/...), make sure the user
+#   - For *browser requests* that hit protected routes, make sure the user
 #     is authenticated via Keycloak. If not, redirect them to the OIDC login view and remember
 #     the original URL in ?next= so they come back to the same endpoint after login.
 #   - For *API clients* sending a Bearer token, DO NOT redirect (that would break API usage).
@@ -31,8 +31,8 @@ from django.shortcuts import redirect
 
 # Every URL path that starts with one of these prefixes is considered "protected" for browser UX.
 # You can add more prefixes if you want the same login-redirect behavior elsewhere
-# (e.g., PROTECTED_PREFIXES = ("/api/", "/reports/", "/dashboard/")).
-# PROTECTED_PREFIXES = ("/api/",)
+# (e.g., PROTECTED_PREFIXES = ("/endoreg-api/", "/reports/", "/dashboard/")).
+# PROTECTED_PREFIXES = ("/endoreg-api/",)
 
 # Protect the SPA shell too (everything except static/assets/oidc)
 PROTECTED_PREFIXES = ("/",)  # catch-all; we'll skip known public paths below
@@ -67,7 +67,7 @@ class LoginRequiredForAPIsMiddleware:
         self.get_response = get_response
 
     def __call__(self, request: HttpRequest) -> HttpResponseBase:
-        # request.path is the URL path without scheme/host/query (e.g., "/api/patients/").
+        # request.path is the URL path without scheme/host/query.
         # If for any reason it's None/empty, coerce to empty string so startswith won’t explode.
         path = request.path or ""
         # --- Exclusions so we don't block assets, HMR, OIDC endpoints, favicon, etc.

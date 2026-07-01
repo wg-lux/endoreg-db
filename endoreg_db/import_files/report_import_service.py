@@ -185,6 +185,7 @@ class ReportImportService:
         if not ctx.file_path.exists():
             raise FileNotFoundError(f"Report file not found: {file_path}")
 
+        ctx.file_hash = sha256_file(ctx.file_path)
         try:
             if ctx.file_path.suffix.lower() == ".txt":
                 is_txt_input = True
@@ -198,8 +199,6 @@ class ReportImportService:
 
             with file_lock(lock_path):
                 logger.info("Acquired file lock for %s", lock_path)
-                if not isinstance(ctx.file_hash, str):
-                    ctx.file_hash = str(ctx.file_hash)
                 with content_hash_lock(ctx.file_hash, _hash_lock_dir()):
                     logger.info("Acquired content-hash lock for %s", ctx.file_hash)
                     existing_completed_report = self._get_existing_completed_report(ctx)

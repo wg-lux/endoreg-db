@@ -10,12 +10,13 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from collections.abc import Iterator, Mapping
+from collections.abc import Generator, Iterator, Mapping
 from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
 from django.core.files.storage import Storage
 from django.test import Client as DjangoClient
+from pytest import FixtureRequest
 from endoreg_db.import_files.context import ImportContext
 from lx_dtypes.models.contracts.ffmpeg_metadata import FfmpegProbeDataPayload
 from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
@@ -246,8 +247,10 @@ os.environ["DJANGO_SETTINGS_MODULE"] = "endoreg_db.config.settings.test"
 _configure_test_path_env(TEST_PROTECTED_ROOT)
 
 import pytest
+from _pytest.reports import TestReport
 from django.db.backends.signals import connection_created
 from django.test import override_settings
+from pluggy import Result
 
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS, env_bool
 from endoreg_db.models import AiModel, Label, ModelMeta, ModelType
@@ -469,6 +472,35 @@ def client() -> DjangoClient:
             )
 
     return SafeClient()
+
+
+# ==========================================
+# Time Tracking Fixtures
+# ==========================================
+
+
+@pytest.fixture(scope="function", autouse=True)
+def testcase_result(request: FixtureRequest) -> None:
+    node = cast(pytest.Item, getattr(request, "node"))
+    print("Test '{}' STARTED".format(node.nodeid))
+
+    def fin() -> None:
+        print("Test '{}' COMPLETED".format(node.nodeid))
+        rep_call = cast(TestReport | None, getattr(node, "rep_call", None))
+        if rep_call is not None:
+            print("Test '{}' DURATION={}".format(node.nodeid, rep_call.duration))
+
+    request.addfinalizer(fin)
+
+
+@pytest.hookimpl(hookwrapper=True, tryfirst=True)
+def pytest_runtest_makereport(
+    item: pytest.Item,
+    call: pytest.CallInfo[object],
+) -> Generator[None, Result[TestReport], None]:
+    outcome = yield
+    rep = outcome.get_result()
+    setattr(item, "rep_" + rep.when, rep)
 
 
 # ==========================================

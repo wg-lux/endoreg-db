@@ -14,6 +14,7 @@ from endoreg_db.models.media.video.storage_mode import (
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
 from endoreg_db.utils.paths import normalize_protected_media_relative_path
+from endoreg_db.utils.rust_backend import is_lx_encrypted_file
 from endoreg_db.utils.storage import file_exists
 from endoreg_db.utils.storage_streaming import maybe_local_plaintext_path
 
@@ -316,6 +317,9 @@ def can_offload_video_stream(
 def is_encrypted_streamable_video_path(path: Path | None) -> bool:
     if path is None:
         return False
+    rust_result = is_lx_encrypted_file(path)
+    if rust_result is not None:
+        return rust_result
     try:
         with path.open("rb") as handle:
             return handle.read(len(LX_ENCRYPTED_MAGIC)) == LX_ENCRYPTED_MAGIC

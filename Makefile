@@ -187,6 +187,7 @@ mypy-requirement-files:
 	PY
 
 package:
+	devenv tasks run rust:stubs
 	@make pypi-clean
 	@make pypi-wheel
 	@make pypi-sdist

@@ -8,11 +8,10 @@ from lx_dtypes.models import SensitiveMeta
 from pydantic import ValidationError
 
 from endoreg_db.import_files.context.import_context import ImportContext
-from endoreg_db.utils.file_operations import sha256_file
 
 
 @pytest.mark.unit
-def test_import_context_computes_hash_and_coerces_paths(tmp_path: Path) -> None:
+def test_import_context_coerces_paths_without_computing_hash(tmp_path: Path) -> None:
     source = tmp_path / "source.pdf"
     source.write_bytes(b"source-payload")
 
@@ -28,7 +27,7 @@ def test_import_context_computes_hash_and_coerces_paths(tmp_path: Path) -> None:
     assert ctx.file_path == source
     assert ctx.original_path == source
     assert ctx.center_name == "test-center"
-    assert ctx.file_hash == sha256_file(source)
+    assert ctx.file_hash is None
     assert isinstance(ctx.extracted_metadata, SensitiveMeta)
 
 

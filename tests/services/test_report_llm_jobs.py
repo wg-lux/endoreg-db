@@ -150,7 +150,10 @@ def test_report_upload_import_inline_returns_report_poll_url_after_completion(
 
     assert result.status == "completed"
     assert result.report_id == report.pk
-    assert result.poll_url == f"/api/media/pdfs/{report.pk}/llm-jobs/{result.job_id}/"
+    assert (
+        result.poll_url
+        == f"/endoreg-api/media/pdfs/{report.pk}/llm-jobs/{result.job_id}/"
+    )
 
     job = ReportLlmInferenceJob.objects.get(upload_job=upload_job)
     assert getattr(job, "pdf_id") == report.pk

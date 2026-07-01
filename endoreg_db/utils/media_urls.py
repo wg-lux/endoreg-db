@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from endoreg_db.utils.api_urls import endoreg_api_path
+
 
 def _append_query(path: str, query: Mapping[str, Any] | None = None) -> str:
     if not query:
@@ -26,7 +28,7 @@ def build_video_stream_path(
     download: bool | None = None,
 ) -> str:
     return _append_query(
-        f"/api/media/videos/{video_id}/stream/",
+        endoreg_api_path(f"media/videos/{video_id}/stream/"),
         {
             "type": file_type,
             "download": 1 if download else None,
@@ -41,7 +43,7 @@ def build_pdf_stream_path(
     download: bool | None = None,
 ) -> str:
     return _append_query(
-        f"/api/media/pdfs/{pdf_id}/stream/",
+        endoreg_api_path(f"media/pdfs/{pdf_id}/stream/"),
         {
             "type": file_type,
             "download": 1 if download else None,
@@ -55,7 +57,7 @@ def build_patient_timeline_path(
     patient_examination_id: int | None = None,
 ) -> str:
     return _append_query(
-        f"/api/media/patients/{patient_id}/timeline/",
+        endoreg_api_path(f"media/patients/{patient_id}/timeline/"),
         {
             "patient_examination_id": patient_examination_id,
         },
@@ -66,7 +68,7 @@ def build_video_frame_stream_path(
     video_id: int,
     frame_number: int,
 ) -> str:
-    return f"/api/media/videos/{video_id}/frames/{frame_number}/stream/"
+    return endoreg_api_path(f"media/videos/{video_id}/frames/{frame_number}/stream/")
 
 
 def build_video_frame_decoded_stream_path(
@@ -76,7 +78,9 @@ def build_video_frame_decoded_stream_path(
     file_type: str,
 ) -> str:
     return _append_query(
-        f"/api/media/videos/{video_id}/frames/{frame_number}/decoded-stream/",
+        endoreg_api_path(
+            f"media/videos/{video_id}/frames/{frame_number}/decoded-stream/"
+        ),
         {"file_type": file_type},
     )
 

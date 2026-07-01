@@ -906,9 +906,9 @@ class PatientExaminationReportApi:
         frame_preview: SegmentFramePreviewData | None = None
         if selected_frame is not None:
             selected_frame_number_value = _frame_number(selected_frame)
-            frame_stream_path = (
-                f"/api/media/videos/{_segment_video_id(segment)}/frames/"
-                f"{selected_frame_number_value}/stream/"
+            frame_stream_path = build_video_frame_stream_path(
+                _segment_video_id(segment),
+                selected_frame_number_value,
             )
             frame_preview = {
                 "frame_id": _frame_pk(selected_frame),

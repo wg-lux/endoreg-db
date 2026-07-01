@@ -262,6 +262,14 @@ in
         .devenv/state/venv/bin/pytest tests/deployment/test_prod_settings_contract.py -q
       '';
     };
+    "rust:stubs" = {
+      description = "Regenerate Python stubs for the PyO3 Rust backend";
+      exec = ''
+        cargo run --manifest-path rust/endoreg_rust_backend/Cargo.toml --bin stub_gen
+        cp rust/endoreg_rust_backend/endoreg_rust_backend.pyi endoreg_db/endoreg_rust_backend.pyi
+        rm rust/endoreg_rust_backend/endoreg_rust_backend.pyi
+      '';
+    };
     "agent:pre-commit" = {
       description = "Run the full default pre-commit suite for agent preflight";
       exec = ".devenv/state/venv/bin/pre-commit run --all-files";

@@ -111,6 +111,11 @@ ROUTE_RESOURCE: RouteResourceMap = {
     "sensitive-metadata-list": "patient",
     "pdf-sensitive-metadata-list": "patient",
     "media-anonymization-metrics": "anonymization",
+    "quarantine-item-list": "anonymization",
+    "quarantine-sync": "anonymization",
+    "quarantine-reap-approved": "anonymization",
+    "quarantine-approve-deletion": "anonymization",
+    "quarantine-retain": "anonymization",
     "anonymization_items_overview": "anonymization",
     "upload_status": "patient",
     # Add more mappings as your API grows

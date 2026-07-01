@@ -111,10 +111,13 @@ deployments should use the packaged Python environment or fixed venv path, not
 /opt/endoreg-db/venv/bin/python /opt/endoreg-db/manage.py check_system_health --json
 ```
 
-Quarantine cleanup is dry-run unless confirmed:
+Quarantine cleanup is approval-gated. The dry run indexes current quarantine
+files and reports stale pending-review material. Confirmed deletion only removes
+files that have first been explicitly approved for deletion.
 
 ```sh
 /opt/endoreg-db/venv/bin/python /opt/endoreg-db/manage.py reap_quarantine --older-than-days 30 --dry-run --json
+/opt/endoreg-db/venv/bin/python /opt/endoreg-db/manage.py reap_quarantine --older-than-days 30 --approve-stale --decision-reason "retention period elapsed" --json
 /opt/endoreg-db/venv/bin/python /opt/endoreg-db/manage.py reap_quarantine --older-than-days 30 --confirm --json
 ```
 

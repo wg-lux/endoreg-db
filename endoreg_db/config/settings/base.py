@@ -255,7 +255,7 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-# Use a distinct module name to avoid ambiguity and mount API under /api/
+# Use a distinct module name to avoid ambiguity and mount API surfaces centrally.
 ROOT_URLCONF = "endoreg_db.root_urls"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 TIME_ZONE = get_time_zone()

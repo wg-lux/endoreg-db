@@ -98,5 +98,5 @@ class ReportLlmStatusScopeTests(TestCase):
         assert payload["job_id"] == self.job.job_key
         assert payload["report_id"] == self.report.pk
         assert payload["poll_url"] == (
-            f"/api/media/pdfs/{self.report.pk}/llm-jobs/{self.job.job_key}/"
+            f"/endoreg-api/media/pdfs/{self.report.pk}/llm-jobs/{self.job.job_key}/"
         )

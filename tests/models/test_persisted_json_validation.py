@@ -5,8 +5,15 @@ from datetime import date
 
 import pytest
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.utils import timezone
 
-from endoreg_db.models import AIModelTrainingRun, RawPdfFile, TransferJob, VideoFile
+from endoreg_db.models import (
+    AIModelTrainingRun,
+    QuarantineItem,
+    RawPdfFile,
+    TransferJob,
+    VideoFile,
+)
 
 
 def test_transfer_job_resource_rows_reject_unknown_video_keys() -> None:
@@ -173,3 +180,23 @@ def test_ai_model_training_run_validates_request_and_artifact_paths() -> None:
     with pytest.raises(DjangoValidationError) as exc_info:
         run.clean()
     assert "artifact_paths" in exc_info.value.message_dict
+
+
+def test_quarantine_item_validates_metadata_boundary() -> None:
+    now = timezone.now()
+    item = QuarantineItem(
+        path="/tmp/endoreg-quarantine/stale.bin",
+        relative_path="stale.bin",
+        size_bytes=5,
+        file_mtime_ns=123,
+        quarantined_at=now,
+        last_seen_at=now,
+        metadata={"source_event": "quarantine.discovered"},
+    )
+    item.clean()
+    assert item.metadata == {"source_event": "quarantine.discovered"}
+
+    item.metadata = {"unknown": True}
+    with pytest.raises(DjangoValidationError) as exc_info:
+        item.clean()
+    assert "metadata" in exc_info.value.message_dict

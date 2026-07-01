@@ -287,14 +287,12 @@ class VideoImportService:
         if not ctx.file_path.exists():
             raise FileNotFoundError(f"Video file not found: {file_path}")
 
+        ctx.file_hash = sha256_file(ctx.file_path)
         ctx.original_path = ctx.file_path
         lock_path = ctx.original_path
 
         with file_lock(lock_path):
             logger.info("Acquired file lock for %s", lock_path)
-            if ctx.file_hash is None:
-                raise ValueError("File hash missing.")
-
             with content_hash_lock(ctx.file_hash, _hash_lock_dir()):
                 logger.info("Acquired content-hash lock for %s", ctx.file_hash)
                 existing_completed_video = self._get_existing_completed_video(ctx)
@@ -454,16 +452,16 @@ class VideoImportService:
             with file_lock(local_source_path):
                 logger.info("Acquired file lock for re-anonymization: %s", video_hash)
                 center_name, processor_name = get_video_import_context_names(video)
+                source_hash = sha256_file(local_source_path)
                 ctx = ImportContext(
                     file_path=local_source_path,
                     center_name=center_name,
                     processor_name=processor_name,
                     file_type="video",
+                    file_hash=source_hash,
                 )
-                if ctx.file_hash is None:
-                    raise ValueError("File hash missing.")
 
-                with content_hash_lock(ctx.file_hash, _hash_lock_dir()):
+                with content_hash_lock(source_hash, _hash_lock_dir()):
                     logger.info(
                         "Acquired content-hash lock for re-anonymization: %s",
                         ctx.file_hash,

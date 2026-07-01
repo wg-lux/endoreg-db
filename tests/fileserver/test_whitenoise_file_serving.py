@@ -50,11 +50,11 @@ class WhiteNoiseFileServingTest(TestCase):
             self.video_file.delete_with_file()
 
     def test_video_file_accessible_via_url(self) -> None:
-        self.assertTrue(self.video_url.startswith("/api/media/videos/"))
+        self.assertTrue(self.video_url.startswith("/endoreg-api/media/videos/"))
         self.assertFalse(self.video_url.startswith("/protected_media/"))
         self.assertFalse(self.video_url.startswith("/media/"))
 
     def test_pdf_file_accessible_via_url(self) -> None:
-        self.assertTrue(self.pdf_url.startswith("/api/media/pdfs/"))
+        self.assertTrue(self.pdf_url.startswith("/endoreg-api/media/pdfs/"))
         self.assertFalse(self.pdf_url.startswith("/protected_media/"))
         self.assertFalse(self.pdf_url.startswith("/media/"))

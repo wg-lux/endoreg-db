@@ -206,11 +206,6 @@ class UploadFileView(APIView):
 
         # Validate file is not empty
         uploaded_file_size = uploaded_file.size
-        if uploaded_file_size is None:
-            return Response(
-                {"error": "Uploaded file size is unavailable."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
 
         if uploaded_file_size == 0:
             return Response(
@@ -219,13 +214,14 @@ class UploadFileView(APIView):
             )
 
         # Validate file size
-        if uploaded_file_size > self.MAX_FILE_SIZE:
-            return Response(
-                {
-                    "error": f"File too large. Maximum size is {self.MAX_FILE_SIZE // (1024**3)} GB."
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        if uploaded_file_size is not None:
+            if uploaded_file_size > self.MAX_FILE_SIZE:
+                return Response(
+                    {
+                        "error": f"File too large. Maximum size is {self.MAX_FILE_SIZE // (1024**3)} GB."
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         # Validate filename
         if not uploaded_file.name or uploaded_file.name.strip() == "":

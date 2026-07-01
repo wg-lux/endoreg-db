@@ -41,7 +41,7 @@ from .base import *  # noqa: F403  # bring in EVERYTHING from base.py first
 
 # ---- Django app & middleware wiring ----------------------------------------
 # Add the mozilla-django-oidc app (gives /oidc/authenticate/, /oidc/callback/, /oidc/logout/)
-# and our small middleware that redirects browsers hitting /api/* to the OIDC login.
+# and our small middleware that redirects browsers hitting protected routes to the OIDC login.
 # NOTE: AuthenticationMiddleware is already in base.py and MUST run before our middleware.
 globals()["INSTALLED_APPS"] = INSTALLED_APPS + KEYCLOAK.EXTRA_INSTALLED_APPS  # noqa: F405
 globals()["MIDDLEWARE"] = MIDDLEWARE + KEYCLOAK.EXTRA_MIDDLEWARE  # noqa: F405

@@ -551,7 +551,7 @@ class UploadEndpointTests(TestCase):
         report_job = response.json()["report_llm_job"]
         assert report_job["report_id"] == report.pk
         assert report_job["poll_url"] == (
-            f"/api/media/pdfs/{report.pk}/llm-jobs/{job.job_key}/"
+            f"/endoreg-api/media/pdfs/{report.pk}/llm-jobs/{job.job_key}/"
         )
 
     def test_upload_dispatches_inline_processing_when_celery_is_unavailable(self):

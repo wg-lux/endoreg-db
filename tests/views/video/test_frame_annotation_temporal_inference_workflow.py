@@ -439,6 +439,27 @@ class FrameAnnotationTemporalInferenceWorkflowIntegrationTest(TestCase):
         self.assertEqual(data["reason"], "video_reprocessing_active")
         self.assertEqual(data["blocked_by_history_id"], 789)
 
+    def test_rerun_prediction_segments_rejects_prediction_segment_append(self):
+        request = self.factory.post(
+            f"/api/media/videos/{self.video.pk}/segments/rerun-predictions/",
+            {
+                "model_meta_id": self.model_meta.pk,
+                "replace_prediction_segments": False,
+            },
+            format="json",
+        )
+
+        with patch(
+            "endoreg_db.views.video.ai.label.dispatch_video_temporal_inference",
+            side_effect=AssertionError("unsafe append rerun must not dispatch"),
+        ):
+            response = rerun_prediction_segments(request, self.video.pk)
+        data = json.loads(response.content)
+
+        self.assertEqual(response.status_code, 400, data)
+        self.assertEqual(data["error_type"], "invalid_options")
+        self.assertIn("replace existing prediction segments", data["error"])
+
     def test_manual_frame_annotation_after_temporal_prediction_excludes_completed_target(
         self,
     ):

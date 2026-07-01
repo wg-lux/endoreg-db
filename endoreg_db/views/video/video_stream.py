@@ -22,13 +22,15 @@ from rest_framework.request import Request
 from rest_framework.views import APIView
 
 from endoreg_db.authz.permissions import PolicyPermission
-from endoreg_db.config.env import raw_django_streaming_enabled
+from endoreg_db.config.env import (
+    nginx_offload_enabled,
+    raw_django_streaming_enabled,
+)
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.media.video.storage_mode import (
     VideoStorageMode,
     coerce_video_storage_mode,
 )
-from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.services.video_files import (
     VideoArtifactKind,
     get_active_raw_video_file,
@@ -44,10 +46,10 @@ from endoreg_db.services.media_operation_gate import (
 from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
 from endoreg_db.utils.nginx_accel import (
     build_nginx_accel_response,
-    nginx_offload_enabled,
 )
 from endoreg_db.utils.paths import resolve_existing_protected_media_path
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.rust_backend import is_lx_encrypted_file
 from endoreg_db.utils.storage_streaming import (
     add_cors_headers,
     build_partial_content_response,
@@ -65,14 +67,16 @@ StreamState: TypeAlias = Literal[
     "encrypted_streamable_artifact",
     "invalid_streamable_artifact",
     "missing_streamable_artifact",
+    "nginx_offload_required",
     "raw_django_streaming_disabled",
-    "streamable_repair_failed",
-    "streamable_repaired",
     "unreadable_streamable_artifact",
 ]
 
 
 def _path_starts_with_encrypted_magic(path: Path) -> bool:
+    rust_result = is_lx_encrypted_file(path)
+    if rust_result is not None:
+        return rust_result
     with path.open("rb") as handle:
         return handle.read(len(LX_ENCRYPTED_MAGIC)) == LX_ENCRYPTED_MAGIC
 
@@ -135,30 +139,6 @@ def _resolve_verified_streamable_path(
     return resolved_stream_path, None
 
 
-def _try_repair_streamable_artifact(
-    video: VideoFile,
-    artifact_kind: VideoArtifactKind,
-) -> StreamState:
-    try:
-        sync_video_streamable_artifacts(
-            video,
-            include_raw=artifact_kind == VideoArtifactKind.RAW,
-            include_processed=artifact_kind == VideoArtifactKind.PROCESSED,
-            save=True,
-        )
-    except Exception as exc:
-        logger.warning(
-            "Could not repair streamable video artifact for id=%s type=%s: %s",
-            getattr(video, "pk", None),
-            artifact_kind.value,
-            exc,
-            exc_info=True,
-        )
-        return "streamable_repair_failed"
-
-    return "streamable_repaired"
-
-
 def _field_file_for_stream(
     video: VideoFile, artifact_kind: VideoArtifactKind
 ) -> FieldFile | None:
@@ -176,6 +156,25 @@ def _add_cors_headers_if_configured(
     if frontend_origin is None:
         return response
     return add_cors_headers(response, frontend_origin)
+
+
+def _streamable_not_ready_response(
+    *,
+    video: VideoFile,
+    file_type: str,
+    stream_state: StreamState | None,
+    frontend_origin: str | None,
+) -> HttpResponseBase:
+    logger.warning(
+        "Refusing Django video streaming fallback for video id=%s type=%s "
+        "state=%s; Nginx offload requires a verified streamable artifact.",
+        getattr(video, "pk", None),
+        file_type,
+        stream_state or "missing_streamable_artifact",
+    )
+    response = HttpResponse(status=409, content_type="text/plain")
+    response["X-Stream-State"] = stream_state or "missing_streamable_artifact"
+    return _add_cors_headers_if_configured(response, frontend_origin)
 
 
 class VideoStreamView(APIView):
@@ -228,6 +227,14 @@ class VideoStreamView(APIView):
         artifact_kind = self._parse_file_type(request)
         file_type = artifact_kind.value
         frontend_origin = resolve_response_origin(request)
+        if nginx_offload_enabled() and not _video_uses_streamable_mode(video):
+            return _streamable_not_ready_response(
+                video=video,
+                file_type=file_type,
+                stream_state="nginx_offload_required",
+                frontend_origin=frontend_origin,
+            )
+
         range_header = self._range_header(request)
         stream_state: StreamState | None = None
         stream_relative_path = get_video_stream_relative_path(video, artifact_kind)
@@ -237,20 +244,6 @@ class VideoStreamView(APIView):
             )
 
             if nginx_offload_enabled():
-                if resolved_stream_path is None:
-                    repair_state = _try_repair_streamable_artifact(
-                        video,
-                        artifact_kind,
-                    )
-                    stream_relative_path = get_video_stream_relative_path(
-                        video,
-                        artifact_kind,
-                    )
-                    resolved_stream_path, unresolved_state = (
-                        _resolve_verified_streamable_path(stream_relative_path)
-                    )
-                    stream_state = unresolved_state or repair_state
-
                 if (
                     resolved_stream_path is not None
                     and stream_relative_path is not None
@@ -278,6 +271,12 @@ class VideoStreamView(APIView):
                             getattr(stream_lease, "token")
                         )
                     return response
+                return _streamable_not_ready_response(
+                    video=video,
+                    file_type=file_type,
+                    stream_state=stream_state,
+                    frontend_origin=frontend_origin,
+                )
 
         try:
             field_file, local_path = resolve_video_stream_source(

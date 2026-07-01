@@ -16,6 +16,7 @@ from endoreg_db.utils.file_operations import (
     ensure_directory,
     safe_unlink_file,
 )
+from endoreg_db.utils.rust_backend import is_lx_encrypted_file
 
 from .encryption import (
     DEFAULT_CHUNK_SIZE,
@@ -99,6 +100,10 @@ class EncryptedStorage(FileSystemStorage):
         return open(full_path, "rb")
 
     def is_encrypted(self, name: str) -> bool:
+        full_path = Path(self.path(name))
+        rust_result = is_lx_encrypted_file(full_path)
+        if rust_result is not None:
+            return rust_result
         with self.open_encrypted(name) as source:
             return source.read(len(MAGIC)) == MAGIC
 

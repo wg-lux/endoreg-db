@@ -10,7 +10,10 @@ from typing import TYPE_CHECKING
 from django.db import models, transaction
 from django.utils import timezone
 
-from endoreg_db.models.state.anonymization import AnonymizationState
+from endoreg_db.models.state.anonymization import (
+    AnonymizationState,
+    derive_video_anonymization_state,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -155,22 +158,15 @@ class VideoState(models.Model):
         """
         Fast, side‑effect‑free status resolution used by API & UI.
         """
-        if self.processing_error:
-            return AnonymizationState.FAILED
-        if self.anonymization_validated:
-            return AnonymizationState.VALIDATED
-        if self.sensitive_meta_processed:
-            return AnonymizationState.DONE_PROCESSING_ANONYMIZATION
-        if self.frames_extracted and not self.anonymized:
-            return AnonymizationState.PROCESSING_ANONYMIZING
-        if self.was_created and not self.frames_extracted:
-            return AnonymizationState.EXTRACTING_FRAMES
-        if self.processing_started:
-            return AnonymizationState.STARTED
-        if self.anonymized:
-            return AnonymizationState.ANONYMIZED
-
-        return AnonymizationState.NOT_STARTED
+        return derive_video_anonymization_state(
+            processing_error=self.processing_error,
+            anonymization_validated=self.anonymization_validated,
+            sensitive_meta_processed=self.sensitive_meta_processed,
+            frames_extracted=self.frames_extracted,
+            anonymized=self.anonymized,
+            was_created=self.was_created,
+            processing_started=self.processing_started,
+        )
 
     @classmethod
     def anonymization_status_case(

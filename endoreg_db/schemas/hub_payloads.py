@@ -207,6 +207,19 @@ class TransferProvenancePayload(BaseModel):
     custom_marker: str | None = None
 
 
+class QuarantineItemMetadataPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    source_event: str | None = None
+    source_system: str | None = None
+    reason: str | None = None
+    original_path: str | None = None
+    file_mtime_ns: int | None = None
+    discovered_by: str | None = None
+    upload_job_id: str | None = None
+    content_type: str | None = None
+
+
 def _validated_json_payload(model_cls: type[BaseModel], value: Any) -> dict[str, Any]:
     if value is None:
         return {}
@@ -227,13 +240,19 @@ def validate_transfer_provenance_payload(value: Any) -> dict[str, Any]:
     return _validated_json_payload(TransferProvenancePayload, value)
 
 
+def validate_quarantine_item_metadata(value: Any) -> dict[str, Any]:
+    return _validated_json_payload(QuarantineItemMetadataPayload, value)
+
+
 __all__ = [
     "LocalStudyServerPreanonymizedIngestPayload",
     "PreanonymizedIngestPayload",
+    "QuarantineItemMetadataPayload",
     "TransferCaseResolutionPayload",
     "TransferMediaUploadPayload",
     "TransferProvenancePayload",
     "UploadProvenancePayload",
+    "validate_quarantine_item_metadata",
     "validate_transfer_provenance_payload",
     "validate_upload_provenance_payload",
 ]

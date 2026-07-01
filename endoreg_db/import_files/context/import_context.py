@@ -15,8 +15,6 @@ from pydantic import (
 
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.utils.file_operations import sha256_file
-
 
 _SHA256_PATTERN = re.compile(r"^[0-9a-fA-F]{64}$")
 _REPORT_SUFFIXES = frozenset({".pdf", ".txt"})
@@ -89,16 +87,11 @@ class ImportContext(BaseModel):
     instance: SkipValidation[RawPdfFile | VideoFile | None] = None
     file_type: Literal["undefined", "video", "report"] = "undefined"
 
-    # Populated in model_post_init from file_path content.
     file_hash: str | None = None
 
     original_text: str | None = None
     anonymized_text: str | None = None
     extracted_metadata: LxSensitiveMeta = Field(default_factory=LxSensitiveMeta)
-
-    def model_post_init(self, __context: object) -> None:
-        """Compute the raw file hash after validation/coercion."""
-        self.file_hash = sha256_file(self.file_path)
 
     @model_validator(mode="after")
     def _validate_file_type_matches_path(self) -> Self:

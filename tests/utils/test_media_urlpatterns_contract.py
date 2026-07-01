@@ -24,6 +24,31 @@ EXPECTED_MEDIA_ROUTE_CONTRACT: list[RouteContract] = [
         "endoreg_db.views.media.hub.transfers.HubTransferMediaUploadView",
     ),
     (
+        "media/quarantine/",
+        "quarantine-item-list",
+        "endoreg_db.views.media.hub.quarantine.QuarantineItemListView",
+    ),
+    (
+        "media/quarantine/sync/",
+        "quarantine-sync",
+        "endoreg_db.views.media.hub.quarantine.QuarantineSyncView",
+    ),
+    (
+        "media/quarantine/reap-approved/",
+        "quarantine-reap-approved",
+        "endoreg_db.views.media.hub.quarantine.QuarantineReapApprovedView",
+    ),
+    (
+        "media/quarantine/<uuid:item_id>/approve-deletion/",
+        "quarantine-approve-deletion",
+        "endoreg_db.views.media.hub.quarantine.QuarantineApproveDeletionView",
+    ),
+    (
+        "media/quarantine/<uuid:item_id>/retain/",
+        "quarantine-retain",
+        "endoreg_db.views.media.hub.quarantine.QuarantineRetainView",
+    ),
+    (
         "media/patients/<int:patient_id>/timeline/",
         "patient-media-timeline",
         "endoreg_db.views.media.patient_media_timeline.PatientMediaTimelineView",
@@ -303,6 +328,7 @@ def _route_contract(pattern: URLPattern) -> RouteContract:
 def test_media_urlpatterns_reexports_flattened_concern_lists() -> None:
     assert media.urlpatterns == [
         *media.HUB_TRANSFER_URLPATTERNS,
+        *media.QUARANTINE_URLPATTERNS,
         *media.MEDIA_OVERVIEW_URLPATTERNS,
         *media.VIDEO_MEDIA_URLPATTERNS,
         *media.VIDEO_ANNOTATION_URLPATTERNS,

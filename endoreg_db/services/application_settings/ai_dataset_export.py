@@ -16,6 +16,7 @@ from endoreg_db.services.hub import (
     resolve_allowed_center_id,
 )
 from endoreg_db.utils import paths as path_settings
+from endoreg_db.utils.api_urls import endoreg_api_path
 from endoreg_db.utils.set_default_center import get_application_settings
 from endoreg_db.utils.file_operations import atomic_write_file, sha256_file
 
@@ -104,8 +105,8 @@ def sanitize_export_token(value: str) -> str:
 
 
 def ai_dataset_export_download_url(artifact: AIDataSetExportArtifact) -> str:
-    return (
-        f"/api/settings/application/ai_dataset_export/{artifact.artifact_key}/download/"
+    return endoreg_api_path(
+        f"settings/application/ai_dataset_export/{artifact.artifact_key}/download/"
     )
 
 

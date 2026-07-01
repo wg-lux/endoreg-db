@@ -49,6 +49,7 @@ from endoreg_db.services.video_temporal_inference import (
     dispatch_video_temporal_inference,
     extract_temporal_options,
 )
+from endoreg_db.utils.api_urls import endoreg_api_path
 from endoreg_db.utils.storage import ensure_local_file
 
 logger = logging.getLogger(__name__)
@@ -425,7 +426,7 @@ def _job_dispatch_result(
         video_id=int(video_id),
         queue=queue,
         history_id=history_id,
-        poll_url=f"/api/media/videos/{int(video_id)}/processing-history/",
+        poll_url=endoreg_api_path(f"media/videos/{int(video_id)}/processing-history/"),
         message=message,
         reason=reason,
         prediction_refresh=prediction_refresh,

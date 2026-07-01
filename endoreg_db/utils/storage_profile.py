@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import logging
+from collections.abc import Mapping
+from dataclasses import dataclass
 from enum import StrEnum
+from types import MappingProxyType
 
 from endoreg_db.config.env import get_endoreg_storage_profile_name
-
-logger = logging.getLogger(__name__)
-
-_STATE = {"legacy_profile_warning_emitted": False}
+from endoreg_db.utils.rust_backend import storage_profile_policy_rows
 
 
 class StorageProfile(StrEnum):
@@ -30,32 +29,73 @@ class StoragePolicy(StrEnum):
     FS_STREAMABLE = "fs_streamable"
 
 
-PROFILE_POLICY_MAP: dict[StorageProfile, dict[PayloadKind, StoragePolicy]] = {
-    StorageProfile.STRICT_APP_ENCRYPTED: {
-        PayloadKind.VIDEO_RAW: StoragePolicy.APP_ENCRYPTED,
-        PayloadKind.VIDEO_PROCESSED: StoragePolicy.APP_ENCRYPTED,
-        PayloadKind.REPORT_PDF: StoragePolicy.APP_ENCRYPTED,
-        PayloadKind.METADATA: StoragePolicy.APP_ENCRYPTED,
-        PayloadKind.SIDECAR: StoragePolicy.APP_ENCRYPTED,
-        PayloadKind.MANIFEST: StoragePolicy.APP_ENCRYPTED,
-    },
-    StorageProfile.FS_ENCRYPTED_STREAMING: {
-        PayloadKind.VIDEO_RAW: StoragePolicy.APP_ENCRYPTED,
-        PayloadKind.VIDEO_PROCESSED: StoragePolicy.FS_STREAMABLE,
-        PayloadKind.REPORT_PDF: StoragePolicy.APP_ENCRYPTED,
-        PayloadKind.METADATA: StoragePolicy.APP_ENCRYPTED,
-        PayloadKind.SIDECAR: StoragePolicy.APP_ENCRYPTED,
-        PayloadKind.MANIFEST: StoragePolicy.APP_ENCRYPTED,
-    },
-    StorageProfile.HYBRID_DEFAULT: {
-        PayloadKind.VIDEO_RAW: StoragePolicy.APP_ENCRYPTED,
-        PayloadKind.VIDEO_PROCESSED: StoragePolicy.FS_STREAMABLE,
-        PayloadKind.REPORT_PDF: StoragePolicy.APP_ENCRYPTED,
-        PayloadKind.METADATA: StoragePolicy.APP_ENCRYPTED,
-        PayloadKind.SIDECAR: StoragePolicy.APP_ENCRYPTED,
-        PayloadKind.MANIFEST: StoragePolicy.APP_ENCRYPTED,
-    },
-}
+@dataclass(frozen=True, slots=True)
+class StorageProfileState:
+    profile: StorageProfile
+    policies: Mapping[PayloadKind, StoragePolicy]
+
+    def policy_for(self, payload_kind: PayloadKind | str) -> StoragePolicy:
+        return self.policies[PayloadKind(payload_kind)]
+
+    def requires_app_encrypted(self, payload_kind: PayloadKind | str) -> bool:
+        return self.policy_for(payload_kind) == StoragePolicy.APP_ENCRYPTED
+
+    def prefers_fs_streamable_video_storage(self) -> bool:
+        return self.policy_for(PayloadKind.VIDEO_RAW) == StoragePolicy.FS_STREAMABLE
+
+
+def _load_profile_policy_map_from_rust() -> Mapping[
+    StorageProfile, Mapping[PayloadKind, StoragePolicy]
+]:
+    rows = storage_profile_policy_rows()
+    if rows is None:
+        raise RuntimeError(
+            "Rust storage profile policy table is unavailable. "
+            "Storage routing requires endoreg_rust_backend."
+        )
+
+    mutable_map: dict[StorageProfile, dict[PayloadKind, StoragePolicy]] = {}
+    for profile_value, payload_kind_value, storage_policy_value in rows:
+        profile = StorageProfile(profile_value)
+        payload_kind = PayloadKind(payload_kind_value)
+        storage_policy = StoragePolicy(storage_policy_value)
+        profile_policies = mutable_map.setdefault(profile, {})
+        if payload_kind in profile_policies:
+            raise RuntimeError(
+                "Duplicate Rust storage profile policy row for "
+                f"profile={profile.value} payload_kind={payload_kind.value}"
+            )
+        profile_policies[payload_kind] = storage_policy
+
+    return MappingProxyType(
+        {
+            profile: MappingProxyType(dict(policies))
+            for profile, policies in mutable_map.items()
+        }
+    )
+
+
+PROFILE_POLICY_MAP = _load_profile_policy_map_from_rust()
+
+
+def _validate_profile_policy_map() -> None:
+    required_payload_kinds = set(PayloadKind)
+    for profile in StorageProfile:
+        policies = PROFILE_POLICY_MAP.get(profile)
+        if policies is None:
+            raise RuntimeError(f"Missing storage policies for profile {profile.value}")
+        missing = required_payload_kinds.difference(policies)
+        extra = set(policies).difference(required_payload_kinds)
+        if missing or extra:
+            missing_text = ", ".join(sorted(kind.value for kind in missing)) or "none"
+            extra_text = ", ".join(sorted(kind.value for kind in extra)) or "none"
+            raise RuntimeError(
+                "Storage profile policy map is not exhaustive for "
+                f"{profile.value}: missing={missing_text} extra={extra_text}"
+            )
+
+
+_validate_profile_policy_map()
 
 
 def _bool_env(name: str) -> bool | None:
@@ -72,28 +112,11 @@ def _bool_env(name: str) -> bool | None:
     return None
 
 
-def _emit_legacy_profile_warning(message: str) -> None:
-    if _STATE["legacy_profile_warning_emitted"]:
-        return
-    logger.warning(message)
-    _STATE["legacy_profile_warning_emitted"] = True
-
-
 def infer_storage_profile_from_legacy_env() -> StorageProfile:
     legacy_encrypted_storage = _bool_env("LX_ANNOTATE_USE_ENCRYPTED_STORAGE")
     if legacy_encrypted_storage is False:
-        _emit_legacy_profile_warning(
-            "LX_ANNOTATE_USE_ENCRYPTED_STORAGE is deprecated; mapping legacy "
-            "disabled encrypted storage mode to ENDOREG_STORAGE_PROFILE="
-            "fs_encrypted_streaming."
-        )
         return StorageProfile.FS_ENCRYPTED_STREAMING
     if legacy_encrypted_storage is True:
-        _emit_legacy_profile_warning(
-            "LX_ANNOTATE_USE_ENCRYPTED_STORAGE is deprecated; mapping legacy "
-            "enabled encrypted storage mode to ENDOREG_STORAGE_PROFILE="
-            "hybrid_default."
-        )
         return StorageProfile.HYBRID_DEFAULT
     return StorageProfile.HYBRID_DEFAULT
 
@@ -105,28 +128,30 @@ def get_storage_profile() -> StorageProfile:
     return infer_storage_profile_from_legacy_env()
 
 
+def resolve_storage_profile_state(
+    profile: StorageProfile | str | None = None,
+) -> StorageProfileState:
+    resolved_profile = (
+        get_storage_profile() if profile is None else StorageProfile(profile)
+    )
+    return StorageProfileState(
+        profile=resolved_profile,
+        policies=MappingProxyType(dict(PROFILE_POLICY_MAP[resolved_profile])),
+    )
+
+
 def resolve_storage_policy(
     payload_kind: PayloadKind | str,
     *,
     profile: StorageProfile | str | None = None,
 ) -> StoragePolicy:
-    resolved_profile = (
-        get_storage_profile() if profile is None else StorageProfile(profile)
-    )
-    resolved_kind = PayloadKind(payload_kind)
-    return PROFILE_POLICY_MAP[resolved_profile][resolved_kind]
+    return resolve_storage_profile_state(profile).policy_for(payload_kind)
 
 
 def prefers_fs_streamable_video_storage(
     *, profile: StorageProfile | str | None = None
 ) -> bool:
-    return (
-        resolve_storage_policy(
-            PayloadKind.VIDEO_RAW,
-            profile=profile,
-        )
-        == StoragePolicy.FS_STREAMABLE
-    )
+    return resolve_storage_profile_state(profile).prefers_fs_streamable_video_storage()
 
 
 def requires_app_encrypted_storage(
@@ -134,16 +159,11 @@ def requires_app_encrypted_storage(
     *,
     profile: StorageProfile | str | None = None,
 ) -> bool:
-    return (
-        resolve_storage_policy(payload_kind, profile=profile)
-        == StoragePolicy.APP_ENCRYPTED
-    )
+    return resolve_storage_profile_state(profile).requires_app_encrypted(payload_kind)
 
 
 def storage_profile_warning(profile: StorageProfile | str | None = None) -> str | None:
-    resolved_profile = (
-        get_storage_profile() if profile is None else StorageProfile(profile)
-    )
+    resolved_profile = resolve_storage_profile_state(profile).profile
     if resolved_profile == StorageProfile.STRICT_APP_ENCRYPTED:
         return (
             "ENDOREG_STORAGE_PROFILE=strict_app_encrypted forces videos onto "

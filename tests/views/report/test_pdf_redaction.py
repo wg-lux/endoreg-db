@@ -104,7 +104,7 @@ class TestPdfRedactionEndpoints:
         assert data["anonymization_validated"] is False
         assert (
             data["processed_stream_url"]
-            == f"/api/media/pdfs/{pdf.pk}/stream/?type=processed"
+            == f"/endoreg-api/media/pdfs/{pdf.pk}/stream/?type=processed"
         )
 
         pdf.refresh_from_db()

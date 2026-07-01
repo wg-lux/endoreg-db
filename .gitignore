@@ -209,3 +209,5 @@ lx-report-generator/
 lx-terminology-editor/
 tools/report_pdf_renderer_rust/
 *.safetensors
+
+*.bak

@@ -160,7 +160,10 @@ class PatientMediaTimelineViewTests(TestCase):
             segment_other.pk,
         ]
         for frame_item in latest_frames:
-            expected_path = f"/api/media/videos/{video.pk}/frames/{frame_item['frame_number']}/stream/"
+            expected_path = (
+                f"/endoreg-api/media/videos/{video.pk}/frames/"
+                f"{frame_item['frame_number']}/stream/"
+            )
             assert frame_item["stream_url"].endswith(expected_path)
             assert frame_item["selection_source"] == "segment_priority"
 
@@ -192,7 +195,7 @@ class PatientMediaTimelineViewTests(TestCase):
         assert latest_report["anonymized_text"] == "FULL REPORT TEXT"
         assert [entry["type"] for entry in latest_report["stream_options"]] == ["raw"]
         assert all(
-            f"/api/media/pdfs/{raw_pdf.pk}/stream/" in option["url"]
+            f"/endoreg-api/media/pdfs/{raw_pdf.pk}/stream/" in option["url"]
             for option in latest_report["stream_options"]
         )
 
@@ -234,5 +237,8 @@ class PatientMediaTimelineViewTests(TestCase):
         assert all(item["category"] == "fallback_latest" for item in latest_frames)
         assert all(item["selection_source"] == "latest_frame" for item in latest_frames)
         for frame_item in latest_frames:
-            expected_path = f"/api/media/videos/{video.pk}/frames/{frame_item['frame_number']}/stream/"
+            expected_path = (
+                f"/endoreg-api/media/videos/{video.pk}/frames/"
+                f"{frame_item['frame_number']}/stream/"
+            )
             assert frame_item["stream_url"].endswith(expected_path)

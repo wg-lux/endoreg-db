@@ -26,10 +26,12 @@ from .ai_training_manifest import (
 from .hub_payloads import (
     LocalStudyServerPreanonymizedIngestPayload,
     PreanonymizedIngestPayload,
+    QuarantineItemMetadataPayload,
     TransferCaseResolutionPayload,
     TransferMediaUploadPayload,
     TransferProvenancePayload,
     UploadProvenancePayload,
+    validate_quarantine_item_metadata,
     validate_transfer_provenance_payload,
     validate_upload_provenance_payload,
 )
@@ -109,6 +111,7 @@ __all__ = [
     "MediaStreamFileKind",
     "LocalStudyServerPreanonymizedIngestPayload",
     "PreanonymizedIngestPayload",
+    "QuarantineItemMetadataPayload",
     "RawPdfMetaPayload",
     "StreamThrottleMode",
     "TransferCaseResolutionPayload",
@@ -154,6 +157,7 @@ __all__ = [
     "validate_ai_model_training_result_payload",
     "validate_dtypes_p_examination_payload",
     "validate_raw_pdf_meta_payload",
+    "validate_quarantine_item_metadata",
     "validate_transfer_processing_snapshot",
     "validate_transfer_provenance_payload",
     "validate_transfer_resource_rows",

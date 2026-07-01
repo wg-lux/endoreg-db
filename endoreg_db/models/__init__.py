@@ -166,7 +166,7 @@ from .aidataset import (
     AIDataSetExportArtifact,
     AIModelTrainingRun,
 )
-from .hub import TransferJob, UploadJob
+from .hub import QuarantineItem, TransferJob, UploadJob
 
 
 __all__ = [
@@ -243,6 +243,7 @@ __all__ = [
     "PatientExaminationReport",
     "TransferJob",
     "UploadJob",
+    "QuarantineItem",
     ######## Medical ########
     # Disease
     "Disease",

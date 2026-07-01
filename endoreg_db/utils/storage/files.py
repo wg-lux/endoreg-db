@@ -22,6 +22,10 @@ from django.core.files import File
 from django.conf import settings
 from django.db.models.fields.files import FieldFile
 from endoreg_db.utils.encryption.encryption import MAGIC as LX_ENCRYPTED_MAGIC
+from endoreg_db.utils.rust_backend import (
+    copy_file_descriptor_to_path,
+    is_lx_encrypted_file,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -47,13 +51,13 @@ class _StoredFieldFile(Protocol):
 
     def delete(self, *, save: bool = False) -> None: ...
 
-    def save(self, name: str, content: File[bytes], save: bool = False) -> None: ...
+    def save(self, name: str, content: "File[Any]", save: bool = False) -> None: ...
 
 
 class _BinaryFileStorage(Protocol):
-    def open(self, name: str, mode: str = "rb") -> File[bytes]: ...
+    def open(self, name: str, mode: str = "rb") -> "File[Any]": ...
 
-    def save(self, name: str, content: File[bytes]) -> str: ...
+    def save(self, name: str, content: "File[Any]") -> str: ...
 
     def delete(self, name: str) -> None: ...
 
@@ -78,11 +82,18 @@ def _resolve_local_path(field_file: FieldFile) -> Optional[Path]:
         return _resolve_media_root_fallback(field_file)
     if path.exists():
         try:
-            with path.open("rb") as handle:
-                if handle.read(len(LX_ENCRYPTED_MAGIC)) == LX_ENCRYPTED_MAGIC:
-                    raise IOError(
-                        f"{field_file.name} is encrypted but storage has no decrypting reader"
+            rust_result = is_lx_encrypted_file(path)
+            if rust_result is None:
+                with path.open("rb") as handle:
+                    is_encrypted = (
+                        handle.read(len(LX_ENCRYPTED_MAGIC)) == LX_ENCRYPTED_MAGIC
                     )
+            else:
+                is_encrypted = rust_result
+            if is_encrypted:
+                raise IOError(
+                    f"{field_file.name} is encrypted but storage has no decrypting reader"
+                )
         except OSError as e:
             raise OSError(f"OS Error: {e}")
         return path
@@ -91,6 +102,14 @@ def _resolve_local_path(field_file: FieldFile) -> Optional[Path]:
     if fallback_path is not None:
         return fallback_path
     return path
+
+
+def _path_has_lx_encrypted_magic(path: Path) -> bool:
+    rust_result = is_lx_encrypted_file(path)
+    if rust_result is not None:
+        return rust_result
+    with path.open("rb") as handle:
+        return handle.read(len(LX_ENCRYPTED_MAGIC)) == LX_ENCRYPTED_MAGIC
 
 
 def _resolve_media_root_fallback(field_file: FieldFile) -> Optional[Path]:
@@ -115,12 +134,37 @@ def _resolve_media_root_fallback(field_file: FieldFile) -> Optional[Path]:
     if not candidate.exists():
         return None
 
-    with candidate.open("rb") as handle:
-        if handle.read(len(LX_ENCRYPTED_MAGIC)) == LX_ENCRYPTED_MAGIC:
-            raise IOError(
-                f"{field_file.name} is encrypted but storage has no decrypting reader"
-            )
+    if _path_has_lx_encrypted_magic(candidate):
+        raise IOError(
+            f"{field_file.name} is encrypted but storage has no decrypting reader"
+        )
     return candidate
+
+
+def _copy_storage_stream_to_local_file(
+    *,
+    source: BinaryIO,
+    target_path: Path,
+    target_file: Any,
+    chunk_size: int,
+) -> None:
+    try:
+        source_fd = source.fileno()
+    except (AttributeError, io.UnsupportedOperation, OSError):
+        source_fd = None
+
+    if source_fd is not None:
+        copied = copy_file_descriptor_to_path(
+            source_fd=source_fd,
+            target_path=target_path,
+            chunk_size=chunk_size,
+        )
+        if copied is not None:
+            return
+
+    shutil.copyfileobj(source, target_file, length=chunk_size)
+    target_file.flush()
+    os.fsync(target_file.fileno())
 
 
 def file_exists(field_file: Optional[FieldFile]) -> bool:
@@ -213,11 +257,12 @@ def ensure_local_file(
                     except (io.UnsupportedOperation, OSError):
                         pass
 
-                shutil.copyfileobj(source, tmp_file, length=chunk_size)
-
-            # 2. Force the OS to write the buffers to the actual physical disk
-            tmp_file.flush()
-            os.fsync(tmp_file.fileno())
+                _copy_storage_stream_to_local_file(
+                    source=source,
+                    target_path=temp_path,
+                    target_file=tmp_file,
+                    chunk_size=chunk_size,
+                )
 
         except Exception as exc:
             temp_path.unlink(missing_ok=True)
@@ -306,7 +351,7 @@ def save_local_file(
             pass
 
     with source_path.open("rb") as source:
-        django_file: File[bytes] = File(source, name=filename)
+        django_file: "File[Any]" = File(source, name=filename)
         if has_explicit_storage_path or overwrite:
             saved_name = stored_file.storage.save(storage_name, django_file)
             stored_file.name = str(saved_name)

@@ -23,6 +23,7 @@ from rest_framework.views import APIView
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+from endoreg_db.utils.api_urls import endoreg_api_path
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 if TYPE_CHECKING:
@@ -311,10 +312,11 @@ class PdfMediaView(APIView):
         )
 
     def delete(self, request: Request, pk: int) -> Response:
+        force_remove_path = endoreg_api_path(f"media-management/force-remove/{pk}/")
         return Response(
             {
                 "error": "report deletion not yet implemented",
-                "alternative": f"Use DELETE /api/media-management/force-remove/{pk}/ instead",
+                "alternative": f"Use DELETE {force_remove_path} instead",
             },
             status=status.HTTP_501_NOT_IMPLEMENTED,
         )

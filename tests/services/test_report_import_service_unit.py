@@ -11,6 +11,7 @@ from endoreg_db.utils.file_operations import (
     atomic_write_file,
     ensure_directory,
     safe_unlink_file,
+    sha256_file,
 )
 
 ris = ReportImportService()
@@ -78,6 +79,7 @@ class TestReportImportServiceUnit(unittest.TestCase):
                 file_path=pdf_path,
                 center_name="dummy-center",
             )
+            ctx.file_hash = sha256_file(pdf_path)
             existing_report = object()
             has_history_mock.return_value = True
             get_report_by_hash_mock.return_value = existing_report

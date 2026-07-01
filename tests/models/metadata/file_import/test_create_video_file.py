@@ -277,6 +277,7 @@ def test_create_or_retrieve_success_history_unusable_processed_file_needs_proces
         processor_name="olympus_cv_1500",
     )
     ctx.sensitive_path = sensitive_path
+    ctx.file_hash = sha256_file(source_path)
 
     assert isinstance(ctx.file_hash, str)
     video = video_file_module.VideoFile(video_hash=ctx.file_hash)
@@ -364,6 +365,7 @@ def test_create_or_retrieve_failure_history_missing_video_imports_fresh(
         processor_name="olympus_cv_1500",
     )
     ctx.sensitive_path = sensitive_path
+    ctx.file_hash = sha256_file(source_path)
 
     assert isinstance(ctx.file_hash, str)
     captured_file_paths: list[Path] = []

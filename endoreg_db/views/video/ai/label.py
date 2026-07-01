@@ -309,6 +309,12 @@ def rerun_prediction_segments(
             status_code=status.HTTP_400_BAD_REQUEST,
             error_type="invalid_options",
         )
+    if not payload.replace_prediction_segments:
+        return _error_response(
+            "Prediction reruns must replace existing prediction segments.",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error_type="invalid_options",
+        )
 
     try:
         model_meta = _resolve_prediction_model_meta(payload)

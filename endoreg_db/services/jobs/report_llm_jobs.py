@@ -24,6 +24,7 @@ from endoreg_db.services.jobs.heavy_jobs import (
 )
 from endoreg_db.services.hub.cleanup import cleanup_upload_job_source
 from endoreg_db.services.report_import import ReportImportService
+from endoreg_db.utils.api_urls import endoreg_api_path
 from endoreg_db.utils.storage import ensure_local_file
 
 logger = logging.getLogger(__name__)
@@ -124,7 +125,7 @@ def _json_safe_dict(payload: Any) -> ReportLlmJobJsonObject:
 
 
 def _report_llm_poll_url(*, report_id: int, job_id: str) -> str:
-    return f"/api/media/pdfs/{int(report_id)}/llm-jobs/{job_id}/"
+    return endoreg_api_path(f"media/pdfs/{int(report_id)}/llm-jobs/{job_id}/")
 
 
 def _report_upload_jobs(pdf: RawPdfFile):

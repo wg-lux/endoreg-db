@@ -15,6 +15,7 @@ from endoreg_db.utils.paths import (
     ensure_within_protected_root,
     resolve_existing_protected_media_path,
 )
+from endoreg_db.utils.rust_backend import is_lx_encrypted_file
 
 RANGE_RE = re.compile(r"bytes=(\d+)-(\d*)$")
 
@@ -168,6 +169,9 @@ def iter_file_path_bytes(
 
 
 def _path_starts_with_encryption_magic(path: Path) -> bool:
+    rust_result = is_lx_encrypted_file(path)
+    if rust_result is not None:
+        return rust_result
     try:
         with path.open("rb") as handle:
             return handle.read(len(LX_ENCRYPTED_MAGIC)) == LX_ENCRYPTED_MAGIC
