@@ -16,9 +16,11 @@ from __future__ import annotations
 import os
 import sys
 
+SMOKE_SETTINGS_MODULE = "endoreg_db.config.settings.test"
+
 
 def main() -> int:
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "endoreg_db.config.settings.test")
+    os.environ["DJANGO_SETTINGS_MODULE"] = SMOKE_SETTINGS_MODULE
     os.environ.setdefault("DJANGO_DEBUG", "1")
     os.environ.setdefault("LX_ANNOTATE_ENCRYPTED_DATA_DIR", "data")
     os.environ.setdefault("STORAGE_DIR", "data/storage")

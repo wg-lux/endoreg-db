@@ -59,7 +59,7 @@ class StreamableMediaState:
 
 @dataclass(frozen=True, slots=True)
 class StreamableTranscodeProfile:
-    height_px: int = 240
+    height_px: int = 480
     codec: str = "libx264"
     crf: int = 35
     preset: str = "veryfast"

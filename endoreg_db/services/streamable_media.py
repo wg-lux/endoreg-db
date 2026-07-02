@@ -338,6 +338,7 @@ def _sync_one_streamable(
     current_relative_path: str,
     expected_hash: str,
     save: bool,
+    force: bool = False,
 ) -> tuple[str, bool]:
     """
     Returns:
@@ -351,20 +352,37 @@ def _sync_one_streamable(
         else None
     )
 
-    if current_relative_path == relative_path and _streamable_target_matches_source(
-        target_path=target_path,
-        video_field_file=video_field_file,
-        source_path=source_path,
-        expected_hash=expected_hash,
-        verify_source_hash=False,
+    if (
+        not force
+        and current_relative_path == relative_path
+        and _streamable_target_matches_source(
+            target_path=target_path,
+            video_field_file=video_field_file,
+            source_path=source_path,
+            expected_hash=expected_hash,
+            verify_source_hash=False,
+        )
     ):
         return relative_path, True
 
-    if _streamable_target_matches_source(
+    if not force and _streamable_target_matches_source(
         target_path=target_path,
         video_field_file=video_field_file,
         source_path=source_path,
         expected_hash=expected_hash,
+    ):
+        return relative_path, True
+
+    if (
+        force
+        and not save
+        and _streamable_target_matches_source(
+            target_path=target_path,
+            video_field_file=video_field_file,
+            source_path=source_path,
+            expected_hash=expected_hash,
+            verify_source_hash=False,
+        )
     ):
         return relative_path, True
 
@@ -395,6 +413,7 @@ def sync_video_streamable_artifacts(
     include_raw: bool = True,
     include_processed: bool = True,
     save: bool = True,
+    force: bool = False,
 ) -> list[str]:
     update_fields: list[str] = []
     state = resolve_streamable_media_state(
@@ -416,6 +435,7 @@ def sync_video_streamable_artifacts(
                 current_relative_path=decision.current_relative_path,
                 expected_hash=decision.expected_hash,
                 save=save,
+                force=force,
             )
             synced_by_kind[decision.spec.kind] = synced
             if synced and decision.current_relative_path != relative_path:

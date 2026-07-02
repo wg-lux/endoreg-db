@@ -245,7 +245,7 @@ def test_streamable_transcode_uses_small_faststart_profile(
         "audio_bitrate": "32k",
         "extra_args": [
             "-vf",
-            "scale=-2:240,format=yuv420p",
+            "scale=-2:480,format=yuv420p",
             "-movflags",
             "+faststart",
             "-an",
@@ -378,6 +378,55 @@ def test_sync_is_idempotent_and_does_not_rewrite_existing_plaintext(
     )
 
     assert target.stat().st_mtime_ns == before
+    assert update_fields == []
+
+
+def test_sync_force_regenerates_existing_plaintext(
+    video: DummyVideo,
+    streamable_roots: StreamableRoots,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    regenerated_payload = b"\x00\x00\x00\x20ftypmp42moovmdatregenerated"
+
+    monkeypatch.setattr(
+        sm,
+        "resolve_storage_policy",
+        _fs_streamable_policy,
+    )
+    monkeypatch.setattr(
+        sm,
+        "field_file_size",
+        _constant_field_file_size(len(video.raw_payload)),
+    )
+    monkeypatch.setattr(
+        sm,
+        "iter_field_file_bytes",
+        _field_file_payload_reader(video.raw_payload),
+    )
+    monkeypatch.setattr(
+        sm,
+        "_transcode_streamable_mp4",
+        _fake_streamable_transcode(regenerated_payload),
+    )
+
+    target = streamable_roots.raw_root / f"{video.video_hash}.mp4"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(video.raw_streamable_payload)
+    before = target.stat().st_mtime_ns
+
+    video.raw_streamable_relative_path = f"streamable_videos/raw/{video.video_hash}.mp4"
+    video.storage_mode = DummyStorageMode.STREAMABLE
+
+    update_fields = sm.sync_video_streamable_artifacts(
+        video,
+        include_raw=True,
+        include_processed=False,
+        save=True,
+        force=True,
+    )
+
+    assert target.read_bytes() == regenerated_payload
+    assert target.stat().st_mtime_ns != before
     assert update_fields == []
 
 
