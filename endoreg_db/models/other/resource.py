@@ -12,7 +12,7 @@ class ResourceManager(models.Manager["Resource"]):  # pyright: ignore[reportMiss
 class Resource(models.Model):
     objects: ClassVar[ResourceManager] = ResourceManager()  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    name: models.CharField[str, str] = models.CharField(max_length=255)
+    name: models.CharField[str] = models.CharField(max_length=255)
 
     def natural_key(self) -> tuple[str]:
         """

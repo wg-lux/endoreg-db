@@ -20,10 +20,10 @@ class VideoSegmentationLabelSetManager(models.Manager["VideoSegmentationLabelSet
 
 
 class VideoSegmentationLabelSet(models.Model):
-    name: models.CharField[str, str] = models.CharField(max_length=255)
-    description: models.TextField[
-        VideoSegmentationLabelSetDescription, VideoSegmentationLabelSetDescription
-    ] = models.TextField(blank=True, null=True)
+    name: models.CharField[str] = models.CharField(max_length=255)
+    description: models.TextField[VideoSegmentationLabelSetDescription | None] = (
+        models.TextField(blank=True, null=True)
+    )
     labels: models.ManyToManyField[VideoSegmentationLabel, VideoSegmentationLabel] = (
         models.ManyToManyField("VideoSegmentationLabel", related_name="labelsets")
     )

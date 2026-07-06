@@ -28,40 +28,39 @@ class Person(models.Model):
         phone (str): The phone number of the person.
     """
 
-    first_name: models.CharField[str, str] = models.CharField(max_length=255)
-    last_name: models.CharField[str, str] = models.CharField(max_length=255)
-    dob: models.DateField[PersonDateValue, PersonDateValue] = models.DateField(
+    first_name: models.CharField[str] = models.CharField(max_length=255)
+    last_name: models.CharField[str] = models.CharField(max_length=255)
+    dob: models.DateField[PersonDateValue | None] = models.DateField(
         "Date of Birth",
         blank=True,
         null=True,
     )
-    gender: models.ForeignKey[
-        PersonGenderValue,
-        PersonGenderValue,
-    ] = models.ForeignKey("endoreg_db.Gender", on_delete=models.SET_NULL, null=True)
-    email: models.EmailField[PersonTextValue, PersonTextValue] = models.EmailField(
+    gender: models.ForeignKey[PersonGenderValue | None] = models.ForeignKey(
+        "endoreg_db.Gender", on_delete=models.SET_NULL, null=True
+    )
+    email: models.EmailField[PersonTextValue | None] = models.EmailField(
         max_length=255,
         blank=True,
         null=True,
     )
-    phone: models.CharField[PersonTextValue, PersonTextValue] = models.CharField(
+    phone: models.CharField[PersonTextValue | None] = models.CharField(
         max_length=255,
         blank=True,
         null=True,
     )
-    is_real_person: models.BooleanField[bool, bool] = models.BooleanField(default=True)
+    is_real_person: models.BooleanField[bool] = models.BooleanField(default=True)
 
-    post_code: models.CharField[PersonTextValue, PersonTextValue] = models.CharField(
+    post_code: models.CharField[PersonTextValue | None] = models.CharField(
         max_length=20,
         blank=True,
         null=True,
     )
-    city: models.CharField[PersonTextValue, PersonTextValue] = models.CharField(
+    city: models.CharField[PersonTextValue | None] = models.CharField(
         max_length=255,
         blank=True,
         null=True,
     )
-    street: models.CharField[PersonTextValue, PersonTextValue] = models.CharField(
+    street: models.CharField[PersonTextValue | None] = models.CharField(
         max_length=255,
         blank=True,
         null=True,

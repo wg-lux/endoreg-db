@@ -9,19 +9,15 @@ from .abstract import AbstractState
 class SensitiveMetaState(AbstractState):
     """State for sensitive meta data."""
 
-    dob_verified: "models.BooleanField[bool, bool]" = models.BooleanField(default=False)
-    names_verified: "models.BooleanField[bool, bool]" = models.BooleanField(
-        default=False
-    )
+    dob_verified: "models.BooleanField[bool]" = models.BooleanField(default=False)
+    names_verified: "models.BooleanField[bool]" = models.BooleanField(default=False)
 
-    origin: "models.OneToOneField[SensitiveMeta | None, SensitiveMeta | None]" = (
-        models.OneToOneField(
-            "SensitiveMeta",
-            on_delete=models.CASCADE,
-            related_name="state",
-            null=True,
-            blank=True,
-        )
+    origin: "models.OneToOneField[SensitiveMeta | None]" = models.OneToOneField(
+        "SensitiveMeta",
+        on_delete=models.CASCADE,
+        related_name="state",
+        null=True,
+        blank=True,
     )
 
     if TYPE_CHECKING:

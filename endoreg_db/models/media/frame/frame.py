@@ -30,20 +30,20 @@ logger = logging.getLogger(__name__)
 
 # Unified Frame model
 class Frame(models.Model):
-    video: models.ForeignKey["VideoFile", "VideoFile"] = models.ForeignKey(
+    video: models.ForeignKey["VideoFile"] = models.ForeignKey(
         "VideoFile",
         on_delete=models.CASCADE,
         related_name="frames",
         blank=False,
         null=False,
     )
-    frame_number: models.PositiveIntegerField[int, int] = models.PositiveIntegerField()
-    relative_path: models.CharField[str, str] = models.CharField(max_length=512)
-    timestamp: models.FloatField[FrameTimestamp, FrameTimestamp] = models.FloatField(
+    frame_number: models.PositiveIntegerField[int] = models.PositiveIntegerField()
+    relative_path: models.CharField[str] = models.CharField(max_length=512)
+    timestamp: models.FloatField[FrameTimestamp | None] = models.FloatField(
         null=True, blank=True
     )
 
-    is_extracted: models.BooleanField[bool, bool] = models.BooleanField(default=False)
+    is_extracted: models.BooleanField[bool] = models.BooleanField(default=False)
 
     if TYPE_CHECKING:
         image_classification_annotations: models.QuerySet[

@@ -36,23 +36,23 @@ class _ProductMaterialProductSource(Protocol):
 
 
 class ProductMaterial(models.Model):
-    component: models.CharField[str, str] = models.CharField(max_length=255)
-    material: models.ForeignKey[Material, Material] = models.ForeignKey(
+    component: models.CharField[str] = models.CharField(max_length=255)
+    material: models.ForeignKey[Material] = models.ForeignKey(
         "Material",
         on_delete=models.CASCADE,
         related_name="material_product_materials",  # Changed related_name
     )
-    product: models.ForeignKey[Product, Product] = models.ForeignKey(
+    product: models.ForeignKey[Product] = models.ForeignKey(
         "Product",
         on_delete=models.CASCADE,
         related_name="product_product_materials",  # Changed related_name
     )
-    unit: models.ForeignKey[Unit, Unit] = models.ForeignKey(
+    unit: models.ForeignKey[Unit] = models.ForeignKey(
         "Unit",
         on_delete=models.CASCADE,
         related_name="unit_product_materials",  # Changed related_name
     )
-    quantity: models.FloatField[float, float] = models.FloatField()
+    quantity: models.FloatField[float] = models.FloatField()
 
     if TYPE_CHECKING:
         pass

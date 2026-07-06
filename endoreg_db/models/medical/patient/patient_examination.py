@@ -1,4 +1,5 @@
 from __future__ import annotations
+from collections.abc import Iterable
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Optional, Protocol, cast
 
@@ -52,19 +53,13 @@ class _PatientFindingInterventionLike(Protocol):
 
 
 class PatientExamination(models.Model):
-    patient: models.ForeignKey["Patient | None", "Patient | None"] = models.ForeignKey(
+    patient: models.ForeignKey["Patient | None"] = models.ForeignKey(
         "Patient", on_delete=models.CASCADE, related_name="patient_examinations"
     )
-    examination: models.ForeignKey[
-        "Examination | None",
-        "Examination | None",
-    ] = models.ForeignKey(
+    examination: models.ForeignKey["Examination | None"] = models.ForeignKey(
         "Examination", on_delete=models.CASCADE, null=True, blank=True
     )
-    video: models.OneToOneField[
-        "VideoFile | None",
-        "VideoFile | None",
-    ] = models.OneToOneField(
+    video: models.OneToOneField["VideoFile | None"] = models.OneToOneField(
         "VideoFile",
         on_delete=models.CASCADE,
         null=True,
@@ -72,30 +67,26 @@ class PatientExamination(models.Model):
         related_name="patient_examination",
     )
 
-    date_start: models.DateField[date | None, date | None] = models.DateField(
-        null=True, blank=True
-    )
-    date_end: models.DateField[date | None, date | None] = models.DateField(
-        null=True, blank=True
-    )
-    hash: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
-    knowledge_base_module: models.CharField[str, str] = models.CharField(
+    date_start: models.DateField[date | None] = models.DateField(null=True, blank=True)
+    date_end: models.DateField[date | None] = models.DateField(null=True, blank=True)
+    hash: models.CharField[str] = models.CharField(max_length=255, unique=True)
+    knowledge_base_module: models.CharField[str] = models.CharField(
         max_length=255, blank=True, default=""
     )
-    knowledge_base_version: models.CharField[str, str] = models.CharField(
+    knowledge_base_version: models.CharField[str] = models.CharField(
         max_length=255, blank=True, default=""
     )
-    dtypes_record: models.JSONField[JsonObject, JsonObject] = models.JSONField(
+    dtypes_record: models.JSONField[JsonObject] = models.JSONField(
         default=dict, blank=True
     )
-    dtypes_record_updated_at: models.DateTimeField[datetime | None, datetime | None] = (
+    dtypes_record_updated_at: models.DateTimeField[datetime | None] = (
         models.DateTimeField(null=True, blank=True)
     )
-    report_draft: models.JSONField[JsonObject, JsonObject] = models.JSONField(
+    report_draft: models.JSONField[JsonObject] = models.JSONField(
         default=dict, blank=True
     )
-    draft_updated_at: models.DateTimeField[datetime | None, datetime | None] = (
-        models.DateTimeField(null=True, blank=True)
+    draft_updated_at: models.DateTimeField[datetime | None] = models.DateTimeField(
+        null=True, blank=True
     )
 
     if TYPE_CHECKING:
@@ -103,10 +94,10 @@ class PatientExamination(models.Model):
         examination_id: int | None
         video_id: int | None
         patient_findings: models.QuerySet["PatientFinding"]
-        indications: models.QuerySet["PatientExaminationIndication",]
+        indications: models.QuerySet["PatientExaminationIndication"]
         raw_pdf_files: models.QuerySet["RawPdfFile"]
-        anonymexaminationreport_set: models.QuerySet["AnonymExaminationReport",]
-        anonymhistologyreport_set: models.QuerySet["AnonymHistologyReport",]
+        anonymexaminationreport_set: models.QuerySet["AnonymExaminationReport"]
+        anonymhistologyreport_set: models.QuerySet["AnonymHistologyReport"]
 
     @property
     def examination_safe(self):
@@ -171,12 +162,23 @@ class PatientExamination(models.Model):
 
         return _hash
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(
+        self,
+        force_insert: bool = False,
+        force_update: bool = False,
+        using: str | None = None,
+        update_fields: Iterable[str] | None = None,
+    ) -> None:
         if not self.hash:
             self.hash = self.generate_default_hash()
         self.assign_knowledge_base_identity()
         self.clean()
-        super().save(*args, **kwargs)
+        super().save(
+            force_insert=force_insert,
+            force_update=force_update,
+            using=using,
+            update_fields=update_fields,
+        )
 
     def clean(self) -> None:
         super().clean()

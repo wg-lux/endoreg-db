@@ -32,11 +32,11 @@ class Examination(models.Model):
         examination_types (ManyToManyField): The types associated with the examination.
     """
 
-    name: models.CharField[str, str] = models.CharField(max_length=100, unique=True)
+    name: models.CharField[str] = models.CharField(max_length=100, unique=True)
     examination_types: "models.ManyToManyField[ExaminationType, ExaminationType]" = (
         models.ManyToManyField("ExaminationType", blank=True)
     )
-    description: models.TextField[str, str] = models.TextField(blank=True, null=True)
+    description: models.TextField[str | None] = models.TextField(blank=True, null=True)
     indications: "models.ManyToManyField[ExaminationIndication, ExaminationIndication]" = models.ManyToManyField(
         "ExaminationIndication",
         related_name="examinations",

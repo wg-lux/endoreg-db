@@ -51,126 +51,120 @@ class AnonymizationValidationMetric(models.Model):
     file paths, or reversible value hashes.
     """
 
-    schema_version: models.CharField[str, str] = models.CharField(
+    schema_version: models.CharField[str] = models.CharField(
         max_length=16, default="1.0", editable=False
     )
-    media_type: models.CharField[str, str] = models.CharField(
+    media_type: models.CharField[str] = models.CharField(
         max_length=16,
         choices=AnonymizationMetricMediaType.choices,
         db_index=True,
     )
-    video: models.ForeignKey[MetricVideo, MetricVideo] = models.ForeignKey(
+    video: models.ForeignKey[MetricVideo | None] = models.ForeignKey(
         "VideoFile",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="anonymization_validation_metrics",
     )
-    pdf: models.ForeignKey[MetricPdf, MetricPdf] = models.ForeignKey(
+    pdf: models.ForeignKey[MetricPdf | None] = models.ForeignKey(
         "RawPdfFile",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="anonymization_validation_metrics",
     )
-    sensitive_meta: models.ForeignKey[MetricSensitiveMeta, MetricSensitiveMeta] = (
-        models.ForeignKey(
-            "SensitiveMeta",
-            on_delete=models.SET_NULL,
-            null=True,
-            blank=True,
-            related_name="anonymization_validation_metrics",
-        )
+    sensitive_meta: models.ForeignKey[MetricSensitiveMeta] = models.ForeignKey(
+        "SensitiveMeta",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="anonymization_validation_metrics",
     )
-    center: models.ForeignKey[MetricCenter, MetricCenter] = models.ForeignKey(
+    center: models.ForeignKey[MetricCenter | None] = models.ForeignKey(
         "Center",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="anonymization_validation_metrics",
     )
-    validator_user: models.ForeignKey[MetricValidatorUser, MetricValidatorUser] = (
-        models.ForeignKey(
-            settings.AUTH_USER_MODEL,
-            on_delete=models.SET_NULL,
-            null=True,
-            blank=True,
-            related_name="anonymization_validation_metrics",
-        )
+    validator_user: models.ForeignKey[MetricValidatorUser] = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="anonymization_validation_metrics",
     )
-    validator_username: models.CharField[str, str] = models.CharField(
+    validator_username: models.CharField[str] = models.CharField(
         max_length=255, blank=True, default=""
     )
-    validated_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
+    validated_at: models.DateTimeField[datetime] = models.DateTimeField(
         default=timezone.now, db_index=True
     )
-    status_before: models.CharField[str, str] = models.CharField(
+    status_before: models.CharField[str] = models.CharField(
         max_length=64, blank=True, default=""
     )
-    status_after: models.CharField[str, str] = models.CharField(
+    status_after: models.CharField[str] = models.CharField(
         max_length=64, blank=True, default=""
     )
-    document_type: models.CharField[str, str] = models.CharField(
+    document_type: models.CharField[str] = models.CharField(
         max_length=64, blank=True, default=""
     )
-    source_system: models.CharField[str, str] = models.CharField(
+    source_system: models.CharField[str] = models.CharField(
         max_length=255, blank=True, default=""
     )
-    anonymizer_source: models.CharField[str, str] = models.CharField(
+    anonymizer_source: models.CharField[str] = models.CharField(
         max_length=255,
         blank=True,
         default="lx_anonymizer",
     )
-    anonymizer_version: models.CharField[str, str] = models.CharField(
+    anonymizer_version: models.CharField[str] = models.CharField(
         max_length=64, blank=True, default=""
     )
     no_more_names_confirmed: models.BooleanField[
-        bool | NoMetricRelationValue, bool | NoMetricRelationValue
+        bool | NoMetricRelationValue | None
     ] = models.BooleanField(null=True, blank=True)
-    seconds_to_validation: models.FloatField[MetricFloat, MetricFloat] = (
-        models.FloatField(null=True, blank=True)
-    )
-    total_fields: models.PositiveIntegerField[int, int] = models.PositiveIntegerField(
-        default=0
-    )
-    changed_fields: models.PositiveIntegerField[int, int] = models.PositiveIntegerField(
-        default=0
-    )
-    exact_match_fields: models.PositiveIntegerField[int, int] = (
-        models.PositiveIntegerField(default=0)
-    )
-    missing_after_validation_fields: models.PositiveIntegerField[int, int] = (
-        models.PositiveIntegerField(default=0)
-    )
-    mean_similarity: models.FloatField[MetricFloat, MetricFloat] = models.FloatField(
+    seconds_to_validation: models.FloatField[MetricFloat] = models.FloatField(
         null=True, blank=True
     )
-    residual_ocr_match_count: models.PositiveIntegerField[int, int] = (
+    total_fields: models.PositiveIntegerField[int] = models.PositiveIntegerField(
+        default=0
+    )
+    changed_fields: models.PositiveIntegerField[int] = models.PositiveIntegerField(
+        default=0
+    )
+    exact_match_fields: models.PositiveIntegerField[int] = models.PositiveIntegerField(
+        default=0
+    )
+    missing_after_validation_fields: models.PositiveIntegerField[int] = (
         models.PositiveIntegerField(default=0)
     )
-    phi_region_false_negative_count: models.PositiveIntegerField[int, int] = (
+    mean_similarity: models.FloatField[MetricFloat | None] = models.FloatField(
+        null=True, blank=True
+    )
+    residual_ocr_match_count: models.PositiveIntegerField[int] = (
         models.PositiveIntegerField(default=0)
     )
-    raw_artifact_residual_count: models.PositiveIntegerField[int, int] = (
+    phi_region_false_negative_count: models.PositiveIntegerField[int] = (
         models.PositiveIntegerField(default=0)
     )
-    missing_sensitive_meta_deletion_count: models.PositiveIntegerField[int, int] = (
+    raw_artifact_residual_count: models.PositiveIntegerField[int] = (
         models.PositiveIntegerField(default=0)
     )
-    residual_phi_detected: models.BooleanField[bool, bool] = models.BooleanField(
+    missing_sensitive_meta_deletion_count: models.PositiveIntegerField[int] = (
+        models.PositiveIntegerField(default=0)
+    )
+    residual_phi_detected: models.BooleanField[bool] = models.BooleanField(
         default=False
     )
-    sensitive_meta_policy: models.CharField[str, str] = models.CharField(
+    sensitive_meta_policy: models.CharField[str] = models.CharField(
         max_length=64, blank=True, default=""
     )
-    sensitive_meta_deletion_status: models.CharField[str, str] = models.CharField(
+    sensitive_meta_deletion_status: models.CharField[str] = models.CharField(
         max_length=64,
         blank=True,
         default="",
     )
-    created_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
-        auto_now_add=True
-    )
+    created_at: models.DateTimeField[datetime] = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         indexes = [
@@ -209,32 +203,30 @@ class AnonymizationFieldMetric(models.Model):
     never persisted here.
     """
 
-    validation_metric: models.ForeignKey[
-        AnonymizationValidationMetric, AnonymizationValidationMetric
-    ] = models.ForeignKey(
-        AnonymizationValidationMetric,
-        on_delete=models.CASCADE,
-        related_name="field_metrics",
+    validation_metric: models.ForeignKey[AnonymizationValidationMetric] = (
+        models.ForeignKey(
+            AnonymizationValidationMetric,
+            on_delete=models.CASCADE,
+            related_name="field_metrics",
+        )
     )
-    field_name: models.CharField[str, str] = models.CharField(
+    field_name: models.CharField[str] = models.CharField(
         max_length=64,
         choices=AnonymizationMetricField.choices,
         db_index=True,
     )
-    present_before: models.BooleanField[bool, bool] = models.BooleanField(default=False)
-    present_after: models.BooleanField[bool, bool] = models.BooleanField(default=False)
-    changed: models.BooleanField[bool, bool] = models.BooleanField(default=False)
-    exact_match: models.BooleanField[bool, bool] = models.BooleanField(default=False)
-    similarity_score: models.FloatField[MetricFloat, MetricFloat] = models.FloatField(
+    present_before: models.BooleanField[bool] = models.BooleanField(default=False)
+    present_after: models.BooleanField[bool] = models.BooleanField(default=False)
+    changed: models.BooleanField[bool] = models.BooleanField(default=False)
+    exact_match: models.BooleanField[bool] = models.BooleanField(default=False)
+    similarity_score: models.FloatField[MetricFloat | None] = models.FloatField(
         null=True, blank=True
     )
-    was_required: models.BooleanField[bool, bool] = models.BooleanField(default=False)
-    was_empty_after_validation: models.BooleanField[bool, bool] = models.BooleanField(
+    was_required: models.BooleanField[bool] = models.BooleanField(default=False)
+    was_empty_after_validation: models.BooleanField[bool] = models.BooleanField(
         default=False
     )
-    created_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
-        auto_now_add=True
-    )
+    created_at: models.DateTimeField[datetime] = models.DateTimeField(auto_now_add=True)
 
     if TYPE_CHECKING:
         validation_metric_id: int

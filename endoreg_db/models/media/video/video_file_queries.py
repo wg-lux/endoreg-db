@@ -7,10 +7,10 @@ from django.db import models
 if TYPE_CHECKING:
     from .video_file import VideoFile
 
-VideoFileQuerySet: TypeAlias = models.QuerySet["VideoFile", "VideoFile"]
+VideoFileQuerySet: TypeAlias = models.QuerySet["VideoFile"]
 
 
-class VideoQuerySet(models.QuerySet["VideoFile", "VideoFile"]):
+class VideoQuerySet(models.QuerySet["VideoFile"]):
     def next_after(self, last_id: int | str | None = None) -> VideoFile | None:
         """
         Return the next VideoFile instance with a primary key greater than the given last_id.

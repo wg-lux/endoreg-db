@@ -40,38 +40,36 @@ class ApplicationSettings(models.Model):
     Stores central defaults used by imports/annotation/report workflows.
     """
 
-    center: models.ForeignKey[Center, Center] = models.ForeignKey(
+    center: models.ForeignKey[Center | None] = models.ForeignKey(
         "Center",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="+",
     )
-    processor: models.ForeignKey[EndoscopyProcessor, EndoscopyProcessor] = (
-        models.ForeignKey(
-            "EndoscopyProcessor",
-            on_delete=models.SET_NULL,
-            null=True,
-            blank=True,
-            related_name="+",
-        )
+    processor: models.ForeignKey[EndoscopyProcessor | None] = models.ForeignKey(
+        "EndoscopyProcessor",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
     )
-    annotator_name: models.CharField[str, str] = models.CharField(
+    annotator_name: models.CharField[str] = models.CharField(
         max_length=255,
         blank=True,
         default="",
     )
-    report_template_name: models.CharField[str, str] = models.CharField(
+    report_template_name: models.CharField[str] = models.CharField(
         max_length=255,
         blank=True,
         default="",
     )
-    ai_dataset_name: models.CharField[str, str] = models.CharField(
+    ai_dataset_name: models.CharField[str] = models.CharField(
         max_length=255,
         blank=True,
         default="",
     )
-    ai_dataset_type: models.CharField[str, str] = models.CharField(
+    ai_dataset_type: models.CharField[str] = models.CharField(
         max_length=32,
         blank=True,
         default="",
@@ -81,19 +79,15 @@ class ApplicationSettings(models.Model):
             ("video", "Video"),
         ],
     )
-    ai_dataset: models.ForeignKey[AIDataSet, AIDataSet] = models.ForeignKey(
+    ai_dataset: models.ForeignKey[AIDataSet | None] = models.ForeignKey(
         "AIDataSet",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="+",
     )
-    created_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
-        auto_now_add=True
-    )
-    updated_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
-        auto_now=True
-    )
+    created_at: models.DateTimeField[datetime] = models.DateTimeField(auto_now_add=True)
+    updated_at: models.DateTimeField[datetime] = models.DateTimeField(auto_now=True)
 
     objects = ApplicationSettingsManager()
 
@@ -103,16 +97,14 @@ class ApplicationSettings(models.Model):
 
     def save(
         self,
-        *args: ApplicationSettingsSavePositional,
-        force_insert: ApplicationSettingsForceInsert = False,
+        force_insert: bool = False,
         force_update: bool = False,
-        using: ApplicationSettingsUsing = None,
-        update_fields: ApplicationSettingsUpdateFields = None,
+        using: str | None = None,
+        update_fields: Iterable[str] | None = None,
     ) -> None:
         # Enforce singleton row semantics.
         self.pk = 1
         super().save(
-            *args,
             force_insert=force_insert,
             force_update=force_update,
             using=using,

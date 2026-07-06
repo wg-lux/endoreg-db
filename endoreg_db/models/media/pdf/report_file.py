@@ -44,9 +44,9 @@ class DocumentType(models.Model):
     Represents the type of a document.
     """
 
-    name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
-    description: models.TextField[DocumentDescription, DocumentDescription] = (
-        models.TextField(blank=True, null=True)
+    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
+    description: models.TextField[DocumentDescription] = models.TextField(
+        blank=True, null=True
     )
 
     objects = DocumentTypeManager()
@@ -67,16 +67,16 @@ class AbstractDocument(models.Model):
     Abstract base class for documents.
     """
 
-    meta: models.JSONField[DocumentMeta, DocumentMeta] = models.JSONField(
+    meta: models.JSONField[DocumentMeta | None] = models.JSONField(
         blank=True, null=True
     )
-    text: models.TextField[DocumentDescription, DocumentDescription] = models.TextField(
+    text: models.TextField[DocumentDescription | None] = models.TextField(
         blank=True, null=True
     )
-    date: models.DateField[DocumentDate, DocumentDate] = models.DateField(
+    date: models.DateField[DocumentDate | None] = models.DateField(
         blank=True, null=True
     )
-    time: models.TimeField[DocumentTime, DocumentTime] = models.TimeField(
+    time: models.TimeField[DocumentTime | None] = models.TimeField(
         blank=True, null=True
     )
     file: models.FileField = models.FileField(
@@ -85,20 +85,18 @@ class AbstractDocument(models.Model):
         null=True,
     )
 
-    center: models.ForeignKey[DocumentCenter, DocumentCenter] = models.ForeignKey(
+    center: models.ForeignKey[DocumentCenter | None] = models.ForeignKey(
         "endoreg_db.Center",
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
     )
 
-    type: models.ForeignKey[DocumentTypeRelation, DocumentTypeRelation] = (
-        models.ForeignKey(
-            DocumentType,
-            on_delete=models.SET_NULL,
-            blank=True,
-            null=True,
-        )
+    type: models.ForeignKey[DocumentTypeRelation] = models.ForeignKey(
+        DocumentType,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
     )
 
     if TYPE_CHECKING:
@@ -113,17 +111,17 @@ class AbstractExaminationReport(AbstractDocument):
     Abstract base class for examination reports.
     """
 
-    patient: models.ForeignKey[DocumentPatient, DocumentPatient] = models.ForeignKey(
+    patient: models.ForeignKey[DocumentPatient | None] = models.ForeignKey(
         "endoreg_db.Patient", on_delete=models.DO_NOTHING, blank=True, null=True
     )
 
-    patient_examination: models.ForeignKey[
-        DocumentPatientExamination, DocumentPatientExamination
-    ] = models.ForeignKey(
-        "endoreg_db.PatientExamination",
-        on_delete=models.SET_NULL,
-        blank=True,
-        null=True,
+    patient_examination: models.ForeignKey[DocumentPatientExamination | None] = (
+        models.ForeignKey(
+            "endoreg_db.PatientExamination",
+            on_delete=models.SET_NULL,
+            blank=True,
+            null=True,
+        )
     )
 
     examiners: models.ManyToManyField["Examiner", "Examiner"] = models.ManyToManyField(
@@ -131,10 +129,8 @@ class AbstractExaminationReport(AbstractDocument):
         blank=True,
     )
 
-    sensitive_meta: models.ForeignKey[DocumentSensitiveMeta, DocumentSensitiveMeta] = (
-        models.ForeignKey(
-            "endoreg_db.SensitiveMeta", on_delete=models.SET_NULL, null=True, blank=True
-        )
+    sensitive_meta: models.ForeignKey[DocumentSensitiveMeta] = models.ForeignKey(
+        "endoreg_db.SensitiveMeta", on_delete=models.SET_NULL, null=True, blank=True
     )
 
     if TYPE_CHECKING:

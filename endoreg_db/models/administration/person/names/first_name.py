@@ -11,7 +11,7 @@ class FirstNameManager(models.Manager["FirstName"]):
 
 class FirstName(models.Model):
     objects = FirstNameManager()
-    name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
+    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
 
     def natural_key(self) -> tuple[str]:
         return (self.name,)

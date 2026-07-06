@@ -80,38 +80,38 @@ class AiModel(models.Model):
 
     objects = AiModelManager()
 
-    name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
+    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
 
-    description: models.TextField[str, str] = models.TextField(blank=True, null=True)
-    model_type: models.ForeignKey[ModelType, ModelType] = models.ForeignKey(
+    description: models.TextField[str | None] = models.TextField(blank=True, null=True)
+    model_type: models.ForeignKey[ModelType | None] = models.ForeignKey(
         "ModelType",
         on_delete=models.CASCADE,
         related_name="ai_models",
         blank=True,
         null=True,
     )
-    model_subtype: models.CharField[str, str] = models.CharField(
+    model_subtype: models.CharField[str | None] = models.CharField(
         max_length=255,
         blank=True,
         null=True,
     )
-    video_segmentation_labelset: models.ForeignKey[
-        VideoSegmentationLabelSet, VideoSegmentationLabelSet
-    ] = models.ForeignKey(
-        "VideoSegmentationLabelSet",
-        on_delete=models.CASCADE,
-        related_name="ai_models",
-        blank=True,
-        null=True,
+    video_segmentation_labelset: models.ForeignKey[VideoSegmentationLabelSet | None] = (
+        models.ForeignKey(
+            "VideoSegmentationLabelSet",
+            on_delete=models.CASCADE,
+            related_name="ai_models",
+            blank=True,
+            null=True,
+        )
     )
-    active_meta: models.ForeignKey[
-        ModelMeta | NoAiModelRelationValue, ModelMeta | NoAiModelRelationValue
-    ] = models.ForeignKey(
-        "ModelMeta",
-        on_delete=models.SET_NULL,
-        related_name="active_model",
-        blank=True,
-        null=True,
+    active_meta: models.ForeignKey[ModelMeta | NoAiModelRelationValue | None] = (
+        models.ForeignKey(
+            "ModelMeta",
+            on_delete=models.SET_NULL,
+            related_name="active_model",
+            blank=True,
+            null=True,
+        )
     )
 
     if TYPE_CHECKING:

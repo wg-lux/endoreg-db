@@ -9,7 +9,7 @@ class BaseValueDistribution(models.Model):
     Abstract base class for value distributions.
     """
 
-    name: models.CharField[str, str] = models.CharField(max_length=100)
+    name: models.CharField[str] = models.CharField(max_length=100)
 
     class Meta:
         abstract = True

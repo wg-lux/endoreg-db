@@ -29,7 +29,7 @@ class ExaminationType(models.Model):
     """
 
     objects = ExaminationTypeManager()
-    name: models.CharField[str, str] = models.CharField(max_length=100, unique=True)
+    name: models.CharField[str] = models.CharField(max_length=100, unique=True)
 
     def __str__(self) -> str:
         """

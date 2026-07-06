@@ -27,8 +27,8 @@ class ModelType(models.Model):
 
     """
 
-    name: models.CharField[str, str] = models.CharField(max_length=255)
-    description: models.TextField[str, str] = models.TextField(blank=True, null=True)
+    name: models.CharField[str] = models.CharField(max_length=255)
+    description: models.TextField[str | None] = models.TextField(blank=True, null=True)
 
     objects = ModelTypeManager()
 

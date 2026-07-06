@@ -15,13 +15,13 @@ class PatientExternalID(models.Model):
         external_id (str): The external ID value.
     """
 
-    external_id: models.CharField[str, str] = models.CharField(max_length=255)
-    patient: models.ForeignKey[Patient, Patient] = models.ForeignKey(
+    external_id: models.CharField[str] = models.CharField(max_length=255)
+    patient: models.ForeignKey[Patient] = models.ForeignKey(
         "Patient",
         on_delete=models.CASCADE,
         related_name="external_ids",
     )
-    origin: models.CharField[str, str] = models.CharField(max_length=255)
+    origin: models.CharField[str] = models.CharField(max_length=255)
 
     class Meta:
         constraints = [

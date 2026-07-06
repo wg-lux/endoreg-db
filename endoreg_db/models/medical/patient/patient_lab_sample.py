@@ -34,10 +34,8 @@ class PatientLabSampleType(models.Model):
         description (str): A description of the patient lab sample type.
     """
 
-    name: models.CharField[str, str] = models.CharField(max_length=255)
-    description: models.TextField[str | None, str | None] = models.TextField(
-        blank=True, null=True
-    )
+    name: models.CharField[str] = models.CharField(max_length=255)
+    description: models.TextField[str | None] = models.TextField(blank=True, null=True)
 
     objects: ClassVar[PatientLabSampleTypeManager] = (  # pyright: ignore[reportIncompatibleVariableOverride]
         PatientLabSampleTypeManager()
@@ -70,14 +68,13 @@ class PatientLabSample(models.Model):
         values (PatientLabValue; One2Many): The value of the lab sample.
     """
 
-    patient: models.ForeignKey["Patient", "Patient"] = models.ForeignKey(
+    patient: models.ForeignKey["Patient"] = models.ForeignKey(
         "Patient", on_delete=models.CASCADE, related_name="lab_samples"
     )
-    sample_type: models.ForeignKey[
-        "PatientLabSampleType",
-        "PatientLabSampleType",
-    ] = models.ForeignKey("PatientLabSampleType", on_delete=models.CASCADE)
-    date: models.DateTimeField[dt, dt] = models.DateTimeField()
+    sample_type: models.ForeignKey["PatientLabSampleType"] = models.ForeignKey(
+        "PatientLabSampleType", on_delete=models.CASCADE
+    )
+    date: models.DateTimeField[dt] = models.DateTimeField()
 
     if TYPE_CHECKING:
 

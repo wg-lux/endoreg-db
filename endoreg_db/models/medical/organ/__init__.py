@@ -20,10 +20,8 @@ class OrganManager(models.Manager["Organ"]):
 class Organ(models.Model):
     """Model representing an organ."""
 
-    name: models.CharField[str, str] = models.CharField(max_length=100, unique=True)
-    description: models.TextField[str | None, str | None] = models.TextField(
-        blank=True, null=True
-    )
+    name: models.CharField[str] = models.CharField(max_length=100, unique=True)
+    description: models.TextField[str | None] = models.TextField(blank=True, null=True)
 
     # Deprecated
     # location_choices = models.ManyToManyField(

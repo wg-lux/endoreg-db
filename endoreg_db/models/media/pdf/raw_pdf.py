@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid as uuid_lib
 from collections.abc import Iterable
 from datetime import datetime
-from typing import TYPE_CHECKING, Callable, Never, TypedDict, Unpack, cast
+from typing import TYPE_CHECKING, Callable, TypedDict, Unpack, cast
 
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
@@ -34,8 +34,6 @@ from pathlib import Path
 IMPORT_REPORT_DIR = path_utils.IMPORT_REPORT_DIR
 
 if TYPE_CHECKING:
-    from django.db.models.base import ModelBase
-
     from endoreg_db.models.administration.center.center import Center
     from endoreg_db.models.administration.person.examiner.examiner import Examiner
     from endoreg_db.models.administration.person.patient.patient import Patient
@@ -64,46 +62,40 @@ class _RawPdfFileCreateKwargs(TypedDict, total=False):
 class RawPdfFile(models.Model):
     objects = models.Manager["RawPdfFile"]()
     # Fields from AbstractPdfFile
-    uuid: models.UUIDField[uuid_lib.UUID, uuid_lib.UUID] = models.UUIDField(
+    uuid: models.UUIDField[uuid_lib.UUID] = models.UUIDField(
         default=uuid_lib.uuid4, unique=True, editable=False
     )
-    pdf_hash: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
-    pdf_type: models.ForeignKey["PdfType | None", "PdfType | None"] = models.ForeignKey(
+    pdf_hash: models.CharField[str] = models.CharField(max_length=255, unique=True)
+    pdf_type: models.ForeignKey["PdfType | None"] = models.ForeignKey(
         "PdfType",
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
     )
-    center: models.ForeignKey["Center | None", "Center | None"] = models.ForeignKey(
+    center: models.ForeignKey["Center | None"] = models.ForeignKey(
         "Center",
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
     )
-    examination: models.ForeignKey[
-        "PatientExamination | None", "PatientExamination | None"
-    ] = models.ForeignKey(
+    examination: models.ForeignKey["PatientExamination | None"] = models.ForeignKey(
         "PatientExamination",
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
         related_name="raw_pdf_files",
     )
-    examiner: models.ForeignKey["Examiner | None", "Examiner | None"] = (
-        models.ForeignKey(
-            "Examiner",
-            on_delete=models.SET_NULL,
-            blank=True,
-            null=True,
-        )
+    examiner: models.ForeignKey["Examiner | None"] = models.ForeignKey(
+        "Examiner",
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
     )
-    text: models.TextField[str, str] = models.TextField(blank=True, null=True)
-    date_created: models.DateTimeField[datetime, datetime] = models.DateTimeField(
+    text: models.TextField[str | None] = models.TextField(blank=True, null=True)
+    date_created: models.DateTimeField[datetime] = models.DateTimeField(
         auto_now_add=True
     )
-    date_modified: models.DateTimeField[datetime, datetime] = models.DateTimeField(
-        auto_now=True
-    )
+    date_modified: models.DateTimeField[datetime] = models.DateTimeField(auto_now=True)
 
     file: models.FileField = models.FileField(
         # Use the relative path from the specific REPORT_DIR
@@ -118,42 +110,38 @@ class RawPdfFile(models.Model):
         null=True,
         blank=True,
     )
-    state: models.OneToOneField["RawPdfState | None", "RawPdfState | None"] = (
-        models.OneToOneField(
-            "RawPdfState",
-            on_delete=models.SET_NULL,
-            blank=True,
-            null=True,
-            related_name="raw_pdf_file",
-        )
+    state: models.OneToOneField["RawPdfState | None"] = models.OneToOneField(
+        "RawPdfState",
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="raw_pdf_file",
     )
-    patient: models.ForeignKey["Patient | None", "Patient | None"] = models.ForeignKey(
+    patient: models.ForeignKey["Patient | None"] = models.ForeignKey(
         "Patient",
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
         related_name="raw_pdf_files",
     )
-    sensitive_meta: models.ForeignKey[
-        "SensitiveMeta | None", "SensitiveMeta | None"
-    ] = models.ForeignKey(
+    sensitive_meta: models.ForeignKey["SensitiveMeta | None"] = models.ForeignKey(
         "SensitiveMeta",
         on_delete=models.SET_NULL,
         related_name="raw_pdf_files",
         null=True,
         blank=True,
     )
-    state_report_processing_required: models.BooleanField[bool, bool] = (
-        models.BooleanField(default=True)
+    state_report_processing_required: models.BooleanField[bool] = models.BooleanField(
+        default=True
     )
-    state_report_processed: models.BooleanField[bool, bool] = models.BooleanField(
+    state_report_processed: models.BooleanField[bool] = models.BooleanField(
         default=False
     )
-    raw_meta: models.JSONField[
-        ReportMetaJsonObject | None, ReportMetaJsonObject | None
-    ] = models.JSONField(blank=True, null=True)
+    raw_meta: models.JSONField[ReportMetaJsonObject | None] = models.JSONField(
+        blank=True, null=True
+    )
     anonym_examination_report: models.OneToOneField[
-        "AnonymExaminationReport | None", "AnonymExaminationReport | None"
+        "AnonymExaminationReport | None"
     ] = models.OneToOneField(
         "AnonymExaminationReport",
         on_delete=models.SET_NULL,
@@ -161,7 +149,7 @@ class RawPdfFile(models.Model):
         null=True,
         related_name="raw_pdf_file",
     )
-    anonymized_text: models.TextField[str, str] = models.TextField(
+    anonymized_text: models.TextField[str | None] = models.TextField(
         blank=True, null=True
     )
 
@@ -402,12 +390,10 @@ class RawPdfFile(models.Model):
 
     def save(
         self,
-        *args: Never,
-        force_insert: bool | tuple["ModelBase", ...] = False,
+        force_insert: bool = False,
         force_update: bool = False,
         using: str | None = None,
         update_fields: Iterable[str] | None = None,
-        **kwargs: Never,
     ) -> None:
         # Ensure hash is calculated before the first save if possible and not already set
         # This is primarily a fallback if instance created manually without using create_from_file
@@ -422,12 +408,10 @@ class RawPdfFile(models.Model):
         self.clean()
 
         super().save(
-            *args,
             force_insert=force_insert,
             force_update=force_update,
             using=using,
             update_fields=update_fields,
-            **kwargs,
         )
 
     def get_or_create_state(self) -> "RawPdfState":

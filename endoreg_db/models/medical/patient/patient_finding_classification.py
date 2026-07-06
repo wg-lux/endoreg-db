@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, cast
 
 import numpy as np
 from django.db import models
-from django.db.models.base import ModelBase
 from lx_dtypes.models.contracts.patient_finding_classification_runtime import (
     PatientFindingClassificationNumericalDescriptorPayload,
     PatientFindingClassificationNumericalDescriptorsPayload,
@@ -33,40 +32,34 @@ class PatientFindingClassification(models.Model):
     Links a PatientFinding to a specific classification and choice, with optional subcategory values.
     """
 
-    finding: models.ForeignKey["PatientFinding", "PatientFinding"] = models.ForeignKey(
+    finding: models.ForeignKey["PatientFinding"] = models.ForeignKey(
         "PatientFinding", on_delete=models.CASCADE, related_name="classifications"
     )
-    classification: models.ForeignKey[
-        "FindingClassification",
-        "FindingClassification",
-    ] = models.ForeignKey(
+    classification: models.ForeignKey["FindingClassification"] = models.ForeignKey(
         "FindingClassification",
         on_delete=models.CASCADE,
         related_name="patient_finding_classifications",
     )
-    classification_choice: models.ForeignKey[
-        "FindingClassificationChoice",
-        "FindingClassificationChoice",
-    ] = models.ForeignKey(
-        "FindingClassificationChoice",
-        on_delete=models.CASCADE,
-        related_name="patient_finding_classifications",
+    classification_choice: models.ForeignKey["FindingClassificationChoice"] = (
+        models.ForeignKey(
+            "FindingClassificationChoice",
+            on_delete=models.CASCADE,
+            related_name="patient_finding_classifications",
+        )
     )
 
-    is_active: models.BooleanField[bool, bool] = models.BooleanField(
+    is_active: models.BooleanField[bool] = models.BooleanField(
         default=True, help_text="Indicates if the classification is currently active."
     )
     subcategories: models.JSONField[
-        PatientFindingClassificationSubcategoriesData,
-        PatientFindingClassificationSubcategoriesData,
+        PatientFindingClassificationSubcategoriesData | None
     ] = models.JSONField(
         blank=True,
         null=True,
         default=dict,
     )
     numerical_descriptors: models.JSONField[
-        PatientFindingClassificationNumericalDescriptorsData,
-        PatientFindingClassificationNumericalDescriptorsData,
+        PatientFindingClassificationNumericalDescriptorsData | None
     ] = models.JSONField(
         blank=True,
         null=True,
@@ -91,8 +84,7 @@ class PatientFindingClassification(models.Model):
 
     def save(
         self,
-        *,
-        force_insert: bool | tuple[ModelBase, ...] = False,
+        force_insert: bool = False,
         force_update: bool = False,
         using: str | None = None,
         update_fields: Iterable[str] | None = None,

@@ -46,97 +46,81 @@ class EndoscopyProcessor(models.Model):
         related_name="endoscopy_processors",
     )
 
-    name: models.CharField[str, str] = models.CharField(max_length=255)
-    image_width: models.IntegerField[int, int] = models.IntegerField(default=1)
-    image_height: models.IntegerField[int, int] = models.IntegerField(default=1)
+    name: models.CharField[str] = models.CharField(max_length=255)
+    image_width: models.IntegerField[int] = models.IntegerField(default=1)
+    image_height: models.IntegerField[int] = models.IntegerField(default=1)
     # image_fps = models.IntegerField()
 
     # Roi for endoscope image
-    endoscope_image_x: models.IntegerField[int, int] = models.IntegerField(default=0)
-    endoscope_image_y: models.IntegerField[int, int] = models.IntegerField(default=0)
-    endoscope_image_width: models.IntegerField[int, int] = models.IntegerField(
-        default=0
-    )
-    endoscope_image_height: models.IntegerField[int, int] = models.IntegerField(
-        default=0
-    )
+    endoscope_image_x: models.IntegerField[int] = models.IntegerField(default=0)
+    endoscope_image_y: models.IntegerField[int] = models.IntegerField(default=0)
+    endoscope_image_width: models.IntegerField[int] = models.IntegerField(default=0)
+    endoscope_image_height: models.IntegerField[int] = models.IntegerField(default=0)
 
     # Roi for examination date
-    examination_date_x: models.IntegerField[int, int] = models.IntegerField(default=0)
-    examination_date_y: models.IntegerField[int, int] = models.IntegerField(default=0)
-    examination_date_width: models.IntegerField[int, int] = models.IntegerField(
-        default=0
-    )
-    examination_date_height: models.IntegerField[int, int] = models.IntegerField(
-        default=0
-    )
+    examination_date_x: models.IntegerField[int] = models.IntegerField(default=0)
+    examination_date_y: models.IntegerField[int] = models.IntegerField(default=0)
+    examination_date_width: models.IntegerField[int] = models.IntegerField(default=0)
+    examination_date_height: models.IntegerField[int] = models.IntegerField(default=0)
 
     # Roi for examination time
-    examination_time_x: models.IntegerField[int | None, int | None] = (
-        models.IntegerField(blank=True, null=True)
+    examination_time_x: models.IntegerField[int | None] = models.IntegerField(
+        blank=True, null=True
     )
-    examination_time_y: models.IntegerField[int | None, int | None] = (
-        models.IntegerField(blank=True, null=True)
+    examination_time_y: models.IntegerField[int | None] = models.IntegerField(
+        blank=True, null=True
     )
-    examination_time_width: models.IntegerField[int | None, int | None] = (
-        models.IntegerField(blank=True, null=True)
+    examination_time_width: models.IntegerField[int | None] = models.IntegerField(
+        blank=True, null=True
     )
-    examination_time_height: models.IntegerField[int | None, int | None] = (
-        models.IntegerField(blank=True, null=True)
+    examination_time_height: models.IntegerField[int | None] = models.IntegerField(
+        blank=True, null=True
     )
 
     # Roi for patient first name
-    patient_first_name_x: models.IntegerField[int, int] = models.IntegerField(default=0)
-    patient_first_name_y: models.IntegerField[int, int] = models.IntegerField(default=0)
-    patient_first_name_width: models.IntegerField[int, int] = models.IntegerField(
-        default=0
-    )
-    patient_first_name_height: models.IntegerField[int, int] = models.IntegerField(
-        default=0
-    )
+    patient_first_name_x: models.IntegerField[int] = models.IntegerField(default=0)
+    patient_first_name_y: models.IntegerField[int] = models.IntegerField(default=0)
+    patient_first_name_width: models.IntegerField[int] = models.IntegerField(default=0)
+    patient_first_name_height: models.IntegerField[int] = models.IntegerField(default=0)
 
     # Roi for patient name
-    patient_last_name_x: models.IntegerField[int, int] = models.IntegerField(default=0)
-    patient_last_name_y: models.IntegerField[int, int] = models.IntegerField(default=0)
-    patient_last_name_width: models.IntegerField[int, int] = models.IntegerField(
-        default=0
-    )
-    patient_last_name_height: models.IntegerField[int, int] = models.IntegerField(
-        default=0
-    )
+    patient_last_name_x: models.IntegerField[int] = models.IntegerField(default=0)
+    patient_last_name_y: models.IntegerField[int] = models.IntegerField(default=0)
+    patient_last_name_width: models.IntegerField[int] = models.IntegerField(default=0)
+    patient_last_name_height: models.IntegerField[int] = models.IntegerField(default=0)
 
     # Roi for patient dob
-    patient_dob_x: models.IntegerField[int, int] = models.IntegerField(default=0)
-    patient_dob_y: models.IntegerField[int, int] = models.IntegerField(default=0)
-    patient_dob_width: models.IntegerField[int, int] = models.IntegerField(default=0)
-    patient_dob_height: models.IntegerField[int, int] = models.IntegerField(default=0)
+    patient_dob_x: models.IntegerField[int] = models.IntegerField(default=0)
+    patient_dob_y: models.IntegerField[int] = models.IntegerField(default=0)
+    patient_dob_width: models.IntegerField[int] = models.IntegerField(default=0)
+    patient_dob_height: models.IntegerField[int] = models.IntegerField(default=0)
 
     # Roi for endoscope type
-    endoscope_type_x: models.IntegerField[int | None, int | None] = models.IntegerField(
+    endoscope_type_x: models.IntegerField[int | None] = models.IntegerField(
         blank=True, null=True
     )
-    endoscope_type_y: models.IntegerField[int | None, int | None] = models.IntegerField(
+    endoscope_type_y: models.IntegerField[int | None] = models.IntegerField(
         blank=True, null=True
     )
-    endoscope_type_width: models.IntegerField[int | None, int | None] = (
-        models.IntegerField(blank=True, null=True)
+    endoscope_type_width: models.IntegerField[int | None] = models.IntegerField(
+        blank=True, null=True
     )
-    endoscope_type_height: models.IntegerField[int | None, int | None] = (
-        models.IntegerField(blank=True, null=True)
+    endoscope_type_height: models.IntegerField[int | None] = models.IntegerField(
+        blank=True, null=True
     )
 
     # Roi for endoscopy sn
-    endoscope_sn_x: models.IntegerField[int | None, int | None] = models.IntegerField(
+    endoscope_sn_x: models.IntegerField[int | None] = models.IntegerField(
         blank=True, null=True
     )
-    endoscope_sn_y: models.IntegerField[int | None, int | None] = models.IntegerField(
+    endoscope_sn_y: models.IntegerField[int | None] = models.IntegerField(
         blank=True, null=True
     )
-    endoscope_sn_width: models.IntegerField[int | None, int | None] = (
-        models.IntegerField(blank=True, null=True)
+    endoscope_sn_width: models.IntegerField[int | None] = models.IntegerField(
+        blank=True, null=True
     )
-    endoscope_sn_height: models.IntegerField[int | None, int | None] = (
-        models.IntegerField(blank=True, null=True)
+    endoscope_sn_height: models.IntegerField[int | None] = models.IntegerField(
+        blank=True, null=True
     )
 
     def natural_key(self) -> tuple[str]:

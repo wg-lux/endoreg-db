@@ -27,19 +27,15 @@ class _ExaminerNameSource(Protocol):
 
 class Examiner(Person):
     if TYPE_CHECKING:
-        center: models.ForeignKey[
-            Center | NoExaminerValue,
-            Center | NoExaminerValue,
-        ]
+        center: models.ForeignKey[Center | NoExaminerValue]
 
-    center: models.ForeignKey[
-        Center | NoExaminerValue,
-        Center | NoExaminerValue,
-    ] = models.ForeignKey("Center", on_delete=models.CASCADE, blank=True, null=True)
-    hash: "models.CharField[str, str]" = models.CharField(max_length=255, unique=True)
+    center: models.ForeignKey[Center | NoExaminerValue | None] = models.ForeignKey(
+        "Center", on_delete=models.CASCADE, blank=True, null=True
+    )
+    hash: "models.CharField[str]" = models.CharField(max_length=255, unique=True)
 
     if TYPE_CHECKING:
-        portal_user_info: models.OneToOneField["PortalUserInfo", "PortalUserInfo"]
+        portal_user_info: models.OneToOneField["PortalUserInfo"]
 
     def __str__(self) -> str:
         return self.first_name + " " + self.last_name

@@ -22,34 +22,31 @@ class _PortalUserSource(Protocol):
 
 
 class PortalUserInfo(models.Model):
-    user: models.OneToOneField["User", "User"] = models.OneToOneField(
+    user: models.OneToOneField["User"] = models.OneToOneField(
         "auth.User", on_delete=models.CASCADE
     )
-    profession: models.ForeignKey[
-        Profession | NoPortalUserInfoValue,
-        Profession | NoPortalUserInfoValue,
-    ] = models.ForeignKey(
-        "endoreg_db.Profession",
-        on_delete=models.CASCADE,
-        blank=True,
-        null=True,
-        related_name="portal_user_infos",
+    profession: models.ForeignKey[Profession | NoPortalUserInfoValue | None] = (
+        models.ForeignKey(
+            "endoreg_db.Profession",
+            on_delete=models.CASCADE,
+            blank=True,
+            null=True,
+            related_name="portal_user_infos",
+        )
     )
-    works_in_endoscopy: models.BooleanField[
-        PortalUserInfoFlag,
-        PortalUserInfoFlag,
-    ] = models.BooleanField(blank=True, null=True)
+    works_in_endoscopy: models.BooleanField[PortalUserInfoFlag | None] = (
+        models.BooleanField(blank=True, null=True)
+    )
     # Add other fields as needed
 
-    examiner: models.OneToOneField[
-        Examiner | NoPortalUserInfoValue,
-        Examiner | NoPortalUserInfoValue,
-    ] = models.OneToOneField(
-        "endoreg_db.Examiner",
-        on_delete=models.CASCADE,
-        blank=True,
-        null=True,
-        related_name="portal_user_info",
+    examiner: models.OneToOneField[Examiner | NoPortalUserInfoValue | None] = (
+        models.OneToOneField(
+            "endoreg_db.Examiner",
+            on_delete=models.CASCADE,
+            blank=True,
+            null=True,
+            related_name="portal_user_info",
+        )
     )
 
     if TYPE_CHECKING:

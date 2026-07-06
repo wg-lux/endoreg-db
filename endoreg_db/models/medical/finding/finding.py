@@ -19,8 +19,8 @@ class FindingManager(models.Manager["Finding"]):
 
 
 class Finding(models.Model):
-    name: models.CharField[str, str] = models.CharField(max_length=100, unique=True)
-    description: models.TextField[str, str] = models.TextField(blank=True, null=True)
+    name: models.CharField[str] = models.CharField(max_length=100, unique=True)
+    description: models.TextField[str | None] = models.TextField(blank=True, null=True)
     finding_types: "models.ManyToManyField[FindingType, FindingType]" = (
         models.ManyToManyField("FindingType", blank=True, related_name="findings")
     )

@@ -19,10 +19,8 @@ class FindingTypeManager(models.Manager["FindingType"]):
 
 
 class FindingType(models.Model):
-    name: models.CharField[str, str] = models.CharField(max_length=100, unique=True)
-    description: models.TextField[str | None, str | None] = models.TextField(
-        blank=True, null=True
-    )
+    name: models.CharField[str] = models.CharField(max_length=100, unique=True)
+    description: models.TextField[str | None] = models.TextField(blank=True, null=True)
 
     objects: models.Manager["FindingType"] = FindingTypeManager()  # pyright: ignore[reportIncompatibleVariableOverride]
 

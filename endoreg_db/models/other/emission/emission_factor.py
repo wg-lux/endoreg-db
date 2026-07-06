@@ -34,11 +34,11 @@ class EmissionFactor(models.Model):
 
     objects = EmissionFactorManager()
 
-    name: models.CharField[str, str] = models.CharField(max_length=255)
-    unit: models.ForeignKey["Unit | None", "Unit | None"] = models.ForeignKey(
+    name: models.CharField[str] = models.CharField(max_length=255)
+    unit: models.ForeignKey["Unit | None"] = models.ForeignKey(
         "Unit", on_delete=models.SET_NULL, null=True
     )
-    value: models.FloatField[float, float] = models.FloatField()
+    value: models.FloatField[float] = models.FloatField()
 
     if TYPE_CHECKING:
         pass

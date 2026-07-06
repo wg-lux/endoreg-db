@@ -34,28 +34,18 @@ class ScheduledDays(models.Model):
     Model representing scheduled days for a shift.
     """
 
-    name: models.CharField[str, str] = models.CharField(
+    name: models.CharField[str] = models.CharField(
         max_length=255,
         unique=True,
         help_text="Name of the scheduled days.",
     )
-    working_days: models.BooleanField[ScheduledDaysBoolean, ScheduledDaysBoolean] = (
-        models.BooleanField(
-            null=True,
-            blank=True,
-            default=True,
-        )
-    )
-
-    non_working_days: models.BooleanField[
-        ScheduledDaysBoolean, ScheduledDaysBoolean
-    ] = models.BooleanField(
+    working_days: models.BooleanField[ScheduledDaysBoolean] = models.BooleanField(
         null=True,
         blank=True,
-        default=False,
+        default=True,
     )
 
-    limited_time: models.BooleanField[ScheduledDaysBoolean, ScheduledDaysBoolean] = (
+    non_working_days: models.BooleanField[ScheduledDaysBoolean | None] = (
         models.BooleanField(
             null=True,
             blank=True,
@@ -63,14 +53,18 @@ class ScheduledDays(models.Model):
         )
     )
 
-    start_date: models.DateField[ScheduledDaysDate, ScheduledDaysDate] = (
-        models.DateField(
-            null=True,
-            blank=True,
-        )
+    limited_time: models.BooleanField[ScheduledDaysBoolean] = models.BooleanField(
+        null=True,
+        blank=True,
+        default=False,
     )
 
-    end_date: models.DateField[ScheduledDaysDate, ScheduledDaysDate] = models.DateField(
+    start_date: models.DateField[ScheduledDaysDate] = models.DateField(
+        null=True,
+        blank=True,
+    )
+
+    end_date: models.DateField[ScheduledDaysDate | None] = models.DateField(
         null=True,
         blank=True,
     )

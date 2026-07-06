@@ -30,13 +30,9 @@ class Disease(models.Model):
     Can define associated subcategories and numerical descriptors applicable to the disease itself.
     """
 
-    name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
-    subcategories: models.JSONField[object, dict[str, object]] = models.JSONField(
-        default=dict
-    )
-    numerical_descriptors: models.JSONField[object, dict[str, object]] = (
-        models.JSONField(default=dict)
-    )
+    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
+    subcategories: models.JSONField[object] = models.JSONField(default=dict)
+    numerical_descriptors: models.JSONField[object] = models.JSONField(default=dict)
 
     objects = DiseaseManager()
 
@@ -45,12 +41,12 @@ class Disease(models.Model):
         @property
         def disease_classifications(
             self,
-        ) -> models.QuerySet["DiseaseClassification", "DiseaseClassification"]: ...
+        ) -> models.QuerySet["DiseaseClassification"]: ...
 
         @property
         def patient_diseases(
             self,
-        ) -> models.QuerySet["PatientDisease", "PatientDisease"]: ...
+        ) -> models.QuerySet["PatientDisease"]: ...
 
     def natural_key(self) -> tuple[str]:
         """Returns the natural key (name) as a tuple."""
@@ -92,9 +88,9 @@ class DiseaseClassification(models.Model):
     Represents a classification system applicable to a specific disease (e.g., Forrest classification for ulcers).
     """
 
-    name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
+    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
 
-    disease: models.ForeignKey[Disease, Disease] = models.ForeignKey(
+    disease: models.ForeignKey[Disease] = models.ForeignKey(
         Disease, on_delete=models.CASCADE, related_name="disease_classifications"
     )
 
@@ -149,14 +145,14 @@ class DiseaseClassificationChoice(models.Model):
     Represents a specific choice within a disease classification system (e.g., Forrest IIa).
     """
 
-    name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
+    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
 
-    disease_classification: models.ForeignKey[
-        DiseaseClassification, DiseaseClassification
-    ] = models.ForeignKey(
-        DiseaseClassification,
-        on_delete=models.CASCADE,
-        related_name="disease_classification_choices",
+    disease_classification: models.ForeignKey[DiseaseClassification] = (
+        models.ForeignKey(
+            DiseaseClassification,
+            on_delete=models.CASCADE,
+            related_name="disease_classification_choices",
+        )
     )
 
     objects = DiseaseClassificationChoiceManager()

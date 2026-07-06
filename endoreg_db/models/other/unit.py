@@ -15,13 +15,11 @@ class UnitManager(models.Manager["Unit"]):
 class Unit(models.Model):
     objects: ClassVar[UnitManager] = UnitManager()  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    name: models.CharField[str, str] = models.CharField(
-        max_length=100
-    )  # e.g. "Centimeter"
-    description: models.CharField[str | None, str | None] = models.CharField(
+    name: models.CharField[str] = models.CharField(max_length=100)  # e.g. "Centimeter"
+    description: models.CharField[str | None] = models.CharField(
         max_length=100, blank=True, null=True
     )  # e.g. "centimeters", "milimeters", "inches"
-    abbreviation: models.CharField[str | None, str | None] = models.CharField(
+    abbreviation: models.CharField[str | None] = models.CharField(
         max_length=25, blank=True, null=True
     )  # e.g. "cm", "mm", "in"
 

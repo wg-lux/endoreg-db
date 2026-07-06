@@ -24,11 +24,11 @@ class Qualification(models.Model):
     Model representing a qualification.
     """
 
-    name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
-    description: models.TextField[
-        QualificationDescription, QualificationDescription
-    ] = models.TextField(blank=True, null=True)
-    is_active: models.BooleanField[bool, bool] = models.BooleanField(default=True)
+    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
+    description: models.TextField[QualificationDescription | None] = models.TextField(
+        blank=True, null=True
+    )
+    is_active: models.BooleanField[bool] = models.BooleanField(default=True)
 
     qualification_types: models.ManyToManyField[
         QualificationType, QualificationType

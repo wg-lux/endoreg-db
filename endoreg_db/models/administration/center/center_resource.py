@@ -16,23 +16,22 @@ CenterResourceName: TypeAlias = str | NoCenterResourceValue
 
 
 class CenterResource(models.Model):
-    name: models.CharField[CenterResourceName, CenterResourceName] = models.CharField(
+    name: models.CharField[CenterResourceName | None] = models.CharField(
         max_length=255,
         null=True,
     )
-    center: models.ForeignKey[Center, Center] = models.ForeignKey(
+    center: models.ForeignKey[Center] = models.ForeignKey(
         "Center",
         on_delete=models.CASCADE,
         related_name="center_resources",
     )
-    quantity: models.FloatField[float, float] = models.FloatField()
-    resource: models.ForeignKey[Resource, Resource] = models.ForeignKey(
+    quantity: models.FloatField[float] = models.FloatField()
+    resource: models.ForeignKey[Resource] = models.ForeignKey(
         "Resource",
         on_delete=models.CASCADE,
     )
     transport_emission_factor: models.ForeignKey[
-        EmissionFactor | NoCenterResourceValue,
-        EmissionFactor | NoCenterResourceValue,
+        EmissionFactor | NoCenterResourceValue | None
     ] = models.ForeignKey(
         "EmissionFactor",
         on_delete=models.SET_NULL,
@@ -40,19 +39,17 @@ class CenterResource(models.Model):
         related_name="center_resource_transport_emission_factor",
     )
     use_emission_factor: models.ForeignKey[
-        EmissionFactor | NoCenterResourceValue,
-        EmissionFactor | NoCenterResourceValue,
+        EmissionFactor | NoCenterResourceValue | None
     ] = models.ForeignKey(
         "EmissionFactor",
         on_delete=models.SET_NULL,
         null=True,
         related_name="center_resource_use_emission_factor",
     )
-    year: models.IntegerField[int, int] = models.IntegerField()
-    unit: models.ForeignKey[
-        Unit | NoCenterResourceValue,
-        Unit | NoCenterResourceValue,
-    ] = models.ForeignKey("Unit", on_delete=models.SET_NULL, null=True)
+    year: models.IntegerField[int] = models.IntegerField()
+    unit: models.ForeignKey[Unit | NoCenterResourceValue | None] = models.ForeignKey(
+        "Unit", on_delete=models.SET_NULL, null=True
+    )
 
     if TYPE_CHECKING:
         pass

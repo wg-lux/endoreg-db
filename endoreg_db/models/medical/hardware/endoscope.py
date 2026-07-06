@@ -12,18 +12,16 @@ class EndoscopeManager(models.Manager["Endoscope"]):
 class Endoscope(models.Model):
     objects = EndoscopeManager()
 
-    name: models.CharField[str, str] = models.CharField(max_length=255)
-    sn: models.CharField[str, str] = models.CharField(max_length=255)
-    center: models.ForeignKey["Center | None", "Center | None"] = models.ForeignKey(
+    name: models.CharField[str] = models.CharField(max_length=255)
+    sn: models.CharField[str] = models.CharField(max_length=255)
+    center: models.ForeignKey["Center | None"] = models.ForeignKey(
         "Center",
         blank=True,
         null=True,
         on_delete=models.CASCADE,
         related_name="endoscopes",
     )
-    endoscope_type: models.ForeignKey[
-        "EndoscopeType | None", "EndoscopeType | None"
-    ] = models.ForeignKey(
+    endoscope_type: models.ForeignKey["EndoscopeType | None"] = models.ForeignKey(
         "EndoscopeType",
         blank=True,
         null=True,
@@ -60,10 +58,10 @@ class EndoscopeTypeManager(models.Manager["EndoscopeType"]):
 class EndoscopeType(models.Model):
     objects = EndoscopeTypeManager()
 
-    name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
+    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
 
     if TYPE_CHECKING:
-        endoscopes: models.QuerySet["Endoscope", "Endoscope"]
+        endoscopes: models.QuerySet["Endoscope"]
 
     def natural_key(self) -> tuple[str]:
         return (str(self.name),)

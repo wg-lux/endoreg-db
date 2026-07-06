@@ -26,29 +26,27 @@ class FrameExtractionRequest(models.Model):
         (STATUS_FAILURE, "Failure"),
     )
 
-    video: models.ForeignKey["VideoFile", "VideoFile"] = models.ForeignKey(
+    video: models.ForeignKey["VideoFile"] = models.ForeignKey(
         "endoreg_db.VideoFile",
         on_delete=models.CASCADE,
         related_name="frame_extraction_requests",
     )
-    frame_number: models.IntegerField[int, int] = models.IntegerField()
-    status: models.CharField[FrameExtractionStatus, FrameExtractionStatus] = (
-        models.CharField(
-            max_length=20,
-            choices=STATUS_CHOICES,
-            default=STATUS_PENDING,
-        )
+    frame_number: models.IntegerField[int] = models.IntegerField()
+    status: models.CharField[str] = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default=STATUS_PENDING,
     )
-    task_id: models.CharField[str, str] = models.CharField(max_length=100, blank=True)
-    error_message: models.TextField[str, str] = models.TextField(blank=True)
-    requested_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
+    task_id: models.CharField[str] = models.CharField(max_length=100, blank=True)
+    error_message: models.TextField[str] = models.TextField(blank=True)
+    requested_at: models.DateTimeField[datetime] = models.DateTimeField(
         auto_now_add=True
     )
-    started_at: models.DateTimeField[datetime | None, datetime | None] = (
-        models.DateTimeField(null=True, blank=True)
+    started_at: models.DateTimeField[datetime | None] = models.DateTimeField(
+        null=True, blank=True
     )
-    completed_at: models.DateTimeField[datetime | None, datetime | None] = (
-        models.DateTimeField(null=True, blank=True)
+    completed_at: models.DateTimeField[datetime | None] = models.DateTimeField(
+        null=True, blank=True
     )
 
     class Meta:

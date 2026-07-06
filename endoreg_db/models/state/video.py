@@ -35,93 +35,91 @@ class VideoState(models.Model):
         video_file: VideoFile
 
     # Frame related states
-    frames_extracted: models.BooleanField[bool, bool] = models.BooleanField(
+    frames_extracted: models.BooleanField[bool] = models.BooleanField(
         default=False, help_text="True if raw frames have been extracted to files."
     )
-    frames_initialized: models.BooleanField[bool, bool] = models.BooleanField(
+    frames_initialized: models.BooleanField[bool] = models.BooleanField(
         default=False, help_text="True if Frame DB objects have been created."
     )
-    frame_count: models.PositiveIntegerField[int | None, int | None] = (
-        models.PositiveIntegerField(
-            null=True, blank=True, help_text="Number of frames extracted/initialized."
-        )
+    frame_count: models.PositiveIntegerField[int | None] = models.PositiveIntegerField(
+        null=True, blank=True, help_text="Number of frames extracted/initialized."
     )
 
     # Metadata related states
-    video_meta_extracted: models.BooleanField[bool, bool] = models.BooleanField(
+    video_meta_extracted: models.BooleanField[bool] = models.BooleanField(
         default=False,
         help_text="True if VideoMeta (technical specs) has been extracted.",
     )
-    text_meta_extracted: models.BooleanField[bool, bool] = models.BooleanField(
+    text_meta_extracted: models.BooleanField[bool] = models.BooleanField(
         default=False, help_text="True if text metadata (OCR) has been extracted."
     )
 
     # AI / Annotation related states
-    initial_prediction_completed: models.BooleanField[bool, bool] = models.BooleanField(
+    initial_prediction_completed: models.BooleanField[bool] = models.BooleanField(
         default=False, help_text="True if initial AI prediction has run."
     )
-    lvs_created: models.BooleanField[bool, bool] = models.BooleanField(
+    lvs_created: models.BooleanField[bool] = models.BooleanField(
         default=False,
         help_text="True if LabelVideoSegments have been created from predictions.",
     )
-    frame_annotations_generated: models.BooleanField[bool, bool] = models.BooleanField(
+    frame_annotations_generated: models.BooleanField[bool] = models.BooleanField(
         default=False,
         help_text="True if frame-level annotations have been generated from segments.",
     )
 
     # Processing state
-    sensitive_meta_processed: models.BooleanField[bool, bool] = models.BooleanField(
+    sensitive_meta_processed: models.BooleanField[bool] = models.BooleanField(
         default=False,
         help_text="True if the video has been fully processed, meaning a anonymized person was created.",
     )
 
     # Anonymization state
-    anonymized: models.BooleanField[bool, bool] = models.BooleanField(
+    anonymized: models.BooleanField[bool] = models.BooleanField(
         default=False, help_text="True if the anonymized video file has been created."
     )
-    anonymization_validated: models.BooleanField[bool, bool] = models.BooleanField(
+    anonymization_validated: models.BooleanField[bool] = models.BooleanField(
         default=False,
         help_text="True if the anonymization process has been validated and confirmed.",
     )
-    outside_segments_removed: models.BooleanField[bool, bool] = models.BooleanField(
+    outside_segments_removed: models.BooleanField[bool] = models.BooleanField(
         default=False,
         help_text=(
             "True if outside-labelled segments have been removed or blackened in "
             "the managed processed artifact."
         ),
     )
-    ready_for_export: models.BooleanField[bool, bool] = models.BooleanField(
+    ready_for_export: models.BooleanField[bool] = models.BooleanField(
         default=False,
         help_text=(
             "True if the managed processed artifact passed explicit clinical "
             "ready-for-export validation."
         ),
     )
-    ready_for_export_at: models.DateTimeField[
-        datetime.datetime | None, datetime.datetime | None
-    ] = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="Server-side timestamp for the ready-for-export promotion.",
+    ready_for_export_at: models.DateTimeField[datetime.datetime | None] = (
+        models.DateTimeField(
+            null=True,
+            blank=True,
+            help_text="Server-side timestamp for the ready-for-export promotion.",
+        )
     )
-    ready_for_export_by: models.CharField[str, str] = models.CharField(
+    ready_for_export_by: models.CharField[str] = models.CharField(
         max_length=255,
         blank=True,
         default="",
         help_text="Authenticated user or service that promoted this video.",
     )
-    processed_file_sha256: models.CharField[str, str] = models.CharField(
+    processed_file_sha256: models.CharField[str] = models.CharField(
         max_length=64,
         blank=True,
         default="",
         help_text="SHA-256 digest of the processed artifact at promotion time.",
     )
 
-    processing_started: models.BooleanField[bool, bool] = models.BooleanField(
+    processing_started: models.BooleanField[bool] = models.BooleanField(
         default=False,
         help_text="True if the processing has started, but not yet completed.",
     )
-    processing_error: models.BooleanField[bool, bool] = models.BooleanField(
+    processing_error: models.BooleanField[bool] = models.BooleanField(
         default=False,
         help_text=(
             "True if processing failed or media integrity marked this video lost."
@@ -129,25 +127,23 @@ class VideoState(models.Model):
     )
 
     # Timestamps
-    date_created: models.DateTimeField[datetime.datetime, datetime.datetime] = (
-        models.DateTimeField(auto_now_add=True)
+    date_created: models.DateTimeField[datetime.datetime] = models.DateTimeField(
+        auto_now_add=True
     )
-    date_modified: models.DateTimeField[datetime.datetime, datetime.datetime] = (
-        models.DateTimeField(auto_now=True)
+    date_modified: models.DateTimeField[datetime.datetime] = models.DateTimeField(
+        auto_now=True
     )
 
     # Segment Annotation State
-    segment_annotations_created: models.BooleanField[bool, bool] = models.BooleanField(
+    segment_annotations_created: models.BooleanField[bool] = models.BooleanField(
         default=False,
         help_text="True if segment annotations have been created from LabelVideoSegments.",
     )
-    segment_annotations_validated: models.BooleanField[bool, bool] = (
-        models.BooleanField(
-            default=False, help_text="True if segment annotations have been validated."
-        )
+    segment_annotations_validated: models.BooleanField[bool] = models.BooleanField(
+        default=False, help_text="True if segment annotations have been validated."
     )
 
-    was_created: models.BooleanField[bool, bool] = models.BooleanField(
+    was_created: models.BooleanField[bool] = models.BooleanField(
         default=True, help_text="True if this state was created for the first time."
     )
 

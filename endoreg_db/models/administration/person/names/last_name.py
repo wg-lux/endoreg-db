@@ -9,7 +9,7 @@ class LastNameManager(models.Manager["LastName"]):
 
 class LastName(models.Model):
     objects = LastNameManager()
-    name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
+    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
 
     def natural_key(self) -> tuple[str]:
         return (self.name,)

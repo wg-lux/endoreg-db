@@ -10,7 +10,7 @@ class TagManager(models.Manager["Tag"]):
 
 
 class Tag(models.Model):
-    name: models.CharField[str, str] = models.CharField(max_length=100, unique=True)
+    name: models.CharField[str] = models.CharField(max_length=100, unique=True)
 
     objects: ClassVar[TagManager] = TagManager()  # pyright: ignore[reportIncompatibleVariableOverride]
 

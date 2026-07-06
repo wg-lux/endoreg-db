@@ -26,20 +26,19 @@ class PatientMedication(models.Model):
     Links a patient to a medication, its indication, dosage, intake times, and unit.
     """
 
-    patient: models.ForeignKey["Patient", "Patient"] = models.ForeignKey(
+    patient: models.ForeignKey["Patient"] = models.ForeignKey(
         "Patient", on_delete=models.CASCADE
     )
-    medication_indication: models.ForeignKey[
-        "MedicationIndication | None",
-        "MedicationIndication | None",
-    ] = models.ForeignKey(
-        "MedicationIndication",
-        on_delete=models.CASCADE,
-        related_name="indication_patient_medications",
-        null=True,
+    medication_indication: models.ForeignKey["MedicationIndication | None"] = (
+        models.ForeignKey(
+            "MedicationIndication",
+            on_delete=models.CASCADE,
+            related_name="indication_patient_medications",
+            null=True,
+        )
     )
 
-    medication: models.ForeignKey["Medication", "Medication"] = models.ForeignKey(
+    medication: models.ForeignKey["Medication"] = models.ForeignKey(
         "Medication",
         on_delete=models.CASCADE,
         blank=True,
@@ -55,13 +54,13 @@ class PatientMedication(models.Model):
         blank=True,
     )
 
-    unit: models.ForeignKey["Unit | None", "Unit | None"] = models.ForeignKey(
+    unit: models.ForeignKey["Unit | None"] = models.ForeignKey(
         "Unit", on_delete=models.CASCADE, null=True, blank=True
     )
-    dosage: models.JSONField[JsonObject | None, JsonObject | None] = models.JSONField(
+    dosage: models.JSONField[JsonObject | None] = models.JSONField(
         null=True, blank=True
     )
-    active: models.BooleanField[bool, bool] = models.BooleanField(default=True)
+    active: models.BooleanField[bool] = models.BooleanField(default=True)
 
     objects: ClassVar[models.Manager["PatientMedication"]] = (  # pyright: ignore[reportIncompatibleVariableOverride]
         models.Manager()

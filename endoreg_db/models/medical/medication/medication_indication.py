@@ -34,11 +34,8 @@ class MedicationIndicationManager(models.Manager["MedicationIndication"]):
 class MedicationIndication(models.Model):
     """Model representing a medication indication."""
 
-    name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
-    indication_type: models.ForeignKey[
-        "MedicationIndicationType",
-        "MedicationIndicationType",
-    ] = models.ForeignKey(
+    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
+    indication_type: models.ForeignKey["MedicationIndicationType"] = models.ForeignKey(
         "MedicationIndicationType",
         on_delete=models.CASCADE,
         related_name="medication_indications",

@@ -33,20 +33,18 @@ class MedicationScheduleManager(models.Manager["MedicationSchedule"]):
 class MedicationSchedule(models.Model):
     """Model representing a medication schedule."""
 
-    name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
-    description: models.TextField[str | None, str | None] = models.TextField(
-        blank=True, null=True
-    )
-    medication: models.ForeignKey["Medication", "Medication"] = models.ForeignKey(
+    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
+    description: models.TextField[str | None] = models.TextField(blank=True, null=True)
+    medication: models.ForeignKey["Medication"] = models.ForeignKey(
         "Medication", on_delete=models.CASCADE
     )
-    unit: models.ForeignKey["Unit", "Unit"] = models.ForeignKey(
+    unit: models.ForeignKey["Unit"] = models.ForeignKey(
         "Unit", on_delete=models.CASCADE
     )
-    therapy_duration_d: models.FloatField[float | None, float | None] = (
-        models.FloatField(blank=True, null=True)
+    therapy_duration_d: models.FloatField[float | None] = models.FloatField(
+        blank=True, null=True
     )
-    dose: models.FloatField[float, float] = models.FloatField()
+    dose: models.FloatField[float] = models.FloatField()
     intake_times: models.ManyToManyField[
         "MedicationIntakeTime", "MedicationIntakeTime"
     ] = models.ManyToManyField("MedicationIntakeTime")

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """Model for medication intake time"""
 
+from datetime import time
 from typing import TYPE_CHECKING
 
 from django.db import models
@@ -18,11 +19,9 @@ class MedicationIntakeTimeManager(models.Manager["MedicationIntakeTime"]):
 class MedicationIntakeTime(models.Model):
     """Model representing a medication intake time."""
 
-    name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
-    repeats: models.CharField[str, str] = models.CharField(
-        max_length=20, default="daily"
-    )
-    time: models.TimeField[str, str] = models.TimeField()
+    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
+    repeats: models.CharField[str] = models.CharField(max_length=20, default="daily")
+    time: models.TimeField[time] = models.TimeField()
 
     objects = MedicationIntakeTimeManager()
 

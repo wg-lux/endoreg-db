@@ -38,10 +38,8 @@ class Event(models.Model):
         description (str): A description of the event.
     """
 
-    name: models.CharField[str, str] = models.CharField(max_length=100, unique=True)
-    description: models.TextField[str | None, str | None] = models.TextField(
-        blank=True, null=True
-    )
+    name: models.CharField[str] = models.CharField(max_length=100, unique=True)
+    description: models.TextField[str | None] = models.TextField(blank=True, null=True)
 
     objects = EventManager()
 
@@ -53,7 +51,7 @@ class Event(models.Model):
         @property
         def event_classifications(
             self,
-        ) -> models.QuerySet["EventClassification", "EventClassification"]: ...
+        ) -> models.QuerySet["EventClassification"]: ...
 
     def natural_key(self) -> tuple[str]:
         """
@@ -86,11 +84,11 @@ class EventClassification(models.Model):
     Represents a classification system for events (e.g., TNM staging for cancer).
     """
 
-    name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
+    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
 
     objects = EventClassificationManager()
 
-    event: models.ForeignKey[Event, Event] = models.ForeignKey(
+    event: models.ForeignKey[Event] = models.ForeignKey(
         Event,
         on_delete=models.CASCADE,
         related_name="event_classifications",
@@ -101,9 +99,7 @@ class EventClassification(models.Model):
         @property
         def event_classification_choices(
             self,
-        ) -> models.QuerySet[
-            "EventClassificationChoice", "EventClassificationChoice"
-        ]: ...
+        ) -> models.QuerySet["EventClassificationChoice"]: ...
 
     def natural_key(self) -> tuple[str]:
         """Returns the natural key (name) as a tuple."""
@@ -133,17 +129,11 @@ class EventClassificationChoice(models.Model):
     Can define associated subcategories and numerical descriptors.
     """
 
-    name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
-    subcategories: models.JSONField[object, dict[str, object]] = models.JSONField(
-        default=dict
-    )
-    numerical_descriptors: models.JSONField[object, dict[str, object]] = (
-        models.JSONField(default=dict)
-    )
+    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
+    subcategories: models.JSONField[object] = models.JSONField(default=dict)
+    numerical_descriptors: models.JSONField[object] = models.JSONField(default=dict)
 
-    event_classification: models.ForeignKey[
-        EventClassification, EventClassification
-    ] = models.ForeignKey(
+    event_classification: models.ForeignKey[EventClassification] = models.ForeignKey(
         EventClassification,
         on_delete=models.CASCADE,
         related_name="event_classification_choices",

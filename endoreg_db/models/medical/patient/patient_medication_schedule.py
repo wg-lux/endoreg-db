@@ -24,7 +24,7 @@ class PatientMedicationSchedule(models.Model):
     Represents a collection of medications associated with a patient, forming their schedule.
     """
 
-    patient: models.ForeignKey["Patient", "Patient"] = models.ForeignKey(
+    patient: models.ForeignKey["Patient"] = models.ForeignKey(
         "Patient", on_delete=models.CASCADE
     )
     medication: models.ManyToManyField[
@@ -34,8 +34,8 @@ class PatientMedicationSchedule(models.Model):
         "PatientMedication", related_name="patient_medication_schedules", blank=True
     )
 
-    created_at: models.DateTimeField[dt, dt] = models.DateTimeField(auto_now_add=True)
-    updated_at: models.DateTimeField[dt, dt] = models.DateTimeField(auto_now=True)
+    created_at: models.DateTimeField[dt] = models.DateTimeField(auto_now_add=True)
+    updated_at: models.DateTimeField[dt] = models.DateTimeField(auto_now=True)
 
     objects: ClassVar[models.Manager["PatientMedicationSchedule"]] = (  # pyright: ignore[reportIncompatibleVariableOverride]
         models.Manager()

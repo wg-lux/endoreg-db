@@ -76,17 +76,16 @@ class LabValueManager(models.Manager["LabValue"]):
 
 
 class LabValue(models.Model):
-    name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
-    abbreviation: models.CharField[str | None, str | None] = models.CharField(
+    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
+    abbreviation: models.CharField[str | None] = models.CharField(
         max_length=10, blank=True, null=True
     )
-    default_unit: models.ForeignKey["Unit | None", "Unit | None"] = models.ForeignKey(
+    default_unit: models.ForeignKey["Unit | None"] = models.ForeignKey(
         "Unit", on_delete=models.CASCADE, blank=True, null=True
     )
-    numeric_precision: models.IntegerField[int, int] = models.IntegerField(default=3)
+    numeric_precision: models.IntegerField[int] = models.IntegerField(default=3)
     default_single_categorical_value_distribution: models.ForeignKey[
-        "SingleCategoricalValueDistribution | None",
-        "SingleCategoricalValueDistribution | None",
+        "SingleCategoricalValueDistribution | None"
     ] = models.ForeignKey(
         "SingleCategoricalValueDistribution",
         on_delete=models.CASCADE,
@@ -95,8 +94,7 @@ class LabValue(models.Model):
         related_name="default_single_categorical_value_distribution",
     )
     default_numerical_value_distribution: models.ForeignKey[
-        "NumericValueDistribution | None",
-        "NumericValueDistribution | None",
+        "NumericValueDistribution | None"
     ] = models.ForeignKey(
         "NumericValueDistribution",
         on_delete=models.CASCADE,
@@ -105,8 +103,7 @@ class LabValue(models.Model):
         related_name="default_numerical_value_distribution",
     )
     default_multiple_categorical_value_distribution: models.ForeignKey[
-        "MultipleCategoricalValueDistribution | None",
-        "MultipleCategoricalValueDistribution | None",
+        "MultipleCategoricalValueDistribution | None"
     ] = models.ForeignKey(
         "MultipleCategoricalValueDistribution",
         on_delete=models.CASCADE,
@@ -115,7 +112,7 @@ class LabValue(models.Model):
         related_name="default_multiple_categorical_value_distribution",
     )
     default_date_value_distribution: models.ForeignKey[
-        "DateValueDistribution | None", "DateValueDistribution | None"
+        "DateValueDistribution | None"
     ] = models.ForeignKey(
         "DateValueDistribution",
         on_delete=models.CASCADE,
@@ -123,19 +120,19 @@ class LabValue(models.Model):
         null=True,
         related_name="default_date_value_distribution",
     )
-    default_normal_range: models.JSONField[
-        LabValueNormalRangePayload | None, LabValueNormalRangePayload | None
-    ] = models.JSONField(blank=True, null=True)
-    normal_range_age_dependent: models.BooleanField[bool, bool] = models.BooleanField(
+    default_normal_range: models.JSONField[LabValueNormalRangePayload | None] = (
+        models.JSONField(blank=True, null=True)
+    )
+    normal_range_age_dependent: models.BooleanField[bool] = models.BooleanField(
         default=False
     )
-    normal_range_gender_dependent: models.BooleanField[bool, bool] = (
-        models.BooleanField(default=False)
-    )
-    normal_range_special_case: models.BooleanField[bool, bool] = models.BooleanField(
+    normal_range_gender_dependent: models.BooleanField[bool] = models.BooleanField(
         default=False
     )
-    bound_adjustment_factor: models.FloatField[float, float] = models.FloatField(
+    normal_range_special_case: models.BooleanField[bool] = models.BooleanField(
+        default=False
+    )
+    bound_adjustment_factor: models.FloatField[float] = models.FloatField(
         default=0.1,
         help_text="Factor for adjusting bounds when generating increased/decreased values, e.g., 0.1 for 10%.",
     )

@@ -19,11 +19,10 @@ class ProfessionManager(models.Manager["Profession"]):
 
 class Profession(models.Model):
     objects = ProfessionManager()
-    name: models.CharField[str, str] = models.CharField(max_length=100)
-    description: models.TextField[
-        ProfessionDescription,
-        ProfessionDescription,
-    ] = models.TextField(blank=True, null=True)
+    name: models.CharField[str] = models.CharField(max_length=100)
+    description: models.TextField[ProfessionDescription | None] = models.TextField(
+        blank=True, null=True
+    )
 
     if TYPE_CHECKING:
 

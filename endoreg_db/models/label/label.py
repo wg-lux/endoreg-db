@@ -49,18 +49,16 @@ class Label(models.Model):
 
     """
 
-    name: models.CharField[str, str] = models.CharField(max_length=255)
-    label_type: models.ForeignKey[LabelTypeRelation, LabelTypeRelation] = (
-        models.ForeignKey(
-            "LabelType",
-            on_delete=models.CASCADE,
-            related_name="labels",
-            blank=True,
-            null=True,
-        )
+    name: models.CharField[str] = models.CharField(max_length=255)
+    label_type: models.ForeignKey[LabelTypeRelation] = models.ForeignKey(
+        "LabelType",
+        on_delete=models.CASCADE,
+        related_name="labels",
+        blank=True,
+        null=True,
     )
-    description: models.TextField[LabelDescription, LabelDescription] = (
-        models.TextField(blank=True, null=True)
+    description: models.TextField[LabelDescription] = models.TextField(
+        blank=True, null=True
     )
 
     objects = LabelManager()

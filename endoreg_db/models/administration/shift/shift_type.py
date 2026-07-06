@@ -37,11 +37,11 @@ class ShiftType(models.Model):
     Model representing a Shift type.
     """
 
-    name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
-    description: models.TextField[ShiftTypeDescription, ShiftTypeDescription] = (
-        models.TextField(blank=True, null=True)
+    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
+    description: models.TextField[ShiftTypeDescription] = models.TextField(
+        blank=True, null=True
     )
-    is_active: models.BooleanField[bool, bool] = models.BooleanField(default=True)
+    is_active: models.BooleanField[bool] = models.BooleanField(default=True)
 
     objects = ShiftTypeManager()
 

@@ -36,13 +36,13 @@ class CenterManager(models.Manager["Center"]):
 
 class Center(models.Model):
     objects = CenterManager()
-    name: models.CharField[str, str] = models.CharField(max_length=255)
-    center_key: models.CharField[str, str] = models.CharField(
+    name: models.CharField[str] = models.CharField(max_length=255)
+    center_key: models.CharField[str] = models.CharField(
         max_length=255,
         unique=True,
         blank=True,
     )
-    display_name: models.CharField[str, str] = models.CharField(
+    display_name: models.CharField[str] = models.CharField(
         max_length=255,
         blank=True,
         default="",
@@ -122,11 +122,10 @@ class Center(models.Model):
 
     def save(
         self,
-        *args: CenterSavePositional,
-        force_insert: CenterForceInsert = False,
+        force_insert: bool = False,
         force_update: bool = False,
-        using: CenterUsing = None,
-        update_fields: CenterUpdateFields = None,
+        using: str | None = None,
+        update_fields: Iterable[str] | None = None,
     ) -> None:
         if self.pk:
             existing_key = (
@@ -147,7 +146,6 @@ class Center(models.Model):
         if not self.display_name:
             self.display_name = self.name
         super().save(
-            *args,
             force_insert=force_insert,
             force_update=force_update,
             using=using,

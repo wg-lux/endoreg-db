@@ -29,24 +29,17 @@ class ProductWeightManager(models.Manager["ProductWeight"]):
 class ProductWeight(models.Model):
     objects = ProductWeightManager()
 
-    name: models.CharField[str | NoProductWeightValue, str | NoProductWeightValue]
+    name: models.CharField[str | NoProductWeightValue]
     name = models.CharField(max_length=255, null=True)
-    product: models.ForeignKey[Product, Product] = models.ForeignKey(
+    product: models.ForeignKey[Product] = models.ForeignKey(
         "Product", on_delete=models.CASCADE
     )
-    measured: models.FloatField[ProductWeightValue, ProductWeightValue] = (
-        models.FloatField(null=True)
+    measured: models.FloatField[ProductWeightValue] = models.FloatField(null=True)
+    verified: models.FloatField[ProductWeightValue] = models.FloatField(null=True)
+    manufacturer: models.FloatField[ProductWeightValue] = models.FloatField(null=True)
+    unit: models.ForeignKey[Unit | NoProductWeightValue | None] = models.ForeignKey(
+        "Unit", on_delete=models.SET_NULL, null=True
     )
-    verified: models.FloatField[ProductWeightValue, ProductWeightValue] = (
-        models.FloatField(null=True)
-    )
-    manufacturer: models.FloatField[ProductWeightValue, ProductWeightValue] = (
-        models.FloatField(null=True)
-    )
-    unit: models.ForeignKey[
-        Unit | NoProductWeightValue,
-        Unit | NoProductWeightValue,
-    ] = models.ForeignKey("Unit", on_delete=models.SET_NULL, null=True)
 
     if TYPE_CHECKING:
         pass

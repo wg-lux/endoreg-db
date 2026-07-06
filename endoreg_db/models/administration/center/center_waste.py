@@ -16,36 +16,28 @@ NoCenterWasteValue: TypeAlias = NoneType
 
 class CenterWaste(models.Model):
     if TYPE_CHECKING:
-        center: models.ForeignKey[Center, Center]
-        waste: models.ForeignKey[Waste, Waste]
-        unit: models.ForeignKey[
-            Unit | NoCenterWasteValue,
-            Unit | NoCenterWasteValue,
-        ]
-        emission_factor: models.ForeignKey[
-            EmissionFactor | NoCenterWasteValue,
-            EmissionFactor | NoCenterWasteValue,
-        ]
+        center: models.ForeignKey[Center]
+        waste: models.ForeignKey[Waste]
+        unit: models.ForeignKey[Unit | NoCenterWasteValue]
+        emission_factor: models.ForeignKey[EmissionFactor | NoCenterWasteValue]
 
-    center: models.ForeignKey[Center, Center] = models.ForeignKey(
+    center: models.ForeignKey[Center] = models.ForeignKey(
         "Center",
         on_delete=models.CASCADE,
         related_name="center_wastes",
     )
-    year: models.IntegerField[int, int] = models.IntegerField()
-    waste: models.ForeignKey[Waste, Waste] = models.ForeignKey(
+    year: models.IntegerField[int] = models.IntegerField()
+    waste: models.ForeignKey[Waste] = models.ForeignKey(
         "Waste",
         on_delete=models.CASCADE,
     )
-    quantity: models.FloatField[float, float] = models.FloatField()
-    unit: models.ForeignKey[
-        Unit | NoCenterWasteValue,
-        Unit | NoCenterWasteValue,
-    ] = models.ForeignKey("Unit", on_delete=models.SET_NULL, null=True)
-    emission_factor: models.ForeignKey[
-        EmissionFactor | NoCenterWasteValue,
-        EmissionFactor | NoCenterWasteValue,
-    ] = models.ForeignKey("EmissionFactor", on_delete=models.SET_NULL, null=True)
+    quantity: models.FloatField[float] = models.FloatField()
+    unit: models.ForeignKey[Unit | NoCenterWasteValue | None] = models.ForeignKey(
+        "Unit", on_delete=models.SET_NULL, null=True
+    )
+    emission_factor: models.ForeignKey[EmissionFactor | NoCenterWasteValue | None] = (
+        models.ForeignKey("EmissionFactor", on_delete=models.SET_NULL, null=True)
+    )
 
     def __str__(self) -> str:
         """

@@ -43,8 +43,8 @@ class ExaminationIndication(models.Model):
         expected_interventions (ManyToManyField): Expected interventions for this indication.
     """
 
-    name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
-    description: models.TextField[str, str] = models.TextField(blank=True, null=True)
+    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
+    description: models.TextField[str | None] = models.TextField(blank=True, null=True)
 
     classifications: "models.ManyToManyField[ExaminationIndicationClassification, ExaminationIndicationClassification]" = models.ManyToManyField(
         "ExaminationIndicationClassification",
@@ -133,8 +133,8 @@ class ExaminationIndicationClassification(models.Model):
         examinations (ManyToManyField): The examinations associated with this classification.
     """
 
-    name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
-    description: models.TextField[str, str] = models.TextField(blank=True, null=True)
+    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
+    description: models.TextField[str | None] = models.TextField(blank=True, null=True)
     choices: "models.ManyToManyField[ExaminationIndicationClassificationChoice, ExaminationIndicationClassificationChoice]" = models.ManyToManyField(
         "ExaminationIndicationClassificationChoice",
         related_name="classifications",
@@ -195,13 +195,9 @@ class ExaminationIndicationClassificationChoice(models.Model):
         classification (ForeignKey): The classification to which this choice belongs.
     """
 
-    name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
-    subcategories: models.JSONField[object, dict[str, object]] = models.JSONField(
-        default=dict
-    )
-    numerical_descriptors: models.JSONField[object, dict[str, object]] = (
-        models.JSONField(default=dict)
-    )
+    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
+    subcategories: models.JSONField[object] = models.JSONField(default=dict)
+    numerical_descriptors: models.JSONField[object] = models.JSONField(default=dict)
 
     objects = ExaminationIndicationClassificationChoiceManager()
 

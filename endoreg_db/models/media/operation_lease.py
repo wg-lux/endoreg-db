@@ -26,29 +26,23 @@ class MediaOperationLease(models.Model):
         (LEASE_SEGMENT_UPDATE, "Segment update"),
     )
 
-    video: models.ForeignKey["VideoFile", "VideoFile"] = models.ForeignKey(
+    video: models.ForeignKey["VideoFile"] = models.ForeignKey(
         "VideoFile",
         on_delete=models.CASCADE,
         related_name="media_operation_leases",
     )
-    lease_type: models.CharField[str, str] = models.CharField(
+    lease_type: models.CharField[str] = models.CharField(
         max_length=32, choices=LEASE_TYPES
     )
-    token: models.UUIDField[uuid.UUID, uuid.UUID] = models.UUIDField(
+    token: models.UUIDField[uuid.UUID] = models.UUIDField(
         default=uuid.uuid4, unique=True, editable=False
     )
-    expires_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
-        db_index=True
-    )
-    metadata: models.JSONField[dict[str, str], dict[str, str]] = models.JSONField(
+    expires_at: models.DateTimeField[datetime] = models.DateTimeField(db_index=True)
+    metadata: models.JSONField[dict[str, str]] = models.JSONField(
         default=dict, blank=True
     )
-    created_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
-        auto_now_add=True
-    )
-    updated_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
-        auto_now=True
-    )
+    created_at: models.DateTimeField[datetime] = models.DateTimeField(auto_now_add=True)
+    updated_at: models.DateTimeField[datetime] = models.DateTimeField(auto_now=True)
 
     if TYPE_CHECKING:
         video_id: int

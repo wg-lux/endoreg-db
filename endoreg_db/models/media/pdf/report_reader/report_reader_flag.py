@@ -15,8 +15,8 @@ class ReportReaderFlagManager(models.Manager["ReportReaderFlag"]):
 
 class ReportReaderFlag(models.Model):
     objects = ReportReaderFlagManager()
-    name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
-    value: models.CharField[str, str] = models.CharField(max_length=255)
+    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
+    value: models.CharField[str] = models.CharField(max_length=255)
 
     if TYPE_CHECKING:
 

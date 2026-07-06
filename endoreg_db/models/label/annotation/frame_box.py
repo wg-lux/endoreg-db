@@ -30,53 +30,53 @@ class FrameBoxAnnotation(models.Model):
     captured alongside the box so clients can render annotations after scaling.
     """
 
-    frame: models.ForeignKey[Frame, Frame] = models.ForeignKey(
+    frame: models.ForeignKey[Frame] = models.ForeignKey(
         "Frame",
         on_delete=models.CASCADE,
         related_name="box_annotations",
         blank=False,
         null=False,
     )
-    label: models.ForeignKey[Label, Label] = models.ForeignKey(
+    label: models.ForeignKey[Label] = models.ForeignKey(
         "Label",
         on_delete=models.CASCADE,
         related_name="frame_box_annotations",
         blank=False,
         null=False,
     )
-    x: models.FloatField[float, float] = models.FloatField()
-    y: models.FloatField[float, float] = models.FloatField()
-    width: models.FloatField[float, float] = models.FloatField()
-    height: models.FloatField[float, float] = models.FloatField()
-    image_width: models.PositiveIntegerField[int, int] = models.PositiveIntegerField()
-    image_height: models.PositiveIntegerField[int, int] = models.PositiveIntegerField()
-    value: models.BooleanField[bool, bool] = models.BooleanField(default=True)
-    float_value: models.FloatField[FrameBoxAnnotationFloat, FrameBoxAnnotationFloat] = (
-        models.FloatField(blank=True, null=True)
+    x: models.FloatField[float] = models.FloatField()
+    y: models.FloatField[float] = models.FloatField()
+    width: models.FloatField[float] = models.FloatField()
+    height: models.FloatField[float] = models.FloatField()
+    image_width: models.PositiveIntegerField[int] = models.PositiveIntegerField()
+    image_height: models.PositiveIntegerField[int] = models.PositiveIntegerField()
+    value: models.BooleanField[bool] = models.BooleanField(default=True)
+    float_value: models.FloatField[FrameBoxAnnotationFloat] = models.FloatField(
+        blank=True, null=True
     )
-    annotator: models.CharField[FrameBoxAnnotationText, FrameBoxAnnotationText] = (
-        models.CharField(max_length=255, blank=True, null=True)
+    annotator: models.CharField[FrameBoxAnnotationText] = models.CharField(
+        max_length=255, blank=True, null=True
     )
-    external_annotation_id: models.CharField[
-        FrameBoxAnnotationText, FrameBoxAnnotationText
-    ] = models.CharField(
-        max_length=255,
-        blank=True,
-        null=True,
-        db_index=True,
+    external_annotation_id: models.CharField[FrameBoxAnnotationText | None] = (
+        models.CharField(
+            max_length=255,
+            blank=True,
+            null=True,
+            db_index=True,
+        )
     )
-    model_meta: models.ForeignKey[
-        FrameBoxAnnotationModelMeta, FrameBoxAnnotationModelMeta
-    ] = models.ForeignKey(
-        "ModelMeta",
-        on_delete=models.SET_NULL,
-        related_name="frame_box_annotations",
-        default=None,
-        null=True,
-        blank=True,
+    model_meta: models.ForeignKey[FrameBoxAnnotationModelMeta | None] = (
+        models.ForeignKey(
+            "ModelMeta",
+            on_delete=models.SET_NULL,
+            related_name="frame_box_annotations",
+            default=None,
+            null=True,
+            blank=True,
+        )
     )
     information_source: models.ForeignKey[
-        FrameBoxAnnotationInformationSource, FrameBoxAnnotationInformationSource
+        FrameBoxAnnotationInformationSource | None
     ] = models.ForeignKey(
         "InformationSource",
         on_delete=models.SET_NULL,
@@ -85,12 +85,10 @@ class FrameBoxAnnotation(models.Model):
         null=True,
         blank=True,
     )
-    date_created: models.DateTimeField[datetime, datetime] = models.DateTimeField(
+    date_created: models.DateTimeField[datetime] = models.DateTimeField(
         auto_now_add=True
     )
-    date_modified: models.DateTimeField[datetime, datetime] = models.DateTimeField(
-        auto_now=True
-    )
+    date_modified: models.DateTimeField[datetime] = models.DateTimeField(auto_now=True)
 
     if TYPE_CHECKING:
         frame_id: int

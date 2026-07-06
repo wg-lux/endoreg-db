@@ -34,20 +34,18 @@ class ProductManager(models.Manager["Product"]):
 class Product(models.Model):
     objects = ProductManager()
 
-    name: models.CharField[str, str] = models.CharField(max_length=255)
+    name: models.CharField[str] = models.CharField(max_length=255)
 
-    transport_route: models.ForeignKey[
-        TransportRoute | NoProductValue,
-        TransportRoute | NoProductValue,
-    ] = models.ForeignKey("TransportRoute", on_delete=models.SET_NULL, null=True)
-    product_group: models.ForeignKey[
-        ProductGroup | NoProductValue,
-        ProductGroup | NoProductValue,
-    ] = models.ForeignKey(
-        "ProductGroup",
-        on_delete=models.SET_NULL,
-        null=True,
-        related_name="products",
+    transport_route: models.ForeignKey[TransportRoute | NoProductValue | None] = (
+        models.ForeignKey("TransportRoute", on_delete=models.SET_NULL, null=True)
+    )
+    product_group: models.ForeignKey[ProductGroup | NoProductValue | None] = (
+        models.ForeignKey(
+            "ProductGroup",
+            on_delete=models.SET_NULL,
+            null=True,
+            related_name="products",
+        )
     )
 
     if TYPE_CHECKING:

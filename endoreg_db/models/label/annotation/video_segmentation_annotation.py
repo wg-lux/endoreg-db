@@ -19,24 +19,22 @@ class VideoSegmentationAnnotation(models.Model):
     An annotation must be associated with exactly one `VideoFile`.
     """
 
-    video_file: models.ForeignKey[VideoFile, VideoFile] = models.ForeignKey(
+    video_file: models.ForeignKey[VideoFile] = models.ForeignKey(
         "VideoFile",
         on_delete=models.CASCADE,
         related_name="video_segmentation_annotations",
     )
 
-    label: models.ForeignKey[VideoSegmentationLabel, VideoSegmentationLabel] = (
-        models.ForeignKey(
-            "VideoSegmentationLabel",
-            on_delete=models.CASCADE,
-        )
+    label: models.ForeignKey[VideoSegmentationLabel] = models.ForeignKey(
+        "VideoSegmentationLabel",
+        on_delete=models.CASCADE,
     )
 
     # times in seconds
-    start_time: models.FloatField[float, float] = models.FloatField()
-    stop_time: models.FloatField[float, float] = models.FloatField()
+    start_time: models.FloatField[float] = models.FloatField()
+    stop_time: models.FloatField[float] = models.FloatField()
 
-    is_true: models.BooleanField[bool, bool] = models.BooleanField(default=True)
+    is_true: models.BooleanField[bool] = models.BooleanField(default=True)
 
     if TYPE_CHECKING:
         pass

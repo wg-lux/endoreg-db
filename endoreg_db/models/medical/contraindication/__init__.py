@@ -14,8 +14,8 @@ class ContraindicationManager(models.Manager["Contraindication"]):
 
 
 class Contraindication(models.Model):
-    name: models.CharField[str, str] = models.CharField(max_length=100, unique=True)
-    description: models.TextField[str | None, str | None] = models.TextField(
+    name: models.CharField[str] = models.CharField(max_length=100, unique=True)
+    description: models.TextField[str | None] = models.TextField(
         blank=True,
         null=True,
     )

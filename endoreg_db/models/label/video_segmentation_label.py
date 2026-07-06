@@ -31,14 +31,14 @@ class VideoSegmentationLabel(models.Model):
 
     objects = VideoSegmentationLabelManager()
 
-    name: models.CharField[str, str] = models.CharField(max_length=255)
-    description: models.TextField[
-        VideoSegmentationLabelText, VideoSegmentationLabelText
-    ] = models.TextField(blank=True, null=True)
-    color: models.CharField[VideoSegmentationLabelText, VideoSegmentationLabelText] = (
-        models.CharField(max_length=255, blank=True, null=True)
+    name: models.CharField[str] = models.CharField(max_length=255)
+    description: models.TextField[VideoSegmentationLabelText | None] = models.TextField(
+        blank=True, null=True
     )
-    order_priority: models.IntegerField[int, int] = models.IntegerField(default=0)
+    color: models.CharField[VideoSegmentationLabelText] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
+    order_priority: models.IntegerField[int] = models.IntegerField(default=0)
 
     def natural_key(self) -> tuple[str]:
         return (self.name,)

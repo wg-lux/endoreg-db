@@ -19,16 +19,16 @@ class TransportRouteManager(models.Manager["TransportRoute"]):
 class TransportRoute(models.Model):
     objects: ClassVar[TransportRouteManager] = TransportRouteManager()  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    distance: models.FloatField[float, float] = models.FloatField()
-    name: models.CharField[str, str] = models.CharField(max_length=255)
+    distance: models.FloatField[float] = models.FloatField()
+    name: models.CharField[str] = models.CharField(max_length=255)
     emission_factor = models.ForeignKey(
         "EmissionFactor", on_delete=models.SET_NULL, null=True
     )
     unit = models.ForeignKey("Unit", on_delete=models.SET_NULL, null=True)
 
     if TYPE_CHECKING:
-        emission_factor: models.ForeignKey["EmissionFactor|None", "EmissionFactor|None"]
-        unit: models.ForeignKey["Unit|None", "Unit|None"]
+        emission_factor: models.ForeignKey["EmissionFactor|None"]
+        unit: models.ForeignKey["Unit|None"]
 
         @property
         def products(self) -> models.QuerySet["Product"]: ...

@@ -25,32 +25,25 @@ class PatientDisease(models.Model):
     and stores associated subcategory values and numerical descriptors.
     """
 
-    patient: models.ForeignKey["Patient", "Patient"] = models.ForeignKey(
+    patient: models.ForeignKey["Patient"] = models.ForeignKey(
         "Patient", on_delete=models.CASCADE, related_name="diseases"
     )
-    disease: models.ForeignKey["Disease", "Disease"] = models.ForeignKey(
+    disease: models.ForeignKey["Disease"] = models.ForeignKey(
         "Disease", on_delete=models.CASCADE, related_name="patient_diseases"
     )
     classification_choices: "models.ManyToManyField[DiseaseClassificationChoice, DiseaseClassificationChoice]" = models.ManyToManyField(
         "DiseaseClassificationChoice"
     )
-    start_date: models.DateField[date | None, date | None] = models.DateField(
-        blank=True, null=True
+    start_date: models.DateField[date | None] = models.DateField(blank=True, null=True)
+    end_date: models.DateField[date | None] = models.DateField(blank=True, null=True)
+    numerical_descriptors: models.JSONField[dict[str, NumericalDescriptorContract]] = (
+        models.JSONField(default=dict)
     )
-    end_date: models.DateField[date | None, date | None] = models.DateField(
-        blank=True, null=True
+    subcategories: models.JSONField[dict[str, SubcategoryDictContract]] = (
+        models.JSONField(default=dict)
     )
-    numerical_descriptors: models.JSONField[
-        dict[str, NumericalDescriptorContract],
-        dict[str, NumericalDescriptorContract],
-    ] = models.JSONField(default=dict)
-    subcategories: models.JSONField[
-        dict[str, SubcategoryDictContract], dict[str, SubcategoryDictContract]
-    ] = models.JSONField(default=dict)
 
-    last_update: models.DateTimeField[datetime, datetime] = models.DateTimeField(
-        auto_now=True
-    )
+    last_update: models.DateTimeField[datetime] = models.DateTimeField(auto_now=True)
 
     if TYPE_CHECKING:
         pass

@@ -26,30 +26,28 @@ class ReferenceProductManager(models.Manager["ReferenceProduct"]):
 
 
 class ReferenceProduct(models.Model):
-    name: models.CharField[str, str] = models.CharField(max_length=255)
-    product: models.ForeignKey[Product, Product] = models.ForeignKey(
+    name: models.CharField[str] = models.CharField(max_length=255)
+    product: models.ForeignKey[Product] = models.ForeignKey(
         "Product",
         on_delete=models.CASCADE,
         related_name="reference_products",
     )
-    product_group: models.OneToOneField[ProductGroup, ProductGroup] = (
-        models.OneToOneField(
-            "ProductGroup",
-            on_delete=models.CASCADE,
-            related_name="reference_product",  # Changed from "reference_products"
+    product_group: models.OneToOneField[ProductGroup] = models.OneToOneField(
+        "ProductGroup",
+        on_delete=models.CASCADE,
+        related_name="reference_product",  # Changed from "reference_products"
+    )
+    emission_factor_total: models.ForeignKey[ReferenceProductEmissionFactor | None] = (
+        models.ForeignKey(
+            "EmissionFactor",
+            on_delete=models.SET_NULL,
+            null=True,
+            blank=True,
+            related_name="reference_products",
         )
     )
-    emission_factor_total: models.ForeignKey[
-        ReferenceProductEmissionFactor, ReferenceProductEmissionFactor
-    ] = models.ForeignKey(
-        "EmissionFactor",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="reference_products",
-    )
     emission_factor_package: models.ForeignKey[
-        ReferenceProductEmissionFactor, ReferenceProductEmissionFactor
+        ReferenceProductEmissionFactor | None
     ] = models.ForeignKey(
         "EmissionFactor",
         on_delete=models.SET_NULL,
@@ -57,7 +55,7 @@ class ReferenceProduct(models.Model):
         related_name="reference_product_package",
     )
     emission_factor_product: models.ForeignKey[
-        ReferenceProductEmissionFactor, ReferenceProductEmissionFactor
+        ReferenceProductEmissionFactor | None
     ] = models.ForeignKey(
         "EmissionFactor",
         on_delete=models.SET_NULL,

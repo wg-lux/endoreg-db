@@ -18,19 +18,14 @@ if TYPE_CHECKING:
 class PatientExaminationIndication(models.Model):
     """A model to store the indication for a patient examination."""
 
-    patient_examination: models.ForeignKey[
-        "PatientExamination",
-        "PatientExamination",
-    ] = models.ForeignKey(
+    patient_examination: models.ForeignKey["PatientExamination"] = models.ForeignKey(
         "PatientExamination", on_delete=models.CASCADE, related_name="indications"
     )
-    examination_indication: models.ForeignKey[
-        "ExaminationIndication",
-        "ExaminationIndication",
-    ] = models.ForeignKey("ExaminationIndication", on_delete=models.CASCADE)
+    examination_indication: models.ForeignKey["ExaminationIndication"] = (
+        models.ForeignKey("ExaminationIndication", on_delete=models.CASCADE)
+    )
     indication_choice: models.ForeignKey[
-        "ExaminationIndicationClassificationChoice | None",
-        "ExaminationIndicationClassificationChoice | None",
+        "ExaminationIndicationClassificationChoice | None"
     ] = models.ForeignKey(
         "ExaminationIndicationClassificationChoice",
         on_delete=models.CASCADE,

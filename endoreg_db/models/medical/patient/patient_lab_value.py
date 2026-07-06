@@ -5,7 +5,6 @@ from collections.abc import Iterable
 from typing import TYPE_CHECKING, Protocol, cast
 
 from django.db import models
-from django.db.models.base import ModelBase
 from lx_dtypes.models.contracts.lab_value import LabValueNormalRangePayload
 
 if TYPE_CHECKING:
@@ -47,45 +46,41 @@ class PatientLabValue(models.Model):
         date (datetime): The date of the lab value.
     """
 
-    patient: models.ForeignKey["Patient | None", "Patient | None"] = models.ForeignKey(
+    patient: models.ForeignKey["Patient | None"] = models.ForeignKey(
         "Patient",
         on_delete=models.CASCADE,
         related_name="lab_values",
         blank=True,
         null=True,
     )
-    lab_value: models.ForeignKey["LabValue", "LabValue"] = models.ForeignKey(
+    lab_value: models.ForeignKey["LabValue"] = models.ForeignKey(
         "LabValue", on_delete=models.CASCADE
     )
-    value: models.FloatField[float | None, float | None] = models.FloatField(
+    value: models.FloatField[float | None] = models.FloatField(
         blank=True,
         null=True,
     )
-    value_str: models.CharField[str | None, str | None] = models.CharField(
+    value_str: models.CharField[str | None] = models.CharField(
         max_length=255,
         blank=True,
         null=True,
     )
-    sample: models.ForeignKey[
-        "PatientLabSample | None",
-        "PatientLabSample | None",
-    ] = models.ForeignKey(
+    sample: models.ForeignKey["PatientLabSample | None"] = models.ForeignKey(
         "PatientLabSample",
         on_delete=models.CASCADE,
         blank=True,
         null=True,
         related_name="values",
     )
-    timestamp: models.DateTimeField[
-        dt_datetime,
-        dt_datetime,
-    ] = models.DateTimeField(  # if not set, use now
-        auto_now_add=True
+    timestamp: models.DateTimeField[dt_datetime] = (
+        models.DateTimeField(  # if not set, use now
+            auto_now_add=True
+        )
     )
-    normal_range: models.JSONField[
-        LabValueNormalRangePayload, LabValueNormalRangePayload
-    ] = models.JSONField(default=dict)
-    unit: models.ForeignKey["Unit | None", "Unit | None"] = models.ForeignKey(
+    normal_range: models.JSONField[LabValueNormalRangePayload] = models.JSONField(
+        default=dict
+    )
+    unit: models.ForeignKey["Unit | None"] = models.ForeignKey(
         "Unit", on_delete=models.CASCADE, blank=True, null=True
     )
 
@@ -189,8 +184,7 @@ class PatientLabValue(models.Model):
     # customize save method so that if a numeric value exists, we round it to the precision of the lab value
     def save(
         self,
-        *,
-        force_insert: bool | tuple[ModelBase, ...] = False,
+        force_insert: bool = False,
         force_update: bool = False,
         using: str | None = None,
         update_fields: Iterable[str] | None = None,

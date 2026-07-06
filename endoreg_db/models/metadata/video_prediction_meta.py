@@ -45,19 +45,17 @@ class VideoPredictionMeta(models.Model):
     Must be associated with exactly one `VideoFile`.
     """
 
-    model_meta: models.ForeignKey["ModelMeta", "ModelMeta"] = models.ForeignKey(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    model_meta: models.ForeignKey["ModelMeta"] = models.ForeignKey(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
         "ModelMeta", on_delete=models.CASCADE
     )
-    date_created: models.DateTimeField[datetime, datetime] = models.DateTimeField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    date_created: models.DateTimeField[datetime] = models.DateTimeField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
         auto_now_add=True
     )
-    date_modified: models.DateTimeField[datetime, datetime] = models.DateTimeField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    date_modified: models.DateTimeField[datetime] = models.DateTimeField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
         auto_now=True
     )
-    prediction_array: models.BinaryField[bytes | None, bytes | None] = (
-        models.BinaryField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
-            blank=True, null=True
-        )
+    prediction_array: models.BinaryField[bytes | None] = models.BinaryField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+        blank=True, null=True
     )
 
     video_file = models.ForeignKey(
@@ -69,8 +67,8 @@ class VideoPredictionMeta(models.Model):
     )
 
     if TYPE_CHECKING:
-        model_meta: models.ForeignKey["ModelMeta", "ModelMeta"]
-        video_file: models.ForeignKey["VideoFile|None", "VideoFile|None"]
+        model_meta: models.ForeignKey["ModelMeta"]
+        video_file: models.ForeignKey["VideoFile|None"]
         label_video_segments: "models.Manager[LabelVideoSegment]"
 
     class Meta:

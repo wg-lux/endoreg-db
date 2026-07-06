@@ -21,7 +21,7 @@ class MedicationIndicationTypeManager(models.Manager["MedicationIndicationType"]
 class MedicationIndicationType(models.Model):
     """Model representing a medication indication type."""
 
-    name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
+    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
 
     objects = MedicationIndicationTypeManager()
 

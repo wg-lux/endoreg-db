@@ -35,25 +35,24 @@ class CenterShift(models.Model):
     Model representing a center shift.
     """
 
-    name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
-    description: models.TextField[
-        CenterShiftDescription,
-        CenterShiftDescription,
-    ] = models.TextField(blank=True, null=True)
+    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
+    description: models.TextField[CenterShiftDescription | None] = models.TextField(
+        blank=True, null=True
+    )
 
-    center: models.ForeignKey[Center, Center] = models.ForeignKey(
+    center: models.ForeignKey[Center] = models.ForeignKey(
         "Center",
         on_delete=models.CASCADE,
         related_name="center_shifts",
     )
-    shift: models.ForeignKey[Shift, Shift] = models.ForeignKey(
+    shift: models.ForeignKey[Shift] = models.ForeignKey(
         "Shift",
         on_delete=models.CASCADE,
         related_name="center_shifts",
     )
 
-    start_time: models.TimeField[time, time] = models.TimeField()
-    end_time: models.TimeField[time, time] = models.TimeField()
+    start_time: models.TimeField[time] = models.TimeField()
+    end_time: models.TimeField[time] = models.TimeField()
     scheduled_days: models.ManyToManyField[
         ScheduledDays,
         ScheduledDays,
@@ -63,12 +62,10 @@ class CenterShift(models.Model):
     )
 
     # TODO add validator; the value should be between 0 and 1
-    estimated_presence_fraction: models.DecimalField[Decimal, Decimal] = (
-        models.DecimalField(
-            max_digits=5,
-            decimal_places=4,
-            default=Decimal("0"),
-        )
+    estimated_presence_fraction: models.DecimalField[Decimal] = models.DecimalField(
+        max_digits=5,
+        decimal_places=4,
+        default=Decimal("0"),
     )
 
     if TYPE_CHECKING:

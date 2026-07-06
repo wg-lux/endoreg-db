@@ -58,22 +58,14 @@ class InformationSourceManager(models.Manager["InformationSource"]):
 class InformationSource(models.Model):
     objects: ClassVar[models.Manager["InformationSource"]] = InformationSourceManager()  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    name: models.CharField[str, str] = models.CharField(max_length=100)
+    name: models.CharField[str] = models.CharField(max_length=100)
 
-    url: models.URLField[str | None, str | None] = models.URLField(
-        blank=True, null=True
-    )
-    description: models.TextField[str | None, str | None] = models.TextField(
-        blank=True, null=True
-    )
-    date: models.DateField[dt.date | None, dt.date | None] = models.DateField(
-        blank=True, null=True
-    )
-    date_created: models.DateField[dt.date, dt.date] = models.DateField(
-        auto_now_add=True
-    )
-    date_modified: models.DateField[dt.date, dt.date] = models.DateField(auto_now=True)
-    abbreviation: models.CharField[str | None, str | None] = models.CharField(
+    url: models.URLField[str | None] = models.URLField(blank=True, null=True)
+    description: models.TextField[str | None] = models.TextField(blank=True, null=True)
+    date: models.DateField[dt.date | None] = models.DateField(blank=True, null=True)
+    date_created: models.DateField[dt.date] = models.DateField(auto_now_add=True)
+    date_modified: models.DateField[dt.date] = models.DateField(auto_now=True)
+    abbreviation: models.CharField[str | None] = models.CharField(
         max_length=100, blank=True, null=True, unique=True
     )
 
@@ -157,10 +149,8 @@ class InformationSourceTypeManager(models.Manager["InformationSourceType"]):
 class InformationSourceType(models.Model):
     objects = InformationSourceTypeManager()
 
-    name: models.CharField[str, str] = models.CharField(max_length=100, unique=True)
-    description: models.TextField[str | None, str | None] = models.TextField(
-        blank=True, null=True
-    )
+    name: models.CharField[str] = models.CharField(max_length=100, unique=True)
+    description: models.TextField[str | None] = models.TextField(blank=True, null=True)
 
     information_sources: models.ManyToManyField[
         InformationSource,

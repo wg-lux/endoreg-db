@@ -49,11 +49,11 @@ class LabelSet(models.Model):
 
     """
 
-    name: models.CharField[str, str] = models.CharField(max_length=255)
-    description: models.TextField[LabelSetDescription, LabelSetDescription] = (
-        models.TextField(blank=True, null=True)
+    name: models.CharField[str] = models.CharField(max_length=255)
+    description: models.TextField[LabelSetDescription] = models.TextField(
+        blank=True, null=True
     )
-    version: models.IntegerField[int, int] = models.IntegerField()
+    version: models.IntegerField[int] = models.IntegerField()
     labels: models.ManyToManyField[Label, Label] = models.ManyToManyField(
         "Label", related_name="label_sets"
     )

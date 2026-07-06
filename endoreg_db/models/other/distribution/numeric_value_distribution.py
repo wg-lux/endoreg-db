@@ -39,28 +39,28 @@ class NumericValueDistribution(BaseValueDistribution):
         (NumericValueDistributionType.SKEWED_NORMAL.value, "Skewed Normal"),
     ]
 
-    distribution_type: models.CharField[str, str] = models.CharField(
+    distribution_type: models.CharField[str] = models.CharField(
         max_length=20, choices=DISTRIBUTION_CHOICES
     )
-    min_descriptor: models.CharField[str, str] = models.CharField(max_length=20)
-    max_descriptor: models.CharField[str, str] = models.CharField(max_length=20)
-    min_value: models.FloatField[float | None, float | None] = models.FloatField(
+    min_descriptor: models.CharField[str] = models.CharField(max_length=20)
+    max_descriptor: models.CharField[str] = models.CharField(max_length=20)
+    min_value: models.FloatField[float | None] = models.FloatField(
         blank=True, null=True, help_text="Lower hard limit for generated values"
     )
-    max_value: models.FloatField[float | None, float | None] = models.FloatField(
+    max_value: models.FloatField[float | None] = models.FloatField(
         blank=True, null=True, help_text="Upper hard limit for generated values"
     )
-    mean: models.FloatField[float | None, float | None] = models.FloatField(
+    mean: models.FloatField[float | None] = models.FloatField(
         blank=True,
         null=True,
         help_text="Mean used for normal or skewed normal distributions",
     )
-    std_dev: models.FloatField[float | None, float | None] = models.FloatField(
+    std_dev: models.FloatField[float | None] = models.FloatField(
         blank=True,
         null=True,
         help_text="Standard deviation for bell-shaped distributions",
     )
-    skewness: models.FloatField[float | None, float | None] = models.FloatField(
+    skewness: models.FloatField[float | None] = models.FloatField(
         blank=True,
         null=True,
         help_text="Shape parameter for skewed normal distributions",

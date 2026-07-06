@@ -24,9 +24,9 @@ class LabelType(models.Model):
 
     """
 
-    name: models.CharField[str, str] = models.CharField(max_length=255)
-    description: models.TextField[LabelTypeDescription, LabelTypeDescription] = (
-        models.TextField(blank=True, null=True)
+    name: models.CharField[str] = models.CharField(max_length=255)
+    description: models.TextField[LabelTypeDescription] = models.TextField(
+        blank=True, null=True
     )
 
     objects = LabelTypeManager()

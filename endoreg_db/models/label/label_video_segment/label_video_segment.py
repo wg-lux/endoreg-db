@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from types import NoneType
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Generator, Iterable
 from typing import TYPE_CHECKING, Protocol, TypeAlias, cast
 
 from django.core.exceptions import ObjectDoesNotExist
@@ -71,6 +73,24 @@ SaveUsing: TypeAlias = "str | NoStringValue"
 SaveUpdateFields: TypeAlias = "Iterable[str] | NoIterableStringValue"
 DeleteResult: TypeAlias = "tuple[int, dict[str, int]]"
 
+_SEGMENT_STATE_SIDE_EFFECTS_SUPPRESSED: ContextVar[bool] = ContextVar(
+    "label_video_segment_state_side_effects_suppressed",
+    default=False,
+)
+
+
+def label_video_segment_state_side_effects_suppressed() -> bool:
+    return _SEGMENT_STATE_SIDE_EFFECTS_SUPPRESSED.get()
+
+
+@contextmanager
+def suppress_label_video_segment_state_side_effects() -> Generator[None, None, None]:
+    token = _SEGMENT_STATE_SIDE_EFFECTS_SUPPRESSED.set(True)
+    try:
+        yield
+    finally:
+        _SEGMENT_STATE_SIDE_EFFECTS_SUPPRESSED.reset(token)
+
 
 class LabelVideoSegment(models.Model):
     """
@@ -80,17 +100,17 @@ class LabelVideoSegment(models.Model):
     If it originates from a prediction, it links to a single `VideoPredictionMeta`.
     """
 
-    start_frame_number: models.IntegerField[int, int] = models.IntegerField()
-    end_frame_number: models.IntegerField[int, int] = models.IntegerField()
-    source: models.ForeignKey[SegmentInformationSource, SegmentInformationSource] = (
-        models.ForeignKey("InformationSource", on_delete=models.SET_NULL, null=True)
+    start_frame_number: models.IntegerField[int] = models.IntegerField()
+    end_frame_number: models.IntegerField[int] = models.IntegerField()
+    source: models.ForeignKey[SegmentInformationSource] = models.ForeignKey(
+        "InformationSource", on_delete=models.SET_NULL, null=True
     )
-    label: models.ForeignKey[SegmentLabel, SegmentLabel] = models.ForeignKey(
+    label: models.ForeignKey[SegmentLabel | None] = models.ForeignKey(
         "Label", on_delete=models.SET_NULL, null=True, blank=True
     )
 
     # Single ForeignKey to the unified VideoFile model
-    video_file: models.ForeignKey["VideoFile", "VideoFile"] = models.ForeignKey(
+    video_file: models.ForeignKey["VideoFile"] = models.ForeignKey(
         "VideoFile",
         on_delete=models.CASCADE,
         related_name="label_video_segments",
@@ -99,14 +119,12 @@ class LabelVideoSegment(models.Model):
     )
 
     # Single ForeignKey to the unified VideoPredictionMeta model
-    prediction_meta: models.ForeignKey[SegmentPredictionMeta, SegmentPredictionMeta] = (
-        models.ForeignKey(
-            "VideoPredictionMeta",
-            on_delete=models.SET_NULL,
-            null=True,
-            blank=True,
-            related_name="label_video_segments",
-        )
+    prediction_meta: models.ForeignKey[SegmentPredictionMeta] = models.ForeignKey(
+        "VideoPredictionMeta",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="label_video_segments",
     )
 
     # M2M relationship with patient finding
@@ -118,7 +136,7 @@ class LabelVideoSegment(models.Model):
         )
     )
 
-    export_segment: models.BooleanField[bool, bool] = models.BooleanField(
+    export_segment: models.BooleanField[bool] = models.BooleanField(
         default=False,
         help_text="If true, include this segment in export selection.",
     )
@@ -310,11 +328,10 @@ class LabelVideoSegment(models.Model):
 
     def save(
         self,
-        *,
-        force_insert: SaveForceInsert = False,
+        force_insert: bool = False,
         force_update: bool = False,
-        using: SaveUsing = None,
-        update_fields: SaveUpdateFields = None,
+        using: str | None = None,
+        update_fields: Iterable[str] | None = None,
     ) -> None:
         """
         Saves the LabelVideoSegment instance and ensures its associated state object exists.
@@ -330,7 +347,7 @@ class LabelVideoSegment(models.Model):
         )
 
         # Ensure state exists after saving, without nested transactions
-        if self.pk:
+        if self.pk and not label_video_segment_state_side_effects_suppressed():
             # `defaults={}` ensures we do not re-fetch the just-saved object.
             # This logic is now encapsulated in get_or_create_state
             self.get_or_create_state()
@@ -347,7 +364,10 @@ class LabelVideoSegment(models.Model):
     ) -> DeleteResult:
         video = getattr(self, "video_file", None)
         result = super().delete(using=using, keep_parents=keep_parents)
-        if video is not None:
+        if (
+            video is not None
+            and not label_video_segment_state_side_effects_suppressed()
+        ):
             from endoreg_db.models.state.video_segment_validation import (
                 mark_segment_annotations_stale,
             )

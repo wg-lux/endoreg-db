@@ -41,21 +41,21 @@ class CenterProduct(models.Model):
         center (Center): The center where the product was used.
     """
 
-    product: models.ForeignKey[Product, Product] = models.ForeignKey(
+    product: models.ForeignKey[Product] = models.ForeignKey(
         "Product",
         on_delete=models.CASCADE,
         related_name="center_products",  # Changed related_name for clarity
     )
-    date_used: models.DateField[date, date] = models.DateField()
-    center: models.ForeignKey[Center, Center] = models.ForeignKey(
+    date_used: models.DateField[date] = models.DateField()
+    center: models.ForeignKey[Center] = models.ForeignKey(
         "Center",
         on_delete=models.CASCADE,
         related_name="center_products",
     )
 
     if TYPE_CHECKING:
-        product: models.ForeignKey["Product", "Product"]
-        center: models.ForeignKey["Center", "Center"]
+        product: models.ForeignKey["Product"]
+        center: models.ForeignKey["Center"]
 
     class Meta:
         ordering = ["center", "-date_used", "product"]

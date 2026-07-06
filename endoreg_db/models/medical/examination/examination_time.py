@@ -27,7 +27,7 @@ class ExaminationTime(models.Model):
         time_types (ManyToManyField): The types associated with this examination time.
     """
 
-    name: models.CharField[str, str] = models.CharField(max_length=100, unique=True)
+    name: models.CharField[str] = models.CharField(max_length=100, unique=True)
     time_types: "models.ManyToManyField[ExaminationTimeType, ExaminationTimeType]" = (
         models.ManyToManyField("ExaminationTimeType", blank=True)
     )

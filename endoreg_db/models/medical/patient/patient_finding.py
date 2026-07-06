@@ -18,28 +18,22 @@ if TYPE_CHECKING:
 
 
 class PatientFinding(models.Model):
-    patient_examination: models.ForeignKey[
-        "PatientExamination", "PatientExamination"
-    ] = models.ForeignKey(
+    patient_examination: models.ForeignKey["PatientExamination"] = models.ForeignKey(
         "PatientExamination",
         on_delete=models.CASCADE,
         related_name="patient_findings",
     )
 
-    finding: models.ForeignKey["Finding", "Finding"] = models.ForeignKey(
+    finding: models.ForeignKey["Finding"] = models.ForeignKey(
         "Finding",
         on_delete=models.CASCADE,
         related_name="finding_patient_findings",
     )
 
-    created_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
-        auto_now_add=True
-    )
-    updated_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
-        auto_now=True
-    )
+    created_at: models.DateTimeField[datetime] = models.DateTimeField(auto_now_add=True)
+    updated_at: models.DateTimeField[datetime] = models.DateTimeField(auto_now=True)
 
-    created_by: models.ForeignKey["User | None", "User | None"] = models.ForeignKey(
+    created_by: models.ForeignKey["User | None"] = models.ForeignKey(
         "auth.User",
         on_delete=models.PROTECT,
         related_name="created_findings",
@@ -47,7 +41,7 @@ class PatientFinding(models.Model):
         blank=True,
     )
 
-    updated_by: models.ForeignKey["User | None", "User | None"] = models.ForeignKey(
+    updated_by: models.ForeignKey["User | None"] = models.ForeignKey(
         "auth.User",
         on_delete=models.PROTECT,
         related_name="updated_findings",
@@ -55,16 +49,16 @@ class PatientFinding(models.Model):
         blank=True,
     )
 
-    is_active: models.BooleanField[bool, bool] = models.BooleanField(
+    is_active: models.BooleanField[bool] = models.BooleanField(
         default=True,
         help_text="Deaktiviert statt gelöscht für Audit-Trail",
     )
 
-    deactivated_at: models.DateTimeField[datetime | None, datetime | None] = (
-        models.DateTimeField(null=True, blank=True)
+    deactivated_at: models.DateTimeField[datetime | None] = models.DateTimeField(
+        null=True, blank=True
     )
 
-    deactivated_by: models.ForeignKey["User | None", "User | None"] = models.ForeignKey(
+    deactivated_by: models.ForeignKey["User | None"] = models.ForeignKey(
         "auth.User",
         on_delete=models.PROTECT,
         related_name="deactivated_findings",
@@ -131,11 +125,9 @@ class PatientFinding(models.Model):
         @property
         def active_classifications(
             self,
-        ) -> "models.QuerySet[PatientFindingClassification, PatientFindingClassification]": ...
+        ) -> "models.QuerySet[PatientFindingClassification]": ...
 
         @property
         def active_interventions(
             self,
-        ) -> (
-            "models.QuerySet[PatientFindingIntervention, PatientFindingIntervention]"
-        ): ...
+        ) -> "models.QuerySet[PatientFindingIntervention]": ...

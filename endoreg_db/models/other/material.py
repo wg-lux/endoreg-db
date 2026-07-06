@@ -16,13 +16,13 @@ class MaterialManager(models.Manager["Material"]):
 class Material(models.Model):
     objects: ClassVar[MaterialManager] = MaterialManager()  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    name: models.CharField[str, str] = models.CharField(max_length=255)
-    emission_factor: models.ForeignKey[
-        "EmissionFactor | None", "EmissionFactor | None"
-    ] = models.ForeignKey("EmissionFactor", on_delete=models.SET_NULL, null=True)
+    name: models.CharField[str] = models.CharField(max_length=255)
+    emission_factor: models.ForeignKey["EmissionFactor | None"] = models.ForeignKey(
+        "EmissionFactor", on_delete=models.SET_NULL, null=True
+    )
 
     if TYPE_CHECKING:
-        emission_factor: models.ForeignKey["EmissionFactor|None", "EmissionFactor|None"]
+        emission_factor: models.ForeignKey["EmissionFactor|None"]
 
         @property
         def material_product_materials(self) -> models.QuerySet["ProductMaterial"]: ...

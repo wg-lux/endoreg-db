@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from django.conf import settings
 from django.db import models, transaction
-from django.db.models.base import ModelBase
 from django.db.utils import OperationalError, ProgrammingError
 from django.utils import timezone
 from lx_dtypes.models.contracts.audit_ledger import AuditLedgerHashPayload
@@ -48,31 +47,31 @@ class AuditLedger(models.Model):
 
     objects: ClassVar[models.Manager["AuditLedger"]] = models.Manager()  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    id: models.UUIDField[uuid.UUID, uuid.UUID] = models.UUIDField(
+    id: models.UUIDField[uuid.UUID] = models.UUIDField(
         primary_key=True,
         default=uuid.uuid4,
         editable=False,
     )
-    ts: models.DateTimeField[datetime, datetime] = models.DateTimeField(
+    ts: models.DateTimeField[datetime] = models.DateTimeField(
         default=timezone.now,
         editable=False,
         db_index=True,
     )
-    user: models.ForeignKey["User | None", "User | None"] = models.ForeignKey(
+    user: models.ForeignKey["User | None"] = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,
         blank=True,
         on_delete=models.PROTECT,
     )
-    object_type: models.CharField[str, str] = models.CharField(max_length=80)
-    object_pk: models.CharField[str, str] = models.CharField(max_length=40)
-    action: models.CharField[str, str] = models.CharField(max_length=40)
-    data: models.JSONField[JsonObject, JsonObject] = models.JSONField()
-    prev_hash: models.CharField[str, str] = models.CharField(
+    object_type: models.CharField[str] = models.CharField(max_length=80)
+    object_pk: models.CharField[str] = models.CharField(max_length=40)
+    action: models.CharField[str] = models.CharField(max_length=40)
+    data: models.JSONField[JsonObject] = models.JSONField()
+    prev_hash: models.CharField[str] = models.CharField(
         max_length=64,
         editable=False,
     )
-    hash: models.CharField[str, str] = models.CharField(
+    hash: models.CharField[str] = models.CharField(
         max_length=64,
         editable=False,
     )
@@ -83,8 +82,7 @@ class AuditLedger(models.Model):
 
     def save(
         self,
-        *,
-        force_insert: bool | tuple[ModelBase, ...] = False,
+        force_insert: bool = False,
         force_update: bool = False,
         using: str | None = None,
         update_fields: Iterable[str] | None = None,
@@ -266,27 +264,25 @@ class LedgerHead(models.Model):
     Writers lock this row before appending, preventing concurrent ledger forks.
     """
 
-    id: models.PositiveSmallIntegerField[int, int] = models.PositiveSmallIntegerField(
+    id: models.PositiveSmallIntegerField[int] = models.PositiveSmallIntegerField(
         primary_key=True,
         default=1,
         editable=False,
     )
-    current_hash: models.CharField[str, str] = models.CharField(
+    current_hash: models.CharField[str] = models.CharField(
         max_length=64,
         default="0" * 64,
         editable=False,
     )
-    last_entry: models.ForeignKey[AuditLedger | None, AuditLedger | None] = (
-        models.ForeignKey(
-            AuditLedger,
-            null=True,
-            blank=True,
-            on_delete=models.SET_NULL,
-            editable=False,
-            related_name="+",
-        )
+    last_entry: models.ForeignKey[AuditLedger | None] = models.ForeignKey(
+        AuditLedger,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        editable=False,
+        related_name="+",
     )
-    updated_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
+    updated_at: models.DateTimeField[datetime] = models.DateTimeField(
         auto_now=True,
     )
 

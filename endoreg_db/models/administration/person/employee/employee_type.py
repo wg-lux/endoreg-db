@@ -28,12 +28,11 @@ class EmployeeType(models.Model):
     Model representing an employee type.
     """
 
-    name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
-    description: models.TextField[
-        EmployeeTypeDescription,
-        EmployeeTypeDescription,
-    ] = models.TextField(blank=True, null=True)
-    is_active: models.BooleanField[bool, bool] = models.BooleanField(default=True)
+    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
+    description: models.TextField[EmployeeTypeDescription | None] = models.TextField(
+        blank=True, null=True
+    )
+    is_active: models.BooleanField[bool] = models.BooleanField(default=True)
 
     qualifications: models.ManyToManyField[Qualification, Qualification] = (
         models.ManyToManyField(

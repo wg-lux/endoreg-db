@@ -18,22 +18,18 @@ class MedicationManager(models.Manager["Medication"]):
 class Medication(models.Model):
     """Model representing a medication."""
 
-    name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
-    adapt_to_renal_function: models.BooleanField[bool, bool] = models.BooleanField(
+    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
+    adapt_to_renal_function: models.BooleanField[bool] = models.BooleanField(
         default=False
     )
-    adapt_to_hepatic_function: models.BooleanField[bool, bool] = models.BooleanField(
+    adapt_to_hepatic_function: models.BooleanField[bool] = models.BooleanField(
         default=False
     )
-    adapt_to_indication: models.BooleanField[bool, bool] = models.BooleanField(
-        default=False
-    )
-    adapt_to_age: models.BooleanField[bool, bool] = models.BooleanField(default=False)
-    adapt_to_weight: models.BooleanField[bool, bool] = models.BooleanField(
-        default=False
-    )
-    adapt_to_risk: models.BooleanField[bool, bool] = models.BooleanField(default=False)
-    default_unit: models.ForeignKey["Unit", "Unit"] = models.ForeignKey(
+    adapt_to_indication: models.BooleanField[bool] = models.BooleanField(default=False)
+    adapt_to_age: models.BooleanField[bool] = models.BooleanField(default=False)
+    adapt_to_weight: models.BooleanField[bool] = models.BooleanField(default=False)
+    adapt_to_risk: models.BooleanField[bool] = models.BooleanField(default=False)
+    default_unit: models.ForeignKey["Unit"] = models.ForeignKey(
         "Unit", on_delete=models.CASCADE
     )
 

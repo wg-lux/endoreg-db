@@ -81,23 +81,20 @@ class Patient(Person):
 
     """
 
-    first_name: models.CharField[str, str] = models.CharField(max_length=100)
-    last_name: models.CharField[str, str] = models.CharField(max_length=100)
-    dob: models.DateField[PatientDateValue, PatientDateValue] = models.DateField(
+    first_name: models.CharField[str] = models.CharField(max_length=100)
+    last_name: models.CharField[str] = models.CharField(max_length=100)
+    dob: models.DateField[PatientDateValue | None] = models.DateField(
         null=True, blank=True
     )
-    gender: models.ForeignKey[
-        PersonGenderValue,
-        PersonGenderValue,
-    ] = models.ForeignKey("Gender", on_delete=models.SET_NULL, null=True, blank=True)
-    center: models.ForeignKey[
-        PatientCenterInput,
-        PatientCenterInput,
-    ] = models.ForeignKey("Center", on_delete=models.SET_NULL, null=True, blank=True)
-    patient_hash: models.CharField[
-        PatientTextValue,
-        PatientTextValue,
-    ] = models.CharField(max_length=255, blank=True, null=True)
+    gender: models.ForeignKey[PersonGenderValue | None] = models.ForeignKey(
+        "Gender", on_delete=models.SET_NULL, null=True, blank=True
+    )
+    center: models.ForeignKey["Center | None"] = models.ForeignKey(
+        "Center", on_delete=models.SET_NULL, null=True, blank=True
+    )
+    patient_hash: models.CharField[PatientTextValue | None] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
 
     objects = cast(models.Manager["Patient"], models.Manager())
 

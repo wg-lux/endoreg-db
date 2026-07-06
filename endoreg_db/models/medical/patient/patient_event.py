@@ -23,40 +23,32 @@ class PatientEvent(models.Model):
     subcategories, and numerical descriptors.
     """
 
-    patient: models.ForeignKey["Patient", "Patient"] = models.ForeignKey(
+    patient: models.ForeignKey["Patient"] = models.ForeignKey(
         "Patient", on_delete=models.CASCADE, related_name="events"
     )
-    event: models.ForeignKey["Event", "Event"] = models.ForeignKey(
+    event: models.ForeignKey["Event"] = models.ForeignKey(
         "Event", on_delete=models.CASCADE, related_name="patient_events"
     )
-    date_start: models.DateField[date, date] = models.DateField()
-    date_end: models.DateField[date | None, date | None] = models.DateField(
-        blank=True, null=True
-    )
-    description: models.TextField[str | None, str | None] = models.TextField(
-        blank=True, null=True
-    )
-    classification_choice: models.ForeignKey[
-        "EventClassificationChoice | None",
-        "EventClassificationChoice | None",
-    ] = models.ForeignKey(
-        "EventClassificationChoice",
-        on_delete=models.CASCADE,
-        blank=True,
-        null=True,
+    date_start: models.DateField[date] = models.DateField()
+    date_end: models.DateField[date | None] = models.DateField(blank=True, null=True)
+    description: models.TextField[str | None] = models.TextField(blank=True, null=True)
+    classification_choice: models.ForeignKey["EventClassificationChoice | None"] = (
+        models.ForeignKey(
+            "EventClassificationChoice",
+            on_delete=models.CASCADE,
+            blank=True,
+            null=True,
+        )
     )
 
-    subcategories: models.JSONField[
-        dict[str, SubcategoryDictContract], dict[str, SubcategoryDictContract]
-    ] = models.JSONField(default=dict)
-    numerical_descriptors: models.JSONField[
-        dict[str, NumericalDescriptorContract],
-        dict[str, NumericalDescriptorContract],
-    ] = models.JSONField(default=dict)
-
-    last_update: models.DateTimeField[datetime, datetime] = models.DateTimeField(
-        auto_now=True
+    subcategories: models.JSONField[dict[str, SubcategoryDictContract]] = (
+        models.JSONField(default=dict)
     )
+    numerical_descriptors: models.JSONField[dict[str, NumericalDescriptorContract]] = (
+        models.JSONField(default=dict)
+    )
+
+    last_update: models.DateTimeField[datetime] = models.DateTimeField(auto_now=True)
 
     if TYPE_CHECKING:
         pass

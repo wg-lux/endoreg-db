@@ -21,7 +21,7 @@ class ProductGroupManager(models.Manager["ProductGroup"]):
 class ProductGroup(models.Model):
     objects = ProductGroupManager()
 
-    name: models.CharField[str, str] = models.CharField(max_length=255)
+    name: models.CharField[str] = models.CharField(max_length=255)
 
     if TYPE_CHECKING:
         reference_product: "ReferenceProduct"

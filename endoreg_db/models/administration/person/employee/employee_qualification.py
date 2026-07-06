@@ -14,7 +14,7 @@ class EmployeeQualification(models.Model):
     Model representing an employee's qualification.
     """
 
-    employee: models.OneToOneField[Employee, Employee] = models.OneToOneField(
+    employee: models.OneToOneField[Employee] = models.OneToOneField(
         "Employee",
         on_delete=models.CASCADE,
         related_name="qualification",

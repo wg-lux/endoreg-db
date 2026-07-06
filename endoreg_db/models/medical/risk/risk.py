@@ -29,24 +29,22 @@ class Risk(models.Model):
         description (str): A description of the risk.
     """
 
-    name: models.CharField[str, str] = models.CharField(max_length=100, unique=True)
-    name_de: models.CharField[str | None, str | None] = models.CharField(
+    name: models.CharField[str] = models.CharField(max_length=100, unique=True)
+    name_de: models.CharField[str | None] = models.CharField(
         max_length=100, blank=True, null=True
     )
-    name_en: models.CharField[str | None, str | None] = models.CharField(
+    name_en: models.CharField[str | None] = models.CharField(
         max_length=100, blank=True, null=True
     )
-    description: models.TextField[str | None, str | None] = models.TextField(
-        blank=True, null=True
-    )
+    description: models.TextField[str | None] = models.TextField(blank=True, null=True)
 
-    risk_value: models.FloatField[float | None, float | None] = models.FloatField(
+    risk_value: models.FloatField[float | None] = models.FloatField(
         blank=True,
         null=True,
         help_text="Risk value for the risk. If not set, the risk is not used in calculations.",
     )
 
-    risk_type: models.ForeignKey["RiskType", "RiskType"] = models.ForeignKey(
+    risk_type: models.ForeignKey["RiskType | None"] = models.ForeignKey(
         "RiskType",
         on_delete=models.CASCADE,
         related_name="risks",

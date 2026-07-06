@@ -61,6 +61,8 @@ __all__ = [
 ]
 
 if TYPE_CHECKING:
+    from django.core.exceptions import ValidationErrorMessageArg
+
     from endoreg_db.models import (
         ImageClassificationAnnotation,
         Label,
@@ -68,6 +70,8 @@ if TYPE_CHECKING:
         LabelVideoSegment,
         VideoFile,
     )
+else:
+    ValidationErrorMessageArg: TypeAlias = str
 
 
 NoAIDataSetTextValue: TypeAlias = NoneType
@@ -158,18 +162,18 @@ class AIDataSet(models.Model):
     AI_MODEL_TYPE_IMAGE_MULTILABEL = "image_multilabel_classification"
     AI_MODEL_TYPE_VIDEO_SEGMENT_CLASSIFICATION = "video_segment_classification"
 
-    name: models.CharField[AIDataSetText, AIDataSetText] = models.CharField(
+    name: models.CharField[AIDataSetText | None] = models.CharField(
         max_length=255,
         blank=True,
         null=True,
         help_text='Human-readable identifier, e.g. "Legacy multilabel dataset v1".',
     )
-    description: models.TextField[AIDataSetText, AIDataSetText] = models.TextField(
+    description: models.TextField[AIDataSetText | None] = models.TextField(
         blank=True,
         null=True,
         help_text="Optional notes / explanation about this dataset.",
     )
-    ai_model_type: models.CharField[str, str] = models.CharField(
+    ai_model_type: models.CharField[str] = models.CharField(
         max_length=255,
         default=AI_MODEL_TYPE_IMAGE_MULTILABEL,
         help_text=(
@@ -177,7 +181,7 @@ class AIDataSet(models.Model):
             '"image_multilabel_classification".'
         ),
     )
-    dataset_type: models.CharField[str, str] = models.CharField(
+    dataset_type: models.CharField[str] = models.CharField(
         max_length=32,
         choices=DATASET_TYPE_CHOICES,
         default=DATASET_TYPE_IMAGE,
@@ -207,15 +211,15 @@ class AIDataSet(models.Model):
             ),
         )
     )
-    created_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
+    created_at: models.DateTimeField[datetime] = models.DateTimeField(
         auto_now_add=True,
         help_text="When this AIDataSet was created.",
     )
-    updated_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
+    updated_at: models.DateTimeField[datetime] = models.DateTimeField(
         auto_now=True,
         help_text="When this AIDataSet was last modified.",
     )
-    is_active: models.BooleanField[bool, bool] = models.BooleanField(
+    is_active: models.BooleanField[bool] = models.BooleanField(
         default=True,
         help_text="Soft toggle to enable/disable this dataset for training.",
     )
@@ -225,7 +229,7 @@ class AIDataSet(models.Model):
 
     @staticmethod
     def _coerce_objects(
-        objects: Iterable[_ModelT] | QuerySet[_ModelT, _ModelT],
+        objects: Iterable[_ModelT] | QuerySet[_ModelT],
     ) -> list[_ModelT]:
         return list(objects)
 
@@ -1346,80 +1350,68 @@ class AIModelTrainingRun(models.Model):
         (STATUS_LOST, "Lost"),
     ]
 
-    run_id: models.UUIDField[uuid.UUID, uuid.UUID] = models.UUIDField(
+    run_id: models.UUIDField[uuid.UUID] = models.UUIDField(
         default=uuid.uuid4, editable=False, unique=True
     )
-    dataset: models.ForeignKey[AIDataSetRelation, AIDataSetRelation] = (
-        models.ForeignKey(
-            AIDataSet,
-            blank=True,
-            null=True,
-            on_delete=models.SET_NULL,
-            related_name="model_training_runs",
-        )
+    dataset: models.ForeignKey[AIDataSetRelation] = models.ForeignKey(
+        AIDataSet,
+        blank=True,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="model_training_runs",
     )
-    dataset_name: models.CharField[AIDataSetText, AIDataSetText] = models.CharField(
+    dataset_name: models.CharField[AIDataSetText | None] = models.CharField(
         max_length=255, blank=True, null=True
     )
-    dataset_type: models.CharField[str, str] = models.CharField(
-        max_length=32, blank=True
-    )
-    ai_model_type: models.CharField[str, str] = models.CharField(
-        max_length=255, blank=True
-    )
-    backbone_name: models.CharField[str, str] = models.CharField(max_length=128)
-    feature_mode: models.CharField[str, str] = models.CharField(max_length=64)
-    freeze_backbone: models.BooleanField[bool, bool] = models.BooleanField(default=True)
-    epochs: models.PositiveIntegerField[int, int] = models.PositiveIntegerField(
-        default=10
-    )
-    batch_size: models.PositiveIntegerField[int, int] = models.PositiveIntegerField(
+    dataset_type: models.CharField[str] = models.CharField(max_length=32, blank=True)
+    ai_model_type: models.CharField[str] = models.CharField(max_length=255, blank=True)
+    backbone_name: models.CharField[str] = models.CharField(max_length=128)
+    feature_mode: models.CharField[str] = models.CharField(max_length=64)
+    freeze_backbone: models.BooleanField[bool] = models.BooleanField(default=True)
+    epochs: models.PositiveIntegerField[int] = models.PositiveIntegerField(default=10)
+    batch_size: models.PositiveIntegerField[int] = models.PositiveIntegerField(
         default=32
     )
-    labelset_version: models.PositiveIntegerField[int, int] = (
-        models.PositiveIntegerField(default=1)
+    labelset_version: models.PositiveIntegerField[int] = models.PositiveIntegerField(
+        default=1
     )
-    treat_unlabeled_as_negative: models.BooleanField[bool, bool] = models.BooleanField(
+    treat_unlabeled_as_negative: models.BooleanField[bool] = models.BooleanField(
         default=True
     )
-    backbone_checkpoint: models.TextField[AIDataSetText, AIDataSetText] = (
-        models.TextField(blank=True, null=True)
+    backbone_checkpoint: models.TextField[AIDataSetText] = models.TextField(
+        blank=True, null=True
     )
-    request_payload: models.JSONField[JsonObject, JsonObject] = models.JSONField(
+    request_payload: models.JSONField[JsonObject] = models.JSONField(
         default=dict, blank=True
     )
-    command_kwargs: models.JSONField[JsonObject, JsonObject] = models.JSONField(
+    command_kwargs: models.JSONField[JsonObject] = models.JSONField(
         default=dict, blank=True
     )
-    status: models.CharField[str, str] = models.CharField(
+    status: models.CharField[str] = models.CharField(
         max_length=16,
         choices=STATUS_CHOICES,
         default=STATUS_QUEUED,
         db_index=True,
     )
-    server_instance_id: models.CharField[str, str] = models.CharField(
+    server_instance_id: models.CharField[str] = models.CharField(
         max_length=64, blank=True, db_index=True
     )
-    result: models.JSONField[JsonObject | None, JsonObject | None] = models.JSONField(
+    result: models.JSONField[JsonObject | None] = models.JSONField(
         blank=True, null=True
     )
-    artifact_paths: models.JSONField[dict[str, str], dict[str, str]] = models.JSONField(
+    artifact_paths: models.JSONField[dict[str, str]] = models.JSONField(
         default=dict, blank=True
     )
-    error: models.TextField[str, str] = models.TextField(blank=True)
-    stdout: models.TextField[str, str] = models.TextField(blank=True)
-    stderr: models.TextField[str, str] = models.TextField(blank=True)
-    created_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
-        auto_now_add=True
+    error: models.TextField[str] = models.TextField(blank=True)
+    stdout: models.TextField[str] = models.TextField(blank=True)
+    stderr: models.TextField[str] = models.TextField(blank=True)
+    created_at: models.DateTimeField[datetime] = models.DateTimeField(auto_now_add=True)
+    updated_at: models.DateTimeField[datetime] = models.DateTimeField(auto_now=True)
+    started_at: models.DateTimeField[AIDataSetDateTime] = models.DateTimeField(
+        blank=True, null=True
     )
-    updated_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
-        auto_now=True
-    )
-    started_at: models.DateTimeField[AIDataSetDateTime, AIDataSetDateTime] = (
-        models.DateTimeField(blank=True, null=True)
-    )
-    finished_at: models.DateTimeField[AIDataSetDateTime, AIDataSetDateTime] = (
-        models.DateTimeField(blank=True, null=True)
+    finished_at: models.DateTimeField[AIDataSetDateTime] = models.DateTimeField(
+        blank=True, null=True
     )
 
     class Meta:
@@ -1442,7 +1434,7 @@ class AIModelTrainingRun(models.Model):
 
     def clean(self) -> None:
         super().clean()
-        errors: dict[str, str] = {}
+        errors: dict[str, ValidationErrorMessageArg] = {}
         try:
             self.request_payload = validate_ai_model_training_request_payload(
                 self.request_payload
@@ -1462,9 +1454,20 @@ class AIModelTrainingRun(models.Model):
         if errors:
             raise ValidationError(errors)
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(
+        self,
+        force_insert: bool = False,
+        force_update: bool = False,
+        using: str | None = None,
+        update_fields: Iterable[str] | None = None,
+    ) -> None:
         self.clean()
-        super().save(*args, **kwargs)
+        super().save(
+            force_insert=force_insert,
+            force_update=force_update,
+            using=using,
+            update_fields=update_fields,
+        )
 
     def __str__(self) -> str:
         return f"AIModelTrainingRun(run_id={self.run_key}, status={self.status})"
@@ -1480,61 +1483,49 @@ class AIDataSetExportArtifact(models.Model):
         (STATUS_FAILED, "Failed"),
     ]
 
-    artifact_id: models.UUIDField[uuid.UUID, uuid.UUID] = models.UUIDField(
+    artifact_id: models.UUIDField[uuid.UUID] = models.UUIDField(
         default=uuid.uuid4, editable=False, unique=True
     )
-    dataset: models.ForeignKey[AIDataSetRelation, AIDataSetRelation] = (
-        models.ForeignKey(
-            AIDataSet,
-            blank=True,
-            null=True,
-            on_delete=models.SET_NULL,
-            related_name="export_artifacts",
-        )
+    dataset: models.ForeignKey[AIDataSetRelation] = models.ForeignKey(
+        AIDataSet,
+        blank=True,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="export_artifacts",
     )
-    dataset_name: models.CharField[AIDataSetText, AIDataSetText] = models.CharField(
+    dataset_name: models.CharField[AIDataSetText | None] = models.CharField(
         max_length=255, blank=True, null=True
     )
-    dataset_type: models.CharField[str, str] = models.CharField(
-        max_length=32, blank=True
-    )
-    ai_model_type: models.CharField[str, str] = models.CharField(
-        max_length=255, blank=True
-    )
-    request_payload: models.JSONField[JsonObject, JsonObject] = models.JSONField(
+    dataset_type: models.CharField[str] = models.CharField(max_length=32, blank=True)
+    ai_model_type: models.CharField[str] = models.CharField(max_length=255, blank=True)
+    request_payload: models.JSONField[JsonObject] = models.JSONField(
         default=dict, blank=True
     )
-    center_key: models.CharField[AIDataSetText, AIDataSetText] = models.CharField(
+    center_key: models.CharField[AIDataSetText | None] = models.CharField(
         max_length=255, blank=True, null=True
     )
-    all_centers: models.BooleanField[bool, bool] = models.BooleanField(default=False)
-    only_validated: models.BooleanField[bool, bool] = models.BooleanField(default=True)
-    status: models.CharField[str, str] = models.CharField(
+    all_centers: models.BooleanField[bool] = models.BooleanField(default=False)
+    only_validated: models.BooleanField[bool] = models.BooleanField(default=True)
+    status: models.CharField[str] = models.CharField(
         max_length=16,
         choices=STATUS_CHOICES,
         default=STATUS_RUNNING,
         db_index=True,
     )
-    output_path: models.TextField[str, str] = models.TextField(blank=True)
-    download_filename: models.CharField[str, str] = models.CharField(
+    output_path: models.TextField[str] = models.TextField(blank=True)
+    download_filename: models.CharField[str] = models.CharField(
         max_length=255, blank=True
     )
-    sha256: models.CharField[str, str] = models.CharField(max_length=64, blank=True)
-    byte_size: models.PositiveBigIntegerField[int, int] = (
-        models.PositiveBigIntegerField(default=0)
+    sha256: models.CharField[str] = models.CharField(max_length=64, blank=True)
+    byte_size: models.PositiveBigIntegerField[int] = models.PositiveBigIntegerField(
+        default=0
     )
-    summary: models.JSONField[JsonObject, JsonObject] = models.JSONField(
-        default=dict, blank=True
-    )
-    error: models.TextField[str, str] = models.TextField(blank=True)
-    created_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
-        auto_now_add=True
-    )
-    updated_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
-        auto_now=True
-    )
-    finished_at: models.DateTimeField[AIDataSetDateTime, AIDataSetDateTime] = (
-        models.DateTimeField(blank=True, null=True)
+    summary: models.JSONField[JsonObject] = models.JSONField(default=dict, blank=True)
+    error: models.TextField[str] = models.TextField(blank=True)
+    created_at: models.DateTimeField[datetime] = models.DateTimeField(auto_now_add=True)
+    updated_at: models.DateTimeField[datetime] = models.DateTimeField(auto_now=True)
+    finished_at: models.DateTimeField[AIDataSetDateTime] = models.DateTimeField(
+        blank=True, null=True
     )
 
     class Meta:

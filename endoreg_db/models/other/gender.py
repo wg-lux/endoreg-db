@@ -42,13 +42,11 @@ class Gender(models.Model):
 
     objects = GenderManager()
 
-    name: models.CharField[str, str] = models.CharField(max_length=255)
-    abbreviation: models.CharField[str | None, str | None] = models.CharField(
+    name: models.CharField[str] = models.CharField(max_length=255)
+    abbreviation: models.CharField[str | None] = models.CharField(
         max_length=255, null=True
     )
-    description: models.TextField[str | None, str | None] = models.TextField(
-        blank=True, null=True
-    )
+    description: models.TextField[str | None] = models.TextField(blank=True, null=True)
 
     if TYPE_CHECKING:
 

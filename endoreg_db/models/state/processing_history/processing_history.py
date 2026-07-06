@@ -20,21 +20,17 @@ class ProcessingHistory(models.Model):
     (content_type, object_id), but the logical identity is file_hash.
     """
 
-    file_hash: models.CharField[str, str] = models.CharField(
+    file_hash: models.CharField[str] = models.CharField(
         max_length=64,
         primary_key=True,
         help_text="Content hash of the original file (e.g. video_hash/pdf_hash).",
         blank=True,
     )
 
-    created_at: models.DateTimeField[datetime, datetime] = models.DateTimeField(
-        auto_now_add=True
-    )
-    success: models.BooleanField[bool, bool] = models.BooleanField(
-        default=False, blank=True
-    )
+    created_at: models.DateTimeField[datetime] = models.DateTimeField(auto_now_add=True)
+    success: models.BooleanField[bool] = models.BooleanField(default=False, blank=True)
 
-    object_id: models.PositiveBigIntegerField[int | None, int | None] = (
+    object_id: models.PositiveBigIntegerField[int | None] = (
         models.PositiveBigIntegerField(null=True, blank=True)
     )
 

@@ -12,32 +12,27 @@ if TYPE_CHECKING:
 
 
 class PatientFindingIntervention(models.Model):
-    finding: models.ForeignKey["PatientFinding", "PatientFinding"] = models.ForeignKey(
+    finding: models.ForeignKey["PatientFinding"] = models.ForeignKey(
         "PatientFinding", on_delete=models.CASCADE, related_name="interventions"
     )
-    intervention: models.ForeignKey[
-        "FindingIntervention",
-        "FindingIntervention",
-    ] = models.ForeignKey(
+    intervention: models.ForeignKey["FindingIntervention"] = models.ForeignKey(
         "FindingIntervention",
         on_delete=models.CASCADE,
         related_name="patient_finding_interventions",
     )
-    is_active: models.BooleanField[bool, bool] = models.BooleanField(
+    is_active: models.BooleanField[bool] = models.BooleanField(
         default=True, help_text="Indicates if the intervention is currently active."
     )
-    state: models.CharField[str | None, str | None] = models.CharField(
+    state: models.CharField[str | None] = models.CharField(
         max_length=100, blank=True, null=True
     )
-    time_start: models.DateTimeField[datetime | None, datetime | None] = (
-        models.DateTimeField(blank=True, null=True)
-    )
-    time_end: models.DateTimeField[datetime | None, datetime | None] = (
-        models.DateTimeField(blank=True, null=True)
-    )
-    date: models.DateField[date_cls | None, date_cls | None] = models.DateField(
+    time_start: models.DateTimeField[datetime | None] = models.DateTimeField(
         blank=True, null=True
     )
+    time_end: models.DateTimeField[datetime | None] = models.DateTimeField(
+        blank=True, null=True
+    )
+    date: models.DateField[date_cls | None] = models.DateField(blank=True, null=True)
 
     objects: ClassVar[models.Manager["PatientFindingIntervention"]] = (  # pyright: ignore[reportIncompatibleVariableOverride]
         models.Manager()

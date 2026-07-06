@@ -10,7 +10,6 @@ from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, ClassVar, Protocol, Type, cast
 
 from django.db import models
-from django.db.models.base import ModelBase
 from lx_dtypes.models.meta.SensitiveMeta import SensitiveMeta as LxSensitiveMeta
 
 
@@ -94,40 +93,38 @@ class SensitiveMeta(models.Model):
         super().__init__(*args, **kwargs)
 
     # --- Examination and Patient Info ---
-    examination_date: models.DateField[date | None, date | None] = models.DateField(
+    examination_date: models.DateField[date | None] = models.DateField(
         blank=True, null=True
     )
-    examination_time: models.TimeField[time | None, time | None] = models.TimeField(
+    examination_time: models.TimeField[time | None] = models.TimeField(
         blank=True, null=True
     )
-    casenumber: models.CharField[str | None, str | None] = models.CharField(
+    casenumber: models.CharField[str | None] = models.CharField(
         max_length=255, blank=True, null=True
     )
-    file_path: models.CharField[str | None, str | None] = models.CharField(
+    file_path: models.CharField[str | None] = models.CharField(
         max_length=1024, blank=True, null=True
     )
 
     # --- Core FKs ---
-    pseudo_patient: models.ForeignKey["Patient | None", "Patient | None"] = (
-        models.ForeignKey(
-            "Patient",
-            on_delete=models.CASCADE,
-            blank=True,
-            null=True,
-            help_text="FK to the pseudo-anonymized Patient record.",
-        )
-    )
-    pseudo_examination: models.ForeignKey[
-        "PatientExamination | None", "PatientExamination | None"
-    ] = models.ForeignKey(
-        "PatientExamination",
+    pseudo_patient: models.ForeignKey["Patient | None"] = models.ForeignKey(
+        "Patient",
         on_delete=models.CASCADE,
         blank=True,
         null=True,
-        help_text="FK to the pseudo-anonymized PatientExamination record.",
+        help_text="FK to the pseudo-anonymized Patient record.",
     )
-    patient_gender: models.ForeignKey["Gender | None", "Gender | None"] = (
-        models.ForeignKey("Gender", on_delete=models.CASCADE, blank=True, null=True)
+    pseudo_examination: models.ForeignKey["PatientExamination | None"] = (
+        models.ForeignKey(
+            "PatientExamination",
+            on_delete=models.CASCADE,
+            blank=True,
+            null=True,
+            help_text="FK to the pseudo-anonymized PatientExamination record.",
+        )
+    )
+    patient_gender: models.ForeignKey["Gender | None"] = models.ForeignKey(
+        "Gender", on_delete=models.CASCADE, blank=True, null=True
     )
     if TYPE_CHECKING:
         examiners: models.ManyToManyField["Examiner", "Examiner"]
@@ -138,7 +135,7 @@ class SensitiveMeta(models.Model):
     tags: models.ManyToManyField["Tag", "Tag"] = models.ManyToManyField(
         "Tag", blank=True, help_text="Validation tags"
     )
-    center: models.ForeignKey["Center | None", "Center | None"] = models.ForeignKey(
+    center: models.ForeignKey["Center | None"] = models.ForeignKey(
         "Center", on_delete=models.CASCADE, blank=True, null=True
     )
 
@@ -149,45 +146,41 @@ class SensitiveMeta(models.Model):
         center_id: int | None
 
     # --- Names and DOB ---
-    patient_first_name: models.CharField[str | None, str | None] = models.CharField(
+    patient_first_name: models.CharField[str | None] = models.CharField(
         max_length=255, blank=True, null=True
     )
-    patient_last_name: models.CharField[str | None, str | None] = models.CharField(
+    patient_last_name: models.CharField[str | None] = models.CharField(
         max_length=255, blank=True, null=True
     )
-    patient_dob: models.DateTimeField[datetime | None, datetime | None] = (
-        models.DateTimeField(
-            blank=True, null=True, help_text="Date of birth (can be auto-generated)."
-        )
+    patient_dob: models.DateTimeField[datetime | None] = models.DateTimeField(
+        blank=True, null=True, help_text="Date of birth (can be auto-generated)."
     )
 
-    examiner_first_name: models.CharField[str | None, str | None] = models.CharField(
+    examiner_first_name: models.CharField[str | None] = models.CharField(
         max_length=255, blank=True, null=True, editable=False
     )
-    examiner_last_name: models.CharField[str | None, str | None] = models.CharField(
+    examiner_last_name: models.CharField[str | None] = models.CharField(
         max_length=255, blank=True, null=True, editable=False
     )
 
     # --- Hashes ---
-    patient_hash: models.CharField[str | None, str | None] = models.CharField(
+    patient_hash: models.CharField[str | None] = models.CharField(
         max_length=64, blank=True, null=True, editable=False, db_index=True
     )
-    examination_hash: models.CharField[str | None, str | None] = models.CharField(
+    examination_hash: models.CharField[str | None] = models.CharField(
         max_length=64, blank=True, null=True, editable=False, db_index=True
     )
 
     # --- Endoscope Info ---
-    endoscope_type: models.CharField[str | None, str | None] = models.CharField(
+    endoscope_type: models.CharField[str | None] = models.CharField(
         max_length=255, blank=True, null=True
     )
-    endoscope_sn: models.CharField[str | None, str | None] = models.CharField(
+    endoscope_sn: models.CharField[str | None] = models.CharField(
         max_length=255, blank=True, null=True
     )
 
     # --- External patient ID ---
-    external_id: models.ForeignKey[
-        "PatientExternalID | None", "PatientExternalID | None"
-    ] = models.ForeignKey(
+    external_id: models.ForeignKey["PatientExternalID | None"] = models.ForeignKey(
         "PatientExternalID", on_delete=models.CASCADE, blank=True, null=True
     )
 
@@ -202,26 +195,22 @@ class SensitiveMeta(models.Model):
         return None
 
     # --- Text Fields ---
-    text: models.TextField[str | None, str | None] = models.TextField(
+    text: models.TextField[str | None] = models.TextField(blank=True, null=True)
+    anonymized_text: models.TextField[str | None] = models.TextField(
         blank=True, null=True
     )
-    anonymized_text: models.TextField[str | None, str | None] = models.TextField(
-        blank=True, null=True
+    validation_comment: models.TextField[str] = models.TextField(blank=True, default="")
+    direct_identifiers_cleared_at: models.DateTimeField[datetime | None] = (
+        models.DateTimeField(blank=True, null=True)
     )
-    validation_comment: models.TextField[str, str] = models.TextField(
-        blank=True, default=""
-    )
-    direct_identifiers_cleared_at: models.DateTimeField[
-        datetime | None, datetime | None
-    ] = models.DateTimeField(blank=True, null=True)
-    direct_identifier_policy: models.CharField[str, str] = models.CharField(
+    direct_identifier_policy: models.CharField[str] = models.CharField(
         max_length=64,
         blank=True,
         default="",
     )
-    direct_identifier_tombstone: models.JSONField[
-        dict[str, object], dict[str, object]
-    ] = models.JSONField(default=dict, blank=True)
+    direct_identifier_tombstone: models.JSONField[dict[str, object]] = models.JSONField(
+        default=dict, blank=True
+    )
 
     # --- Anonymization helper method ---
     create_anonymized_record = sensitive_meta_logic._create_anonymized_record
@@ -417,8 +406,7 @@ class SensitiveMeta(models.Model):
     # --- Save method orchestrates calls to sensitive_meta_logic ---
     def save(
         self,
-        *,
-        force_insert: bool | tuple[ModelBase, ...] = False,
+        force_insert: bool = False,
         force_update: bool = False,
         using: str | None = None,
         update_fields: Iterable[str] | None = None,
