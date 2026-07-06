@@ -113,6 +113,31 @@ def run_video_post_validation_rebuild_task(
 
 
 @shared_task(
+    name="endoreg_db.tasks.video_hls_materialization",
+    bind=True,
+    acks_late=True,
+    reject_on_worker_lost=True,
+    track_started=True,
+    time_limit=60 * 60 * 6,
+    soft_time_limit=60 * 60 * 5,
+)
+def video_hls_materialization(
+    _task: Task[[int, str, bool], dict[str, object]],
+    video_id: int,
+    artifact_kind: str = "processed",
+    force: bool = False,
+) -> dict[str, object]:
+    from endoreg_db.services.hls_media import materialize_video_hls
+
+    result = materialize_video_hls(
+        int(video_id),
+        artifact_kind=str(artifact_kind),
+        force=bool(force),
+    )
+    return result.as_dict()
+
+
+@shared_task(
     name="endoreg_db.segment_annotation_expansion",
     bind=True,
     acks_late=True,

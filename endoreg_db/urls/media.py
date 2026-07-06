@@ -35,6 +35,11 @@ from endoreg_db.views.report.pdf_redaction import (
     PdfProcessingHistoryView,
 )
 from endoreg_db.views.report.report_stream import ReportStreamView
+from endoreg_db.views.video.hls_stream import (
+    HLSKeyView,
+    HLSPlaylistView,
+    HLSSegmentView,
+)
 from endoreg_db.views.video.video_stream import VideoStreamView
 from endoreg_db.views.video import (
     VideoReimportView,
@@ -141,6 +146,21 @@ VIDEO_MEDIA_URLPATTERNS: list[URLPattern] = [
     path(
         "media/videos/<int:pk>/stream/", VideoStreamView.as_view(), name="video-stream"
     ),  # Legacy support
+    path(
+        "media/videos/<int:pk>/hls/playlist/",
+        HLSPlaylistView.as_view(),
+        name="video-hls-playlist",
+    ),
+    path(
+        "media/videos/<int:pk>/hls/key/<uuid:key_id>/",
+        HLSKeyView.as_view(),
+        name="video-hls-key",
+    ),
+    path(
+        "media/videos/<int:pk>/hls/segments/<uuid:key_id>/<str:segment_name>",
+        HLSSegmentView.as_view(),
+        name="video-hls-segment",
+    ),
     path(
         "media/videos/<int:video_id>/frames/<int:frame_number>/stream/",
         FrameStreamView.as_view(),

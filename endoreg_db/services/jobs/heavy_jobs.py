@@ -36,6 +36,7 @@ class HeavyJobKind(StrEnum):
     VIDEO_UPLOAD_IMPORT = "video_upload_import"
     VIDEO_REIMPORT = "video_reimport"
     VIDEO_TRANSCODE = "video_transcode"
+    VIDEO_HLS_MATERIALIZATION = "video_hls_materialization"
     VIDEO_FRAME_REMOVAL = "video_frame_removal"
     VIDEO_POST_VALIDATION_REBUILD = "video_post_validation_rebuild"
     FRAME_EXTRACTION = "frame_extraction"
@@ -51,6 +52,7 @@ HEAVY_JOB_QUEUE_BY_KIND: dict[HeavyJobKind, WorkloadQueue] = {
     HeavyJobKind.VIDEO_UPLOAD_IMPORT: WorkloadQueue.FFMPEG_MEDIA,
     HeavyJobKind.VIDEO_REIMPORT: WorkloadQueue.FFMPEG_MEDIA,
     HeavyJobKind.VIDEO_TRANSCODE: WorkloadQueue.FFMPEG_MEDIA,
+    HeavyJobKind.VIDEO_HLS_MATERIALIZATION: WorkloadQueue.FFMPEG_MEDIA,
     HeavyJobKind.VIDEO_FRAME_REMOVAL: WorkloadQueue.FFMPEG_MEDIA,
     HeavyJobKind.VIDEO_POST_VALIDATION_REBUILD: WorkloadQueue.FFMPEG_MEDIA,
     HeavyJobKind.FRAME_EXTRACTION: WorkloadQueue.FRAME_EXTRACTION,

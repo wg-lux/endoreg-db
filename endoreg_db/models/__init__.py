@@ -66,6 +66,7 @@ from .media import (
     ReportLlmInferenceJob,
     ReportReaderConfig,
     ReportReaderFlag,
+    VideoHlsArtifact,
     VideoFile,
     VideoMetadata,
     VideoProcessingHistory,
@@ -222,6 +223,7 @@ __all__ = [
     "VideoSegmentationAnnotation",
     ####### Media ########
     "VideoFile",
+    "VideoHlsArtifact",
     "Frame",
     "FrameExtractionRequest",
     "MediaOperationLease",

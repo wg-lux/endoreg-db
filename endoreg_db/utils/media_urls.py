@@ -85,6 +85,25 @@ def build_video_frame_decoded_stream_path(
     )
 
 
+def build_video_hls_playlist_path(
+    video_id: int,
+    *,
+    file_type: str | None = None,
+) -> str:
+    return _append_query(
+        endoreg_api_path(f"media/videos/{video_id}/hls/playlist/"),
+        {"type": file_type},
+    )
+
+
+def build_video_hls_key_path(video_id: int, key_id: str) -> str:
+    return endoreg_api_path(f"media/videos/{video_id}/hls/key/{key_id}/")
+
+
+def build_video_hls_segment_base_path(video_id: int, key_id: str) -> str:
+    return endoreg_api_path(f"media/videos/{video_id}/hls/segments/{key_id}/")
+
+
 def build_absolute_media_url(
     request: Any | None,
     relative_path: str,

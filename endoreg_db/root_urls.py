@@ -66,7 +66,12 @@ urlpatterns = [
 if settings.DEBUG:
     protected_media_url = getattr(settings, "PROTECTED_MEDIA_URL", None)
     protected_media_root = getattr(settings, "PROTECTED_MEDIA_ROOT", None)
-    if protected_media_url and protected_media_root:
+    allow_insecure_protected_media = getattr(
+        settings,
+        "ALLOW_INSECURE_PROTECTED_MEDIA",
+        False,
+    )
+    if allow_insecure_protected_media and protected_media_url and protected_media_root:
         urlpatterns += static(
             protected_media_url,
             document_root=protected_media_root,

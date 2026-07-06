@@ -5,6 +5,7 @@ from kombu import Exchange, Queue
 
 from endoreg_db.config.env import (
     ENDOREG_DEPLOYMENT_ROLE_VALUES,
+    allow_insecure_protected_media_serving,
     get_asset_dir,
     get_cache_location,
     get_cache_timeout_seconds,
@@ -175,6 +176,10 @@ CELERY_TASK_ROUTES = {
         "queue": CELERY_FFMPEG_MEDIA_QUEUE,
         "routing_key": CELERY_FFMPEG_MEDIA_QUEUE,
     },
+    "endoreg_db.tasks.video_hls_materialization": {
+        "queue": CELERY_FFMPEG_MEDIA_QUEUE,
+        "routing_key": CELERY_FFMPEG_MEDIA_QUEUE,
+    },
     "endoreg_db.video_temporal_inference": {
         "queue": CELERY_INFERENCE_QUEUE,
         "routing_key": CELERY_INFERENCE_QUEUE,
@@ -266,6 +271,7 @@ STATIC_ROOT = get_static_root()
 # Protected media is served through the LuxNix/Nginx contract by default.
 PROTECTED_MEDIA_URL = get_protected_media_url()
 PROTECTED_MEDIA_ROOT = get_protected_media_root()
+ALLOW_INSECURE_PROTECTED_MEDIA = allow_insecure_protected_media_serving()
 
 # Keep Django's media settings aligned with the protected-media contract so any
 # remaining FileField.url consumers resolve to the protected prefix rather than
@@ -384,6 +390,7 @@ __all__ = [
     "STATIC_ROOT",
     "PROTECTED_MEDIA_URL",
     "PROTECTED_MEDIA_ROOT",
+    "ALLOW_INSECURE_PROTECTED_MEDIA",
     "MEDIA_URL",
     "MEDIA_ROOT",
     "CACHES",

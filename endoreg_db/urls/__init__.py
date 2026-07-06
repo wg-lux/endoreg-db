@@ -91,8 +91,11 @@ if django_settings.DEBUG:
     media_url = cast(str | None, getattr(django_settings, "PROTECTED_MEDIA_URL", None))
     media_root = getattr(django_settings, "PROTECTED_MEDIA_ROOT", None)
     static_url = cast(str | None, getattr(django_settings, "STATIC_URL", None))
+    allow_insecure_protected_media = bool(
+        getattr(django_settings, "ALLOW_INSECURE_PROTECTED_MEDIA", False)
+    )
 
-    if media_url and media_root:
+    if allow_insecure_protected_media and media_url and media_root:
         urlpatterns += static(media_url, document_root=media_root)
     if static_url:
         urlpatterns += static(static_url, document_root=django_settings.STATIC_ROOT)

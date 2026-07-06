@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 from typing import Any, Protocol, cast
 from unittest.mock import patch
@@ -31,6 +32,7 @@ def test_job_tasks_are_configured_for_worker_loss_redelivery() -> None:
     celery_tasks = [
         tasks.run_frame_extraction_request_task,
         tasks.run_video_post_validation_rebuild_task,
+        tasks.video_hls_materialization,
         tasks.run_video_temporal_inference_task,
         tasks.run_model_training_task,
         tasks.process_upload_job,
@@ -50,6 +52,23 @@ def test_celery_defaults_bound_worker_memory_pressure() -> None:
     assert settings.CELERY_WORKER_PREFETCH_MULTIPLIER == 1
     assert settings.CELERY_TASK_TRACK_STARTED is True
     assert settings.CELERY_TASK_SOFT_TIME_LIMIT < settings.CELERY_TASK_TIME_LIMIT
+
+
+def test_hls_materialization_routes_to_single_ffmpeg_media_lane() -> None:
+    queue = settings.CELERY_FFMPEG_MEDIA_QUEUE
+    assert settings.CELERY_TASK_ROUTES[
+        "endoreg_db.tasks.video_hls_materialization"
+    ] == {
+        "queue": queue,
+        "routing_key": queue,
+    }
+
+    devenv_source = Path("devenv.nix").read_text(encoding="utf-8")
+    assert re.search(
+        r'"celery:worker:ffmpeg".*CELERY_FFMPEG_MEDIA_CONCURRENCY:-1',
+        devenv_source,
+        flags=re.DOTALL,
+    )
 
 
 def test_task_module_defers_service_imports_until_execution() -> None:
@@ -127,6 +146,25 @@ def test_video_post_validation_rebuild_task_retries_when_media_busy() -> None:
 
     runner.assert_called_once_with(42, only_validated=True, history_id=7)
     retry.assert_called_once_with(exc=deferred, countdown=17, max_retries=20)
+
+
+def test_video_hls_materialization_task_delegates_with_normalized_args() -> None:
+    class _Result:
+        def as_dict(self) -> dict[str, object]:
+            return {"video_id": 42, "status": "materialized"}
+
+    with patch(
+        "endoreg_db.services.hls_media.materialize_video_hls",
+        return_value=_Result(),
+    ) as runner:
+        result = cast(Any, tasks.video_hls_materialization).run(
+            "42",
+            artifact_kind="processed",
+            force=1,
+        )
+
+    assert result == {"video_id": 42, "status": "materialized"}
+    runner.assert_called_once_with(42, artifact_kind="processed", force=True)
 
 
 def test_video_temporal_inference_task_delegates_with_bounded_defaults() -> None:

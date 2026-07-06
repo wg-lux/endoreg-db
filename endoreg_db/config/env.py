@@ -520,6 +520,10 @@ def get_protected_media_root() -> Path:
     return env_path(PROTECTED_MEDIA_ROOT_ENV, default_root)
 
 
+def allow_insecure_protected_media_serving() -> bool:
+    return env_bool("ALLOW_INSECURE_PROTECTED_MEDIA", False)
+
+
 def get_data_dir() -> Path:
     runtime_env = build_protected_runtime_env()
     default_root = runtime_env[DATA_DIR_ENV]
@@ -744,6 +748,7 @@ def snapshot() -> Dict[str, Any]:
         "STORAGE_DIR",
         "DATA_DIR",
         "PROTECTED_MEDIA_ROOT",
+        "ALLOW_INSECURE_PROTECTED_MEDIA",
         "ASSET_DIR",
         "STATIC_URL",
         "MEDIA_URL",

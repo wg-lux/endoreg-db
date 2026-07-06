@@ -1,6 +1,7 @@
 from __future__ import annotations
 from .video import (
     FrameExtractionRequest,
+    VideoHlsArtifact,
     VideoFile,
     VideoMetadata,
     VideoProcessingHistory,
@@ -26,6 +27,7 @@ from .anonymization_metrics import (
 
 __all__ = [
     "VideoFile",
+    "VideoHlsArtifact",
     "Frame",
     "FrameExtractionRequest",
     "RawPdfFile",
