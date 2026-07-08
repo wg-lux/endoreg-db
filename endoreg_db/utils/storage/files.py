@@ -23,6 +23,7 @@ from typing import (
     Generator,
     Optional,
     Protocol,
+    TYPE_CHECKING,
     TypeAlias,
     cast,
 )
@@ -40,7 +41,10 @@ from endoreg_db.utils.file_operations import secure_unlink_file
 logger = logging.getLogger(__name__)
 
 _DEFAULT_CHUNK_SIZE = 1024 * 1024  # 1 MiB
-DjangoFile: TypeAlias = File[bytes]
+if TYPE_CHECKING:
+    DjangoFile: TypeAlias = File[bytes]
+else:
+    DjangoFile: TypeAlias = File
 
 
 class _VideoMaterializable(Protocol):

@@ -17,6 +17,7 @@ DRY_RUN=0
 
 RUN_MIGRATE="${RUN_MIGRATE:-1}"
 RUN_LOAD_BASE_DATA="${RUN_LOAD_BASE_DATA:-1}"
+RUN_DJANGO_STARTUP_PREFLIGHT="${RUN_DJANGO_STARTUP_PREFLIGHT:-1}"
 RUN_IMPORT="${RUN_IMPORT:-1}"
 RUN_VIDEO_STREAMING="${RUN_VIDEO_STREAMING:-1}"
 RUN_HLS_MATERIALIZATION_FOR_STREAMING="${RUN_HLS_MATERIALIZATION_FOR_STREAMING:-1}"
@@ -59,6 +60,7 @@ Options:
   --master-key-file PATH     Read LX_ANNOTATE_MASTER_KEY from this file.
   --skip-migrate             Do not run manage.py migrate.
   --skip-load-base-data      Do not run manage.py load_base_db_data.
+  --skip-startup-preflight   Do not run manage.py check before profiling.
   --skip-import              Do not run kcache_video_import.
   --skip-video-streaming     Do not run profile_video_streaming.
   --skip-segment-updates     Do not run profile_segment_updates.
@@ -125,6 +127,10 @@ parse_args() {
         ;;
       --skip-load-base-data)
         RUN_LOAD_BASE_DATA=0
+        shift
+        ;;
+      --skip-startup-preflight)
+        RUN_DJANGO_STARTUP_PREFLIGHT=0
         shift
         ;;
       --skip-import)
@@ -343,6 +349,15 @@ run_setup_steps() {
   fi
 }
 
+run_django_startup_preflight() {
+  [[ "$RUN_DJANGO_STARTUP_PREFLIGHT" == "1" ]] || {
+    printf 'skip: django startup preflight\n'
+    return 0
+  }
+
+  run_manage django_startup_preflight check
+}
+
 run_import_pipeline_profile() {
   [[ "$RUN_IMPORT" == "1" ]] || {
     printf 'skip: import pipeline profile\n'
@@ -450,6 +465,7 @@ main() {
   printf 'settings module: %s\n' "${DJANGO_SETTINGS_MODULE:-endoreg_db.config.settings.dev}"
   printf 'python: %s\n' "$PYTHON"
 
+  run_django_startup_preflight
   run_setup_steps
 
   local runner

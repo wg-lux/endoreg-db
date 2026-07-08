@@ -567,7 +567,20 @@ def test_anonymize_video_persists_phi_region_proposals_from_frame_cleaner(
             output_path: Path,
         ) -> tuple[Path, JsonObject]:
             output_path.write_bytes(b"anonymized-video")
-            return output_path, {"frame_observations": [_phi_observation()]}
+            return output_path, {
+                "frame_observations": [_phi_observation()],
+                "paper_evaluation_metrics": {
+                    "runtime": {
+                        "total_frames": 12,
+                        "frames_processed": 1,
+                        "anonymizer_seconds": 0.5,
+                    },
+                    "temporal_accumulation": {
+                        "sensitive_frame_count": 1,
+                        "phi_region_count": 1,
+                    },
+                },
+            }
 
     monkeypatch.setattr(video_anonymization, "FrameCleaner", FakeFrameCleaner)
     monkeypatch.setattr(
@@ -603,6 +616,39 @@ def test_anonymize_video_persists_phi_region_proposals_from_frame_cleaner(
     assert result_ctx.anonymized_path is not None
     assert result_ctx.anonymized_path.read_bytes() == b"anonymized-video"
     assert FrameBoxAnnotation.objects.count() == 1
+    video.refresh_from_db()
+    assert video.meta is not None
+    persisted_metrics = video.meta.get("paper_evaluation_metrics")
+    assert isinstance(persisted_metrics, dict)
+    runtime_metrics = persisted_metrics.get("runtime")
+    assert isinstance(runtime_metrics, dict)
+    assert runtime_metrics.get("total_frames") == 12
+    temporal_metrics = persisted_metrics.get("temporal_accumulation")
+    assert isinstance(temporal_metrics, dict)
+    assert temporal_metrics.get("phi_region_count") == 1
+
+
+@pytest.mark.django_db
+def test_persist_paper_evaluation_metrics_rejects_non_json_payload(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    center = Center.objects.create(
+        name="paper-metrics-center",
+        display_name="Paper Metrics Center",
+    )
+    video = VideoFile.objects.create(center=center, video_hash="paper-metrics-video")
+    anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
+
+    with caplog.at_level("WARNING"):
+        saved = anonymizer._persist_paper_evaluation_metrics(
+            video,
+            {"paper_evaluation_metrics": {"runtime": {"total_seconds": float("nan")}}},
+        )
+
+    video.refresh_from_db()
+    assert saved is False
+    assert video.meta is None
+    assert "does not allow NaN" in caplog.text
 
 
 @pytest.mark.django_db

@@ -707,14 +707,6 @@ wheels = [
 ]
 
 [[package]]
-name = "de-core-news-sm"
-version = "3.8.0"
-source = { url = "https://github.com/explosion/spacy-models/releases/download/de_core_news_sm-3.8.0/de_core_news_sm-3.8.0-py3-none-any.whl" }
-wheels = [
-    { url = "https://github.com/explosion/spacy-models/releases/download/de_core_news_sm-3.8.0/de_core_news_sm-3.8.0-py3-none-any.whl", hash = "sha256:fec69fec52b1780f2d269d5af7582a5e28028738bd3190532459aeb473bfa3e7" },
-]
-
-[[package]]
 name = "decorator"
 version = "5.3.1"
 source = { registry = "https://pypi.org/simple" }
@@ -996,7 +988,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/62/59/e47bbd0542d0e6f4c
 
 [[package]]
 name = "endoreg-db"
-version = "1.0.4.8"
+version = "1.0.5.1"
 source = { editable = "." }
 dependencies = [
     { name = "celery" },
@@ -1097,9 +1089,6 @@ docs = [
     { name = "sphinx-autodoc-typehints" },
     { name = "sphinx-copybutton" },
 ]
-spacy = [
-    { name = "de-core-news-sm" },
-]
 
 [package.dev-dependencies]
 cpu-runtime = [
@@ -1116,7 +1105,6 @@ requires-dist = [
     { name = "celery", specifier = ">=5.5.3" },
     { name = "celery-types", specifier = ">=0.26.0" },
     { name = "cryptography", specifier = ">=44.0.2" },
-    { name = "de-core-news-sm", marker = "extra == 'spacy'", url = "https://github.com/explosion/spacy-models/releases/download/de_core_news_sm-3.8.0/de_core_news_sm-3.8.0-py3-none-any.whl" },
     { name = "decord", specifier = "==0.6.0" },
     { name = "django", specifier = ">=5.2.4" },
     { name = "django-bootstrap5", specifier = ">=25.2" },
@@ -1143,7 +1131,7 @@ requires-dist = [
     { name = "linkify-it-py", marker = "extra == 'docs'", specifier = ">=2.0.3" },
     { name = "llvmlite", specifier = ">=0.44.0" },
     { name = "lx-ai-core", extras = ["torch"], specifier = "==0.0.1" },
-    { name = "lx-anonymizer", extras = ["gpu"], specifier = "==0.9.3.1" },
+    { name = "lx-anonymizer", extras = ["gpu"], specifier = "==0.9.3.2" },
     { name = "lx-dtypes", specifier = "==0.2.0" },
     { name = "moviepy", specifier = "==2.2.1" },
     { name = "mozilla-django-oidc", specifier = ">=4.0.1" },
@@ -1204,7 +1192,7 @@ requires-dist = [
     { name = "whitenoise", specifier = ">=6.10.0" },
     { name = "ziglang", specifier = ">=0.15.2" },
 ]
-provides-extras = ["dev", "docs", "spacy"]
+provides-extras = ["dev", "docs"]
 
 [package.metadata.requires-dev]
 cpu-runtime = [{ name = "onnxruntime", specifier = ">=1.25.1" }]
@@ -1952,12 +1940,11 @@ torch = [
 
 [[package]]
 name = "lx-anonymizer"
-version = "0.9.3.1"
+version = "0.9.3.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
     { name = "dateparser" },
-    { name = "de-core-news-sm" },
     { name = "faker" },
     { name = "gender-guesser" },
     { name = "lx-dtypes" },
@@ -1982,9 +1969,9 @@ dependencies = [
     { name = "verovio" },
     { name = "ziglang" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/2d/c2/92f0dfb50bdd70507886b0e7c5670abc95053b83dff71bdf8eb89f888f5d/lx_anonymizer-0.9.3.1.tar.gz", hash = "sha256:2b2a68d8481134c8ac1639842bc381554668a8b0b3f6042b47a5c7f44518ecaf", size = 1387064, upload-time = "2026-07-07T17:14:10.432Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f3/15/9e5913261842ca890c373a374ecee1faf27ddb5c5b3793aa40d81bdb2ae0/lx_anonymizer-0.9.3.2.tar.gz", hash = "sha256:11f31ee7bb578e5674997d5c23e76bbd0e2cb995962081cfefb74a3ca02d48e5", size = 1392305, upload-time = "2026-07-08T13:41:13.768Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c6/05/07fcafab0faab33623d5123e2cd62edb44dc09d016f17a3a55298247616a/lx_anonymizer-0.9.3.1-cp312-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:0451a286701a0ca6292d0ab956e7e799c0c11cf40edc9d195ba5f8494e153e01", size = 1459533, upload-time = "2026-07-07T17:14:06.686Z" },
+    { url = "https://files.pythonhosted.org/packages/56/1f/f307726852a5ee817c2604798b1e878d28ec82209232abca105811cfead0/lx_anonymizer-0.9.3.2-cp312-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:0957f4dd7f39a1a5a46557809de4c6e1c3bbfee2315b32273fd234c03e87d800", size = 1464461, upload-time = "2026-07-08T13:41:10.119Z" },
 ]
 
 [package.optional-dependencies]

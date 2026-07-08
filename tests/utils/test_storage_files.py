@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from django.core.files import File
 from django.db.models.fields.files import FieldFile
 
 from endoreg_db.utils.storage import ensure_local_file
@@ -42,6 +43,11 @@ class _PathlessFieldFile:
     @property
     def path(self) -> Path:
         raise NotImplementedError
+
+
+@pytest.mark.unit
+def test_django_file_type_alias_is_runtime_import_safe() -> None:
+    assert storage_files.DjangoFile is File
 
 
 @pytest.mark.unit

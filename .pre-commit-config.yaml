@@ -29,6 +29,7 @@ repos:
         entry: .devenv/state/venv/bin/python scripts/check_django_startup_imports.py
         language: system
         pass_filenames: false
+        always_run: true
       - id: deployment-settings-contract
         name: deployment settings contract
         entry: pytest tests/deployment/test_prod_settings_contract.py -q

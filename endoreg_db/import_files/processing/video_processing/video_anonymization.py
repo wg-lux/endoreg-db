@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+import math
 import os
 import uuid
 from contextlib import nullcontext
@@ -15,11 +16,12 @@ from endoreg_db.utils.ffmpeg_wrapper import (
 )
 from lx_anonymizer.frame_cleaner import FrameCleaner
 from lx_dtypes.models import SensitiveMeta
-from lx_dtypes.models.contracts.json_types import JsonObject
+from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
 from lx_dtypes.models.contracts.media_streaming import (
     FfmpegStreamProbeEntry,
     validate_ffmpeg_stream_info,
 )
+from lx_dtypes.models.contracts.video_file import VideoFileMetaJsonObject
 from lx_dtypes.models.contracts.video_frame_box_annotations import (
     VideoPhiFrameObservationPayload,
     VideoPhiRegionPayload,
@@ -58,6 +60,7 @@ logger = logging.getLogger(__name__)
 PHI_REGION_LABEL_NAME = "phi_region"
 PHI_REGION_INFORMATION_SOURCE_NAME = "lx_anonymizer_phi_detector"
 PHI_REGION_ANNOTATOR = "system:lx_anonymizer"
+PAPER_EVALUATION_METRICS_KEY = "paper_evaluation_metrics"
 ENDOSCOPE_IMAGE_ROI_REQUIRED_KEYS = ("x", "y", "width", "height")
 ENDOSCOPE_IMAGE_ROI_POSITIVE_KEYS = (
     "width",
@@ -168,6 +171,53 @@ def _positive_int(value: object) -> int | None:
     except (TypeError, ValueError):
         return None
     return parsed if parsed > 0 else None
+
+
+def _json_compatible_value(value: object, *, field_name: str) -> JsonValue:
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError(f"{field_name} does not allow NaN or infinite floats")
+        return value
+    if isinstance(value, list):
+        values = cast(list[object], value)
+        return [_json_compatible_value(item, field_name=field_name) for item in values]
+    if isinstance(value, dict):
+        return _json_compatible_mapping(
+            cast(dict[object, object], value),
+            field_name=field_name,
+        )
+    raise ValueError(
+        f"{field_name} contains unsupported JSON value type: {type(value).__name__}"
+    )
+
+
+def _json_compatible_mapping(
+    value: dict[object, object],
+    *,
+    field_name: str,
+) -> JsonObject:
+    payload: JsonObject = {}
+    for key, item in value.items():
+        if not isinstance(key, str):
+            raise ValueError(f"{field_name} keys must be strings")
+        payload[key] = _json_compatible_value(item, field_name=field_name)
+    return payload
+
+
+def _paper_evaluation_metrics_payload(
+    extracted_metadata: JsonObject,
+) -> JsonObject | None:
+    raw_metrics = extracted_metadata.get(PAPER_EVALUATION_METRICS_KEY)
+    if raw_metrics is None:
+        return None
+    if not isinstance(raw_metrics, dict):
+        raise ValueError(f"{PAPER_EVALUATION_METRICS_KEY} must be a JSON object")
+    return _json_compatible_mapping(
+        cast(dict[object, object], raw_metrics),
+        field_name=PAPER_EVALUATION_METRICS_KEY,
+    )
 
 
 def _require_endoscope_image_roi(
@@ -686,8 +736,44 @@ class VideoAnonymizer:
         sensitive_meta_storage(
             SensitiveMeta.model_validate(lx_sensitive_payload), ctx.current_video
         )
+        self._persist_paper_evaluation_metrics(ctx.current_video, extracted_metadata)
         self._persist_phi_region_proposals(ctx.current_video, extracted_metadata)
         return ctx
+
+    def _persist_paper_evaluation_metrics(
+        self,
+        video: VideoFile,
+        extracted_metadata: JsonObject,
+    ) -> bool:
+        try:
+            metrics_payload = _paper_evaluation_metrics_payload(extracted_metadata)
+        except ValueError as exc:
+            logger.warning(
+                "Failed to persist lx-anonymizer paper evaluation metrics for video %s: %s",
+                getattr(video, "video_hash", None),
+                exc,
+            )
+            return False
+        if metrics_payload is None:
+            return False
+
+        current_meta = video.meta if isinstance(video.meta, dict) else {}
+        try:
+            next_meta = _json_compatible_mapping(
+                cast(dict[object, object], current_meta),
+                field_name="VideoFile.meta",
+            )
+        except ValueError as exc:
+            logger.warning(
+                "Failed to merge lx-anonymizer paper evaluation metrics for video %s: %s",
+                getattr(video, "video_hash", None),
+                exc,
+            )
+            return False
+        next_meta[PAPER_EVALUATION_METRICS_KEY] = metrics_payload
+        video.meta = cast(VideoFileMetaJsonObject, next_meta)
+        video.save(update_fields=["meta"])
+        return True
 
     def _persist_phi_region_proposals(
         self,

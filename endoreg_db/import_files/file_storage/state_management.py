@@ -118,11 +118,22 @@ def _store_existing_final_file(
 
 
 def _materialize_processed_video_hls(instance: VideoFile) -> None:
-    result = materialize_video_hls(
-        int(instance.pk),
-        artifact_kind="processed",
-        force=True,
-    )
+    try:
+        result = materialize_video_hls(
+            int(instance.pk),
+            artifact_kind="processed",
+            force=True,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Processed HLS materialization failed after video finalization: "
+            "video=%s error=%s",
+            instance.pk,
+            exc,
+            exc_info=True,
+        )
+        return
+
     logger.info(
         "Materialized processed HLS after video finalization: video=%s status=%s key_id=%s",
         instance.pk,

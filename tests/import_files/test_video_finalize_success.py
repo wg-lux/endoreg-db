@@ -1,8 +1,9 @@
 from contextlib import contextmanager
 from hashlib import sha256
+import logging
 from pathlib import Path
 from types import SimpleNamespace
-from typing import NoReturn, cast
+from typing import Any, NoReturn, cast
 
 import pytest
 from pytest import MonkeyPatch
@@ -15,6 +16,33 @@ from endoreg_db.utils import paths as paths_module
 
 def _runtime_storage_root() -> Path:
     return paths_module.EndoregPathsModel.from_environment().storage
+
+
+@pytest.mark.unit
+def test_materialize_processed_video_hls_logs_and_swallows_failure(
+    monkeypatch: MonkeyPatch,
+    caplog: Any,
+) -> None:
+    import endoreg_db.import_files.file_storage.state_management as state_management_module
+
+    def fail_materialize_video_hls(*args: object, **kwargs: object) -> NoReturn:
+        raise RuntimeError("synthetic HLS failure")
+
+    monkeypatch.setattr(
+        state_management_module,
+        "materialize_video_hls",
+        fail_materialize_video_hls,
+        raising=True,
+    )
+    caplog.set_level(logging.WARNING, logger=state_management_module.__name__)
+
+    video = cast(VideoFile, SimpleNamespace(pk=42))
+    cast(Any, state_management_module)._materialize_processed_video_hls(video)
+
+    assert (
+        "Processed HLS materialization failed after video finalization" in caplog.text
+    )
+    assert "synthetic HLS failure" in caplog.text
 
 
 @pytest.mark.unit
