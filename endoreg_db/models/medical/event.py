@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from django.db import models
 
@@ -38,8 +38,8 @@ class Event(models.Model):
         description (str): A description of the event.
     """
 
-    name: models.CharField[str] = models.CharField(max_length=100, unique=True)
-    description: models.TextField[str | None] = models.TextField(blank=True, null=True)
+    name: models.CharField[Any, Any] = models.CharField(max_length=100, unique=True)
+    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
 
     objects = EventManager()
 
@@ -84,11 +84,11 @@ class EventClassification(models.Model):
     Represents a classification system for events (e.g., TNM staging for cancer).
     """
 
-    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
+    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
 
     objects = EventClassificationManager()
 
-    event: models.ForeignKey[Event] = models.ForeignKey(
+    event: models.ForeignKey[Any] = models.ForeignKey(
         Event,
         on_delete=models.CASCADE,
         related_name="event_classifications",
@@ -129,11 +129,11 @@ class EventClassificationChoice(models.Model):
     Can define associated subcategories and numerical descriptors.
     """
 
-    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
-    subcategories: models.JSONField[object] = models.JSONField(default=dict)
-    numerical_descriptors: models.JSONField[object] = models.JSONField(default=dict)
+    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    subcategories: models.JSONField[Any, Any] = models.JSONField(default=dict)
+    numerical_descriptors: models.JSONField[Any, Any] = models.JSONField(default=dict)
 
-    event_classification: models.ForeignKey[EventClassification] = models.ForeignKey(
+    event_classification: models.ForeignKey[Any] = models.ForeignKey(
         EventClassification,
         on_delete=models.CASCADE,
         related_name="event_classification_choices",

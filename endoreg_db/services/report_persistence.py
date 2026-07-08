@@ -478,7 +478,7 @@ def persist_report_pdf_artifact(
     )
 
     # Keep full report file in sync too (optional but useful for timeline/display)
-    full_report_ref.file.save(pdf_filename, ContentFile(pdf_bytes), save=False)
+    full_report_ref.file.save(pdf_filename, ContentFile[bytes](pdf_bytes), save=False)
     full_report_ref.save()
 
     raw_pdf = RawPdfFile.objects.filter(anonym_examination_report=full_report).first()
@@ -521,7 +521,7 @@ def persist_report_pdf_artifact(
         ).hexdigest()
 
     raw_pdf_ref = cast(_RawPdfFileLike, raw_pdf)
-    raw_pdf_ref.file.save(pdf_filename, ContentFile(pdf_bytes), save=False)
+    raw_pdf_ref.file.save(pdf_filename, ContentFile[bytes](pdf_bytes), save=False)
     raw_pdf.save()
 
     return full_report.pk, raw_pdf.pk

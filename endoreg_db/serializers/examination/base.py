@@ -15,7 +15,7 @@ from ...models import Examination, ExaminationType
 
 
 class _ExaminationTypeManagerLike(Protocol):
-    def all(self) -> QuerySet[ExaminationType, ExaminationType]: ...
+    def all(self) -> QuerySet[ExaminationType]: ...
 
 
 class _SerializerDataLike:

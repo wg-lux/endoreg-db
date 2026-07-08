@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from django.db import models
 
@@ -29,7 +29,7 @@ class ActiveModel(models.Model):
         objects (ActiveModelManager): Custom manager providing specialized query capabilities for ActiveModel instances.
     """
 
-    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
+    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
 
     model_meta: models.ForeignKey[ModelMeta | None] = models.ForeignKey(
         "ModelMeta", on_delete=models.SET_NULL, blank=True, null=True

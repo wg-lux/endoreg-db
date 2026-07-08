@@ -18,7 +18,17 @@ class _WeightsFileLike(Protocol):
     storage: Storage
 
 
+class _AiModelWithActiveMeta(Protocol):
+    active_meta: ModelMeta | None
+
+
+class _ModelMetaWithModel(Protocol):
+    model: _AiModelWithActiveMeta
+
+
 class AiModelTest(TestCase):
+    ai_model_meta: ModelMeta
+
     def setUp(self):
         load_data()
 
@@ -47,7 +57,8 @@ def test_setup_default_model_meta_from_huggingface_downloads_safetensors():
     assert weights_path.exists(), "Weights file should exist after download"
     assert weights_path.suffix == ".safetensors"
     assert weights_path.stat().st_size > 0
-    assert model_meta.model.active_meta == model_meta
+    model = cast(_ModelMetaWithModel, model_meta).model
+    assert model.active_meta == model_meta
 
     try:
         weights_file = cast(_WeightsFileLike, model_meta.weights)

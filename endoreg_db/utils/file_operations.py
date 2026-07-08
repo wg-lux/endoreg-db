@@ -9,7 +9,6 @@ import time
 from pathlib import Path
 from typing import Any, Iterable
 from django.db.models.fields.files import FieldFile
-from endoreg_db.utils.storage import ensure_local_file
 
 from endoreg_db.utils.rust_backend import sha256_file_hex as rust_sha256_file_hex
 from endoreg_db.utils.structured_logging import (
@@ -63,6 +62,8 @@ def sha256_file(path: Path | FieldFile, chunk_size: int = 1024 * 1024) -> str:
         return h.hexdigest()
 
     if isinstance(path, FieldFile):
+        from endoreg_db.utils.storage import ensure_local_file
+
         with ensure_local_file(path) as local_path:
             return sha256_file(Path(local_path), chunk_size)
 
@@ -302,6 +303,8 @@ def atomic_write_file(
     bytes_written = 0
     try:
         with temp_destination.open("wb") as handle:
+            if file_mode is not None:
+                os.chmod(temp_destination, file_mode)
             for chunk in content:
                 handle.write(chunk)
                 bytes_written += len(chunk)
@@ -455,6 +458,46 @@ def safe_unlink_file(path: Path, *, missing_ok: bool = True) -> None:
         )
 
 
+def secure_unlink_file(path: Path, *, missing_ok: bool = True) -> None:
+    target = Path(path)
+    try:
+        stat_result = target.stat()
+    except FileNotFoundError:
+        safe_unlink_file(target, missing_ok=missing_ok)
+        return
+
+    if not target.is_file():
+        safe_unlink_file(target, missing_ok=missing_ok)
+        return
+
+    try:
+        with target.open("r+b", buffering=0) as handle:
+            remaining = stat_result.st_size
+            zero_chunk = b"\x00" * min(remaining, 64 * 1024)
+            while remaining > 0:
+                chunk = zero_chunk[: min(len(zero_chunk), remaining)]
+                handle.write(chunk)
+                remaining -= len(chunk)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except Exception as exc:
+        _emit_file_operation_event(
+            operation="secure_unlink",
+            status="error",
+            source=target,
+            detail=str(exc),
+        )
+        raise
+
+    _emit_file_operation_event(
+        operation="secure_unlink",
+        status="overwritten",
+        source=target,
+        bytes=stat_result.st_size,
+    )
+    safe_unlink_file(target, missing_ok=missing_ok)
+
+
 def ensure_directory(
     path: Path,
     *,
@@ -479,6 +522,27 @@ def ensure_directory(
         destination=target,
     )
     return target
+
+
+def set_path_mode(path: Path, mode: int) -> None:
+    target = Path(path)
+    try:
+        os.chmod(target, mode)
+    except Exception as exc:
+        _emit_file_operation_event(
+            operation="chmod",
+            status="error",
+            source=target,
+            detail=str(exc),
+            mode=oct(mode),
+        )
+        raise
+    _emit_file_operation_event(
+        operation="chmod",
+        status="ok",
+        source=target,
+        mode=oct(mode),
+    )
 
 
 def safe_rmtree(path: Path, *, missing_ok: bool = True) -> None:

@@ -1,17 +1,11 @@
 from __future__ import annotations
 
 from types import NoneType
-from typing import TYPE_CHECKING, Protocol, TypeAlias, cast
+from typing import Protocol, TypeAlias, cast, Any
 
 from django.db import models
 
 # models.py in your main app
-
-if TYPE_CHECKING:
-    from django.contrib.auth.models import User
-
-    from ..examiner.examiner import Examiner
-    from ..profession import Profession
 
 NoPortalUserInfoValue: TypeAlias = NoneType
 PortalUserInfoFlag: TypeAlias = bool | NoPortalUserInfoValue
@@ -22,35 +16,28 @@ class _PortalUserSource(Protocol):
 
 
 class PortalUserInfo(models.Model):
-    user: models.OneToOneField["User"] = models.OneToOneField(
+    user: models.OneToOneField[Any, Any] = models.OneToOneField(
         "auth.User", on_delete=models.CASCADE
     )
-    profession: models.ForeignKey[Profession | NoPortalUserInfoValue | None] = (
-        models.ForeignKey(
-            "endoreg_db.Profession",
-            on_delete=models.CASCADE,
-            blank=True,
-            null=True,
-            related_name="portal_user_infos",
-        )
+    profession: models.ForeignKey[Any, Any] = models.ForeignKey(
+        "endoreg_db.Profession",
+        on_delete=models.CASCADE,
+        blank=True,
+        null=True,
+        related_name="portal_user_infos",
     )
-    works_in_endoscopy: models.BooleanField[PortalUserInfoFlag | None] = (
-        models.BooleanField(blank=True, null=True)
+    works_in_endoscopy: models.BooleanField[Any, Any] = models.BooleanField(
+        blank=True, null=True
     )
     # Add other fields as needed
 
-    examiner: models.OneToOneField[Examiner | NoPortalUserInfoValue | None] = (
-        models.OneToOneField(
-            "endoreg_db.Examiner",
-            on_delete=models.CASCADE,
-            blank=True,
-            null=True,
-            related_name="portal_user_info",
-        )
+    examiner: models.OneToOneField[Any, Any] = models.OneToOneField(
+        "endoreg_db.Examiner",
+        on_delete=models.CASCADE,
+        blank=True,
+        null=True,
+        related_name="portal_user_info",
     )
-
-    if TYPE_CHECKING:
-        pass
 
     def __str__(self) -> str:
         user = cast(_PortalUserSource, self.user)

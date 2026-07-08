@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Any
 from typing import TYPE_CHECKING
 
 from django.db import models
@@ -9,10 +10,10 @@ from .abstract import AbstractState
 class SensitiveMetaState(AbstractState):
     """State for sensitive meta data."""
 
-    dob_verified: "models.BooleanField[bool]" = models.BooleanField(default=False)
-    names_verified: "models.BooleanField[bool]" = models.BooleanField(default=False)
+    dob_verified: models.BooleanField[bool, Any] = models.BooleanField(default=False)
+    names_verified: models.BooleanField[bool, Any] = models.BooleanField(default=False)
 
-    origin: "models.OneToOneField[SensitiveMeta | None]" = models.OneToOneField(
+    origin: models.OneToOneField["SensitiveMeta | None"] = models.OneToOneField(
         "SensitiveMeta",
         on_delete=models.CASCADE,
         related_name="state",

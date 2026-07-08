@@ -243,9 +243,28 @@ export SKIP_EXPENSIVE_TESTS=False
 
 or change the default.
 
-We offer various devenv tasks t
+Run tests using:
+```
+bash
+pytest
+```
 
----
+We offer various devenv tasks to run tests.
+```
+bash
+devenv tasks run test:sync # syncs the uv dev dependencies
+devenv tasks run test:fast
+devenv tasks run test:heavy
+devenv tasks run test:full
+devenv tasks run test:clean
+```
+
+To run profiling, use the following command:
+```
+bash
+scripts/run_profiling_suite.sh --master-key-file tests/assets/test_master_key.txt
+```
+
 ## 📦 Database Backup and Restore
 
 This project includes two shell scripts to **export** and **import** database data in JSON format using Django's management commands.

@@ -24,6 +24,12 @@ class FakeStreamingProcess:
         self.waited = True
         return self.returncode
 
+    def communicate(self) -> tuple[bytes, bytes]:
+        self.waited = True
+        stdout = self.stdout.read()
+        stderr = self.stderr.read()
+        return stdout, stderr
+
     def poll(self) -> int | None:
         if self.waited or self.terminated or self.killed:
             return self.returncode
@@ -104,6 +110,75 @@ def test_read_video_path_frame_sample_decodes_requested_frame(
     assert sample.rgb_frame.tolist() == [[[0, 1, 2], [3, 4, 5]]]
     assert "-frames:v" in created_commands[0]
     assert "select='eq(n,5)'" in created_commands[0]
+
+
+@pytest.mark.unit
+def test_read_video_path_frame_jpeg_uses_timestamp_seek_and_mjpeg_pipe(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(frame_stream, "_resolve_ffmpeg_executable", lambda: "/ffmpeg")
+    created_commands: list[list[str]] = []
+
+    def fake_popen(command: list[str], **kwargs: Any) -> FakeStreamingProcess:
+        created_commands.append(command)
+        return FakeStreamingProcess(b"\xff\xd8encoded-jpeg")
+
+    monkeypatch.setattr(frame_stream.subprocess, "Popen", fake_popen)
+
+    sample = frame_stream.read_video_path_frame_jpeg(
+        tmp_path / "video.mp4",
+        frame_number=5,
+        fps_hint=2.0,
+    )
+
+    assert sample.frame_number == 5
+    assert sample.timestamp == 2.5
+    assert sample.content_type == "image/jpeg"
+    assert sample.image_bytes == b"\xff\xd8encoded-jpeg"
+    assert created_commands[0] == [
+        "/ffmpeg",
+        "-nostdin",
+        "-v",
+        "error",
+        "-ss",
+        "2.500000",
+        "-i",
+        str(tmp_path / "video.mp4"),
+        "-map",
+        "0:v:0",
+        "-an",
+        "-sn",
+        "-dn",
+        "-frames:v",
+        "1",
+        "-q:v",
+        "2",
+        "-f",
+        "image2pipe",
+        "-vcodec",
+        "mjpeg",
+        "pipe:1",
+    ]
+
+
+@pytest.mark.unit
+def test_read_video_path_frame_jpeg_raises_when_frame_is_missing(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(frame_stream, "_resolve_ffmpeg_executable", lambda: "/ffmpeg")
+
+    def fake_popen(command: list[str], **kwargs: Any) -> FakeStreamingProcess:
+        return FakeStreamingProcess(b"")
+
+    monkeypatch.setattr(frame_stream.subprocess, "Popen", fake_popen)
+
+    with pytest.raises(RuntimeError, match="produced no encoded frame"):
+        frame_stream.read_video_path_frame_jpeg(
+            tmp_path / "video.mp4",
+            frame_number=7,
+            fps_hint=2.0,
+        )
 
 
 @pytest.mark.unit

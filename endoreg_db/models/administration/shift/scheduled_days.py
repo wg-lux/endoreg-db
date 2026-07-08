@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING, TypeAlias, Any
 
 from django.db import models
 
@@ -34,37 +34,35 @@ class ScheduledDays(models.Model):
     Model representing scheduled days for a shift.
     """
 
-    name: models.CharField[str] = models.CharField(
+    name: models.CharField[Any, Any] = models.CharField(
         max_length=255,
         unique=True,
         help_text="Name of the scheduled days.",
     )
-    working_days: models.BooleanField[ScheduledDaysBoolean] = models.BooleanField(
+    working_days: models.BooleanField[Any, Any] = models.BooleanField(
         null=True,
         blank=True,
         default=True,
     )
 
-    non_working_days: models.BooleanField[ScheduledDaysBoolean | None] = (
-        models.BooleanField(
-            null=True,
-            blank=True,
-            default=False,
-        )
-    )
-
-    limited_time: models.BooleanField[ScheduledDaysBoolean] = models.BooleanField(
+    non_working_days: models.BooleanField[Any, Any] = models.BooleanField(
         null=True,
         blank=True,
         default=False,
     )
 
-    start_date: models.DateField[ScheduledDaysDate] = models.DateField(
+    limited_time: models.BooleanField[Any, Any] = models.BooleanField(
+        null=True,
+        blank=True,
+        default=False,
+    )
+
+    start_date: models.DateField[Any, Any] = models.DateField(
         null=True,
         blank=True,
     )
 
-    end_date: models.DateField[ScheduledDaysDate | None] = models.DateField(
+    end_date: models.DateField[Any, Any] = models.DateField(
         null=True,
         blank=True,
     )

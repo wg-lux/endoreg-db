@@ -59,13 +59,7 @@ from endoreg_db.services.hub.watcher_handoff import (
 )
 from endoreg_db.services.hub.payloads import PreanonymizedIngestPayload
 from endoreg_db.services.hub.payloads import LocalStudyServerPreanonymizedIngestPayload
-from endoreg_db.services.report_import import ReportImportService
-from endoreg_db.services.jobs.report_llm_jobs import dispatch_report_llm_import
-from endoreg_db.services.video_import import VideoImportService
 from endoreg_db.services.video_files import get_or_create_video_state
-from endoreg_db.services.video_temporal_inference import (
-    dispatch_video_temporal_inference,
-)
 from endoreg_db.utils.set_default_center import (
     get_application_defaults,
     get_default_processor,
@@ -220,6 +214,10 @@ class UploadProvenance(TypedDict, total=False):
     media_integrity_missing_artifacts: list[str]
     previous_upload_job_id: str
     custom_marker: NotRequired[str]
+
+
+class _NamedUploadFile(Protocol):
+    name: str
 
 
 def _upload_provenance(
@@ -699,7 +697,7 @@ def _media_integrity_provenance(
 
 def create_or_reuse_upload_job(
     *,
-    uploaded_file: UploadedFile | File[bytes] | None,
+    uploaded_file: UploadedFile | _NamedUploadFile | None,
     content_type: str,
     created_by: object | None = None,
     source_center: Center | None = None,
@@ -974,7 +972,7 @@ def create_or_reuse_watcher_upload_job(
     )
 
     with file_path.open("rb") as handle:
-        django_file = File(handle, name=file_path.name)
+        django_file = cast(_NamedUploadFile, File(handle, name=file_path.name))
         return create_or_reuse_upload_job(
             uploaded_file=django_file,
             content_type=content_type,
@@ -1539,6 +1537,8 @@ def process_upload_job(job_id: str) -> bool:
         return False
 
     if job.content_type == "application/pdf":
+        from endoreg_db.services.jobs.report_llm_jobs import dispatch_report_llm_import
+
         job.mark_processing()
         provenance = _update_upload_provenance(job, stored_upload_path=job.file.name)
         provenance.setdefault("stored_upload_path", job.file.name)
@@ -1632,6 +1632,8 @@ def _run_video_upload_import_job(job_id: str) -> bool:
                         "No default EndoscopyProcessor is configured"
                     )
 
+                from endoreg_db.services.video_import import VideoImportService
+
                 video = VideoImportService().import_and_anonymize(
                     file_path=file_path,
                     center_name=center.name,
@@ -1659,6 +1661,10 @@ def _run_video_upload_import_job(job_id: str) -> bool:
         prediction_model_name = provenance.get("prediction_model_name")
         if isinstance(video, VideoFile) and prediction_model_name:
             try:
+                from endoreg_db.services.video_temporal_inference import (
+                    dispatch_video_temporal_inference,
+                )
+
                 ai_model = AiModel.objects.get(name=str(prediction_model_name))
                 model_meta = ai_model.get_latest_version()
                 prediction_dispatch = dispatch_video_temporal_inference(
@@ -1726,6 +1732,8 @@ def _run_watcher_upload_job_inline(
     imported_media: RawPdfFile | VideoFile | None = None
     sensitive_meta: SensitiveMeta | None = None
     if normalized_type == "report":
+        from endoreg_db.services.report_import import ReportImportService
+
         report = ReportImportService().import_and_anonymize(
             file_path=watched_path,
             center_name=source_center.name,
@@ -1738,6 +1746,8 @@ def _run_watcher_upload_job_inline(
     elif normalized_type == "video":
         if not processor_name:
             raise ObjectDoesNotExist("No default EndoscopyProcessor is configured")
+        from endoreg_db.services.video_import import VideoImportService
+
         video = VideoImportService().import_and_anonymize(
             file_path=watched_path,
             center_name=source_center.name,
@@ -1758,6 +1768,10 @@ def _run_watcher_upload_job_inline(
     )
     if isinstance(imported_media, VideoFile) and prediction_model_name:
         try:
+            from endoreg_db.services.video_temporal_inference import (
+                dispatch_video_temporal_inference,
+            )
+
             ai_model = AiModel.objects.get(name=str(prediction_model_name))
             model_meta = ai_model.get_latest_version()
             prediction_dispatch = dispatch_video_temporal_inference(

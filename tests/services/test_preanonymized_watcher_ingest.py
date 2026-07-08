@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import hashlib
 import tempfile
+from typing import cast
 from collections.abc import Mapping
 from pathlib import Path
 from unittest.mock import patch
@@ -126,8 +127,8 @@ class PreanonymizedWatcherIngestTests(TestCase):
             ):
                 upload_job = process_preanonymized_watcher_file(file_path=report_path)
 
-            upload_job.refresh_from_db()
-            report = RawPdfFile.objects.get()
+        upload_job.refresh_from_db()
+        report = RawPdfFile.objects.get()
 
         assert upload_job.status == UploadJob.Status.ANONYMIZED
         assert (
@@ -136,7 +137,10 @@ class PreanonymizedWatcherIngestTests(TestCase):
         )
         processing_provenance = upload_job.processing_provenance
         assert isinstance(processing_provenance, Mapping)
-        sidecar_payload = processing_provenance["sidecar_payload"]
+        sidecar_payload = cast(
+            Mapping[str, object],
+            processing_provenance["sidecar_payload"],
+        )
         assert isinstance(sidecar_payload, Mapping)
         assert sidecar_payload["human_anonymization_validated"] is True
         assert report.get_or_create_state().anonymization_validated is True

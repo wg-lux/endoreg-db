@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING, TypeAlias, Any
 
 from django.db import models
 
@@ -26,18 +26,18 @@ class ReferenceProductManager(models.Manager["ReferenceProduct"]):
 
 
 class ReferenceProduct(models.Model):
-    name: models.CharField[str] = models.CharField(max_length=255)
-    product: models.ForeignKey[Product] = models.ForeignKey(
+    name: models.CharField[Any, Any] = models.CharField(max_length=255)
+    product: models.ForeignKey["Product"] = models.ForeignKey(
         "Product",
         on_delete=models.CASCADE,
         related_name="reference_products",
     )
-    product_group: models.OneToOneField[ProductGroup] = models.OneToOneField(
+    product_group: models.OneToOneField["ProductGroup"] = models.OneToOneField(
         "ProductGroup",
         on_delete=models.CASCADE,
         related_name="reference_product",  # Changed from "reference_products"
     )
-    emission_factor_total: models.ForeignKey[ReferenceProductEmissionFactor | None] = (
+    emission_factor_total: models.ForeignKey[ReferenceProductEmissionFactor] = (
         models.ForeignKey(
             "EmissionFactor",
             on_delete=models.SET_NULL,
@@ -46,21 +46,21 @@ class ReferenceProduct(models.Model):
             related_name="reference_products",
         )
     )
-    emission_factor_package: models.ForeignKey[
-        ReferenceProductEmissionFactor | None
-    ] = models.ForeignKey(
-        "EmissionFactor",
-        on_delete=models.SET_NULL,
-        null=True,
-        related_name="reference_product_package",
+    emission_factor_package: models.ForeignKey[ReferenceProductEmissionFactor] = (
+        models.ForeignKey(
+            "EmissionFactor",
+            on_delete=models.SET_NULL,
+            null=True,
+            related_name="reference_product_package",
+        )
     )
-    emission_factor_product: models.ForeignKey[
-        ReferenceProductEmissionFactor | None
-    ] = models.ForeignKey(
-        "EmissionFactor",
-        on_delete=models.SET_NULL,
-        null=True,
-        related_name="reference_product_product",
+    emission_factor_product: models.ForeignKey[ReferenceProductEmissionFactor] = (
+        models.ForeignKey(
+            "EmissionFactor",
+            on_delete=models.SET_NULL,
+            null=True,
+            related_name="reference_product_product",
+        )
     )
 
     if TYPE_CHECKING:

@@ -1,6 +1,6 @@
 from __future__ import annotations
+from typing import Any
 
-from datetime import date, time
 
 from django.db import models
 
@@ -16,19 +16,19 @@ def _flag_value(flag: ReportReaderFlag | None) -> str:
 
 
 class PdfType(models.Model):
-    name: models.CharField[str] = models.CharField(max_length=255)
+    name: models.CharField[Any, Any] = models.CharField(max_length=255)
 
-    patient_info_line: models.ForeignKey[ReportReaderFlag | None] = models.ForeignKey(
+    patient_info_line: models.ForeignKey[Any] = models.ForeignKey(
         ReportReaderFlag,
         related_name="pdf_type_patient_info_line",
         on_delete=models.CASCADE,
     )
-    endoscope_info_line: models.ForeignKey[ReportReaderFlag | None] = models.ForeignKey(
+    endoscope_info_line: models.ForeignKey[Any] = models.ForeignKey(
         ReportReaderFlag,
         related_name="pdf_type_endoscopy_info_line",
         on_delete=models.CASCADE,
     )
-    examiner_info_line: models.ForeignKey[ReportReaderFlag | None] = models.ForeignKey(
+    examiner_info_line: models.ForeignKey[Any] = models.ForeignKey(
         ReportReaderFlag,
         related_name="pdf_type_examiner_info_line",
         on_delete=models.CASCADE,
@@ -73,12 +73,12 @@ class PdfType(models.Model):
 
 
 class PdfMeta(models.Model):
-    pdf_type: models.ForeignKey[PdfType] = models.ForeignKey(
+    pdf_type: models.ForeignKey[Any] = models.ForeignKey(
         PdfType, on_delete=models.CASCADE
     )
-    date: models.DateField[date] = models.DateField()
-    time: models.TimeField[time] = models.TimeField()
-    pdf_hash: models.CharField[str] = models.CharField(max_length=255, unique=True)
+    date: models.DateField[Any, Any] = models.DateField()
+    time: models.TimeField[Any, Any] = models.TimeField()
+    pdf_hash: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
 
     def __str__(self) -> str:
         return str(self.pdf_hash)

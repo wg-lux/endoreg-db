@@ -1,9 +1,8 @@
 from __future__ import annotations
-from datetime import datetime
+from typing import Any
 
 from django.conf import settings
 from django.db import models
-from lx_dtypes.models.contracts.json_types import JsonObject
 
 
 class OperationLog(models.Model):
@@ -13,51 +12,59 @@ class OperationLog(models.Model):
 
     # actor_id – internal Django user ID (primary key)
     # Who did it
-    actor_user: models.ForeignKey["models.Model | None"] = models.ForeignKey(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    actor_user: models.ForeignKey[Any] = models.ForeignKey(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="operation_logs",
     )
-    actor_username: models.CharField[str] = models.CharField(max_length=150, blank=True)
-    actor_email: models.EmailField[str] = models.EmailField(blank=True)
-    actor_keycloak_id: models.CharField[str] = models.CharField(
+    actor_username: models.CharField[Any, Any] = models.CharField(
+        max_length=150, blank=True
+    )
+    actor_email: models.EmailField[Any, Any] = models.EmailField(blank=True)
+    actor_keycloak_id: models.CharField[Any, Any] = models.CharField(
         max_length=255,
         blank=True,
         help_text="Keycloak subject/ID if you later want to store it.",
     )
 
     # What happened
-    action: models.CharField[str] = models.CharField(
+    action: models.CharField[Any, Any] = models.CharField(
         max_length=100,
         help_text="e.g. 'anonymization.start', 'anonymization.validate'",
     )
-    http_method: models.CharField[str] = models.CharField(max_length=10, blank=True)
-    path: models.CharField[str] = models.CharField(max_length=512, blank=True)
+    http_method: models.CharField[Any, Any] = models.CharField(
+        max_length=10, blank=True
+    )
+    path: models.CharField[Any, Any] = models.CharField(max_length=512, blank=True)
 
     # On what resource
-    resource_type: models.CharField[str] = models.CharField(
+    resource_type: models.CharField[Any, Any] = models.CharField(
         max_length=50,
         blank=True,
         help_text="e.g. 'video', 'pdf'",
     )
-    resource_id: models.IntegerField[int | None] = models.IntegerField(
+    resource_id: models.IntegerField[Any, Any] = models.IntegerField(
         null=True,
         blank=True,
         help_text="ID of VideoFile / RawPdfFile etc.",
     )
 
     # State before/after
-    status_before: models.CharField[str] = models.CharField(max_length=50, blank=True)
-    status_after: models.CharField[str] = models.CharField(max_length=50, blank=True)
+    status_before: models.CharField[Any, Any] = models.CharField(
+        max_length=50, blank=True
+    )
+    status_after: models.CharField[Any, Any] = models.CharField(
+        max_length=50, blank=True
+    )
 
     # Extra info
-    meta: models.JSONField[JsonObject | None] = models.JSONField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    meta: models.JSONField[Any, Any] = models.JSONField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
         null=True, blank=True
     )
 
-    created_at: models.DateTimeField[datetime] = models.DateTimeField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    created_at: models.DateTimeField[Any, Any] = models.DateTimeField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
         auto_now_add=True
     )
 

@@ -22,6 +22,18 @@ class _CenterRelation(Protocol):
     def add(self, *objs: Center | int) -> None: ...
 
 
+class _VideoStateWithFramesExtracted(Protocol):
+    frames_extracted: bool
+
+
+class _VideoFileWithMetadata(Protocol):
+    sensitive_meta: object | None
+
+    def get_or_create_state(self) -> _VideoStateWithFramesExtracted: ...
+
+    def extract_frames(self, *, overwrite: bool = False) -> bool: ...
+
+
 class _WritableFieldFile(Protocol):
     def save(self, name: str, content: File[bytes], save: bool = True) -> None: ...
 
@@ -674,11 +686,13 @@ class TestValidationDeletion:
                 overwrite: bool = False,
             ) -> object:
                 # This simulates the real behavior: attempt frame extraction if needed
-                state = video_obj.get_or_create_state()
+                video_instance = cast(_VideoFileWithMetadata, video_obj)
+                state = video_instance.get_or_create_state()
                 if not state.frames_extracted:
                     video_obj.extract_frames(overwrite=False)
                 # Return existing sensitive_meta or create minimal mock
-                return video_obj.sensitive_meta or Mock()
+                sensitive_meta = video_instance.sensitive_meta
+                return sensitive_meta if sensitive_meta is not None else Mock()
 
             mock_update_meta.side_effect = mock_update_text_metadata
 

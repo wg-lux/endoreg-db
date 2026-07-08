@@ -10,6 +10,26 @@ from endoreg_db.management.commands.evaluate_lx_anonymizer_performance import Co
 from endoreg_db.models import EndoscopyProcessor
 
 
+def test_performance_command_accepts_manifest_flags(tmp_path: Path) -> None:
+    parser = Command().create_parser(
+        "manage.py",
+        "evaluate_lx_anonymizer_performance",
+    )
+
+    options = vars(
+        parser.parse_args(
+            [
+                "--generate-manifest",
+                "--manifest-output-dir",
+                str(tmp_path),
+            ]
+        )
+    )
+
+    assert options["generate_manifest"] is True
+    assert options["manifest_output_dir"] == str(tmp_path)
+
+
 def test_evaluator_auto_discovery_excludes_text_reports(tmp_path: Path) -> None:
     text_report = tmp_path / "report.txt"
     text_report.write_text("report text", encoding="utf-8")

@@ -2,16 +2,14 @@ from __future__ import annotations
 
 """Model for the medication schedule."""
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, Any
 
 from django.db import models
 
 if TYPE_CHECKING:
-    from endoreg_db.models.medical.medication.medication import Medication
     from endoreg_db.models.medical.medication.medication_intake_time import (
         MedicationIntakeTime,
     )
-    from endoreg_db.models.other.unit import Unit
 
 
 class MedicationScheduleManager(models.Manager["MedicationSchedule"]):
@@ -33,18 +31,16 @@ class MedicationScheduleManager(models.Manager["MedicationSchedule"]):
 class MedicationSchedule(models.Model):
     """Model representing a medication schedule."""
 
-    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
-    description: models.TextField[str | None] = models.TextField(blank=True, null=True)
-    medication: models.ForeignKey["Medication"] = models.ForeignKey(
+    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
+    medication: models.ForeignKey[Any] = models.ForeignKey(
         "Medication", on_delete=models.CASCADE
     )
-    unit: models.ForeignKey["Unit"] = models.ForeignKey(
-        "Unit", on_delete=models.CASCADE
-    )
-    therapy_duration_d: models.FloatField[float | None] = models.FloatField(
+    unit: models.ForeignKey[Any] = models.ForeignKey("Unit", on_delete=models.CASCADE)
+    therapy_duration_d: models.FloatField[Any, Any] = models.FloatField(
         blank=True, null=True
     )
-    dose: models.FloatField[float] = models.FloatField()
+    dose: models.FloatField[Any, Any] = models.FloatField()
     intake_times: models.ManyToManyField[
         "MedicationIntakeTime", "MedicationIntakeTime"
     ] = models.ManyToManyField("MedicationIntakeTime")

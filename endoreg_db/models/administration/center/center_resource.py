@@ -1,32 +1,29 @@
 from __future__ import annotations
 
 from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING, TypeAlias, Any
 
 from django.db import models
 
 if TYPE_CHECKING:
     from ...other.emission import EmissionFactor
-    from ...other.resource import Resource
-    from ...other.unit import Unit
-    from .center import Center
 
 NoCenterResourceValue: TypeAlias = NoneType
 CenterResourceName: TypeAlias = str | NoCenterResourceValue
 
 
 class CenterResource(models.Model):
-    name: models.CharField[CenterResourceName | None] = models.CharField(
+    name: models.CharField[Any, Any] = models.CharField(
         max_length=255,
         null=True,
     )
-    center: models.ForeignKey[Center] = models.ForeignKey(
+    center: models.ForeignKey[Any] = models.ForeignKey(
         "Center",
         on_delete=models.CASCADE,
         related_name="center_resources",
     )
-    quantity: models.FloatField[float] = models.FloatField()
-    resource: models.ForeignKey[Resource] = models.ForeignKey(
+    quantity: models.FloatField[Any, Any] = models.FloatField()
+    resource: models.ForeignKey[Any] = models.ForeignKey(
         "Resource",
         on_delete=models.CASCADE,
     )
@@ -46,8 +43,8 @@ class CenterResource(models.Model):
         null=True,
         related_name="center_resource_use_emission_factor",
     )
-    year: models.IntegerField[int] = models.IntegerField()
-    unit: models.ForeignKey[Unit | NoCenterResourceValue | None] = models.ForeignKey(
+    year: models.IntegerField[Any, Any] = models.IntegerField()
+    unit: models.ForeignKey[Any] = models.ForeignKey(
         "Unit", on_delete=models.SET_NULL, null=True
     )
 

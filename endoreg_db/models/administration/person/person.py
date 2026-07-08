@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import abstractmethod
 from datetime import date
 from types import NoneType
-from typing import TypeAlias
+from typing import TypeAlias, Any
 
 from django.db import models
 
@@ -28,39 +28,39 @@ class Person(models.Model):
         phone (str): The phone number of the person.
     """
 
-    first_name: models.CharField[str] = models.CharField(max_length=255)
-    last_name: models.CharField[str] = models.CharField(max_length=255)
-    dob: models.DateField[PersonDateValue | None] = models.DateField(
+    first_name: models.CharField[Any, Any] = models.CharField(max_length=255)
+    last_name: models.CharField[Any, Any] = models.CharField(max_length=255)
+    dob: models.DateField[Any, Any] = models.DateField(
         "Date of Birth",
         blank=True,
         null=True,
     )
-    gender: models.ForeignKey[PersonGenderValue | None] = models.ForeignKey(
+    gender: models.ForeignKey[Any] = models.ForeignKey(
         "endoreg_db.Gender", on_delete=models.SET_NULL, null=True
     )
-    email: models.EmailField[PersonTextValue | None] = models.EmailField(
+    email: models.EmailField[Any, Any] = models.EmailField(
         max_length=255,
         blank=True,
         null=True,
     )
-    phone: models.CharField[PersonTextValue | None] = models.CharField(
+    phone: models.CharField[Any, Any] = models.CharField(
         max_length=255,
         blank=True,
         null=True,
     )
-    is_real_person: models.BooleanField[bool] = models.BooleanField(default=True)
+    is_real_person: models.BooleanField[Any, Any] = models.BooleanField(default=True)
 
-    post_code: models.CharField[PersonTextValue | None] = models.CharField(
+    post_code: models.CharField[Any, Any] = models.CharField(
         max_length=20,
         blank=True,
         null=True,
     )
-    city: models.CharField[PersonTextValue | None] = models.CharField(
+    city: models.CharField[Any, Any] = models.CharField(
         max_length=255,
         blank=True,
         null=True,
     )
-    street: models.CharField[PersonTextValue | None] = models.CharField(
+    street: models.CharField[Any, Any] = models.CharField(
         max_length=255,
         blank=True,
         null=True,

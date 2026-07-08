@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from django.db import models
 
@@ -30,9 +30,9 @@ class Disease(models.Model):
     Can define associated subcategories and numerical descriptors applicable to the disease itself.
     """
 
-    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
-    subcategories: models.JSONField[object] = models.JSONField(default=dict)
-    numerical_descriptors: models.JSONField[object] = models.JSONField(default=dict)
+    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    subcategories: models.JSONField[Any, Any] = models.JSONField(default=dict)
+    numerical_descriptors: models.JSONField[Any, Any] = models.JSONField(default=dict)
 
     objects = DiseaseManager()
 
@@ -88,9 +88,9 @@ class DiseaseClassification(models.Model):
     Represents a classification system applicable to a specific disease (e.g., Forrest classification for ulcers).
     """
 
-    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
+    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
 
-    disease: models.ForeignKey[Disease] = models.ForeignKey(
+    disease: models.ForeignKey[Any] = models.ForeignKey(
         Disease, on_delete=models.CASCADE, related_name="disease_classifications"
     )
 
@@ -145,9 +145,9 @@ class DiseaseClassificationChoice(models.Model):
     Represents a specific choice within a disease classification system (e.g., Forrest IIa).
     """
 
-    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
+    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
 
-    disease_classification: models.ForeignKey[DiseaseClassification] = (
+    disease_classification: models.ForeignKey["DiseaseClassification | None"] = (
         models.ForeignKey(
             DiseaseClassification,
             on_delete=models.CASCADE,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, time
 from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING, TypeAlias, Any
 
 from django.db import models
 from lx_dtypes.models.contracts.json_types import JsonObject
@@ -44,10 +44,8 @@ class DocumentType(models.Model):
     Represents the type of a document.
     """
 
-    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
-    description: models.TextField[DocumentDescription] = models.TextField(
-        blank=True, null=True
-    )
+    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
 
     objects = DocumentTypeManager()
 
@@ -67,32 +65,24 @@ class AbstractDocument(models.Model):
     Abstract base class for documents.
     """
 
-    meta: models.JSONField[DocumentMeta | None] = models.JSONField(
-        blank=True, null=True
-    )
-    text: models.TextField[DocumentDescription | None] = models.TextField(
-        blank=True, null=True
-    )
-    date: models.DateField[DocumentDate | None] = models.DateField(
-        blank=True, null=True
-    )
-    time: models.TimeField[DocumentTime | None] = models.TimeField(
-        blank=True, null=True
-    )
+    meta: models.JSONField[Any, Any] = models.JSONField(blank=True, null=True)
+    text: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
+    date: models.DateField[Any, Any] = models.DateField(blank=True, null=True)
+    time: models.TimeField[Any, Any] = models.TimeField(blank=True, null=True)
     file: models.FileField = models.FileField(
         upload_to=DOCUMENT_DIR.relative_to(STORAGE_DIR).as_posix(),
         blank=True,
         null=True,
     )
 
-    center: models.ForeignKey[DocumentCenter | None] = models.ForeignKey(
+    center: models.ForeignKey[Any] = models.ForeignKey(
         "endoreg_db.Center",
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
     )
 
-    type: models.ForeignKey[DocumentTypeRelation] = models.ForeignKey(
+    type: models.ForeignKey[Any] = models.ForeignKey(
         DocumentType,
         on_delete=models.SET_NULL,
         blank=True,
@@ -111,11 +101,11 @@ class AbstractExaminationReport(AbstractDocument):
     Abstract base class for examination reports.
     """
 
-    patient: models.ForeignKey[DocumentPatient | None] = models.ForeignKey(
+    patient: models.ForeignKey[Any] = models.ForeignKey(
         "endoreg_db.Patient", on_delete=models.DO_NOTHING, blank=True, null=True
     )
 
-    patient_examination: models.ForeignKey[DocumentPatientExamination | None] = (
+    patient_examination: models.ForeignKey[DocumentPatientExamination, Any] = (
         models.ForeignKey(
             "endoreg_db.PatientExamination",
             on_delete=models.SET_NULL,
@@ -129,7 +119,7 @@ class AbstractExaminationReport(AbstractDocument):
         blank=True,
     )
 
-    sensitive_meta: models.ForeignKey[DocumentSensitiveMeta] = models.ForeignKey(
+    sensitive_meta: models.ForeignKey[Any] = models.ForeignKey(
         "endoreg_db.SensitiveMeta", on_delete=models.SET_NULL, null=True, blank=True
     )
 

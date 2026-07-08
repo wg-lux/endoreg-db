@@ -6,7 +6,7 @@ from contextvars import ContextVar
 from pathlib import Path
 from types import NoneType
 from collections.abc import Callable, Generator, Iterable
-from typing import TYPE_CHECKING, Protocol, TypeAlias, cast
+from typing import TYPE_CHECKING, Protocol, TypeAlias, cast, Any
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
@@ -44,6 +44,9 @@ if TYPE_CHECKING:
     class VideoModelMetaCarrier(Protocol):
         ai_model_meta: "ModelMeta | NoModelMetaValue"
         video_hash: str
+
+    class VideoPredictionMetaCarrier(Protocol):
+        model_meta: SegmentModelMeta
 
     class FrameIdentifier(Protocol):
         pk: int
@@ -100,12 +103,12 @@ class LabelVideoSegment(models.Model):
     If it originates from a prediction, it links to a single `VideoPredictionMeta`.
     """
 
-    start_frame_number: models.IntegerField[int] = models.IntegerField()
-    end_frame_number: models.IntegerField[int] = models.IntegerField()
-    source: models.ForeignKey[SegmentInformationSource] = models.ForeignKey(
-        "InformationSource", on_delete=models.SET_NULL, null=True
+    start_frame_number: models.IntegerField[Any, Any] = models.IntegerField()
+    end_frame_number: models.IntegerField[Any, Any] = models.IntegerField()
+    source: models.ForeignKey[SegmentInformationSource | NoInformationSourceValue] = (
+        models.ForeignKey("InformationSource", on_delete=models.SET_NULL, null=True)
     )
-    label: models.ForeignKey[SegmentLabel | None] = models.ForeignKey(
+    label: models.ForeignKey[SegmentLabel | NoSegmentLabelValue] = models.ForeignKey(
         "Label", on_delete=models.SET_NULL, null=True, blank=True
     )
 
@@ -119,7 +122,9 @@ class LabelVideoSegment(models.Model):
     )
 
     # Single ForeignKey to the unified VideoPredictionMeta model
-    prediction_meta: models.ForeignKey[SegmentPredictionMeta] = models.ForeignKey(
+    prediction_meta: models.ForeignKey[
+        SegmentPredictionMeta | NoPredictionMetaValue
+    ] = models.ForeignKey(
         "VideoPredictionMeta",
         on_delete=models.SET_NULL,
         null=True,
@@ -136,7 +141,7 @@ class LabelVideoSegment(models.Model):
         )
     )
 
-    export_segment: models.BooleanField[bool] = models.BooleanField(
+    export_segment: models.BooleanField[Any, Any] = models.BooleanField(
         default=False,
         help_text="If true, include this segment in export selection.",
     )
@@ -192,15 +197,17 @@ class LabelVideoSegment(models.Model):
 
     def resolve_labelset(self) -> ResolvedLabelSet:
         prediction_meta = self.prediction_meta
-        prediction_model_meta = (
-            cast(
-                "ModelMetaLabelSetCarrier | NoModelMetaValue",
-                prediction_meta.model_meta,
+        prediction_model_meta: ModelMetaLabelSetCarrier | NoModelMetaValue | None = None
+        if prediction_meta is not None:
+            prediction_meta_model = cast(
+                "VideoPredictionMetaCarrier",
+                prediction_meta,
             )
-            if prediction_meta is not None
-            else None
-        )
-        if prediction_meta is not None and prediction_model_meta is not None:
+            prediction_model_meta = cast(
+                "ModelMetaLabelSetCarrier | NoModelMetaValue",
+                prediction_meta_model.model_meta,
+            )
+        if prediction_model_meta is not None:
             return prediction_model_meta.labelset
 
         label = self.label
@@ -277,8 +284,9 @@ class LabelVideoSegment(models.Model):
         Extracts frame files specifically for this segment using the associated VideoFile.
         Passes additional keyword arguments to extract_frames.
         """
+        video_file = self.video_file
         return extract_video_frame_range(
-            self.video_file,
+            video_file,
             start_frame=self.start_frame_number,
             end_frame=self.end_frame_number,
             overwrite=overwrite,
@@ -292,8 +300,9 @@ class LabelVideoSegment(models.Model):
         Raises:
             ValueError: If there is no associated VideoFile.
         """
+        video_file = self.video_file
         delete_video_frame_range(
-            self.video_file,
+            video_file,
             start_frame=self.start_frame_number,
             end_frame=self.end_frame_number,
         )
@@ -326,25 +335,14 @@ class LabelVideoSegment(models.Model):
             **kwargs,
         )
 
-    def save(
-        self,
-        force_insert: bool = False,
-        force_update: bool = False,
-        using: str | None = None,
-        update_fields: Iterable[str] | None = None,
-    ) -> None:
+    def save(self, *args: object, **kwargs: object) -> None:
         """
         Saves the LabelVideoSegment instance and ensures its associated state object exists.
 
         Overrides the default save behavior to guarantee that a related LabelVideoSegmentState is created or retrieved after saving.
         """
         # Call the original save method first
-        super().save(
-            force_insert=force_insert,
-            force_update=force_update,
-            using=using,
-            update_fields=update_fields,
-        )
+        super().save(*args, **kwargs)
 
         # Ensure state exists after saving, without nested transactions
         if self.pk and not label_video_segment_state_side_effects_suppressed():
@@ -449,16 +447,18 @@ class LabelVideoSegment(models.Model):
 
         return str_repr
 
-    def get_model_meta(self) -> SegmentModelMeta:
+    def get_model_meta(self) -> SegmentModelMeta | None:
         """
         Retrieve the associated ModelMeta object from the segment's prediction metadata, if available.
 
         Returns:
             ModelMeta or None: The related ModelMeta instance, or None if no prediction metadata is set.
         """
-        if self.prediction_meta:
-            return self.prediction_meta.model_meta
-        return None
+        prediction_meta = self.prediction_meta
+        if prediction_meta is None:
+            return None
+        prediction_meta_model = cast("VideoPredictionMetaCarrier", prediction_meta)
+        return prediction_meta_model.model_meta
 
     @property
     def frames(self) -> models.QuerySet["Frame"]:

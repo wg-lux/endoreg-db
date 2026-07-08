@@ -84,6 +84,11 @@ EXPECTED_MEDIA_ROUTE_CONTRACT: list[RouteContract] = [
         "endoreg_db.views.video.video_stream.VideoStreamView",
     ),
     (
+        "media/videos/<int:pk>/hls/playlist.m3u8",
+        "video-hls-playlist-m3u8",
+        "endoreg_db.views.video.hls_stream.HLSPlaylistView",
+    ),
+    (
         "media/videos/<int:pk>/hls/playlist/",
         "video-hls-playlist",
         "endoreg_db.views.video.hls_stream.HLSPlaylistView",

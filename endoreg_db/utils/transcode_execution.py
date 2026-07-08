@@ -109,6 +109,7 @@ def _run_ffmpeg_command(command: List[str]) -> Tuple[int, str]:
     """Run ffmpeg while preserving timeout behavior for long transcodes."""
     process = subprocess.Popen(
         command,
+        stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -149,10 +150,24 @@ def get_stream_info(file_path: Path) -> JsonObject | None:
         file_path=file_path,
     )
     try:
-        result = subprocess.run(command, capture_output=True, text=True, check=True)
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=FFMPEG_TRANSCODE_TIMEOUT_SECONDS,
+            stdin=subprocess.DEVNULL,
+        )
         return cast(JsonObject, json.loads(result.stdout))
     except subprocess.CalledProcessError as e:
         logger.error("ffprobe command failed for %s: %s\n%s", file_path, e, e.stderr)
+        return None
+    except subprocess.TimeoutExpired as e:
+        logger.error(
+            "ffprobe command timed out for %s after %ss",
+            file_path,
+            e.timeout,
+        )
         return None
     except json.JSONDecodeError as e:
         logger.error("Failed to parse ffprobe JSON output for %s: %s", file_path, e)

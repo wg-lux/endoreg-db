@@ -2,7 +2,7 @@ from __future__ import annotations
 
 # pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportUnusedImport=false, reportUnusedClass=false
 
-from typing import Protocol
+from typing import Protocol, cast
 
 from importlib import import_module
 from importlib.util import find_spec
@@ -28,6 +28,26 @@ class _MaterializesPredictionSegments(Protocol):
         n_test_frames: int = 100,
         **kwargs: object,
     ) -> bool: ...
+
+
+class _VideoStateLike(Protocol):
+    initial_prediction_completed: bool
+    lvs_created: bool
+
+    def refresh_from_db(self, *args: object, **kwargs: object) -> None: ...
+
+
+class _VideoForTemporalLike(Protocol):
+    state: _VideoStateLike
+    video_meta: object | None
+
+    def refresh_from_db(self, *args: object, **kwargs: object) -> None: ...
+
+    def materialize_prediction_segments(self, **kwargs: object) -> bool: ...
+
+
+class _VideoForTemporalRealLike(Protocol):
+    video_meta: object | None
 
 
 if TYPE_CHECKING:
@@ -76,22 +96,28 @@ def _test_temporal_prediction_materialization(
             frame_source_mode="stream",
         )
     else:
-        success = video_file.materialize_prediction_segments(delete_frames_after=True)
+        success = cast(
+            _MaterializesPredictionSegments, video_file
+        ).materialize_prediction_segments(
+            delete_frames_after=True,
+        )
 
     test.assertTrue(
         success,
         "Temporal prediction segment materialization failed.",
     )
 
-    video_file.refresh_from_db()
-    state = video_file.state
+    video_file_stateful = cast(_VideoForTemporalLike, video_file)
+    video_file_stateful.refresh_from_db()
+    state = video_file_stateful.state
     test.assertIsNotNone(state, "VideoState should exist after temporal prediction")
     assert state is not None
     state.refresh_from_db()
 
     if isinstance(video_file, VideoFile):
+        real_video_file = cast(_VideoForTemporalRealLike, video_file)
         test.assertIsNotNone(
-            video_file.video_meta,
+            real_video_file.video_meta,
             "VideoMeta should exist after temporal prediction",
         )
 

@@ -3,13 +3,13 @@ import logging
 import random
 from datetime import date, datetime, timedelta
 from types import NoneType
-from typing import TYPE_CHECKING, Protocol, TypeAlias, cast
+from typing import TYPE_CHECKING, Protocol, TypeAlias, cast, Any
 
 from django.db import models
 from django.utils import timezone  # Add this import
 from faker import Faker
 
-from ..person import Person, PersonGenderValue
+from ..person import Person
 
 # Import ModelLinks and Disease for the links property
 
@@ -81,18 +81,16 @@ class Patient(Person):
 
     """
 
-    first_name: models.CharField[str] = models.CharField(max_length=100)
-    last_name: models.CharField[str] = models.CharField(max_length=100)
-    dob: models.DateField[PatientDateValue | None] = models.DateField(
-        null=True, blank=True
-    )
-    gender: models.ForeignKey[PersonGenderValue | None] = models.ForeignKey(
+    first_name: models.CharField[Any, Any] = models.CharField(max_length=100)
+    last_name: models.CharField[Any, Any] = models.CharField(max_length=100)
+    dob: models.DateField[Any, Any] = models.DateField(null=True, blank=True)
+    gender: models.ForeignKey["Gender | None"] = models.ForeignKey(
         "Gender", on_delete=models.SET_NULL, null=True, blank=True
     )
-    center: models.ForeignKey["Center | None"] = models.ForeignKey(
+    center: models.ForeignKey[Any] = models.ForeignKey(
         "Center", on_delete=models.SET_NULL, null=True, blank=True
     )
-    patient_hash: models.CharField[PatientTextValue | None] = models.CharField(
+    patient_hash: models.CharField[Any, Any] = models.CharField(
         max_length=255, blank=True, null=True
     )
 

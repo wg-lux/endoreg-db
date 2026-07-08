@@ -9,8 +9,7 @@ Created as part of Phase 1.1: Video Correction API Endpoints.
 
 import logging
 from pathlib import Path
-from datetime import datetime
-from typing import ClassVar
+from typing import ClassVar, Any
 
 from django.conf import settings
 from django.db import models
@@ -66,20 +65,20 @@ class VideoProcessingHistory(models.Model):
         (STATUS_CANCELLED, "Cancelled"),
     ]
 
-    video: models.ForeignKey[VideoFile] = models.ForeignKey(
+    video: models.ForeignKey[Any] = models.ForeignKey(
         VideoFile,
         on_delete=models.CASCADE,
         related_name="processing_history",
         help_text="Video file this operation was performed on",
     )
 
-    operation: models.CharField[str] = models.CharField(
+    operation: models.CharField[Any, Any] = models.CharField(
         max_length=50,
         choices=OPERATION_CHOICES,
         help_text="Type of processing operation",
     )
 
-    status: models.CharField[str] = models.CharField(
+    status: models.CharField[Any, Any] = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,
         default=STATUS_PENDING,
@@ -92,27 +91,27 @@ class VideoProcessingHistory(models.Model):
         help_text="Operation configuration (mask settings, frame list, etc.)",
     )
 
-    output_file: models.CharField[str] = models.CharField(
+    output_file: models.CharField[Any, Any] = models.CharField(
         max_length=500,
         blank=True,
         help_text="Path to output file (relative to MEDIA_ROOT)",
     )
 
-    details: models.TextField[str] = models.TextField(
+    details: models.TextField[Any, Any] = models.TextField(
         blank=True, help_text="Additional details or error messages"
     )
 
     # Celery Integration
-    task_id: models.CharField[str] = models.CharField(
+    task_id: models.CharField[Any, Any] = models.CharField(
         max_length=100, blank=True, help_text="Celery task ID for progress tracking"
     )
 
     # Timestamps
-    created_at: models.DateTimeField[datetime] = models.DateTimeField(
+    created_at: models.DateTimeField[Any, Any] = models.DateTimeField(
         auto_now_add=True, help_text="When the operation was started"
     )
 
-    completed_at: models.DateTimeField[datetime | None] = models.DateTimeField(
+    completed_at: models.DateTimeField[Any, Any] = models.DateTimeField(
         null=True,
         blank=True,
         help_text="When the operation completed (success or failure)",

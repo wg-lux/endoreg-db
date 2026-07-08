@@ -1,8 +1,7 @@
 from __future__ import annotations
 import numbers
 from datetime import datetime as dt_datetime
-from collections.abc import Iterable
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast, Any
 
 from django.db import models
 from lx_dtypes.models.contracts.lab_value import LabValueNormalRangePayload
@@ -35,6 +34,10 @@ class _PatientLabSamplePatientLike(Protocol):
     patient: "Patient"
 
 
+class _PatientLabValueGenderLike(Protocol):
+    name: str
+
+
 class PatientLabValue(models.Model):
     """
     A class representing a patient lab value.
@@ -56,11 +59,11 @@ class PatientLabValue(models.Model):
     lab_value: models.ForeignKey["LabValue"] = models.ForeignKey(
         "LabValue", on_delete=models.CASCADE
     )
-    value: models.FloatField[float | None] = models.FloatField(
+    value: models.FloatField[Any, Any] = models.FloatField(
         blank=True,
         null=True,
     )
-    value_str: models.CharField[str | None] = models.CharField(
+    value_str: models.CharField[Any, Any] = models.CharField(
         max_length=255,
         blank=True,
         null=True,
@@ -72,14 +75,12 @@ class PatientLabValue(models.Model):
         null=True,
         related_name="values",
     )
-    timestamp: models.DateTimeField[dt_datetime] = (
+    timestamp: models.DateTimeField[Any, Any] = (
         models.DateTimeField(  # if not set, use now
             auto_now_add=True
         )
     )
-    normal_range: models.JSONField[LabValueNormalRangePayload] = models.JSONField(
-        default=dict
-    )
+    normal_range: models.JSONField[Any, Any] = models.JSONField(default=dict)
     unit: models.ForeignKey["Unit | None"] = models.ForeignKey(
         "Unit", on_delete=models.CASCADE, blank=True, null=True
     )
@@ -144,7 +145,7 @@ class PatientLabValue(models.Model):
         patient = self.patient_safe
 
         age = patient.age_safe
-        gender = patient.gender
+        gender = cast(_PatientLabValueGenderLike | None, patient.gender)
 
         return lab_value.get_normal_range(age, gender)
 
@@ -165,8 +166,7 @@ class PatientLabValue(models.Model):
         self.save()
 
     def set_unit_from_default(self) -> None:
-        _default_unit = self.lab_value_safe.default_unit
-        self.unit = _default_unit
+        self.unit = self.lab_value_safe.default_unit
         self.save()
 
     def get_value(self) -> float | str | dt_datetime | None:
@@ -182,13 +182,7 @@ class PatientLabValue(models.Model):
             return "value_str"
 
     # customize save method so that if a numeric value exists, we round it to the precision of the lab value
-    def save(
-        self,
-        force_insert: bool = False,
-        force_update: bool = False,
-        using: str | None = None,
-        update_fields: Iterable[str] | None = None,
-    ) -> None:
+    def save(self, *args: object, **kwargs: object) -> None:
         if self.value is not None:
             # only attempt rounding for real numeric types (ints/floats/compatible)
 
@@ -196,12 +190,7 @@ class PatientLabValue(models.Model):
             if isinstance(self.value, numbers.Real) and precision is not None:
                 # ensure a plain float is passed to built-in round to satisfy type checkers
                 self.value = round(float(self.value), int(precision))
-        super().save(
-            force_insert=force_insert,
-            force_update=force_update,
-            using=using,
-            update_fields=update_fields,
-        )
+        super().save(*args, **kwargs)
 
     def set_value_by_distribution(
         self,

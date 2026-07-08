@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from hashlib import sha256
 from pathlib import Path
 from types import SimpleNamespace
 from typing import NoReturn, cast
@@ -61,6 +62,7 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
         def __init__(self) -> None:
             self.pk = 1
             self.video_hash = "video_hash"
+            self.processed_video_hash = None
             self.processed_file = SimpleNamespace(name=None)
             self.state = DummyState()
 
@@ -130,10 +132,44 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
         fake_get_stream_info,
         raising=True,
     )
+
+    store_calls: list[tuple[Path, str]] = []
+
+    def fake_store_existing_final_file(
+        field_file: object,
+        final_path: Path,
+        *,
+        relative_name: str | None = None,
+    ) -> str:
+        assert relative_name is not None
+        stored_path = _runtime_storage_root() / relative_name
+        stored_path.parent.mkdir(parents=True, exist_ok=True)
+        stored_path.write_bytes(final_path.read_bytes())
+        setattr(field_file, "name", relative_name)
+        store_calls.append((stored_path, relative_name))
+        return relative_name
+
+    monkeypatch.setattr(
+        state_management_module,
+        "_store_existing_final_file",
+        fake_store_existing_final_file,
+        raising=True,
+    )
     monkeypatch.setattr(
         cleanup_module,
         "staging_cleanup_roots",
         fake_staging_cleanup_roots,
+        raising=True,
+    )
+    hls_calls: list[int] = []
+
+    def fake_materialize_processed_video_hls(video_arg: VideoFile) -> None:
+        hls_calls.append(int(video_arg.pk))
+
+    monkeypatch.setattr(
+        state_management_module,
+        "_materialize_processed_video_hls",
+        fake_materialize_processed_video_hls,
         raising=True,
     )
 
@@ -154,7 +190,10 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
     assert raw_path.exists()
     assert final_anonymized.exists()
     assert not sensitive_working_copy.exists()
+    assert video.processed_video_hash == sha256(b"anonymized").hexdigest()
     assert video.processed_file.name.endswith("anonymized_videos/video_hash.mp4")
+    assert store_calls == [(final_anonymized, video.processed_file.name)]
+    assert hls_calls == [1]
 
 
 @pytest.mark.unit
@@ -203,6 +242,7 @@ def test_finalize_video_success_rejects_unprobeable_final_output(
         def __init__(self) -> None:
             self.pk = 1
             self.video_hash = "video_hash"
+            self.processed_video_hash = None
             self.processed_file = SimpleNamespace(name=None)
             self.state = DummyState()
 
@@ -285,7 +325,8 @@ def test_finalize_video_success_rejects_unprobeable_final_output(
         finalize_video_success(ctx)
 
     final_anonymized = anonym_dir / "video_hash.mp4"
-    assert final_anonymized.exists()
+    assert not final_anonymized.exists()
+    assert video.processed_video_hash is None
     assert video.processed_file.name is None
     assert sensitive_working_copy.exists()
     assert history_calls == []
@@ -335,6 +376,7 @@ def test_finalize_video_success_rejects_missing_anonymized_output(
         def __init__(self) -> None:
             self.pk = 1
             self.video_hash = "video_hash"
+            self.processed_video_hash = None
             self.processed_file = SimpleNamespace(name=None)
             self.state = DummyState()
             self.saved = False
@@ -390,6 +432,7 @@ def test_finalize_video_success_rejects_missing_anonymized_output(
         finalize_video_success(ctx)
 
     assert video.processed_file.name is None
+    assert video.processed_video_hash is None
     assert video.saved is False
     assert video.state.processing_started is False
     assert video.state.anonymized is False

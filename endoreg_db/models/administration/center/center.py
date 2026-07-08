@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias, cast
+from typing import TYPE_CHECKING, TypeAlias, cast, Any
 
 from django.db import models
 from django.db.models.base import ModelBase
@@ -36,13 +36,13 @@ class CenterManager(models.Manager["Center"]):
 
 class Center(models.Model):
     objects = CenterManager()
-    name: models.CharField[str] = models.CharField(max_length=255)
-    center_key: models.CharField[str] = models.CharField(
+    name: models.CharField[Any, Any] = models.CharField(max_length=255)
+    center_key: models.CharField[Any, Any] = models.CharField(
         max_length=255,
         unique=True,
         blank=True,
     )
-    display_name: models.CharField[str] = models.CharField(
+    display_name: models.CharField[Any, Any] = models.CharField(
         max_length=255,
         blank=True,
         default="",
@@ -120,13 +120,7 @@ class Center(models.Model):
             suffix += 1
         return candidate
 
-    def save(
-        self,
-        force_insert: bool = False,
-        force_update: bool = False,
-        using: str | None = None,
-        update_fields: Iterable[str] | None = None,
-    ) -> None:
+    def save(self, *args: object, **kwargs: object) -> None:
         if self.pk:
             existing_key = (
                 type(self)
@@ -145,12 +139,7 @@ class Center(models.Model):
             )
         if not self.display_name:
             self.display_name = self.name
-        super().save(
-            force_insert=force_insert,
-            force_update=force_update,
-            using=using,
-            update_fields=update_fields,
-        )
+        super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return str(self.display_name or self.name)

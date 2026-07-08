@@ -1,11 +1,10 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from django.db import models
 
 if TYPE_CHECKING:
     from ...administration import ReferenceProduct
-    from ...other.unit import Unit
 
 
 class EmissionFactorManager(models.Manager["EmissionFactor"]):
@@ -34,11 +33,11 @@ class EmissionFactor(models.Model):
 
     objects = EmissionFactorManager()
 
-    name: models.CharField[str] = models.CharField(max_length=255)
-    unit: models.ForeignKey["Unit | None"] = models.ForeignKey(
+    name: models.CharField[Any, Any] = models.CharField(max_length=255)
+    unit: models.ForeignKey[Any] = models.ForeignKey(
         "Unit", on_delete=models.SET_NULL, null=True
     )
-    value: models.FloatField[float] = models.FloatField()
+    value: models.FloatField[Any, Any] = models.FloatField()
 
     if TYPE_CHECKING:
         pass

@@ -2,26 +2,21 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING, TypeAlias, Any
 
 from django.db import models
 
 from endoreg_db.utils.product.sum_emissions import sum_emissions
 from endoreg_db.utils.product.sum_weights import sum_weights
-
-if TYPE_CHECKING:
-    from ...other.transport_route import TransportRoute
-    from ...other.unit import Unit
-    from .product_group import ProductGroup
-    from .product_material import ProductMaterial
-    from .reference_product import ReferenceProduct
-    # from .product_weight import ProductWeight
+from ...other.unit import Unit
+from .product_material import ProductMaterial
+from .reference_product import ReferenceProduct
 
 NoProductValue: TypeAlias = NoneType
-ProductMetric: TypeAlias = tuple[float, "Unit | NoProductValue"]
+ProductMetric: TypeAlias = tuple[float, Unit | NoProductValue]
 ProductMetricResult: TypeAlias = ProductMetric | NoProductValue
 ProductMaterialMetricCalculator: TypeAlias = Callable[
-    [Iterable["ProductMaterial"]],
+    [Iterable[ProductMaterial]],
     ProductMetric,
 ]
 
@@ -34,23 +29,21 @@ class ProductManager(models.Manager["Product"]):
 class Product(models.Model):
     objects = ProductManager()
 
-    name: models.CharField[str] = models.CharField(max_length=255)
+    name: models.CharField[Any, Any] = models.CharField(max_length=255)
 
-    transport_route: models.ForeignKey[TransportRoute | NoProductValue | None] = (
-        models.ForeignKey("TransportRoute", on_delete=models.SET_NULL, null=True)
+    transport_route: models.ForeignKey[Any, Any] = models.ForeignKey(
+        "TransportRoute", on_delete=models.SET_NULL, null=True
     )
-    product_group: models.ForeignKey[ProductGroup | NoProductValue | None] = (
-        models.ForeignKey(
-            "ProductGroup",
-            on_delete=models.SET_NULL,
-            null=True,
-            related_name="products",
-        )
+    product_group: models.ForeignKey[Any, Any] = models.ForeignKey(
+        "ProductGroup",
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="products",
     )
 
     if TYPE_CHECKING:
-        reference_products: models.QuerySet["ReferenceProduct"]
-        product_product_materials: models.QuerySet["ProductMaterial"]
+        reference_products: models.QuerySet[ReferenceProduct]
+        product_product_materials: models.QuerySet[ProductMaterial]
 
     def natural_key(self) -> tuple[str]:
         return (self.name,)

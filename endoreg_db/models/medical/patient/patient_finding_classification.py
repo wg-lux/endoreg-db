@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import random
-from collections.abc import Iterable
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, cast, Any
 
 import numpy as np
 from django.db import models
@@ -48,7 +47,7 @@ class PatientFindingClassification(models.Model):
         )
     )
 
-    is_active: models.BooleanField[bool] = models.BooleanField(
+    is_active: models.BooleanField[Any, Any] = models.BooleanField(
         default=True, help_text="Indicates if the classification is currently active."
     )
     subcategories: models.JSONField[
@@ -82,13 +81,7 @@ class PatientFindingClassification(models.Model):
         """
         return f"{self.finding} - {self.classification} - {self.classification_choice}"
 
-    def save(
-        self,
-        force_insert: bool = False,
-        force_update: bool = False,
-        using: str | None = None,
-        update_fields: Iterable[str] | None = None,
-    ) -> None:
+    def save(self, *args: object, **kwargs: object) -> None:
         """
         Saves the model instance after validating and initializing classification-related fields.
 
@@ -113,12 +106,7 @@ class PatientFindingClassification(models.Model):
                 ).model_dump(mode="python"),
             )
 
-        super().save(
-            force_insert=force_insert,
-            force_update=force_update,
-            using=using,
-            update_fields=update_fields,
-        )
+        super().save(*args, **kwargs)
 
     def initialize_and_get_subcategories(
         self,

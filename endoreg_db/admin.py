@@ -67,7 +67,7 @@ class PatientFindingInterventionAdmin(admin.ModelAdmin[PatientFindingInterventio
     def changelist_view(
         self,
         request: HttpRequest,
-        extra_context: dict[str, str] | None = None,
+        extra_context: dict[str, object] | None = None,
     ) -> HttpResponse:
         """
         Overrides the admin changelist view to provide additional context data for the template, including all patients, examinations, findings, classifications, and interventions relevant to patient finding interventions.
@@ -86,10 +86,7 @@ class PatientFindingInterventionAdmin(admin.ModelAdmin[PatientFindingInterventio
             "morphology_choices": FindingClassificationChoice.objects.none(),
             "finding_interventions": FindingIntervention.objects.all(),
         }
-        return super().changelist_view(
-            request,
-            extra_context=cast(dict[str, str], admin_context),
-        )
+        return super().changelist_view(request, extra_context=admin_context)
 
     def get_location_choices_json(self, request: HttpRequest) -> JsonResponse:
         """

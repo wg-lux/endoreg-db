@@ -3,8 +3,6 @@ from __future__ import annotations
 
 import logging
 import uuid
-from collections.abc import Iterable
-from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from django.conf import settings
@@ -47,12 +45,12 @@ class AuditLedger(models.Model):
 
     objects: ClassVar[models.Manager["AuditLedger"]] = models.Manager()  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    id: models.UUIDField[uuid.UUID] = models.UUIDField(
+    id: models.UUIDField[Any, Any] = models.UUIDField(
         primary_key=True,
         default=uuid.uuid4,
         editable=False,
     )
-    ts: models.DateTimeField[datetime] = models.DateTimeField(
+    ts: models.DateTimeField[Any, Any] = models.DateTimeField(
         default=timezone.now,
         editable=False,
         db_index=True,
@@ -63,15 +61,15 @@ class AuditLedger(models.Model):
         blank=True,
         on_delete=models.PROTECT,
     )
-    object_type: models.CharField[str] = models.CharField(max_length=80)
-    object_pk: models.CharField[str] = models.CharField(max_length=40)
-    action: models.CharField[str] = models.CharField(max_length=40)
-    data: models.JSONField[JsonObject] = models.JSONField()
-    prev_hash: models.CharField[str] = models.CharField(
+    object_type: models.CharField[Any, Any] = models.CharField(max_length=80)
+    object_pk: models.CharField[Any, Any] = models.CharField(max_length=40)
+    action: models.CharField[Any, Any] = models.CharField(max_length=40)
+    data: models.JSONField[Any, Any] = models.JSONField()
+    prev_hash: models.CharField[Any, Any] = models.CharField(
         max_length=64,
         editable=False,
     )
-    hash: models.CharField[str] = models.CharField(
+    hash: models.CharField[Any, Any] = models.CharField(
         max_length=64,
         editable=False,
     )
@@ -80,13 +78,7 @@ class AuditLedger(models.Model):
         ordering = ["ts"]
         indexes = [models.Index(fields=["object_type", "object_pk"])]
 
-    def save(
-        self,
-        force_insert: bool = False,
-        force_update: bool = False,
-        using: str | None = None,
-        update_fields: Iterable[str] | None = None,
-    ) -> None:
+    def save(self, *args: object, **kwargs: object) -> None:
         """
         Save a new immutable audit record, computing and linking cryptographic hashes.
 
@@ -102,12 +94,7 @@ class AuditLedger(models.Model):
                 else:
                     raise RuntimeError("AuditLedger rows are immutable")
 
-                super().save(
-                    force_insert=force_insert,
-                    force_update=force_update,
-                    using=using,
-                    update_fields=update_fields,
-                )
+                super().save(*args, **kwargs)
 
                 object.__setattr__(head, "current_hash", self.hash)
                 object.__setattr__(head, "last_entry", self)
@@ -264,17 +251,17 @@ class LedgerHead(models.Model):
     Writers lock this row before appending, preventing concurrent ledger forks.
     """
 
-    id: models.PositiveSmallIntegerField[int] = models.PositiveSmallIntegerField(
+    id: models.PositiveSmallIntegerField[Any, Any] = models.PositiveSmallIntegerField(
         primary_key=True,
         default=1,
         editable=False,
     )
-    current_hash: models.CharField[str] = models.CharField(
+    current_hash: models.CharField[Any, Any] = models.CharField(
         max_length=64,
         default="0" * 64,
         editable=False,
     )
-    last_entry: models.ForeignKey[AuditLedger | None] = models.ForeignKey(
+    last_entry: models.ForeignKey["AuditLedger | None"] = models.ForeignKey(
         AuditLedger,
         null=True,
         blank=True,
@@ -282,7 +269,7 @@ class LedgerHead(models.Model):
         editable=False,
         related_name="+",
     )
-    updated_at: models.DateTimeField[datetime] = models.DateTimeField(
+    updated_at: models.DateTimeField[Any, Any] = models.DateTimeField(
         auto_now=True,
     )
 

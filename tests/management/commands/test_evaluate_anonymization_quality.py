@@ -64,7 +64,9 @@ def test_quality_command_json_output_is_derived_only_and_snake_case(
     )
 
     output_path = tmp_path / "quality.json"
+    manifest_dir = tmp_path / "manifests"
     stdout = StringIO()
+    stderr = StringIO()
     today = timezone.localdate()
     call_command(
         "evaluate_anonymization_quality",
@@ -76,8 +78,12 @@ def test_quality_command_json_output_is_derived_only_and_snake_case(
         (today + timedelta(days=1)).isoformat(),
         "--json-output",
         str(output_path),
+        "--generate-manifest",
+        "--manifest-output-dir",
+        str(manifest_dir),
         "--json",
         stdout=stdout,
+        stderr=stderr,
     )
 
     payload = AnonymizationQualityPayload.model_validate_json(stdout.getvalue())
@@ -95,6 +101,10 @@ def test_quality_command_json_output_is_derived_only_and_snake_case(
     assert "CommandPatient" not in payload_text
     assert "COMMAND-CASE-17" not in payload_text
     _assert_snake_case_keys(payload.model_dump(mode="json"))
+
+    manifest_files = list(manifest_dir.glob("run_*.json"))
+    assert len(manifest_files) == 1
+    assert "evaluation_manifest:" in stderr.getvalue()
 
 
 @pytest.mark.django_db

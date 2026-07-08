@@ -633,8 +633,9 @@ def _load_base_db_data_impl(cache: CacheManager) -> bool:
                     meta,
                     suffix=f"{meta.name}_v{meta.version}_stub.safetensors",
                 )
-            if ai_model.active_meta is None:
-                ai_model.active_meta = metadata_qs.first()
+            if cast(Any, ai_model).active_meta is None:
+                ai_model_active_meta = metadata_qs.first()
+                cast(Any, ai_model).active_meta = ai_model_active_meta
                 ai_model.save(update_fields=["active_meta"])
 
         # Additional model for compatibility
@@ -664,8 +665,9 @@ def _load_base_db_data_impl(cache: CacheManager) -> bool:
                     meta,
                     suffix=f"{meta.name}_v{meta.version}_stub.safetensors",
                 )
-            if ai_model_alt.active_meta is None:
-                ai_model_alt.active_meta = metadata_alt_qs.first()
+            if cast(Any, ai_model_alt).active_meta is None:
+                ai_model_alt_active_meta = metadata_alt_qs.first()
+                cast(Any, ai_model_alt).active_meta = ai_model_alt_active_meta
                 ai_model_alt.save(update_fields=["active_meta"])
 
     except Exception as e:
@@ -799,7 +801,7 @@ def processed_video_file(
 
 
 @pytest.fixture
-def mock_video_file(base_db_data: bool) -> Iterator[object]:
+def mock_video_file(base_db_data: bool) -> Iterator[VideoFile]:
     """
     Create a lightweight mock video file for fast testing.
     This avoids actual file operations while providing the model structure.
@@ -1674,7 +1676,7 @@ def smart_video_mocks(
 def mock_storage(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-) -> Iterator[object]:
+) -> Iterator[paths_module.EndoregPathsModel]:
     # 1. Define the fake root
     fake_root = tmp_path / "fake_protected_root"
     ensure_directory(fake_root)

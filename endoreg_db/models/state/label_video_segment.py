@@ -1,6 +1,5 @@
 from __future__ import annotations
-from collections.abc import Iterable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from django.db import models
 
@@ -10,12 +9,14 @@ from .abstract import AbstractState
 class LabelVideoSegmentState(AbstractState):
     """State for label video segment data."""
 
-    prediction: "models.BooleanField[bool]" = models.BooleanField(default=False)
-    annotation: "models.BooleanField[bool]" = models.BooleanField(default=False)
-    frames_extracted: "models.BooleanField[bool]" = models.BooleanField(default=False)
-    is_validated: "models.BooleanField[bool]" = models.BooleanField(default=False)
+    prediction: models.BooleanField[bool, Any] = models.BooleanField(default=False)
+    annotation: models.BooleanField[bool, Any] = models.BooleanField(default=False)
+    frames_extracted: models.BooleanField[bool, Any] = models.BooleanField(
+        default=False
+    )
+    is_validated: models.BooleanField[bool, Any] = models.BooleanField(default=False)
 
-    origin: "models.OneToOneField[LabelVideoSegment | None]" = models.OneToOneField(
+    origin: models.OneToOneField["LabelVideoSegment | None"] = models.OneToOneField(
         "LabelVideoSegment",
         on_delete=models.CASCADE,
         related_name="state",
@@ -27,18 +28,10 @@ class LabelVideoSegmentState(AbstractState):
         verbose_name = "Label Video Segment State"
         verbose_name_plural = "Label Video Segment States"
 
-    def save(
-        self,
-        force_insert: bool = False,
-        force_update: bool = False,
-        using: str | None = None,
-        update_fields: Iterable[str] | None = None,
-    ) -> None:
+    def save(self, *args: object, **kwargs: object) -> None:
         super().save(
-            force_insert=force_insert,
-            force_update=force_update,
-            using=using,
-            update_fields=update_fields,
+            *args,
+            **kwargs,
         )
         origin = getattr(self, "origin", None)
         video = getattr(origin, "video_file", None) if origin is not None else None

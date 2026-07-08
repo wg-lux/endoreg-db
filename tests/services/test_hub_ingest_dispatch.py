@@ -55,6 +55,8 @@ class _RecordingUploadJobManager:
 
 
 class UploadJobDispatchTests(TestCase):
+    center: Center
+
     def setUp(self) -> None:
         self.center = Center.objects.create(
             name="dispatch-center",

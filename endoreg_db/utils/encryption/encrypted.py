@@ -4,7 +4,7 @@ import io
 import os
 import tempfile
 from pathlib import Path
-from typing import BinaryIO, Iterator, Protocol, TypeAlias, cast, Any
+from typing import BinaryIO, Iterator, Protocol, TypeAlias, cast
 
 from django.core.exceptions import ImproperlyConfigured
 from django.core.files.base import File
@@ -48,6 +48,19 @@ class _EncryptedStorageLike(Protocol):
     def open(self, name: str, mode: str = "rb") -> File[bytes]: ...
 
 
+class _FileSystemStorageInit(Protocol):
+    def __call__(
+        self,
+        storage: FileSystemStorage,
+        *,
+        location: str | Path | None = None,
+        base_url: str | None = None,
+        file_permissions_mode: int | None = None,
+        directory_permissions_mode: int | None = None,
+        allow_overwrite: bool = False,
+    ) -> None: ...
+
+
 class EncryptedStorage(FileSystemStorage):
     """
     File-system-backed storage that persists only ciphertext on disk.
@@ -63,8 +76,13 @@ class EncryptedStorage(FileSystemStorage):
         chunk_size: int = DEFAULT_CHUNK_SIZE,
         master_key: bytes | None = None,
     ):
-        super().__init__(
-            location=cast(Any, location),
+        filesystem_storage_init = cast(
+            _FileSystemStorageInit,
+            getattr(FileSystemStorage, "__init__"),
+        )
+        filesystem_storage_init(
+            self,
+            location=location,
             base_url=base_url,
             file_permissions_mode=file_permissions_mode,
             directory_permissions_mode=directory_permissions_mode,
@@ -93,7 +111,7 @@ class EncryptedStorage(FileSystemStorage):
         stream = open(full_path, "rb")
         decrypted = DecryptedStream(stream, master_key=self._master_key)
         buffered = io.BufferedReader(decrypted)
-        return File(buffered, name)
+        return File(cast(BinaryIO, buffered), name)
 
     def open_encrypted(self, name: str) -> BinaryIO:
         full_path = Path(self.path(name))

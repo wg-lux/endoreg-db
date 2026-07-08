@@ -26,7 +26,11 @@ class _ValidatedSensitiveMeta(Protocol):
 
 def _report_is_failed_or_lost(report: "RawPdfFile") -> bool:
     state = report.state
-    raw_meta = report.raw_meta if isinstance(report.raw_meta, dict) else {}
+    raw_meta: dict[str, object]
+    if isinstance(report.raw_meta, dict):
+        raw_meta = cast(dict[str, object], report.raw_meta)
+    else:
+        raw_meta = cast(dict[str, object], {})
     return bool(getattr(state, "processing_error", False)) or (
         raw_meta.get("integrity_status") == "lost"
     )

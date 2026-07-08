@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 from django.db import models
 from scipy.stats import skewnorm
-from typing import TYPE_CHECKING, Callable, cast
+from typing import TYPE_CHECKING, Callable, cast, Any
 
 from .base_value_distribution import BaseValueDistribution
 from lx_dtypes.models.contracts.numeric_value_distribution import (
@@ -39,28 +39,28 @@ class NumericValueDistribution(BaseValueDistribution):
         (NumericValueDistributionType.SKEWED_NORMAL.value, "Skewed Normal"),
     ]
 
-    distribution_type: models.CharField[str] = models.CharField(
+    distribution_type: models.CharField[str, Any] = models.CharField(
         max_length=20, choices=DISTRIBUTION_CHOICES
     )
-    min_descriptor: models.CharField[str] = models.CharField(max_length=20)
-    max_descriptor: models.CharField[str] = models.CharField(max_length=20)
-    min_value: models.FloatField[float | None] = models.FloatField(
+    min_descriptor: models.CharField[str, Any] = models.CharField(max_length=20)
+    max_descriptor: models.CharField[str, Any] = models.CharField(max_length=20)
+    min_value: models.FloatField[float | None, Any] = models.FloatField(
         blank=True, null=True, help_text="Lower hard limit for generated values"
     )
-    max_value: models.FloatField[float | None] = models.FloatField(
+    max_value: models.FloatField[float | None, Any] = models.FloatField(
         blank=True, null=True, help_text="Upper hard limit for generated values"
     )
-    mean: models.FloatField[float | None] = models.FloatField(
+    mean: models.FloatField[float | None, Any] = models.FloatField(
         blank=True,
         null=True,
         help_text="Mean used for normal or skewed normal distributions",
     )
-    std_dev: models.FloatField[float | None] = models.FloatField(
+    std_dev: models.FloatField[float | None, Any] = models.FloatField(
         blank=True,
         null=True,
         help_text="Standard deviation for bell-shaped distributions",
     )
-    skewness: models.FloatField[float | None] = models.FloatField(
+    skewness: models.FloatField[float | None, Any] = models.FloatField(
         blank=True,
         null=True,
         help_text="Shape parameter for skewed normal distributions",
@@ -153,14 +153,16 @@ class NumericValueDistribution(BaseValueDistribution):
             self._validate_normal_parameters()
             assert self.mean is not None
             assert self.std_dev is not None
-            value = np.random.normal(self.mean, self.std_dev)
+            value = cast(float, np.random.normal(self.mean, self.std_dev))
             return self._clip_to_bounds(value)
         elif self.distribution_type == NumericValueDistributionType.SKEWED_NORMAL.value:
             self._validate_skewed_normal_parameters()
             assert self.mean is not None
             assert self.std_dev is not None
             assert self.skewness is not None
-            value = skewnorm.rvs(a=self.skewness, loc=self.mean, scale=self.std_dev)
+            value = cast(
+                float, skewnorm.rvs(a=self.skewness, loc=self.mean, scale=self.std_dev)
+            )
             return self._clip_to_bounds(value)
         else:
             raise ValueError("Unsupported distribution type")

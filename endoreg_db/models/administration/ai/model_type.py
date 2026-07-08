@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from django.db import models
 
 if TYPE_CHECKING:
@@ -27,8 +27,8 @@ class ModelType(models.Model):
 
     """
 
-    name: models.CharField[str] = models.CharField(max_length=255)
-    description: models.TextField[str | None] = models.TextField(blank=True, null=True)
+    name: models.CharField[Any, Any] = models.CharField(max_length=255)
+    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
 
     objects = ModelTypeManager()
 

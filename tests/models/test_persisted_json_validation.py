@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from typing import cast
 from datetime import date
 
 import pytest
@@ -88,8 +89,8 @@ def test_transfer_job_resource_rows_accept_frame_annotations_and_reports() -> No
     assert isinstance(reports, Sequence)
     assert not isinstance(reports, (str, bytes))
 
-    frame_annotation = frame_annotations[0]
-    report = reports[0]
+    frame_annotation = cast(Mapping[str, object], frame_annotations[0])
+    report = cast(Mapping[str, object], reports[0])
 
     assert isinstance(frame_annotation, Mapping)
     assert isinstance(report, Mapping)
@@ -140,11 +141,15 @@ def test_raw_pdf_meta_preserves_legacy_keys_and_normalizes_dates() -> None:
 
     raw_meta = report.raw_meta
     assert isinstance(raw_meta, dict)
-    case_resolution = raw_meta["case_resolution"]
-    assert isinstance(case_resolution, dict)
-    assert raw_meta["existing"] == "value"
-    assert raw_meta["generated_at"] == "2026-05-21"
-    assert case_resolution["linked_patient_id"] == 7
+    raw_meta_like = cast(dict[str, object], raw_meta)
+    case_resolution_data = cast(
+        dict[str, object],
+        cast(Mapping[str, object], raw_meta_like).get("case_resolution", {}),
+    )
+    assert raw_meta_like["existing"] == "value"
+    assert raw_meta_like["generated_at"] == "2026-05-21"
+    assert isinstance(case_resolution_data, dict)
+    assert case_resolution_data["linked_patient_id"] == 7
 
 
 def test_raw_pdf_meta_treats_blank_template_version_as_unset() -> None:

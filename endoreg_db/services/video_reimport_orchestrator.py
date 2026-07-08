@@ -24,6 +24,7 @@ from endoreg_db.services.jobs.video_reimport_jobs import (
     _mark_upload_jobs_anonymized,
     _mark_upload_jobs_error,
     _mark_upload_jobs_lost,
+    _regenerate_reimport_hls_artifacts,
     _reset_reimport_state,
     _video_has_integrity_loss,
 )
@@ -255,6 +256,28 @@ class VideoReimportOrchestrator:
                 )
 
             self.video.refresh_from_db()
+            try:
+                _regenerate_reimport_hls_artifacts(self.video)
+            except Exception as exc:
+                logger.exception(
+                    "Processed HLS regeneration failed during video re-import "
+                    "for %s: %s",
+                    self.video_hash,
+                    exc,
+                )
+                _mark_upload_jobs_error(self.video, str(exc))
+                return (
+                    {
+                        "error": (
+                            f"Video re-import HLS regeneration failed: {str(exc)}"
+                        ),
+                        "error_type": "processing_error",
+                        "video_id": self.video_id,
+                        "uuid": self.video_hash,
+                    },
+                    status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
             completed_upload_jobs = _mark_upload_jobs_anonymized(self.video)
             prediction_refresh = self._maybe_dispatch_prediction_refresh()
 

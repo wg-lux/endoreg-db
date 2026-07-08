@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+from bisect import bisect_left, bisect_right
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Protocol, TypeAlias, cast
@@ -47,12 +48,19 @@ from rest_framework.views import APIView
 
 from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
+    suppress_label_video_segment_state_side_effects,
 )
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.media.video.video_metadata import VideoMetadata
 from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
 from endoreg_db.serializers import VideoProcessingHistorySerializer
 from endoreg_db.serializers.video.video_file_detail import VideoDetailSerializer
+from endoreg_db.models.state.video_segment_validation import (
+    mark_segment_annotations_stale,
+)
+from endoreg_db.services.label_video_segment_states import (
+    ensure_label_video_segment_states,
+)
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.file_operations import (
@@ -264,23 +272,19 @@ def update_segments_after_frame_removal(
     segments_updated = 0
     segments_deleted = 0
     segments_unchanged = 0
+    segments_to_update: list[LabelVideoSegment] = []
+    segment_ids_to_delete: list[int] = []
 
     for segment in segments:
         segment_obj = cast(Any, segment)
         original_start = int(segment_obj.start_frame_number)
         original_end = int(segment_obj.end_frame_number)
 
-        # Count frames removed before this segment
-        frames_before = sum(
-            1 for frame in normalized_removed_frames if frame < original_start
-        )
-
-        # Count frames removed within this segment
-        frames_within = sum(
-            1
-            for frame in normalized_removed_frames
-            if original_start <= frame <= original_end
-        )
+        frames_before = bisect_left(normalized_removed_frames, original_start)
+        frames_within = bisect_right(
+            normalized_removed_frames,
+            original_end,
+        ) - bisect_left(normalized_removed_frames, original_start)
 
         # Calculate new boundaries
         new_start = original_start - frames_before
@@ -292,7 +296,9 @@ def update_segments_after_frame_removal(
                 f"Deleting segment {segment.pk} (original: {original_start}-{original_end}) "
                 f"- all {frames_within} frames removed"
             )
-            segment_obj.delete()
+            segment_pk = segment.pk
+            if isinstance(segment_pk, int) and not isinstance(segment_pk, bool):
+                segment_ids_to_delete.append(segment_pk)
             segments_deleted += 1
         elif new_start != original_start or new_end != original_end:
             # Update segment boundaries
@@ -301,13 +307,25 @@ def update_segments_after_frame_removal(
                 f"{original_start}-{original_end} → {new_start}-{new_end} "
                 f"(before: {frames_before}, within: {frames_within})"
             )
-            segment_obj.start_frame_number = new_start
-            segment_obj.end_frame_number = new_end
-            segment_obj.save(update_fields=["start_frame_number", "end_frame_number"])
+            segment.start_frame_number = new_start
+            segment.end_frame_number = new_end
+            segments_to_update.append(segment)
             segments_updated += 1
         else:
             # No change needed
             segments_unchanged += 1
+
+    if segments_to_update or segment_ids_to_delete:
+        with suppress_label_video_segment_state_side_effects():
+            if segments_to_update:
+                LabelVideoSegment.objects.bulk_update(
+                    segments_to_update,
+                    ["start_frame_number", "end_frame_number"],
+                )
+                ensure_label_video_segment_states(segments_to_update)
+            if segment_ids_to_delete:
+                LabelVideoSegment.objects.filter(pk__in=segment_ids_to_delete).delete()
+        mark_segment_annotations_stale(video)
 
     logger.info(
         f"Segment update complete for video {video.pk}: "
@@ -574,8 +592,14 @@ class VideoRemoveFramesView(APIView):
             # Use existing analysis results
             try:
                 metadata = VideoMetadata.objects.get(video=video)
-                if metadata.sensitive_frame_ids:
-                    raw_frames = json.loads(str(metadata.sensitive_frame_ids))
+                sensitive_frame_ids = getattr(metadata, "sensitive_frame_ids", None)
+                if sensitive_frame_ids:
+                    if not isinstance(sensitive_frame_ids, str):
+                        return _error_response(
+                            "Analysis results were not stored as JSON text.",
+                            status.HTTP_400_BAD_REQUEST,
+                        )
+                    raw_frames = json.loads(sensitive_frame_ids)
                     if not isinstance(raw_frames, list):
                         return _error_response(
                             "Analysis results did not contain a frame list.",

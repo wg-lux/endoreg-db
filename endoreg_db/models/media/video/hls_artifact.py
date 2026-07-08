@@ -2,17 +2,14 @@ from __future__ import annotations
 
 import uuid as uuid_lib
 from datetime import datetime
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING, Any
 
 from django.core.exceptions import ValidationError
 from django.db import models
+from endoreg_db.utils.validation_types import ValidationErrorMessageArg
 
 if TYPE_CHECKING:
-    from django.core.exceptions import ValidationErrorMessageArg
-
-    from endoreg_db.models.media.video.video_file import VideoFile
-else:
-    ValidationErrorMessageArg: TypeAlias = str
+    pass
 
 
 class VideoHlsArtifact(models.Model):
@@ -25,56 +22,60 @@ class VideoHlsArtifact(models.Model):
         READY = "ready", "Ready"
         FAILED = "failed", "Failed"
 
-    video: models.ForeignKey["VideoFile"] = models.ForeignKey(
+    video: models.ForeignKey[Any] = models.ForeignKey(
         "VideoFile",
         on_delete=models.CASCADE,
         related_name="hls_artifacts",
     )
     video_id: int
-    artifact_kind: models.CharField[str] = models.CharField(
+    artifact_kind: models.CharField[str, Any] = models.CharField(
         max_length=16,
         choices=ArtifactKind.choices,
     )
-    status: models.CharField[str] = models.CharField(
+    status: models.CharField[str, Any] = models.CharField(
         max_length=32,
         choices=Status.choices,
         default=Status.MATERIALIZING,
     )
-    key_id: models.UUIDField[uuid_lib.UUID] = models.UUIDField(
+    key_id: models.UUIDField[uuid_lib.UUID, Any] = models.UUIDField(
         default=uuid_lib.uuid4,
         unique=True,
         editable=False,
     )
-    key_ciphertext: models.BinaryField[bytes | None] = models.BinaryField(
+    key_ciphertext: models.BinaryField[bytes | None, Any] = models.BinaryField(
         null=True, blank=True
     )
-    key_nonce: models.BinaryField[bytes | None] = models.BinaryField(
+    key_nonce: models.BinaryField[bytes | None, Any] = models.BinaryField(
         null=True,
         blank=True,
     )
-    key_wrap_algorithm: models.CharField[str] = models.CharField(
+    key_wrap_algorithm: models.CharField[str, Any] = models.CharField(
         max_length=64,
         default="AESGCM-master-wrap-v1",
     )
-    iv_hex: models.CharField[str] = models.CharField(max_length=32, blank=True)
-    playlist_relative_path: models.CharField[str] = models.CharField(
+    iv_hex: models.CharField[str, Any] = models.CharField(max_length=32, blank=True)
+    playlist_relative_path: models.CharField[str, Any] = models.CharField(
         max_length=500,
         blank=True,
     )
-    segment_directory_relative_path: models.CharField[str] = models.CharField(
+    segment_directory_relative_path: models.CharField[str, Any] = models.CharField(
         max_length=500,
         blank=True,
     )
-    segment_count: models.PositiveIntegerField[int] = models.PositiveIntegerField(
+    segment_count: models.PositiveIntegerField[int, Any] = models.PositiveIntegerField(
         default=0
     )
-    source_file_name: models.CharField[str] = models.CharField(
+    source_file_name: models.CharField[str, Any] = models.CharField(
         max_length=500,
         blank=True,
     )
-    last_error: models.TextField[str] = models.TextField(blank=True)
-    created_at: models.DateTimeField[datetime] = models.DateTimeField(auto_now_add=True)
-    updated_at: models.DateTimeField[datetime] = models.DateTimeField(auto_now=True)
+    last_error: models.TextField[str, Any] = models.TextField(blank=True)
+    created_at: models.DateTimeField[datetime, Any] = models.DateTimeField(
+        auto_now_add=True
+    )
+    updated_at: models.DateTimeField[datetime, Any] = models.DateTimeField(
+        auto_now=True
+    )
 
     class Meta:
         constraints = [

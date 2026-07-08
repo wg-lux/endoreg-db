@@ -7,6 +7,9 @@ from ..helpers.data_loader import load_information_source_data
 
 
 class InformationSourceModelTest(TestCase):
+    information_source_type: InformationSourceType
+    information_source: InformationSource
+
     def setUp(self):
         load_information_source_data()
         self.information_source_type = InformationSourceType.objects.create(

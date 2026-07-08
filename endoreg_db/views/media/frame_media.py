@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import mimetypes
-from io import BytesIO
 from pathlib import Path
 from typing import Protocol, TypeGuard, cast
 
@@ -13,7 +12,6 @@ from rest_framework import status
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from PIL import Image
 
 from endoreg_db.models.media.frame.frame import Frame
 from endoreg_db.models.media.video.video_file import VideoFile
@@ -41,7 +39,7 @@ from endoreg_db.utils.nginx_accel import (
 )
 from endoreg_db.utils.cors import resolve_response_origin
 import endoreg_db.utils.frame_stream as frame_stream_utils
-from endoreg_db.utils.frame_stream import FrameSample
+from endoreg_db.utils.frame_stream import EncodedFrameSample
 
 logger = logging.getLogger(__name__)
 
@@ -52,19 +50,19 @@ SUPPORTED_DECODED_FRAME_FILE_TYPES: dict[str, VideoArtifactKind] = {
 }
 
 
-class _ReadVideoFileFrameSample(Protocol):
+class _ReadVideoFileFrameJpeg(Protocol):
     def __call__(
         self,
         video: VideoFile,
         *,
         frame_number: int,
         file_type: str = "raw",
-    ) -> FrameSample: ...
+    ) -> EncodedFrameSample: ...
 
 
-read_video_file_frame_sample = cast(
-    _ReadVideoFileFrameSample,
-    getattr(frame_stream_utils, "read_video_file_frame_sample"),
+read_video_file_frame_jpeg = cast(
+    _ReadVideoFileFrameJpeg,
+    getattr(frame_stream_utils, "read_video_file_frame_jpeg"),
 )
 
 
@@ -386,7 +384,7 @@ class DecodedFrameStreamView(APIView):
             )
 
         try:
-            sample = read_video_file_frame_sample(
+            sample = read_video_file_frame_jpeg(
                 video,
                 frame_number=frame_number_int,
                 file_type=artifact_kind.value,
@@ -413,13 +411,7 @@ class DecodedFrameStreamView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
 
-        buffer = BytesIO()
-        Image.fromarray(sample.rgb_frame.astype("uint8")).save(
-            buffer,
-            format="JPEG",
-            quality=90,
-        )
-        response = HttpResponse(buffer.getvalue(), content_type="image/jpeg")
+        response = HttpResponse(sample.image_bytes, content_type=sample.content_type)
         response["Content-Disposition"] = (
             f'inline; filename="video_{video_id_int}_frame_{frame_number_int:07d}.jpg"'
         )

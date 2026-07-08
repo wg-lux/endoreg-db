@@ -9,6 +9,7 @@ from typing import Protocol, TypedDict, cast
 from rest_framework import serializers
 
 from lx_dtypes.models.contracts import DocumentType as DocumentTypeContract
+from lx_dtypes.models.contracts.json_types import JsonObject
 
 from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
@@ -192,7 +193,11 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
         ):
             return report_type_name
 
-        raw_meta = instance.raw_meta if isinstance(instance.raw_meta, dict) else {}
+        raw_meta: JsonObject
+        if isinstance(instance.raw_meta, dict):
+            raw_meta = cast(JsonObject, instance.raw_meta)
+        else:
+            raw_meta = cast(JsonObject, {})
         raw_document_type = raw_meta.get("document_type")
         if (
             isinstance(raw_document_type, str)

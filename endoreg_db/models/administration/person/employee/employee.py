@@ -16,7 +16,7 @@ class Employee(Person):
     Model representing an employee.
     """
 
-    employee_type: "models.ForeignKey[EmployeeType]" = models.ForeignKey(
+    employee_type: models.ForeignKey["EmployeeType"] = models.ForeignKey(
         "EmployeeType",
         on_delete=models.CASCADE,
         related_name="employees",
@@ -24,7 +24,7 @@ class Employee(Person):
 
     if TYPE_CHECKING:
         # qualification is a OneToOneField defined in the EmployeeQualification model
-        qualification: models.OneToOneField["EmployeeQualification"]
+        qualification: EmployeeQualification
 
     def __str__(self) -> str:
         """

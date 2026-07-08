@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime
-from typing import TYPE_CHECKING, ClassVar, Literal
+from typing import TYPE_CHECKING, ClassVar, Literal, Any
 
 from django.db import models
 from django.utils import timezone
 
 if TYPE_CHECKING:
-    from endoreg_db.models.media.video.video_file import VideoFile
+    pass
 
 
 type FrameExtractionStatus = Literal["pending", "running", "success", "failure"]
@@ -26,26 +25,26 @@ class FrameExtractionRequest(models.Model):
         (STATUS_FAILURE, "Failure"),
     )
 
-    video: models.ForeignKey["VideoFile"] = models.ForeignKey(
+    video: models.ForeignKey[Any] = models.ForeignKey(
         "endoreg_db.VideoFile",
         on_delete=models.CASCADE,
         related_name="frame_extraction_requests",
     )
-    frame_number: models.IntegerField[int] = models.IntegerField()
-    status: models.CharField[str] = models.CharField(
+    frame_number: models.IntegerField[Any, Any] = models.IntegerField()
+    status: models.CharField[Any, Any] = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,
         default=STATUS_PENDING,
     )
-    task_id: models.CharField[str] = models.CharField(max_length=100, blank=True)
-    error_message: models.TextField[str] = models.TextField(blank=True)
-    requested_at: models.DateTimeField[datetime] = models.DateTimeField(
+    task_id: models.CharField[Any, Any] = models.CharField(max_length=100, blank=True)
+    error_message: models.TextField[Any, Any] = models.TextField(blank=True)
+    requested_at: models.DateTimeField[Any, Any] = models.DateTimeField(
         auto_now_add=True
     )
-    started_at: models.DateTimeField[datetime | None] = models.DateTimeField(
+    started_at: models.DateTimeField[Any, Any] = models.DateTimeField(
         null=True, blank=True
     )
-    completed_at: models.DateTimeField[datetime | None] = models.DateTimeField(
+    completed_at: models.DateTimeField[Any, Any] = models.DateTimeField(
         null=True, blank=True
     )
 

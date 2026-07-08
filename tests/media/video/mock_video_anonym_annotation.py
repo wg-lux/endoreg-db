@@ -31,6 +31,28 @@ class _LabelManagerLike(Protocol):
     ) -> Label | None: ...
 
 
+class _SensitiveMetaStateLike(Protocol):
+    dob_verified: bool
+    names_verified: bool
+    is_verified: bool
+
+    def save(self, *args: object, **kwargs: object) -> None: ...
+
+    def refresh_from_db(self, *args: object, **kwargs: object) -> None: ...
+
+
+class _SensitiveMetaLike(Protocol):
+    state: _SensitiveMetaStateLike
+
+    def get_or_create_state(self) -> _SensitiveMetaStateLike: ...
+
+
+class _VideoFileWithSensitiveMeta(Protocol):
+    sensitive_meta: _SensitiveMetaLike | None
+
+    def refresh_from_db(self, *args: object, **kwargs: object) -> None: ...
+
+
 def _assert_true(subject: object, value: bool, message: str) -> None:
     if hasattr(subject, "assertTrue"):
         cast(_AssertTrueLike, subject).assertTrue(value, message)
@@ -65,6 +87,8 @@ def _simulate_manual_validation(video_file: object) -> bool:
             )
         return True
 
+    video_file_typed = cast(_VideoFileWithSensitiveMeta, video_file)
+
     outside_label = cast(_LabelManagerLike, Label.objects).resolve_by_name(
         "outside",
         case_insensitive=True,
@@ -83,7 +107,7 @@ def _simulate_manual_validation(video_file: object) -> bool:
     segment_state.is_validated = True
     segment_state.save()
 
-    if video_file.sensitive_meta is None:
+    if video_file_typed.sensitive_meta is None:
         from endoreg_db.import_files.context.default_sensitive_meta import (
             default_sensitive_meta,
         )
@@ -91,9 +115,9 @@ def _simulate_manual_validation(video_file: object) -> bool:
         sensitive_meta = default_sensitive_meta(video_file)
         if sensitive_meta is None:
             return False
-        video_file.refresh_from_db()
+        video_file_typed.refresh_from_db()
 
-    sensitive_meta = video_file.sensitive_meta
+    sensitive_meta = video_file_typed.sensitive_meta
     if sensitive_meta is None:
         return False
 
@@ -123,7 +147,7 @@ def mock_video_manual_validation(subject: object) -> None:
         return
 
     video_file.refresh_from_db()
-    sensitive_meta = video_file.sensitive_meta
+    sensitive_meta = cast(_VideoFileWithSensitiveMeta, video_file).sensitive_meta
     if sensitive_meta is not None:
         sensitive_meta_state = sensitive_meta.state
         _assert_is_not_none(

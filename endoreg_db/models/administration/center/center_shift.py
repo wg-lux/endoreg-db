@@ -1,16 +1,13 @@
 from __future__ import annotations
 
-from datetime import time
 from decimal import Decimal
 from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING, TypeAlias, Any
 
 from django.db import models
 
 if TYPE_CHECKING:
     from ..shift.scheduled_days import ScheduledDays
-    from ..shift.shift import Shift
-    from .center import Center
 
 NoCenterShiftValue: TypeAlias = NoneType
 CenterShiftDescription: TypeAlias = str | NoCenterShiftValue
@@ -35,24 +32,22 @@ class CenterShift(models.Model):
     Model representing a center shift.
     """
 
-    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
-    description: models.TextField[CenterShiftDescription | None] = models.TextField(
-        blank=True, null=True
-    )
+    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
 
-    center: models.ForeignKey[Center] = models.ForeignKey(
+    center: models.ForeignKey[Any] = models.ForeignKey(
         "Center",
         on_delete=models.CASCADE,
         related_name="center_shifts",
     )
-    shift: models.ForeignKey[Shift] = models.ForeignKey(
+    shift: models.ForeignKey[Any] = models.ForeignKey(
         "Shift",
         on_delete=models.CASCADE,
         related_name="center_shifts",
     )
 
-    start_time: models.TimeField[time] = models.TimeField()
-    end_time: models.TimeField[time] = models.TimeField()
+    start_time: models.TimeField[Any, Any] = models.TimeField()
+    end_time: models.TimeField[Any, Any] = models.TimeField()
     scheduled_days: models.ManyToManyField[
         ScheduledDays,
         ScheduledDays,
@@ -62,7 +57,7 @@ class CenterShift(models.Model):
     )
 
     # TODO add validator; the value should be between 0 and 1
-    estimated_presence_fraction: models.DecimalField[Decimal] = models.DecimalField(
+    estimated_presence_fraction: models.DecimalField[Any, Any] = models.DecimalField(
         max_digits=5,
         decimal_places=4,
         default=Decimal("0"),

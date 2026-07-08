@@ -134,12 +134,19 @@ def extract_frames(
         output_pattern=output_pattern,
         quality=quality,
         fps=fps,
+        ext=ext,
     )
 
     logger.info("Running FFmpeg command: %s", " ".join(cmd))
     try:
         # Use subprocess.run for better error handling
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        result = subprocess.run(
+            cmd,
+            check=True,
+            capture_output=True,
+            text=True,
+            stdin=subprocess.DEVNULL,
+        )
         logger.debug("FFmpeg stdout:\n%s", result.stdout)
         logger.debug("FFmpeg stderr:\n%s", result.stderr)
         logger.info("FFmpeg frame extraction completed successfully.")
@@ -222,11 +229,18 @@ def extract_frame_range(
         start_frame=start_frame,
         end_frame=end_frame,
         quality=quality,
+        ext=ext,
     )
 
     logger.info("Running FFmpeg command for frame range extraction: %s", " ".join(cmd))
     try:
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        result = subprocess.run(
+            cmd,
+            check=True,
+            capture_output=True,
+            text=True,
+            stdin=subprocess.DEVNULL,
+        )
         logger.debug("FFmpeg stdout:\n%s", result.stdout)
         logger.debug("FFmpeg stderr:\n%s", result.stderr)
         logger.info("FFmpeg frame range extraction completed successfully.")

@@ -83,7 +83,7 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 cover/
-
+profile/
 # Translations
 *.mo
 *.pot
@@ -211,3 +211,5 @@ tools/report_pdf_renderer_rust/
 *.safetensors
 
 *.bak
+
+*callgrind.out.*

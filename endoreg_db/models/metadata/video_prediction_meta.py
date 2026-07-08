@@ -1,8 +1,8 @@
 from __future__ import annotations
 import logging
 import pickle
-from datetime import datetime
-from typing import TYPE_CHECKING, Protocol, cast
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Protocol, cast, Any
 from typing import List, Optional, Tuple
 
 import numpy as np
@@ -21,7 +21,7 @@ DEFAULT_WINDOW_SIZE_IN_SECONDS_FOR_RUNNING_MEAN = 1.5
 DEFAULT_VIDEO_SEGMENT_LENGTH_THRESHOLD_IN_S = 1.0
 
 if TYPE_CHECKING:
-    from endoreg_db.models import Label, ModelMeta
+    from endoreg_db.models import Label
 
     from ..media.video.video_file import VideoFile
 
@@ -45,20 +45,20 @@ class VideoPredictionMeta(models.Model):
     Must be associated with exactly one `VideoFile`.
     """
 
-    model_meta: models.ForeignKey["ModelMeta"] = models.ForeignKey(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    model_meta: models.ForeignKey[Any] = models.ForeignKey(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
         "ModelMeta", on_delete=models.CASCADE
     )
-    date_created: models.DateTimeField[datetime] = models.DateTimeField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    date_created: models.DateTimeField[Any, Any] = models.DateTimeField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
         auto_now_add=True
     )
-    date_modified: models.DateTimeField[datetime] = models.DateTimeField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    date_modified: models.DateTimeField[Any, Any] = models.DateTimeField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
         auto_now=True
     )
-    prediction_array: models.BinaryField[bytes | None] = models.BinaryField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    prediction_array: models.BinaryField[Any, Any] = models.BinaryField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
         blank=True, null=True
     )
 
-    video_file = models.ForeignKey(
+    video_file: models.ForeignKey[Any] = models.ForeignKey(
         "VideoFile",
         on_delete=models.CASCADE,
         related_name="video_prediction_meta",
@@ -67,8 +67,6 @@ class VideoPredictionMeta(models.Model):
     )
 
     if TYPE_CHECKING:
-        model_meta: models.ForeignKey["ModelMeta"]
-        video_file: models.ForeignKey["VideoFile|None"]
         label_video_segments: "models.Manager[LabelVideoSegment]"
 
     class Meta:
@@ -182,17 +180,21 @@ class VideoPredictionMeta(models.Model):
         )
 
         for i, label in enumerate(label_list):
-            predictions = (
+            predictions = cast(
+                Iterable[tuple[int, float]],
                 base_pred_qs.filter(label=label)
                 .order_by("frame__frame_number")
-                .values_list("frame__frame_number", "float_value")
+                .values_list("frame__frame_number", "float_value"),
             )
 
-            confidences: ConfidenceArray = np.full(num_frames, 0.5, dtype=np.float64)
+            confidences = cast(
+                ConfidenceArray,
+                np.full(num_frames, 0.5, dtype=np.float64),
+            )
             found_predictions = False
             for frame_num, confidence in predictions:
                 if 0 <= frame_num < num_frames:
-                    confidences[frame_num] = confidence
+                    confidences[frame_num] = float(confidence)
                     found_predictions = True
                 else:
                     logger.warning(

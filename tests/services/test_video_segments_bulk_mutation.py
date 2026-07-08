@@ -15,6 +15,7 @@ from endoreg_db.services.video_segments_bulk_mutation import (
     BulkSegmentMutationServiceError,
     bulk_mutate_video_segments,
 )
+from endoreg_db.models.state.label_video_segment import LabelVideoSegmentState
 
 
 class VideoSegmentsBulkMutationServiceTest(TestCase):
@@ -101,6 +102,17 @@ class VideoSegmentsBulkMutationServiceTest(TestCase):
         self.assertTrue(
             dataset.video_annotations.filter(pk=self.update_segment.pk).exists()
         )
+        self.assertTrue(
+            LabelVideoSegmentState.objects.filter(origin_id=created_id).exists()
+        )
+        self.assertTrue(
+            LabelVideoSegmentState.objects.filter(
+                origin_id=self.update_segment.pk,
+            ).exists()
+        )
+        state = self.video.get_or_create_state()
+        self.assertFalse(state.segment_annotations_created)
+        self.assertFalse(state.segment_annotations_validated)
 
     def test_service_uses_eager_annotation_sync_when_defer_disabled(self):
         sync_frame_annotations = MagicMock()
@@ -146,6 +158,11 @@ class VideoSegmentsBulkMutationServiceTest(TestCase):
         state = self.video.get_or_create_state()
         self.assertTrue(state.segment_annotations_created)
         self.assertTrue(state.segment_annotations_validated)
+        self.assertTrue(
+            LabelVideoSegmentState.objects.filter(
+                origin_id=self.update_segment.pk,
+            ).exists()
+        )
 
     def test_service_rolls_back_created_segment_on_invalid_update(self):
         with self.assertRaises(BulkSegmentMutationServiceError) as error:

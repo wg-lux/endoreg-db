@@ -1,9 +1,19 @@
 from django.test import TestCase
+from typing import Protocol, cast
 from logging import getLogger
 
 from endoreg_db.models.administration.product.product import Product
 from endoreg_db.models.administration.product.product_material import ProductMaterial
 from endoreg_db.models.other.unit import Unit
+
+
+class _ProductMaterialLike(Protocol):
+    material: object
+    unit: Unit
+    quantity: float
+    product: object
+
+    def get_emission(self) -> tuple[float, Unit]: ...
 
 
 logger = getLogger(__name__)
@@ -19,6 +29,8 @@ from ...helpers.data_loader import (
 
 
 class ProductMaterialModelTest(TestCase):
+    _product_materials: list[ProductMaterial]
+
     def setUp(self):
         load_unit_data()
         load_examination_data()
@@ -34,8 +46,9 @@ class ProductMaterialModelTest(TestCase):
 
         product_materials = ProductMaterial.objects.all()
         for product_material in product_materials:
+            product_material_like = cast(_ProductMaterialLike, product_material)
             self.assertIsInstance(product_material, ProductMaterial)
-            self.assertIsNotNone(product_material.material)
+            self.assertIsNotNone(product_material_like.material)
 
     def test_has_unit(self):
         """
@@ -45,7 +58,8 @@ class ProductMaterialModelTest(TestCase):
 
         product_materials = ProductMaterial.objects.all()
         for product_material in product_materials:
-            self.assertIsNotNone(product_material.unit)
+            product_material_like = cast(_ProductMaterialLike, product_material)
+            self.assertIsNotNone(product_material_like.unit)
 
     def test_has_emission_factor(self):
         """
@@ -53,7 +67,9 @@ class ProductMaterialModelTest(TestCase):
         """
         product_materials = ProductMaterial.objects.all()
         for product_material in product_materials:
-            emission, _unit = product_material.get_emission()
+            emission, _unit = cast(
+                _ProductMaterialLike, product_material
+            ).get_emission()
             self.assertIsInstance(emission, float)
             self.assertIsInstance(_unit, Unit)
 
@@ -63,7 +79,8 @@ class ProductMaterialModelTest(TestCase):
         """
         product_materials = ProductMaterial.objects.all()
         for product_material in product_materials:
-            self.assertIsInstance(product_material.product, Product)
+            product_material_like = cast(_ProductMaterialLike, product_material)
+            self.assertIsInstance(product_material_like.product, Product)
 
     def test_has_quantity(self):
         """
@@ -71,4 +88,6 @@ class ProductMaterialModelTest(TestCase):
         """
         product_materials = ProductMaterial.objects.all()
         for product_material in product_materials:
-            self.assertIsInstance(product_material.quantity, float)
+            self.assertIsInstance(
+                cast(_ProductMaterialLike, product_material).quantity, float
+            )

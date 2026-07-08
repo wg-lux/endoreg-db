@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from django.db import models
 
@@ -19,8 +19,8 @@ class FindingTypeManager(models.Manager["FindingType"]):
 
 
 class FindingType(models.Model):
-    name: models.CharField[str] = models.CharField(max_length=100, unique=True)
-    description: models.TextField[str | None] = models.TextField(blank=True, null=True)
+    name: models.CharField[Any, Any] = models.CharField(max_length=100, unique=True)
+    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
 
     objects: models.Manager["FindingType"] = FindingTypeManager()  # pyright: ignore[reportIncompatibleVariableOverride]
 

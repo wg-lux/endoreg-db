@@ -7,10 +7,9 @@ from lx_dtypes.models.contracts.management_command import (
     MigrateVideoStreamableStorageCommandOptionsPayload,
 )
 
-from endoreg_db.models import VideoFile
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.services.hls_media import materialize_video_hls
 from endoreg_db.services.streamable_media import (
-    StreamableArtifactDisposition,
-    resolve_streamable_media_state,
     sync_video_streamable_artifacts,
 )
 
@@ -29,22 +28,32 @@ def _selected_streamable_artifact_count(
     include_raw: bool,
     include_processed: bool,
 ) -> int:
-    state = resolve_streamable_media_state(
-        video,
-        include_raw=include_raw,
-        include_processed=include_processed,
-    )
     return sum(
         1
-        for decision in state.artifacts
-        if decision.disposition == StreamableArtifactDisposition.SYNC
+        for enabled, attr in (
+            (include_raw, "raw_streamable_relative_path"),
+            (include_processed, "processed_streamable_relative_path"),
+        )
+        if enabled and str(getattr(video, attr, "") or "").strip()
+    )
+
+
+def _processed_hls_required_for_legacy_streamable(
+    video: VideoFile,
+    *,
+    include_processed: bool,
+) -> bool:
+    if not include_processed:
+        return False
+    return bool(
+        str(getattr(video, "processed_streamable_relative_path", "") or "").strip()
     )
 
 
 class Command(BaseCommand):
     help = (
-        "Materialize streamable protected-media copies for existing videos and "
-        "stamp VideoFile storage metadata for X-Accel-Redirect delivery."
+        "Replace legacy plaintext streamable MP4 artifacts with encrypted HLS "
+        "where possible, then securely delete the legacy MP4 paths."
     )
 
     def add_arguments(self, parser: CommandParser) -> None:
@@ -76,8 +85,8 @@ class Command(BaseCommand):
             action="store_true",
             dest="regenerate",
             help=(
-                "Rewrite selected streamable artifacts even when an existing "
-                "proxy already looks valid."
+                "Regenerate selected processed HLS artifacts even when an "
+                "existing HLS artifact is ready."
             ),
         )
 
@@ -107,28 +116,43 @@ class Command(BaseCommand):
             queryset = queryset.filter(pk__in=video_ids)
 
         migrated = 0
-        regenerated = 0
+        hls_materialized = 0
         unchanged = 0
         failed = 0
 
         for video in queryset.iterator():
             try:
-                selected_streamable_count = (
-                    _selected_streamable_artifact_count(
-                        video,
-                        include_raw=include_raw,
-                        include_processed=include_processed,
-                    )
-                    if regenerate
-                    else 0
+                selected_streamable_count = _selected_streamable_artifact_count(
+                    video,
+                    include_raw=include_raw,
+                    include_processed=include_processed,
                 )
+                processed_hls_required = _processed_hls_required_for_legacy_streamable(
+                    video,
+                    include_processed=include_processed,
+                )
+                if processed_hls_required and not getattr(
+                    video.processed_file, "name", ""
+                ):
+                    raise RuntimeError(
+                        "Cannot replace processed streamable artifact without "
+                        "canonical processed_file"
+                    )
                 update_fields = sync_video_streamable_artifacts(
                     video,
                     include_raw=include_raw,
                     include_processed=include_processed,
                     save=not dry_run,
-                    force=regenerate,
+                    force=False,
                 )
+                if processed_hls_required:
+                    if not dry_run:
+                        materialize_video_hls(
+                            int(video.pk),
+                            artifact_kind="processed",
+                            force=regenerate,
+                        )
+                    hls_materialized += 1
             except Exception as exc:
                 failed += 1
                 self.stderr.write(
@@ -137,9 +161,6 @@ class Command(BaseCommand):
                     )
                 )
                 continue
-
-            if selected_streamable_count:
-                regenerated += 1
 
             if update_fields:
                 migrated += 1
@@ -150,7 +171,7 @@ class Command(BaseCommand):
                     )
                 )
             elif selected_streamable_count:
-                action = "would regenerate" if dry_run else "regenerated"
+                action = "would replace" if dry_run else "replaced"
                 self.stdout.write(
                     self.style.SUCCESS(
                         f"video={video.pk} {action}: "
@@ -163,7 +184,7 @@ class Command(BaseCommand):
 
         summary = (
             f"streamable video migration complete: migrated={migrated} "
-            f"regenerated={regenerated} "
+            f"hls_materialized={hls_materialized} "
             f"unchanged={unchanged} failed={failed}"
         )
         if failed:

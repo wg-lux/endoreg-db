@@ -1,8 +1,7 @@
 from __future__ import annotations
 import logging
-from collections.abc import Iterable
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast, Any
 
 # import endoreg_center_id from django settings
 from django.conf import settings
@@ -16,7 +15,6 @@ import endoreg_db.utils.ffmpeg_wrapper as ffmpeg_wrapper
 from lx_dtypes.models.contracts.ffmpeg_metadata import (
     FfmpegMetaPayload,
     FfmpegProbeDataPayload,
-    FfmpegProbeJsonObject,
 )
 
 logger = logging.getLogger(__name__)
@@ -166,22 +164,11 @@ class VideoMeta(models.Model):
 
         return result_html
 
-    def save(
-        self,
-        force_insert: bool = False,
-        force_update: bool = False,
-        using: str | None = None,
-        update_fields: Iterable[str] | None = None,
-    ) -> None:
+    def save(self, *args: object, **kwargs: object) -> None:
         """Ensures VideoImportMeta exists before saving."""
         if self.import_meta is None:
             self.import_meta = VideoImportMeta.objects.create()
-        super().save(
-            force_insert=force_insert,
-            force_update=force_update,
-            using=using,
-            update_fields=update_fields,
-        )
+        super().save(*args, **kwargs)
 
     def initialize_ffmpeg_meta(self, video_path: Path) -> None:
         """
@@ -300,33 +287,31 @@ class FFMpegMeta(models.Model):
     Stores technical video stream information extracted using FFmpeg (ffprobe).
     """
 
-    width: models.IntegerField[int | None] = models.IntegerField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    width: models.IntegerField[Any, Any] = models.IntegerField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
         null=True, blank=True
     )
-    height: models.IntegerField[int | None] = models.IntegerField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    height: models.IntegerField[Any, Any] = models.IntegerField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
         null=True, blank=True
     )
-    duration: models.FloatField[float | None] = models.FloatField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    duration: models.FloatField[Any, Any] = models.FloatField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
         null=True, blank=True
     )
-    frame_rate_num: models.IntegerField[int | None] = models.IntegerField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    frame_rate_num: models.IntegerField[Any, Any] = models.IntegerField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
         null=True, blank=True
     )
-    frame_rate_den: models.IntegerField[int | None] = models.IntegerField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    frame_rate_den: models.IntegerField[Any, Any] = models.IntegerField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
         null=True, blank=True
     )
-    codec_name: models.CharField[str | None] = models.CharField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    codec_name: models.CharField[Any, Any] = models.CharField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
         max_length=50, null=True, blank=True
     )
-    pixel_format: models.CharField[str | None] = models.CharField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    pixel_format: models.CharField[Any, Any] = models.CharField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
         max_length=50, null=True, blank=True
     )
-    bit_rate: models.BigIntegerField[int | None] = models.BigIntegerField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    bit_rate: models.BigIntegerField[Any, Any] = models.BigIntegerField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
         null=True, blank=True
     )
-    raw_probe_data: models.JSONField[FfmpegProbeJsonObject | None] = models.JSONField(
-        null=True, blank=True
-    )
+    raw_probe_data: models.JSONField[Any, Any] = models.JSONField(null=True, blank=True)
 
     @property
     def fps(self) -> float | None:
@@ -476,16 +461,18 @@ class VideoImportMeta(models.Model):
     Stores metadata related to the import and processing status of a video.
     """
 
-    file_name: models.CharField[str | None] = models.CharField(
+    file_name: models.CharField[Any, Any] = models.CharField(
         max_length=255, blank=True, null=True
     )
-    video_anonymized: models.BooleanField[bool] = models.BooleanField(default=False)
-    video_patient_data_detected: models.BooleanField[bool] = models.BooleanField(
+    video_anonymized: models.BooleanField[Any, Any] = models.BooleanField(default=False)
+    video_patient_data_detected: models.BooleanField[Any, Any] = models.BooleanField(
         default=False
     )
-    outside_detected: models.BooleanField[bool] = models.BooleanField(default=False)
-    patient_data_removed: models.BooleanField[bool] = models.BooleanField(default=False)
-    outside_removed: models.BooleanField[bool] = models.BooleanField(default=False)
+    outside_detected: models.BooleanField[Any, Any] = models.BooleanField(default=False)
+    patient_data_removed: models.BooleanField[Any, Any] = models.BooleanField(
+        default=False
+    )
+    outside_removed: models.BooleanField[Any, Any] = models.BooleanField(default=False)
 
     def __str__(self) -> str:
         """Returns a string summary of the import metadata."""

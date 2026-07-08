@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from math import isnan
 from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING, TypeAlias, Any
 
 from django.db import models
 
 if TYPE_CHECKING:
-    from ...other.unit import Unit
     from .product import Product
     from .product_group import ProductGroup
 
@@ -29,15 +28,14 @@ class ProductWeightManager(models.Manager["ProductWeight"]):
 class ProductWeight(models.Model):
     objects = ProductWeightManager()
 
-    name: models.CharField[str | NoProductWeightValue]
-    name = models.CharField(max_length=255, null=True)
-    product: models.ForeignKey[Product] = models.ForeignKey(
+    name: models.CharField[Any, Any] = models.CharField(max_length=255, null=True)
+    product: models.ForeignKey[Any] = models.ForeignKey(
         "Product", on_delete=models.CASCADE
     )
-    measured: models.FloatField[ProductWeightValue] = models.FloatField(null=True)
-    verified: models.FloatField[ProductWeightValue] = models.FloatField(null=True)
-    manufacturer: models.FloatField[ProductWeightValue] = models.FloatField(null=True)
-    unit: models.ForeignKey[Unit | NoProductWeightValue | None] = models.ForeignKey(
+    measured: models.FloatField[Any, Any] = models.FloatField(null=True)
+    verified: models.FloatField[Any, Any] = models.FloatField(null=True)
+    manufacturer: models.FloatField[Any, Any] = models.FloatField(null=True)
+    unit: models.ForeignKey[Any] = models.ForeignKey(
         "Unit", on_delete=models.SET_NULL, null=True
     )
 

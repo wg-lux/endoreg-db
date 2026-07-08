@@ -13,6 +13,11 @@ from lx_dtypes.models.contracts.model_meta_logic import (
     ModelMetaCreateFromFileKwargsData,
     ModelMetaInferredDefaultsPayload,
 )
+from typing import Protocol
+
+
+class _AiModelWithActiveMeta(Protocol):
+    active_meta: ModelMeta | None
 
 
 class _CreateFromFileDelegateKwargs(ModelMetaCreateFromFileKwargsData, total=False):
@@ -287,7 +292,9 @@ def test_setup_default_from_huggingface_repairs_existing_missing_weights(
     assert result.pk == model_meta.pk
     assert result.weights.name == "model_weights/missing.safetensors"
     assert Path(result.weights.path).read_bytes() == b"downloaded weights"
-    assert unique_ai_model.active_meta == result
+    active_meta = cast(_AiModelWithActiveMeta, unique_ai_model).active_meta
+    assert active_meta is not None
+    assert active_meta == result
 
 
 def test_get_activation_function_delegates_to_logic(

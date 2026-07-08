@@ -1,17 +1,14 @@
 from __future__ import annotations
 
-from datetime import datetime
 from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TypeAlias, Any, TYPE_CHECKING
 
 from django.db import models
 from django.db.models import CheckConstraint, Q
 
 if TYPE_CHECKING:
-    from ...label import Label
-    from ...media.frame import Frame
-    from ...metadata import ModelMeta
-    from ...other.information_source import InformationSource
+    from endoreg_db.models.metadata.model_meta import ModelMeta
+    from endoreg_db.models.other.information_source import InformationSource
 
 NoFrameBoxAnnotationValue: TypeAlias = NoneType
 FrameBoxAnnotationFloat: TypeAlias = "float | NoFrameBoxAnnotationValue"
@@ -30,50 +27,44 @@ class FrameBoxAnnotation(models.Model):
     captured alongside the box so clients can render annotations after scaling.
     """
 
-    frame: models.ForeignKey[Frame] = models.ForeignKey(
+    frame: models.ForeignKey[Any] = models.ForeignKey(
         "Frame",
         on_delete=models.CASCADE,
         related_name="box_annotations",
         blank=False,
         null=False,
     )
-    label: models.ForeignKey[Label] = models.ForeignKey(
+    label: models.ForeignKey[Any] = models.ForeignKey(
         "Label",
         on_delete=models.CASCADE,
         related_name="frame_box_annotations",
         blank=False,
         null=False,
     )
-    x: models.FloatField[float] = models.FloatField()
-    y: models.FloatField[float] = models.FloatField()
-    width: models.FloatField[float] = models.FloatField()
-    height: models.FloatField[float] = models.FloatField()
-    image_width: models.PositiveIntegerField[int] = models.PositiveIntegerField()
-    image_height: models.PositiveIntegerField[int] = models.PositiveIntegerField()
-    value: models.BooleanField[bool] = models.BooleanField(default=True)
-    float_value: models.FloatField[FrameBoxAnnotationFloat] = models.FloatField(
-        blank=True, null=True
-    )
-    annotator: models.CharField[FrameBoxAnnotationText] = models.CharField(
+    x: models.FloatField[Any, Any] = models.FloatField()
+    y: models.FloatField[Any, Any] = models.FloatField()
+    width: models.FloatField[Any, Any] = models.FloatField()
+    height: models.FloatField[Any, Any] = models.FloatField()
+    image_width: models.PositiveIntegerField[Any, Any] = models.PositiveIntegerField()
+    image_height: models.PositiveIntegerField[Any, Any] = models.PositiveIntegerField()
+    value: models.BooleanField[Any, Any] = models.BooleanField(default=True)
+    float_value: models.FloatField[Any, Any] = models.FloatField(blank=True, null=True)
+    annotator: models.CharField[Any, Any] = models.CharField(
         max_length=255, blank=True, null=True
     )
-    external_annotation_id: models.CharField[FrameBoxAnnotationText | None] = (
-        models.CharField(
-            max_length=255,
-            blank=True,
-            null=True,
-            db_index=True,
-        )
+    external_annotation_id: models.CharField[str, Any] = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        db_index=True,
     )
-    model_meta: models.ForeignKey[FrameBoxAnnotationModelMeta | None] = (
-        models.ForeignKey(
-            "ModelMeta",
-            on_delete=models.SET_NULL,
-            related_name="frame_box_annotations",
-            default=None,
-            null=True,
-            blank=True,
-        )
+    model_meta: models.ForeignKey["ModelMeta | None"] = models.ForeignKey(
+        "ModelMeta",
+        on_delete=models.SET_NULL,
+        related_name="frame_box_annotations",
+        default=None,
+        null=True,
+        blank=True,
     )
     information_source: models.ForeignKey[
         FrameBoxAnnotationInformationSource | None
@@ -85,10 +76,10 @@ class FrameBoxAnnotation(models.Model):
         null=True,
         blank=True,
     )
-    date_created: models.DateTimeField[datetime] = models.DateTimeField(
+    date_created: models.DateTimeField[Any, Any] = models.DateTimeField(
         auto_now_add=True
     )
-    date_modified: models.DateTimeField[datetime] = models.DateTimeField(auto_now=True)
+    date_modified: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now=True)
 
     if TYPE_CHECKING:
         frame_id: int

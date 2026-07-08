@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from types import NoneType
-from typing import TYPE_CHECKING, Protocol, TypeAlias, cast
+from typing import TYPE_CHECKING, Protocol, TypeAlias, cast, Any
 
 import cv2
 import numpy as np
@@ -13,7 +13,6 @@ if TYPE_CHECKING:
     from endoreg_db.models.label.annotation.image_classification import (
         ImageClassificationAnnotation,
     )
-    from endoreg_db.models.media.video.video_file import VideoFile
 
     class FrameVideoCarrier(Protocol):
         video_hash: str
@@ -30,20 +29,18 @@ logger = logging.getLogger(__name__)
 
 # Unified Frame model
 class Frame(models.Model):
-    video: models.ForeignKey["VideoFile"] = models.ForeignKey(
+    video: models.ForeignKey[Any] = models.ForeignKey(
         "VideoFile",
         on_delete=models.CASCADE,
         related_name="frames",
         blank=False,
         null=False,
     )
-    frame_number: models.PositiveIntegerField[int] = models.PositiveIntegerField()
-    relative_path: models.CharField[str] = models.CharField(max_length=512)
-    timestamp: models.FloatField[FrameTimestamp | None] = models.FloatField(
-        null=True, blank=True
-    )
+    frame_number: models.PositiveIntegerField[Any, Any] = models.PositiveIntegerField()
+    relative_path: models.CharField[Any, Any] = models.CharField(max_length=512)
+    timestamp: models.FloatField[Any, Any] = models.FloatField(null=True, blank=True)
 
-    is_extracted: models.BooleanField[bool] = models.BooleanField(default=False)
+    is_extracted: models.BooleanField[Any, Any] = models.BooleanField(default=False)
 
     if TYPE_CHECKING:
         image_classification_annotations: models.QuerySet[

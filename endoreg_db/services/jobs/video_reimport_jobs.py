@@ -475,6 +475,41 @@ def _run_prediction_refresh(
     return video_reimport_json_safe_dict(raw_result)
 
 
+def _regenerate_reimport_hls_artifacts(video: VideoFile) -> dict[str, JsonValue]:
+    """
+    Rebuild processed HLS from the freshly committed encrypted processed_file.
+
+    The HLS service streams through the FieldFile storage API, so encrypted
+    storage is the only durable source and plaintext is confined to ffmpeg pipes.
+    """
+    try:
+        video_id = int(video.pk)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Cannot regenerate HLS for an unsaved video.") from exc
+
+    try:
+        from endoreg_db.services.hls_media import materialize_video_hls
+
+        result = materialize_video_hls(
+            video_id,
+            artifact_kind="processed",
+            force=True,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            "Processed HLS source is missing after video re-import."
+        ) from exc
+
+    payload = video_reimport_json_safe_dict(result.as_dict())
+    logger.info(
+        "Regenerated processed HLS after video re-import: video=%s status=%s key_id=%s",
+        getattr(video, "video_hash", video_id),
+        payload.get("status"),
+        payload.get("key_id"),
+    )
+    return payload
+
+
 def _run_video_reimport_job(
     video_id: int,
     *,
@@ -514,6 +549,7 @@ def _run_video_reimport_job(
             )
 
         video.refresh_from_db()
+        hls_refresh = _regenerate_reimport_hls_artifacts(video)
         completed_upload_jobs = _mark_upload_jobs_anonymized(video)
         prediction_refresh = _run_prediction_refresh(video=video, config=config)
 
@@ -525,6 +561,8 @@ def _run_video_reimport_job(
                     "Video re-import completed: "
                     f"reset_upload_jobs={reset_upload_jobs}, "
                     f"completed_upload_jobs={completed_upload_jobs}, "
+                    f"hls_status={hls_refresh.get('status')}, "
+                    f"hls_key_id={hls_refresh.get('key_id')}, "
                     f"prediction_refresh_status={prediction_refresh.get('status')}"
                 ),
             )
@@ -670,5 +708,6 @@ dispatch_prediction_refresh = _dispatch_prediction_refresh
 mark_upload_jobs_anonymized = _mark_upload_jobs_anonymized
 mark_upload_jobs_error = _mark_upload_jobs_error
 mark_upload_jobs_lost = _mark_upload_jobs_lost
+regenerate_reimport_hls_artifacts = _regenerate_reimport_hls_artifacts
 reset_reimport_state = _reset_reimport_state
 video_has_integrity_loss = _video_has_integrity_loss

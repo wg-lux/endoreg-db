@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import cast
 from pathlib import Path
 
 import pytest
@@ -77,6 +78,6 @@ def test_create_from_file_accepts_real_ffprobe_extra_fields(
     assert raw_probe_data is not None
     streams = raw_probe_data["streams"]
     assert isinstance(streams, list)
-    first_stream = streams[0]
+    first_stream = cast(dict[str, object], streams[0])
     assert isinstance(first_stream, dict)
     assert "codec_long_name" not in first_stream

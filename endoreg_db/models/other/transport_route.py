@@ -1,13 +1,11 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, Any
 
 from django.db import models
 
 if TYPE_CHECKING:
     from endoreg_db.models import (
-        EmissionFactor,
         Product,
-        Unit,
     )
 
 
@@ -19,16 +17,16 @@ class TransportRouteManager(models.Manager["TransportRoute"]):
 class TransportRoute(models.Model):
     objects: ClassVar[TransportRouteManager] = TransportRouteManager()  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    distance: models.FloatField[float] = models.FloatField()
-    name: models.CharField[str] = models.CharField(max_length=255)
-    emission_factor = models.ForeignKey(
+    distance: models.FloatField[Any, Any] = models.FloatField()
+    name: models.CharField[Any, Any] = models.CharField(max_length=255)
+    emission_factor: models.ForeignKey[Any] = models.ForeignKey(
         "EmissionFactor", on_delete=models.SET_NULL, null=True
     )
-    unit = models.ForeignKey("Unit", on_delete=models.SET_NULL, null=True)
+    unit: models.ForeignKey[Any] = models.ForeignKey(
+        "Unit", on_delete=models.SET_NULL, null=True
+    )
 
     if TYPE_CHECKING:
-        emission_factor: models.ForeignKey["EmissionFactor|None"]
-        unit: models.ForeignKey["Unit|None"]
 
         @property
         def products(self) -> models.QuerySet["Product"]: ...

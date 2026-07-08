@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Any
 from django.db import models
 
 
@@ -29,7 +30,7 @@ class ExaminationType(models.Model):
     """
 
     objects = ExaminationTypeManager()
-    name: models.CharField[str] = models.CharField(max_length=100, unique=True)
+    name: models.CharField[Any, Any] = models.CharField(max_length=100, unique=True)
 
     def __str__(self) -> str:
         """

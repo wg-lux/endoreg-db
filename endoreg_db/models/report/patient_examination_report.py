@@ -1,17 +1,12 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-from datetime import datetime
+from typing import TYPE_CHECKING, Any
 
 from django.db import models
 from django.utils import timezone
-from lx_dtypes.models.contracts.json_types import JsonObject
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
-    from endoreg_db.models.medical.patient.patient_examination import (
-        PatientExamination,
-    )
 
 
 class PatientExaminationReport(models.Model):
@@ -19,65 +14,67 @@ class PatientExaminationReport(models.Model):
         DRAFT = "draft", "Draft"
         FINAL = "final", "Final"
 
-    patient_examination: models.ForeignKey["PatientExamination"] = models.ForeignKey(
+    patient_examination: models.ForeignKey[Any] = models.ForeignKey(
         "PatientExamination",
         on_delete=models.CASCADE,
         related_name="reports",
     )
 
-    template_name: models.CharField[str] = models.CharField(max_length=255)
-    template_version: models.CharField[str] = models.CharField(
+    template_name: models.CharField[Any, Any] = models.CharField(max_length=255)
+    template_version: models.CharField[Any, Any] = models.CharField(
         max_length=64, blank=True, default=""
     )
-    template_hash: models.CharField[str] = models.CharField(
+    template_hash: models.CharField[Any, Any] = models.CharField(
         max_length=128, blank=True, default=""
     )
-    title: models.CharField[str] = models.CharField(
+    title: models.CharField[Any, Any] = models.CharField(
         max_length=255, blank=True, default=""
     )
 
-    status: models.CharField[str] = models.CharField(
+    status: models.CharField[Any, Any] = models.CharField(
         max_length=16,
         choices=Status.choices,
         default=Status.DRAFT,
     )
 
     # Structured editor state and persisted snapshots for reproducibility/audit.
-    editor_payload: models.JSONField[JsonObject] = models.JSONField(
+    editor_payload: models.JSONField[Any, Any] = models.JSONField(
         default=dict, blank=True
     )
-    patient_context_snapshot: models.JSONField[JsonObject] = models.JSONField(
+    patient_context_snapshot: models.JSONField[Any, Any] = models.JSONField(
         default=dict, blank=True
     )
-    history_context_snapshot: models.JSONField[JsonObject] = models.JSONField(
+    history_context_snapshot: models.JSONField[Any, Any] = models.JSONField(
         default=dict, blank=True
     )
-    rendered_text: models.TextField[str] = models.TextField(blank=True, default="")
+    rendered_text: models.TextField[Any, Any] = models.TextField(blank=True, default="")
 
-    version: models.PositiveIntegerField[int] = models.PositiveIntegerField(default=1)
-    is_active: models.BooleanField[bool] = models.BooleanField(default=True)
+    version: models.PositiveIntegerField[Any, Any] = models.PositiveIntegerField(
+        default=1
+    )
+    is_active: models.BooleanField[Any, Any] = models.BooleanField(default=True)
 
-    created_at: models.DateTimeField[datetime] = models.DateTimeField(auto_now_add=True)
-    updated_at: models.DateTimeField[datetime] = models.DateTimeField(auto_now=True)
-    finalized_at: models.DateTimeField[datetime | None] = models.DateTimeField(
+    created_at: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now_add=True)
+    updated_at: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now=True)
+    finalized_at: models.DateTimeField[Any, Any] = models.DateTimeField(
         null=True, blank=True
     )
 
-    created_by: models.ForeignKey["User | None"] = models.ForeignKey(
+    created_by: models.ForeignKey[Any] = models.ForeignKey(
         "auth.User",
         on_delete=models.PROTECT,
         related_name="created_patient_examination_reports",
         null=True,
         blank=True,
     )
-    updated_by: models.ForeignKey["User | None"] = models.ForeignKey(
+    updated_by: models.ForeignKey[Any] = models.ForeignKey(
         "auth.User",
         on_delete=models.PROTECT,
         related_name="updated_patient_examination_reports",
         null=True,
         blank=True,
     )
-    finalized_by: models.ForeignKey["User | None"] = models.ForeignKey(
+    finalized_by: models.ForeignKey[Any] = models.ForeignKey(
         "auth.User",
         on_delete=models.PROTECT,
         related_name="finalized_patient_examination_reports",

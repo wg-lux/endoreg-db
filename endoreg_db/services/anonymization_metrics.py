@@ -60,6 +60,7 @@ UploadJobQuerySet = QuerySet[UploadJob]
 PHI_REGION_LABEL_NAME = "phi_region"
 PHI_REGION_INFORMATION_SOURCE_NAME = "lx_anonymizer_phi_detector"
 PHI_REGION_ANNOTATOR = "system:lx_anonymizer"
+PHI_REGION_IOU_THRESHOLD = 0.3
 MAX_METRICS_WINDOW_DAYS = 31
 MAX_PHI_REGION_MATCH_ANNOTATIONS = 5000
 
@@ -707,7 +708,7 @@ def _matched_phi_region_count(
             if iou > best_iou:
                 best_candidate = candidate
                 best_iou = iou
-        if best_candidate is not None and best_iou >= 0.3:
+        if best_candidate is not None and best_iou >= PHI_REGION_IOU_THRESHOLD:
             matched_human_ids.add(int(best_candidate["id"]))
             matched_count += 1
     return matched_count

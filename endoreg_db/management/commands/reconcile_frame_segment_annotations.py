@@ -5,6 +5,11 @@ import json
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 from pydantic import ValidationError
 
+from endoreg_db.management.commands._profiling import (
+    add_profiling_arguments,
+    command_profiling_config_from_options,
+    run_with_optional_profile,
+)
 from endoreg_db.services.frame_segment_reconciliation import (
     FrameSegmentReconciliationSpec,
     VALID_FRAME_SEGMENT_TRACKS,
@@ -61,8 +66,17 @@ class Command(BaseCommand):
             action="store_true",
             help="Write the reconciliation report as JSON.",
         )
+        add_profiling_arguments(parser)
 
     def handle(self, *args: object, **options: object) -> None:
+        profiling_config = command_profiling_config_from_options(options)
+        return run_with_optional_profile(
+            lambda: self._handle_unprofiled(*args, **options),
+            config=profiling_config,
+        )
+
+    def _handle_unprofiled(self, *args: object, **options: object) -> None:
+        _ = args
         try:
             command_options = (
                 ReconcileFrameSegmentAnnotationsCommandOptionsPayload.model_validate(

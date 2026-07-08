@@ -32,6 +32,10 @@ class _SerializerErrors(Protocol):
     def errors(self) -> Mapping[str, object]: ...
 
 
+class _VideoPredictionMetaWithModel(Protocol):
+    model_meta: object
+
+
 def _pk_int(value: object) -> int:
     pk = getattr(value, "pk", None)
     assert pk is not None
@@ -76,6 +80,8 @@ def _segment_crud_data(
 
 
 class LabelVideoSegmentModelTest(TestCase):
+    prediction_meta: _VideoPredictionMetaWithModel
+
     def setUp(self):
         load_data()
 
@@ -93,9 +99,10 @@ class LabelVideoSegmentModelTest(TestCase):
 
         self.source_prediction = get_information_source_prediction()
 
-        self.prediction_meta, _ = VideoPredictionMeta.objects.get_or_create(
+        prediction_meta, _ = VideoPredictionMeta.objects.get_or_create(
             video_file=self.video_file, model_meta=self.ai_model_meta
         )
+        self.prediction_meta = cast(_VideoPredictionMetaWithModel, prediction_meta)
 
         self.start_frame = 10
         video_frame_count = _video_frame_count(self.video_file)
@@ -107,7 +114,7 @@ class LabelVideoSegmentModelTest(TestCase):
         )
         self.segment = LabelVideoSegment.create_from_video(
             source=self.video_file,
-            prediction_meta=self.prediction_meta,
+            prediction_meta=cast(VideoPredictionMeta, self.prediction_meta),
             label=self.outside_label,
             start_frame_number=self.start_frame,
             end_frame_number=self.end_frame,

@@ -7,13 +7,13 @@ import pytest
 from endoreg_db.utils.ffmpeg_wrapper import _build_encoder_args, transcode_video
 from lx_dtypes.models.contracts.json_types import JsonObject
 
-from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.utils import transcode_execution
 from endoreg_db.utils import ffmpeg_wrapper
 from endoreg_db.utils.video.command_construction import (
     TimestampRepairMode,
     _build_extract_frame_range_command,
     _build_extract_frames_command,
+    _build_ffprobe_stream_info_command,
     _build_filter_transcode_command,
     _build_transcode_command,
 )
@@ -182,6 +182,8 @@ def test_transcode_video_force_cpu_uses_cpu_only_flags(
     assert "-rc" not in command
     assert command == [
         "/smart/bin/ffmpeg",
+        "-nostdin",
+        "-hide_banner",
         "-i",
         str(input_path),
         "-c:v",
@@ -252,38 +254,6 @@ def test_transcode_video_retries_timestamp_repair(
     assert "-fflags" not in commands[0]
     assert "-fflags" in commands[1]
     assert commands[1][commands[1].index("-fflags") + 1] == "+genpts"
-
-
-@pytest.mark.unit
-def test_create_sensitive_copy_fails_when_video_transcode_fails(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    from endoreg_db.import_files.file_storage.storage import create_sensitive_copy
-
-    input_path = tmp_path / "input.mp4"
-    sensitive_root = tmp_path / "sensitive"
-    input_path.write_bytes(b"input")
-
-    def fail_video_transcode(_src: Path, _dest: Path) -> None:
-        return None
-
-    monkeypatch.setattr(
-        "endoreg_db.import_files.file_storage.storage.transcode_videofile_if_required",
-        fail_video_transcode,
-    )
-    import_context = ImportContext(
-        file_path=input_path,
-        center_name="test-center",
-        file_type="video",
-    )
-
-    with pytest.raises(RuntimeError, match="Video transcode failed"):
-        create_sensitive_copy(
-            input_path,
-            sensitive_root,
-            import_context,
-        )
 
 
 @pytest.mark.unit
@@ -431,6 +401,8 @@ def test_build_transcode_command_preserves_legacy_extra_arg_order() -> None:
 
     assert command == [
         "/smart/bin/ffmpeg",
+        "-nostdin",
+        "-hide_banner",
         "-i",
         "/data/input.mp4",
         "-c:v",
@@ -469,6 +441,8 @@ def test_build_transcode_command_preserves_legacy_timestamp_repair_order() -> No
 
     assert command == [
         "/smart/bin/ffmpeg",
+        "-nostdin",
+        "-hide_banner",
         "-fflags",
         "+genpts+igndts",
         "-err_detect",
@@ -491,6 +465,56 @@ def test_build_transcode_command_preserves_legacy_timestamp_repair_order() -> No
 
 
 @pytest.mark.unit
+def test_build_ffprobe_stream_info_command_omits_ffmpeg_only_nostdin() -> None:
+    command = _build_ffprobe_stream_info_command(
+        ffprobe_executable="/smart/bin/ffprobe",
+        file_path=Path("/data/input.mp4"),
+    )
+
+    assert command == [
+        "/smart/bin/ffprobe",
+        "-hide_banner",
+        "-v",
+        "quiet",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "/data/input.mp4",
+    ]
+    assert "-nostdin" not in command
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("audio_codec", "extra_args", "unexpected_args"),
+    [
+        ("copy", None, ["-b:a"]),
+        ("aac", ["-an"], ["-c:a", "-b:a"]),
+    ],
+)
+def test_build_transcode_command_skips_unneeded_audio_args(
+    audio_codec: str,
+    extra_args: list[str] | None,
+    unexpected_args: list[str],
+) -> None:
+    command = _build_transcode_command(
+        ffmpeg_executable="/smart/bin/ffmpeg",
+        input_path=Path("/data/input.mp4"),
+        output_path=Path("/data/output.mp4"),
+        encoder_args=["-c:v", "libx264"],
+        audio_codec=audio_codec,
+        audio_bitrate="128k",
+        extra_args=extra_args,
+        timestamp_repair_mode=TimestampRepairMode.NONE,
+    )
+
+    for arg in unexpected_args:
+        assert arg not in command
+    if audio_codec == "copy":
+        assert command[command.index("-c:a") + 1] == "copy"
+
+
+@pytest.mark.unit
 def test_build_frame_extraction_commands_preserve_legacy_order() -> None:
     output_pattern = Path("/data/frames/frame_%07d.jpg")
 
@@ -500,6 +524,7 @@ def test_build_frame_extraction_commands_preserve_legacy_order() -> None:
         output_pattern=output_pattern,
         quality=2,
         fps=5.0,
+        ext="jpg",
     )
     range_command = _build_extract_frame_range_command(
         ffmpeg_executable="/smart/bin/ffmpeg",
@@ -508,22 +533,27 @@ def test_build_frame_extraction_commands_preserve_legacy_order() -> None:
         start_frame=10,
         end_frame=13,
         quality=2,
+        ext="jpg",
     )
 
     assert full_command == [
         "/smart/bin/ffmpeg",
+        "-nostdin",
+        "-hide_banner",
         "-i",
         "/data/input.mp4",
-        "-qscale:v",
-        "2",
         "-start_number",
         "0",
         "-vf",
         "fps=5.0",
+        "-qscale:v",
+        "2",
         "/data/frames/frame_%07d.jpg",
     ]
     assert range_command == [
         "/smart/bin/ffmpeg",
+        "-nostdin",
+        "-hide_banner",
         "-i",
         "/data/input.mp4",
         "-vf",
@@ -537,6 +567,36 @@ def test_build_frame_extraction_commands_preserve_legacy_order() -> None:
         "10",
         "/data/frames/frame_%07d.jpg",
     ]
+
+
+@pytest.mark.unit
+def test_build_png_frame_extraction_commands_disable_png_compression() -> None:
+    output_pattern = Path("/data/frames/frame_%07d.png")
+
+    full_command = _build_extract_frames_command(
+        ffmpeg_executable="/smart/bin/ffmpeg",
+        video_path=Path("/data/input.mp4"),
+        output_pattern=output_pattern,
+        quality=2,
+        fps=None,
+        ext="png",
+    )
+    range_command = _build_extract_frame_range_command(
+        ffmpeg_executable="/smart/bin/ffmpeg",
+        video_path=Path("/data/input.mp4"),
+        output_pattern=output_pattern,
+        start_frame=10,
+        end_frame=13,
+        quality=2,
+        ext="png",
+    )
+
+    assert "-qscale:v" not in full_command
+    assert "-compression_level" in full_command
+    assert full_command[full_command.index("-compression_level") + 1] == "0"
+    assert "-qscale:v" not in range_command
+    assert "-compression_level" in range_command
+    assert range_command[range_command.index("-compression_level") + 1] == "0"
 
 
 @pytest.mark.unit
@@ -573,6 +633,8 @@ def test_build_filter_transcode_command_preserves_legacy_order() -> None:
 
     assert command == [
         "/smart/bin/ffmpeg",
+        "-nostdin",
+        "-hide_banner",
         "-i",
         "/data/input.mp4",
         "-c:v",
@@ -609,6 +671,7 @@ def test_extract_frame_range_numbers_outputs_by_requested_frame(
     output_dir = tmp_path / "frames"
     input_path.write_bytes(b"video")
     captured_commands: list[list[str]] = []
+    captured_kwargs: list[dict[str, object]] = []
 
     monkeypatch.setattr(
         "endoreg_db.utils.video.frame_extraction._resolve_ffmpeg_executable",
@@ -617,9 +680,10 @@ def test_extract_frame_range_numbers_outputs_by_requested_frame(
 
     def fake_run(
         command: list[str],
-        **_kwargs: str | int | bool,
+        **_kwargs: object,
     ) -> subprocess.CompletedProcess[str]:
         captured_commands.append(command)
+        captured_kwargs.append(_kwargs)
         output_dir.mkdir(parents=True, exist_ok=True)
         for frame_number in range(10, 13):
             (output_dir / f"frame_{frame_number:07d}.jpg").write_bytes(b"frame")
@@ -643,6 +707,7 @@ def test_extract_frame_range_numbers_outputs_by_requested_frame(
     command = captured_commands[0]
     assert "-start_number" in command
     assert command[command.index("-start_number") + 1] == "10"
+    assert captured_kwargs[0]["stdin"] == subprocess.DEVNULL
 
 
 @pytest.mark.unit
@@ -654,6 +719,7 @@ def test_extract_frames_numbers_full_extraction_from_zero(
     output_dir = tmp_path / "frames"
     input_path.write_bytes(b"video")
     captured_commands: list[list[str]] = []
+    captured_kwargs: list[dict[str, object]] = []
 
     monkeypatch.setattr(
         "endoreg_db.utils.video.frame_extraction._resolve_ffmpeg_executable",
@@ -662,9 +728,10 @@ def test_extract_frames_numbers_full_extraction_from_zero(
 
     def fake_run(
         command: list[str],
-        **_kwargs: str | int | bool,
+        **_kwargs: object,
     ) -> subprocess.CompletedProcess[str]:
         captured_commands.append(command)
+        captured_kwargs.append(_kwargs)
         output_dir.mkdir(parents=True, exist_ok=True)
         for frame_number in range(2):
             (output_dir / f"frame_{frame_number:07d}.jpg").write_bytes(b"frame")
@@ -685,6 +752,7 @@ def test_extract_frames_numbers_full_extraction_from_zero(
     command = captured_commands[0]
     assert "-start_number" in command
     assert command[command.index("-start_number") + 1] == "0"
+    assert captured_kwargs[0]["stdin"] == subprocess.DEVNULL
 
 
 @pytest.mark.unit

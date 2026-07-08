@@ -4,8 +4,10 @@ import logging
 import os
 import subprocess
 import threading
+import time
 from collections import deque
-from collections.abc import Iterable
+from collections.abc import Generator, Iterable
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO, Literal, cast
@@ -64,6 +66,14 @@ HLS_OUTBOUND_POLICY_ERROR = (
 
 FFMPEG_STDIN_CHUNK_BYTES = 1024 * 1024
 FFMPEG_STDERR_TAIL_BYTES = 64 * 1024
+FFMPEG_STDIN_WATCHDOG_SECONDS = 30.0
+FFMPEG_STDIN_WATCHDOG_INTERVAL_SECONDS = 1.0
+FFMPEG_INPUT_THREAD_JOIN_TIMEOUT_SECONDS = 2.0
+HLS_VIDEO_PRESET = "slow"
+HLS_VIDEO_CRF = "18"
+HLS_VIDEO_PROFILE = "high"
+HLS_VIDEO_PIXEL_FORMAT = "yuv420p"
+HLS_AUDIO_CODEC = "copy"
 
 _HLS_KEY_WRAP_AAD_PREFIX = b"endoreg-db:hls-content-key:v1"
 
@@ -113,6 +123,19 @@ class _PreparedArtifact:
     previous: _ArtifactSnapshot | None
 
 
+@dataclass(frozen=True)
+class _HlsSource:
+    source_file_name: str
+    field_file: FieldFile
+
+
+@dataclass
+class _FFmpegStdinFeedState:
+    last_activity: float
+    bytes_written: int = 0
+    error: BaseException | None = None
+
+
 def _coerce_hls_artifact_kind(value: object) -> VideoArtifactKind:
     if isinstance(value, VideoArtifactKind):
         return value
@@ -160,6 +183,14 @@ def _source_field_file(
     if not _field_file_has_name(field_file):
         raise FileNotFoundError("Video has no active raw source file for HLS")
     return field_file
+
+
+def _hls_source(video: VideoFile, artifact_kind: VideoArtifactKind) -> _HlsSource:
+    field_file = _source_field_file(video, artifact_kind)
+    return _HlsSource(
+        source_file_name=str(field_file.name),
+        field_file=field_file,
+    )
 
 
 def _key_wrap_aad(
@@ -477,6 +508,53 @@ def _write_transient_key_files(
     return key_path, key_info_path
 
 
+@contextmanager
+def _temporary_hls_key_material(
+    *,
+    temp_key_dir: Path,
+    cek: bytes,
+    key_uri: str,
+    iv_hex: str,
+) -> Generator[tuple[Path, Path], None, None]:
+    ensure_directory(temp_key_dir, dir_mode=HLS_TEMP_DIRECTORY_MODE)
+    key_path = temp_key_dir / "hls.key"
+    key_info_path = temp_key_dir / "key_info.txt"
+    _write_transient_key_files(
+        temp_dir=temp_key_dir,
+        cek=cek,
+        key_uri=key_uri,
+        iv_hex=iv_hex,
+    )
+    try:
+        yield key_path, key_info_path
+    finally:
+        try:
+            safe_unlink_file(key_info_path, missing_ok=True)
+        except Exception as cleanup_exc:
+            logger.warning(
+                "Failed to remove HLS key info file %s during cleanup: %s",
+                key_info_path,
+                cleanup_exc,
+            )
+
+        try:
+            secure_unlink_file(key_path, missing_ok=True)
+        except Exception as cleanup_exc:
+            logger.warning(
+                "Failed to remove HLS key file %s during cleanup: %s",
+                key_path,
+                cleanup_exc,
+            )
+        try:
+            safe_rmtree(temp_key_dir, missing_ok=True)
+        except Exception as cleanup_exc:
+            logger.warning(
+                "Failed to remove temporary HLS key dir %s during cleanup: %s",
+                temp_key_dir,
+                cleanup_exc,
+            )
+
+
 def _stderr_tail(chunks: deque[bytes]) -> str:
     return b"".join(chunks).decode("utf-8", errors="replace").strip()
 
@@ -490,7 +568,11 @@ def _drain_pipe_tail(pipe: BinaryIO, chunks: deque[bytes]) -> None:
             total_bytes -= len(chunks.popleft())
 
 
-def _feed_source_to_ffmpeg(source: BinaryIO, process: subprocess.Popen[bytes]) -> None:
+def _feed_source_to_ffmpeg(
+    source: BinaryIO,
+    process: subprocess.Popen[bytes],
+    state: _FFmpegStdinFeedState,
+) -> None:
     if process.stdin is None:
         raise RuntimeError("FFmpeg stdin pipe was not created")
 
@@ -499,7 +581,32 @@ def _feed_source_to_ffmpeg(source: BinaryIO, process: subprocess.Popen[bytes]) -
         if not chunk:
             break
         process.stdin.write(chunk)
-    process.stdin.close()
+        state.bytes_written += len(chunk)
+        state.last_activity = time.monotonic()
+
+
+def _start_stdin_pumper(
+    source: BinaryIO,
+    process: subprocess.Popen[bytes],
+) -> tuple[threading.Thread, _FFmpegStdinFeedState]:
+    state = _FFmpegStdinFeedState(last_activity=time.monotonic())
+
+    def _pump() -> None:
+        try:
+            _feed_source_to_ffmpeg(source=source, process=process, state=state)
+        except BaseException as exc:
+            state.error = exc
+        finally:
+            if process.stdin is not None and not process.stdin.closed:
+                process.stdin.close()
+
+    thread = threading.Thread(
+        target=_pump,
+        name="ffmpeg-stdin-pumper",
+        daemon=True,
+    )
+    thread.start()
+    return thread, state
 
 
 def _ffmpeg_command(
@@ -518,18 +625,22 @@ def _ffmpeg_command(
         "-y",
         "-i",
         "pipe:0",
+        "-map",
+        "0:v:0",
+        "-map",
+        "0:a?",
         "-codec:v",
         "libx264",
+        "-preset",
+        HLS_VIDEO_PRESET,
         "-profile:v",
-        "main",
-        "-level",
-        "3.1",
+        HLS_VIDEO_PROFILE,
         "-crf",
-        "23",
+        HLS_VIDEO_CRF,
+        "-pix_fmt",
+        HLS_VIDEO_PIXEL_FORMAT,
         "-codec:a",
-        "aac",
-        "-b:a",
-        "128k",
+        HLS_AUDIO_CODEC,
         "-f",
         "hls",
         "-hls_time",
@@ -567,6 +678,7 @@ def _run_ffmpeg_hls(
         stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
     )
+    input_thread, input_state = _start_stdin_pumper(source=source, process=process)
     stderr_thread: threading.Thread | None = None
     if process.stderr is not None:
         stderr_thread = threading.Thread(
@@ -577,24 +689,94 @@ def _run_ffmpeg_hls(
         stderr_thread.start()
 
     try:
-        _feed_source_to_ffmpeg(source, process)
-        return_code = process.wait()
+        # 1. Watchdog während der Stdin-Einspeisung
+        while input_thread.is_alive():
+            input_thread.join(timeout=FFMPEG_STDIN_WATCHDOG_INTERVAL_SECONDS)
+
+            if input_state.error is not None:
+                raise RuntimeError(
+                    "FFmpeg stdin pump failed with "
+                    f"{type(input_state.error).__name__}: {input_state.error}"
+                ) from input_state.error
+
+            if process.poll() is not None:
+                raise RuntimeError(
+                    "FFmpeg exited before stdin feed completed with "
+                    f"returncode={process.returncode}"
+                )
+
+            idle_seconds = time.monotonic() - input_state.last_activity
+            if idle_seconds > FFMPEG_STDIN_WATCHDOG_SECONDS:
+                raise TimeoutError(
+                    f"FFmpeg input stream stalled for {idle_seconds:.1f}s while feeding chunks"
+                )
+
+        if input_state.error is not None:
+            raise RuntimeError(
+                "FFmpeg stdin pump failed with "
+                f"{type(input_state.error).__name__}: {input_state.error}"
+            ) from input_state.error
+
+        # 2. Absicherung gegen Hangs beim Muxing / Finalisieren
+        try:
+            return_code = process.wait(timeout=FFMPEG_STDIN_WATCHDOG_SECONDS)
+        except subprocess.TimeoutExpired as exc:
+            raise TimeoutError(
+                "FFmpeg hung during muxing/finalization after input stream completed"
+            ) from exc
+
+    except TimeoutError as exc:
+        try:
+            process.kill()
+        finally:
+            try:
+                return_code = process.wait(timeout=5.0)
+            except Exception:
+                return_code = -1
+        raise RuntimeError(
+            "FFmpeg HLS pipeline timed out: "
+            f"returncode={return_code} stderr={_stderr_tail(stderr_chunks)}"
+        ) from exc
     except (BrokenPipeError, OSError) as exc:
-        process.kill()
-        return_code = process.wait()
+        try:
+            process.kill()
+        finally:
+            try:
+                return_code = process.wait(timeout=5.0)
+            except Exception:
+                return_code = -1
         raise RuntimeError(
             "FFmpeg HLS pipeline terminated while reading source: "
             f"returncode={return_code} stderr={_stderr_tail(stderr_chunks)}"
         ) from exc
+    except RuntimeError as exc:
+        try:
+            process.kill()
+        finally:
+            try:
+                return_code = process.wait(timeout=5.0)
+            except Exception:
+                return_code = -1
+        raise RuntimeError(
+            "FFmpeg HLS stdin pipeline failed: "
+            f"returncode={return_code} stderr={_stderr_tail(stderr_chunks)}"
+        ) from exc
     except BaseException:
-        process.kill()
-        process.wait()
+        try:
+            process.kill()
+        finally:
+            try:
+                process.wait(timeout=5.0)
+            except Exception:
+                pass
         raise
     finally:
         if process.stdin is not None and not process.stdin.closed:
             process.stdin.close()
+        if input_thread.is_alive():
+            input_thread.join(timeout=FFMPEG_INPUT_THREAD_JOIN_TIMEOUT_SECONDS)
         if stderr_thread is not None:
-            stderr_thread.join(timeout=5)
+            stderr_thread.join(timeout=5.0)
 
     if return_code != 0:
         raise RuntimeError(
@@ -606,6 +788,16 @@ def _run_ffmpeg_hls(
 def _open_field_file(field_file: FieldFile) -> BinaryIO:
     field_file.open("rb")
     return cast(BinaryIO, field_file.file)
+
+
+@contextmanager
+def _open_hls_source(source: _HlsSource) -> Generator[BinaryIO, None, None]:
+    field_file = source.field_file
+    handle = _open_field_file(field_file)
+    try:
+        yield handle
+    finally:
+        field_file.close()
 
 
 def _ready_artifact_paths_exist(artifact: VideoHlsArtifact) -> bool:
@@ -718,6 +910,30 @@ def _cleanup_partial_output(target_dir: Path) -> None:
         safe_rmtree(parent, missing_ok=True)
 
 
+def _cleanup_replaced_artifact(snapshot: _ArtifactSnapshot | None) -> None:
+    if snapshot is None:
+        return
+
+    playlist_path = resolve_existing_protected_media_path(
+        snapshot.playlist_relative_path
+    )
+    segment_dir = resolve_existing_protected_media_path(
+        snapshot.segment_directory_relative_path
+    )
+    if segment_dir is None and playlist_path is None:
+        return
+
+    if segment_dir is not None:
+        safe_rmtree(segment_dir, missing_ok=True)
+        parent = segment_dir.parent
+        if parent.exists() and not any(_iter_path_tree(parent)):
+            safe_rmtree(parent, missing_ok=True)
+        return
+
+    if playlist_path is not None:
+        safe_unlink_file(playlist_path, missing_ok=True)
+
+
 def materialize_video_hls(
     video_id: int,
     *,
@@ -731,8 +947,8 @@ def materialize_video_hls(
             return existing
 
     video = VideoFile.objects.get(pk=int(video_id))
-    field_file = _source_field_file(video, parsed_kind)
-    source_file_name = str(field_file.name)
+    source_ref = _hls_source(video, parsed_kind)
+    source_file_name = source_ref.source_file_name
 
     cek = os.urandom(HLS_CONTENT_KEY_BYTES)
     key_id = uuid4()
@@ -767,8 +983,6 @@ def materialize_video_hls(
     )
     temp_key_dir = _temporary_key_dir(video_id=int(video.pk), key_id=key_id)
     temp_output_dir = _temporary_output_dir(video_id=int(video.pk), key_id=key_id)
-    key_path = temp_key_dir / "hls.key"
-    key_info_path = temp_key_dir / "key_info.txt"
     playlist_path = target_dir / "playlist.m3u8"
     temp_playlist_path = temp_output_dir / "playlist.m3u8"
     temp_segment_pattern = temp_output_dir / "seg_%03d.ts"
@@ -779,23 +993,20 @@ def materialize_video_hls(
         safe_rmtree(target_dir, missing_ok=True)
         safe_rmtree(temp_output_dir, missing_ok=True)
         ensure_directory(temp_output_dir, dir_mode=HLS_TEMP_DIRECTORY_MODE)
-        _write_transient_key_files(
-            temp_dir=temp_key_dir,
+        with _temporary_hls_key_material(
+            temp_key_dir=temp_key_dir,
             cek=cek,
             key_uri=key_uri,
             iv_hex=iv_hex,
-        )
-        source = _open_field_file(field_file)
-        try:
-            _run_ffmpeg_hls(
-                source=source,
-                key_info_path=key_info_path,
-                segment_pattern=temp_segment_pattern,
-                playlist_path=temp_playlist_path,
-                segment_base_url=segment_base_url,
-            )
-        finally:
-            field_file.close()
+        ) as (_, _key_info_path):
+            with _open_hls_source(source_ref) as source:
+                _run_ffmpeg_hls(
+                    source=source,
+                    key_info_path=_key_info_path,
+                    segment_pattern=temp_segment_pattern,
+                    playlist_path=temp_playlist_path,
+                    segment_base_url=segment_base_url,
+                )
         segment_count = _assert_hls_outputs(
             playlist_path=temp_playlist_path,
             target_dir=temp_output_dir,
@@ -810,23 +1021,41 @@ def materialize_video_hls(
             segment_directory_relative_path=to_protected_media_relative(target_dir),
             segment_count=segment_count,
         )
+        try:
+            _cleanup_replaced_artifact(prepared.previous)
+        except Exception as cleanup_exc:
+            logger.warning(
+                "Could not remove replaced HLS artifact after materialization: %s",
+                cleanup_exc,
+                exc_info=True,
+            )
         return _result_from_ready_artifact(artifact, status="materialized")
-    except Exception as exc:
+    except BaseException as exc:
         safe_rmtree(temp_output_dir, missing_ok=True)
         _cleanup_partial_output(target_dir)
-        _mark_artifact_failed(
-            artifact_id=prepared.artifact_id,
-            error=str(exc),
-            previous=prepared.previous,
-        )
+        try:
+            # Erzeuge eine saubere Fehlermeldung auch für leere SystemExits
+            error_msg = (
+                f"System termination or unhandled exception: {type(exc).__name__}"
+            )
+            if str(exc):
+                error_msg += f" - {exc}"
+
+            _mark_artifact_failed(
+                artifact_id=prepared.artifact_id,
+                error=error_msg,
+                previous=prepared.previous,
+            )
+        except Exception as mark_exc:
+            logger.warning(
+                "Failed to persist failed state for HLS artifact %s: %s",
+                prepared.artifact_id,
+                mark_exc,
+                exc_info=True,
+            )
         raise
     finally:
-        try:
-            secure_unlink_file(key_path, missing_ok=True)
-        finally:
-            safe_unlink_file(key_info_path, missing_ok=True)
-            safe_rmtree(temp_key_dir, missing_ok=True)
-            safe_rmtree(temp_output_dir, missing_ok=True)
+        safe_rmtree(temp_output_dir, missing_ok=True)
 
 
 def get_ready_hls_artifact(

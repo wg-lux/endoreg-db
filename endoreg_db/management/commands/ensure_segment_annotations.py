@@ -7,11 +7,16 @@ from typing import TypedDict, cast
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 from lx_dtypes.models.contracts import validate_segment_annotation_ensure_payload
 
+from endoreg_db.management.commands._profiling import (
+    add_profiling_arguments,
+    command_profiling_config_from_options,
+    run_with_optional_profile,
+)
 from endoreg_db.models import VideoFile
 from endoreg_db.services.segment_annotations import ensure_segment_annotations
 
 
-type _CommandOption = NoneType | bool | list[int] | str
+type _CommandOption = NoneType | bool | int | list[int] | str
 type _IdSequence = NoneType | Sequence[int]
 
 
@@ -64,8 +69,17 @@ class Command(BaseCommand):
             dest="dry_run",
             help="Report how many annotations would be created without inserting rows.",
         )
+        add_profiling_arguments(parser)
 
     def handle(self, *args: str, **options: _CommandOption) -> None:
+        profiling_config = command_profiling_config_from_options(options)
+        return run_with_optional_profile(
+            lambda: self._handle_unprofiled(*args, **options),
+            config=profiling_config,
+        )
+
+    def _handle_unprofiled(self, *args: str, **options: _CommandOption) -> None:
+        _ = args
         all_videos = self._bool_option(options, "all_videos")
         dry_run = self._bool_option(options, "dry_run")
         payload = validate_segment_annotation_ensure_payload(

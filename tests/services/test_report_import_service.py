@@ -9,7 +9,7 @@ import logging
 import os
 import tempfile
 from pathlib import Path
-from typing import cast
+from typing import Protocol, cast
 
 import pytest
 from django.test import TestCase
@@ -182,9 +182,13 @@ class TestReportImportService(TestCase):
             self.assertEqual(raw_pdf.anonym_examination_report_id, report_obj.pk)
             linked_raw_pdf = cast(RawPdfFile, getattr(report_obj, "raw_pdf_file"))
             self.assertEqual(linked_raw_pdf.pk, raw_pdf.pk)
-            report_type = report_obj.type
+            report_type = cast(_AnonymizedReportType, getattr(report_obj, "type"))
             assert report_type is not None
             self.assertEqual(report_type.name, "report_draft")
 
         finally:
             safe_unlink_file(pdf_path, missing_ok=True)
+
+
+class _AnonymizedReportType(Protocol):
+    name: str

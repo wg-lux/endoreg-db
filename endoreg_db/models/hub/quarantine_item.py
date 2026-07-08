@@ -1,24 +1,19 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Iterable
 from datetime import datetime
 from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias
+from typing import Any, TYPE_CHECKING, TypeAlias
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.db import models
-from lx_dtypes.models.contracts.json_types import JsonObject
 
 from endoreg_db.schemas import validate_quarantine_item_metadata
+from endoreg_db.utils.validation_types import ValidationErrorMessageArg
 
 if TYPE_CHECKING:
-    from django.core.exceptions import ValidationErrorMessageArg
-
     from .upload_job import UploadJob
-else:
-    ValidationErrorMessageArg: TypeAlias = str
 
 NoQuarantineRelationValue: TypeAlias = NoneType
 QuarantineUploadJob: TypeAlias = "UploadJob | NoQuarantineRelationValue"
@@ -35,60 +30,60 @@ class QuarantineItem(models.Model):
         MISSING = "missing", "Missing"
         FAILED = "failed", "Failed"
 
-    id: models.UUIDField[uuid.UUID] = models.UUIDField(
+    id: models.UUIDField[uuid.UUID, Any] = models.UUIDField(
         primary_key=True,
         default=uuid.uuid4,
         editable=False,
     )
-    path: models.TextField[str] = models.TextField(unique=True)
-    relative_path: models.TextField[str] = models.TextField(db_index=True)
-    original_filename: models.CharField[str] = models.CharField(
+    path: models.TextField[str, Any] = models.TextField(unique=True)
+    relative_path: models.TextField[str, Any] = models.TextField(db_index=True)
+    original_filename: models.CharField[str, Any] = models.CharField(
         max_length=512,
         blank=True,
     )
-    size_bytes: models.BigIntegerField[int] = models.BigIntegerField(default=0)
-    file_mtime_ns: models.BigIntegerField[int] = models.BigIntegerField(default=0)
-    quarantined_at: models.DateTimeField[datetime] = models.DateTimeField()
-    last_seen_at: models.DateTimeField[datetime] = models.DateTimeField()
-    status: models.CharField[str] = models.CharField(
+    size_bytes: models.BigIntegerField[int, Any] = models.BigIntegerField(default=0)
+    file_mtime_ns: models.BigIntegerField[int, Any] = models.BigIntegerField(default=0)
+    quarantined_at: models.DateTimeField[datetime, Any] = models.DateTimeField()
+    last_seen_at: models.DateTimeField[datetime, Any] = models.DateTimeField()
+    status: models.CharField[str, Any] = models.CharField(
         max_length=32,
         choices=Status.choices,
         default=Status.PENDING_REVIEW,
         db_index=True,
     )
-    source_upload_job: models.ForeignKey[QuarantineUploadJob] = models.ForeignKey(
+    source_upload_job: models.ForeignKey[Any] = models.ForeignKey(
         "UploadJob",
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
         related_name="quarantine_items",
     )
-    metadata: models.JSONField[JsonObject] = models.JSONField(
+    metadata: models.JSONField[Any, Any] = models.JSONField(
         default=dict,
         blank=True,
     )
-    decision_reason: models.TextField[str] = models.TextField(blank=True)
-    reviewed_by: models.ForeignKey[QuarantineUser | None] = models.ForeignKey(
+    decision_reason: models.TextField[str, Any] = models.TextField(blank=True)
+    reviewed_by: models.ForeignKey[Any] = models.ForeignKey(
         User,
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
         related_name="reviewed_quarantine_items",
     )
-    reviewed_at: models.DateTimeField[QuarantineDateTime] = models.DateTimeField(
+    reviewed_at: models.DateTimeField[QuarantineDateTime, Any] = models.DateTimeField(
         null=True, blank=True
     )
-    delete_eligible_at: models.DateTimeField[QuarantineDateTime] = models.DateTimeField(
+    delete_eligible_at: models.DateTimeField[QuarantineDateTime, Any] = (
+        models.DateTimeField(null=True, blank=True)
+    )
+    deleted_at: models.DateTimeField[QuarantineDateTime, Any] = models.DateTimeField(
         null=True, blank=True
     )
-    deleted_at: models.DateTimeField[QuarantineDateTime] = models.DateTimeField(
-        null=True, blank=True
-    )
-    error_detail: models.TextField[str] = models.TextField(blank=True)
-    created_at: models.DateTimeField[datetime] = models.DateTimeField(
+    error_detail: models.TextField[str, Any] = models.TextField(blank=True)
+    created_at: models.DateTimeField[datetime, Any] = models.DateTimeField(
         auto_now_add=True,
     )
-    updated_at: models.DateTimeField[datetime] = models.DateTimeField(
+    updated_at: models.DateTimeField[datetime, Any] = models.DateTimeField(
         auto_now=True,
     )
 
@@ -130,17 +125,6 @@ class QuarantineItem(models.Model):
         if errors:
             raise ValidationError(errors)
 
-    def save(
-        self,
-        force_insert: bool = False,
-        force_update: bool = False,
-        using: str | None = None,
-        update_fields: Iterable[str] | None = None,
-    ) -> None:
+    def save(self, *args: object, **kwargs: object) -> None:
         self.clean()
-        super().save(
-            force_insert=force_insert,
-            force_update=force_update,
-            using=using,
-            update_fields=update_fields,
-        )
+        super().save(*args, **kwargs)

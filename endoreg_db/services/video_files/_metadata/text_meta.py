@@ -12,7 +12,6 @@ from endoreg_db.models.metadata import SensitiveMeta
 from endoreg_db.models.metadata.sensitive_meta_logic import (
     update_or_create_sensitive_meta_from_dict,
 )
-from endoreg_db.services.video_files._frames import _extract_frames
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
@@ -47,43 +46,11 @@ def _update_text_metadata(
     Raises ValueError if pre-conditions not met, RuntimeError on processing failure.
 
     State Transitions:
-        - Pre-condition: Requires state.frames_extracted=True.
         - Post-condition: Sets state.text_meta_extracted=True (even if no text found).
     """
     logger.debug(f"Updating text metadata for video {video.video_hash}")
     state = cast(_VideoTextMetaState, video.get_or_create_state())
-
-    # --- Pre-condition Checks ---
-    if not state.frames_extracted:
-        # Attempt to extract frames automatically if they're not available
-        logger.warning(
-            f"Frames not extracted for video {video.video_hash}. Attempting automatic frame extraction..."
-        )
-        try:
-            success = _extract_frames(video, overwrite=False)
-        except (FileNotFoundError, RuntimeError, ValueError, OSError) as exc:
-            logger.error(
-                "Failed to extract frames for video %s: %s",
-                video.video_hash,
-                exc,
-                exc_info=True,
-            )
-            raise ValueError(
-                f"Cannot update text metadata for video {video.video_hash}: Frames not extracted and automatic extraction failed"
-            ) from exc
-
-        if not success:
-            raise ValueError(
-                f"Cannot update text metadata for video {video.video_hash}: Frame extraction returned False"
-            )
-
-        state.refresh_from_db()
-        if not state.frames_extracted:
-            raise ValueError(
-                f"Cannot update text metadata for video {video.video_hash}: Frame extraction completed but state was not updated"
-            )
-
-        logger.info(f"Successfully extracted frames for video {video.video_hash}")
+    state.refresh_from_db()
 
     if state.text_meta_extracted and not overwrite:
         logger.info(

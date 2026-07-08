@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from django.db import models
 
 if TYPE_CHECKING:
-    from endoreg_db.models.media.video.video_file import VideoFile
+    pass
 
 
 class MediaOperationLeaseManager(models.Manager["MediaOperationLease"]):
@@ -26,23 +25,23 @@ class MediaOperationLease(models.Model):
         (LEASE_SEGMENT_UPDATE, "Segment update"),
     )
 
-    video: models.ForeignKey["VideoFile"] = models.ForeignKey(
+    video: models.ForeignKey[Any] = models.ForeignKey(
         "VideoFile",
         on_delete=models.CASCADE,
         related_name="media_operation_leases",
     )
-    lease_type: models.CharField[str] = models.CharField(
+    lease_type: models.CharField[Any, Any] = models.CharField(
         max_length=32, choices=LEASE_TYPES
     )
-    token: models.UUIDField[uuid.UUID] = models.UUIDField(
+    token: models.UUIDField[Any, Any] = models.UUIDField(
         default=uuid.uuid4, unique=True, editable=False
     )
-    expires_at: models.DateTimeField[datetime] = models.DateTimeField(db_index=True)
+    expires_at: models.DateTimeField[Any, Any] = models.DateTimeField(db_index=True)
     metadata: models.JSONField[dict[str, str]] = models.JSONField(
         default=dict, blank=True
     )
-    created_at: models.DateTimeField[datetime] = models.DateTimeField(auto_now_add=True)
-    updated_at: models.DateTimeField[datetime] = models.DateTimeField(auto_now=True)
+    created_at: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now_add=True)
+    updated_at: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now=True)
 
     if TYPE_CHECKING:
         video_id: int

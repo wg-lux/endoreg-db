@@ -235,6 +235,40 @@ def test_atomic_move_file_falls_back_to_copy_then_unlink_on_cross_device_error(
 
 
 @pytest.mark.unit
+def test_atomic_move_file_copy_failure_keeps_source_and_removes_partial_destination(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    source = tmp_path / "ingest" / "source.bin"
+    destination = tmp_path / "protected" / "destination.bin"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_bytes(b"complete source payload")
+    calls = 0
+
+    def replace_with_cross_device_error(src: str | Path, dst: str | Path) -> None:
+        nonlocal calls
+        _ = src
+        _ = dst
+        calls += 1
+        raise OSError(errno.EXDEV, "Invalid cross-device link")
+
+    def copy2_with_partial_write(src: str, dst: str) -> None:
+        _ = src
+        Path(dst).write_bytes(b"partial")
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    monkeypatch.setattr(file_operations.os, "replace", replace_with_cross_device_error)
+    monkeypatch.setattr(file_operations.shutil, "copy2", copy2_with_partial_write)
+
+    with pytest.raises(OSError, match="No space left on device"):
+        atomic_move_file(source=source, destination=destination)
+
+    assert calls == 1
+    assert source.read_bytes() == b"complete source payload"
+    assert not destination.exists()
+    assert list(destination.parent.glob("destination.bin.tmp.*")) == []
+
+
+@pytest.mark.unit
 def test_safe_unlink_file_missing_required_path_logs_and_raises(
     caplog: LogCaptureFixture, tmp_path: Path
 ) -> None:

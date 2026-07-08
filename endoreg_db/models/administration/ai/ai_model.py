@@ -7,7 +7,7 @@ from __future__ import annotations
 from logging import getLogger
 from pathlib import Path
 from types import NoneType
-from typing import TYPE_CHECKING, Protocol, TypeAlias, cast
+from typing import TYPE_CHECKING, Protocol, TypeAlias, cast, Any
 
 from django.db import models
 from icecream import ic
@@ -21,9 +21,7 @@ DEFAULT_PREDICTION_LABELSET_NAME = "multilabel_classification_colonoscopy_defaul
 NoAiModelRelationValue: TypeAlias = NoneType
 
 if TYPE_CHECKING:
-    from ...label.video_segmentation_labelset import VideoSegmentationLabelSet
     from ...metadata.model_meta import ModelMeta
-    from .model_type import ModelType
 
 
 class _AiModelPkSource(Protocol):
@@ -80,44 +78,40 @@ class AiModel(models.Model):
 
     objects = AiModelManager()
 
-    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
+    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
 
-    description: models.TextField[str | None] = models.TextField(blank=True, null=True)
-    model_type: models.ForeignKey[ModelType | None] = models.ForeignKey(
+    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
+    model_type: models.ForeignKey[Any, Any] = models.ForeignKey(
         "ModelType",
         on_delete=models.CASCADE,
         related_name="ai_models",
         blank=True,
         null=True,
     )
-    model_subtype: models.CharField[str | None] = models.CharField(
+    model_subtype: models.CharField[Any, Any] = models.CharField(
         max_length=255,
         blank=True,
         null=True,
     )
-    video_segmentation_labelset: models.ForeignKey[VideoSegmentationLabelSet | None] = (
-        models.ForeignKey(
-            "VideoSegmentationLabelSet",
-            on_delete=models.CASCADE,
-            related_name="ai_models",
-            blank=True,
-            null=True,
-        )
+    video_segmentation_labelset: models.ForeignKey[Any, Any] = models.ForeignKey(
+        "VideoSegmentationLabelSet",
+        on_delete=models.CASCADE,
+        related_name="ai_models",
+        blank=True,
+        null=True,
     )
-    active_meta: models.ForeignKey[ModelMeta | NoAiModelRelationValue | None] = (
-        models.ForeignKey(
-            "ModelMeta",
-            on_delete=models.SET_NULL,
-            related_name="active_model",
-            blank=True,
-            null=True,
-        )
+    active_meta: models.ForeignKey[Any, Any] = models.ForeignKey(
+        "ModelMeta",
+        on_delete=models.SET_NULL,
+        related_name="active_model",
+        blank=True,
+        null=True,
     )
 
     if TYPE_CHECKING:
-        metadata_versions: models.QuerySet["ModelMeta"]
+        metadata_versions: models.QuerySet[ModelMeta]
 
-    def get_version(self, version: int) -> "ModelMeta":
+    def get_version(self, version: int) -> ModelMeta:
         """
         Retrieves the ModelMeta instance for the specified version.
 
@@ -153,7 +147,7 @@ class AiModel(models.Model):
             raise ValueError("Cannot resolve model metadata for an unsaved AiModel.")
 
     @staticmethod
-    def _model_meta_weights_exist(model_meta: "ModelMeta") -> bool:
+    def _model_meta_weights_exist(model_meta: ModelMeta) -> bool:
         if not model_meta.weights:
             return False
         try:
@@ -161,9 +155,7 @@ class AiModel(models.Model):
         except (OSError, ValueError):
             return False
 
-    def _ensure_default_huggingface_weights(
-        self, model_meta: "ModelMeta"
-    ) -> "ModelMeta":
+    def _ensure_default_huggingface_weights(self, model_meta: ModelMeta) -> ModelMeta:
         if self.name != DEFAULT_PREDICTION_MODEL_NAME:
             raise ValueError(
                 f"Model weights for '{self.name}' are missing and no Hugging Face fallback is configured."
@@ -181,7 +173,7 @@ class AiModel(models.Model):
             labelset_version=labelset.version,
         )
 
-    def _ensure_model_meta_belongs_to_self(self, model_meta: "ModelMeta") -> None:
+    def _ensure_model_meta_belongs_to_self(self, model_meta: ModelMeta) -> None:
         model = cast(_AiModelMetaModelSource, model_meta)
         model_pk = model.model.pk
         if model_pk != self.pk:
@@ -191,8 +183,8 @@ class AiModel(models.Model):
             )
 
     def _repair_missing_default_weights(
-        self, model_meta: "ModelMeta", source: str
-    ) -> "ModelMeta":
+        self, model_meta: ModelMeta, source: str
+    ) -> ModelMeta:
         if self.name != DEFAULT_PREDICTION_MODEL_NAME:
             raise ValueError(
                 f"{source} ModelMeta {model_meta.pk} for AiModel '{self.name}' has "
@@ -215,15 +207,13 @@ class AiModel(models.Model):
             )
         return repaired_meta
 
-    def _ensure_model_meta_ready(
-        self, model_meta: "ModelMeta", source: str
-    ) -> "ModelMeta":
+    def _ensure_model_meta_ready(self, model_meta: ModelMeta, source: str) -> ModelMeta:
         self._ensure_model_meta_belongs_to_self(model_meta)
         if self._model_meta_weights_exist(model_meta):
             return model_meta
         return self._repair_missing_default_weights(model_meta, source)
 
-    def get_latest_version(self) -> "ModelMeta":
+    def get_latest_version(self) -> ModelMeta:
         self._ensure_saved()
 
         active_meta = self.active_meta

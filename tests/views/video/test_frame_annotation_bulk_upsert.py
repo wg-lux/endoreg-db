@@ -13,6 +13,16 @@ from endoreg_db.views.video.ai import FrameAnnotationBulkUpsertView
 
 
 class FrameAnnotationBulkUpsertViewTest(TestCase):
+    factory: APIRequestFactory
+    center: Center
+    video: VideoFile
+    other_video: VideoFile
+    frame_1: Frame
+    frame_2: Frame
+    other_video_frame: Frame
+    label: Label
+    source: InformationSource
+
     def setUp(self):
         self.factory = APIRequestFactory()
         self.view = FrameAnnotationBulkUpsertView.as_view()

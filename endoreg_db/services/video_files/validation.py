@@ -21,7 +21,8 @@ def validate_video_metadata_annotation(
     from .state import get_or_create_video_state
 
     state = get_or_create_video_state(video)
-    meta = video.meta if isinstance(video.meta, dict) else {}
+    meta = video.meta if video.meta is not None else {}
+
     if (
         getattr(state, "processing_error", False)
         or meta.get("integrity_status") == "lost"

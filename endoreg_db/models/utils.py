@@ -31,7 +31,7 @@ _TEST_RUN_ENV = os.environ.get("TEST_RUN", "False")
 TEST_RUN = _TEST_RUN_ENV.lower() == "true"
 
 
-def prepare_bulk_frames(frame_paths: list[Path]) -> Iterator[tuple[int, File]]:
+def prepare_bulk_frames(frame_paths: list[Path]) -> Iterator[tuple[int, File[bytes]]]:
     """
     Reads the frame paths into memory as Django File objects.
     This avoids 'seek of closed file' errors by using BytesIO for each frame.
@@ -40,7 +40,7 @@ def prepare_bulk_frames(frame_paths: list[Path]) -> Iterator[tuple[int, File]]:
         frame_number = int(path.stem.split("_")[1])
         with open(path, "rb") as f:
             content = f.read()
-        file_obj: File = File(io.BytesIO(content), name=path.name)
+        file_obj: File[bytes] = File(io.BytesIO(content), name=path.name)
         yield frame_number, file_obj
 
 

@@ -30,8 +30,6 @@ from endoreg_db.models import (
 )
 
 from .default_objects import (
-    DEFAULT_CENTER_NAME,
-    DEFAULT_ENDOSCOPY_PROCESSOR_NAME,
     get_default_center,
     get_default_processor,
 )
@@ -48,6 +46,11 @@ _CACHE_SENTINEL = object()
 
 class _BytesFieldFile(Protocol):
     def save(self, name: str, content: File[bytes], save: bool = True) -> None: ...
+
+
+class _SegmentVideoLike(Protocol):
+    center: Center
+    processor: EndoscopyProcessor | None
 
 
 def configure_cache(namespace: Optional["CacheNamespace"]) -> None:
@@ -96,6 +99,9 @@ def _cache_pop(key: str) -> None:
 def _segment_payload_from_video(video: VideoFile) -> Dict[str, Any]:
     """Capture immutable info so stub videos can be rebuilt after DB flush."""
     raw_file_name = getattr(video.raw_file, "name", None) or ""
+    video_like = cast(_SegmentVideoLike, video)
+    center = video_like.center
+    processor = video_like.processor
 
     return {
         "pk": video.pk,
@@ -108,10 +114,8 @@ def _segment_payload_from_video(video: VideoFile) -> Dict[str, Any]:
         "width": int(video.width or 0),
         "height": int(video.height or 0),
         "frame_dir": video.frame_dir or "",
-        "center_name": getattr(video.center, "name", DEFAULT_CENTER_NAME),
-        "processor_name": getattr(
-            video.processor, "name", DEFAULT_ENDOSCOPY_PROCESSOR_NAME
-        ),
+        "center_name": center.name,
+        "processor_name": processor.name if processor is not None else "",
     }
 
 
@@ -126,10 +130,9 @@ def _hydrate_segment_video(payload: Dict[str, Any]) -> VideoFile:
             from tests.helpers.data_loader import load_center_data
 
             load_center_data()
-            center = get_default_center()
-
+        center = get_default_center()
     processor_name = payload.get("processor_name")
-    processor = None
+    processor: EndoscopyProcessor | None = None
     if processor_name:
         processor = EndoscopyProcessor.objects.filter(name=processor_name).first()
     if processor is None:

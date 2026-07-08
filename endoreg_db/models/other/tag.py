@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import ClassVar
+from typing import ClassVar, Any
 
 from django.db import models
 
@@ -10,7 +10,7 @@ class TagManager(models.Manager["Tag"]):
 
 
 class Tag(models.Model):
-    name: models.CharField[str] = models.CharField(max_length=100, unique=True)
+    name: models.CharField[Any, Any] = models.CharField(max_length=100, unique=True)
 
     objects: ClassVar[TagManager] = TagManager()  # pyright: ignore[reportIncompatibleVariableOverride]
 

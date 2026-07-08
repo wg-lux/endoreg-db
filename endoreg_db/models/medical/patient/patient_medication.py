@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, Any
 
 from django.db import models
-from lx_dtypes.models.contracts.json_types import JsonObject
 
 # Added imports for type hints
 if TYPE_CHECKING:
@@ -15,7 +14,6 @@ if TYPE_CHECKING:
     from endoreg_db.models.medical.medication.medication_intake_time import (
         MedicationIntakeTime,
     )
-    from endoreg_db.models.other.unit import Unit
     from endoreg_db.utils.links import ModelLinks
 
 
@@ -26,19 +24,19 @@ class PatientMedication(models.Model):
     Links a patient to a medication, its indication, dosage, intake times, and unit.
     """
 
-    patient: models.ForeignKey["Patient"] = models.ForeignKey(
+    patient: models.ForeignKey[Any] = models.ForeignKey(
         "Patient", on_delete=models.CASCADE
     )
-    medication_indication: models.ForeignKey["MedicationIndication | None"] = (
-        models.ForeignKey(
-            "MedicationIndication",
-            on_delete=models.CASCADE,
-            related_name="indication_patient_medications",
-            null=True,
-        )
+    medication_indication: models.ForeignKey[
+        "MedicationIndication", "MedicationIndication"
+    ] = models.ForeignKey(
+        "MedicationIndication",
+        on_delete=models.CASCADE,
+        related_name="indication_patient_medications",
+        null=True,
     )
 
-    medication: models.ForeignKey["Medication"] = models.ForeignKey(
+    medication: models.ForeignKey[Any] = models.ForeignKey(
         "Medication",
         on_delete=models.CASCADE,
         blank=True,
@@ -54,13 +52,11 @@ class PatientMedication(models.Model):
         blank=True,
     )
 
-    unit: models.ForeignKey["Unit | None"] = models.ForeignKey(
+    unit: models.ForeignKey[Any] = models.ForeignKey(
         "Unit", on_delete=models.CASCADE, null=True, blank=True
     )
-    dosage: models.JSONField[JsonObject | None] = models.JSONField(
-        null=True, blank=True
-    )
-    active: models.BooleanField[bool] = models.BooleanField(default=True)
+    dosage: models.JSONField[Any, Any] = models.JSONField(null=True, blank=True)
+    active: models.BooleanField[Any, Any] = models.BooleanField(default=True)
 
     objects: ClassVar[models.Manager["PatientMedication"]] = (  # pyright: ignore[reportIncompatibleVariableOverride]
         models.Manager()

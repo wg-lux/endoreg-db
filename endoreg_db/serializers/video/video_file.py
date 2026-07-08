@@ -23,7 +23,7 @@ from endoreg_db.config.env import DEFAULT_VIDEO_FPS
 from endoreg_db.services.video_files import get_active_video_file, get_video_fps
 from endoreg_db.utils.media_urls import (
     build_absolute_media_url,
-    build_video_stream_path,
+    build_video_hls_playlist_path,
 )
 from endoreg_db.utils.storage import ensure_local_file
 from endoreg_db.utils.storage_streaming import maybe_local_plaintext_path
@@ -106,7 +106,7 @@ class VideoFileSerializer(serializers.ModelSerializer[VideoFile]):
         self, obj: _VideoFileSerializerLike
     ) -> object:  # when we serialize a RawVideoFile object (video metadata), the get_video_url method is automatically invoked by DRF
         """
-        Return the absolute API URL for accessing the video file.
+        Return the absolute API HLS playlist URL for the processed video.
 
         If the video ID is invalid or the request context is missing, returns a dictionary with an error message.
         """
@@ -117,7 +117,10 @@ class VideoFileSerializer(serializers.ModelSerializer[VideoFile]):
             "request"
         )  # Gets the request object (provided by DRF).
         if request:
-            return build_absolute_media_url(request, build_video_stream_path(obj.id))
+            return build_absolute_media_url(
+                request,
+                build_video_hls_playlist_path(obj.id, file_type="processed"),
+            )
 
         return {"error": "Video URL not available"}
 

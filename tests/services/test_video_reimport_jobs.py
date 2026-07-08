@@ -3,6 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
 from pytest import MonkeyPatch
 
 
@@ -20,6 +21,7 @@ def test_async_reimport_uses_in_place_reanonymization(
     raw_path.write_bytes(b"raw")
     events: list[tuple[str, object]] = []
     service_calls: list[dict[str, object]] = []
+    hls_calls: list[object] = []
 
     class _FakeVideo:
         pk = 1
@@ -79,6 +81,10 @@ def test_async_reimport_uses_in_place_reanonymization(
     ) -> dict[str, object]:
         return {"status": "skipped", "queued": False}
 
+    def fake_regenerate_hls(target_video: object) -> dict[str, object]:
+        hls_calls.append(target_video)
+        return {"status": "materialized", "key_id": "reimport-hls-key"}
+
     monkeypatch.setattr(module, "VideoFile", _FakeVideoModel, raising=True)
     monkeypatch.setattr(
         module, "ensure_local_file", fake_ensure_local_file, raising=True
@@ -96,6 +102,12 @@ def test_async_reimport_uses_in_place_reanonymization(
     monkeypatch.setattr(
         module, "_run_prediction_refresh", fake_run_prediction_refresh, raising=True
     )
+    monkeypatch.setattr(
+        module,
+        "_regenerate_reimport_hls_artifacts",
+        fake_regenerate_hls,
+        raising=True,
+    )
 
     def fake_video_import_service_factory() -> _FakeService:
         return _FakeService()
@@ -106,4 +118,107 @@ def test_async_reimport_uses_in_place_reanonymization(
 
     assert ("reset", video) in events
     assert service_calls == [{"target_video": video, "source_path": raw_path}]
+    assert hls_calls == [video]
     assert ("mark_anonymized", video) in events
+
+
+def test_async_reimport_fails_if_hls_regeneration_fails(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    import endoreg_db.services.jobs.video_reimport_jobs as module
+
+    raw_path = tmp_path / "raw.mp4"
+    raw_path.write_bytes(b"raw")
+    events: list[tuple[str, object, object | None]] = []
+
+    class _FakeVideo:
+        pk = 1
+        video_hash = "video-hash"
+        raw_file = SimpleNamespace(name="raw.mp4")
+        center = SimpleNamespace(name="university_hospital_wuerzburg")
+        processor = SimpleNamespace(name="olympus_cv_1500")
+        video_meta = SimpleNamespace(processor=processor)
+        processed_file = SimpleNamespace(name="processed_videos_final/video.mp4")
+
+        def refresh_from_db(self) -> None:
+            events.append(("refresh_from_db", self, None))
+
+    video = _FakeVideo()
+
+    class _FakeVideoManager:
+        def select_related(self, *args: str) -> "_FakeVideoManager":
+            return self
+
+        def get(self, pk: int) -> _FakeVideo:
+            assert pk == 1
+            return video
+
+    class _FakeVideoModel:
+        objects = _FakeVideoManager()
+
+    class _FakeService:
+        def reanonymize_existing_video(
+            self, target_video: object, *, source_path: Path | None = None
+        ) -> object:
+            events.append(("reanonymize", target_video, source_path))
+            return target_video
+
+    @contextmanager
+    def _fake_atomic() -> Any:
+        yield
+
+    def fake_ensure_local_file(field_file: object) -> Any:
+        return _context_path(raw_path)
+
+    def fake_reset_reimport_state(target_video: object) -> int:
+        events.append(("reset", target_video, None))
+        return 1
+
+    def fake_mark_upload_jobs_error(target_video: object, error_detail: str) -> int:
+        events.append(("mark_error", target_video, error_detail))
+        return 1
+
+    def fail_mark_upload_jobs_anonymized(target_video: object) -> int:
+        raise AssertionError("failed HLS regeneration must not mark upload anonymized")
+
+    def fail_prediction_refresh(*, video: object, config: object) -> dict[str, object]:
+        raise AssertionError("failed HLS regeneration must not refresh predictions")
+
+    def fail_regenerate_hls(target_video: object) -> dict[str, object]:
+        raise RuntimeError("hls regeneration failed")
+
+    monkeypatch.setattr(module, "VideoFile", _FakeVideoModel, raising=True)
+    monkeypatch.setattr(
+        module, "ensure_local_file", fake_ensure_local_file, raising=True
+    )
+    monkeypatch.setattr(module.transaction, "atomic", _fake_atomic, raising=True)
+    monkeypatch.setattr(
+        module, "_reset_reimport_state", fake_reset_reimport_state, raising=True
+    )
+    monkeypatch.setattr(
+        module,
+        "_mark_upload_jobs_error",
+        fake_mark_upload_jobs_error,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        module,
+        "_mark_upload_jobs_anonymized",
+        fail_mark_upload_jobs_anonymized,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        module, "_run_prediction_refresh", fail_prediction_refresh, raising=True
+    )
+    monkeypatch.setattr(
+        module,
+        "_regenerate_reimport_hls_artifacts",
+        fail_regenerate_hls,
+        raising=True,
+    )
+    monkeypatch.setattr(module, "VideoImportService", lambda: _FakeService())
+
+    with pytest.raises(RuntimeError, match="hls regeneration failed"):
+        module._run_video_reimport_job(1)  # pyright: ignore[reportPrivateUsage]
+
+    assert ("mark_error", video, "hls regeneration failed") in events

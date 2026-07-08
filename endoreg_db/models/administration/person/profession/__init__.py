@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING, TypeAlias, Any
 
 from django.db import models
 
@@ -19,10 +19,8 @@ class ProfessionManager(models.Manager["Profession"]):
 
 class Profession(models.Model):
     objects = ProfessionManager()
-    name: models.CharField[str] = models.CharField(max_length=100)
-    description: models.TextField[ProfessionDescription | None] = models.TextField(
-        blank=True, null=True
-    )
+    name: models.CharField[Any, Any] = models.CharField(max_length=100)
+    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
 
     if TYPE_CHECKING:
 

@@ -18,7 +18,7 @@ else:
 from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
 from endoreg_db.utils.media_urls import (
     build_absolute_media_url,
-    build_video_stream_path,
+    build_video_hls_playlist_path,
 )
 
 
@@ -72,7 +72,7 @@ class VideoProcessingHistorySerializer(
 
     def get_download_url(self, obj: _VideoProcessingHistoryLike) -> str | None:
         """
-        Generate download URL for processed video file.
+        Generate playback URL for the processed HLS playlist.
 
         Args:
             obj: VideoProcessingHistory instance
@@ -87,7 +87,7 @@ class VideoProcessingHistorySerializer(
         request = context.get("request")
         return build_absolute_media_url(
             request,
-            build_video_stream_path(obj.video.id, file_type="processed"),
+            build_video_hls_playlist_path(obj.video.id, file_type="processed"),
         )
 
     def get_operation_display(self, obj: _VideoProcessingHistoryLike) -> str:

@@ -1,7 +1,7 @@
 # pyright: reportPrivateUsage=false
 import os
 from pathlib import Path
-from typing import cast
+from typing import Protocol, cast
 
 import pytest
 from django.conf import settings
@@ -57,6 +57,8 @@ def test_predict_video_with_huggingface_weights(base_db_data: object) -> None:
     )
 
     video_file = _prepare_video_file()
+    model_meta_like = cast(_ModelMetaLike, model_meta)
+    ai_model: _AiModelLike | None = None
     try:
         sequences = video_file.predict_video(
             model_meta=model_meta,
@@ -68,9 +70,8 @@ def test_predict_video_with_huggingface_weights(base_db_data: object) -> None:
         assert isinstance(sequences, dict)
         assert sequences, "Inference with Hugging Face weights should yield predictions"
         assert all(isinstance(spans, list) for spans in sequences.values())
-        label_names = {
-            label.name for label in model_meta.labelset.get_labels_in_order()
-        }
+        labelset = cast(_LabelSetLike, model_meta_like.labelset)
+        label_names = {label.name for label in labelset.get_labels_in_order()}
         assert set(sequences.keys()).issubset(label_names)
 
         prediction_meta_exists = VideoPredictionMeta.objects.filter(
@@ -82,7 +83,7 @@ def test_predict_video_with_huggingface_weights(base_db_data: object) -> None:
         )
 
     finally:
-        ai_model = model_meta.model
+        ai_model = model_meta_like.model
         weights = model_meta.weights
         video_file.delete_with_file()
         if weights.name:
@@ -155,9 +156,9 @@ def test_predict_video_with_local_fixture_weights(base_db_data: object) -> None:
             "Inference with local fixture weights should yield predictions"
         )
         assert all(isinstance(spans, list) for spans in sequences.values())
-        label_names = {
-            label.name for label in model_meta.labelset.get_labels_in_order()
-        }
+        model_meta_like = cast(_ModelMetaLike, model_meta)
+        labelset = cast(_LabelSetLike, model_meta_like.labelset)
+        label_names = {label.name for label in labelset.get_labels_in_order()}
         assert set(sequences.keys()).issubset(label_names)
 
         prediction_meta_exists = VideoPredictionMeta.objects.filter(
@@ -174,3 +175,27 @@ def test_predict_video_with_local_fixture_weights(base_db_data: object) -> None:
         if weights.name:
             weights.delete(save=False)
         model_meta.delete()
+
+
+class _MetadataVersionsLike(Protocol):
+    def exists(self) -> bool: ...
+    def delete(self) -> None: ...
+
+
+class _AiModelLike(Protocol):
+    metadata_versions: _MetadataVersionsLike
+
+    def delete(self) -> None: ...
+
+
+class _LabelLike(Protocol):
+    name: str
+
+
+class _LabelSetLike(Protocol):
+    def get_labels_in_order(self) -> list[_LabelLike]: ...
+
+
+class _ModelMetaLike(Protocol):
+    labelset: _LabelSetLike | None
+    model: _AiModelLike | None

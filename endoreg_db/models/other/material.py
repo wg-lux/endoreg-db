@@ -1,11 +1,10 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, Any
 
 from django.db import models
 
 if TYPE_CHECKING:
     from ..administration.product.product_material import ProductMaterial
-    from .emission import EmissionFactor
 
 
 class MaterialManager(models.Manager["Material"]):
@@ -16,13 +15,12 @@ class MaterialManager(models.Manager["Material"]):
 class Material(models.Model):
     objects: ClassVar[MaterialManager] = MaterialManager()  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    name: models.CharField[str] = models.CharField(max_length=255)
-    emission_factor: models.ForeignKey["EmissionFactor | None"] = models.ForeignKey(
+    name: models.CharField[Any, Any] = models.CharField(max_length=255)
+    emission_factor: models.ForeignKey[Any] = models.ForeignKey(
         "EmissionFactor", on_delete=models.SET_NULL, null=True
     )
 
     if TYPE_CHECKING:
-        emission_factor: models.ForeignKey["EmissionFactor|None"]
 
         @property
         def material_product_materials(self) -> models.QuerySet["ProductMaterial"]: ...

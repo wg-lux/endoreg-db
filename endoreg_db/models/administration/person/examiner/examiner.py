@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from types import NoneType
-from typing import TYPE_CHECKING, Protocol, TypeAlias, cast
+from typing import TYPE_CHECKING, Protocol, TypeAlias, Any, cast
 
 from django.db import models
 
@@ -26,16 +26,13 @@ class _ExaminerNameSource(Protocol):
 
 
 class Examiner(Person):
-    if TYPE_CHECKING:
-        center: models.ForeignKey[Center | NoExaminerValue]
-
-    center: models.ForeignKey[Center | NoExaminerValue | None] = models.ForeignKey(
+    center: models.ForeignKey["Center | None"] = models.ForeignKey(
         "Center", on_delete=models.CASCADE, blank=True, null=True
     )
-    hash: "models.CharField[str]" = models.CharField(max_length=255, unique=True)
+    hash: models.CharField[str, Any] = models.CharField(max_length=255, unique=True)
 
     if TYPE_CHECKING:
-        portal_user_info: models.OneToOneField["PortalUserInfo"]
+        portal_user_info: PortalUserInfo
 
     def __str__(self) -> str:
         return self.first_name + " " + self.last_name

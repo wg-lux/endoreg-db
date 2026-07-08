@@ -77,6 +77,13 @@ def _serializer_rows(serializer: object) -> list[dict[str, object]]:
     return [dict(item) for item in cast(_SerializerDataLike, serializer).data]
 
 
+def _segment_frame_number(segment: object, field_name: str) -> int:
+    value = getattr(segment, field_name, None)
+    if not isinstance(value, int):
+        raise serializers.ValidationError(f"{field_name} must be an integer.")
+    return value
+
+
 class FrameLike(Protocol):
     pk: int
     video_id: int
@@ -225,6 +232,11 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
         return bool(context.get("include_annotation_payload", True))
 
     def _get_video_file(self, video_id: int) -> VideoFile:
+        context = cast(ContextLike, getattr(self, "context", {}))
+        context_video = context.get("video_file")
+        if isinstance(context_video, VideoFile) and context_video.pk == video_id:
+            return context_video
+
         try:
             return VideoFile.objects.get(id=video_id)
         except ObjectDoesNotExist as exc:
@@ -246,6 +258,19 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
         return None
 
     def _validate_fps(self, video_file: object) -> float:
+        context = cast(ContextLike, getattr(self, "context", {}))
+        context_video_id = context.get("video_id")
+        context_fps = context.get("video_fps")
+        if (
+            isinstance(video_file, VideoFile)
+            and isinstance(context_video_id, int)
+            and video_file.pk == context_video_id
+            and isinstance(context_fps, (int, float))
+            and not isinstance(context_fps, bool)
+            and context_fps > 0
+        ):
+            return float(context_fps)
+
         fps = get_video_fps(cast(VideoFile, video_file))
         if not fps or fps <= 0:
             raise serializers.ValidationError(
@@ -414,8 +439,7 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
                 end_frame_number=int(cast(int, validated_data["end_frame_number"])),
                 prediction_meta=None,
                 export_segment=export_segment,
-            )
-            segment.save()
+            )  # this function handles segment.save()
             return segment
         except Exception as exc:
             logger.error("Error creating segment: %s", exc)
@@ -475,7 +499,9 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
             if export_segment is not None:
                 instance.export_segment = bool(export_segment)
 
-            if instance.start_frame_number >= instance.end_frame_number:
+            start_frame_number = _segment_frame_number(instance, "start_frame_number")
+            end_frame_number = _segment_frame_number(instance, "end_frame_number")
+            if start_frame_number >= end_frame_number:
                 raise serializers.ValidationError(
                     "start_time/frame must be strictly less than end_time/frame"
                 )
@@ -490,8 +516,10 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
         data = super().to_representation(instance)
         video = cast(VideoLike | None, instance.video_file)
         if video is not None:
-            data["start_time"] = video.frame_number_to_s(instance.start_frame_number)
-            data["end_time"] = video.frame_number_to_s(instance.end_frame_number)
+            start_frame_number = _segment_frame_number(instance, "start_frame_number")
+            end_frame_number = _segment_frame_number(instance, "end_frame_number")
+            data["start_time"] = video.frame_number_to_s(start_frame_number)
+            data["end_time"] = video.frame_number_to_s(end_frame_number)
             data["video_id"] = cast(int, getattr(instance.video_file, "id"))
         label = cast(LabelFileLike | None, instance.label)
         if label is not None:

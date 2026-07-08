@@ -57,6 +57,12 @@ let
     rustc
     rustfmt
     maturin
+    valgrind
+    kdePackages.kcachegrind     # Contains both kcachegrind and the pure Qt qcachegrind
+    graphviz        # Enables the call-graph visualization tab inside Cachegrind
+    python312
+    python312Packages.pyprof2calltree
+
   ];
   
   SYNC_CMD = "uv sync --extra dev --extra docs";
@@ -100,7 +106,7 @@ in
     uv = {
       enable = true;
       package = uvPackage;
-      sync.enable = true;
+      sync.enable = false;
     };
   };
 
@@ -409,6 +415,7 @@ in
 
     # Add the uv virtual environment directly to your PATH
     export PATH="$PWD/.devenv/state/venv/bin:$PATH"
+    
   '';
 
   enterTest = ''

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """Model for medication indication."""
 
-from typing import TYPE_CHECKING, ClassVar, TypedDict
+from typing import TYPE_CHECKING, ClassVar, TypedDict, Any
 
 from django.db import models
 
@@ -34,8 +34,8 @@ class MedicationIndicationManager(models.Manager["MedicationIndication"]):
 class MedicationIndication(models.Model):
     """Model representing a medication indication."""
 
-    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
-    indication_type: models.ForeignKey["MedicationIndicationType"] = models.ForeignKey(
+    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    indication_type: models.ForeignKey[Any] = models.ForeignKey(
         "MedicationIndicationType",
         on_delete=models.CASCADE,
         related_name="medication_indications",

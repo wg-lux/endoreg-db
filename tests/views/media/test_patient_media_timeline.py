@@ -141,10 +141,15 @@ class PatientMediaTimelineViewTests(TestCase):
         latest_video = payload["latest_video"]
         assert latest_video is not None
         assert latest_video["id"] == video.pk
-        assert {entry["type"] for entry in latest_video["stream_options"]} == {
-            "raw",
-            "processed",
-        }
+        assert latest_video["stream_options"] == [
+            {
+                "type": "processed",
+                "url": (
+                    "http://testserver/endoreg-api/media/videos/"
+                    f"{video.pk}/hls/playlist.m3u8?type=processed"
+                ),
+            }
+        ]
 
         latest_frames = payload["latest_frames"]
         assert len(latest_frames) == 3

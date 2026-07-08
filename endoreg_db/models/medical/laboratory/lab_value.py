@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import warnings
 from numbers import Real
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, cast, Any
 
 from django.db import models
 from lx_dtypes.models.contracts.lab_value import (
@@ -76,14 +76,14 @@ class LabValueManager(models.Manager["LabValue"]):
 
 
 class LabValue(models.Model):
-    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
-    abbreviation: models.CharField[str | None] = models.CharField(
+    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    abbreviation: models.CharField[Any, Any] = models.CharField(
         max_length=10, blank=True, null=True
     )
     default_unit: models.ForeignKey["Unit | None"] = models.ForeignKey(
         "Unit", on_delete=models.CASCADE, blank=True, null=True
     )
-    numeric_precision: models.IntegerField[int] = models.IntegerField(default=3)
+    numeric_precision: models.IntegerField[Any, Any] = models.IntegerField(default=3)
     default_single_categorical_value_distribution: models.ForeignKey[
         "SingleCategoricalValueDistribution | None"
     ] = models.ForeignKey(
@@ -120,19 +120,17 @@ class LabValue(models.Model):
         null=True,
         related_name="default_date_value_distribution",
     )
-    default_normal_range: models.JSONField[LabValueNormalRangePayload | None] = (
-        models.JSONField(blank=True, null=True)
-    )
-    normal_range_age_dependent: models.BooleanField[bool] = models.BooleanField(
+    default_normal_range = models.JSONField(blank=True, null=True)
+    normal_range_age_dependent: models.BooleanField[Any, Any] = models.BooleanField(
         default=False
     )
-    normal_range_gender_dependent: models.BooleanField[bool] = models.BooleanField(
+    normal_range_gender_dependent: models.BooleanField[Any, Any] = models.BooleanField(
         default=False
     )
-    normal_range_special_case: models.BooleanField[bool] = models.BooleanField(
+    normal_range_special_case: models.BooleanField[Any, Any] = models.BooleanField(
         default=False
     )
-    bound_adjustment_factor: models.FloatField[float] = models.FloatField(
+    bound_adjustment_factor: models.FloatField[Any, Any] = models.FloatField(
         default=0.1,
         help_text="Factor for adjusting bounds when generating increased/decreased values, e.g., 0.1 for 10%.",
     )

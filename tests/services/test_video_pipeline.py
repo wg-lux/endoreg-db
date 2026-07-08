@@ -11,12 +11,24 @@ This script demonstrates the complete pipeline for importing and processing a vi
 """
 
 from pathlib import Path
+from typing import Protocol, cast
 
 from endoreg_db.models import VideoFile
 from endoreg_db.services.video_import import VideoImportService
 from endoreg_db.services.video_temporal_inference import _run_video_temporal_inference  # pyright: ignore[reportPrivateUsage]
 from tests.helpers.default_objects import get_latest_segmentation_model
 from tests.media.video.mock_video_anonym_annotation import mock_video_manual_validation
+
+
+class _SensitiveMetaStateLike(Protocol):
+    is_verified: bool
+    dob_verified: bool
+    names_verified: bool
+
+
+class _SensitiveMetaLike(Protocol):
+    state: _SensitiveMetaStateLike
+
 
 # Configuration
 DEFAULT_ENDOSCOPY_PROCESSOR_NAME = "olympus_cv_1500"
@@ -84,7 +96,7 @@ def main() -> None:
         # Verify validation state
         video_file.refresh_from_db()
         if video_file.sensitive_meta:
-            sm_state = video_file.sensitive_meta.state
+            sm_state = cast(_SensitiveMetaLike, video_file.sensitive_meta).state
             if sm_state:
                 print(f"✓ Sensitive meta verified: {sm_state.is_verified}")
                 print(f"✓ DOB verified: {sm_state.dob_verified}")

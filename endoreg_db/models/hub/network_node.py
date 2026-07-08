@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
-from datetime import datetime
 from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING, TypeAlias, Any
 
 from django.contrib.auth.hashers import check_password, make_password
 from django.db import models
@@ -29,29 +27,29 @@ class NetworkNode(models.Model):
 
     objects = NetworkNodeManager()
 
-    node_key: models.CharField[str] = models.CharField(
+    node_key: models.CharField[Any, Any] = models.CharField(
         max_length=255, unique=True, blank=True
     )
-    display_name: models.CharField[str] = models.CharField(max_length=255)
-    role: models.CharField[str] = models.CharField(
+    display_name: models.CharField[Any, Any] = models.CharField(max_length=255)
+    role: models.CharField[Any, Any] = models.CharField(
         max_length=32,
         choices=Role.choices,
         default=Role.SITE_NODE,
     )
-    base_url: models.URLField[str] = models.URLField(blank=True, default="")
-    is_active: models.BooleanField[bool] = models.BooleanField(default=True)
-    shared_secret_hash: models.CharField[str] = models.CharField(
+    base_url: models.URLField[Any, Any] = models.URLField(blank=True, default="")
+    is_active: models.BooleanField[Any, Any] = models.BooleanField(default=True)
+    shared_secret_hash: models.CharField[Any, Any] = models.CharField(
         max_length=255, blank=True, default=""
     )
-    owning_center: models.ForeignKey[NetworkNodeCenter] = models.ForeignKey(
+    owning_center: models.ForeignKey["NetworkNodeCenter"] = models.ForeignKey(
         "Center",
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
         related_name="network_nodes",
     )
-    created_at: models.DateTimeField[datetime] = models.DateTimeField(auto_now_add=True)
-    updated_at: models.DateTimeField[datetime] = models.DateTimeField(auto_now=True)
+    created_at: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now_add=True)
+    updated_at: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["display_name", "pk"]
@@ -69,13 +67,7 @@ class NetworkNode(models.Model):
             suffix += 1
         return candidate
 
-    def save(
-        self,
-        force_insert: bool = False,
-        force_update: bool = False,
-        using: str | None = None,
-        update_fields: Iterable[str] | None = None,
-    ) -> None:
+    def save(self, *args: object, **kwargs: object) -> None:
         if self.pk:
             existing_key = (
                 type(self)
@@ -92,12 +84,7 @@ class NetworkNode(models.Model):
                 exclude_pk=self.pk,
             )
 
-        super().save(
-            force_insert=force_insert,
-            force_update=force_update,
-            using=using,
-            update_fields=update_fields,
-        )
+        super().save(*args, **kwargs)
 
     def set_shared_secret(self, secret: str) -> None:
         normalized = str(secret or "").strip()

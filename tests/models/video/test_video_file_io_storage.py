@@ -5,11 +5,11 @@ from __future__ import annotations
 
 import uuid
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Any, Generator, Protocol, cast
 from unittest.mock import patch
 
 import pytest
-from django.core.files import File
+from django.core.files.base import File
 from django.core.files.storage import default_storage
 
 from endoreg_db.models import Center, EndoscopyProcessor, VideoFile
@@ -27,7 +27,7 @@ class _CenterRelation(Protocol):
 
 
 class _WritableFieldFile(Protocol):
-    def save(self, name: str, content: File[bytes], save: bool = True) -> None: ...
+    def save(self, name: str, content: File[Any], save: bool = True) -> None: ...
 
 
 def _add_center(processor: EndoscopyProcessor, center: Center) -> None:
@@ -94,7 +94,7 @@ def video_with_files(
     center: Center,
     processor: EndoscopyProcessor,
     video_asset_file: Path,
-):
+) -> Generator[VideoFile, None, None]:
     video = VideoFile.objects.create(
         center=center,
         processor=processor,

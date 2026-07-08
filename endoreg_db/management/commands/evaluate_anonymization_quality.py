@@ -12,6 +12,7 @@ from endoreg_db.services.anonymization_quality_evaluation import (
     evaluate_anonymization_quality,
     parse_quality_datetime,
 )
+from endoreg_db.services.evaluation_manifest import write_quality_evaluation_manifest
 from endoreg_db.utils.file_operations import atomic_write_file
 
 
@@ -106,6 +107,22 @@ class Command(BaseCommand):
             help="Write the full JSON payload to this path using atomic write semantics.",
         )
         parser.add_argument(
+            "--generate-manifest",
+            action="store_true",
+            help=(
+                "Write a PHI-safe unified evaluation manifest for this run to "
+                "/data/results/manifests by default."
+            ),
+        )
+        parser.add_argument(
+            "--manifest-output-dir",
+            default="",
+            help=(
+                "Override the evaluation manifest output directory. Intended for "
+                "controlled test or export environments."
+            ),
+        )
+        parser.add_argument(
             "--json",
             action="store_true",
             help="Emit the full JSON payload to stdout.",
@@ -153,6 +170,13 @@ class Command(BaseCommand):
         json_output = _string_option(options, "json_output")
         if json_output:
             _write_json_output(Path(json_output), payload)
+        if _bool_option(options, "generate_manifest"):
+            manifest_output_dir = _string_option(options, "manifest_output_dir")
+            manifest_path = write_quality_evaluation_manifest(
+                payload,
+                output_dir=Path(manifest_output_dir) if manifest_output_dir else None,
+            )
+            self.stderr.write(f"evaluation_manifest: {manifest_path}")
 
         if _bool_option(options, "json"):
             self.stdout.write(payload.model_dump_json(indent=2))

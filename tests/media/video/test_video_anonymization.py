@@ -1,5 +1,30 @@
 # pyright: reportUnusedFunction=false
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Protocol, cast
+
+
+class _VideoStateLike(Protocol):
+    anonymized: bool
+
+    def refresh_from_db(self, *args: object, **kwargs: object) -> None: ...
+
+
+class _VideoForAnonymization(Protocol):
+    def anonymize(self, delete_original_raw: bool = True) -> bool: ...
+
+    is_processed: bool
+    processed_file: "_ProcessedVideoFileLike | None"
+    processed_video_hash: str | None
+    has_raw: bool
+
+    def refresh_from_db(self, *args: object, **kwargs: object) -> None: ...
+
+    @property
+    def state(self) -> _VideoStateLike | None: ...
+
+
+class _ProcessedVideoFileLike(Protocol):
+    name: str
+
 
 if TYPE_CHECKING:
     from endoreg_db.models import VideoFile
@@ -8,7 +33,7 @@ if TYPE_CHECKING:
 
 
 def _test_video_anonymization(test: "VideoFileModelExtractedTest") -> None:
-    video_file = test.video_file
+    video_file = cast(_VideoForAnonymization, test.video_file)
 
     is_mock_video = (
         hasattr(video_file, "__class__")
@@ -25,7 +50,7 @@ def _test_video_anonymization(test: "VideoFileModelExtractedTest") -> None:
         )
         return
 
-    video_file = cast("VideoFile", video_file)
+    video_file = cast(_VideoForAnonymization, cast("VideoFile", video_file))
     video_file.refresh_from_db()
     state = video_file.state
     test.assertIsNotNone(state, "VideoState should exist after anonymization")
@@ -34,12 +59,11 @@ def _test_video_anonymization(test: "VideoFileModelExtractedTest") -> None:
     state.refresh_from_db()
 
     test.assertTrue(video_file.is_processed, "VideoFile should be marked as processed")
-    test.assertIsNotNone(
-        video_file.processed_file,
-        "processed_file field should be set",
-    )
+    processed_file = video_file.processed_file
+    test.assertIsNotNone(processed_file, "processed_file field should be set")
+    assert processed_file is not None
     test.assertTrue(
-        bool(video_file.processed_file.name),
+        bool(processed_file.name),
         "processed_file field should have a name",
     )
     test.assertIsNotNone(

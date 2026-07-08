@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import ClassVar
+from typing import ClassVar, Any
 
 from django.db import models
 
@@ -12,7 +12,7 @@ class ResourceManager(models.Manager["Resource"]):  # pyright: ignore[reportMiss
 class Resource(models.Model):
     objects: ClassVar[ResourceManager] = ResourceManager()  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    name: models.CharField[str] = models.CharField(max_length=255)
+    name: models.CharField[Any, Any] = models.CharField(max_length=255)
 
     def natural_key(self) -> tuple[str]:
         """

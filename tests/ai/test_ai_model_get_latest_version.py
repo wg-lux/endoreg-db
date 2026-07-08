@@ -2,6 +2,7 @@
 
 import pytest
 from unittest.mock import patch
+from typing import Protocol, cast
 from endoreg_db.models.administration.ai.ai_model import (
     AiModel,
     DEFAULT_HF_MODEL_ID,
@@ -11,6 +12,19 @@ from endoreg_db.models.administration.ai.ai_model import (
 from endoreg_db.models.label.label_set import LabelSet
 from endoreg_db.models.metadata.model_meta import ModelMeta
 from tests.helpers.model_weights import ensure_managed_stub_weights
+
+
+class _ModelMetaQueryset(Protocol):
+    def all(self) -> "_ModelMetaQueryset": ...
+    def delete(self) -> None: ...
+
+
+class _AiModelLike(Protocol):
+    active_meta: ModelMeta | None
+    metadata_versions: _ModelMetaQueryset
+
+    def get_latest_version(self) -> ModelMeta | None: ...
+    def save(self, update_fields: list[str] | None = None) -> None: ...
 
 
 def _get_default_prediction_labelset() -> LabelSet:
@@ -36,7 +50,10 @@ def test_get_latest_version_returns_active_meta():
         name="labelset_1",
         version=1,
     )
-    ai_model = AiModel.objects.create(name="model_active_check", description="test")
+    ai_model = cast(
+        _AiModelLike,
+        AiModel.objects.create(name="model_active_check", description="test"),
+    )
 
     active_meta = ModelMeta.objects.create(
         name="meta_active",
@@ -61,7 +78,10 @@ def test_get_latest_version_returns_latest_metadata_when_no_active_meta():
         name="labelset_2",
         version=1,
     )
-    ai_model = AiModel.objects.create(name="model_version_check", description="test")
+    ai_model = cast(
+        _AiModelLike,
+        AiModel.objects.create(name="model_version_check", description="test"),
+    )
 
     meta_v1 = ModelMeta.objects.create(
         name="meta_v1",
@@ -94,9 +114,12 @@ def test_get_latest_version_raises_for_non_default_model_without_meta():
     Scenario 3: No active meta AND no local versions.
     Non-default models must fail closed instead of silently falling back to the default model.
     """
-    ai_model = AiModel.objects.create(
-        name="temp_model_for_hf_fallback_test",
-        description="test model",
+    ai_model = cast(
+        _AiModelLike,
+        AiModel.objects.create(
+            name="temp_model_for_hf_fallback_test",
+            description="test model",
+        ),
     )
 
     patch_target = "endoreg_db.services.model_meta_from_hf.ensure_model_meta_from_hf"
@@ -115,6 +138,7 @@ def test_get_latest_version_calls_hf_service_when_default_has_no_meta():
         name=DEFAULT_PREDICTION_MODEL_NAME,
         defaults={"description": "default prediction model"},
     )
+    ai_model = cast(_AiModelLike, ai_model)
     ai_model.active_meta = None
     ai_model.save(update_fields=["active_meta"])
     ai_model.metadata_versions.all().delete()
@@ -150,6 +174,7 @@ def test_get_latest_version_repairs_default_active_meta_with_missing_weights():
         name=DEFAULT_PREDICTION_MODEL_NAME,
         defaults={"description": "default prediction model"},
     )
+    ai_model = cast(_AiModelLike, ai_model)
     active_meta, _ = ModelMeta.objects.update_or_create(
         name=DEFAULT_PREDICTION_MODEL_NAME,
         model=ai_model,

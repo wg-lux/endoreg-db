@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias, cast
+from typing import TYPE_CHECKING, TypeAlias, cast, Any
 
 from django.db import models
 
@@ -49,17 +49,15 @@ class Label(models.Model):
 
     """
 
-    name: models.CharField[str] = models.CharField(max_length=255)
-    label_type: models.ForeignKey[LabelTypeRelation] = models.ForeignKey(
+    name: models.CharField[Any, Any] = models.CharField(max_length=255)
+    label_type: models.ForeignKey[Any] = models.ForeignKey(
         "LabelType",
         on_delete=models.CASCADE,
         related_name="labels",
         blank=True,
         null=True,
     )
-    description: models.TextField[LabelDescription] = models.TextField(
-        blank=True, null=True
-    )
+    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
 
     objects = LabelManager()
 

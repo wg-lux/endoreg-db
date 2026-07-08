@@ -1,4 +1,5 @@
 from django.test import TestCase
+from typing import Protocol, cast
 from endoreg_db.models import (
     Product,
     ProductGroup,
@@ -8,6 +9,21 @@ from logging import getLogger
 
 from endoreg_db.models.administration.product.product_material import ProductMaterial
 from endoreg_db.models.administration.product.reference_product import ReferenceProduct
+
+
+class _QuerySetLike(Protocol):
+    def first(self) -> object | None: ...
+
+
+class _ProductLike(Protocol):
+    name: str
+    product_group: ProductGroup
+    transport_route: TransportRoute
+    reference_products: _QuerySetLike
+    product_product_materials: _QuerySetLike
+
+    def get_product_weight(self) -> tuple[object, object] | None: ...
+    def get_package_weight(self) -> tuple[object, object] | None: ...
 
 
 logger = getLogger(__name__)
@@ -24,6 +40,9 @@ from ...helpers.data_loader import (
 
 
 class ProductModelTest(TestCase):
+    # Test suite works on pre-loaded fixture models created in shared data loader.
+    products: list[Product]
+
     def setUp(self):
         load_unit_data()
         load_examination_data()
@@ -42,13 +61,16 @@ class ProductModelTest(TestCase):
         products = Product.objects.all()
 
         for product in products:
+            product_like = cast(_ProductLike, product)
             self.assertIsInstance(product, Product)
-            self.assertIsInstance(product.name, str)
-            self.assertIsInstance(product.product_group, ProductGroup)
-            self.assertIsInstance(product.transport_route, TransportRoute)
-            self.assertIsInstance(product.reference_products.first(), ReferenceProduct)
+            self.assertIsInstance(product_like.name, str)
+            self.assertIsInstance(product_like.product_group, ProductGroup)
+            self.assertIsInstance(product_like.transport_route, TransportRoute)
+            self.assertIsInstance(
+                product_like.reference_products.first(), ReferenceProduct
+            )
             self.assertIsNotNone(
-                product.product_product_materials.first(), ProductMaterial
+                product_like.product_product_materials.first(), ProductMaterial
             )
 
     def test_product_material_weight(self):
@@ -60,7 +82,7 @@ class ProductModelTest(TestCase):
 
         for product in products:
             # check if the product has a product weight
-            product_weight_result = product.get_product_weight()
+            product_weight_result = cast(_ProductLike, product).get_product_weight()
             if product_weight_result is None:
                 raise self.failureException(
                     "product.get_product_weight() must return a metric tuple"
@@ -78,7 +100,7 @@ class ProductModelTest(TestCase):
 
         for product in products:
             # check if the product has a package weight
-            package_weight_result = product.get_package_weight()
+            package_weight_result = cast(_ProductLike, product).get_package_weight()
             if package_weight_result is None:
                 raise self.failureException(
                     "product.get_package_weight() must return a metric tuple"

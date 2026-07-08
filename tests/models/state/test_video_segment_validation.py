@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime
 import uuid
-from typing import Literal
+from typing import Literal, cast
 
 import pytest
 
@@ -191,6 +192,7 @@ def test_segment_state_mutators_clear_export_readiness(
     for field_name, value in expected_values.items():
         assert getattr(state, field_name) is value
     assert state.ready_for_export is False
-    assert state.ready_for_export_at is None
+    ready_for_export_at = cast(datetime | None, getattr(state, "ready_for_export_at"))
+    assert ready_for_export_at is None
     assert state.ready_for_export_by == ""
     assert state.processed_file_sha256 == ""

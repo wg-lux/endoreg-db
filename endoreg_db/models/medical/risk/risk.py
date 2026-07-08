@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from django.db import models
 
@@ -29,22 +29,22 @@ class Risk(models.Model):
         description (str): A description of the risk.
     """
 
-    name: models.CharField[str] = models.CharField(max_length=100, unique=True)
-    name_de: models.CharField[str | None] = models.CharField(
+    name: models.CharField[Any, Any] = models.CharField(max_length=100, unique=True)
+    name_de: models.CharField[Any, Any] = models.CharField(
         max_length=100, blank=True, null=True
     )
-    name_en: models.CharField[str | None] = models.CharField(
+    name_en: models.CharField[Any, Any] = models.CharField(
         max_length=100, blank=True, null=True
     )
-    description: models.TextField[str | None] = models.TextField(blank=True, null=True)
+    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
 
-    risk_value: models.FloatField[float | None] = models.FloatField(
+    risk_value: models.FloatField[Any, Any] = models.FloatField(
         blank=True,
         null=True,
         help_text="Risk value for the risk. If not set, the risk is not used in calculations.",
     )
 
-    risk_type: models.ForeignKey["RiskType | None"] = models.ForeignKey(
+    risk_type: models.ForeignKey[Any] = models.ForeignKey(
         "RiskType",
         on_delete=models.CASCADE,
         related_name="risks",

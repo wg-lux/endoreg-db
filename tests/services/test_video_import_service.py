@@ -70,15 +70,19 @@ def _noop_pipeline_storage_budget(
     return None
 
 
+def _completed_video_file(
+    *,
+    file_hash: str,
+    original_file_name: str = "completed-duplicate.mp4",
+) -> VideoFile:
+    return VideoFile(id=1, video_hash=file_hash, original_file_name=original_file_name)
+
+
 def _path_provider(path: Path) -> Callable[[], Path]:
     def provide_path() -> Path:
         return path
 
     return provide_path
-
-
-def _file_exists_true(field_file: object) -> bool:
-    return True
 
 
 def _fail_success_finalize(ctx: ImportContext) -> NoReturn:
@@ -473,63 +477,6 @@ def test_video_import_service_does_not_construct_anonymizer_in_init(
     service = VideoImportService()
 
     assert service._anonymizer is None  # pyright: ignore[reportPrivateUsage]
-
-
-@pytest.mark.unit
-def test_sync_raw_streamable_artifacts_syncs_only_raw(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import endoreg_db.import_files.video_import_service as vis_module
-
-    events: list[tuple[VideoFile, dict[str, bool]]] = []
-    video = VideoFile(video_hash="video-hash")
-    video.pk = 1
-    video.raw_file.name = "sensitive_videos/video-hash.mp4"
-
-    monkeypatch.setattr(
-        vis_module, "validate_directories", _noop_validate_directories, raising=True
-    )
-    monkeypatch.setattr(vis_module, "file_exists", _file_exists_true, raising=True)
-
-    def fake_sync_video_streamable_artifacts(
-        video_arg: VideoFile,
-        *,
-        include_raw: bool = True,
-        include_processed: bool = True,
-        save: bool = True,
-    ) -> list[str]:
-        events.append(
-            (
-                video_arg,
-                {
-                    "include_raw": include_raw,
-                    "include_processed": include_processed,
-                    "save": save,
-                },
-            )
-        )
-        return []
-
-    monkeypatch.setattr(
-        vis_module,
-        "sync_video_streamable_artifacts",
-        fake_sync_video_streamable_artifacts,
-        raising=True,
-    )
-
-    service = VideoImportService()
-    service._sync_raw_streamable_artifacts(video)  # pyright: ignore[reportPrivateUsage]
-
-    assert events == [
-        (
-            video,
-            {
-                "include_raw": True,
-                "include_processed": False,
-                "save": True,
-            },
-        )
-    ]
 
 
 @pytest.mark.unit
@@ -1095,19 +1042,22 @@ def test_import_and_anonymize_duplicate_success_skips_storage_preflight_and_stag
         events.append(("hash_lock_enter", file_hash))
         yield
 
-    class DummyVideo:
-        pk = 1
+    existing_video = _completed_video_file(
+        file_hash=sha256_file(source_path),
+        original_file_name=source_path.name,
+    )
 
     def has_history_for_hash(file_hash: str, success: bool) -> bool:
         return success
 
-    def get_video_by_content_hash(file_hash: str) -> DummyVideo:
-        return DummyVideo()
+    def get_video_by_content_hash(file_hash: str) -> VideoFile:
+        return existing_video
 
     def check_video_media_integrity(
         *args: object,
         **kwargs: object,
     ) -> SimpleNamespace:
+        assert args[0] is existing_video
         return SimpleNamespace(ok=True, reason="ok")
 
     monkeypatch.setattr(vis_module, "file_lock", fake_file_lock, raising=True)
@@ -1131,7 +1081,7 @@ def test_import_and_anonymize_duplicate_success_skips_storage_preflight_and_stag
         raising=True,
     )
 
-    def fail_storage_budget(path: Path) -> NoReturn:
+    def fail_storage_budget(self: VideoImportService, path: Path) -> NoReturn:
         raise AssertionError(
             "storage preflight should be skipped for completed duplicates"
         )
@@ -1146,10 +1096,10 @@ def test_import_and_anonymize_duplicate_success_skips_storage_preflight_and_stag
         )
 
     monkeypatch.setattr(
-        vis_module,
+        VideoImportService,
         "_ensure_pipeline_storage_budget",
         fail_storage_budget,
-        raising=False,
+        raising=True,
     )
     monkeypatch.setattr(
         vis_module, "create_sensitive_copy", fail_create_sensitive_copy, raising=True
@@ -1197,22 +1147,22 @@ def test_import_and_anonymize_completed_duplicate_removes_import_source(
     def fake_hash_lock(file_hash: str, lock_root: Path) -> Generator[None, None, None]:
         yield
 
-    class DummyVideo:
-        pk = 1
-
-        def get_raw_file_path(self) -> None:
-            return None
+    existing_video = _completed_video_file(
+        file_hash=sha256_file(source_path),
+        original_file_name=source_path.name,
+    )
 
     def has_history_for_hash(file_hash: str, success: bool) -> bool:
         return success
 
-    def get_video_by_content_hash(file_hash: str) -> DummyVideo:
-        return DummyVideo()
+    def get_video_by_content_hash(file_hash: str) -> VideoFile:
+        return existing_video
 
     def check_video_media_integrity(
         *args: object,
         **kwargs: object,
     ) -> SimpleNamespace:
+        assert args[0] is existing_video
         return SimpleNamespace(ok=True, reason="ok")
 
     monkeypatch.setattr(vis_module, "file_lock", fake_file_lock, raising=True)
@@ -1236,7 +1186,7 @@ def test_import_and_anonymize_completed_duplicate_removes_import_source(
         raising=True,
     )
 
-    def fail_storage_budget(path: Path) -> NoReturn:
+    def fail_storage_budget(self: VideoImportService, path: Path) -> NoReturn:
         raise AssertionError(
             "storage preflight should be skipped for completed duplicates"
         )
@@ -1301,22 +1251,22 @@ def test_import_and_anonymize_completed_duplicate_keeps_external_source(
     def fake_hash_lock(file_hash: str, lock_root: Path) -> Generator[None, None, None]:
         yield
 
-    class DummyVideo:
-        pk = 1
-
-        def get_raw_file_path(self) -> None:
-            return None
+    existing_video = _completed_video_file(
+        file_hash=sha256_file(source_path),
+        original_file_name=source_path.name,
+    )
 
     def has_history_for_hash(file_hash: str, success: bool) -> bool:
         return success
 
-    def get_video_by_content_hash(file_hash: str) -> DummyVideo:
-        return DummyVideo()
+    def get_video_by_content_hash(file_hash: str) -> VideoFile:
+        return existing_video
 
     def check_video_media_integrity(
         *args: object,
         **kwargs: object,
     ) -> SimpleNamespace:
+        assert args[0] is existing_video
         return SimpleNamespace(ok=True, reason="ok")
 
     monkeypatch.setattr(vis_module, "file_lock", fake_file_lock, raising=True)
@@ -1338,6 +1288,30 @@ def test_import_and_anonymize_completed_duplicate_keeps_external_source(
         "check_video_media_integrity",
         check_video_media_integrity,
         raising=True,
+    )
+
+    def fail_storage_budget(self: VideoImportService, path: Path) -> NoReturn:
+        raise AssertionError(
+            "storage preflight should be skipped for completed duplicates"
+        )
+
+    def fail_create_sensitive_copy(
+        src: Path,
+        root: Path,
+        ctx: ImportContext,
+    ) -> NoReturn:
+        raise AssertionError(
+            "sensitive copy should be skipped for completed duplicates"
+        )
+
+    monkeypatch.setattr(
+        VideoImportService,
+        "_ensure_pipeline_storage_budget",
+        fail_storage_budget,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        vis_module, "create_sensitive_copy", fail_create_sensitive_copy, raising=True
     )
 
     service = VideoImportService()
@@ -1625,6 +1599,19 @@ def test_same_content_imports_serialize_and_only_one_runs_heavy_work(
             state_video = DummyVideo()
         return state_video, True, False
 
+    def has_history_for_hash(file_hash: str, success: bool) -> bool:
+        return success and has_success_history
+
+    def get_video_by_content_hash(file_hash: str) -> DummyVideo:
+        assert state_video is not None
+        return state_video
+
+    def check_video_media_integrity(
+        *args: object,
+        **kwargs: object,
+    ) -> SimpleNamespace:
+        return SimpleNamespace(ok=True, reason="ok")
+
     def fake_mark_processing_started(
         instance: _VideoImportResultLike,
         ctx: ImportContext,
@@ -1648,6 +1635,24 @@ def test_same_content_imports_serialize_and_only_one_runs_heavy_work(
 
     monkeypatch.setattr(vis_module, "file_lock", fake_file_lock, raising=True)
     monkeypatch.setattr(vis_module, "content_hash_lock", fake_hash_lock, raising=True)
+    monkeypatch.setattr(
+        vis_module.ProcessingHistory,
+        "has_history_for_hash",
+        staticmethod(has_history_for_hash),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        vis_module,
+        "get_video_by_content_hash",
+        get_video_by_content_hash,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        vis_module,
+        "check_video_media_integrity",
+        check_video_media_integrity,
+        raising=True,
+    )
     monkeypatch.setattr(
         vis_module, "create_sensitive_copy", fake_create_sensitive_copy, raising=True
     )
@@ -1694,6 +1699,6 @@ def test_same_content_imports_serialize_and_only_one_runs_heavy_work(
     assert results["a"].pk == 1
     assert results["b"].pk == 1
     assert len(anonymize_calls) == 1
-    assert sorted(create_calls) == ["same_a.mp4", "same_b.mp4"]
+    assert create_calls == ["same_a.mp4"]
     assert not (sensitive_root / "same_b.mp4").exists()
     assert not source_b.exists()

@@ -10,7 +10,7 @@ from django.conf import settings
 from django.test import TestCase
 from endoreg_db.utils.ffmpeg_wrapper import is_ffmpeg_available
 
-from endoreg_db.models import VideoFile
+from endoreg_db.models import Center, EndoscopyProcessor, VideoFile
 
 from .mock_video_anonym_annotation import mock_video_manual_validation
 from .test_temporal_prediction_materialization import (
@@ -38,6 +38,12 @@ FFMPEG_AVAILABLE = is_ffmpeg_available()
 class VideoFileModelExtractedTest(TestCase):
     video_file: Union[VideoFile, MockVideoFile]
     video: "VideoFile"
+    center: Center | object
+    endo_processor: EndoscopyProcessor | object
+
+    class _VideoFileLike:
+        center: Center | object
+        processor: EndoscopyProcessor | object | None
 
     def setUp(self):
         """Initialize test with optimized fixtures"""
@@ -63,8 +69,9 @@ class VideoFileModelExtractedTest(TestCase):
                 get_cached_or_create("pipeline_test_video", get_default_video_file),
             )
 
-        self.center = self.video_file.center
-        self.endo_processor = self.video_file.processor
+        video_file = cast("VideoFileModelExtractedTest._VideoFileLike", self.video_file)
+        self.center = video_file.center
+        self.endo_processor = video_file.processor
 
     @pytest.mark.expensive
     @pytest.mark.video

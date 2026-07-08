@@ -10,7 +10,6 @@ import uuid
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
-import numpy as np
 import pytest
 from django.core.files.base import ContentFile
 from django.test import TestCase
@@ -317,7 +316,7 @@ class FrameStreamViewTests(TestCase):
         )
         self.video.save(update_fields=["raw_file"])
 
-        def fake_read_video_file_frame_sample(
+        def fake_read_video_file_frame_jpeg(
             *args: object,
             **kwargs: object,
         ) -> object:
@@ -327,14 +326,15 @@ class FrameStreamViewTests(TestCase):
             return SimpleNamespace(
                 frame_number=frame_number,
                 timestamp=1.25,
-                rgb_frame=np.zeros((2, 2, 3), dtype=np.uint8),
+                content_type="image/jpeg",
+                image_bytes=b"\xff\xd8encoded-jpeg",
             )
 
         monkeypatches = pytest.MonkeyPatch()
         monkeypatches.setattr(
             frame_media_module,
-            "read_video_file_frame_sample",
-            fake_read_video_file_frame_sample,
+            "read_video_file_frame_jpeg",
+            fake_read_video_file_frame_jpeg,
         )
 
         try:
@@ -356,7 +356,7 @@ class FrameStreamViewTests(TestCase):
         assert resp["Content-Type"] == "image/jpeg"
         assert resp["X-Frame-File-Type"] == "raw"
         assert resp["X-Frame-Number"] == str(self.frame.frame_number)
-        assert resp.content.startswith(b"\xff\xd8")
+        assert resp.content == b"\xff\xd8encoded-jpeg"
 
     def test_decoded_frame_stream_rejects_invalid_file_type(self) -> None:
         from endoreg_db.views.media.frame_media import DecodedFrameStreamView
@@ -387,7 +387,7 @@ class FrameStreamViewTests(TestCase):
         )
         self.video.save(update_fields=["processed_file"])
 
-        def fake_failing_read_video_file_frame_sample(
+        def fake_failing_read_video_file_frame_jpeg(
             *args: object,
             **kwargs: object,
         ) -> object:
@@ -396,8 +396,8 @@ class FrameStreamViewTests(TestCase):
         monkeypatches = pytest.MonkeyPatch()
         monkeypatches.setattr(
             frame_media_module,
-            "read_video_file_frame_sample",
-            fake_failing_read_video_file_frame_sample,
+            "read_video_file_frame_jpeg",
+            fake_failing_read_video_file_frame_jpeg,
         )
 
         try:

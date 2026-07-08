@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 import uuid as uuid_lib
-from datetime import datetime
-from typing import ClassVar, Literal, TYPE_CHECKING
+from typing import ClassVar, Literal, TYPE_CHECKING, Any
 
 from django.db import models
 from django.utils import timezone
 from lx_dtypes.models.contracts.json_types import JsonNull, JsonValue
 
 if TYPE_CHECKING:
-    from endoreg_db.models.hub.upload_job import UploadJob
-    from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+    pass
 
 
 type ReportLlmJobOperation = Literal["report_llm_reimport", "report_llm_import"]
@@ -64,49 +62,45 @@ class ReportLlmInferenceJob(models.Model):
         (STATUS_CANCELLED, "Cancelled"),
     )
 
-    job_id: models.UUIDField[uuid_lib.UUID] = models.UUIDField(
+    job_id: models.UUIDField[Any, Any] = models.UUIDField(
         default=uuid_lib.uuid4, editable=False, unique=True
     )
-    pdf: models.ForeignKey["RawPdfFile | None"] = models.ForeignKey(
+    pdf: models.ForeignKey[Any] = models.ForeignKey(
         "RawPdfFile",
         on_delete=models.CASCADE,
         related_name="llm_inference_jobs",
         null=True,
         blank=True,
     )
-    upload_job: models.ForeignKey["UploadJob | None"] = models.ForeignKey(
+    upload_job: models.ForeignKey[Any] = models.ForeignKey(
         "UploadJob",
         on_delete=models.SET_NULL,
         related_name="report_llm_inference_jobs",
         null=True,
         blank=True,
     )
-    operation: models.CharField[str] = models.CharField(
+    operation: models.CharField[Any, Any] = models.CharField(
         max_length=64, choices=OPERATION_CHOICES
     )
-    status: models.CharField[str] = models.CharField(
+    status: models.CharField[Any, Any] = models.CharField(
         max_length=16,
         choices=STATUS_CHOICES,
         default=STATUS_QUEUED,
         db_index=True,
     )
-    task_id: models.CharField[str] = models.CharField(
+    task_id: models.CharField[Any, Any] = models.CharField(
         max_length=100, blank=True, db_index=True
     )
-    queue: models.CharField[str] = models.CharField(max_length=64)
-    config: models.JSONField[ReportLlmJobJsonObject] = models.JSONField(
-        default=dict, blank=True
-    )
-    result: models.JSONField[ReportLlmJobJsonObject] = models.JSONField(
-        default=dict, blank=True
-    )
-    error: models.TextField[str] = models.TextField(blank=True)
-    created_at: models.DateTimeField[datetime] = models.DateTimeField(auto_now_add=True)
-    updated_at: models.DateTimeField[datetime] = models.DateTimeField(auto_now=True)
-    started_at: models.DateTimeField[datetime | None] = models.DateTimeField(
+    queue: models.CharField[Any, Any] = models.CharField(max_length=64)
+    config: models.JSONField[Any, Any] = models.JSONField(default=dict, blank=True)
+    result: models.JSONField[Any, Any] = models.JSONField(default=dict, blank=True)
+    error: models.TextField[Any, Any] = models.TextField(blank=True)
+    created_at: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now_add=True)
+    updated_at: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now=True)
+    started_at: models.DateTimeField[Any, Any] = models.DateTimeField(
         blank=True, null=True
     )
-    completed_at: models.DateTimeField[datetime | None] = models.DateTimeField(
+    completed_at: models.DateTimeField[Any, Any] = models.DateTimeField(
         blank=True, null=True
     )
 

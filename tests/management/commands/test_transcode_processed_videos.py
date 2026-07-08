@@ -89,12 +89,13 @@ def _patch_transcode_and_streamable(
         _ = include_raw
         if not include_processed:
             return []
+        processed_video_hash = cast(str, video.processed_video_hash)
         paths = EndoregPathsModel.from_environment()
         streamable_path = (
             paths.storage
             / "streamable_videos"
             / "processed"
-            / f"{video.processed_video_hash}.mp4"
+            / f"{processed_video_hash}.mp4"
         )
         streamable_path.parent.mkdir(parents=True, exist_ok=True)
         streamable_path.write_bytes(b"\x00\x00\x00\x18ftypmp42new-streamable")
@@ -149,9 +150,11 @@ def test_transcode_processed_videos_apply_updates_hash_reencrypts_and_cleans_old
     processed_file = video.processed_file
     processed_name = processed_file.name
     processed_storage = cast(Storage, getattr(processed_file, "storage"))
+    assert processed_name is not None
     assert processed_storage.exists(processed_name)
+    processed_video_hash = cast(str, video.processed_video_hash)
     assert video.processed_streamable_relative_path.endswith(
-        f"{video.processed_video_hash}.mp4"
+        f"{processed_video_hash}.mp4"
     )
     with Path(video.processed_file.path).open("rb") as stored:
         assert stored.read(len(MAGIC)) == MAGIC

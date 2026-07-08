@@ -1,39 +1,34 @@
 from __future__ import annotations
 
-from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from django.db import models
 
 if TYPE_CHECKING:
-    from django.contrib.auth.models import User
-
     from endoreg_db.models import (
-        Finding,
         Patient,
-        PatientExamination,
         PatientFindingClassification,
         PatientFindingIntervention,
     )
 
 
 class PatientFinding(models.Model):
-    patient_examination: models.ForeignKey["PatientExamination"] = models.ForeignKey(
+    patient_examination: models.ForeignKey[Any] = models.ForeignKey(
         "PatientExamination",
         on_delete=models.CASCADE,
         related_name="patient_findings",
     )
 
-    finding: models.ForeignKey["Finding"] = models.ForeignKey(
+    finding: models.ForeignKey[Any] = models.ForeignKey(
         "Finding",
         on_delete=models.CASCADE,
         related_name="finding_patient_findings",
     )
 
-    created_at: models.DateTimeField[datetime] = models.DateTimeField(auto_now_add=True)
-    updated_at: models.DateTimeField[datetime] = models.DateTimeField(auto_now=True)
+    created_at: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now_add=True)
+    updated_at: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now=True)
 
-    created_by: models.ForeignKey["User | None"] = models.ForeignKey(
+    created_by: models.ForeignKey[Any] = models.ForeignKey(
         "auth.User",
         on_delete=models.PROTECT,
         related_name="created_findings",
@@ -41,7 +36,7 @@ class PatientFinding(models.Model):
         blank=True,
     )
 
-    updated_by: models.ForeignKey["User | None"] = models.ForeignKey(
+    updated_by: models.ForeignKey[Any] = models.ForeignKey(
         "auth.User",
         on_delete=models.PROTECT,
         related_name="updated_findings",
@@ -49,16 +44,16 @@ class PatientFinding(models.Model):
         blank=True,
     )
 
-    is_active: models.BooleanField[bool] = models.BooleanField(
+    is_active: models.BooleanField[Any, Any] = models.BooleanField(
         default=True,
         help_text="Deaktiviert statt gelöscht für Audit-Trail",
     )
 
-    deactivated_at: models.DateTimeField[datetime | None] = models.DateTimeField(
+    deactivated_at: models.DateTimeField[Any, Any] = models.DateTimeField(
         null=True, blank=True
     )
 
-    deactivated_by: models.ForeignKey["User | None"] = models.ForeignKey(
+    deactivated_by: models.ForeignKey[Any] = models.ForeignKey(
         "auth.User",
         on_delete=models.PROTECT,
         related_name="deactivated_findings",

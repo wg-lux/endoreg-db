@@ -21,18 +21,33 @@ def _append_query(path: str, query: Mapping[str, Any] | None = None) -> str:
     return f"{path}?{'&'.join(parts)}"
 
 
+def _normalize_hls_file_type(file_type: str | None) -> str | None:
+    if file_type is None:
+        return None
+
+    normalized = file_type.strip().lower()
+    if normalized in {"", "processed"}:
+        return "processed"
+    raise ValueError("Video HLS playlist URLs are only available for processed video.")
+
+
 def build_video_stream_path(
     video_id: int,
     *,
     file_type: str | None = None,
     download: bool | None = None,
 ) -> str:
+    """
+    Return the legacy-compatible video playback URL.
+
+    The endpoint stays stable for lx-annotate and older clients, but the view
+    redirects to the processed HLS playlist. Raw video streaming is not exposed.
+    """
+    if download:
+        raise ValueError("Video stream URLs do not support download mode.")
     return _append_query(
         endoreg_api_path(f"media/videos/{video_id}/stream/"),
-        {
-            "type": file_type,
-            "download": 1 if download else None,
-        },
+        {"type": _normalize_hls_file_type(file_type)},
     )
 
 
@@ -91,8 +106,8 @@ def build_video_hls_playlist_path(
     file_type: str | None = None,
 ) -> str:
     return _append_query(
-        endoreg_api_path(f"media/videos/{video_id}/hls/playlist/"),
-        {"type": file_type},
+        endoreg_api_path(f"media/videos/{video_id}/hls/playlist.m3u8"),
+        {"type": _normalize_hls_file_type(file_type)},
     )
 
 

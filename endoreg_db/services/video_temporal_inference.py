@@ -688,13 +688,19 @@ def _parse_temporal_history_config(
     )
 
 
+def _normalized_history_config(config: object | None) -> dict[str, object]:
+    if isinstance(config, dict):
+        return cast(dict[str, object], config)
+    return {}
+
+
 def _is_deferred_temporal_inference_history(
     history: VideoProcessingHistory,
 ) -> bool:
     try:
         parsed_config = _parse_temporal_history_config(history.config)
     except TemporalInferenceConfigError:
-        config = history.config or {}
+        config = _normalized_history_config(history.config)
         return (
             config.get("deferred_reason")
             == TEMPORAL_INFERENCE_DEFERRED_REASON_REPROCESSING
@@ -730,7 +736,7 @@ def _mark_history_cancelled(history: VideoProcessingHistory, reason: str) -> Non
 
 
 def _history_delete_frames_after(history: VideoProcessingHistory) -> bool:
-    config = history.config or {}
+    config = _normalized_history_config(history.config)
     return bool(config.get("delete_frames_after", True))
 
 
@@ -1238,7 +1244,9 @@ def _run_video_temporal_inference(
     frame_source_mode: str | None = None,
 ) -> bool:
     history = _get_processing_history(history_id)
-    history_config = history.config or {} if history is not None else {}
+    history_config: dict[str, object] = (
+        _normalized_history_config(history.config) if history is not None else {}
+    )
     requested_frame_source_mode = _normalize_temporal_frame_source_mode(
         cast(str | None, frame_source_mode or history_config.get("frame_source_mode"))
     )
@@ -1509,7 +1517,9 @@ def dispatch_video_temporal_inference(
             status=reservation_status,
             video_id=int(video_id),
             model_meta_id=int(model_meta_id),
-            queue=str((history.config or {}).get("queue") or queue),
+            queue=str(
+                (_normalized_history_config(history.config).get("queue") or queue)
+            ),
             history_id=history.pk,
             reason=TEMPORAL_INFERENCE_DEFERRED_REASON_REPROCESSING,
             message="Video reprocessing is active. Prediction was not queued.",
@@ -1542,7 +1552,9 @@ def dispatch_video_temporal_inference(
             status=reservation_status,
             video_id=int(video_id),
             model_meta_id=int(model_meta_id),
-            queue=str((history.config or {}).get("queue") or queue),
+            queue=str(
+                (_normalized_history_config(history.config).get("queue") or queue)
+            ),
             history_id=history.pk,
         )
 

@@ -42,6 +42,9 @@ from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.report_import import ReportImportService
+from endoreg_db.services.evaluation_manifest import (
+    write_performance_evaluation_manifest,
+)
 from endoreg_db.services.video_import import VideoImportService
 from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.file_operations import (
@@ -210,6 +213,8 @@ class PerformanceCommandOptions(TypedDict):
     continue_on_error: bool
     json_output: str
     csv_output: str
+    generate_manifest: bool
+    manifest_output_dir: str
     json: bool
 
 
@@ -303,6 +308,23 @@ class Command(BaseCommand):
             help="Write flat per-run CSV results to this path.",
         )
         parser.add_argument(
+            "--generate-manifest",
+            action="store_true",
+            help=(
+                "Write a PHI-safe unified evaluation manifest for this run to "
+                "/data/results/manifests by default."
+            ),
+        )
+        parser.add_argument(
+            "--manifest-output-dir",
+            type=str,
+            default="",
+            help=(
+                "Override the evaluation manifest output directory. Intended for "
+                "controlled test or export environments."
+            ),
+        )
+        parser.add_argument(
             "--json",
             action="store_true",
             help="Emit full JSON results to stdout instead of the compact text summary.",
@@ -386,6 +408,18 @@ class Command(BaseCommand):
             self._write_json(Path(options["json_output"]), payload)
         if options["csv_output"]:
             self._write_csv(Path(options["csv_output"]), run_results)
+        if options["generate_manifest"]:
+            manifest_path = write_performance_evaluation_manifest(
+                payload,
+                processor_name=options["processor_name"],
+                center_name=options["center_name"],
+                output_dir=(
+                    Path(options["manifest_output_dir"])
+                    if options["manifest_output_dir"]
+                    else None
+                ),
+            )
+            self.stderr.write(f"evaluation_manifest: {manifest_path}")
 
         if options["json"]:
             self.stdout.write(payload.model_dump_json(indent=2))

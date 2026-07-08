@@ -2,13 +2,12 @@ from __future__ import annotations
 
 from datetime import datetime
 from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING, TypeAlias, Any
 
 from django.db import models
 from django.utils import timezone
 
 if TYPE_CHECKING:
-    from ...administration.person.patient.patient import Patient
     from ...medical.patient.patient_examination import PatientExamination
 
 NoCaseEndDate: TypeAlias = NoneType
@@ -32,7 +31,7 @@ class Case(models.Model):
         updated_at (datetime): Timestamp of last case update.
     """
 
-    patient: models.ForeignKey[Patient] = models.ForeignKey(
+    patient: models.ForeignKey[Any] = models.ForeignKey(
         "Patient",
         on_delete=models.CASCADE,
         related_name="cases",
@@ -44,38 +43,38 @@ class Case(models.Model):
         related_name="cases",
         help_text="The examinations included in this case.",
     )
-    hash: models.CharField[str | None] = models.CharField(
+    hash: models.CharField[Any, Any] = models.CharField(
         max_length=255,
         blank=True,
         null=True,
         help_text="A hash value associated with the case when configured.",
     )
 
-    start_date: models.DateTimeField[datetime] = models.DateTimeField(
+    start_date: models.DateTimeField[Any, Any] = models.DateTimeField(
         help_text="The start date and time of the case.", db_index=True
     )
-    end_date: models.DateTimeField[CaseEndDate | None] = models.DateTimeField(
+    end_date: models.DateTimeField[Any, Any] = models.DateTimeField(
         null=True, blank=True, help_text="The end date and time of the case."
     )
-    is_active: models.BooleanField[bool] = models.BooleanField(
+    is_active: models.BooleanField[Any, Any] = models.BooleanField(
         default=True,
         help_text="Flag indicating if the case is currently active.",
         db_index=True,
     )
-    is_closed: models.BooleanField[bool] = models.BooleanField(
+    is_closed: models.BooleanField[Any, Any] = models.BooleanField(
         default=False,
         help_text="Flag indicating if the case has been closed.",
         db_index=True,
     )
-    is_deleted: models.BooleanField[bool] = models.BooleanField(
+    is_deleted: models.BooleanField[Any, Any] = models.BooleanField(
         default=False,
         help_text="Flag indicating if the case is marked as deleted.",
         db_index=True,
     )
-    created_at: models.DateTimeField[datetime] = models.DateTimeField(
+    created_at: models.DateTimeField[Any, Any] = models.DateTimeField(
         auto_now_add=True, help_text="The date and time the case was created."
     )
-    updated_at: models.DateTimeField[datetime] = models.DateTimeField(
+    updated_at: models.DateTimeField[Any, Any] = models.DateTimeField(
         auto_now=True, help_text="The date and time the case was last updated."
     )
 

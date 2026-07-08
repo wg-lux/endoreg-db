@@ -6,6 +6,7 @@ from datetime import datetime
 from collections.abc import Iterable
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from collections.abc import Mapping
 from typing import Any, Literal, NotRequired, TypedDict, cast
 
 from django.core.files.uploadedfile import UploadedFile
@@ -228,8 +229,8 @@ def create_or_reuse_transfer_job(
     processing_intent: str,
     cleanup_policy: str,
     payload_schema_version: str,
-    resource_rows: dict[str, Any],
-    processing_snapshot: dict[str, Any],
+    resource_rows: Mapping[str, JsonValue],
+    processing_snapshot: Mapping[str, JsonValue],
     provenance: TransferProvenance,
     created_by: object | None = None,
 ) -> tuple[TransferJob, bool]:
@@ -439,7 +440,7 @@ def attach_transfer_media(
 
 
 def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
-    resource_rows = transfer_job.resource_rows
+    resource_rows = cast(JsonObject, transfer_job.resource_rows or {})
     video_file_payload = _json_object(
         resource_rows.get("video_file") or {},
         field_name="resource_rows.video_file",
@@ -452,7 +453,7 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
         resource_rows.get("processing_history") or {},
         field_name="resource_rows.processing_history",
     )
-    processing_snapshot = transfer_job.processing_snapshot
+    processing_snapshot = cast(JsonObject, transfer_job.processing_snapshot or {})
     source_center = transfer_job.source_center
 
     if source_center is None:
@@ -559,7 +560,7 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
 
 
 def _apply_report_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
-    resource_rows = transfer_job.resource_rows
+    resource_rows = cast(JsonObject, transfer_job.resource_rows or {})
     report_payload = _json_object(
         resource_rows.get("raw_pdf_file") or {},
         field_name="resource_rows.raw_pdf_file",
@@ -1207,7 +1208,7 @@ def _expected_processed_video_hash(
     transfer_job: TransferJob,
     video: VideoFile,
 ) -> str:
-    resource_rows = transfer_job.resource_rows
+    resource_rows = cast(JsonObject, transfer_job.resource_rows or {})
     video_payload = resource_rows.get("video_file") or {}
     if not isinstance(video_payload, dict):
         return str(video.processed_video_hash or "").strip()
@@ -1236,14 +1237,14 @@ def _mark_report_transfer_as_processed(report: RawPdfFile) -> None:
 
 
 def _sender_processing_success(transfer_job: TransferJob) -> bool | None:
-    processing_snapshot = transfer_job.processing_snapshot
+    processing_snapshot = cast(JsonObject, transfer_job.processing_snapshot or {})
     sender_processing_success = _coerce_optional_bool(
         processing_snapshot.get("sender_processing_success")
     )
     if sender_processing_success is not None:
         return sender_processing_success
 
-    resource_rows = transfer_job.resource_rows
+    resource_rows = cast(JsonObject, transfer_job.resource_rows or {})
     processing_history_payload = resource_rows.get("processing_history") or {}
     if isinstance(processing_history_payload, dict):
         return _coerce_optional_bool(processing_history_payload.get("success"))

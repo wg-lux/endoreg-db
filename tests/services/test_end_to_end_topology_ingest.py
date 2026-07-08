@@ -84,7 +84,7 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
                     return report
 
             monkeypatch.setattr(
-                "endoreg_db.services.hub.ingest.ReportImportService",
+                "endoreg_db.services.report_import.ReportImportService",
                 _StubReportImportService,
             )
 

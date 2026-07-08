@@ -7,9 +7,7 @@ from __future__ import annotations
 # objects contains methods to extract text, extract metadata from text and anonymize text from pdf file uzing agl_report_reader.ReportReader class
 # ------------------------------------------------------------------------------
 import uuid as uuid_lib
-from collections.abc import Iterable
-from datetime import datetime
-from typing import TYPE_CHECKING, Callable, TypedDict, Unpack, cast
+from typing import TYPE_CHECKING, Callable, TypedDict, Unpack, cast, Any
 
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
@@ -62,10 +60,10 @@ class _RawPdfFileCreateKwargs(TypedDict, total=False):
 class RawPdfFile(models.Model):
     objects = models.Manager["RawPdfFile"]()
     # Fields from AbstractPdfFile
-    uuid: models.UUIDField[uuid_lib.UUID] = models.UUIDField(
+    uuid: models.UUIDField[Any, Any] = models.UUIDField(
         default=uuid_lib.uuid4, unique=True, editable=False
     )
-    pdf_hash: models.CharField[str] = models.CharField(max_length=255, unique=True)
+    pdf_hash: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
     pdf_type: models.ForeignKey["PdfType | None"] = models.ForeignKey(
         "PdfType",
         on_delete=models.SET_NULL,
@@ -91,11 +89,11 @@ class RawPdfFile(models.Model):
         blank=True,
         null=True,
     )
-    text: models.TextField[str | None] = models.TextField(blank=True, null=True)
-    date_created: models.DateTimeField[datetime] = models.DateTimeField(
+    text: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
+    date_created: models.DateTimeField[Any, Any] = models.DateTimeField(
         auto_now_add=True
     )
-    date_modified: models.DateTimeField[datetime] = models.DateTimeField(auto_now=True)
+    date_modified: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now=True)
 
     file: models.FileField = models.FileField(
         # Use the relative path from the specific REPORT_DIR
@@ -131,15 +129,15 @@ class RawPdfFile(models.Model):
         null=True,
         blank=True,
     )
-    state_report_processing_required: models.BooleanField[bool] = models.BooleanField(
-        default=True
+    state_report_processing_required: models.BooleanField[Any, Any] = (
+        models.BooleanField(default=True)
     )
-    state_report_processed: models.BooleanField[bool] = models.BooleanField(
+    state_report_processed: models.BooleanField[Any, Any] = models.BooleanField(
         default=False
     )
-    raw_meta: models.JSONField[ReportMetaJsonObject | None] = models.JSONField(
-        blank=True, null=True
-    )
+    raw_meta: models.JSONField[
+        ReportMetaJsonObject | None, ReportMetaJsonObject | None
+    ] = models.JSONField(blank=True, null=True)
     anonym_examination_report: models.OneToOneField[
         "AnonymExaminationReport | None"
     ] = models.OneToOneField(
@@ -149,7 +147,7 @@ class RawPdfFile(models.Model):
         null=True,
         related_name="raw_pdf_file",
     )
-    anonymized_text: models.TextField[str | None] = models.TextField(
+    anonymized_text: models.TextField[Any, Any] = models.TextField(
         blank=True, null=True
     )
 
@@ -388,13 +386,7 @@ class RawPdfFile(models.Model):
             raise ValidationError({"raw_meta": str(exc)}) from exc
         self.raw_meta = cast(ReportMetaJsonObject | None, validated_raw_meta)
 
-    def save(
-        self,
-        force_insert: bool = False,
-        force_update: bool = False,
-        using: str | None = None,
-        update_fields: Iterable[str] | None = None,
-    ) -> None:
+    def save(self, *args: object, **kwargs: object) -> None:
         # Ensure hash is calculated before the first save if possible and not already set
         # This is primarily a fallback if instance created manually without using create_from_file
         """
@@ -407,12 +399,7 @@ class RawPdfFile(models.Model):
         prepare_raw_pdf_before_save(self)
         self.clean()
 
-        super().save(
-            force_insert=force_insert,
-            force_update=force_update,
-            using=using,
-            update_fields=update_fields,
-        )
+        super().save(*args, **kwargs)
 
     def get_or_create_state(self) -> "RawPdfState":
         """

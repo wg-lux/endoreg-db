@@ -403,9 +403,12 @@ def _mark_lost_model_training_runs() -> None:
 
 
 def _model_training_run_payload(run: AIModelTrainingRun) -> dict[str, Any]:
-    request_payload = run.request_payload or {}
-    command_kwargs = run.command_kwargs or {}
-    training_target = request_payload.get("training_target")
+    request_payload = cast(dict[str, object], run.request_payload or {})
+    command_kwargs = cast(dict[str, object], run.command_kwargs or {})
+    training_target = cast(
+        str | None,
+        request_payload.get("training_target"),
+    )
     if training_target not in {
         MODEL_TRAINING_TARGET_IMAGE_MULTILABEL,
         MODEL_TRAINING_TARGET_PHI_REGION_DETECTOR,
@@ -418,12 +421,13 @@ def _model_training_run_payload(run: AIModelTrainingRun) -> dict[str, Any]:
 
     annotation_source_scope = None
     if training_target == MODEL_TRAINING_TARGET_IMAGE_MULTILABEL:
+        annotation_source_scope_raw = request_payload.get("annotation_source_scope")
+        if not isinstance(annotation_source_scope_raw, str):
+            annotation_source_scope_raw = command_kwargs.get("annotation_source_scope")
+            if not isinstance(annotation_source_scope_raw, str):
+                annotation_source_scope_raw = None
         annotation_source_scope = normalize_annotation_source_scope(
-            cast(
-                str | None,
-                request_payload.get("annotation_source_scope")
-                or command_kwargs.get("annotation_source_scope"),
-            )
+            annotation_source_scope_raw
         )
 
     dataset = run.dataset

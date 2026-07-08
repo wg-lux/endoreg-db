@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING, TypeAlias, Any
 
 from django.db import models
 
@@ -49,11 +49,9 @@ class LabelSet(models.Model):
 
     """
 
-    name: models.CharField[str] = models.CharField(max_length=255)
-    description: models.TextField[LabelSetDescription] = models.TextField(
-        blank=True, null=True
-    )
-    version: models.IntegerField[int] = models.IntegerField()
+    name: models.CharField[Any, Any] = models.CharField(max_length=255)
+    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
+    version: models.IntegerField[Any, Any] = models.IntegerField()
     labels: models.ManyToManyField[Label, Label] = models.ManyToManyField(
         "Label", related_name="label_sets"
     )

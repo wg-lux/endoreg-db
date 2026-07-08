@@ -135,11 +135,14 @@ class CenterScopedReadTests(TestCase):
         assert getattr(response, "streaming", False) is True
 
     @patch("endoreg_db.views.access_control.resolve_allowed_center_id")
-    def test_video_stream_still_returns_404_without_backing_file(
+    def test_video_stream_redirects_to_hls_without_backing_file(
         self, mock_allowed_center_id: MagicMock
     ) -> None:
         mock_allowed_center_id.return_value = self._pk(self.center_b)
 
         response = self.client.get(f"/api/media/videos/{self._pk(self.video)}/stream/")
 
-        assert response.status_code == 404, response.content
+        assert response.status_code == 302, response.content
+        assert response["Location"].endswith(
+            f"/endoreg-api/media/videos/{self._pk(self.video)}/hls/playlist.m3u8?type=processed"
+        )

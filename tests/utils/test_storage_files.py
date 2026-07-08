@@ -68,6 +68,33 @@ def test_ensure_local_file_ignores_unsupported_seek() -> None:
 
 
 @pytest.mark.unit
+def test_ensure_local_file_secure_unlinks_materialized_temp(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    field_file = _PathlessFieldFile(io.BytesIO(b"secret-video-payload"))
+    unlink_calls: list[tuple[Path, bool, bool]] = []
+
+    def fake_secure_unlink_file(path: Path, *, missing_ok: bool = True) -> None:
+        target = Path(path)
+        unlink_calls.append((target, missing_ok, target.exists()))
+        target.unlink(missing_ok=missing_ok)
+
+    monkeypatch.setattr(
+        storage_files,
+        "secure_unlink_file",
+        fake_secure_unlink_file,
+        raising=True,
+    )
+
+    with ensure_local_file(cast(FieldFile, field_file)) as local_path:
+        materialized_path = local_path
+        assert materialized_path.read_bytes() == b"secret-video-payload"
+
+    assert unlink_calls == [(materialized_path, True, True)]
+    assert not materialized_path.exists()
+
+
+@pytest.mark.unit
 def test_ensure_local_file_prefers_rust_fd_copy(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

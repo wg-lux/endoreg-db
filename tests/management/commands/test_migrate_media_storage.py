@@ -201,7 +201,7 @@ def test_migrate_media_storage_keeps_legacy_when_verify_breaks(
     assert source.exists()
 
 
-def test_migrate_media_storage_rewrites_bad_streamable_object(
+def test_migrate_media_storage_removes_bad_streamable_object(
     media_center: Center,
     tmp_path: Path,
 ) -> None:
@@ -239,8 +239,9 @@ def test_migrate_media_storage_rewrites_bad_streamable_object(
 
     assert summary.failed == 0, summary.model_dump_json()
     assert summary.changed == 1
-    assert not _starts_with_magic(streamable_path)
-    assert streamable_path.stat().st_size > 0
+    assert not streamable_path.exists()
+    video.refresh_from_db()
+    assert video.processed_streamable_relative_path == ""
 
 
 def test_migrate_media_storage_migrates_report_fields(media_center: Center) -> None:

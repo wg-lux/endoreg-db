@@ -342,6 +342,35 @@ def _resolve_data_root() -> Path:
     return env_path(DATA_DIR_ENV, "data").resolve()
 
 
+def _protected_root_candidates() -> list[Path]:
+    return [
+        _resolve_protected_root(),
+        *_legacy_test_roots(
+            TEST_PROTECTED_ROOT,
+            BASE_DIR / "data" / "tests" / "storage",
+        ),
+    ]
+
+
+def _data_root_candidates() -> list[Path]:
+    return [
+        _resolve_data_root(),
+        *_legacy_test_roots(
+            TEST_DATA_ROOT,
+            BASE_DIR / "data" / "tests" / "storage",
+        ),
+    ]
+
+
+def _resolve_storage_root() -> Path:
+    protected_root = _resolve_protected_root()
+    return _resolve_protected_subdir(
+        env_key=STORAGE_DIR_ENV,
+        default_path=protected_root / "storage",
+        protected_root=protected_root,
+    ).resolve()
+
+
 def _resolve_protected_subdir(
     *,
     env_key: str,
@@ -364,33 +393,17 @@ def _resolve_protected_subdir(
 
 
 def ensure_within_protected_root(path: str | Path) -> Path:
-    current_protected_root = (
-        EndoregPathsModel.from_environment().protected_root.resolve()
-    )
     return _ensure_within_roots(
         path,
-        roots=[
-            current_protected_root,
-            *_legacy_test_roots(
-                TEST_PROTECTED_ROOT,
-                BASE_DIR / "data" / "tests" / "storage",
-            ),
-        ],
+        roots=_protected_root_candidates(),
         label="protected data root",
     )
 
 
 def ensure_within_data_root(path: str | Path) -> Path:
-    current_data_root = EndoregPathsModel.from_environment().data.resolve()
     return _ensure_within_roots(
         path,
-        roots=[
-            current_data_root,
-            *_legacy_test_roots(
-                TEST_DATA_ROOT,
-                BASE_DIR / "data" / "tests" / "storage",
-            ),
-        ],
+        roots=_data_root_candidates(),
         label="data root",
     )
 
@@ -398,8 +411,12 @@ def ensure_within_data_root(path: str | Path) -> Path:
 def _resolve_protected_media_root() -> Path:
     raw_value = os.environ.get(PROTECTED_MEDIA_ROOT_ENV, "").strip()
     if not raw_value:
-        return EndoregPathsModel.from_environment().storage.resolve()
-    return ensure_within_protected_root(_resolve_env_path(raw_value))
+        return _resolve_storage_root()
+    return _ensure_within_roots(
+        _resolve_env_path(raw_value),
+        roots=_protected_root_candidates(),
+        label="protected data root",
+    )
 
 
 def protected_media_root() -> Path:

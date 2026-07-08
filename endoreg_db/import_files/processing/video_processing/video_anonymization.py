@@ -595,9 +595,9 @@ def _verify_anonymizer_source(
 class VideoAnonymizer:
     def __init__(self):
         _ensure_ffmpeg_tools_on_path()
+        self._frame_cleaning_available: bool = False
+        self._frame_cleaning_class: _FrameCleaner | None = None
         self._ensure_frame_cleaning_available()
-        self._frame_cleaning_available = None
-        self._frame_cleaning_class = None
 
     def anonymize_video(self, ctx: ImportContext):
         _ensure_ffmpeg_tools_on_path()
@@ -619,8 +619,14 @@ class VideoAnonymizer:
         anonymized_output_path = anonymized_dir / f"{video_hash}.mp4"
         temp_output_path = _temp_media_path(anonymized_output_path)
         safe_unlink_file(temp_output_path, missing_ok=True)
+        ensure_directory(temp_output_path.parent)
 
-        self._frame_cleaning_class = cast(_FrameCleaner, FrameCleaner())
+        frame_cleaner = getattr(self, "_frame_cleaning_class", None)
+        if frame_cleaner is None:
+            self._ensure_frame_cleaning_available()
+            frame_cleaner = self._frame_cleaning_class
+        if frame_cleaner is None:
+            raise RuntimeError("Frame cleaning is unavailable.")
 
         endoscope_roi, endoscope_roi_nested = self._get_processor_roi_info(ctx)
         explicit_source_path = getattr(ctx, "local_source_path", None)
@@ -649,17 +655,17 @@ class VideoAnonymizer:
                 source_width=source_width,
                 source_height=source_height,
             )
-            ctx.anonymized_path, extracted_metadata = (
-                self._frame_cleaning_class.clean_video(
-                    video_path=verified_source,
-                    endoscope_image_roi=endoscope_roi,
-                    endoscope_data_roi_nested=endoscope_roi_nested,
-                    output_path=temp_output_path,
-                )
+            ctx.anonymized_path, extracted_metadata = frame_cleaner.clean_video(
+                video_path=verified_source,
+                endoscope_image_roi=endoscope_roi,
+                endoscope_data_roi_nested=endoscope_roi_nested,
+                output_path=temp_output_path,
             )
         if extracted_metadata is None:
             extracted_metadata = {}
         temp_result_path = ctx.anonymized_path
+        if temp_result_path is None:
+            raise RuntimeError("Video anonymization did not return an output path.")
         if not temp_result_path.exists():
             raise RuntimeError(
                 f"Video anonymization output does not exist: {temp_result_path}"
@@ -848,16 +854,8 @@ class VideoAnonymizer:
         Returns:
             Tuple of (availability_flag, FrameCleaner_class, ReportReader_class)
         """
-        try:
-            from lx_anonymizer import FrameCleaner
-        except Exception as e:
-            logger.warning(
-                f"Frame cleaning not available: {e} Please install or update lx_anonymizer."
-            )
-            raise
-
         assert FrameCleaner is not None
-        self._frame_cleaning_class = FrameCleaner()
+        self._frame_cleaning_class = cast(_FrameCleaner, FrameCleaner())
         self._frame_cleaning_available = True
 
     def _get_processor_roi_info(

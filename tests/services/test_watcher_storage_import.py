@@ -269,7 +269,7 @@ def test_process_watcher_file_reuse_deletes_duplicate_drop_without_reprocessing(
     original_id = upload_job.id
 
     with patch(
-        "endoreg_db.services.hub.ingest.ReportImportService.import_and_anonymize",
+        "endoreg_db.services.report_import.ReportImportService.import_and_anonymize",
         side_effect=AssertionError("duplicate watcher file must not be reprocessed"),
     ):
         reused_job = ingest.process_watcher_file(
@@ -299,7 +299,7 @@ def test_completed_watcher_video_with_intact_media_reuses_duplicate_drop(
     )
 
     with patch(
-        "endoreg_db.services.hub.ingest.VideoImportService.import_and_anonymize",
+        "endoreg_db.services.video_import.VideoImportService.import_and_anonymize",
         side_effect=AssertionError("complete media must be reused"),
     ):
         reused_job = ingest.process_watcher_file(
@@ -329,7 +329,7 @@ def test_completed_watcher_video_missing_raw_marks_old_job_lost_and_reingests(
     )
 
     with patch(
-        "endoreg_db.services.hub.ingest.VideoImportService.import_and_anonymize",
+        "endoreg_db.services.video_import.VideoImportService.import_and_anonymize",
         side_effect=_fake_video_import(video),
     ):
         new_job = ingest.process_watcher_file(
@@ -364,7 +364,7 @@ def test_completed_watcher_video_missing_processed_marks_old_job_lost_and_reinge
     )
 
     with patch(
-        "endoreg_db.services.hub.ingest.VideoImportService.import_and_anonymize",
+        "endoreg_db.services.video_import.VideoImportService.import_and_anonymize",
         side_effect=_fake_video_import(video),
     ):
         new_job = ingest.process_watcher_file(
@@ -402,7 +402,7 @@ def test_completed_watcher_video_unreadable_artifact_marks_old_job_lost(
             return_value=False,
         ),
         patch(
-            "endoreg_db.services.hub.ingest.VideoImportService.import_and_anonymize",
+            "endoreg_db.services.video_import.VideoImportService.import_and_anonymize",
             side_effect=_fake_video_import(video),
         ),
     ):

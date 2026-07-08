@@ -158,9 +158,7 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
         )
         data = _serializer_data(serializer)
 
-        expected_url = (
-            f"/endoreg-api/media/videos/{int(video_file.pk)}/stream/?type=processed"
-        )
+        expected_url = f"/endoreg-api/media/videos/{int(video_file.pk)}/hls/playlist.m3u8?type=processed"
         assert expected_url in cast(str, data["download_url"])
 
     def test_get_download_url_without_output_file(
@@ -214,9 +212,7 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
         serializer = VideoProcessingHistorySerializer(history)
         data = _serializer_data(serializer)
 
-        expected_url = (
-            f"/endoreg-api/media/videos/{int(video_file.pk)}/stream/?type=processed"
-        )
+        expected_url = f"/endoreg-api/media/videos/{int(video_file.pk)}/hls/playlist.m3u8?type=processed"
         assert data["download_url"] == expected_url
 
     def test_validate_operation_valid(self) -> None:

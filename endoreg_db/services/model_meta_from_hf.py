@@ -6,6 +6,7 @@ from logging import getLogger
 from typing import Any, Protocol, cast
 
 from django.core.files.base import ContentFile
+from django.core.files.storage import Storage
 from django.db import IntegrityError, transaction
 
 from endoreg_db.models.utils import WEIGHTS_DIR
@@ -34,6 +35,12 @@ class _StorageSave(Protocol):
     ) -> str: ...
 
 
+class _WeightsFieldFile(Protocol):
+    name: str
+    path: str
+    storage: Storage
+
+
 def hf_hub_download(
     *,
     repo_id: str,
@@ -54,8 +61,9 @@ def hf_hub_download(
 def _model_meta_weights_exist(model_meta: ModelMeta) -> bool:
     if not model_meta.weights:
         return False
+    weights = cast(_WeightsFieldFile, model_meta.weights)
     try:
-        return Path(model_meta.weights.path).exists()
+        return Path(weights.path).exists()
     except (OSError, ValueError):
         return False
 
@@ -65,9 +73,10 @@ def _store_downloaded_weights(
     model_meta: ModelMeta,
     weights_path: Path,
 ) -> None:
+    weights = cast(_WeightsFieldFile, model_meta.weights)
     relative_name = ""
-    if model_meta.weights.name:
-        relative_name = str(model_meta.weights.name)
+    if weights.name:
+        relative_name = str(weights.name)
 
     if not relative_name:
         relative_name = (
@@ -75,18 +84,18 @@ def _store_downloaded_weights(
         )
 
     try:
-        destination = Path(model_meta.weights.storage.path(relative_name))
+        destination = Path(weights.storage.path(relative_name))
         atomic_copy_file(source=weights_path, destination=destination)
-        model_meta.weights.name = relative_name
+        weights.name = relative_name
         model_meta.save(update_fields=["weights"])
     except TypeError:
         with weights_path.open("rb") as source_file:
-            storage_save = cast(_StorageSave, model_meta.weights.storage.save)
+            storage_save = cast(_StorageSave, weights.storage.save)
             saved_name = storage_save(
                 relative_name,
-                ContentFile[bytes](source_file.read()),
+                ContentFile(source_file.read()),
             )
-            model_meta.weights.name = saved_name
+            weights.name = saved_name
             model_meta.save(update_fields=["weights"])
 
 

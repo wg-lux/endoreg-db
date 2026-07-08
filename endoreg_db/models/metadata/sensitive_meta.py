@@ -5,9 +5,8 @@ import logging
 
 # Removed hash utils, datetime, random, os, timezone, sha256 imports
 # Removed icecream import (was used in old save sensitive_meta_logic)
-from datetime import date, datetime, time
-from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any, ClassVar, Protocol, Type, cast
+from datetime import date
+from typing import TYPE_CHECKING, ClassVar, Protocol, Type, cast, Any
 
 from django.db import models
 from lx_dtypes.models.meta.SensitiveMeta import SensitiveMeta as LxSensitiveMeta
@@ -93,16 +92,16 @@ class SensitiveMeta(models.Model):
         super().__init__(*args, **kwargs)
 
     # --- Examination and Patient Info ---
-    examination_date: models.DateField[date | None] = models.DateField(
+    examination_date: models.DateField[Any, Any] = models.DateField(
         blank=True, null=True
     )
-    examination_time: models.TimeField[time | None] = models.TimeField(
+    examination_time: models.TimeField[Any, Any] = models.TimeField(
         blank=True, null=True
     )
-    casenumber: models.CharField[str | None] = models.CharField(
+    casenumber: models.CharField[Any, Any] = models.CharField(
         max_length=255, blank=True, null=True
     )
-    file_path: models.CharField[str | None] = models.CharField(
+    file_path: models.CharField[Any, Any] = models.CharField(
         max_length=1024, blank=True, null=True
     )
 
@@ -146,36 +145,36 @@ class SensitiveMeta(models.Model):
         center_id: int | None
 
     # --- Names and DOB ---
-    patient_first_name: models.CharField[str | None] = models.CharField(
+    patient_first_name: models.CharField[Any, Any] = models.CharField(
         max_length=255, blank=True, null=True
     )
-    patient_last_name: models.CharField[str | None] = models.CharField(
+    patient_last_name: models.CharField[Any, Any] = models.CharField(
         max_length=255, blank=True, null=True
     )
-    patient_dob: models.DateTimeField[datetime | None] = models.DateTimeField(
+    patient_dob: models.DateTimeField[Any, Any] = models.DateTimeField(
         blank=True, null=True, help_text="Date of birth (can be auto-generated)."
     )
 
-    examiner_first_name: models.CharField[str | None] = models.CharField(
+    examiner_first_name: models.CharField[Any, Any] = models.CharField(
         max_length=255, blank=True, null=True, editable=False
     )
-    examiner_last_name: models.CharField[str | None] = models.CharField(
+    examiner_last_name: models.CharField[Any, Any] = models.CharField(
         max_length=255, blank=True, null=True, editable=False
     )
 
     # --- Hashes ---
-    patient_hash: models.CharField[str | None] = models.CharField(
+    patient_hash: models.CharField[Any, Any] = models.CharField(
         max_length=64, blank=True, null=True, editable=False, db_index=True
     )
-    examination_hash: models.CharField[str | None] = models.CharField(
+    examination_hash: models.CharField[Any, Any] = models.CharField(
         max_length=64, blank=True, null=True, editable=False, db_index=True
     )
 
     # --- Endoscope Info ---
-    endoscope_type: models.CharField[str | None] = models.CharField(
+    endoscope_type: models.CharField[Any, Any] = models.CharField(
         max_length=255, blank=True, null=True
     )
-    endoscope_sn: models.CharField[str | None] = models.CharField(
+    endoscope_sn: models.CharField[Any, Any] = models.CharField(
         max_length=255, blank=True, null=True
     )
 
@@ -195,15 +194,17 @@ class SensitiveMeta(models.Model):
         return None
 
     # --- Text Fields ---
-    text: models.TextField[str | None] = models.TextField(blank=True, null=True)
-    anonymized_text: models.TextField[str | None] = models.TextField(
+    text: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
+    anonymized_text: models.TextField[Any, Any] = models.TextField(
         blank=True, null=True
     )
-    validation_comment: models.TextField[str] = models.TextField(blank=True, default="")
-    direct_identifiers_cleared_at: models.DateTimeField[datetime | None] = (
+    validation_comment: models.TextField[Any, Any] = models.TextField(
+        blank=True, default=""
+    )
+    direct_identifiers_cleared_at: models.DateTimeField[Any, Any] = (
         models.DateTimeField(blank=True, null=True)
     )
-    direct_identifier_policy: models.CharField[str] = models.CharField(
+    direct_identifier_policy: models.CharField[Any, Any] = models.CharField(
         max_length=64,
         blank=True,
         default="",
@@ -404,13 +405,7 @@ class SensitiveMeta(models.Model):
         return sensitive_meta_logic.calculate_examination_hash(self, salt=salt_to_use)
 
     # --- Save method orchestrates calls to sensitive_meta_logic ---
-    def save(
-        self,
-        force_insert: bool = False,
-        force_update: bool = False,
-        using: str | None = None,
-        update_fields: Iterable[str] | None = None,
-    ) -> None:
+    def save(self, *args: object, **kwargs: object) -> None:
         """
         Saves the SensitiveMeta instance, ensuring data integrity, hash calculation, pseudo-entity linking, and related state management using external sensitive_meta_logic.
 
@@ -426,12 +421,7 @@ class SensitiveMeta(models.Model):
 
         # 2. Call the original Django save method to save the instance itself
         #    (including updated FKs, hashes, dates).
-        super().save(
-            force_insert=force_insert,
-            force_update=force_update,
-            using=using,
-            update_fields=update_fields,
-        )  # Pass original args/kwargs
+        super().save(*args, **kwargs)  # Pass original args/kwargs
 
         # 3. Ensure SensitiveMetaState exists *after* saving the main instance
         #    Use related name 'state' if defined, otherwise access via manager.

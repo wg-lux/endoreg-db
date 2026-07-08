@@ -269,7 +269,11 @@ def _record_report(report: dict[str, Any], key: str, payload: dict[str, Any]) ->
 
 
 def _video_integrity_detail(video: VideoFile) -> str:
-    payload = video.meta if isinstance(video.meta, dict) else {}
+    payload: dict[str, object]
+    if isinstance(video.meta, dict):
+        payload = cast(dict[str, object], video.meta)
+    else:
+        payload = cast(dict[str, object], {})
     detail = str(payload.get("integrity_error") or "").strip()
     if detail:
         return detail
@@ -279,7 +283,11 @@ def _video_integrity_detail(video: VideoFile) -> str:
 
 
 def _video_integrity_is_lost(video: VideoFile) -> bool:
-    payload = video.meta if isinstance(video.meta, dict) else {}
+    payload: dict[str, object]
+    if isinstance(video.meta, dict):
+        payload = cast(dict[str, object], video.meta)
+    else:
+        payload = cast(dict[str, object], {})
     return payload.get("integrity_status") == "lost" or bool(
         getattr(getattr(video, "state", None), "processing_error", False)
     )
@@ -438,27 +446,13 @@ def _mark_video_ok(video: VideoFile, *, dry_run: bool = False) -> None:
 def _repair_processed_metadata_from_streamable(
     video: VideoFile, *, dry_run: bool = False
 ) -> bool:
-    relative_name = (video.processed_streamable_relative_path or "").strip()
-    if not relative_name:
-        return False
-    candidate = _storage_absolute_path(relative_name)
-    if not candidate.is_file():
-        return False
-    if dry_run:
-        logger.warning(
-            "Would repair processed_file metadata for video %s using streamable artifact %s",
-            video.pk,
-            relative_name,
-        )
-        return True
-    video.processed_file.name = relative_name
-    video.save(update_fields=["processed_file", "date_modified"])
     logger.warning(
-        "Repaired processed_file metadata for video %s using streamable artifact %s",
+        "Refusing processed_file metadata repair for video %s from legacy "
+        "streamable artifact; canonical encrypted storage is required.",
         video.pk,
-        relative_name,
     )
-    return True
+    _ = dry_run
+    return False
 
 
 def _verify_streamable_artifact(
@@ -502,28 +496,21 @@ def _probe_video_path(path: Path) -> tuple[bool, dict[str, Any] | None, str]:
 def _repair_streamable_state(
     video: VideoFile, *, dry_run: bool = False
 ) -> tuple[bool, str, bool]:
-    processed_ok, processed_detail, _ = (
-        _verify_streamable_artifact(video, processed=True)
-        if getattr(video.processed_file, "name", "")
-        else (True, "", None)
-    )
-    raw_ok, raw_detail, _ = (
-        _verify_streamable_artifact(video, processed=False)
-        if getattr(video.raw_file, "name", "")
-        else (True, "", None)
-    )
-    if processed_ok and raw_ok:
+    stale_paths = [
+        attr
+        for attr in (
+            "raw_streamable_relative_path",
+            "processed_streamable_relative_path",
+        )
+        if str(getattr(video, attr, "") or "").strip()
+    ]
+    if not stale_paths:
         return True, "", False
 
+    detail = "legacy streamable MP4 paths are not allowed: " + ", ".join(stale_paths)
     try:
         if dry_run:
-            return (
-                False,
-                "; ".join(
-                    detail for detail in (processed_detail, raw_detail) if detail
-                ),
-                True,
-            )
+            return False, detail, True
         sync_video_streamable_artifacts(
             video,
             include_raw=bool(getattr(video.raw_file, "name", "")),
@@ -533,23 +520,7 @@ def _repair_streamable_state(
     except Exception as exc:
         return False, str(exc), False
 
-    processed_ok, processed_detail, _ = (
-        _verify_streamable_artifact(video, processed=True)
-        if getattr(video.processed_file, "name", "")
-        else (True, "", None)
-    )
-    raw_ok, raw_detail, _ = (
-        _verify_streamable_artifact(video, processed=False)
-        if getattr(video.raw_file, "name", "")
-        else (True, "", None)
-    )
-    if processed_ok and raw_ok:
-        return True, "", True
-    return (
-        False,
-        "; ".join(detail for detail in (processed_detail, raw_detail) if detail),
-        False,
-    )
+    return True, "", True
 
 
 def _degrade_video_to_encrypted(
@@ -1089,14 +1060,6 @@ def _ffmpeg_meta_fps(video: VideoFile) -> float | None:
     return float(fps)
 
 
-def _streamable_processed_path(video: VideoFile) -> Path | None:
-    relative_name = (video.processed_streamable_relative_path or "").strip()
-    if not relative_name:
-        return None
-    candidate = _storage_absolute_path(relative_name)
-    return candidate if candidate.is_file() else None
-
-
 def _select_ffmpeg_probe_source(
     video: VideoFile,
 ) -> tuple[str, str, dict[str, Any] | None, str]:
@@ -1135,23 +1098,11 @@ def _select_ffmpeg_probe_source(
                 exc,
             )
 
-    processed_streamable = _streamable_processed_path(video)
-    if processed_streamable is not None:
-        ok, probe_data, detail = _probe_video_path(processed_streamable)
-        if ok:
-            return (
-                str(processed_streamable),
-                "processed_streamable_fallback",
-                probe_data,
-                "",
-            )
-        return "", "processed_streamable_fallback", probe_data, detail
-
     return (
         "",
         "unavailable",
         None,
-        "no probeable canonical or processed streamable media",
+        "no probeable canonical media",
     )
 
 
@@ -1307,67 +1258,51 @@ def reconcile_streamable_probe(
     dry_run: bool,
 ) -> tuple[int, int, dict[str, Any]]:
     repaired = 0
-    lost = 0
     artifacts: list[dict[str, Any]] = []
     for processed in (False, True):
-        field_file = video.processed_file if processed else video.raw_file
-        if not getattr(field_file, "name", ""):
+        attr = (
+            "processed_streamable_relative_path"
+            if processed
+            else "raw_streamable_relative_path"
+        )
+        relative_path = str(getattr(video, attr, "") or "").strip()
+        if not relative_path:
             continue
-        ok, detail, path = _verify_streamable_artifact(video, processed=processed)
+        path = _storage_absolute_path(relative_path)
         artifact_report = {
             "kind": "processed" if processed else "raw",
-            "path": str(path) if path is not None else "",
-            "exists_and_mode_ok": ok,
+            "path": str(path),
+            "exists_and_mode_ok": path.is_file(),
             "probe_ok": False,
-            "action": "none",
-            "detail": detail,
+            "action": "would_remove_streamable" if dry_run else "removed_streamable",
+            "detail": "legacy streamable MP4 is not allowed at rest",
         }
-        if ok and path is not None:
-            probe_ok, _, probe_detail = _probe_video_path(path)
-            artifact_report["probe_ok"] = probe_ok
-            artifact_report["detail"] = probe_detail
-            if probe_ok:
-                artifacts.append(artifact_report)
-                continue
-
-        canonical_ok, canonical_detail = _verify_canonical_probe(
-            video,
-            processed=processed,
-        )
-        artifact_report["canonical_probe_ok"] = canonical_ok
-        artifact_report["canonical_detail"] = canonical_detail
-        if canonical_ok:
-            artifact_report["action"] = (
-                "would_rebuild_streamable" if dry_run else "rebuilt_streamable"
-            )
-            if not dry_run:
-                sync_video_streamable_artifacts(
-                    video,
-                    include_raw=not processed,
-                    include_processed=processed,
-                    save=True,
-                )
-            repaired += 1
-        else:
-            active_is_this_file = bool(video.is_processed) == processed
-            if active_is_this_file:
-                artifact_report["action"] = "lost"
-                _mark_video_lost(
-                    video,
-                    f"{artifact_report['kind']} streamable corrupt and canonical media unverifiable: {canonical_detail}",
-                    dry_run=dry_run,
-                )
-                lost += 1
-            else:
-                artifact_report["action"] = "warning"
-                _mark_video_warning(
-                    video,
-                    f"{artifact_report['kind']} streamable corrupt and canonical media unverifiable: {canonical_detail}",
-                    dry_run=dry_run,
-                )
         artifacts.append(artifact_report)
+        repaired += 1
 
-    return repaired, lost, {"artifacts": artifacts}
+    if artifacts and not dry_run:
+        try:
+            sync_video_streamable_artifacts(
+                video,
+                include_raw=bool(
+                    str(getattr(video, "raw_streamable_relative_path", "") or "")
+                ),
+                include_processed=bool(
+                    str(getattr(video, "processed_streamable_relative_path", "") or "")
+                ),
+                save=True,
+            )
+        except Exception as exc:
+            return (
+                0,
+                1,
+                {
+                    "artifacts": artifacts,
+                    "error": str(exc),
+                },
+            )
+
+    return repaired, 0, {"artifacts": artifacts}
 
 
 def reconcile_video_integrity(
@@ -1666,8 +1601,8 @@ def reconcile_media_integrity(
                             continue
                         artifact_dict = cast(dict[str, Any], artifact)
                         if artifact_dict.get("action") in {
-                            "would_rebuild_streamable",
-                            "rebuilt_streamable",
+                            "would_remove_streamable",
+                            "removed_streamable",
                         }:
                             summary.streamable_artifacts_repaired += 1
         if (

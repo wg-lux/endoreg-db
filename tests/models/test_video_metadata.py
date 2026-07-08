@@ -77,7 +77,8 @@ class TestVideoMetadataModel:
             sensitive_frame_ids=json.dumps([1, 5, 10, 15, 20, 25, 30, 35, 40, 45]),
         )
 
-        assert metadata.video == video_file
+        metadata_video = cast(VideoFile, getattr(metadata, "video"))
+        assert metadata_video == video_file
         assert metadata.sensitive_frame_count == 10
         assert metadata.sensitive_ratio == 0.25
         assert metadata.analyzed_at is not None
@@ -239,8 +240,8 @@ class TestVideoMetadataModel:
         assert metadata_zero.sensitive_percentage == 0.0
 
         # Test ratio = 1.0 (100%)
-        center = video_file.center
-        processor = video_file.processor
+        center = cast(Center, getattr(video_file, "center"))
+        processor = cast(EndoscopyProcessor, getattr(video_file, "processor"))
         video_file.delete()
         new_raw_file = SimpleUploadedFile(
             name="test-video-2.mp4",

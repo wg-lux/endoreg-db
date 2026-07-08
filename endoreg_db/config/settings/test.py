@@ -1,4 +1,5 @@
 import os
+import sys
 from pathlib import Path
 from types import NoneType
 
@@ -14,10 +15,17 @@ type DatabaseConfigValue = str | DatabaseOptions
 TEST_DB_DIR = BASE_DIR / "data" / "tests" / "db"
 TEST_DB_DIR.mkdir(parents=True, exist_ok=True)
 
-# Use an isolated SQLite file per pytest process by default. Shared file-backed
-# databases interact badly with --reuse-db after interrupted runs because stale
-# pytest processes can keep WAL/SHM locks open for the next session.
-TEST_DB_REUSE = env_bool("TEST_DB_REUSE", False)
+
+def _running_under_pytest() -> bool:
+    return "PYTEST_CURRENT_TEST" in os.environ or any(
+        "pytest" in Path(arg).name for arg in sys.argv[:2]
+    )
+
+
+# Pytest uses an isolated SQLite file per process by default. Normal management
+# commands using test settings reuse a stable test DB so `migrate` and a later
+# profiled command open the same schema.
+TEST_DB_REUSE = env_bool("TEST_DB_REUSE", not _running_under_pytest())
 TEST_DB_WORKER = env_str("PYTEST_XDIST_WORKER", "main")
 REUSED_TEST_DB_NAME = (
     f"test_db_{TEST_DB_WORKER}.sqlite3"

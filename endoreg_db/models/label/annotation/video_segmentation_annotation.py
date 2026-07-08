@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from django.db import models
 from django.db.models import CheckConstraint, F, Q
@@ -8,7 +8,6 @@ from django.db.models import CheckConstraint, F, Q
 
 if TYPE_CHECKING:
     from ...media.video.video_file import VideoFile
-    from ..video_segmentation_label import VideoSegmentationLabel
 
 
 class VideoSegmentationAnnotation(models.Model):
@@ -19,22 +18,22 @@ class VideoSegmentationAnnotation(models.Model):
     An annotation must be associated with exactly one `VideoFile`.
     """
 
-    video_file: models.ForeignKey[VideoFile] = models.ForeignKey(
+    video_file: models.ForeignKey[Any] = models.ForeignKey(
         "VideoFile",
         on_delete=models.CASCADE,
         related_name="video_segmentation_annotations",
     )
 
-    label: models.ForeignKey[VideoSegmentationLabel] = models.ForeignKey(
+    label: models.ForeignKey[Any] = models.ForeignKey(
         "VideoSegmentationLabel",
         on_delete=models.CASCADE,
     )
 
     # times in seconds
-    start_time: models.FloatField[float] = models.FloatField()
-    stop_time: models.FloatField[float] = models.FloatField()
+    start_time: models.FloatField[Any, Any] = models.FloatField()
+    stop_time: models.FloatField[Any, Any] = models.FloatField()
 
-    is_true: models.BooleanField[bool] = models.BooleanField(default=True)
+    is_true: models.BooleanField[Any, Any] = models.BooleanField(default=True)
 
     if TYPE_CHECKING:
         pass

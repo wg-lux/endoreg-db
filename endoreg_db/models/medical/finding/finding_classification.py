@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from django.db import models
 
@@ -17,8 +17,8 @@ class FindingClassificationTypeManager(models.Manager["FindingClassificationType
 
 
 class FindingClassificationType(models.Model):
-    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
-    description: models.TextField[str] = models.TextField(blank=True)
+    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    description: models.TextField[Any, Any] = models.TextField(blank=True)
     objects = FindingClassificationTypeManager()
 
     def natural_key(self) -> tuple[str]:
@@ -34,8 +34,8 @@ class FindingClassificationManager(models.Manager["FindingClassification"]):
 
 
 class FindingClassification(models.Model):
-    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
-    description: models.TextField[str] = models.TextField(blank=True)
+    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    description: models.TextField[Any, Any] = models.TextField(blank=True)
     finding_types: "models.ManyToManyField[FindingType, FindingType]" = (
         models.ManyToManyField(
             "FindingType", blank=True, related_name="finding_classifications"
@@ -106,10 +106,10 @@ class FindingClassificationChoiceManager(models.Manager["FindingClassificationCh
 
 
 class FindingClassificationChoice(models.Model):
-    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
-    description: models.TextField[str] = models.TextField(blank=True)
-    subcategories: models.JSONField[object] = models.JSONField(default=dict)
-    numerical_descriptors: models.JSONField[object] = models.JSONField(default=dict)
+    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    description: models.TextField[Any, Any] = models.TextField(blank=True)
+    subcategories: models.JSONField[Any, Any] = models.JSONField(default=dict)
+    numerical_descriptors: models.JSONField[Any, Any] = models.JSONField(default=dict)
     objects = FindingClassificationChoiceManager()
 
     if TYPE_CHECKING:

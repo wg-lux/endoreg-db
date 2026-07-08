@@ -261,7 +261,7 @@ def test_ffmpeg_report_records_db_fps_source(tmp_path: Path):
     assert report["action"] == "probe_unavailable"
 
 
-def test_ffmpeg_report_uses_streamable_fallback_source(
+def test_ffmpeg_report_does_not_use_streamable_fallback_source(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
     video = _video_with_initialized_frames(tmp_path, frame_count=3)
@@ -282,7 +282,10 @@ def test_ffmpeg_report_uses_streamable_fallback_source(
 
     monkeypatch.setattr(media_integrity, "STORAGE_DIR", tmp_path)
 
+    probed_paths: list[Path] = []
+
     def fake_probe_video_path(path: Path) -> tuple[bool, dict[str, object], str]:
+        probed_paths.append(path)
         return True, probe_data, ""
 
     monkeypatch.setattr(
@@ -298,13 +301,15 @@ def test_ffmpeg_report_uses_streamable_fallback_source(
     )
 
     report = summary.video_reports[0]["ffmpeg_metadata"]
-    assert report["source"] == "processed_streamable_fallback"
-    assert report["fps_provenance"] == "fps_verified_by_ffprobe"
-    assert report["probed_fps"] == 50.0
-    assert report["action"] == "would_backfill_ffmpeg_meta"
+    assert report["source"] == "unavailable"
+    assert report["fps_provenance"] == "fps_defaulted"
+    assert report["probed_fps"] is None
+    assert report["action"] == "fps_defaulted"
+    assert report["default_fps"] == 50.0
+    assert probed_paths == []
 
 
-def test_corrupt_streamable_with_valid_canonical_is_rebuild_only(
+def test_legacy_streamable_probe_reports_removal_only_in_dry_run(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
     video = _video_with_initialized_frames(tmp_path, frame_count=3)
@@ -314,34 +319,10 @@ def test_corrupt_streamable_with_valid_canonical_is_rebuild_only(
         b"corrupt-streamable",
         file_mode=media_integrity.STREAMABLE_FILE_MODE,
     )
-    video.processed_file.name = "processed/missing.mp4"
     video.processed_streamable_relative_path = "streamable/processed/fallback.mp4"
-    video.save(update_fields=["processed_file", "processed_streamable_relative_path"])
+    video.save(update_fields=["processed_streamable_relative_path"])
 
     monkeypatch.setattr(media_integrity, "STORAGE_DIR", tmp_path)
-
-    def fake_corrupt_probe_video_path(
-        path: Path,
-    ) -> tuple[bool, dict[str, object], str]:
-        return False, {"streams": []}, "corrupt streamable"
-
-    def fake_verify_canonical_probe(
-        video_arg: VideoFile,
-        *,
-        processed: bool,
-    ) -> tuple[bool, str]:
-        return True, ""
-
-    monkeypatch.setattr(
-        media_integrity,
-        "_probe_video_path",
-        fake_corrupt_probe_video_path,
-    )
-    monkeypatch.setattr(
-        media_integrity,
-        "_verify_canonical_probe",
-        fake_verify_canonical_probe,
-    )
 
     called: list[dict[str, bool]] = []
 
@@ -376,8 +357,9 @@ def test_corrupt_streamable_with_valid_canonical_is_rebuild_only(
     assert called == []
     assert summary.streamable_artifacts_checked == 1
     assert summary.streamable_artifacts_repaired == 1
+    assert summary.lost_records == 0
     artifact = summary.video_reports[0]["streamable_probe"]["artifacts"][0]
     assert artifact["kind"] == "processed"
     assert artifact["probe_ok"] is False
-    assert artifact["canonical_probe_ok"] is True
-    assert artifact["action"] == "would_rebuild_streamable"
+    assert artifact["action"] == "would_remove_streamable"
+    assert artifact["detail"] == "legacy streamable MP4 is not allowed at rest"

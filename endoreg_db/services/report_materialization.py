@@ -5,6 +5,7 @@ from typing import Protocol, cast
 
 from lx_dtypes.models.contracts import DocumentType as DocumentTypeContract
 from lx_dtypes.models.contracts import ReportContext
+from lx_dtypes.models.contracts.json_types import JsonObject
 
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
@@ -105,7 +106,11 @@ def resolve_pdf_document_type_name(
             return document_type_name.value
         return document_type_name
 
-    raw_meta = pdf.raw_meta if isinstance(pdf.raw_meta, dict) else {}
+    raw_meta: JsonObject
+    if isinstance(pdf.raw_meta, dict):
+        raw_meta = cast(JsonObject, pdf.raw_meta)
+    else:
+        raw_meta = cast(JsonObject, {})
     candidate = raw_meta.get("document_type")
     if isinstance(candidate, str) and candidate in DOCUMENT_TYPE_VALUES:
         return candidate
@@ -127,10 +132,6 @@ def build_report_context_from_pdf(
             "pdf.examination must be explicitly resolved before report materialization"
         )
     patient = pdf.examination.patient
-    if patient is None:
-        raise ValueError(
-            "pdf.examination.patient must be resolved before report materialization"
-        )
     if pdf.examination_id is None:
         raise ValueError(
             "pdf.examination_id must be resolved before report materialization"
@@ -247,11 +248,7 @@ def upsert_anonym_examination_report_from_pdf(
     report_obj_ref.type = document_type
     report_obj_ref.text = resolved_text
 
-    meta_obj: dict[str, object]
-    if isinstance(report_obj.meta, dict):
-        meta_obj = dict(report_obj.meta)
-    else:
-        meta_obj = {}
+    meta_obj = dict(report_obj_ref.meta or {})
     meta_obj.update(
         {
             "source": source,

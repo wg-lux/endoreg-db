@@ -36,6 +36,7 @@ from .model_weights import ensure_managed_stub_weights
 
 if TYPE_CHECKING:
     from endoreg_db.services.raw_pdf_files.metadata import ReportMetaJsonObject
+    from endoreg_db.models import RawPdfFile, VideoFile
 
 
 logger = getLogger("default_objects")
@@ -311,7 +312,7 @@ def get_random_default_examination_indication() -> ExaminationIndication:
     return examination_indication
 
 
-def get_default_egd_pdf():
+def get_default_egd_pdf() -> "RawPdfFile":
     """
     Get a default EGD report file for testing.
     This function creates a temporary copy of the default report file, uses it to create and save
@@ -388,7 +389,7 @@ def get_default_egd_pdf():
     return pdf_file
 
 
-def get_default_video_file():
+def get_default_video_file() -> "VideoFile":
     """
     Creates and initializes a default VideoFile instance for an EGD examination.
 

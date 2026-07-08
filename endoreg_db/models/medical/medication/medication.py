@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """Model for the medication."""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from django.db import models
 
@@ -18,18 +18,20 @@ class MedicationManager(models.Manager["Medication"]):
 class Medication(models.Model):
     """Model representing a medication."""
 
-    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
-    adapt_to_renal_function: models.BooleanField[bool] = models.BooleanField(
+    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    adapt_to_renal_function: models.BooleanField[Any, Any] = models.BooleanField(
         default=False
     )
-    adapt_to_hepatic_function: models.BooleanField[bool] = models.BooleanField(
+    adapt_to_hepatic_function: models.BooleanField[Any, Any] = models.BooleanField(
         default=False
     )
-    adapt_to_indication: models.BooleanField[bool] = models.BooleanField(default=False)
-    adapt_to_age: models.BooleanField[bool] = models.BooleanField(default=False)
-    adapt_to_weight: models.BooleanField[bool] = models.BooleanField(default=False)
-    adapt_to_risk: models.BooleanField[bool] = models.BooleanField(default=False)
-    default_unit: models.ForeignKey["Unit"] = models.ForeignKey(
+    adapt_to_indication: models.BooleanField[Any, Any] = models.BooleanField(
+        default=False
+    )
+    adapt_to_age: models.BooleanField[Any, Any] = models.BooleanField(default=False)
+    adapt_to_weight: models.BooleanField[Any, Any] = models.BooleanField(default=False)
+    adapt_to_risk: models.BooleanField[Any, Any] = models.BooleanField(default=False)
+    default_unit: models.ForeignKey["Unit | None"] = models.ForeignKey(
         "Unit", on_delete=models.CASCADE
     )
 

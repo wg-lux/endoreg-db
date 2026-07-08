@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import date, datetime
-from typing import TYPE_CHECKING, cast
+from datetime import date
+from typing import TYPE_CHECKING, cast, Any
 
 from django.db import models
 from lx_dtypes.models.contracts.subcategory_validation import (
@@ -10,8 +10,6 @@ from lx_dtypes.models.contracts.subcategory_validation import (
 )
 
 if TYPE_CHECKING:
-    from endoreg_db.models.administration.person.patient.patient import Patient
-    from endoreg_db.models.medical.event import Event, EventClassificationChoice
     from endoreg_db.utils.links import ModelLinks
 
 
@@ -23,22 +21,20 @@ class PatientEvent(models.Model):
     subcategories, and numerical descriptors.
     """
 
-    patient: models.ForeignKey["Patient"] = models.ForeignKey(
+    patient: models.ForeignKey[Any, Any] = models.ForeignKey(
         "Patient", on_delete=models.CASCADE, related_name="events"
     )
-    event: models.ForeignKey["Event"] = models.ForeignKey(
+    event: models.ForeignKey[Any, Any] = models.ForeignKey(
         "Event", on_delete=models.CASCADE, related_name="patient_events"
     )
-    date_start: models.DateField[date] = models.DateField()
-    date_end: models.DateField[date | None] = models.DateField(blank=True, null=True)
-    description: models.TextField[str | None] = models.TextField(blank=True, null=True)
-    classification_choice: models.ForeignKey["EventClassificationChoice | None"] = (
-        models.ForeignKey(
-            "EventClassificationChoice",
-            on_delete=models.CASCADE,
-            blank=True,
-            null=True,
-        )
+    date_start: models.DateField[Any, Any] = models.DateField()
+    date_end: models.DateField[Any, Any] = models.DateField(blank=True, null=True)
+    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
+    classification_choice: models.ForeignKey[Any, Any] = models.ForeignKey(
+        "EventClassificationChoice",
+        on_delete=models.CASCADE,
+        blank=True,
+        null=True,
     )
 
     subcategories: models.JSONField[dict[str, SubcategoryDictContract]] = (
@@ -48,19 +44,17 @@ class PatientEvent(models.Model):
         models.JSONField(default=dict)
     )
 
-    last_update: models.DateTimeField[datetime] = models.DateTimeField(auto_now=True)
+    last_update: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now=True)
 
     if TYPE_CHECKING:
         pass
 
     @property
-    def links(self) -> "ModelLinks":
+    def links(self) -> ModelLinks:
         """
         Returns a dictionary of links related to this PatientEvent.
         Currently, it only includes the patient and event.
         """
-        from endoreg_db.utils.links import ModelLinks
-
         return ModelLinks(patient_events=[self], events=[self.event])
 
     @property

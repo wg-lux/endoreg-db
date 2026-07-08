@@ -256,6 +256,7 @@ def test_reimport_reanonymizes_existing_video_without_full_import(
     raw_path.write_bytes(b"raw")
     video = _FakeVideo(raw_path)
     service_calls: list[dict[str, Any]] = []
+    hls_calls: list[Any] = []
     prediction_calls: list[tuple[Any, Any]] = []
 
     class _FakeVideoModel:
@@ -325,6 +326,17 @@ def test_reimport_reanonymizes_existing_video_without_full_import(
         raising=True,
     )
 
+    def _regenerate_hls_mock(target_video: Any) -> dict[str, Any]:
+        hls_calls.append(target_video)
+        return {"status": "materialized", "key_id": "reimport-hls-key"}
+
+    monkeypatch.setattr(
+        reimport_orchestrator,
+        "_regenerate_reimport_hls_artifacts",
+        _regenerate_hls_mock,
+        raising=True,
+    )
+
     def _init_specs_mock(target_video: Any) -> None:
         target_video.initialize_video_specs()
 
@@ -357,6 +369,7 @@ def test_reimport_reanonymizes_existing_video_without_full_import(
     assert video.initialize_specs_called is True
     assert video.initialize_frames_called is True
     assert video.refreshed is True
+    assert hls_calls == [video]
     assert prediction_calls == [(video, {})]
     assert data["prediction_refresh"]["queued"] is True
 

@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, TypeGuard, cast
 
 from django.db.models.fields.files import FieldFile
-from django.urls import reverse
 
 from endoreg_db.models.media.video.storage_mode import (
     VideoStorageMode,
@@ -13,6 +12,7 @@ from endoreg_db.models.media.video.storage_mode import (
 )
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
+from endoreg_db.utils.media_urls import build_video_stream_path
 from endoreg_db.utils.paths import normalize_protected_media_relative_path
 from endoreg_db.utils.rust_backend import is_lx_encrypted_file
 from endoreg_db.utils.storage import file_exists
@@ -126,30 +126,14 @@ def get_protected_video_stream_url(
 ) -> str | None:
     if getattr(video, "pk", None) is None:
         return None
+    if artifact_kind == VideoArtifactKind.RAW:
+        return None
     if artifact_kind == VideoArtifactKind.PROCESSED and not _field_has_name(
         getattr(video, "processed_file", None)
     ):
         return None
-    if artifact_kind == VideoArtifactKind.RAW:
-        try:
-            get_active_raw_video_file(video)
-        except ValueError:
-            return None
 
-    try:
-        storage_mode = coerce_video_storage_mode(getattr(video, "storage_mode", None))
-    except ValueError:
-        return None
-
-    if storage_mode == VideoStorageMode.STREAMABLE:
-        relative_path = get_video_stream_relative_path(video, artifact_kind)
-        if relative_path is None:
-            return None
-
-    url = reverse("api:video-stream", kwargs={"pk": video.pk})
-    if artifact_kind == VideoArtifactKind.PROCESSED:
-        return f"{url}?type=processed"
-    return url
+    return build_video_stream_path(int(video.pk), file_type="processed")
 
 
 def get_active_raw_video_file_url(video: "VideoFile") -> str | None:
@@ -164,7 +148,13 @@ def get_active_video_file_url(video: "VideoFile") -> str | None:
         )
         if processed_url is not None:
             return processed_url
-    return get_protected_video_stream_url(video, artifact_kind=VideoArtifactKind.RAW)
+    if getattr(video, "pk", None) is None:
+        return None
+    if _field_has_name(getattr(video, "raw_file", None)) or _field_has_name(
+        vars(video).get("active_raw_file")
+    ):
+        return build_video_stream_path(int(video.pk))
+    return None
 
 
 def get_raw_video_stream_relative_path(video: "VideoFile") -> str | None:

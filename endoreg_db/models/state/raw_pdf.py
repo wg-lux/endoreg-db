@@ -5,8 +5,7 @@ Defines state tracking models related to report processing, including extraction
 """
 
 import logging
-from datetime import datetime
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, cast, Any
 
 from django.db import models, transaction
 
@@ -27,51 +26,51 @@ class RawPdfState(models.Model):
     Uses BooleanFields for clear, distinct states.
     """
 
-    text_meta_extracted: models.BooleanField[bool] = models.BooleanField(
+    text_meta_extracted: models.BooleanField[Any, Any] = models.BooleanField(
         default=False, help_text="True if text metadata (OCR) has been extracted."
     )
 
     # AI / Annotation related states
-    initial_prediction_completed: models.BooleanField[bool] = models.BooleanField(
+    initial_prediction_completed: models.BooleanField[Any, Any] = models.BooleanField(
         default=False, help_text="True if initial AI prediction has run."
     )
 
     # Processing state
-    sensitive_meta_processed: models.BooleanField[bool] = models.BooleanField(
+    sensitive_meta_processed: models.BooleanField[Any, Any] = models.BooleanField(
         default=False,
         help_text="True if the video has been fully processed, meaning a anonymized person was created.",
     )
 
     # Anonymization state
-    anonymized: models.BooleanField[bool] = models.BooleanField(
+    anonymized: models.BooleanField[Any, Any] = models.BooleanField(
         default=False, help_text="True if the anonymized video file has been created."
     )
-    anonymization_validated: models.BooleanField[bool] = models.BooleanField(
+    anonymization_validated: models.BooleanField[Any, Any] = models.BooleanField(
         default=False,
         help_text="True if the anonymization process has been validated and confirmed.",
     )
 
     # Processing state
-    processing_started: models.BooleanField[bool] = models.BooleanField(
+    processing_started: models.BooleanField[Any, Any] = models.BooleanField(
         default=False,
         help_text="True if the processing has started, but not yet completed.",
     )
-    processing_error: models.BooleanField[bool] = models.BooleanField(
+    processing_error: models.BooleanField[Any, Any] = models.BooleanField(
         default=False, help_text="True if an error occurred during processing."
     )
 
     # Timestamps
-    date_created: models.DateTimeField[datetime] = models.DateTimeField(
+    date_created: models.DateTimeField[Any, Any] = models.DateTimeField(
         auto_now_add=True
     )
-    date_modified: models.DateTimeField[datetime] = models.DateTimeField(auto_now=True)
+    date_modified: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now=True)
 
-    was_created: models.BooleanField[bool] = models.BooleanField(
+    was_created: models.BooleanField[Any, Any] = models.BooleanField(
         default=True, help_text="True if this state was created for the first time."
     )
 
     # report metadata extraction state
-    pdf_meta_extracted: models.BooleanField[bool] = models.BooleanField(
+    pdf_meta_extracted: models.BooleanField[Any, Any] = models.BooleanField(
         default=False, help_text="True if report metadata has been extracted."
     )
 

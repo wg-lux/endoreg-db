@@ -3,7 +3,7 @@ import os
 from collections.abc import Callable
 from contextlib import nullcontext
 from pathlib import Path
-from typing import NoReturn
+from typing import NoReturn, Protocol, cast
 
 import pytest
 from lx_dtypes.models import SensitiveMeta
@@ -20,6 +20,26 @@ from endoreg_db.models import (
 )
 
 RealVideoAnonymizer = video_anonymization.VideoAnonymizer
+
+
+class _FrameBoxAnnotationLike(Protocol):
+    frame: Frame
+    label: "_NamedEntityLike"
+    information_source: "_NamedEntityLike"
+    external_annotation_id: str
+    float_value: float
+    x: int
+    y: int
+    width: int
+    height: int
+    image_width: int
+    image_height: int
+    value: bool
+    annotator: str
+
+
+class _NamedEntityLike(Protocol):
+    name: str
 
 
 def _valid_stream_info(*, width: int = 640, height: int = 480) -> JsonObject:
@@ -378,7 +398,7 @@ def test_persist_phi_region_proposals_creates_frame_box_annotation() -> None:
     )
 
     assert count == 1
-    annotation = FrameBoxAnnotation.objects.get()
+    annotation = cast(_FrameBoxAnnotationLike, FrameBoxAnnotation.objects.get())
     assert annotation.frame == frame
     assert annotation.label is not None
     assert annotation.information_source is not None
@@ -665,6 +685,70 @@ def test_anonymize_video_uses_local_source_path_override(
     assert result_ctx.anonymized_path == output_dir / "local-source-video.mp4"
     assert result_ctx.anonymized_path is not None
     assert result_ctx.anonymized_path.read_bytes() == b"anonymized-video"
+
+
+@pytest.mark.django_db
+def test_anonymizer_reuses_initialized_frame_cleaner(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    center = Center.objects.create(
+        name="reuse-frame-cleaner-center",
+        display_name="Reuse FrameCleaner Center",
+    )
+    video = VideoFile.objects.create(center=center, video_hash="reuse-frame-cleaner")
+    processor = _create_processor_with_roi("reuse_frame_cleaner_processor", center)
+    source_video = tmp_path / "source.mp4"
+    source_video.write_bytes(b"source-video")
+    output_dir = tmp_path / "anonymized"
+    frame_cleaner_instances: list[object] = []
+
+    class FakeFrameCleaner:
+        def __init__(self) -> None:
+            frame_cleaner_instances.append(self)
+
+        def clean_video(
+            self,
+            *,
+            video_path: Path,
+            endoscope_image_roi: dict[str, int],
+            endoscope_data_roi_nested: dict[str, dict[str, int | None]],
+            output_path: Path,
+        ) -> tuple[Path, JsonObject]:
+            output_path.write_bytes(b"anonymized-video")
+            return output_path, {}
+
+    monkeypatch.setattr(video_anonymization, "FrameCleaner", FakeFrameCleaner)
+    monkeypatch.setattr(
+        video_anonymization, "_ensure_ffmpeg_tools_on_path", _ensure_ffmpeg_tools_noop
+    )
+    monkeypatch.setattr(
+        video_anonymization,
+        "_processed_video_dir",
+        _processed_video_dir_for(output_dir),
+    )
+    monkeypatch.setattr(
+        video_anonymization,
+        "get_stream_info",
+        _stream_info_for_path,
+    )
+    monkeypatch.setattr(
+        video_anonymization,
+        "sensitive_meta_storage",
+        _sensitive_meta_storage_noop,
+    )
+
+    ctx = _create_import_context(
+        file_path=source_video,
+        center=center,
+        video=video,
+        processor_name=processor.name,
+    )
+    anonymizer = RealVideoAnonymizer()
+
+    anonymizer.anonymize_video(ctx)
+
+    assert len(frame_cleaner_instances) == 1
 
 
 @pytest.mark.django_db

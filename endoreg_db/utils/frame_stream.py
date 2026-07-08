@@ -63,6 +63,14 @@ class FrameSample:
     rgb_frame: np.ndarray
 
 
+@dataclass(frozen=True)
+class EncodedFrameSample:
+    frame_number: int
+    timestamp: float
+    content_type: str
+    image_bytes: bytes
+
+
 def _parse_frame_rate(value: object) -> float | None:
     if value is None:
         return None
@@ -115,6 +123,18 @@ def _video_stream_metadata(
     if fps <= 0:
         fps = DEFAULT_VIDEO_FPS
     return width, height, float(fps)
+
+
+def _video_stream_fps(
+    video_path: Path,
+    *,
+    fps_hint: float | None,
+) -> float:
+    if fps_hint is not None and fps_hint > 0:
+        return float(fps_hint)
+
+    _width, _height, fps = _video_stream_metadata(video_path, fps_hint=fps_hint)
+    return fps
 
 
 def _read_exact(handle: IO[bytes], byte_count: int) -> bytes:
@@ -308,6 +328,86 @@ def read_video_path_frame_sample(
         process.stderr.close()
 
 
+def read_video_path_frame_jpeg(
+    video_path: Path,
+    *,
+    frame_number: int,
+    fps_hint: float | None = None,
+    quality: int = 2,
+) -> EncodedFrameSample:
+    if frame_number < 0:
+        raise ValueError("frame_number must be non-negative.")
+
+    if quality < 1 or quality > 31:
+        raise ValueError("quality must be between 1 and 31 for ffmpeg mjpeg output.")
+
+    ffmpeg_executable = _resolve_ffmpeg_executable()
+    if not ffmpeg_executable:
+        raise FileNotFoundError(
+            "ffmpeg command not found. Ensure FFmpeg is installed and in PATH."
+        )
+
+    fps = _video_stream_fps(video_path, fps_hint=fps_hint)
+    timestamp = frame_number / fps
+    command = [
+        ffmpeg_executable,
+        "-nostdin",
+        "-v",
+        "error",
+        "-ss",
+        f"{timestamp:.6f}",
+        "-i",
+        str(video_path),
+        "-map",
+        "0:v:0",
+        "-an",
+        "-sn",
+        "-dn",
+        "-frames:v",
+        "1",
+        "-q:v",
+        str(quality),
+        "-f",
+        "image2pipe",
+        "-vcodec",
+        "mjpeg",
+        "pipe:1",
+    ]
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        stdout, stderr_bytes = process.communicate()
+    finally:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+
+    stderr = stderr_bytes.decode("utf-8", errors="replace") if stderr_bytes else ""
+    if process.returncode != 0:
+        raise RuntimeError(
+            f"ffmpeg single-frame jpeg decode failed for {video_path.name} "
+            f"with exit code {process.returncode}: {stderr.strip()}"
+        )
+    if not stdout:
+        raise RuntimeError(
+            f"ffmpeg produced no encoded frame {frame_number} for {video_path.name}."
+        )
+
+    return EncodedFrameSample(
+        frame_number=frame_number,
+        timestamp=timestamp,
+        content_type="image/jpeg",
+        image_bytes=stdout,
+    )
+
+
 def iter_video_file_frame_samples(
     video: _VideoLike,
     *,
@@ -351,10 +451,39 @@ def read_video_file_frame_sample(
         )
 
 
+def read_video_file_frame_jpeg(
+    video: _VideoLike,
+    *,
+    frame_number: int,
+    file_type: str = "raw",
+    quality: int = 2,
+) -> EncodedFrameSample:
+    fps_hint: float | None = None
+    try:
+        fps_value = video.get_fps()
+        if isinstance(fps_value, (int, float)):
+            fps_hint = float(fps_value) or None
+        elif isinstance(fps_value, str):
+            fps_hint = float(fps_value) or None
+    except (TypeError, ValueError):
+        fps_hint = None
+
+    with _materialize_video_file_typed(video, file_type) as source_path:
+        return read_video_path_frame_jpeg(
+            source_path,
+            frame_number=frame_number,
+            fps_hint=fps_hint,
+            quality=quality,
+        )
+
+
 __all__ = [
+    "EncodedFrameSample",
     "FrameSample",
     "iter_video_file_frame_samples",
     "iter_video_path_frame_samples",
+    "read_video_file_frame_jpeg",
     "read_video_file_frame_sample",
+    "read_video_path_frame_jpeg",
     "read_video_path_frame_sample",
 ]

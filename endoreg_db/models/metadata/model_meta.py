@@ -6,8 +6,7 @@ including versioning, configuration, and associated weights files.
 Logic is primarily handled in model_meta_logic.py.
 """
 
-from datetime import datetime
-from typing import TYPE_CHECKING, Callable, ClassVar, Unpack, cast
+from typing import TYPE_CHECKING, Callable, ClassVar, Unpack, cast, Any
 
 from django.core.validators import FileExtensionValidator
 from django.db import models
@@ -26,8 +25,7 @@ from ..utils import WEIGHTS_DIR
 from . import model_meta_logic
 
 if TYPE_CHECKING:
-    from ..administration.ai.ai_model import AiModel
-    from ..label.label_set import LabelSet
+    pass
 
 
 class ModelMetaManager(models.Manager["ModelMeta"]):
@@ -64,28 +62,28 @@ class ModelMeta(models.Model):
     Logic for creation, querying, and configuration is in model_meta_logic.py.
     """
 
-    name: models.CharField[str] = models.CharField(
+    name: models.CharField[Any, Any] = models.CharField(
         max_length=255,
         help_text="User-defined name for this specific model metadata set (e.g., 'segmentation_base').",
     )
-    version: models.CharField[str] = models.CharField(
+    version: models.CharField[Any, Any] = models.CharField(
         max_length=255,
         help_text="Version identifier for this metadata set (e.g., '1', '2a').",
     )
-    model: models.ForeignKey["AiModel"] = models.ForeignKey(
+    model: models.ForeignKey[Any] = models.ForeignKey(
         "AiModel",
         on_delete=models.CASCADE,
         related_name="metadata_versions",
         help_text="The base AI model architecture this metadata belongs to.",
     )
 
-    labelset: models.ForeignKey["LabelSet"] = models.ForeignKey(
+    labelset: models.ForeignKey[Any] = models.ForeignKey(
         "LabelSet",
         on_delete=models.CASCADE,
         related_name="model_metadata",
         help_text="The set of labels this model version predicts.",
     )
-    activation: models.CharField[str] = models.CharField(
+    activation: models.CharField[Any, Any] = models.CharField(
         max_length=50,
         default="sigmoid",
         help_text="Output activation function (e.g., 'sigmoid', 'softmax', 'none').",
@@ -100,39 +98,39 @@ class ModelMeta(models.Model):
         help_text="Path to the model weights file (.safetensors), relative to MEDIA_ROOT.",
     )
 
-    mean: models.CharField[str] = models.CharField(
+    mean: models.CharField[Any, Any] = models.CharField(
         max_length=255,
         default="0.45211223,0.27139644,0.19264949",
         help_text="Comma-separated mean values for input normalization.",
     )
-    std: models.CharField[str] = models.CharField(
+    std: models.CharField[Any, Any] = models.CharField(
         max_length=255,
         default="0.31418097,0.21088019,0.16059452",
         help_text="Comma-separated standard deviation values for input normalization.",
     )
-    size_x: models.IntegerField[int] = models.IntegerField(
+    size_x: models.IntegerField[Any, Any] = models.IntegerField(
         default=716, help_text="Expected input image width."
     )
-    size_y: models.IntegerField[int] = models.IntegerField(
+    size_y: models.IntegerField[Any, Any] = models.IntegerField(
         default=716, help_text="Expected input image height."
     )
-    axes: models.CharField[str] = models.CharField(
+    axes: models.CharField[Any, Any] = models.CharField(
         max_length=10,
         default="2,0,1",
         help_text="Comma-separated target axis order (e.g., '2,0,1' for CHW).",
     )
 
-    batchsize: models.IntegerField[int] = models.IntegerField(
+    batchsize: models.IntegerField[Any, Any] = models.IntegerField(
         default=16, help_text="Default batch size for inference."
     )
-    num_workers: models.IntegerField[int] = models.IntegerField(
+    num_workers: models.IntegerField[Any, Any] = models.IntegerField(
         default=0, help_text="Default number of workers for data loading."
     )
 
-    description: models.TextField[str | None] = models.TextField(
+    description: models.TextField[Any, Any] = models.TextField(
         blank=True, null=True, help_text="Optional description."
     )
-    date_created: models.DateTimeField[datetime] = models.DateTimeField(
+    date_created: models.DateTimeField[Any, Any] = models.DateTimeField(
         auto_now_add=True
     )
 

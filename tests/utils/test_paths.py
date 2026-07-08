@@ -301,6 +301,37 @@ def test_protected_media_relative_path_rejects_unsafe_segments() -> None:
         paths_module.normalize_protected_media_relative_path("../escape.mp4")
 
 
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "../escape.mp4",
+        "streamable_videos/../../etc/passwd",
+        "streamable_videos/../processed/video.mp4",
+        "/etc/passwd",
+        "",
+    ],
+)
+def test_resolve_protected_media_path_rejects_traversal_and_absolute_paths(
+    relative_path: str,
+) -> None:
+    with pytest.raises(ValueError):
+        paths_module.resolve_protected_media_path(relative_path)
+
+
+def test_storage_tier_matrix_resolves_documented_path_model_fields() -> None:
+    paths = paths_module.EndoregPathsModel.from_environment()
+
+    for tier in paths_module.StorageTier:
+        field_name = paths_module.STORAGE_TIER_FIELDS[tier]
+        assert field_name in paths_module.EndoregPathsModel.__annotations__
+        root = paths_module.get_storage_tier_root(tier)
+        assert root == getattr(paths, field_name)
+        if tier in paths_module.PROTECTED_STORAGE_TIERS:
+            assert root.resolve().is_relative_to(paths.protected_root.resolve())
+        else:
+            assert root.resolve().is_relative_to(paths.data.resolve())
+
+
 def test_watcher_intake_dirs_are_distinct_from_protected_media_root(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -373,4 +404,38 @@ def test_resolve_existing_protected_media_path_rejects_intake_and_accepts_manage
             "upload_jobs/watcher/job-123/incoming.pdf"
         )
         == managed_file.resolve()
+    )
+
+
+def test_protected_media_read_helpers_do_not_bootstrap_directories(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    protected_root = tmp_path / "protected"
+    storage_root = protected_root / "storage"
+    media_file = storage_root / "streamable_videos" / "processed" / "video.mp4"
+
+    reloaded = reload_paths(
+        monkeypatch,
+        LX_ANNOTATE_ENCRYPTED_DATA_DIR=protected_root,
+        STORAGE_DIR=storage_root,
+    )
+    media_file.parent.mkdir(parents=True, exist_ok=True)
+    media_file.write_bytes(b"managed media")
+
+    def fail_if_directory_bootstrap_runs(path: Path) -> Path:
+        raise AssertionError(f"read-only path helper tried to ensure {path}")
+
+    monkeypatch.setattr(
+        reloaded,
+        "_ensure_directory",
+        fail_if_directory_bootstrap_runs,
+    )
+
+    assert module_callable(reloaded, "protected_media_root")() == storage_root.resolve()
+    assert (
+        module_callable(reloaded, "resolve_existing_protected_media_path")(
+            "streamable_videos/processed/video.mp4"
+        )
+        == media_file.resolve()
     )

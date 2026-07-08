@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING, TypeAlias, Any
 
 from django.db import models
 
@@ -20,8 +20,8 @@ class VideoSegmentationLabelSetManager(models.Manager["VideoSegmentationLabelSet
 
 
 class VideoSegmentationLabelSet(models.Model):
-    name: models.CharField[str] = models.CharField(max_length=255)
-    description: models.TextField[VideoSegmentationLabelSetDescription | None] = (
+    name: models.CharField[Any, Any] = models.CharField(max_length=255)
+    description: models.TextField[VideoSegmentationLabelSetDescription, Any] = (
         models.TextField(blank=True, null=True)
     )
     labels: models.ManyToManyField[VideoSegmentationLabel, VideoSegmentationLabel] = (

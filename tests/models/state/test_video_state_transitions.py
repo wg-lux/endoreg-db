@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import pytest
+from datetime import datetime
 from django.db import IntegrityError, transaction
 from django.utils import timezone
+from typing import cast
 
 from endoreg_db.models.state.video import SHA256_HEX_LENGTH, VideoState
 
@@ -87,7 +89,8 @@ def test_mark_ready_for_export_enforces_transition_order(
 
     state.refresh_from_db()
     assert state.ready_for_export is False
-    assert state.ready_for_export_at is None
+    ready_for_export_at = cast(datetime | None, getattr(state, "ready_for_export_at"))
+    assert ready_for_export_at is None
     assert state.ready_for_export_by == ""
     assert state.processed_file_sha256 == ""
 
@@ -133,4 +136,5 @@ def test_mark_ready_for_export_normalizes_required_evidence() -> None:
     assert state.ready_for_export is True
     assert state.processed_file_sha256 == VALID_SHA256
     assert state.ready_for_export_by == "validator"
-    assert state.ready_for_export_at is not None
+    ready_for_export_at = cast(datetime | None, getattr(state, "ready_for_export_at"))
+    assert ready_for_export_at is not None

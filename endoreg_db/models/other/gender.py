@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from django.db import models
 
@@ -42,11 +42,11 @@ class Gender(models.Model):
 
     objects = GenderManager()
 
-    name: models.CharField[str] = models.CharField(max_length=255)
-    abbreviation: models.CharField[str | None] = models.CharField(
+    name: models.CharField[Any, Any] = models.CharField(max_length=255)
+    abbreviation: models.CharField[Any, Any] = models.CharField(
         max_length=255, null=True
     )
-    description: models.TextField[str | None] = models.TextField(blank=True, null=True)
+    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
 
     if TYPE_CHECKING:
 

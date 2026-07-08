@@ -3,6 +3,7 @@ from __future__ import annotations
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
+from typing import cast
 
 from endoreg_db.models import Center, NetworkNode, TransferJob, UploadJob
 
@@ -118,10 +119,11 @@ class HubProvenanceValidationTests(TestCase):
         assert transfer_job.provenance["entrypoint"] == "transfer"
         media_uploads = transfer_job.provenance["media_uploads"]
         assert isinstance(media_uploads, list)
-        first_media_upload = media_uploads[0]
+        first_media_upload = cast(dict[str, object], media_uploads[0])
         assert isinstance(first_media_upload, dict)
         assert first_media_upload["media_role"] == "processed"
 
         case_resolution = transfer_job.provenance["case_resolution"]
         assert isinstance(case_resolution, dict)
-        assert case_resolution["status"] == "linked"
+        case_resolution_data = cast(dict[str, object], case_resolution)
+        assert case_resolution_data["status"] == "linked"

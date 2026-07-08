@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-from datetime import datetime
 from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING, TypeAlias, Any
 
 from django.db import models
 
 if TYPE_CHECKING:
     from ...media.frame import Frame
+    from ..label import Label
     from ...metadata import ModelMeta
     from ...other.information_source import InformationSource
-    from ..label import Label
 
 NoImageClassificationAnnotationValue: TypeAlias = NoneType
 ImageClassificationAnnotationFloat: TypeAlias = (
@@ -47,7 +46,7 @@ class ImageClassificationAnnotation(models.Model):
     """
 
     # Single ForeignKey to the unified Frame model
-    frame: models.ForeignKey[Frame] = models.ForeignKey(
+    frame: models.ForeignKey["Frame"] = models.ForeignKey(
         "Frame",  # Points to the unified Frame model
         on_delete=models.CASCADE,
         related_name="image_classification_annotations",
@@ -55,40 +54,36 @@ class ImageClassificationAnnotation(models.Model):
         null=False,
     )
 
-    label: models.ForeignKey[Label] = models.ForeignKey(
+    label: models.ForeignKey["Label"] = models.ForeignKey(
         "Label",
         on_delete=models.CASCADE,
         related_name="image_classification_annotations",
     )
-    value: models.BooleanField[bool] = models.BooleanField()
-    float_value: models.FloatField[ImageClassificationAnnotationFloat | None] = (
-        models.FloatField(blank=True, null=True)
-    )
-    annotator: models.CharField[ImageClassificationAnnotationText | None] = (
-        models.CharField(max_length=255, blank=True, null=True)
+    value: models.BooleanField[Any, Any] = models.BooleanField()
+    float_value: models.FloatField[Any, Any] = models.FloatField(blank=True, null=True)
+    annotator: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
     )
     external_annotation_id: models.CharField[
-        ImageClassificationAnnotationText | None
+        ImageClassificationAnnotationText | None, Any
     ] = models.CharField(
         max_length=255,
         blank=True,
         null=True,
         db_index=True,
     )
-    model_meta: models.ForeignKey[ImageClassificationAnnotationModelMeta | None] = (
-        models.ForeignKey(
-            "ModelMeta",
-            on_delete=models.SET_NULL,
-            related_name="image_classification_annotations",
-            default=None,
-            null=True,
-            blank=True,
-        )
+    model_meta: models.ForeignKey["ModelMeta | None"] = models.ForeignKey(
+        "ModelMeta",
+        on_delete=models.SET_NULL,
+        related_name="image_classification_annotations",
+        default=None,
+        null=True,
+        blank=True,
     )
-    date_created: models.DateTimeField[datetime] = models.DateTimeField(
+    date_created: models.DateTimeField[Any, Any] = models.DateTimeField(
         auto_now_add=True
     )
-    date_modified: models.DateTimeField[datetime] = models.DateTimeField(auto_now=True)
+    date_modified: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now=True)
     information_source: models.ForeignKey[
         ImageClassificationAnnotationInformationSource | None
     ] = models.ForeignKey(

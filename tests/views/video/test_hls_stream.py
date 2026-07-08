@@ -65,6 +65,11 @@ def _authenticated_request(
     return request
 
 
+def _artifact_video_pk(hls_artifact: VideoHlsArtifact) -> int:
+    hls_video = cast(Any, hls_artifact).video
+    return hls_video.pk
+
+
 def _assert_no_cors_headers(response: Any) -> None:
     assert "Access-Control-Allow-Origin" not in response.headers
     assert "Access-Control-Allow-Credentials" not in response.headers
@@ -84,14 +89,14 @@ def test_hls_playlist_and_segment_use_nginx_accel_after_authz(
     monkeypatch.setenv("SERVE_WITH_NGINX", "true")
     monkeypatch.setenv("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
     user = User.objects.create_user(username="hls-reader")
-    video = hls_artifact.video
+    video_pk = _artifact_video_pk(hls_artifact)
 
     playlist_response = hls_stream.HLSPlaylistView.as_view()(
         _authenticated_request(
-            f"/endoreg-api/media/videos/{video.pk}/hls/playlist/",
+            f"/endoreg-api/media/videos/{video_pk}/hls/playlist/",
             user,
         ),
-        pk=video.pk,
+        pk=video_pk,
     )
     assert playlist_response.status_code == 200
     assert cast(Any, playlist_response).content == b""
@@ -104,11 +109,11 @@ def test_hls_playlist_and_segment_use_nginx_accel_after_authz(
 
     segment_response = hls_stream.HLSSegmentView.as_view()(
         _authenticated_request(
-            f"/endoreg-api/media/videos/{video.pk}/hls/segments/"
+            f"/endoreg-api/media/videos/{video_pk}/hls/segments/"
             f"{hls_artifact.key_id}/seg_000.ts",
             user,
         ),
-        pk=video.pk,
+        pk=video_pk,
         key_id=hls_artifact.key_id,
         segment_name="seg_000.ts",
     )
@@ -130,14 +135,14 @@ def test_hls_playlist_and_key_serve_same_origin_without_cors_headers(
     monkeypatch.delenv("DJANGO_CORS_ALLOWED_ORIGINS", raising=False)
     monkeypatch.delenv("SERVE_WITH_NGINX", raising=False)
     user = User.objects.create_user(username="hls-same-origin-reader")
-    video = hls_artifact.video
+    video_pk = _artifact_video_pk(hls_artifact)
 
     playlist_response = hls_stream.HLSPlaylistView.as_view()(
         _authenticated_request(
-            f"/endoreg-api/media/videos/{video.pk}/hls/playlist/",
+            f"/endoreg-api/media/videos/{video_pk}/hls/playlist/",
             user,
         ),
-        pk=video.pk,
+        pk=video_pk,
     )
     assert playlist_response.status_code == 200
     assert playlist_response["Content-Type"] == "application/vnd.apple.mpegurl"
@@ -147,10 +152,10 @@ def test_hls_playlist_and_key_serve_same_origin_without_cors_headers(
 
     key_response = hls_stream.HLSKeyView.as_view()(
         _authenticated_request(
-            f"/endoreg-api/media/videos/{video.pk}/hls/key/{hls_artifact.key_id}/",
+            f"/endoreg-api/media/videos/{video_pk}/hls/key/{hls_artifact.key_id}/",
             user,
         ),
-        pk=video.pk,
+        pk=video_pk,
         key_id=hls_artifact.key_id,
     )
     assert key_response.status_code == 200
@@ -166,15 +171,15 @@ def test_hls_segment_fails_closed_without_nginx_offload(
     monkeypatch.delenv("DJANGO_CORS_ALLOWED_ORIGINS", raising=False)
     monkeypatch.delenv("SERVE_WITH_NGINX", raising=False)
     user = User.objects.create_user(username="hls-no-nginx-reader")
-    video = hls_artifact.video
+    video_pk = _artifact_video_pk(hls_artifact)
 
     segment_response = hls_stream.HLSSegmentView.as_view()(
         _authenticated_request(
-            f"/endoreg-api/media/videos/{video.pk}/hls/segments/"
+            f"/endoreg-api/media/videos/{video_pk}/hls/segments/"
             f"{hls_artifact.key_id}/seg_000.ts",
             user,
         ),
-        pk=video.pk,
+        pk=video_pk,
         key_id=hls_artifact.key_id,
         segment_name="seg_000.ts",
     )
@@ -193,15 +198,15 @@ def test_hls_views_preserve_configured_cross_origin_cors(
     monkeypatch.setenv("SERVE_WITH_NGINX", "true")
     monkeypatch.setenv("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
     user = User.objects.create_user(username="hls-cross-origin-reader")
-    video = hls_artifact.video
+    video_pk = _artifact_video_pk(hls_artifact)
 
     playlist_response = hls_stream.HLSPlaylistView.as_view()(
         _authenticated_request(
-            f"/endoreg-api/media/videos/{video.pk}/hls/playlist/",
+            f"/endoreg-api/media/videos/{video_pk}/hls/playlist/",
             user,
             origin=frontend_origin,
         ),
-        pk=video.pk,
+        pk=video_pk,
     )
     assert playlist_response.status_code == 200
     _assert_explicit_credentialed_cors(playlist_response, frontend_origin)
@@ -209,11 +214,11 @@ def test_hls_views_preserve_configured_cross_origin_cors(
 
     key_response = hls_stream.HLSKeyView.as_view()(
         _authenticated_request(
-            f"/endoreg-api/media/videos/{video.pk}/hls/key/{hls_artifact.key_id}/",
+            f"/endoreg-api/media/videos/{video_pk}/hls/key/{hls_artifact.key_id}/",
             user,
             origin=frontend_origin,
         ),
-        pk=video.pk,
+        pk=video_pk,
         key_id=hls_artifact.key_id,
     )
     assert key_response.status_code == 200
@@ -221,12 +226,12 @@ def test_hls_views_preserve_configured_cross_origin_cors(
 
     segment_response = hls_stream.HLSSegmentView.as_view()(
         _authenticated_request(
-            f"/endoreg-api/media/videos/{video.pk}/hls/segments/"
+            f"/endoreg-api/media/videos/{video_pk}/hls/segments/"
             f"{hls_artifact.key_id}/seg_000.ts",
             user,
             origin=frontend_origin,
         ),
-        pk=video.pk,
+        pk=video_pk,
         key_id=hls_artifact.key_id,
         segment_name="seg_000.ts",
     )
@@ -246,14 +251,14 @@ def test_hls_key_view_returns_ephemeral_uncached_key(
 ) -> None:
     monkeypatch.delenv("DJANGO_CORS_ALLOWED_ORIGINS", raising=False)
     user = User.objects.create_user(username="hls-key-reader")
-    video = hls_artifact.video
+    video_pk = _artifact_video_pk(hls_artifact)
 
     response = hls_stream.HLSKeyView.as_view()(
         _authenticated_request(
-            f"/endoreg-api/media/videos/{video.pk}/hls/key/{hls_artifact.key_id}/",
+            f"/endoreg-api/media/videos/{video_pk}/hls/key/{hls_artifact.key_id}/",
             user,
         ),
-        pk=video.pk,
+        pk=video_pk,
         key_id=hls_artifact.key_id,
     )
 
@@ -270,14 +275,14 @@ def test_hls_playlist_rejects_raw_artifact_request(
     hls_artifact: VideoHlsArtifact,
 ) -> None:
     user = User.objects.create_user(username="hls-raw-reader")
-    video = hls_artifact.video
+    video_pk = _artifact_video_pk(hls_artifact)
 
     response = hls_stream.HLSPlaylistView.as_view()(
         _authenticated_request(
-            f"/endoreg-api/media/videos/{video.pk}/hls/playlist/?type=raw",
+            f"/endoreg-api/media/videos/{video_pk}/hls/playlist/?type=raw",
             user,
         ),
-        pk=video.pk,
+        pk=video_pk,
     )
 
     assert response.status_code == 404

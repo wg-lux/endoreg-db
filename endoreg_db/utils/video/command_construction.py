@@ -5,6 +5,11 @@ from pathlib import Path
 from typing import List
 
 logger = logging.getLogger("ffmpeg_wrapper")
+_COMMON_FFMPEG_ARGS = ("-nostdin", "-hide_banner")
+# stdin is disabled at subprocess boundary; ffprobe 8.1 rejects the ffmpeg-only
+# -nostdin option.
+_COMMON_FFPROBE_ARGS = ("-hide_banner",)
+_LOSSLESS_FRAME_EXTENSIONS = frozenset({"png"})
 
 
 class TimestampRepairMode(str, Enum):
@@ -58,19 +63,27 @@ def _build_transcode_command(
     extra_args: List[str] | None,
     timestamp_repair_mode: TimestampRepairMode,
 ) -> List[str]:
+    disable_audio = _has_flag(extra_args, "-an")
     command = [
         ffmpeg_executable,
+        *_COMMON_FFMPEG_ARGS,
         *_timestamp_repair_input_args(timestamp_repair_mode),
         "-i",
         str(input_path),
         *encoder_args,
-        "-c:a",
-        audio_codec,
-        "-b:a",
-        audio_bitrate,
-        *_timestamp_repair_output_args(timestamp_repair_mode),
-        "-y",
     ]
+
+    if not disable_audio:
+        command.extend(["-c:a", audio_codec])
+        if audio_codec != "copy":
+            command.extend(["-b:a", audio_bitrate])
+
+    command.extend(
+        [
+            *_timestamp_repair_output_args(timestamp_repair_mode),
+            "-y",
+        ]
+    )
 
     if extra_args:
         command.extend(extra_args)
@@ -88,6 +101,7 @@ def _build_filter_transcode_command(
 ) -> List[str]:
     return [
         ffmpeg_executable,
+        *_COMMON_FFMPEG_ARGS,
         "-i",
         str(input_path),
         *encoder_args,
@@ -104,6 +118,7 @@ def _build_ffprobe_stream_info_command(
 ) -> List[str]:
     return [
         ffprobe_executable,
+        *_COMMON_FFPROBE_ARGS,
         "-v",
         "quiet",
         "-print_format",
@@ -120,13 +135,13 @@ def _build_extract_frames_command(
     output_pattern: Path,
     quality: int,
     fps: float | None,
+    ext: str,
 ) -> List[str]:
     cmd = [
         ffmpeg_executable,
+        *_COMMON_FFMPEG_ARGS,
         "-i",
         str(video_path),
-        "-qscale:v",
-        str(quality),
         "-start_number",
         "0",
     ]
@@ -134,6 +149,7 @@ def _build_extract_frames_command(
     if fps is not None:
         cmd.extend(["-vf", f"fps={fps}"])
 
+    cmd.extend(_frame_image_encoder_args(ext=ext, quality=quality))
     cmd.append(str(output_pattern))
     return cmd
 
@@ -146,18 +162,19 @@ def _build_extract_frame_range_command(
     start_frame: int,
     end_frame: int,
     quality: int,
+    ext: str,
 ) -> List[str]:
     select_filter = f"select='between(n,{start_frame},{end_frame - 1})'"
     return [
         ffmpeg_executable,
+        *_COMMON_FFMPEG_ARGS,
         "-i",
         str(video_path),
         "-vf",
         select_filter,
         "-vsync",
         "vfr",
-        "-qscale:v",
-        str(quality),
+        *_frame_image_encoder_args(ext=ext, quality=quality),
         "-copyts",
         "-start_number",
         str(start_frame),
@@ -187,3 +204,14 @@ def _update_or_append_ffmpeg_arg(args: List[str], key: str, value: str) -> None:
             value,
         )
         args[value_index] = value
+
+
+def _has_flag(args: List[str] | None, flag: str) -> bool:
+    return args is not None and flag in args
+
+
+def _frame_image_encoder_args(*, ext: str, quality: int) -> list[str]:
+    normalized_ext = ext.lower().lstrip(".")
+    if normalized_ext in _LOSSLESS_FRAME_EXTENSIONS:
+        return ["-compression_level", "0"]
+    return ["-qscale:v", str(quality)]

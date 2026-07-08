@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING, TypeAlias, Any
 
 from django.db import models
 
@@ -27,11 +27,11 @@ class QualificationType(models.Model):
     Model representing a qualification type.
     """
 
-    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
-    description: models.TextField[QualificationTypeDescription | None] = (
-        models.TextField(blank=True, null=True)
+    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    description: models.TextField[QualificationTypeDescription, Any] = models.TextField(
+        blank=True, null=True
     )
-    is_active: models.BooleanField[bool] = models.BooleanField(default=True)
+    is_active: models.BooleanField[Any, Any] = models.BooleanField(default=True)
 
     objects = QualificationTypeManager()
 

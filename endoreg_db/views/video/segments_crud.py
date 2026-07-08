@@ -1355,10 +1355,10 @@ def video_segments_validate_bulk(request: Request, pk: int) -> Response:
                                         "end_frame_number",
                                     ],
                                 )
-
+                    was_validated = bool(segment.state and segment.state.is_validated)
                     status_before = (
                         STATUS_VALIDATED
-                        if (segment.state and segment.state.is_validated)
+                        if (segment.state and was_validated)
                         else STATUS_UNVALIDATED
                     )
 

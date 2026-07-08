@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING, TypeAlias, Any
 
 from django.db import models
 
@@ -21,7 +21,7 @@ class ProductGroupManager(models.Manager["ProductGroup"]):
 class ProductGroup(models.Model):
     objects = ProductGroupManager()
 
-    name: models.CharField[str] = models.CharField(max_length=255)
+    name: models.CharField[Any, Any] = models.CharField(max_length=255)
 
     if TYPE_CHECKING:
         reference_product: "ReferenceProduct"

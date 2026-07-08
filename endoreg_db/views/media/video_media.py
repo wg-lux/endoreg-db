@@ -186,11 +186,7 @@ class VideoMediaView(APIView):
                     "video_file",
                 ).order_by("start_frame_number")
             )
-            segments_prefetch: Prefetch[
-                str,
-                QuerySet[LabelVideoSegment],
-                str,
-            ] = Prefetch(
+            segments_prefetch = Prefetch(
                 "label_video_segments",
                 queryset=segments_queryset,
             )

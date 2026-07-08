@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from types import NoneType
-from typing import TypeAlias
+from typing import TypeAlias, Any
 
 from django.db import models
 
@@ -24,10 +24,8 @@ class LabelType(models.Model):
 
     """
 
-    name: models.CharField[str] = models.CharField(max_length=255)
-    description: models.TextField[LabelTypeDescription] = models.TextField(
-        blank=True, null=True
-    )
+    name: models.CharField[Any, Any] = models.CharField(max_length=255)
+    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
 
     objects = LabelTypeManager()
 

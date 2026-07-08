@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from django.db import models
 
@@ -14,7 +14,7 @@ class EmployeeQualification(models.Model):
     Model representing an employee's qualification.
     """
 
-    employee: models.OneToOneField[Employee] = models.OneToOneField(
+    employee: models.OneToOneField["Employee", Any] = models.OneToOneField(
         "Employee",
         on_delete=models.CASCADE,
         related_name="qualification",

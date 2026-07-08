@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, Any
 
 from django.db import models
 
@@ -15,11 +15,13 @@ class UnitManager(models.Manager["Unit"]):
 class Unit(models.Model):
     objects: ClassVar[UnitManager] = UnitManager()  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    name: models.CharField[str] = models.CharField(max_length=100)  # e.g. "Centimeter"
-    description: models.CharField[str | None] = models.CharField(
+    name: models.CharField[Any, Any] = models.CharField(
+        max_length=100
+    )  # e.g. "Centimeter"
+    description: models.CharField[Any, Any] = models.CharField(
         max_length=100, blank=True, null=True
     )  # e.g. "centimeters", "milimeters", "inches"
-    abbreviation: models.CharField[str | None] = models.CharField(
+    abbreviation: models.CharField[Any, Any] = models.CharField(
         max_length=25, blank=True, null=True
     )  # e.g. "cm", "mm", "in"
 

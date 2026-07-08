@@ -108,7 +108,8 @@ class UploadJobStatusSerializer(serializers.ModelSerializer[UploadJob]):
             data.pop("error_detail", None)
 
         # Only include sensitive_meta_id if status is anonymized and we have a meta record
-        if str(instance.status) != "anonymized" or not instance.sensitive_meta:
+        sensitive_meta = cast(object | None, instance.sensitive_meta)
+        if str(instance.status) != "anonymized" or not sensitive_meta:
             data.pop("sensitive_meta_id", None)
 
         # Remove empty optional fields

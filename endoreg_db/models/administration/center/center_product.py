@@ -1,17 +1,14 @@
 from __future__ import annotations
 
-from datetime import date
 from types import NoneType
-from typing import TYPE_CHECKING, Protocol, TypeAlias, cast
+from typing import TYPE_CHECKING, Protocol, TypeAlias, cast, Any
 
 from django.db import models
 
 if TYPE_CHECKING:
     from ...other.unit import Unit
-    from ..product import Product
     from ..product.product_group import ProductGroup
     from ..product.reference_product import ReferenceProduct
-    from .center import Center
 
 NoCenterProductValue: TypeAlias = NoneType
 CenterProductWeight: TypeAlias = tuple[float, "Unit | NoCenterProductValue"]
@@ -41,21 +38,17 @@ class CenterProduct(models.Model):
         center (Center): The center where the product was used.
     """
 
-    product: models.ForeignKey[Product] = models.ForeignKey(
+    product: models.ForeignKey[Any] = models.ForeignKey(
         "Product",
         on_delete=models.CASCADE,
         related_name="center_products",  # Changed related_name for clarity
     )
-    date_used: models.DateField[date] = models.DateField()
-    center: models.ForeignKey[Center] = models.ForeignKey(
+    date_used: models.DateField[Any, Any] = models.DateField()
+    center: models.ForeignKey[Any] = models.ForeignKey(
         "Center",
         on_delete=models.CASCADE,
         related_name="center_products",
     )
-
-    if TYPE_CHECKING:
-        product: models.ForeignKey["Product"]
-        center: models.ForeignKey["Center"]
 
     class Meta:
         ordering = ["center", "-date_used", "product"]

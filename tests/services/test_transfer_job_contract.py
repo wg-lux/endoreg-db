@@ -27,6 +27,10 @@ def _save_transfer_job_state_side_effect(**kwargs: Any) -> TransferJob:
 
 
 class TransferJobContractTests(TestCase):
+    center: Center
+    source_node: NetworkNode
+    target_node: NetworkNode
+
     def setUp(self) -> None:
         self.center = Center.objects.create(
             name="transfer-center",

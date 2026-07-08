@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from types import NoneType
-from typing import TYPE_CHECKING, Protocol, TypeAlias, cast
+from typing import TYPE_CHECKING, Protocol, TypeAlias, cast, Any
 
 from django.db import models
 
@@ -9,9 +9,7 @@ from endoreg_db.models.other.unit import Unit
 
 if TYPE_CHECKING:
     from ...other.emission.emission_factor import EmissionFactor
-    from ...other.material import Material
     from ...other.unit import Unit
-    from .product import Product
 
 NoProductMaterialValue: TypeAlias = NoneType
 ProductMaterialEmission: TypeAlias = tuple[float, "Unit"]
@@ -36,23 +34,23 @@ class _ProductMaterialProductSource(Protocol):
 
 
 class ProductMaterial(models.Model):
-    component: models.CharField[str] = models.CharField(max_length=255)
-    material: models.ForeignKey[Material] = models.ForeignKey(
+    component: models.CharField[Any, Any] = models.CharField(max_length=255)
+    material: models.ForeignKey[Any] = models.ForeignKey(
         "Material",
         on_delete=models.CASCADE,
         related_name="material_product_materials",  # Changed related_name
     )
-    product: models.ForeignKey[Product] = models.ForeignKey(
+    product: models.ForeignKey[Any] = models.ForeignKey(
         "Product",
         on_delete=models.CASCADE,
         related_name="product_product_materials",  # Changed related_name
     )
-    unit: models.ForeignKey[Unit] = models.ForeignKey(
+    unit: models.ForeignKey[Any] = models.ForeignKey(
         "Unit",
         on_delete=models.CASCADE,
         related_name="unit_product_materials",  # Changed related_name
     )
-    quantity: models.FloatField[float] = models.FloatField()
+    quantity: models.FloatField[Any, Any] = models.FloatField()
 
     if TYPE_CHECKING:
         pass

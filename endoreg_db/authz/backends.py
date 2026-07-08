@@ -26,7 +26,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from typing import Protocol, cast, overload
+from typing import Any, Protocol, cast, overload
 
 from mozilla_django_oidc.auth import OIDCAuthenticationBackend
 from django.contrib.auth import get_user_model
@@ -66,11 +66,9 @@ class _UserManager(Protocol):
         last_name: str,
     ) -> _AuthenticatedUser: ...
 
-    def none(self) -> QuerySet[AbstractUser, AbstractUser]: ...
+    def none(self) -> QuerySet[AbstractUser]: ...
 
-    def filter(
-        self, *, username__iexact: str
-    ) -> QuerySet[AbstractUser, AbstractUser]: ...
+    def filter(self, *, username__iexact: str) -> QuerySet[AbstractUser]: ...
 
 
 class _UserModel(Protocol):
@@ -205,9 +203,7 @@ class KeycloakOIDCBackend(OIDCAuthenticationBackend):
         #     user.is_staff = False
         # user.save(update_fields=["is_staff", "is_superuser"])
 
-    def filter_users_by_claims(
-        self, claims: Mapping[str, JsonValue]
-    ) -> QuerySet[AbstractUser, AbstractUser]:
+    def filter_users_by_claims(self, claims: Mapping[str, JsonValue]) -> Any:
         """
         Return the queryset of users matching the incoming claims.
 

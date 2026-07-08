@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Any, cast
 import numpy as np
 from django.db import models
 
@@ -20,36 +21,36 @@ class MultipleCategoricalValueDistribution(BaseValueDistribution):
 
     objects = MultipleCategoricalValueDistributionManager()
     categories: models.JSONField[dict[str, float]] = models.JSONField()
-    min_count: models.IntegerField[int] = models.IntegerField()
-    max_count: models.IntegerField[int] = models.IntegerField()
-    count_distribution_type: models.CharField[str] = models.CharField(
+    min_count: models.IntegerField[int, Any] = models.IntegerField()
+    max_count: models.IntegerField[int, Any] = models.IntegerField()
+    count_distribution_type: models.CharField[str, Any] = models.CharField(
         max_length=20, choices=[("uniform", "Uniform"), ("normal", "Normal")]
     )
-    count_mean: models.FloatField[float | None] = models.FloatField(
+    count_mean: models.FloatField[float | None, Any] = models.FloatField(
         null=True, blank=True
     )
-    count_std_dev: models.FloatField[float | None] = models.FloatField(
+    count_std_dev: models.FloatField[float | None, Any] = models.FloatField(
         null=True, blank=True
     )
 
     @property
-    def count_mean_safe(self):
+    def count_mean_safe(self) -> float:
         if self.count_mean is None:
             raise ValueError("count_mean is not set")
         return self.count_mean
 
     @property
-    def count_std_dev_safe(self):
+    def count_std_dev_safe(self) -> float:
         if self.count_std_dev is None:
             raise ValueError("count_std_dev is not set")
         return self.count_std_dev
 
     def generate_value(self, *args: object, **kwargs: object) -> object:
         if self.count_distribution_type == "uniform":
-            count = np.random.randint(self.min_count, self.max_count + 1)
+            count = cast(int, np.random.randint(self.min_count, self.max_count + 1))
         elif self.count_distribution_type == "normal":
             count = int(np.random.normal(self.count_mean_safe, self.count_std_dev_safe))
-            count = np.clip(count, self.min_count, self.max_count)
+            count = int(np.clip(count, self.min_count, self.max_count))
         else:
             raise ValueError("Unsupported count distribution type")
 

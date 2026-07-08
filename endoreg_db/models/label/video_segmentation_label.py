@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from types import NoneType
-from typing import TypeAlias
+from typing import TypeAlias, Any
 
 from django.db import models
 
@@ -31,14 +31,12 @@ class VideoSegmentationLabel(models.Model):
 
     objects = VideoSegmentationLabelManager()
 
-    name: models.CharField[str] = models.CharField(max_length=255)
-    description: models.TextField[VideoSegmentationLabelText | None] = models.TextField(
-        blank=True, null=True
-    )
-    color: models.CharField[VideoSegmentationLabelText] = models.CharField(
+    name: models.CharField[Any, Any] = models.CharField(max_length=255)
+    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
+    color: models.CharField[Any, Any] = models.CharField(
         max_length=255, blank=True, null=True
     )
-    order_priority: models.IntegerField[int] = models.IntegerField(default=0)
+    order_priority: models.IntegerField[Any, Any] = models.IntegerField(default=0)
 
     def natural_key(self) -> tuple[str]:
         return (self.name,)

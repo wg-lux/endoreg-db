@@ -2,16 +2,15 @@ from __future__ import annotations
 
 import logging
 import uuid
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from datetime import datetime
 from types import NoneType
-from typing import TYPE_CHECKING, Protocol, TypeAlias, cast
+from typing import Any, TYPE_CHECKING, Protocol, TypeAlias, cast
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
-from lx_dtypes.models.contracts.json_types import JsonObject
 
 from endoreg_db.schemas import validate_upload_provenance_payload
 from endoreg_db.utils.paths import (
@@ -111,7 +110,7 @@ class UploadJob(models.Model):
 
     objects = models.Manager["UploadJob"]()
 
-    id: models.UUIDField[uuid.UUID] = models.UUIDField(
+    id: models.UUIDField[uuid.UUID, Any] = models.UUIDField(
         primary_key=True,
         default=uuid.uuid4,
         editable=False,
@@ -123,18 +122,18 @@ class UploadJob(models.Model):
         help_text="Uploaded file (report or video)",
     )
 
-    status: models.CharField[str] = models.CharField(
+    status: models.CharField[str, Any] = models.CharField(
         max_length=20,
         choices=Status.choices,
         default=Status.PENDING,
         help_text="Current processing status of the upload",
     )
 
-    content_type: models.CharField[str] = models.CharField(
+    content_type: models.CharField[str, Any] = models.CharField(
         max_length=100, blank=True, help_text="MIME type of the uploaded file"
     )
 
-    source_center: models.ForeignKey[UploadJobCenter] = models.ForeignKey(
+    source_center: models.ForeignKey[Any] = models.ForeignKey(
         "Center",
         null=True,
         blank=True,
@@ -143,14 +142,14 @@ class UploadJob(models.Model):
         help_text="Center identity attached to the ingest request",
     )
 
-    source_system: models.CharField[str] = models.CharField(
+    source_system: models.CharField[str, Any] = models.CharField(
         max_length=255,
         blank=True,
         default="api",
         help_text="Name of the upstream source system or client",
     )
 
-    content_hash: models.CharField[str] = models.CharField(
+    content_hash: models.CharField[str, Any] = models.CharField(
         max_length=255,
         blank=True,
         default="",
@@ -158,7 +157,7 @@ class UploadJob(models.Model):
         help_text="Canonical content hash used for content-first deduplication.",
     )
 
-    idempotency_key: models.CharField[str] = models.CharField(
+    idempotency_key: models.CharField[str, Any] = models.CharField(
         max_length=255,
         blank=True,
         default="",
@@ -166,68 +165,68 @@ class UploadJob(models.Model):
         help_text="Client-supplied idempotency key for logical deduplication",
     )
 
-    ingest_mode: models.CharField[str] = models.CharField(
+    ingest_mode: models.CharField[str, Any] = models.CharField(
         max_length=20,
         choices=IngestMode.choices,
         default=IngestMode.API,
         help_text="How the ingest request entered the system",
     )
 
-    original_filename: models.CharField[str] = models.CharField(
+    original_filename: models.CharField[str, Any] = models.CharField(
         max_length=512,
         blank=True,
         default="",
         help_text="Original client-supplied filename",
     )
 
-    processing_provenance: models.JSONField[JsonObject] = models.JSONField(
+    processing_provenance: models.JSONField[Any, Any] = models.JSONField(
         blank=True,
         default=dict,
         help_text="Additional ingest metadata recorded for audit and processing",
     )
 
-    storage_class: models.CharField[str] = models.CharField(
+    storage_class: models.CharField[str, Any] = models.CharField(
         max_length=64,
         choices=StorageClass.choices,
         default=StorageClass.INGEST,
         help_text="High-level storage lifecycle class for the persisted artifact.",
     )
 
-    storage_tier: models.CharField[str] = models.CharField(
+    storage_tier: models.CharField[str, Any] = models.CharField(
         max_length=64,
         choices=StorageTier.choices,
         default=StorageTier.UPLOAD_API,
         help_text="Protected storage tier where the upload artifact is persisted.",
     )
 
-    retention_policy: models.CharField[str] = models.CharField(
+    retention_policy: models.CharField[str, Any] = models.CharField(
         max_length=64,
         choices=RetentionPolicy.choices,
         default=RetentionPolicy.PRESERVE_SOURCE,
         help_text="Lifecycle policy for the persisted upload artifact.",
     )
 
-    source_file_persisted: models.BooleanField[bool] = models.BooleanField(
+    source_file_persisted: models.BooleanField[bool, Any] = models.BooleanField(
         default=True,
         help_text="Whether the source ingest artifact is currently expected to remain on disk.",
     )
 
-    source_file_delete_eligible_at: models.DateTimeField[UploadJobDateTime | None] = (
-        models.DateTimeField(
-            null=True,
-            blank=True,
-            help_text="When the persisted source ingest artifact becomes eligible for cleanup.",
-        )
+    source_file_delete_eligible_at: models.DateTimeField[
+        UploadJobDateTime | None, Any
+    ] = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the persisted source ingest artifact becomes eligible for cleanup.",
     )
 
-    cleanup_status: models.CharField[str] = models.CharField(
+    cleanup_status: models.CharField[str, Any] = models.CharField(
         max_length=64,
         choices=CleanupStatus.choices,
         default=CleanupStatus.PENDING,
         help_text="Cleanup state for the persisted source artifact.",
     )
 
-    created_by: models.ForeignKey[UploadJobUser | None] = models.ForeignKey(
+    created_by: models.ForeignKey[Any] = models.ForeignKey(
         User,
         null=True,
         blank=True,
@@ -236,25 +235,23 @@ class UploadJob(models.Model):
         help_text="Authenticated user who initiated the upload job, if any",
     )
 
-    sensitive_meta: models.ForeignKey[UploadJobSensitiveMeta | None] = (
-        models.ForeignKey(
-            "SensitiveMeta",
-            null=True,
-            blank=True,
-            on_delete=models.SET_NULL,
-            help_text="Link to the created SensitiveMeta record after processing",
-        )
+    sensitive_meta: models.ForeignKey[UploadJobSensitiveMeta, Any] = models.ForeignKey(
+        "SensitiveMeta",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        help_text="Link to the created SensitiveMeta record after processing",
     )
 
-    error_detail: models.TextField[str] = models.TextField(
+    error_detail: models.TextField[str, Any] = models.TextField(
         blank=True, help_text="Error message if processing failed"
     )
 
-    created_at: models.DateTimeField[datetime] = models.DateTimeField(
+    created_at: models.DateTimeField[datetime, Any] = models.DateTimeField(
         auto_now_add=True, help_text="When the upload job was created"
     )
 
-    updated_at: models.DateTimeField[datetime] = models.DateTimeField(
+    updated_at: models.DateTimeField[datetime, Any] = models.DateTimeField(
         auto_now=True, help_text="When the upload job was last updated"
     )
 
@@ -316,21 +313,10 @@ class UploadJob(models.Model):
         except ValueError as exc:
             raise ValidationError({"processing_provenance": str(exc)}) from exc
 
-    def save(
-        self,
-        force_insert: bool = False,
-        force_update: bool = False,
-        using: str | None = None,
-        update_fields: Iterable[str] | None = None,
-    ) -> None:
+    def save(self, *args: object, **kwargs: object) -> None:
         self.clean()
         _sync_upload_job_storage_location(self)
-        super().save(
-            force_insert=force_insert,
-            force_update=force_update,
-            using=using,
-            update_fields=update_fields,
-        )
+        super().save(*args, **kwargs)
 
     @property
     def is_complete(self) -> bool:

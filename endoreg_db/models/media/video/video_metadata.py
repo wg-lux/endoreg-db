@@ -2,8 +2,7 @@ from __future__ import annotations
 
 """Video metadata model for analysis results and correction UI metrics."""
 
-from datetime import datetime
-from typing import Protocol, cast
+from typing import Protocol, cast, Any
 
 from django.db import models
 
@@ -24,7 +23,7 @@ class VideoMetadata(models.Model):
 
     objects = models.Manager["VideoMetadata"]()
 
-    video: models.OneToOneField[VideoFile] = models.OneToOneField(
+    video: models.OneToOneField[Any] = models.OneToOneField(
         VideoFile,
         on_delete=models.CASCADE,
         related_name="metadata",
@@ -32,24 +31,24 @@ class VideoMetadata(models.Model):
     )
 
     # Analysis Results
-    sensitive_frame_count: models.IntegerField[int | None] = models.IntegerField(
+    sensitive_frame_count: models.IntegerField[Any, Any] = models.IntegerField(
         null=True,
         blank=True,
         help_text="Number of frames detected as containing sensitive information",
     )
-    sensitive_ratio: models.FloatField[float | None] = models.FloatField(
+    sensitive_ratio: models.FloatField[Any, Any] = models.FloatField(
         null=True,
         blank=True,
         help_text="Ratio of sensitive frames to total frames (0.0-1.0)",
     )
-    sensitive_frame_ids: models.TextField[str | None] = models.TextField(
+    sensitive_frame_ids: models.TextField[Any, Any] = models.TextField(
         null=True,
         blank=True,
         help_text="JSON array of sensitive frame indices (0-based)",
     )
 
     # Metadata
-    analyzed_at: models.DateTimeField[datetime] = models.DateTimeField(
+    analyzed_at: models.DateTimeField[Any, Any] = models.DateTimeField(
         auto_now=True, help_text="Timestamp of last analysis"
     )
 

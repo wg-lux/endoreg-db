@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from django.db import transaction
 from django.db.utils import OperationalError, ProgrammingError
@@ -21,6 +22,9 @@ from endoreg_db.services.video_files import get_or_create_video_state
 from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.utils.paths import ensure_within_protected_media_root
 from lx_dtypes.models.contracts.export_ready import ReadyForExportResult
+
+if TYPE_CHECKING:
+    from endoreg_db.models.state.video import VideoState
 
 logger = logging.getLogger(__name__)
 
@@ -199,7 +203,7 @@ def mark_video_ready_for_export(
             status_code=409,
         )
 
-    state = get_or_create_video_state(video)
+    state: VideoState = get_or_create_video_state(video)
     ready_by = _user_identifier(user)
     state.mark_ready_for_export(
         processed_file_sha256=processed_file_sha256,
@@ -220,14 +224,16 @@ def mark_video_ready_for_export(
         request_user=user,
     )
 
+    state_ready_for_export_at = cast(datetime | None, state.ready_for_export_at)
+    ready_for_export_at: str | None
+    if state_ready_for_export_at is not None:
+        ready_for_export_at = state_ready_for_export_at.isoformat()
+    else:
+        ready_for_export_at = None
     return ReadyForExportResult(
         video_id=video.pk,
         ready_for_export=state.ready_for_export,
-        ready_for_export_at=(
-            state.ready_for_export_at.isoformat()
-            if state.ready_for_export_at is not None
-            else None
-        ),
+        ready_for_export_at=ready_for_export_at,
         ready_for_export_by=state.ready_for_export_by,
         processed_file_sha256=state.processed_file_sha256,
     )

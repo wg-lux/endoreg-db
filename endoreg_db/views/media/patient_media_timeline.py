@@ -34,7 +34,7 @@ from endoreg_db.utils.media_urls import (
     build_absolute_media_url,
     build_pdf_stream_path,
     build_video_frame_stream_path,
-    build_video_stream_path,
+    build_video_hls_playlist_path,
 )
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
@@ -615,7 +615,6 @@ class PatientMediaTimelineView(APIView):
             video_date = cast(dt_date | None, getattr(video, "date", None))
             uploaded_at = cast(datetime | None, getattr(video, "uploaded_at", None))
             date_created = cast(datetime | None, getattr(video, "date_created", None))
-            stream_source_id = video.pk
             video_timestamp = _safe_iso(ts)
             item: TimelineItem = {
                 "media_type": "video",
@@ -656,18 +655,11 @@ class PatientMediaTimelineView(APIView):
                 ],
                 "stream_options": [
                     {
-                        "type": "raw",
-                        "url": build_absolute_media_url(
-                            request,
-                            build_video_stream_path(stream_source_id, file_type="raw"),
-                        ),
-                    },
-                    {
                         "type": "processed",
                         "url": build_absolute_media_url(
                             request,
-                            build_video_stream_path(
-                                stream_source_id, file_type="processed"
+                            build_video_hls_playlist_path(
+                                int(video.pk), file_type="processed"
                             ),
                         ),
                     },

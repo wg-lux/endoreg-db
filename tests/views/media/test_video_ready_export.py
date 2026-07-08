@@ -2,6 +2,7 @@ from __future__ import annotations
 
 # pyright: reportUnknownMemberType=false
 
+from typing import cast
 import hashlib
 from unittest.mock import patch
 from uuid import uuid4
@@ -60,7 +61,7 @@ class VideoReadyExportEndpointTests(TestCase):
         video.save(update_fields=["processed_file"])
         self.processed_sha = hashlib.sha256(content).hexdigest()
         if default_state:
-            video_state = video.state
+            video_state = cast(VideoState, video.state)
             assert video_state is not None
             video_state.anonymization_validated = True
             video_state.outside_segments_removed = True

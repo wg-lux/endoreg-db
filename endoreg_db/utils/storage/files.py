@@ -16,7 +16,16 @@ import os
 import shutil
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Any, BinaryIO, ContextManager, Generator, Optional, Protocol, cast
+from typing import (
+    Any,
+    BinaryIO,
+    ContextManager,
+    Generator,
+    Optional,
+    Protocol,
+    TypeAlias,
+    cast,
+)
 
 from django.core.files import File
 from django.conf import settings
@@ -26,10 +35,12 @@ from endoreg_db.utils.rust_backend import (
     copy_file_descriptor_to_path,
     is_lx_encrypted_file,
 )
+from endoreg_db.utils.file_operations import secure_unlink_file
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_CHUNK_SIZE = 1024 * 1024  # 1 MiB
+DjangoFile: TypeAlias = File[bytes]
 
 
 class _VideoMaterializable(Protocol):
@@ -51,13 +62,21 @@ class _StoredFieldFile(Protocol):
 
     def delete(self, *, save: bool = False) -> None: ...
 
-    def save(self, name: str, content: "File[Any]", save: bool = False) -> None: ...
+    def save(self, name: str, content: DjangoFile, save: bool = False) -> None: ...
+
+
+class _BinaryWritableFile(Protocol):
+    def write(self, __s: bytes, /) -> int: ...
+
+    def flush(self) -> None: ...
+
+    def fileno(self) -> int: ...
 
 
 class _BinaryFileStorage(Protocol):
-    def open(self, name: str, mode: str = "rb") -> "File[Any]": ...
+    def open(self, name: str, mode: str = "rb") -> DjangoFile: ...
 
-    def save(self, name: str, content: "File[Any]") -> str: ...
+    def save(self, name: str, content: DjangoFile) -> str: ...
 
     def delete(self, name: str) -> None: ...
 
@@ -145,7 +164,7 @@ def _copy_storage_stream_to_local_file(
     *,
     source: BinaryIO,
     target_path: Path,
-    target_file: Any,
+    target_file: _BinaryWritableFile,
     chunk_size: int,
 ) -> None:
     try:
@@ -260,12 +279,12 @@ def ensure_local_file(
                 _copy_storage_stream_to_local_file(
                     source=source,
                     target_path=temp_path,
-                    target_file=tmp_file,
+                    target_file=cast(_BinaryWritableFile, tmp_file),
                     chunk_size=chunk_size,
                 )
 
         except Exception as exc:
-            temp_path.unlink(missing_ok=True)
+            secure_unlink_file(temp_path, missing_ok=True)
             raise IOError(
                 f"Could not download {field_file.name} from storage to a local file"
             ) from exc
@@ -275,7 +294,7 @@ def ensure_local_file(
         temp_path.chmod(0o644)
         yield temp_path
     finally:
-        temp_path.unlink(missing_ok=True)
+        secure_unlink_file(temp_path, missing_ok=True)
 
 
 def delete_field_file(
@@ -351,7 +370,7 @@ def save_local_file(
             pass
 
     with source_path.open("rb") as source:
-        django_file: "File[Any]" = File(source, name=filename)
+        django_file: DjangoFile = File(source, name=filename)
         if has_explicit_storage_path or overwrite:
             saved_name = stored_file.storage.save(storage_name, django_file)
             stored_file.name = str(saved_name)

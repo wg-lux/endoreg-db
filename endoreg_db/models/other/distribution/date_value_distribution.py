@@ -1,6 +1,7 @@
 """Model for date value distribution"""
 
 from __future__ import annotations
+from typing import Any
 
 from datetime import date, timedelta
 
@@ -27,7 +28,7 @@ class DateValueDistribution(BaseValueDistribution):
     """
 
     objects = DateValueDistributionManager()
-    description: models.TextField[str | None] = models.TextField(blank=True, null=True)
+    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
     DISTRIBUTION_CHOICES = [
         ("uniform", "Uniform"),
         ("normal", "Normal"),
@@ -37,29 +38,31 @@ class DateValueDistribution(BaseValueDistribution):
         ("timedelta", "Timedelta"),
     ]
 
-    distribution_type: models.CharField[str] = models.CharField(
+    distribution_type: models.CharField[Any, Any] = models.CharField(
         max_length=20, choices=DISTRIBUTION_CHOICES
     )
-    mode: models.CharField[str] = models.CharField(max_length=20, choices=MODE_CHOICES)
+    mode: models.CharField[Any, Any] = models.CharField(
+        max_length=20, choices=MODE_CHOICES
+    )
 
-    date_min: models.DateField[date | None] = models.DateField(blank=True, null=True)
-    date_max: models.DateField[date | None] = models.DateField(blank=True, null=True)
-    date_mean: models.DateField[date | None] = models.DateField(blank=True, null=True)
-    date_std_dev: models.IntegerField[int | None] = models.IntegerField(
+    date_min: models.DateField[Any, Any] = models.DateField(blank=True, null=True)
+    date_max: models.DateField[Any, Any] = models.DateField(blank=True, null=True)
+    date_mean: models.DateField[Any, Any] = models.DateField(blank=True, null=True)
+    date_std_dev: models.IntegerField[Any, Any] = models.IntegerField(
         blank=True,
         null=True,
     )
 
-    timedelta_days_min: models.IntegerField[int | None] = models.IntegerField(
+    timedelta_days_min: models.IntegerField[Any, Any] = models.IntegerField(
         blank=True, null=True
     )
-    timedelta_days_max: models.IntegerField[int | None] = models.IntegerField(
+    timedelta_days_max: models.IntegerField[Any, Any] = models.IntegerField(
         blank=True, null=True
     )
-    timedelta_days_mean: models.IntegerField[int | None] = models.IntegerField(
+    timedelta_days_mean: models.IntegerField[Any, Any] = models.IntegerField(
         blank=True, null=True
     )
-    timedelta_days_std_dev: models.IntegerField[int | None] = models.IntegerField(
+    timedelta_days_std_dev: models.IntegerField[Any, Any] = models.IntegerField(
         blank=True, null=True
     )
 

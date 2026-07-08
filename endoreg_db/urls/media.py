@@ -147,6 +147,11 @@ VIDEO_MEDIA_URLPATTERNS: list[URLPattern] = [
         "media/videos/<int:pk>/stream/", VideoStreamView.as_view(), name="video-stream"
     ),  # Legacy support
     path(
+        "media/videos/<int:pk>/hls/playlist.m3u8",
+        HLSPlaylistView.as_view(),
+        name="video-hls-playlist-m3u8",
+    ),
+    path(
         "media/videos/<int:pk>/hls/playlist/",
         HLSPlaylistView.as_view(),
         name="video-hls-playlist",

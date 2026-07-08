@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """Model for medication indication type."""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from django.db import models
 
@@ -21,7 +21,7 @@ class MedicationIndicationTypeManager(models.Manager["MedicationIndicationType"]
 class MedicationIndicationType(models.Model):
     """Model representing a medication indication type."""
 
-    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
+    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
 
     objects = MedicationIndicationTypeManager()
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
-from datetime import datetime
-from typing import Optional, cast
+from typing import Optional, cast, Any
 from logging import getLogger
 from pathlib import Path
 from django.db import models
@@ -20,17 +19,19 @@ class ProcessingHistory(models.Model):
     (content_type, object_id), but the logical identity is file_hash.
     """
 
-    file_hash: models.CharField[str] = models.CharField(
+    file_hash: models.CharField[Any, Any] = models.CharField(
         max_length=64,
         primary_key=True,
         help_text="Content hash of the original file (e.g. video_hash/pdf_hash).",
         blank=True,
     )
 
-    created_at: models.DateTimeField[datetime] = models.DateTimeField(auto_now_add=True)
-    success: models.BooleanField[bool] = models.BooleanField(default=False, blank=True)
+    created_at: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now_add=True)
+    success: models.BooleanField[Any, Any] = models.BooleanField(
+        default=False, blank=True
+    )
 
-    object_id: models.PositiveBigIntegerField[int | None] = (
+    object_id: models.PositiveBigIntegerField[int | None, Any] = (
         models.PositiveBigIntegerField(null=True, blank=True)
     )
 

@@ -36,6 +36,7 @@ from endoreg_db.utils.structured_logging import (
     emit_structured_event,
     hash_identifier,
 )
+from lx_dtypes.models.contracts.json_types import JsonValue
 from lx_dtypes.models.contracts.transfer_validation import (
     TransferValidationFailureLogPayload,
 )
@@ -293,11 +294,11 @@ class HubTransferCreateView(APIView):
                     data["payload_schema_version"],
                 ),
                 resource_rows=cast(
-                    dict[str, _TransferPayloadValue],
+                    dict[str, JsonValue],
                     data["resource_rows"],
                 ),
                 processing_snapshot=cast(
-                    dict[str, _TransferPayloadValue],
+                    dict[str, JsonValue],
                     data["processing_snapshot"],
                 ),
                 provenance=provenance,

@@ -33,9 +33,10 @@ def test_persist_case_resolution_state_uses_contract_request() -> None:
 
     pdf.refresh_from_db()
     assert isinstance(pdf.raw_meta, dict)
+    raw_meta = cast(dict[str, object], getattr(pdf, "raw_meta"))
     case_resolution_meta = cast(
         dict[str, object],
-        pdf.raw_meta[CASE_RESOLUTION_META_KEY],
+        raw_meta[CASE_RESOLUTION_META_KEY],
     )
     assert case_resolution_meta["last_action"] == "attach"
     assert case_resolution_meta["is_explicitly_resolved"] is True

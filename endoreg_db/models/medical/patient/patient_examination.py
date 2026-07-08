@@ -1,11 +1,8 @@
 from __future__ import annotations
-from collections.abc import Iterable
-from datetime import date, datetime
-from typing import TYPE_CHECKING, Optional, Protocol, cast
+from typing import TYPE_CHECKING, Optional, Protocol, Any, cast
 
 from django.core.exceptions import ValidationError
 from django.db import models
-from lx_dtypes.models.contracts.json_types import JsonObject
 from endoreg_db.schemas import validate_dtypes_p_examination_payload
 
 if TYPE_CHECKING:
@@ -53,7 +50,7 @@ class _PatientFindingInterventionLike(Protocol):
 
 
 class PatientExamination(models.Model):
-    patient: models.ForeignKey["Patient | None"] = models.ForeignKey(
+    patient: models.ForeignKey["Patient"] = models.ForeignKey(
         "Patient", on_delete=models.CASCADE, related_name="patient_examinations"
     )
     examination: models.ForeignKey["Examination | None"] = models.ForeignKey(
@@ -67,25 +64,25 @@ class PatientExamination(models.Model):
         related_name="patient_examination",
     )
 
-    date_start: models.DateField[date | None] = models.DateField(null=True, blank=True)
-    date_end: models.DateField[date | None] = models.DateField(null=True, blank=True)
-    hash: models.CharField[str] = models.CharField(max_length=255, unique=True)
-    knowledge_base_module: models.CharField[str] = models.CharField(
+    date_start: models.DateField[Any, Any] = models.DateField(null=True, blank=True)
+    date_end: models.DateField[Any, Any] = models.DateField(null=True, blank=True)
+    hash: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    knowledge_base_module: models.CharField[Any, Any] = models.CharField(
         max_length=255, blank=True, default=""
     )
-    knowledge_base_version: models.CharField[str] = models.CharField(
+    knowledge_base_version: models.CharField[Any, Any] = models.CharField(
         max_length=255, blank=True, default=""
     )
-    dtypes_record: models.JSONField[JsonObject] = models.JSONField(
+    dtypes_record: models.JSONField[Any, Any] = models.JSONField(
         default=dict, blank=True
     )
-    dtypes_record_updated_at: models.DateTimeField[datetime | None] = (
-        models.DateTimeField(null=True, blank=True)
+    dtypes_record_updated_at: models.DateTimeField[Any, Any] = models.DateTimeField(
+        null=True, blank=True
     )
-    report_draft: models.JSONField[JsonObject] = models.JSONField(
+    report_draft: models.JSONField[Any, Any] = models.JSONField(
         default=dict, blank=True
     )
-    draft_updated_at: models.DateTimeField[datetime | None] = models.DateTimeField(
+    draft_updated_at: models.DateTimeField[Any, Any] = models.DateTimeField(
         null=True, blank=True
     )
 
@@ -162,23 +159,12 @@ class PatientExamination(models.Model):
 
         return _hash
 
-    def save(
-        self,
-        force_insert: bool = False,
-        force_update: bool = False,
-        using: str | None = None,
-        update_fields: Iterable[str] | None = None,
-    ) -> None:
+    def save(self, *args: object, **kwargs: object) -> None:
         if not self.hash:
             self.hash = self.generate_default_hash()
         self.assign_knowledge_base_identity()
         self.clean()
-        super().save(
-            force_insert=force_insert,
-            force_update=force_update,
-            using=using,
-            update_fields=update_fields,
-        )
+        super().save(*args, **kwargs)
 
     def clean(self) -> None:
         super().clean()
@@ -212,7 +198,7 @@ class PatientExamination(models.Model):
         Returns the patient's age at the time of the examination.
         """
 
-        patient = cast(Patient, self.patient)
+        patient = self.patient
         dob = patient.get_dob()
         date_start = self.date_start
         assert dob is not None

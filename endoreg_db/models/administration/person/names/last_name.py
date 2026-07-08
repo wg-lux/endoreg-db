@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Any
 from django.db import models
 
 
@@ -9,7 +10,7 @@ class LastNameManager(models.Manager["LastName"]):
 
 class LastName(models.Model):
     objects = LastNameManager()
-    name: models.CharField[str] = models.CharField(max_length=255, unique=True)
+    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
 
     def natural_key(self) -> tuple[str]:
         return (self.name,)

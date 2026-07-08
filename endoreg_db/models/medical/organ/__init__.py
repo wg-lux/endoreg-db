@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Any
 
 """Module for Organ models."""
 
@@ -20,8 +21,8 @@ class OrganManager(models.Manager["Organ"]):
 class Organ(models.Model):
     """Model representing an organ."""
 
-    name: models.CharField[str] = models.CharField(max_length=100, unique=True)
-    description: models.TextField[str | None] = models.TextField(blank=True, null=True)
+    name: models.CharField[Any, Any] = models.CharField(max_length=100, unique=True)
+    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
 
     # Deprecated
     # location_choices = models.ManyToManyField(

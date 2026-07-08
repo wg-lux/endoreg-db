@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Iterable, Literal, Mapping, Protocol, cast
@@ -27,6 +28,7 @@ from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.services.anonymization_metrics import (
     MAX_PHI_REGION_MATCH_ANNOTATIONS,
     PHI_REGION_ANNOTATOR,
+    PHI_REGION_IOU_THRESHOLD,
     PHI_REGION_INFORMATION_SOURCE_NAME,
     PHI_REGION_LABEL_NAME,
     annotation_box_rows,
@@ -56,6 +58,23 @@ DIRECT_IDENTIFIER_FIELDS: tuple[str, ...] = (
     "external_id",
     "validation_comment",
 )
+
+
+@dataclass(frozen=True)
+class PhiRegionConfusionMatrix:
+    iou_threshold: float
+    proposal_count: int
+    human_annotation_count: int
+    true_positive_count: int | None
+    false_positive_count: int | None
+    false_negative_count: int | None
+    precision: float | None
+    recall: float | None
+    f1_score: float | None
+    matching_evaluated: bool
+    matching_annotation_count: int
+    max_matching_annotations: int
+    skip_reason: str
 
 
 class _ExaminerRelationManager(Protocol):
@@ -528,14 +547,19 @@ def _contains_identifier(normalized_haystack: str, raw_needle: str) -> bool:
     return needle in normalized_haystack
 
 
-def _phi_region_false_negative_count(media_obj: VideoFile | RawPdfFile) -> int:
-    if not isinstance(media_obj, VideoFile):
-        return 0
+def evaluate_phi_region_confusion_matrix(
+    *,
+    video_ids: Iterable[int] = (),
+) -> PhiRegionConfusionMatrix:
+    selected_video_ids = tuple(video_ids)
     qs = FrameBoxAnnotation.objects.select_related(
         "information_source",
         "label",
         "frame",
-    ).filter(frame__video=media_obj, label__name=PHI_REGION_LABEL_NAME)
+    ).filter(label__name=PHI_REGION_LABEL_NAME)
+    if selected_video_ids:
+        qs = qs.filter(frame__video_id__in=selected_video_ids)
+
     proposal_qs = qs.filter(
         information_source__name=PHI_REGION_INFORMATION_SOURCE_NAME,
         annotator=PHI_REGION_ANNOTATOR,
@@ -544,15 +568,90 @@ def _phi_region_false_negative_count(media_obj: VideoFile | RawPdfFile) -> int:
         information_source__name=PHI_REGION_INFORMATION_SOURCE_NAME,
         annotator=PHI_REGION_ANNOTATOR,
     )
+    proposal_count = proposal_qs.count()
     human_count = human_qs.count()
-    total_count = proposal_qs.count() + human_count
-    if not human_count or total_count > MAX_PHI_REGION_MATCH_ANNOTATIONS:
-        return 0
-    matched_count = matched_phi_region_count(
+    total_count = proposal_count + human_count
+    if not human_count:
+        return PhiRegionConfusionMatrix(
+            iou_threshold=PHI_REGION_IOU_THRESHOLD,
+            proposal_count=proposal_count,
+            human_annotation_count=human_count,
+            true_positive_count=None,
+            false_positive_count=None,
+            false_negative_count=None,
+            precision=None,
+            recall=None,
+            f1_score=None,
+            matching_evaluated=False,
+            matching_annotation_count=total_count,
+            max_matching_annotations=MAX_PHI_REGION_MATCH_ANNOTATIONS,
+            skip_reason="human_annotations_missing",
+        )
+    if total_count > MAX_PHI_REGION_MATCH_ANNOTATIONS:
+        return PhiRegionConfusionMatrix(
+            iou_threshold=PHI_REGION_IOU_THRESHOLD,
+            proposal_count=proposal_count,
+            human_annotation_count=human_count,
+            true_positive_count=None,
+            false_positive_count=None,
+            false_negative_count=None,
+            precision=None,
+            recall=None,
+            f1_score=None,
+            matching_evaluated=False,
+            matching_annotation_count=total_count,
+            max_matching_annotations=MAX_PHI_REGION_MATCH_ANNOTATIONS,
+            skip_reason="annotation_limit_exceeded",
+        )
+
+    true_positive_count = matched_phi_region_count(
         annotation_box_rows(proposal_qs),
         annotation_box_rows(human_qs),
     )
-    return max(human_count - matched_count, 0)
+    false_positive_count = max(proposal_count - true_positive_count, 0)
+    false_negative_count = max(human_count - true_positive_count, 0)
+    precision = _safe_rate(true_positive_count, proposal_count)
+    recall = _safe_rate(true_positive_count, human_count)
+    f1_score = _f1_score(precision=precision, recall=recall)
+    return PhiRegionConfusionMatrix(
+        iou_threshold=PHI_REGION_IOU_THRESHOLD,
+        proposal_count=proposal_count,
+        human_annotation_count=human_count,
+        true_positive_count=true_positive_count,
+        false_positive_count=false_positive_count,
+        false_negative_count=false_negative_count,
+        precision=precision,
+        recall=recall,
+        f1_score=f1_score,
+        matching_evaluated=True,
+        matching_annotation_count=total_count,
+        max_matching_annotations=MAX_PHI_REGION_MATCH_ANNOTATIONS,
+        skip_reason="",
+    )
+
+
+def _safe_rate(numerator: int | None, denominator: int) -> float | None:
+    if numerator is None or denominator <= 0:
+        return None
+    return numerator / denominator
+
+
+def _f1_score(*, precision: float | None, recall: float | None) -> float | None:
+    if precision is None or recall is None:
+        return None
+    denominator = precision + recall
+    if denominator <= 0:
+        return 0.0
+    return 2 * precision * recall / denominator
+
+
+def _phi_region_false_negative_count(media_obj: VideoFile | RawPdfFile) -> int:
+    if not isinstance(media_obj, VideoFile):
+        return 0
+    matrix = evaluate_phi_region_confusion_matrix(video_ids=(int(media_obj.pk or 0),))
+    if matrix.false_negative_count is None:
+        return 0
+    return matrix.false_negative_count
 
 
 def _phi_region_measurement_warnings(media_obj: VideoFile | RawPdfFile) -> list[str]:

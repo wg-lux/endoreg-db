@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import cast
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -174,7 +175,8 @@ class UploadEndpointTests(TestCase):
 
         assert response.status_code == 201, response.content
         upload_job = UploadJob.objects.get(id=response.json()["upload_id"])
-        assert upload_job.source_center == default_center
+        source_center = cast(Center, getattr(upload_job, "source_center"))
+        assert source_center == default_center
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_hub_mode_rejects_unauthenticated_upload(self):
@@ -335,7 +337,8 @@ class UploadEndpointTests(TestCase):
 
         assert response.status_code == 201, response.content
         upload_job = UploadJob.objects.get(id=response.json()["upload_id"])
-        assert upload_job.source_center == center
+        source_center = cast(Center, getattr(upload_job, "source_center"))
+        assert source_center == center
 
     @override_settings(
         ENDOREG_DEPLOYMENT_ROLE="central_hub",

@@ -291,7 +291,7 @@ def test_streamable_media_state_centralizes_artifact_decisions(
     assert processed_decision.target_path is None
 
 
-def test_sync_materializes_plaintext_raw_and_sets_streamable_mode(
+def test_sync_does_not_materialize_plaintext_raw_or_set_streamable_mode(
     video: DummyVideo,
     streamable_roots: StreamableRoots,
     monkeypatch: pytest.MonkeyPatch,
@@ -322,17 +322,11 @@ def test_sync_materializes_plaintext_raw_and_sets_streamable_mode(
 
     target = streamable_roots.raw_root / f"{video.video_hash}.mp4"
 
-    assert target.exists()
-    assert target.read_bytes() == video.raw_streamable_payload
-    assert (
-        video.raw_streamable_relative_path
-        == f"streamable_videos/raw/{video.video_hash}.mp4"
-    )
-    assert video.storage_mode == DummyStorageMode.STREAMABLE
-    assert "raw_streamable_relative_path" in update_fields
-    assert "storage_mode" in update_fields
-    assert video.saved_update_fields is not None
-    assert "storage_mode" in video.saved_update_fields
+    assert not target.exists()
+    assert video.raw_streamable_relative_path == ""
+    assert video.storage_mode == DummyStorageMode.ENCRYPTED
+    assert update_fields == []
+    assert video.saved_update_fields == []
 
 
 def test_sync_is_idempotent_and_does_not_rewrite_existing_plaintext(
@@ -359,8 +353,6 @@ def test_sync_is_idempotent_and_does_not_rewrite_existing_plaintext(
     target = streamable_roots.raw_root / f"{video.video_hash}.mp4"
     target.parent.mkdir(parents=True)
     target.write_bytes(video.raw_streamable_payload)
-    before = target.stat().st_mtime_ns
-
     video.raw_streamable_relative_path = f"streamable_videos/raw/{video.video_hash}.mp4"
     video.storage_mode = DummyStorageMode.STREAMABLE
 
@@ -377,17 +369,17 @@ def test_sync_is_idempotent_and_does_not_rewrite_existing_plaintext(
         save=True,
     )
 
-    assert target.stat().st_mtime_ns == before
-    assert update_fields == []
+    assert not target.exists()
+    assert video.raw_streamable_relative_path == ""
+    assert video.storage_mode == DummyStorageMode.ENCRYPTED
+    assert update_fields == ["raw_streamable_relative_path", "storage_mode"]
 
 
-def test_sync_force_regenerates_existing_plaintext(
+def test_sync_force_removes_existing_plaintext(
     video: DummyVideo,
     streamable_roots: StreamableRoots,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    regenerated_payload = b"\x00\x00\x00\x20ftypmp42moovmdatregenerated"
-
     monkeypatch.setattr(
         sm,
         "resolve_storage_policy",
@@ -406,13 +398,12 @@ def test_sync_force_regenerates_existing_plaintext(
     monkeypatch.setattr(
         sm,
         "_transcode_streamable_mp4",
-        _fake_streamable_transcode(regenerated_payload),
+        _fake_streamable_transcode(video.raw_streamable_payload),
     )
 
     target = streamable_roots.raw_root / f"{video.video_hash}.mp4"
     target.parent.mkdir(parents=True)
     target.write_bytes(video.raw_streamable_payload)
-    before = target.stat().st_mtime_ns
 
     video.raw_streamable_relative_path = f"streamable_videos/raw/{video.video_hash}.mp4"
     video.storage_mode = DummyStorageMode.STREAMABLE
@@ -425,9 +416,10 @@ def test_sync_force_regenerates_existing_plaintext(
         force=True,
     )
 
-    assert target.read_bytes() == regenerated_payload
-    assert target.stat().st_mtime_ns != before
-    assert update_fields == []
+    assert not target.exists()
+    assert video.raw_streamable_relative_path == ""
+    assert video.storage_mode == DummyStorageMode.ENCRYPTED
+    assert update_fields == ["raw_streamable_relative_path", "storage_mode"]
 
 
 def test_sync_idempotent_path_does_not_rehash_source(
@@ -462,10 +454,11 @@ def test_sync_idempotent_path_does_not_rehash_source(
         save=True,
     )
 
-    assert update_fields == []
+    assert not target.exists()
+    assert update_fields == ["raw_streamable_relative_path", "storage_mode"]
 
 
-def test_sync_updates_db_path_without_rewriting_existing_plaintext(
+def test_sync_does_not_adopt_untracked_existing_plaintext(
     video: DummyVideo,
     streamable_roots: StreamableRoots,
     monkeypatch: pytest.MonkeyPatch,
@@ -505,15 +498,12 @@ def test_sync_updates_db_path_without_rewriting_existing_plaintext(
         save=True,
     )
 
-    assert (
-        video.raw_streamable_relative_path
-        == f"streamable_videos/raw/{video.video_hash}.mp4"
-    )
-    assert "raw_streamable_relative_path" in update_fields
-    assert "storage_mode" in update_fields
+    assert video.raw_streamable_relative_path == ""
+    assert target.exists()
+    assert update_fields == []
 
 
-def test_sync_repairs_existing_plaintext_with_wrong_hash(
+def test_sync_removes_existing_plaintext_with_wrong_hash(
     video: DummyVideo,
     streamable_roots: StreamableRoots,
     monkeypatch: pytest.MonkeyPatch,
@@ -542,8 +532,6 @@ def test_sync_repairs_existing_plaintext_with_wrong_hash(
     target = streamable_roots.raw_root / f"{video.video_hash}.mp4"
     target.parent.mkdir(parents=True)
     target.write_bytes(b"\x00\x00\x00\x20ftypmp42mdatwrongmoov")
-    before = target.stat().st_mtime_ns
-
     video.raw_streamable_relative_path = f"streamable_videos/raw/{video.video_hash}.mp4"
     video.storage_mode = DummyStorageMode.STREAMABLE
 
@@ -554,9 +542,10 @@ def test_sync_repairs_existing_plaintext_with_wrong_hash(
         save=True,
     )
 
-    assert target.read_bytes() == video.raw_streamable_payload
-    assert target.stat().st_mtime_ns != before
-    assert update_fields == []
+    assert not target.exists()
+    assert video.raw_streamable_relative_path == ""
+    assert video.storage_mode == DummyStorageMode.ENCRYPTED
+    assert update_fields == ["raw_streamable_relative_path", "storage_mode"]
 
 
 def test_dry_run_does_not_write_file_or_set_streamable_mode(

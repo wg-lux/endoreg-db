@@ -44,10 +44,8 @@ from endoreg_db.services.video_files import (
     ensure_local_raw_video_file,
     initialize_video_file,
 )
-from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.file_operations import sha256_file
-from endoreg_db.utils.storage import file_exists
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
@@ -78,29 +76,26 @@ class _LocalRawSourceProvider(Protocol):
     def __call__(self) -> AbstractContextManager[Path]: ...
 
 
-try:
-    from endoreg_db.import_files.processing.video_processing.video_anonymization import (
-        VideoAnonymizer as _ImportedVideoAnonymizer,
-    )
+VideoAnonymizer: type[_VideoAnonymizer] | None = None
 
-    VideoAnonymizer = cast(type[_VideoAnonymizer], _ImportedVideoAnonymizer)
-except ImportError as exc:  # pragma: no cover - exercised by dependency-light tests
-    _VIDEO_ANONYMIZER_IMPORT_ERROR = exc
 
-    class _UnavailableVideoAnonymizer:
-        """Import-time placeholder so tests can monkeypatch VideoAnonymizer."""
+def _load_video_anonymizer_class() -> type[_VideoAnonymizer]:
+    """
+    This avoids reloading anonymizer and repeatedly pulling in dependencies.
+    """
+    global VideoAnonymizer
+    if VideoAnonymizer is not None:
+        return VideoAnonymizer
 
-        def __init__(self) -> None:
-            raise RuntimeError(
-                "Video anonymization dependencies are unavailable"
-            ) from _VIDEO_ANONYMIZER_IMPORT_ERROR
+    try:
+        from endoreg_db.import_files.processing.video_processing.video_anonymization import (
+            VideoAnonymizer as imported_video_anonymizer,
+        )
+    except ImportError as exc:  # pragma: no cover - exercised by dependency-light tests
+        raise RuntimeError("Video anonymization dependencies are unavailable") from exc
 
-        def anonymize_video(self, ctx: ImportContext) -> ImportContext:
-            raise RuntimeError(
-                "Video anonymization dependencies are unavailable"
-            ) from _VIDEO_ANONYMIZER_IMPORT_ERROR
-
-    VideoAnonymizer: type[_VideoAnonymizer] = _UnavailableVideoAnonymizer
+    VideoAnonymizer = cast(type[_VideoAnonymizer], imported_video_anonymizer)
+    return VideoAnonymizer
 
 
 def _storage_dir() -> Path:
@@ -258,7 +253,7 @@ class VideoImportService:
     @property
     def anonymizer(self) -> _VideoAnonymizer:
         if self._anonymizer is None:
-            self._anonymizer = VideoAnonymizer()
+            self._anonymizer = _load_video_anonymizer_class()()
         return self._anonymizer
 
     @anonymizer.setter
@@ -310,7 +305,6 @@ class VideoImportService:
                 ctx.current_video, _processed, needs_processing = (
                     create_or_retrieve_video_file(ctx)
                 )
-                self._sync_raw_streamable_artifacts(ctx.current_video)
                 get_or_create_video_state(ctx.current_video)
                 current_video = cast(_LocalRawVideo, ctx.current_video)
                 if current_video.state is None:
@@ -332,7 +326,6 @@ class VideoImportService:
                     ctx.current_video, _processed, needs_processing = (
                         create_or_retrieve_video_file(ctx)
                     )
-                    self._sync_raw_streamable_artifacts(ctx.current_video)
 
                 if not needs_processing and not retry:
                     self._cleanup_duplicate_staging(ctx)
@@ -367,24 +360,6 @@ class VideoImportService:
                     )
                     finalize_failure(ctx)
                     raise
-
-    def _sync_raw_streamable_artifacts(self, video: VideoFile) -> None:
-        raw_file = getattr(video, "raw_file", None)
-        if raw_file is None or not file_exists(raw_file):
-            return
-        try:
-            sync_video_streamable_artifacts(
-                video,
-                include_raw=True,
-                include_processed=False,
-                save=True,
-            )
-        except Exception as exc:
-            logger.warning(
-                "Could not synchronize raw streamable artifact for video %s: %s",
-                getattr(video, "pk", "unknown"),
-                exc,
-            )
 
     @contextmanager
     def _verified_local_raw_source(self, ctx: ImportContext) -> Generator[None]:

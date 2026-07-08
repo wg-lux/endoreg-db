@@ -2,6 +2,7 @@
 
 import json
 import logging
+from collections.abc import Mapping
 from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Protocol, cast
@@ -54,7 +55,7 @@ class _LocalRawFileProvider(Protocol):
 
 
 def _video_integrity_failure_detail(video: "VideoFile") -> str:
-    payload = video.meta if isinstance(video.meta, dict) else {}
+    payload: Mapping[str, object] = video.meta if video.meta is not None else {}
     detail = str(payload.get("integrity_error") or "").strip()
     if detail:
         return detail
@@ -64,7 +65,7 @@ def _video_integrity_failure_detail(video: "VideoFile") -> str:
 
 
 def _video_has_integrity_failure(video: "VideoFile") -> bool:
-    payload = video.meta if isinstance(video.meta, dict) else {}
+    payload: Mapping[str, object] = video.meta if video.meta is not None else {}
     return payload.get("integrity_status") == "lost" or bool(
         getattr(getattr(video, "state", None), "processing_error", False)
     )

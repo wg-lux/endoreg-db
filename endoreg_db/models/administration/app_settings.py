@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from datetime import datetime
 from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias, cast
+from typing import TYPE_CHECKING, TypeAlias, cast, Any
 
 from django.db import models
 from django.db.models.base import ModelBase
@@ -40,36 +39,40 @@ class ApplicationSettings(models.Model):
     Stores central defaults used by imports/annotation/report workflows.
     """
 
-    center: models.ForeignKey[Center | None] = models.ForeignKey(
-        "Center",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="+",
+    center: models.ForeignKey["Center | NoApplicationSettingsSaveValue"] = (
+        models.ForeignKey(
+            "Center",
+            on_delete=models.SET_NULL,
+            null=True,
+            blank=True,
+            related_name="+",
+        )
     )
-    processor: models.ForeignKey[EndoscopyProcessor | None] = models.ForeignKey(
+    processor: models.ForeignKey[
+        "EndoscopyProcessor | NoApplicationSettingsSaveValue"
+    ] = models.ForeignKey(
         "EndoscopyProcessor",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="+",
     )
-    annotator_name: models.CharField[str] = models.CharField(
+    annotator_name: models.CharField[Any, Any] = models.CharField(
         max_length=255,
         blank=True,
         default="",
     )
-    report_template_name: models.CharField[str] = models.CharField(
+    report_template_name: models.CharField[Any, Any] = models.CharField(
         max_length=255,
         blank=True,
         default="",
     )
-    ai_dataset_name: models.CharField[str] = models.CharField(
+    ai_dataset_name: models.CharField[Any, Any] = models.CharField(
         max_length=255,
         blank=True,
         default="",
     )
-    ai_dataset_type: models.CharField[str] = models.CharField(
+    ai_dataset_type: models.CharField[Any, Any] = models.CharField(
         max_length=32,
         blank=True,
         default="",
@@ -79,15 +82,17 @@ class ApplicationSettings(models.Model):
             ("video", "Video"),
         ],
     )
-    ai_dataset: models.ForeignKey[AIDataSet | None] = models.ForeignKey(
-        "AIDataSet",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="+",
+    ai_dataset: models.ForeignKey["AIDataSet | NoApplicationSettingsSaveValue"] = (
+        models.ForeignKey(
+            "AIDataSet",
+            on_delete=models.SET_NULL,
+            null=True,
+            blank=True,
+            related_name="+",
+        )
     )
-    created_at: models.DateTimeField[datetime] = models.DateTimeField(auto_now_add=True)
-    updated_at: models.DateTimeField[datetime] = models.DateTimeField(auto_now=True)
+    created_at: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now_add=True)
+    updated_at: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now=True)
 
     objects = ApplicationSettingsManager()
 
@@ -95,21 +100,10 @@ class ApplicationSettings(models.Model):
         verbose_name = "Application Settings"
         verbose_name_plural = "Application Settings"
 
-    def save(
-        self,
-        force_insert: bool = False,
-        force_update: bool = False,
-        using: str | None = None,
-        update_fields: Iterable[str] | None = None,
-    ) -> None:
+    def save(self, *args: object, **kwargs: object) -> None:
         # Enforce singleton row semantics.
         self.pk = 1
-        super().save(
-            force_insert=force_insert,
-            force_update=force_update,
-            using=using,
-            update_fields=update_fields,
-        )
+        super().save(*args, **kwargs)
 
     @classmethod
     def get_solo(cls) -> "ApplicationSettings":

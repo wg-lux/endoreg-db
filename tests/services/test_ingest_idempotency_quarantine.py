@@ -36,6 +36,11 @@ from endoreg_db.utils.file_operations import (
 @override_settings(MEDIA_ROOT=(Path(__file__).parent / "test_media").as_posix())
 class IngestIdempotencyQuarantineTests(TransactionTestCase):
     test_media_dir: Path
+    center: Center
+    pdf_content: bytes
+    video_content: bytes
+    quarantine_dir: Path
+    quarantine_patch: object
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -267,7 +272,7 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
                 return_value="processor",
             ),
             patch(
-                "endoreg_db.services.hub.ingest.VideoImportService.import_and_anonymize",
+                "endoreg_db.services.video_import.VideoImportService.import_and_anonymize",
                 side_effect=ValueError("Test processing error"),
             ),
         ):

@@ -13,6 +13,7 @@ from endoreg_db.models.aidataset.aidataset import AIDataSet
 from endoreg_db.models.label.label import Label
 from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
+    suppress_label_video_segment_state_side_effects,
 )
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.state.frame_annotation import (
@@ -26,6 +27,10 @@ from endoreg_db.serializers.label_video_segment.label_video_segment import (
     LabelVideoSegmentSerializer,
     LabelVideoSegmentTimelineSerializer,
 )
+from endoreg_db.services.label_video_segment_states import (
+    ensure_label_video_segment_states,
+)
+from endoreg_db.services.video_files import get_video_fps
 
 SyncFrameAnnotations = Callable[..., None]
 DeleteFrameAnnotations = Callable[..., int]
@@ -89,9 +94,10 @@ def bulk_mutate_video_segments(
     updated_segments: list[LabelVideoSegment] = []
     deleted_segment_ids: list[int] = []
     attached_segment_ids: list[int] = []
+    serializer_context = _bulk_serializer_context(video, mutation_request)
 
     try:
-        with transaction.atomic():
+        with transaction.atomic(), suppress_label_video_segment_state_side_effects():
             _create_segments(
                 video=video,
                 creates=mutation_request.creates,
@@ -99,6 +105,7 @@ def bulk_mutate_video_segments(
                 created_segments=created_segments,
                 created_segment_objects=created_segment_objects,
                 sync_frame_annotations=sync_frame_annotations,
+                serializer_context=serializer_context,
             )
             _update_segments(
                 video=video,
@@ -109,6 +116,7 @@ def bulk_mutate_video_segments(
                 delete_frame_annotations_for_segment=(
                     delete_frame_annotations_for_segment
                 ),
+                serializer_context=serializer_context,
             )
             _delete_segments(
                 video=video,
@@ -117,6 +125,10 @@ def bulk_mutate_video_segments(
                 delete_frame_annotations_for_segment=(
                     delete_frame_annotations_for_segment
                 ),
+            )
+
+            ensure_label_video_segment_states(
+                [*created_segment_objects, *updated_segments],
             )
 
             if mutation_request.defer_annotation_sync:
@@ -175,6 +187,25 @@ def _invalid_bulk_payload(detail: object) -> BulkSegmentMutationServiceError:
     )
 
 
+def _bulk_serializer_context(
+    video: VideoFile,
+    mutation_request: BulkSegmentMutationRequest,
+) -> dict[str, object]:
+    context: dict[str, object] = {"video_file": video, "video_id": video.pk}
+    if _mutation_request_uses_time_values(mutation_request):
+        context["video_fps"] = get_video_fps(video)
+    return context
+
+
+def _mutation_request_uses_time_values(
+    mutation_request: BulkSegmentMutationRequest,
+) -> bool:
+    for item in [*mutation_request.creates, *mutation_request.updates]:
+        if isinstance(item, Mapping) and ("start_time" in item or "end_time" in item):
+            return True
+    return False
+
+
 def _create_segments(
     *,
     video: VideoFile,
@@ -183,6 +214,7 @@ def _create_segments(
     created_segments: list[dict[str, object]],
     created_segment_objects: list[LabelVideoSegment],
     sync_frame_annotations: SyncFrameAnnotations,
+    serializer_context: dict[str, object],
 ) -> None:
     for index, item in enumerate(creates):
         if not isinstance(item, Mapping):
@@ -198,7 +230,10 @@ def _create_segments(
         segment_payload.pop("client_id", None)
         segment_payload["video_id"] = video.pk
 
-        serializer = LabelVideoSegmentSerializer(data=segment_payload)
+        serializer = LabelVideoSegmentSerializer(
+            data=segment_payload,
+            context=serializer_context,
+        )
         if not serializer.is_valid():
             validation_errors = getattr(serializer, "errors")
             raise _bulk_item_validation_error(
@@ -227,6 +262,7 @@ def _update_segments(
     updated_segments: list[LabelVideoSegment],
     sync_frame_annotations: SyncFrameAnnotations,
     delete_frame_annotations_for_segment: DeleteFrameAnnotations,
+    serializer_context: dict[str, object],
 ) -> None:
     for index, item in enumerate(updates):
         if not isinstance(item, Mapping):
@@ -273,6 +309,7 @@ def _update_segments(
             cast(LabelVideoSegment, segment),
             data=segment_payload,
             partial=True,
+            context=serializer_context,
         )
         if not serializer.is_valid():
             validation_errors = getattr(serializer, "errors")

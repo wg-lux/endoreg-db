@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import logging
 import uuid as uuid_lib
-from collections.abc import Iterable
 from contextlib import AbstractContextManager
 from datetime import date, datetime
 from pathlib import Path
 from typing import (
+    Any,
     TYPE_CHECKING,
     Protocol,
     Sequence,
@@ -49,20 +49,13 @@ logger = logging.getLogger(__name__)  # Changed from "video_file"
 if TYPE_CHECKING:
     from django.db.models.fields.files import FieldFile
 
-    from endoreg_db.models.administration.center.center import Center
-    from endoreg_db.models.administration.person.patient.patient import Patient
-    from endoreg_db.models.medical.hardware.endoscopy_processor import (
-        EndoscopyProcessor,
-    )
-    from endoreg_db.models.medical.patient.patient_examination import PatientExamination
     from endoreg_db.models.label.label_video_segment.label_video_segment import (
         LabelVideoSegment,
     )
     from endoreg_db.models.media.frame.frame import Frame
-    from endoreg_db.models.metadata.video_meta import FFMpegMeta, VideoImportMeta
+    from endoreg_db.models.metadata.video_meta import FFMpegMeta
     from endoreg_db.models.metadata.model_meta import ModelMeta
     from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
-    from endoreg_db.models.metadata.video_meta import VideoMeta
     from endoreg_db.models.state.video import VideoState
 
 
@@ -113,14 +106,14 @@ class VideoFile(models.Model):
         blank=True,
     )
 
-    uuid: models.UUIDField[uuid_lib.UUID] = models.UUIDField(
+    uuid: models.UUIDField[uuid_lib.UUID, Any] = models.UUIDField(
         default=uuid_lib.uuid4, unique=True, editable=False
     )
 
-    video_hash: models.CharField[str] = models.CharField(
+    video_hash: models.CharField[str, Any] = models.CharField(
         max_length=255, unique=True, help_text="Hash of the raw video file."
     )
-    processed_video_hash: models.CharField[str | None] = models.CharField(
+    processed_video_hash: models.CharField[str | None, Any] = models.CharField(
         max_length=255,
         unique=True,
         null=True,
@@ -128,58 +121,58 @@ class VideoFile(models.Model):
         help_text="Hash of the processed video file, unique if not null.",
     )
 
-    sensitive_meta: models.OneToOneField["SensitiveMeta | None"] = models.OneToOneField(
+    sensitive_meta: models.OneToOneField[Any] = models.OneToOneField(
         "SensitiveMeta",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="video_file",
     )
-    center: models.ForeignKey["Center"] = models.ForeignKey(
+    center: models.ForeignKey[Any] = models.ForeignKey(
         "Center", on_delete=models.PROTECT
     )
-    processor: models.ForeignKey["EndoscopyProcessor | None"] = models.ForeignKey(
+    processor: models.ForeignKey[Any] = models.ForeignKey(
         "EndoscopyProcessor", on_delete=models.PROTECT, blank=True, null=True
     )
-    video_meta: models.OneToOneField["VideoMeta | None"] = models.OneToOneField(
+    video_meta: models.OneToOneField[Any] = models.OneToOneField(
         "VideoMeta",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="video_file",
     )
-    examination: models.ForeignKey["PatientExamination | None"] = models.ForeignKey(
+    examination: models.ForeignKey[Any] = models.ForeignKey(
         "PatientExamination",
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
         related_name="video_files",
     )
-    patient: models.ForeignKey["Patient | None"] = models.ForeignKey(
+    patient: models.ForeignKey[Any] = models.ForeignKey(
         "Patient",
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
         related_name="video_files",
     )
-    ai_model_meta: models.ForeignKey["ModelMeta | None"] = models.ForeignKey(
+    ai_model_meta: models.ForeignKey[Any] = models.ForeignKey(
         "ModelMeta", on_delete=models.SET_NULL, blank=True, null=True
     )
-    state: models.OneToOneField["VideoState | None"] = models.OneToOneField(
+    state: models.OneToOneField[Any] = models.OneToOneField(
         "VideoState",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="video_file",
     )
-    import_meta: models.OneToOneField["VideoImportMeta | None"] = models.OneToOneField(
+    import_meta: models.OneToOneField[Any] = models.OneToOneField(
         "VideoImportMeta", on_delete=models.CASCADE, blank=True, null=True
     )
 
-    original_file_name: models.CharField[str | None] = models.CharField(
+    original_file_name: models.CharField[str | None, Any] = models.CharField(
         max_length=255, blank=True, null=True
     )
-    storage_mode: models.CharField[str] = models.CharField(
+    storage_mode: models.CharField[str, Any] = models.CharField(
         max_length=64,
         choices=VIDEO_STORAGE_MODE_CHOICES,
         default=get_default_video_storage_mode_value,
@@ -189,7 +182,7 @@ class VideoFile(models.Model):
             "filesystem-backed media root."
         ),
     )
-    raw_streamable_relative_path: models.CharField[str] = models.CharField(
+    raw_streamable_relative_path: models.CharField[str, Any] = models.CharField(
         max_length=512,
         blank=True,
         help_text=(
@@ -197,7 +190,7 @@ class VideoFile(models.Model):
             "storage_mode = fs_encrypted_streamable."
         ),
     )
-    processed_streamable_relative_path: models.CharField[str] = models.CharField(
+    processed_streamable_relative_path: models.CharField[str, Any] = models.CharField(
         max_length=512,
         blank=True,
         help_text=(
@@ -205,41 +198,49 @@ class VideoFile(models.Model):
             "when storage_mode = fs_encrypted_streamable."
         ),
     )
-    uploaded_at: models.DateTimeField[datetime] = models.DateTimeField(
+    uploaded_at: models.DateTimeField[datetime, Any] = models.DateTimeField(
         auto_now_add=True
     )
-    frame_dir: models.CharField[str] = models.CharField(
+    frame_dir: models.CharField[str, Any] = models.CharField(
         max_length=512,
         blank=True,
         help_text="Path to frames extracted from the raw video.",
     )
-    fps: models.FloatField[float | None] = models.FloatField(blank=True, null=True)
-    duration: models.FloatField[float | None] = models.FloatField(blank=True, null=True)
-    frame_count: models.IntegerField[int | None] = models.IntegerField(
+    fps: models.FloatField[float | None, Any] = models.FloatField(blank=True, null=True)
+    duration: models.FloatField[float | None, Any] = models.FloatField(
         blank=True, null=True
     )
-    width: models.IntegerField[int | None] = models.IntegerField(blank=True, null=True)
-    height: models.IntegerField[int | None] = models.IntegerField(blank=True, null=True)
-    suffix: models.CharField[str | None] = models.CharField(
+    frame_count: models.IntegerField[int | None, Any] = models.IntegerField(
+        blank=True, null=True
+    )
+    width: models.IntegerField[int | None, Any] = models.IntegerField(
+        blank=True, null=True
+    )
+    height: models.IntegerField[int | None, Any] = models.IntegerField(
+        blank=True, null=True
+    )
+    suffix: models.CharField[str | None, Any] = models.CharField(
         max_length=10, blank=True, null=True
     )
-    sequences: models.JSONField[VideoFileMetaJsonObject] = models.JSONField(
+    sequences: models.JSONField[Any, Any] = models.JSONField(
         default=dict,
         blank=True,
         help_text="AI prediction sequences based on raw frames.",
     )
-    export_segments_by_video: models.BooleanField[bool] = models.BooleanField(
+    export_segments_by_video: models.BooleanField[bool, Any] = models.BooleanField(
         default=False,
         help_text="If true, include all segments for this video in exports.",
     )
-    date: models.DateField[date | None] = models.DateField(blank=True, null=True)
-    meta: models.JSONField[VideoFileMetaJsonObject | None] = models.JSONField(
-        blank=True, null=True
-    )
-    date_created: models.DateTimeField[datetime] = models.DateTimeField(
+    date: models.DateField[date | None, Any] = models.DateField(blank=True, null=True)
+    meta: models.JSONField[
+        VideoFileMetaJsonObject | None, VideoFileMetaJsonObject | None
+    ] = models.JSONField(blank=True, null=True)
+    date_created: models.DateTimeField[datetime, Any] = models.DateTimeField(
         auto_now_add=True
     )
-    date_modified: models.DateTimeField[datetime] = models.DateTimeField(auto_now=True)
+    date_modified: models.DateTimeField[datetime, Any] = models.DateTimeField(
+        auto_now=True
+    )
 
     if TYPE_CHECKING:
         pk: int
@@ -779,13 +780,7 @@ class VideoFile(models.Model):
             raise ValidationError({"meta": str(exc)}) from exc
         self.meta = cast(VideoFileMetaJsonObject | None, validated_meta)
 
-    def save(
-        self,
-        force_insert: bool = False,
-        force_update: bool = False,
-        using: str | None = None,
-        update_fields: Iterable[str] | None = None,
-    ) -> None:
+    def save(self, *args: object, **kwargs: object) -> None:
         # Ensure state exists or is created before the main save operation
         # Now call the original save method
         """
@@ -803,12 +798,7 @@ class VideoFile(models.Model):
             )
         current_processed_name = getattr(self.processed_file, "name", None) or ""
         self.clean()
-        super().save(
-            force_insert=force_insert,
-            force_update=force_update,
-            using=using,
-            update_fields=update_fields,
-        )
+        super().save(*args, **kwargs)
         if self.pk and previous_processed_name is not None:
             if str(previous_processed_name or "") != str(current_processed_name):
                 self.get_or_create_state().clear_export_readiness(

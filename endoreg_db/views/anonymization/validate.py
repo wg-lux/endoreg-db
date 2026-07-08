@@ -1,6 +1,6 @@
 import logging
 from datetime import date as dt_date, datetime, time as dt_time
-from typing import Protocol, TypedDict, cast
+from typing import Any, Protocol, TypedDict, cast
 
 from django.contrib.auth.models import AnonymousUser
 from django.db import models, transaction
@@ -73,7 +73,7 @@ class _ValidationState(Protocol):
 class _ValidatedSensitiveMeta(Protocol):
     pk: int | None
     center_id: int | None
-    center: object | None
+    center: "_CenterLike | None"
     validation_comment: str
     tags: "_TagRelation"
     pseudo_patient_id: object
@@ -83,7 +83,42 @@ class _ValidatedSensitiveMeta(Protocol):
     state: _ValidationState | None
 
     def save(self, *args: object, **kwargs: object) -> None: ...
+
+    def get_or_create_state(self) -> None: ...
+
     def create_anonymized_record(self) -> None: ...
+
+
+class _CenterLike(Protocol):
+    name: str
+
+
+class _VideoValidationLike(Protocol):
+    meta: object
+    state: _ValidationState | None
+    sensitive_meta: SensitiveMeta | None
+    center: _CenterLike | None
+    state_id: int | None
+    anonymization_status: str | None
+
+    def save(self, *args: object, **kwargs: object) -> None: ...
+
+    def validate_metadata_annotation(self, payload: VideoTextMetaPayload) -> bool: ...
+
+
+class _PdfValidationLike(Protocol):
+    raw_meta: dict[str, Any] | None
+    sensitive_meta: SensitiveMeta | None
+    center: _CenterLike | None
+    center_id: int | None
+    anonymized_text: str | None
+    examination_id: int | None
+    anonym_examination_report_id: int | None
+    state: _ValidationState | None
+
+    def save(self, *args: object, **kwargs: object) -> None: ...
+
+    def validate_metadata_annotation(self, payload: ReportMetaJsonObject) -> bool: ...
 
 
 class ValidationOperationMetaPayload(TypedDict):
@@ -184,10 +219,11 @@ def _persist_pdf_validation_state(
     validated_at_iso: str,
     document_type: DocumentTypeContract,
 ) -> str:
-    original_anonymized_text = getattr(pdf, "anonymized_text", None)
+    pdf_obj = cast(_PdfValidationLike, pdf)
+    original_anonymized_text = getattr(pdf_obj, "anonymized_text", None)
     if original_anonymized_text is None:
         payload_text = payload.get("anonymized_text")
-        pdf.anonymized_text = payload_text if isinstance(payload_text, str) else ""
+        pdf_obj.anonymized_text = payload_text if isinstance(payload_text, str) else ""
 
     report_context = build_report_context_from_validation(
         pdf=pdf,
@@ -196,12 +232,12 @@ def _persist_pdf_validation_state(
     )
     resolved_text = report_context.anonymized_text
     raw_meta: ReportMetaJsonObject
-    if isinstance(pdf.raw_meta, dict):
-        raw_meta = cast(ReportMetaJsonObject, dict(pdf.raw_meta))
+    if isinstance(pdf_obj.raw_meta, dict):
+        raw_meta = cast(ReportMetaJsonObject, dict(pdf_obj.raw_meta))
     else:
         raw_meta = cast(ReportMetaJsonObject, {})
 
-    sensitive_meta = pdf.sensitive_meta
+    sensitive_meta = pdf_obj.sensitive_meta
     raw_meta.update(
         {
             "document_type": report_context.document_type.value,
@@ -219,23 +255,23 @@ def _persist_pdf_validation_state(
         pdf.anonymized_text = resolved_text
         update_fields.append("anonymized_text")
     if (
-        getattr(pdf, "center_id", None) is None
+        getattr(pdf_obj, "center_id", None) is None
         and sensitive_meta is not None
         and getattr(sensitive_meta, "center_id", None)
     ):
-        pdf.center = getattr(sensitive_meta, "center", None)
+        pdf_obj.center = cast(_CenterLike, getattr(sensitive_meta, "center"))
         update_fields.append("center")
-    if pdf.raw_meta != raw_meta:
-        pdf.raw_meta = raw_meta
+    if pdf_obj.raw_meta != raw_meta:
+        pdf_obj.raw_meta = raw_meta
         update_fields.append("raw_meta")
     if update_fields:
-        pdf.save(update_fields=update_fields)
+        pdf_obj.save(update_fields=update_fields)
 
     return resolved_text
 
 
 def _build_pdf_validation_context(pdf: RawPdfFile) -> dict[str, object] | None:
-    sensitive_meta = pdf.sensitive_meta
+    sensitive_meta = cast(_PdfValidationLike, pdf).sensitive_meta
     if sensitive_meta is None:
         return None
     validated_meta = cast(_ValidatedSensitiveMeta, sensitive_meta)
@@ -384,8 +420,14 @@ class AnonymizationValidateView(APIView):
                 )
                 # TODO: The state for video will be none when no state is set and the state for pdf will always be none. After status needs to be inferred after calling the sensitive meta state update functions
                 if video is not None:
+                    video_obj = cast(_VideoValidationLike, video)
                     video_state = get_or_create_video_state(video)
-                    video_meta = video.meta if isinstance(video.meta, dict) else {}
+                    raw_video_meta = video_obj.meta
+                    video_meta = (
+                        cast(dict[str, Any], raw_video_meta)
+                        if isinstance(raw_video_meta, dict)
+                        else {}
+                    )
                     if getattr(video_state, "processing_error", False) or (
                         video_meta.get("integrity_status") == "lost"
                     ):
@@ -397,15 +439,18 @@ class AnonymizationValidateView(APIView):
                             },
                             status=status.HTTP_409_CONFLICT,
                         )
-                    status_before = _state_status_value(video.state)
+                    status_before = _state_status_value(video_obj.state)
+                    video_sensitive_meta: SensitiveMeta | None = (
+                        video_obj.sensitive_meta
+                    )
                     before_values = capture_sensitive_meta_metric_values(
-                        sensitive_meta=video.sensitive_meta,
+                        sensitive_meta=video_sensitive_meta,
                         media_obj=video,
                         media_type="video",
                     )
-                    prepared_payload = self._prepare_video_payload(payload, video)
+                    prepared_payload = self._prepare_video_payload(payload, video_obj)
                     try:
-                        ok = video.validate_metadata_annotation(
+                        ok = video_obj.validate_metadata_annotation(
                             cast(VideoTextMetaPayload, prepared_payload)
                         )
                     except Exception:  # pragma: no cover - defensive safety net
@@ -426,49 +471,56 @@ class AnonymizationValidateView(APIView):
                         )
 
                     # this is here for tests!
-                    if video.sensitive_meta is None:
-                        sm = SensitiveMeta.objects.create(center=video.center)
-                        video.sensitive_meta = sm
+                    if video_obj.sensitive_meta is None:
+                        sm = SensitiveMeta.objects.create(center=video_obj.center)
+                        video_sensitive_meta = sm
+                        video_obj.sensitive_meta = video_sensitive_meta
 
-                    video.save(update_fields=["sensitive_meta"])
-                    video.sensitive_meta.get_or_create_state()
+                    if video_sensitive_meta is None:
+                        transaction.set_rollback(True)
+                        return Response(
+                            {
+                                "message": "Video not validated, failed to create SensitiveMeta."
+                            },
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        )
+
+                    video_obj.save(update_fields=["sensitive_meta"])
+                    video_sensitive_meta.get_or_create_state()
                     _apply_validation_tags(
-                        sensitive_meta=video.sensitive_meta,
+                        sensitive_meta=video_sensitive_meta,
                         payload=payload,
                     )
-                    if video.sensitive_meta.state is not None:
-                        state_obj = cast(_ValidationState, video.sensitive_meta.state)
-                        state_obj.refresh_from_db()
-                        state_obj.mark_dob_verified()
-                        state_obj.mark_names_verified()
-                        auto_case_resolution = commit_validated_media_identity(
-                            media_type="video",
-                            media_obj=video,
-                            user=_request_actor(request),
-                            source="anonymization_validate",
-                        )
-                        cast(
-                            _ValidatedSensitiveMeta, video.sensitive_meta
-                        ).create_anonymized_record()
-                    else:
+                    if video_sensitive_meta.state is None:
                         transaction.set_rollback(True)
                         return Response(
                             {"message": "Video not validated, failed to create State."},
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         )
 
-                    if video.state is not None:
-                        video.state.anonymized = True
-                        video.state.save(update_fields=["anonymized"])
-                        cast(_ValidationState, video.sensitive_meta.state).save()
+                    state_obj = video_sensitive_meta.state
+                    state_obj.refresh_from_db()
+                    state_obj.mark_dob_verified()
+                    state_obj.mark_names_verified()
+                    auto_case_resolution = commit_validated_media_identity(
+                        media_type="video",
+                        media_obj=video,
+                        user=_request_actor(request),
+                        source="anonymization_validate",
+                    )
+                    video_sensitive_meta.create_anonymized_record()
 
-                        # --- NEW: status AFTER validation ---
+                    if video_obj.state is not None:
+                        video_obj.state.save(update_fields=["anonymized"])
+                        video_sensitive_meta.state.save()
+
+                    # --- NEW: status AFTER validation ---
                     status_after = status_before
                     try:
-                        if video.state is not None:
-                            video.state.refresh_from_db()
+                        if video_obj.state is not None:
+                            video_obj.state.refresh_from_db()
                             status_after = (
-                                _state_status_value(video.state) or status_after
+                                _state_status_value(video_obj.state) or status_after
                             )
                     except Exception:
                         logger.exception(
@@ -483,7 +535,7 @@ class AnonymizationValidateView(APIView):
                     )
                     record_validation_metrics(
                         request=request,
-                        media_obj=video,
+                        media_obj=cast(VideoFile, video_obj),
                         media_type="video",
                         payload=metric_payload,
                         before_values=before_values,
@@ -541,21 +593,22 @@ class AnonymizationValidateView(APIView):
                     .first()
                 )
                 if pdf is not None:
+                    pdf_obj = cast(_PdfValidationLike, pdf)
                     document_type_result = _validated_pdf_document_type(payload)
                     if isinstance(document_type_result, Response):
                         return document_type_result
                     document_type_name, document_type = document_type_result
 
-                    status_before = _state_status_value(pdf.state)
+                    status_before = _state_status_value(pdf_obj.state)
                     before_values = capture_sensitive_meta_metric_values(
-                        sensitive_meta=pdf.sensitive_meta,
-                        media_obj=pdf,
+                        sensitive_meta=pdf_obj.sensitive_meta,
+                        media_obj=cast(RawPdfFile, pdf_obj),
                         media_type="pdf",
                     )
-                    prepared_payload = self._prepare_payload(payload, pdf)
+                    prepared_payload = self._prepare_payload(payload, pdf_obj)
                     try:
                         ok = validate_report_metadata_annotation(
-                            pdf,
+                            cast(RawPdfFile, pdf_obj),
                             prepared_payload,
                         )
                     except Exception:  # pragma: no cover - defensive safety net
@@ -583,43 +636,34 @@ class AnonymizationValidateView(APIView):
                         )
                     else:
                         # this is here for tests!
-                        if pdf.sensitive_meta is None:
-                            sm = SensitiveMeta.objects.create(center=pdf.center)
-                            pdf.sensitive_meta = sm
+                        pdf_sensitive_meta = pdf_obj.sensitive_meta
+                        if pdf_sensitive_meta is None:
+                            sm = SensitiveMeta.objects.create(center=pdf_obj.center)
+                            pdf_sensitive_meta = sm
+                            pdf_obj.sensitive_meta = pdf_sensitive_meta
 
-                        sensitive_meta = cast(SensitiveMeta | None, pdf.sensitive_meta)
-                        if sensitive_meta is None:
-                            transaction.set_rollback(True)
-                            return Response(
-                                {
-                                    "message": "report not validated, failed to create SensitiveMeta."
-                                },
-                                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            )
-
-                        pdf.save(update_fields=["sensitive_meta"])
-                        pdf.sensitive_meta.get_or_create_state()
+                        pdf_obj.save(update_fields=["sensitive_meta"])
+                        pdf_sensitive_meta.get_or_create_state()
                         _apply_validation_tags(
-                            sensitive_meta=sensitive_meta,
+                            sensitive_meta=pdf_sensitive_meta,
                             payload=payload,
                         )
-                        if sensitive_meta.state is not None:
-                            state_obj = sensitive_meta.state
+                        if pdf_sensitive_meta.state is not None:
+                            state_obj = pdf_sensitive_meta.state
                             state_obj.refresh_from_db()
                             state_obj.mark_dob_verified()
                             state_obj.mark_names_verified()
                             auto_case_resolution = commit_validated_media_identity(
                                 media_type="pdf",
-                                media_obj=pdf,
+                                media_obj=cast(RawPdfFile, pdf_obj),
                                 user=_request_actor(request),
                                 source="anonymization_validate",
                             )
-                            sensitive_meta.create_anonymized_record()
+                            pdf_sensitive_meta.create_anonymized_record()
 
-                            pdf_state = cast(_ValidationState | None, pdf.state)
-                            if pdf_state is not None:
-                                pdf_state.mark_anonymized()
-                                pdf_state.save(update_fields=["anonymized"])
+                            if pdf_obj.state is not None:
+                                pdf_obj.state.mark_anonymized()
+                                pdf_obj.state.save(update_fields=["anonymized"])
 
                             state_obj.save()
                         else:
@@ -632,7 +676,7 @@ class AnonymizationValidateView(APIView):
                             )
 
                         resolved_text = _persist_pdf_validation_state(
-                            pdf=pdf,
+                            pdf=cast(RawPdfFile, pdf_obj),
                             payload=prepared_payload,
                             validated_at_iso=response_timestamp,
                             document_type=document_type,
@@ -640,20 +684,20 @@ class AnonymizationValidateView(APIView):
 
                     if (
                         auto_case_resolution.status == "linked"
-                        and pdf.examination_id is not None
+                        and pdf_obj.examination_id is not None
                     ):
                         upsert_anonym_examination_report_from_pdf(
-                            pdf=pdf,
+                            pdf=cast(RawPdfFile, pdf_obj),
                             validated_at_iso=None,
                             source="anonymization_validate_auto_case_resolution",
                         )
 
                     status_after = status_before
                     try:
-                        if pdf.state is not None:
-                            pdf.state.refresh_from_db()
+                        if pdf_obj.state is not None:
+                            pdf_obj.state.refresh_from_db()
                             status_after = (
-                                _state_status_value(pdf.state) or status_after
+                                _state_status_value(pdf_obj.state) or status_after
                             )
                     except Exception:
                         logger.exception(
@@ -666,7 +710,7 @@ class AnonymizationValidateView(APIView):
                     )
                     record_validation_metrics(
                         request=request,
-                        media_obj=pdf,
+                        media_obj=cast(RawPdfFile, pdf_obj),
                         media_type="pdf",
                         payload=metric_payload,
                         before_values=before_values,
@@ -695,11 +739,11 @@ class AnonymizationValidateView(APIView):
                             "timestamp": response_timestamp,
                             "report_file": (
                                 {
-                                    "id": pdf.anonym_examination_report_id,
+                                    "id": pdf_obj.anonym_examination_report_id,
                                     "document_type": document_type_name,
                                     "created": False,
                                 }
-                                if pdf.anonym_examination_report_id is not None
+                                if pdf_obj.anonym_examination_report_id is not None
                                 else None
                             ),
                             "anonymized_text_saved": bool(resolved_text),
