@@ -110,6 +110,7 @@ def test_ffmpeg_hls_command_uses_clinical_quality_h264_settings(
         segment_pattern=Path("/tmp/seg_%03d.ts"),
         playlist_path=Path("/tmp/playlist.m3u8"),
         segment_base_url="/media/videos/1/hls/",
+        input_arg="pipe:0",
     )
 
     assert command[command.index("-preset") + 1] == hls_media.HLS_VIDEO_PRESET
