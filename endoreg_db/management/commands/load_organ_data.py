@@ -7,7 +7,7 @@ from lx_dtypes.models.contracts.management_command import (
     VerboseManagementCommandOptionsPayload,
 )
 
-from endoreg_db.models import Organ
+from endoreg_db.models.medical.organ import Organ
 
 from ...data import ORGAN_DATA_DIR
 from ...utils import load_model_data_from_yaml

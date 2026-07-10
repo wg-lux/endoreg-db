@@ -125,7 +125,8 @@ def add_resource(index: ResourceIndex, record: ResourceRecord, field_name: str) 
 
 
 def build_eligible_resources() -> ResourceIndex:
-    from endoreg_db.models import RawPdfFile, VideoFile
+    from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+    from endoreg_db.models.media.video.video_file import VideoFile
 
     resources = empty_resource_index()
 
@@ -439,7 +440,8 @@ def marker_resources(payload: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def resource_is_validated(resource: dict[str, Any]) -> bool:
-    from endoreg_db.models import RawPdfFile, VideoFile
+    from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+    from endoreg_db.models.media.video.video_file import VideoFile
 
     kind = parse_resource_kind(resource.get("kind") or resource.get("resource_kind"))
     pk = resource.get("id", resource.get("pk", resource.get("resource_id")))

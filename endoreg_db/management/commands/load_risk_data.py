@@ -7,7 +7,8 @@ from lx_dtypes.models.contracts.management_command import (
     VerboseManagementCommandOptionsPayload,
 )
 
-from endoreg_db.models import Risk, RiskType
+from endoreg_db.models.medical.risk.risk import Risk
+from endoreg_db.models.medical.risk.risk_type import RiskType
 
 from ...data import RISK_DATA_DIR, RISK_TYPE_DATA_DIR
 from ...utils import load_model_data_from_yaml

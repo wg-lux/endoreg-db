@@ -10,7 +10,22 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PACKAGE_ROOT = PROJECT_ROOT / "endoreg_db"
 MODELS_ROOT = PROJECT_ROOT / "endoreg_db" / "models"
 SERVICES_ROOT = PROJECT_ROOT / "endoreg_db" / "services"
+SERIALIZERS_ROOT = PROJECT_ROOT / "endoreg_db" / "serializers"
+VIEWS_ROOT = PROJECT_ROOT / "endoreg_db" / "views"
+UTILS_ROOT = PROJECT_ROOT / "endoreg_db" / "utils"
+HELPERS_ROOT = PROJECT_ROOT / "endoreg_db" / "helpers"
+MANAGEMENT_COMMANDS_ROOT = PROJECT_ROOT / "endoreg_db" / "management" / "commands"
 SERVICE_IMPORT_PREFIX = "endoreg_db.services"
+MODEL_BARREL_IMPORT_PREFIX = "endoreg_db.models"
+BANNED_MODEL_REEXPORT_IMPORT_MODULES = (
+    MODEL_BARREL_IMPORT_PREFIX,
+    "endoreg_db.models.aidataset",
+    "endoreg_db.models.metadata",
+    "endoreg_db.models.state",
+    "endoreg_db.models.label.label_video_segment",
+    "endoreg_db.models.media.frame",
+    "endoreg_db.models.medical.hardware",
+)
 BANNED_MODEL_IMPLEMENTATION_IMPORT_PREFIXES = (
     "endoreg_db.models.media.pdf.create_report_from_file",
     "endoreg_db.models.media.video.create_from_file",
@@ -23,6 +38,17 @@ BANNED_MODEL_IMPLEMENTATION_IMPORT_PREFIXES = (
     "endoreg_db.models.media.video.video_file_streaming",
     "endoreg_db.models.media.video.video_file_time",
 )
+BANNED_MODEL_BARREL_IMPORT_ROOTS = (
+    SERVICES_ROOT,
+    SERIALIZERS_ROOT,
+    VIEWS_ROOT,
+    UTILS_ROOT,
+    HELPERS_ROOT,
+    MANAGEMENT_COMMANDS_ROOT,
+)
+ALLOWLISTED_MODEL_BARREL_IMPORTS: ImportMap = {}
+VIEW_MODEL_WORKFLOW_IMPORT_MODULES = ("endoreg_db.models.state.frame_annotation",)
+ALLOWLISTED_VIEW_MODEL_WORKFLOW_IMPORTS: ImportMap = {}
 
 ALLOWLISTED_MODEL_TO_SERVICE_IMPORTS = {
     (
@@ -228,6 +254,14 @@ def _is_banned_model_implementation_import(module: str) -> bool:
     )
 
 
+def _is_banned_model_reexport_import(module: str) -> bool:
+    return module in BANNED_MODEL_REEXPORT_IMPORT_MODULES
+
+
+def _is_view_model_workflow_import(module: str) -> bool:
+    return module in VIEW_MODEL_WORKFLOW_IMPORT_MODULES
+
+
 def _service_to_model_implementation_imports() -> ImportMap:
     imports: defaultdict[ImportKey, set[str]] = defaultdict(set)
 
@@ -250,6 +284,59 @@ def _service_to_model_implementation_imports() -> ImportMap:
                 for alias in node.names:
                     if _is_banned_model_implementation_import(alias.name):
                         imports[(rel_path, alias.name)].add(_imported_name(alias))
+
+    return {key: frozenset(names) for key, names in imports.items()}
+
+
+def _view_model_workflow_imports() -> ImportMap:
+    imports: defaultdict[ImportKey, set[str]] = defaultdict(set)
+
+    for path in sorted(VIEWS_ROOT.rglob("*.py")):
+        tree = ast.parse(path.read_text(), filename=str(path))
+        rel_path = path.relative_to(PROJECT_ROOT).as_posix()
+
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.ImportFrom)
+                and node.module
+                and _is_view_model_workflow_import(node.module)
+            ):
+                imports[(rel_path, node.module)].update(
+                    _imported_name(alias) for alias in node.names
+                )
+                continue
+
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if _is_view_model_workflow_import(alias.name):
+                        imports[(rel_path, alias.name)].add(_imported_name(alias))
+
+    return {key: frozenset(names) for key, names in imports.items()}
+
+
+def _runtime_model_barrel_imports() -> ImportMap:
+    imports: defaultdict[ImportKey, set[str]] = defaultdict(set)
+
+    for root in BANNED_MODEL_BARREL_IMPORT_ROOTS:
+        for path in sorted(root.rglob("*.py")):
+            tree = ast.parse(path.read_text(), filename=str(path))
+            rel_path = path.relative_to(PROJECT_ROOT).as_posix()
+
+            for node in ast.walk(tree):
+                if (
+                    isinstance(node, ast.ImportFrom)
+                    and node.module
+                    and _is_banned_model_reexport_import(node.module)
+                ):
+                    imports[(rel_path, node.module)].update(
+                        _imported_name(alias) for alias in node.names
+                    )
+                    continue
+
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        if _is_banned_model_reexport_import(alias.name):
+                            imports[(rel_path, alias.name)].add(_imported_name(alias))
 
     return {key: frozenset(names) for key, names in imports.items()}
 
@@ -315,6 +402,58 @@ def test_models_do_not_add_new_service_imports() -> None:
 
 def test_services_do_not_import_model_media_implementation_modules() -> None:
     assert not _service_to_model_implementation_imports()
+
+
+def test_runtime_layers_do_not_use_model_barrel_imports() -> None:
+    current_imports = _runtime_model_barrel_imports()
+
+    unexpected_import_keys = set(current_imports) - set(
+        ALLOWLISTED_MODEL_BARREL_IMPORTS
+    )
+    stale_import_keys = set(ALLOWLISTED_MODEL_BARREL_IMPORTS) - set(current_imports)
+    changed_import_names = {
+        key: {
+            "unexpected": sorted(
+                current_imports[key] - ALLOWLISTED_MODEL_BARREL_IMPORTS[key]
+            ),
+            "stale": sorted(
+                ALLOWLISTED_MODEL_BARREL_IMPORTS[key] - current_imports[key]
+            ),
+        }
+        for key in set(current_imports) & set(ALLOWLISTED_MODEL_BARREL_IMPORTS)
+        if current_imports[key] != ALLOWLISTED_MODEL_BARREL_IMPORTS[key]
+    }
+
+    assert not unexpected_import_keys, sorted(unexpected_import_keys)
+    assert not stale_import_keys, sorted(stale_import_keys)
+    assert not changed_import_names, changed_import_names
+
+
+def test_views_do_not_add_model_workflow_imports() -> None:
+    current_imports = _view_model_workflow_imports()
+
+    unexpected_import_keys = set(current_imports) - set(
+        ALLOWLISTED_VIEW_MODEL_WORKFLOW_IMPORTS
+    )
+    stale_import_keys = set(ALLOWLISTED_VIEW_MODEL_WORKFLOW_IMPORTS) - set(
+        current_imports
+    )
+    changed_import_names = {
+        key: {
+            "unexpected": sorted(
+                current_imports[key] - ALLOWLISTED_VIEW_MODEL_WORKFLOW_IMPORTS[key]
+            ),
+            "stale": sorted(
+                ALLOWLISTED_VIEW_MODEL_WORKFLOW_IMPORTS[key] - current_imports[key]
+            ),
+        }
+        for key in set(current_imports) & set(ALLOWLISTED_VIEW_MODEL_WORKFLOW_IMPORTS)
+        if current_imports[key] != ALLOWLISTED_VIEW_MODEL_WORKFLOW_IMPORTS[key]
+    }
+
+    assert not unexpected_import_keys, sorted(unexpected_import_keys)
+    assert not stale_import_keys, sorted(stale_import_keys)
+    assert not changed_import_names, changed_import_names
 
 
 def test_project_code_does_not_reference_model_media_implementation_modules() -> None:

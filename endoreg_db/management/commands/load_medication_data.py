@@ -7,18 +7,26 @@ from lx_dtypes.models.contracts.management_command import (
     VerboseManagementCommandOptionsPayload,
 )
 
-from endoreg_db.models import (
+from endoreg_db.models.medical.disease import (
     Disease,
     DiseaseClassificationChoice,
-    Event,
-    InformationSource,
-    Medication,
-    MedicationIndication,
-    MedicationIndicationType,
-    MedicationIntakeTime,
-    MedicationSchedule,
-    Unit,
 )
+from endoreg_db.models.medical.event import Event
+from endoreg_db.models.medical.medication.medication import Medication
+from endoreg_db.models.medical.medication.medication_indication import (
+    MedicationIndication,
+)
+from endoreg_db.models.medical.medication.medication_indication_type import (
+    MedicationIndicationType,
+)
+from endoreg_db.models.medical.medication.medication_intake_time import (
+    MedicationIntakeTime,
+)
+from endoreg_db.models.medical.medication.medication_schedule import (
+    MedicationSchedule,
+)
+from endoreg_db.models.other.information_source import InformationSource
+from endoreg_db.models.other.unit import Unit
 
 from ...data import (
     MEDICATION_DATA_DIR,

@@ -44,7 +44,7 @@ from endoreg_db.services.video_files._segments import (
 if TYPE_CHECKING:
     from django.db.models import QuerySet
 
-    from endoreg_db.models.media.frame import Frame
+    from endoreg_db.models.media.frame.frame import Frame
     from endoreg_db.models.media.video.video_file import VideoFile
 
 logger = logging.getLogger(__name__)

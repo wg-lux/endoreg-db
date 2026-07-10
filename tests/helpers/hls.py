@@ -37,11 +37,17 @@ class FakeHlsOutputRecorder:
         self,
         *,
         source: BinaryIO,
+        source_file_name: str,
+        source_size_bytes: int | None,
+        temp_source_dir: Path,
         key_info_path: Path,
         segment_pattern: Path,
         playlist_path: Path,
         segment_base_url: str,
     ) -> None:
+        _ = source_file_name
+        _ = source_size_bytes
+        _ = temp_source_dir
         record = _read_key_info_record(key_info_path)
         if not record.key_path.exists():
             raise AssertionError(f"HLS key file does not exist: {record.key_path}")

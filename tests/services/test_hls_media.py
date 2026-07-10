@@ -459,11 +459,17 @@ def test_materialize_video_hls_failure_unlinks_partial_segments_and_keys(
     def fake_run_ffmpeg_hls(
         *,
         source: BinaryIO,
+        source_file_name: str,
+        source_size_bytes: int | None,
+        temp_source_dir: Path,
         key_info_path: Path,
         segment_pattern: Path,
         playlist_path: Path,
         segment_base_url: str,
     ) -> None:
+        _ = source_file_name
+        _ = source_size_bytes
+        _ = temp_source_dir
         _ = source.read()
         _ = playlist_path
         _ = segment_base_url

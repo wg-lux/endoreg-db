@@ -1,4 +1,4 @@
-from endoreg_db.models import Gender
+from endoreg_db.models.other.gender import Gender
 from rest_framework.viewsets import ReadOnlyModelViewSet
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
 from ...serializers.administration import GenderSerializer

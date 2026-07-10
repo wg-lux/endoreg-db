@@ -2,7 +2,7 @@
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
-    from endoreg_db.models import VideoFile
+    from endoreg_db.models.media.video.video_file import VideoFile
 
 
 def _calc_duration_vf(obj: "VideoFile") -> float:

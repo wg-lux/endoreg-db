@@ -12,7 +12,7 @@ from endoreg_db.management.commands._profiling import (
     command_profiling_config_from_options,
     run_with_optional_profile,
 )
-from endoreg_db.models import VideoFile
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.segment_annotations import ensure_segment_annotations
 
 

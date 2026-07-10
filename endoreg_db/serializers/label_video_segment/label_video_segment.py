@@ -17,7 +17,7 @@ from endoreg_db.models.label.label import Label
 from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
 )
-from endoreg_db.models.media.frame import Frame
+from endoreg_db.models.media.frame.frame import Frame
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.other.information_source import InformationSource
 from endoreg_db.serializers.label_video_segment.image_classification_annotation import (

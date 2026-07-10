@@ -7,8 +7,8 @@ from typing import Tuple
 from django.db import transaction
 
 from endoreg_db.models.administration.person.patient.patient import Patient
+import endoreg_db.models.metadata.sensitive_meta_logic as sensitive_meta_logic
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
-from endoreg_db.models.metadata import sensitive_meta_logic
 
 logger = logging.getLogger(__name__)
 

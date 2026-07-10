@@ -10,7 +10,7 @@ from lx_dtypes.models.contracts.management_command import (
     MigrationMarkEligibleCommandOptionsPayload,
 )
 
-from endoreg_db.models import UploadJob
+from endoreg_db.models.hub.upload_job import UploadJob
 
 
 class MigrationMarkEligibleCommandOptions(TypedDict):

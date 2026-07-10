@@ -7,15 +7,17 @@ from lx_dtypes.models.contracts.management_command import (
     VerboseManagementCommandOptionsPayload,
 )
 
-from endoreg_db.models import (
-    Finding,
+from endoreg_db.models.medical.finding.finding import Finding
+from endoreg_db.models.medical.finding.finding_classification import (
     FindingClassification,
     FindingClassificationChoice,
     FindingClassificationType,
+)
+from endoreg_db.models.medical.finding.finding_intervention import (
     FindingIntervention,
     FindingInterventionType,
-    FindingType,
 )
+from endoreg_db.models.medical.finding.finding_type import FindingType
 
 from ...data import (
     FINDING_CLASSIFICATION_CHOICE_DATA_DIR,

@@ -7,8 +7,12 @@ from lx_dtypes.models.contracts.management_command import (
     VerboseManagementCommandOptionsPayload,
 )
 
-from endoreg_db.models import LabValue as MODEL_0
-from endoreg_db.models import NumericValueDistribution, PatientLabSampleType, Unit
+from endoreg_db.models.medical.laboratory.lab_value import LabValue as MODEL_0
+from endoreg_db.models.medical.patient.patient_lab_sample import PatientLabSampleType
+from endoreg_db.models.other.distribution.numeric_value_distribution import (
+    NumericValueDistribution,
+)
+from endoreg_db.models.other.unit import Unit
 
 from ...data import LAB_VALUE_DATA_DIR as SOURCE_DIR
 from ...data import PATIENT_LAB_SAMPLE_TYPE_DATA_DIR

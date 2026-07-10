@@ -9,7 +9,7 @@ from uuid import UUID
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 from pydantic import ValidationError
 
-from endoreg_db.models import VideoFile
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.utils.paths import PROTECTED_DATA_ROOT, data_paths
 from endoreg_db.utils.file_operations import (
     atomic_write_file,

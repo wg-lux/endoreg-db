@@ -7,7 +7,7 @@ from types import NoneType
 from typing import TypeAlias, TypedDict, Unpack
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
-from endoreg_db.models import Center
+from endoreg_db.models.administration.center.center import Center
 from endoreg_db.services.hub.ingest import (
     process_preanonymized_watcher_file,
     resolve_declared_upload_center,

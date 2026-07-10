@@ -10,7 +10,7 @@ from typing import Protocol, cast
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 from pydantic import ValidationError
 
-from endoreg_db.models import AIDataSet
+from endoreg_db.models.aidataset.aidataset import AIDataSet
 from endoreg_db.utils.ai.multilabel_dataset_builder import (
     ANNOTATION_SOURCE_SCOPE_ALL,
     VALID_ANNOTATION_SOURCE_SCOPES,

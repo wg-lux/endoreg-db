@@ -16,10 +16,12 @@ if TYPE_CHECKING:
     from django.db.models import QuerySet
 
     from endoreg_db.models.other.information_source import InformationSource
-    from endoreg_db.models.label import Label
-    from endoreg_db.models.label import LabelVideoSegment
-    from endoreg_db.models.metadata import VideoPredictionMeta
-    from endoreg_db.models.media.frame import Frame
+    from endoreg_db.models.label.label import Label
+    from endoreg_db.models.label.label_video_segment.label_video_segment import (
+        LabelVideoSegment,
+    )
+    from endoreg_db.models.metadata.video_prediction_meta import VideoPredictionMeta
+    from endoreg_db.models.media.frame.frame import Frame
     from endoreg_db.models.media.video.video_file import VideoFile
 
 logger = logging.getLogger(__name__)
@@ -248,7 +250,9 @@ def _get_outside_segments(
     only_validated: bool = False,
 ) -> "QuerySet[LabelVideoSegment]":
     """Gets LabelVideoSegments marked with the 'outside' label."""
-    from endoreg_db.models.label import LabelVideoSegment  # Local import for models
+    from endoreg_db.models.label.label_video_segment.label_video_segment import (
+        LabelVideoSegment,
+    )
 
     try:
         # FIX: Use direct filter instead of relying on 'label_video_segments' related name
@@ -314,7 +318,7 @@ def _get_outside_frames(
     Gets a QuerySet of all unique Frame objects that fall within any segment
     labeled with the specified 'outside_label_name'.
     """
-    from endoreg_db.models.media.frame import Frame  # Local import
+    from endoreg_db.models.media.frame.frame import Frame  # Local import
 
     outside_segments = _get_outside_segments(
         video,

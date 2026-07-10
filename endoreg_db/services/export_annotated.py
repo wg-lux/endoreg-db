@@ -15,7 +15,8 @@ from endoreg_db.export.frames.export_frames_with_labels import (
     annotation_exporter_client,
     export_job_failed_error,
 )
-from endoreg_db.models import Center, VideoFile
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.hub.deployment import local_study_server_mode_enabled
 
 logger = logging.getLogger(__name__)

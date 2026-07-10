@@ -22,15 +22,15 @@ from lx_dtypes.models.contracts.legacy_data_import import (
 )
 from pydantic import ValidationError
 
-from endoreg_db.models import (
-    AIDataSet,
-    Center,
-    Frame,
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.aidataset.aidataset import AIDataSet
+from endoreg_db.models.label.annotation.image_classification import (
     ImageClassificationAnnotation,
-    Label,
-    LabelSet,
-    VideoFile,
 )
+from endoreg_db.models.label.label import Label
+from endoreg_db.models.label.label_set import LabelSet
+from endoreg_db.models.media.frame.frame import Frame
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_write_file,

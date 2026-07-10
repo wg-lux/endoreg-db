@@ -23,14 +23,16 @@ from typing import Any, Dict, Final, List, Literal, Optional, TypedDict, cast
 
 from django.db import models
 
-from endoreg_db.models import (
-    AIDataSet,
-    Frame,
+from endoreg_db.models.aidataset.aidataset import AIDataSet
+from endoreg_db.models.label.annotation.image_classification import (
     ImageClassificationAnnotation,
-    Label,
-    LabelSet,
+)
+from endoreg_db.models.label.label import Label
+from endoreg_db.models.label.label_set import LabelSet
+from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
 )
+from endoreg_db.models.media.frame.frame import Frame
 
 AnnotationSourceScope = Literal["all", "frame_only", "segment_only"]
 ANNOTATION_SOURCE_SCOPE_ALL: Final[AnnotationSourceScope] = "all"

@@ -8,7 +8,9 @@ from typing import TYPE_CHECKING
 from endoreg_db.models.label.annotation.image_classification import (
     ImageClassificationAnnotation,
 )
-from endoreg_db.models.label.label_video_segment import LabelVideoSegment
+from endoreg_db.models.label.label_video_segment.label_video_segment import (
+    LabelVideoSegment,
+)
 from endoreg_db.services.media_operation_gate import (
     MediaOperationDeferred,
     defer_if_video_media_busy,

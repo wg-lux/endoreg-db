@@ -22,22 +22,20 @@ from ...data import (
     TRANSPORT_ROUTE_DATA_DIR,
     WASTE_DATA_DIR,
 )
-from endoreg_db.models import (
-    Center,
-    CenterResource,
-    CenterWaste,
-    EmissionFactor,
-    Material,
-    Product,
-    ProductGroup,
-    ProductMaterial,
-    ProductWeight,
-    ReferenceProduct,
-    Resource,
-    TransportRoute,
-    Unit,
-    Waste,
-)
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.administration.center.center_resource import CenterResource
+from endoreg_db.models.administration.center.center_waste import CenterWaste
+from endoreg_db.models.administration.product.product import Product
+from endoreg_db.models.administration.product.product_group import ProductGroup
+from endoreg_db.models.administration.product.product_material import ProductMaterial
+from endoreg_db.models.administration.product.product_weight import ProductWeight
+from endoreg_db.models.administration.product.reference_product import ReferenceProduct
+from endoreg_db.models.other.emission.emission_factor import EmissionFactor
+from endoreg_db.models.other.material import Material
+from endoreg_db.models.other.resource import Resource
+from endoreg_db.models.other.transport_route import TransportRoute
+from endoreg_db.models.other.unit import Unit
+from endoreg_db.models.other.waste import Waste
 from ...utils import load_model_data_from_yaml
 from ...utils.yaml_model_loader import LoadModelDataMetadata
 

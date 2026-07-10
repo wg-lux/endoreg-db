@@ -72,7 +72,7 @@ def _ensure_stable_frame_rows(
     end_frame: int,
     ext: str,
 ) -> None:
-    from endoreg_db.models.media.frame import Frame
+    from endoreg_db.models.media.frame.frame import Frame
 
     existing_frames = {
         frame.frame_number: frame

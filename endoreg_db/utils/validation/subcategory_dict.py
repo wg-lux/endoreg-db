@@ -2,7 +2,7 @@ from typing import Protocol
 
 from pydantic import ValidationError
 
-from endoreg_db.models import Unit
+from endoreg_db.models.other.unit import Unit
 from lx_dtypes.models.contracts.json_types import JsonObject
 from lx_dtypes.models.contracts.subcategory_validation import (
     NumericalDescriptorContract,

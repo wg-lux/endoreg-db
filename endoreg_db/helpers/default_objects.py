@@ -18,17 +18,17 @@ from endoreg_db.utils.file_operations import (
     safe_unlink_file,
     sha256_file,
 )
-from endoreg_db.models import (
-    AiModel,
-    Center,
-    EndoscopyProcessor,
-    Examination,
+from endoreg_db.models.administration.ai.ai_model import AiModel
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.administration.person.patient.patient import Patient
+from endoreg_db.models.medical.examination.examination import Examination
+from endoreg_db.models.medical.examination.examination_indication import (
     ExaminationIndication,
-    Gender,
-    InformationSource,
-    ModelMeta,
-    Patient,
 )
+from endoreg_db.models.medical.hardware.endoscopy_processor import EndoscopyProcessor
+from endoreg_db.models.metadata.model_meta import ModelMeta
+from endoreg_db.models.other.gender import Gender
+from endoreg_db.models.other.information_source import InformationSource
 from endoreg_db.utils import create_mock_patient_name
 
 if TYPE_CHECKING:

@@ -3,7 +3,7 @@ from __future__ import annotations
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 from pydantic import ValidationError
 
-from endoreg_db.models import VideoFile
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.state.video_segment_validation import (
     resolve_segment_annotation_status,
 )

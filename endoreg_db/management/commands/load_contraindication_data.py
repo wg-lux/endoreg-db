@@ -7,7 +7,7 @@ from lx_dtypes.models.contracts.management_command import (
     VerboseManagementCommandOptionsPayload,
 )
 
-from endoreg_db.models import Contraindication
+from endoreg_db.models.medical.contraindication import Contraindication
 
 from ...data import CONTRAINDICATION_DATA_DIR as SOURCE_DIR
 from ...utils import load_model_data_from_yaml

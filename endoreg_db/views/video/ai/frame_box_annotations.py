@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Iterable, Mapping
 from typing import Any, Protocol, cast
 
 from django.db import transaction
@@ -26,10 +26,10 @@ from endoreg_db.models.label.label import Label
 from endoreg_db.models.media.frame.frame import Frame
 from endoreg_db.models.metadata.model_meta import ModelMeta
 from endoreg_db.models.other.information_source import InformationSource
-from endoreg_db.models.state import frame_annotation as frame_annotation_state
-from endoreg_db.models.state.frame_annotation import (
+from endoreg_db.services.frame_annotation_workflow import (
     DEFAULT_FRAME_INFORMATION_SOURCE_NAME,
     resolve_frame_information_source_name,
+    resolve_request_annotator,
 )
 from endoreg_db.serializers.label_video_segment.frame_box_annotation import (
     FrameBoxAnnotationBulkItemSerializer,
@@ -113,14 +113,7 @@ def _resolve_request_annotator(
     request: Request,
     requested_annotator: str | None,
 ) -> str:
-    resolver = cast(
-        Callable[[object, str | None], str],
-        getattr(frame_annotation_state, "resolve_request_annotator"),
-    )
-    return resolver(
-        request,
-        requested_annotator,
-    )
+    return resolve_request_annotator(request, requested_annotator)
 
 
 def _json_object_list_excluding_none(value: object) -> list[VideoFrameBoxJsonObject]:

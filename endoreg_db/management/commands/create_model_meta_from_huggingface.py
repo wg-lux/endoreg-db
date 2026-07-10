@@ -13,7 +13,9 @@ from lx_dtypes.models.contracts.huggingface_model_meta import (
     validate_huggingface_model_meta_command_payload,
 )
 
-from endoreg_db.models import AiModel, LabelSet, ModelMeta
+from endoreg_db.models.administration.ai.ai_model import AiModel
+from endoreg_db.models.label.label_set import LabelSet
+from endoreg_db.models.metadata.model_meta import ModelMeta
 
 MODEL_WEIGHTS_FILENAME = "colo_segmentation_RegNetX800MF_base.safetensors"
 

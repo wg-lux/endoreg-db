@@ -17,7 +17,9 @@ import yaml
 from django.core.management import BaseCommand, CommandError, CommandParser
 
 from endoreg_db.data import AI_MODEL_META_DATA_DIR
-from endoreg_db.models import AiModel, LabelSet, ModelMeta
+from endoreg_db.models.administration.ai.ai_model import AiModel
+from endoreg_db.models.label.label_set import LabelSet
+from endoreg_db.models.metadata.model_meta import ModelMeta
 
 logger = logging.getLogger(__name__)
 

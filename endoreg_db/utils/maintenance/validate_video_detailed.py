@@ -23,7 +23,7 @@ import django
 
 django.setup()
 
-from endoreg_db.models import VideoFile
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.utils.storage import (
     ensure_local_file,
     field_file_is_readable,

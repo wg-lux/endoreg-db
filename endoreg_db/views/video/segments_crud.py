@@ -34,7 +34,7 @@ from lx_dtypes.models.contracts.video_segments import (
     validate_segment_validation_payload,
     validate_segment_validation_status_payload,
 )
-from endoreg_db.models.aidataset import AIDataSet
+from endoreg_db.models.aidataset.aidataset import AIDataSet
 from endoreg_db.models.label.annotation.image_classification import (
     ImageClassificationAnnotation,
 )
@@ -51,10 +51,13 @@ from endoreg_db.models.state.video_segment_validation import (
     mark_segment_annotations_stale,
     resolve_segment_annotation_status,
 )
-from endoreg_db.models.state import frame_annotation as frame_annotation_state
 from endoreg_db.services.segment_annotations import (
     ensure_prediction_segment_annotations,
     ensure_segment_annotations,
+)
+from endoreg_db.services.segment_frame_annotations import (
+    delete_frame_annotations_for_segment as service_delete_frame_annotations_for_segment,
+    sync_frame_annotations_for_segment as service_sync_frame_annotations_for_segment,
 )
 
 from endoreg_db.services.video_segments_bulk_mutation import (
@@ -129,7 +132,7 @@ def _sync_frame_annotations(
     segment: LabelVideoSegment,
     old_snapshot: SegmentSnapshot | None = None,
 ) -> None:
-    cast(Any, frame_annotation_state).sync_frame_annotations_for_segment(
+    service_sync_frame_annotations_for_segment(
         segment=segment,
         old_snapshot=old_snapshot,
     )
@@ -144,15 +147,13 @@ def _delete_frame_annotations_for_segment(
     information_source_id: int | None,
     model_meta_id: int | None,
 ) -> int:
-    return int(
-        cast(Any, frame_annotation_state).delete_frame_annotations_for_segment(
-            video=video,
-            start_frame_number=start_frame_number,
-            end_frame_number=end_frame_number,
-            label=label,
-            information_source_id=information_source_id,
-            model_meta_id=model_meta_id,
-        )
+    return service_delete_frame_annotations_for_segment(
+        video=video,
+        start_frame_number=start_frame_number,
+        end_frame_number=end_frame_number,
+        label=label,
+        information_source_id=information_source_id,
+        model_meta_id=model_meta_id,
     )
 
 

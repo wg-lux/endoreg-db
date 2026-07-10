@@ -14,7 +14,7 @@ from lx_dtypes.models.contracts.management_command import (
 )
 from pydantic import ValidationError
 
-from endoreg_db.models import AIDataSet
+from endoreg_db.models.aidataset.aidataset import AIDataSet
 from endoreg_db.utils.ai.data_loader_for_model_input import (
     ANNOTATION_SOURCE_SCOPE_ALL,
     VALID_ANNOTATION_SOURCE_SCOPES,

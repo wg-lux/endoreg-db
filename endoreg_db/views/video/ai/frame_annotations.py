@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Any, TypeAlias, cast
 
 from django.db import transaction
@@ -32,8 +32,7 @@ from endoreg_db.models.media.frame.frame import Frame
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.metadata.model_meta import ModelMeta
 from endoreg_db.models.other.information_source import InformationSource
-from endoreg_db.models.state import frame_annotation as frame_annotation_state
-from endoreg_db.models.state.frame_annotation import (
+from endoreg_db.services.frame_annotation_workflow import (
     DEFAULT_FRAME_INFORMATION_SOURCE_NAME,
     SUPPORTED_FRAME_SAMPLING_STRATEGIES,
     SUPPORTED_FRAME_TASK_MODES,
@@ -44,6 +43,7 @@ from endoreg_db.models.state.frame_annotation import (
     normalize_frame_task_mode,
     resolve_ai_dataset_for_queue,
     resolve_frame_information_source_name,
+    resolve_request_annotator as service_resolve_request_annotator,
 )
 from endoreg_db.serializers.label_video_segment.frame_annotation_bulk import (
     FrameAnnotationBulkItemSerializer,
@@ -75,11 +75,7 @@ def resolve_request_annotator(
     request: Request,
     requested_annotator: str | None = None,
 ) -> str:
-    resolver = cast(
-        Callable[[object, str | None], str],
-        getattr(frame_annotation_state, "resolve_request_annotator"),
-    )
-    return resolver(request, requested_annotator)
+    return service_resolve_request_annotator(request, requested_annotator)
 
 
 def _coerce_int(value: object) -> int:

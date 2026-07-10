@@ -17,7 +17,8 @@ from lx_dtypes.models.contracts import (
     dump_sensitive_meta_patient_repair_update_payload,
 )
 
-from endoreg_db.models import SensitiveMeta, VideoFile
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 
 JsonNull: TypeAlias = NoneType
 

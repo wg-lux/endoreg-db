@@ -13,7 +13,7 @@ import torch
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
-from endoreg_db.models import AIDataSet
+from endoreg_db.models.aidataset.aidataset import AIDataSet
 from endoreg_db.utils.file_operations import atomic_write_file
 from endoreg_db.utils.ai.data_loader_for_model_input import build_dataset_for_training
 from endoreg_db.utils.ai.model_training.config import (

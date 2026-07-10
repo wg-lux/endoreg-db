@@ -7,8 +7,8 @@ from lx_dtypes.models.contracts.management_command import (
     VerboseManagementCommandOptionsPayload,
 )
 
-from endoreg_db.models import DiseaseClassification
-from endoreg_db.models import DiseaseClassificationChoice as MODEL_0
+from endoreg_db.models.medical.disease import DiseaseClassification
+from endoreg_db.models.medical.disease import DiseaseClassificationChoice as MODEL_0
 
 from ...data import DISEASE_CLASSIFICATION_CHOICE_DATA_DIR as SOURCE_DIR
 from ...utils import load_model_data_from_yaml

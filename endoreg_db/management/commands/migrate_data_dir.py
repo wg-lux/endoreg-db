@@ -19,7 +19,9 @@ from lx_dtypes.models.contracts.migrate_data_dir import (
     MigrateDataDirManifestPayload,
 )
 
-from endoreg_db.models import RawPdfFile, UploadJob, VideoFile
+from endoreg_db.models.hub.upload_job import UploadJob
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.media.video.storage_mode import VideoStorageMode
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,

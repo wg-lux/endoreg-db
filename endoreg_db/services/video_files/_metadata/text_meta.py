@@ -7,11 +7,10 @@ from typing import TYPE_CHECKING, Protocol, cast
 from django.db import transaction
 from lx_dtypes.models.contracts.video_text_metadata import VideoTextMetaPayload
 
-# --- Fix Imports ---
-from endoreg_db.models.metadata import SensitiveMeta
 from endoreg_db.models.metadata.sensitive_meta_logic import (
     update_or_create_sensitive_meta_from_dict,
 )
+from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile

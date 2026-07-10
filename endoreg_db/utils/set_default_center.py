@@ -5,7 +5,10 @@ from typing import Protocol, cast
 
 from django.core.exceptions import ObjectDoesNotExist
 
-from endoreg_db.models import AIDataSet, ApplicationSettings, Center, EndoscopyProcessor
+from endoreg_db.models.administration.app_settings import ApplicationSettings
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.aidataset.aidataset import AIDataSet
+from endoreg_db.models.medical.hardware.endoscopy_processor import EndoscopyProcessor
 
 _UNSET = object()
 

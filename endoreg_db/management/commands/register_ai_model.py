@@ -19,7 +19,9 @@ from lx_dtypes.models.contracts.management_command import (
     RegisterAiModelMetaPayload,
 )
 
-from endoreg_db.models import LabelSet, ModelMeta, ModelType
+from endoreg_db.models.administration.ai.model_type import ModelType
+from endoreg_db.models.label.label_set import LabelSet
+from endoreg_db.models.metadata.model_meta import ModelMeta
 
 
 class Command(BaseCommand):

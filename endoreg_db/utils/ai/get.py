@@ -1,4 +1,4 @@
-from endoreg_db.models import ModelMeta
+from endoreg_db.models.metadata.model_meta import ModelMeta
 
 
 def get_latest_model_meta_by_model_name(model_name: str) -> ModelMeta | None:

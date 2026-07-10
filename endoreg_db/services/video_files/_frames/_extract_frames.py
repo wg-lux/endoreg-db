@@ -423,7 +423,7 @@ def validate_video_frame_cache(
     *,
     ext: str = "jpg",
 ) -> FrameCacheValidation:
-    from endoreg_db.models.media.frame import Frame
+    from endoreg_db.models.media.frame.frame import Frame
 
     state = video.get_or_create_state()
     expected_count = _expected_frame_count(
@@ -493,7 +493,7 @@ def _ensure_stable_frame_records(
     frame_numbers: list[int],
     ext: str,
 ) -> int:
-    from endoreg_db.models.media.frame import Frame
+    from endoreg_db.models.media.frame.frame import Frame
 
     if not frame_numbers:
         return 0
@@ -550,7 +550,7 @@ def _sync_extracted_frame_records(
     frame_numbers: list[int],
     ext: str,
 ) -> int:
-    from endoreg_db.models.media.frame import Frame
+    from endoreg_db.models.media.frame.frame import Frame
 
     unique_numbers = sorted(set(frame_numbers))
     if unique_numbers:

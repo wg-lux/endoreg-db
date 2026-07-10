@@ -7,7 +7,7 @@ from lx_dtypes.models.contracts.management_command import (
     VerboseManagementCommandOptionsPayload,
 )
 
-from endoreg_db.models import (
+from endoreg_db.models.medical.disease import (
     Disease,
     DiseaseClassification,
     DiseaseClassificationChoice,

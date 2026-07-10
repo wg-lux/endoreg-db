@@ -17,7 +17,7 @@ from endoreg_db.config.env import (
     get_protected_media_root,
     get_protected_media_url,
 )
-from endoreg_db.models import UploadJob
+from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.services.audit_integrity import get_audit_ledger_integrity_status
 from endoreg_db.services.environment_readiness import check_environment_readiness
 from endoreg_db.services.hub.deployment import (

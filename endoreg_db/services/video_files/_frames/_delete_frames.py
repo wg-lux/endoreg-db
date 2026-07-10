@@ -31,7 +31,7 @@ def _get_staged_deletion_path(path: str) -> str:
 def _dataset_backed_frame_ids_with_files(
     video: "VideoFile",
 ) -> tuple[set[int], set[Path]]:
-    from endoreg_db.models.media.frame import Frame
+    from endoreg_db.models.media.frame.frame import Frame
 
     frame_ids: set[int] = set()
     frame_paths: set[Path] = set()
@@ -72,7 +72,7 @@ def _delete_frames(video: "VideoFile") -> str:
     Does NOT delete Frame objects from DB, but marks them as is_extracted=False.
     Raises RuntimeError if state update fails.
     """
-    from endoreg_db.models.media.frame import Frame
+    from endoreg_db.models.media.frame.frame import Frame
 
     deleted_messages: List[str] = []
     error_messages: List[str] = []

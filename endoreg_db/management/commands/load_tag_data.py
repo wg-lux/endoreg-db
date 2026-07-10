@@ -7,9 +7,7 @@ from lx_dtypes.models.contracts.management_command import (
     VerboseManagementCommandOptionsPayload,
 )
 
-from endoreg_db.models import (
-    Tag,
-)
+from endoreg_db.models.other.tag import Tag
 
 from ...data import TAG_DATA_DIR
 from ...utils import load_model_data_from_yaml

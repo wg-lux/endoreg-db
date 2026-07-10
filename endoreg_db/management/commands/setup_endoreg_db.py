@@ -144,7 +144,7 @@ class Command(BaseCommand):
                 primary_labelset = setup_config.get_primary_labelset_name()
 
                 # Check if model metadata already exists
-                from endoreg_db.models import AiModel
+                from endoreg_db.models.administration.ai.ai_model import AiModel
 
                 ai_model = AiModel.objects.filter(name=default_model_name).first()
 
@@ -295,14 +295,14 @@ class Command(BaseCommand):
             raise Exception(f"Missing required tables: {missing_tables}")
 
         # Check that AI models exist (if AI setup was performed)
-        from endoreg_db.models import AiModel
+        from endoreg_db.models.administration.ai.ai_model import AiModel
 
         if AiModel.objects.exists():
             ai_model_count = AiModel.objects.count()
             self.stdout.write(f"Found {ai_model_count} AI model(s)")
 
             # Check for model metadata
-            from endoreg_db.models import ModelMeta
+            from endoreg_db.models.metadata.model_meta import ModelMeta
 
             meta_count = ModelMeta.objects.count()
             self.stdout.write(f"Found {meta_count} model metadata record(s)")
@@ -317,7 +317,9 @@ class Command(BaseCommand):
         Args:
             yaml_only (bool): If True, only set active metadata but don't create new metadata
         """
-        from endoreg_db.models import AiModel, LabelSet, ModelMeta
+        from endoreg_db.models.administration.ai.ai_model import AiModel
+        from endoreg_db.models.label.label_set import LabelSet
+        from endoreg_db.models.metadata.model_meta import ModelMeta
         from endoreg_db.utils.setup_config import setup_config
 
         all_models = AiModel.objects.all()

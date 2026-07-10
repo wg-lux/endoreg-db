@@ -57,7 +57,7 @@ try:
     import django
 
     django.setup()
-    from endoreg_db.models import VideoFile as _VideoFile
+    from endoreg_db.models.media.video.video_file import VideoFile as _VideoFile
     from endoreg_db.utils.storage import (
         field_file_is_readable as _field_file_is_readable,
     )

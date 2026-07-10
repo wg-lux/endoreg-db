@@ -37,7 +37,7 @@ from endoreg_db.models.state.video import VideoState
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
-from endoreg_db.models.metadata import sensitive_meta_logic
+import endoreg_db.models.metadata.sensitive_meta_logic as sensitive_meta_logic
 from endoreg_db.services.auto_case_resolution import auto_resolve_media_case
 from endoreg_db.services.hub.audit import emit_hub_audit_event
 from endoreg_db.services.raw_pdf_files import get_or_create_raw_pdf_state

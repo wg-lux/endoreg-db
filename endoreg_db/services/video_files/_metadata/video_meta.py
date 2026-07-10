@@ -80,7 +80,7 @@ def _update_video_meta(
     Updates or creates the technical VideoMeta from the raw video file.
     Raises FileNotFoundError or ValueError on pre-condition failure, RuntimeError on processing failure.
     """
-    from endoreg_db.models.metadata import VideoMeta  # Local import
+    from endoreg_db.models.metadata.video_meta import VideoMeta  # Local import
 
     logger.debug(
         "Updating technical VideoMeta for video %s (from raw file).", video.video_hash

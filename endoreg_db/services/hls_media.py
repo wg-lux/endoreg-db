@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import inspect
 import logging
 import os
 import subprocess
 import threading
 import time
 from collections import deque
-from collections.abc import Callable, Generator, Iterable
+from collections.abc import Generator, Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -73,12 +72,13 @@ FFMPEG_STDIN_WATCHDOG_SECONDS = 30.0
 FFMPEG_STDIN_WATCHDOG_INTERVAL_SECONDS = 1.0
 FFMPEG_INPUT_THREAD_JOIN_TIMEOUT_SECONDS = 2.0
 FFMPEG_OUTPUT_PROGRESS_WATCHDOG_SECONDS = 300.0
-MP4_PIPE_COMPATIBILITY_SCAN_BYTES = 16 * 1024 * 1024
-HLS_VIDEO_PRESET = "slow"
+MP4_PIPE_COMPATIBILITY_SCAN_BYTES = 64 * 1024
+HLS_VIDEO_PRESET = "medium"
 HLS_VIDEO_CRF = "18"
 HLS_VIDEO_PROFILE = "high"
 HLS_VIDEO_PIXEL_FORMAT = "yuv420p"
 HLS_AUDIO_CODEC = "copy"
+HLS_FFMPEG_THREADS_ENV = "LX_ANNOTATE_HLS_FFMPEG_THREADS"
 
 _HLS_KEY_WRAP_AAD_PREFIX = b"endoreg-db:hls-content-key:v1"
 
@@ -657,50 +657,6 @@ def _start_stdin_pumper(
     return thread, state
 
 
-def _mp4_atom_scan_requires_seekable_input(prefix: bytes) -> bool:
-    if not prefix:
-        return False
-
-    offset = 0
-    while offset + 8 <= len(prefix):
-        atom_size = int.from_bytes(prefix[offset : offset + 4], "big")
-        atom_type = prefix[offset + 4 : offset + 8]
-        header_size = 8
-
-        if offset == 0 and atom_type not in {
-            b"ftyp",
-            b"free",
-            b"wide",
-            b"moov",
-            b"mdat",
-        }:
-            return False
-
-        if atom_size == 1:
-            if offset + 16 > len(prefix):
-                return True
-            atom_size = int.from_bytes(prefix[offset + 8 : offset + 16], "big")
-            header_size = 16
-        elif atom_size == 0:
-            return atom_type == b"mdat"
-
-        if atom_type == b"moov":
-            return False
-        if atom_type == b"mdat":
-            return True
-        if atom_size < header_size:
-            return True
-
-        next_offset = offset + atom_size
-        if next_offset <= offset:
-            return True
-        if next_offset > len(prefix):
-            return True
-        offset = next_offset
-
-    return True
-
-
 def _source_name_looks_like_seekable_container(source_file_name: str) -> bool:
     return Path(source_file_name.lower()).suffix in {".mp4", ".m4v", ".mov"}
 
@@ -710,9 +666,15 @@ def _source_requires_seekable_input(
     source_file_name: str,
     prefix: bytes,
 ) -> bool:
-    if not _source_name_looks_like_seekable_container(source_file_name):
-        return False
-    return _mp4_atom_scan_requires_seekable_input(prefix)
+    # Production hotfix:
+    # MP4/MOV over pipe:0 is not operationally safe for long/non-faststart
+    # inputs. FFmpeg can spend hours consuming CPU before emitting the first
+    # HLS segment because it cannot seek container metadata. Prefer the
+    # already-hardened 0700/0600 seekable temp-file path for every MP4-like
+    # source instead of relying on atom-position heuristics.
+    if len(prefix) >= 12 and prefix[4:8] == b"ftyp":
+        return True
+    return _source_name_looks_like_seekable_container(source_file_name)
 
 
 def _source_size_bytes(field_file: FieldFile) -> int | None:
@@ -857,6 +819,29 @@ def _wait_for_ffmpeg_completion(
             )
 
 
+def get_ffmpeg_thread_count() -> int:
+    """
+    Determines safe thread allocation for HLS encoding.
+    Prioritizes explicit env override, falls back to (CPUs - 2).
+    """
+    configured_threads = os.environ.get(HLS_FFMPEG_THREADS_ENV)
+    if configured_threads is not None:
+        try:
+            parsed_threads = int(configured_threads)
+        except ValueError as exc:
+            raise RuntimeError(
+                f"{HLS_FFMPEG_THREADS_ENV} must be a positive integer"
+            ) from exc
+        if parsed_threads < 1:
+            raise RuntimeError(f"{HLS_FFMPEG_THREADS_ENV} must be a positive integer")
+        return parsed_threads
+
+    cpu_count = os.cpu_count()
+    if cpu_count is None:
+        return 1
+    return max(1, cpu_count - 2)
+
+
 def _ffmpeg_command(
     *,
     key_info_path: Path,
@@ -866,6 +851,8 @@ def _ffmpeg_command(
     input_arg: str = "pipe:0",
 ) -> list[str]:
     ffmpeg_executable = ffmpeg_wrapper.resolve_ffmpeg_executable()
+    threads = get_ffmpeg_thread_count()
+
     if ffmpeg_executable is None:
         raise RuntimeError("ffmpeg executable is not available")
     return [
@@ -880,6 +867,8 @@ def _ffmpeg_command(
         "0:a?",
         "-codec:v",
         "libx264",
+        "-threads",
+        str(threads),
         "-preset",
         HLS_VIDEO_PRESET,
         "-profile:v",
@@ -1079,48 +1068,6 @@ def _run_ffmpeg_hls(
             "FFmpeg HLS pipeline failed: "
             f"returncode={return_code} stderr={_stderr_tail(stderr_chunks)}"
         )
-
-
-def _call_run_ffmpeg_hls(
-    *,
-    source: BinaryIO,
-    source_file_name: str,
-    source_size_bytes: int | None,
-    temp_source_dir: Path,
-    key_info_path: Path,
-    segment_pattern: Path,
-    playlist_path: Path,
-    segment_base_url: str,
-) -> None:
-    runner: Callable[..., None] = _run_ffmpeg_hls
-    kwargs: dict[str, object] = {
-        "source": source,
-        "source_file_name": source_file_name,
-        "source_size_bytes": source_size_bytes,
-        "temp_source_dir": temp_source_dir,
-        "key_info_path": key_info_path,
-        "segment_pattern": segment_pattern,
-        "playlist_path": playlist_path,
-        "segment_base_url": segment_base_url,
-    }
-    try:
-        signature = inspect.signature(runner)
-    except (TypeError, ValueError):
-        runner(**kwargs)
-        return
-
-    accepts_extra_kwargs = any(
-        parameter.kind == inspect.Parameter.VAR_KEYWORD
-        for parameter in signature.parameters.values()
-    )
-    if accepts_extra_kwargs:
-        runner(**kwargs)
-        return
-
-    supported_kwargs = {
-        name: value for name, value in kwargs.items() if name in signature.parameters
-    }
-    runner(**supported_kwargs)
 
 
 def _open_field_file(field_file: FieldFile) -> BinaryIO:
@@ -1342,7 +1289,7 @@ def materialize_video_hls(
             iv_hex=iv_hex,
         ) as (_, _key_info_path):
             with _open_hls_source(source_ref) as source:
-                _call_run_ffmpeg_hls(
+                _run_ffmpeg_hls(
                     source=source,
                     source_file_name=source_ref.source_file_name,
                     source_size_bytes=_source_size_bytes(source_ref.field_file),

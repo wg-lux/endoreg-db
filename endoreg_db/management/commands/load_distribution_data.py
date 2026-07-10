@@ -14,10 +14,16 @@ from ...data import (
     DISTRIBUTION_NUMERIC_DATA_DIR,
     DISTRIBUTION_SINGLE_CATEGORICAL_DATA_DIR,
 )
-from endoreg_db.models import (
+from endoreg_db.models.other.distribution.date_value_distribution import (
     DateValueDistribution,
+)
+from endoreg_db.models.other.distribution.multiple_categorical_value_distribution import (
     MultipleCategoricalValueDistribution,
+)
+from endoreg_db.models.other.distribution.numeric_value_distribution import (
     NumericValueDistribution,
+)
+from endoreg_db.models.other.distribution.single_categorical_value_distribution import (
     SingleCategoricalValueDistribution,
 )
 from ...utils import load_model_data_from_yaml

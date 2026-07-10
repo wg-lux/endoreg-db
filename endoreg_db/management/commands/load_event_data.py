@@ -7,7 +7,7 @@ from lx_dtypes.models.contracts.management_command import (
     VerboseManagementCommandOptionsPayload,
 )
 
-from endoreg_db.models import Event
+from endoreg_db.models.medical.event import Event
 
 from ...data import EVENT_DATA_DIR as SOURCE_DIR
 from ...utils import load_model_data_from_yaml

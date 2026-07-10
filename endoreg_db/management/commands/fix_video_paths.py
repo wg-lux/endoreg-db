@@ -15,7 +15,7 @@ from lx_dtypes.models.contracts import (
     VideoPathRepairFileInfoPayload,
 )
 
-from endoreg_db.models import VideoFile
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.utils.paths import STORAGE_DIR
 

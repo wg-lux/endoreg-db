@@ -483,7 +483,7 @@ def get_video_frame_count(video_id: int) -> int:
         Anzahl der Frames
     """
     try:
-        from endoreg_db.models import VideoFile
+        from endoreg_db.models.media.video.video_file import VideoFile
 
         video = VideoFile.objects.get(id=video_id)
 

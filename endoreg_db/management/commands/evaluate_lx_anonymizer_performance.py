@@ -37,8 +37,8 @@ from lx_dtypes.models.contracts.endoscopy_processor import (
 )
 from pydantic import ValidationError
 
-from endoreg_db.models import EndoscopyProcessor
 from endoreg_db.import_files.context.import_context import ImportContext
+from endoreg_db.models.medical.hardware.endoscopy_processor import EndoscopyProcessor
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.report_import import ReportImportService

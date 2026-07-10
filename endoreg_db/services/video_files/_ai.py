@@ -29,7 +29,8 @@ from safetensors import safe_open
 from lx_dtypes.models.contracts.ai_prediction import AiPredictionConfigPayload
 
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS
-from endoreg_db.models.metadata import ModelMeta, VideoPredictionMeta
+from endoreg_db.models.metadata.model_meta import ModelMeta
+from endoreg_db.models.metadata.video_prediction_meta import VideoPredictionMeta
 from endoreg_db.models.utils import TEST_RUN as _GLOBAL_TEST_RUN
 
 GLOBAL_TEST_RUN: bool = _GLOBAL_TEST_RUN
@@ -38,7 +39,9 @@ GLOBAL_N_TEST_FRAMES = 100
 
 if TYPE_CHECKING:
     import torch
-    from endoreg_db.models.medical.hardware import EndoscopyProcessor
+    from endoreg_db.models.medical.hardware.endoscopy_processor import (
+        EndoscopyProcessor,
+    )
     from endoreg_db.models.media.video.video_file import VideoFile
 
 

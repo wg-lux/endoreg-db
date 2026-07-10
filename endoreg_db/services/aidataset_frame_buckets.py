@@ -259,7 +259,7 @@ def _build_segment_frame_buckets(
     prediction_segments_only: bool,
 ) -> dict[int, set[int]]:
     from endoreg_db.models.media.frame.frame import Frame
-    from endoreg_db.models.state import frame_annotation as frame_annotation_state
+    import endoreg_db.models.state.frame_annotation as frame_annotation_state
 
     buckets: dict[int, set[int]] = defaultdict(set)
     segments = (
