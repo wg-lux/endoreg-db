@@ -226,7 +226,9 @@ CI tips
 
 ## Removing legacy settings
 - Replace imports of prod_settings, dev/dev_settings.py, tests/test_settings.py with endoreg_db.config.settings.prod/dev/test.
-- Update scripts: scripts/django_setup.py, check_video_files.py, etc., to default to endoreg_db.config.settings.dev/test.
+- Run maintenance through the registered Django management commands with
+  `DJANGO_SETTINGS_MODULE` set to `endoreg_db.config.settings.dev` or
+  `endoreg_db.config.settings.test` as appropriate.
 
 ## AI Model Setup (for video processing features)
 

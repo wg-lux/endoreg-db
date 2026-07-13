@@ -15,6 +15,10 @@ from endoreg_db.utils.file_operations import (
     safe_rmtree,
     safe_unlink_file,
 )
+from endoreg_db.utils.media.frame_file_permissions import (
+    FRAME_CACHE_DIR_MODE,
+    apply_frame_cache_dir_mode,
+)
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile, VideoState
@@ -206,7 +210,12 @@ def _delete_frames(video: "VideoFile") -> str:
                     _get_staged_deletion_path(original_path.name)
                 )
                 try:
-                    atomic_move_path(source=original_path, destination=staged_path)
+                    atomic_move_path(
+                        source=original_path,
+                        destination=staged_path,
+                        dir_mode=FRAME_CACHE_DIR_MODE,
+                    )
+                    apply_frame_cache_dir_mode(staged_path)
                     safe_rmtree(staged_path, missing_ok=True)
                 except Exception as cleanup_exc:
                     if staged_path.exists() and not original_path.exists():
@@ -214,7 +223,9 @@ def _delete_frames(video: "VideoFile") -> str:
                             atomic_move_path(
                                 source=staged_path,
                                 destination=original_path,
+                                dir_mode=FRAME_CACHE_DIR_MODE,
                             )
+                            apply_frame_cache_dir_mode(original_path)
                         except Exception as restore_exc:
                             logger.error(
                                 "Failed to restore staged frame directory "

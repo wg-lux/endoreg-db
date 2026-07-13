@@ -116,6 +116,24 @@ def _allow_staging_cleanup_roots(
     )
 
 
+@pytest.fixture(autouse=True)
+def _isolate_duplicate_hls_readiness(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep import-service units from invoking the real HLS/database boundary."""
+    import endoreg_db.import_files.video_import_service as vis_module
+
+    def hls_ready(_video: VideoFile, *, force: bool = False) -> None:
+        assert force is False
+
+    monkeypatch.setattr(
+        vis_module,
+        "ensure_processed_video_hls",
+        hls_ready,
+        raising=True,
+    )
+
+
 class TestVideoImportService(TestCase):
     """Test cases for video import service."""
 
@@ -1105,6 +1123,19 @@ def test_import_and_anonymize_duplicate_success_skips_storage_preflight_and_stag
         vis_module, "create_sensitive_copy", fail_create_sensitive_copy, raising=True
     )
 
+    hls_ready_calls: list[int] = []
+
+    def ensure_hls_ready(video: VideoFile, *, force: bool = False) -> None:
+        assert force is False
+        hls_ready_calls.append(int(video.pk))
+
+    monkeypatch.setattr(
+        vis_module,
+        "ensure_processed_video_hls",
+        ensure_hls_ready,
+        raising=True,
+    )
+
     service = VideoImportService()
     result = service.import_and_anonymize(
         file_path=source_path,
@@ -1116,6 +1147,7 @@ def test_import_and_anonymize_duplicate_success_skips_storage_preflight_and_stag
     assert result.pk == 1
     assert ("file_lock_enter", source_path) in events
     assert any(event[0] == "hash_lock_enter" for event in events)
+    assert hls_ready_calls == [1]
     assert not source_path.exists()
 
 

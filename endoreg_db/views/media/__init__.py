@@ -10,6 +10,7 @@ from .hub import (
 )
 from .patient_media_timeline import PatientMediaTimelineView
 from .anonymization_metrics import AnonymizationMetricsView
+from .study_cohort import StudyCohortPreviewView
 from ..video.reimport import VideoReimportView
 from ..report.reimport import ReportReimportView
 from endoreg_db.views.video.ai.label import label_list
@@ -34,6 +35,7 @@ __all__ = [
     "HubTransferStatusView",
     "PatientMediaTimelineView",
     "AnonymizationMetricsView",
+    "StudyCohortPreviewView",
     "VideoReimportView",
     "ReportReimportView",
     "get_sensitive_metadata_pk",

@@ -24,6 +24,7 @@ from endoreg_db.services.jobs.heavy_jobs import (
 )
 from endoreg_db.services.hub.cleanup import cleanup_upload_job_source
 from endoreg_db.services.report_import import ReportImportService
+from endoreg_db.services.raw_pdf_files import require_usable_completed_report
 from endoreg_db.utils.api_urls import endoreg_api_path
 from endoreg_db.utils.storage import ensure_local_file
 
@@ -47,6 +48,11 @@ class _CenterLike(Protocol):
     name: str
 
 
+class _RawPdfStateLike(Protocol):
+    anonymized: bool
+    processed_file_sha256: str
+
+
 class _RawPdfLike(Protocol):
     pk: int
     pdf_hash: str
@@ -56,7 +62,8 @@ class _RawPdfLike(Protocol):
     sensitive_meta_id: int | None
     sensitive_meta: SensitiveMeta | None
     text: str | None
-    anonymized: bool | None
+    processed_file: Any
+    state: _RawPdfStateLike | None
 
     def save(self, *args: object, **kwargs: object) -> None: ...
     def refresh_from_db(self, *args: object, **kwargs: object) -> None: ...
@@ -459,6 +466,10 @@ def _run_report_llm_reimport_job(job_id: str) -> bool:
             )
 
         pdf.refresh_from_db()
+        processed_file_sha256 = require_usable_completed_report(
+            cast(RawPdfFile, pdf),
+            source_sha256=pdf.pdf_hash,
+        )
         anonymized_upload_jobs = _mark_report_upload_jobs_anonymized(pdf)
         result: ReportLlmJobJsonObject = cast(
             ReportLlmJobJsonObject,
@@ -470,7 +481,8 @@ def _run_report_llm_reimport_job(job_id: str) -> bool:
                 if pdf.sensitive_meta_id is not None
                 else None,
                 "text_extracted": bool(pdf.text),
-                "anonymized": bool(getattr(pdf, "anonymized", False)),
+                "anonymized": bool(pdf.state and pdf.state.anonymized),
+                "processed_file_sha256": processed_file_sha256,
                 "old_sensitive_meta_id": old_meta_id,
                 "processing_upload_jobs": int(processing_upload_jobs),
                 "anonymized_upload_jobs": int(anonymized_upload_jobs),
@@ -540,28 +552,32 @@ def _run_report_llm_import_job(job_id: str) -> bool:
                 center_name=center.name,
                 retry=config.retry,
             )
-        typed_report = cast(_RawPdfLike | None, report)
-        sensitive_meta = (
-            typed_report.sensitive_meta if typed_report is not None else None
+        if not isinstance(report, RawPdfFile):
+            raise RuntimeError("Report import completed without a RawPdfFile result.")
+        typed_report = cast(_RawPdfLike, report)
+        processed_file_sha256 = require_usable_completed_report(
+            report,
+            source_sha256=typed_report.pdf_hash,
         )
-        if typed_report is not None:
-            job.pdf = cast(RawPdfFile, typed_report)
-            job.save(update_fields=["pdf", "updated_at"])
+        sensitive_meta = typed_report.sensitive_meta
+        job.pdf = report
+        job.save(update_fields=["pdf", "updated_at"])
         upload_job.mark_completed(sensitive_meta=sensitive_meta)
         cleanup_upload_job_source(cast(UploadJob, upload_job))
         result: ReportLlmJobJsonObject = cast(
             ReportLlmJobJsonObject,
             {
                 "upload_job_id": str(upload_job.pk),
-                "pdf_id": int(typed_report.pk) if typed_report is not None else None,
-                "pdf_hash": str(typed_report.pdf_hash)
-                if typed_report is not None
-                else "",
+                "pdf_id": int(typed_report.pk),
+                "pdf_hash": str(typed_report.pdf_hash),
                 "sensitive_meta_id": (
                     int(sensitive_meta.pk) if sensitive_meta is not None else None
                 ),
                 "text_extracted": bool(getattr(typed_report, "text", "")),
-                "anonymized": bool(getattr(typed_report, "anonymized", False)),
+                "anonymized": bool(
+                    typed_report.state and typed_report.state.anonymized
+                ),
+                "processed_file_sha256": processed_file_sha256,
             },
         )
         job.mark_success(result=result)

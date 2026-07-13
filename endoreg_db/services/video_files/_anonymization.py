@@ -23,6 +23,11 @@ from endoreg_db.utils.file_operations import (
     safe_rmtree,
     safe_unlink_file,
 )
+from endoreg_db.utils.media.frame_file_permissions import (
+    FRAME_FILE_MODE,
+    FRAME_STAGING_DIR_MODE,
+    ensure_frame_staging_dir,
+)
 from endoreg_db.utils.storage import save_local_file
 from endoreg_db.utils.validate_endo_roi import validate_endo_roi
 
@@ -208,6 +213,8 @@ def _create_anonymized_frame_files(
                 endo_roi=endo_roi,
                 all_black=make_all_black,
                 censor_color=censor_color,
+                file_mode=FRAME_FILE_MODE,
+                dir_mode=FRAME_STAGING_DIR_MODE,
             )
 
             generated_paths.append(target_path)
@@ -348,7 +355,7 @@ def _make_temporary_anonymized_frames(
         )
 
     temp_anonym_frame_dir = video.get_temp_anonymized_frame_dir()
-    ensure_directory(temp_anonym_frame_dir)
+    ensure_frame_staging_dir(temp_anonym_frame_dir)
     logger.info(
         "Creating temporary anonymized frames for video %s in %s",
         video.video_hash,

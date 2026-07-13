@@ -74,7 +74,10 @@ def ensure_document_types() -> dict[str, DocumentTypeModel]:
 
 
 def resolve_report_text(
-    pdf: RawPdfFile, payload: Mapping[str, object] | None = None
+    pdf: RawPdfFile,
+    payload: Mapping[str, object] | None = None,
+    *,
+    allow_empty: bool = False,
 ) -> str:
     payload_obj = payload or {}
 
@@ -95,7 +98,12 @@ def resolve_report_text(
         ):
             return sensitive_meta_ref.anonymized_text
 
-    return pdf.text or ""
+    if allow_empty:
+        return ""
+
+    raise ValueError(
+        "Cannot materialize a structured report without non-empty anonymized text"
+    )
 
 
 def resolve_pdf_document_type_name(
@@ -126,6 +134,7 @@ def build_report_context_from_pdf(
     pdf: RawPdfFile,
     payload: Mapping[str, object] | None = None,
     document_type_name: str | DocumentTypeContract | None = None,
+    allow_empty_text: bool = False,
 ) -> ReportContext:
     if pdf.examination is None:
         raise ValueError(
@@ -151,7 +160,11 @@ def build_report_context_from_pdf(
         ),
         patient_id=_positive_id(patient.pk, field_name="patient.pk"),
         document_type=document_type,
-        anonymized_text=resolve_report_text(pdf, payload),
+        anonymized_text=resolve_report_text(
+            pdf,
+            payload,
+            allow_empty=allow_empty_text,
+        ),
         patient_hash=_required_text(
             sensitive_meta.patient_hash,
             field_name="sensitive_meta.patient_hash",
@@ -215,11 +228,13 @@ def upsert_anonym_examination_report_from_pdf(
     document_type_name: str | None = None,
     validated_at_iso: str | None = None,
     source: str = "case_resolution",
+    allow_empty_text: bool = False,
 ) -> tuple[AnonymExaminationReport, bool]:
     report_context = build_report_context_from_pdf(
         pdf=pdf,
         payload=payload,
         document_type_name=document_type_name,
+        allow_empty_text=allow_empty_text,
     )
     document_type = ensure_document_types()[report_context.document_type.value]
     patient_examination = pdf.examination

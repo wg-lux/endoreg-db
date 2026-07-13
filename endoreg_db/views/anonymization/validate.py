@@ -610,6 +610,7 @@ class AnonymizationValidateView(APIView):
                         ok = validate_report_metadata_annotation(
                             cast(RawPdfFile, pdf_obj),
                             prepared_payload,
+                            enforce_processed_artifact=False,
                         )
                     except Exception:  # pragma: no cover - defensive safety net
                         transaction.set_rollback(True)

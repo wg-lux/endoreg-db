@@ -58,6 +58,15 @@ class RawPdfState(models.Model):
     processing_error: models.BooleanField[Any, Any] = models.BooleanField(
         default=False, help_text="True if an error occurred during processing."
     )
+    processed_file_sha256: models.CharField[Any, Any] = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text=(
+            "SHA-256 of the plaintext anonymized PDF currently attached to the "
+            "RawPdfFile. Empty until a processed artifact has been verified."
+        ),
+    )
 
     # Timestamps
     date_created: models.DateTimeField[Any, Any] = models.DateTimeField(
@@ -126,6 +135,7 @@ class RawPdfState(models.Model):
             self.was_created = False
             self.sensitive_meta_processed = False
             self.anonymization_validated = False
+            self.processed_file_sha256 = ""
             self.save()
 
     def mark_processing_started(self, *, save: bool = True) -> None:

@@ -1038,7 +1038,10 @@ def _resolve_request_user(user_id: int | None) -> User:
             raise CommandError(f"User not found: {user_id}") from exc
 
     username = f"profile-video-streaming-{os.getpid()}"
-    user = User.objects.create_user(username=username)
+    # The generated user is a trusted local profiler spanning selected videos.
+    # Mark it as a cross-center operator so object-scope checks remain active for
+    # ordinary users while this management command can exercise every target.
+    user = User.objects.create_user(username=username, is_staff=True)
     group, _created = Group.objects.get_or_create(name="endoregdb_user")
     cast(_UserWithGroups, user).groups.add(group)
     return user

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import hashlib
 from collections.abc import Mapping
-from typing import Protocol, cast
+from typing import Any, Protocol, cast
 
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -21,18 +21,12 @@ from endoreg_db.models import (
     NetworkNode,
     PatientExaminationReport,
     PortalUserInfo,
+    RawPdfFile,
     TransferJob,
     VideoFile,
 )
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
-)
-from lx_dtypes.models.contracts.hub_transfer import (
-    HubTransferVideoFilePayloadData,
-    HubTransferReportTransferPayloadData,
-    HubTransferVideoTransferPayloadData,
-    validate_hub_transfer_report_payload,
-    validate_hub_transfer_video_payload,
 )
 from tests.helpers.data_loader import load_gender_data
 
@@ -154,22 +148,24 @@ class HubTransferEndpointTests(TestCase):
         sender_processing_success: bool = False,
         processed_video_hash: str | None = None,
         examination_date: str = "2026-03-20",
-    ) -> HubTransferVideoTransferPayloadData:
-        video_file_payload: HubTransferVideoFilePayloadData = {
+    ) -> dict[str, Any]:
+        video_file_payload: dict[str, object] = {
             "video_hash": video_hash,
-            "original_file_name": "example.mp4",
             "suffix": ".mp4",
             "fps": 25.0,
             "duration": 12.5,
             "frame_count": 300,
             "width": 1280,
             "height": 720,
-            "meta": {"origin": "site-a"},
         }
         if processed_video_hash:
             video_file_payload["processed_video_hash"] = processed_video_hash
 
-        payload: dict[str, object] = {
+        patient_hash = self._sha256(b"site-a-patient")
+        examination_hash = self._sha256(
+            f"site-a-examination:{examination_date}".encode()
+        )
+        payload: dict[str, Any] = {
             "transfer_key": transfer_key,
             "source_node_key": self.source_node.node_key,
             "target_node_key": self.target_node.node_key,
@@ -180,18 +176,23 @@ class HubTransferEndpointTests(TestCase):
             "processing_policy": processing_policy,
             "processing_intent": "sender_requests_state_preservation",
             "cleanup_policy": "retain_all",
+            "payload_schema_version": "2.0",
             "resource_rows": {
                 "video_file": video_file_payload,
                 "sensitive_meta": {
-                    "patient_first_name": "Max",
-                    "patient_last_name": "Mustermann",
-                    "patient_dob": "1990-01-01",
-                    "examination_date": examination_date,
+                    "patient_hash": patient_hash,
+                    "examination_hash": examination_hash,
                 },
                 "video_state": {
                     "processing_started": True,
                     "frames_extracted": True,
                     "sensitive_meta_processed": True,
+                    "anonymized": True,
+                    "anonymization_validated": True,
+                    "processed_file_sha256": (
+                        processed_video_hash
+                        or self._sha256(f"processed:{video_hash}".encode())
+                    ),
                 },
                 "processing_history": {
                     "file_hash": video_hash,
@@ -202,7 +203,7 @@ class HubTransferEndpointTests(TestCase):
                 "sender_processing_success": sender_processing_success,
             },
         }
-        return validate_hub_transfer_video_payload(payload)
+        return payload
 
     def _report_transfer_payload(
         self,
@@ -212,8 +213,9 @@ class HubTransferEndpointTests(TestCase):
         transfer_mode: str = "metadata_only",
         processing_policy: str = "reprocess_if_missing_outputs",
         sender_processing_success: bool = False,
-    ) -> HubTransferReportTransferPayloadData:
-        payload: dict[str, object] = {
+        processed_file_sha256: str | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
             "transfer_key": transfer_key,
             "source_node_key": self.source_node.node_key,
             "target_node_key": self.target_node.node_key,
@@ -224,21 +226,26 @@ class HubTransferEndpointTests(TestCase):
             "processing_policy": processing_policy,
             "processing_intent": "sender_requests_state_preservation",
             "cleanup_policy": "retain_all",
+            "payload_schema_version": "2.0",
             "resource_rows": {
                 "raw_pdf_file": {
                     "pdf_hash": pdf_hash,
-                    "text": "Clinical report",
+                    "anonymized_text": "Anonymized clinical report",
                 },
                 "sensitive_meta": {
-                    "patient_first_name": "Max",
-                    "patient_last_name": "Mustermann",
-                    "patient_dob": "1990-01-01",
-                    "examination_date": "2026-03-20",
+                    "patient_hash": self._sha256(b"site-a-patient"),
+                    "examination_hash": self._sha256(b"site-a-examination:2026-03-20"),
                 },
                 "raw_pdf_state": {
                     "processing_started": True,
                     "text_meta_extracted": True,
                     "sensitive_meta_processed": True,
+                    "anonymized": True,
+                    "anonymization_validated": True,
+                    "processed_file_sha256": (
+                        processed_file_sha256
+                        or self._sha256(f"processed:{pdf_hash}".encode())
+                    ),
                 },
                 "processing_history": {
                     "file_hash": pdf_hash,
@@ -249,7 +256,7 @@ class HubTransferEndpointTests(TestCase):
                 "sender_processing_success": sender_processing_success,
             },
         }
-        return validate_hub_transfer_report_payload(payload)
+        return payload
 
     @override_settings(
         ENDOREG_DEPLOYMENT_ROLE="central_hub",
@@ -313,7 +320,11 @@ class HubTransferEndpointTests(TestCase):
 
         video = VideoFile.objects.get(video_hash="hash-1")
         assert video.center == self.center
-        assert video.original_file_name == "example.mp4"
+        assert video.original_file_name is None
+        assert video.sensitive_meta is not None
+        assert video.sensitive_meta.patient_first_name is None
+        assert video.sensitive_meta.patient_last_name is None
+        assert video.sensitive_meta.patient_dob is None
         assert video.state is not None
         assert video.state.processing_started is True
         assert ProcessingHistory.objects.get(file_hash="hash-1").success is True
@@ -332,6 +343,66 @@ class HubTransferEndpointTests(TestCase):
         assert transfer_job.cleanup_status == TransferJob.CleanupStatus.NOT_REQUESTED
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_transfer_registration_rejects_direct_identity_fields(self):
+        payload = self._video_transfer_payload(
+            transfer_key="site-a__video__pii-rejected",
+            video_hash="hash-pii-rejected",
+        )
+        payload["resource_rows"]["sensitive_meta"]["patient_first_name"] = "Max"
+
+        response = self._secure_post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            headers=self._auth_headers(),
+        )
+
+        assert response.status_code == 400, response.content
+        assert "Direct identity fields are prohibited" in str(response.json())
+        assert not TransferJob.objects.filter(
+            transfer_key="site-a__video__pii-rejected"
+        ).exists()
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_transfer_registration_rejects_raw_report_text(self):
+        payload = self._report_transfer_payload(
+            transfer_key="site-a__report__raw-text-rejected",
+            pdf_hash="hash-raw-text-rejected",
+        )
+        payload["resource_rows"]["raw_pdf_file"]["text"] = "Raw clinical text"
+
+        response = self._secure_post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            headers=self._auth_headers(),
+        )
+
+        assert response.status_code == 400, response.content
+        assert "Raw report text is prohibited" in str(response.json())
+        assert not TransferJob.objects.filter(
+            transfer_key="site-a__report__raw-text-rejected"
+        ).exists()
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_transfer_registration_rejects_legacy_privacy_schema(self):
+        payload = self._video_transfer_payload(
+            transfer_key="site-a__video__legacy-schema-rejected",
+            video_hash="hash-legacy-schema-rejected",
+        )
+        payload["payload_schema_version"] = "1.0"
+
+        response = self._secure_post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            headers=self._auth_headers(),
+        )
+
+        assert response.status_code == 400, response.content
+        assert "privacy-preserving" in str(response.json())
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_video_transfer_imports_frame_annotations_and_related_reports(self):
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__annotations",
@@ -347,26 +418,17 @@ class HubTransferEndpointTests(TestCase):
                 "label_name": "lesion_visible",
                 "value": True,
                 "float_value": 0.91,
-                "annotator": "site-a-reviewer",
                 "information_source_name": "manual_annotation",
             }
         ]
         payload["resource_rows"]["reports"] = [
             {
-                "id": 77,
-                "patient_examination": 123,
                 "template_name": "star_upper_gi_main",
                 "template_version": "2026.1",
                 "template_hash": "template-hash",
-                "title": "Transferred upper GI report",
                 "status": "final",
-                "editor_payload": {"sections": [{"id": "findings"}]},
-                "patient_context_snapshot": {"patient_hash": "patient-hash"},
-                "history_context_snapshot": {"previous_reports": []},
-                "rendered_text": "Anonymized report text",
                 "version": 2,
                 "is_active": True,
-                "finalized_at": "2026-05-20T10:30:00Z",
             }
         ]
 
@@ -391,6 +453,7 @@ class HubTransferEndpointTests(TestCase):
         assert annotation.label.name == "lesion_visible"
         assert annotation.information_source is not None
         assert annotation.information_source.name == "manual_annotation"
+        assert annotation.annotator is None
         assert annotation.value is True
         assert annotation.float_value == 0.91
         assert (
@@ -408,10 +471,9 @@ class HubTransferEndpointTests(TestCase):
             version=2,
         )
         assert report.status == PatientExaminationReport.Status.FINAL
-        assert report.title == "Transferred upper GI report"
-        assert report.editor_payload == {"sections": [{"id": "findings"}]}
-        assert report.rendered_text == "Anonymized report text"
-        assert report.finalized_at is not None
+        assert report.title == ""
+        assert report.editor_payload == {}
+        assert report.rendered_text == ""
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfer_registration_requires_matching_node_credentials(self):
@@ -732,22 +794,17 @@ class HubTransferEndpointTests(TestCase):
         assert "Raw media transfer is not permitted" in str(response.json())
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
-    def test_report_transfer_imports_related_lx_report_rows(self):
+    def test_report_transfer_imports_safe_final_report_rows(self):
         payload = self._report_transfer_payload(
             transfer_key="site-a__report__lx-report",
             pdf_hash="hash-lx-report",
         )
         payload["resource_rows"]["reports"] = [
             {
-                "id": 88,
-                "patient_examination": 321,
                 "template_name": "star_colonoscopy_main",
                 "template_version": "2026.1",
                 "template_hash": "report-template-hash",
-                "title": "Transferred colonoscopy report",
-                "status": "draft",
-                "editor_payload": {"sections": [{"id": "summary"}]},
-                "rendered_text": "Draft anonymized report text",
+                "status": "final",
                 "version": 1,
                 "is_active": True,
             }
@@ -767,10 +824,10 @@ class HubTransferEndpointTests(TestCase):
             patient_examination_id=transfer_job.linked_patient_examination_id,
             template_name="star_colonoscopy_main",
         )
-        assert report.status == PatientExaminationReport.Status.DRAFT
-        assert report.title == "Transferred colonoscopy report"
-        assert report.editor_payload == {"sections": [{"id": "summary"}]}
-        assert report.rendered_text == "Draft anonymized report text"
+        assert report.status == PatientExaminationReport.Status.FINAL
+        assert report.title == ""
+        assert report.editor_payload == {}
+        assert report.rendered_text == ""
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfer_registration_requires_anonymized_status(self):
@@ -791,7 +848,9 @@ class HubTransferEndpointTests(TestCase):
         )
 
         assert response.status_code == 400, response.content
-        assert "only allowed for anonymized data" in str(response.json())
+        assert "only allowed for anonymized data that was explicitly validated" in str(
+            response.json()
+        )
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_raw_video_upload_is_rejected(self):
@@ -837,6 +896,43 @@ class HubTransferEndpointTests(TestCase):
         log_output = "\n".join(transfer_logs.output)
         assert "raw-video-bytes" not in log_output
         assert "source.mp4" not in log_output
+
+    @override_settings(
+        ENDOREG_DEPLOYMENT_ROLE="central_hub",
+        ENDOREG_HUB_TRANSFER_MAX_UPLOAD_BYTES=4,
+    )
+    def test_processed_video_upload_enforces_configured_size_limit(self):
+        processed_bytes = b"processed-video"
+        payload = self._video_transfer_payload(
+            transfer_key="site-a__video__oversized-upload",
+            video_hash="oversized-video-hash",
+            transfer_mode="metadata_and_processed_media",
+            sender_processing_success=True,
+            processed_video_hash=self._sha256(processed_bytes),
+        )
+        create_response = self._secure_post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            headers=self._auth_headers(),
+        )
+        assert create_response.status_code == 201, create_response.content
+
+        upload_response = self._secure_post(
+            f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
+            data={
+                "media_role": "processed",
+                "file": SimpleUploadedFile(
+                    "processed.mp4",
+                    processed_bytes,
+                    content_type="video/mp4",
+                ),
+            },
+            headers=self._auth_headers(),
+        )
+
+        assert upload_response.status_code == 400, upload_response.content
+        assert "configured size limit" in str(upload_response.json())
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfer_media_upload_requires_multipart_file(self):
@@ -909,6 +1005,50 @@ class HubTransferEndpointTests(TestCase):
         video = VideoFile.objects.get(video_hash=raw_hash)
         assert video.processed_video_hash == processed_hash
         assert ProcessingHistory.objects.get(file_hash=raw_hash).success is True
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_processed_report_upload_verifies_and_persists_anonymized_hash(self):
+        processed_bytes = b"%PDF-1.4\nanonymized\n%%EOF\n"
+        processed_hash = self._sha256(processed_bytes)
+        payload = self._report_transfer_payload(
+            transfer_key="site-a__report__processed-upload",
+            pdf_hash=self._sha256(b"raw-report"),
+            transfer_mode="metadata_and_processed_media",
+            processing_policy="preserve_processing_state",
+            sender_processing_success=True,
+            processed_file_sha256=processed_hash,
+        )
+
+        create_response = self._secure_post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            headers=self._auth_headers(),
+        )
+        assert create_response.status_code == 201, create_response.content
+
+        upload_response = self._secure_post(
+            f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
+            data={
+                "media_role": "processed",
+                "file": SimpleUploadedFile(
+                    "patient-name-report.pdf",
+                    processed_bytes,
+                    content_type="application/pdf",
+                ),
+            },
+            headers=self._auth_headers(),
+        )
+
+        assert upload_response.status_code == 200, upload_response.content
+        transfer_job = TransferJob.objects.get(transfer_key=payload["transfer_key"])
+        report = RawPdfFile.objects.get(pdf_hash=payload["resource_hash"])
+        assert report.state is not None
+        assert report.state.processed_file_sha256 == processed_hash
+        assert str(report.processed_file.name or "").endswith(f"{processed_hash}.pdf")
+        media_upload = transfer_job.provenance["media_uploads"][-1]
+        assert media_upload["uploaded_name"] == f"{processed_hash}.pdf"
+        assert "patient-name" not in str(transfer_job.provenance)
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_raw_report_upload_is_rejected(self):

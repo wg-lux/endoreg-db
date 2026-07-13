@@ -50,6 +50,14 @@ from endoreg_db.utils.file_operations import (
     safe_rmtree,
     sha256_file,
 )
+from endoreg_db.utils.media.frame_file_permissions import (
+    FRAME_CACHE_DIR_MODE,
+    FRAME_FILE_MODE,
+    apply_frame_cache_dir_mode,
+    apply_frame_file_modes,
+    ensure_frame_cache_dir,
+    ensure_frame_staging_dir,
+)
 from endoreg_db.utils.paths import STORAGE_DIR
 from endoreg_db.utils.structured_logging import (
     emit_structured_event,
@@ -724,11 +732,12 @@ def _repair_specific_frames(
     if dry_run:
         return 0, f"would repair frames {unique_numbers[:20]}"
 
-    ensure_directory(frame_dir.parent)
-    ensure_directory(frame_dir)
+    ensure_directory(frame_dir.parent, dir_mode=FRAME_CACHE_DIR_MODE)
+    ensure_frame_cache_dir(frame_dir)
     staged_dir = _staged_frame_dir(frame_dir, video)
     repaired = 0
     try:
+        ensure_frame_staging_dir(staged_dir)
         for frame_number in unique_numbers:
             extract_frame_range_to_directory(
                 video,
@@ -742,7 +751,12 @@ def _repair_specific_frames(
             stable_path = frame_dir / _expected_relative_path(frame_number, ext)
             if not staged_path.is_file():
                 raise RuntimeError(f"missing staged frame file: {staged_path}")
-            atomic_move_file(source=staged_path, destination=stable_path)
+            atomic_move_file(
+                source=staged_path,
+                destination=stable_path,
+                file_mode=FRAME_FILE_MODE,
+                dir_mode=FRAME_CACHE_DIR_MODE,
+            )
             repaired += 1
 
         with transaction.atomic():
@@ -804,7 +818,7 @@ def _repair_full_frame_cache(
     if dry_run:
         return 0, "would replace frame cache atomically"
 
-    ensure_directory(frame_dir.parent)
+    ensure_directory(frame_dir.parent, dir_mode=FRAME_CACHE_DIR_MODE)
     staged_dir = _staged_frame_dir(frame_dir, video)
     replaced_dir: Path | None = None
     installed_new_cache = False
@@ -820,6 +834,7 @@ def _repair_full_frame_cache(
             frame_dir=staged_dir,
             ext=ext,
         )
+        apply_frame_file_modes(extracted_paths)
         expected_names = {
             _expected_relative_path(frame_number, ext)
             for frame_number in range(expected_count)
@@ -838,7 +853,10 @@ def _repair_full_frame_cache(
         if frame_dir.exists():
             replaced_dir = _staged_replacement_dir(frame_dir)
             atomic_move_path(source=frame_dir, destination=replaced_dir)
+            apply_frame_cache_dir_mode(replaced_dir)
         atomic_move_path(source=staged_dir, destination=frame_dir)
+        apply_frame_cache_dir_mode(frame_dir)
+        apply_frame_file_modes(frame_dir.glob(f"frame_*.{ext}"))
         installed_new_cache = True
 
         with transaction.atomic():

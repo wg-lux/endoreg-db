@@ -94,24 +94,23 @@ After that, the anonymizer writes one more full anonymized output file.
 
 For one report dropped into `data/import/report_import`, the current pipeline performs these file operations:
 
-1. Optional txt-to-pdf materialization.
-   If the watched file ends in `.txt`, `_create_temp_pdf_from_txt(...)` renders a temporary single-page PDF in the system temp directory.
-2. Sensitive staging copy of the original payload.
+Raw report ingestion accepts PDF input only. Plain `.txt` input is rejected because
+raw text cannot be treated as anonymized output; genuinely preanonymized input uses
+the separate validated-sidecar workflow.
+
+1. Sensitive staging copy of the original payload.
    `create_sensitive_copy(...)` copies the original report source into `SENSITIVE_REPORT_DIR` under the original filename.
-   For `.txt` inputs this copies the original `.txt`, not the temporary PDF.
-3. Canonical raw report save into Django-managed storage.
+2. Canonical raw report save into Django-managed storage.
    `RawPdfFile.create_from_file_initialized(...)` opens `ctx.file_path` and saves it through Django storage using a generated content-hash-based filename.
-   For PDF input, this means the imported PDF is copied from the watched location into managed raw storage.
-   For TXT input, this means the temporary rendered PDF is copied from `/tmp/...pdf` into managed raw storage.
-4. Optional restoration copy for pre-existing records.
+3. Optional restoration copy for pre-existing records.
    If a `RawPdfFile` record already exists but its stored file is missing, `create_from_file(...)` re-saves the source file into storage from the current import path.
-5. Anonymized report write.
+4. Anonymized report write.
    `ReportAnonymizer.anonymize_report(...)` asks `lx_anonymizer.ReportReader.process_report(...)` to write `ANONYM_REPORT_DIR/<pdf_hash>.pdf`.
-6. Final move safety net.
+5. Finalization and integrity verification.
    `finalize_report_success(...)` moves `ctx.anonymized_path` into `ANONYM_REPORT_DIR/<pdf_hash>.pdf` only if the anonymizer wrote somewhere else.
-7. Cleanup of transient files.
+   It then verifies the stored PDF and persists its plaintext SHA-256 before publishing successful state/history.
+6. Cleanup of transient files.
    Success cleanup deletes the original-name sensitive staging copy if it is not the canonical raw file.
-   TXT imports also delete the original `.txt` once the managed record exists and delete the temporary rendered PDF in the `finally` block.
 
 There is no report transcoding step in the current report import path. The only format conversion is `.txt` -> temporary generated `.pdf`.
 

@@ -603,8 +603,12 @@ class TestAnonymizationValidateView:
         pdf_file.save(update_fields=["sensitive_meta", "raw_meta", "anonymized_text"])
 
         def mutate_and_fail(
-            instance: _MediaFileFixture, _payload: Mapping[str, object]
+            instance: _MediaFileFixture,
+            _payload: Mapping[str, object],
+            *,
+            enforce_processed_artifact: bool,
         ) -> bool:
+            assert enforce_processed_artifact is False
             sensitive_meta = instance.sensitive_meta
             assert sensitive_meta is not None
             sensitive_meta.patient_first_name = "Mutated"

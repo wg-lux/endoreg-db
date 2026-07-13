@@ -28,6 +28,14 @@ from endoreg_db.utils.file_operations import (
     safe_rmtree,
     safe_unlink_file,
 )
+from endoreg_db.utils.media.frame_file_permissions import (
+    FRAME_CACHE_DIR_MODE,
+    FRAME_FILE_MODE,
+    FRAME_STAGING_DIR_MODE,
+    apply_frame_cache_dir_mode,
+    apply_frame_file_modes,
+    ensure_frame_staging_dir,
+)
 from endoreg_db.utils.rust_backend import (
     parse_extracted_frame_numbers as rust_parse,
 )
@@ -589,13 +597,15 @@ def extract_full_frame_set_to_directory(
             raise FileNotFoundError(
                 f"{source_label} video file not found at {source_path} for video {video.video_hash}. Cannot extract frames."
             )
-        ensure_directory(output_dir)
-        return ffmpeg_extract_frames(
+        ensure_frame_staging_dir(output_dir)
+        frame_paths = ffmpeg_extract_frames(
             Path(source_path),
             output_dir,
             quality=quality,
             ext=ext,
         )
+        apply_frame_file_modes(frame_paths)
+        return frame_paths
 
 
 def _normalize_full_extraction_paths(
@@ -638,13 +648,23 @@ def _normalize_full_extraction_paths(
     try:
         for index, source_path in enumerate(sorted_paths):
             staged_path = frame_dir / f"{source_path.name}{rename_token}.{index}"
-            atomic_move_file(source=source_path, destination=staged_path)
+            atomic_move_file(
+                source=source_path,
+                destination=staged_path,
+                file_mode=FRAME_FILE_MODE,
+                dir_mode=FRAME_STAGING_DIR_MODE,
+            )
             staged_paths.append(staged_path)
 
         for staged_path, target_path in zip(staged_paths, target_paths):
             if target_path.exists():
                 safe_unlink_file(target_path, missing_ok=True)
-            atomic_move_file(source=staged_path, destination=target_path)
+            atomic_move_file(
+                source=staged_path,
+                destination=target_path,
+                file_mode=FRAME_FILE_MODE,
+                dir_mode=FRAME_STAGING_DIR_MODE,
+            )
     except Exception:
         for staged_path in staged_paths:
             if staged_path.exists():
@@ -758,7 +778,7 @@ def _extract_frames(
             video.video_hash,
         )
 
-    ensure_directory(frame_dir.parent)
+    ensure_directory(frame_dir.parent, dir_mode=FRAME_CACHE_DIR_MODE)
     staged_frame_dir = _get_staged_extraction_dir(frame_dir, str(video.video_hash))
     replaced_frame_dir: Path | None = None
     installed_new_cache = False
@@ -821,7 +841,10 @@ def _extract_frames(
         if frame_dir.exists():
             replaced_frame_dir = _get_staged_replacement_dir(frame_dir)
             atomic_move_path(source=frame_dir, destination=replaced_frame_dir)
+            apply_frame_cache_dir_mode(replaced_frame_dir)
         atomic_move_path(source=staged_frame_dir, destination=frame_dir)
+        apply_frame_cache_dir_mode(frame_dir)
+        apply_frame_file_modes(frame_dir.glob(f"frame_*.{ext}"))
         installed_new_cache = True
         final_manifest = build_frame_cache_manifest(
             frame_dir,

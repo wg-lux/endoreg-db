@@ -13,6 +13,7 @@ from endoreg_db.services.jobs.report_llm_jobs import (
     dispatch_report_llm_reimport,
     report_llm_job_payload,
 )
+from endoreg_db.services.raw_pdf_files import ProcessedReportIntegrityError
 
 pytestmark = pytest.mark.django_db
 
@@ -135,6 +136,18 @@ def test_report_upload_import_inline_returns_report_poll_url_after_completion(
             content_type="application/pdf",
         ),
     )
+    state = report.get_or_create_state()
+    state.anonymized = True
+    state.sensitive_meta_processed = True
+    state.processed_file_sha256 = "a" * 64
+    state.save(
+        update_fields=[
+            "anonymized",
+            "sensitive_meta_processed",
+            "processed_file_sha256",
+            "date_modified",
+        ]
+    )
 
     monkeypatch.setenv("REPORT_LLM_JOB_MODE", "inline")
 
@@ -144,6 +157,17 @@ def test_report_upload_import_inline_returns_report_poll_url_after_completion(
     monkeypatch.setattr(
         "endoreg_db.services.jobs.report_llm_jobs.ReportImportService.import_and_anonymize",
         fake_import_and_anonymize,
+    )
+
+    def fake_require_usable_completed_report(
+        *_args: object,
+        **_kwargs: object,
+    ) -> str:
+        return "a" * 64
+
+    monkeypatch.setattr(
+        "endoreg_db.services.jobs.report_llm_jobs.require_usable_completed_report",
+        fake_require_usable_completed_report,
     )
 
     result = dispatch_report_llm_import(upload_job_id=str(upload_job.pk), payload={})
@@ -158,3 +182,47 @@ def test_report_upload_import_inline_returns_report_poll_url_after_completion(
     job = ReportLlmInferenceJob.objects.get(upload_job=upload_job)
     assert getattr(job, "pdf_id") == report.pk
     assert report_llm_job_payload(job)["report_id"] == report.pk
+    assert job.result["anonymized"] is True
+    assert job.result["processed_file_sha256"] == "a" * 64
+    upload_job.refresh_from_db()
+    assert upload_job.status == UploadJob.Status.ANONYMIZED
+
+
+def test_report_upload_import_does_not_publish_success_without_usable_artifact(
+    monkeypatch: MonkeyPatch,
+    center: Center,
+) -> None:
+    upload_job = _make_upload_job(center)
+    report = RawPdfFile.objects.create(
+        center=center,
+        pdf_hash=f"report-llm-import-unusable-{upload_job.pk}",
+        file=SimpleUploadedFile(
+            name="unusable-report-import.pdf",
+            content=b"%PDF-1.4\n%%EOF\n",
+            content_type="application/pdf",
+        ),
+    )
+    monkeypatch.setenv("REPORT_LLM_JOB_MODE", "inline")
+
+    def fake_import(*_args: object, **_kwargs: object) -> RawPdfFile:
+        return report
+
+    monkeypatch.setattr(
+        "endoreg_db.services.jobs.report_llm_jobs.ReportImportService.import_and_anonymize",
+        fake_import,
+    )
+
+    def fail_completion(*_args: object, **_kwargs: object) -> str:
+        raise ProcessedReportIntegrityError("processed report missing")
+
+    monkeypatch.setattr(
+        "endoreg_db.services.jobs.report_llm_jobs.require_usable_completed_report",
+        fail_completion,
+    )
+
+    result = dispatch_report_llm_import(upload_job_id=str(upload_job.pk), payload={})
+
+    assert result.status == "failed"
+    upload_job.refresh_from_db()
+    assert upload_job.status == UploadJob.Status.ERROR
+    assert "processed report missing" in upload_job.error_detail

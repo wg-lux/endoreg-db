@@ -7,12 +7,14 @@ from typing import Any, cast
 from unittest.mock import patch
 
 from django.test import TestCase
+from django.core.files.uploadedfile import SimpleUploadedFile
 
 from endoreg_db.models import Center, NetworkNode, TransferJob, VideoFile
 from endoreg_db.models.state.anonymization import AnonymizationState
 from endoreg_db.serializers.hub.transfer_job import TransferJobCreateSerializer
 from endoreg_db.services.hub import transfers
 from endoreg_db.services.hub.transfers import (
+    attach_transfer_media,
     authenticate_network_node,
     create_or_reuse_transfer_job,
 )
@@ -143,6 +145,19 @@ class TransferJobContractTests(TestCase):
         assert "hub.transfer_node_auth_failed" in log_body
         assert "missing_shared_secret_hash" in log_body
         assert "request-secret" not in log_body
+
+    def test_attach_transfer_media_rejects_raw_at_service_boundary(self) -> None:
+        transfer_job = self._create_transfer(
+            transfer_key="service-raw-rejected",
+            cleanup_policy=TransferJob.CleanupPolicy.RETAIN_ALL,
+        )
+
+        with self.assertRaisesMessage(ValueError, "Only anonymized processed media"):
+            attach_transfer_media(
+                transfer_job=transfer_job,
+                uploaded_file=SimpleUploadedFile("raw.pdf", b"raw"),
+                media_role="raw",
+            )
 
     def test_authenticate_network_node_accepts_valid_shared_secret(self) -> None:
         self.source_node.set_shared_secret("request-secret")
@@ -372,7 +387,6 @@ class TransferJobContractTests(TestCase):
             media_role="processed",
             stored_name="new-upload.bin",
             content_hash="deadbeef",
-            uploaded_name="upload.mp4",
         )
         transfer_job.save(update_fields=["provenance"])
         transfer_job.refresh_from_db()
@@ -385,6 +399,7 @@ class TransferJobContractTests(TestCase):
         assert len(uploads) == 2
         assert cast(str, uploads[1]["media_role"]) == "processed"
         assert cast(str, uploads[1]["content_hash"]) == "deadbeef"
+        assert cast(str, uploads[1]["uploaded_name"]) == "new-upload.bin"
         assert (
             transfers._transfer_annotation_external_id(
                 transfer_job=transfer_job,
@@ -393,7 +408,7 @@ class TransferJobContractTests(TestCase):
                     "annotation_id": "ignored",
                 },
             )
-            == "ext-id"
+            == "hub_transfer:source-node:annotation:ignored"
         )
         assert (
             transfers._transfer_annotation_external_id(

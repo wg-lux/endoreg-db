@@ -2,17 +2,14 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+import uuid
 from collections.abc import Iterable
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 from collections.abc import Mapping
 from typing import Any, Literal, NotRequired, TypedDict, cast
 
 from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
-from django.utils.dateparse import parse_datetime
-from django.utils import timezone
 from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
 
 from endoreg_db.models.administration.center.center import Center
@@ -25,6 +22,7 @@ from endoreg_db.models.label.label import Label
 from endoreg_db.models.media.frame.frame import Frame
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.administration.person.patient.patient import Patient
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.models.other.information_source import (
@@ -37,12 +35,12 @@ from endoreg_db.models.state.video import VideoState
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
-import endoreg_db.models.metadata.sensitive_meta_logic as sensitive_meta_logic
 from endoreg_db.services.auto_case_resolution import auto_resolve_media_case
 from endoreg_db.services.hub.audit import emit_hub_audit_event
 from endoreg_db.services.raw_pdf_files import get_or_create_raw_pdf_state
 from endoreg_db.services.video_files import get_or_create_video_state
 from endoreg_db.utils.file_operations import (
+    atomic_handoff_file,
     ensure_directory,
     safe_unlink_file,
     sha256_file,
@@ -54,6 +52,20 @@ from endoreg_db.utils.structured_logging import hash_identifier
 from .ingest import _default_processor_name
 
 logger = logging.getLogger(__name__)
+
+_SAFE_SENSITIVE_META_FIELDS = frozenset({"patient_hash", "examination_hash"})
+_UNSAFE_STRUCTURED_REPORT_FIELDS = frozenset(
+    {
+        "title",
+        "editor_payload",
+        "patient_context_snapshot",
+        "history_context_snapshot",
+        "rendered_text",
+        "created_by",
+        "updated_by",
+        "finalized_by",
+    }
+)
 
 
 class TransferProvenance(TypedDict, total=False):
@@ -99,6 +111,47 @@ def _json_object_list(
             raise ValueError(f"{field_name}[{index}] must be a JSON object")
         items.append(cast(JsonObject, item))
     return items
+
+
+def _assert_privacy_preserving_resource_rows(resource_rows: JsonObject) -> None:
+    sensitive_meta = resource_rows.get("sensitive_meta")
+    if isinstance(sensitive_meta, dict):
+        forbidden = sorted(set(sensitive_meta).difference(_SAFE_SENSITIVE_META_FIELDS))
+        if forbidden:
+            raise ValueError(
+                "Direct identity fields are prohibited in hub transfers: "
+                + ", ".join(forbidden)
+            )
+
+    raw_pdf_file = resource_rows.get("raw_pdf_file")
+    if isinstance(raw_pdf_file, dict) and "text" in raw_pdf_file:
+        raise ValueError(
+            "Raw report text is prohibited in hub transfers; only validated "
+            "anonymized_text is accepted."
+        )
+
+    video_file = resource_rows.get("video_file")
+    if isinstance(video_file, dict):
+        forbidden_video_fields = sorted(
+            set(video_file).intersection({"original_file_name", "meta"})
+        )
+        if forbidden_video_fields:
+            raise ValueError(
+                "Unsafe video metadata fields are prohibited in hub transfers: "
+                + ", ".join(forbidden_video_fields)
+            )
+
+    for row in _json_object_list(
+        resource_rows.get("reports"), field_name="resource_rows.reports"
+    ):
+        forbidden_report_fields = sorted(
+            set(row).intersection(_UNSAFE_STRUCTURED_REPORT_FIELDS)
+        )
+        if forbidden_report_fields:
+            raise ValueError(
+                "Unsafe structured report fields are prohibited in hub transfers: "
+                + ", ".join(forbidden_report_fields)
+            )
 
 
 def _json_int(
@@ -167,30 +220,6 @@ def _update_transfer_provenance(
             cast(Any, provenance)[key] = value
     transfer_job.provenance = cast(JsonObject, provenance)
     return provenance
-
-
-def _normalize_sensitive_meta_value(field_name: str, value: Any) -> Any:
-    if field_name == "patient_dob":
-        if isinstance(value, str):
-            parsed = sensitive_meta_logic.parse_any_date(value)
-            if parsed is None:
-                logger.warning(
-                    "Skipping invalid hub transfer patient_dob value %r", value
-                )
-                return None
-            return timezone.make_aware(datetime.combine(parsed, datetime.min.time()))
-        return value
-
-    if field_name == "examination_date" and isinstance(value, str):
-        parsed = sensitive_meta_logic.parse_any_date(value)
-        if parsed is None:
-            logger.warning(
-                "Skipping invalid hub transfer examination_date value %r", value
-            )
-            return None
-        return parsed
-
-    return value
 
 
 def _normalized_transfer_provenance(
@@ -408,8 +437,17 @@ def attach_transfer_media(
     uploaded_file: UploadedFile,
     media_role: str,
 ) -> TransferJob:
-    if media_role not in {"raw", "processed"}:
-        raise ValueError("media_role must be either 'raw' or 'processed'")
+    if media_role != "processed":
+        raise ValueError(
+            "Only anonymized processed media may be attached to a transfer."
+        )
+    if (
+        transfer_job.transfer_mode
+        != TransferJob.TransferMode.METADATA_AND_PROCESSED_MEDIA.value
+    ):
+        raise ValueError(
+            "Processed media upload requires metadata_and_processed_media transfer mode."
+        )
 
     default_suffix = ".mp4"
     if transfer_job.resource_kind == TransferJob.ResourceKind.REPORT.value:
@@ -441,6 +479,7 @@ def attach_transfer_media(
 
 def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
     resource_rows = cast(JsonObject, transfer_job.resource_rows or {})
+    _assert_privacy_preserving_resource_rows(resource_rows)
     video_file_payload = _json_object(
         resource_rows.get("video_file") or {},
         field_name="resource_rows.video_file",
@@ -561,6 +600,7 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
 
 def _apply_report_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
     resource_rows = cast(JsonObject, transfer_job.resource_rows or {})
+    _assert_privacy_preserving_resource_rows(resource_rows)
     report_payload = _json_object(
         resource_rows.get("raw_pdf_file") or {},
         field_name="resource_rows.raw_pdf_file",
@@ -707,7 +747,6 @@ def _attach_video_transfer_media(
             media_role=media_role,
             stored_name=_stored_field_name(video.raw_file),
             content_hash=actual_hash,
-            uploaded_name=upload_name,
         )
         _apply_case_resolution_for_media(
             transfer_job=transfer_job,
@@ -753,7 +792,6 @@ def _attach_video_transfer_media(
         media_role=media_role,
         stored_name=_stored_field_name(video.processed_file),
         content_hash=actual_hash,
-        uploaded_name=upload_name,
     )
     _apply_case_resolution_for_media(
         transfer_job=transfer_job,
@@ -777,7 +815,6 @@ def _attach_report_transfer_media(
     media_role: str,
 ) -> TransferJob:
     report = _get_transfer_report(transfer_job)
-    upload_name = Path(str(getattr(uploaded_file, "name", "") or "upload.pdf")).name
 
     if media_role == "raw":
         actual_hash = get_pdf_hash(temp_path)
@@ -801,7 +838,6 @@ def _attach_report_transfer_media(
             media_role=media_role,
             stored_name=_stored_field_name(report.file),
             content_hash=actual_hash,
-            uploaded_name=upload_name,
         )
         _apply_case_resolution_for_media(
             transfer_job=transfer_job,
@@ -814,12 +850,23 @@ def _attach_report_transfer_media(
             import_path=temp_path,
         )
 
+    expected_hash = _expected_processed_report_hash(transfer_job=transfer_job)
+    if not expected_hash:
+        raise ValueError(
+            "Processed report upload requires "
+            "raw_pdf_state.processed_file_sha256 in transfer metadata"
+        )
     actual_hash = get_pdf_hash(temp_path)
+    if actual_hash != expected_hash:
+        raise ValueError(
+            "Uploaded processed report hash does not match the expected "
+            "processed_file_sha256"
+        )
     update_fields = _store_model_file(
         instance=report,
         field_name="processed_file",
         source_path=temp_path,
-        stored_name=f"{transfer_job.resource_hash}_processed.pdf",
+        stored_name=f"{expected_hash}.pdf",
     )
     if update_fields:
         update_fields.append("date_modified")
@@ -831,7 +878,6 @@ def _attach_report_transfer_media(
         media_role=media_role,
         stored_name=_stored_field_name(report.processed_file),
         content_hash=actual_hash,
-        uploaded_name=upload_name,
     )
     _apply_case_resolution_for_media(
         transfer_job=transfer_job,
@@ -1145,17 +1191,21 @@ def _write_uploaded_file_to_temp(
     ensure_directory(TRANSCODING_DIR)
     upload_name = Path(str(getattr(uploaded_file, "name", "") or "upload")).name
     suffix = _normalized_suffix(upload_name, default_suffix)
-    with NamedTemporaryFile(
-        delete=False,
-        dir=TRANSCODING_DIR,
-        suffix=suffix,
-    ) as handle:
-        if hasattr(uploaded_file, "chunks"):
-            for chunk in cast(Iterable[bytes], uploaded_file.chunks()):
-                handle.write(chunk)
-        else:
-            handle.write(uploaded_file.read())
-        return Path(handle.name)
+    destination = TRANSCODING_DIR / f"hub-upload-{uuid.uuid4().hex}{suffix}"
+    content = (
+        cast(Iterable[bytes], uploaded_file.chunks())
+        if hasattr(uploaded_file, "chunks")
+        else [uploaded_file.read()]
+    )
+    required_bytes = uploaded_file.size
+    if required_bytes is None or required_bytes < 0:
+        raise ValueError("Uploaded media size must be known before staging.")
+    return atomic_handoff_file(
+        destination=destination,
+        content=content,
+        required_bytes=required_bytes,
+        file_mode=0o600,
+    )
 
 
 def _record_media_upload(
@@ -1164,7 +1214,6 @@ def _record_media_upload(
     media_role: str,
     stored_name: str,
     content_hash: str,
-    uploaded_name: str,
 ) -> None:
     provenance = _transfer_provenance(transfer_job.provenance)
     uploads = list(provenance.get("media_uploads") or [])
@@ -1173,7 +1222,7 @@ def _record_media_upload(
             "media_role": media_role,
             "stored_name": stored_name,
             "content_hash": content_hash,
-            "uploaded_name": uploaded_name,
+            "uploaded_name": Path(stored_name).name,
         }
     )
     _update_transfer_provenance(transfer_job, media_uploads=uploads)
@@ -1218,21 +1267,52 @@ def _expected_processed_video_hash(
     return str(video.processed_video_hash or "").strip()
 
 
+def _expected_processed_report_hash(*, transfer_job: TransferJob) -> str:
+    resource_rows = cast(JsonObject, transfer_job.resource_rows or {})
+    state_payload = resource_rows.get("raw_pdf_state") or {}
+    if not isinstance(state_payload, dict):
+        return ""
+    return str(state_payload.get("processed_file_sha256", "") or "").strip()
+
+
 def _mark_video_transfer_as_processed(video: VideoFile) -> None:
     state = get_or_create_video_state(video)
-    state.mark_processing_started()
-    state.mark_anonymized()
-    state.mark_sensitive_meta_processed()
-    state.mark_anonymization_validated()
+    state.processing_started = True
+    state.anonymized = True
+    state.sensitive_meta_processed = True
+    state.anonymization_validated = True
+    state.processed_file_sha256 = str(video.processed_video_hash or "").strip()
+    state.save(
+        update_fields=[
+            "processing_started",
+            "anonymized",
+            "sensitive_meta_processed",
+            "anonymization_validated",
+            "processed_file_sha256",
+            "date_modified",
+        ]
+    )
     ProcessingHistory.mark_success(file_hash=video.video_hash, obj=video)
 
 
 def _mark_report_transfer_as_processed(report: RawPdfFile) -> None:
     state = get_or_create_raw_pdf_state(report)
-    state.mark_processing_started()
-    state.mark_anonymized()
-    state.mark_sensitive_meta_processed()
-    state.mark_anonymization_validated()
+    actual_hash = sha256_file(report.processed_file)
+    state.processing_started = True
+    state.anonymized = True
+    state.sensitive_meta_processed = True
+    state.anonymization_validated = True
+    state.processed_file_sha256 = actual_hash
+    state.save(
+        update_fields=[
+            "processing_started",
+            "anonymized",
+            "sensitive_meta_processed",
+            "anonymization_validated",
+            "processed_file_sha256",
+            "date_modified",
+        ]
+    )
     ProcessingHistory.mark_success(file_hash=report.pdf_hash, obj=report)
 
 
@@ -1319,10 +1399,7 @@ def _apply_frame_annotation_rows(
             frame=frame,
             label=label,
             information_source=information_source,
-            annotator=_json_str(
-                row.get("annotator"),
-                field_name="resource_rows.frame_annotations.annotator",
-            ),
+            annotator=None,
             value=_json_bool(
                 row["value"],
                 field_name="resource_rows.frame_annotations.value",
@@ -1345,10 +1422,6 @@ def _transfer_annotation_external_id(
     transfer_job: TransferJob,
     row: JsonObject,
 ) -> str | None:
-    external_annotation_id = row.get("external_annotation_id")
-    if external_annotation_id:
-        return str(external_annotation_id).strip()
-
     source_annotation_id = row.get("annotation_id")
     if source_annotation_id in (None, ""):
         return None
@@ -1478,57 +1551,21 @@ def _upsert_patient_examination_report(
     report_any.template_version = template_version
     report_any.template_hash = template_hash
     report_any.version = version
-    if "title" in row:
-        report_any.title = str(row.get("title") or "")
-    if "status" in row:
-        report_any.status = str(row["status"])
-    if "editor_payload" in row:
-        report_any.editor_payload = cast(JsonObject, row.get("editor_payload") or {})
-    if "patient_context_snapshot" in row:
-        report_any.patient_context_snapshot = cast(
-            JsonObject, row.get("patient_context_snapshot") or {}
-        )
-    if "history_context_snapshot" in row:
-        report_any.history_context_snapshot = cast(
-            JsonObject, row.get("history_context_snapshot") or {}
-        )
-    if "rendered_text" in row:
-        report_any.rendered_text = str(row.get("rendered_text") or "")
-    if "is_active" in row:
-        report_any.is_active = bool(row["is_active"])
-    if "finalized_at" in row:
-        report_any.finalized_at = _parse_transfer_datetime(row.get("finalized_at"))
-    elif report_any.status != PatientExaminationReport.Status.FINAL.value:
-        report_any.finalized_at = None
+    report_any.status = PatientExaminationReport.Status.FINAL.value
+    report_any.is_active = True
 
     report_any.save()
-
-
-def _parse_transfer_datetime(value: Any) -> datetime | None:
-    if value in (None, ""):
-        return None
-    if isinstance(value, datetime):
-        parsed = value
-    else:
-        parsed = parse_datetime(str(value))
-    if parsed is None:
-        raise ValueError(f"Invalid transfer datetime value: {value!r}")
-    if timezone.is_naive(parsed):
-        return timezone.make_aware(parsed)
-    return parsed
 
 
 def _apply_video_file_payload(video: VideoFile, payload: JsonObject) -> None:
     sync_fields = [
         "processed_video_hash",
-        "original_file_name",
         "fps",
         "duration",
         "frame_count",
         "width",
         "height",
         "suffix",
-        "meta",
     ]
     for field_name in sync_fields:
         if field_name in payload:
@@ -1554,6 +1591,7 @@ def _apply_video_state_payload(video_state: VideoState, payload: JsonObject) -> 
         "segment_annotations_created",
         "segment_annotations_validated",
         "was_created",
+        "processed_file_sha256",
     ]
     updated_fields: list[str] = []
     for field_name in sync_fields:
@@ -1567,9 +1605,7 @@ def _apply_video_state_payload(video_state: VideoState, payload: JsonObject) -> 
 
 def _apply_report_file_payload(report: RawPdfFile, payload: JsonObject) -> None:
     sync_fields = [
-        "text",
         "anonymized_text",
-        "raw_meta",
         "state_report_processing_required",
         "state_report_processed",
     ]
@@ -1589,6 +1625,7 @@ def _apply_report_state_payload(report_state: RawPdfState, payload: JsonObject) 
         "processing_error",
         "was_created",
         "pdf_meta_extracted",
+        "processed_file_sha256",
     ]
     updated_fields: list[str] = []
     for field_name in sync_fields:
@@ -1606,52 +1643,84 @@ def _upsert_sensitive_meta(
     payload: JsonObject,
     center: Center,
 ) -> SensitiveMeta:
-    safe_fields = [
-        "examination_date",
-        "examination_time",
-        "casenumber",
-        "file_path",
-        "patient_first_name",
-        "patient_last_name",
-        "patient_dob",
-        "endoscope_type",
-        "endoscope_sn",
-        "text",
-        "anonymized_text",
-    ]
-    payload_patient_hash = (
-        str(payload.get("patient_hash", "")).strip()
-        if payload.get("patient_hash")
-        else ""
+    _assert_privacy_preserving_resource_rows(
+        cast(JsonObject, {"sensitive_meta": payload})
     )
-    payload_examination_hash = (
-        str(payload.get("examination_hash", "")).strip()
-        if payload.get("examination_hash")
-        else ""
+    payload_patient_hash = str(payload.get("patient_hash", "") or "").strip()
+    payload_examination_hash = str(payload.get("examination_hash", "") or "").strip()
+    if not payload_patient_hash or not payload_examination_hash:
+        raise ValueError(
+            "Hub sensitive metadata requires patient_hash and examination_hash."
+        )
+
+    direct_identifier_updates: dict[str, Any] = {
+        "patient_first_name": None,
+        "patient_last_name": None,
+        "patient_dob": None,
+        "examination_date": None,
+        "examination_time": None,
+        "casenumber": None,
+        "file_path": None,
+        "examiner_first_name": None,
+        "examiner_last_name": None,
+        "text": None,
+        "anonymized_text": None,
+        "endoscope_sn": None,
+        "external_id": None,
+        "validation_comment": "",
+    }
+    if existing is None:
+        sensitive_meta = SensitiveMeta(
+            center=center,
+            patient_hash=payload_patient_hash,
+            examination_hash=payload_examination_hash,
+            **direct_identifier_updates,
+        )
+        SensitiveMeta.objects.bulk_create([sensitive_meta])
+    else:
+        sensitive_meta = existing
+        SensitiveMeta.objects.filter(pk=sensitive_meta.pk).update(
+            center=center,
+            patient_hash=payload_patient_hash,
+            examination_hash=payload_examination_hash,
+            **direct_identifier_updates,
+        )
+        sensitive_meta.refresh_from_db()
+
+    patient = Patient.objects.filter(patient_hash=payload_patient_hash).first()
+    if patient is None:
+        patient = Patient.objects.create(
+            first_name="",
+            last_name="",
+            dob=None,
+            gender=None,
+            center=center,
+            patient_hash=payload_patient_hash,
+            is_real_person=False,
+        )
+    patient_examination = (
+        PatientExamination.objects.select_related("patient")
+        .filter(hash=payload_examination_hash)
+        .first()
     )
-    sensitive_meta = existing or SensitiveMeta(center=center)
-    sensitive_meta.center = center
-    for field_name in safe_fields:
-        if field_name in payload:
-            normalized_value = _normalize_sensitive_meta_value(
-                field_name, payload[field_name]
-            )
-            if normalized_value is None:
-                continue
-            setattr(sensitive_meta, field_name, normalized_value)
-    sensitive_meta.save()
-    if payload_patient_hash or payload_examination_hash:
-        update_fields: list[str] = []
-        if payload_patient_hash:
-            sensitive_meta.patient_hash = payload_patient_hash
-            update_fields.append("patient_hash")
-        if payload_examination_hash:
-            sensitive_meta.examination_hash = payload_examination_hash
-            update_fields.append("examination_hash")
-        if update_fields:
-            SensitiveMeta.objects.filter(pk=sensitive_meta.pk).update(
-                **{field: getattr(sensitive_meta, field) for field in update_fields}
-            )
+    if patient_examination is not None and (
+        patient_examination.patient.patient_hash != payload_patient_hash
+    ):
+        raise ValueError(
+            "Hub examination_hash is already linked to a different patient_hash."
+        )
+    if patient_examination is None:
+        patient_examination = PatientExamination.objects.create(
+            patient=patient,
+            examination=None,
+            hash=payload_examination_hash,
+        )
+    SensitiveMeta.objects.filter(pk=sensitive_meta.pk).update(
+        pseudo_patient=patient,
+        pseudo_examination=patient_examination,
+    )
+    sensitive_meta.pseudo_patient = patient
+    sensitive_meta.pseudo_examination = patient_examination
     return sensitive_meta
 
 

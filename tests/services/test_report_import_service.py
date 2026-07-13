@@ -189,6 +189,50 @@ class TestReportImportService(TestCase):
         finally:
             safe_unlink_file(pdf_path, missing_ok=True)
 
+    @pytest.mark.integration
+    def test_success_history_with_missing_processed_pdf_is_repaired(self):
+        if SKIP_EXPENSIVE_TESTS:
+            self.skipTest(
+                "Skipping expensive report import test (SKIP_EXPENSIVE_TESTS=true)"
+            )
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            pdf_path = Path(tmp.name)
+        atomic_write_file(
+            destination=pdf_path,
+            content=(MINIMAL_report_BYTES + b"\n%report-repair-check\n",),
+        )
+
+        try:
+            first = ReportImportService().import_and_anonymize(
+                file_path=pdf_path,
+                center_name=self.center.name,
+                retry=False,
+            )
+            assert isinstance(first, RawPdfFile)
+            first.refresh_from_db()
+            assert first.processed_file
+            first.processed_file.delete(save=True)
+
+            repaired = ReportImportService().import_and_anonymize(
+                file_path=pdf_path,
+                center_name=self.center.name,
+                retry=False,
+            )
+
+            assert isinstance(repaired, RawPdfFile)
+            repaired.refresh_from_db()
+            assert repaired.pk == first.pk
+            assert repaired.processed_file
+            processed_name = repaired.processed_file.name
+            assert processed_name is not None
+            assert repaired.processed_file.storage.exists(processed_name)
+            assert repaired.state is not None
+            assert repaired.state.anonymized is True
+            assert len(repaired.state.processed_file_sha256) == 64
+        finally:
+            safe_unlink_file(pdf_path, missing_ok=True)
+
 
 class _AnonymizedReportType(Protocol):
     name: str

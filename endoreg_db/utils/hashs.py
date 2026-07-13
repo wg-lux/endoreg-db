@@ -5,7 +5,6 @@ from pathlib import Path
 import logging
 from django.db.models.fields.files import FieldFile
 from endoreg_db.utils.file_operations import sha256_file
-from endoreg_db.utils.storage import ensure_local_file
 
 logger = logging.getLogger(__name__)
 
@@ -21,12 +20,6 @@ def get_video_hash(video_file: Path | FieldFile) -> str:
 def get_pdf_hash(pdf_file: Path | FieldFile) -> str:
     """Semantic alias for sha256_file() used by report import workflows."""
     return sha256_file(pdf_file)
-
-
-def _sha256_field_file(field_file: FieldFile) -> str:
-    """Compatibility helper for callers that need a hash from Django storage."""
-    with ensure_local_file(field_file) as local_path:
-        return sha256_file(local_path)
 
 
 def _get_date_hash_string(date_obj: date) -> str:

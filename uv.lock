@@ -988,7 +988,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/62/59/e47bbd0542d0e6f4c
 
 [[package]]
 name = "endoreg-db"
-version = "1.0.5.1"
+version = "1.0.5.5"
 source = { editable = "." }
 dependencies = [
     { name = "celery" },
@@ -1053,6 +1053,7 @@ dependencies = [
     { name = "urllib3" },
     { name = "vector-quantize-pytorch" },
     { name = "vocos" },
+    { name = "vulture" },
     { name = "whitenoise" },
     { name = "ziglang" },
 ]
@@ -1189,6 +1190,7 @@ requires-dist = [
     { name = "urllib3", specifier = ">=2.2.3" },
     { name = "vector-quantize-pytorch", specifier = "==1.18.5" },
     { name = "vocos", specifier = "==0.1.0" },
+    { name = "vulture", extras = ["dev"], specifier = ">=2.16" },
     { name = "whitenoise", specifier = ">=6.10.0" },
     { name = "ziglang", specifier = ">=0.15.2" },
 ]
@@ -4712,6 +4714,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/db/48/1e4d3a4a97292e47ebaa18e3eae6ecb2f57bde47693ccab0e7acb23f9ffe/vocos-0.1.0.tar.gz", hash = "sha256:b488224dbe398ff7d4790a027ad659478b4bc02e465db992c62c12b32ca043d8", size = 21107, upload-time = "2023-10-14T00:57:29.631Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0a/45/82fe9b5696eb5dd4f84632f75b549b48bed0c33a5920b6309fbafd7e3477/vocos-0.1.0-py3-none-any.whl", hash = "sha256:0ac13eaef68596074301e912d781399b3defa4b4ca60b6bc52c8a4b9209ca235", size = 24085, upload-time = "2023-10-14T00:57:27.972Z" },
+]
+
+[[package]]
+name = "vulture"
+version = "2.16"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/66/3e/4d08c5903b2c0c70cad583c170cc4a663fc6a61e2ad00b711fcda61358cd/vulture-2.16.tar.gz", hash = "sha256:f8d9f6e2af03011664a3c6c240c9765b3f392917d3135fddca6d6a68d359f717", size = 52680, upload-time = "2026-03-25T14:41:27.141Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f5/be/f935130312330614811dae2ea9df3f395f6d63889eb6c2e68c14507152ee/vulture-2.16-py3-none-any.whl", hash = "sha256:6e0f1c312cef1c87856957e5c2ca9608834a7c794c2180477f30bf0e4cc58eee", size = 26993, upload-time = "2026-03-25T14:41:26.21Z" },
 ]
 
 [[package]]

@@ -11,6 +11,7 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 from endoreg_db.models import Center, VideoFile
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.services import hls_media
+from endoreg_db.views import access_control
 from endoreg_db.views.video import hls_stream
 from tests.helpers.hls import FakeHlsOutputRecorder
 
@@ -56,6 +57,9 @@ def _authenticated_request(
     *,
     origin: str | None = None,
 ) -> Any:
+    # Staff users are intentionally cross-center operators in the production
+    # access-control contract. Center-scoped denial is covered separately.
+    user.is_staff = True
     factory = APIRequestFactory()
     if origin is None:
         request = factory.get(path)
@@ -105,6 +109,7 @@ def test_hls_playlist_and_segment_use_nginx_accel_after_authz(
         == f"/protected_media/{hls_artifact.playlist_relative_path}"
     )
     assert playlist_response["Cache-Control"] == "no-store, private"
+    assert playlist_response["X-Content-Type-Options"] == "nosniff"
     _assert_no_cors_headers(playlist_response)
 
     segment_response = hls_stream.HLSSegmentView.as_view()(
@@ -124,6 +129,7 @@ def test_hls_playlist_and_segment_use_nginx_accel_after_authz(
         f"{hls_artifact.segment_directory_relative_path}/seg_000.ts"
     )
     assert segment_response["Cache-Control"] == hls_stream.HLS_SEGMENT_CACHE_CONTROL
+    assert segment_response["X-Content-Type-Options"] == "nosniff"
     assert "public" not in segment_response["Cache-Control"]
     _assert_no_cors_headers(segment_response)
 
@@ -147,6 +153,7 @@ def test_hls_playlist_and_key_serve_same_origin_without_cors_headers(
     assert playlist_response.status_code == 200
     assert playlist_response["Content-Type"] == "application/vnd.apple.mpegurl"
     assert playlist_response["Cache-Control"] == "no-store, private"
+    assert playlist_response["X-Content-Type-Options"] == "nosniff"
     _assert_no_cors_headers(playlist_response)
     playlist_response.close()
 
@@ -161,6 +168,7 @@ def test_hls_playlist_and_key_serve_same_origin_without_cors_headers(
     assert key_response.status_code == 200
     assert len(cast(Any, key_response).content) == hls_media.HLS_CONTENT_KEY_BYTES
     assert key_response["Cache-Control"] == "no-store, private"
+    assert key_response["X-Content-Type-Options"] == "nosniff"
     _assert_no_cors_headers(key_response)
 
 
@@ -268,6 +276,7 @@ def test_hls_key_view_returns_ephemeral_uncached_key(
     assert response["Cache-Control"] == "no-store, private"
     assert response["Pragma"] == "no-cache"
     assert response["Expires"] == "0"
+    assert response["X-Content-Type-Options"] == "nosniff"
     _assert_no_cors_headers(response)
 
 
@@ -284,6 +293,32 @@ def test_hls_playlist_rejects_raw_artifact_request(
         ),
         pk=video_pk,
     )
+
+    assert response.status_code == 404
+
+
+def test_hls_playlist_rejects_video_outside_user_center_scope(
+    hls_artifact: VideoHlsArtifact,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = User.objects.create_user(username="hls-wrong-center-reader")
+    video_pk = _artifact_video_pk(hls_artifact)
+    request = _authenticated_request(
+        f"/endoreg-api/media/videos/{video_pk}/hls/playlist.m3u8",
+        user,
+    )
+    user.is_staff = False
+
+    def resolve_other_center(_user: object) -> int:
+        return int(hls_artifact.video.center_id) + 1
+
+    monkeypatch.setattr(
+        access_control,
+        "resolve_allowed_center_id",
+        resolve_other_center,
+    )
+
+    response = hls_stream.HLSPlaylistView.as_view()(request, pk=video_pk)
 
     assert response.status_code == 404
 

@@ -9,6 +9,11 @@ RouteContract = tuple[str, str, str]
 
 EXPECTED_MEDIA_ROUTE_CONTRACT: list[RouteContract] = [
     (
+        "media/studies/cohort-preview/",
+        "study-cohort-preview",
+        "endoreg_db.views.media.study_cohort.StudyCohortPreviewView",
+    ),
+    (
         "media/hub/transfers/",
         "hub-transfer-create",
         "endoreg_db.views.media.hub.transfers.HubTransferCreateView",

@@ -194,6 +194,8 @@ def test_report_finalize_persists_processed_pdf_as_encrypted_bytes(
     assert stored_path.read_bytes().startswith(MAGIC)
     with report.processed_file.open("rb") as stored:
         assert stored.read() == processed_plaintext
+    assert report.state is not None
+    assert report.state.processed_file_sha256 == sha256_file(report.processed_file)
 
 
 def test_staging_cleanup_rejects_paths_outside_known_roots(tmp_path: Path) -> None:

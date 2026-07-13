@@ -6,6 +6,7 @@ import tempfile
 from unittest.mock import Mock, patch
 
 from endoreg_db.import_files.context.import_context import ImportContext
+from endoreg_db.services.raw_pdf_files import ProcessedReportIntegrityError
 from endoreg_db.services.report_import import ReportImportService
 from endoreg_db.utils.file_operations import (
     atomic_write_file,
@@ -29,10 +30,9 @@ class TestReportImportServiceUnit(unittest.TestCase):
                 retry=False,
             )
 
-    def test_create_temp_pdf_from_txt(self) -> None:
+    def test_import_and_anonymize_rejects_raw_txt(self) -> None:
         service = ReportImportService()
         txt_path = None
-        temp_pdf = None
         try:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
                 txt_path = Path(tmp.name)
@@ -43,14 +43,14 @@ class TestReportImportServiceUnit(unittest.TestCase):
                 required_bytes=len(txt_content),
             )
 
-            temp_pdf = service._create_temp_pdf_from_txt(txt_path)  # pyright: ignore[reportPrivateUsage]
-
-            self.assertTrue(temp_pdf.exists())
-            self.assertEqual(temp_pdf.suffix.lower(), ".pdf")
-            self.assertTrue(temp_pdf.read_bytes().startswith(b"%PDF-1.4"))
+            with self.assertRaisesRegex(
+                ValueError, "Raw TXT report import is disabled"
+            ):
+                service.import_and_anonymize(
+                    file_path=txt_path,
+                    center_name="dummy-center",
+                )
         finally:
-            if temp_pdf is not None and temp_pdf.exists():
-                safe_unlink_file(temp_pdf)
             if txt_path is not None and txt_path.exists():
                 safe_unlink_file(txt_path)
 
@@ -84,9 +84,17 @@ class TestReportImportServiceUnit(unittest.TestCase):
             has_history_mock.return_value = True
             get_report_by_hash_mock.return_value = existing_report
 
-            result = service._get_existing_completed_report(ctx)  # pyright: ignore[reportPrivateUsage]
+            with patch(
+                "endoreg_db.import_files.report_import_service.require_usable_completed_report",
+                return_value="a" * 64,
+            ) as completion_mock:
+                result = service._get_existing_completed_report(ctx)  # pyright: ignore[reportPrivateUsage]
 
             self.assertIs(result, existing_report)
+            completion_mock.assert_called_once_with(
+                existing_report,
+                source_sha256=ctx.file_hash,
+            )
             has_history_mock.assert_called_once_with(
                 file_hash=ctx.file_hash,
                 success=True,
@@ -95,6 +103,31 @@ class TestReportImportServiceUnit(unittest.TestCase):
         finally:
             if pdf_path.exists():
                 safe_unlink_file(pdf_path)
+
+    @patch(
+        "endoreg_db.import_files.report_import_service.ProcessingHistory.has_history_for_hash"
+    )
+    @patch("endoreg_db.import_files.report_import_service.get_raw_pdf_by_content_hash")
+    def test_get_existing_completed_report_reprocesses_unusable_artifact(
+        self,
+        get_report_by_hash_mock: Mock,
+        has_history_mock: Mock,
+    ) -> None:
+        service = ReportImportService()
+        ctx = ImportContext(file_path=Path("report.pdf"), center_name="dummy-center")
+        ctx.file_hash = "a" * 64
+        existing_report = object()
+        has_history_mock.return_value = True
+        get_report_by_hash_mock.return_value = existing_report
+
+        with patch(
+            "endoreg_db.import_files.report_import_service.require_usable_completed_report",
+            side_effect=ProcessedReportIntegrityError("processed PDF missing"),
+        ):
+            result = service._get_existing_completed_report(ctx)  # pyright: ignore[reportPrivateUsage]
+
+        self.assertIsNone(result)
+        self.assertIs(ctx.current_report, existing_report)
 
     def test_cleanup_duplicate_staging_deletes_import_source(self) -> None:
         service = ReportImportService()

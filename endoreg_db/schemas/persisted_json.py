@@ -86,6 +86,17 @@ def _non_empty_string(value: str | None) -> str | None:
     return stripped or None
 
 
+def _sha256_hex(value: Any, *, field_name: str) -> str:
+    normalized = _non_empty_string(str(value)) if value is not None else None
+    if (
+        normalized is None
+        or len(normalized) != 64
+        or any(character not in "0123456789abcdef" for character in normalized.lower())
+    ):
+        raise ValueError(f"{field_name} must be a 64-character SHA-256 hex digest")
+    return normalized.lower()
+
+
 _EXPLICIT_CASE_RESOLUTION_ACTIONS = frozenset(
     str(action)
     for action in get_args(CaseResolutionRequest.model_fields["action"].annotation)
@@ -225,19 +236,13 @@ class RawPdfMetaPayload(BaseModel):
 class TransferSensitiveMetaRow(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    examination_date: str | date | None = None
-    examination_time: str | time | None = None
-    casenumber: str | None = None
-    file_path: str | None = None
-    patient_first_name: str | None = None
-    patient_last_name: str | None = None
-    patient_dob: str | date | None = None
-    endoscope_type: str | None = None
-    endoscope_sn: str | None = None
-    text: str | None = None
-    anonymized_text: str | None = None
-    patient_hash: str | None = None
-    examination_hash: str | None = None
+    patient_hash: str
+    examination_hash: str
+
+    @field_validator("patient_hash", "examination_hash", mode="before")
+    @classmethod
+    def _require_pseudonym_hash(cls, value: Any) -> str:
+        return _sha256_hex(value, field_name="pseudonym hash")
 
     @field_validator("*", mode="before")
     @classmethod
@@ -255,33 +260,28 @@ class TransferProcessingHistoryRow(BaseModel):
 class TransferFrameAnnotationRow(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    annotation_id: int | str | None = None
-    video_id: int | None = Field(default=None, ge=1)
+    annotation_id: int | str
+    annotator: str | None = None
     video_hash: str | None = None
-    frame_id: int | None = Field(default=None, ge=1)
     frame_number: int = Field(ge=0)
     frame_relative_path: str
     frame_timestamp: float | None = Field(default=None, ge=0)
-    label_id: int | None = Field(default=None, ge=1)
     label_name: str
     value: bool
     float_value: float | None = None
-    annotator: str | None = None
-    information_source_id: int | None = Field(default=None, ge=1)
     information_source_name: str
-    model_meta_id: int | None = Field(default=None, ge=1)
-    date_created: str | None = None
-    date_modified: str | None = None
-    external_annotation_id: str | None = None
 
     @field_validator(
         "frame_relative_path",
         "label_name",
         "information_source_name",
+        "annotator",
         mode="before",
     )
     @classmethod
-    def _require_non_empty_strings(cls, value: Any) -> str:
+    def _require_non_empty_strings(cls, value: Any) -> str | None:
+        if value is None:
+            return None
         normalized = _non_empty_string(str(value)) if value is not None else None
         if normalized is None:
             raise ValueError("value must not be blank")
@@ -298,35 +298,42 @@ class TransferFrameAnnotationRow(BaseModel):
 class TransferPatientExaminationReportRow(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    id: int | str | None = None
-    report_id: int | str | None = None
-    patient_examination_report_id: int | str | None = None
-    patient_examination: int | str | None = None
+    id: int | None = Field(default=None, ge=1)
+    patient_examination: int | None = Field(default=None, ge=1)
     template_name: str
     template_version: str | int | None = None
     template_hash: str | None = None
     title: str | None = None
-    status: Literal["draft", "final"] = "draft"
+    status: Literal["final"] = "final"
     editor_payload: dict[str, Any] | None = None
-    patient_context_snapshot: dict[str, Any] | None = None
-    history_context_snapshot: dict[str, Any] | None = None
     rendered_text: str | None = None
     version: int = Field(default=1, ge=1)
-    is_active: bool | None = None
-    created_at: str | None = None
-    updated_at: str | None = None
+    is_active: Literal[True] = True
     finalized_at: str | None = None
-    created_by: int | str | None = None
-    updated_by: int | str | None = None
-    finalized_by: int | str | None = None
 
-    @field_validator("template_name", mode="before")
+    @field_validator(
+        "template_name",
+        "template_hash",
+        "title",
+        "rendered_text",
+        "finalized_at",
+        mode="before",
+    )
     @classmethod
-    def _require_template_name(cls, value: Any) -> str:
+    def _normalize_strings(cls, value: Any) -> str | None:
+        if value is None:
+            return None
         normalized = _non_empty_string(str(value)) if value is not None else None
         if normalized is None:
-            raise ValueError("template_name must not be blank")
+            return None
         return normalized
+
+    @field_validator("template_name")
+    @classmethod
+    def _require_template_name(cls, value: str | None) -> str:
+        if value is None:
+            raise ValueError("template_name must not be blank")
+        return value
 
     @field_validator("*", mode="before")
     @classmethod
@@ -347,14 +354,12 @@ class TransferVideoFileRow(BaseModel):
 
     video_hash: str
     processed_video_hash: str | None = None
-    original_file_name: str | None = None
     fps: float | None = Field(default=None, ge=0)
     duration: float | None = Field(default=None, ge=0)
     frame_count: int | None = Field(default=None, ge=0)
     width: int | None = Field(default=None, ge=1)
     height: int | None = Field(default=None, ge=1)
     suffix: str | None = None
-    meta: VideoFileMetaPayload | None = None
 
     @field_validator("video_hash", "processed_video_hash", mode="before")
     @classmethod
@@ -386,6 +391,14 @@ class TransferVideoStateRow(BaseModel):
     segment_annotations_created: bool | None = None
     segment_annotations_validated: bool | None = None
     was_created: bool | None = None
+    processed_file_sha256: str | None = None
+
+    @field_validator("processed_file_sha256", mode="before")
+    @classmethod
+    def _validate_processed_file_sha256(cls, value: Any) -> str | None:
+        if value in (None, ""):
+            return None
+        return _sha256_hex(value, field_name="processed_file_sha256")
 
 
 class TransferVideoResourceRows(BaseModel):
@@ -407,9 +420,7 @@ class TransferRawPdfFileRow(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     pdf_hash: str
-    text: str | None = None
-    anonymized_text: str | None = None
-    raw_meta: RawPdfMetaPayload | None = None
+    anonymized_text: str
     state_report_processing_required: bool | None = None
     state_report_processed: bool | None = None
 
@@ -419,6 +430,14 @@ class TransferRawPdfFileRow(BaseModel):
         if isinstance(value, str):
             return _non_empty_string(value)
         return value
+
+    @field_validator("anonymized_text", mode="before")
+    @classmethod
+    def _require_anonymized_text(cls, value: Any) -> str:
+        normalized = _non_empty_string(str(value)) if value is not None else None
+        if normalized is None:
+            raise ValueError("anonymized_text must not be blank")
+        return normalized
 
 
 class TransferRawPdfStateRow(BaseModel):
@@ -433,6 +452,14 @@ class TransferRawPdfStateRow(BaseModel):
     processing_error: bool | None = None
     was_created: bool | None = None
     pdf_meta_extracted: bool | None = None
+    processed_file_sha256: str | None = None
+
+    @field_validator("processed_file_sha256", mode="before")
+    @classmethod
+    def _validate_processed_file_sha256(cls, value: Any) -> str | None:
+        if value in (None, ""):
+            return None
+        return _sha256_hex(value, field_name="processed_file_sha256")
 
 
 class TransferReportResourceRows(BaseModel):

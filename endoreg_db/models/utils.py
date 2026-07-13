@@ -9,6 +9,10 @@ from django.core.files.storage import FileSystemStorage
 from lx_dtypes.models.contracts.endoscopy_processor import RoiBoxCore
 
 from endoreg_db.utils.file_operations import atomic_write_file
+from endoreg_db.utils.media.frame_file_permissions import (
+    FRAME_CACHE_DIR_MODE,
+    FRAME_FILE_MODE,
+)
 
 from ..utils import DJANGO_NAME_SALT, data_paths
 
@@ -77,6 +81,8 @@ def anonymize_frame(
     endo_roi: RoiBoxCore,
     all_black: bool = False,
     censor_color: Tuple[int, int, int] = (0, 0, 0),
+    file_mode: int = FRAME_FILE_MODE,
+    dir_mode: int = FRAME_CACHE_DIR_MODE,
 ):
     """
     Anonymize the frame by blacking out pixels outside the endoscope ROI or making the whole frame black.
@@ -123,6 +129,8 @@ def anonymize_frame(
         destination=target_frame_path,
         content=[encoded.tobytes()],
         required_bytes=int(encoded.nbytes),
+        file_mode=file_mode,
+        dir_mode=dir_mode,
     )
 
 

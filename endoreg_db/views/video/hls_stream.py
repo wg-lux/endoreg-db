@@ -24,6 +24,7 @@ from endoreg_db.utils.cors import resolve_response_origin
 from endoreg_db.utils.nginx_accel import build_nginx_accel_response_for_path
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.utils.storage_streaming import add_cors_headers
+from endoreg_db.views.access_control import assert_center_scope_allowed
 from endoreg_db.views.video.lookups import get_video_or_404 as _get_video_or_404
 
 HLS_PLAYLIST_CONTENT_TYPE = "application/vnd.apple.mpegurl"
@@ -36,6 +37,11 @@ def _private_no_store(response: HttpResponseBase) -> HttpResponseBase:
     response["Cache-Control"] = "no-store, private"
     response["Pragma"] = "no-cache"
     response["Expires"] = "0"
+    return response
+
+
+def _harden_media_response(response: HttpResponseBase) -> HttpResponseBase:
+    response["X-Content-Type-Options"] = "nosniff"
     return response
 
 
@@ -74,6 +80,7 @@ class HLSPlaylistView(APIView):
         pk: int | str | None = None,
     ) -> HttpResponseBase:
         video = _get_video_or_404(pk)
+        assert_center_scope_allowed(request=request, obj=video)
         self.check_object_permissions(request, video)
         artifact_kind = _artifact_kind_from_request(request)
         try:
@@ -97,7 +104,7 @@ class HLSPlaylistView(APIView):
         else:
             response = _file_response(path, content_type=HLS_PLAYLIST_CONTENT_TYPE)
             response = _add_cors_if_configured(response, request)
-        return _private_no_store(response)
+        return _harden_media_response(_private_no_store(response))
 
 
 class HLSKeyView(APIView):
@@ -112,6 +119,7 @@ class HLSKeyView(APIView):
         if key_id is None:
             raise Http404("HLS key ID is required")
         video = _get_video_or_404(pk)
+        assert_center_scope_allowed(request=request, obj=video)
         self.check_object_permissions(request, video)
         try:
             artifact = get_ready_hls_artifact_by_key(
@@ -125,7 +133,7 @@ class HLSKeyView(APIView):
         response = HttpResponse(key, content_type=HLS_KEY_CONTENT_TYPE)
         response["Content-Length"] = str(len(key))
         response = _add_cors_if_configured(response, request)
-        return _private_no_store(response)
+        return _harden_media_response(_private_no_store(response))
 
 
 class HLSSegmentView(APIView):
@@ -141,6 +149,7 @@ class HLSSegmentView(APIView):
         if key_id is None:
             raise Http404("HLS key ID is required")
         video = _get_video_or_404(pk)
+        assert_center_scope_allowed(request=request, obj=video)
         self.check_object_permissions(request, video)
         if not nginx_offload_enabled():
             raise Http404("HLS segment offload is not configured")
@@ -161,4 +170,4 @@ class HLSSegmentView(APIView):
             frontend_origin=resolve_response_origin(request),
         )
         response["Cache-Control"] = HLS_SEGMENT_CACHE_CONTROL
-        return response
+        return _harden_media_response(response)

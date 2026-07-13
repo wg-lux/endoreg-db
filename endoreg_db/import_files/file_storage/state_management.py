@@ -17,6 +17,9 @@ from endoreg_db.models.state.processing_history.processing_history import (
 from endoreg_db.models.state.raw_pdf import RawPdfState
 from endoreg_db.models.state.video import VideoState
 from endoreg_db.services.hls_media import materialize_video_hls
+from endoreg_db.services.raw_pdf_files.integrity import (
+    verify_and_persist_processed_report_sha256,
+)
 from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.ffmpeg_wrapper import get_stream_info
 from endoreg_db.utils.file_operations import (
@@ -117,28 +120,21 @@ def _store_existing_final_file(
     )
 
 
-def _materialize_processed_video_hls(instance: VideoFile) -> None:
-    try:
-        result = materialize_video_hls(
-            int(instance.pk),
-            artifact_kind="processed",
-            force=True,
-        )
-    except Exception as exc:
-        logger.warning(
-            "Processed HLS materialization failed after video finalization: "
-            "video=%s error=%s",
-            instance.pk,
-            exc,
-            exc_info=True,
-        )
-        return
-
+def ensure_processed_video_hls(
+    instance: VideoFile,
+    *,
+    force: bool = False,
+) -> None:
+    """Return only after processed HLS is ready; propagate failures to callers."""
+    result = materialize_video_hls(
+        int(instance.pk),
+        artifact_kind="processed",
+        force=force,
+    )
     logger.info(
-        "Materialized processed HLS after video finalization: video=%s status=%s key_id=%s",
+        "Processed HLS is ready: video=%s status=%s",
         instance.pk,
         result.status,
-        result.key_id,
     )
 
 
@@ -187,75 +183,77 @@ def finalize_report_success(
     """
     instance = ctx.current_report
     if not isinstance(instance, RawPdfFile):
-        logger.warning("finalize_success called with unsaved instance")
-        return
+        raise RuntimeError(
+            "Cannot finalize report import without a RawPdfFile instance."
+        )
     if not instance.pk:
-        logger.warning("finalize_success called with unsaved instance")
-        return
+        raise RuntimeError("Cannot finalize report import with an unsaved RawPdfFile.")
 
-    # --- Move anonymized path into final storage (if we have one) ---
-    final_path: Path | None = None
+    # --- Move anonymized path into final storage ---
     if ctx.anonymized_path is None:
-        logger.warning(
-            "No anonymized_path for instance %s (hash=%s); skipping file move.",
-            instance.pk,
-            getattr(instance, "pdf_hash", None),
+        raise RuntimeError(
+            "Cannot finalize report import without an anonymized PDF output "
+            f"(instance={instance.pk}, hash={getattr(instance, 'pdf_hash', None)})."
         )
-        final_path = None
-    else:
-        pdf_hash = getattr(instance, "pdf_hash", None) or instance.pk
-        expected_final_path = _processed_report_dir() / f"{pdf_hash}.pdf"
 
-        src = Path(ctx.anonymized_path)
+    pdf_hash = getattr(instance, "pdf_hash", None) or instance.pk
+    expected_final_path = _processed_report_dir() / f"{pdf_hash}.pdf"
+    src = Path(ctx.anonymized_path)
 
-        logger.debug(
-            "finalize_report_success: src=%s (exists=%s, resolved=%s), expected_final=%s",
+    logger.debug(
+        "finalize_report_success: src=%s (exists=%s, resolved=%s), expected_final=%s",
+        src,
+        src.exists(),
+        src.resolve(),
+        expected_final_path,
+    )
+
+    if not src.exists() or not src.is_file() or src.stat().st_size <= 0:
+        raise RuntimeError(
+            f"Cannot finalize report import because anonymized output is missing or empty: {src}"
+        )
+
+    if requires_app_encrypted_storage(PayloadKind.REPORT_PDF):
+        relative_name = path_utils.to_storage_relative(expected_final_path)
+        saved_name = _store_existing_final_file(
+            instance.processed_file,
             src,
-            src.exists(),
-            src.resolve(),
-            expected_final_path,
+            relative_name=relative_name,
         )
-
-        if not src.exists():
-            logger.error(
-                "Anonymized file %s does not exist; cannot finalize to %s",
+        logger.info("Updated processed_file to %s", saved_name)
+        if src.resolve() != expected_final_path.resolve():
+            safe_cleanup_staging_file(
                 src,
+                label="processed report staging output",
+                missing_ok=True,
+            )
+    else:
+        if src.resolve() == expected_final_path.resolve():
+            logger.info(
+                "Anonymizer output already at final path %s; skipping move.",
                 expected_final_path,
             )
-            final_path = None
-        elif requires_app_encrypted_storage(PayloadKind.REPORT_PDF):
-            relative_name = path_utils.to_storage_relative(expected_final_path)
-            saved_name = _store_existing_final_file(
-                instance.processed_file,
-                src,
-                relative_name=relative_name,
-            )
-            logger.info("Updated processed_file to %s", saved_name)
-            if src.resolve() != expected_final_path.resolve():
-                safe_cleanup_staging_file(
-                    src,
-                    label="processed report staging output",
-                    missing_ok=True,
-                )
+            final_path = expected_final_path
         else:
-            if src.resolve() == expected_final_path.resolve():
-                logger.info(
-                    "Anonymizer output already at final path %s; skipping move.",
-                    expected_final_path,
-                )
-                final_path = expected_final_path
-            else:
-                if expected_final_path.exists():
-                    safe_unlink_file(expected_final_path, missing_ok=True)
-                atomic_move_file(source=src, destination=expected_final_path)
-                final_path = expected_final_path
-                logger.info("Moved anonymized report to %s", final_path)
+            if expected_final_path.exists():
+                safe_unlink_file(expected_final_path, missing_ok=True)
+            atomic_move_file(source=src, destination=expected_final_path)
+            final_path = expected_final_path
+            logger.info("Moved anonymized report to %s", final_path)
 
-            relative_name = path_utils.to_storage_relative(final_path)
-            current_name = getattr(instance.processed_file, "name", None)
-            if current_name != relative_name:
-                instance.processed_file.name = relative_name
-                logger.info("Updated processed_file to %s", relative_name)
+        relative_name = path_utils.to_storage_relative(final_path)
+        current_name = getattr(instance.processed_file, "name", None)
+        if current_name != relative_name:
+            instance.processed_file.name = relative_name
+            logger.info("Updated processed_file to %s", relative_name)
+
+    cast(_StatefulImportInstance, instance).save()
+    processed_file_sha256 = verify_and_persist_processed_report_sha256(instance)
+    logger.info(
+        "Verified processed report artifact: report=%s sha256=%s",
+        instance.pk,
+        processed_file_sha256,
+    )
 
     # --- Update RawPdfState flags (mirrors _finalize_processing) ---
     state = _ensure_instance_state(instance)
@@ -274,27 +272,20 @@ def finalize_report_success(
 
         cast(_StatefulImportInstance, instance).save()
 
+    if not isinstance(ctx.file_hash, str):
+        ctx.file_hash = sha256_file(ctx.file_path)
+    with transaction.atomic():
+        ProcessingHistory.get_or_create_for_hash(
+            obj=instance,
+            file_hash=ctx.file_hash,
+            success=True,
+        )
+
     if isinstance(ctx.sensitive_path, Path):
         safe_cleanup_staging_file(
             ctx.sensitive_path,
             label="report sensitive staging copy after success",
             missing_ok=False,
-        )
-
-    # --- ProcessingHistory entry ---
-    try:
-        with transaction.atomic():
-            if not isinstance(ctx.file_hash, str):
-                ctx.file_hash = sha256_file(ctx.file_path)
-            ProcessingHistory.get_or_create_for_hash(
-                obj=instance,
-                file_hash=ctx.file_hash,
-                success=True,
-            )
-    except Exception as e:
-        logger.debug(
-            f"Saving not possible; %sskipping ProcessingHistory.{e}",
-            instance.pk,
         )
 
 
@@ -374,7 +365,9 @@ def finalize_video_success(
                 )
 
     cast(_StatefulImportInstance, instance).save()
-    _materialize_processed_video_hls(instance)
+    # HLS readiness is part of import success. A failed transcode must leave the
+    # import retryable instead of publishing a successful but unstreamable video.
+    ensure_processed_video_hls(instance, force=True)
 
     # --- Update VideoState flags (mirrors report) ---
     state = _ensure_instance_state(instance)

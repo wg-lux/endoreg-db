@@ -484,6 +484,7 @@ def _handle_case_resolution_post(
                     pdf=media_obj,
                     validated_at_iso=None,
                     source="case_resolution",
+                    allow_empty_text=True,
                 )
     except drf_serializers.ValidationError as exc:
         return Response(

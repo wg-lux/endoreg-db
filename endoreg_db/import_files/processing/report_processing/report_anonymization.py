@@ -84,16 +84,10 @@ class ReportAnonymizer:
         report = cast(_ReportStorageRecord, ctx.current_report)
         is_txt_input = self._is_txt_input(ctx)
         if is_txt_input:
-            source_path = (
-                ctx.original_path
-                if isinstance(ctx.original_path, Path)
-                else ctx.file_path
+            raise ValueError(
+                "Raw TXT report anonymization is disabled. Use a PDF or the "
+                "validated preanonymized import workflow."
             )
-            txt_content = self._read_txt_content(source_path)
-            ctx.original_text = txt_content
-            ctx.anonymized_text = txt_content
-            ctx.extracted_metadata = LxSensitiveMeta()
-            ctx.anonymized_path = None
         else:
             # Setup anonymized directory
             anonymized_dir = ensure_directory(_processed_report_dir())
@@ -128,7 +122,10 @@ class ReportAnonymizer:
         report.anonymized_text = ctx.anonymized_text
         report.save(update_fields=["text", "anonymized_text"])
 
-        sensitive_meta_storage(ctx.extracted_metadata, ctx.current_report)
+        if not sensitive_meta_storage(ctx.extracted_metadata, ctx.current_report):
+            raise RuntimeError(
+                "Report anonymization could not persist extracted sensitive metadata."
+            )
         return ctx
 
     def _instantiate_report_reader(self) -> _ReportReader:

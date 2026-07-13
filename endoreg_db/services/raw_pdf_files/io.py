@@ -191,26 +191,13 @@ def verify_existing_raw_pdf_file(
         logger.error("Error during verify_existing_file for %s: %s", file_name, exc)
 
 
-def delete_raw_pdf_owned_files(
+def delete_raw_pdf_raw_file(
     report: "RawPdfFile",
     *,
     save: bool = False,
-) -> tuple[bool, bool]:
+) -> bool:
     raw_name = report.file.name if report.file and report.file.name else None
-    processed_name = (
-        report.processed_file.name
-        if report.processed_file and report.processed_file.name
-        else None
-    )
-
     raw_deleted = delete_field_file(report, "file", missing_ok=True, save=save)
-    processed_deleted = delete_field_file(
-        report,
-        "processed_file",
-        missing_ok=True,
-        save=save,
-    )
-
     if raw_deleted:
         _emit_report_file_event(
             "raw_pdf.file_deleted",
@@ -219,6 +206,28 @@ def delete_raw_pdf_owned_files(
             status="ok",
             storage_name=raw_name,
         )
+    return raw_deleted
+
+
+def delete_raw_pdf_owned_files(
+    report: "RawPdfFile",
+    *,
+    save: bool = False,
+) -> tuple[bool, bool]:
+    processed_name = (
+        report.processed_file.name
+        if report.processed_file and report.processed_file.name
+        else None
+    )
+
+    raw_deleted = delete_raw_pdf_raw_file(report, save=save)
+    processed_deleted = delete_field_file(
+        report,
+        "processed_file",
+        missing_ok=True,
+        save=save,
+    )
+
     if processed_deleted:
         _emit_report_file_event(
             "raw_pdf.file_deleted",

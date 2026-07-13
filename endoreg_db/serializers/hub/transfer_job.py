@@ -8,10 +8,9 @@ from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.hub.network_node import NetworkNode
 from endoreg_db.models.hub.transfer_job import TransferJob
 from endoreg_db.models.state.anonymization import AnonymizationState
-from lx_dtypes.models.contracts.hub_transfer import (
-    validate_hub_transfer_processing_snapshot,
-    validate_hub_transfer_report_resource_rows,
-    validate_hub_transfer_video_resource_rows,
+from endoreg_db.schemas import (
+    validate_transfer_processing_snapshot,
+    validate_transfer_resource_rows,
 )
 
 
@@ -27,10 +26,6 @@ class _ReportFilePayload(TypedDict):
 class _SensitiveMetaPayload(TypedDict, total=False):
     patient_hash: str
     examination_hash: str
-    patient_first_name: str
-    patient_last_name: str
-    patient_dob: str
-    examination_date: str
 
 
 class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
@@ -69,11 +64,15 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
     processing_snapshot = serializers.JSONField(default=dict)
     provenance = serializers.JSONField(default=dict, required=False)
 
-    _TRANSFER_ELIGIBLE_ANONYMIZATION_STATES = {
-        AnonymizationState.ANONYMIZED,
-        AnonymizationState.DONE_PROCESSING_ANONYMIZATION,
-        AnonymizationState.VALIDATED,
-    }
+    _TRANSFER_ELIGIBLE_ANONYMIZATION_STATES = {AnonymizationState.VALIDATED}
+
+    def validate_payload_schema_version(self, value: str) -> str:
+        normalized = value.strip()
+        if normalized != "2.0":
+            raise serializers.ValidationError(
+                "Only privacy-preserving hub payload_schema_version '2.0' is accepted."
+            )
+        return normalized
 
     def validate_source_node_key(self, value: str) -> str:
         normalized = value.strip()
@@ -149,6 +148,7 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
             source_center = source_node.owning_center
 
         resource_rows = cast(dict[str, object], attrs.get("resource_rows", {}))
+        self._validate_privacy_boundary(resource_rows)
         if transfer_mode in {
             TransferJob.TransferMode.METADATA_AND_RAW_MEDIA.value,
             TransferJob.TransferMode.METADATA_RAW_AND_PROCESSED_MEDIA.value,
@@ -219,6 +219,21 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
                 anonymization_status=anonymization_status,
                 resource_kind="video",
             )
+            if (
+                transfer_mode
+                == (TransferJob.TransferMode.METADATA_AND_PROCESSED_MEDIA.value)
+                and not str(
+                    video_state_payload.get("processed_file_sha256", "") or ""
+                ).strip()
+            ):
+                raise serializers.ValidationError(
+                    {
+                        "resource_rows": (
+                            "resource_rows.video_state.processed_file_sha256 is "
+                            "required for processed-media transfer"
+                        )
+                    }
+                )
         elif str(attrs["resource_kind"]) == TransferJob.ResourceKind.REPORT.value:
             report_file = cast(
                 _ReportFilePayload | None, resource_rows.get("raw_pdf_file")
@@ -259,18 +274,32 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
                 anonymization_status=anonymization_status,
                 resource_kind="report",
             )
+            if (
+                transfer_mode
+                == (TransferJob.TransferMode.METADATA_AND_PROCESSED_MEDIA.value)
+                and not str(
+                    report_state_payload.get("processed_file_sha256", "") or ""
+                ).strip()
+            ):
+                raise serializers.ValidationError(
+                    {
+                        "resource_rows": (
+                            "resource_rows.raw_pdf_state.processed_file_sha256 is "
+                            "required for processed-media transfer"
+                        )
+                    }
+                )
 
-        if str(attrs["resource_kind"]) == TransferJob.ResourceKind.VIDEO.value:
-            attrs["resource_rows"] = validate_hub_transfer_video_resource_rows(
-                resource_rows
+        try:
+            attrs["resource_rows"] = validate_transfer_resource_rows(
+                resource_rows,
+                resource_kind=str(attrs["resource_kind"]),
             )
-        elif str(attrs["resource_kind"]) == TransferJob.ResourceKind.REPORT.value:
-            attrs["resource_rows"] = validate_hub_transfer_report_resource_rows(
-                resource_rows
+            attrs["processing_snapshot"] = validate_transfer_processing_snapshot(
+                attrs.get("processing_snapshot", {})
             )
-        attrs["processing_snapshot"] = validate_hub_transfer_processing_snapshot(
-            attrs.get("processing_snapshot", {})
-        )
+        except ValueError as exc:
+            raise serializers.ValidationError({"resource_rows": str(exc)}) from exc
 
         self._validate_sensitive_meta_linkage(resource_rows)
 
@@ -289,7 +318,8 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
             raise serializers.ValidationError(
                 {
                     "resource_rows": (
-                        f"{resource_kind} transfer is only allowed for anonymized data. "
+                        f"{resource_kind} transfer is only allowed for anonymized "
+                        "data that was explicitly validated. "
                         f"Current anonymization_status={anonymization_status.value!r} is not eligible."
                     )
                 }
@@ -358,24 +388,43 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
             sensitive_meta.get("patient_hash", "").strip()
             and sensitive_meta.get("examination_hash", "").strip()
         )
-        has_derivation_fields = all(
-            sensitive_meta.get(field, "").strip()
-            for field in (
-                "patient_first_name",
-                "patient_last_name",
-                "patient_dob",
-                "examination_date",
-            )
-        )
-
-        if not has_hashes and not has_derivation_fields:
+        if not has_hashes:
             raise serializers.ValidationError(
                 {
                     "resource_rows": (
-                        "resource_rows.sensitive_meta must include either "
-                        "patient_hash and examination_hash, or "
-                        "patient_first_name, patient_last_name, patient_dob, "
-                        "and examination_date"
+                        "resource_rows.sensitive_meta must include patient_hash "
+                        "and examination_hash; direct identity derivation fields "
+                        "are prohibited"
+                    )
+                }
+            )
+
+    def _validate_privacy_boundary(self, resource_rows: dict[str, object]) -> None:
+        sensitive_meta = resource_rows.get("sensitive_meta")
+        if isinstance(sensitive_meta, dict):
+            sensitive_meta_fields = cast(dict[str, object], sensitive_meta)
+            direct_identity_fields = sorted(
+                set(sensitive_meta_fields).difference(
+                    {"patient_hash", "examination_hash"}
+                )
+            )
+            if direct_identity_fields:
+                raise serializers.ValidationError(
+                    {
+                        "resource_rows": (
+                            "Direct identity fields are prohibited in hub transfers: "
+                            + ", ".join(direct_identity_fields)
+                        )
+                    }
+                )
+
+        raw_pdf_file = resource_rows.get("raw_pdf_file")
+        if isinstance(raw_pdf_file, dict) and "text" in raw_pdf_file:
+            raise serializers.ValidationError(
+                {
+                    "resource_rows": (
+                        "Raw report text is prohibited in hub transfers; use only "
+                        "validated anonymized_text."
                     )
                 }
             )

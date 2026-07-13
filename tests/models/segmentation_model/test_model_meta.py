@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Unpack, cast
@@ -18,6 +19,10 @@ from typing import Protocol
 
 class _AiModelWithActiveMeta(Protocol):
     active_meta: ModelMeta | None
+
+
+class _DownloadHfWeights(Protocol):
+    def __call__(self, *, model_id: str) -> AbstractContextManager[Path]: ...
 
 
 class _CreateFromFileDelegateKwargs(ModelMetaCreateFromFileKwargsData, total=False):
@@ -237,8 +242,7 @@ def test_setup_default_from_huggingface_repairs_existing_missing_weights(
     base_labelset: LabelSet,
 ) -> None:
     settings.MEDIA_ROOT = tmp_path
-    source_weights = tmp_path / "downloaded.safetensors"
-    source_weights.write_bytes(b"downloaded weights")
+    download_staging_dirs: list[Path] = []
 
     model_meta = ModelMeta.objects.create(
         name=unique_ai_model.name,
@@ -267,6 +271,10 @@ def test_setup_default_from_huggingface_repairs_existing_missing_weights(
         filename: str,
         local_dir: str | Path,
     ) -> str:
+        staging_dir = Path(local_dir)
+        download_staging_dirs.append(staging_dir)
+        source_weights = staging_dir / filename
+        source_weights.write_bytes(b"downloaded weights")
         return source_weights.as_posix()
 
     monkeypatch.setattr(
@@ -295,6 +303,46 @@ def test_setup_default_from_huggingface_repairs_existing_missing_weights(
     active_meta = cast(_AiModelWithActiveMeta, unique_ai_model).active_meta
     assert active_meta is not None
     assert active_meta == result
+    assert len(download_staging_dirs) == 1
+    assert not download_staging_dirs[0].exists()
+
+
+def test_huggingface_download_rejects_artifact_outside_protected_staging(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    weights_dir = tmp_path / "protected" / "model_weights"
+    outside_artifact = tmp_path / "outside.safetensors"
+    outside_artifact.write_bytes(b"untrusted-location")
+    download_staging_dirs: list[Path] = []
+
+    def fake_hf_hub_download(
+        *,
+        repo_id: str,
+        filename: str,
+        local_dir: str | Path,
+    ) -> str:
+        download_staging_dirs.append(Path(local_dir))
+        return outside_artifact.as_posix()
+
+    monkeypatch.setattr(model_meta_logic, "WEIGHTS_DIR", weights_dir)
+    monkeypatch.setattr(
+        model_meta_logic,
+        "hf_hub_download",
+        fake_hf_hub_download,
+    )
+    download_hf_weights = cast(
+        _DownloadHfWeights,
+        getattr(model_meta_logic, "_download_hf_weights"),
+    )
+
+    with pytest.raises(RuntimeError, match="outside the protected"):
+        with download_hf_weights(model_id="wg-lux/test-model"):
+            pytest.fail("An out-of-bound artifact must never be yielded")
+
+    assert outside_artifact.read_bytes() == b"untrusted-location"
+    assert len(download_staging_dirs) == 1
+    assert not download_staging_dirs[0].exists()
 
 
 def test_get_activation_function_delegates_to_logic(

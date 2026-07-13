@@ -14,6 +14,7 @@ from endoreg_db.views.media.hub import (
 )
 from endoreg_db.views.media.patient_media_timeline import PatientMediaTimelineView
 from endoreg_db.views.media.anonymization_metrics import AnonymizationMetricsView
+from endoreg_db.views.media.study_cohort import StudyCohortPreviewView
 from endoreg_db.views.media.pdf_media import (
     PdfMediaView,  # Alias to avoid conflict with legacy pdf.reportMediaView
 )
@@ -123,6 +124,11 @@ QUARANTINE_URLPATTERNS: list[URLPattern] = [
 ]
 
 MEDIA_OVERVIEW_URLPATTERNS: list[URLPattern] = [
+    path(
+        "media/studies/cohort-preview/",
+        StudyCohortPreviewView.as_view(),
+        name="study-cohort-preview",
+    ),
     path(
         "media/patients/<int:patient_id>/timeline/",
         PatientMediaTimelineView.as_view(),

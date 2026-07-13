@@ -27,8 +27,10 @@ from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
 from endoreg_db.services.raw_pdf_files import (
+    ProcessedReportIntegrityError,
     get_or_create_raw_pdf_state,
     get_raw_pdf_by_content_hash,
+    require_usable_completed_report,
 )
 from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.utils import paths as path_utils
@@ -184,6 +186,14 @@ class ReportImportService:
         self.logger.info("validating and preparing file")
         if not ctx.file_path.exists():
             raise FileNotFoundError(f"Report file not found: {file_path}")
+        if ctx.file_path.suffix.lower() == ".txt":
+            raise ValueError(
+                "Raw TXT report import is disabled because plain text cannot be "
+                "treated as an anonymized report. Upload a PDF or use the validated "
+                "preanonymized import workflow."
+            )
+        if ctx.file_path.suffix.lower() != ".pdf":
+            raise ValueError("Report import only accepts PDF files.")
 
         ctx.file_hash = sha256_file(ctx.file_path)
         try:
@@ -322,6 +332,22 @@ class ReportImportService:
             logger.warning(
                 "Successful processing history exists for %s but no RawPdfFile was found.",
                 file_hash,
+            )
+            return None
+
+        try:
+            require_usable_completed_report(
+                existing_report,
+                source_sha256=file_hash,
+            )
+        except ProcessedReportIntegrityError as exc:
+            ctx.current_report = existing_report
+            logger.warning(
+                "Successful processing history exists for %s but the completed "
+                "report is unusable: %s. Continuing import so the processed PDF "
+                "can be repaired.",
+                file_hash,
+                exc,
             )
             return None
 

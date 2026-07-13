@@ -417,6 +417,26 @@ class HubTransferMediaUploadView(APIView):
             )
             raise ValidationError(errors)
 
+        max_upload_bytes = int(
+            getattr(settings, "ENDOREG_HUB_TRANSFER_MAX_UPLOAD_BYTES", 50 * 1024**3)
+        )
+        uploaded_size = uploaded_file.size
+        if (
+            max_upload_bytes <= 0
+            or uploaded_size is None
+            or uploaded_size < 0
+            or uploaded_size > max_upload_bytes
+        ):
+            errors = {"file": "Uploaded media exceeds the configured size limit."}
+            _log_transfer_validation_failure(
+                request,
+                event="hub.transfer_media_upload_validation_failed",
+                errors=cast(_ValidationErrorValue, errors),
+                transfer_key=transfer_key,
+                transfer_job=transfer_job,
+            )
+            raise ValidationError(errors)
+
         try:
             transfer_job = attach_transfer_media(
                 transfer_job=transfer_job,

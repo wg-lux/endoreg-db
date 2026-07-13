@@ -18,6 +18,7 @@ from endoreg_db.import_files.context.import_context import (
 )
 from endoreg_db.import_files.file_storage.cleanup import safe_cleanup_staging_file
 from endoreg_db.import_files.file_storage.state_management import (
+    ensure_processed_video_hls,
     finalize_failure,
     finalize_video_success,
 )
@@ -293,6 +294,7 @@ class VideoImportService:
                 existing_completed_video = self._get_existing_completed_video(ctx)
                 if existing_completed_video is not None and not retry:
                     ctx.current_video = existing_completed_video
+                    ensure_processed_video_hls(existing_completed_video)
                     self._cleanup_duplicate_staging(ctx)
                     return existing_completed_video
 
@@ -328,6 +330,7 @@ class VideoImportService:
                     )
 
                 if not needs_processing and not retry:
+                    ensure_processed_video_hls(ctx.current_video)
                     self._cleanup_duplicate_staging(ctx)
                     return ctx.current_video
 

@@ -1,9 +1,11 @@
 from __future__ import annotations
+from contextlib import contextmanager
 from importlib import import_module
 from logging import getLogger
 from pathlib import Path
 from collections.abc import Iterable, Sequence
-from typing import TYPE_CHECKING, Protocol, Unpack, cast
+from typing import TYPE_CHECKING, Generator, Protocol, Unpack, cast
+from uuid import uuid4
 
 from django.db import transaction
 from torch import nn
@@ -16,6 +18,7 @@ from ..utils import STORAGE_DIR, WEIGHTS_DIR
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     ensure_directory,
+    safe_rmtree,
 )
 from lx_dtypes.models.contracts import model_meta as model_meta_contract
 from lx_dtypes.models.contracts.model_meta_logic import (
@@ -25,6 +28,8 @@ from lx_dtypes.models.contracts.model_meta_logic import (
 )
 
 logger = getLogger("ai_model")
+
+_DEFAULT_HF_WEIGHT_FILENAME = "colo_segmentation_RegNetX800MF_base.safetensors"
 
 if TYPE_CHECKING:
     from endoreg_db.models.metadata.model_meta import ModelMeta
@@ -63,6 +68,45 @@ def hf_hub_download(
         filename=filename,
         local_dir=local_dir,
     )
+
+
+@contextmanager
+def _download_hf_weights(*, model_id: str) -> Generator[Path, None, None]:
+    """Download one model artifact into an isolated protected staging directory."""
+    staging_root = WEIGHTS_DIR / ".downloads" / uuid4().hex
+    ensure_directory(staging_root)
+
+    try:
+        try:
+            downloaded_path = Path(
+                hf_hub_download(
+                    repo_id=model_id,
+                    filename=_DEFAULT_HF_WEIGHT_FILENAME,
+                    local_dir=staging_root,
+                )
+            ).resolve()
+        except Exception as exc:  # pragma: no cover - network boundary
+            raise RuntimeError(
+                "Failed to download safetensor weights from Hugging Face; "
+                "ensure the repository provides a .safetensors artifact."
+            ) from exc
+
+        resolved_staging_root = staging_root.resolve()
+        if not downloaded_path.is_relative_to(resolved_staging_root):
+            raise RuntimeError(
+                "Hugging Face returned a model artifact outside the protected "
+                "download staging directory."
+            )
+        if downloaded_path.name != _DEFAULT_HF_WEIGHT_FILENAME:
+            raise RuntimeError("Hugging Face returned an unexpected model artifact.")
+        if not downloaded_path.is_file() or downloaded_path.stat().st_size <= 0:
+            raise RuntimeError(
+                "Hugging Face returned a missing or empty safetensor artifact."
+            )
+
+        yield downloaded_path
+    finally:
+        safe_rmtree(staging_root, missing_ok=True)
 
 
 def _get_model_meta_class():
@@ -512,18 +556,6 @@ def setup_default_from_huggingface_logic(
         infer_default_model_meta_from_hf(model_id)
     )
 
-    def _download_weights() -> str:
-        try:
-            return hf_hub_download(
-                repo_id=model_id,
-                filename="colo_segmentation_RegNetX800MF_base.safetensors",
-                local_dir=WEIGHTS_DIR,
-            )
-        except Exception as exc:  # pragma: no cover - network errors
-            raise RuntimeError(
-                "Failed to download safetensor weights from Hugging Face; ensure the repository provides a .safetensors artifact."
-            ) from exc
-
     ai_model, _ = AiModel.objects.get_or_create(name=meta.name)
     ai_model_like = cast(_AiModelActiveMetaLike, ai_model)
     if not labelset_name:
@@ -559,34 +591,34 @@ def setup_default_from_huggingface_logic(
                 ai_model_like.active_meta = model_meta
                 ai_model_like.save(update_fields=["active_meta"])
             return model_meta
-        weights_path = _download_weights()
         logger.warning(
             "ModelMeta %s for model %s exists but its weights file is missing; "
             "repairing from Hugging Face download.",
             meta.name,
             ai_model.name,
         )
-        _copy_weights_to_existing_model_meta(
-            model_meta,
-            source_weights_path=Path(weights_path).resolve(),
-        )
+        with _download_hf_weights(model_id=model_id) as weights_path:
+            _copy_weights_to_existing_model_meta(
+                model_meta,
+                source_weights_path=weights_path,
+            )
         if ai_model_like.active_meta_id != model_meta.pk:
             ai_model_like.active_meta = model_meta
             ai_model_like.save(update_fields=["active_meta"])
         return model_meta
 
-    weights_path = _download_weights()
-    return create_from_file_logic(
-        cls,
-        meta_name=meta.name,
-        model_name=ai_model.name,
-        labelset_name=labelset.name,
-        labelset_version=labelset.version,
-        weights_file=weights_path,
-        activation=meta.activation,
-        mean=",".join(str(value) for value in meta.mean),
-        std=",".join(str(value) for value in meta.std),
-        size_x=meta.size_x,
-        size_y=meta.size_y,
-        description=meta.description,
-    )
+    with _download_hf_weights(model_id=model_id) as weights_path:
+        return create_from_file_logic(
+            cls,
+            meta_name=meta.name,
+            model_name=ai_model.name,
+            labelset_name=labelset.name,
+            labelset_version=labelset.version,
+            weights_file=weights_path.as_posix(),
+            activation=meta.activation,
+            mean=",".join(str(value) for value in meta.mean),
+            std=",".join(str(value) for value in meta.std),
+            size_x=meta.size_x,
+            size_y=meta.size_y,
+            description=meta.description,
+        )

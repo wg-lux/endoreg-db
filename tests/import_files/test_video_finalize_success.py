@@ -1,9 +1,8 @@
 from contextlib import contextmanager
 from hashlib import sha256
-import logging
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, NoReturn, cast
+from typing import NoReturn, cast
 
 import pytest
 from pytest import MonkeyPatch
@@ -19,9 +18,8 @@ def _runtime_storage_root() -> Path:
 
 
 @pytest.mark.unit
-def test_materialize_processed_video_hls_logs_and_swallows_failure(
+def test_ensure_processed_video_hls_propagates_failure(
     monkeypatch: MonkeyPatch,
-    caplog: Any,
 ) -> None:
     import endoreg_db.import_files.file_storage.state_management as state_management_module
 
@@ -34,15 +32,9 @@ def test_materialize_processed_video_hls_logs_and_swallows_failure(
         fail_materialize_video_hls,
         raising=True,
     )
-    caplog.set_level(logging.WARNING, logger=state_management_module.__name__)
-
     video = cast(VideoFile, SimpleNamespace(pk=42))
-    cast(Any, state_management_module)._materialize_processed_video_hls(video)
-
-    assert (
-        "Processed HLS materialization failed after video finalization" in caplog.text
-    )
-    assert "synthetic HLS failure" in caplog.text
+    with pytest.raises(RuntimeError, match="synthetic HLS failure"):
+        state_management_module.ensure_processed_video_hls(video, force=True)
 
 
 @pytest.mark.unit
@@ -191,13 +183,18 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
     )
     hls_calls: list[int] = []
 
-    def fake_materialize_processed_video_hls(video_arg: VideoFile) -> None:
+    def fake_ensure_processed_video_hls(
+        video_arg: VideoFile,
+        *,
+        force: bool = False,
+    ) -> None:
+        assert force is True
         hls_calls.append(int(video_arg.pk))
 
     monkeypatch.setattr(
         state_management_module,
-        "_materialize_processed_video_hls",
-        fake_materialize_processed_video_hls,
+        "ensure_processed_video_hls",
+        fake_ensure_processed_video_hls,
         raising=True,
     )
 
