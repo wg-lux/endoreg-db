@@ -60,6 +60,9 @@ class LoginRequiredForAPIsMiddleware:
         # --- Exclusions so we don't block assets, HMR, OIDC endpoints, favicon, etc.
         # Allow static, assets, vite HMR, favicon, and OIDC endpoints without redirect
         # Skip public stuff
+        if request.path_info.startswith("/api/media/hub/transfers/"):
+            return self.get_response(request)
+    
         if path.startswith(PUBLIC_PREFIXES):
             return self.get_response(request)
 

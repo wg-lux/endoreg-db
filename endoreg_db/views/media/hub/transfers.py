@@ -167,6 +167,7 @@ def _assert_transfer_center_scope(request, source_center_id: int | None) -> None
 
 @method_decorator(csrf_exempt, name="dispatch")
 class HubTransferCreateView(APIView):
+    authentication_classes = []
     permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
@@ -222,6 +223,7 @@ class HubTransferCreateView(APIView):
 
 @method_decorator(csrf_exempt, name="dispatch")
 class HubTransferStatusView(APIView):
+    authentication_classes = []
     permission_classes = [AllowAny]
 
     def get(self, request, transfer_key: str, *args, **kwargs):
@@ -247,6 +249,7 @@ class HubTransferStatusView(APIView):
 
 @method_decorator(csrf_exempt, name="dispatch")
 class HubTransferMediaUploadView(APIView):
+    authentication_classes = []
     permission_classes = [AllowAny]
     parser_classes = [MultiPartParser, FormParser]
 
