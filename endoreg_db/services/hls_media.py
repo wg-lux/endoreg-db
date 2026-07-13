@@ -186,16 +186,8 @@ def _coerce_hls_artifact_kind(value: object) -> VideoArtifactKind:
     raise ValueError(f"Unsupported HLS artifact kind: {value!r}")
 
 
-def _enforce_outbound_hls_artifact_kind(
-    artifact_kind: VideoArtifactKind,
-) -> None:
-    if artifact_kind != VideoArtifactKind.PROCESSED:
-        raise ValueError(HLS_OUTBOUND_POLICY_ERROR)
-
-
 def coerce_outbound_hls_artifact_kind(value: object) -> VideoArtifactKind:
     artifact_kind = _coerce_hls_artifact_kind(value)
-    _enforce_outbound_hls_artifact_kind(artifact_kind)
     return artifact_kind
 
 
@@ -485,7 +477,6 @@ def _mark_artifact_ready(
 
 
 def _hls_root_for_kind(artifact_kind: VideoArtifactKind) -> Path:
-    _enforce_outbound_hls_artifact_kind(artifact_kind)
     root = streamable_media.STREAMABLE_PROCESSED_VIDEO_ROOT
     return ensure_within_protected_media_root(Path(root).resolve() / "hls")
 
@@ -1380,9 +1371,7 @@ def get_ready_hls_artifact_by_key(
         key_id=key_id,
         status=VideoHlsArtifact.Status.READY.value,
     )
-    _enforce_outbound_hls_artifact_kind(
-        _coerce_hls_artifact_kind(artifact.artifact_kind)
-    )
+
     if not _ready_artifact_paths_exist(artifact):
         raise FileNotFoundError("HLS artifact files are missing")
     return artifact
