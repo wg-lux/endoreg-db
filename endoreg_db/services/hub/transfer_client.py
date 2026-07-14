@@ -23,6 +23,34 @@ class HubTransferClient:
             "X-Network-Node-Key": self.node_key,
             "X-Network-Node-Secret": self.node_secret,
         }
+    
+    @staticmethod
+    def _response_json(res: requests.Response, *, operation: str) -> dict[str, Any]:
+        if not res.ok:
+            raise RuntimeError(
+                f"{operation} failed: "
+                f"status={res.status_code}, "
+                f"url={res.url}, "
+                f"response={res.text}"
+            )
+    
+        try:
+            data = res.json()
+        except requests.exceptions.JSONDecodeError as exc:
+            raise RuntimeError(
+                f"{operation} returned invalid JSON: "
+                f"status={res.status_code}, "
+                f"url={res.url}, "
+                f"response={res.text}"
+            ) from exc
+    
+        if not isinstance(data, dict):
+            raise RuntimeError(
+                f"{operation} returned an unexpected response type: "
+                f"{type(data).__name__}"
+            )
+    
+        return data
 
     def create_transfer(self, payload: dict[str, Any]) -> dict[str, Any]:
         res = requests.post(
@@ -32,16 +60,7 @@ class HubTransferClient:
             timeout=self.timeout,
             verify=self.verify_tls,
         )
-    
-        if not res.ok:
-            raise RuntimeError(
-                "Hub transfer creation failed: "
-                f"status={res.status_code}, "
-                f"url={res.url}, "
-                f"response={res.text}"
-            )
-    
-        return res.json()
+        return self._response_json(res, operation="Hub transfer creation")
 
     def upload_processed_media(
         self,
@@ -64,8 +83,7 @@ class HubTransferClient:
                 verify=self.verify_tls,
             )
 
-        res.raise_for_status()
-        return res.json()
+        return self._response_json(res, operation="Hub transfer media upload")
 
     def get_status(self, transfer_key: str) -> dict[str, Any]:
         res = requests.get(
@@ -74,5 +92,4 @@ class HubTransferClient:
             timeout=self.timeout,
             verify=self.verify_tls,
         )
-        res.raise_for_status()
-        return res.json()
+        return self._response_json(res, operation="Hub transfer status request")
