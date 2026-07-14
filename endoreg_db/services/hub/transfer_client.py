@@ -32,7 +32,15 @@ class HubTransferClient:
             timeout=self.timeout,
             verify=self.verify_tls,
         )
-        res.raise_for_status()
+    
+        if not res.ok:
+            raise RuntimeError(
+                "Hub transfer creation failed: "
+                f"status={res.status_code}, "
+                f"url={res.url}, "
+                f"response={res.text}"
+            )
+    
         return res.json()
 
     def upload_processed_media(
