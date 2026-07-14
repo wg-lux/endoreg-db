@@ -18,23 +18,29 @@ def _runtime_storage_root() -> Path:
 
 
 @pytest.mark.unit
-def test_ensure_processed_video_hls_propagates_failure(
+def test_ensure_video_hls_materializes_raw_and_processed(
     monkeypatch: MonkeyPatch,
 ) -> None:
     import endoreg_db.import_files.file_storage.state_management as state_management_module
 
-    def fail_materialize_video_hls(*args: object, **kwargs: object) -> NoReturn:
-        raise RuntimeError("synthetic HLS failure")
+    artifact_kinds: list[object] = []
+
+    def record_materialize_video_hls(
+        *args: object, **kwargs: object
+    ) -> SimpleNamespace:
+        artifact_kinds.append(kwargs.get("artifact_kind"))
+        return SimpleNamespace(status="materialized")
 
     monkeypatch.setattr(
         state_management_module,
         "materialize_video_hls",
-        fail_materialize_video_hls,
+        record_materialize_video_hls,
         raising=True,
     )
     video = cast(VideoFile, SimpleNamespace(pk=42))
-    with pytest.raises(RuntimeError, match="synthetic HLS failure"):
-        state_management_module.ensure_processed_video_hls(video, force=True)
+    state_management_module.ensure_video_hls(video, force=True)
+
+    assert artifact_kinds == ["raw", "processed"]
 
 
 @pytest.mark.unit
@@ -183,7 +189,7 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
     )
     hls_calls: list[int] = []
 
-    def fake_ensure_processed_video_hls(
+    def fake_ensure_video_hls(
         video_arg: VideoFile,
         *,
         force: bool = False,
@@ -193,8 +199,8 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
 
     monkeypatch.setattr(
         state_management_module,
-        "ensure_processed_video_hls",
-        fake_ensure_processed_video_hls,
+        "ensure_video_hls",
+        fake_ensure_video_hls,
         raising=True,
     )
 

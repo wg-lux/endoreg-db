@@ -24,6 +24,7 @@ from endoreg_db.config.env import (
     get_celery_audit_ledger_integrity_interval_seconds,
     get_enable_hub_transfers,
     get_endoreg_deployment_role,
+    get_ffmpeg_transcode_quality_mode,
     get_hub_transfer_mtls_meta_key,
     get_hub_transfer_mtls_meta_value,
     get_hub_transfer_require_mtls,
@@ -70,6 +71,7 @@ BASE_DIR = Path(__file__).parent.parent.parent.resolve()
 # Test assets directory (used in tests and utilities)
 ASSET_DIR = get_asset_dir()
 RUN_VIDEO_TESTS = run_video_tests_enabled()
+FFMPEG_TRANSCODE_QUALITY_MODE = get_ffmpeg_transcode_quality_mode()
 ENDOREG_DEPLOYMENT_ROLE = get_endoreg_deployment_role()
 ENDOREG_ENABLE_HUB_TRANSFERS = get_enable_hub_transfers()
 ENDOREG_HUB_TRANSFER_REQUIRE_SECURE_TRANSPORT = (
@@ -339,6 +341,7 @@ __all__ = [
     "BASE_DIR",
     "ASSET_DIR",
     "RUN_VIDEO_TESTS",
+    "FFMPEG_TRANSCODE_QUALITY_MODE",
     "ENDOREG_DEPLOYMENT_ROLE",
     "ENDOREG_ENABLE_HUB_TRANSFERS",
     "ENDOREG_DEPLOYMENT_ROLE_VALUES",

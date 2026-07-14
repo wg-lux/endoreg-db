@@ -109,7 +109,7 @@ def _field_file_has_name(field_file: object) -> bool:
     return isinstance(name, str) and bool(name.strip())
 
 
-def _processed_video_queryset() -> QuerySet[VideoFile]:
+def _eligible_video_queryset() -> QuerySet[VideoFile]:
     return (
         VideoFile.objects.exclude(processed_file="")
         .exclude(processed_file__isnull=True)
@@ -180,7 +180,7 @@ class Command(BaseCommand):
         failed_video_ids: set[int] = set()
 
         eligible_video_ids = list(
-            _processed_video_queryset().values_list("pk", flat=True)
+            _eligible_video_queryset().values_list("pk", flat=True)
         )
         eligible_count = len(eligible_video_ids)
 
@@ -412,30 +412,40 @@ class Command(BaseCommand):
         failed_video_ids: set[int],
     ) -> None:
         if not eligible_video_ids:
-            self.stdout.write(self.style.WARNING("[hls-db] no processed videos found"))
+            self.stdout.write(self.style.WARNING("[hls-db] no finalized videos found"))
             return
 
-        ready_video_ids = set(
+        ready_pairs = set(
             VideoHlsArtifact.objects.filter(
                 video_id__in=eligible_video_ids,
-                artifact_kind=VideoHlsArtifact.ArtifactKind.PROCESSED.value,
+                artifact_kind__in=(
+                    VideoHlsArtifact.ArtifactKind.RAW.value,
+                    VideoHlsArtifact.ArtifactKind.PROCESSED.value,
+                ),
                 status=VideoHlsArtifact.Status.READY.value,
-            ).values_list("video_id", flat=True)
+            ).values_list("video_id", "artifact_kind")
         )
-        missing_ready = [
-            video_id
+        required_pairs = [
+            (video_id, artifact_kind)
             for video_id in eligible_video_ids
-            if video_id not in ready_video_ids
+            for artifact_kind in (
+                VideoHlsArtifact.ArtifactKind.RAW.value,
+                VideoHlsArtifact.ArtifactKind.PROCESSED.value,
+            )
         ]
+        missing_ready = [pair for pair in required_pairs if pair not in ready_pairs]
+        missing_video_ids = sorted({video_id for video_id, _ in missing_ready})
         if missing_ready:
-            failed_video_ids.update(missing_ready)
+            failed_video_ids.update(missing_video_ids)
+            missing_detail = ", ".join(
+                f"{video_id}:{artifact_kind}"
+                for video_id, artifact_kind in missing_ready[:_MAX_REPORTED_IDS]
+            )
             issues.append(
                 _ReadinessIssue(
                     block="hls_db",
-                    message=(
-                        "Processed videos without READY processed HLS artifact found."
-                    ),
-                    detail=f"count={len(missing_ready)} ids={_format_ids(missing_ready)}",
+                    message="Videos without required READY raw/processed HLS artifacts found.",
+                    detail=f"count={len(missing_ready)} video_kind={missing_detail}",
                 )
             )
             self.stdout.write(
@@ -447,7 +457,7 @@ class Command(BaseCommand):
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"[hls-db] READY processed HLS artifacts present: {len(ready_video_ids)}"
+                f"[hls-db] READY raw/processed HLS artifacts present: {len(ready_pairs)}"
             )
         )
 
@@ -463,11 +473,14 @@ class Command(BaseCommand):
         ready_artifacts = (
             VideoHlsArtifact.objects.filter(
                 video_id__in=eligible_video_ids,
-                artifact_kind=VideoHlsArtifact.ArtifactKind.PROCESSED.value,
+                artifact_kind__in=(
+                    VideoHlsArtifact.ArtifactKind.RAW.value,
+                    VideoHlsArtifact.ArtifactKind.PROCESSED.value,
+                ),
                 status=VideoHlsArtifact.Status.READY.value,
             )
             .select_related("video")
-            .order_by("video_id")
+            .order_by("video_id", "artifact_kind")
         )
         total = ready_artifacts.count()
         limit = _sample_limit(total, fast=fast, sample_size=sample_size)

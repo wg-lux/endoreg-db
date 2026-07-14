@@ -16,7 +16,7 @@ maintainers = [
 ]
 name = "endoreg_db"
 readme = "README.md"
-version = "1.0.5.6"
+version = "1.0.5.9"
 requires-python = ">=3.12,<3.13"
 
 classifiers = [

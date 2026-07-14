@@ -42,6 +42,23 @@ def _create_processed_video(
     return video
 
 
+def _create_raw_video(
+    *,
+    center: Center,
+    payload: bytes = b"raw hls command source",
+) -> VideoFile:
+    video = VideoFile.objects.create(
+        center=center,
+        video_hash=f"raw-hls-command-video-{payload.hex()}",
+    )
+    cast(Any, video.raw_file).save(
+        "raw-hls-command-source.mp4",
+        ContentFile(payload),
+        save=True,
+    )
+    return video
+
+
 def _patch_command_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         command_module.ffmpeg_wrapper,
@@ -50,15 +67,29 @@ def _patch_command_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
-def test_materialize_video_hls_command_rejects_raw_artifact_kind() -> None:
-    with pytest.raises(CommandError, match="Raw HLS artifacts are prohibited"):
-        call_command(
-            "materialize_video_hls",
-            "--artifact-kind",
-            "raw",
-            stdout=StringIO(),
-            stderr=StringIO(),
-        )
+@pytest.mark.django_db
+def test_materialize_video_hls_command_selects_raw_artifacts(
+    hls_command_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_command_preflight(monkeypatch)
+    _create_raw_video(center=hls_command_center)
+    stdout = StringIO()
+
+    call_command(
+        "materialize_video_hls",
+        "--artifact-kind",
+        "raw",
+        "--json",
+        stdout=stdout,
+        stderr=StringIO(),
+    )
+
+    payload = json.loads(stdout.getvalue())
+    assert payload["artifact_kind"] == "raw"
+    assert payload["selected"] == 1
+    assert payload["audit"]["eligible_raw_videos"] == 1
+    assert payload["results"][0]["status"] == "would_materialize"
 
 
 @pytest.mark.django_db

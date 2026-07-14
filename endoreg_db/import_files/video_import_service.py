@@ -5,8 +5,15 @@ from contextlib import AbstractContextManager, contextmanager, nullcontext
 from collections.abc import Generator
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
+from uuid import uuid4
 
+from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 
+from endoreg_db.config.env import (
+    FFMPEG_TRANSCODE_QUALITY_MODES,
+    get_ffmpeg_transcode_quality_mode,
+)
 from endoreg_db.exceptions import InsufficientStorageError
 from endoreg_db.import_files.context import (
     content_hash_lock,
@@ -18,7 +25,7 @@ from endoreg_db.import_files.context.import_context import (
 )
 from endoreg_db.import_files.file_storage.cleanup import safe_cleanup_staging_file
 from endoreg_db.import_files.file_storage.state_management import (
-    ensure_processed_video_hls,
+    ensure_video_hls,
     finalize_failure,
     finalize_video_success,
 )
@@ -45,8 +52,12 @@ from endoreg_db.services.video_files import (
     ensure_local_raw_video_file,
     initialize_video_file,
 )
-from endoreg_db.utils import paths as path_utils
-from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils import ffmpeg_wrapper, paths as path_utils
+from endoreg_db.utils.file_operations import (
+    atomic_move_file,
+    safe_unlink_file,
+    sha256_file,
+)
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
@@ -223,6 +234,65 @@ def _raw_source_identity(local_source_path: Path) -> tuple[int, int, str]:
     )
 
 
+def _configured_reimport_transcode_quality_mode() -> str:
+    """Resolve the host setting while retaining the endoreg default."""
+    try:
+        configured = getattr(settings, "FFMPEG_TRANSCODE_QUALITY_MODE", None)
+    except ImproperlyConfigured:
+        configured = None
+
+    if configured is None:
+        return get_ffmpeg_transcode_quality_mode()
+
+    quality_mode = str(configured).strip().lower()
+    if quality_mode not in FFMPEG_TRANSCODE_QUALITY_MODES:
+        allowed = ", ".join(sorted(FFMPEG_TRANSCODE_QUALITY_MODES))
+        raise ValueError(f"FFMPEG_TRANSCODE_QUALITY_MODE must be one of: {allowed}")
+    return quality_mode
+
+
+def _normalize_reimport_video_quality(ctx: ImportContext) -> None:
+    """Encode a fresh re-import output with the configured FFmpeg quality."""
+    source_path = ctx.anonymized_path
+    if not isinstance(source_path, Path):
+        raise RuntimeError(
+            "Cannot normalize re-import quality without an anonymized video output."
+        )
+    if not source_path.is_file() or source_path.stat().st_size <= 0:
+        raise RuntimeError(
+            f"Cannot normalize missing or empty re-import output: {source_path}"
+        )
+
+    quality_mode = _configured_reimport_transcode_quality_mode()
+    staging_path = source_path.with_name(
+        f".{source_path.stem}.reimport-quality.{uuid4().hex}.part{source_path.suffix}"
+    )
+    try:
+        result = ffmpeg_wrapper.transcode_video(
+            input_path=source_path,
+            output_path=staging_path,
+            quality_mode=quality_mode,
+        )
+        if result is None:
+            raise RuntimeError(
+                "FFmpeg failed to normalize the re-import video with quality mode "
+                f"{quality_mode!r}."
+            )
+        if Path(result) != staging_path:
+            raise RuntimeError(
+                f"FFmpeg returned an unexpected re-import quality output path: {result}"
+            )
+        atomic_move_file(source=staging_path, destination=source_path)
+        logger.info(
+            "Normalized re-import video quality: video=%s quality_mode=%s path=%s",
+            getattr(ctx.current_video, "video_hash", None),
+            quality_mode,
+            source_path,
+        )
+    finally:
+        safe_unlink_file(staging_path, missing_ok=True)
+
+
 class VideoImportService:
     """
     Service for importing and anonymizing video files.
@@ -294,7 +364,7 @@ class VideoImportService:
                 existing_completed_video = self._get_existing_completed_video(ctx)
                 if existing_completed_video is not None and not retry:
                     ctx.current_video = existing_completed_video
-                    ensure_processed_video_hls(existing_completed_video)
+                    ensure_video_hls(existing_completed_video)
                     self._cleanup_duplicate_staging(ctx)
                     return existing_completed_video
 
@@ -330,7 +400,7 @@ class VideoImportService:
                     )
 
                 if not needs_processing and not retry:
-                    ensure_processed_video_hls(ctx.current_video)
+                    ensure_video_hls(ctx.current_video)
                     self._cleanup_duplicate_staging(ctx)
                     return ctx.current_video
 
@@ -477,6 +547,11 @@ class VideoImportService:
                             video_hash,
                         )
                         ctx = self.anonymizer.anonymize_video(ctx)
+                        # CRF/CQ cannot be recovered reliably from ordinary ffprobe
+                        # metadata. A fresh anonymizer output therefore has no trusted
+                        # proof that it matches the configured storage quality, so
+                        # normalize it before replacing the canonical processed file.
+                        _normalize_reimport_video_quality(ctx)
                         logger.info(
                             "Existing video re-anonymization succeeded for %s",
                             video_hash,
@@ -489,7 +564,10 @@ class VideoImportService:
                             video_hash,
                             exc,
                         )
-                        finalize_failure(ctx)
+                        finalize_failure(
+                            ctx,
+                            preserve_existing_video_artifacts=True,
+                        )
                         raise
 
     def _get_existing_completed_video(self, ctx: ImportContext) -> VideoFile | None:

@@ -61,11 +61,6 @@ HLS_TEMP_DIRECTORY_MODE = 0o700
 HLS_TEMP_FILE_MODE = 0o600
 HLS_KEY_WRAP_ALGORITHM = "AESGCM-master-wrap-v1"
 HLS_KEY_WRAP_NONCE_BYTES = 12
-HLS_OUTBOUND_POLICY_ERROR = (
-    "Raw HLS artifacts are prohibited for outbound streaming; "
-    "materialize processed/anonymized HLS artifacts instead."
-)
-
 FFMPEG_STDIN_CHUNK_BYTES = 1024 * 1024
 FFMPEG_STDERR_TAIL_BYTES = 64 * 1024
 FFMPEG_STDIN_WATCHDOG_SECONDS = 30.0
@@ -186,9 +181,9 @@ def _coerce_hls_artifact_kind(value: object) -> VideoArtifactKind:
     raise ValueError(f"Unsupported HLS artifact kind: {value!r}")
 
 
-def coerce_outbound_hls_artifact_kind(value: object) -> VideoArtifactKind:
-    artifact_kind = _coerce_hls_artifact_kind(value)
-    return artifact_kind
+def coerce_hls_artifact_kind(value: object) -> VideoArtifactKind:
+    """Parse the local, authenticated HLS artifact kind."""
+    return _coerce_hls_artifact_kind(value)
 
 
 def _field_file_has_name(field_file: object) -> bool:
@@ -477,7 +472,11 @@ def _mark_artifact_ready(
 
 
 def _hls_root_for_kind(artifact_kind: VideoArtifactKind) -> Path:
-    root = streamable_media.STREAMABLE_PROCESSED_VIDEO_ROOT
+    root = (
+        streamable_media.STREAMABLE_RAW_VIDEO_ROOT
+        if artifact_kind == VideoArtifactKind.RAW
+        else streamable_media.STREAMABLE_PROCESSED_VIDEO_ROOT
+    )
     return ensure_within_protected_media_root(Path(root).resolve() / "hls")
 
 
@@ -1216,7 +1215,7 @@ def materialize_video_hls(
     artifact_kind: object = VideoArtifactKind.PROCESSED,
     force: bool = False,
 ) -> HlsMaterializationResult:
-    parsed_kind = coerce_outbound_hls_artifact_kind(artifact_kind)
+    parsed_kind = coerce_hls_artifact_kind(artifact_kind)
     if not force:
         existing = _existing_ready_result(video_id=video_id, artifact_kind=parsed_kind)
         if existing is not None:
@@ -1347,7 +1346,7 @@ def get_ready_hls_artifact(
     artifact_kind: object = VideoArtifactKind.PROCESSED,
     key_id: UUID | None = None,
 ) -> VideoHlsArtifact:
-    parsed_kind = coerce_outbound_hls_artifact_kind(artifact_kind)
+    parsed_kind = coerce_hls_artifact_kind(artifact_kind)
     filters: dict[str, object] = {
         "video": video,
         "artifact_kind": parsed_kind.value,

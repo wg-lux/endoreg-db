@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 import pytest
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Group, User
 from django.core.files.base import ContentFile
 from django.test import override_settings
 from rest_framework.test import APIRequestFactory, force_authenticate
 
-from endoreg_db.models import Center, VideoFile
+from endoreg_db.models import Center, Examiner, PortalUserInfo, VideoFile
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.services import hls_media
 from endoreg_db.views import access_control
@@ -16,6 +16,14 @@ from endoreg_db.views.video import hls_stream
 from tests.helpers.hls import FakeHlsOutputRecorder
 
 pytestmark = pytest.mark.django_db
+
+
+class _GroupRelation(Protocol):
+    def add(self, *groups: Group) -> None: ...
+
+
+class _UserWithGroups(Protocol):
+    groups: _GroupRelation
 
 
 @pytest.fixture
@@ -295,6 +303,44 @@ def test_hls_playlist_rejects_raw_artifact_request(
     )
 
     assert response.status_code == 404
+
+
+def test_center_user_can_stream_ready_raw_hls_from_assigned_center(
+    hls_artifact: VideoHlsArtifact,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("SERVE_WITH_NGINX", raising=False)
+    video = hls_artifact.video
+    video.raw_file.save(
+        "raw-view-source.mp4",
+        ContentFile(b"raw view source payload"),
+        save=True,
+    )
+    fake_hls = FakeHlsOutputRecorder(include_version_tag=False)
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
+    hls_media.materialize_video_hls(video.pk, artifact_kind="raw")
+
+    user = User.objects.create_user(username="center-raw-reader")
+    cast(_UserWithGroups, user).groups.add(Group.objects.create(name="video:read"))
+    examiner = Examiner.objects.create(
+        first_name="Center",
+        last_name="Reader",
+        center=video.center,
+        hash="center-raw-reader-hash",
+        is_real_person=False,
+    )
+    PortalUserInfo.objects.create(user=user, examiner=examiner)
+    request = _authenticated_request(
+        f"/endoreg-api/media/videos/{video.pk}/hls/playlist/?type=raw",
+        user,
+    )
+    user.is_staff = False
+
+    response = hls_stream.HLSPlaylistView.as_view()(request, pk=video.pk)
+
+    assert response.status_code == 200
+    assert response["Content-Type"] == hls_stream.HLS_PLAYLIST_CONTENT_TYPE
+    response.close()
 
 
 def test_hls_playlist_rejects_video_outside_user_center_scope(

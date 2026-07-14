@@ -17,6 +17,7 @@ from types import SimpleNamespace
 from collections.abc import Callable, Generator
 from typing import NoReturn, Protocol
 from django.test import TestCase
+from django.test.utils import override_settings
 from endoreg_db.models import VideoFile
 from endoreg_db.import_files.context import ImportContext
 from endoreg_db.services.video_import import VideoImportService
@@ -128,7 +129,7 @@ def _isolate_duplicate_hls_readiness(
 
     monkeypatch.setattr(
         vis_module,
-        "ensure_processed_video_hls",
+        "ensure_video_hls",
         hls_ready,
         raising=True,
     )
@@ -699,6 +700,224 @@ def test_verified_local_raw_source_initializes_video_meta_on_same_file(
 
 
 @pytest.mark.unit
+@override_settings(FFMPEG_TRANSCODE_QUALITY_MODE="quality")
+def test_normalize_reimport_video_quality_uses_configured_mode_and_replaces_output(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import endoreg_db.import_files.video_import_service as vis_module
+
+    source_path = tmp_path / "anonymized.mp4"
+    source_path.write_bytes(b"fresh-anonymized-video")
+    video = VideoFile(id=73, video_hash="stable-video-hash")
+    ctx = ImportContext(
+        file_path=tmp_path / "raw.mp4",
+        center_name="center",
+        processor_name="processor",
+        file_type="video",
+    )
+    ctx.current_video = video
+    ctx.anonymized_path = source_path
+    captured: dict[str, object] = {}
+
+    def fake_transcode_video(
+        input_path: Path,
+        output_path: Path,
+        **kwargs: object,
+    ) -> Path:
+        captured["input_path"] = input_path
+        captured["output_path"] = output_path
+        captured["kwargs"] = kwargs
+        output_path.write_bytes(b"quality-normalized-video")
+        return output_path
+
+    monkeypatch.setattr(
+        vis_module.ffmpeg_wrapper,
+        "transcode_video",
+        fake_transcode_video,
+        raising=True,
+    )
+
+    vis_module._normalize_reimport_video_quality(ctx)  # pyright: ignore[reportPrivateUsage]
+
+    assert source_path.read_bytes() == b"quality-normalized-video"
+    assert captured["input_path"] == source_path
+    assert captured["kwargs"] == {"quality_mode": "quality"}
+    captured_output_path = captured["output_path"]
+    assert isinstance(captured_output_path, Path)
+    assert not captured_output_path.exists()
+    assert ctx.current_video is video
+    assert video.pk == 73
+
+
+@pytest.mark.unit
+@override_settings(FFMPEG_TRANSCODE_QUALITY_MODE="balanced")
+def test_normalize_reimport_video_quality_keeps_fresh_output_on_ffmpeg_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import endoreg_db.import_files.video_import_service as vis_module
+
+    source_path = tmp_path / "anonymized.mp4"
+    source_path.write_bytes(b"fresh-anonymized-video")
+    ctx = ImportContext(
+        file_path=tmp_path / "raw.mp4",
+        center_name="center",
+        processor_name="processor",
+        file_type="video",
+    )
+    ctx.anonymized_path = source_path
+
+    def fail_transcode_video(
+        input_path: Path,
+        output_path: Path,
+        **kwargs: object,
+    ) -> None:
+        assert input_path == source_path
+        assert kwargs == {"quality_mode": "balanced"}
+        output_path.write_bytes(b"partial")
+        return None
+
+    monkeypatch.setattr(
+        vis_module.ffmpeg_wrapper,
+        "transcode_video",
+        fail_transcode_video,
+        raising=True,
+    )
+
+    with pytest.raises(RuntimeError, match="failed to normalize"):
+        vis_module._normalize_reimport_video_quality(ctx)  # pyright: ignore[reportPrivateUsage]
+
+    assert source_path.read_bytes() == b"fresh-anonymized-video"
+    assert list(tmp_path.glob(".*.reimport-quality.*")) == []
+
+
+@pytest.mark.unit
+def test_ffmpeg_transcode_quality_mode_setting_validation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from endoreg_db.config import env as env_module
+
+    monkeypatch.delenv("FFMPEG_TRANSCODE_QUALITY_MODE", raising=False)
+    assert env_module.get_ffmpeg_transcode_quality_mode() == "balanced"
+
+    monkeypatch.setenv("FFMPEG_TRANSCODE_QUALITY_MODE", " QUALITY ")
+    assert env_module.get_ffmpeg_transcode_quality_mode() == "quality"
+
+    monkeypatch.setenv("FFMPEG_TRANSCODE_QUALITY_MODE", "unsupported")
+    with pytest.raises(ValueError, match="must be one of"):
+        env_module.get_ffmpeg_transcode_quality_mode()
+
+
+@pytest.mark.unit
+@override_settings(FFMPEG_TRANSCODE_QUALITY_MODE="balanced")
+def test_reanonymize_transcode_failure_preserves_previous_canonical_video(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import endoreg_db.import_files.video_import_service as vis_module
+
+    source_path = tmp_path / "raw.mp4"
+    source_path.write_bytes(b"raw-video")
+    canonical_path = tmp_path / "video-hash.mp4"
+    canonical_path.write_bytes(b"previous-processed-video")
+    staged_path = tmp_path / "video-hash.part.mp4"
+    video = VideoFile(id=73, video_hash="video-hash")
+    failure_paths: list[Path] = []
+
+    class DummyAnonymizer:
+        def anonymize_video(self, ctx: ImportContext) -> ImportContext:
+            staged_path.write_bytes(b"fresh-anonymized-video")
+            ctx.anonymized_path = staged_path
+            return ctx
+
+    @contextmanager
+    def fake_file_lock(path: Path) -> Generator[None, None, None]:
+        yield
+
+    @contextmanager
+    def fake_hash_lock(file_hash: str, lock_root: Path) -> Generator[None, None, None]:
+        yield
+
+    def fail_transcode_video(
+        input_path: Path,
+        output_path: Path,
+        **kwargs: object,
+    ) -> None:
+        assert input_path == staged_path
+        assert kwargs == {"quality_mode": "balanced"}
+        output_path.write_bytes(b"partial-transcode")
+        return None
+
+    def fake_finalize_failure(
+        ctx: ImportContext,
+        *,
+        preserve_existing_video_artifacts: bool = False,
+    ) -> None:
+        assert preserve_existing_video_artifacts is True
+        failed_path = _required_context_path(ctx.anonymized_path)
+        failure_paths.append(failed_path)
+        vis_module.safe_unlink_file(failed_path, missing_ok=False)
+        ctx.anonymized_path = None
+
+    def fake_get_video_import_context_names(_video: VideoFile) -> tuple[str, str]:
+        return "center", "processor"
+
+    def fake_mark_instance_processing_started(
+        _video: VideoFile,
+        _ctx: ImportContext,
+    ) -> None:
+        return None
+
+    monkeypatch.setattr(
+        vis_module, "validate_directories", _noop_validate_directories, raising=True
+    )
+    monkeypatch.setattr(vis_module, "file_lock", fake_file_lock, raising=True)
+    monkeypatch.setattr(vis_module, "content_hash_lock", fake_hash_lock, raising=True)
+    monkeypatch.setattr(
+        vis_module,
+        "get_video_import_context_names",
+        fake_get_video_import_context_names,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        vis_module,
+        "mark_instance_processing_started",
+        fake_mark_instance_processing_started,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        vis_module,
+        "finalize_video_success",
+        _fail_success_finalize,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        vis_module,
+        "finalize_failure",
+        fake_finalize_failure,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        vis_module.ffmpeg_wrapper,
+        "transcode_video",
+        fail_transcode_video,
+        raising=True,
+    )
+
+    service = VideoImportService(anonymizer=DummyAnonymizer())
+
+    with pytest.raises(RuntimeError, match="failed to normalize"):
+        service.reanonymize_existing_video(video, source_path=source_path)
+
+    assert failure_paths == [staged_path]
+    assert canonical_path.read_bytes() == b"previous-processed-video"
+    assert not staged_path.exists()
+    assert list(tmp_path.glob(".*.reimport-quality.*")) == []
+    assert video.pk == 73
+
+
+@pytest.mark.unit
 def test_reanonymize_existing_video_skips_import_staging(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -748,6 +967,9 @@ def test_reanonymize_existing_video_skips_import_staging(
     def fake_reanonymize_success(ctx: ImportContext) -> None:
         events.append(("success", ctx.current_video, ctx.anonymized_path))
 
+    def fake_normalize_reimport_video_quality(ctx: ImportContext) -> None:
+        events.append(("normalize_quality", ctx.current_video, ctx.anonymized_path))
+
     @contextmanager
     def fake_file_lock(path: Path) -> Generator[None, None, None]:
         events.append(("file_lock", Path(path)))
@@ -786,6 +1008,12 @@ def test_reanonymize_existing_video_skips_import_staging(
     )
     monkeypatch.setattr(
         vis_module,
+        "_normalize_reimport_video_quality",
+        fake_normalize_reimport_video_quality,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        vis_module,
         "finalize_failure",
         _fail_reanonymize_finalize_failure,
         raising=True,
@@ -808,7 +1036,8 @@ def test_reanonymize_existing_video_skips_import_staging(
         None,
         True,
     )
-    assert events[4] == ("success", video, tmp_path / "anon.mp4")
+    assert events[4] == ("normalize_quality", video, tmp_path / "anon.mp4")
+    assert events[5] == ("success", video, tmp_path / "anon.mp4")
 
 
 @pytest.mark.unit
@@ -1131,7 +1360,7 @@ def test_import_and_anonymize_duplicate_success_skips_storage_preflight_and_stag
 
     monkeypatch.setattr(
         vis_module,
-        "ensure_processed_video_hls",
+        "ensure_video_hls",
         ensure_hls_ready,
         raising=True,
     )

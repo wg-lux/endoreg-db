@@ -12,7 +12,7 @@ from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.config.env import nginx_offload_enabled
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.services.hls_media import (
-    coerce_outbound_hls_artifact_kind,
+    coerce_hls_artifact_kind,
     get_ready_hls_artifact,
     get_ready_hls_artifact_by_key,
     hls_playlist_path,
@@ -62,7 +62,7 @@ def _artifact_kind_from_request(request: Request) -> VideoArtifactKind:
     if raw_value is None:
         return VideoArtifactKind.PROCESSED
     try:
-        return coerce_outbound_hls_artifact_kind(raw_value)
+        return coerce_hls_artifact_kind(raw_value)
     except ValueError as exc:
         raise Http404(str(exc)) from exc
 

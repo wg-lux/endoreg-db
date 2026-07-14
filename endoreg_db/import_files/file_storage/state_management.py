@@ -120,22 +120,33 @@ def _store_existing_final_file(
     )
 
 
+def ensure_video_hls(
+    instance: VideoFile,
+    *,
+    force: bool = False,
+) -> None:
+    """Return only after local raw and processed HLS are both ready."""
+    for artifact_kind in ("raw", "processed"):
+        result = materialize_video_hls(
+            int(instance.pk),
+            artifact_kind=artifact_kind,
+            force=force,
+        )
+        logger.info(
+            "%s HLS is ready: video=%s status=%s",
+            artifact_kind.capitalize(),
+            instance.pk,
+            result.status,
+        )
+
+
 def ensure_processed_video_hls(
     instance: VideoFile,
     *,
     force: bool = False,
 ) -> None:
-    """Return only after processed HLS is ready; propagate failures to callers."""
-    result = materialize_video_hls(
-        int(instance.pk),
-        artifact_kind="processed",
-        force=force,
-    )
-    logger.info(
-        "Processed HLS is ready: video=%s status=%s",
-        instance.pk,
-        result.status,
-    )
+    """Compatibility wrapper for callers predating required raw HLS."""
+    ensure_video_hls(instance, force=force)
 
 
 def _ensure_instance_state(
@@ -367,7 +378,7 @@ def finalize_video_success(
     cast(_StatefulImportInstance, instance).save()
     # HLS readiness is part of import success. A failed transcode must leave the
     # import retryable instead of publishing a successful but unstreamable video.
-    ensure_processed_video_hls(instance, force=True)
+    ensure_video_hls(instance, force=True)
 
     # --- Update VideoState flags (mirrors report) ---
     state = _ensure_instance_state(instance)
@@ -411,13 +422,16 @@ def finalize_video_success(
 
 def finalize_failure(
     ctx: ImportContext,
+    *,
+    preserve_existing_video_artifacts: bool = False,
 ) -> None:
     """
     Finalize a failed instance import/anonymization.
 
     - Reset RawPdfState flags to "not processed"
     - Mark ProcessingHistory.success = False
-    - Delete all associated files
+    - Delete all associated files, unless an in-place video re-import failed
+      before committing its staged replacement
     """
 
     if ctx.instance is None:
@@ -457,7 +471,10 @@ def finalize_failure(
             )
 
     try:
-        delete_associated_files(ctx)
+        delete_associated_files(
+            ctx,
+            preserve_existing_video_artifacts=preserve_existing_video_artifacts,
+        )
     except Exception as e:
         logger.warning(f"There might be files remaining. {e}")
 
@@ -467,7 +484,11 @@ def finalize_failure(
     )
 
 
-def delete_associated_files(ctx: ImportContext) -> None:
+def delete_associated_files(
+    ctx: ImportContext,
+    *,
+    preserve_existing_video_artifacts: bool = False,
+) -> None:
     """
     Best-effort cleanup of anonymized, sensitive and transcoding artefacts.
 
@@ -481,7 +502,8 @@ def delete_associated_files(ctx: ImportContext) -> None:
     Only restoration of the original import file is treated as critical.
     """
 
-    _delete_video_streamable_artifacts(ctx)
+    if not preserve_existing_video_artifacts:
+        _delete_video_streamable_artifacts(ctx)
 
     # --- Delete anonymized file (best-effort) ---
     if isinstance(ctx.anonymized_path, Path):

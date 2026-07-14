@@ -35,6 +35,11 @@ def _create_processed_video(
         ContentFile(payload),
         save=True,
     )
+    cast(Any, video.raw_file).save(
+        "hls-readiness-raw-source.mp4",
+        ContentFile(payload + b"-raw"),
+        save=True,
+    )
     return video
 
 
@@ -44,8 +49,32 @@ def _materialize_fake_hls(
 ) -> VideoHlsArtifact:
     fake_hls = FakeHlsOutputRecorder()
     monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
+    hls_media.materialize_video_hls(video.pk, artifact_kind="raw")
     hls_media.materialize_video_hls(video.pk, artifact_kind="processed")
     return VideoHlsArtifact.objects.get(video=video, artifact_kind="processed")
+
+
+@pytest.mark.django_db
+def test_check_production_hls_readiness_fails_without_raw_hls(
+    hls_readiness_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _enable_nginx(monkeypatch)
+    video = _create_processed_video(center=hls_readiness_center)
+    fake_hls = FakeHlsOutputRecorder()
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
+    hls_media.materialize_video_hls(video.pk, artifact_kind="processed")
+
+    stdout = StringIO()
+    with pytest.raises(SystemExit) as exc_info:
+        call_command(
+            "check_production_hls_readiness",
+            stdout=stdout,
+            stderr=StringIO(),
+        )
+
+    assert exc_info.value.code == 1
+    assert f"{video.pk}:raw" in stdout.getvalue()
 
 
 def _enable_nginx(monkeypatch: pytest.MonkeyPatch) -> None:

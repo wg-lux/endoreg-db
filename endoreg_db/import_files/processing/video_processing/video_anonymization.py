@@ -725,8 +725,31 @@ class VideoAnonymizer:
                 f"Video anonymization output is empty: {temp_result_path}"
             )
 
-        atomic_move_file(source=temp_result_path, destination=anonymized_output_path)
-        ctx.anonymized_path = anonymized_output_path
+        if ctx.retry:
+            try:
+                retry_output_is_canonical = (
+                    temp_result_path.resolve() == anonymized_output_path.resolve()
+                )
+            except FileNotFoundError:
+                retry_output_is_canonical = False
+            if retry_output_is_canonical:
+                raise RuntimeError(
+                    "Video re-anonymization must remain staged until quality "
+                    "normalization succeeds."
+                )
+            ctx.anonymized_path = temp_result_path
+            logger.info(
+                "Retained re-anonymized video in staging pending quality "
+                "normalization: video=%s path=%s",
+                video_hash,
+                temp_result_path,
+            )
+        else:
+            atomic_move_file(
+                source=temp_result_path,
+                destination=anonymized_output_path,
+            )
+            ctx.anonymized_path = anonymized_output_path
 
         lx_sensitive_payload = {
             key: value

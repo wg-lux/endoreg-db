@@ -28,6 +28,8 @@ DEFAULT_CACHE_TIMEOUT_SECONDS = 60 * 30
 DEFAULT_DRF_THROTTLE_USER = "100/hour"
 DEFAULT_DRF_THROTTLE_ANON = "20/hour"
 DEFAULT_FFMPEG_TRANSCODE_TIMEOUT_SECONDS = 8600
+DEFAULT_FFMPEG_TRANSCODE_QUALITY_MODE = "balanced"
+FFMPEG_TRANSCODE_QUALITY_MODES = frozenset({"fast", "balanced", "quality"})
 DEFAULT_VIDEO_FPS = 50.0
 DEFAULT_WATCHER_POLL_INTERVAL_SECONDS = 5.0
 DEFAULT_WATCHER_STABLE_AFTER_SECONDS = 10.0
@@ -557,6 +559,21 @@ def get_ffmpeg_transcode_timeout_seconds() -> int:
     )
 
 
+def get_ffmpeg_transcode_quality_mode() -> str:
+    quality_mode = (
+        env_str(
+            "FFMPEG_TRANSCODE_QUALITY_MODE",
+            DEFAULT_FFMPEG_TRANSCODE_QUALITY_MODE,
+        )
+        .strip()
+        .lower()
+    )
+    if quality_mode not in FFMPEG_TRANSCODE_QUALITY_MODES:
+        allowed = ", ".join(sorted(FFMPEG_TRANSCODE_QUALITY_MODES))
+        raise ValueError(f"FFMPEG_TRANSCODE_QUALITY_MODE must be one of: {allowed}")
+    return quality_mode
+
+
 def get_ffmpeg_env_candidates() -> list[str]:
     return [
         env_str("FFMPEG_EXECUTABLE", ""),
@@ -763,6 +780,7 @@ def snapshot() -> Dict[str, Any]:
         # Flags
         "RUN_VIDEO_TESTS",
         "SKIP_EXPENSIVE_TESTS",
+        "FFMPEG_TRANSCODE_QUALITY_MODE",
         "ENDOREG_DEPLOYMENT_ROLE",
         "ENDOREG_ENABLE_HUB_TRANSFERS",
         "CELERY_BROKER_URL",

@@ -629,6 +629,78 @@ def test_anonymize_video_persists_phi_region_proposals_from_frame_cleaner(
 
 
 @pytest.mark.django_db
+def test_reanonymize_video_keeps_new_output_staged_until_finalization(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    center = Center.objects.create(
+        name="staged-reanonymize-center",
+        display_name="Staged Re-anonymize Center",
+    )
+    video = VideoFile.objects.create(
+        center=center,
+        video_hash="staged-reanonymize-video",
+    )
+    processor = _create_processor_with_roi("staged_reanonymize_processor", center)
+    source_video = tmp_path / "source.mp4"
+    source_video.write_bytes(b"source-video")
+    output_dir = tmp_path / "anonymized"
+    output_dir.mkdir()
+    canonical_output = output_dir / "staged-reanonymize-video.mp4"
+    canonical_output.write_bytes(b"previous-processed-video")
+
+    class FakeFrameCleaner:
+        def clean_video(
+            self,
+            *,
+            video_path: Path,
+            endoscope_image_roi: dict[str, int],
+            endoscope_data_roi_nested: dict[str, dict[str, int | None]],
+            output_path: Path,
+        ) -> tuple[Path, JsonObject]:
+            output_path.write_bytes(b"fresh-anonymized-video")
+            return output_path, {}
+
+    monkeypatch.setattr(video_anonymization, "FrameCleaner", FakeFrameCleaner)
+    monkeypatch.setattr(
+        video_anonymization, "_ensure_ffmpeg_tools_on_path", _ensure_ffmpeg_tools_noop
+    )
+    monkeypatch.setattr(
+        video_anonymization,
+        "_processed_video_dir",
+        _processed_video_dir_for(output_dir),
+    )
+    monkeypatch.setattr(
+        video_anonymization,
+        "get_stream_info",
+        _stream_info_for_path,
+    )
+    monkeypatch.setattr(
+        video_anonymization,
+        "sensitive_meta_storage",
+        _sensitive_meta_storage_noop,
+    )
+
+    ctx = _create_import_context(
+        file_path=source_video,
+        center=center,
+        video=video,
+        processor_name=processor.name,
+    )
+    ctx.retry = True
+    anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
+
+    result_ctx = anonymizer.anonymize_video(ctx)
+
+    assert canonical_output.read_bytes() == b"previous-processed-video"
+    assert result_ctx.anonymized_path is not None
+    assert (
+        result_ctx.anonymized_path == output_dir / "staged-reanonymize-video.part.mp4"
+    )
+    assert result_ctx.anonymized_path.read_bytes() == b"fresh-anonymized-video"
+
+
+@pytest.mark.django_db
 def test_persist_paper_evaluation_metrics_rejects_non_json_payload(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

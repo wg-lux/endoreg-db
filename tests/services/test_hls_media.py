@@ -96,6 +96,23 @@ def _create_processed_video(
     return video
 
 
+def _create_raw_video(
+    *,
+    center: Center,
+    payload: bytes = b"raw plaintext mp4 payload",
+) -> VideoFile:
+    video = VideoFile.objects.create(
+        center=center,
+        video_hash=f"hls-raw-video-{payload.hex()}",
+    )
+    cast(Any, video.raw_file).save(
+        "hls-raw-source.mp4",
+        ContentFile(payload),
+        save=True,
+    )
+    return video
+
+
 def test_ffmpeg_hls_command_uses_clinical_quality_h264_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -421,32 +438,43 @@ def test_materialize_video_hls_real_ffmpeg_commits_staged_output(
     assert not list(segment_dir.glob("*.key"))
 
 
-def test_materialize_video_hls_rejects_raw_outbound_policy(
+def test_materialize_video_hls_encrypts_raw_for_local_authenticated_playback(
     hls_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    video = _create_processed_video(center=hls_center, payload=b"raw blocked")
+    video = _create_raw_video(center=hls_center, payload=b"raw local playback")
+    fake_hls = FakeHlsOutputRecorder()
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
 
-    with pytest.raises(ValueError, match="Raw HLS artifacts are prohibited"):
-        hls_media.materialize_video_hls(video.pk, artifact_kind="raw")
+    result = hls_media.materialize_video_hls(video.pk, artifact_kind="raw")
 
-    assert not VideoHlsArtifact.objects.filter(video=video).exists()
+    artifact = VideoHlsArtifact.objects.get(video=video, artifact_kind="raw")
+    assert artifact.status == VideoHlsArtifact.Status.READY
+    assert result.artifact_kind == "raw"
+    assert Path(result.playlist_relative_path).parts[:3] == (
+        "streamable_videos",
+        "raw",
+        "hls",
+    )
+    assert hls_media.unwrap_hls_content_key(artifact) != b"raw local playback"
 
 
-def test_get_ready_hls_artifact_by_key_rejects_legacy_raw_artifact(
+def test_get_ready_hls_artifact_by_key_accepts_ready_raw_artifact(
     hls_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    video = _create_processed_video(center=hls_center, payload=b"legacy raw")
-    artifact = VideoHlsArtifact.objects.create(
+    video = _create_raw_video(center=hls_center, payload=b"ready raw")
+    fake_hls = FakeHlsOutputRecorder()
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
+    hls_media.materialize_video_hls(video.pk, artifact_kind="raw")
+    artifact = VideoHlsArtifact.objects.get(video=video, artifact_kind="raw")
+
+    resolved = hls_media.get_ready_hls_artifact_by_key(
         video=video,
-        artifact_kind=VideoHlsArtifact.ArtifactKind.RAW.value,
-        status=VideoHlsArtifact.Status.READY.value,
+        key_id=artifact.key_id,
     )
 
-    with pytest.raises(ValueError, match="Raw HLS artifacts are prohibited"):
-        hls_media.get_ready_hls_artifact_by_key(
-            video=video,
-            key_id=artifact.key_id,
-        )
+    assert resolved.pk == artifact.pk
 
 
 def test_materialize_video_hls_failure_unlinks_partial_segments_and_keys(

@@ -11,8 +11,9 @@ from django.db.models import QuerySet
 from endoreg_db.config.env import get_protected_media_url, nginx_offload_enabled
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.services.video_files import VideoArtifactKind
 from endoreg_db.services.hls_media import (
-    coerce_outbound_hls_artifact_kind,
+    coerce_hls_artifact_kind,
     materialize_video_hls,
 )
 from endoreg_db.services.jobs.heavy_jobs import (
@@ -76,7 +77,7 @@ class Command(BaseVideoCommand):
             default="processed",
             help=(
                 "Video artifact to materialize as encrypted HLS. "
-                "Only processed/anonymized HLS is permitted for outbound streams."
+                "Use raw for local clinical review or processed for anonymized playback."
             ),
         )
         self.add_apply_argument(
@@ -106,7 +107,7 @@ class Command(BaseVideoCommand):
         limit = self.positive_limit_from_options(options)
         selected_video_ids = self.selected_video_ids_from_options(options)
         try:
-            artifact_kind = coerce_outbound_hls_artifact_kind(
+            artifact_kind = coerce_hls_artifact_kind(
                 options.get("artifact_kind") or "processed"
             ).value
         except ValueError as exc:
@@ -223,17 +224,17 @@ class Command(BaseVideoCommand):
     @staticmethod
     def _eligible_queryset(*, artifact_kind: str) -> QuerySet[VideoFile]:
         try:
-            parsed_kind = coerce_outbound_hls_artifact_kind(artifact_kind)
+            parsed_kind = coerce_hls_artifact_kind(artifact_kind)
         except ValueError as exc:
             raise CommandError(str(exc)) from exc
 
-        if parsed_kind.value != "processed":
-            raise CommandError(f"Unsupported artifact kind: {artifact_kind}")
-
+        queryset = VideoFile.objects.all()
+        source_field = (
+            "raw_file" if parsed_kind == VideoArtifactKind.RAW else "processed_file"
+        )
         return (
-            VideoFile.objects.all()
-            .exclude(processed_file="")
-            .exclude(processed_file__isnull=True)
+            queryset.exclude(**{source_field: ""})
+            .exclude(**{f"{source_field}__isnull": True})
             .order_by("pk")
         )
 
@@ -281,8 +282,8 @@ class Command(BaseVideoCommand):
 
         return {
             "total_videos": total_count,
-            "eligible_processed_videos": eligible_count,
-            "videos_without_processed_file": total_count - eligible_count,
+            f"eligible_{artifact_kind}_videos": eligible_count,
+            f"videos_without_{artifact_kind}_file": total_count - eligible_count,
             "hls_artifacts": status_counts,
             "missing_hls_artifacts": max(eligible_count - hls_artifact_count, 0),
         }

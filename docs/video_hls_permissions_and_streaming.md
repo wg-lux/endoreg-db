@@ -5,8 +5,10 @@ This document describes the permissions and streaming behavior implemented by
 known gaps so that operators can distinguish an unavailable HLS artifact from
 an authorization failure that is deliberately represented as `404`.
 
-Production HLS is currently a processed/anonymized-video contract. Raw HLS is
-rejected by the backend and is not part of the hub transfer contract.
+Local browser playback supports both raw and processed video as encrypted HLS.
+Raw playback is strictly local, authenticated, RBAC-protected, and center
+scoped. This does not change the hub boundary: raw clinical media remains
+ineligible for outbound hub transfer.
 
 ## System boundaries
 
@@ -36,7 +38,7 @@ request
   -> VideoFile lookup
   -> explicit user-center versus video-center comparison
   -> DRF object-permission hook
-  -> processed-only artifact-kind policy
+  -> local HLS artifact-kind validation (raw or processed)
   -> READY artifact and protected-path validation
   -> authorized response or Nginx internal handoff
 ```
@@ -54,14 +56,14 @@ denial.
 | Route-role RBAC | `403` | Authenticated user does not satisfy the route's required role. |
 | Video lookup | `404` | No `VideoFile` exists for that primary key. |
 | Center scope | `404 {"detail":"Resource not found"}` | User has no usable center or the video belongs to a different/unresolved center. The response intentionally hides which case occurred. |
-| Raw artifact policy | `404` | `type=raw` is not permitted by the production outbound HLS policy. |
-| Artifact/path lookup | `404` with HLS-unavailable detail | No ready processed artifact exists or its playlist/segment path is inconsistent. |
+| Artifact kind | `404` | The requested kind is neither `raw` nor `processed`. |
+| Artifact/path lookup | `404` with HLS-unavailable detail | No ready artifact of the requested kind exists or its playlist/segment path is inconsistent. |
 | Nginx segment offload | `404` | Protected segment offload is disabled or the authorized path cannot be served. |
 
 The frontend currently maps every playlist `404` to “Encrypted HLS playback is
 not available for this video yet.” That message is safe from a resource
 enumeration perspective but is operationally ambiguous: it can mean center
-denial, raw-policy denial, or genuine artifact unavailability.
+denial or genuine artifact unavailability.
 
 ## Authentication
 
@@ -147,9 +149,9 @@ auth.User
       -> center_id
 ```
 
-The current OIDC backends synchronize identity fields and roles, but they do
-not create this clinical center association from Keycloak claims. It must exist
-in the local database through a separate provisioning or administration step.
+The OIDC backends synchronize identity fields and roles, but do not trust a
+login claim as a clinical center assignment. A global administrator creates or
+updates the local association through the Access Management workflow.
 
 The resolver returns:
 
@@ -205,29 +207,52 @@ request if the local clinical association is absent.
 
 ## Administrative management of user center scope
 
-### Current state
+### Supported Access Management workflow
 
-There is currently **no supported administrative UI or API** for assigning a
-user's center scope.
+LX-Annotate provides a protected Administration page backed by dedicated
+center-scope API routes. It lists locally known OIDC/Django users, their
+Keycloak-synchronized roles, assignment state, and available centers. The
+Application Settings center selector remains unrelated: it changes workflow
+defaults, not `user.portaluserinfo.examiner.center_id`.
 
-The existing Application Settings center selector changes the application's
-default center for workflow/import behavior. It does not change
-`user.portaluserinfo.examiner.center_id`. Likewise:
+An assignment requires the exact synchronized `center_scope:admin` group. The
+ordinary compatibility role, `data:write`, and `video:write` are not accepted
+as substitutes. Keycloak remains the source of truth for technical roles; the
+administration API never creates users or changes Keycloak groups.
 
-- the general centers API manages `Center` records, not user membership
-- OIDC login creates or updates `auth.User` and synchronizes Keycloak roles,
-  but does not provision `PortalUserInfo`, `Examiner`, or a center association
-- the authentication bootstrap response exposes username, roles, and page
-  capabilities, but no center assignment
-- there is no center-assignment REST route
-- there is no center-assignment management command
-- there is no lx-annotate user/center administration page
+A global Django superuser may assign an existing user whose local clinical
+relationship is incomplete. In the same database transaction the service:
 
-The relationship can technically be changed through Django ORM code in a
-management shell, a Django admin site if one is separately enabled, or direct
-database mutation. In the current deployment, where no admin site is exposed,
-that makes routine center administration operationally impractical and
-insufficiently auditable. Direct SQL must not become the normal workflow.
+1. creates a `PortalUserInfo` when absent
+2. creates a non-real-person, pseudonymous `Examiner` when absent
+3. assigns the examiner to the selected center
+4. persists an immutable audit-ledger entry
+
+No patient demographics or identity-provider secrets are manufactured or
+logged. If the audit write fails, all provisioning and assignment changes roll
+back. A delegated center administrator may change existing relationships only
+inside their own center and may not provision an incomplete relationship,
+move users across centers, or change their own scope.
+
+The first strictly authorized administrator can be promoted with the dedicated
+deployment command after the account has logged in through Keycloak and has the
+exact synchronized `center_scope:admin` group:
+
+```bash
+python manage.py bootstrap_center_admin --username lx_bootstrap_admin
+```
+
+The command never creates a user or group, never assigns a Keycloak role, and
+does not accept the broad `endoregdb_user` compatibility role. It locks the
+existing user, verifies the exact group, sets `is_staff` and `is_superuser` in a
+transaction, and requires a persisted immutable audit-ledger entry. If the
+audit write is unavailable, the promotion rolls back. Repeating the command for
+an already promoted user makes no further change or duplicate audit entry.
+
+The command must be executed inside the deployed application environment by an
+operator or controlled release job. Adding it to source code does not modify a
+deployed database, and it must not be exposed as a public bootstrap endpoint or
+automatic login side effect.
 
 ### Effect of a current assignment change
 
@@ -242,12 +267,9 @@ to the browser, but future protected requests are denied. The player therefore
 must continue using authenticated backend URLs for every HLS resource rather
 than receiving public or long-lived bearer URLs.
 
-### Required supported administration surface
+### Administration contract
 
-A production deployment needs a dedicated access-management workflow. It
-should not overload the global Application Settings center field.
-
-The minimum backend surface should provide:
+The backend and frontend provide:
 
 - a paginated list of locally known OIDC users
 - each user's current center-assignment status: assigned, incomplete, or
@@ -262,10 +284,20 @@ The minimum backend surface should provide:
   center, timestamp, reason, and request/correlation ID
 - no patient metadata, tokens, cookies, or secrets in the audit payload
 
-The corresponding frontend should live under a clearly protected
-“Access Management” page and require confirmation for assignment changes. It
-should show incomplete relationships explicitly instead of representing them as
-ordinary missing HLS artifacts.
+The frontend lives under a protected Administration page, requires a reason
+and confirmation for mutations, and displays incomplete relationships
+explicitly.
+
+The API routes are:
+
+```text
+GET  /api/administration/center-scopes/
+POST /api/administration/center-scopes/<user-id>/
+```
+
+Assignments include `center_key`, `expected_center_key`, and a human reason.
+Revocations omit `center_key`. The expected value provides optimistic conflict
+detection, and `X-Request-ID` is retained as audit correlation when supplied.
 
 ### Authorization requirements for that surface
 
@@ -292,12 +324,12 @@ clinical center assignment should remain an explicit application record unless
 a reviewed, immutable Keycloak center claim and synchronization lifecycle are
 introduced.
 
-### Data-model decision required
+### Data-model limitation
 
 The current model derives access scope from an `Examiner` relationship. This is
-adequate only when every application user is also a clinical examiner with one
-center. Before building the administration surface, decide whether that remains
-a valid invariant.
+adequate only when every application user has one center. The provisioning
+workflow intentionally creates a pseudonymous, non-real-person examiner solely
+to preserve this established scope invariant.
 
 If non-examiner users, support personnel, or multi-center users are required,
 introduce a dedicated user-center membership model rather than manufacturing
@@ -305,17 +337,17 @@ fake `Examiner` records. Such a model should make cardinality, delegated roles,
 validity dates, revocation, and audit provenance explicit. The HLS center
 resolver should then consume that single canonical membership service.
 
-Until this administration surface exists, center scope is enforced at request
-time but is not operationally manageable at production quality. This is a
-deployment-readiness gap, not a reason to bypass the center guard.
+If multi-center membership or time-bounded delegation is introduced, replace
+this single-center relation with a dedicated membership model and update the
+central resolver rather than adding HLS-specific exceptions.
 
 ## HLS route behavior
 
 ### Canonical endpoints
 
 ```text
-GET /endoreg-api/media/videos/<id>/hls/playlist.m3u8?type=processed
-GET /endoreg-api/media/videos/<id>/hls/playlist/?type=processed
+GET /endoreg-api/media/videos/<id>/hls/playlist.m3u8?type=<raw|processed>
+GET /endoreg-api/media/videos/<id>/hls/playlist/?type=<raw|processed>
 GET /endoreg-api/media/videos/<id>/hls/key/<key-id>/
 GET /endoreg-api/media/videos/<id>/hls/segments/<key-id>/<segment-name>
 ```
@@ -344,7 +376,7 @@ to processed HLS.
 
 After permission and center checks, the playlist view:
 
-1. accepts only the processed artifact kind
+1. accepts the local `raw` or `processed` artifact kind
 2. selects a `VideoHlsArtifact` for the video with `status=ready`
 3. verifies that the protected playlist and segment directory exist and that
    segment count is positive
@@ -363,7 +395,7 @@ The key view repeats authentication, RBAC, center scope, and object permission
 checks. It then:
 
 1. selects a ready artifact matching the requested video and key ID
-2. confirms the artifact is processed
+2. confirms the artifact belongs to the requested video
 3. verifies artifact paths
 4. unwraps the 16-byte HLS content key using the application master key and
    artifact-bound authenticated data
@@ -399,9 +431,10 @@ Queue dispatch result `queued` is not a database artifact status. It only means
 a Celery task was accepted. Likewise, a systemd dispatcher exiting successfully
 does not mean the task completed.
 
-For new processed imports, HLS materialization is part of successful import
-finalization. A transcode failure propagates so the import stays retryable.
-Legacy videos are backfilled by queued `ffmpeg_media` jobs.
+For new imports, both raw and processed HLS readiness are part of successful
+import finalization. A transcode failure propagates so the import stays
+retryable instead of publishing a partially streamable clinical record. Legacy
+videos require separate raw and processed backfill jobs.
 
 The playback API serves only `ready` artifacts whose files are consistent.
 Materializing, failed, missing, and path-inconsistent artifacts all fail closed.
@@ -411,7 +444,7 @@ Materializing, failed, missing, and path-inconsistent artifacts all fail closed.
 The lx-annotate authenticated stream composable performs this sequence:
 
 ```text
-video ID / processed kind
+video ID / raw or processed kind
   -> build same-origin playlist URL
   -> credentialed Axios playlist preflight
   -> require HLS MIME type and #EXTM3U signature
@@ -450,35 +483,28 @@ change user authorization.
 
 ## Current gaps and hardening backlog
 
-1. **Center provisioning is separate from OIDC provisioning.** Login synchronizes
-   roles but not the `PortalUserInfo → Examiner → Center` association. There is
-   no documented automated lifecycle in the authentication backend for creating,
-   changing, or revoking that link.
-2. **There is no supported center-administration surface.** The relationship can
-   currently be changed only through ORM/admin/direct-database mechanisms. A
-   strictly authorized, audited API and frontend workflow are required for
-   production operations.
-3. **Broad compatibility roles remain active.** `endoregdb_user` passes all
+1. **Center provisioning is intentionally separate from OIDC role sync.** Login
+   does not silently grant a clinical scope. Administrators must explicitly and
+   auditably assign or revoke it in Access Management.
+2. **Broad compatibility roles remain active.** `endoregdb_user` passes all
    route-role checks, and `data:*` roles satisfy resource roles. Center scope is
    therefore a critical second boundary.
-4. **The object-permission hook is not a separate video ACL.** The HLS views call
+3. **The object-permission hook is not a separate video ACL.** The HLS views call
    `check_object_permissions()`, but the active permission classes add
    authentication/RBAC rather than per-video grants. The explicit center guard
    is the effective object-level control.
-5. **The legacy redirect checks center only at the destination.** The
+4. **The legacy redirect checks center only at the destination.** The
    compatibility `/stream/` view looks up the video and redirects without first
    calling the center guard. A cross-center caller with video RBAC can therefore
    distinguish an existing video (`302`) from a nonexistent ID (`404`) before
    the destination playlist correctly denies access. The redirect view should
    apply the same center check.
-6. **Frontend `404` language is too specific.** Privacy masking prevents a
+5. **Frontend `404` language is deliberately non-diagnostic.** Privacy masking prevents a
    detailed client error, but “not available yet” incorrectly implies missing
    materialization. Operator-facing correlation or a privileged diagnostic
    surface is needed without weakening the public response.
-7. **Raw comparison is not implemented under this contract.** The frontend can
-   request raw HLS, while the backend intentionally rejects it. A local-only raw
-   validation design requires an explicit policy and must remain separate from
-   hub export.
+6. **Single-center examiner scope is a model constraint.** Multi-center users
+   require a dedicated membership model, not exceptions in media views.
 
 These gaps must be tracked as permissions and workflow issues. They do not
 justify exposing the protected media tree, removing center checks, disabling
