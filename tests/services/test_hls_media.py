@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import subprocess
 import tempfile
+from datetime import timedelta
 from pathlib import Path
 from typing import Any, BinaryIO, cast
 from urllib.parse import urlsplit
 
 import pytest
 from django.core.files.base import ContentFile
+from django.utils import timezone
 
 from endoreg_db.models import Center, VideoFile
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
@@ -262,6 +264,54 @@ def test_materialize_video_hls_streams_decrypted_source_and_cleans_temp_key(
     segment_dir = Path(paths.storage / result.segment_directory_relative_path)
     assert (segment_dir / "seg_000.ts").exists()
     assert not list(segment_dir.glob("*.key"))
+
+
+def test_hls_dispatch_reservation_deduplicates_queued_artifact(
+    hls_center: Center,
+) -> None:
+    video = _create_processed_video(center=hls_center)
+
+    first = hls_media.reserve_hls_materialization_dispatch(
+        video_id=video.pk,
+        artifact_kind="processed",
+    )
+    second = hls_media.reserve_hls_materialization_dispatch(
+        video_id=video.pk,
+        artifact_kind="processed",
+    )
+
+    assert first.status == "queued"
+    assert second.status == "already_queued"
+    assert first.artifact_id == second.artifact_id
+    artifact = VideoHlsArtifact.objects.get(pk=first.artifact_id)
+    assert artifact.status == VideoHlsArtifact.Status.QUEUED.value
+
+
+def test_hls_dispatch_reservation_recovers_stale_materializing_artifact(
+    hls_center: Center,
+) -> None:
+    video = _create_processed_video(center=hls_center)
+    artifact = VideoHlsArtifact.objects.create(
+        video=video,
+        artifact_kind=VideoHlsArtifact.ArtifactKind.PROCESSED.value,
+        status=VideoHlsArtifact.Status.MATERIALIZING.value,
+    )
+    stale_at = timezone.now() - timedelta(
+        seconds=getattr(hls_media, "get_ffmpeg_transcode_timeout_seconds")()
+        + hls_media.HLS_MATERIALIZATION_STALE_GRACE_SECONDS
+        + 1
+    )
+    VideoHlsArtifact.objects.filter(pk=artifact.pk).update(updated_at=stale_at)
+
+    reservation = hls_media.reserve_hls_materialization_dispatch(
+        video_id=video.pk,
+        artifact_kind="processed",
+    )
+
+    artifact.refresh_from_db()
+    assert reservation.status == "queued"
+    assert artifact.status == VideoHlsArtifact.Status.QUEUED.value
+    assert "Recovered stale HLS materialization" in artifact.last_error
 
 
 def test_force_materialize_video_hls_removes_replaced_artifact_directory(

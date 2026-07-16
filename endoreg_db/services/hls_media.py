@@ -9,6 +9,7 @@ from collections import deque
 from collections.abc import Generator, Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import BinaryIO, Literal, cast
 from uuid import UUID, uuid4
@@ -16,6 +17,7 @@ from uuid import UUID, uuid4
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from django.db import transaction
 from django.db.models.fields.files import FieldFile
+from django.utils import timezone
 
 from endoreg_db.config.env import get_ffmpeg_transcode_timeout_seconds
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
@@ -62,6 +64,7 @@ HLS_TEMP_DIRECTORY_MODE = 0o700
 HLS_TEMP_FILE_MODE = 0o600
 HLS_KEY_WRAP_ALGORITHM = "AESGCM-master-wrap-v1"
 HLS_KEY_WRAP_NONCE_BYTES = 12
+HLS_MATERIALIZATION_STALE_GRACE_SECONDS = 60
 FFMPEG_STDIN_CHUNK_BYTES = 1024 * 1024
 FFMPEG_STDERR_TAIL_BYTES = 64 * 1024
 FFMPEG_STDIN_WATCHDOG_SECONDS = 30.0
@@ -124,6 +127,14 @@ class _PreparedArtifact:
     artifact_id: int
     key_id: UUID
     previous: _ArtifactSnapshot | None
+    should_materialize: bool
+
+
+@dataclass(frozen=True)
+class HlsMaterializationDispatchReservation:
+    artifact_id: int
+    artifact_kind: HlsArtifactKind
+    status: Literal["queued", "already_queued", "already_ready"]
 
 
 @dataclass(frozen=True)
@@ -372,6 +383,118 @@ def _mark_artifact_failed(
         )
 
 
+def _materialization_stale_before() -> datetime:
+    return timezone.now() - timedelta(
+        seconds=get_ffmpeg_transcode_timeout_seconds()
+        + HLS_MATERIALIZATION_STALE_GRACE_SECONDS
+    )
+
+
+def _recover_stale_materializing_artifact(
+    artifact: VideoHlsArtifact,
+    *,
+    video_id: int,
+    artifact_kind: VideoArtifactKind,
+) -> bool:
+    if (
+        artifact.status != VideoHlsArtifact.Status.MATERIALIZING.value
+        or artifact.updated_at > _materialization_stale_before()
+    ):
+        return False
+
+    artifact.status = VideoHlsArtifact.Status.FAILED.value
+    artifact.key_ciphertext = None
+    artifact.key_nonce = None
+    artifact.iv_hex = ""
+    artifact.playlist_relative_path = ""
+    artifact.segment_directory_relative_path = ""
+    artifact.segment_count = 0
+    artifact.last_error = (
+        "Recovered stale HLS materialization after exceeding the configured "
+        "FFmpeg timeout."
+    )
+    artifact.save(
+        update_fields=[
+            "status",
+            "key_ciphertext",
+            "key_nonce",
+            "iv_hex",
+            "playlist_relative_path",
+            "segment_directory_relative_path",
+            "segment_count",
+            "last_error",
+            "updated_at",
+        ]
+    )
+    logger.warning(
+        "Recovered stale HLS materialization: video=%s kind=%s artifact=%s",
+        video_id,
+        artifact_kind.value,
+        artifact.pk,
+    )
+    return True
+
+
+def reserve_hls_materialization_dispatch(
+    *,
+    video_id: int,
+    artifact_kind: object = VideoArtifactKind.PROCESSED,
+    force: bool = False,
+) -> HlsMaterializationDispatchReservation:
+    """Atomically reserve one HLS task per video and artifact kind."""
+    parsed_kind = coerce_hls_artifact_kind(artifact_kind)
+    with transaction.atomic():
+        video = VideoFile.objects.select_for_update().get(pk=int(video_id))
+        artifact, created = VideoHlsArtifact.objects.select_for_update().get_or_create(
+            video=video,
+            artifact_kind=parsed_kind.value,
+            defaults={"status": VideoHlsArtifact.Status.QUEUED.value},
+        )
+        recovered_stale_artifact = _recover_stale_materializing_artifact(
+            artifact,
+            video_id=int(video.pk),
+            artifact_kind=parsed_kind,
+        )
+        if not created and artifact.status in {
+            VideoHlsArtifact.Status.QUEUED.value,
+            VideoHlsArtifact.Status.MATERIALIZING.value,
+        }:
+            return HlsMaterializationDispatchReservation(
+                artifact_id=int(artifact.pk),
+                artifact_kind=parsed_kind.value,
+                status="already_queued",
+            )
+        if (
+            artifact.status == VideoHlsArtifact.Status.READY.value
+            and not force
+            and _ready_artifact_paths_exist(artifact)
+        ):
+            return HlsMaterializationDispatchReservation(
+                artifact_id=int(artifact.pk),
+                artifact_kind=parsed_kind.value,
+                status="already_ready",
+            )
+
+        artifact.status = VideoHlsArtifact.Status.QUEUED.value
+        if not recovered_stale_artifact:
+            artifact.last_error = ""
+        artifact.save(update_fields=["status", "last_error", "updated_at"])
+        return HlsMaterializationDispatchReservation(
+            artifact_id=int(artifact.pk),
+            artifact_kind=parsed_kind.value,
+            status="queued",
+        )
+
+
+def mark_hls_materialization_dispatch_failed(*, artifact_id: int, error: str) -> None:
+    """Release a reservation when publishing its Celery task failed."""
+    with transaction.atomic():
+        artifact = VideoHlsArtifact.objects.select_for_update().get(pk=artifact_id)
+        if artifact.status != VideoHlsArtifact.Status.QUEUED.value:
+            return
+        _mark_artifact_failed(artifact_id=artifact_id, error=error, previous=None)
+
+
 def _prepare_artifact_record(
     *,
     video_id: int,
@@ -399,15 +522,19 @@ def _prepare_artifact_record(
                 artifact_id=int(artifact.pk),
                 key_id=artifact.key_id,
                 previous=None,
+                should_materialize=False,
             )
-        if (
-            artifact.status == VideoHlsArtifact.Status.MATERIALIZING.value
-            and artifact.key_ciphertext is not None
-            and not force
-        ):
-            raise RuntimeError(
-                f"HLS artifact is already materializing for video={video_id} "
-                f"kind={artifact_kind.value}"
+        _recover_stale_materializing_artifact(
+            artifact,
+            video_id=video_id,
+            artifact_kind=artifact_kind,
+        )
+        if artifact.status == VideoHlsArtifact.Status.MATERIALIZING.value:
+            return _PreparedArtifact(
+                artifact_id=int(artifact.pk),
+                key_id=artifact.key_id,
+                previous=None,
+                should_materialize=False,
             )
 
         previous = _artifact_snapshot(artifact)
@@ -443,6 +570,7 @@ def _prepare_artifact_record(
             artifact_id=int(artifact.pk),
             key_id=key_id,
             previous=previous,
+            should_materialize=True,
         )
 
 
@@ -1256,9 +1384,20 @@ def materialize_video_hls(
         force=force,
     )
 
-    if prepared.key_id != key_id:
+    if not prepared.should_materialize:
         artifact = VideoHlsArtifact.objects.get(pk=prepared.artifact_id)
-        return _result_from_ready_artifact(artifact, status="already_ready")
+        if artifact.status == VideoHlsArtifact.Status.READY.value:
+            return _result_from_ready_artifact(artifact, status="already_ready")
+        return HlsMaterializationResult(
+            video_id=int(artifact.video_id),
+            artifact_kind=cast(HlsArtifactKind, str(artifact.artifact_kind)),
+            status="already_materializing",
+            key_id=str(artifact.key_id),
+            playlist_relative_path="",
+            segment_directory_relative_path="",
+            segment_count=0,
+            detail="An HLS materialization task is already active.",
+        )
 
     target_dir = _artifact_target_dir(
         video=video,

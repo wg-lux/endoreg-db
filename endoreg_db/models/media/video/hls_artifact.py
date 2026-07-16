@@ -18,6 +18,7 @@ class VideoHlsArtifact(models.Model):
         PROCESSED = "processed", "Processed"
 
     class Status(models.TextChoices):
+        QUEUED = "queued", "Queued"
         MATERIALIZING = "materializing", "Materializing"
         READY = "ready", "Ready"
         FAILED = "failed", "Failed"

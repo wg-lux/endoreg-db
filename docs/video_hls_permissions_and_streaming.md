@@ -542,9 +542,14 @@ replacement, and the cached segment remains AES-128 encrypted.
 An HLS artifact is identified by video and artifact kind and moves through:
 
 ```text
+queued -> materializing
 materializing -> ready
 materializing -> failed
 ```
+
+Only one `queued` or `materializing` artifact may exist for a video and artifact
+kind. A materializing artifact that outlives the configured FFmpeg timeout is
+marked failed before a new dispatch is reserved.
 
 Queue dispatch result `queued` is not a database artifact status. It only means
 a Celery task was accepted. Likewise, a systemd dispatcher exiting successfully

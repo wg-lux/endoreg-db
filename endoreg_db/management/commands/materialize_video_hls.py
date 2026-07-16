@@ -14,7 +14,9 @@ from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.video_files import VideoArtifactKind
 from endoreg_db.services.hls_media import (
     coerce_hls_artifact_kind,
+    mark_hls_materialization_dispatch_failed,
     materialize_video_hls,
+    reserve_hls_materialization_dispatch,
 )
 from endoreg_db.services.jobs.heavy_jobs import (
     HeavyJobKind,
@@ -211,19 +213,47 @@ class Command(BaseVideoCommand):
                         }
                         stop_after_failure = fail_fast
                 else:
-                    task_dispatcher = cast(_TaskDispatcher, video_hls_materialization)
-                    async_result = task_dispatcher.apply_async(
-                        args=[video_id, selected_kind, force],
-                        queue=queue,
-                        routing_key=queue,
+                    reservation = reserve_hls_materialization_dispatch(
+                        video_id=video_id,
+                        artifact_kind=selected_kind,
+                        force=force,
                     )
-                    result = {
-                        "video_id": video_id,
-                        "artifact_kind": selected_kind,
-                        "status": "queued",
-                        "task_id": str(async_result.id),
-                        "queue": queue,
-                    }
+                    if reservation.status != "queued":
+                        result = {
+                            "video_id": video_id,
+                            "artifact_kind": selected_kind,
+                            "status": reservation.status,
+                        }
+                        results.append(result)
+                        if not json_output:
+                            self._write_result(result)
+                        continue
+                    task_dispatcher = cast(_TaskDispatcher, video_hls_materialization)
+                    try:
+                        async_result = task_dispatcher.apply_async(
+                            args=[video_id, selected_kind, force],
+                            queue=queue,
+                            routing_key=queue,
+                        )
+                    except Exception as exc:
+                        mark_hls_materialization_dispatch_failed(
+                            artifact_id=reservation.artifact_id,
+                            error=f"Celery HLS dispatch failed: {exc}",
+                        )
+                        result = {
+                            "video_id": video_id,
+                            "artifact_kind": selected_kind,
+                            "status": "failed",
+                            "error": str(exc),
+                        }
+                    else:
+                        result = {
+                            "video_id": video_id,
+                            "artifact_kind": selected_kind,
+                            "status": "queued",
+                            "task_id": str(async_result.id),
+                            "queue": queue,
+                        }
                 results.append(result)
                 if not json_output:
                     self._write_result(result)
@@ -414,7 +444,7 @@ class Command(BaseVideoCommand):
 
         if status == "failed":
             self.stderr.write(self.style.ERROR(line))
-        elif status in {"queued", "materialized", "already_ready"}:
+        elif status in {"queued", "materialized", "already_ready", "already_queued"}:
             self.stdout.write(self.style.SUCCESS(line))
         else:
             self.stdout.write(line)

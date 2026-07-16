@@ -243,6 +243,56 @@ def test_materialize_video_hls_command_inline_apply_materializes_artifact(
 
 
 @pytest.mark.django_db
+def test_materialize_video_hls_command_dispatches_each_artifact_once(
+    hls_command_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    video = _create_processed_video(center=hls_command_center)
+    _patch_command_preflight(monkeypatch)
+    dispatched: list[tuple[object, ...]] = []
+
+    class FakeTaskDispatcher:
+        def apply_async(self, *args: object, **kwargs: object) -> SimpleNamespace:
+            dispatched.append(args)
+            return SimpleNamespace(id="hls-task-1")
+
+    monkeypatch.setattr(
+        command_module,
+        "video_hls_materialization",
+        FakeTaskDispatcher(),
+    )
+
+    first_stdout = StringIO()
+    call_command(
+        "materialize_video_hls",
+        "--apply",
+        "--artifact-kind",
+        "processed",
+        "--json",
+        stdout=first_stdout,
+        stderr=StringIO(),
+    )
+    second_stdout = StringIO()
+    call_command(
+        "materialize_video_hls",
+        "--apply",
+        "--artifact-kind",
+        "processed",
+        "--json",
+        stdout=second_stdout,
+        stderr=StringIO(),
+    )
+
+    assert dispatched == [()]
+    assert json.loads(first_stdout.getvalue())["results"][0]["status"] == "queued"
+    assert (
+        json.loads(second_stdout.getvalue())["results"][0]["status"] == "already_queued"
+    )
+    artifact = VideoHlsArtifact.objects.get(video=video, artifact_kind="processed")
+    assert artifact.status == VideoHlsArtifact.Status.QUEUED.value
+
+
+@pytest.mark.django_db
 def test_materialize_video_hls_command_dry_run_reports_bulk_audit(
     hls_command_center: Center,
     monkeypatch: pytest.MonkeyPatch,
