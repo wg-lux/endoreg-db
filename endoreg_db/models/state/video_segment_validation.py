@@ -41,6 +41,8 @@ class _VideoProcessingHistoryRecord(Protocol):
     created_at: datetime | VideoSegmentValidationNull
     completed_at: datetime | VideoSegmentValidationNull
 
+    def save(self, *, update_fields: list[str]) -> None: ...
+
 
 class _VideoSegmentValidationState(Protocol):
     segment_annotations_created: bool
@@ -125,6 +127,55 @@ def _parse_blackening_history_config(
     )
 
 
+def _repair_legacy_blackening_history_config(
+    history_record: _VideoProcessingHistoryRecord,
+) -> OutsideFrameBlackeningConfig | VideoSegmentValidationNull:
+    config = history_record.config
+    if not isinstance(config, dict):
+        return None
+    if config.get("kind") != OUTSIDE_FRAME_BLACKENING_KIND:
+        return None
+
+    canonical_keys = {"kind", "only_validated", "queue"}
+    if not set(config).issubset(canonical_keys):
+        return None
+    if "only_validated" in config and "queue" in config:
+        return None
+
+    only_validated = config.get("only_validated", False)
+    if not isinstance(only_validated, bool):
+        return None
+    queue = config["queue"] if "queue" in config else get_celery_ffmpeg_media_queue()
+    try:
+        repaired = OutsideFrameBlackeningConfig(
+            only_validated=only_validated,
+            queue=_validate_blackening_queue(queue),
+        )
+        repaired_config = cast(JsonValue, repaired.to_dict())
+    except (OutsideFrameBlackeningConfigError, ValidationError):
+        return None
+
+    history_record.config = repaired_config
+    history_record.save(update_fields=["config"])
+    logger.warning(
+        "Repaired legacy outside-frame blackening config on VideoProcessingHistory %s.",
+        history_record.pk,
+    )
+    return repaired
+
+
+def _parse_blackening_history_record(
+    history_record: _VideoProcessingHistoryRecord,
+) -> OutsideFrameBlackeningConfig | VideoSegmentValidationNull:
+    try:
+        return _parse_blackening_history_config(history_record.config)
+    except OutsideFrameBlackeningConfigError:
+        repaired = _repair_legacy_blackening_history_config(history_record)
+        if repaired is not None:
+            return repaired
+        raise
+
+
 def blackening_history_config(
     *,
     only_validated: bool,
@@ -142,7 +193,7 @@ def _is_outside_frame_blackening_history(
 ) -> bool:
     history_record = cast(_VideoProcessingHistoryRecord, history)
     try:
-        return _parse_blackening_history_config(history_record.config) is not None
+        return _parse_blackening_history_record(history_record) is not None
     except OutsideFrameBlackeningConfigError:
         config = history_record.config
         if (
@@ -176,7 +227,7 @@ def _resolve_blackening_run_config(
         )
 
     history_record = cast(_VideoProcessingHistoryRecord, history)
-    parsed_config = _parse_blackening_history_config(history_record.config)
+    parsed_config = _parse_blackening_history_record(history_record)
     if parsed_config is None:
         raise OutsideFrameBlackeningConfigError(
             f"VideoProcessingHistory {history_record.pk} is not an outside-frame blackening job."

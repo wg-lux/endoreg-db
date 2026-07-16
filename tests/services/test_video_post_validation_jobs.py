@@ -324,6 +324,81 @@ def test_blackening_history_config_schema_rejects_invalid_config(
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("legacy_config", "expected_only_validated", "expected_queue"),
+    [
+        (
+            {"kind": segment_state.OUTSIDE_FRAME_BLACKENING_KIND},
+            False,
+            "ffmpeg_media_hi",
+        ),
+        (
+            {
+                "kind": segment_state.OUTSIDE_FRAME_BLACKENING_KIND,
+                "only_validated": True,
+            },
+            True,
+            "ffmpeg_media_hi",
+        ),
+        (
+            {
+                "kind": segment_state.OUTSIDE_FRAME_BLACKENING_KIND,
+                "queue": "legacy_ffmpeg_queue",
+            },
+            False,
+            "legacy_ffmpeg_queue",
+        ),
+    ],
+)
+def test_blackening_history_repairs_recognized_legacy_config(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    legacy_config: dict[str, object],
+    expected_only_validated: bool,
+    expected_queue: str,
+) -> None:
+    monkeypatch.setenv("CELERY_FFMPEG_MEDIA_QUEUE", "ffmpeg_media_hi")
+    video = _create_video_for_post_validation(tmp_path)
+    history = VideoProcessingHistory.objects.create(
+        video=video,
+        operation=VideoProcessingHistory.OPERATION_REPROCESSING,
+        status=VideoProcessingHistory.STATUS_PENDING,
+        config=legacy_config,
+    )
+
+    assert segment_state.is_outside_frame_blackening_history(history) is True
+    history.refresh_from_db()
+    assert history.config == {
+        "kind": segment_state.OUTSIDE_FRAME_BLACKENING_KIND,
+        "only_validated": expected_only_validated,
+        "queue": expected_queue,
+    }
+
+    assert segment_state.is_outside_frame_blackening_history(history) is True
+
+
+@pytest.mark.django_db
+def test_blackening_history_does_not_repair_unknown_config_fields(
+    tmp_path: Path,
+) -> None:
+    video = _create_video_for_post_validation(tmp_path)
+    malformed_config = {
+        "kind": segment_state.OUTSIDE_FRAME_BLACKENING_KIND,
+        "legacy_unknown": "preserve-for-audit",
+    }
+    history = VideoProcessingHistory.objects.create(
+        video=video,
+        operation=VideoProcessingHistory.OPERATION_REPROCESSING,
+        status=VideoProcessingHistory.STATUS_PENDING,
+        config=malformed_config,
+    )
+
+    assert segment_state.is_outside_frame_blackening_history(history) is True
+    history.refresh_from_db()
+    assert history.config == malformed_config
+
+
+@pytest.mark.django_db
 def test_dispatch_video_post_validation_rebuild_reuses_active_history(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

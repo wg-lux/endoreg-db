@@ -14,24 +14,79 @@ from collections.abc import Generator, Iterator, Mapping
 from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
+
+# Establish the process-owned test root before Django or endoreg_db settings are
+# imported. Django's FileField storage snapshots MEDIA_ROOT during setup.
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+TEST_RUN_NAMESPACE = os.environ["ENDOREG_TEST_RUN_NAMESPACE"]
+TEST_RUN_ROOT = PROJECT_ROOT / "data" / "tests" / "workers" / TEST_RUN_NAMESPACE
+TEST_PROTECTED_ROOT = TEST_RUN_ROOT / "protected_runtime"
+TEST_DATA_DIR = TEST_RUN_ROOT / "runtime"
+TEST_STORAGE_DIR = TEST_PROTECTED_ROOT / "storage"
+TEST_ASSET_DIR = Path(__file__).parent / "assets"
+
+
+def _configure_test_path_env(protected_root: Path) -> None:
+    protected_root = protected_root.resolve()
+    storage_dir = (protected_root / "storage").resolve()
+    data_dir = TEST_DATA_DIR.resolve()
+    streamable_root = (storage_dir / "streamable_videos").resolve()
+
+    os.environ["LX_ANNOTATE_ENCRYPTED_DATA_DIR"] = str(protected_root)
+    os.environ["STORAGE_DIR"] = str(storage_dir)
+    os.environ["DATA_DIR"] = str(data_dir)
+    os.environ["PROTECTED_MEDIA_ROOT"] = str(storage_dir)
+    os.environ["LX_ANNOTATE_STREAMABLE_VIDEO_ROOT"] = str(streamable_root)
+    os.environ["LX_ANNOTATE_STREAMABLE_VIDEO_RAW_ROOT"] = str(streamable_root / "raw")
+    os.environ["LX_ANNOTATE_STREAMABLE_VIDEO_PROCESSED_ROOT"] = str(
+        streamable_root / "processed"
+    )
+    os.environ.setdefault(
+        "LX_ANNOTATE_MASTER_KEY",
+        "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
+    )
+    os.environ.setdefault("WATCHER_STABLE_AFTER_SECONDS", "0")
+    os.environ.setdefault("WATCHER_POLL_INTERVAL_SECONDS", "0.01")
+
+
+os.environ["DJANGO_SETTINGS_MODULE"] = "endoreg_db.config.settings.test"
+_configure_test_path_env(TEST_PROTECTED_ROOT)
+
+import pytest
+from _pytest.reports import TestReport
+from django.db.backends.signals import connection_created
 from django.core.files.storage import Storage
 from django.test import Client as DjangoClient
+from django.test import override_settings
+from pluggy import Result
 from pytest import FixtureRequest
+
+from endoreg_db.config.env import DEFAULT_VIDEO_FPS, env_bool
 from endoreg_db.import_files.context import ImportContext
+from endoreg_db.models import AiModel, Label, ModelMeta, ModelType
+from endoreg_db.models.label import LabelSet, LabelType
+from endoreg_db.utils import paths as paths_module
+from endoreg_db.utils.file_operations import (
+    atomic_copy_file,
+    atomic_write_file,
+    ensure_directory,
+    safe_rmtree,
+    safe_unlink_file,
+)
 from lx_dtypes.models.contracts.ffmpeg_metadata import FfmpegProbeDataPayload
 from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
+from tests.helpers.model_weights import (
+    cleanup_managed_stub_weight_collisions,
+    ensure_managed_stub_weights,
+)
 from tests.plugins.cache import CacheManager
 
 if TYPE_CHECKING:
     from endoreg_db.models import AiModel, LabelSet, VideoFile
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-TEST_WORKER_ID = os.environ.get("PYTEST_XDIST_WORKER", "main")
-TEST_RUN_ROOT = PROJECT_ROOT / "data" / "tests" / "workers" / TEST_WORKER_ID
-TEST_PROTECTED_ROOT = TEST_RUN_ROOT / "protected_runtime"
-TEST_DATA_DIR = TEST_RUN_ROOT / "runtime"
-TEST_STORAGE_DIR = TEST_PROTECTED_ROOT / "storage"
-TEST_ASSET_DIR = Path(__file__).parent / "assets"
 LOGGER = logging.getLogger(__name__)
 
 
@@ -213,60 +268,6 @@ class _TestPathsModel(Protocol):
     quarantine_failed: Path
     staging_migration: Path
 
-
-def _configure_test_path_env(protected_root: Path) -> None:
-    protected_root = protected_root.resolve()
-    storage_dir = (protected_root / "storage").resolve()
-    data_dir = TEST_DATA_DIR.resolve()
-    streamable_root = (storage_dir / "streamable_videos").resolve()
-
-    os.environ["LX_ANNOTATE_ENCRYPTED_DATA_DIR"] = str(protected_root)
-    os.environ["STORAGE_DIR"] = str(storage_dir)
-    os.environ["DATA_DIR"] = str(data_dir)
-    os.environ["PROTECTED_MEDIA_ROOT"] = str(storage_dir)
-    os.environ["LX_ANNOTATE_STREAMABLE_VIDEO_ROOT"] = str(streamable_root)
-    os.environ["LX_ANNOTATE_STREAMABLE_VIDEO_RAW_ROOT"] = str(streamable_root / "raw")
-    os.environ["LX_ANNOTATE_STREAMABLE_VIDEO_PROCESSED_ROOT"] = str(
-        streamable_root / "processed"
-    )
-    os.environ.setdefault(
-        "LX_ANNOTATE_MASTER_KEY",
-        "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
-    )
-    os.environ.setdefault("WATCHER_STABLE_AFTER_SECONDS", "0")
-    os.environ.setdefault("WATCHER_POLL_INTERVAL_SECONDS", "0.01")
-
-
-# Ensure the repository root is in the Python path before importing project code.
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
-# Configure pytest-django and the protected storage contract before importing
-# modules that read path settings at import time.
-os.environ["DJANGO_SETTINGS_MODULE"] = "endoreg_db.config.settings.test"
-_configure_test_path_env(TEST_PROTECTED_ROOT)
-
-import pytest
-from _pytest.reports import TestReport
-from django.db.backends.signals import connection_created
-from django.test import override_settings
-from pluggy import Result
-
-from endoreg_db.config.env import DEFAULT_VIDEO_FPS, env_bool
-from endoreg_db.models import AiModel, Label, ModelMeta, ModelType
-from endoreg_db.models.label import LabelSet, LabelType
-from endoreg_db.utils import paths as paths_module
-from endoreg_db.utils.file_operations import (
-    atomic_copy_file,
-    atomic_write_file,
-    ensure_directory,
-    safe_rmtree,
-    safe_unlink_file,
-)
-from tests.helpers.model_weights import (
-    cleanup_managed_stub_weight_collisions,
-    ensure_managed_stub_weights,
-)
 
 pytest_plugins = [
     "tests.plugins.cache",
@@ -501,6 +502,12 @@ def pytest_runtest_makereport(
     outcome = yield
     rep = outcome.get_result()
     setattr(item, "rep_" + rep.when, rep)
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Remove only the filesystem tree owned by this pytest process."""
+    del session, exitstatus
+    safe_rmtree(TEST_RUN_ROOT, missing_ok=True)
 
 
 # ==========================================
@@ -1054,8 +1061,6 @@ def setup_test_environment(cache: CacheManager) -> Iterator[None]:
                 pass
 
     _cleanup_test_lock_files()
-
-    safe_rmtree(TEST_PROTECTED_ROOT, missing_ok=True)
 
 
 def _apply_global_video_mocks(cache: CacheManager) -> None:
