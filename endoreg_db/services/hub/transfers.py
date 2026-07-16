@@ -34,6 +34,17 @@ from endoreg_db.utils.security.hashs import get_pdf_hash
 from endoreg_db.utils.filesystem.paths import TRANSCODING_DIR
 from endoreg_db.utils.storage import delete_field_file, file_exists, save_local_file
 from endoreg_db.utils.observability.structured_logging import hash_identifier
+from endoreg_db.services.hub.transfer_logging import (
+    decision,
+    error,
+    info,
+    json_block,
+    kv,
+    section,
+    step,
+    success,
+    warning,
+)
 from .ingest import _default_processor_name
 
 logger = logging.getLogger(__name__)
@@ -49,6 +60,8 @@ class TransferProvenance(TypedDict, total=False):
     cleanup_policy: str
     media_uploads: list[dict[str, str]]
     case_resolution: dict[str, Any]
+    source_video_id: int
+    source_report_id: int
     custom_marker: NotRequired[str]
 
 
@@ -138,18 +151,56 @@ def create_or_reuse_transfer_job(
     provenance: TransferProvenance,
     created_by=None,
 ) -> tuple[TransferJob, bool]:
+    section("TRANSFER LEDGER RESOLUTION", "🧾")
+    kv("Transfer key", transfer_key)
+    kv("Source node ID", source_node.id)
+    kv("Source node key", source_node.node_key)
+    kv("Target node ID", target_node.id)
+    kv("Target node key", target_node.node_key)
+    kv("Source center ID", source_center.id if source_center is not None else None)
+    kv(
+        "Source center key",
+        source_center.center_key if source_center is not None else None,
+    )
+    kv("Resource kind", resource_kind)
+    kv("Resource hash", resource_hash)
+    kv("Transfer mode", transfer_mode)
+    kv("Processing policy", processing_policy)
+    kv("Processing intent", processing_intent)
+    kv("Cleanup policy", cleanup_policy)
+    kv("Schema version", payload_schema_version)
+    json_block("Portable resource rows", resource_rows)
+    json_block("Processing snapshot", processing_snapshot)
+    json_block("Incoming provenance", provenance)
+
     transfer_job_manager = cast(Any, TransferJob.objects)
     existing = transfer_job_manager.filter(transfer_key=transfer_key).first()
+
     if existing is not None:
-        if (
-            existing.source_node_id != source_node.id
-            or existing.target_node_id != target_node.id
-            or existing.resource_kind != resource_kind
-            or existing.resource_hash != resource_hash
-        ):
+        decision("EXISTING TRANSFER KEY FOUND")
+        kv("Existing TransferJob UUID", existing.id)
+        kv("Existing source node ID", existing.source_node_id)
+        kv("Existing target node ID", existing.target_node_id)
+        kv("Existing source center ID", existing.source_center_id)
+        kv("Existing resource kind", existing.resource_kind)
+        kv("Existing resource hash", existing.resource_hash)
+        kv("Existing transfer status", existing.transfer_status)
+        kv("Existing target object ID", existing.target_object_id)
+
+        identity_matches = (
+            existing.source_node_id == source_node.id
+            and existing.target_node_id == target_node.id
+            and existing.resource_kind == resource_kind
+            and existing.resource_hash == resource_hash
+        )
+        kv("Transfer identity matches", identity_matches)
+
+        if not identity_matches:
+            error("Transfer key collision detected with different payload identity")
             raise ValueError(
                 "transfer_key already exists for a different transfer payload"
             )
+
         emit_hub_audit_event(
             "hub.transfer_job_reused",
             transfer_job_id=str(existing.id),
@@ -159,7 +210,10 @@ def create_or_reuse_transfer_job(
             transfer_key=transfer_key,
             source_node_key=source_node.node_key,
         )
+        success("Existing TransferJob safely reused")
         return existing, False
+
+    decision("CREATE NEW RECEIVER TRANSFER LEDGER RECORD")
 
     transfer_job = transfer_job_manager.create(
         transfer_key=transfer_key,
@@ -193,6 +247,17 @@ def create_or_reuse_transfer_job(
             created_by if getattr(created_by, "is_authenticated", False) else None
         ),
     )
+
+    kv("New TransferJob UUID", transfer_job.id)
+    kv("Stored transfer key", transfer_job.transfer_key)
+    kv("Stored source node ID", transfer_job.source_node_id)
+    kv("Stored target node ID", transfer_job.target_node_id)
+    kv("Stored source center ID", transfer_job.source_center_id)
+    kv("Stored resource hash", transfer_job.resource_hash)
+    kv("Initial transfer status", transfer_job.transfer_status)
+    kv("Initial processing decision", transfer_job.processing_decision)
+    kv("Initial target object ID", transfer_job.target_object_id)
+
     emit_hub_audit_event(
         "hub.transfer_job_created",
         transfer_job_id=str(transfer_job.id),
@@ -203,8 +268,8 @@ def create_or_reuse_transfer_job(
         source_node_key=source_node.node_key,
         cleanup_policy=cleanup_policy,
     )
+    success("TransferJob persisted in receiver database")
     return transfer_job, True
-
 
 def authenticate_network_node(
     *,
@@ -349,7 +414,26 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
     processing_snapshot = transfer_job.processing_snapshot or {}
     source_center = transfer_job.source_center
 
+    section("APPLY VIDEO TRANSFER METADATA", "🎬")
+    kv("TransferJob UUID", transfer_job.id)
+    kv("Transfer key", transfer_job.transfer_key)
+    kv("Incoming resource hash", transfer_job.resource_hash)
+    kv("Source node", transfer_job.source_node.node_key)
+    kv("Target node", transfer_job.target_node.node_key)
+    kv("Source center ID", transfer_job.source_center_id)
+    kv(
+        "Sender-local VideoFile ID",
+        transfer_job.provenance.get("source_video_id"),
+    )
+    kv("Transfer mode", transfer_job.transfer_mode)
+    kv("Processing policy", transfer_job.processing_policy)
+    json_block("Incoming video_file payload", video_file_payload)
+    json_block("Incoming video_state payload", video_state_payload)
+    json_block("Incoming processing history", processing_history_payload)
+    json_block("Incoming processing snapshot", processing_snapshot)
+
     if source_center is None:
+        error("No source_center could be resolved for the video transfer")
         transfer_job.transfer_status = TransferJob.TransferStatus.FAILED
         transfer_job.processing_decision = (
             TransferJob.ProcessingDecision.REJECT_TRANSFER
@@ -366,6 +450,11 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
         return transfer_job
 
     with transaction.atomic():
+        step(1, "Search receiver database by portable video hash")
+        kv("Lookup model", "VideoFile")
+        kv("Lookup field", "VideoFile.video_hash")
+        kv("Lookup value", transfer_job.resource_hash)
+
         video = (
             VideoFile.objects.select_related("state", "sensitive_meta")
             .filter(video_hash=transfer_job.resource_hash)
@@ -373,48 +462,123 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
         )
 
         if video is None:
+            decision("NO MATCHING VIDEO FOUND ON RECEIVER")
+            info("A new receiver-local VideoFile will be created")
+            kv(
+                "Sender-local VideoFile ID",
+                transfer_job.provenance.get("source_video_id"),
+            )
             video = VideoFile(
                 video_hash=transfer_job.resource_hash,
                 center=source_center,
             )
+        else:
+            decision("EXISTING VIDEO FOUND ON RECEIVER")
+            kv("Existing receiver VideoFile ID", video.pk)
+            kv("Existing receiver video hash", video.video_hash)
+            kv(
+                "Existing processed storage name",
+                getattr(video.processed_file, "name", None),
+            )
+            info("The existing receiver VideoFile will be reused")
 
         sensitive_meta_payload = resource_rows.get("sensitive_meta") or {}
         if isinstance(sensitive_meta_payload, dict) and sensitive_meta_payload:
+            step(2, "Apply permitted sensitive metadata linkage")
+            info("Sensitive values are intentionally not printed")
             sensitive_meta = _upsert_sensitive_meta(
                 existing=video.sensitive_meta if video.pk else None,
                 payload=sensitive_meta_payload,
                 center=source_center,
             )
             video.sensitive_meta = sensitive_meta
+            kv("Receiver SensitiveMeta ID", sensitive_meta.pk)
+        else:
+            info("No sensitive_meta payload was included")
 
         video.center = source_center
         _apply_video_file_payload(video, video_file_payload)
-
         video.save()
+
+        step(3, "Persist receiver VideoFile metadata")
+        kv("Receiver VideoFile ID", video.pk)
+        kv("Receiver center ID", video.center_id)
+        kv("Receiver VideoFile hash", video.video_hash)
+        kv("Receiver processed hash", video.processed_video_hash)
+        kv("Receiver original filename", video.original_file_name)
+        kv("Receiver FPS", video.fps)
+        kv("Receiver duration", video.duration)
+        kv("Receiver frame count", video.frame_count)
+        kv("Receiver width", video.width)
+        kv("Receiver height", video.height)
+        kv("Receiver suffix", video.suffix)
+        kv(
+            "Receiver processed storage name",
+            getattr(video.processed_file, "name", None),
+        )
+        success("Receiver VideoFile metadata persisted")
+
         video_state = get_or_create_video_state(video)
         _apply_video_state_payload(video_state, video_state_payload)
+
+        step(4, "Persist receiver VideoState")
+        kv("Receiver VideoState ID", video_state.pk)
+        kv("Frames extracted", video_state.frames_extracted)
+        kv("Frames initialized", video_state.frames_initialized)
+        kv("Frame count", video_state.frame_count)
+        kv("Video metadata extracted", video_state.video_meta_extracted)
+        kv("Text metadata extracted", video_state.text_meta_extracted)
+        kv("Sensitive metadata processed", video_state.sensitive_meta_processed)
+        kv("Anonymized", video_state.anonymized)
+        kv("Anonymization validated", video_state.anonymization_validated)
+        kv("Processing started", video_state.processing_started)
+        kv("Processing error", video_state.processing_error)
+        kv("Resolved anonymization status", video_state.anonymization_status.value)
+        success("Receiver VideoState persisted")
 
         processing_success = _coerce_optional_bool(
             processing_history_payload.get("success")
         )
-        ProcessingHistory.get_or_create_for_hash(
+        step(5, "Create or reuse receiver ProcessingHistory")
+        kv("Sender processing success", processing_success)
+        processing_history = ProcessingHistory.get_or_create_for_hash(
             file_hash=transfer_job.resource_hash,
             obj=video,
             success=processing_success,
         )
+        kv("ProcessingHistory result", processing_history)
 
+        step(6, "Resolve optional patient/examination linkage")
         _apply_case_resolution_for_media(
             transfer_job=transfer_job,
             media_obj=video,
             media_type="video",
         )
+        kv("Case resolution status", transfer_job.case_resolution_status)
+        kv("Linked patient ID", transfer_job.linked_patient_id)
+        kv(
+            "Linked patient examination ID",
+            transfer_job.linked_patient_examination_id,
+        )
 
+        step(7, "Decide receiver processing behavior")
         processing_decision, transfer_status, status_detail = _decide_video_processing(
             transfer_job=transfer_job,
             video=video,
             processing_success=processing_success,
             processing_snapshot=processing_snapshot,
         )
+
+        decision("RECEIVER PROCESSING DECISION")
+        kv("Processing decision", processing_decision)
+        kv("Transfer status", transfer_status)
+        kv("Status detail", status_detail)
+        kv(
+            "Sender-local VideoFile ID",
+            transfer_job.provenance.get("source_video_id"),
+        )
+        kv("Receiver-local VideoFile ID", video.pk)
+        kv("Portable identity hash", transfer_job.resource_hash)
 
         transfer_job.target_object_id = video.pk
         transfer_job.processing_decision = processing_decision
@@ -433,9 +597,10 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
                 "updated_at",
             ]
         )
+        success("TransferJob linked to receiver VideoFile")
 
+    _log_video_transfer_mapping(transfer_job=transfer_job, video=video)
     return transfer_job
-
 
 def _apply_report_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
     resource_rows = transfer_job.resource_rows or {}
@@ -541,18 +706,42 @@ def _attach_video_transfer_media(
     upload_name = Path(str(getattr(uploaded_file, "name", "") or "upload.mp4")).name
     suffix = _normalized_suffix(upload_name, video.suffix or ".mp4")
 
+    section("RECEIVER: ATTACH VIDEO MEDIA", "💾")
+    kv("TransferJob UUID", transfer_job.id)
+    kv("Transfer key", transfer_job.transfer_key)
+    kv("Media role", media_role)
+    kv("Receiver VideoFile ID", video.pk)
+    kv("Portable resource hash", transfer_job.resource_hash)
+    kv("Temporary upload path", temp_path)
+    kv("Temporary file exists", temp_path.is_file())
+    kv("Temporary file bytes", temp_path.stat().st_size if temp_path.is_file() else None)
+    kv("Uploaded original name", upload_name)
+    kv("Normalized suffix", suffix)
+
     if media_role == "raw":
+        step(1, "Verify raw-video content hash")
         actual_hash = sha256_file(temp_path)
+        kv("Expected raw hash", transfer_job.resource_hash)
+        kv("Actual uploaded SHA-256", actual_hash)
+        kv("Hash match", actual_hash == transfer_job.resource_hash)
         if actual_hash != transfer_job.resource_hash:
+            error("Uploaded raw video failed SHA-256 verification")
             raise ValueError(
                 "Uploaded raw video hash does not match transfer resource_hash"
             )
+        success("Uploaded raw MP4 passed SHA-256 verification")
+
+        stored_name = f"{transfer_job.resource_hash}{suffix}"
+        step(2, "Store raw media through Django FileField storage")
+        kv("Storage field", "VideoFile.raw_file")
+        kv("Requested storage name", stored_name)
+        kv("Previous storage name", getattr(video.raw_file, "name", None))
 
         update_fields = _store_model_file(
             instance=video,
             field_name="raw_file",
             source_path=temp_path,
-            stored_name=f"{transfer_job.resource_hash}{suffix}",
+            stored_name=stored_name,
         )
         if video.suffix != suffix:
             video.suffix = suffix
@@ -563,6 +752,12 @@ def _attach_video_transfer_media(
         if update_fields:
             update_fields.append("date_modified")
             video.save(update_fields=update_fields)
+
+        step(3, "Confirm permanent raw-video storage")
+        _log_field_file_storage(
+            label="Raw video",
+            field_file=video.raw_file,
+        )
 
         _record_media_upload(
             transfer_job=transfer_job,
@@ -576,31 +771,48 @@ def _attach_video_transfer_media(
             media_obj=video,
             media_type="video",
         )
-        return _handle_video_processing_after_raw_upload(
+        result = _handle_video_processing_after_raw_upload(
             transfer_job=transfer_job,
             video=video,
             import_path=temp_path,
         )
+        _log_video_transfer_mapping(transfer_job=result, video=video)
+        return result
 
+    step(1, "Resolve expected processed-media hash")
     expected_hash = _expected_processed_video_hash(
-        transfer_job=transfer_job, video=video
+        transfer_job=transfer_job,
+        video=video,
     )
+    kv("Expected processed hash", expected_hash)
     if not expected_hash:
+        error("No processed_video_hash is available in transfer metadata")
         raise ValueError(
             "Processed video upload requires video_file.processed_video_hash in transfer metadata"
         )
 
+    step(2, "Verify uploaded processed-media integrity")
     actual_hash = sha256_file(temp_path)
+    kv("Actual uploaded SHA-256", actual_hash)
+    kv("Hash match", actual_hash == expected_hash)
     if actual_hash != expected_hash:
+        error("Uploaded processed video failed SHA-256 verification")
         raise ValueError(
             "Uploaded processed video hash does not match the expected processed_video_hash"
         )
+    success("Uploaded processed MP4 passed SHA-256 verification")
+
+    stored_name = f"{expected_hash}{suffix}"
+    step(3, "Store processed media through Django FileField storage")
+    kv("Storage field", "VideoFile.processed_file")
+    kv("Requested storage name", stored_name)
+    kv("Previous storage name", getattr(video.processed_file, "name", None))
 
     update_fields = _store_model_file(
         instance=video,
         field_name="processed_file",
         source_path=temp_path,
-        stored_name=f"{expected_hash}{suffix}",
+        stored_name=stored_name,
     )
     if video.processed_video_hash != expected_hash:
         video.processed_video_hash = expected_hash
@@ -608,6 +820,14 @@ def _attach_video_transfer_media(
     if update_fields:
         update_fields.append("date_modified")
         video.save(update_fields=update_fields)
+
+    step(4, "Confirm permanent receiver storage")
+    kv("Saved receiver VideoFile ID", video.pk)
+    _log_field_file_storage(
+        label="Processed video",
+        field_file=video.processed_file,
+    )
+    success("Processed MP4 stored on receiver")
 
     _mark_video_transfer_as_processed(video)
     _record_media_upload(
@@ -622,14 +842,15 @@ def _attach_video_transfer_media(
         media_obj=video,
         media_type="video",
     )
-    return _save_transfer_job_state(
+    result = _save_transfer_job_state(
         transfer_job=transfer_job,
         target_object_id=video.pk,
         transfer_status=TransferJob.TransferStatus.APPLIED,
         processing_decision=TransferJob.ProcessingDecision.SKIP_PRESERVED_STATE,
         status_detail="Processed video uploaded and sender processing state preserved",
     )
-
+    _log_video_transfer_mapping(transfer_job=result, video=video)
+    return result
 
 def _attach_report_transfer_media(
     *,
@@ -946,6 +1167,52 @@ def _handle_report_processing_after_raw_upload(
         status_detail="Raw report uploaded and processing completed on the hub",
     )
 
+
+
+def _log_field_file_storage(*, label: str, field_file: object) -> None:
+    """Print storage-relative and local-path details without reading file content."""
+    stored_name = getattr(field_file, "name", None)
+    kv(f"{label} stored relative name", stored_name)
+    if not stored_name:
+        warning(f"{label} storage field has no stored name")
+        return
+
+    try:
+        absolute_path = Path(getattr(field_file, "path"))
+    except (NotImplementedError, AttributeError, TypeError, ValueError):
+        warning(
+            f"{label} storage backend does not expose a local absolute filesystem path"
+        )
+        return
+
+    kv(f"{label} stored absolute path", absolute_path)
+    kv(f"{label} stored file exists", absolute_path.is_file())
+    if absolute_path.is_file():
+        kv(f"{label} stored file bytes", absolute_path.stat().st_size)
+
+
+def _log_video_transfer_mapping(
+    *,
+    transfer_job: TransferJob,
+    video: VideoFile,
+) -> None:
+    section("TRANSFER IDENTITY MAPPING", "🔗")
+    kv(
+        "Sender-local VideoFile ID",
+        transfer_job.provenance.get("source_video_id"),
+    )
+    kv("Receiver-local VideoFile ID", transfer_job.target_object_id or video.pk)
+    kv("Portable video hash", transfer_job.resource_hash)
+    kv("Processed video hash", video.processed_video_hash)
+    kv("TransferJob UUID", transfer_job.id)
+    kv("Transfer key", transfer_job.transfer_key)
+    kv("Source node", transfer_job.source_node.node_key)
+    kv("Target node", transfer_job.target_node.node_key)
+    kv("Final transfer status", transfer_job.transfer_status)
+    kv("Processing decision", transfer_job.processing_decision)
+    kv("Status detail", transfer_job.status_detail)
+    kv("Stored raw media path", getattr(video.raw_file, "name", None))
+    kv("Stored processed media path", getattr(video.processed_file, "name", None))
 
 def _save_transfer_job_state(
     *,

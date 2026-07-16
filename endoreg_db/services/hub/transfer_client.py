@@ -5,8 +5,17 @@ from pathlib import Path
 from typing import Any
 
 import requests
-
-
+import time
+from endoreg_db.services.hub.transfer_logging import (
+    error,
+    info,
+    json_block,
+    kv,
+    path_info,
+    step,
+    subsection,
+    success,
+)
 @dataclass(frozen=True)
 class HubTransferClient:
     base_url: str
@@ -53,6 +62,18 @@ class HubTransferClient:
         return data
 
     def create_transfer(self, payload: dict[str, Any]) -> dict[str, Any]:
+
+        url = self._url("/api/media/hub/transfers/")
+    
+        subsection("HTTP create-transfer request")
+        kv("Method", "POST")
+        kv("URL", url)
+        kv("TLS verification", self.verify_tls)
+        kv("Source node header", self.node_key)
+        info("X-Network-Node-Secret is present but intentionally not printed")
+        json_block("Request JSON body", payload)
+        started = time.monotonic()
+
         res = requests.post(
             self._url("/api/media/hub/transfers/"),
             json=payload,
@@ -60,7 +81,17 @@ class HubTransferClient:
             timeout=self.timeout,
             verify=self.verify_tls,
         )
-        return self._response_json(res, operation="Hub transfer creation")
+        
+        elapsed = time.monotonic() - started
+
+        kv("HTTP status", res.status_code)
+        kv("Elapsed seconds", f"{elapsed:.3f}")
+        kv("Response content type", res.headers.get("Content-Type"))
+        kv("Response bytes", len(res.content))
+    
+        return self._response_json(
+            res,
+            operation="Hub transfer creation",)
 
     def upload_processed_media(
         self,
