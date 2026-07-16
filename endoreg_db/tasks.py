@@ -77,6 +77,36 @@ def run_video_fps_normalization_task(
 
 
 @shared_task(
+    name="endoreg_db.video_anonymization_correction",
+    bind=True,
+    acks_late=True,
+    reject_on_worker_lost=True,
+    track_started=True,
+    time_limit=60 * 60 * 6,
+    soft_time_limit=60 * 60 * 5,
+)
+def run_video_anonymization_correction_task(
+    _task: Task[[int, int], dict[str, object]],
+    video_id: int,
+    history_id: int,
+) -> dict[str, object]:
+    from endoreg_db.config.env import get_video_post_validation_dispatch_delay_seconds
+    from endoreg_db.services.jobs.video_correction_jobs import (
+        run_video_anonymization_correction,
+    )
+    from endoreg_db.services.media_operation_gate import MediaOperationDeferred
+
+    try:
+        return run_video_anonymization_correction(int(video_id), int(history_id))
+    except MediaOperationDeferred as exc:
+        raise _task.retry(
+            exc=exc,
+            countdown=max(get_video_post_validation_dispatch_delay_seconds(), 60),
+            max_retries=20,
+        ) from exc
+
+
+@shared_task(
     name="endoreg_db.frame_extraction_request",
     bind=True,
     acks_late=True,

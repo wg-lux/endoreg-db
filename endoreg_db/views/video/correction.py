@@ -16,15 +16,10 @@ from __future__ import annotations
 
 import json
 import logging
-import subprocess
-import tempfile
-import time
 from bisect import bisect_left, bisect_right
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Protocol, TypeAlias, cast
-
-import cv2
 
 from django.db.models.fields.files import FieldFile
 from django.shortcuts import get_object_or_404
@@ -56,6 +51,7 @@ from endoreg_db.models.label.label_video_segment.label_video_segment import (
     suppress_label_video_segment_state_side_effects,
 )
 from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.models.media.video.video_metadata import VideoMetadata
 from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
 from endoreg_db.serializers import VideoProcessingHistorySerializer
@@ -66,6 +62,13 @@ from endoreg_db.models.state.video_segment_validation import (
 from endoreg_db.services.label_video_segment_states import (
     ensure_label_video_segment_states,
 )
+from endoreg_db.services.hls_media import get_ready_hls_artifact, hls_playlist_path
+from endoreg_db.services.jobs.video_correction_jobs import (
+    VideoAnonymizationCorrectionJobConfig,
+    apply_video_anonymization_strategy,
+    dispatch_video_anonymization_correction,
+)
+from endoreg_db.services.jobs.heavy_jobs import HeavyJobKind, queue_for_job_kind
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.file_operations import (
@@ -202,14 +205,6 @@ def _cleaned_output_path(video: VideoFile) -> Path:
     return ensure_directory(anonym_video_dir) / f"{_video_hash(video)}_cleaned.mp4"
 
 
-def _anonymization_output_path(video: VideoFile, strategy: str) -> Path:
-    anonym_video_dir = path_utils.EndoregPathsModel.from_environment().anonym_video
-    safe_strategy = strategy.replace("_", "-")
-    return ensure_directory(anonym_video_dir) / (
-        f"{_video_hash(video)}_{safe_strategy}.mp4"
-    )
-
-
 def _part_output_path(output_path: Path) -> Path:
     return output_path.with_name(f"{output_path.stem}.part{output_path.suffix}")
 
@@ -222,114 +217,6 @@ def _promote_processed_output(temp_path: Path, final_path: Path) -> Path:
     ensure_directory(final_path.parent)
     atomic_move_file(source=temp_path, destination=final_path)
     return final_path
-
-
-def _mask_video_with_detector_compat(
-    frame_cleaner: Any, input_video: Path, output_video: Path
-) -> dict[str, object]:
-    """Compatibility all-frame masker for the currently pinned lx-anonymizer.
-
-    Newer lx-anonymizer builds expose ``mask_video_with_phi_detector`` directly.
-    This adapter keeps the correction API functional with the 0.9.3.2 public
-    interface, which already exposes configured per-frame PHI detection.
-    """
-    capture = cv2.VideoCapture(str(input_video))
-    if not capture.isOpened():
-        raise RuntimeError("Could not decode input video for detector masking")
-    width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fps = float(capture.get(cv2.CAP_PROP_FPS))
-    if width <= 0 or height <= 0 or fps <= 0:
-        capture.release()
-        raise RuntimeError("Input video has invalid dimensions or frame rate")
-
-    output_video.parent.mkdir(parents=True, exist_ok=True)
-    frames_processed = 0
-    frames_with_redactions = 0
-    redactions_applied = 0
-    with tempfile.TemporaryDirectory(
-        prefix="endoreg-detector-mask-", dir=output_video.parent
-    ) as temp_dir:
-        video_only = Path(temp_dir) / "masked-video.mp4"
-        writer = cv2.VideoWriter(
-            str(video_only),
-            cv2.VideoWriter_fourcc(*"mp4v"),  # pyright: ignore[reportUnknownMemberType,reportAttributeAccessIssue,reportUnknownArgumentType]
-            fps,
-            (width, height),
-        )
-        if not writer.isOpened():
-            capture.release()
-            raise RuntimeError("Could not initialize detector masking writer")
-        try:
-            while True:
-                ok, frame = capture.read()
-                if not ok:
-                    break
-                raw_regions = frame_cleaner._detect_phi_regions_for_frame(frame)
-                valid_regions = 0
-                for item in raw_regions:
-                    if not isinstance(item, Mapping):
-                        continue
-                    region_item = cast(Mapping[str, object], item)
-                    try:
-                        x1, y1, x2, y2 = (
-                            _coerce_frame_number(region_item[key])
-                            for key in ("x1", "y1", "x2", "y2")
-                        )
-                    except (KeyError, TypeError, ValueError):
-                        continue
-                    x1, x2 = max(0, x1), min(width, x2)
-                    y1, y2 = max(0, y1), min(height, y2)
-                    if x2 <= x1 or y2 <= y1:
-                        continue
-                    frame[y1:y2, x1:x2] = 0
-                    valid_regions += 1
-                writer.write(frame)
-                frames_processed += 1
-                if valid_regions:
-                    frames_with_redactions += 1
-                    redactions_applied += valid_regions
-        finally:
-            capture.release()
-            writer.release()
-
-        if frames_processed == 0 or not video_only.is_file():
-            raise RuntimeError("Detector masking produced no video frames")
-        command = [
-            "ffmpeg",
-            "-nostdin",
-            "-y",
-            "-i",
-            str(video_only),
-            "-i",
-            str(input_video),
-            "-map",
-            "0:v:0",
-            "-map",
-            "1:a?",
-            "-c:v",
-            "copy",
-            "-c:a",
-            "aac",
-            "-shortest",
-            "-movflags",
-            "+faststart",
-            str(output_video),
-        ]
-        try:
-            subprocess.run(command, capture_output=True, text=True, check=True)
-        except subprocess.CalledProcessError as exc:
-            raise RuntimeError(
-                f"Could not finalize detector video: {exc.stderr}"
-            ) from exc
-
-    return {
-        "strategy": "detector_assisted",
-        "frames_processed": frames_processed,
-        "frames_with_redactions": frames_with_redactions,
-        "redactions_applied": redactions_applied,
-        "review_required": True,
-    }
 
 
 class VideoCorrectionView(APIView):
@@ -361,72 +248,36 @@ class VideoAnonymizationCorrectionView(APIView):
             payload = self._validate_payload(_request_payload_data(request))
         except ValueError as exc:
             return _error_response(str(exc), status.HTTP_400_BAD_REQUEST)
-
-        strategy = cast(str, payload["strategy"])
-        history = cast(
-            ProcessingHistoryRecord,
-            VideoProcessingHistory.objects.create(
-                video=video,
-                operation=VideoProcessingHistory.OPERATION_MASKING,
-                status=VideoProcessingHistory.STATUS_PENDING,
-                config=payload,
-            ),
-        )
-        output_path = _anonymization_output_path(video, strategy)
-        temp_output_path = _part_output_path(output_path)
-        safe_unlink_file(temp_output_path, missing_ok=True)
-
         try:
-            history.mark_running()
-            if not video.raw_file or not getattr(video.raw_file, "name", None):
-                raise FileNotFoundError(
-                    f"Raw video file not found for correction: {_video_hash(video)}"
-                )
-
-            started_at = time.perf_counter()
-            frame_cleaner = FrameCleaner()
-            with ensure_local_file(video.raw_file) as raw_path:
-                run_summary = self._apply_strategy(
-                    frame_cleaner=frame_cleaner,
-                    raw_path=raw_path,
-                    output_path=temp_output_path,
-                    payload=payload,
-                )
-            processing_time = time.perf_counter() - started_at
-            final_output = _promote_processed_output(temp_output_path, output_path)
-            stored_name = update_processed_file(video, final_output)
-            summary = {
-                **run_summary,
-                "strategy": strategy,
-                "processing_time": processing_time,
-                "review_required": True,
-                "output_file": stored_name,
-            }
-            history.mark_success(
-                output_file=stored_name,
-                details=json.dumps(summary, sort_keys=True),
-            )
-            return Response(
-                {
-                    **self._status_payload(request, video, selected_strategy=strategy),
-                    **summary,
-                    "message": "Anonymization correction complete; human review required",
-                },
-                status=status.HTTP_200_OK,
+            dispatch = dispatch_video_anonymization_correction(video, payload)
+        except PydanticValidationError as exc:
+            return _error_response(
+                _validation_error_message(exc), status.HTTP_400_BAD_REQUEST
             )
         except Exception as exc:
-            safe_unlink_file(temp_output_path, missing_ok=True)
-            history.mark_failure(str(exc))
             logger.error(
-                "Anonymization correction failed for video %s: %s",
+                "Anonymization correction dispatch failed for video %s: %s",
                 pk,
                 exc,
                 exc_info=True,
             )
             return _error_response(
-                f"Anonymization correction failed: {exc}",
-                status.HTTP_500_INTERNAL_SERVER_ERROR,
+                f"Anonymization correction could not be queued: {exc}",
+                status.HTTP_503_SERVICE_UNAVAILABLE,
             )
+
+        return Response(
+            {
+                **self._status_payload(
+                    request,
+                    video,
+                    selected_strategy=cast(str, payload["strategy"]),
+                ),
+                "job": dispatch.to_dict(),
+                "message": "Anonymization correction queued on the FFmpeg worker",
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
 
     @classmethod
     def _validate_payload(cls, data: Mapping[str, Any]) -> dict[str, object]:
@@ -487,38 +338,27 @@ class VideoAnonymizationCorrectionView(APIView):
         output_path: Path,
         payload: Mapping[str, object],
     ) -> dict[str, object]:
-        strategy = str(payload["strategy"])
-        if strategy == "detector_assisted":
-            mask_method = getattr(frame_cleaner, "mask_video_with_phi_detector", None)
-            if callable(mask_method):
-                summary = mask_method(input_video=raw_path, output_video=output_path)
-                to_dict = getattr(summary, "to_dict", None)
-                return cast(dict[str, object], to_dict() if callable(to_dict) else {})
-            return _mask_video_with_detector_compat(
-                frame_cleaner, raw_path, output_path
-            )
-
-        region = cast(Mapping[str, object], payload["region"])
-        if region["mode"] == "device":
-            frame_cleaner.mask_application.device_name = str(region["device_name"])
-            mask_config = frame_cleaner.mask_application._load_mask()
-        else:
-            mask_config = frame_cleaner.mask_application.create_mask_config_from_roi(
-                endoscope_image_roi=cast(Mapping[str, object], region["roi"])
-            )
-        success = frame_cleaner.mask_application.mask_video_streaming(
-            input_video=raw_path,
-            mask_config=mask_config,
-            output_video=output_path,
-            use_named_pipe=payload["processing_method"] == "streaming",
+        config = VideoAnonymizationCorrectionJobConfig.model_validate(
+            {
+                "processing_method": "streaming",
+                "region": {
+                    "mode": "device",
+                    "device_name": "olympus_cv_1500",
+                },
+                "human_review_required": True,
+                "apply_all_frames": True,
+                **payload,
+                "queue": queue_for_job_kind(
+                    HeavyJobKind.VIDEO_ANONYMIZATION_CORRECTION
+                ),
+            }
         )
-        if not success:
-            raise RuntimeError("Processor-region masking failed")
-        return {
-            "frames_processed": None,
-            "frames_with_redactions": None,
-            "redactions_applied": None,
-        }
+        return apply_video_anonymization_strategy(
+            frame_cleaner=frame_cleaner,
+            raw_path=raw_path,
+            output_path=output_path,
+            config=config,
+        )
 
     def _status_payload(
         self,
@@ -531,7 +371,6 @@ class VideoAnonymizationCorrectionView(APIView):
             VideoProcessingHistory.objects.filter(
                 video=video,
                 operation=VideoProcessingHistory.OPERATION_MASKING,
-                status=VideoProcessingHistory.STATUS_SUCCESS,
             )
             .order_by("-created_at")
             .first()
@@ -540,6 +379,21 @@ class VideoAnonymizationCorrectionView(APIView):
             cast(dict[str, object], latest.config) if latest is not None else {}
         )
         processed_name = str(getattr(video.processed_file, "name", "") or "")
+        processed_hls_available = False
+        if processed_name:
+            try:
+                processed_hls = get_ready_hls_artifact(
+                    video=video,
+                    artifact_kind="processed",
+                )
+                hls_playlist_path(processed_hls)
+                processed_hls_available = True
+            except (
+                FileNotFoundError,
+                ValueError,
+                VideoHlsArtifact.DoesNotExist,
+            ):
+                processed_hls_available = False
         resolved_strategy = (
             selected_strategy
             or cast(str | None, latest_config.get("strategy"))
@@ -580,14 +434,14 @@ class VideoAnonymizationCorrectionView(APIView):
             "ocr_engines": ["RapidOCR", "TesseOCR", "PyTesseract"],
             "review_required": True,
             "processed_artifact": {
-                "available": bool(processed_name),
+                "available": processed_hls_available,
                 "stream_url": build_absolute_media_url(
                     request,
                     build_video_hls_playlist_path(
                         int(cast(Any, video).pk), file_type="processed"
                     ),
                 )
-                if processed_name
+                if processed_hls_available
                 else None,
             },
             "latest_run": latest_run,

@@ -278,6 +278,69 @@ def test_anonymization_correction_uses_public_all_frame_detector_method(
     assert result == {"frames_processed": 12, "redactions_applied": 7}
 
 
+def test_anonymization_correction_post_dispatches_ffmpeg_job(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module: Any = _load_video_view_module("correction")
+    video = _FakeVideo(tmp_path / "source.mp4")
+    captured_payload: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        module,
+        "get_object_or_404",
+        _fake_get_object_or_404(video),
+        raising=True,
+    )
+
+    def _dispatch(_video: object, payload: dict[str, object]) -> SimpleNamespace:
+        captured_payload.update(payload)
+        return SimpleNamespace(
+            to_dict=lambda: {
+                "video_id": 1,
+                "status": "queued",
+                "queue": "ffmpeg_media",
+                "task_id": "task-1",
+                "history_id": 9,
+            }
+        )
+
+    monkeypatch.setattr(
+        module, "dispatch_video_anonymization_correction", _dispatch, raising=True
+    )
+
+    def _status_payload(*_args: object, **_kwargs: object) -> dict[str, object]:
+        return {"latest_run": None}
+
+    monkeypatch.setattr(
+        module.VideoAnonymizationCorrectionView,
+        "_status_payload",
+        _status_payload,
+        raising=True,
+    )
+    view = module.VideoAnonymizationCorrectionView()
+    request = view.initialize_request(
+        APIRequestFactory().post(
+            "/correction/",
+            {
+                "strategy": "processor_region",
+                "processing_method": "streaming",
+                "region": {
+                    "mode": "device",
+                    "device_name": "olympus_cv_1500",
+                },
+                "human_review_required": True,
+            },
+            format="json",
+        )
+    )
+
+    response = view.post(request, pk=1)
+
+    assert response.status_code == 202
+    assert captured_payload["strategy"] == "processor_region"
+    assert response.data["job"]["queue"] == "ffmpeg_media"
+
+
 @pytest.mark.django_db
 def test_reimport_returns_clear_error_when_raw_source_is_missing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch

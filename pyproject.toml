@@ -16,7 +16,7 @@ maintainers = [
 ]
 name = "endoreg_db"
 readme = "README.md"
-version = "1.0.6.2"
+version = "1.0.6.3"
 requires-python = ">=3.12,<3.13"
 
 classifiers = [
@@ -76,7 +76,7 @@ dependencies = [
     "python-magic>=0.4.27",
     "python-jose[cryptography]>=3.5.0",
     "mozilla-django-oidc>=4.0.1",
-    "lx-anonymizer[gpu]==0.9.3.2",
+    "lx-anonymizer[gpu]==0.9.3.3",
     "googlemaps>=4.10.0",
     "numba>=0.63.1",
     "ziglang>=0.15.2",
