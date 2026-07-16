@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from endoreg_db.utils.storage_profile import PayloadKind, StoragePolicy
+from endoreg_db.utils.video.encoding_standard import STANDARD_VIDEO_ENCODING
 
 STREAMABLE_DIRECTORY_MODE = 0o750
 STREAMABLE_FILE_MODE = 0o640
@@ -70,8 +71,7 @@ class StreamableTranscodeProfile:
 
     def extra_args(self) -> list[str]:
         args = [
-            "-vf",
-            f"scale=-2:{self.height_px},format=yuv420p",
+            *STANDARD_VIDEO_ENCODING.ffmpeg_output_args(height_px=self.height_px),
             "-movflags",
             self.movflags,
         ]

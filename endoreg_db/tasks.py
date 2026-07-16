@@ -56,6 +56,27 @@ def run_video_reimport_task(
 
 
 @shared_task(
+    name="endoreg_db.video_fps_normalization",
+    bind=True,
+    acks_late=True,
+    reject_on_worker_lost=True,
+    track_started=True,
+    time_limit=60 * 60 * 6,
+    soft_time_limit=60 * 60 * 5,
+)
+def run_video_fps_normalization_task(
+    _task: Task[[int, int], bool],
+    video_id: int,
+    history_id: int,
+) -> bool:
+    from endoreg_db.services.jobs.video_fps_normalization_jobs import (
+        _run_video_fps_normalization,
+    )
+
+    return _run_video_fps_normalization(int(video_id), int(history_id))
+
+
+@shared_task(
     name="endoreg_db.frame_extraction_request",
     bind=True,
     acks_late=True,

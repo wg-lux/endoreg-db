@@ -167,7 +167,7 @@ class ReportAnonymizer:
 
         try:
             # Try direct import first
-            from lx_anonymizer import ReportReader
+            from lx_anonymizer import ReportReader  # pyright: ignore[reportMissingTypeStubs]
 
             logger.info("Successfully imported lx_anonymizer ReportReader module")
             self._report_reader_available = True

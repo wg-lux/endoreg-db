@@ -3,7 +3,7 @@ import types
 from collections.abc import Callable, Mapping
 from typing import Any, cast
 from typing import Protocol
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from django.test import TestCase
 from django.urls import resolve
@@ -27,15 +27,57 @@ from endoreg_db.serializers import LabelVideoSegmentSerializer
 from endoreg_db.serializers.video.video_file_list import VideoFileListSerializer
 from endoreg_db.services.jobs import video_post_validation_jobs as post_validation_jobs
 from endoreg_db.services.jobs.video_post_validation_jobs import JobDispatchResult
+from endoreg_db.services.jobs.video_fps_normalization_jobs import (
+    FpsNormalizationDispatchResult,
+)
 from endoreg_db.views.video.segments_crud import (
     ensure_prediction_segment_annotations_for_video,
     import_prediction_segments_to_manual,
     video_segment_validate,
     video_segments_blacken_outside,
+    video_segments_normalize_fps,
     video_segments_bulk_mutation,
     video_segments_by_video,
     video_segments_validate_bulk,
 )
+
+
+class VideoSegmentFpsNormalizationViewTest(TestCase):
+    def setUp(self) -> None:
+        self.factory = APIRequestFactory()
+        center = Center.objects.create(name="FPS normalization center")
+        self.video = VideoFile.objects.create(
+            center=center,
+            video_hash="fps-normalization-video",
+            original_file_name="fps-normalization.mp4",
+            fps=60.0,
+            frame_count=600,
+        )
+
+    @patch("endoreg_db.views.video.segments_crud.dispatch_video_fps_normalization")
+    def test_post_dispatches_non_blocking_normalization(
+        self, dispatch: MagicMock
+    ) -> None:
+        dispatch.return_value = FpsNormalizationDispatchResult(
+            video_id=int(self.video.pk),
+            status="queued",
+            fps=60.0,
+            max_fps=50.0,
+            task_id="fps-task",
+            history_id=7,
+        )
+        request = self.factory.post(
+            f"/api/media/videos/{self.video.pk}/segments/normalize-fps/",
+            {},
+            format="json",
+        )
+
+        response = video_segments_normalize_fps(request, pk=int(self.video.pk))
+
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.data["status"], "queued")
+        self.assertEqual(response.data["max_fps"], 50.0)
+        dispatch.assert_called_once_with(self.video)
 
 
 class _SerializerErrorsCarrier(Protocol):

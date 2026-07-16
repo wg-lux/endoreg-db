@@ -8,7 +8,7 @@ from tempfile import TemporaryDirectory
 from typing import Protocol, cast
 
 import cv2
-import pytesseract
+import pytesseract  # pyright: ignore[reportMissingTypeStubs]
 from PIL import Image, ImageOps
 from endoreg_db.utils.cropping import crop_and_insert
 from lx_dtypes.models.contracts.endoscopy_processor import RoiBoxCore

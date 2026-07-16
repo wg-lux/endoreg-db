@@ -28,7 +28,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Any, Protocol, cast, overload
 
-from mozilla_django_oidc.auth import OIDCAuthenticationBackend
+from mozilla_django_oidc.auth import OIDCAuthenticationBackend  # pyright: ignore[reportMissingTypeStubs]
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AbstractUser, Group
 from django.db.models.query import QuerySet

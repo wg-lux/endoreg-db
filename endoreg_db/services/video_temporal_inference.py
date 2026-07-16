@@ -574,7 +574,7 @@ def _segments_to_sequences(
     return sequences
 
 
-def _temporal_history_config(
+def _temporal_history_config(  # pyright: ignore[reportUnusedFunction]
     *,
     model_meta_id: int,
     replace_prediction_segments: bool,

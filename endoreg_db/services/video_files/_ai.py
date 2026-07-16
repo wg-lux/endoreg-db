@@ -270,28 +270,28 @@ def _build_label_mapping(
 
 
 def _remap_prediction_dict(
-    predictions: Dict[str, Any], mapping: Dict[str, List[str]]
-) -> Dict[str, Any]:
-    remapped: Dict[str, Any] = {}
+    predictions: Dict[str, List[float]], mapping: Dict[str, List[str]]
+) -> Dict[str, List[float]]:
+    if not predictions:
+        raise ValueError("Cannot remap an empty prediction dictionary.")
+
+    score_count = len(next(iter(predictions.values())))
+    if any(len(scores) != score_count for scores in predictions.values()):
+        raise ValueError("Prediction score lists must have equal lengths.")
+
+    remapped: Dict[str, List[float]] = {}
     for target, sources in mapping.items():
-        values: List[Any] = []
+        values: List[List[float]] = []
         for source in sources:
             value = predictions.get(source)
             if value is not None:
                 values.append(value)
         if not values:
-            remapped[target] = 0.0
+            remapped[target] = [0.0] * score_count
             continue
 
-        first = values[0]
-        if isinstance(first, np.ndarray):
-            stacked = np.stack(values, axis=0)
-            remapped[target] = stacked.max(axis=0)
-        elif hasattr(first, "__iter__") and not isinstance(first, (float, int)):
-            stacked = np.stack([np.asarray(v) for v in values], axis=0)
-            remapped[target] = stacked.max(axis=0)
-        else:
-            remapped[target] = max(float(v) for v in values)
+        stacked = np.asarray(values, dtype=float)
+        remapped[target] = stacked.max(axis=0).tolist()
 
     return remapped
 

@@ -26,6 +26,7 @@ from endoreg_db.services.video_files import (
     get_active_raw_video_file,
 )
 from endoreg_db.utils import ffmpeg_wrapper
+from endoreg_db.utils.video.encoding_standard import STANDARD_VIDEO_ENCODING
 from endoreg_db.utils.encryption.encryption import load_master_key
 from endoreg_db.utils.file_operations import (
     atomic_move_path,
@@ -70,8 +71,10 @@ FFMPEG_OUTPUT_PROGRESS_WATCHDOG_SECONDS = 300.0
 MP4_PIPE_COMPATIBILITY_SCAN_BYTES = 64 * 1024
 HLS_VIDEO_PRESET = "medium"
 HLS_VIDEO_CRF = "18"
-HLS_VIDEO_PROFILE = "high"
-HLS_VIDEO_PIXEL_FORMAT = "yuv420p"
+HLS_VIDEO_PROFILE = STANDARD_VIDEO_ENCODING.profile
+HLS_VIDEO_PIXEL_FORMAT = STANDARD_VIDEO_ENCODING.pixel_format
+HLS_VIDEO_COLOR_RANGE = STANDARD_VIDEO_ENCODING.color_range
+HLS_VIDEO_MAX_FPS = STANDARD_VIDEO_ENCODING.max_fps_arg()
 HLS_AUDIO_CODEC = "copy"
 HLS_FFMPEG_THREADS_ENV = "LX_ANNOTATE_HLS_FFMPEG_THREADS"
 
@@ -867,6 +870,12 @@ def _ffmpeg_command(
         HLS_VIDEO_CRF,
         "-pix_fmt",
         HLS_VIDEO_PIXEL_FORMAT,
+        "-vf",
+        STANDARD_VIDEO_ENCODING.filter_chain(),
+        "-color_range",
+        HLS_VIDEO_COLOR_RANGE,
+        "-fpsmax",
+        HLS_VIDEO_MAX_FPS,
         "-codec:a",
         HLS_AUDIO_CODEC,
         "-f",

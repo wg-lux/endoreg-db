@@ -88,7 +88,7 @@ confirm the processed source artifact is still permitted for outbound streaming,
 then run the regeneration command for each affected video ID:
 
 ```sh
-manage.py materialize_video_hls --video-id <id> --apply --inline --force
+manage.py materialize_video_hls --video-id <id> --artifact-kind processed --apply --inline --force
 ```
 
 ## Managed Media Promotion

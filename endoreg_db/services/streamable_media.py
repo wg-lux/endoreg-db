@@ -119,7 +119,9 @@ _DEFAULT_STREAMABLE_RAW_VIDEO_ROOT_FN = _streamable_raw_video_root
 _DEFAULT_STREAMABLE_PROCESSED_VIDEO_ROOT_FN = _streamable_processed_video_root
 
 
-def _streamable_relative_path(target_path: Path) -> str:
+def _streamable_relative_path(  # pyright: ignore[reportUnusedFunction]
+    target_path: Path,
+) -> str:
     resolved_target = Path(target_path).resolve()
 
     storage_roots = (
@@ -351,7 +353,7 @@ def _secure_delete_legacy_streamable_path(
     return True
 
 
-def _materialize_streamable_target(
+def _materialize_streamable_target(  # pyright: ignore[reportUnusedFunction]
     video_field_file: FieldFile | Any,
     target_path: Path,
     *,

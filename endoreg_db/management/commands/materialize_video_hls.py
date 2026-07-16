@@ -6,7 +6,7 @@ import json
 from typing import Any, Protocol, cast
 
 from django.core.management.base import CommandError, CommandParser
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 
 from endoreg_db.config.env import get_protected_media_url, nginx_offload_enabled
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
@@ -37,6 +37,7 @@ _HLS_STATUS_VALUES = (
     VideoHlsArtifact.Status.READY.value,
     VideoHlsArtifact.Status.FAILED.value,
 )
+_BOTH_ARTIFACT_KINDS = "both"
 
 
 @dataclass(frozen=True)
@@ -74,10 +75,11 @@ class Command(BaseVideoCommand):
         self.add_video_selection_arguments(parser)
         parser.add_argument(
             "--artifact-kind",
-            default="processed",
+            default=_BOTH_ARTIFACT_KINDS,
             help=(
                 "Video artifact to materialize as encrypted HLS. "
-                "Use raw for local clinical review or processed for anonymized playback."
+                "Defaults to both required local artifacts; use raw for local "
+                "clinical review only or processed for anonymized playback only."
             ),
         )
         self.add_apply_argument(
@@ -106,12 +108,19 @@ class Command(BaseVideoCommand):
     def handle(self, *args: object, **options: object) -> None:
         limit = self.positive_limit_from_options(options)
         selected_video_ids = self.selected_video_ids_from_options(options)
-        try:
-            artifact_kind = coerce_hls_artifact_kind(
-                options.get("artifact_kind") or "processed"
-            ).value
-        except ValueError as exc:
-            raise CommandError(str(exc)) from exc
+        artifact_kind = (
+            str(options.get("artifact_kind") or _BOTH_ARTIFACT_KINDS).strip().lower()
+        )
+        if artifact_kind == _BOTH_ARTIFACT_KINDS:
+            artifact_kinds = (
+                VideoArtifactKind.RAW.value,
+                VideoArtifactKind.PROCESSED.value,
+            )
+        else:
+            try:
+                artifact_kinds = (coerce_hls_artifact_kind(artifact_kind).value,)
+            except ValueError as exc:
+                raise CommandError(str(exc)) from exc
         apply_changes = bool(options.get("apply"))
         inline = bool(options.get("inline"))
         force = bool(options.get("force"))
@@ -120,18 +129,33 @@ class Command(BaseVideoCommand):
 
         selected_videos = list(
             self._queryset(
-                artifact_kind=artifact_kind,
+                artifact_kinds=artifact_kinds,
                 video_ids=selected_video_ids,
                 limit=limit,
             )
         )
+        selected_artifact_count = sum(
+            1
+            for video in selected_videos
+            for selected_kind in artifact_kinds
+            if self._video_has_source(video, artifact_kind=selected_kind)
+        )
 
         results: list[dict[str, Any]] = []
         queue = queue_for_job_kind(HeavyJobKind.VIDEO_HLS_MATERIALIZATION)
-        audit = self._audit_summary(
-            artifact_kind=artifact_kind,
-            video_ids=selected_video_ids,
-        )
+        if artifact_kind == _BOTH_ARTIFACT_KINDS:
+            audit: dict[str, object] = {
+                selected_kind: self._audit_summary(
+                    artifact_kind=selected_kind,
+                    video_ids=selected_video_ids,
+                )
+                for selected_kind in artifact_kinds
+            }
+        else:
+            audit = self._audit_summary(
+                artifact_kind=artifact_kinds[0],
+                video_ids=selected_video_ids,
+            )
         preflight = self._preflight(queue=queue)
         if apply_changes and not inline:
             try:
@@ -147,6 +171,7 @@ class Command(BaseVideoCommand):
                 inline=inline,
                 artifact_kind=artifact_kind,
                 selected=len(selected_videos),
+                selected_artifacts=selected_artifact_count,
                 audit=audit,
                 preflight=preflight,
                 results=results,
@@ -157,55 +182,62 @@ class Command(BaseVideoCommand):
                 "HLS materialization preflight failed: " + "; ".join(preflight.errors)
             )
 
+        stop_after_failure = False
         for video in selected_videos:
             video_id = int(video.pk)
-            if not apply_changes:
-                result = {
-                    "video_id": video_id,
-                    "artifact_kind": artifact_kind,
-                    "status": "would_materialize",
-                }
-            elif inline:
-                try:
-                    materialized = materialize_video_hls(
-                        video_id,
-                        artifact_kind=artifact_kind,
-                        force=force,
-                    )
-                    result = materialized.as_dict()
-                except Exception as exc:
+            for selected_kind in artifact_kinds:
+                if not self._video_has_source(video, artifact_kind=selected_kind):
+                    continue
+                if not apply_changes:
                     result = {
                         "video_id": video_id,
-                        "artifact_kind": artifact_kind,
-                        "status": "failed",
-                        "error": str(exc),
+                        "artifact_kind": selected_kind,
+                        "status": "would_materialize",
                     }
-                    if fail_fast:
-                        results.append(result)
-                        break
-            else:
-                task_dispatcher = cast(_TaskDispatcher, video_hls_materialization)
-                async_result = task_dispatcher.apply_async(
-                    args=[video_id, artifact_kind, force],
-                    queue=queue,
-                    routing_key=queue,
-                )
-                result = {
-                    "video_id": video_id,
-                    "artifact_kind": artifact_kind,
-                    "status": "queued",
-                    "task_id": str(async_result.id),
-                    "queue": queue,
-                }
-            results.append(result)
-            if not json_output:
-                self._write_result(result)
+                elif inline:
+                    try:
+                        materialized = materialize_video_hls(
+                            video_id,
+                            artifact_kind=selected_kind,
+                            force=force,
+                        )
+                        result = materialized.as_dict()
+                    except Exception as exc:
+                        result = {
+                            "video_id": video_id,
+                            "artifact_kind": selected_kind,
+                            "status": "failed",
+                            "error": str(exc),
+                        }
+                        stop_after_failure = fail_fast
+                else:
+                    task_dispatcher = cast(_TaskDispatcher, video_hls_materialization)
+                    async_result = task_dispatcher.apply_async(
+                        args=[video_id, selected_kind, force],
+                        queue=queue,
+                        routing_key=queue,
+                    )
+                    result = {
+                        "video_id": video_id,
+                        "artifact_kind": selected_kind,
+                        "status": "queued",
+                        "task_id": str(async_result.id),
+                        "queue": queue,
+                    }
+                results.append(result)
+                if not json_output:
+                    self._write_result(result)
+                if stop_after_failure:
+                    break
+            if stop_after_failure:
+                break
 
         payload = self._payload(
             apply_changes=apply_changes,
             inline=inline,
             artifact_kind=artifact_kind,
             selected=len(selected_videos),
+            selected_artifacts=selected_artifact_count,
             audit=audit,
             preflight=preflight,
             results=results,
@@ -218,7 +250,7 @@ class Command(BaseVideoCommand):
         failures = [result for result in results if result.get("status") == "failed"]
         if failures:
             raise CommandError(
-                f"HLS materialization failed for {len(failures)} video(s)."
+                f"HLS materialization failed for {len(failures)} artifact(s)."
             )
 
     @staticmethod
@@ -239,13 +271,32 @@ class Command(BaseVideoCommand):
         )
 
     @staticmethod
+    def _video_has_source(video: VideoFile, *, artifact_kind: str) -> bool:
+        parsed_kind = coerce_hls_artifact_kind(artifact_kind)
+        source = (
+            video.raw_file
+            if parsed_kind == VideoArtifactKind.RAW
+            else video.processed_file
+        )
+        return bool(getattr(source, "name", ""))
+
+    @staticmethod
     def _queryset(
         *,
-        artifact_kind: str,
+        artifact_kinds: tuple[str, ...],
         video_ids: list[int] | None,
         limit: int | None,
     ) -> QuerySet[VideoFile]:
-        queryset = Command._eligible_queryset(artifact_kind=artifact_kind)
+        source_filter = Q()
+        for artifact_kind in artifact_kinds:
+            parsed_kind = coerce_hls_artifact_kind(artifact_kind)
+            source_field = (
+                "raw_file" if parsed_kind == VideoArtifactKind.RAW else "processed_file"
+            )
+            source_filter |= Q(**{f"{source_field}__isnull": False}) & ~Q(
+                **{source_field: ""}
+            )
+        queryset = VideoFile.objects.filter(source_filter).order_by("pk")
         return Command.apply_video_selection(
             queryset,
             video_ids=video_ids,
@@ -334,6 +385,7 @@ class Command(BaseVideoCommand):
         inline: bool,
         artifact_kind: str,
         selected: int,
+        selected_artifacts: int,
         audit: dict[str, object],
         preflight: _PreflightResult,
         results: list[dict[str, Any]],
@@ -343,6 +395,7 @@ class Command(BaseVideoCommand):
             "inline": inline,
             "artifact_kind": artifact_kind,
             "selected": selected,
+            "selected_artifacts": selected_artifacts,
             "audit": audit,
             "preflight": preflight.as_dict(),
             "results": results,

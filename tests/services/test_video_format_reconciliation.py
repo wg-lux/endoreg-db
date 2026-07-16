@@ -16,6 +16,7 @@ def _stream_info(
     codec_name: str = "h264",
     pixel_format: str = "yuv420p",
     color_range: str = "pc",
+    frame_rate: str = "50/1",
 ) -> JsonObject:
     payload = FfmpegProbeDataPayload.model_validate(
         {
@@ -25,6 +26,7 @@ def _stream_info(
                     "codec_name": codec_name,
                     "pix_fmt": pixel_format,
                     "color_range": color_range,
+                    "avg_frame_rate": frame_rate,
                 }
             ]
         }
@@ -82,6 +84,14 @@ def _yuvj420p_full_range_stream_info(path: Path) -> JsonObject:
 
 def _yuvj420p_tv_range_stream_info(path: Path) -> JsonObject:
     return _stream_info(pixel_format="yuvj420p", color_range="tv")
+
+
+def _non_compliant_60_fps_stream_info(path: Path) -> JsonObject:
+    return _stream_info(frame_rate="60/1")
+
+
+def _compliant_30_fps_stream_info(path: Path) -> JsonObject:
+    return _stream_info(frame_rate="30/1")
 
 
 @pytest.mark.unit
@@ -144,6 +154,46 @@ def test_classify_video_format_rejects_yuvj420p_without_full_color_range(
     assert report.compliant is False
     assert report.status == reconciliation.VideoFormatStatus.NON_COMPLIANT
     assert report.reasons == ["color_range_mismatch:tv!=pc"]
+
+
+@pytest.mark.unit
+def test_classify_video_format_preserves_lower_source_fps(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    video_path = tmp_path / "clip.mp4"
+    video_path.write_bytes(b"video")
+    monkeypatch.setattr(
+        reconciliation.ffmpeg_wrapper,
+        "get_stream_info",
+        _compliant_30_fps_stream_info,
+    )
+
+    report = reconciliation.classify_video_format(video_path)
+
+    assert report.compliant is True
+    assert report.fps == 30.0
+    assert report.reasons == []
+
+
+@pytest.mark.unit
+def test_classify_video_format_rejects_fps_above_standard_maximum(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    video_path = tmp_path / "clip.mp4"
+    video_path.write_bytes(b"video")
+    monkeypatch.setattr(
+        reconciliation.ffmpeg_wrapper,
+        "get_stream_info",
+        _non_compliant_60_fps_stream_info,
+    )
+
+    report = reconciliation.classify_video_format(video_path)
+
+    assert report.compliant is False
+    assert report.fps == 60.0
+    assert report.reasons == ["fps_exceeds_max:60.0>50"]
 
 
 @pytest.mark.unit
@@ -258,7 +308,7 @@ def test_reconcile_video_formats_skips_legacy_root_repair(
     )
     monkeypatch.setattr(
         reconciliation.ffmpeg_wrapper,
-        "transcode_videofile_if_required",
+        "transcode_video",
         fail_if_transcoded,
     )
 
@@ -295,7 +345,7 @@ def test_reconcile_video_formats_repairs_mp4_in_place(
             return _stream_info()
         return _stream_info(codec_name="mpeg4", color_range="tv")
 
-    def fake_transcode_videofile_if_required(
+    def fake_transcode_video(
         input_path: Path,
         output_path: Path,
         **kwargs: JsonValue,
@@ -310,8 +360,8 @@ def test_reconcile_video_formats_repairs_mp4_in_place(
     )
     monkeypatch.setattr(
         reconciliation.ffmpeg_wrapper,
-        "transcode_videofile_if_required",
-        fake_transcode_videofile_if_required,
+        "transcode_video",
+        fake_transcode_video,
     )
 
     summary = reconciliation.reconcile_video_formats(

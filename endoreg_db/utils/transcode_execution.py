@@ -27,6 +27,7 @@ from .video.command_construction import (
     _update_or_append_ffmpeg_arg,
 )
 from .video.encoder_policy import _build_encoder_args
+from .video.encoding_standard import STANDARD_VIDEO_ENCODING
 from .video.executable_discovery import (
     _resolve_ffmpeg_executable,
     _resolve_ffprobe_executable,
@@ -219,6 +220,9 @@ def transcode_video(
         return None
 
     ensure_directory(output_path.parent)
+
+    if extra_args is None:
+        extra_args = STANDARD_VIDEO_ENCODING.ffmpeg_output_args()
 
     # Determine encoder configuration
     if codec == "auto" or preset == "auto":

@@ -95,6 +95,8 @@ ROUTE_RESOURCE: RouteResourceMap = {
     "video-frame-decoded-stream": "video",
     "video-reimport": "video",
     "video-correction": "video",
+    "video-anonymization-correction": "video",
+    "video-processing-history": "video",
     "video-metadata": "video",
     "video-apply-mask": "video",
     "video-remove-frames": "video",

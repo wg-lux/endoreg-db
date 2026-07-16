@@ -134,6 +134,12 @@ def test_ffmpeg_hls_command_uses_clinical_quality_h264_settings(
     assert command[command.index("-crf") + 1] == hls_media.HLS_VIDEO_CRF
     assert command[command.index("-profile:v") + 1] == hls_media.HLS_VIDEO_PROFILE
     assert command[command.index("-pix_fmt") + 1] == hls_media.HLS_VIDEO_PIXEL_FORMAT
+    assert command[command.index("-color_range") + 1] == "pc"
+    assert command[command.index("-fpsmax") + 1] == "50"
+    assert "-r" not in command
+    assert command[command.index("-vf") + 1] == (
+        "scale=iw:ih:in_range=auto:out_range=full,format=yuv420p"
+    )
     assert command[command.index("-codec:a") + 1] == hls_media.HLS_AUDIO_CODEC
     assert "0:v:0" in command
     assert "0:a?" in command

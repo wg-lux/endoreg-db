@@ -199,6 +199,85 @@ class _FakeVideo:
         return self.processed_file.name
 
 
+def test_anonymization_correction_payload_requires_human_review() -> None:
+    module: Any = _load_video_view_module("correction")
+
+    with pytest.raises(ValueError, match="human_review_required"):
+        module.VideoAnonymizationCorrectionView._validate_payload(
+            {"strategy": "detector_assisted"}
+        )
+
+
+def test_anonymization_correction_accepts_detector_all_frame_strategy() -> None:
+    module: Any = _load_video_view_module("correction")
+
+    payload = module.VideoAnonymizationCorrectionView._validate_payload(
+        {
+            "strategy": "detector_assisted",
+            "processing_method": "streaming",
+            "human_review_required": True,
+        }
+    )
+
+    assert payload["strategy"] == "detector_assisted"
+    assert payload["apply_all_frames"] is True
+    assert payload["human_review_required"] is True
+
+
+def test_anonymization_correction_normalizes_custom_processor_region() -> None:
+    module: Any = _load_video_view_module("correction")
+
+    payload = module.VideoAnonymizationCorrectionView._validate_payload(
+        {
+            "strategy": "processor_region",
+            "processing_method": "direct",
+            "human_review_required": True,
+            "region": {
+                "mode": "custom",
+                "roi": {"x": 10, "y": 20, "width": 300, "height": 200},
+            },
+        }
+    )
+
+    assert payload["region"] == {
+        "mode": "custom",
+        "device_name": "olympus_cv_1500",
+        "roi": {"x": 10, "y": 20, "width": 300, "height": 200},
+    }
+
+
+def test_anonymization_correction_uses_public_all_frame_detector_method(
+    tmp_path: Path,
+) -> None:
+    module: Any = _load_video_view_module("correction")
+    calls: list[tuple[Path, Path]] = []
+
+    class _Summary:
+        @staticmethod
+        def to_dict() -> dict[str, object]:
+            return {"frames_processed": 12, "redactions_applied": 7}
+
+    class _Cleaner:
+        @staticmethod
+        def mask_video_with_phi_detector(
+            *, input_video: Path, output_video: Path
+        ) -> _Summary:
+            calls.append((input_video, output_video))
+            return _Summary()
+
+    source = tmp_path / "source.mp4"
+    output = tmp_path / "output.mp4"
+    result = module.VideoAnonymizationCorrectionView._apply_strategy(
+        frame_cleaner=_Cleaner(),
+        raw_path=source,
+        output_path=output,
+        payload={"strategy": "detector_assisted"},
+    )
+
+    assert calls == [(source, output)]
+    assert result == {"frames_processed": 12, "redactions_applied": 7}
+
+
 @pytest.mark.django_db
 def test_reimport_returns_clear_error_when_raw_source_is_missing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch

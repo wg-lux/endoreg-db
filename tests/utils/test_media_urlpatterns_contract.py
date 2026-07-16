@@ -139,6 +139,16 @@ EXPECTED_MEDIA_ROUTE_CONTRACT: list[RouteContract] = [
         "endoreg_db.views.video.correction.VideoCorrectionView",
     ),
     (
+        "media/videos/video-correction/<int:pk>/anonymization/",
+        "video-anonymization-correction",
+        "endoreg_db.views.video.correction.VideoAnonymizationCorrectionView",
+    ),
+    (
+        "media/videos/<int:pk>/processing-history/",
+        "video-processing-history",
+        "endoreg_db.views.video.correction.VideoProcessingHistoryView",
+    ),
+    (
         "media/videos/<int:pk>/metadata/",
         "video-metadata",
         "endoreg_db.views.video.video_metadata.VideoMetadataStatsView",
@@ -177,6 +187,11 @@ EXPECTED_MEDIA_ROUTE_CONTRACT: list[RouteContract] = [
         "media/videos/<int:pk>/segments/rerun-predictions/",
         "video-segments-rerun-predictions",
         "endoreg_db.views.video.ai.label.rerun_prediction_segments",
+    ),
+    (
+        "media/videos/<int:pk>/segments/normalize-fps/",
+        "video-segments-normalize-fps",
+        "endoreg_db.views.video.segments_crud.video_segments_normalize_fps",
     ),
     (
         "media/videos/<int:pk>/segments/import-predictions/",

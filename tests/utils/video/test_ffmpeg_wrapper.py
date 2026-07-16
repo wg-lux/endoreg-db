@@ -199,6 +199,16 @@ def test_transcode_video_force_cpu_uses_cpu_only_flags(
         "-b:a",
         "128k",
         "-y",
+        "-profile:v",
+        "high",
+        "-vf",
+        "scale=iw:ih:in_range=auto:out_range=full,format=yuv420p",
+        "-pix_fmt",
+        "yuv420p",
+        "-color_range",
+        "pc",
+        "-fpsmax",
+        "50",
         str(output_path),
     ]
 
@@ -833,6 +843,10 @@ def test_blacken_video_frame_intervals_maps_audio_and_filter(
     assert command[command.index("-c:a") + 1] == "copy"
     assert "-vf" in command
     assert "(gte(n\\,10)*lt(n\\,20))" in command[command.index("-vf") + 1]
+    assert "out_range=full" in command[command.index("-vf") + 1]
+    assert command[command.index("-color_range") + 1] == "pc"
+    assert command[command.index("-fpsmax") + 1] == "50"
+    assert "-r" not in command
 
 
 @pytest.mark.unit
@@ -931,3 +945,7 @@ def test_mask_video_to_roi_and_blacken_intervals_maps_audio_and_filter(
     filter_expression = command[command.index("-vf") + 1]
     assert "drawbox=x=0:y=0:w=iw:h=20:color=black:t=fill" in filter_expression
     assert "(gte(n\\,10)*lt(n\\,20))" in filter_expression
+    assert "out_range=full" in filter_expression
+    assert command[command.index("-color_range") + 1] == "pc"
+    assert command[command.index("-fpsmax") + 1] == "50"
+    assert "-r" not in command

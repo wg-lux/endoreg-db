@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import shutil
 from dataclasses import dataclass, field
@@ -23,6 +24,7 @@ from endoreg_db.utils.paths import (
     ensure_within_protected_root,
 )
 from endoreg_db.utils import ffmpeg_wrapper
+from endoreg_db.utils.video.encoding_standard import STANDARD_VIDEO_ENCODING
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +40,10 @@ VIDEO_EXTENSIONS = frozenset(
         ".webm",
     }
 )
-REQUIRED_CODEC = "h264"
-REQUIRED_PIXEL_FORMAT = "yuv420p"
-REQUIRED_COLOR_RANGE = "pc"
+REQUIRED_CODEC = STANDARD_VIDEO_ENCODING.codec_name
+REQUIRED_PIXEL_FORMAT = STANDARD_VIDEO_ENCODING.pixel_format
+REQUIRED_COLOR_RANGE = STANDARD_VIDEO_ENCODING.color_range
+REQUIRED_MAX_FPS = STANDARD_VIDEO_ENCODING.max_fps
 FULL_RANGE_YUV420P_PIXEL_FORMATS = frozenset({REQUIRED_PIXEL_FORMAT, "yuvj420p"})
 DEFAULT_MIN_FREE_BYTES = 20 * 1024 * 1024 * 1024
 LEGACY_ROOT_READ_ONLY = "legacy_root_read_only"
@@ -82,6 +85,7 @@ class VideoFormatFileReport:
     codec_name: str | None = None
     pixel_format: str | None = None
     color_range: str | None = None
+    fps: float | None = None
     reasons: list[str] = field(default_factory=_new_str_list)
     action: VideoFormatAction = VideoFormatAction.NONE
     bytes_before: int | None = None
@@ -96,6 +100,7 @@ class VideoFormatFileReport:
             "codec_name": self.codec_name,
             "pixel_format": self.pixel_format,
             "color_range": self.color_range,
+            "fps": self.fps,
             "reasons": list(self.reasons),
             "action": self.action.value,
             "bytes_before": self.bytes_before,
@@ -316,6 +321,7 @@ def classify_video_format(path: Path) -> VideoFormatFileReport:
     report.codec_name = _optional_str(video_stream.get("codec_name"))
     report.pixel_format = _optional_str(video_stream.get("pix_fmt"))
     report.color_range = _optional_str(video_stream.get("color_range")) or "tv"
+    report.fps = _video_stream_fps(video_stream)
     report.reasons = _format_mismatch_reasons(path, report)
 
     if report.reasons:
@@ -384,10 +390,11 @@ def _repair_file(
                 "reasons": list(report.reasons),
             },
         )
-        result = ffmpeg_wrapper.transcode_videofile_if_required(
+        result = ffmpeg_wrapper.transcode_video(
             input_path=input_path,
             output_path=temp_path,
             force_cpu=force_cpu,
+            extra_args=STANDARD_VIDEO_ENCODING.ffmpeg_output_args(),
         )
         if result is None:
             raise RuntimeError("ffmpeg transcode did not produce an output")
@@ -463,11 +470,41 @@ def _format_mismatch_reasons(
         reasons.append(
             f"color_range_mismatch:{report.color_range}!={REQUIRED_COLOR_RANGE}"
         )
+    if report.fps is None:
+        reasons.append("fps_missing")
+    elif report.fps > REQUIRED_MAX_FPS and not math.isclose(
+        report.fps,
+        REQUIRED_MAX_FPS,
+        rel_tol=0.001,
+        abs_tol=0.01,
+    ):
+        reasons.append(f"fps_exceeds_max:{report.fps}>{REQUIRED_MAX_FPS:g}")
     return reasons
 
 
 def _has_required_pixel_format(pixel_format: str | None) -> bool:
     return pixel_format in FULL_RANGE_YUV420P_PIXEL_FORMATS
+
+
+def _video_stream_fps(video_stream: dict[str, Any]) -> float | None:
+    value = video_stream.get("avg_frame_rate") or video_stream.get("r_frame_rate")
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text == "0/0":
+        return None
+    try:
+        if "/" in text:
+            numerator_text, denominator_text = text.split("/", 1)
+            denominator = float(denominator_text)
+            if denominator == 0:
+                return None
+            fps = float(numerator_text) / denominator
+        else:
+            fps = float(text)
+    except ValueError:
+        return None
+    return fps if math.isfinite(fps) and fps > 0 else None
 
 
 def _first_video_stream(streams: list[object]) -> dict[str, Any] | None:

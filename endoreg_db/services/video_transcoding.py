@@ -11,8 +11,6 @@ from uuid import uuid4
 
 from endoreg_db.config.env import get_video_default_fps
 from endoreg_db.services.video_format_reconciliation import (
-    REQUIRED_COLOR_RANGE,
-    REQUIRED_PIXEL_FORMAT,
     VIDEO_EXTENSIONS,
     classify_video_format,
 )
@@ -27,6 +25,7 @@ from endoreg_db.utils.paths import (
     ensure_within_data_root,
     ensure_within_protected_root,
 )
+from endoreg_db.utils.video.encoding_standard import STANDARD_VIDEO_ENCODING
 from endoreg_db.utils import ffmpeg_wrapper
 
 logger = logging.getLogger(__name__)
@@ -262,7 +261,7 @@ def _transcode_one(
 
         _verify_output_file(staging_path)
         _verify_standard_video(staging_path)
-        _verify_target_fps(staging_path, target_fps=target_fps)
+        _verify_max_fps(staging_path, max_fps=target_fps)
 
         file_mode = source.stat().st_mode & 0o777
         atomic_move_file(
@@ -302,14 +301,7 @@ def _run_system_transcode(
         output_path=staging_path,
         quality_mode=quality_mode,
         force_cpu=force_cpu,
-        extra_args=[
-            "-pix_fmt",
-            REQUIRED_PIXEL_FORMAT,
-            "-color_range",
-            REQUIRED_COLOR_RANGE,
-            "-r",
-            _format_fps_arg(target_fps),
-        ],
+        extra_args=STANDARD_VIDEO_ENCODING.ffmpeg_output_args(max_fps=target_fps),
     )
 
 
@@ -376,7 +368,7 @@ def _verify_standard_video(path: Path) -> None:
     raise RuntimeError(f"Transcoded output is not system-standard video: {reason_text}")
 
 
-def _verify_target_fps(path: Path, *, target_fps: float) -> None:
+def _verify_max_fps(path: Path, *, max_fps: float) -> None:
     stream_info = ffmpeg_wrapper.get_stream_info(path)
     if not isinstance(stream_info, dict) or "streams" not in stream_info:
         raise RuntimeError(f"Could not verify output fps for {path}")
@@ -400,10 +392,15 @@ def _verify_target_fps(path: Path, *, target_fps: float) -> None:
     probed_fps = _parse_frame_rate(fps_raw)
     if probed_fps is None:
         raise RuntimeError(f"Could not verify output fps for {path}: missing fps")
-    if not math.isclose(probed_fps, target_fps, rel_tol=0.001, abs_tol=0.01):
+    if probed_fps > max_fps and not math.isclose(
+        probed_fps,
+        max_fps,
+        rel_tol=0.001,
+        abs_tol=0.01,
+    ):
         raise RuntimeError(
-            f"Transcoded output fps mismatch for {path}: "
-            f"{probed_fps:g} != {target_fps:g}"
+            f"Transcoded output fps exceeds maximum for {path}: "
+            f"{probed_fps:g} > {max_fps:g}"
         )
 
 
@@ -483,10 +480,6 @@ def _default_target_fps() -> float:
     except Exception:
         pass
     return float(get_video_default_fps())
-
-
-def _format_fps_arg(fps: float) -> str:
-    return str(int(fps)) if float(fps).is_integer() else f"{fps:g}"
 
 
 def _parse_frame_rate(value: object) -> float | None:

@@ -92,7 +92,18 @@ def test_transcode_video_directory_stages_and_moves_output(
     assert captured["input_path"] == source.resolve()
     assert captured["output_path"] != destination
     assert captured["kwargs"] == {
-        "extra_args": ["-pix_fmt", "yuv420p", "-color_range", "pc", "-r", "50"],
+        "extra_args": [
+            "-profile:v",
+            "high",
+            "-vf",
+            "scale=iw:ih:in_range=auto:out_range=full,format=yuv420p",
+            "-pix_fmt",
+            "yuv420p",
+            "-color_range",
+            "pc",
+            "-fpsmax",
+            "50",
+        ],
         "quality_mode": "quality",
         "force_cpu": True,
     }
@@ -167,7 +178,18 @@ def test_transcode_video_directory_uses_configured_target_fps(
     assert summary.transcoded_files == 1
     assert summary.target_fps == 29.97
     assert captured["kwargs"] == {
-        "extra_args": ["-pix_fmt", "yuv420p", "-color_range", "pc", "-r", "29.97"],
+        "extra_args": [
+            "-profile:v",
+            "high",
+            "-vf",
+            "scale=iw:ih:in_range=auto:out_range=full,format=yuv420p",
+            "-pix_fmt",
+            "yuv420p",
+            "-color_range",
+            "pc",
+            "-fpsmax",
+            "29.97",
+        ],
         "quality_mode": "balanced",
         "force_cpu": False,
     }

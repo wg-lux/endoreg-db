@@ -71,6 +71,10 @@ from endoreg_db.services.jobs.video_post_validation_jobs import (
     JobDispatchResult,
     dispatch_video_post_validation_rebuild,
 )
+from endoreg_db.services.jobs.video_fps_normalization_jobs import (
+    dispatch_video_fps_normalization,
+    normalization_status,
+)
 from endoreg_db.services.video_files import get_or_create_video_state, get_video_fps
 from endoreg_db.models.state.label_video_segment import LabelVideoSegmentState
 from endoreg_db.serializers.label_video_segment import (
@@ -574,6 +578,35 @@ def video_segments_blacken_outside(request: Request, pk: int) -> Response:
         },
         status=response_status,
     )
+
+
+@api_view(["GET", "POST"])
+@permission_classes([EnvironmentAwarePermission])
+def video_segments_normalize_fps(request: Request, pk: int) -> Response:
+    """Start or inspect idempotent pre-annotation FPS normalization."""
+    video = get_object_or_404(VideoFile, pk=pk)
+    try:
+        result = (
+            dispatch_video_fps_normalization(video)
+            if request.method == "POST"
+            else normalization_status(video)
+        )
+    except (TypeError, ValueError) as exc:
+        return Response(
+            {
+                "error": "Could not determine a valid source FPS.",
+                "detail": str(exc),
+                "status": "failed",
+                "video_id": int(video.pk),
+            },
+            status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        )
+    response_status = (
+        status.HTTP_202_ACCEPTED
+        if result.status in {"queued", "already_queued", "running"}
+        else status.HTTP_200_OK
+    )
+    return Response(result.to_dict(), status=response_status)
 
 
 @api_view(["GET"])

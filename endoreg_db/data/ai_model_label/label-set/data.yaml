@@ -6,6 +6,7 @@
       [
         "appendix",
         "blood",
+        "bubbles",
         "diverticule",
         "grasper",
         "ileocaecalvalve",
@@ -15,7 +16,9 @@
         "needle",
         "outside",
         "polyp",
+        "smoke",
         "snare",
+        "tissue_on_snare",
         "water_jet",
         "wound",
       ]

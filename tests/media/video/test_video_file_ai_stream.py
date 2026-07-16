@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false
 from __future__ import annotations
 
 import uuid
@@ -33,6 +34,35 @@ class FakeMultilabelNet:
         **kwargs: object,
     ) -> FakeModel:
         return FakeModel()
+
+
+def test_remap_prediction_dict_preserves_score_list_shape() -> None:
+    predictions = {
+        "polyp": [0.2],
+        "grasper": [0.7],
+        "needle": [0.4],
+    }
+    mapping = {
+        "polyp": ["polyp"],
+        "instrument": ["grasper", "needle"],
+        "outside": ["outside"],
+    }
+
+    result = video_file_ai._remap_prediction_dict(predictions, mapping)
+
+    assert result == {
+        "polyp": [0.2],
+        "instrument": [0.7],
+        "outside": [0.0],
+    }
+
+
+def test_remap_prediction_dict_rejects_inconsistent_score_lengths() -> None:
+    with pytest.raises(ValueError, match="equal lengths"):
+        video_file_ai._remap_prediction_dict(
+            {"polyp": [0.2], "instrument": [0.4, 0.7]},
+            {"polyp": ["polyp"], "instrument": ["instrument"]},
+        )
 
 
 @pytest.mark.django_db

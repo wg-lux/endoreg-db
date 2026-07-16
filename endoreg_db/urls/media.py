@@ -49,6 +49,7 @@ from endoreg_db.views.video import (
     video_segment_detail,
     video_segment_validate,
     video_segments_blacken_outside,
+    video_segments_normalize_fps,
     video_segments_bulk_mutation,
     video_segments_by_video,
     video_segments_stats,
@@ -72,7 +73,9 @@ from endoreg_db.views.video.ai import (
 )
 from endoreg_db.views.video.correction import (
     VideoApplyMaskView,
+    VideoAnonymizationCorrectionView,
     VideoCorrectionView,
+    VideoProcessingHistoryView,
     VideoRemoveFramesView,
 )
 from endoreg_db.views.video.video_metadata import VideoMetadataStatsView
@@ -198,6 +201,16 @@ VIDEO_MEDIA_URLPATTERNS: list[URLPattern] = [
         name="video-correction",
     ),
     path(
+        "media/videos/video-correction/<int:pk>/anonymization/",
+        VideoAnonymizationCorrectionView.as_view(),
+        name="video-anonymization-correction",
+    ),
+    path(
+        "media/videos/<int:pk>/processing-history/",
+        VideoProcessingHistoryView.as_view(),
+        name="video-processing-history",
+    ),
+    path(
         "media/videos/<int:pk>/metadata/",
         VideoMetadataStatsView.as_view(),
         name="video-metadata",
@@ -240,6 +253,11 @@ VIDEO_ANNOTATION_URLPATTERNS: list[URLPattern] = [
         "media/videos/<int:pk>/segments/rerun-predictions/",
         rerun_prediction_segments,
         name="video-segments-rerun-predictions",
+    ),
+    path(
+        "media/videos/<int:pk>/segments/normalize-fps/",
+        video_segments_normalize_fps,
+        name="video-segments-normalize-fps",
     ),
     path(
         "media/videos/<int:pk>/segments/import-predictions/",

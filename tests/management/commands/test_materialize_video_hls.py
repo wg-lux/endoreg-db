@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from io import StringIO
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -59,6 +60,25 @@ def _create_raw_video(
     return video
 
 
+def _create_raw_and_processed_video(*, center: Center) -> VideoFile:
+    video = VideoFile.objects.create(
+        center=center,
+        video_hash="raw-and-processed-hls-command-video",
+    )
+    cast(Any, video.raw_file).save(
+        "raw-and-processed-source-raw.mp4",
+        ContentFile(b"raw source"),
+        save=False,
+    )
+    cast(Any, video.processed_file).save(
+        "raw-and-processed-source-processed.mp4",
+        ContentFile(b"processed source"),
+        save=False,
+    )
+    video.save()
+    return video
+
+
 def _patch_command_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         command_module.ffmpeg_wrapper,
@@ -93,6 +113,87 @@ def test_materialize_video_hls_command_selects_raw_artifacts(
 
 
 @pytest.mark.django_db
+def test_materialize_video_hls_command_defaults_to_both_required_artifacts(
+    hls_command_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_command_preflight(monkeypatch)
+    video = _create_raw_and_processed_video(center=hls_command_center)
+    stdout = StringIO()
+
+    call_command(
+        "materialize_video_hls",
+        "--json",
+        stdout=stdout,
+        stderr=StringIO(),
+    )
+
+    payload = json.loads(stdout.getvalue())
+    assert payload["artifact_kind"] == "both"
+    assert payload["selected"] == 1
+    assert payload["selected_artifacts"] == 2
+    assert payload["audit"]["raw"]["eligible_raw_videos"] == 1
+    assert payload["audit"]["processed"]["eligible_processed_videos"] == 1
+    assert payload["results"] == [
+        {
+            "artifact_kind": "raw",
+            "status": "would_materialize",
+            "video_id": video.pk,
+        },
+        {
+            "artifact_kind": "processed",
+            "status": "would_materialize",
+            "video_id": video.pk,
+        },
+    ]
+
+
+@pytest.mark.django_db
+def test_materialize_video_hls_command_inline_apply_materializes_both_artifacts(
+    hls_command_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    video = _create_raw_and_processed_video(center=hls_command_center)
+    _patch_command_preflight(monkeypatch)
+    materialized_kinds: list[str] = []
+
+    def fake_materialize_video_hls(
+        video_id: int,
+        *,
+        artifact_kind: object,
+        force: bool,
+    ) -> SimpleNamespace:
+        assert video_id == video.pk
+        assert force is False
+        selected_kind = str(artifact_kind)
+        materialized_kinds.append(selected_kind)
+        return SimpleNamespace(
+            as_dict=lambda: {
+                "video_id": video_id,
+                "artifact_kind": selected_kind,
+                "status": "materialized",
+            }
+        )
+
+    monkeypatch.setattr(
+        command_module,
+        "materialize_video_hls",
+        fake_materialize_video_hls,
+        raising=True,
+    )
+
+    call_command(
+        "materialize_video_hls",
+        "--apply",
+        "--inline",
+        stdout=StringIO(),
+        stderr=StringIO(),
+    )
+
+    assert materialized_kinds == ["raw", "processed"]
+
+
+@pytest.mark.django_db
 def test_materialize_video_hls_command_inline_apply_materializes_artifact(
     hls_command_center: Center,
     monkeypatch: pytest.MonkeyPatch,
@@ -109,6 +210,8 @@ def test_materialize_video_hls_command_inline_apply_materializes_artifact(
         str(video.pk),
         "--apply",
         "--inline",
+        "--artifact-kind",
+        "processed",
         "--json",
         stdout=stdout,
         stderr=StringIO(),
@@ -175,6 +278,8 @@ def test_materialize_video_hls_command_dry_run_reports_bulk_audit(
     stdout = StringIO()
     call_command(
         "materialize_video_hls",
+        "--artifact-kind",
+        "processed",
         "--json",
         stdout=stdout,
         stderr=StringIO(),
@@ -225,6 +330,8 @@ def test_materialize_video_hls_command_apply_fails_closed_on_preflight_error(
             str(video.pk),
             "--apply",
             "--inline",
+            "--artifact-kind",
+            "processed",
             "--json",
             stdout=stdout,
             stderr=StringIO(),

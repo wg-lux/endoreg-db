@@ -102,6 +102,101 @@ authorization mechanism for playback. Session authentication, RBAC, and center
 scope remain mandatory. Session cookies and CSRF values must never be printed
 to browser or server logs.
 
+## Roles and identity model
+
+Authorization uses several independent records. They must not be treated as a
+single "user group" concept:
+
+| Record | Source of truth | Purpose | Synchronization |
+| --- | --- | --- | --- |
+| Keycloak user | Keycloak | Login identity | A local Django user is created or updated on successful OIDC login. |
+| Keycloak realm role | Keycloak | Technical application permission such as `video:read` | Copied by exact name into Django groups at every successful login. |
+| Keycloak group | Keycloak | Organizational container for assigning realm roles to users | The application does not authorize the group name. Its mapped realm roles must appear in the token. |
+| Django group | Keycloak-derived local cache | Request-time RBAC input | Membership is replaced at login with the token's current realm-role set. Do not manage synchronized groups manually. |
+| Django `is_staff` / `is_superuser` | Local deployment database | Exceptional local administration and center-scope bypass | Not granted by normal OIDC role synchronization. `bootstrap_center_admin` is the controlled promotion path. |
+| Clinical center assignment | Local deployment database | Limits a normal user to one center's objects | Managed through audited Access Management; it is not a Keycloak role or the host default center. |
+
+### Keycloak role extraction
+
+The OIDC backend accepts realm roles from either token shape:
+
+```text
+roles: ["video:read", ...]
+realm_access.roles: ["video:read", ...]
+```
+
+The two sets are combined. Client roles under `resource_access` and arbitrary
+Keycloak group names are not currently authorization inputs. A Keycloak group
+such as `video_group` is therefore only useful as an administrative container:
+assign the required realm roles to that group and verify those roles appear in
+the user's token. Creating a Django group named `video_group` does not grant
+video access.
+
+On every successful login, the application creates missing Django groups and
+then replaces the user's Django group membership with the current token roles.
+Consequences:
+
+- adding or removing a Keycloak realm role takes effect at the next successful
+  login or token-authenticated synchronization
+- a manual Django group assignment can disappear at the next login
+- a user must log into each independent site-node database once before that
+  node has a local Django user to center-assign
+- technical roles can be shared through Keycloak, but local superuser flags and
+  center assignments do not propagate between gc-02, gc-10, or other nodes
+
+### Current role catalogue
+
+| Role | Intended meaning | Current effective behavior |
+| --- | --- | --- |
+| `video:read` | Read video metadata and protected raw/processed HLS | Satisfies mapped video GET/HEAD/OPTIONS routes. A matching local center is still required for normal users. |
+| `video:write` | Mutate video resources | Also satisfies `video:read`. Center and object checks still apply where implemented. |
+| `patient:read` | Read patient-linked records, reports, and sensitive metadata | Required by mapped patient and patient-linked media routes. |
+| `patient:write` | Mutate patient-linked records | Also satisfies `patient:read`. |
+| `anonymization:read` | Read anonymization overview, metrics, and quarantine state | Applies to mapped anonymization routes. |
+| `anonymization:write` | Mutate anonymization and quarantine workflows | Also satisfies `anonymization:read`. |
+| `data:read` | Legacy global read compatibility | Satisfies every role ending in `:read`, including video, patient, and anonymization reads. |
+| `data:write` | Legacy global write compatibility | Satisfies every role ending in `:write` and every read role. |
+| `endoregdb_user` | Legacy application-wide compatibility role | Satisfies every ordinary mapped backend role and is currently required by the frontend's global router guard. This is not least privilege. |
+| `center_scope:admin` | Operate the center-assignment API | Checked by exact Django-group name; `endoregdb_user`, `data:write`, and other compatibility roles do not substitute. |
+
+The frontend currently rejects and logs out an authenticated user who lacks
+`endoregdb_user`, even if the backend would otherwise accept a narrower role
+such as `video:read`. Consequently, the current production UI onboarding
+contract is:
+
+```text
+endoregdb_user
++ workflow-specific roles where policy clarity/auditability requires them
++ local center assignment
+```
+
+Because `endoregdb_user` already satisfies all ordinary backend route checks,
+the additional resource roles do not technically reduce its authority today.
+They remain useful for migration visibility, but true least-privilege UI access
+requires removing the frontend's global `endoregdb_user` gate and retiring the
+backend compatibility override in a coordinated release.
+
+### Administrative roles and local flags
+
+`center_scope:admin` authorizes the center-scope administration endpoints, but
+does not itself make a user a Django superuser. The controlled bootstrap command
+requires an already-existing OIDC user with that exact role and then sets the
+local database's `is_staff=True` and `is_superuser=True` flags transactionally.
+
+These local flags have wider consequences:
+
+- staff and superusers bypass the normal single-center object restriction
+- only a superuser is treated as a global center administrator by the Access
+  Management service
+- a non-superuser with `center_scope:admin` is a delegated administrator and
+  must have an unambiguous local center assignment
+- even a superuser must retain the exact `center_scope:admin` Django group to
+  call the protected center-scope API
+- promotion on gc-02 does not promote the same Keycloak identity on gc-10
+
+The application never creates Keycloak users, assigns Keycloak groups, or
+changes Keycloak realm roles. Those actions belong in Keycloak administration.
+
 ## Route-role RBAC
 
 The HLS routes map to the `video` resource:
@@ -205,6 +300,30 @@ Keycloak role assignment alone is insufficient. A user can pass
 `video:read` RBAC and still receive `404 Resource not found` for every HLS
 request if the local clinical association is absent.
 
+### Effective authorization examples
+
+| Identity state | Route result | Object result |
+| --- | --- | --- |
+| Not authenticated | OIDC redirect or `401`/`403` | No media lookup is authorized. |
+| `video:read`, no `endoregdb_user` | Backend HLS role can pass, but the current Vue router denies full application navigation | Direct backend access still requires a valid center assignment. |
+| `endoregdb_user`, no center assignment | Ordinary backend role checks pass through the compatibility override | Center-scoped video access is masked as `404`. |
+| `endoregdb_user`, correct center | Ordinary backend role checks pass | Same-center video may be read; cross-center video is masked as `404`. |
+| `center_scope:admin`, delegated local center | Center-scope API passes its exact-role check | May administer existing relationships only inside that center. |
+| `center_scope:admin` plus local superuser | Center-scope API passes and the service treats the actor as global | May provision incomplete users and select any local center; changes remain audited. |
+
+For a normal clinical UI user today, operators should:
+
+1. assign `endoregdb_user` in Keycloak, directly or through a Keycloak group
+2. assign the explicit workflow roles used by the organization, such as
+   `video:read`, so migration away from compatibility roles remains observable
+3. have the user log into the target node once
+4. assign the local user to the intended center in Access Management
+5. require a fresh login after later Keycloak role changes
+
+Do not add a local `video_group` Django membership as a repair. If
+`video_group` is a Keycloak group, map the required realm roles to it and verify
+the resulting token claims instead.
+
 ## Administrative management of user center scope
 
 ### Supported Access Management workflow
@@ -291,8 +410,8 @@ explicitly.
 The API routes are:
 
 ```text
-GET  /api/administration/center-scopes/
-POST /api/administration/center-scopes/<user-id>/
+GET  /endoreg-api/administration/center-scopes/
+POST /endoreg-api/administration/center-scopes/<user-id>/
 ```
 
 Assignments include `center_key`, `expected_center_key`, and a human reason.
@@ -434,7 +553,15 @@ does not mean the task completed.
 For new imports, both raw and processed HLS readiness are part of successful
 import finalization. A transcode failure propagates so the import stays
 retryable instead of publishing a partially streamable clinical record. Legacy
-videos require separate raw and processed backfill jobs.
+videos require a backfill job. The default command selection covers both
+required local artifact kinds so raw playback cannot be omitted accidentally:
+
+```bash
+python manage.py materialize_video_hls --apply
+```
+
+Use `--artifact-kind raw` or `--artifact-kind processed` only for an explicitly
+scoped repair. Without `--apply`, the command remains a dry-run audit.
 
 The playback API serves only `ready` artifacts whose files are consistent.
 Materializing, failed, missing, and path-inconsistent artifacts all fail closed.

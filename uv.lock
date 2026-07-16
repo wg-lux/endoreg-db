@@ -988,7 +988,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/62/59/e47bbd0542d0e6f4c
 
 [[package]]
 name = "endoreg-db"
-version = "1.0.5.5"
+version = "1.0.6.1"
 source = { editable = "." }
 dependencies = [
     { name = "celery" },
@@ -1053,7 +1053,6 @@ dependencies = [
     { name = "urllib3" },
     { name = "vector-quantize-pytorch" },
     { name = "vocos" },
-    { name = "vulture" },
     { name = "whitenoise" },
     { name = "ziglang" },
 ]
@@ -1081,6 +1080,7 @@ dev = [
     { name = "types-pyyaml" },
     { name = "types-requests" },
     { name = "types-tqdm" },
+    { name = "vulture" },
 ]
 docs = [
     { name = "furo" },
@@ -1190,7 +1190,7 @@ requires-dist = [
     { name = "urllib3", specifier = ">=2.2.3" },
     { name = "vector-quantize-pytorch", specifier = "==1.18.5" },
     { name = "vocos", specifier = "==0.1.0" },
-    { name = "vulture", extras = ["dev"], specifier = ">=2.16" },
+    { name = "vulture", marker = "extra == 'dev'", specifier = ">=2.16" },
     { name = "whitenoise", specifier = ">=6.10.0" },
     { name = "ziglang", specifier = ">=0.15.2" },
 ]

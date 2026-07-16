@@ -22,6 +22,7 @@ from .command_construction import (
     _update_or_append_ffmpeg_arg,
 )
 from .encoder_policy import _build_encoder_args
+from .encoding_standard import STANDARD_VIDEO_ENCODING
 from .executable_discovery import _resolve_ffmpeg_executable
 from ..transcode_execution import (
     FFMPEG_TRANSCODE_TIMEOUT_SECONDS,
@@ -126,6 +127,7 @@ def _build_roi_mask_and_blacken_filter_expression(
     interval_list = list(intervals)
     if interval_list:
         filter_parts.append(_build_blacken_filter_expression(interval_list))
+    filter_parts.append(STANDARD_VIDEO_ENCODING.filter_chain())
     return ",".join(filter_parts)
 
 
@@ -178,6 +180,7 @@ def _blacken_filter_args_from_normalized(
     filter_expression = _build_blacken_filter_expression_from_normalized(
         normalized_intervals
     )
+    filter_expression = f"{filter_expression},{STANDARD_VIDEO_ENCODING.filter_chain()}"
     if len(normalized_intervals) <= inline_threshold:
         return ["-vf", filter_expression], None
 
@@ -235,12 +238,20 @@ def blacken_video_frame_intervals(
         "-map",
         "0:a?",
         *filter_args,
+        "-color_range",
+        STANDARD_VIDEO_ENCODING.color_range,
+        "-fpsmax",
+        STANDARD_VIDEO_ENCODING.max_fps_arg(),
         "-c:a",
         "copy",
         "-movflags",
         "+faststart",
     ]
-    _update_or_append_ffmpeg_arg(encoder_args, "-pix_fmt", "yuv420p")
+    _update_or_append_ffmpeg_arg(
+        encoder_args,
+        "-pix_fmt",
+        STANDARD_VIDEO_ENCODING.pixel_format,
+    )
 
     command = _build_filter_transcode_command(
         ffmpeg_executable=ffmpeg_executable,
@@ -333,12 +344,20 @@ def mask_video_to_roi_and_blacken_intervals(
         "-map",
         "0:a?",
         *filter_args,
+        "-color_range",
+        STANDARD_VIDEO_ENCODING.color_range,
+        "-fpsmax",
+        STANDARD_VIDEO_ENCODING.max_fps_arg(),
         "-c:a",
         "copy",
         "-movflags",
         "+faststart",
     ]
-    _update_or_append_ffmpeg_arg(encoder_args, "-pix_fmt", "yuv420p")
+    _update_or_append_ffmpeg_arg(
+        encoder_args,
+        "-pix_fmt",
+        STANDARD_VIDEO_ENCODING.pixel_format,
+    )
 
     command = _build_filter_transcode_command(
         ffmpeg_executable=ffmpeg_executable,

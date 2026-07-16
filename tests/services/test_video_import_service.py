@@ -118,7 +118,7 @@ def _allow_staging_cleanup_roots(
 
 
 @pytest.fixture(autouse=True)
-def _isolate_duplicate_hls_readiness(
+def _isolate_duplicate_hls_readiness(  # pyright: ignore[reportUnusedFunction]
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Keep import-service units from invoking the real HLS/database boundary."""
