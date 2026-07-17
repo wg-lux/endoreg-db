@@ -11,6 +11,7 @@ from typing import TypedDict, cast
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 from django.db.utils import OperationalError, ProgrammingError
+from django.utils import timezone
 
 from endoreg_db.config.env import (
     env_int,
@@ -18,12 +19,16 @@ from endoreg_db.config.env import (
     get_protected_media_url,
 )
 from endoreg_db.models.hub.upload_job import UploadJob
+from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
+from endoreg_db.models.state.raw_pdf import RawPdfState
+from endoreg_db.models.state.video import VideoState
 from endoreg_db.services.audit_integrity import get_audit_ledger_integrity_status
 from endoreg_db.services.environment_readiness import check_environment_readiness
 from endoreg_db.services.hub.deployment import (
     get_deployment_role,
     transfer_api_enabled,
 )
+from endoreg_db.services.jobs.stale_recovery import VIDEO_PROCESSING_STALE_TIMEOUT
 from endoreg_db.utils.file_operations import atomic_write_file
 from endoreg_db.utils.paths import (
     LOG_DIR,
@@ -45,6 +50,14 @@ class _AuditLedgerIntegrityStatus(TypedDict):
     entry_count: int | None
     error: str | None
     source: str
+
+
+class _AnonymizationProcessingStats(TypedDict):
+    failed_videos: int | None
+    failed_reports: int | None
+    stale_video_histories: int | None
+    stale_timeout_seconds: int
+    error: str | None
 
 
 def _secret_key_fingerprint() -> str:
@@ -104,6 +117,37 @@ def _upload_job_failure_stats() -> dict[str, int | str | None]:
         return {
             "failed": None,
             "lost": None,
+            "error": str(exc),
+        }
+
+
+def _anonymization_processing_stats() -> _AnonymizationProcessingStats:
+    """Return unresolved failures and stale processing visible to operators."""
+    stale_before = timezone.now() - VIDEO_PROCESSING_STALE_TIMEOUT
+    try:
+        return {
+            "failed_videos": VideoState.objects.filter(processing_error=True).count(),
+            "failed_reports": RawPdfState.objects.filter(processing_error=True).count(),
+            "stale_video_histories": VideoProcessingHistory.objects.filter(
+                status__in=(
+                    VideoProcessingHistory.STATUS_PENDING,
+                    VideoProcessingHistory.STATUS_RUNNING,
+                ),
+                created_at__lte=stale_before,
+            ).count(),
+            "stale_timeout_seconds": int(
+                VIDEO_PROCESSING_STALE_TIMEOUT.total_seconds()
+            ),
+            "error": None,
+        }
+    except (OperationalError, ProgrammingError) as exc:
+        return {
+            "failed_videos": None,
+            "failed_reports": None,
+            "stale_video_histories": None,
+            "stale_timeout_seconds": int(
+                VIDEO_PROCESSING_STALE_TIMEOUT.total_seconds()
+            ),
             "error": str(exc),
         }
 
@@ -196,6 +240,7 @@ class Command(BaseCommand):
         )
         quarantine = _quarantine_stats(now)
         upload_jobs = _upload_job_failure_stats()
+        anonymization_processing = _anonymization_processing_stats()
         storage_free = _storage_free_stats()
         audit_ledger_integrity = _audit_ledger_integrity_status()
         oldest_age_seconds = quarantine["oldest_age_seconds"]
@@ -226,6 +271,13 @@ class Command(BaseCommand):
                     ),
                     "local_study_server_no_lost_upload_jobs": (
                         upload_jobs["lost"] == 0
+                    ),
+                    "local_study_server_no_failed_anonymization": (
+                        anonymization_processing["failed_videos"] == 0
+                        and anonymization_processing["failed_reports"] == 0
+                    ),
+                    "local_study_server_no_stale_video_processing": (
+                        anonymization_processing["stale_video_histories"] == 0
                     ),
                     "local_study_server_storage_free_above_threshold": (
                         storage_free["free_bytes"] is not None
@@ -267,6 +319,7 @@ class Command(BaseCommand):
                 "audit_ledger_integrity": audit_ledger_integrity,
                 "quarantine": quarantine,
                 "upload_jobs": upload_jobs,
+                "anonymization_processing": anonymization_processing,
                 "storage_free": storage_free,
                 "min_free_bytes": min_free_bytes,
                 "max_quarantine_age_days": max_quarantine_age_days,

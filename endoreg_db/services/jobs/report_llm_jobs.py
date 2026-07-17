@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import uuid
+from datetime import timedelta
 from typing import Any, Literal, Protocol, cast
 
 from django.db import transaction
@@ -39,6 +40,7 @@ REPORT_LLM_IMPORT_OPERATION = cast(
 )
 REPORT_LLM_JOB_MODE_DEFAULT = "celery"
 REPORT_LLM_DISPATCH_DELAY_SECONDS_DEFAULT = 0
+REPORT_LLM_STALE_TIMEOUT = timedelta(hours=7)
 
 
 JsonValue = ReportLlmJobJsonValue
@@ -239,6 +241,16 @@ def _active_report_llm_jobs(
     ).order_by("created_at", "id")
 
 
+def _recover_stale_report_llm_job(job: ReportLlmInferenceJob) -> bool:
+    if job.updated_at > timezone.now() - REPORT_LLM_STALE_TIMEOUT:
+        return False
+    job.mark_failure(
+        f"Recovered stale report LLM job after {REPORT_LLM_STALE_TIMEOUT}."
+    )
+    logger.warning("Recovered stale report LLM job: job=%s", job.job_key)
+    return True
+
+
 def _active_upload_report_llm_jobs(
     *,
     upload_job: UploadJob,
@@ -266,7 +278,7 @@ def _reserve_report_llm_job(
             .select_for_update()
             .first()
         )
-        if active_job is not None:
+        if active_job is not None and not _recover_stale_report_llm_job(active_job):
             return active_job, "already_queued"
 
         job = ReportLlmInferenceJob.objects.create(
@@ -298,7 +310,7 @@ def _reserve_report_llm_import_job(
             .select_for_update()
             .first()
         )
-        if active_job is not None:
+        if active_job is not None and not _recover_stale_report_llm_job(active_job):
             return active_job, "already_queued"
 
         job = ReportLlmInferenceJob.objects.create(

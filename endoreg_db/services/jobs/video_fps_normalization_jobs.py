@@ -19,6 +19,9 @@ from endoreg_db.services.jobs.heavy_jobs import (
     ensure_secure_transport_for_job_kind,
     queue_for_job_kind,
 )
+from endoreg_db.services.jobs.stale_recovery import (
+    recover_stale_video_processing_history,
+)
 from endoreg_db.services.media_operation_gate import defer_if_video_media_busy
 from endoreg_db.services.video_files import get_video_fps
 from endoreg_db.services.video_files.io import ensure_local_processed_video_file
@@ -187,7 +190,30 @@ def dispatch_video_fps_normalization(
                 "FPS normalization must run before segment rows exist; refusing to "
                 "invalidate existing clinical frame coordinates."
             )
-        existing = _active_history(locked_video)
+        active_histories = (
+            VideoProcessingHistory.objects.filter(
+                video=locked_video,
+                operation=VideoProcessingHistory.OPERATION_REPROCESSING,
+                status__in=(
+                    VideoProcessingHistory.STATUS_PENDING,
+                    VideoProcessingHistory.STATUS_RUNNING,
+                ),
+                config__operation=CONFIG_OPERATION,
+            )
+            .order_by("created_at")
+            .select_for_update()
+        )
+        existing = next(
+            (
+                history
+                for history in active_histories
+                if not recover_stale_video_processing_history(
+                    history,
+                    job_name="FPS normalization",
+                )
+            ),
+            None,
+        )
         if existing is not None:
             return FpsNormalizationDispatchResult(
                 video_id=int(video.pk),

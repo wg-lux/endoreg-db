@@ -25,6 +25,9 @@ from endoreg_db.services.jobs.heavy_jobs import (
     ensure_secure_transport_for_job_kind,
     queue_for_job_kind,
 )
+from endoreg_db.services.jobs.stale_recovery import (
+    recover_stale_video_processing_history,
+)
 from endoreg_db.services.media_operation_gate import defer_if_video_media_busy
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.utils import ffmpeg_wrapper, paths as path_utils
@@ -330,6 +333,11 @@ def dispatch_video_anonymization_correction(
     with transaction.atomic():
         locked_video = VideoFile.objects.select_for_update().get(pk=video.pk)
         active = _active_history(locked_video)
+        if active is not None and recover_stale_video_processing_history(
+            active,
+            job_name="video anonymization correction",
+        ):
+            active = None
         if active is not None:
             return VideoAnonymizationCorrectionDispatchResult(
                 video_id=int(video.pk),

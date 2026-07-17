@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from typing import cast
+from datetime import timedelta
 
 import pytest
 from pytest import MonkeyPatch
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.utils import timezone
 
 from endoreg_db.models import Center, RawPdfFile, ReportLlmInferenceJob, UploadJob
 from endoreg_db.services.jobs.report_llm_jobs import (
@@ -95,6 +97,38 @@ def test_report_reimport_duplicate_is_idempotent(
     assert result.status == "already_queued"
     assert result.task_id == existing.task_id
     assert result.job_id == existing.job_key
+
+
+def test_report_reimport_recovers_stale_job(
+    monkeypatch: MonkeyPatch, center: Center
+) -> None:
+    report = _make_report(center)
+    existing = ReportLlmInferenceJob.objects.create(
+        pdf=report,
+        operation=ReportLlmInferenceJob.OPERATION_REIMPORT,
+        status=ReportLlmInferenceJob.STATUS_RUNNING,
+        task_id="stale-task",
+        queue="llm_inference",
+        config={"kind": "report_llm_reimport", "queue": "llm_inference"},
+    )
+    ReportLlmInferenceJob.objects.filter(pk=existing.pk).update(
+        updated_at=timezone.now() - timedelta(hours=8)
+    )
+    monkeypatch.setenv("REPORT_LLM_JOB_MODE", "inline")
+
+    def run_reimport(_job_id: int) -> bool:
+        return True
+
+    monkeypatch.setattr(
+        "endoreg_db.services.jobs.report_llm_jobs._run_report_llm_reimport_job",
+        run_reimport,
+    )
+
+    result = dispatch_report_llm_reimport(report_id=report.pk, payload={})
+
+    existing.refresh_from_db()
+    assert existing.status == ReportLlmInferenceJob.STATUS_FAILURE
+    assert result.status == "completed"
 
 
 def test_report_upload_import_dispatches_to_llm_queue(

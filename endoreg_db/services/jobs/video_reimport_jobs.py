@@ -35,6 +35,9 @@ from endoreg_db.services.jobs.heavy_jobs import (
     ensure_secure_transport_for_job_kind,
     queue_for_job_kind,
 )
+from endoreg_db.services.jobs.stale_recovery import (
+    recover_stale_video_processing_history,
+)
 from endoreg_db.services.media_operation_gate import defer_if_video_media_busy
 from endoreg_db.services.video_import import VideoImportService
 from endoreg_db.services.video_files import (
@@ -375,6 +378,11 @@ def _reserve_reimport_history(
         ).select_for_update()
         for history in active_histories:
             if _is_video_reimport_history(history):
+                if recover_stale_video_processing_history(
+                    history,
+                    job_name="video re-import",
+                ):
+                    continue
                 return history, RESERVATION_ALREADY_QUEUED
             return history, RESERVATION_BUSY
 

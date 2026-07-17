@@ -35,9 +35,6 @@ class ProcessingHistory(models.Model):
         models.PositiveBigIntegerField(null=True, blank=True)
     )
 
-    if False:  # pragma: no cover
-        objects: models.Manager["ProcessingHistory"]
-
     class Meta:
         ordering = ["-created_at"]
 

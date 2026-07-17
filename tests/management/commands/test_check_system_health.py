@@ -66,6 +66,17 @@ def _health_command_patches(
         ),
         patch.object(
             health_command,
+            "_anonymization_processing_stats",
+            return_value={
+                "failed_videos": 0,
+                "failed_reports": 0,
+                "stale_video_histories": 0,
+                "stale_timeout_seconds": 7 * 60 * 60,
+                "error": None,
+            },
+        ),
+        patch.object(
+            health_command,
             "_storage_free_stats",
             return_value={
                 "path": str(storage_root),
@@ -138,3 +149,63 @@ def test_check_system_health_rejects_local_profile_on_unverified_audit_ledger(
     payload = cast(dict[str, Any], json.loads(output.getvalue()))
     assert not payload["checks"]["local_study_server_audit_ledger_integrity_verified"]
     assert payload["local_study_server"]["audit_ledger_integrity"] == audit_status
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("stats", "failed_check"),
+    [
+        (
+            {
+                "failed_videos": 1,
+                "failed_reports": 0,
+                "stale_video_histories": 0,
+                "stale_timeout_seconds": 7 * 60 * 60,
+                "error": None,
+            },
+            "local_study_server_no_failed_anonymization",
+        ),
+        (
+            {
+                "failed_videos": 0,
+                "failed_reports": 0,
+                "stale_video_histories": 1,
+                "stale_timeout_seconds": 7 * 60 * 60,
+                "error": None,
+            },
+            "local_study_server_no_stale_video_processing",
+        ),
+    ],
+)
+def test_check_system_health_fails_closed_for_anonymization_processing(
+    tmp_path: Path,
+    stats: Mapping[str, object],
+    failed_check: str,
+):
+    audit_status = {
+        "status": "verified",
+        "verified": True,
+        "checked_at": "2026-05-06T12:00:00+00:00",
+        "entry_count": 3,
+        "error": None,
+        "source": "cache",
+    }
+    output = StringIO()
+    patches = _health_command_patches(tmp_path=tmp_path, audit_status=audit_status)
+
+    with ExitStack() as stack:
+        for active_patch in patches:
+            stack.enter_context(active_patch)
+        stack.enter_context(
+            patch.object(
+                health_command,
+                "_anonymization_processing_stats",
+                return_value=stats,
+            )
+        )
+        with pytest.raises(CommandError, match=failed_check):
+            call_command("check_system_health", "--json", stdout=output)
+
+    payload = cast(dict[str, Any], json.loads(output.getvalue()))
+    assert payload["checks"][failed_check] is False
+    assert payload["local_study_server"]["anonymization_processing"] == stats

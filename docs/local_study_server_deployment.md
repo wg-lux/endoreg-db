@@ -1,5 +1,9 @@
 # Local Study Server Deployment
 
+Der verbindliche Schutzumfang, die Qualitätsgrenzen, Reviewer-Schritte und das
+Fehler-/Korrekturszenario stehen im
+[Anonymisierungs- und Freigabe-Contract](anonymization_contract.md).
+
 `local_study_server` is a production profile for one encrypted host. It accepts
 center-scoped authenticated API uploads, external preanonymized imports, and
 explicit promotion of existing managed processed media into an export-ready
@@ -174,7 +178,10 @@ files that have first been explicitly approved for deletion.
 Example systemd unit files live in `docs/ops/local_study_server/`. The health
 timer writes JSON to journald and exits non-zero on critical issues, including
 failed/lost upload jobs, stale quarantine, insufficient free storage, transfer
-API exposure, or unverified audit ledger integrity.
+API exposure, unverified audit ledger integrity, unresolved video/report
+anonymization failures, or video processing histories active for more than seven
+hours. The latter counters are emitted under
+`local_study_server.anonymization_processing`.
 
 V1 monitoring is systemd plus journald. Local mail can be wired by adding an
 `OnFailure=` notification unit that invokes `sendmail` with the failed unit
