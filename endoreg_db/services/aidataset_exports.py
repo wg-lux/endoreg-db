@@ -190,6 +190,7 @@ def build_patient_videos_export(
             dataset.video_annotations.select_related(
                 "label",
                 "source",
+                "state",
                 "video_file",
                 "prediction_meta__model_meta__labelset",
                 "video_file__ai_model_meta__labelset",
@@ -273,6 +274,7 @@ def build_export_payload(
     video_annotations_qs = dataset.video_annotations.select_related(
         "label",
         "source",
+        "state",
         "video_file",
         "prediction_meta__model_meta__labelset",
         "video_file__ai_model_meta__labelset",
@@ -387,11 +389,27 @@ def export_to_standardized_structure(
     only_validated: bool = False,
 ) -> JsonObject:
     """
-    Return a validated JSON-serializable export payload.
+    Return a validated, data-minimized JSON export payload.
+
+    ``SensitiveMeta`` is required while the internal video contract is built, but
+    it contains direct identifiers and must never cross the AI dataset artifact
+    boundary. The exclusion is declared here so callers cannot accidentally omit
+    the serialization safeguard.
     """
-    return build_export_payload(
+    payload = build_export_payload(
         dataset,
         center_key=center_key,
         all_centers=all_centers,
         only_validated=only_validated,
-    ).to_json_object()
+    )
+    return cast(
+        JsonObject,
+        payload.model_dump(
+            mode="json",
+            exclude={
+                "patient_videos": {
+                    "__all__": {"sensitive_meta"},
+                }
+            },
+        ),
+    )
