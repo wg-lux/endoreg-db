@@ -29,13 +29,17 @@ from endoreg_db.models.other.information_source import InformationSource
 from endoreg_db.services.frame_annotation_workflow import (
     DEFAULT_FRAME_INFORMATION_SOURCE_NAME,
     resolve_frame_information_source_name,
-    resolve_request_annotator,
+)
+from endoreg_db.services.annotation_access import (
+    resolve_trusted_annotation_principal,
+    validate_interactive_annotation_source,
 )
 from endoreg_db.serializers.label_video_segment.frame_box_annotation import (
     FrameBoxAnnotationBulkItemSerializer,
     FrameBoxAnnotationSerializer,
 )
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.authz.permissions import PolicyPermission
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +117,7 @@ def _resolve_request_annotator(
     request: Request,
     requested_annotator: str | None,
 ) -> str:
-    return resolve_request_annotator(request, requested_annotator)
+    return resolve_trusted_annotation_principal(request, requested_annotator)
 
 
 def _json_object_list_excluding_none(value: object) -> list[VideoFrameBoxJsonObject]:
@@ -227,7 +231,7 @@ class FrameBoxAnnotationView(APIView):
     object with {frame_id, video_id, replace, annotations}.
     """
 
-    permission_classes = [EnvironmentAwarePermission]
+    permission_classes = [EnvironmentAwarePermission, PolicyPermission]
 
     def get(
         self,
@@ -275,17 +279,18 @@ class FrameBoxAnnotationView(APIView):
         if information_source_name is None:
             information_source_name = _query_param(request, "information_source")
         if information_source_name:
-            queryset = queryset.filter(
-                information_source__name=resolve_frame_information_source_name(
-                    information_source_name
-                )
+            resolved_source_name = validate_interactive_annotation_source(
+                resolve_frame_information_source_name(information_source_name)
             )
+            queryset = queryset.filter(information_source__name=resolved_source_name)
 
         annotator = _query_param(request, "annotator")
-        if annotator is not None:
-            queryset = queryset.filter(
-                annotator=_resolve_request_annotator(request, str(annotator))
+        queryset = queryset.filter(
+            annotator=_resolve_request_annotator(
+                request,
+                str(annotator) if annotator is not None else None,
             )
+        )
 
         serializer = FrameBoxAnnotationSerializer(
             queryset.order_by("label__name", "id"),
@@ -411,6 +416,7 @@ class FrameBoxAnnotationView(APIView):
         source_name = resolve_frame_information_source_name(
             information_source_name or DEFAULT_FRAME_INFORMATION_SOURCE_NAME
         )
+        source_name = validate_interactive_annotation_source(source_name)
         source = InformationSource.objects.filter(name=source_name).first()
         if source is None:
             return Response(
@@ -458,9 +464,11 @@ class FrameBoxAnnotationView(APIView):
             if (model_meta_id := _item_optional_int(item, "model_meta_id")) is not None
         }
 
-        frame_rows = cast(
-            Iterable[Mapping[str, int]],
-            Frame.objects.filter(id__in=frame_ids).values("id", "video_id"),
+        frame_rows = list(
+            cast(
+                Iterable[Mapping[str, int]],
+                Frame.objects.filter(id__in=frame_ids).values("id", "video_id"),
+            )
         )
         frame_video_by_id = {int(row["id"]): int(row["video_id"]) for row in frame_rows}
         missing_frame_ids = sorted(frame_ids - set(frame_video_by_id))
@@ -529,6 +537,9 @@ class FrameBoxAnnotationView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
+        for source_name in source_names:
+            validate_interactive_annotation_source(source_name)
+
         source_by_name = self._source_by_name(source_names)
         missing_source_names = sorted(source_names - set(source_by_name))
         if missing_source_names:
@@ -543,6 +554,12 @@ class FrameBoxAnnotationView(APIView):
             )
 
         fallback_annotator = _request_user_name(request)
+        for item in validated_items:
+            requested_annotator = self._item_annotator(item, fallback_annotator)
+            item["annotator"] = _resolve_request_annotator(
+                request,
+                requested_annotator,
+            )
 
         try:
             with transaction.atomic():
@@ -669,7 +686,12 @@ class FrameBoxAnnotationView(APIView):
     ) -> FrameBoxAnnotation:
         annotation_id = _item_optional_int(item, "id")
         if annotation_id is not None:
-            existing = FrameBoxAnnotation.objects.filter(pk=annotation_id).first()
+            existing = FrameBoxAnnotation.objects.filter(
+                pk=annotation_id,
+                frame_id=_item_int(item, "frame_id"),
+                information_source_id=information_source_id,
+                annotator=annotator,
+            ).first()
             if existing is not None:
                 return existing
 

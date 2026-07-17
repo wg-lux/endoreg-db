@@ -17,6 +17,7 @@ from lx_dtypes.models.contracts.video_frame_annotations import (
 )
 from pydantic import ValidationError
 from rest_framework import status
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -43,7 +44,10 @@ from endoreg_db.services.frame_annotation_workflow import (
     normalize_frame_task_mode,
     resolve_ai_dataset_for_queue,
     resolve_frame_information_source_name,
-    resolve_request_annotator as service_resolve_request_annotator,
+)
+from endoreg_db.services.annotation_access import (
+    resolve_trusted_annotation_principal,
+    validate_interactive_annotation_source,
 )
 from endoreg_db.serializers.label_video_segment.frame_annotation_bulk import (
     FrameAnnotationBulkItemSerializer,
@@ -57,6 +61,7 @@ from endoreg_db.services.queue.frame_annotation_queue import (
 from endoreg_db.services.video_files import VideoArtifactKind
 from endoreg_db.utils.media_urls import build_video_frame_decoded_stream_path
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.authz.permissions import PolicyPermission
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +80,7 @@ def resolve_request_annotator(
     request: Request,
     requested_annotator: str | None = None,
 ) -> str:
-    return service_resolve_request_annotator(request, requested_annotator)
+    return resolve_trusted_annotation_principal(request, requested_annotator)
 
 
 def _coerce_int(value: object) -> int:
@@ -155,13 +160,6 @@ def _dataset_frame_annotation_count(ai_dataset: AIDataSet) -> int:
     return int(image_annotations.count())
 
 
-def _request_username(request: Request) -> str:
-    user = getattr(request, "user", None)
-    if user and bool(getattr(user, "is_authenticated", False)):
-        return str(getattr(user, "username", "") or "")
-    return ""
-
-
 def _serializer_errors(serializer: object) -> object:
     return cast(object, getattr(serializer, "errors", {}))
 
@@ -169,7 +167,7 @@ def _serializer_errors(serializer: object) -> object:
 def _build_bulk_upsert_response(
     annotation_items: Sequence[Mapping[str, Any]],
     requested_video_id: int | None,
-    fallback_annotator: str,
+    request: Request,
     ai_dataset_id_raw: object = None,
 ) -> Response:
     ai_dataset: AIDataSet | None = None
@@ -309,12 +307,13 @@ def _build_bulk_upsert_response(
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    for source_name in source_names:
+        validate_interactive_annotation_source(source_name)
+
     date_modified = timezone.now()
     annotations_to_upsert: list[ImageClassificationAnnotation] = []
     for item in validated_items:
-        annotator = item.get("annotator")
-        if annotator is None:
-            annotator = fallback_annotator
+        annotator = resolve_request_annotator(request, item.get("annotator"))
         annotations_to_upsert.append(
             ImageClassificationAnnotation(
                 frame_id=item["frame_id"],
@@ -608,7 +607,7 @@ class FrameAnnotationBulkUpsertView(APIView):
        }
     """
 
-    permission_classes = [EnvironmentAwarePermission]
+    permission_classes = [EnvironmentAwarePermission, PolicyPermission]
 
     def post(
         self,
@@ -660,12 +659,10 @@ class FrameAnnotationBulkUpsertView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        fallback_annotator = _request_username(request)
-
         return _build_bulk_upsert_response(
             annotation_items=cast(list[Mapping[str, Any]], annotation_items),
             requested_video_id=requested_video_id,
-            fallback_annotator=fallback_annotator,
+            request=request,
             ai_dataset_id_raw=(
                 payload_data.get("ai_dataset_id") if payload_data else None
             ),
@@ -677,7 +674,7 @@ class FrameAnnotationRandomTaskView(APIView):
     Return one random frame task for annotation.
     """
 
-    permission_classes = [EnvironmentAwarePermission]
+    permission_classes = [EnvironmentAwarePermission, PolicyPermission]
 
     def get(
         self,
@@ -752,6 +749,15 @@ class FrameAnnotationRandomTaskView(APIView):
                 ),
             )
         )
+        try:
+            information_source_name = validate_interactive_annotation_source(
+                information_source_name
+            )
+        except PermissionDenied as exc:
+            return Response(
+                {"error": str(exc.detail)},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         requested_annotator = request.query_params.get("annotator")
         annotator = resolve_request_annotator(request, requested_annotator)
@@ -911,7 +917,7 @@ class FrameAnnotationSkipView(APIView):
     Acknowledge skipped frame tasks without creating annotations.
     """
 
-    permission_classes = [EnvironmentAwarePermission]
+    permission_classes = [EnvironmentAwarePermission, PolicyPermission]
 
     def post(
         self,
@@ -971,6 +977,9 @@ class FrameAnnotationSkipView(APIView):
                     "information_source", DEFAULT_FRAME_INFORMATION_SOURCE_NAME
                 ),
             )
+        )
+        information_source_name = validate_interactive_annotation_source(
+            information_source_name
         )
 
         exclude_annotated = _as_bool(payload.get("exclude_annotated"), default=True)

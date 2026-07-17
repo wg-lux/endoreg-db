@@ -1,5 +1,6 @@
 from django.test import TestCase
-from rest_framework.test import APIRequestFactory
+from django.contrib.auth.models import User
+from rest_framework.test import APIRequestFactory, force_authenticate
 import json
 from endoreg_db.models import (
     Center,
@@ -164,6 +165,50 @@ class FrameAnnotationBulkUpsertViewTest(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("missing_information_source_names", data["details"])
+
+    def test_bulk_upsert_uses_authenticated_user_as_annotator(self):
+        user = User.objects.create_user(username="trusted-reviewer")
+        payload = [
+            {
+                "frame_id": self.frame_1.pk,
+                "label_id": self.label.pk,
+                "information_source_name": self.source.name,
+            }
+        ]
+        request = self.factory.post(
+            "/api/media/annotations/frames/bulk-upsert/",
+            payload,
+            format="json",
+        )
+        force_authenticate(request, user=user)
+
+        response = self.view(request)
+
+        self.assertEqual(response.status_code, 200)
+        annotation = ImageClassificationAnnotation.objects.get(frame=self.frame_1)
+        self.assertEqual(annotation.annotator, "trusted-reviewer")
+
+    def test_bulk_upsert_allows_cross_center_dataset_annotation(self):
+        user = User.objects.create_user(username="foreign-reviewer")
+        payload = [
+            {
+                "frame_id": self.frame_1.pk,
+                "label_id": self.label.pk,
+                "information_source_name": self.source.name,
+            }
+        ]
+        request = self.factory.post(
+            "/api/media/annotations/frames/bulk-upsert/",
+            payload,
+            format="json",
+        )
+        force_authenticate(request, user=user)
+
+        response = self.view(request)
+
+        self.assertEqual(response.status_code, 200)
+        annotation = ImageClassificationAnnotation.objects.get(frame=self.frame_1)
+        self.assertEqual(annotation.annotator, "foreign-reviewer")
 
     def test_bulk_upsert_rejects_frames_outside_requested_video(self):
         payload = {
