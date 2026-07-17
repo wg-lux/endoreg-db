@@ -1,16 +1,10 @@
 from __future__ import annotations
 
-from typing import Protocol, cast
-
-from django.core.files.storage import Storage
 from django.db.models.fields.files import FieldFile
 
 from endoreg_db.models.hub.upload_job import UploadJob
-
-
-class _StoredFileLike(Protocol):
-    name: str
-    storage: Storage
+from endoreg_db.services.hub.audit import emit_hub_audit_event
+from endoreg_db.utils.file_operations import safe_delete_field_file
 
 
 def cleanup_upload_job_source(upload_job: UploadJob) -> bool:
@@ -22,9 +16,7 @@ def cleanup_upload_job_source(upload_job: UploadJob) -> bool:
 
     field_file: FieldFile = upload_job.file
     file_name = (field_file.name or "").strip()
-    stored_file = cast(_StoredFileLike, field_file)
-    if file_name and stored_file.storage.exists(file_name):
-        field_file.delete(save=False)
+    deleted = safe_delete_field_file(field_file) if file_name else False
 
     upload_job.file.name = ""
     upload_job.source_file_persisted = False
@@ -36,6 +28,13 @@ def cleanup_upload_job_source(upload_job: UploadJob) -> bool:
             "cleanup_status",
             "updated_at",
         ]
+    )
+    emit_hub_audit_event(
+        "hub.upload_source_cleanup_completed",
+        upload_job_id=str(upload_job.pk),
+        content_hash=upload_job.content_hash,
+        cleanup_status=upload_job.cleanup_status,
+        storage_object_deleted=deleted,
     )
     return True
 

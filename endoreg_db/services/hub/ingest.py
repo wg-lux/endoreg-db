@@ -657,7 +657,14 @@ def _reserve_video_upload_import_handoff(
             and isinstance(existing_task_id, str)
             and existing_task_id.strip()
         ):
-            return job, False
+            if timezone.now() - job.updated_at <= STALE_UPLOAD_JOB_AGE:
+                return job, False
+            reason = (
+                "Recovered stale video upload import handoff after "
+                f"{STALE_UPLOAD_JOB_AGE}."
+            )
+            job.mark_error(reason)
+            logger.warning("Recovered stale video upload import: job=%s", job.id)
 
         job.status = UploadJob.Status.PROCESSING.value
         job.error_detail = ""

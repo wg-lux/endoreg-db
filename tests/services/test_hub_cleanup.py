@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 
@@ -23,13 +25,30 @@ class HubCleanupTests(TestCase):
             source_file_persisted=True,
         )
 
-        cleaned = reap_upload_job_sources()
+        with (
+            self.assertLogs(
+                "endoreg_db.utils.file_operations", level="INFO"
+            ) as file_logs,
+            self.assertLogs("endoreg_db.hub.audit", level="INFO") as audit_logs,
+        ):
+            cleaned = reap_upload_job_sources()
 
         upload_job.refresh_from_db()
         assert cleaned == 1
         assert upload_job.cleanup_status == UploadJob.CleanupStatus.COMPLETED
         assert upload_job.source_file_persisted is False
         assert upload_job.file.name == ""
+        file_events = [json.loads(record.getMessage()) for record in file_logs.records]
+        file_event = next(
+            event for event in file_events if event.get("operation") == "storage_delete"
+        )
+        audit_event = json.loads(audit_logs.records[-1].getMessage())
+        assert file_event["event"] == "file_operation"
+        assert file_event["operation"] == "storage_delete"
+        assert file_event["status"] == "ok"
+        assert audit_event["event"] == "hub.upload_source_cleanup_completed"
+        assert audit_event["upload_job_id"] == str(upload_job.pk)
+        assert audit_event["storage_object_deleted"] is True
 
     def test_reap_upload_job_sources_is_idempotent_when_file_is_already_missing(self):
         upload_job = UploadJob.objects.create(

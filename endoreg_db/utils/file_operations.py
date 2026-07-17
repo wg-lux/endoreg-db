@@ -8,6 +8,7 @@ import shutil
 import time
 from pathlib import Path
 from typing import Any, Iterable
+
 from django.db.models.fields.files import FieldFile
 
 from endoreg_db.utils.rust_backend import sha256_file_hex as rust_sha256_file_hex
@@ -456,6 +457,49 @@ def safe_unlink_file(path: Path, *, missing_ok: bool = True) -> None:
             status="ok",
             source=target,
         )
+
+
+def safe_delete_field_file(
+    field_file: FieldFile,
+    *,
+    missing_ok: bool = True,
+) -> bool:
+    """Delete a Django-managed file through its storage backend with audit logs."""
+    storage_name = str(field_file.name or "").strip()
+    if not storage_name:
+        if missing_ok:
+            return False
+        raise FileNotFoundError("Django FieldFile has no storage name.")
+
+    storage = field_file.storage
+    try:
+        exists = storage.exists(storage_name)
+        if not exists:
+            if not missing_ok:
+                raise FileNotFoundError(storage_name)
+            _emit_file_operation_event(
+                operation="storage_delete",
+                status="missing",
+                detail="managed storage object is already absent",
+                storage_name=path_reference(Path(storage_name)),
+            )
+            return False
+        storage.delete(storage_name)
+    except Exception as exc:
+        _emit_file_operation_event(
+            operation="storage_delete",
+            status="error",
+            detail=str(exc),
+            storage_name=path_reference(Path(storage_name)),
+        )
+        raise
+
+    _emit_file_operation_event(
+        operation="storage_delete",
+        status="ok",
+        storage_name=path_reference(Path(storage_name)),
+    )
+    return True
 
 
 def secure_unlink_file(path: Path, *, missing_ok: bool = True) -> None:

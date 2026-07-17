@@ -350,6 +350,11 @@ Relevant files:
 - `endoreg_db/services/hub/cleanup.py`
 - `endoreg_db/models/hub/transfer_job.py`
 
+Upload source deletion runs through the typed Django-storage wrapper in
+`endoreg_db.utils.file_operations` and emits both structured file-operation and
+hub audit events. The lx-annotate administration view exposes recent outbound
+transfers with local/remote correlation and cleanup state.
+
 ## Operational Boundaries And Current Limits
 
 Implemented today:
@@ -399,6 +404,7 @@ Primary files for current hub functionality:
 
 ## Related Docs
 
+- `docs/hub_ingest_operations.md`
 - `docs/deployment_note_hub_contract.md`
 - `docs/wiki/hub_ingest_gap_closure.md`
 - `endoreg_db/import_files/multi_centre_storage_hub_roadmap.md`
