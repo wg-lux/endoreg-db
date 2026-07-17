@@ -280,6 +280,14 @@ in
       description = "Run the full default pre-commit suite for agent preflight";
       exec = ".devenv/state/venv/bin/pre-commit run --all-files";
     };
+    "quality:dead-code" = {
+      description = "Reject new, stale, or expired reviewed dead-code findings";
+      exec = ".devenv/state/venv/bin/python scripts/check_dead_code.py";
+    };
+    "quality:boundaries" = {
+      description = "Reject unreviewed broad exceptions and type suppressions";
+      exec = ".devenv/state/venv/bin/python scripts/check_quality_boundaries.py";
+    };
     "celery:check" = {
       description = "Validate Celery broker, queue, and secure transport settings";
       exec = ''

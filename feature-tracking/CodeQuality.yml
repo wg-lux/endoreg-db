@@ -143,6 +143,7 @@ definition_of_done:
   - Pyright, Import-Boundary-Tests und fokussierte Runtime-Tests bestehen nach jeder Refactoring-Kohorte.
   - Ein versionierter Dead-Code-Check meldet neue hochkonfidente Funde und verwendet nur begründete, reviewbare
     Ausnahmen.
+  - Ein versionierter Boundary-Guard verhindert unreviewte breite Exception-Handler und Typunterdrückungen.
   - Tests decken Exception-Mapping, Chaining, Retry-Klassifikation, unbekannte Fehler und rückwärtskompatible
     öffentliche Importe ab.
   required: true
@@ -150,6 +151,8 @@ definition_of_done:
     kind: command
     command:
     - .devenv/state/venv/bin/pyright
+    - devenv tasks run quality:dead-code
+    - devenv tasks run quality:boundaries
     - devenv tasks run test:fast
     timeout_seconds: 1800
   assessment:

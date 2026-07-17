@@ -130,6 +130,7 @@ definition_of_done:
     kind: command
     command:
     - .devenv/state/venv/bin/pyright
+    - devenv tasks run quality:boundaries
     timeout_seconds: 1200
   assessment:
     status: verified

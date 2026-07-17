@@ -1,0 +1,145 @@
+schema_version: "1.0"
+tool:
+  paths:
+    - endoreg_db
+    - scripts
+  exclude:
+    - "*/migrations/*"
+    - "*/tests/*"
+    - "*/settings/*"
+    - "*/management/commands/*"
+    - "*/apps.py"
+    - "*/admin.py"
+  min_confidence: 90
+accepted_findings:
+  - &protocol_signature
+    path: endoreg_db/authz/backends.py
+    message: "unused variable 'username__iexact'"
+    confidence: 100
+    classification: protocol_signature
+    reason: Required keyword name in a structural typing contract; the implementation consumes it dynamically.
+    owner: endoreg_db maintainers
+    review_after: 2026-10-17
+  - <<: *protocol_signature
+    path: endoreg_db/authz/permissions.py
+    message: "unused variable 'flat'"
+  - <<: *protocol_signature
+    path: endoreg_db/authz/views_auth.py
+    message: "unused variable 'flat'"
+  - <<: *protocol_signature
+    path: endoreg_db/helpers/typing.py
+    message: "unused variable 'objs'"
+  - <<: *protocol_signature
+    path: endoreg_db/models/aidataset/aidataset.py
+    message: "unused variable 'flat'"
+  - <<: *protocol_signature
+    path: endoreg_db/models/media/pdf/report_reader/report_reader_config.py
+    message: "unused variable 'objs'"
+  - <<: *protocol_signature
+    path: endoreg_db/models/metadata/sensitive_meta.py
+    message: "unused variable 'objs'"
+  - <<: *protocol_signature
+    path: endoreg_db/serializers/misc/sensitive_patient_data.py
+    message: "unused variable 'flat'"
+  - <<: *protocol_signature
+    path: endoreg_db/services/annotation_access.py
+    message: "unused variable 'flat'"
+  - <<: *protocol_signature
+    path: endoreg_db/services/interoperability/dicom_import.py
+    message: "unused variable 'expected_size_bytes'"
+  - <<: *protocol_signature
+    path: endoreg_db/utils/media/frame_anonymization_utils.py
+    message: "unused variable 'flat'"
+    occurrences: 2
+  - <<: *protocol_signature
+    path: endoreg_db/utils/pydantic_models/db_config.py
+    message: "unused variable 'ask_override'"
+  - <<: *protocol_signature
+    path: endoreg_db/views/anonymization/validate.py
+    message: "unused variable 'objs'"
+  - <<: *protocol_signature
+    path: endoreg_db/views/anonymization/validate.py
+    message: "unused variable 'through_defaults'"
+
+  - &framework_contract
+    path: endoreg_db/checks.py
+    message: "unused variable 'app_configs'"
+    confidence: 100
+    classification: framework_contract
+    reason: Required by the registered Django or Python framework callback signature.
+    owner: endoreg_db maintainers
+    review_after: 2026-10-17
+  - <<: *framework_contract
+    path: endoreg_db/checks.py
+    message: "unused variable 'databases'"
+  - <<: *framework_contract
+    path: endoreg_db/codemods/rename_datetime_fields.py
+    message: "unused variable 'new_name'"
+  - <<: *framework_contract
+    path: endoreg_db/models/state/signals.py
+    message: "unused variable 'sender'"
+    occurrences: 2
+  - <<: *framework_contract
+    path: endoreg_db/services/polling_coordinator.py
+    message: "unused variable 'exc_val'"
+  - <<: *framework_contract
+    path: endoreg_db/services/polling_coordinator.py
+    message: "unused variable 'exc_tb'"
+  - <<: *framework_contract
+    path: endoreg_db/services/reconciliation.py
+    message: "unused variable 'tb'"
+  - <<: *framework_contract
+    path: endoreg_db/urls/patient.py
+    message: "unused variable 'actions'"
+  - <<: *framework_contract
+    path: endoreg_db/utils/storage/files.py
+    message: "unused variable '__s'"
+
+  - &compatibility_contract
+    path: endoreg_db/helpers/download_segmentation_model.py
+    message: "unused variable 'force_download'"
+    confidence: 100
+    classification: compatibility_contract
+    reason: Public compatibility parameter retained for existing callers; removal requires a consumer migration.
+    owner: endoreg_db maintainers
+    review_after: 2026-10-17
+  - <<: *compatibility_contract
+    path: endoreg_db/helpers/download_segmentation_model.py
+    message: "unused variable 'resume_download'"
+  - <<: *compatibility_contract
+    path: endoreg_db/import_files/processing/report_processing/report_anonymization.py
+    message: "unused variable 'pdf_path'"
+  - <<: *compatibility_contract
+    path: endoreg_db/import_files/processing/report_processing/report_anonymization.py
+    message: "unused variable 'create_anonymized_pdf'"
+  - <<: *compatibility_contract
+    path: endoreg_db/import_files/processing/report_processing/report_anonymization.py
+    message: "unused variable 'anonymized_pdf_output_path'"
+  - <<: *compatibility_contract
+    path: endoreg_db/services/hub/ingest.py
+    message: "unused variable 'allow_completed_reuse_without_media'"
+  - <<: *compatibility_contract
+    path: endoreg_db/services/video_files/_ai.py
+    message: "unused variable 'save_results'"
+  - <<: *compatibility_contract
+    path: endoreg_db/views/misc/upload_views.py
+    message: "unused variable 'allow_completed_reuse_without_media'"
+    occurrences: 2
+
+  - &typing_only
+    path: endoreg_db/models/media/anonymization_metrics.py
+    message: "unused import 'AbstractBaseUser'"
+    confidence: 90
+    classification: typing_only
+    reason: Imported under TYPE_CHECKING and referenced by a forward type alias; it has no runtime import.
+    owner: endoreg_db maintainers
+    review_after: 2026-10-17
+  - <<: *typing_only
+    path: endoreg_db/models/media/pdf/pdf_processing_history.py
+    message: "unused import 'AbstractBaseUser'"
+  - <<: *typing_only
+    path: endoreg_db/services/raw_pdf_files/metadata.py
+    message: "unused import 'CenterModel'"
+  - <<: *typing_only
+    path: endoreg_db/utils/yaml_model_loader.py
+    message: "unused import 'DataLoaderLoadModelDataMetadata'"

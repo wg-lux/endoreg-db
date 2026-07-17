@@ -1,5 +1,8 @@
 default_stages:
   - pre-commit
+default_install_hook_types:
+  - pre-commit
+  - commit-msg
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.14.7
@@ -12,6 +15,12 @@ repos:
         pass_filenames: false
   - repo: local
     hooks:
+      - id: feature-readiness-commit-message
+        name: feature definition of done gate
+        entry: ./feature-tracking/tracker.py guard-commit-message
+        language: system
+        stages: [commit-msg]
+        always_run: true
       - id: route-matrix-contract
         name: route matrix contract (backend vs frontend)
         entry: python scripts/check_route_matrix.py --warn-on-missing-backend
@@ -24,6 +33,18 @@ repos:
         language: system
         pass_filenames: false
         types: [python]
+      - id: dead-code-baseline
+        name: reviewed dead-code baseline
+        entry: .devenv/state/venv/bin/python scripts/check_dead_code.py
+        language: system
+        pass_filenames: false
+        files: ^(endoreg_db/.*\.py|scripts/.*\.py|quality/dead_code_baseline\.yml)$
+      - id: quality-boundary-baseline
+        name: reviewed exception and type-suppression baseline
+        entry: .devenv/state/venv/bin/python scripts/check_quality_boundaries.py
+        language: system
+        pass_filenames: false
+        files: ^(endoreg_db/.*\.py|scripts/.*\.py|quality/quality_boundary_baseline\.yml)$
       - id: django-startup-smoke
         name: django startup smoke
         entry: .devenv/state/venv/bin/python scripts/check_django_startup_imports.py

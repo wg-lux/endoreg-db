@@ -16,7 +16,7 @@ maintainers = [
 ]
 name = "endoreg_db"
 readme = "README.md"
-version = "1.0.6.4"
+version = "1.0.6.6"
 requires-python = ">=3.12,<3.13"
 
 classifiers = [
@@ -195,6 +195,8 @@ disable_error_code = [
   "var-annotated", "no-redef", "assignment", "name-defined", "attr-defined"
 ]
 
+[tool.pyprojectx.aliases]
+test-features = "feature-tracking/tracker.py"
 
 [tool.uv.extra-build-dependencies]
 "antlr4-python3-runtime" = ["setuptools"]

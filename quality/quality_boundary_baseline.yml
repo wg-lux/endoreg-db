@@ -1,0 +1,26 @@
+schema_version: "1.0"
+scan:
+  paths:
+    - endoreg_db
+    - scripts
+  excluded_path_parts:
+    - migrations
+    - __pycache__
+broad_exception:
+  count: 463
+  fingerprint: 94038013328f8405e3e218301396646cc2d3d8aa88b89d00fcdb06c75cba9df1
+  owner: endoreg_db maintainers
+  reason: >-
+    Eingefrorener Altbestand, keine Freigabe. Jede Änderung erfordert die
+    Klassifikation als zulässige Boundary oder die Ersetzung durch konkrete
+    Exception-Typen.
+  review_after: 2026-10-17
+type_suppression:
+  count: 146
+  fingerprint: 1ad5c6ce8fef3b82ad55324bca89084dfe1c4199d2f54c2c303b09ce5f5de5d8
+  owner: endoreg_db maintainers
+  reason: >-
+    Eingefrorener Altbestand, keine Freigabe. Neue Suppressions sind verboten;
+    eine Baseline-Änderung benötigt eine konkrete Framework-Begründung und
+    einen dokumentierten Abbaupfad.
+  review_after: 2026-10-17
