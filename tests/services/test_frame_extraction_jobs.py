@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import shutil
 import uuid
+from datetime import timedelta
 from typing import Any
 
 import pytest
 from django.test import TestCase
+from django.utils import timezone
 
 from endoreg_db.models import Center, Frame, FrameExtractionRequest, VideoFile
 from endoreg_db.services.jobs import frame_extraction_jobs
@@ -99,6 +101,49 @@ class FrameExtractionJobsTest(TestCase):
         request.refresh_from_db()
         assert request.task_id == "running-task"
 
+    def test_request_frame_extraction_recovers_stale_request(self) -> None:
+        request = FrameExtractionRequest.objects.create(
+            video=self.video,
+            frame_number=18,
+            status=FrameExtractionRequest.STATUS_RUNNING,
+            task_id="stale-task",
+        )
+        FrameExtractionRequest.objects.filter(pk=request.pk).update(
+            started_at=timezone.now()
+            - frame_extraction_jobs.FRAME_EXTRACTION_STALE_TIMEOUT
+            - timedelta(seconds=1)
+        )
+
+        monkeypatches = pytest.MonkeyPatch()
+        monkeypatches.setattr(
+            frame_extraction_jobs,
+            "_ensure_frame_extraction_broker_transport_allowed",
+            lambda: None,
+        )
+
+        class _ReplacementTaskResult:
+            id = "replacement-task"
+
+        def replacement_apply_async(**_kwargs: object) -> _ReplacementTaskResult:
+            return _ReplacementTaskResult()
+
+        monkeypatches.setattr(
+            "endoreg_db.tasks.run_frame_extraction_request_task.apply_async",
+            replacement_apply_async,
+        )
+        try:
+            result = frame_extraction_jobs.request_frame_extraction(
+                video=self.video,
+                frame_number=18,
+            )
+        finally:
+            monkeypatches.undo()
+
+        assert result.status == frame_extraction_jobs.REQUEST_STATUS_QUEUED
+        request.refresh_from_db()
+        assert request.status == FrameExtractionRequest.STATUS_PENDING
+        assert request.task_id == "replacement-task"
+
     def test_run_frame_extraction_request_marks_success_and_frame_extracted(
         self,
     ) -> None:
@@ -153,3 +198,19 @@ class FrameExtractionJobsTest(TestCase):
         assert request.status == FrameExtractionRequest.STATUS_SUCCESS
         assert frame.is_extracted is True
         assert target_path.exists()
+
+    def test_run_frame_extraction_request_skips_duplicate_running_task(self) -> None:
+        request = FrameExtractionRequest.objects.create(
+            video=self.video,
+            frame_number=19,
+            status=FrameExtractionRequest.STATUS_RUNNING,
+            task_id="running-task",
+        )
+
+        result = frame_extraction_jobs.run_frame_extraction_request(
+            request_id=request.pk,
+            video_id=self.video.pk,
+            frame_number=19,
+        )
+
+        assert result is False

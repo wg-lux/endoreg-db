@@ -6,6 +6,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any, BinaryIO, cast
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 import pytest
 from django.core.files.base import ContentFile
@@ -311,7 +312,193 @@ def test_hls_dispatch_reservation_recovers_stale_materializing_artifact(
     artifact.refresh_from_db()
     assert reservation.status == "queued"
     assert artifact.status == VideoHlsArtifact.Status.QUEUED.value
-    assert "Recovered stale HLS materialization" in artifact.last_error
+    assert "Recovered stale HLS materializing attempt" in artifact.last_error
+
+
+def test_hls_dispatch_reservation_recovers_stale_queued_artifact(
+    hls_center: Center,
+) -> None:
+    video = _create_processed_video(center=hls_center)
+    artifact = VideoHlsArtifact.objects.create(
+        video=video,
+        artifact_kind=VideoHlsArtifact.ArtifactKind.PROCESSED.value,
+        status=VideoHlsArtifact.Status.QUEUED.value,
+    )
+    stale_at = timezone.now() - timedelta(
+        seconds=getattr(hls_media, "get_ffmpeg_transcode_timeout_seconds")()
+        + hls_media.HLS_MATERIALIZATION_STALE_GRACE_SECONDS
+        + 1
+    )
+    VideoHlsArtifact.objects.filter(pk=artifact.pk).update(updated_at=stale_at)
+
+    reservation = hls_media.reserve_hls_materialization_dispatch(
+        video_id=video.pk,
+        artifact_kind="processed",
+    )
+
+    artifact.refresh_from_db()
+    assert reservation.status == "queued"
+    assert artifact.status == VideoHlsArtifact.Status.QUEUED.value
+    assert "Recovered stale HLS queued attempt" in artifact.last_error
+
+
+def test_stale_forced_queue_preserves_previous_ready_artifact(
+    hls_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    video = _create_processed_video(center=hls_center, payload=b"stable ready source")
+    fake_hls = FakeHlsOutputRecorder()
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
+    ready_result = hls_media.materialize_video_hls(
+        video.pk,
+        artifact_kind="processed",
+    )
+    first_reservation = hls_media.reserve_hls_materialization_dispatch(
+        video_id=video.pk,
+        artifact_kind="processed",
+        force=True,
+    )
+    stale_at = timezone.now() - timedelta(
+        seconds=getattr(hls_media, "get_ffmpeg_transcode_timeout_seconds")()
+        + hls_media.HLS_MATERIALIZATION_STALE_GRACE_SECONDS
+        + 1
+    )
+    VideoHlsArtifact.objects.filter(pk=first_reservation.artifact_id).update(
+        updated_at=stale_at
+    )
+
+    second_reservation = hls_media.reserve_hls_materialization_dispatch(
+        video_id=video.pk,
+        artifact_kind="processed",
+        force=True,
+    )
+
+    artifact = VideoHlsArtifact.objects.get(pk=first_reservation.artifact_id)
+    assert first_reservation.status == "queued"
+    assert second_reservation.status == "queued"
+    assert second_reservation.artifact_id == first_reservation.artifact_id
+    assert artifact.status == VideoHlsArtifact.Status.QUEUED.value
+    assert str(artifact.key_id) == ready_result.key_id
+    assert artifact.playlist_relative_path == ready_result.playlist_relative_path
+    assert (
+        artifact.segment_directory_relative_path
+        == ready_result.segment_directory_relative_path
+    )
+    assert "Recovered stale HLS queued attempt" in artifact.last_error
+
+
+def test_queued_hls_worker_claims_reservation_and_materializes(
+    hls_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    video = _create_processed_video(center=hls_center)
+    fake_hls = FakeHlsOutputRecorder()
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
+    reservation = hls_media.reserve_hls_materialization_dispatch(
+        video_id=video.pk,
+        artifact_kind="processed",
+    )
+
+    result = hls_media.materialize_video_hls(
+        video.pk,
+        artifact_kind="processed",
+    )
+
+    assert reservation.status == "queued"
+    assert result.status == "materialized"
+    artifact = VideoHlsArtifact.objects.get(pk=reservation.artifact_id)
+    assert artifact.status == VideoHlsArtifact.Status.READY.value
+    assert str(artifact.key_id) == result.key_id
+
+
+@pytest.mark.parametrize("force", [False, True])
+def test_active_hls_materialization_is_not_stolen(
+    hls_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+    force: bool,
+) -> None:
+    video = _create_processed_video(center=hls_center)
+    active_key_id = uuid4()
+    artifact = VideoHlsArtifact.objects.create(
+        video=video,
+        artifact_kind=VideoHlsArtifact.ArtifactKind.PROCESSED.value,
+        status=VideoHlsArtifact.Status.MATERIALIZING.value,
+        key_id=active_key_id,
+        key_ciphertext=b"active wrapped key",
+        key_nonce=b"n" * 12,
+        iv_hex="1" * 32,
+    )
+    fake_hls = FakeHlsOutputRecorder()
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
+
+    result = hls_media.materialize_video_hls(
+        video.pk,
+        artifact_kind="processed",
+        force=force,
+    )
+
+    artifact.refresh_from_db()
+    assert result.status == "already_materializing"
+    assert artifact.status == VideoHlsArtifact.Status.MATERIALIZING.value
+    assert artifact.key_id == active_key_id
+    assert fake_hls.source_payloads == []
+
+
+def test_stale_hls_worker_cannot_overwrite_new_owner(
+    hls_center: Center,
+) -> None:
+    video = _create_processed_video(center=hls_center)
+    stale_key_id = uuid4()
+    new_key_id = uuid4()
+    artifact = VideoHlsArtifact.objects.create(
+        video=video,
+        artifact_kind=VideoHlsArtifact.ArtifactKind.PROCESSED.value,
+        status=VideoHlsArtifact.Status.MATERIALIZING.value,
+        key_id=stale_key_id,
+        key_ciphertext=b"stale wrapped key",
+        key_nonce=b"s" * 12,
+        iv_hex="1" * 32,
+    )
+    stale_at = timezone.now() - timedelta(
+        seconds=getattr(hls_media, "get_ffmpeg_transcode_timeout_seconds")()
+        + hls_media.HLS_MATERIALIZATION_STALE_GRACE_SECONDS
+        + 1
+    )
+    VideoHlsArtifact.objects.filter(pk=artifact.pk).update(updated_at=stale_at)
+
+    prepared = cast(Any, hls_media)._prepare_artifact_record(
+        video_id=video.pk,
+        artifact_kind=cast(Any, hls_media).VideoArtifactKind.PROCESSED,
+        source_file_name=str(video.processed_file.name),
+        key_id=new_key_id,
+        key_ciphertext=b"new wrapped key",
+        key_nonce=b"n" * 12,
+        iv_hex="2" * 32,
+        force=False,
+    )
+
+    assert prepared.should_materialize is True
+    with pytest.raises(RuntimeError, match="ownership was lost"):
+        cast(Any, hls_media)._mark_artifact_ready(
+            artifact_id=artifact.pk,
+            expected_key_id=stale_key_id,
+            playlist_relative_path="stale/playlist.m3u8",
+            segment_directory_relative_path="stale",
+            segment_count=1,
+        )
+    marked_failed = cast(Any, hls_media)._mark_artifact_failed(
+        artifact_id=artifact.pk,
+        error="late stale worker failure",
+        previous=None,
+        expected_key_id=stale_key_id,
+        expected_status=VideoHlsArtifact.Status.MATERIALIZING.value,
+    )
+
+    artifact.refresh_from_db()
+    assert marked_failed is False
+    assert artifact.status == VideoHlsArtifact.Status.MATERIALIZING.value
+    assert artifact.key_id == new_key_id
+    assert artifact.key_ciphertext == b"new wrapped key"
 
 
 def test_force_materialize_video_hls_removes_replaced_artifact_directory(
@@ -389,6 +576,47 @@ def test_force_materialize_video_hls_keeps_new_artifact_when_old_cleanup_fails(
         Path(paths.storage / second.segment_directory_relative_path) / "seg_000.ts"
     ).exists()
     assert "Could not remove replaced HLS artifact" in caplog.text
+
+
+def test_failed_forced_queue_attempt_restores_previous_ready_artifact(
+    hls_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    video = _create_processed_video(center=hls_center, payload=b"stable source")
+    fake_hls = FakeHlsOutputRecorder()
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
+    ready_result = hls_media.materialize_video_hls(
+        video.pk,
+        artifact_kind="processed",
+    )
+    reservation = hls_media.reserve_hls_materialization_dispatch(
+        video_id=video.pk,
+        artifact_kind="processed",
+        force=True,
+    )
+
+    def fail_ffmpeg(**_kwargs: object) -> None:
+        raise RuntimeError("forced retry failed")
+
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fail_ffmpeg)
+
+    with pytest.raises(RuntimeError, match="forced retry failed"):
+        hls_media.materialize_video_hls(
+            video.pk,
+            artifact_kind="processed",
+            force=True,
+        )
+
+    artifact = VideoHlsArtifact.objects.get(pk=reservation.artifact_id)
+    assert reservation.status == "queued"
+    assert artifact.status == VideoHlsArtifact.Status.READY.value
+    assert str(artifact.key_id) == ready_result.key_id
+    assert artifact.playlist_relative_path == ready_result.playlist_relative_path
+    assert (
+        artifact.segment_directory_relative_path
+        == ready_result.segment_directory_relative_path
+    )
+    assert "forced retry failed" in artifact.last_error
 
 
 def test_materialized_playlist_uses_api_rooted_relative_key_and_segment_uris(
