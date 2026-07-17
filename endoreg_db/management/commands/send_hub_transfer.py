@@ -59,9 +59,29 @@ class Command(BaseCommand):
         kv("TLS verification enabled", not options["insecure_skip_tls_verify"])
         path_info(label="Node secret file", path=secret_path)
     
+        if not options["source_node_secret_file"].strip():
+            error("The --source-node-secret-file argument is empty")
+            raise CommandError(
+                "--source-node-secret-file must contain a valid file path"
+            )
+        
+        if not secret_path.exists():
+            error(f"Secret file path does not exist: {secret_path}")
+            raise CommandError(
+                f"Secret file path does not exist: {secret_path}"
+            )
+        
+        if secret_path.is_dir():
+            error(f"Secret file path points to a directory: {secret_path}")
+            raise CommandError(
+                f"Secret file path must be a file, not a directory: {secret_path}"
+            )
+        
         if not secret_path.is_file():
-            error(f"Secret file not found: {secret_path}")
-            raise CommandError(f"Secret file not found: {secret_path}")
+            error(f"Secret path is not a regular file: {secret_path}")
+            raise CommandError(
+                f"Secret path is not a regular file: {secret_path}"
+            )
     
         node_secret = secret_path.read_text(encoding="utf-8").strip()
         if not node_secret:

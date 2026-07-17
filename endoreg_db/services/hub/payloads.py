@@ -182,12 +182,21 @@ class TransferProvenancePayload(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     entrypoint: str | None = None
+
     source_node_key: str | None = None
     target_node_key: str | None = None
     source_center_key: str | None = None
+
+    # Sender-local resource identifiers retained only for provenance,
+    # auditing, transfer reconciliation, and source-side cleanup.
+    # These IDs must never be used as receiver database primary keys.
+    source_video_id: int | None = None
+    source_report_id: int | None = None
+
     transfer_mode: str | None = None
     processing_policy: str | None = None
     cleanup_policy: str | None = None
+
     media_uploads: list[TransferMediaUploadPayload] | None = None
     case_resolution: TransferCaseResolutionPayload | None = None
     custom_marker: str | None = None
