@@ -38,7 +38,10 @@ from endoreg_db.services.media_operation_gate import (
     MediaOperationDeferred,
     defer_if_video_media_busy,
 )
-from endoreg_db.services.video_files import ensure_local_processed_video_file
+from endoreg_db.services.video_files import (
+    censor_outside_video_frames,
+    ensure_local_processed_video_file,
+)
 from endoreg_db.services.video_post_validation_blackening import (
     merge_outside_frame_intervals as _merge_outside_frame_intervals,
 )
@@ -448,6 +451,20 @@ def _run_video_post_validation_rebuild(
             only_validated=run_config.only_validated,
             outside_intervals=rebuild_outside_intervals,
         )
+        if has_applicable_outside_segments:
+            frames_blackened = censor_outside_video_frames(
+                video,
+                only_validated=run_config.only_validated,
+            )
+            if not frames_blackened:
+                raise RuntimeError(
+                    "Post-validation rebuild could not blacken every outside frame "
+                    f"for video {video.pk}."
+                )
+            _verify_outside_frames_blackened(
+                video,
+                only_validated=run_config.only_validated,
+            )
         mark_post_validation_complete(video)
         prune_unused_validated_outside_frames(video)
         if history is not None:

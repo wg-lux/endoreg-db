@@ -3,6 +3,7 @@ from __future__ import annotations
 from .ai import extract_text_from_video_frames, predict_video
 from .anonymization import (
     anonymize_video_file,
+    censor_outside_video_frames,
     cleanup_video_raw_assets,
     create_anonymized_video_frame_files,
     merge_outside_frame_intervals,
@@ -87,6 +88,7 @@ __all__ = [
     "anonymize_video_file",
     "bulk_create_video_frames",
     "can_offload_video_stream",
+    "censor_outside_video_frames",
     "cleanup_video_raw_assets",
     "count_unmodified_other_videos",
     "create_anonymized_video_frame_files",

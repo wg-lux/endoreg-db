@@ -693,6 +693,23 @@ def test_run_video_post_validation_rebuild_accepts_valid_processed_output(
         return __import__("numpy").zeros((4, 4, 3), dtype="uint8")
 
     monkeypatch.setattr(jobs, "_capture_frame", fake_capture_frame)
+    def fake_censor_outside_video_frames(
+        _video: VideoFile,
+        *,
+        only_validated: bool = False,
+    ) -> bool:
+        return True
+
+    def fake_verify_outside_frames_blackened(
+        _video: VideoFile,
+        *,
+        only_validated: bool = False,
+        tolerance: int = 8,
+    ) -> None:
+        return None
+
+    monkeypatch.setattr(jobs, "censor_outside_video_frames", fake_censor_outside_video_frames)
+    monkeypatch.setattr(jobs, "_verify_outside_frames_blackened", fake_verify_outside_frames_blackened)
 
     history = VideoProcessingHistory.objects.create(
         video=video,
@@ -723,6 +740,7 @@ def test_run_video_post_validation_rebuild_reuses_merged_intervals(
     merge_calls: list[tuple[int | None, bool]] = []
     create_calls: list[tuple[bool, Sequence[tuple[int, int]] | None]] = []
     verify_calls: list[tuple[bool, Sequence[tuple[int, int]] | None, int]] = []
+    frame_blackening_calls: list[bool] = []
 
     def fake_merge(
         video_obj: VideoFile,
@@ -761,6 +779,32 @@ def test_run_video_post_validation_rebuild_reuses_merged_intervals(
         "_verify_processed_video_contract",
         fake_verify_processed_video_contract,
     )
+    def fake_censor_outside_video_frames(
+        _video: VideoFile,
+        *,
+        only_validated: bool = False,
+    ) -> bool:
+        frame_blackening_calls.append(only_validated)
+        return True
+
+    def fake_verify_outside_frames_blackened(
+        _video: VideoFile,
+        *,
+        only_validated: bool = False,
+        tolerance: int = 8,
+    ) -> None:
+        return None
+
+    monkeypatch.setattr(
+        jobs,
+        "censor_outside_video_frames",
+        fake_censor_outside_video_frames,
+    )
+    monkeypatch.setattr(
+        jobs,
+        "_verify_outside_frames_blackened",
+        fake_verify_outside_frames_blackened,
+    )
 
     history = VideoProcessingHistory.objects.create(
         video=video,
@@ -775,6 +819,7 @@ def test_run_video_post_validation_rebuild_reuses_merged_intervals(
     assert merge_calls == [(video.pk, False)]
     assert create_calls == [(False, merged_intervals)]
     assert verify_calls == [(False, merged_intervals, 8)]
+    assert frame_blackening_calls == [False]
 
 
 @pytest.mark.django_db

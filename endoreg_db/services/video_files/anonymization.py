@@ -58,6 +58,21 @@ def cleanup_video_raw_assets(
     )
 
 
+def censor_outside_video_frames(
+    video: "VideoFile",
+    *,
+    only_validated: bool = True,
+    censor_color: tuple[int, int, int] = (0, 0, 0),
+) -> bool:
+    from ._anonymization import censor_outside_video_frames as _censor
+
+    return _censor(
+        video,
+        only_validated=only_validated,
+        censor_color=censor_color,
+    )
+
+
 def merge_outside_frame_intervals(
     video: "VideoFile",
     *,

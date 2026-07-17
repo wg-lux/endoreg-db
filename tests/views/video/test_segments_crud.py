@@ -527,13 +527,10 @@ class VideoSegmentValidateAsyncSafetyTest(TestCase):
         with (
             patch(
                 "endoreg_db.views.video.segments_crud.dispatch_video_post_validation_rebuild",
-                return_value=JobDispatchResult(
-                    task_id="job-123",
-                    mode="thread",
-                    status="queued",
-                    video_id=self.video.pk,
+                side_effect=AssertionError(
+                    "single-segment validation must not dispatch blackening"
                 ),
-            ) as mock_dispatch,
+            ),
             patch(
                 "endoreg_db.views.video.segments_crud.record_operation",
                 return_value=None,
@@ -544,11 +541,9 @@ class VideoSegmentValidateAsyncSafetyTest(TestCase):
             )
         data = json.loads(response.content.decode())
 
-        self.assertEqual(response.status_code, 202)
-        self.assertEqual(data["validation_status"], "scheduled")
-        self.assertEqual(data["post_processing_job"]["status"], "queued")
-        self.assertEqual(data["post_processing_job"]["video_id"], self.video.pk)
-        mock_dispatch.assert_called_once_with(video_id=self.video.pk)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(data["validation_status"], "completed")
+        self.assertNotIn("post_processing_job", data)
 
         after = list(
             ImageClassificationAnnotation.objects.filter(
@@ -808,6 +803,19 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
         )
         self.outside_label, _ = Label.objects.get_or_create(name="outside")
 
+    def _create_validated_outside_segment(self) -> LabelVideoSegment:
+        segment = LabelVideoSegment.objects.create(
+            video_file=self.video,
+            label=self.outside_label,
+            start_frame_number=10,
+            end_frame_number=20,
+        )
+        segment.mark_validated(
+            is_validated=True,
+            information_source_name="manual_annotation",
+        )
+        return segment
+
     def test_route_is_registered(self):
         match = resolve(f"/api/media/videos/{self.video.pk}/segments/blacken-outside/")
 
@@ -836,15 +844,10 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
         self.assertFalse(data["only_validated"])
 
     def test_outside_segments_dispatch_rebuild(self):
-        LabelVideoSegment.objects.create(
-            video_file=self.video,
-            label=self.outside_label,
-            start_frame_number=10,
-            end_frame_number=20,
-        )
+        self._create_validated_outside_segment()
         request = self.factory.post(
             f"/api/media/videos/{self.video.pk}/segments/blacken-outside/",
-            {"only_validated": False},
+            {"only_validated": True},
             format="json",
         )
 
@@ -866,10 +869,10 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
         self.assertEqual(data["outside_segment_count"], 1)
         mock_dispatch.assert_called_once_with(
             video_id=self.video.pk,
-            only_validated=False,
+            only_validated=True,
         )
 
-    def test_active_non_blackening_reprocessing_returns_busy(self):
+    def test_unvalidated_outside_segments_are_rejected(self):
         LabelVideoSegment.objects.create(
             video_file=self.video,
             label=self.outside_label,
@@ -878,7 +881,21 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
         )
         request = self.factory.post(
             f"/api/media/videos/{self.video.pk}/segments/blacken-outside/",
-            {"only_validated": False},
+            {"only_validated": True},
+            format="json",
+        )
+
+        response = video_segments_blacken_outside(request, pk=self.video.pk)
+        data = json.loads(response.content.decode())
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(data["status"], "validation_required")
+
+    def test_active_non_blackening_reprocessing_returns_busy(self):
+        self._create_validated_outside_segment()
+        request = self.factory.post(
+            f"/api/media/videos/{self.video.pk}/segments/blacken-outside/",
+            {"only_validated": True},
             format="json",
         )
 
@@ -903,15 +920,10 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
         self.assertEqual(data["post_processing_job"]["status"], "busy")
 
     def test_dispatch_error_returns_error_response(self):
-        LabelVideoSegment.objects.create(
-            video_file=self.video,
-            label=self.outside_label,
-            start_frame_number=10,
-            end_frame_number=20,
-        )
+        self._create_validated_outside_segment()
         request = self.factory.post(
             f"/api/media/videos/{self.video.pk}/segments/blacken-outside/",
-            {"only_validated": False},
+            {"only_validated": True},
             format="json",
         )
 
@@ -928,12 +940,7 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
         self.assertIn("inline rebuild failed", data["error"])
 
     def test_dispatch_failure_clears_stale_final_flags_and_serializes_failed(self):
-        LabelVideoSegment.objects.create(
-            video_file=self.video,
-            label=self.outside_label,
-            start_frame_number=10,
-            end_frame_number=20,
-        )
+        self._create_validated_outside_segment()
         state = self.video.get_or_create_state()
         state.segment_annotations_created = True
         state.segment_annotations_validated = True
@@ -953,7 +960,7 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
 
         request = self.factory.post(
             f"/api/media/videos/{self.video.pk}/segments/blacken-outside/",
-            {"only_validated": False},
+            {"only_validated": True},
             format="json",
         )
 
@@ -989,12 +996,7 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
         )
 
     def test_repeated_call_returns_already_queued(self):
-        LabelVideoSegment.objects.create(
-            video_file=self.video,
-            label=self.outside_label,
-            start_frame_number=10,
-            end_frame_number=20,
-        )
+        self._create_validated_outside_segment()
         submitted: list[Any] = []
 
         def fake_submit(fn: Any) -> types.SimpleNamespace:
@@ -1011,7 +1013,7 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
             first_response = video_segments_blacken_outside(
                 self.factory.post(
                     f"/api/media/videos/{self.video.pk}/segments/blacken-outside/",
-                    {"only_validated": False},
+                    {"only_validated": True},
                     format="json",
                 ),
                 pk=self.video.pk,
@@ -1022,7 +1024,7 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
             second_response = video_segments_blacken_outside(
                 self.factory.post(
                     f"/api/media/videos/{self.video.pk}/segments/blacken-outside/",
-                    {"only_validated": False},
+                    {"only_validated": True},
                     format="json",
                 ),
                 pk=self.video.pk,
@@ -1038,19 +1040,14 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
         self.assertEqual(len(submitted), 1)
 
     def test_failed_cleanup_can_be_requeued(self):
-        LabelVideoSegment.objects.create(
-            video_file=self.video,
-            label=self.outside_label,
-            start_frame_number=10,
-            end_frame_number=20,
-        )
+        self._create_validated_outside_segment()
         failed_history = VideoProcessingHistory.objects.create(
             video=self.video,
             operation=VideoProcessingHistory.OPERATION_REPROCESSING,
             status=VideoProcessingHistory.STATUS_FAILURE,
             task_id="failed-blackening-task",
             details="broker unavailable",
-            config=segment_state.blackening_history_config(only_validated=False),
+            config=segment_state.blackening_history_config(only_validated=True),
         )
         submitted = []
 
@@ -1070,7 +1067,7 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
             response = video_segments_blacken_outside(
                 self.factory.post(
                     f"/api/media/videos/{self.video.pk}/segments/blacken-outside/",
-                    {"only_validated": False},
+                    {"only_validated": True},
                     format="json",
                 ),
                 pk=self.video.pk,
@@ -1106,10 +1103,9 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
             response = video_segments_blacken_outside(request, pk=self.video.pk)
         data = json.loads(response.content.decode())
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(data["status"], "noop")
-        self.assertEqual(data["validation_status"], "completed")
-        self.assertEqual(data["outside_segment_count"], 0)
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(data["status"], "validation_required")
+        self.assertEqual(data["validation_status"], "validation_required")
 
         segment.mark_validated(
             is_validated=True,

@@ -419,6 +419,7 @@ def _dispatch_segment_annotation_expansion(
     information_source_name: str,
     annotator: str | None,
     dispatch_post_validation_rebuild: bool = False,
+    mark_complete_without_rebuild: bool | None = None,
 ) -> tuple[str, bool]:
     from endoreg_db.tasks import run_segment_annotation_expansion_task
 
@@ -434,7 +435,11 @@ def _dispatch_segment_annotation_expansion(
         result = run_segment_annotation_expansion_task.apply(kwargs=kwargs)
         return str(result.id), True
     kwargs["dispatch_post_validation_rebuild"] = bool(dispatch_post_validation_rebuild)
-    kwargs["mark_complete_without_rebuild"] = bool(not dispatch_post_validation_rebuild)
+    kwargs["mark_complete_without_rebuild"] = bool(
+        not dispatch_post_validation_rebuild
+        if mark_complete_without_rebuild is None
+        else mark_complete_without_rebuild
+    )
     result = run_segment_annotation_expansion_task.apply_async(kwargs=kwargs)
     return str(result.id), False
 
@@ -513,6 +518,20 @@ def video_segments_blacken_outside(request: Request, pk: int) -> Response:
     if only_validated:
         outside_segments = outside_segments.filter(state__is_validated=True)
     outside_segment_count = outside_segments.count()
+    segment_rows = LabelVideoSegment.objects.filter(video_file=video)
+
+    if segment_rows.exists() and segment_rows.exclude(
+        state__is_validated=True
+    ).exists():
+        return Response(
+            {
+                "message": "All video segments must be validated before blackening.",
+                "status": "validation_required",
+                "video_id": video.pk,
+                "validation_status": "validation_required",
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
 
     if outside_segment_count == 0:
         return Response(
@@ -525,6 +544,17 @@ def video_segments_blacken_outside(request: Request, pk: int) -> Response:
                 "validation_status": "completed",
             },
             status=status.HTTP_200_OK,
+        )
+
+    if not only_validated:
+        return Response(
+            {
+                "message": "Post-validation blackening requires only_validated=true.",
+                "status": "validation_required",
+                "video_id": video.pk,
+                "validation_status": "validation_required",
+            },
+            status=status.HTTP_400_BAD_REQUEST,
         )
 
     try:
@@ -1247,21 +1277,17 @@ def video_segment_validate(request: Request, pk: int, segment_id: int) -> Respon
                 segment_ids=[int(segment.pk)],
                 information_source_name=information_source_name,
                 annotator=annotation_annotator,
-                dispatch_post_validation_rebuild=True,
+                dispatch_post_validation_rebuild=False,
+                mark_complete_without_rebuild=False,
             )
         )
-        if expansion_completed:
-            post_processing_job = dispatch_video_post_validation_rebuild(
-                video_id=video.pk
-            )
-            response_status = _bulk_validation_response_status(
-                post_processing_job.status
-            )
-            validation_status = _validation_status_from_job(post_processing_job)
-            post_processing_job_payload = post_processing_job.to_dict()
-        else:
+        if not expansion_completed:
             response_status = status.HTTP_202_ACCEPTED
             validation_status = "annotation_expansion_queued"
+            post_processing_job_payload = None
+        else:
+            response_status = status.HTTP_200_OK
+            validation_status = "completed"
             post_processing_job_payload = None
 
         logger.info(f"Validated segment {segment_id} in video {pk}: {is_validated}")
@@ -1512,7 +1538,8 @@ def video_segments_validate_bulk(request: Request, pk: int) -> Response:
                             status=status.HTTP_409_CONFLICT,
                         )
                     post_processing_job = dispatch_video_post_validation_rebuild(
-                        video_id=video.pk
+                        video_id=video.pk,
+                        only_validated=True,
                     )
                     response_status = _bulk_validation_response_status(
                         post_processing_job.status

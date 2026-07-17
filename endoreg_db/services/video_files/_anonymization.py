@@ -334,6 +334,20 @@ def _censor_outside_frames(
     return error_count == 0
 
 
+def censor_outside_video_frames(
+    video: "VideoFile",
+    *,
+    only_validated: bool = True,
+    censor_color: tuple[int, int, int] = (0, 0, 0),
+) -> bool:
+    """Atomically blacken extracted frames belonging to outside segments."""
+    return _censor_outside_frames(
+        video,
+        only_validated=only_validated,
+        censor_color=censor_color,
+    )
+
+
 def _make_temporary_anonymized_frames(
     video: "VideoFile", roi_processing: bool = True
 ) -> tuple[Path, list[Path]]:

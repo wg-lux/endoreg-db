@@ -223,7 +223,10 @@ def run_segment_annotation_expansion_task(
         commit=True,
     )
     if dispatch_post_validation_rebuild:
-        dispatch_video_post_validation_rebuild(video_id=int(video_id))
+        dispatch_video_post_validation_rebuild(
+            video_id=int(video_id),
+            only_validated=True,
+        )
     elif mark_complete_without_rebuild:
         video = VideoFile.objects.get(pk=int(video_id))
         mark_segment_annotations_complete_without_cleanup(video)
