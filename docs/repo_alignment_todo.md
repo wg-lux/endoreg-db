@@ -1,5 +1,9 @@
 # Repository Alignment TODO
 
+> Status tracking was migrated to `feature-tracking/StorageSecurity.yml`. This
+> document is retained as architecture context and must not carry an independent
+> completion status.
+
 ## Goal
 
 Re-align `endoreg-db`, `lx-annotate`, and LuxNix so the protected-media model is consistent again:

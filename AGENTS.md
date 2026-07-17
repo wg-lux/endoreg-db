@@ -53,6 +53,34 @@ Preferred agent commands:
 - Fast pytest lane: `devenv tasks run test:fast`
 - Full pytest lane: `devenv tasks run test:full`
 
+## Feature Readiness Tracking
+
+`feature-tracking/` is the single source of truth for feature scope,
+Definition of Done, implementation maturity, and production-readiness evidence.
+Do not create or maintain parallel TODO, roadmap, implementation-status, or
+completion-tracking Markdown files.
+
+Before changing a tracked feature:
+
+1. Read its YAML definition in `feature-tracking/` and `policy.yml`.
+2. Add or sharpen measurable acceptance criteria before implementing scope that
+   is not represented yet.
+3. Do not declare a criterion `verified` without stable evidence and an
+   identified assessor.
+
+After changing a tracked feature, run:
+
+- `./feature-tracking/tracker.py validate`
+- `./feature-tracking/tracker.py show <feature_id>`
+- `./feature-tracking/tracker.py check <feature_id>` when assessing production
+  readiness
+
+Use `tracker.py update` or `tracker.py verify --update` for status changes so
+the YAML remains schema-valid and writes are atomic. Markdown documents may
+remain as architecture, design, or operational references, but they must point
+to the corresponding feature YAML and must not carry an independent completion
+status.
+
 Use `rg` for search and `jq` for structured JSON inspection; both are part of
 the devenv shell for agent workflows. If tests require the activated uv virtual
 environment, prefer entering through direnv/devenv rather than invoking system

@@ -1,0 +1,90 @@
+schema_version: "1.0"
+id: api_contracts
+name: API-Verträge
+description: Stabile, autorisierte und regressionsgetestete REST-Verträge für alle produktionskritischen Endpunkte.
+owners:
+  - endoreg_db maintainers
+production_critical: true
+source_documents:
+  - path: docs/api_route_test_matrix.md
+    disposition: migrated
+    note: Die Routenmatrix bleibt Coverage-Referenz; der Fertigstellungsstatus wird hier abgeleitet.
+definition_of_done:
+  - id: documented_scope
+    category: requirements
+    title: Kanonische und kompatible Routen sind vollständig inventarisiert
+    acceptance:
+      - Jede produktionskritische Route hat Zweck, Mount, Supportstatus und Eigentümer.
+      - Kompatibilitätsalias und Entfernungskriterium sind explizit dokumentiert.
+    required: true
+    verification:
+      kind: manual
+      instructions: URL-Konfiguration gegen Routenmatrix und Supportvertrag prüfen.
+    assessment: &not_assessed
+      status: not_assessed
+  - id: route_contracts
+    category: functionality
+    title: Kanonische Routen und Payloadverträge stimmen mit der Implementierung überein
+    acceptance:
+      - Alle dokumentierten Routen lösen auf die erwarteten Views auf.
+      - Request-, Response- und Fehlerpayloads sind stabil und ohne camelCase-interne Sonderpfade.
+    required: true
+    verification:
+      kind: command
+      command: [.devenv/state/venv/bin/python, scripts/check_route_matrix.py, --warn-on-missing-backend]
+    assessment: *not_assessed
+  - id: route_coverage
+    category: testing
+    title: Jede Hochrisikoroute besitzt einen belastbaren Contract-Test
+    acceptance:
+      - Routenmatrix und Testdateien sind synchron.
+      - Authentifizierung, Autorisierung, Validierung und Fehlerfälle sind nicht nur Happy-Path-getestet.
+    required: true
+    verification:
+      kind: command
+      command: [.devenv/state/venv/bin/pytest, tests/docs/test_show_urls_contract.py, tests/test_resolve.py, -q]
+      timeout_seconds: 600
+    assessment: *not_assessed
+  - id: access_controls
+    category: security
+    title: Alle geschützten Routen erzwingen Authentifizierung und Scope
+    acceptance:
+      - Medien-, Bericht-, Upload- und Adminrouten verweigern fremden Center- oder Patientenzugriff.
+      - DEBUG-Bypass kann in keinem Produktionsprofil aktiv sein.
+    required: true
+    verification:
+      kind: manual
+      instructions: Routenmatrix gegen Permission-Klassen und negative Authz-Tests prüfen.
+    assessment: *not_assessed
+  - id: deprecation_control
+    category: maintainability
+    title: Legacy-Routen und Serializer-Shims haben ein kontrolliertes Ende
+    acceptance:
+      - Jeder Alias ist markiert, getestet und mit Entfernungsvoraussetzung versehen.
+      - Tote oder ungetestete Kompatibilitätspfade sind entfernt.
+    required: true
+    verification:
+      kind: manual
+      instructions: URL- und Serializer-Shims inventarisieren und Supportstatus reviewen.
+    assessment: *not_assessed
+  - id: operational_readiness
+    category: operations
+    title: Vertragsbrüche werden vor Deployment erkannt
+    acceptance:
+      - Routenprüfung ist lokal und in CI reproduzierbar.
+      - Fehlerausgaben benennen Route, erwarteten Vertrag und fehlende Abdeckung.
+    required: true
+    verification:
+      kind: command
+      command: [.devenv/state/venv/bin/python, scripts/check_route_matrix.py, --warn-on-missing-backend]
+    assessment: *not_assessed
+  - id: api_documentation
+    category: documentation
+    title: API-Vertrag ist für Consumer aktuell und eindeutig
+    acceptance:
+      - Mounts, Versionierung, Authentifizierung, Payloads und Fehlerverhalten sind dokumentiert.
+    required: true
+    verification:
+      kind: manual
+      instructions: Dokumentierten Ablauf für je eine Medien-, Upload- und Berichtsroute nachvollziehen.
+    assessment: *not_assessed

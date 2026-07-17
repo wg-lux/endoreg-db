@@ -1,0 +1,186 @@
+schema_version: '1.0'
+id: dicom
+name: DICOM-Interoperabilität
+description: Sicherer, pseudonymisierter und idempotenter Austausch klinischer DICOM-Metadaten und Artefakte.
+owners:
+- endoreg_db maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/dicom_interoperability.md
+  disposition: reference
+  note: Aktueller Integrationsvertrag, unterstützter Umfang und Betriebs-Runbook.
+definition_of_done:
+- id: documented_scope
+  category: requirements
+  title: Unterstützter DICOM-Umfang ist eindeutig festgelegt
+  acceptance:
+  - Unterstützte SOP-Klassen, Transfergrenzen und bewusst ausgeschlossene Abläufe sind dokumentiert.
+  - Export- und Importverträge beschreiben Identität, Versionierung und Fehlerverhalten.
+  required: true
+  verification:
+    kind: manual
+    instructions: DICOM-Vertrag gegen Schema, Service und Deploymentgrenzen prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/dicom_interoperability.md
+    - kind: review
+      reference: endoreg_db/services/interoperability/dicom_import.py
+    assessed_by: codex
+    assessed_at: '2026-07-17T11:32:55.723334Z'
+- id: interoperable_contract
+  category: interoperability
+  title: DICOM-Vertrag ist standardspezifisch und versionsstabil
+  acceptance:
+  - Wire-Felder und UID-Behandlung sind explizit validiert.
+  - Ein unterstützter Export kann ohne implizite Defaults wieder eingelesen werden.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_dicom_interoperability.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_dicom_interoperability.py -q
+      note: Exit-Code 0
+    assessed_by: codex
+    assessed_at: '2026-07-17T11:21:58.169114Z'
+- id: import_behavior
+  category: functionality
+  title: Import ist deterministisch, idempotent und fail-closed
+  acceptance:
+  - Wiederholte identische Importe erzeugen keine Duplikate.
+  - Konfligierende Exportidentitäten werden abgelehnt.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_dicom_interoperability.py::test_import_catalogues_valid_manifest_and_is_idempotent
+    - tests/services/test_dicom_interoperability.py::test_import_rejects_reused_export_id_for_another_examination
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_dicom_interoperability.py::test_import_catalogues_valid_manifest_and_is_idempotent
+        tests/services/test_dicom_interoperability.py::test_import_rejects_reused_export_id_for_another_examination
+        -q
+      note: Exit-Code 0
+    assessed_by: codex
+    assessed_at: '2026-07-17T11:22:26.552828Z'
+- id: automated_tests
+  category: testing
+  title: Positive, negative und Wiederholungsfälle sind automatisiert getestet
+  acceptance:
+  - Schema-, Service-, Integritäts- und Idempotenztests laufen reproduzierbar.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_dicom_interoperability.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_dicom_interoperability.py -q
+      note: Exit-Code 0
+    assessed_by: codex
+    assessed_at: '2026-07-17T11:22:54.384649Z'
+- id: security_controls
+  category: security
+  title: Direkte Identifikatoren und unzulässige Rohdaten werden abgewiesen
+  acceptance:
+  - Originale Patientenidentifikatoren werden am Schema- oder Service-Rand abgelehnt.
+  - Der Austausch überträgt keinen Master-Key und exportiert keine verbotenen Rohmedien.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_dicom_interoperability.py::test_import_rejects_original_identifier_fields
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_dicom_interoperability.py::test_import_rejects_original_identifier_fields
+        -q
+      note: Exit-Code 0
+    assessed_by: codex
+    assessed_at: '2026-07-17T11:23:18.557892Z'
+- id: artifact_integrity
+  category: data_integrity
+  title: Artefaktintegrität wird vor Persistenz geprüft
+  acceptance:
+  - Manipulierte oder unvollständige Artefakte führen zu einem lauten, auditierbaren Fehler.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_dicom_interoperability.py::test_import_fails_closed_when_artifact_integrity_check_fails
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_dicom_interoperability.py::test_import_fails_closed_when_artifact_integrity_check_fails
+        -q
+      note: Exit-Code 0
+    assessed_by: codex
+    assessed_at: '2026-07-17T11:23:49.422906Z'
+- id: operational_readiness
+  category: operations
+  title: Betrieb, Fehlerdiagnose und Wiederanlauf sind definiert
+  acceptance:
+  - Runbook, Migrationsweg, Monitoring und Wiederanlauf nach Teilfehlern sind geprüft.
+  required: true
+  verification:
+    kind: manual
+    instructions: Betriebsübung mit Importfehler, Wiederholung und Auditnachweis durchführen.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: runbook
+      reference: docs/dicom_interoperability.md
+    - kind: command
+      reference: pytest tests/services/test_dicom_interoperability.py
+    note: Runbook und strukturierte Auditereignisse sind implementiert; produktionsnahe Betriebsübung
+      steht aus.
+    assessed_by: codex
+    assessed_at: '2026-07-17T11:33:07.994649Z'
+- id: operator_documentation
+  category: documentation
+  title: Integratoren und Betreiber haben aktuelle Dokumentation
+  acceptance:
+  - Konfiguration, unterstützte Profile, Beispielablauf und Fehlermeldungen sind dokumentiert.
+  required: true
+  verification:
+    kind: manual
+    instructions: Dokumentation aus Sicht eines neuen Integrators vollständig nachvollziehen.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: runbook
+      reference: docs/dicom_interoperability.md
+    assessed_by: codex
+    assessed_at: '2026-07-17T11:33:07.267487Z'

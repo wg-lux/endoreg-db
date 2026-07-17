@@ -1,0 +1,91 @@
+schema_version: "1.0"
+id: colonoscopy
+name: Koloskopie-Dokumentation
+description: Vollständige, klinisch valide und typisierte Dokumentation von Koloskopien und Polypenbefunden.
+owners:
+  - endoreg_db maintainers
+production_critical: true
+source_documents:
+  - path: docs/colonoscopy-requirements-plan.md
+    disposition: migrated
+    note: Fachliche Anforderungen wurden in überprüfbare DoD-Kriterien überführt.
+definition_of_done:
+  - id: documented_scope
+    category: requirements
+    title: Pflichtdaten und klinische Semantik sind fachlich freigegeben
+    acceptance:
+      - Patient, Indikation, Personal, Gerät, Zeitpunkte und Untersuchungsabschluss sind eindeutig definiert.
+      - Operierter Situs, unbekannte Werte und unauffälliger Befund haben explizite Semantik.
+    required: true
+    verification:
+      kind: manual
+      instructions: Kriterien mit klinischer Fachverantwortung und Datenmodell reviewen.
+    assessment: &not_assessed
+      status: not_assessed
+  - id: examination_timeline
+    category: functionality
+    title: Untersuchungszeitpunkte und Vollständigkeit sind korrekt erfassbar
+    acceptance:
+      - Untersuchungsbeginn, Rückzugsbeginn und Untersuchungsende sind validierte Zeitpunkte.
+      - Tiefste Intubation bildet Vollständigkeit auch bei operiertem Situs korrekt ab.
+    required: true
+    verification:
+      kind: manual
+      instructions: Repräsentative vollständige, unvollständige und postoperativ veränderte Fälle prüfen.
+    assessment: *not_assessed
+  - id: finding_requirements
+    category: data_integrity
+    title: Polypenbefunde erfüllen größenabhängige Pflichtangaben
+    acceptance:
+      - Lokalisation und Größe sind vorhanden; Rektum und Sigma verlangen bei Bedarf Zentimeterangabe.
+      - Paris-, NICE-, J-NET- und LST-Klassifikation werden nur gemäß fachlicher Größenregeln verlangt.
+      - Biopsie, Resektion und Clipversorgung sind eindeutig dokumentiert.
+    required: true
+    verification:
+      kind: command
+      command: [.devenv/state/venv/bin/pytest, tests/finding/test_colonoscopy_finding.py, tests/finding/test_colon_polyp_locations.py, tests/finding/test_colon_polyp_morphologies.py, -q]
+      timeout_seconds: 600
+    assessment: *not_assessed
+  - id: automated_tests
+    category: testing
+    title: Klinische Regeln haben parametrisierte Positiv- und Negativtests
+    acceptance:
+      - Größen-, Lokalisations-, Klassifikations- und Vollständigkeitsvarianten sind automatisiert getestet.
+    required: true
+    verification:
+      kind: command
+      command: [.devenv/state/venv/bin/pytest, tests/finding, -q]
+      timeout_seconds: 600
+    assessment: *not_assessed
+  - id: privacy_controls
+    category: security
+    title: Patienten- und Geräteidentität folgt dem minimalen Zugriffskonzept
+    acceptance:
+      - Direkte Identifikatoren sind nur in autorisiertem klinischem Kontext verfügbar.
+      - Export und Forschungsnutzung verwenden pseudonymisierte Verträge.
+    required: true
+    verification:
+      kind: manual
+      instructions: API-, Export- und Rollenpfade für Patient und Geräte-ID reviewen.
+    assessment: *not_assessed
+  - id: operational_readiness
+    category: operations
+    title: Ungültige und historische Datensätze sind sicher behandelbar
+    acceptance:
+      - Validierungsfehler sind verständlich und bestehende Daten können kontrolliert migriert werden.
+      - Keine neue Pflichtregel macht Produktion ohne geprüften Migrationspfad unstartbar.
+    required: true
+    verification:
+      kind: manual
+      instructions: Migration und Validierung eines repräsentativen Bestands proben.
+    assessment: *not_assessed
+  - id: clinical_documentation
+    category: documentation
+    title: Klinische Regeln und technische Abbildung sind gemeinsam dokumentiert
+    acceptance:
+      - Jede Pflichtangabe ist auf Modell, API-Feld und fachliche Begründung abbildbar.
+    required: true
+    verification:
+      kind: manual
+      instructions: Feldmatrix mit klinischer Fachverantwortung und API-Consumer abnehmen.
+    assessment: *not_assessed

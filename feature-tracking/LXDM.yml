@@ -1,0 +1,90 @@
+schema_version: "1.0"
+id: lxdm
+name: LX-Datenmodell-Integration
+description: Strikt typisierte Integration von lx_dtypes als klinischer Wissens- und Austauschvertrag.
+owners:
+  - endoreg_db maintainers
+production_critical: true
+source_documents:
+  - path: docs/dtypes_lookup_module_entrypoint.md
+    disposition: reference
+    note: Beschreibt den aktuellen Lookup- und Host-Modul-Vertrag.
+definition_of_done:
+  - id: documented_scope
+    category: requirements
+    title: Ownership zwischen Django, lx_dtypes und Knowledge Base ist eindeutig
+    acceptance:
+      - Für jedes persistierte oder exportierte Feld ist die zuständige Quelle festgelegt.
+      - Versions- und Kompatibilitätsgrenzen sind dokumentiert.
+    required: true
+    verification:
+      kind: manual
+      instructions: Feldownership und Versionsvertrag gegen Host-Modelle und Service prüfen.
+    assessment: &not_assessed
+      status: not_assessed
+  - id: typed_boundary
+    category: functionality
+    title: Externe und persistierte Daten werden einmalig strikt validiert
+    acceptance:
+      - API-Daten werden am Rand in lx_dtypes-Verträge überführt.
+      - Interne Workflows verwenden keine parallelen untypisierten Payloadformen.
+    required: true
+    verification:
+      kind: command
+      command: [.devenv/state/venv/bin/pytest, tests/api/test_dtypes_record_persistence.py, -q]
+      timeout_seconds: 600
+    assessment: *not_assessed
+  - id: record_consistency
+    category: data_integrity
+    title: Persistierter LXDM-Datensatz folgt allen klinischen Änderungen
+    acceptance:
+      - Erstellen, Ändern und Löschen abhängiger Befunde aktualisiert den Datensatz idempotent.
+      - Fremde Untersuchungsdatensätze werden abgelehnt.
+    required: true
+    verification:
+      kind: command
+      command: [.devenv/state/venv/bin/pytest, tests/api/test_dtypes_record_persistence.py, -q]
+      timeout_seconds: 600
+    assessment: *not_assessed
+  - id: automated_tests
+    category: testing
+    title: Importgrenzen und Persistenzvertrag sind regressionsgetestet
+    acceptance:
+      - Import-Boundary- und Datensatztests laufen mit strikt typisierten Verträgen.
+    required: true
+    verification:
+      kind: command
+      command: [.devenv/state/venv/bin/pytest, tests/app/test_lx_dtypes_import_boundary.py, tests/api/test_dtypes_record_persistence.py, -q]
+      timeout_seconds: 600
+    assessment: *not_assessed
+  - id: security_controls
+    category: security
+    title: Klinische Identität und Provenienz werden nicht durch lose Payloads umgangen
+    acceptance:
+      - Center- und Untersuchungsbezug werden serverseitig geprüft.
+      - Persistierte JSON-Daten werden am Modellrand validiert.
+    required: true
+    verification:
+      kind: manual
+      instructions: Boundary-Review für fremde Untersuchung, ungültiges JSON und Center-Scope durchführen.
+    assessment: *not_assessed
+  - id: operational_readiness
+    category: operations
+    title: Versionswechsel und Reparatur bestehender Datensätze sind beherrscht
+    acceptance:
+      - Upgrade-, Backfill-, Fehler- und Rollbackverfahren sind definiert und getestet.
+    required: true
+    verification:
+      kind: manual
+      instructions: Versionsupgrade und Backfill mit repräsentativem Datenbestand proben.
+    assessment: *not_assessed
+  - id: integration_documentation
+    category: documentation
+    title: Host-Modul, Wissensbasis und API-Nutzung sind dokumentiert
+    acceptance:
+      - Neue Entwickler können Datenfluss, Imports und Kompatibilitätsregeln ohne Quellcodeforensik nachvollziehen.
+    required: true
+    verification:
+      kind: manual
+      instructions: Dokumentation gegen aktuellen Import- und Persistenzpfad prüfen.
+    assessment: *not_assessed

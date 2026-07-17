@@ -1,5 +1,9 @@
 # Production Workflow Hardening Plan
 
+> Status tracking was migrated to `feature-tracking/ProductionWorkflow.yml`.
+> This document is retained as design history and must not carry an independent
+> completion status.
+
 ## Goal
 
 Make the media import, anonymization, validation, segment review, case resolution, and reporting flow safe for production-grade data import and reporting.

@@ -1,0 +1,87 @@
+schema_version: "1.0"
+id: audit_ledger
+name: Audit-Ledger
+description: Manipulationserkennbares, center-bezogenes und betrieblich überprüfbares Audit-Ledger.
+owners:
+  - endoreg_db maintainers
+production_critical: true
+source_documents: []
+definition_of_done:
+  - id: documented_scope
+    category: requirements
+    title: Auditereignisse, Verkettung und Vertrauensgrenzen sind festgelegt
+    acceptance:
+      - Auditpflichtige Aktionen und bewusst ausgeschlossene Daten sind dokumentiert.
+      - Integritätsstatus, Fehlerzustand und Verifikationsfrequenz sind eindeutig.
+    required: true
+    verification:
+      kind: manual
+      instructions: Auditvertrag gegen Modell, Service, Tasks und Betriebsanforderungen prüfen.
+    assessment: &not_assessed
+      status: not_assessed
+  - id: ledger_behavior
+    category: functionality
+    title: Ereignisse werden deterministisch verkettet und verifiziert
+    acceptance:
+      - Neue Ereignisse referenzieren den korrekten Vorgänger und Manipulation wird erkannt.
+      - Wiederholte Verifikation verändert das Ledger nicht.
+    required: true
+    verification:
+      kind: command
+      command: [.devenv/state/venv/bin/pytest, tests/models/state/test_audit_ledger.py, tests/services/test_audit_integrity.py, -q]
+      timeout_seconds: 600
+    assessment: *not_assessed
+  - id: automated_tests
+    category: testing
+    title: Modell, Integritätsservice, Hub-Audit und Refresh-Kommando sind getestet
+    acceptance:
+      - Manipulation, Locking, Fehler und Cache-Zustände haben Regressionstests.
+    required: true
+    verification:
+      kind: command
+      command: [.devenv/state/venv/bin/pytest, tests/models/state/test_audit_ledger.py, tests/services/test_audit_integrity.py, tests/services/test_hub_audit.py, tests/management/commands/test_refresh_audit_ledger_integrity.py, -q]
+      timeout_seconds: 900
+    assessment: *not_assessed
+  - id: security_controls
+    category: security
+    title: Auditdaten sind unveränderbar zugriffsgeschützt und center-bezogen
+    acceptance:
+      - Unautorisierte Nutzer können Integritätsdetails nicht lesen oder verändern.
+      - Geheimnisse und direkte unnötige Patientendaten werden nicht protokolliert.
+    required: true
+    verification:
+      kind: manual
+      instructions: Berechtigungs-, Datenminimierungs- und Manipulationsreview durchführen.
+    assessment: *not_assessed
+  - id: integrity_evidence
+    category: data_integrity
+    title: Ledger-Kopf und Verifikationsergebnis sind konsistent nachvollziehbar
+    acceptance:
+      - Status enthält einen überprüfbaren Kopf-Snapshot und meldet unbekannte oder defekte Zustände laut.
+    required: true
+    verification:
+      kind: command
+      command: [.devenv/state/venv/bin/pytest, tests/services/test_audit_integrity.py, -q]
+      timeout_seconds: 600
+    assessment: *not_assessed
+  - id: operational_readiness
+    category: operations
+    title: Periodische Prüfung, Alarmierung und Reparaturprozess sind eingerichtet
+    acceptance:
+      - Verifikation läuft getrennt, verhindert parallele Läufe und alarmiert bei Fehlern.
+      - Betreiber haben ein Verfahren zur Beweissicherung ohne unsafe Auto-Recovery.
+    required: true
+    verification:
+      kind: manual
+      instructions: Manipulation simulieren, Alarm und Beweissicherungs-Runbook prüfen.
+    assessment: *not_assessed
+  - id: audit_documentation
+    category: documentation
+    title: Auditmodell und Incident-Verfahren sind dokumentiert
+    acceptance:
+      - Ereignisformat, Aufbewahrung, Verifikation und Incident-Ablauf sind aktuell beschrieben.
+    required: true
+    verification:
+      kind: manual
+      instructions: Dokumentation mit Security und Betrieb reviewen.
+    assessment: *not_assessed

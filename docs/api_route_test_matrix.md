@@ -1,5 +1,9 @@
 # API Route Test Matrix
 
+> Status tracking was migrated to `feature-tracking/ApiContracts.yml`. This
+> document is a coverage reference and must not carry an independent completion
+> status.
+
 This matrix tracks high-risk API routes and the backend tests that exercise them.
 Routes are shown with the canonical `/endoreg-api/` mount. `/api/` remains a
 compatibility alias during migration.

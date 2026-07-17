@@ -1,5 +1,9 @@
 # Dataloader Layers And Naming
 
+> Status tracking was migrated to `feature-tracking/DataLoading.yml`. This
+> document defines naming and migration context, not an independent completion
+> status.
+
 ## Why Two Modules Exist
 There are currently two similarly named modules with different responsibilities:
 

@@ -1,0 +1,89 @@
+schema_version: "1.0"
+id: reporting
+name: Klinisches Reporting
+description: Sicherer Import, Bearbeitung, Materialisierung, LLM-Verarbeitung und Streaming klinischer Berichte.
+owners:
+  - endoreg_db maintainers
+production_critical: true
+source_documents: []
+definition_of_done:
+  - id: documented_scope
+    category: requirements
+    title: Berichtslebenszyklus und unterstützte Dokumenttypen sind definiert
+    acceptance:
+      - Import, Entwurf, Finalisierung, PDF-Materialisierung und Historie haben explizite Invarianten.
+      - LLM-Verarbeitung ist optional, nachverfolgbar und kein stiller Freigabeersatz.
+    required: true
+    verification:
+      kind: manual
+      instructions: Berichtszustände gegen Modelle, Services, API und Jobs prüfen.
+    assessment: &not_assessed
+      status: not_assessed
+  - id: report_workflow
+    category: functionality
+    title: Import bis Streaming funktioniert deterministisch und idempotent
+    acceptance:
+      - Finalisierung verlangt Untersuchung und Dokumenttyp.
+      - Materialisierung und Reimport erzeugen nachvollziehbare Versionen ohne stille Duplikate.
+    required: true
+    verification:
+      kind: command
+      command: [.devenv/state/venv/bin/pytest, tests/services/test_report_import_service_unit.py, tests/services/test_report_materialization_contracts.py, tests/views/report/test_patient_examination_report_ninja_api.py, -q]
+      timeout_seconds: 900
+    assessment: *not_assessed
+  - id: automated_tests
+    category: testing
+    title: Import, Persistenz, Materialisierung, LLM-Jobs und Streaming sind getestet
+    acceptance:
+      - Kritische positive und negative Pfade laufen in fokussierten Testlanes.
+    required: true
+    verification:
+      kind: command
+      command: [.devenv/state/venv/bin/pytest, tests/services/test_report_persistence_service.py, tests/services/test_report_materialization_contracts.py, tests/views/report/test_report_stream.py, tests/services/test_report_llm_jobs.py, -q]
+      timeout_seconds: 900
+    assessment: *not_assessed
+  - id: access_controls
+    category: security
+    title: Berichtszugriff und LLM-Verarbeitung sind patienten- und center-bezogen
+    acceptance:
+      - Fremde Berichte können weder gelesen noch verarbeitet oder gestreamt werden.
+      - Rohberichte verlassen den lokalen Schutzbereich nicht über Exportpfade.
+    required: true
+    verification:
+      kind: command
+      command: [.devenv/state/venv/bin/pytest, tests/authz/test_report_llm_policy.py, tests/views/report/test_report_stream.py, -q]
+      timeout_seconds: 600
+    assessment: *not_assessed
+  - id: artifact_integrity
+    category: data_integrity
+    title: Berichtsversionen und PDF-Artefakte sind atomar und nachvollziehbar
+    acceptance:
+      - Hash, Version, Quelldokument und Renderergebnis bleiben konsistent.
+      - Fehlgeschlagene Materialisierung hinterlässt kein freigegebenes Teilprodukt.
+    required: true
+    verification:
+      kind: command
+      command: [.devenv/state/venv/bin/pytest, tests/services/test_report_artifact_integrity.py, tests/services/test_report_materialization_contracts.py, -q]
+      timeout_seconds: 600
+    assessment: *not_assessed
+  - id: operational_readiness
+    category: operations
+    title: Jobfehler, Renderer und Wiederanlauf sind betreibbar
+    acceptance:
+      - Status, Fehlergrund, Retry-Entscheidung und Abhängigkeiten sind für Betreiber sichtbar.
+      - Wiederholung ist idempotent und verliert keine Historie.
+    required: true
+    verification:
+      kind: manual
+      instructions: Renderer- und LLM-Fehler samt Wiederanlauf im Betriebsprofil durchführen.
+    assessment: *not_assessed
+  - id: user_documentation
+    category: documentation
+    title: API-, Nutzer- und Betriebsdokumentation entspricht dem Berichtsworkflow
+    acceptance:
+      - Unterstützte Formate, Status, Fehler und Berechtigungen sind vollständig beschrieben.
+    required: true
+    verification:
+      kind: manual
+      instructions: Dokumentation anhand eines vollständigen Import-bis-Stream-Ablaufs prüfen.
+    assessment: *not_assessed

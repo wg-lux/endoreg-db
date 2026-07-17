@@ -1,5 +1,9 @@
 # Multi-Centre Storage Hub Roadmap
 
+> Status tracking was migrated to `feature-tracking/HubIngest.yml`. This
+> document is retained as architecture context and must not carry an independent
+> completion status.
+
 ## Purpose
 
 This document is for engineers extending `endoreg-db` for multi-centre

@@ -1,5 +1,9 @@
 # Colonoscopy Requirements Plan
 
+> Status tracking was migrated to `feature-tracking/Colonoscopy.yml`. This
+> document is retained as requirements context and must not carry an independent
+> completion status.
+
 * Patientendaten: Eindeutige Identifikation des Patienten (z.B. Name, Geburtsdatum, Patienten-ID).
 * Indikation: Der klinische Grund für die Durchführung der Endoskopie muss klar dokumentiert sein.
 * Untersucher und Assistenz: Namentliche Nennung des verantwortlichen ärztlichen und des assistierenden Fachpersonals.

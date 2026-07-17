@@ -1,0 +1,292 @@
+from __future__ import annotations
+
+from datetime import datetime
+from pathlib import Path
+import subprocess
+
+import pytest
+import yaml
+
+from tracker import (
+    Assessment,
+    AssessmentStatus,
+    Evidence,
+    EvidenceKind,
+    FeatureDefinition,
+    FeatureTrackingState,
+    ReadinessStatus,
+    TRACKING_DIR,
+    TrackerError,
+    actively_tracked_features,
+    derive_readiness,
+    find_feature_references,
+    guard_commit_message,
+    load_feature_file,
+    load_registry,
+    load_registry_from_git_index,
+    main,
+    mark_feature_done,
+    reopen_feature,
+    save_feature,
+    update_assessment,
+)
+
+
+ASSESSMENT_TIME = datetime.fromisoformat("2026-07-17T10:00:00+00:00")
+
+
+def _verified_feature(feature: FeatureDefinition) -> FeatureDefinition:
+    verified = Assessment(
+        status=AssessmentStatus.VERIFIED,
+        evidence=(Evidence(kind=EvidenceKind.REVIEW, reference="review-42"),),
+        assessed_by="reviewer@example.org",
+        assessed_at=ASSESSMENT_TIME,
+    )
+    criteria = tuple(
+        criterion.model_copy(update={"assessment": verified})
+        for criterion in feature.definition_of_done
+    )
+    return FeatureDefinition(
+        schema_version=feature.schema_version,
+        id=feature.id,
+        name=feature.name,
+        description=feature.description,
+        owners=feature.owners,
+        production_critical=feature.production_critical,
+        tracking=feature.tracking,
+        source_documents=feature.source_documents,
+        definition_of_done=criteria,
+    )
+
+
+def _run_git(repository: Path, *arguments: str) -> None:
+    subprocess.run(
+        ("git", *arguments),
+        cwd=repository,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_repository_registry_is_valid_and_tracks_current_assessments() -> None:
+    _, features = load_registry(TRACKING_DIR)
+
+    assert len(features) == 16
+    assert {feature.id for feature in features} == {
+        "annotation",
+        "anonymization",
+        "audit_ledger",
+        "api_contracts",
+        "colonoscopy",
+        "code_quality",
+        "data_loading",
+        "dicom",
+        "fhir",
+        "hub_ingest",
+        "lxdm",
+        "production_workflow",
+        "reporting",
+        "storage_security",
+        "standard",
+        "type_safety",
+    }
+    readiness_by_id = {
+        feature.id: derive_readiness(feature).status for feature in features
+    }
+    assert {
+        feature_id
+        for feature_id, status in readiness_by_id.items()
+        if status is ReadinessStatus.IN_PROGRESS
+    } == {
+        "anonymization",
+        "code_quality",
+        "dicom",
+        "fhir",
+        "production_workflow",
+        "type_safety",
+    }
+    assert {
+        feature_id
+        for feature_id, status in readiness_by_id.items()
+        if status is ReadinessStatus.PRODUCTION_READY
+    } == {"annotation", "hub_ingest"}
+
+
+def test_verified_status_requires_evidence_and_assessor() -> None:
+    with pytest.raises(ValueError, match="require evidence"):
+        Assessment(
+            status=AssessmentStatus.VERIFIED,
+            assessed_by="reviewer@example.org",
+            assessed_at=ASSESSMENT_TIME,
+        )
+
+
+def test_all_required_criteria_must_be_verified_for_production() -> None:
+    _, features = load_registry(TRACKING_DIR)
+    feature = next(item for item in features if item.id == "dicom")
+    ready = _verified_feature(feature)
+
+    result = derive_readiness(ready)
+
+    assert result.status is ReadinessStatus.PRODUCTION_READY
+    assert result.score_percent == 100
+
+
+def test_update_and_atomic_save_round_trip(tmp_path: Path) -> None:
+    _, features = load_registry(TRACKING_DIR)
+    feature = next(item for item in features if item.id == "dicom")
+    updated = update_assessment(
+        feature,
+        criterion_id="documented_scope",
+        status=AssessmentStatus.IN_PROGRESS,
+        assessed_by="reviewer@example.org",
+        note="Review läuft.",
+    )
+
+    destination = save_feature(updated, tmp_path)
+    loaded = load_feature_file(destination)
+
+    criterion = next(
+        item for item in loaded.definition_of_done if item.id == "documented_scope"
+    )
+    assert criterion.assessment.status is AssessmentStatus.IN_PROGRESS
+    assert criterion.assessment.assessed_by == "reviewer@example.org"
+    assert not tuple(tmp_path.glob("*.tmp.*"))
+
+
+def test_save_feature_preserves_existing_filename_case(tmp_path: Path) -> None:
+    _, features = load_registry(TRACKING_DIR)
+    feature = next(item for item in features if item.id == "dicom")
+    existing = tmp_path / "DICOM.yml"
+    existing.write_text("placeholder: true\n", encoding="utf-8")
+
+    destination = save_feature(feature, tmp_path)
+
+    assert destination == existing
+    assert not (tmp_path / "dicom.yml").exists()
+    assert load_feature_file(existing).id == "dicom"
+
+
+def test_file_name_must_match_feature_id(tmp_path: Path) -> None:
+    _, features = load_registry(TRACKING_DIR)
+    payload = features[0].model_dump(mode="json", exclude_none=True)
+    path = tmp_path / "wrong_name.yml"
+    path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+
+    with pytest.raises(TrackerError, match="Dateiname und Feature-ID"):
+        load_feature_file(path)
+
+
+def test_check_returns_failure_until_definition_of_done_is_verified() -> None:
+    assert main(["check", "standard"]) == 1
+
+
+def test_verify_update_requires_assessor_before_command_runs() -> None:
+    with pytest.raises(TrackerError, match="erfordert --assessed-by"):
+        main(["verify", "standard", "terminal_commands", "--update"])
+
+
+def test_feature_references_match_ids_names_and_separator_variants() -> None:
+    _, features = load_registry(TRACKING_DIR)
+
+    matched = find_feature_references(
+        "feat(dicom): align FHIR-R4-Export and audit-ledger",
+        features,
+    )
+
+    assert {feature.id for feature in matched} == {"dicom", "fhir", "audit_ledger"}
+    assert find_feature_references("documentation cleanup", features) == ()
+
+
+def test_commit_guard_uses_staged_readiness_not_unstaged_yaml(
+    tmp_path: Path,
+) -> None:
+    _, repository_features = load_registry(TRACKING_DIR)
+    source = next(item for item in repository_features if item.id == "standard")
+    feature = FeatureDefinition(
+        schema_version=source.schema_version,
+        id=source.id,
+        name=source.name,
+        description=source.description,
+        owners=source.owners,
+        production_critical=source.production_critical,
+        tracking=source.tracking,
+        source_documents=(),
+        definition_of_done=source.definition_of_done,
+    )
+    policy, _ = load_registry(TRACKING_DIR)
+    staged_policy = policy.model_copy(update={"migrated_markdown_trackers": ()})
+    tracking_dir = tmp_path / "feature-tracking"
+    tracking_dir.mkdir()
+    (tracking_dir / "policy.yml").write_text(
+        yaml.safe_dump(staged_policy.model_dump(mode="json"), sort_keys=False),
+        encoding="utf-8",
+    )
+    feature_path = tracking_dir / "Standard.yml"
+    feature_path.write_text(
+        yaml.safe_dump(feature.model_dump(mode="json"), sort_keys=False),
+        encoding="utf-8",
+    )
+    _run_git(tmp_path, "init", "--quiet")
+    _run_git(tmp_path, "add", "feature-tracking")
+
+    message_path = tmp_path / "COMMIT_EDITMSG"
+    message_path.write_text("feat(standard): production release\n", encoding="utf-8")
+    assert guard_commit_message(message_path, repository_root=tmp_path) == 1
+
+    feature_path.write_text(
+        yaml.safe_dump(
+            _verified_feature(feature).model_dump(mode="json"), sort_keys=False
+        ),
+        encoding="utf-8",
+    )
+    _, indexed_features = load_registry_from_git_index(tmp_path)
+    assert derive_readiness(indexed_features[0]).status is ReadinessStatus.EVALUATED
+    assert guard_commit_message(message_path, repository_root=tmp_path) == 1
+
+    _run_git(tmp_path, "add", feature_path.relative_to(tmp_path).as_posix())
+    assert guard_commit_message(message_path, repository_root=tmp_path) == 0
+
+
+def test_default_overview_marks_valid_features_as_evaluated(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main([]) == 0
+
+    output = capsys.readouterr().out
+    assert "evaluiert" in output
+    assert "Aktiv getrackt: 14; Done: 2" in output
+
+
+def test_done_requires_complete_dod_and_excludes_feature_from_tracking() -> None:
+    _, features = load_registry(TRACKING_DIR)
+    feature = next(item for item in features if item.id == "standard")
+
+    with pytest.raises(TrackerError, match="kann nicht done gesetzt werden"):
+        mark_feature_done(
+            feature,
+            changed_by="reviewer@example.org",
+            note="Release freigegeben.",
+        )
+
+    completed = mark_feature_done(
+        _verified_feature(feature),
+        changed_by="reviewer@example.org",
+        note="Release freigegeben.",
+    )
+
+    assert completed.tracking.state is FeatureTrackingState.DONE
+    assert actively_tracked_features((completed,)) == ()
+    assert find_feature_references("feat(standard): release", (completed,)) == ()
+
+    reopened = reopen_feature(
+        completed,
+        criterion_id="defined_structure",
+        changed_by="reviewer@example.org",
+        note="Neue Anforderungen.",
+    )
+    assert reopened.tracking.state is FeatureTrackingState.ACTIVE
+    assert actively_tracked_features((reopened,)) == (reopened,)
+    assert len(reopened.tracking.history) == 2
+    assert derive_readiness(reopened).status is ReadinessStatus.IN_PROGRESS
