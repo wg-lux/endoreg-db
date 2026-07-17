@@ -15,6 +15,12 @@ from rest_framework.response import Response
 from endoreg_db.models.administration.person.patient.patient import Patient
 from endoreg_db.models.medical.examination.examination import Examination
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
+from endoreg_db.authz.permissions import PolicyPermission
+from endoreg_db.exceptions import FhirExportError
+from endoreg_db.schemas.fhir_r4 import dump_fhir_r4_bundle
+from endoreg_db.services.interoperability.fhir_r4 import (
+    build_patient_examination_fhir_bundle,
+)
 from endoreg_db.serializers.patient.patient_dropdown import PatientDropdownSerializer
 from endoreg_db.serializers.patient_examination import (
     PatientExaminationDraftResponseSerializer,
@@ -22,6 +28,9 @@ from endoreg_db.serializers.patient_examination import (
     PatientExaminationSerializer,
 )
 from endoreg_db.serializers.examination import ExaminationDropdownSerializer
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.views.access_control import assert_center_scope_allowed
+from endoreg_db.views.interoperability_errors import interoperability_error_response
 
 JsonScalar: TypeAlias = str | int | float | bool | None
 JsonValue: TypeAlias = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
@@ -138,6 +147,30 @@ class PatientExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):  # p
             else None,
         }
         return Response(data)
+
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path="fhir",
+        permission_classes=[EnvironmentAwarePermission, PolicyPermission],
+    )
+    def fhir_bundle(self, request: Request, pk: str = "") -> Response:
+        """Export one patient examination as a validated FHIR R4 Bundle."""
+
+        examination = self.get_object()
+        assert_center_scope_allowed(
+            request=request,
+            obj=examination,
+            not_found_message="Patient examination not found",
+        )
+        try:
+            bundle = build_patient_examination_fhir_bundle(examination)
+        except FhirExportError as error:
+            return interoperability_error_response(error)
+        return Response(
+            dump_fhir_r4_bundle(bundle),
+            content_type="application/fhir+json",
+        )
 
     @action(detail=True, methods=["get", "put"])
     def draft(self, request: Request, pk: str = "") -> Response:

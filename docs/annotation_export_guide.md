@@ -14,10 +14,17 @@ The recommended export unit is:
 
 Export only anonymized processed media. Raw media export is prohibited.
 
-`export_videos=true` copies `VideoFile.active_file`, so production users must
-verify that the active file is the processed/anonymized artifact before enabling
-video export. For most model-training runs, prefer `export_frames=true` and
-`export_videos=false`.
+`export_videos=true` is restricted to validated processed/anonymized artifacts;
+the exporter must never fall back to raw media. Unvalidated, unavailable, failed,
+or lost media fail closed. For most model-training runs, prefer
+`export_frames=true` and `export_videos=false`.
+
+API exports require authentication. Annotation data and anonymized processed
+exports may span centers because annotation datasets can combine material from
+multiple sites. Raw-video viewing remains independently center-scoped. In local
+study-server mode, callers must still select exactly one center unless a staff
+user explicitly requests all centers; that is an explicit export selection
+rule, not an annotation ownership boundary.
 
 ## Data Model
 
@@ -27,9 +34,13 @@ video export. For most model-training runs, prefer `export_frames=true` and
   prediction workflow.
 - **ImageClassificationAnnotation (ICA)**: the frame-level label row consumed by
   the export pipeline and image training code.
+- **FrameBoxAnnotation**: a rectangular frame region with validated image bounds;
+  it is managed by the annotation UI but is not part of the classification CSV.
 - **Information source**: annotation origin. Manual user labels normally use
   `manual_annotation`; prediction-derived labels can use
   `prediction_annotation`.
+- **Annotator**: reviewer-track identifier. Ordinary interactive writes are bound
+  to the authenticated username; privileged overrides remain explicit tracks.
 - **Export flags**:
   - `video_file.export_segments_by_video`: include all exportable segments for a
     video.

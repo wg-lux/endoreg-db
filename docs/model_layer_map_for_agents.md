@@ -21,6 +21,74 @@ When changing model-layer imports:
 - Keep storage routing typed through enums such as `VideoStorageMode`.
 - Keep raw media export and raw media transfer prohibited.
 
+## Typed Boundary Rules
+
+External input is normalized exactly once at the owning boundary. DRF request
+data, JSON/YAML, persisted JSON, environment values, and third-party responses
+must be validated into one typed internal shape before workflow code consumes
+them. Do not pass the original mapping alongside the validated object.
+
+Field ownership is split deliberately:
+
+| Layer | Owns | Must not own |
+| --- | --- | --- |
+| Django model | persisted fields, database constraints, model-boundary validation, typed state transitions | request parsing, export orchestration, or service workflows |
+| endoreg_db boundary schema | API/file/persisted-JSON validation and legacy normalization | ORM queries or persistence behavior |
+| lx_dtypes | shared cross-repository clinical and interoperability contracts | endoreg_db-specific database behavior |
+| DRF serializer/view | HTTP representation, authentication, and conversion into the boundary schema | a second competing domain shape |
+| service | typed workflow and explicit side effects | unvalidated external mappings |
+
+Apply these field rules:
+
+- Prefer `list[T]` for semantic lists. A string containing serialized list data
+  is a transport compatibility field and needs a named boundary adapter; do not
+  expose `str | list[T]` beyond that adapter.
+- Optional fields require a domain reason. Distinguish “not supplied” from an
+  explicit empty value when partial updates depend on that difference.
+- Pydantic mixins must not define `model_config`. Multiple parents must not
+  define the same field unless the overriding class documents and tests the
+  intended MRO behavior.
+- Strict external and clinical contracts use `extra="forbid"`. Evolving
+  internal carriers may allow compatibility keys only through an explicit,
+  tested normalization function.
+- `.links` and comparable relationship properties are query-producing unless a
+  test demonstrates otherwise. Hot paths need one documented loader with the
+  matching `select_related`/`prefetch_related` plan and a bounded query-count
+  test.
+
+`PatientExamination` no longer exposes a `.links` model property. Load the graph
+through `endoreg_db.services.patient_examination_links.load_patient_examination_for_links`
+and pass the result to `build_patient_examination_links`. The loader performs the
+bounded object-graph query plan; service-owned aggregation then performs zero
+additional queries and fails loudly for an incompletely loaded instance. This
+keeps the dependency direction at `service -> model`.
+
+### Cross-Layer Field Change Checklist
+
+For every added, renamed, made-optional, or removed field, record which entries
+are applicable and update them in the same change:
+
+1. Django field, constraint, migration, and model-boundary validation.
+2. endoreg_db Pydantic schema and legacy normalization adapter.
+3. Shared lx_dtypes contract and its version/compatibility window.
+4. DRF serializer, request/response schema, and snake_case API contract.
+5. DataDict, YAML/JSON loader, dump path, and persisted provenance shape.
+6. Service signatures, exhaustive enum branches, and export consumers.
+7. Query loader/prefetch paths when `.links` or evaluation traverses the field.
+8. Positive, invalid-input, round-trip, query-count, and migration tests as
+   applicable.
+9. Backfill, rollback, and mixed-version deployment behavior for persisted
+   changes.
+
+If ownership is unclear or two layers would normalize the same value, stop and
+resolve the ownership boundary before implementation.
+
+The shared `lx_dtypes` layer enforces the inheritance rules in
+`lx_dtypes/models/base/app_base_model/tests/test_inheritance_safety.py`. The
+test imports the complete model package, rejects duplicate fields declared by
+direct Pydantic parents, verifies MRO-wide list-field normalization and dumping,
+and protects minimal inheritance for `FilesAndDirsModel`.
+
 ## Current Shape
 
 `endoreg_db.models` is currently more than a schema package. Several model files
