@@ -168,6 +168,7 @@ from .aidataset import (
     AIModelTrainingRun,
 )
 from .hub import QuarantineItem, TransferJob, UploadJob
+from .interoperability import DicomExportJob, DicomInstance, DicomSeries, DicomStudy
 
 
 __all__ = [
@@ -344,4 +345,9 @@ __all__ = [
     "AIDataSet",
     "AIDataSetExportArtifact",
     "AIModelTrainingRun",
+    ###### Interoperability ######
+    "DicomExportJob",
+    "DicomStudy",
+    "DicomSeries",
+    "DicomInstance",
 ]
