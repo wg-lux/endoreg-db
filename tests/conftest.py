@@ -816,7 +816,7 @@ def mock_video_file(base_db_data: bool) -> Iterator[VideoFile]:
     import uuid
 
     from endoreg_db.models import Center, EndoscopyProcessor, VideoFile
-    from endoreg_db.models.state.video import VideoState
+    from endoreg_db.services.video_files import get_or_create_video_state
     from tests.helpers.default_objects import (
         DEFAULT_CENTER_NAME,
         DEFAULT_ENDOSCOPY_PROCESSOR_NAME,
@@ -838,11 +838,10 @@ def mock_video_file(base_db_data: bool) -> Iterator[VideoFile]:
         height=1080,
         duration=10.0,
         frame_count=int(10.0 * DEFAULT_VIDEO_FPS),
-        frames_initialized=True,
     )
 
     # Create associated VideoState to prevent state errors
-    VideoState.objects.create(video=video_file)
+    get_or_create_video_state(video_file)
 
     yield video_file
 

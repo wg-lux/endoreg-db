@@ -26,6 +26,13 @@ from endoreg_db.utils.file_operations import sha256_file
 from ..helpers.default_objects import get_default_center, get_default_processor
 from ..media.video.helper import get_random_video_path_by_examination_alias
 import logging
+from datetime import UTC, datetime
+
+from endoreg_db.schemas.video_storage import (
+    VideoArtifactProbe,
+    VideoStorageNormalizationEvidence,
+    VideoTimelineContract,
+)
 
 # Environment-based test control
 SKIP_EXPENSIVE_TESTS = os.environ.get("SKIP_EXPENSIVE_TESTS", "true").lower() == "true"
@@ -55,6 +62,32 @@ def _noop_validate_directories() -> None:
 def _required_context_path(path: Path | None) -> Path:
     assert path is not None
     return path
+
+
+def _normalization_evidence() -> VideoStorageNormalizationEvidence:
+    timeline = VideoTimelineContract(
+        fps_num=25,
+        fps_den=1,
+        duration_seconds=10.0,
+        frame_count=250,
+    )
+    probe = VideoArtifactProbe(
+        codec_name="h264",
+        pixel_format="yuv420p",
+        width=1920,
+        height=1080,
+        bit_rate_bps=800_000,
+        size_bytes=1_000_000,
+        timeline=timeline,
+    )
+    return VideoStorageNormalizationEvidence(
+        profile_name="test",
+        normalized_at=datetime.now(UTC),
+        source=probe,
+        output=probe,
+        temporal_equivalent=True,
+        storage_compliant=True,
+    )
 
 
 def _no_existing_completed_video(
@@ -709,6 +742,8 @@ def test_normalize_reimport_video_quality_uses_configured_mode_and_replaces_outp
 
     source_path = tmp_path / "anonymized.mp4"
     source_path.write_bytes(b"fresh-anonymized-video")
+    raw_path = tmp_path / "raw.mp4"
+    raw_path.write_bytes(b"raw-video")
     video = VideoFile(id=73, video_hash="stable-video-hash")
     ctx = ImportContext(
         file_path=tmp_path / "raw.mp4",
@@ -718,34 +753,33 @@ def test_normalize_reimport_video_quality_uses_configured_mode_and_replaces_outp
     )
     ctx.current_video = video
     ctx.anonymized_path = source_path
+    ctx.validated_raw_source_path = raw_path
     captured: dict[str, object] = {}
 
-    def fake_transcode_video(
-        input_path: Path,
-        output_path: Path,
+    def fake_normalize_video_file(
         **kwargs: object,
-    ) -> Path:
-        captured["input_path"] = input_path
-        captured["output_path"] = output_path
+    ) -> VideoStorageNormalizationEvidence:
         captured["kwargs"] = kwargs
-        output_path.write_bytes(b"quality-normalized-video")
-        return output_path
+        source_path.write_bytes(b"quality-normalized-video")
+        return _normalization_evidence()
 
     monkeypatch.setattr(
-        vis_module.ffmpeg_wrapper,
-        "transcode_video",
-        fake_transcode_video,
+        vis_module,
+        "normalize_video_file",
+        fake_normalize_video_file,
         raising=True,
     )
 
     vis_module._normalize_reimport_video_quality(ctx)  # pyright: ignore[reportPrivateUsage]
 
     assert source_path.read_bytes() == b"quality-normalized-video"
-    assert captured["input_path"] == source_path
-    assert captured["kwargs"] == {"quality_mode": "quality"}
-    captured_output_path = captured["output_path"]
-    assert isinstance(captured_output_path, Path)
-    assert not captured_output_path.exists()
+    assert captured["kwargs"] == {
+        "input_path": source_path,
+        "reference_path": raw_path,
+        "quality_mode": "quality",
+        "segments": [],
+    }
+    assert ctx.storage_normalization_evidence is not None
     assert ctx.current_video is video
     assert video.pk == 73
 
@@ -760,6 +794,8 @@ def test_normalize_reimport_video_quality_keeps_fresh_output_on_ffmpeg_failure(
 
     source_path = tmp_path / "anonymized.mp4"
     source_path.write_bytes(b"fresh-anonymized-video")
+    raw_path = tmp_path / "raw.mp4"
+    raw_path.write_bytes(b"raw-video")
     ctx = ImportContext(
         file_path=tmp_path / "raw.mp4",
         center_name="center",
@@ -767,21 +803,20 @@ def test_normalize_reimport_video_quality_keeps_fresh_output_on_ffmpeg_failure(
         file_type="video",
     )
     ctx.anonymized_path = source_path
+    ctx.validated_raw_source_path = raw_path
 
-    def fail_transcode_video(
-        input_path: Path,
-        output_path: Path,
+    def fail_normalize_video_file(
         **kwargs: object,
-    ) -> None:
-        assert input_path == source_path
-        assert kwargs == {"quality_mode": "balanced"}
-        output_path.write_bytes(b"partial")
-        return None
+    ) -> VideoStorageNormalizationEvidence:
+        assert kwargs["input_path"] == source_path
+        assert kwargs["reference_path"] == raw_path
+        assert kwargs["quality_mode"] == "balanced"
+        raise RuntimeError("failed to normalize")
 
     monkeypatch.setattr(
-        vis_module.ffmpeg_wrapper,
-        "transcode_video",
-        fail_transcode_video,
+        vis_module,
+        "normalize_video_file",
+        fail_normalize_video_file,
         raising=True,
     )
 
@@ -789,7 +824,6 @@ def test_normalize_reimport_video_quality_keeps_fresh_output_on_ffmpeg_failure(
         vis_module._normalize_reimport_video_quality(ctx)  # pyright: ignore[reportPrivateUsage]
 
     assert source_path.read_bytes() == b"fresh-anonymized-video"
-    assert list(tmp_path.glob(".*.reimport-quality.*")) == []
 
 
 @pytest.mark.unit
@@ -839,15 +873,13 @@ def test_reanonymize_transcode_failure_preserves_previous_canonical_video(
     def fake_hash_lock(file_hash: str, lock_root: Path) -> Generator[None, None, None]:
         yield
 
-    def fail_transcode_video(
-        input_path: Path,
-        output_path: Path,
+    def fail_normalize_video_file(
         **kwargs: object,
-    ) -> None:
-        assert input_path == staged_path
-        assert kwargs == {"quality_mode": "balanced"}
-        output_path.write_bytes(b"partial-transcode")
-        return None
+    ) -> VideoStorageNormalizationEvidence:
+        assert kwargs["input_path"] == staged_path
+        assert kwargs["reference_path"] == source_path
+        assert kwargs["quality_mode"] == "balanced"
+        raise RuntimeError("failed to normalize")
 
     def fake_finalize_failure(
         ctx: ImportContext,
@@ -857,7 +889,7 @@ def test_reanonymize_transcode_failure_preserves_previous_canonical_video(
         assert preserve_existing_video_artifacts is True
         failed_path = _required_context_path(ctx.anonymized_path)
         failure_paths.append(failed_path)
-        vis_module.safe_unlink_file(failed_path, missing_ok=False)
+        failed_path.unlink()
         ctx.anonymized_path = None
 
     def fake_get_video_import_context_names(_video: VideoFile) -> tuple[str, str]:
@@ -899,9 +931,9 @@ def test_reanonymize_transcode_failure_preserves_previous_canonical_video(
         raising=True,
     )
     monkeypatch.setattr(
-        vis_module.ffmpeg_wrapper,
-        "transcode_video",
-        fail_transcode_video,
+        vis_module,
+        "normalize_video_file",
+        fail_normalize_video_file,
         raising=True,
     )
 
@@ -913,7 +945,6 @@ def test_reanonymize_transcode_failure_preserves_previous_canonical_video(
     assert failure_paths == [staged_path]
     assert canonical_path.read_bytes() == b"previous-processed-video"
     assert not staged_path.exists()
-    assert list(tmp_path.glob(".*.reimport-quality.*")) == []
     assert video.pk == 73
 
 

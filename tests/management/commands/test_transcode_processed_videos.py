@@ -13,6 +13,7 @@ from pytest import MonkeyPatch
 
 from endoreg_db.models import Center, VideoFile
 from endoreg_db.services import video_processed_transcode as service
+from endoreg_db.schemas.video_storage import VideoArtifactProbe, VideoTimelineContract
 from endoreg_db.utils.encryption.encrypted import MAGIC
 from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.utils.paths import EndoregPathsModel
@@ -36,6 +37,9 @@ def _create_processed_video(
     video = VideoFile.objects.create(
         center=center,
         video_hash="raw-video-hash-for-processed-transcode",
+        fps=25.0,
+        duration=10.0,
+        frame_count=250,
     )
     cast(Any, video.processed_file).save(
         "old-processed.mp4",
@@ -109,6 +113,33 @@ def _patch_transcode_and_streamable(
         return ["processed_streamable_relative_path"]
 
     monkeypatch.setattr(service, "transcode_video", fake_transcode_video)
+    probe = VideoArtifactProbe(
+        codec_name="h264",
+        pixel_format="yuv420p",
+        width=1920,
+        height=1080,
+        bit_rate_bps=800_000,
+        size_bytes=max(1, len(output_payload)),
+        timeline=VideoTimelineContract(
+            fps_num=25,
+            fps_den=1,
+            duration_seconds=10.0,
+            frame_count=250,
+        ),
+    )
+    def fake_probe_video_artifact(_path: Path) -> VideoArtifactProbe:
+        return probe
+
+    def fake_materialize_video_hls(*args: object, **kwargs: object) -> None:
+        _ = args
+        _ = kwargs
+
+    monkeypatch.setattr(service, "probe_video_artifact", fake_probe_video_artifact)
+    monkeypatch.setattr(
+        service,
+        "materialize_video_hls",
+        fake_materialize_video_hls,
+    )
     monkeypatch.setattr(
         service,
         "sync_video_streamable_artifacts",

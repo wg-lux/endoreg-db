@@ -10,10 +10,30 @@ from uuid import uuid4
 from django.db import transaction
 
 from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.label.label_video_segment.label_video_segment import (
+    LabelVideoSegment,
+)
+from endoreg_db.services.hls_media import materialize_video_hls
+from endoreg_db.services.media_operation_gate import defer_if_video_media_busy
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.services.video_files.io import ensure_local_processed_video_file
+from endoreg_db.services.video_storage_normalization import (
+    assert_temporal_equivalence,
+    configured_video_storage_profile,
+    evidence_as_json,
+    probe_video_artifact,
+    persist_video_source_timeline,
+    segment_timeline_references,
+    timeline_from_video_metadata,
+    validate_annotation_fps_resample,
+    validate_normalized_output,
+)
 from endoreg_db.utils import paths as path_utils
-from endoreg_db.utils.file_operations import ensure_directory, safe_unlink_file
+from endoreg_db.utils.file_operations import (
+    ensure_directory,
+    ensure_disk_capacity,
+    safe_unlink_file,
+)
 from endoreg_db.utils.hashs import get_video_hash
 from endoreg_db.utils.storage import save_local_file
 from endoreg_db.utils.transcode_execution import transcode_video
@@ -144,6 +164,7 @@ def transcode_processed_video_for_storage_pressure(
     quality_mode: str = "balanced",
     force_cpu: bool = False,
     allow_larger: bool = False,
+    resample_max_fps: float | None = None,
 ) -> ProcessedVideoTranscodeResult:
     old_processed_name = str(getattr(video.processed_file, "name", "") or "")
     old_hash = str(video.processed_video_hash or "")
@@ -173,14 +194,64 @@ def transcode_processed_video_for_storage_pressure(
     saved_new_processed_name = ""
 
     try:
+        defer_if_video_media_busy(video_id=int(video.pk))
         with ensure_local_processed_video_file(video) as source_path:
             source_path = Path(source_path)
             old_size = source_path.stat().st_size
+            ensure_disk_capacity(
+                destination_dir=work_dir,
+                required_bytes=old_size,
+            )
+            profile = configured_video_storage_profile()
+            source_probe = probe_video_artifact(source_path)
+            if resample_max_fps is not None and LabelVideoSegment.objects.filter(
+                video_file=video
+            ).exists():
+                raise RuntimeError(
+                    "Annotation FPS resampling must run before segment rows exist."
+                )
+            if resample_max_fps is not None and video.frames.filter(
+                is_extracted=True
+            ).exists():
+                raise RuntimeError(
+                    "Annotation FPS resampling refuses extracted frame rows because "
+                    "their coordinates would be invalidated."
+                )
+            stored_fps = video.fps
+            stored_duration = video.duration
+            stored_frame_count = video.frame_count
+            if (
+                stored_fps is None
+                or stored_duration is None
+                or stored_frame_count is None
+            ):
+                raise RuntimeError(
+                    "Stored FPS, duration, and frame count are required before "
+                    "normalizing an existing processed video."
+                )
+            stored_timeline = timeline_from_video_metadata(
+                fps=float(stored_fps),
+                duration_seconds=float(stored_duration),
+                frame_count=int(stored_frame_count),
+            )
+            if resample_max_fps is None:
+                assert_temporal_equivalence(
+                    stored_timeline,
+                    source_probe.timeline,
+                    profile=profile,
+                )
+                segment_references = segment_timeline_references(
+                    video,
+                    timeline=source_probe.timeline,
+                )
+            else:
+                segment_references = []
             transcoded_path = transcode_video(
                 source_path,
                 output_path,
                 quality_mode=quality_mode,
                 force_cpu=force_cpu,
+                extra_args=profile.ffmpeg_output_args(target_fps=resample_max_fps),
             )
             if transcoded_path is None:
                 return ProcessedVideoTranscodeResult(
@@ -211,6 +282,27 @@ def transcode_processed_video_for_storage_pressure(
                     old_streamable_relative_path=old_streamable_relative_path,
                     new_streamable_relative_path=old_streamable_relative_path,
                     detail="transcoded output is empty",
+                )
+            output_probe = probe_video_artifact(Path(transcoded_path))
+            fps_resampling_evidence = None
+            if resample_max_fps is None:
+                normalization_evidence = validate_normalized_output(
+                    source=source_probe,
+                    output=output_probe,
+                    profile=profile,
+                    segments=segment_references,
+                )
+            else:
+                fps_resampling_evidence = validate_annotation_fps_resample(
+                    source=source_probe,
+                    output=output_probe,
+                    max_fps=resample_max_fps,
+                    profile=profile,
+                )
+                normalization_evidence = validate_normalized_output(
+                    source=output_probe,
+                    output=output_probe,
+                    profile=profile,
                 )
             if not allow_larger and new_size >= old_size:
                 return ProcessedVideoTranscodeResult(
@@ -294,14 +386,39 @@ def transcode_processed_video_for_storage_pressure(
                 saved_new_processed_name = new_processed_name
                 video.processed_video_hash = new_hash
                 video.processed_streamable_relative_path = ""
+                existing_meta = dict(video.meta or {})
+                existing_meta["storage_normalization"] = evidence_as_json(
+                    normalization_evidence
+                )
+                if fps_resampling_evidence is not None:
+                    existing_meta["fps_normalization"] = evidence_as_json(
+                        fps_resampling_evidence
+                    )
+                video.meta = existing_meta
+                if fps_resampling_evidence is not None:
+                    video.fps = output_probe.timeline.fps
+                    video.duration = output_probe.timeline.duration_seconds
+                    video.frame_count = output_probe.timeline.frame_count
                 video.save(
                     update_fields=[
                         "processed_file",
                         "processed_video_hash",
                         "processed_streamable_relative_path",
+                        "meta",
+                        "fps",
+                        "duration",
+                        "frame_count",
                         "date_modified",
                     ]
                 )
+                if fps_resampling_evidence is not None:
+                    from endoreg_db.services.video_files.frames import (
+                        initialize_video_frames,
+                    )
+
+                    video.frames.all().delete()
+                    initialize_video_frames(video)
+                    persist_video_source_timeline(video, Path(transcoded_path))
                 sync_video_streamable_artifacts(
                     video,
                     include_raw=False,
@@ -310,6 +427,11 @@ def transcode_processed_video_for_storage_pressure(
                 )
                 new_streamable_relative_path = str(
                     video.processed_streamable_relative_path or ""
+                )
+                materialize_video_hls(
+                    int(video.pk),
+                    artifact_kind="processed",
+                    force=True,
                 )
                 transaction.on_commit(
                     lambda: _cleanup_replaced_processed_assets(

@@ -1,0 +1,367 @@
+schema_version: '1.0'
+id: video_storage_normalization
+name: Speicher-normalisierte Videos
+description: Einheitlicher, speicherbegrenzter Lebenszyklus für Rohvideo, kanonisches anonymisiertes Video
+  und HLS-Derivate, ohne die zeitgenaue Extraktion klinisch hochwertiger Frames aus persistierten Segmenten
+  zu verschlechtern.
+owners:
+- endoreg_db maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/video_storage_normalization.md
+  disposition: reference
+  note: Artefaktvertrag, Profil, Migrationsgate und Betriebsablauf.
+- path: docs/video_pts_fps_callsite_inventory.md
+  disposition: reference
+  note: Repository-weites Risikoinventar und rückwärtskompatible FPS-zu-PTS-Migration.
+definition_of_done:
+- id: storage_profile_contract
+  category: requirements
+  title: Rollen und Größenbudgets aller Videoartefakte sind verbindlich definiert
+  acceptance:
+  - Roh-Ingest, kanonisches anonymisiertes Mastervideo, HLS-Derivat, extrahierter Frame und temporäres
+    Transcode-Artefakt besitzen je eine eindeutige Rolle, Aufbewahrungsfrist und Löschbedingung.
+  - Ein versioniertes, typisiertes Profil definiert numerische Obergrenzen für Auflösung, Bildrate, Bitrate
+    beziehungsweise Bytes pro Sekunde und zulässigen Storage-Overhead; Profile werden nicht als freie
+    Strings durch den Workflow gereicht.
+  - Genau ein anonymisiertes kanonisches Video bleibt dauerhaft erhalten; HLS ist ein reproduzierbares,
+    größenbegrenztes Derivat mit expliziter Cache- und Eviction-Regel.
+  - Abweichungen vom Profil werden laut abgelehnt oder in einen expliziten Quarantänestatus versetzt;
+    stilles Stream-Copy oder unbeschränktes Source-Quality-Encoding ist kein Produktionsfallback.
+  required: true
+  verification:
+    kind: manual
+    instructions: Profil, Artefaktmatrix und Ausnahmeprozess mit Betrieb, klinischem Reviewer und Storage-Verantwortlichen
+      abnehmen.
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: endoreg_db/services/video_storage/contracts.py; endoreg_db/services/video_storage/validation.py;
+        docs/video_storage_normalization.md
+    note: Typisierte Auflösungs-, Quell-FPS-, Annotations-FPS-, Bitraten- und Größenlimits sowie Artefaktmatrix
+      und Fail-closed-Ausnahmeprozess sind implementiert und dokumentiert. Offen bleibt die formale Abnahme
+      durch Betrieb, klinischen Reviewer und Storage-Verantwortliche.
+    assessed_by: Codex
+    assessed_at: '2026-07-20T10:19:49.123387Z'
+- id: temporal_frame_contract
+  category: data_integrity
+  title: Persistierte Segmente referenzieren Frames transcode-stabil und eindeutig
+  acceptance:
+  - Vor einer Bestandsnormalisierung sind die autoritative rationale FPS, Time-Base, Dauer, Frameanzahl
+    und Präsentationszeitstempel beziehungsweise deren belastbare Zuordnung zur Quell-Timeline persistiert
+    und versioniert.
+  - Segmentgrenzen speichern autoritative Präsentationszeitstempel; falls Frameindizes gespeichert werden,
+    ist deren Umrechnung samt Rundungsregel und Timeline-Version explizit. Bei variabler Bildrate sind
+    Zeitstempel autoritativ und eine nominelle FPS-Angabe allein ist unzulässig.
+  - Zeitbasierte Modellfenster für Glättung, Mindestdauer und Lückenschluss werden gegen die persistierten
+    Präsentationszeitstempel ausgewertet; fehlende, nicht endliche, nicht streng steigende oder unvollständige
+    Zeitstempelfolgen brechen die temporale Inferenz laut ab und fallen nicht auf eine nominelle Bildrate zurück.
+  - Jede Normalisierung persistiert Provenienz und eine überprüfbare Abbildung von Quell- zu Ziel-Timeline;
+    Drift, ausgelassene oder doppelte Frames außerhalb der freigegebenen Toleranz verhindern die Freigabe.
+  - Frame-Extraktion an Segmentanfang, Segmentende und inneren Zeitpunkten wählt vor und nach dem Transcode
+    denselben klinischen Bildinhalt deterministisch aus und protokolliert Zielzeitstempel sowie Frameindex.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - bash
+    - -lc
+    - exec .devenv/state/venv/bin/pytest tests/services/test_video_temporal_mapping.py tests/services/test_segment_frame_extraction.py
+      tests/services/test_video_temporal_inference.py -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell bash -lc 'exec .devenv/state/venv/bin/pytest tests/services/test_video_temporal_mapping.py
+        tests/services/test_segment_frame_extraction.py -q'
+      note: Exit-Code 0
+    assessed_by: Max
+    assessed_at: '2026-07-20T10:40:56.446106Z'
+- id: clinical_frame_quality
+  category: requirements
+  title: Storage-Reduktion erhält die klinisch erforderliche Framequalität
+  acceptance:
+  - Ein repräsentativer, freigegebener Videokorpus deckt Auflösungen, Bildraten, variable Bildrate, Bewegung,
+    Text, Segmentgrenzen und aktuell eingesetzte Quellcodecs ab.
+  - Numerische Mindestwerte für extrahierte Frameauflösung, Lesbarkeit und freigegebene objektive Qualitätsmetriken
+    sind je Profil versioniert; reine Dateigröße ist kein Qualitätsnachweis.
+  - Qualitätsmessungen erfolgen auf den anhand persistierter Segment-PTS ausgewählten Frames und nicht
+    nur auf zufällig gewählten Vollvideoframes.
+  - Das kleinste Profil, das alle klinischen und zeitlichen Grenzwerte erfüllt, wird als Produktionsprofil
+    festgelegt und mit Reviewerfreigabe dokumentiert.
+  required: true
+  verification:
+    kind: manual
+    instructions: Benchmarkbericht, numerische Schwellen und klinische Stichprobe gemeinsam prüfen; ohne
+      freigegebenes Profil keine destruktive Bestandsmigration.
+    timeout_seconds: 900
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: normalized_import_pipeline
+  category: functionality
+  title: Jeder erfolgreiche Import erzeugt ein begrenztes kanonisches Video
+  acceptance:
+  - Neuimport, Reimport und Reanonymisierung durchlaufen denselben typisierten Normalisierungsschritt;
+    Duplicate- und Existing-Video-Pfade umgehen ihn nicht unbemerkt.
+  - Das finale Video wird vor Veröffentlichung auf Codec, Pixel-Format, Dimensionen, FPS, Dauer, Bitrate,
+    Dateigröße und Timeline-Konformität geprüft.
+  - Ein Full-Frame-Maskierungs- oder Passthrough-Pfad darf das verpflichtende Storage-Profil nicht durch
+    Stream-Copy umgehen.
+  - Fehlende oder widersprüchliche Metadaten führen zu einem expliziten Fehlerzustand und bewahren die
+    noch benötigte Quelle.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - bash
+    - -lc
+    - exec .devenv/state/venv/bin/pytest tests/import_files/test_video_import_normalization.py tests/services/test_video_storage_normalization.py
+      -q
+    timeout_seconds: 1200
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell bash -lc 'exec .devenv/state/venv/bin/pytest tests/import_files/test_video_import_normalization.py
+        tests/services/test_video_storage_normalization.py -q'
+      note: Exit-Code 0
+    assessed_by: Max
+    assessed_at: '2026-07-20T10:41:29.074290Z'
+- id: video_examination_annotation_contract
+  category: interoperability
+  title: Normalisierte Videos bleiben in der Segmentannotation sicher nutzbar
+  acceptance:
+  - Das von lx-annotate/VideoExaminationAnnotation.vue verwendete Processed-HLS bleibt nach Neuimport,
+    Reimport und Bestandsnormalisierung unter den bestehenden Playlist-, Key- und Segment-Endpunkten abspielbar;
+    Video-Detail, HLS-Dauer, FPS und Frameanzahl beschreiben dieselbe veröffentlichte Generation.
+  - Der GET-/POST-Vertrag segments/normalize-fps normalisiert Videos oberhalb von 50 FPS vor der ersten
+    Segmentanlage mit einem eigenen typisierten Resampling-Profil. Er aktualisiert FPS, Frameanzahl, Timeline-Version
+    und Provenienz konsistent; eine Storage-Normalisierung mit FPS-Passthrough darf diesen Pfad nicht
+    als erfolgreich behandeln oder blockieren.
+  - Sobald Segmentzeilen existieren, lehnt der FPS-Pfad jede Änderung der Framekoordinaten laut ab. Seeking
+    sowie Segmentanfang und -ende referenzieren nach Storage-Normalisierung deterministisch denselben
+    klinischen Bildinhalt.
+  - Playlist-, Key- und Segmentzugriffe erzeugen beziehungsweise erneuern eine Media-Operation-Lease.
+    Normalisierung, HLS-Neuerzeugung und Cleanup warten bei aktivem Playback oder Segment-Update und veröffentlichen
+    eine neue Generation atomar, ohne laufende Annotationen auf gemischte Derivate zu lenken.
+  - Ein Cross-Repository-Test deckt mindestens ein Video oberhalb von 50 FPS, die Zustände required/queued/running/ready/failed,
+    authentifiziertes Processed-HLS-Playback und Segment-Zeit-/Frame-Roundtrips ab.
+  required: true
+  verification:
+    kind: manual
+    instructions: Backend-Tests für FPS-Job, Timeline und HLS-Leases sowie die lx-annotate Tests für VideoExaminationAnnotation
+      und useAuthenticatedVideoStream ausführen. Zusätzlich mit einem Video oberhalb von 50 FPS nachweisen,
+      dass die UI erst nach atomarer HLS-Veröffentlichung lädt und Segmentgrenzen über Normalisierung
+      und erneutes Laden stabil bleiben.
+    timeout_seconds: 1200
+  assessment:
+    status: blocked
+    evidence:
+    - kind: review
+      reference: endoreg_db/services/jobs/video_fps_normalization_jobs.py; endoreg_db/services/video_processed_transcode.py
+    - kind: review
+      reference: /home/admin/dev/lx-annotate/frontend/src/components/VideoExamination/VideoExaminationAnnotation.vue:1177-1280,1810-1819
+    - kind: test
+      reference: tests/services/test_video_fps_normalization_jobs.py; tests/views/video/test_hls_stream.py
+    - kind: test
+      reference: tests/services/test_export_frames_contract.py; /home/admin/dev/lx-annotate/frontend/src/components/VideoExamination/__tests__/ExportAnnotations.pts-contract.test.ts
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/frontend/src/utils/__tests__/segmentTimeline.test.ts
+    - kind: test
+      reference: tests/views/video/test_video_timeline_view.py; tests/services/test_segment_frame_extraction.py; /home/admin/dev/lx-annotate/frontend/src/components/VideoExamination/__tests__/Timeline.pts-navigation.test.ts
+    - kind: command
+      reference: devenv shell bash -lc 'exec .devenv/state/venv/bin/pytest tests/services/test_video_fps_normalization_jobs.py
+        -q'
+    note: Das gemeinsame mock_video_file-Fixture erzeugt nun ein persistiertes 60-FPS-Video und der Backendtest
+      weist required→queued→running→failed→ready sowie den 50-FPS-Zielvertrag nach. Der lx-annotate-Contract-Test
+      weist timestamp-only Segment-Create/-Update mit irregulären Zeitwerten sowie die Übernahme kanonischer
+      Backendgrenzen nach. Frame vor/zurück verwendet nun denselben kanonischen PTS-Resolver über einen
+      center-scoped Nachbarschaftsendpoint und schlägt bei fehlenden VFR-PTS geschlossen fehl. Ein begrenztes
+      Backendfenster, Frontendcache, `(video, timestamp)`-Index und Vier-Query-Budget schützen den interaktiven Pfad
+      ohne eine zweite Mappinglogik. Blockiert bleiben
+      authentifiziertes Processed-HLS, atomare Generationsveröffentlichung, Lease-Konkurrenz und der vollständige
+      Segment-PTS-Roundtrip über ein reales Video im Cross-Repository-Test.
+    assessed_by: Codex
+    assessed_at: '2026-07-20T10:59:45.040797Z'
+- id: derived_artifact_lifecycle
+  category: functionality
+  title: Redundante Roh- und HLS-Artefakte werden erst nach vollständiger Freigabe entfernt
+  acceptance:
+  - Roh-HLS und kanonisches Rohvideo werden nach erfolgreicher menschlicher Validierung nur entfernt,
+    wenn normalisiertes Mastervideo, benötigtes Processed-HLS, Segmentdaten und Temporal-/Qualitätsnachweise
+    vollständig und integritätsgeprüft vorliegen.
+  - Legacy materialisierte Vollvideos und veraltete HLS-Generationen werden anhand persistierter Besitz-
+    und Referenzdaten erkannt und idempotent bereinigt; aktive oder unbekannte Referenzen verhindern die
+    Löschung.
+  - Nach einem Teilfehler bleibt ein wiederanlauffähiger, eindeutig beobachtbarer Zustand zurück; ein
+    Cleanup-Erfolg wird erst nach Prüfung des tatsächlichen Dateisystemzustands persistiert.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_hls_media.py
+    - tests/models/video/test_video_file_io_helpers.py
+    - tests/views/anonymization/test_validate_view.py
+    - -q
+    timeout_seconds: 1200
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_hls_media.py tests/models/video/test_video_file_io_helpers.py
+        tests/views/anonymization/test_validate_view.py -q
+      note: Exit-Code 0
+    assessed_by: Max
+    assessed_at: '2026-07-20T10:42:11.149131Z'
+- id: secure_atomic_migration
+  category: security
+  title: Normalisierung und Löschung bleiben innerhalb der geschützten Storage-Grenze
+  acceptance:
+  - Temporäre und finale Medien liegen ausschließlich im freigegebenen, verschlüsselten Storage; Klartext-Artefakte
+    werden weder exportiert noch in öffentliche Mounts oder ungeschützte Temp-Verzeichnisse geschrieben.
+  - Dateiänderungen verwenden den kanonischen typisierten Wrapper, atomare Veröffentlichung und strukturierte
+    Logs; Quelle und einziger gültiger Master werden nie vor Ziel-, Hash-, Timeline- und Qualitätsprüfung
+    gelöscht.
+  - Abbruch, Prozessverlust und unzureichender Speicher können kein teilweise veröffentlichtes Video als
+    gültig markieren.
+  required: true
+  verification:
+    kind: manual
+    instructions: Dateioperationspfade sowie Abbruch-, Disk-full- und Integritätsfehler im verschlüsselten
+      Produktionsprofil prüfen.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: tests/services/test_video_storage_atomic_migration.py (5 passed)
+    note: Failure-Injection für ENOSPC, kontrollierte Unterbrechung, Integritätsgate und atomaren Publikationsfehler
+      ist implementiert. Kandidaten bleiben im Master-Verzeichnis, der bestehende Master bleibt erhalten,
+      Part-Dateien werden bereinigt und strukturierte Lifecycle-/Dateioperationsereignisse werden geprüft.
+      Offen bleibt die manuelle Abnahme im verschlüsselten Produktionsprofil einschließlich harter Prozessbeendigung.
+    assessed_by: Codex
+    assessed_at: '2026-07-20T10:37:52.494260Z'
+- id: migration_regression_tests
+  category: testing
+  title: Größen-, Timeline-, Qualitäts- und Cleanup-Invarianten sind regressionsgetestet
+  acceptance:
+  - Parametrisierte Tests decken konstante und variable Bildrate, mehrere Auflösungen und Codecs, kurze
+    und lange Segmente sowie Grenzzeitstempel ab.
+  - Negative Tests erzwingen Fehler bei zu großem Output, Timeline-Drift, ungenügender Framequalität,
+    fehlender Provenienz, Disk-full und unvollständiger Validierung.
+  - Ein End-to-End-Test beweist, dass Normalisierung plus Cleanup die erwartete Byte-Reduktion erreicht
+    und weiterhin hochwertige Frames aus den gespeicherten Segmentzeitstempeln extrahiert.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_video_storage_normalization.py
+    - tests/services/test_video_temporal_mapping.py
+    - tests/management/commands/test_normalize_video_storage.py
+    - -q
+    timeout_seconds: 1800
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_video_storage_normalization.py tests/services/test_video_temporal_mapping.py
+        tests/management/commands/test_normalize_video_storage.py -q
+      note: Exit-Code 0
+    assessed_by: Max
+    assessed_at: '2026-07-20T10:42:49.159573Z'
+- id: controlled_legacy_migration
+  category: operations
+  title: Bestandsvideos werden kapazitätsbegrenzt, idempotent und rollbackfähig normalisiert
+  acceptance:
+  - Ein Dry-Run inventarisiert pro Video Rohvideo, Master, HLS, Legacy-Derivate, Referenzen und erwartete
+    Einsparung, ohne Dateien zu verändern.
+  - Die Migration priorisiert validierte Videos mit größtem Einsparpotenzial, arbeitet in begrenzten Batches
+    und startet nur mit ausreichendem Headroom für temporären Output und Rollback.
+  - Resume, Retry und erneuter Dry-Run sind idempotent; bei Fehler bleibt die bisher gültige Quelle erhalten
+    und das betroffene Video wird isoliert.
+  - Destruktive Migration ist technisch gesperrt, bis temporal_frame_contract und clinical_frame_quality
+    verifiziert sind.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/management/commands/test_normalize_video_storage.py
+    - -q
+    timeout_seconds: 1200
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/management/commands/test_normalize_video_storage.py
+        -q
+      note: Exit-Code 0
+    assessed_by: Max
+    assessed_at: '2026-07-20T10:43:20.011221Z'
+- id: storage_observability
+  category: operations
+  title: Betreiber sehen Verbrauch, Redundanz, Einsparung und Migrationsrisiko
+  acceptance:
+  - Metriken und strukturierte Logs weisen Bytes nach Artefaktrolle, normalisierte versus ausstehende
+    Videos, freigegebenen löschbaren Bestand, erzielte Einsparung, Fehler und verfügbaren Headroom aus.
+  - Konfigurierbare Warn- und Stoppschwellen verhindern, dass Transcoding oder HLS-Materialisierung den
+    kritischen Storage erschöpfen.
+  - Nach jedem Batch werden Zähler aus Datenbank und Dateisystem abgeglichen; Abweichungen stoppen weitere
+    destruktive Schritte.
+  required: true
+  verification:
+    kind: manual
+    instructions: Dry-Run, Kapazitätsalarm, Stoppschwelle, Batchabbruch und anschließenden Bestandsabgleich
+      in einer produktionsnahen Kopie demonstrieren.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_video_storage_normalization.py
+        tests/management/commands/test_normalize_video_storage.py -q
+    note: Kapazitätsprojektion, Warn-/Stoppschwellen, Rollen- und Statuszähler, batch_id, strukturierte
+      Ergebnislogs und Fail-closed-Referenzabgleich sind implementiert; 18 fokussierte Tests bestanden.
+      Offen bleibt die Demonstration in einer produktionsnahen verschlüsselten Kopie.
+    assessed_by: Codex
+    assessed_at: '2026-07-20T10:22:03.009183Z'
+- id: operator_documentation
+  category: documentation
+  title: Profilwahl, Rollout, Recovery und Qualitätsprüfung sind dokumentiert
+  acceptance:
+  - Ein Runbook beschreibt Inventur, Profilbenchmark, Freigabegates, Batchplanung, Pause/Resume, Quarantäne,
+    Rollback und Recovery bei Disk-full.
+  - Die Artefaktmatrix dokumentiert, wann Rohvideo, Roh-HLS, Processed-HLS, kanonisches Mastervideo und
+    Legacy-Derivate erstellt und gelöscht werden.
+  - Dokumentation benennt ausdrücklich das Timeline-/Framequalitäts-Gate als Voraussetzung jeder destruktiven
+    Bestandsnormalisierung.
+  required: true
+  verification:
+    kind: manual
+    instructions: Runbook mit Betrieb, Security und klinischem Reviewer abnehmen.
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: docs/video_storage_normalization.md
+    - kind: review
+      reference: AGENTS.md; docs/video_storage_normalization.md
+    note: Das kanonische Runbook liegt vollständig auf Englisch vor, erklärt Abkürzungen zentral und AGENTS.md
+      erklärt die Videoregeln für alle Agenten verbindlich. Offen bleibt die formale Abnahme durch Betrieb,
+      Security und klinischen Reviewer.
+    assessed_by: Codex
+    assessed_at: '2026-07-20T11:00:29.670278Z'

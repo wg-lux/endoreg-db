@@ -143,6 +143,64 @@ You are acting as the Lead Security and Systems Architect for `endoreg_db` and
 architectural invariants and roadmap for all code generation, refactoring, and
 system design. Use /home/admin/lx-data-models/lx_dtypes/models wherever handy for strict pydantic validation.
 
+## Mandatory Video Rules For All Agents
+
+These rules apply to every change involving video import, reimport,
+reanonymization, transcoding, storage, HTTP Live Streaming (HLS), frame
+extraction, timeline or segment coordinates, cleanup, migration, or export.
+Before changing any of these paths, read:
+
+- `docs/video_storage_normalization.md`, the canonical English operational and
+  architecture runbook;
+- `feature-tracking/VideoStorageNormalization.yml`, the only source of truth
+  for scope, approval state, and production-readiness evidence;
+- `docs/video_pts_fps_callsite_inventory.md` when frames per second (FPS),
+  presentation timestamps (PTS), frame indices, seeking, or segment boundaries
+  are involved.
+
+Do not use unexplained abbreviations in video code, documentation, logs,
+user-facing text, or feature-tracker evidence. Spell out a term at its first
+use and add durable video terminology to the runbook glossary.
+
+All agents must preserve these video invariants:
+
+- Exactly one canonical anonymized master generation is published. Raw media,
+  streamable MPEG-4 Part 14 (MP4), HLS, extracted frames, and transcode staging
+  files have distinct lifecycle roles and must not be treated as
+  interchangeable masters.
+- The versioned typed storage profile is mandatory. Media outside its
+  resolution, frame-rate, bitrate, byte-budget, codec, pixel-format, duration,
+  or timeline limits must fail loudly or enter an explicit quarantine process.
+  Stream copy, unbounded source-quality encoding, and upsampling are not safe
+  fallbacks.
+- Persisted presentation timestamps are authoritative for clinical segment and
+  frame identity. For variable-frame-rate (VFR) media, nominal frames per
+  second alone is never sufficient. Do not rewrite frame coordinates after
+  segment rows or extracted frames exist.
+- Storage normalization preserves the source timeline. The separate
+  `annotation_fps_resample_v1` workflow may convert videos above 50 frames per
+  second to exactly 50 frames per second only before the first segment or
+  extracted-frame coordinate is persisted.
+- Playlist, key, and segment access renews a media-operation lease. Transcoding,
+  HLS regeneration, generation replacement, and cleanup must defer while a
+  playback or segment-update lease is active and must publish one generation
+  atomically.
+- All video staging and publication stays inside the approved encrypted storage
+  boundary. Every filesystem mutation uses
+  `endoreg_db.utils.filesystem.file_operations`, atomic semantics, and
+  structured JavaScript Object Notation (JSON) logging. Raw media export is
+  prohibited.
+- Cleanup is fail-closed. Never delete the previous or only valid master before
+  target validation, hash and timeline checks, clinical-quality approval, HLS
+  generation matching, lease expiry, and database/filesystem reconciliation.
+- Destructive legacy migration remains disabled until the temporal and clinical
+  quality gates are verified and the required operations, storage, security,
+  and clinical approvals are recorded through the feature tracker.
+
+The canonical video runbook is maintained in English so it can be reviewed by
+all participating teams; this is an explicit exception to the general German
+report-language convention below.
+
 ### Report structure
 
 While the model language is english, keep generated reports in german. /home/admin/lx-data-models/docs/guides/konzept-verknuepfungen.md is the main reference for how this is usually structured.

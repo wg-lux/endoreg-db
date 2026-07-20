@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,11 +11,42 @@ from pytest import MonkeyPatch
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.file_storage.state_management import finalize_video_success
 from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.schemas.video_storage import (
+    VideoArtifactProbe,
+    VideoStorageNormalizationEvidence,
+    VideoTimelineContract,
+)
 from endoreg_db.utils import paths as paths_module
 
 
 def _runtime_storage_root() -> Path:
     return paths_module.EndoregPathsModel.from_environment().storage
+
+
+def _normalization_evidence() -> VideoStorageNormalizationEvidence:
+    timeline = VideoTimelineContract(
+        fps_num=25,
+        fps_den=1,
+        duration_seconds=10.0,
+        frame_count=250,
+    )
+    probe = VideoArtifactProbe(
+        codec_name="h264",
+        pixel_format="yuv420p",
+        width=1920,
+        height=1080,
+        bit_rate_bps=800_000,
+        size_bytes=1_000_000,
+        timeline=timeline,
+    )
+    return VideoStorageNormalizationEvidence(
+        profile_name="test",
+        normalized_at=datetime.now(UTC),
+        source=probe,
+        output=probe,
+        temporal_equivalent=True,
+        storage_compliant=True,
+    )
 
 
 @pytest.mark.unit
@@ -91,6 +123,7 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
             self.processed_video_hash = None
             self.processed_file = SimpleNamespace(name=None)
             self.state = DummyState()
+            self.meta: dict[str, object] = {}
 
         def get_raw_file_path(self) -> Path:
             return raw_path
@@ -214,6 +247,7 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
     ctx.current_video = cast(VideoFile, video)
     ctx.sensitive_path = sensitive_working_copy
     ctx.anonymized_path = temp_anonymized
+    ctx.storage_normalization_evidence = _normalization_evidence()
 
     finalize_video_success(ctx)
 

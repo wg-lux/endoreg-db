@@ -5,7 +5,6 @@ from contextlib import AbstractContextManager, contextmanager, nullcontext
 from collections.abc import Generator
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
-from uuid import uuid4
 
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
@@ -52,10 +51,13 @@ from endoreg_db.services.video_files import (
     ensure_local_raw_video_file,
     initialize_video_file,
 )
-from endoreg_db.utils import ffmpeg_wrapper, paths as path_utils
+from endoreg_db.services.video_storage_normalization import (
+    normalize_video_file,
+    probe_video_artifact,
+    segment_timeline_references,
+)
+from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.file_operations import (
-    atomic_move_file,
-    safe_unlink_file,
     sha256_file,
 )
 
@@ -252,7 +254,7 @@ def _configured_reimport_transcode_quality_mode() -> str:
 
 
 def _normalize_reimport_video_quality(ctx: ImportContext) -> None:
-    """Encode a fresh re-import output with the configured FFmpeg quality."""
+    """Normalize a fresh anonymized output against the stored source timeline."""
     source_path = ctx.anonymized_path
     if not isinstance(source_path, Path):
         raise RuntimeError(
@@ -263,34 +265,33 @@ def _normalize_reimport_video_quality(ctx: ImportContext) -> None:
             f"Cannot normalize missing or empty re-import output: {source_path}"
         )
 
+    reference_path = ctx.validated_raw_source_path
+    if not isinstance(reference_path, Path) or not reference_path.is_file():
+        raise RuntimeError(
+            "Cannot normalize video storage without the validated raw source."
+        )
+
+    segments = []
+    if isinstance(ctx.current_video, VideoFile) and ctx.current_video.pk:
+        segments = segment_timeline_references(
+            ctx.current_video,
+            timeline=probe_video_artifact(reference_path).timeline,
+        )
+
     quality_mode = _configured_reimport_transcode_quality_mode()
-    staging_path = source_path.with_name(
-        f".{source_path.stem}.reimport-quality.{uuid4().hex}.part{source_path.suffix}"
+    ctx.storage_normalization_evidence = normalize_video_file(
+        input_path=source_path,
+        reference_path=reference_path,
+        quality_mode=quality_mode,
+        segments=segments,
     )
-    try:
-        result = ffmpeg_wrapper.transcode_video(
-            input_path=source_path,
-            output_path=staging_path,
-            quality_mode=quality_mode,
-        )
-        if result is None:
-            raise RuntimeError(
-                "FFmpeg failed to normalize the re-import video with quality mode "
-                f"{quality_mode!r}."
-            )
-        if Path(result) != staging_path:
-            raise RuntimeError(
-                f"FFmpeg returned an unexpected re-import quality output path: {result}"
-            )
-        atomic_move_file(source=staging_path, destination=source_path)
-        logger.info(
-            "Normalized re-import video quality: video=%s quality_mode=%s path=%s",
-            getattr(ctx.current_video, "video_hash", None),
-            quality_mode,
-            source_path,
-        )
-    finally:
-        safe_unlink_file(staging_path, missing_ok=True)
+    logger.info(
+        "Normalized video storage: video=%s profile=%s quality_mode=%s path=%s",
+        getattr(ctx.current_video, "video_hash", None),
+        ctx.storage_normalization_evidence.profile_name,
+        quality_mode,
+        source_path,
+    )
 
 
 class VideoImportService:
@@ -412,6 +413,7 @@ class VideoImportService:
                     )
                     with self._verified_local_raw_source(ctx):
                         ctx = self.anonymizer.anonymize_video(ctx)
+                        _normalize_reimport_video_quality(ctx)
                     logger.info(
                         "Primary video anonymization succeeded for %s",
                         ctx.file_path,

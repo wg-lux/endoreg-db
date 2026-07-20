@@ -20,6 +20,7 @@ from endoreg_db.services.hls_media import materialize_video_hls
 from endoreg_db.services.raw_pdf_files.integrity import (
     verify_and_persist_processed_report_sha256,
 )
+from endoreg_db.services.video_storage_normalization import evidence_as_json
 from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.ffmpeg_wrapper import get_stream_info
 from endoreg_db.utils.file_operations import (
@@ -360,6 +361,10 @@ def finalize_video_success(
             )
         else:
             _verify_final_video_output(src)
+            if ctx.storage_normalization_evidence is None:
+                raise RuntimeError(
+                    "Cannot finalize video without storage-normalization evidence."
+                )
             instance.processed_video_hash = sha256_file(src)
             relative_name = path_utils.to_storage_relative(expected_final_path)
             saved_name = _store_existing_final_file(
@@ -375,6 +380,11 @@ def finalize_video_success(
                     missing_ok=True,
                 )
 
+    existing_meta = dict(instance.meta or {})
+    existing_meta["storage_normalization"] = evidence_as_json(
+        ctx.storage_normalization_evidence
+    )
+    instance.meta = existing_meta
     cast(_StatefulImportInstance, instance).save()
     # HLS readiness is part of import success. A failed transcode must leave the
     # import retryable instead of publishing a successful but unstreamable video.

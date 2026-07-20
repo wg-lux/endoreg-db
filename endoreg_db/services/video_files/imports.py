@@ -152,4 +152,10 @@ def initialize_video_file(
         )
 
     initialize_video_frames(video)
+    if local_raw_path is not None:
+        from endoreg_db.services.video_storage_normalization import (
+            persist_video_source_timeline,
+        )
+
+        persist_video_source_timeline(video, Path(local_raw_path))
     return video

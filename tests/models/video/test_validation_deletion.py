@@ -1,8 +1,8 @@
-"""
-Test to verify that validation deletes RAW video, not processed (anonymized) video.
+"""Tests for fail-closed raw-video cleanup after metadata validation.
 
-This test ensures the critical bug fix where validate_metadata_annotation()
-was incorrectly deleting the processed video instead of the raw video.
+Raw cleanup is permitted only after every storage-normalization gate succeeds.
+When cleanup is permitted, validation must delete the raw video rather than the
+processed anonymized video.
 """
 
 from pathlib import Path
@@ -58,9 +58,9 @@ class TestVideoValidationDeletionBehavior:
     Test suite to verify correct file deletion during validation.
 
     **Expected Behavior:**
-    - Validation should delete RAW video file
-    - Validation should PRESERVE processed (anonymized) video file
-    - After validation, only anonymized video remains
+    - Validation deletes the raw video only when every cleanup gate succeeds.
+    - Validation preserves the processed anonymized video.
+    - Missing cleanup evidence preserves the raw video.
     """
 
     @pytest.fixture
@@ -153,6 +153,10 @@ class TestVideoValidationDeletionBehavior:
             patch(
                 "endoreg_db.services.video_files.metadata.update_video_text_metadata"
             ) as mock_update,
+            patch(
+                "endoreg_db.services.video_storage_normalization.raw_cleanup_blockers",
+                return_value=(),
+            ),
         ):
             # Mock sensitive meta update
             mock_sm = Mock()
@@ -231,12 +235,12 @@ class TestVideoValidationDeletionBehavior:
         self, center: Center, processor: EndoscopyProcessor, tmp_path: Path
     ) -> None:
         """
-        Test validation when only raw video exists (no processed yet).
+        Test fail-closed validation when only a raw video exists.
 
         **Test Scenario:**
         1. Create VideoFile with only raw file
         2. Call validate_metadata_annotation()
-        3. Verify raw file is deleted
+        3. Verify the only valid video is preserved
 
         **Note:** This is an edge case - normally processed file should exist
         before validation is called.
@@ -271,9 +275,8 @@ class TestVideoValidationDeletionBehavior:
                 VideoTextMetaPayload.model_validate({})
             )
 
-            # Verify raw is deleted
-            assert not raw_video_path.exists(), (
-                "Raw video should be deleted even when it's the only file"
+            assert raw_video_path.exists(), (
+                "The only valid video must remain when cleanup gates are missing"
             )
 
             assert result is True, "Validation should succeed"
@@ -378,6 +381,10 @@ class TestActiveFileLogicWithValidation:
             patch(
                 "endoreg_db.services.video_files.metadata.update_video_text_metadata"
             ) as mock_update,
+            patch(
+                "endoreg_db.services.video_storage_normalization.raw_cleanup_blockers",
+                return_value=(),
+            ),
         ):
             mock_update.return_value = Mock()
 
@@ -396,7 +403,7 @@ class TestActiveFileLogicWithValidation:
 @pytest.mark.django_db
 class TestValidationDeletion:
     """
-    Test to verify validation deletion behavior.
+    Test validation and gated raw-video cleanup behavior.
 
     This includes scenarios for frame extraction and raw video deletion order.
     """
@@ -489,6 +496,10 @@ class TestValidationDeletion:
             patch(
                 "endoreg_db.services.video_files.metadata.update_video_text_metadata"
             ) as mock_update,
+            patch(
+                "endoreg_db.services.video_storage_normalization.raw_cleanup_blockers",
+                return_value=(),
+            ),
         ):
             # Mock sensitive meta update
             mock_sm = Mock()
@@ -567,12 +578,12 @@ class TestValidationDeletion:
         self, center: Center, processor: EndoscopyProcessor, tmp_path: Path
     ) -> None:
         """
-        Test validation when only raw video exists (no processed yet).
+        Test fail-closed validation when only a raw video exists.
 
         **Test Scenario:**
         1. Create VideoFile with only raw file
         2. Call validate_metadata_annotation()
-        3. Verify raw file is deleted
+        3. Verify the only valid video is preserved
 
         **Note:** This is an edge case - normally processed file should exist
         before validation is called.
@@ -607,9 +618,8 @@ class TestValidationDeletion:
                 VideoTextMetaPayload.model_validate({})
             )
 
-            # Verify raw is deleted
-            assert not raw_video_path.exists(), (
-                "Raw video should be deleted even when it's the only file"
+            assert raw_video_path.exists(), (
+                "The only valid video must remain when cleanup gates are missing"
             )
 
             assert result is True, "Validation should succeed"
@@ -678,6 +688,10 @@ class TestValidationDeletion:
             patch(
                 "endoreg_db.services.video_files.metadata.update_video_text_metadata"
             ) as mock_update_meta,
+            patch(
+                "endoreg_db.services.video_storage_normalization.raw_cleanup_blockers",
+                return_value=(),
+            ),
         ):
             # Mock sensitive meta update - ensure it calls extract_frames
             def mock_update_text_metadata(

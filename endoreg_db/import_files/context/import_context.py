@@ -15,6 +15,7 @@ from pydantic import (
 
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.schemas.video_storage import VideoStorageNormalizationEvidence
 
 _SHA256_PATTERN = re.compile(r"^[0-9a-fA-F]{64}$")
 _REPORT_SUFFIXES = frozenset({".pdf", ".txt"})
@@ -79,6 +80,7 @@ class ImportContext(BaseModel):
     quarantine_path: Path | None = None
     sensitive_path: Path | None = None
     anonymized_path: Path | None = None
+    storage_normalization_evidence: VideoStorageNormalizationEvidence | None = None
 
     current_report: SkipValidation[RawPdfFile | None] = None
     current_video: SkipValidation[VideoFile | None] = None

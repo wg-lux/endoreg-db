@@ -4,7 +4,6 @@ import math
 import uuid
 from dataclasses import asdict, dataclass
 
-import cv2
 from django.conf import settings
 from django.db import transaction
 from pydantic import BaseModel, ConfigDict
@@ -24,7 +23,6 @@ from endoreg_db.services.jobs.stale_recovery import (
 )
 from endoreg_db.services.media_operation_gate import defer_if_video_media_busy
 from endoreg_db.services.video_files import get_video_fps
-from endoreg_db.services.video_files.io import ensure_local_processed_video_file
 from endoreg_db.services.video_processed_transcode import (
     transcode_processed_video_for_storage_pressure,
 )
@@ -129,6 +127,7 @@ def _run_video_fps_normalization(  # pyright: ignore[reportUnusedFunction]
             apply=True,
             quality_mode="quality",
             allow_larger=True,
+            resample_max_fps=MAX_SEGMENTATION_FPS,
         )
         if not result.changed:
             raise RuntimeError(
@@ -145,18 +144,9 @@ def _run_video_fps_normalization(  # pyright: ignore[reportUnusedFunction]
             raise RuntimeError(
                 f"Normalized output FPS is outside contract: {normalized_fps:g}."
             )
-        with ensure_local_processed_video_file(normalized_video) as normalized_path:
-            capture = cv2.VideoCapture(str(normalized_path))
-            try:
-                if not capture.isOpened():
-                    raise RuntimeError("Could not inspect normalized video metadata.")
-                normalized_frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
-            finally:
-                capture.release()
-        if normalized_frame_count <= 0:
+        normalized_frame_count = normalized_video.frame_count
+        if normalized_frame_count is None or normalized_frame_count <= 0:
             raise RuntimeError("Normalized video has no positive frame count.")
-        normalized_video.frame_count = normalized_frame_count
-        normalized_video.save(update_fields=["frame_count", "date_modified"])
         history.mark_success(
             output_file=str(getattr(normalized_video.processed_file, "name", "")),
             details=f"Segmentation FPS normalized to {normalized_fps:g} fps.",
