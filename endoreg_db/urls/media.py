@@ -45,6 +45,7 @@ from endoreg_db.views.video.video_stream import VideoStreamView
 from endoreg_db.views.video import (
     VideoReimportView,
     VideoFpsView,
+    VideoFrameNeighborhoodView,
     export_annotated,
     video_segment_detail,
     video_segment_validate,
@@ -258,6 +259,11 @@ VIDEO_ANNOTATION_URLPATTERNS: list[URLPattern] = [
         "media/videos/<int:pk>/segments/normalize-fps/",
         video_segments_normalize_fps,
         name="video-segments-normalize-fps",
+    ),
+    path(
+        "media/videos/<int:pk>/timeline/frame-neighborhood/",
+        VideoFrameNeighborhoodView.as_view(),
+        name="video-frame-neighborhood",
     ),
     path(
         "media/videos/<int:pk>/segments/import-predictions/",

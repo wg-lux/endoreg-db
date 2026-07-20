@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
     from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
     from endoreg_db.models.metadata.video_meta import FFMpegMeta
+    from .types import VideoFrameNeighborhood
 
 
 def get_video_ffmpeg_meta(video: "VideoFile") -> "FFMpegMeta":
@@ -117,3 +118,19 @@ def video_frame_number_to_seconds(video: "VideoFile", frame_number: int) -> floa
     from ._time import _frame_number_to_s
 
     return _frame_number_to_s(video, frame_number)
+
+
+def video_seconds_to_frame_number(
+    video: "VideoFile", timestamp_seconds: float
+) -> int:
+    from ._time import _seconds_to_frame_number
+
+    return _seconds_to_frame_number(video, timestamp_seconds)
+
+
+def get_video_frame_neighborhood(
+    video: "VideoFile", timestamp_seconds: float, *, radius: int = 12
+) -> "VideoFrameNeighborhood":
+    from ._time import _frame_neighborhood
+
+    return _frame_neighborhood(video, timestamp_seconds, radius=radius)

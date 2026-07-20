@@ -14,13 +14,10 @@ try:
     cv2_mod = importlib.import_module("cv2")
 except ImportError:
     cv2_mod = None
-# from django.conf import settings
-
-from django.conf import settings
-from rest_framework.exceptions import ValidationError
-
-from endoreg_db.config.env import DEFAULT_VIDEO_FPS
-from endoreg_db.services.video_files import get_active_video_file, get_video_fps
+from endoreg_db.services.video_files import (
+    get_active_video_file,
+    video_frame_number_to_seconds,
+)
 from endoreg_db.utils.media_urls import (
     build_absolute_media_url,
     build_video_hls_playlist_path,
@@ -235,30 +232,6 @@ class VideoFileSerializer(serializers.ModelSerializer[VideoFile]):
             dict: A dictionary mapping each label to its list of time segments and associated frame metadata.
         """
 
-        fps = getattr(obj, "fps", None)
-        if fps is None:
-            fps = get_video_fps(cast(VideoFile, obj))
-
-        if not fps or fps <= 0:
-            # Strict by default — only use fallback if explicitly enabled and > 0
-            if (
-                bool(getattr(settings, "VIDEO_ALLOW_FPS_FALLBACK", False))
-                and float(
-                    cast(Any, getattr(settings, "VIDEO_DEFAULT_FPS", DEFAULT_VIDEO_FPS))
-                )
-                > 0
-            ):
-                fps = float(
-                    cast(Any, getattr(settings, "VIDEO_DEFAULT_FPS", DEFAULT_VIDEO_FPS))
-                )
-            else:
-                raise ValidationError(
-                    {
-                        "label_time_segments": "FPS unavailable — cannot calculate time segments",
-                        "video_id": getattr(obj, "id", None),
-                    }
-                )
-
         sequences = obj.sequences
         frame_dir = Path(
             str(obj.frame_dir or "")
@@ -274,8 +247,12 @@ class VideoFileSerializer(serializers.ModelSerializer[VideoFile]):
                     continue  # Skip invalid frame ranges
 
                 start_frame, end_frame = frame_range  # Raw frame indices from DB
-                start_time = start_frame / fps  # Convert frame index to seconds
-                end_time = end_frame / fps  # Convert frame index to seconds
+                start_time = video_frame_number_to_seconds(
+                    cast(VideoFile, obj), start_frame
+                )
+                end_time = video_frame_number_to_seconds(
+                    cast(VideoFile, obj), end_frame
+                )
 
                 frame_data: dict[int, dict[str, Any]] = {}
 

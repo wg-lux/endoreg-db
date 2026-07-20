@@ -4,6 +4,7 @@ import subprocess
 from pathlib import Path
 
 from endoreg_db.utils.file_operations import ensure_directory, safe_rmtree
+from endoreg_db.utils.ffmpeg_wrapper import extract_frame_range
 
 
 def extract_single_frame(
@@ -41,20 +42,25 @@ def extract_selected_frames(
     quality: int = 2,
     ext: str = "png",
 ) -> None:
-    """
-    Extract specific frames from a video using the same quality logic as the original extractor.
-    """
+    """Extract source frame identities; ``fps`` remains a legacy API argument."""
+    _ = fps
+    requested = sorted(set(frame_numbers))
+    if any(frame_number < 0 for frame_number in requested):
+        raise ValueError("frame_numbers must be non-negative")
     if output_dir.exists():
         safe_rmtree(output_dir)
     ensure_directory(output_dir)
 
-    for frame_number in frame_numbers:
-        timestamp_sec = frame_number / fps
-        output_file = output_dir / f"frame_{str(frame_number).zfill(7)}.{ext}"
-        extract_single_frame(
-            input_path=str(video_path),
-            timestamp=timestamp_sec,
-            output_path=str(output_file),
+    for frame_number in requested:
+        extracted = extract_frame_range(
+            video_path,
+            output_dir,
+            start_frame=frame_number,
+            end_frame=frame_number + 1,
             quality=quality,
             ext=ext,
         )
+        if len(extracted) != 1:
+            raise RuntimeError(
+                f"Could not extract source frame {frame_number} from {video_path}"
+            )

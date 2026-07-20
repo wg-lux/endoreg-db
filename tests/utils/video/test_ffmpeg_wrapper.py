@@ -602,6 +602,7 @@ def test_build_png_frame_extraction_commands_disable_png_compression() -> None:
     )
 
     assert "-qscale:v" not in full_command
+    assert full_command[full_command.index("-fps_mode") + 1] == "passthrough"
     assert "-compression_level" in full_command
     assert full_command[full_command.index("-compression_level") + 1] == "0"
     assert "-qscale:v" not in range_command

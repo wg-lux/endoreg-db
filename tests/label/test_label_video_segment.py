@@ -505,22 +505,21 @@ class LabelVideoSegmentModelTest(TestCase):
         self.assertIsInstance(segment.start_frame_number, int)
         self.assertIsInstance(segment.end_frame_number, int)
 
-    def test_lvs_serializer_create_method_exceed_frame_limit(self) -> None:
+    def test_lvs_serializer_create_method_rejects_time_past_duration(self) -> None:
         """
-        Test that creating a new LabelVideoSegment with end_frame_number exceeding video frame count raises ValidationError.
+        Test that a segment timestamp past the authoritative duration is rejected.
         """
         from rest_framework import serializers
 
         label = Label.objects.first()
         assert label is not None
         label_id = _pk_int(label)
-        frame_count = _video_frame_count(self.video_file) + 10
-        fps = _video_fps(self.video_file)
+        duration = float(self.video_file.duration or 0)
         data = _segment_crud_data(
             video_file=self.video_file,
             label_id=label_id,
             start_time=0.0,
-            end_time=frame_count / fps,
+            end_time=duration + 0.2,
         )
         serializer = LabelVideoSegmentSerializer(data=data)
         self.assertTrue(
@@ -529,7 +528,7 @@ class LabelVideoSegmentModelTest(TestCase):
         # Expect DRF ValidationError, not ValueError
         with self.assertRaises(serializers.ValidationError) as cm:
             serializer.create(serializer.validated_data)
-        self.assertIn("exceeds video frame count", str(cm.exception))
+        self.assertIn("exceeds video duration", str(cm.exception))
 
     def tearDown(self):
         if hasattr(self, "video_file") and self.video_file:

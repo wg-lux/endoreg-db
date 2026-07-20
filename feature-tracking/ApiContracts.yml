@@ -15,7 +15,8 @@ definition_of_done:
     title: Kanonische und kompatible Routen sind vollständig inventarisiert
     acceptance:
       - Jede produktionskritische Route hat Zweck, Mount, Supportstatus und Eigentümer.
-      - Kompatibilitätsalias und Entfernungskriterium sind explizit dokumentiert.
+      - Für lx-annotate sind /endoreg-api/ und /dtypes-api/ die kanonischen Mounts; /api/ und /base_api/ sind ausschließlich dokumentierte Kompatibilitätsaliasse.
+      - Jeder Kompatibilitätsalias besitzt ein explizites Entfernungskriterium; neue Consumer verwenden ausschließlich die kanonischen Mounts und zentralen URL-Helper.
     required: true
     verification:
       kind: manual
@@ -27,12 +28,21 @@ definition_of_done:
     title: Kanonische Routen und Payloadverträge stimmen mit der Implementierung überein
     acceptance:
       - Alle dokumentierten Routen lösen auf die erwarteten Views auf.
-      - Request-, Response- und Fehlerpayloads sind stabil und ohne camelCase-interne Sonderpfade.
+      - Backend- und Wire-Verträge verwenden snake_case; die zentrale lx-annotate-Clientgrenze darf Requests nach snake_case und Responses nach camelCase konvertieren, ohne endpoint-spezifische Sonderpfade.
     required: true
     verification:
       kind: command
       command: [.devenv/state/venv/bin/python, scripts/check_route_matrix.py, --warn-on-missing-backend]
-    assessment: *not_assessed
+    assessment:
+      status: in_progress
+      evidence:
+        - kind: review
+          reference: docs/api_route_test_matrix.md; endoreg_db/views/video/video_timeline.py
+        - kind: test
+          reference: tests/views/video/test_video_timeline_view.py; tests/utils/test_media_urlpatterns_contract.py
+      note: Der neue kanonische Frame-Nachbarschaftsvertrag ist dokumentiert, aufgelöst, center-scoped sowie für Validierungs- und Fehlerfälle getestet. Die repository-weite Routenabnahme bleibt offen.
+      assessed_by: Codex
+      assessed_at: '2026-07-20T11:12:00Z'
   - id: route_coverage
     category: testing
     title: Jede Hochrisikoroute besitzt einen belastbaren Contract-Test
@@ -49,7 +59,8 @@ definition_of_done:
     category: security
     title: Alle geschützten Routen erzwingen Authentifizierung und Scope
     acceptance:
-      - Medien-, Bericht-, Upload- und Adminrouten verweigern fremden Center- oder Patientenzugriff.
+      - Medien-, Berichts-, Upload- und Adminrouten erzwingen ihren dokumentierten Ressourcen-, Patienten- und Center-Scope.
+      - Ausdrücklich center-übergreifende Annotationsrouten erzwingen stattdessen Dataset-, Annotator- und Rollenberechtigungen; Raw-Video-Streams bleiben center-bezogen.
       - DEBUG-Bypass kann in keinem Produktionsprofil aktiv sein.
     required: true
     verification:
@@ -60,7 +71,8 @@ definition_of_done:
     category: maintainability
     title: Legacy-Routen und Serializer-Shims haben ein kontrolliertes Ende
     acceptance:
-      - Jeder Alias ist markiert, getestet und mit Entfernungsvoraussetzung versehen.
+      - /api/ und /base_api/ sowie jeder weitere Alias sind markiert, getestet und mit Entfernungsvoraussetzung versehen.
+      - Neue lx-annotate-Aufrufer verwenden endoregApi() oder dtypesApi() statt direkter Legacy-Mounts.
       - Tote oder ungetestete Kompatibilitätspfade sind entfernt.
     required: true
     verification:

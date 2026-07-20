@@ -3,7 +3,6 @@ from django.test import TestCase
 from django.contrib.auth.models import User
 from unittest.mock import Mock, patch
 
-from endoreg_db.config.env import DEFAULT_VIDEO_FPS
 from endoreg_db.models import VideoFile, Label, LabelVideoSegment, InformationSource
 from lx_dtypes.models.contracts.video_segments import parse_segment_annotation_input
 import endoreg_db.services.segment_sync as segment_sync
@@ -49,8 +48,15 @@ class TestSegmentAnnotationFlow(TestCase):
         # Mock video file with required methods
         self.video = Mock(spec=VideoFile)
         self.video.id = 1
-        self.video_fps = 25.0
         self.video.objects = Mock()
+        self.timestamp_to_frame = {
+            7 / 25.0: 7,
+            15 / 25.0: 15,
+            10.0: 250,
+            15.0: 375,
+            18.0: 450,
+        }
+        self.frame_to_timestamp = {250: 10.0, 375: 15.0, 450: 18.0}
 
         # Patch manager lookup with automatic cleanup to avoid leaking into other tests.
         self.video_get_patcher = patch.object(
@@ -59,16 +65,27 @@ class TestSegmentAnnotationFlow(TestCase):
         self.mock_video_get = self.video_get_patcher.start()
         self.addCleanup(self.video_get_patcher.stop)
 
-        def fake_get_video_fps(video: VideoFile) -> float:
-            return self.video_fps
+        def fake_timestamp_to_frame(_video: VideoFile, timestamp: float) -> int:
+            return self.timestamp_to_frame[timestamp]
 
-        self.video_fps_patcher = patch.object(
+        self.timestamp_mapping_patcher = patch.object(
             segment_sync,
-            "get_video_fps",
-            side_effect=fake_get_video_fps,
+            "video_seconds_to_frame_number",
+            side_effect=fake_timestamp_to_frame,
         )
-        self.video_fps_patcher.start()
-        self.addCleanup(self.video_fps_patcher.stop)
+        self.timestamp_mapping_patcher.start()
+        self.addCleanup(self.timestamp_mapping_patcher.stop)
+
+        def fake_frame_to_timestamp(_video: VideoFile, frame: int) -> float:
+            return self.frame_to_timestamp[frame]
+
+        self.frame_mapping_patcher = patch.object(
+            segment_sync,
+            "video_frame_number_to_seconds",
+            side_effect=fake_frame_to_timestamp,
+        )
+        self.frame_mapping_patcher.start()
+        self.addCleanup(self.frame_mapping_patcher.stop)
 
     def test_create_user_segment_from_new_annotation(self) -> None:
         """Test creating a user segment from a new segment annotation"""
@@ -113,8 +130,8 @@ class TestSegmentAnnotationFlow(TestCase):
                 # Verify user source was set
                 mock_segment.save.assert_called_once()
 
-    def test_create_user_segment_defaults_invalid_fps_to_50(self) -> None:
-        self.video_fps = 0
+    def test_create_user_segment_uses_timestamp_mapping_without_fps(self) -> None:
+        self.timestamp_to_frame.update({10.0: 271, 15.0: 409})
         annotation_data = _segment_annotation_payload(
             type="segment",
             video_id=1,
@@ -142,8 +159,8 @@ class TestSegmentAnnotationFlow(TestCase):
                     source=self.video,
                     prediction_meta=None,
                     label=self.label,
-                    start_frame_number=int(10.0 * DEFAULT_VIDEO_FPS),
-                    end_frame_number=int(15.0 * DEFAULT_VIDEO_FPS),
+                    start_frame_number=271,
+                    end_frame_number=409,
                 )
 
     def test_create_user_segment_from_updated_annotation(self) -> None:

@@ -148,6 +148,8 @@ def _build_extract_frames_command(
 
     if fps is not None:
         cmd.extend(["-vf", f"fps={fps}"])
+    else:
+        cmd.extend(["-fps_mode", "passthrough"])
 
     cmd.extend(_frame_image_encoder_args(ext=ext, quality=quality))
     cmd.append(str(output_pattern))

@@ -12,6 +12,7 @@ from .video_stream import VideoStreamView
 from .video_examination_viewset import VideoExaminationViewSet
 from .video_fps import VideoFpsView
 from .video_metadata import VideoMetadataStatsView
+from .video_timeline import VideoFrameNeighborhoodView
 
 
 from .segments_crud import (
@@ -41,6 +42,7 @@ __all__ = [
     "VideoRemoveFramesView",
     "VideoMetadataStatsView",
     "VideoFpsView",
+    "VideoFrameNeighborhoodView",
     "VideoMediaView",
     "VideoCorrectionView",
     # Reimport views

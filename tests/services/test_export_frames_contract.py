@@ -46,6 +46,15 @@ class _FakeFrameAnnotations:
         yield self._annotation
 
 
+class _FakeFrameRows:
+    def __init__(self, frames: list["_FrameDouble"]) -> None:
+        self._frames = frames
+
+    def only(self, *fields: str) -> list["_FrameDouble"]:
+        assert fields == ("pk", "frame_number")
+        return self._frames
+
+
 @dataclass(frozen=True)
 class _NamedFile:
     name: str
@@ -68,6 +77,7 @@ class _VideoDouble:
     processed_file: _NamedFile = field(default_factory=lambda: _NamedFile(""))
     active_file: _NamedFile = field(default_factory=lambda: _NamedFile(""))
     state: _VideoState = field(default_factory=_VideoState)
+    frames: _FakeFrameRows | None = None
 
     def get_frame_dir_path(self) -> Path:
         raise AssertionError("canonical frame dir must not be used")
@@ -329,3 +339,56 @@ def test_local_frame_source_does_not_fallback_to_canonical_storage(
     )
 
     assert source_path == generated_root / "video_31" / "frame_5.jpg"
+
+
+def test_legacy_transcode_fps_cannot_reindex_annotation_frames(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_path = tmp_path / "processed.mp4"
+    source_path.write_bytes(b"processed")
+    frame = _FrameDouble(
+        pk=41,
+        video=cast(VideoFile, None),
+        relative_path="frame_0000010.jpg",
+        file_path="frame_0000010.jpg",
+        frame_number=10,
+        timestamp=0.417,
+    )
+    video = _VideoDouble(pk=21, frames=_FakeFrameRows([frame]))
+    captured: dict[str, int] = {}
+
+    def fake_extract_range(
+        video_path: Path,
+        output_dir: Path,
+        start_frame: int,
+        end_frame: int,
+        quality: int,
+        ext: str,
+    ) -> list[Path]:
+        assert video_path == source_path
+        assert quality == 2
+        captured.update(start_frame=start_frame, end_frame=end_frame)
+        output = output_dir / f"frame_{start_frame:07d}.{ext}"
+        output.write_bytes(b"frame-10")
+        return [output]
+
+    def reject_fps_resample(*args: object, **kwargs: object) -> list[Path]:
+        raise AssertionError("legacy transcode_fps must not resample source frames")
+
+    monkeypatch.setattr(export_module, "ffmpeg_extract_frame_range", fake_extract_range)
+    monkeypatch.setattr(export_module, "ffmpeg_extract_frames", reject_fps_resample)
+
+    export_module._extract_and_move_transcoded_frames(
+        cast(VideoFile, video),
+        source_path=source_path,
+        frame_dir=tmp_path / "frames",
+        frame_pks={41},
+        fps=50.0,
+        quality=2,
+        ext="jpg",
+        overwrite=True,
+    )
+
+    assert captured == {"start_frame": 10, "end_frame": 11}
+    assert (tmp_path / "frames" / "frame_41.jpg").read_bytes() == b"frame-10"

@@ -17,6 +17,13 @@ from pydantic import (
     model_validator,
 )
 
+from .video_storage import (
+    ClinicalFrameQualityEvidence,
+    VideoFpsResamplingEvidence,
+    VideoSourceTimelineEvidence,
+    VideoStorageNormalizationEvidence,
+)
+
 
 def _json_compatible_value(value: Any, *, field_name: str) -> Any:
     if isinstance(value, datetime):
@@ -149,6 +156,10 @@ class VideoFileMetaPayload(BaseModel):
     timestamp_source: str | None = None
     examination_date: str | None = None
     case_resolution: CaseResolutionMetaPayload | None = None
+    storage_normalization: VideoStorageNormalizationEvidence | None = None
+    fps_normalization: VideoFpsResamplingEvidence | None = None
+    source_timeline: VideoSourceTimelineEvidence | None = None
+    clinical_frame_quality: ClinicalFrameQualityEvidence | None = None
 
     @model_validator(mode="before")
     @classmethod

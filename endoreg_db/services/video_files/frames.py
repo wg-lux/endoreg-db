@@ -1,6 +1,7 @@
 # pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportUnusedClass=false
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -84,6 +85,48 @@ def extract_video_frame_range(
         overwrite=overwrite,
         ext=ext,
         verbose=verbose,
+    )
+
+
+def extract_video_frame_range_by_timestamps(
+    video: "VideoFile",
+    *,
+    start_timestamp: float,
+    end_timestamp: float,
+    overwrite: bool = False,
+    **kwargs: FrameRangeOption,
+) -> bool:
+    """Extract a half-open frame range resolved from authoritative PTS."""
+    from .metadata import video_seconds_to_frame_number
+
+    if end_timestamp <= start_timestamp:
+        raise ValueError("end_timestamp must be greater than start_timestamp")
+    start_frame = video_seconds_to_frame_number(video, start_timestamp)
+    end_frame = video_seconds_to_frame_number(video, end_timestamp)
+    if end_frame <= start_frame:
+        raise ValueError(
+            "Timestamp range resolves to an empty frame interval: "
+            f"[{start_frame}, {end_frame})"
+        )
+    logger.info(
+        json.dumps(
+            {
+                "event": "video_frame_range_pts_resolved",
+                "video_id": int(video.pk),
+                "start_timestamp": float(start_timestamp),
+                "end_timestamp": float(end_timestamp),
+                "start_frame": start_frame,
+                "end_frame": end_frame,
+            },
+            sort_keys=True,
+        )
+    )
+    return extract_video_frame_range(
+        video,
+        start_frame=start_frame,
+        end_frame=end_frame,
+        overwrite=overwrite,
+        **kwargs,
     )
 
 

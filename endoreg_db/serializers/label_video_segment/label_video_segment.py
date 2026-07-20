@@ -23,7 +23,10 @@ from endoreg_db.models.other.information_source import InformationSource
 from endoreg_db.serializers.label_video_segment.image_classification_annotation import (
     ImageClassificationAnnotationSerializer,
 )
-from endoreg_db.services.video_files import get_video_fps, video_frame_number_to_seconds
+from endoreg_db.services.video_files import (
+    video_frame_number_to_seconds,
+    video_seconds_to_frame_number,
+)
 from endoreg_db.utils.media_urls import (
     build_absolute_media_url,
     build_video_frame_stream_path,
@@ -144,10 +147,7 @@ class LabelVideoSegmentTimelineSerializer(
         video = cast(VideoLike | None, obj.video_file)
         if video is None:
             return None
-        try:
-            return video_frame_number_to_seconds(cast(VideoFile, video), frame_number)
-        except Exception:
-            return None
+        return video_frame_number_to_seconds(cast(VideoFile, video), frame_number)
 
     def get_label_id(self, obj: LabelVideoSegmentLike) -> int | None:
         label = cast(LabelFileLike | None, obj.label)
@@ -257,29 +257,13 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
             return label
         return None
 
-    def _validate_fps(self, video_file: object) -> float:
-        context = cast(ContextLike, getattr(self, "context", {}))
-        context_video_id = context.get("video_id")
-        context_fps = context.get("video_fps")
-        if (
-            isinstance(video_file, VideoFile)
-            and isinstance(context_video_id, int)
-            and video_file.pk == context_video_id
-            and isinstance(context_fps, (int, float))
-            and not isinstance(context_fps, bool)
-            and context_fps > 0
-        ):
-            return float(context_fps)
-
-        fps = get_video_fps(cast(VideoFile, video_file))
-        if not fps or fps <= 0:
-            raise serializers.ValidationError(
-                "Video file must have a defined, positive FPS to calculate frames."
-            )
-        return float(fps)
-
-    def _convert_time_to_frame(self, time_val: float, fps: float) -> int:
-        return int(round(time_val * fps))
+    def _convert_time_to_frame(
+        self, video_file: VideoFile, time_val: float
+    ) -> int:
+        try:
+            return video_seconds_to_frame_number(video_file, time_val)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc)) from exc
 
     def _get_information_source(self) -> InformationSource:
         source_name = "manual_annotation"
@@ -415,12 +399,11 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
             source = self._get_information_source()
 
             if start_time is not None and end_time is not None:
-                fps = self._validate_fps(video_file)
                 validated_data["start_frame_number"] = self._convert_time_to_frame(
-                    start_time, fps
+                    video_file, start_time
                 )
                 validated_data["end_frame_number"] = self._convert_time_to_frame(
-                    end_time, fps
+                    video_file, end_time
                 )
 
             if (
@@ -470,17 +453,15 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
             if label_id_present or label_name_present:
                 instance.label = self._get_label(label_id, label_name)
 
-            fps: float | None = None
             if start_time is not None or end_time is not None:
                 if current_video is None:
                     raise serializers.ValidationError(
                         {"video_id": "This field is required."}
                     )
-                fps = self._validate_fps(current_video)
 
             if start_time is not None:
                 instance.start_frame_number = self._convert_time_to_frame(
-                    start_time, cast(float, fps)
+                    cast(VideoFile, current_video), start_time
                 )
             elif "start_frame_number" in validated_data:
                 instance.start_frame_number = int(
@@ -489,7 +470,7 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
 
             if end_time is not None:
                 instance.end_frame_number = self._convert_time_to_frame(
-                    end_time, cast(float, fps)
+                    cast(VideoFile, current_video), end_time
                 )
             elif "end_frame_number" in validated_data:
                 instance.end_frame_number = int(
@@ -518,8 +499,12 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
         if video is not None:
             start_frame_number = _segment_frame_number(instance, "start_frame_number")
             end_frame_number = _segment_frame_number(instance, "end_frame_number")
-            data["start_time"] = video.frame_number_to_s(start_frame_number)
-            data["end_time"] = video.frame_number_to_s(end_frame_number)
+            data["start_time"] = video_frame_number_to_seconds(
+                cast(VideoFile, video), start_frame_number
+            )
+            data["end_time"] = video_frame_number_to_seconds(
+                cast(VideoFile, video), end_frame_number
+            )
             data["video_id"] = cast(int, getattr(instance.video_file, "id"))
         label = cast(LabelFileLike | None, instance.label)
         if label is not None:
@@ -569,12 +554,12 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
             end_time = None
             video = cast(VideoLike | None, obj.video_file)
             if video is not None:
-                try:
-                    start_time = video.frame_number_to_s(obj.start_frame_number)
-                    end_time = video.frame_number_to_s(obj.end_frame_number)
-                except Exception:
-                    start_time = None
-                    end_time = None
+                start_time = video_frame_number_to_seconds(
+                    cast(VideoFile, video), obj.start_frame_number
+                )
+                end_time = video_frame_number_to_seconds(
+                    cast(VideoFile, video), obj.end_frame_number
+                )
             return {
                 "segment_id": obj.pk,
                 "segment_start": obj.start_frame_number,

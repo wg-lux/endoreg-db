@@ -14,6 +14,7 @@ from typing import Literal, Protocol, TypedDict, cast
 
 from django.db.models import Q, QuerySet
 from endoreg_db.utils.ffmpeg_wrapper import (
+    extract_frame_range as ffmpeg_extract_frame_range,
     extract_frames as ffmpeg_extract_frames,
 )
 from lx_dtypes.models.contracts import (
@@ -1106,16 +1107,52 @@ def _extract_and_move_transcoded_frames(
     ext: str,
     overwrite: bool,
 ) -> None:
+    if fps > 0:
+        logger.info(
+            "Ignoring legacy transcode_fps=%s for video %s; annotation frame "
+            "identity is preserved using source frame coordinates.",
+            fps,
+            video.pk,
+        )
     tmp_dir = ensure_directory(frame_dir / f"transcode_tmp_{uuid.uuid4().hex}")
     try:
-        extracted_paths = ffmpeg_extract_frames(
-            source_path,
-            tmp_dir,
-            quality=quality,
-            ext=ext,
-            fps=fps,
+        frames_by_pk = {
+            int(frame.pk): int(frame.frame_number)
+            for frame in cast(_VideoFramesExportModel, video).frames.only(
+                "pk", "frame_number"
+            )
+        }
+        requested_numbers = sorted(
+            frames_by_pk[frame_pk]
+            for frame_pk in frame_pks or frames_by_pk.keys()
+            if frame_pk in frames_by_pk
         )
-        _move_extracted_frames_to_pk_names(
+        if frame_pks is not None and len(requested_numbers) != len(frame_pks):
+            missing_pks = sorted(frame_pks - frames_by_pk.keys())
+            raise ValueError(
+                f"Requested annotation frames are missing for video {video.pk}: "
+                f"{missing_pks[:10]}"
+            )
+        if not requested_numbers:
+            return
+        if frame_pks is None:
+            extracted_paths = ffmpeg_extract_frames(
+                source_path,
+                tmp_dir,
+                quality=quality,
+                ext=ext,
+                fps=None,
+            )
+        else:
+            extracted_paths = ffmpeg_extract_frame_range(
+                source_path,
+                tmp_dir,
+                start_frame=requested_numbers[0],
+                end_frame=requested_numbers[-1] + 1,
+                quality=quality,
+                ext=ext,
+            )
+        moved_frame_pks = _move_extracted_frames_to_pk_names(
             video,
             extracted_paths,
             frame_dir,
@@ -1123,6 +1160,12 @@ def _extract_and_move_transcoded_frames(
             ext=ext,
             overwrite=overwrite,
         )
+        missing_outputs = sorted((frame_pks or set(frames_by_pk)) - moved_frame_pks)
+        if missing_outputs:
+            raise RuntimeError(
+                f"Identity-preserving extraction did not produce requested frames "
+                f"for video {video.pk}: {missing_outputs[:10]}"
+            )
     finally:
         safe_rmtree(tmp_dir, missing_ok=True)
 
@@ -1135,16 +1178,16 @@ def _move_extracted_frames_to_pk_names(
     frame_pks: set[int] | Null,
     ext: str,
     overwrite: bool,
-) -> None:
+) -> set[int]:
     video_export = cast(_VideoFramesExportModel, video)
     frames_by_number = {
         frame.frame_number: frame
         for frame in video_export.frames.only("pk", "frame_number")
     }
     if not frames_by_number:
-        logger.warning("No frames available for video %s", video.pk)
-        return
+        raise ValueError(f"No persisted frames available for video {video.pk}")
 
+    moved_frame_pks: set[int] = set()
     for extracted_path in sorted(extracted_paths):
         frame_number = _parse_extracted_frame_number(extracted_path)
         if frame_number is None:
@@ -1152,8 +1195,6 @@ def _move_extracted_frames_to_pk_names(
             continue
 
         frame = frames_by_number.get(frame_number)
-        if frame is None:
-            frame = frames_by_number.get(frame_number - 1)
         if frame is None:
             safe_unlink_file(extracted_path, missing_ok=True)
             continue
@@ -1165,9 +1206,12 @@ def _move_extracted_frames_to_pk_names(
         target_path = frame_dir / _frame_pk_filename(frame.pk, ext)
         if target_path.exists() and not overwrite:
             safe_unlink_file(extracted_path, missing_ok=True)
+            moved_frame_pks.add(int(frame.pk))
             continue
 
         atomic_move_file(source=extracted_path, destination=target_path)
+        moved_frame_pks.add(int(frame.pk))
+    return moved_frame_pks
 
 
 def _parse_extracted_frame_number(frame_path: Path) -> int | Null:

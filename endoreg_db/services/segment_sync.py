@@ -11,14 +11,15 @@ from typing import Optional
 from django.contrib.auth.models import User
 from django.db import transaction
 
-from endoreg_db.config.env import DEFAULT_VIDEO_FPS
-
 from ..models import VideoFile, Label, LabelVideoSegment, InformationSource
 from ..models.label.label_video_segment.label_video_segment import (
     SegmentLabel,
     SegmentPredictionMeta,
 )
-from .video_files import get_video_fps
+from .video_files import (
+    video_frame_number_to_seconds,
+    video_seconds_to_frame_number,
+)
 from lx_dtypes.models.contracts.video_segments import (
     SegmentAnnotationInput,
     parse_segment_annotation_input,
@@ -64,17 +65,8 @@ def create_user_segment_from_annotation(
     try:
         video_file = VideoFile.objects.get(pk=video_id)
 
-        fps = get_video_fps(video_file)
-        if not fps or fps <= 0:
-            logger.warning(
-                "Invalid FPS (%s) for video %s, using default %.1f",
-                fps,
-                video_id,
-                DEFAULT_VIDEO_FPS,
-            )
-            fps = DEFAULT_VIDEO_FPS
-
-        start_frame_number, end_frame_number = annotation_input.to_frame_range(fps)
+        start_frame_number = video_seconds_to_frame_number(video_file, start_time)
+        end_frame_number = video_seconds_to_frame_number(video_file, end_time)
 
         user_source, _ = InformationSource.objects.get_or_create(
             name="user", defaults={"description": "User-generated annotations"}
@@ -97,8 +89,12 @@ def create_user_segment_from_annotation(
             try:
                 original_segment = LabelVideoSegment.objects.get(pk=original_segment_id)
 
-                original_start_time = original_segment.start_frame_number / fps
-                original_end_time = original_segment.end_frame_number / fps
+                original_start_time = video_frame_number_to_seconds(
+                    video_file, original_segment.start_frame_number
+                )
+                original_end_time = video_frame_number_to_seconds(
+                    video_file, original_segment.end_frame_number
+                )
 
                 timing_changed = (
                     abs(original_start_time - start_time) > 0.1

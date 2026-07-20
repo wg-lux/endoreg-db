@@ -50,6 +50,12 @@ class Frame(models.Model):
     class Meta:
         unique_together = ("video", "frame_number")
         ordering = ["video", "frame_number"]
+        indexes = [
+            models.Index(
+                fields=["video", "timestamp"],
+                name="frame_video_timestamp_idx",
+            )
+        ]
 
     @property
     def file_path(self) -> Path:

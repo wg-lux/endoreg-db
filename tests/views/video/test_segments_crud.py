@@ -198,7 +198,9 @@ class LabelVideoSegmentSerializerTest(TestCase):
         """
         Scenario: Loading the Timeline.
         The serializer method `get_time_segments` iterates over frames.
-        We must ensure it doesn't fire a DB query for every single frame to get annotations.
+        We must ensure it doesn't fire a database query for every single frame
+        to get annotations. Two fixed queries additionally resolve the
+        authoritative start and end presentation timestamps.
         """
         frames: list[Frame] = []
         for i in range(50):
@@ -225,7 +227,7 @@ class LabelVideoSegmentSerializerTest(TestCase):
             # Fix: Avoid type checking unknown attributes on Frame
             _ = cast(Any, frames[0]).file_path
 
-        with self.assertNumQueries(2):
+        with self.assertNumQueries(4):
             serializer = LabelVideoSegmentSerializer(self.segment)
             # Fix: Cast self.segment to Any to satisfy LabelVideoSegmentLike Protocol
             # and explicitly cast the return dictionary structure

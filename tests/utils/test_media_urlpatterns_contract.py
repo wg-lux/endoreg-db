@@ -194,6 +194,11 @@ EXPECTED_MEDIA_ROUTE_CONTRACT: list[RouteContract] = [
         "endoreg_db.views.video.segments_crud.video_segments_normalize_fps",
     ),
     (
+        "media/videos/<int:pk>/timeline/frame-neighborhood/",
+        "video-frame-neighborhood",
+        "endoreg_db.views.video.video_timeline.VideoFrameNeighborhoodView",
+    ),
+    (
         "media/videos/<int:pk>/segments/import-predictions/",
         "video-segments-import-predictions",
         "endoreg_db.views.video.segments_crud.import_prediction_segments_to_manual",

@@ -30,7 +30,6 @@ from endoreg_db.serializers.label_video_segment.label_video_segment import (
 from endoreg_db.services.label_video_segment_states import (
     ensure_label_video_segment_states,
 )
-from endoreg_db.services.video_files import get_video_fps
 
 SyncFrameAnnotations = Callable[..., None]
 DeleteFrameAnnotations = Callable[..., int]
@@ -191,19 +190,8 @@ def _bulk_serializer_context(
     video: VideoFile,
     mutation_request: BulkSegmentMutationRequest,
 ) -> dict[str, object]:
-    context: dict[str, object] = {"video_file": video, "video_id": video.pk}
-    if _mutation_request_uses_time_values(mutation_request):
-        context["video_fps"] = get_video_fps(video)
-    return context
-
-
-def _mutation_request_uses_time_values(
-    mutation_request: BulkSegmentMutationRequest,
-) -> bool:
-    for item in [*mutation_request.creates, *mutation_request.updates]:
-        if isinstance(item, Mapping) and ("start_time" in item or "end_time" in item):
-            return True
-    return False
+    _ = mutation_request
+    return {"video_file": video, "video_id": video.pk}
 
 
 def _create_segments(

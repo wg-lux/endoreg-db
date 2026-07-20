@@ -164,29 +164,13 @@ class LabelVideoSegment(models.Model):
 
     @property
     def start_time(self) -> float:
-        """
-        Return the segment's start time in seconds, calculated from the start frame number and video FPS.
-
-        Returns:
-            float: Start time in seconds. Returns 0.0 if FPS is unavailable or zero.
-        """
-        fps = self._get_fps_safe()
-        if fps == 0.0:
-            return 0.0
-        return self.start_frame_number / fps
+        """Return the authoritative timestamp of the start-frame boundary."""
+        return self.video_file.frame_number_to_s(self.start_frame_number)
 
     @property
     def end_time(self) -> float:
-        """
-        Return the segment's end time in seconds, calculated from the end frame number and video FPS.
-
-        Returns:
-            float: End time in seconds, or 0.0 if FPS is unavailable.
-        """
-        fps = self._get_fps_safe()
-        if fps == 0.0:
-            return 0.0
-        return self.end_frame_number / fps
+        """Return the authoritative timestamp of the exclusive end boundary."""
+        return self.video_file.frame_number_to_s(self.end_frame_number)
 
     @property
     def segment_duration(self) -> float:
@@ -586,15 +570,7 @@ class LabelVideoSegment(models.Model):
             float: Segment duration in seconds, or 0.0 if FPS is invalid or video is unavailable.
         """
         try:
-            video_obj = self.get_video()
-            fps = get_video_fps(video_obj)
-            if fps <= 0:
-                logger.warning(
-                    "Could not determine valid FPS for %s. Cannot calculate segment length in seconds.",
-                    video_obj,
-                )
-                return 0.0
-            return (self.end_frame_number - self.start_frame_number) / fps
+            return self.end_time - self.start_time
         except ValueError as e:  # Catch error from get_video
             logger.error(
                 "Cannot calculate segment length for segment %s: %s", self.pk, e

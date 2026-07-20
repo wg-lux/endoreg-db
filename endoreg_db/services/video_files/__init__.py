@@ -15,6 +15,7 @@ from .frames import (
     delete_video_frame_range,
     delete_video_frames,
     extract_video_frame_range,
+    extract_video_frame_range_by_timestamps,
     extract_video_frames,
     get_video_frame,
     get_video_frame_number,
@@ -50,12 +51,14 @@ from .metadata import (
     get_video_endo_roi,
     get_video_ffmpeg_meta,
     get_video_fps,
+    get_video_frame_neighborhood,
     get_video_import_context_names,
     get_video_import_processor,
     initialize_video_specs,
     update_video_meta,
     update_video_text_metadata,
     video_frame_number_to_seconds,
+    video_seconds_to_frame_number,
 )
 from .queries import (
     count_unmodified_other_videos,
@@ -80,11 +83,18 @@ from .streaming import (
     is_encrypted_streamable_video_path,
     resolve_video_stream_source,
 )
-from .types import VideoArtifactKind, parse_video_artifact_kind
+from .types import (
+    VideoArtifactKind,
+    VideoFrameBoundary,
+    VideoFrameNeighborhood,
+    parse_video_artifact_kind,
+)
 from .validation import validate_video_metadata_annotation
 
 __all__ = [
     "VideoArtifactKind",
+    "VideoFrameBoundary",
+    "VideoFrameNeighborhood",
     "anonymize_video_file",
     "bulk_create_video_frames",
     "can_offload_video_stream",
@@ -103,6 +113,7 @@ __all__ = [
     "ensure_local_raw_video_file",
     "extract_text_from_video_frames",
     "extract_video_frame_range",
+    "extract_video_frame_range_by_timestamps",
     "extract_video_frames",
     "get_active_raw_video_file",
     "get_active_raw_video_file_url",
@@ -128,6 +139,7 @@ __all__ = [
     "get_video_endo_roi",
     "get_video_ffmpeg_meta",
     "get_video_fps",
+    "get_video_frame_neighborhood",
     "get_video_frame",
     "get_video_frame_dir_path",
     "get_video_frame_number",
@@ -153,5 +165,6 @@ __all__ = [
     "update_video_text_metadata",
     "validate_video_metadata_annotation",
     "video_frame_number_to_seconds",
+    "video_seconds_to_frame_number",
     "video_hash_exists",
 ]

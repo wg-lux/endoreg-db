@@ -91,6 +91,15 @@ from .video_metadata import (
     VideoMetadataStatsPayload,
     VideoMetadataStatus,
 )
+from .video_storage import (
+    ClinicalFrameQualityEvidence,
+    SegmentTimelineReference,
+    VideoArtifactProbe,
+    VideoFpsResamplingEvidence,
+    VideoSourceTimelineEvidence,
+    VideoStorageNormalizationEvidence,
+    VideoTimelineContract,
+)
 
 __all__ = [
     "AIModelTrainingArtifactPathsPayload",
@@ -102,6 +111,7 @@ __all__ = [
     "AITrainingLabel",
     "AITrainingSample",
     "ByteRange",
+    "ClinicalFrameQualityEvidence",
     "FfmpegActiveStreamThrottleState",
     "FfmpegStreamThrottleState",
     "FfmpegStreamThrottleStatePayload",
@@ -145,6 +155,12 @@ __all__ = [
     "VideoMetadataAnonymizationState",
     "VideoMetadataStatsPayload",
     "VideoMetadataStatus",
+    "SegmentTimelineReference",
+    "VideoArtifactProbe",
+    "VideoFpsResamplingEvidence",
+    "VideoSourceTimelineEvidence",
+    "VideoStorageNormalizationEvidence",
+    "VideoTimelineContract",
     "dump_ffmpeg_stream_throttle_state",
     "dump_media_operation_lease_summary",
     "dump_video_annotation_export_update_payload",

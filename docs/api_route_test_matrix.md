@@ -21,6 +21,12 @@ compatibility alias during migration.
 | `/endoreg-api/media/videos/<pk>/stream/` | Video stream (raw/processed, nginx handoff) | `tests/views/video/test_video_stream.py` |
 | `/endoreg-api/media/videos/<video_id>/frames/<frame_number>/stream/` | Frame stream | `tests/views/media/test_frame_stream.py` |
 
+## Video Annotation Timeline
+
+| Route | Purpose | Test Coverage |
+|---|---|---|
+| `/endoreg-api/media/videos/<pk>/timeline/frame-neighborhood/` | Resolve a bounded, cacheable display-frame window through the canonical PTS timeline with a constant four-query budget | `tests/views/video/test_video_timeline_view.py`, `tests/services/test_segment_frame_extraction.py` |
+
 ## Media Management
 
 | Route | Purpose | Test Coverage |
