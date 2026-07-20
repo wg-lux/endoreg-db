@@ -158,25 +158,38 @@ def _create_video(tmp_path: Path) -> VideoFile:
     frame_dir = tmp_path / f"frames-{uuid.uuid4().hex[:8]}"
     frame_dir.mkdir(parents=True)
     (frame_dir / "frame_0000000.jpg").write_bytes(b"not-real-image")
-    return VideoFile.objects.create(
+    video = VideoFile.objects.create(
         center=center,
         video_hash=f"temporal-video-{uuid.uuid4().hex}",
         frame_count=4,
+        duration=0.16,
         frame_dir=str(frame_dir),
         fps=25.0,
     )
+    Frame.objects.bulk_create(
+        [
+            Frame(
+                video=video,
+                frame_number=index,
+                timestamp=index * 0.04,
+                relative_path=f"frame_{index:07d}.jpg",
+            )
+            for index in range(4)
+        ]
+    )
+    return video
 
 
-def test_build_lx_temporal_options_defaults_convert_seconds_to_frames():
-    lx_options, history_options = jobs.build_lx_temporal_options({}, fps=25.0)
+def test_build_lx_temporal_options_defaults_use_presentation_time_domain():
+    lx_options, history_options = jobs.build_lx_temporal_options({})
 
     assert lx_options["temporal_model"] == "hysteresis"
     assert lx_options["threshold"] == 0.5
-    assert lx_options["min_length"] == 25
+    assert lx_options["min_length"] == 1
     assert lx_options["max_gap"] == 0
-    assert lx_options["smoothing_window"] == 25
+    assert lx_options["smoothing_window"] == 1
     assert lx_options["include_score_vectors"] is False
-    assert history_options["fps"] == 25.0
+    assert history_options["coordinate_basis"] == "presentation_timestamps"
     assert history_options["smoothing_window_seconds"] == 1.0
     assert history_options["temporal_smoothing_enabled"] is True
 
@@ -187,7 +200,6 @@ def test_build_lx_temporal_options_can_disable_temporal_smoothing():
             "temporal_smoothing_enabled": False,
             "smoothing_window_seconds": 3.0,
         },
-        fps=25.0,
     )
 
     assert lx_options["smoothing_window"] == 1
@@ -202,7 +214,6 @@ def test_build_lx_temporal_options_rejects_invalid_smoothing_enabled_value():
     ):
         jobs.build_lx_temporal_options(
             {"temporal_smoothing_enabled": "sometimes"},
-            fps=25.0,
         )
 
 
@@ -213,18 +224,82 @@ def test_build_lx_temporal_options_accepts_label_keyed_thresholds():
             "low_threshold": {"polyp": 0.55},
             "min_length_seconds": 0.01,
         },
-        fps=25.0,
     )
 
     assert lx_options["threshold"] == 0.5
     assert lx_options["thresholds"] == {"polyp": 0.7, "outside": 0.4}
     assert lx_options["low_thresholds"] == {"polyp": 0.55}
-    assert lx_options["min_length"] == 2
+    assert lx_options["min_length"] == 1
 
 
 def test_build_lx_temporal_options_rejects_invalid_model():
     with pytest.raises(jobs.TemporalInferenceConfigError):
-        jobs.build_lx_temporal_options({"temporal_model": "unknown"}, fps=25.0)
+        jobs.build_lx_temporal_options({"temporal_model": "unknown"})
+
+
+def test_smooth_scores_uses_elapsed_presentation_time():
+    score_result = VideoFrameScoreResult(
+        labels=["finding"],
+        frame_scores=_score_array([[0.0], [1.0], [0.0], [1.0]]),
+        device="cpu",
+        frame_count=4,
+        frame_numbers=[0, 1, 2, 3],
+        timestamps=[0.0, 0.1, 0.9, 1.0],
+    )
+    timeline = jobs.TemporalScoreTimeline(
+        frame_numbers=(0, 1, 2, 3),
+        timestamps=(0.0, 0.1, 0.9, 1.0),
+        terminal_frame_number=4,
+        terminal_timestamp=1.1,
+    )
+
+    smoothed = jobs._smooth_scores_by_presentation_time(
+        score_result,
+        timeline,
+        window_seconds=0.4,
+    )
+
+    assert smoothed.frame_scores.tolist() == [[0.5], [0.5], [0.5], [0.5]]
+
+
+def test_segments_use_presentation_time_for_gap_and_minimum_duration():
+    timeline = jobs.TemporalScoreTimeline(
+        frame_numbers=(10, 11, 12, 13),
+        timestamps=(0.0, 0.1, 0.5, 0.6),
+        terminal_frame_number=14,
+        terminal_timestamp=1.0,
+    )
+
+    sequences = jobs._segments_to_sequences(
+        [
+            types.SimpleNamespace(label="finding", start_frame=0, end_frame=0),
+            types.SimpleNamespace(label="finding", start_frame=2, end_frame=3),
+        ],
+        timeline=timeline,
+        min_length_seconds=0.9,
+        max_gap_seconds=0.4,
+    )
+
+    assert sequences == {"finding": [(10, 14)]}
+
+
+@pytest.mark.django_db
+def test_resolve_score_timeline_rejects_non_increasing_timestamps(tmp_path: Path):
+    video = _create_video(tmp_path)
+    score_result = VideoFrameScoreResult(
+        labels=["finding"],
+        frame_scores=_score_array([[0.0], [1.0], [0.0]]),
+        device="cpu",
+        frame_count=3,
+        frame_numbers=[0, 1, 2],
+        timestamps=[0.0, 0.1, 0.1],
+    )
+
+    with pytest.raises(
+        jobs.TemporalInferenceConfigError,
+        match="strictly increasing",
+    ):
+        jobs._resolve_score_timeline(video, score_result)
 
 
 def test_coerce_lx_temporal_inference_result_rejects_missing_segments():
@@ -495,11 +570,13 @@ def test_dispatch_video_temporal_inference_expires_stale_running_history_and_rol
     frame_dir = video.get_frame_dir_path()
     assert frame_dir is not None
     (frame_dir / "frame_0000000.jpg").write_bytes(b"partial")
-    Frame.objects.create(
+    Frame.objects.update_or_create(
         video=video,
         frame_number=0,
-        relative_path="frame_0000000.jpg",
-        is_extracted=True,
+        defaults={
+            "relative_path": "frame_0000000.jpg",
+            "is_extracted": True,
+        },
     )
     state = video.get_or_create_state()
     state.frames_initialized = True
@@ -565,11 +642,13 @@ def test_run_video_temporal_inference_redelivered_stream_success_preserves_frame
     assert frame_dir is not None
     frame_path = frame_dir / "frame_0000000.jpg"
     frame_path.write_bytes(b"frame")
-    Frame.objects.create(
+    Frame.objects.update_or_create(
         video=video,
         frame_number=0,
-        relative_path="frame_0000000.jpg",
-        is_extracted=True,
+        defaults={
+            "relative_path": "frame_0000000.jpg",
+            "is_extracted": True,
+        },
     )
     state = video.get_or_create_state()
     state.frames_initialized = True
@@ -704,6 +783,10 @@ def test_run_video_temporal_inference_materializes_lx_core_segments(
         lx_options = kwargs.get("lx_options")
         assert lx_options is not None
         assert lx_options.get("include_score_vectors") is False
+        effective_scores = kwargs.get("score_result")
+        assert effective_scores is not None
+        assert effective_scores.frame_numbers == [0, 1, 2, 3]
+        assert effective_scores.timestamps == [0.0, 0.04, 0.08, 0.12]
         return types.SimpleNamespace(
             temporal_segments=[
                 types.SimpleNamespace(label=label_a.name, start_frame=2, end_frame=3),
@@ -722,6 +805,7 @@ def test_run_video_temporal_inference_materializes_lx_core_segments(
         model_meta_id=model_meta.pk,
         history_id=history.pk,
         delete_frames_after=False,
+        temporal_options={"min_length_seconds": 0.0},
     )
 
     assert not LabelVideoSegment.objects.filter(pk=old_segment.pk).exists()
@@ -1100,6 +1184,7 @@ def test_run_video_temporal_inference_fails_when_current_meta_materializes_nothi
             model_meta_id=model_meta.pk,
             history_id=history.pk,
             delete_frames_after=False,
+            temporal_options={"min_length_seconds": 0.0},
         )
 
     assert not VideoPredictionMeta.objects.filter(
@@ -1203,11 +1288,13 @@ def test_run_video_temporal_inference_cleans_frames_for_redelivered_success(
     frame_dir = video.get_frame_dir_path()
     assert frame_dir is not None
     (frame_dir / "frame_0000000.jpg").write_bytes(b"frame")
-    Frame.objects.create(
+    Frame.objects.update_or_create(
         video=video,
         frame_number=0,
-        relative_path="frame_0000000.jpg",
-        is_extracted=True,
+        defaults={
+            "relative_path": "frame_0000000.jpg",
+            "is_extracted": True,
+        },
     )
     state = video.get_or_create_state()
     state.frames_initialized = True

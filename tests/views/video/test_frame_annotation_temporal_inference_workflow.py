@@ -67,10 +67,18 @@ class FrameAnnotationTemporalInferenceWorkflowIntegrationTest(TestCase):
                 video=self.video,
                 frame_number=frame_number,
                 relative_path=f"frame_{frame_number:07d}.jpg",
+                timestamp=timestamp,
                 is_extracted=True,
             )
-            for frame_number in (10, 11, 12)
+            for frame_number, timestamp in ((10, 0.4), (11, 0.44), (12, 0.48))
         ]
+        Frame.objects.create(
+            video=self.video,
+            frame_number=13,
+            relative_path="frame_0000013.jpg",
+            timestamp=0.52,
+            is_extracted=False,
+        )
         frame_dir = Path(self.frame_dir_temp.name)
         for frame in self.frames:
             (frame_dir / frame.relative_path).write_bytes(b"frame")
@@ -141,8 +149,8 @@ class FrameAnnotationTemporalInferenceWorkflowIntegrationTest(TestCase):
                     temporal_segments=[
                         SimpleNamespace(
                             label=self.predicted_label.name,
-                            start_frame=10,
-                            end_frame=13,
+                            start_frame=0,
+                            end_frame=2,
                         )
                     ],
                     backend="torch",
@@ -159,6 +167,7 @@ class FrameAnnotationTemporalInferenceWorkflowIntegrationTest(TestCase):
                 frame_source_mode="stream",
                 test_run=True,
                 n_test_frames=3,
+                temporal_options={"min_length_seconds": 0.0},
             )
 
         self.assertTrue(success)

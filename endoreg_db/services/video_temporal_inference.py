@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import uuid
 from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
@@ -10,11 +11,11 @@ from importlib import import_module
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any, Protocol, cast
 
+import numpy as np
 from django.db import transaction
 from django.utils import timezone
 
 from endoreg_db.config.env import (
-    DEFAULT_VIDEO_FPS,
     get_celery_inference_queue,
     get_video_temporal_inference_job_mode,
     get_video_temporal_inference_frame_source_mode,
@@ -48,7 +49,6 @@ from endoreg_db.models.state.video_segment_validation import (
 from endoreg_db.services.video_files import (
     delete_video_frames,
     extract_video_frames,
-    get_video_fps,
     get_video_frame_dir_path,
     predict_video,
     update_video_meta,
@@ -106,6 +106,16 @@ _executor = ThreadPoolExecutor(max_workers=1)
 
 class TemporalInferenceConfigError(ValueError):
     """Raised when temporal inference options are invalid."""
+
+
+@dataclass(frozen=True, slots=True)
+class TemporalScoreTimeline:
+    """Authoritative coordinates for each score row and its terminal boundary."""
+
+    frame_numbers: tuple[int, ...]
+    timestamps: tuple[float, ...]
+    terminal_frame_number: int
+    terminal_timestamp: float
 
 
 class _ModelMetaRuntimeSpec(Protocol):
@@ -285,22 +295,15 @@ def _coerce_probability_map_or_sequence(value: Any, *, name: str) -> Any:
     return _coerce_probability(value, name=name)
 
 
-def _frames_from_seconds(seconds: float, fps: float, *, minimum: int) -> int:
-    return max(minimum, int(round(seconds * fps)))
-
-
 def build_lx_temporal_options(
     raw_options: Mapping[str, Any] | None,
-    *,
-    fps: float,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Normalize caller options for lx-ai-core temporal segmentation.
+    """Normalize timestamp-domain options for lx-ai-core temporal segmentation.
 
-    `temporal_smoothing_enabled` controls only the rolling score smoothing
-    window passed as `smoothing_window` to lx-ai-core. When the flag is omitted
-    or true, the requested `smoothing_window_seconds` is converted to frames
-    with the current video FPS. When false, the effective window is forced to
-    one frame, which is lx-ai-core's identity window for frame-score smoothing.
+    Duration-based smoothing, minimum length, and gap merging are applied by
+    endoreg-db against authoritative presentation timestamps. lx-ai-core gets
+    identity frame-count options so it cannot reapply nominal-frame-rate
+    approximations.
 
     Other temporal models still run normally. In particular, `temporal_model`
     values such as `markov` can still apply their own temporal awareness before
@@ -323,7 +326,6 @@ def build_lx_temporal_options(
         else True
     )
 
-    resolved_fps = fps if fps > 0 else DEFAULT_VIDEO_FPS
     min_length_seconds = _coerce_nonnegative_seconds(
         raw.get("min_length_seconds"),
         name="min_length_seconds",
@@ -345,21 +347,9 @@ def build_lx_temporal_options(
     lx_options: dict[str, Any] = {
         "temporal_model": temporal_model,
         "include_score_vectors": False,
-        "min_length": _frames_from_seconds(
-            min_length_seconds,
-            resolved_fps,
-            minimum=2,
-        ),
-        "max_gap": _frames_from_seconds(
-            max_gap_seconds,
-            resolved_fps,
-            minimum=0,
-        ),
-        "smoothing_window": _frames_from_seconds(
-            smoothing_window_seconds,
-            resolved_fps,
-            minimum=1,
-        ),
+        "min_length": 1,
+        "max_gap": 0,
+        "smoothing_window": 1,
     }
 
     threshold = _coerce_probability_map_or_sequence(
@@ -428,7 +418,7 @@ def build_lx_temporal_options(
         )
 
     history_options = {
-        "fps": resolved_fps,
+        "coordinate_basis": "presentation_timestamps",
         "min_length_seconds": min_length_seconds,
         "max_gap_seconds": max_gap_seconds,
         "smoothing_window_seconds": smoothing_window_seconds,
@@ -436,6 +426,145 @@ def build_lx_temporal_options(
         "lx_options": lx_options,
     }
     return lx_options, history_options
+
+
+def _resolve_score_timeline(
+    video: VideoFile,
+    score_result: VideoFrameScoreResult,
+) -> TemporalScoreTimeline:
+    """Resolve every score row to a persisted presentation timestamp."""
+    row_count = int(score_result.frame_scores.shape[0])
+    if row_count != score_result.frame_count:
+        raise TemporalInferenceConfigError(
+            "Frame-score row count does not match the declared frame count."
+        )
+    if row_count == 0:
+        return TemporalScoreTimeline((), (), 0, 0.0)
+
+    frame_numbers = tuple(
+        int(value)
+        for value in (
+            score_result.frame_numbers
+            if score_result.frame_numbers is not None
+            else range(row_count)
+        )
+    )
+    if len(frame_numbers) != row_count or any(
+        current <= previous
+        for previous, current in zip(frame_numbers, frame_numbers[1:])
+    ):
+        raise TemporalInferenceConfigError(
+            "Frame-score frame numbers must be complete and strictly increasing."
+        )
+
+    if score_result.timestamps is not None:
+        timestamps = tuple(float(value) for value in score_result.timestamps)
+    else:
+        persisted_rows = video.frames.filter(
+            frame_number__in=frame_numbers,
+            timestamp__isnull=False,
+        ).values_list("frame_number", "timestamp")
+        persisted_by_frame = {
+            int(frame_number): float(timestamp)
+            for frame_number, timestamp in persisted_rows
+        }
+        missing = [
+            frame_number
+            for frame_number in frame_numbers
+            if frame_number not in persisted_by_frame
+        ]
+        if missing:
+            raise TemporalInferenceConfigError(
+                "Temporal inference requires persisted presentation timestamps "
+                f"for every scored frame; missing frames: {missing[:10]}."
+            )
+        timestamps = tuple(persisted_by_frame[number] for number in frame_numbers)
+
+    if len(timestamps) != row_count or any(
+        not math.isfinite(timestamp) or timestamp < 0 for timestamp in timestamps
+    ):
+        raise TemporalInferenceConfigError(
+            "Frame-score presentation timestamps must be complete, finite, and non-negative."
+        )
+    if any(
+        current <= previous
+        for previous, current in zip(timestamps, timestamps[1:])
+    ):
+        raise TemporalInferenceConfigError(
+            "Frame-score presentation timestamps must be strictly increasing."
+        )
+
+    next_boundary = (
+        video.frames.filter(
+            frame_number__gt=frame_numbers[-1],
+            timestamp__isnull=False,
+        )
+        .order_by("frame_number")
+        .values_list("frame_number", "timestamp")
+        .first()
+    )
+    if next_boundary is not None:
+        terminal_frame_number = int(next_boundary[0])
+        terminal_timestamp = float(next_boundary[1])
+    elif video.frame_count is not None and int(video.frame_count) == frame_numbers[-1] + 1:
+        terminal_frame_number = int(video.frame_count)
+        terminal_timestamp = float(video.frame_number_to_s(terminal_frame_number))
+    else:
+        raise TemporalInferenceConfigError(
+            "Temporal inference cannot resolve the exclusive presentation-time "
+            "boundary after the final scored frame."
+        )
+    if (
+        terminal_frame_number <= frame_numbers[-1]
+        or not math.isfinite(terminal_timestamp)
+        or terminal_timestamp <= timestamps[-1]
+    ):
+        raise TemporalInferenceConfigError(
+            "The terminal score boundary must follow the final scored frame in "
+            "both frame number and presentation time."
+        )
+    return TemporalScoreTimeline(
+        frame_numbers=frame_numbers,
+        timestamps=timestamps,
+        terminal_frame_number=terminal_frame_number,
+        terminal_timestamp=terminal_timestamp,
+    )
+
+
+def _smooth_scores_by_presentation_time(
+    score_result: VideoFrameScoreResult,
+    timeline: TemporalScoreTimeline,
+    *,
+    window_seconds: float,
+) -> VideoFrameScoreResult:
+    """Apply a centered rolling mean over presentation time, preserving rows."""
+    if window_seconds <= 0 or score_result.frame_count == 0:
+        return score_result
+
+    radius_seconds = window_seconds / 2.0
+    scores = score_result.frame_scores
+    prefix = np.vstack(
+        (
+            np.zeros((1, scores.shape[1]), dtype=np.float64),
+            np.cumsum(scores, axis=0, dtype=np.float64),
+        )
+    )
+    smoothed = np.empty(scores.shape, dtype=np.float64)
+    left = 0
+    right = 0
+    row_count = score_result.frame_count
+    for index, timestamp in enumerate(timeline.timestamps):
+        lower = timestamp - radius_seconds
+        upper = timestamp + radius_seconds
+        while left < row_count and timeline.timestamps[left] < lower:
+            left += 1
+        if right < index:
+            right = index
+        while right < row_count and timeline.timestamps[right] <= upper:
+            right += 1
+        smoothed[index] = (prefix[right] - prefix[left]) / float(right - left)
+
+    return replace(score_result, frame_scores=smoothed)
 
 
 def _lx_ai_core_version() -> str:
@@ -556,21 +685,55 @@ def _coerce_lx_temporal_inference_result(
 
 def _segments_to_sequences(
     segments: Sequence[Any],
+    *,
+    timeline: TemporalScoreTimeline,
+    min_length_seconds: float,
+    max_gap_seconds: float,
 ) -> Mapping[str, list[tuple[int, int]]]:
-    sequences: dict[str, list[tuple[int, int]]] = {}
+    indexed_by_label: dict[str, list[tuple[int, int]]] = {}
     for segment in segments:
         label = str(getattr(segment, "label"))
         start = int(getattr(segment, "start_frame"))
         end = int(getattr(segment, "end_frame"))
-        if start < 0 or end <= start:
-            logger.debug(
-                "Skipping DB-unsafe temporal segment %s [%s, %s].",
-                label,
-                start,
-                end,
+        if start < 0 or end < start or end >= len(timeline.timestamps):
+            raise TemporalInferenceConfigError(
+                "lx-ai-core returned a temporal segment outside the scored "
+                f"presentation timeline: {label} [{start}, {end}]."
             )
-            continue
-        sequences.setdefault(label, []).append((start, end))
+        indexed_by_label.setdefault(label, []).append((start, end))
+
+    sequences: dict[str, list[tuple[int, int]]] = {}
+    for label, ranges in indexed_by_label.items():
+        merged: list[tuple[int, int]] = []
+        for start, end in sorted(ranges):
+            if merged:
+                previous_start, previous_end = merged[-1]
+                previous_boundary = (
+                    timeline.timestamps[previous_end + 1]
+                    if previous_end + 1 < len(timeline.timestamps)
+                    else timeline.terminal_timestamp
+                )
+                gap_seconds = timeline.timestamps[start] - previous_boundary
+                if gap_seconds <= max_gap_seconds + 1e-9:
+                    merged[-1] = (previous_start, max(previous_end, end))
+                    continue
+            merged.append((start, end))
+
+        materialized: list[tuple[int, int]] = []
+        for start, end in merged:
+            end_frame_index = end + 1
+            if end_frame_index < len(timeline.timestamps):
+                end_timestamp = timeline.timestamps[end_frame_index]
+                end_frame_number = timeline.frame_numbers[end_frame_index]
+            else:
+                end_timestamp = timeline.terminal_timestamp
+                end_frame_number = timeline.terminal_frame_number
+            duration_seconds = end_timestamp - timeline.timestamps[start]
+            if duration_seconds + 1e-9 < min_length_seconds:
+                continue
+            materialized.append((timeline.frame_numbers[start], end_frame_number))
+        if materialized:
+            sequences[label] = materialized
     return sequences
 
 
@@ -1290,10 +1453,8 @@ def _run_video_temporal_inference(
         model_meta = ModelMeta.objects.select_related("model", "labelset").get(
             pk=model_meta_id
         )
-        fps = float(get_video_fps(video) or DEFAULT_VIDEO_FPS)
         lx_options, normalized_temporal_options = build_lx_temporal_options(
             temporal_options,
-            fps=fps,
         )
 
         mark_frame_prediction_reset(video)
@@ -1338,6 +1499,19 @@ def _run_video_temporal_inference(
         )
         if not isinstance(score_result, VideoFrameScoreResult):
             raise RuntimeError("Video prediction did not return frame scores.")
+        score_timeline = _resolve_score_timeline(video, score_result)
+        score_result = replace(
+            score_result,
+            frame_numbers=list(score_timeline.frame_numbers),
+            timestamps=list(score_timeline.timestamps),
+        )
+        score_result = _smooth_scores_by_presentation_time(
+            score_result,
+            score_timeline,
+            window_seconds=float(
+                normalized_temporal_options["smoothing_window_seconds"]
+            ),
+        )
 
         request_id = (
             f"video-{video.pk}-temporal-{history.pk if history else uuid.uuid4()}"
@@ -1350,7 +1524,14 @@ def _run_video_temporal_inference(
                 request_id=request_id,
             )
         )
-        sequences = _segments_to_sequences(inference_result.temporal_segments)
+        sequences = _segments_to_sequences(
+            inference_result.temporal_segments,
+            timeline=score_timeline,
+            min_length_seconds=float(
+                normalized_temporal_options["min_length_seconds"]
+            ),
+            max_gap_seconds=float(normalized_temporal_options["max_gap_seconds"]),
+        )
         has_segment_ranges = any(bool(ranges) for ranges in sequences.values())
         with transaction.atomic():
             video_prediction_meta, _ = VideoPredictionMeta.objects.get_or_create(
@@ -1485,10 +1666,8 @@ def dispatch_video_temporal_inference(
     task_id = str(uuid.uuid4())
     queue = get_celery_inference_queue()
     video = VideoFile.objects.get(pk=video_id)
-    fps = float(get_video_fps(video) or DEFAULT_VIDEO_FPS)
     _, normalized_temporal_options = build_lx_temporal_options(
         temporal_options,
-        fps=fps,
     )
     dispatch_config = TemporalInferenceHistoryConfig(
         model_meta_id=int(model_meta_id),
