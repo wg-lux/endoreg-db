@@ -19,6 +19,7 @@ from endoreg_db.services.hls_media import (
     hls_segment_path,
     unwrap_hls_content_key,
 )
+from endoreg_db.services.media_operation_gate import create_video_stream_lease
 from endoreg_db.services.video_files import VideoArtifactKind
 from endoreg_db.utils.cors import resolve_response_origin
 from endoreg_db.utils.nginx_accel import build_nginx_accel_response_for_path
@@ -91,6 +92,10 @@ class HLSPlaylistView(APIView):
             path = hls_playlist_path(artifact)
         except (FileNotFoundError, ValueError, VideoHlsArtifact.DoesNotExist):
             raise Http404("HLS playlist is not available") from None
+        create_video_stream_lease(
+            video,
+            file_type=f"hls_{artifact.artifact_kind}_playlist",
+        )
 
         if nginx_offload_enabled():
             response = build_nginx_accel_response_for_path(
@@ -129,6 +134,10 @@ class HLSKeyView(APIView):
             key = unwrap_hls_content_key(artifact)
         except (FileNotFoundError, ValueError, VideoHlsArtifact.DoesNotExist):
             raise Http404("HLS key is not available") from None
+        create_video_stream_lease(
+            video,
+            file_type=f"hls_{artifact.artifact_kind}_key",
+        )
 
         response = HttpResponse(key, content_type=HLS_KEY_CONTENT_TYPE)
         response["Content-Length"] = str(len(key))
@@ -161,6 +170,10 @@ class HLSSegmentView(APIView):
             path = hls_segment_path(artifact, segment_name)
         except (FileNotFoundError, ValueError, VideoHlsArtifact.DoesNotExist):
             raise Http404("HLS segment is not available") from None
+        create_video_stream_lease(
+            video,
+            file_type=f"hls_{artifact.artifact_kind}_segment",
+        )
 
         response = build_nginx_accel_response_for_path(
             path=path,

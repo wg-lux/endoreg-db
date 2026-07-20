@@ -10,6 +10,7 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 
 from endoreg_db.models import Center, Examiner, PortalUserInfo, VideoFile
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
+from endoreg_db.models.media.operation_lease import MediaOperationLease
 from endoreg_db.services import hls_media
 from endoreg_db.views import access_control
 from endoreg_db.views.video import hls_stream
@@ -140,6 +141,56 @@ def test_hls_playlist_and_segment_use_nginx_accel_after_authz(
     assert segment_response["X-Content-Type-Options"] == "nosniff"
     assert "public" not in segment_response["Cache-Control"]
     _assert_no_cors_headers(segment_response)
+    lease_types = set(
+        MediaOperationLease.objects.filter(video_id=video_pk).values_list(
+            "metadata__file_type",
+            flat=True,
+        )
+    )
+    assert lease_types == {"hls_processed_playlist", "hls_processed_segment"}
+
+
+def test_hls_playlist_access_renews_one_media_operation_lease(
+    hls_artifact: VideoHlsArtifact,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SERVE_WITH_NGINX", "true")
+    monkeypatch.setenv("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
+    user = User.objects.create_user(username="hls-lease-renewal-reader")
+    video_pk = _artifact_video_pk(hls_artifact)
+    view = hls_stream.HLSPlaylistView.as_view()
+
+    first = view(
+        _authenticated_request(
+            f"/endoreg-api/media/videos/{video_pk}/hls/playlist/",
+            user,
+        ),
+        pk=video_pk,
+    )
+    first_lease = MediaOperationLease.objects.get(
+        video_id=video_pk,
+        metadata__file_type="hls_processed_playlist",
+    )
+    first_expiry = first_lease.expires_at
+    second = view(
+        _authenticated_request(
+            f"/endoreg-api/media/videos/{video_pk}/hls/playlist/",
+            user,
+        ),
+        pk=video_pk,
+    )
+
+    first_lease.refresh_from_db()
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first_lease.expires_at >= first_expiry
+    assert (
+        MediaOperationLease.objects.filter(
+            video_id=video_pk,
+            metadata__file_type="hls_processed_playlist",
+        ).count()
+        == 1
+    )
 
 
 def test_hls_playlist_and_key_serve_same_origin_without_cors_headers(

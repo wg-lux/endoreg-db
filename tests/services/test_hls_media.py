@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false
 from __future__ import annotations
 
 import subprocess
@@ -116,6 +117,59 @@ def _create_raw_video(
     return video
 
 
+def test_delete_video_hls_artifacts_removes_complete_raw_tree_only(
+    hls_center: Center,
+) -> None:
+    video = _create_raw_video(center=hls_center, payload=b"raw cleanup source")
+    raw_key_id = uuid4()
+    processed_key_id = uuid4()
+    raw_artifact = VideoHlsArtifact.objects.create(
+        video=video,
+        artifact_kind=VideoHlsArtifact.ArtifactKind.RAW,
+        status=VideoHlsArtifact.Status.MATERIALIZING,
+        key_id=raw_key_id,
+    )
+    processed_artifact = VideoHlsArtifact.objects.create(
+        video=video,
+        artifact_kind=VideoHlsArtifact.ArtifactKind.PROCESSED,
+        status=VideoHlsArtifact.Status.READY,
+        key_id=processed_key_id,
+    )
+
+    raw_video_dir = hls_media._artifact_target_dir(
+        video=video,
+        artifact_kind=hls_media.VideoArtifactKind.RAW,
+        key_id=raw_key_id,
+    ).parent.parent
+    stale_raw_dir = raw_video_dir / str(uuid4()) / "v0"
+    processed_dir = hls_media._artifact_target_dir(
+        video=video,
+        artifact_kind=hls_media.VideoArtifactKind.PROCESSED,
+        key_id=processed_key_id,
+    )
+    transient_dirs = (
+        hls_media._temporary_key_dir(video_id=int(video.pk), key_id=raw_key_id),
+        hls_media._temporary_plaintext_source_dir(
+            video_id=int(video.pk), key_id=raw_key_id
+        ),
+        hls_media._temporary_output_dir(video_id=int(video.pk), key_id=raw_key_id),
+    )
+    for directory in (stale_raw_dir, processed_dir, *transient_dirs):
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "payload.bin").write_bytes(b"payload")
+    (transient_dirs[0] / "hls.key").write_bytes(b"secret key")
+    (transient_dirs[0] / "key_info.txt").write_text("key info")
+
+    removed = hls_media.delete_video_hls_artifacts(video, artifact_kind="raw")
+
+    assert removed is True
+    assert not raw_video_dir.exists()
+    assert all(not directory.exists() for directory in transient_dirs)
+    assert not VideoHlsArtifact.objects.filter(pk=raw_artifact.pk).exists()
+    assert processed_dir.exists()
+    assert VideoHlsArtifact.objects.filter(pk=processed_artifact.pk).exists()
+
+
 def test_ffmpeg_hls_command_uses_clinical_quality_h264_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -135,6 +189,8 @@ def test_ffmpeg_hls_command_uses_clinical_quality_h264_settings(
 
     assert command[command.index("-preset") + 1] == hls_media.HLS_VIDEO_PRESET
     assert command[command.index("-crf") + 1] == hls_media.HLS_VIDEO_CRF
+    assert command[command.index("-maxrate") + 1] == "12000000"
+    assert command[command.index("-bufsize") + 1] == "24000000"
     assert command[command.index("-profile:v") + 1] == hls_media.HLS_VIDEO_PROFILE
     assert command[command.index("-pix_fmt") + 1] == hls_media.HLS_VIDEO_PIXEL_FORMAT
     assert command[command.index("-color_range") + 1] == "pc"

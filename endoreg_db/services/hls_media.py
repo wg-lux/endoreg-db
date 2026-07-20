@@ -29,6 +29,9 @@ from endoreg_db.services.video_files import (
 )
 from endoreg_db.utils import ffmpeg_wrapper
 from endoreg_db.utils.video.encoding_standard import STANDARD_VIDEO_ENCODING
+from endoreg_db.services.video_storage_normalization import (
+    configured_video_storage_profile,
+)
 from endoreg_db.utils.encryption.encryption import load_master_key
 from endoreg_db.utils.file_operations import (
     atomic_move_path,
@@ -1051,6 +1054,7 @@ def _ffmpeg_command(
 ) -> list[str]:
     ffmpeg_executable = ffmpeg_wrapper.resolve_ffmpeg_executable()
     threads = get_ffmpeg_thread_count()
+    storage_profile = configured_video_storage_profile()
 
     if ffmpeg_executable is None:
         raise RuntimeError("ffmpeg executable is not available")
@@ -1074,6 +1078,10 @@ def _ffmpeg_command(
         HLS_VIDEO_PROFILE,
         "-crf",
         HLS_VIDEO_CRF,
+        "-maxrate",
+        str(storage_profile.max_bit_rate_bps),
+        "-bufsize",
+        str(storage_profile.max_bit_rate_bps * 2),
         "-pix_fmt",
         HLS_VIDEO_PIXEL_FORMAT,
         "-vf",
@@ -1426,6 +1434,90 @@ def _cleanup_replaced_artifact(snapshot: _ArtifactSnapshot | None) -> None:
         safe_unlink_file(playlist_path, missing_ok=True)
 
 
+def _cleanup_transient_hls_artifact(*, video_id: int, key_id: UUID) -> None:
+    temp_key_dir = _temporary_key_dir(video_id=video_id, key_id=key_id)
+    safe_unlink_file(temp_key_dir / "key_info.txt", missing_ok=True)
+    secure_unlink_file(temp_key_dir / "hls.key", missing_ok=True)
+    safe_rmtree(temp_key_dir, missing_ok=True)
+
+    temp_source_dir = _temporary_plaintext_source_dir(
+        video_id=video_id,
+        key_id=key_id,
+    )
+    if temp_source_dir.exists():
+        for source_path in temp_source_dir.rglob("*"):
+            if source_path.is_file():
+                secure_unlink_file(source_path, missing_ok=True)
+    safe_rmtree(temp_source_dir, missing_ok=True)
+
+    safe_rmtree(
+        _temporary_output_dir(video_id=video_id, key_id=key_id),
+        missing_ok=True,
+    )
+
+
+@transaction.atomic
+def delete_video_hls_artifacts(
+    video: VideoFile,
+    *,
+    artifact_kind: object,
+) -> bool:
+    """Delete one video's HLS state and all owned files for an artifact kind."""
+    video_pk = getattr(video, "pk", None)
+    if not isinstance(video_pk, int):
+        raise ValueError("Cannot delete HLS artifacts for an unsaved video.")
+    from endoreg_db.services.media_operation_gate import defer_if_video_media_busy
+
+    defer_if_video_media_busy(video_id=video_pk)
+
+    parsed_kind = coerce_hls_artifact_kind(artifact_kind)
+    locked_video = VideoFile.objects.select_for_update().get(pk=video_pk)
+    artifacts = tuple(
+        VideoHlsArtifact.objects.select_for_update().filter(
+            video=locked_video,
+            artifact_kind=parsed_kind.value,
+        )
+    )
+
+    video_hls_dir = ensure_within_protected_media_root(
+        _hls_root_for_kind(parsed_kind) / str(locked_video.uuid)
+    )
+    removed = video_hls_dir.exists() or bool(artifacts)
+    safe_rmtree(video_hls_dir, missing_ok=True)
+
+    for artifact in artifacts:
+        transient_paths = (
+            _temporary_key_dir(video_id=int(locked_video.pk), key_id=artifact.key_id),
+            _temporary_plaintext_source_dir(
+                video_id=int(locked_video.pk),
+                key_id=artifact.key_id,
+            ),
+            _temporary_output_dir(
+                video_id=int(locked_video.pk),
+                key_id=artifact.key_id,
+            ),
+        )
+        removed = removed or any(path.exists() for path in transient_paths)
+        _cleanup_transient_hls_artifact(
+            video_id=int(locked_video.pk),
+            key_id=artifact.key_id,
+        )
+
+    if artifacts:
+        VideoHlsArtifact.objects.filter(
+            pk__in=[int(artifact.pk) for artifact in artifacts]
+        ).delete()
+
+    logger.info(
+        "Deleted %s HLS artifacts for video=%s artifact_records=%s removed=%s",
+        parsed_kind.value,
+        locked_video.pk,
+        len(artifacts),
+        removed,
+    )
+    return removed
+
+
 def materialize_video_hls(
     video_id: int,
     *,
@@ -1437,6 +1529,10 @@ def materialize_video_hls(
         existing = _existing_ready_result(video_id=video_id, artifact_kind=parsed_kind)
         if existing is not None:
             return existing
+
+    from endoreg_db.services.media_operation_gate import defer_if_video_media_busy
+
+    defer_if_video_media_busy(video_id=int(video_id))
 
     video = VideoFile.objects.get(pk=int(video_id))
     source_ref = _hls_source(video, parsed_kind)

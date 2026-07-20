@@ -55,12 +55,30 @@ def create_video_stream_lease(
         else max(1, int(ttl_seconds))
     )
     expires_at = timezone.now() + timedelta(seconds=ttl)
-    return MediaOperationLease.objects.create(
-        video=video,
-        lease_type=MediaOperationLease.LEASE_STREAM,
-        expires_at=expires_at,
-        metadata={"file_type": str(file_type)},
-    )
+    normalized_file_type = str(file_type).strip()
+    if not normalized_file_type:
+        raise ValueError("file_type must not be empty")
+    with transaction.atomic():
+        existing = (
+            MediaOperationLease.objects.select_for_update()
+            .filter(
+                video=video,
+                lease_type=MediaOperationLease.LEASE_STREAM,
+                metadata__file_type=normalized_file_type,
+            )
+            .order_by("-expires_at", "pk")
+            .first()
+        )
+        if existing is not None:
+            existing.expires_at = expires_at
+            existing.save(update_fields=["expires_at"])
+            return existing
+        return MediaOperationLease.objects.create(
+            video=video,
+            lease_type=MediaOperationLease.LEASE_STREAM,
+            expires_at=expires_at,
+            metadata={"file_type": normalized_file_type},
+        )
 
 
 def create_video_segment_update_lease(

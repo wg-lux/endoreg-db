@@ -194,11 +194,15 @@ def _delete_raw_file_after_validation(video: "VideoFile") -> bool:
     Important: delete through storage, not via guessed paths.
     Streamable derived raw copy is cleaned separately.
     """
+    from endoreg_db.services.hls_media import delete_video_hls_artifacts
+
+    deleted = delete_video_hls_artifacts(video, artifact_kind="raw")
     raw_field = getattr(video, "raw_file", None)
-    deleted = False
 
     if raw_field and raw_field.name:
-        deleted = delete_field_file(video, "raw_file", missing_ok=True, save=True)
+        deleted = (
+            delete_field_file(video, "raw_file", missing_ok=True, save=True) or deleted
+        )
     else:
         raw_path = _get_raw_file_path(video)
         if raw_path is not None and raw_path.exists():
@@ -208,6 +212,7 @@ def _delete_raw_file_after_validation(video: "VideoFile") -> bool:
     raw_stream_path = _get_raw_stream_path(video)
     if raw_stream_path and raw_stream_path.exists():
         safe_unlink_file(raw_stream_path, missing_ok=True)
+        deleted = True
 
     if getattr(video, "raw_streamable_relative_path", ""):
         video.raw_streamable_relative_path = ""
