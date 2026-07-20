@@ -19,6 +19,7 @@ definition_of_done:
   acceptance:
   - Reportfinalisierung verlangt Untersuchung und aufgelösten Dokumenttyp.
   - Segmentexport verlangt ein aufgelöstes Labelset und abgeschlossene Validierung.
+  - Anonymisierungsvalidierung und Segmentannotationsvalidierung sind getrennte Gates mit getrennten Zuständen und Freigabewirkungen.
   - Produktionspfade besitzen keine stillen Validator- oder Statusfallbacks.
   required: true
   verification:
@@ -34,7 +35,8 @@ definition_of_done:
   acceptance:
   - Gültige Übergänge, Vorbedingungen und Terminalzustände sind serverseitig erzwungen.
   - Unmögliche Zustände schlagen laut fehl; LOST bleibt sichtbar und auditierbar.
-  - Videoanonymisierung bis Segmentreview und PDF-Validierung bis Materialisierung funktionieren end-to-end.
+  - Ein anonymisiertes und freigegebenes Video darf downstream genutzt werden, ohne dadurch als segmentvalidiert zu gelten; Segmentvalidierung sperrt die Bearbeitung nur gemäß dokumentiertem Override-Vertrag.
+  - Videoanonymisierung über die separate Segmentbereitschaft bis zum Segmentreview sowie PDF-Validierung bis Materialisierung funktionieren end-to-end.
   required: true
   verification:
     kind: manual
@@ -76,7 +78,8 @@ definition_of_done:
   title: Kritische Workflows sind end-to-end und als API-Vertrag getestet
   acceptance:
   - PDF-Validierung, Case Resolution und Reportmaterialisierung sind gemeinsam getestet.
-  - Videoanonymisierung, Segmentbereitschaft und Validierungsabschluss sind gemeinsam getestet.
+  - Videoanonymisierungsfreigabe, Segmentbereitschaft und Segmentvalidierungsabschluss sind als getrennte Zustände gemeinsam getestet.
+  - lx-annotate hält anonymisierte und bereits segmentvalidierte Videos zur Ansicht auswählbar und macht segmentvalidierte Annotationen ohne berechtigten Override schreibgeschützt.
   - Segment-CRUD und Reportsubmission haben explizite Contract-Tests.
   required: true
   verification:
@@ -166,6 +169,7 @@ definition_of_done:
   title: Zustände, Übergänge und Betriebsabläufe sind aktuell dokumentiert
   acceptance:
   - Dokumentation unterscheidet kanonische, kompatible und nicht unterstützte Pfade.
+  - Dokumentation und Consumer-Terminologie unterscheiden Anonymisierungsstatus, allgemeinen Workflowstatus und Segmentannotationsvalidierung eindeutig.
   required: true
   verification:
     kind: manual
