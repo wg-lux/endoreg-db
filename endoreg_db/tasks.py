@@ -38,8 +38,8 @@ def run_video_reimport_task(
     video_id: int,
     history_id: int | None = None,
 ) -> bool:
-    from endoreg_db.config.env import get_video_post_validation_dispatch_delay_seconds
     from endoreg_db.services.media_operation_gate import MediaOperationDeferred
+    from endoreg_db.services.jobs.error_handling import retry_deferred_media_operation
     from endoreg_db.services.jobs.video_reimport_jobs import _run_video_reimport_job
 
     try:
@@ -48,11 +48,12 @@ def run_video_reimport_task(
             history_id=int(history_id) if history_id is not None else None,
         )
     except MediaOperationDeferred as exc:
-        raise _task.retry(
-            exc=exc,
-            countdown=max(get_video_post_validation_dispatch_delay_seconds(), 60),
-            max_retries=20,
-        ) from exc
+        retry_deferred_media_operation(
+            retry=_task.retry,
+            error=exc,
+            job_name="video_reimport",
+            video_id=video_id,
+        )
 
 
 @shared_task(
@@ -90,7 +91,7 @@ def run_video_anonymization_correction_task(
     video_id: int,
     history_id: int,
 ) -> dict[str, object]:
-    from endoreg_db.config.env import get_video_post_validation_dispatch_delay_seconds
+    from endoreg_db.services.jobs.error_handling import retry_deferred_media_operation
     from endoreg_db.services.jobs.video_correction_jobs import (
         run_video_anonymization_correction,
     )
@@ -99,11 +100,12 @@ def run_video_anonymization_correction_task(
     try:
         return run_video_anonymization_correction(int(video_id), int(history_id))
     except MediaOperationDeferred as exc:
-        raise _task.retry(
-            exc=exc,
-            countdown=max(get_video_post_validation_dispatch_delay_seconds(), 60),
-            max_retries=20,
-        ) from exc
+        retry_deferred_media_operation(
+            retry=_task.retry,
+            error=exc,
+            job_name="video_anonymization_correction",
+            video_id=video_id,
+        )
 
 
 @shared_task(
@@ -143,8 +145,8 @@ def run_video_post_validation_rebuild_task(
     only_validated: bool = False,
     history_id: int | None = None,
 ) -> bool:
-    from endoreg_db.config.env import get_video_post_validation_dispatch_delay_seconds
     from endoreg_db.services.media_operation_gate import MediaOperationDeferred
+    from endoreg_db.services.jobs.error_handling import retry_deferred_media_operation
     from endoreg_db.services.jobs.video_post_validation_jobs import (
         _run_video_post_validation_rebuild,
     )
@@ -156,11 +158,12 @@ def run_video_post_validation_rebuild_task(
             history_id=int(history_id) if history_id is not None else None,
         )
     except MediaOperationDeferred as exc:
-        raise _task.retry(
-            exc=exc,
-            countdown=get_video_post_validation_dispatch_delay_seconds(),
-            max_retries=20,
-        ) from exc
+        retry_deferred_media_operation(
+            retry=_task.retry,
+            error=exc,
+            job_name="video_post_validation_rebuild",
+            video_id=video_id,
+        )
 
 
 @shared_task(

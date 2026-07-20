@@ -80,6 +80,25 @@ Exportdaten auf HTTP 422 mit `code`, `detail` und `retryable`. Rollback erfolgt
 durch Zurücknahme des View-Mappers; Abbruchkriterium ist eine unerwartete
 Umklassifizierung interner Fehler oder die Offenlegung interner Detailtexte.
 
+Die zweite migrierte Kohorte ergänzt Command- und Job-Grenzen:
+
+- `backfill_dicom_manifest_v2` übersetzt den typisierten Backfill-Fehler über
+  `endoreg_db.management.command_errors` in Exitcode 1 sowie einen stabilen,
+  datensparsamen Code und Text. Interne Datensatzdetails bleiben ausschließlich
+  in der verketteten Serviceursache.
+- `MediaOperationDeferred` besitzt zentral eine Retry-Klassifikation. Die drei
+  betroffenen Celery-Tasks verwenden dieselbe Policy mit mindestens 60 Sekunden
+  Verzögerung und höchstens 20 Versuchen und protokollieren nur Jobname,
+  gehashte Objektidentität, Fehlercode und Retry-Parameter.
+- Andere oder unbekannte Jobfehler werden nicht automatisch erneut versucht
+  und unverändert an Celery weitergereicht.
+
+Die öffentliche Importposition der beiden verschobenen Exceptions bleibt als
+Kompatibilitätsvertrag erhalten. Rollback ist die Rücknahme der beiden
+Boundary-Adapter; Abbruchkriterium sind erhöhte Retry-Raten, unbegrenzte
+Wiederholungen oder interne Detailtexte in Command-Ausgabe beziehungsweise
+Job-Logs.
+
 Für jede weitere Kohorte werden vor Deployment Owner, betroffene öffentliche
 Verträge, Metriken/Logs, Abbruchkriterium und ein reversibler Rollback benannt.
 Baseline-Reduktionen bleiben beim Rollback erhalten, sofern kein entfernter

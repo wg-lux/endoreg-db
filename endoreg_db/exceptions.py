@@ -141,3 +141,44 @@ def describe_interoperability_error(
     """Return the public and operational contract for a known error."""
 
     return error.descriptor
+
+
+class JobErrorCode(StrEnum):
+    """Stable machine-readable codes for background-job boundaries."""
+
+    MEDIA_OPERATION_DEFERRED = "media_operation_deferred"
+
+
+@dataclass(frozen=True, slots=True)
+class JobErrorDescriptor:
+    """Operational policy for an expected background-job failure."""
+
+    code: JobErrorCode
+    log_reason: str
+    retryable: bool
+    minimum_countdown_seconds: int
+    max_retries: int
+
+
+class JobError(RuntimeError):
+    """Base class for failures with an explicit worker-boundary policy."""
+
+    descriptor: JobErrorDescriptor
+
+
+class MediaOperationDeferred(JobError):
+    """Raised when media work must wait for active operations to drain."""
+
+    descriptor = JobErrorDescriptor(
+        code=JobErrorCode.MEDIA_OPERATION_DEFERRED,
+        log_reason="active_media_operation",
+        retryable=True,
+        minimum_countdown_seconds=60,
+        max_retries=20,
+    )
+
+
+def describe_job_error(error: JobError) -> JobErrorDescriptor:
+    """Return the retry and audit contract for a known job error."""
+
+    return error.descriptor

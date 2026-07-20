@@ -12,6 +12,7 @@ from endoreg_db.config.env import (
     get_media_operation_segment_update_grace_seconds,
     get_media_operation_stream_lease_seconds,
 )
+from endoreg_db.exceptions import MediaOperationDeferred
 from endoreg_db.models.media.operation_lease import MediaOperationLease
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
@@ -30,10 +31,6 @@ logger = logging.getLogger(__name__)
 
 FFMPEG_STREAM_THROTTLE_NORMAL: Final[StreamThrottleMode] = "normal"
 FFMPEG_STREAM_THROTTLE_STREAMING: Final[StreamThrottleMode] = "streaming"
-
-
-class MediaOperationDeferred(RuntimeError):
-    """Raised when media work must wait for active streaming or edits to drain."""
 
 
 def expire_media_operation_leases(*, video_id: int | None = None) -> int:

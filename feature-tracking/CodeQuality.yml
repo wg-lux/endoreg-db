@@ -132,10 +132,17 @@ definition_of_done:
       reference: endoreg_db/exceptions.py
     - kind: code
       reference: endoreg_db/views/interoperability_errors.py
-    note: DICOM/FHIR now use centralized typed codes, safe messages, audit reasons and retry semantics;
-      FHIR has one HTTP mapper and preserves chained causes. Command and background-job cohorts remain.
+    - kind: code
+      reference: endoreg_db/management/command_errors.py
+    - kind: code
+      reference: endoreg_db/services/jobs/error_handling.py
+    - kind: command
+      reference: pytest DICOM backfill and Celery task boundaries (22 passed)
+    note: DICOM/FHIR decken HTTP und Integration ab; der DICOM-Backfill besitzt nun eine sichere zentrale
+      Command-Übersetzung und MediaOperationDeferred eine einheitliche Celery-Retry-Policy mit strukturiertem
+      Audit. Weitere Altbestand-Commands und Jobs bleiben zu migrieren.
     assessed_by: Codex
-    assessed_at: '2026-07-17T13:58:06Z'
+    assessed_at: '2026-07-17T14:33:49.850571Z'
 - id: quality_regression_guards
   category: testing
   title: Automatisierte Guards verhindern neue Qualitätsregressionen
@@ -150,10 +157,10 @@ definition_of_done:
   verification:
     kind: command
     command:
-    - .devenv/state/venv/bin/pyright
-    - devenv tasks run quality:dead-code
-    - devenv tasks run quality:boundaries
-    - devenv tasks run test:fast
+    - devenv
+    - tasks
+    - run
+    - quality:code-regression
     timeout_seconds: 1800
   assessment:
     status: in_progress
@@ -178,11 +185,13 @@ definition_of_done:
       reference: .devenv/state/venv/bin/pyright (0 errors, 0 warnings)
     - kind: document
       reference: quality/quality_boundary_baseline.yml
-    note: Dead-Code- und Quality-Boundary-Guards sind versioniert und in Devenv sowie Pre-commit eingebunden.
-      Der neue semantische Fingerprint verhindert unreviewte breite Exception-Handler und Type-Suppressions;
-      repräsentative Exception-Mapping- und Retry-Verträge außerhalb der DICOM/FHIR-Kohorte bleiben offen.
+    - kind: command
+      reference: pytest DICOM backfill and Celery task boundaries (22 passed)
+    note: Dead-Code- und Boundary-Guards bleiben sauber; die zweite Exception-Kohorte deckt Command-Exitcode,
+      Chaining, drei Retry-Pfade, Unknown-Error-Passthrough und Importkompatibilität ab. Der restliche
+      Altbestand bleibt schrittweise zu reduzieren.
     assessed_by: Codex
-    assessed_at: '2026-07-17T14:01:13.926085Z'
+    assessed_at: '2026-07-17T14:33:52.295400Z'
 - id: secure_failure_semantics
   category: security
   title: Zentralisierte Fehlerbehandlung bleibt fail-closed und datensparsam
@@ -207,11 +216,15 @@ definition_of_done:
       reference: tests/services/test_fhir_r4_export.py::test_patient_examination_fhir_endpoint_maps_expected_export_error
     - kind: test
       reference: tests/services/test_dicom_interoperability.py::test_import_fails_closed_when_artifact_integrity_check_fails
-    note: The interoperability cohort returns only stable safe details, hashes audit identifiers, preserves
-      fail-closed integrity behavior, and passes unexpected errors through. Other security/storage error
-      boundaries remain to be assessed.
+    - kind: test
+      reference: tests/services/test_dicom_manifest_backfill.py::test_command_maps_backfill_failure_to_safe_stable_contract
+    - kind: test
+      reference: tests/test_tasks.py::test_job_boundary_preserves_unknown_error_without_retry
+    note: Command-Ausgabe und Job-Logs der zweiten Kohorte sind datensparsam; interne Ursachen bleiben
+      verkettet, Objektidentitäten werden gehasht und unbekannte Fehler nicht automatisch erneut versucht.
+      Weitere Security- und Storage-Grenzen bleiben.
     assessed_by: Codex
-    assessed_at: '2026-07-17T13:58:06Z'
+    assessed_at: '2026-07-17T14:33:54.821735Z'
 - id: incremental_rollout
   category: operations
   title: Qualitätsrefactorings besitzen einen kontrollierten Rollout- und Rollbackpfad
@@ -237,11 +250,13 @@ definition_of_done:
       reference: docs/code_quality.md
     - kind: document
       reference: quality/quality_boundary_baseline.yml
-    note: Für die erste DICOM/FHIR-Kohorte sind Vertragsänderung, Abbruchkriterium und Rollback dokumentiert;
-      die Boundary-Baseline macht Schuldenänderungen pro Kohorte sichtbar. Deploymentbeobachtung und weitere
-      Domänenkohorten bleiben offen.
+    - kind: test
+      reference: tests/test_tasks.py::test_media_tasks_share_retry_contract_when_media_busy
+    note: Die zweite Kohorte dokumentiert Command-Exitcode, zentralisierte Retry-Parameter, Kompatibilitätsimporte,
+      Auditfelder, Abbruchkriterien und Adapter-Rollback; Produktionsbeobachtung und weitere Domänenkohorten
+      bleiben offen.
     assessed_by: Codex
-    assessed_at: '2026-07-17T14:01:38.295461Z'
+    assessed_at: '2026-07-17T14:33:57.477090Z'
 - id: contributor_guidance
   category: documentation
   title: Entwickler können Qualitätsgrenzen konsistent anwenden
@@ -270,8 +285,12 @@ definition_of_done:
       reference: docs/code_quality.md#qualitäts-boundary-guard
     - kind: document
       reference: docs/code_quality.md#exception-grenzen
-    note: Die Dokumentation enthält nun ein konkretes DICOM/FHIR-Exception-Beispiel, Baseline-Reviewregeln
-      sowie Rollout-, Abbruch- und Rollbackvorgaben. Ein zweites End-to-End-Beispiel für Command- oder
-      Job-Grenzen bleibt offen.
+    - kind: code
+      reference: endoreg_db/management/command_errors.py
+    - kind: code
+      reference: endoreg_db/services/jobs/error_handling.py
+    note: Die Dokumentation enthält nun neben HTTP/Integration ein vollständiges Command-/Job-Beispiel
+      mit Exitcode, Retry-Policy, Chaining, sicheren Logs, Kompatibilität und Rollback. Weitere Altbestandsmigrationen
+      bleiben.
     assessed_by: Codex
-    assessed_at: '2026-07-17T14:01:20.120132Z'
+    assessed_at: '2026-07-17T14:34:00.318493Z'

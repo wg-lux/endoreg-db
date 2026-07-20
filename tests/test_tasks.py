@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import logging
 import re
 from pathlib import Path
 from typing import Any, Protocol, cast
@@ -10,6 +11,9 @@ import pytest
 from django.conf import settings
 
 from endoreg_db import tasks
+from endoreg_db.exceptions import (
+    MediaOperationDeferred as CentralMediaOperationDeferred,
+)
 from endoreg_db.services.media_operation_gate import MediaOperationDeferred
 
 
@@ -120,17 +124,49 @@ def test_video_post_validation_rebuild_task_delegates_with_normalized_args() -> 
     runner.assert_called_once_with(42, only_validated=True, history_id=7)
 
 
-def test_video_post_validation_rebuild_task_retries_when_media_busy() -> None:
-    deferred = MediaOperationDeferred("active stream")
-    retry_exc = RuntimeError("retry requested")
-    current_task = _current_task(tasks.run_video_post_validation_rebuild_task)
-
-    with (
-        patch(
+@pytest.mark.parametrize(
+    ("task", "service_path", "args", "kwargs", "job_name"),
+    [
+        (
+            tasks.run_video_reimport_task,
+            "endoreg_db.services.jobs.video_reimport_jobs._run_video_reimport_job",
+            ("42",),
+            {},
+            "video_reimport",
+        ),
+        (
+            tasks.run_video_anonymization_correction_task,
+            "endoreg_db.services.jobs.video_correction_jobs."
+            "run_video_anonymization_correction",
+            ("42", "7"),
+            {},
+            "video_anonymization_correction",
+        ),
+        (
+            tasks.run_video_post_validation_rebuild_task,
             "endoreg_db.services.jobs.video_post_validation_jobs."
             "_run_video_post_validation_rebuild",
-            side_effect=deferred,
-        ) as runner,
+            ("42",),
+            {"only_validated": 1, "history_id": "7"},
+            "video_post_validation_rebuild",
+        ),
+    ],
+)
+def test_media_tasks_share_retry_contract_when_media_busy(
+    task: object,
+    service_path: str,
+    args: tuple[object, ...],
+    kwargs: dict[str, object],
+    job_name: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    deferred = MediaOperationDeferred("active stream")
+    retry_exc = RuntimeError("retry requested")
+    current_task = _current_task(task)
+
+    with (
+        caplog.at_level(logging.INFO, logger="endoreg_db.jobs"),
+        patch(service_path, side_effect=deferred),
         patch(
             "endoreg_db.config.env.get_video_post_validation_dispatch_delay_seconds",
             return_value=17,
@@ -138,14 +174,40 @@ def test_video_post_validation_rebuild_task_retries_when_media_busy() -> None:
         patch.object(current_task, "retry", side_effect=retry_exc) as retry,
         pytest.raises(RuntimeError, match="retry requested"),
     ):
-        cast(Any, tasks.run_video_post_validation_rebuild_task).run(
-            "42",
-            only_validated=1,
-            history_id="7",
-        )
+        cast(Any, task).run(*args, **kwargs)
 
-    runner.assert_called_once_with(42, only_validated=True, history_id=7)
-    retry.assert_called_once_with(exc=deferred, countdown=17, max_retries=20)
+    retry.assert_called_once_with(exc=deferred, countdown=60, max_retries=20)
+    event = getattr(caplog.records[-1], "structured_event", {})
+    assert event["event"] == "job.retry_scheduled"
+    assert event["job_name"] == job_name
+    assert event["error_code"] == "media_operation_deferred"
+    assert event["retryable"] is True
+    assert event["countdown_seconds"] == 60
+    assert "subject_id_sha256" in event
+    assert "active stream" not in caplog.text
+
+
+def test_job_boundary_preserves_unknown_error_without_retry() -> None:
+    sentinel = RuntimeError("unknown job failure")
+    current_task = _current_task(tasks.run_video_post_validation_rebuild_task)
+
+    with (
+        patch(
+            "endoreg_db.services.jobs.video_post_validation_jobs."
+            "_run_video_post_validation_rebuild",
+            side_effect=sentinel,
+        ),
+        patch.object(current_task, "retry") as retry,
+        pytest.raises(RuntimeError) as exc_info,
+    ):
+        cast(Any, tasks.run_video_post_validation_rebuild_task).run("42")
+
+    assert exc_info.value is sentinel
+    retry.assert_not_called()
+
+
+def test_media_operation_deferred_public_import_remains_compatible() -> None:
+    assert MediaOperationDeferred is CentralMediaOperationDeferred
 
 
 def test_video_hls_materialization_task_delegates_with_normalized_args() -> None:
