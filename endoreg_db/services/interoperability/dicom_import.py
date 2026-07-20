@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-import hashlib
-import json
 import logging
 from typing import Protocol
 
@@ -26,6 +24,7 @@ from endoreg_db.models.interoperability.dicom import (
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.schemas.dicom_export import (
     DicomExportManifestV2,
+    dicom_export_manifest_sha256,
     validate_dicom_export_manifest_v2,
 )
 from endoreg_db.utils.structured_logging import emit_structured_event, hash_identifier
@@ -83,16 +82,6 @@ def _emit_import_error(
         reason=descriptor.log_reason,
         level=logging.ERROR,
     )
-
-
-def _manifest_digest(manifest: DicomExportManifestV2) -> str:
-    canonical = json.dumps(
-        manifest.model_dump(mode="json", exclude_none=True),
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=True,
-    ).encode("utf-8")
-    return hashlib.sha256(canonical).hexdigest()
 
 
 def _verify_artifacts(
@@ -154,7 +143,7 @@ def import_dicom_export_manifest(
             patient_examination_id=patient_examination.pk,
         )
         raise error from exc
-    digest = _manifest_digest(manifest)
+    digest = dicom_export_manifest_sha256(manifest)
     try:
         _verify_artifacts(manifest, artifact_verifier)
     except DicomArtifactIntegrityError as error:

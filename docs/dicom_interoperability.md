@@ -63,6 +63,56 @@ Fallback. Sobald eine spätere Ausbaustufe Daten zwischen Knoten transportiert,
 gelten mTLS und die Envelope-Encryption-Vorgaben des jeweiligen
 Deploymentprofils; der Master-Key darf nie übertragen werden.
 
+### Versions- und Backfillvertrag
+
+Die Runtime akzeptiert ausschließlich Manifestversion 2. Eine fehlende,
+stringförmige oder unbekannte `schema_version` wird vor der weiteren
+Payloadvalidierung mit der unterstützten Version abgewiesen. Insbesondere wird
+Version 1 nicht implizit ergänzt oder geraten; dafür existiert kein sicher
+definierter Quellvertrag.
+
+Bestehende V2-JSON-Datensätze werden mit folgendem Command geprüft:
+
+```text
+python manage.py backfill_dicom_manifest_v2
+```
+
+Der Default ist ein schreibfreier Dry-run. Er validiert jeden Datensatz,
+vergleicht `export_id` mit dem Primärschlüssel und meldet, wie viele Manifeste
+kanonisiert werden müssten. `--apply` sperrt die betroffenen Zeilen und schreibt
+kanonisches Manifest, Version und SHA-256 gemeinsam in genau einer
+Datenbanktransaktion. Ein einziger unbekannter oder ungültiger Datensatz bricht
+die gesamte Kohorte ab; Teilupdates werden zurückgerollt. Fehlermeldungen
+enthalten nur einen gehashten Datensatzbezug und niemals Manifestinhalt,
+Patientenpseudonym, DICOM-UID oder Artefaktpfad.
+
+Die Deploymentprobe verwendet
+`tests/fixtures/dicom_manifest_v2_existing.json` als versionierten
+Bestandsdatensatz und weist Dry-run, Apply, vollständigen Transaktionsrollback
+und die klare Ablehnung unbekannter Versionen nach. Sie läuft über
+`devenv tasks run quality:type-safety-operational`.
+
+### Rollout, Kompatibilitätsdauer und Rollback
+
+Vor `--apply` wird ein verschlüsseltes Datenbankbackup der betroffenen
+`DicomExportJob`-Zeilen nach dem freigegebenen Datenbank-Runbook erstellt. Der
+Dry-run muss ohne Validierungsfehler enden. Die Ausführung erfolgt in einem
+Wartungsfenster; Abbruchkriterien sind jeder Versions-/Validierungsfehler, eine
+unerwartete Anzahl zu ändernder Datensätze oder ein Digest-Konflikt. Erst nach
+erfolgreichem Apply werden Importworker wieder freigegeben.
+
+Der Backfill verändert nur die kanonische Darstellung desselben V2-Vertrags.
+Ein Code-Rollback ist deshalb ohne Datenrückmigration möglich. Falls dennoch
+die vorherige JSON-Darstellung benötigt wird, werden ausschließlich
+`schema_version`, `manifest` und `manifest_sha256` aus dem verschlüsselten
+Backup wiederhergestellt; Artefakte und Schlüssel werden nicht kopiert.
+
+Version 2 bleibt mindestens zwölf Monate nach der ersten produktiven Freigabe
+einer späteren Version lesbar. Ein konkretes V2-Enddatum darf erst gemeinsam
+mit dem Nachfolgeschema, dessen explizitem Backfill und einer erfolgreichen
+Rollbackprobe festgelegt werden. Bis dahin gibt es kein V2-Enddatum; spätere
+unbekannte Versionen schlagen weiterhin fail-closed fehl.
+
 ## Beobachtbarkeit
 
 Der Logger `endoreg_db.interoperability.dicom` erzeugt strukturierte Ereignisse:

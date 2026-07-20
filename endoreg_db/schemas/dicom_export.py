@@ -2,9 +2,12 @@ from __future__ import annotations
 
 # This module mirrors the shared lx-dtypes contract until the next lx-dtypes
 # release is available to the pinned endoreg-db runtime.
+from collections.abc import Mapping
 from datetime import date, datetime
+import hashlib
+import json
 import re
-from typing import Literal, Self
+from typing import Literal, Self, cast
 from uuid import UUID
 
 from pydantic import (
@@ -19,6 +22,11 @@ from pydantic import (
 
 _DICOM_UID_PATTERN = re.compile(r"^[0-9]+(?:\.[0-9]+)+$")
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+DICOM_EXPORT_MANIFEST_SCHEMA_VERSION = 2
+
+
+class UnsupportedDicomManifestVersionError(ValueError):
+    """Raised before payload validation when the manifest version is unsupported."""
 
 
 class _ContractModel(BaseModel):
@@ -147,6 +155,22 @@ class DicomExportManifestV2(_ContractModel):
 
 
 def validate_dicom_export_manifest_v2(value: object) -> DicomExportManifestV2:
+    if isinstance(value, Mapping):
+        mapping = cast(Mapping[object, object], value)
+        raw_version: object | None = mapping.get("schema_version")
+        if raw_version != DICOM_EXPORT_MANIFEST_SCHEMA_VERSION or isinstance(
+            raw_version, bool
+        ):
+            display_version = (
+                repr(raw_version)
+                if raw_version is None or isinstance(raw_version, (str, int))
+                else type(raw_version).__name__
+            )
+            raise UnsupportedDicomManifestVersionError(
+                "unsupported DICOM manifest schema_version "
+                f"{display_version}; supported version is "
+                f"{DICOM_EXPORT_MANIFEST_SCHEMA_VERSION}"
+            )
     try:
         return DicomExportManifestV2.model_validate(value)
     except ValidationError as exc:
@@ -159,11 +183,24 @@ def dump_dicom_export_manifest_v2(value: object) -> dict[str, object]:
     )
 
 
+def dicom_export_manifest_sha256(value: object) -> str:
+    canonical = json.dumps(
+        dump_dicom_export_manifest_v2(value),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
 __all__ = [
+    "DICOM_EXPORT_MANIFEST_SCHEMA_VERSION",
     "DicomExportManifestV2",
     "DicomInstanceManifest",
     "DicomSeriesManifest",
     "DicomStudyManifest",
+    "UnsupportedDicomManifestVersionError",
+    "dicom_export_manifest_sha256",
     "dump_dicom_export_manifest_v2",
     "validate_dicom_export_manifest_v2",
 ]

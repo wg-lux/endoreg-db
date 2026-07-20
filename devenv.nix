@@ -288,6 +288,19 @@ in
       description = "Reject unreviewed broad exceptions and type suppressions";
       exec = ".devenv/state/venv/bin/python scripts/check_quality_boundaries.py";
     };
+    "quality:type-safety-operational" = {
+      description = "Rehearse the persisted DICOM V2 JSON migration path";
+      exec = ".devenv/state/venv/bin/pytest tests/services/test_dicom_manifest_backfill.py -q";
+    };
+    "quality:code-regression" = {
+      description = "Run the versioned quality guards and fast regression lane";
+      exec = ''
+        .devenv/state/venv/bin/pyright
+        .devenv/state/venv/bin/python scripts/check_dead_code.py
+        .devenv/state/venv/bin/python scripts/check_quality_boundaries.py
+        devenv tasks run test:fast
+      '';
+    };
     "celery:check" = {
       description = "Validate Celery broker, queue, and secure transport settings";
       exec = ''

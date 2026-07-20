@@ -41,6 +41,7 @@ class InteroperabilityErrorCode(StrEnum):
     DICOM_ARTIFACT_INTEGRITY_FAILED = "dicom_artifact_integrity_failed"
     DICOM_IDENTITY_CONFLICT = "dicom_identity_conflict"
     DICOM_CONCURRENT_IDENTITY_CONFLICT = "dicom_concurrent_identity_conflict"
+    DICOM_MANIFEST_BACKFILL_INVALID = "dicom_manifest_backfill_invalid"
     FHIR_EXPORT_INVALID = "fhir_export_invalid"
 
 
@@ -105,6 +106,17 @@ class DicomConcurrentImportConflictError(DicomImportConflictError):
         safe_message="A concurrent DICOM import created an identity conflict.",
         log_reason="concurrent_identity_conflict",
         retryable=True,
+    )
+
+
+class DicomManifestBackfillError(InteroperabilityError):
+    """Raised when persisted DICOM manifests cannot be migrated atomically."""
+
+    descriptor = InteroperabilityErrorDescriptor(
+        code=InteroperabilityErrorCode.DICOM_MANIFEST_BACKFILL_INVALID,
+        safe_message="Persisted DICOM manifests could not be safely migrated.",
+        log_reason="manifest_backfill_invalid",
+        retryable=False,
     )
 
 

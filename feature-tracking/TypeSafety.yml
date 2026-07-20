@@ -130,7 +130,6 @@ definition_of_done:
     kind: command
     command:
     - .devenv/state/venv/bin/pyright
-    - devenv tasks run quality:boundaries
     timeout_seconds: 1200
   assessment:
     status: verified
@@ -184,12 +183,21 @@ definition_of_done:
   - Backfill, Rollback und Kompatibilitätsdauer sind vor Deployment definiert.
   required: true
   verification:
-    kind: manual
-    instructions: Repräsentatives Schema-Upgrade mit bestehendem JSON-Datenbestand proben.
-    timeout_seconds: 300
+    kind: command
+    command:
+    - devenv
+    - tasks
+    - run
+    - quality:type-safety-operational
+    timeout_seconds: 600
   assessment:
-    status: not_assessed
-    evidence: []
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv tasks run quality:type-safety-operational
+      note: Exit-Code 0
+    assessed_by: Codex
+    assessed_at: '2026-07-17T14:33:25.372099Z'
 - id: contributor_documentation
   category: documentation
   title: Entwickler können Typ- und Modellgrenzen konsistent erweitern
