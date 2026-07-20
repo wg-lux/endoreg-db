@@ -420,3 +420,99 @@ class FrameStreamViewTests(TestCase):
         assert resp.status_code == 409
         assert data["status"] == "frame_decode_failed"
         assert data["file_type"] == "processed"
+
+    def test_decoded_raw_frame_stream_rejects_video_outside_center_scope(self) -> None:
+        from endoreg_db.views import access_control
+        from endoreg_db.views.media import frame_media as frame_media_module
+
+        self.video.raw_file.save(
+            "videos/raw_frame_stream_wrong_center.mp4",
+            ContentFile(b"fake raw video"),
+            save=True,
+        )
+
+        def resolve_other_center(_user: object) -> int:
+            return int(self.center.pk) + 1
+
+        def fail_raw_frame_decode(*args: object, **kwargs: object) -> object:
+            _ = args, kwargs
+            pytest.fail("raw frame decode must not run")
+
+        monkeypatches = pytest.MonkeyPatch()
+        monkeypatches.setattr(
+            access_control,
+            "resolve_allowed_center_id",
+            resolve_other_center,
+        )
+        monkeypatches.setattr(
+            frame_media_module,
+            "read_video_file_frame_jpeg",
+            fail_raw_frame_decode,
+        )
+
+        try:
+            request = APIRequestFactory().get(
+                f"/api/media/videos/{self.video.pk}/frames/"
+                f"{self.frame.frame_number}/decoded-stream/?file_type=raw"
+            )
+            response = frame_media_module.DecodedFrameStreamView.as_view()(
+                request,
+                video_id=self.video.pk,
+                frame_number=self.frame.frame_number,
+            )
+        finally:
+            monkeypatches.undo()
+
+        assert response.status_code == 404
+
+    def test_decoded_processed_frame_stream_remains_available_across_centers(self) -> None:
+        from endoreg_db.views import access_control
+        from endoreg_db.views.media import frame_media as frame_media_module
+
+        self.video.processed_file.save(
+            "videos/processed_frame_stream_cross_center.mp4",
+            ContentFile(b"fake processed video"),
+            save=True,
+        )
+
+        def resolve_other_center(_user: object) -> int:
+            return int(self.center.pk) + 1
+
+        def read_processed_frame(*args: object, **kwargs: object) -> object:
+            _ = args
+            frame_number = kwargs["frame_number"]
+            assert isinstance(frame_number, int)
+            return SimpleNamespace(
+                frame_number=frame_number,
+                timestamp=1.25,
+                content_type="image/jpeg",
+                image_bytes=b"\xff\xd8processed-jpeg",
+            )
+
+        monkeypatches = pytest.MonkeyPatch()
+        monkeypatches.setattr(
+            access_control,
+            "resolve_allowed_center_id",
+            resolve_other_center,
+        )
+        monkeypatches.setattr(
+            frame_media_module,
+            "read_video_file_frame_jpeg",
+            read_processed_frame,
+        )
+
+        try:
+            request = APIRequestFactory().get(
+                f"/api/media/videos/{self.video.pk}/frames/"
+                f"{self.frame.frame_number}/decoded-stream/?file_type=processed"
+            )
+            response = frame_media_module.DecodedFrameStreamView.as_view()(
+                request,
+                video_id=self.video.pk,
+                frame_number=self.frame.frame_number,
+            )
+        finally:
+            monkeypatches.undo()
+
+        assert response.status_code == 200
+        assert response.content == b"\xff\xd8processed-jpeg"

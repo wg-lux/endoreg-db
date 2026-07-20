@@ -25,6 +25,7 @@ from endoreg_db.services.jobs.frame_extraction_jobs import (
 )
 from endoreg_db.services.video_files import get_video_frame_dir_path
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.views.access_control import assert_center_scope_allowed
 from endoreg_db.utils.paths import (
     ensure_within_protected_media_root,
 )
@@ -377,6 +378,13 @@ class DecodedFrameStreamView(APIView):
         if parse_error is not None:
             return parse_error
         assert artifact_kind is not None
+
+        if artifact_kind == VideoArtifactKind.RAW:
+            assert_center_scope_allowed(
+                request=request,
+                obj=video,
+                not_found_message="Video not found",
+            )
 
         if not self._video_has_selected_artifact(video, artifact_kind):
             raise Http404(

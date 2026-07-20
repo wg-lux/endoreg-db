@@ -45,6 +45,9 @@ definition_of_done:
   acceptance:
   - Wiederholte Operationen sind idempotent und erhalten Provenienz.
   - Ungültige Zeitsegmente und unfertige Annotationen werden abgelehnt.
+  - Das Speichern von Frame-Boxen erzeugt einen eindeutigen positiven oder negativen Review-Zustand
+    und wechselt erst nach erfolgreicher Persistenz zur nächsten Aufgabe.
+  - Vorab geladene Frame-Aufgaben enthalten innerhalb einer Queue-Generation keine doppelten Frame-IDs.
   required: true
   verification:
     kind: command
@@ -61,8 +64,14 @@ definition_of_done:
       reference: .devenv/state/venv/bin/pytest tests/services/test_segment_annotation_flow.py tests/views/video/test_frame_annotation_bulk_upsert.py
         -q
       note: Exit-Code 0
+    - kind: command
+      reference: PATH=/home/admin/dev/lx-annotate/.devenv/profile/bin:$PATH npm run test:unit -- --run
+        src/views/__tests__/FrameAnnotationPage.test.ts src/views/__tests__/FrameAnnotationPage.usability.test.ts
+        src/stores/__tests__/annotationQueue.test.ts
+      note: 28 Tests bestanden; positive und negative Box-Reviews, Fortschaltung und Queue-Deduplizierung
+        sind abgedeckt.
     assessed_by: Codex
-    assessed_at: '2026-07-17T12:10:01.106971Z'
+    assessed_at: '2026-07-20T13:46:44+02:00'
 - id: automated_tests
   category: testing
   title: Service-, API- und Reconciliation-Pfade sind regressionsgetestet
@@ -97,6 +106,8 @@ definition_of_done:
     erfordert Staff-, Superuser- oder center_scope:admin-Rechte.
   - Interaktive Frame- und Box-Endpunkte akzeptieren ausschließlich manuelle Informationsquellen und können
     keine Prediction-Provenienz erzeugen.
+  - Direkt aus Rohvideo dekodierte Frames werden nur innerhalb des Center-Scopes des authentifizierten
+    Nutzers ausgeliefert; verarbeitete Frames bleiben gemäß dem center-übergreifenden Annotationsvertrag verfügbar.
   required: true
   verification:
     kind: manual
@@ -114,12 +125,18 @@ definition_of_done:
     - kind: command
       reference: tests/views/video/test_hls_stream.py::test_hls_playlist_rejects_video_outside_user_center_scope
         (passed)
+    - kind: command
+      reference: devenv shell bash -lc '.devenv/state/venv/bin/pytest tests/views/media/test_frame_stream.py
+        tests/views/video/test_frame_annotation_task_endpoints.py tests/views/video/test_frame_annotation_bulk_upsert.py
+        tests/views/video/test_frame_box_annotation.py -q'
+      note: 46 Tests bestanden; fremde Raw-Frames liefern 404, verarbeitete Frames bleiben center-übergreifend
+        verfügbar.
     note: Cross-center annotation and processed export are allowed; authenticated principal and manual
       provenance remain enforced. Raw-stream foreign-center access returns privacy-preserving 404. The
       separate same-center raw HLS test currently exposes an existing artifact materialization-state failure
       and remains residual risk.
     assessed_by: Codex
-    assessed_at: '2026-07-17T12:11:06.557955Z'
+    assessed_at: '2026-07-20T13:46:44+02:00'
 - id: data_consistency
   category: data_integrity
   title: Frame- und Segmentzustand bleibt widerspruchsfrei
