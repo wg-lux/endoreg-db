@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Protocol, cast
+from typing import Any
 
 from django.contrib.auth.models import AnonymousUser, User
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -26,17 +26,9 @@ class ExportConflictError(RuntimeError):
     pass
 
 
-class AnnotationExporterClientProtocol(Protocol):
-    def run_export(self, config: export_config) -> export_result: ...
-
-
-class _ExportAnnotatedConfigWithExporterConfig(Protocol):
-    def to_export_config(self) -> export_config: ...
-
-
 @dataclass(slots=True)
 class ExportAnnotatedService:
-    client: AnnotationExporterClientProtocol
+    client: annotation_exporter_client
 
     @classmethod
     def default(cls) -> ExportAnnotatedService:
@@ -53,9 +45,7 @@ class ExportAnnotatedService:
         self._validate_scope_after_loading(config=contract, user=user)
         self._validate_video_specific_export(contract)
 
-        config = cast(
-            _ExportAnnotatedConfigWithExporterConfig, contract
-        ).to_export_config()
+        config: export_config = contract.to_export_config()
         try:
             return self.client.run_export(config)
         except export_job_failed_error:
