@@ -47,13 +47,13 @@ repos:
         files: ^(endoreg_db/.*\.py|scripts/.*\.py|quality/quality_boundary_baseline\.yml)$
       - id: django-startup-smoke
         name: django startup smoke
-        entry: .devenv/state/venv/bin/python scripts/check_django_startup_imports.py
+        entry: devenv shell -- .devenv/state/venv/bin/python scripts/check_django_startup_imports.py
         language: system
         pass_filenames: false
         always_run: true
       - id: deployment-settings-contract
         name: deployment settings contract
-        entry: pytest tests/deployment/test_prod_settings_contract.py -q
+        entry: devenv shell -- .devenv/state/venv/bin/pytest tests/deployment/test_prod_settings_contract.py -q
         language: system
         pass_filenames: false
       - id: pytest-expensive
@@ -64,11 +64,11 @@ repos:
         stages: [manual]
       - id: deploy-django
         name: deploy check for django resolve
-        entry: env DJANGO_SETTINGS_MODULE=endoreg_db.config.settings.test .devenv/state/venv/bin/python manage.py check --deploy
+        entry: devenv shell -- env DJANGO_SETTINGS_MODULE=endoreg_db.config.settings.test .devenv/state/venv/bin/python manage.py check --deploy
         language: system
         pass_filenames: false
       - id: resolve-django
         name: resolve all check_django_startup_imports
-        entry: pytest tests/test_resolve.py
+        entry: devenv shell -- .devenv/state/venv/bin/pytest tests/test_resolve.py
         language: system
         pass_filenames: false

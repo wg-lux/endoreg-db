@@ -3,13 +3,12 @@ from __future__ import annotations
 
 import logging
 import uuid
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from pathlib import Path
-from collections.abc import Mapping
 from typing import Any, Literal, NotRequired, TypedDict, cast
 
 from django.core.files.uploadedfile import UploadedFile
-from django.db import transaction
+from django.db import models, transaction
 from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
 
 from endoreg_db.models.administration.center.center import Center
@@ -19,6 +18,10 @@ from endoreg_db.models.label.annotation.image_classification import (
     ImageClassificationAnnotation,
 )
 from endoreg_db.models.label.label import Label
+from endoreg_db.models.label.label_video_segment.label_video_segment import (
+    LabelVideoSegment,
+    suppress_label_video_segment_state_side_effects,
+)
 from endoreg_db.models.media.frame.frame import Frame
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
@@ -32,6 +35,9 @@ from endoreg_db.models.other.information_source import (
 from endoreg_db.models.report.patient_examination_report import PatientExaminationReport
 from endoreg_db.models.state.raw_pdf import RawPdfState
 from endoreg_db.models.state.video import VideoState
+from endoreg_db.models.state.label_video_segment import LabelVideoSegmentState
+from endoreg_db.models.metadata.model_meta import ModelMeta
+from endoreg_db.models.metadata.video_prediction_meta import VideoPredictionMeta
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
@@ -54,6 +60,9 @@ from .ingest import _default_processor_name
 logger = logging.getLogger(__name__)
 
 _SAFE_SENSITIVE_META_FIELDS = frozenset({"patient_hash", "examination_hash"})
+_RECEIVER_MANAGED_TRANSFER_PROVENANCE_FIELDS = frozenset(
+    {"media_uploads", "case_resolution"}
+)
 _UNSAFE_STRUCTURED_REPORT_FIELDS = frozenset(
     {
         "title",
@@ -245,6 +254,15 @@ def _normalized_transfer_provenance(
     return normalized
 
 
+def _canonical_sender_transfer_provenance(
+    provenance: TransferProvenance,
+) -> TransferProvenance:
+    canonical = _transfer_provenance(provenance)
+    for field_name in _RECEIVER_MANAGED_TRANSFER_PROVENANCE_FIELDS:
+        canonical.pop(field_name, None)
+    return canonical
+
+
 def create_or_reuse_transfer_job(
     *,
     transfer_key: str,
@@ -267,13 +285,49 @@ def create_or_reuse_transfer_job(
     existing = transfer_job_manager.filter(transfer_key=transfer_key).first()
     source_node_pk = cast(int, source_node.pk)
     target_node_pk = cast(int, target_node.pk)
+    normalized_provenance = _normalized_transfer_provenance(
+        provenance=provenance,
+        source_node=source_node,
+        target_node=target_node,
+        source_center=source_center,
+        transfer_mode=transfer_mode,
+        processing_policy=processing_policy,
+        cleanup_policy=cleanup_policy,
+    )
     if existing is not None:
-        if (
+        identity_mismatch = (
             existing.source_node_id != source_node_pk
             or existing.target_node_id != target_node_pk
             or existing.resource_kind != resource_kind
             or existing.resource_hash != resource_hash
-        ):
+        )
+        payload_matches = (
+            existing.source_center_id == getattr(source_center, "pk", None)
+            and existing.transfer_mode == transfer_mode
+            and existing.processing_policy == processing_policy
+            and existing.processing_intent == processing_intent
+            and existing.cleanup_policy == cleanup_policy
+            and existing.payload_schema_version == payload_schema_version
+            and existing.resource_rows == dict(resource_rows)
+            and existing.processing_snapshot == dict(processing_snapshot)
+            and _canonical_sender_transfer_provenance(
+                _transfer_provenance(existing.provenance)
+            )
+            == _canonical_sender_transfer_provenance(normalized_provenance)
+        )
+        if identity_mismatch or not payload_matches:
+            emit_hub_audit_event(
+                "hub.transfer_job_replay_rejected",
+                transfer_job_id=str(existing.id),
+                source_system="transfer",
+                request_user=created_by,
+                center_key=(
+                    source_center.center_key if source_center is not None else None
+                ),
+                transfer_key=transfer_key,
+                source_node_key=source_node.node_key,
+                reason="canonical_payload_mismatch",
+            )
             raise ValueError(
                 "transfer_key already exists for a different transfer payload"
             )
@@ -302,15 +356,7 @@ def create_or_reuse_transfer_job(
         payload_schema_version=payload_schema_version,
         resource_rows=resource_rows,
         processing_snapshot=processing_snapshot,
-        provenance=_normalized_transfer_provenance(
-            provenance=provenance,
-            source_node=source_node,
-            target_node=target_node,
-            source_center=source_center,
-            transfer_mode=transfer_mode,
-            processing_policy=processing_policy,
-            cleanup_policy=cleanup_policy,
-        ),
+        provenance=normalized_provenance,
         cleanup_status=(
             TransferJob.CleanupStatus.NOT_REQUESTED
             if cleanup_policy == TransferJob.CleanupPolicy.RETAIN_ALL.value
@@ -331,6 +377,65 @@ def create_or_reuse_transfer_job(
         cleanup_policy=cleanup_policy,
     )
     return transfer_job, True
+
+
+def _resource_ownership_conflict_detail(
+    *,
+    transfer_job: TransferJob,
+    target_object_id: int,
+    resource_center_id: int | None,
+) -> str | None:
+    source_center_id = cast(int | None, getattr(transfer_job, "source_center_id", None))
+    if resource_center_id != source_center_id:
+        return "Resource hash is already owned by a different center."
+
+    conflicting_source_exists = (
+        TransferJob.objects.filter(
+            resource_kind=transfer_job.resource_kind,
+            resource_hash=transfer_job.resource_hash,
+            target_object_id=target_object_id,
+        )
+        .exclude(pk=transfer_job.pk)
+        .exclude(source_node_id=cast(int, getattr(transfer_job, "source_node_id")))
+        .exists()
+    )
+    if conflicting_source_exists:
+        return "Resource hash is already owned by a different source node."
+    return None
+
+
+def _mark_transfer_ownership_inconsistent(
+    *,
+    transfer_job: TransferJob,
+    status_detail: str,
+) -> TransferJob:
+    transfer_job.transfer_status = TransferJob.TransferStatus.INCONSISTENT
+    transfer_job.processing_decision = TransferJob.ProcessingDecision.MARK_INCONSISTENT
+    transfer_job.status_detail = status_detail
+    transfer_job.save(
+        update_fields=[
+            "transfer_status",
+            "processing_decision",
+            "status_detail",
+            "updated_at",
+        ]
+    )
+    emit_hub_audit_event(
+        "hub.transfer_resource_ownership_conflict",
+        transfer_job_id=str(transfer_job.id),
+        source_system="transfer",
+        center_key=(
+            transfer_job.source_center.center_key
+            if transfer_job.source_center is not None
+            else None
+        ),
+        transfer_key=transfer_job.transfer_key,
+        source_node_key=transfer_job.source_node.node_key,
+        resource_kind=transfer_job.resource_kind,
+        resource_hash_sha256=hash_identifier(transfer_job.resource_hash),
+        reason="resource_ownership_conflict",
+    )
+    return transfer_job
 
 
 def authenticate_network_node(
@@ -437,6 +542,14 @@ def attach_transfer_media(
     uploaded_file: UploadedFile,
     media_role: str,
 ) -> TransferJob:
+    if (
+        transfer_job.transfer_status == TransferJob.TransferStatus.INCONSISTENT.value
+        or transfer_job.processing_decision
+        == TransferJob.ProcessingDecision.REJECT_TRANSFER.value
+    ):
+        raise ValueError(
+            "Media cannot be attached to an inconsistent or rejected transfer."
+        )
     if media_role != "processed":
         raise ValueError(
             "Only anonymized processed media may be attached to a transfer."
@@ -513,7 +626,8 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
 
     with transaction.atomic():
         video = (
-            VideoFile.objects.select_related("state", "sensitive_meta")
+            VideoFile.objects.select_for_update()
+            .select_related("state", "sensitive_meta")
             .filter(video_hash=transfer_job.resource_hash)
             .first()
         )
@@ -523,6 +637,17 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
                 video_hash=transfer_job.resource_hash,
                 center=source_center,
             )
+        else:
+            ownership_conflict = _resource_ownership_conflict_detail(
+                transfer_job=transfer_job,
+                target_object_id=video.pk,
+                resource_center_id=video.center_id,
+            )
+            if ownership_conflict is not None:
+                return _mark_transfer_ownership_inconsistent(
+                    transfer_job=transfer_job,
+                    status_detail=ownership_conflict,
+                )
 
         sensitive_meta_payload = resource_rows.get("sensitive_meta") or {}
         if isinstance(sensitive_meta_payload, dict) and sensitive_meta_payload:
@@ -554,6 +679,14 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
             media_obj=video,
             media_type="video",
         )
+        _apply_video_segment_rows(
+            transfer_job=transfer_job,
+            video=video,
+            rows=_json_object_list(
+                resource_rows.get("video_segments"),
+                field_name="resource_rows.video_segments",
+            ),
+        )
         _apply_frame_annotation_rows(
             transfer_job=transfer_job,
             video=video,
@@ -568,6 +701,10 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
                 resource_rows.get("reports"),
                 field_name="resource_rows.reports",
             ),
+        )
+        _reconcile_segment_annotations_validated(
+            video_state=video_state,
+            sender_state_payload=video_state_payload,
         )
 
         processing_decision, transfer_status, status_detail = _decide_video_processing(
@@ -633,7 +770,8 @@ def _apply_report_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
 
     with transaction.atomic():
         report = (
-            RawPdfFile.objects.select_related("state", "sensitive_meta")
+            RawPdfFile.objects.select_for_update()
+            .select_related("state", "sensitive_meta")
             .filter(pdf_hash=transfer_job.resource_hash)
             .first()
         )
@@ -642,6 +780,17 @@ def _apply_report_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
                 pdf_hash=transfer_job.resource_hash,
                 center=source_center,
             )
+        else:
+            ownership_conflict = _resource_ownership_conflict_detail(
+                transfer_job=transfer_job,
+                target_object_id=report.pk,
+                resource_center_id=report.center_id,
+            )
+            if ownership_conflict is not None:
+                return _mark_transfer_ownership_inconsistent(
+                    transfer_job=transfer_job,
+                    status_detail=ownership_conflict,
+                )
 
         sensitive_meta_payload = resource_rows.get("sensitive_meta") or {}
         if isinstance(sensitive_meta_payload, dict) and sensitive_meta_payload:
@@ -1417,6 +1566,189 @@ def _apply_frame_annotation_rows(
         video_state.save(update_fields=["frame_annotations_generated", "date_modified"])
 
 
+def _apply_video_segment_rows(
+    *,
+    transfer_job: TransferJob,
+    video: VideoFile,
+    rows: list[JsonObject],
+) -> None:
+    if not rows:
+        return
+    frame_count = video.frame_count
+    if frame_count is None or frame_count <= 0:
+        raise ValueError(
+            "resource_rows.video_file.frame_count is required for video segments"
+        )
+
+    with suppress_label_video_segment_state_side_effects():
+        for row in rows:
+            _upsert_video_segment_row(
+                transfer_job=transfer_job,
+                video=video,
+                frame_count=frame_count,
+                row=row,
+            )
+
+
+def _upsert_video_segment_row(
+    *,
+    transfer_job: TransferJob,
+    video: VideoFile,
+    frame_count: int,
+    row: JsonObject,
+) -> None:
+    source_node_key = str(row["source_node_key"]).strip()
+    if source_node_key != transfer_job.source_node.node_key:
+        raise ValueError(
+            "resource_rows.video_segments source_node_key does not match transfer"
+        )
+    row_video_hash = str(row["video_hash"]).strip()
+    if row_video_hash != video.video_hash:
+        raise ValueError(
+            "resource_rows.video_segments video_hash does not match transfer video"
+        )
+
+    source_segment_id = str(row["source_segment_id"]).strip()
+    start_frame_number = _json_int(
+        row["start_frame_number"],
+        field_name="resource_rows.video_segments.start_frame_number",
+    )
+    end_frame_number = _json_int(
+        row["end_frame_number_exclusive"],
+        field_name="resource_rows.video_segments.end_frame_number_exclusive",
+    )
+    if start_frame_number < 0 or end_frame_number <= start_frame_number:
+        raise ValueError("video segment frame range must be non-empty and non-negative")
+    if end_frame_number > frame_count:
+        raise ValueError("video segment exclusive end exceeds video frame_count")
+
+    label_name = str(row["label_name"]).strip()
+    label, _ = Label.get_or_create_from_name(label_name)
+    provenance = _json_object(
+        row["anonymous_provenance"],
+        field_name="resource_rows.video_segments.anonymous_provenance",
+    )
+    information_source_name = str(provenance["information_source_name"]).strip()
+    information_source, _ = cast(
+        InformationSourceManager, InformationSource.objects
+    ).get_or_create_by_name(
+        information_source_name,
+        description="Anonymous provenance imported from a hub transfer segment",
+    )
+    source_kind = str(row["source_kind"])
+    prediction_meta = _resolve_transferred_segment_prediction_meta(
+        video=video,
+        label=label,
+        source_kind=source_kind,
+        model_name=_json_str(
+            row.get("model_name"),
+            field_name="resource_rows.video_segments.model_name",
+        ),
+        model_version=_json_str(
+            row.get("model_version"),
+            field_name="resource_rows.video_segments.model_version",
+        ),
+    )
+
+    segment = (
+        LabelVideoSegment.objects.select_related("video_file")
+        .filter(
+            source_node_key=source_node_key,
+            source_segment_id=source_segment_id,
+        )
+        .first()
+    )
+    if segment is not None and segment.video_file.pk != video.pk:
+        raise ValueError(
+            "source-scoped segment identity is already linked to another video"
+        )
+    if segment is None:
+        segment = LabelVideoSegment(
+            source_node_key=source_node_key,
+            source_segment_id=source_segment_id,
+            video_file=video,
+        )
+
+    segment.video_file = video
+    segment.start_frame_number = start_frame_number
+    segment.end_frame_number = end_frame_number
+    segment.label = label
+    segment.source = information_source
+    segment.prediction_meta = prediction_meta
+    segment.export_segment = _json_bool(
+        row["export_segment"],
+        field_name="resource_rows.video_segments.export_segment",
+    )
+    segment.save()
+
+    state = LabelVideoSegmentState.objects.filter(origin=segment).first()
+    if state is None:
+        state = LabelVideoSegmentState(origin=segment)
+        state.prediction = source_kind == "prediction"
+        state.annotation = source_kind == "manual_annotation"
+        state.is_validated = row["validation_state"] == "validated"
+        models.Model.save(state)
+    else:
+        state.prediction = source_kind == "prediction"
+        state.annotation = source_kind == "manual_annotation"
+        state.is_validated = row["validation_state"] == "validated"
+        models.Model.save(
+            state,
+            update_fields=["prediction", "annotation", "is_validated"],
+        )
+
+
+def _resolve_transferred_segment_prediction_meta(
+    *,
+    video: VideoFile,
+    label: Label,
+    source_kind: str,
+    model_name: str | None,
+    model_version: str | None,
+) -> VideoPredictionMeta | None:
+    if source_kind not in {"manual_annotation", "prediction"}:
+        raise ValueError(f"Unsupported video segment source_kind: {source_kind!r}")
+    if model_name is None and model_version is None:
+        return None
+    if source_kind != "prediction" or model_name is None or model_version is None:
+        raise ValueError(
+            "model_name and model_version are permitted only together for predictions"
+        )
+    candidates = list(
+        ModelMeta.objects.filter(
+            name=model_name,
+            version=model_version,
+            labelset__labels=label,
+        )
+        .distinct()
+        .order_by("pk")[:2]
+    )
+    if len(candidates) != 1:
+        raise ValueError(
+            "prediction segment model_name/model_version must resolve uniquely "
+            "and include the transferred label"
+        )
+    prediction_meta, _ = VideoPredictionMeta.objects.get_or_create(
+        video_file=video,
+        model_meta=candidates[0],
+    )
+    return prediction_meta
+
+
+def _reconcile_segment_annotations_validated(
+    *,
+    video_state: VideoState,
+    sender_state_payload: JsonObject,
+) -> None:
+    if "segment_annotations_validated" not in sender_state_payload:
+        return
+    video_state.segment_annotations_validated = _json_bool(
+        sender_state_payload["segment_annotations_validated"],
+        field_name="resource_rows.video_state.segment_annotations_validated",
+    )
+    video_state.save(update_fields=["segment_annotations_validated", "date_modified"])
+
+
 def _transfer_annotation_external_id(
     *,
     transfer_job: TransferJob,
@@ -1589,7 +1921,6 @@ def _apply_video_state_payload(video_state: VideoState, payload: JsonObject) -> 
         "processing_error",
         "processing_started",
         "segment_annotations_created",
-        "segment_annotations_validated",
         "was_created",
         "processed_file_sha256",
     ]

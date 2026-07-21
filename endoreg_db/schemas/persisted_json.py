@@ -6,6 +6,13 @@ from pathlib import Path
 from typing import Any, Literal, cast, get_args
 
 from lx_dtypes.models.contracts import CaseResolutionRequest, DocumentType
+from lx_dtypes.models.contracts.dtypes_record_persistence import (
+    parse_dtypes_record_persistence_payload,
+)
+from lx_dtypes.models.contracts.hub_transfer import (
+    HubTransferSegmentProvenancePayload,
+    HubTransferVideoSegmentPayload,
+)
 from lx_dtypes.models.ledger.p_examination.Pydantic import PExamination
 from lx_dtypes.serialization import serialize_path
 from pydantic import (
@@ -306,6 +313,14 @@ class TransferFrameAnnotationRow(BaseModel):
         )
 
 
+class TransferSegmentProvenanceRow(HubTransferSegmentProvenancePayload):
+    """Backward-compatible Endoreg name for the canonical LXDM contract."""
+
+
+class TransferVideoSegmentRow(HubTransferVideoSegmentPayload):
+    """Backward-compatible Endoreg name for the canonical LXDM contract."""
+
+
 class TransferPatientExaminationReportRow(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -353,6 +368,10 @@ class TransferPatientExaminationReportRow(BaseModel):
 
 
 def _empty_transfer_frame_annotation_rows() -> list[TransferFrameAnnotationRow]:
+    return []
+
+
+def _empty_transfer_video_segment_rows() -> list[TransferVideoSegmentRow]:
     return []
 
 
@@ -422,9 +441,33 @@ class TransferVideoResourceRows(BaseModel):
     frame_annotations: list[TransferFrameAnnotationRow] = Field(
         default_factory=_empty_transfer_frame_annotation_rows
     )
+    video_segments: list[TransferVideoSegmentRow] = Field(
+        default_factory=_empty_transfer_video_segment_rows
+    )
     reports: list[TransferPatientExaminationReportRow] = Field(
         default_factory=_empty_transfer_report_rows
     )
+
+    @model_validator(mode="after")
+    def _validate_video_segment_linkage(self) -> "TransferVideoResourceRows":
+        frame_count = self.video_file.frame_count
+        identities: set[tuple[str, str]] = set()
+        for segment in self.video_segments:
+            if segment.video_hash != self.video_file.video_hash:
+                raise ValueError("video segment video_hash must match video_file")
+            if frame_count is None or frame_count <= 0:
+                raise ValueError(
+                    "video_file.frame_count is required when video_segments are present"
+                )
+            if segment.end_frame_number_exclusive > frame_count:
+                raise ValueError(
+                    "video segment end_frame_number_exclusive exceeds video frame_count"
+                )
+            identity = (segment.source_node_key, str(segment.source_segment_id))
+            if identity in identities:
+                raise ValueError("video segment source identity must be unique")
+            identities.add(identity)
+        return self
 
 
 class TransferRawPdfFileRow(BaseModel):
@@ -636,16 +679,16 @@ def validate_dtypes_p_examination_payload(value: Any) -> dict[str, Any]:
     if value is None or value == {}:
         return {}
     if isinstance(value, PExamination):
-        return value.model_dump(mode="json", exclude_none=True)
-    if not isinstance(value, dict):
+        candidate = value.model_dump(mode="json", exclude_none=True)
+    elif isinstance(value, dict):
+        candidate = _json_compatible_mapping(
+            cast(dict[Any, Any], value),
+            field_name="dtypes_record",
+        )
+    else:
         raise ValueError("dtypes_record must be a JSON object")
     try:
-        payload = PExamination.model_validate(
-            _json_compatible_mapping(
-                cast(dict[Any, Any], value),
-                field_name="dtypes_record",
-            )
-        )
+        payload = parse_dtypes_record_persistence_payload(candidate)
     except ValidationError as exc:
         raise ValueError(str(exc)) from exc
     return payload.model_dump(mode="json", exclude_none=True)

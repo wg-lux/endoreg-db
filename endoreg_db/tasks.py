@@ -361,6 +361,31 @@ def process_upload_job(_task: Task[[str], bool], job_id: str) -> bool:
 
 
 @shared_task(
+    name="endoreg_db.retry_due_upload_jobs",
+    bind=True,
+    acks_late=True,
+    reject_on_worker_lost=True,
+    track_started=True,
+)
+def retry_due_upload_jobs_task(_task: Task[[], dict[str, int]]) -> dict[str, int]:
+    from endoreg_db.services.hub.import_monitoring import (
+        dispatch_due_upload_job_retries,
+    )
+    from endoreg_db.services.jobs.heavy_jobs import HeavyJobKind, queue_for_job_kind
+
+    queue = queue_for_job_kind(HeavyJobKind.PIPELINE_INGEST)
+    result = dispatch_due_upload_job_retries(
+        dispatcher=process_upload_job,
+        queue=queue,
+    )
+    return {
+        "due_count": result.due_count,
+        "dispatched_count": result.dispatched_count,
+        "failed_count": result.failed_count,
+    }
+
+
+@shared_task(
     name="endoreg_db.refresh_audit_ledger_integrity_status",
     bind=True,
     acks_late=True,

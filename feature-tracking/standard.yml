@@ -1,84 +1,123 @@
-schema_version: "1.0"
+schema_version: '1.0'
 id: standard
 name: Feature-Tracking-Standard
 description: Selbstprüfung des zentralen, YAML-basierten Produktionsreife-Trackers.
 owners:
-  - endoreg_db maintainers
+- endoreg_db maintainers
 production_critical: true
 tracking:
   state: active
   history: []
 source_documents:
-  - path: feature-tracking/README.md
-    disposition: reference
-    note: Bedien- und Governancevertrag des Trackers.
+- path: feature-tracking/README.md
+  disposition: reference
+  note: Bedien- und Governancevertrag des Trackers.
 definition_of_done:
-  - id: defined_structure
-    category: requirements
-    title: Struktur und Produktionsgate sind strikt definiert
-    acceptance:
-      - Feature, Kriterien, Verifikation, Bewertung und Evidenz besitzen ein versioniertes Schema.
-      - Das Produktionsgate liefert binär produktionsreif oder nicht produktionsreif.
-      - Ein Prozentwert kann das binäre Gate nicht ersetzen.
-    required: true
-    verification:
-      kind: command
-      command: [.devenv/state/venv/bin/python, feature-tracking/tracker.py, validate]
-    assessment: &not_assessed
-      status: not_assessed
-  - id: terminal_commands
-    category: functionality
-    title: Kleine, testbare Terminalbefehle decken den Workflow ab
-    acceptance:
-      - overview, show, validate, check, update, verify, done und reopen haben getrennte Verantwortlichkeiten.
-      - check liefert Exit-Code 0 nur bei vollständig verifizierter Definition of Done.
-      - Valide aktive Features erscheinen ohne Argumente als evaluiert; done blendet sie standardmäßig aus.
-    required: true
-    verification:
-      kind: command
-      command: [.devenv/state/venv/bin/python, feature-tracking/tracker.py, overview]
-    assessment: *not_assessed
-  - id: automated_tests
-    category: testing
-    title: Schema, Ableitung und Updates sind fokussiert getestet
-    acceptance:
-      - Ungültige Bewertungen, unvollständige Migration und falsche Produktionsfreigabe schlagen fehl.
-      - Update und atomarer YAML-Roundtrip sind getestet.
-    required: true
-    verification:
-      kind: command
-      command: [.devenv/state/venv/bin/pytest, feature-tracking/test_tracker.py, -q]
-    assessment: *not_assessed
-  - id: safe_execution
-    category: security
-    title: YAML kann keine implizite Shellausführung oder Freigabe einschleusen
-    acceptance:
-      - Prüfkommandos werden als Argumentlisten ohne Shell ausgeführt.
-      - Unbekannte Felder und ungültige Zustände werden strikt abgelehnt.
-    required: true
-    verification:
-      kind: manual
-      instructions: Parser-, Subprocess- und Pydantic-Grenzen reviewen.
-    assessment: *not_assessed
-  - id: atomic_updates
-    category: operations
-    title: Terminalupdates sind atomar und strukturiert protokolliert
-    acceptance:
-      - Updates verwenden die zentralen Dateioperations-Wrapper.
-      - Ein fehlgeschlagener Write hinterlässt keine gültig aussehende Teildatei.
-    required: true
-    verification:
-      kind: command
-      command: [.devenv/state/venv/bin/pytest, feature-tracking/test_tracker.py::test_update_and_atomic_save_round_trip, -q]
-    assessment: *not_assessed
-  - id: governance_documentation
-    category: documentation
-    title: Nutzung und Agentenpflichten sind zentral dokumentiert
-    acceptance:
-      - README erklärt Authoring, Evidenz, Exit-Codes und Updateprozess.
-      - AGENTS.md verbietet parallele Markdown-Statustracker.
-    required: true
-    verification:
-      kind: manual
-      instructions: README und AGENTS.md gegen CLI und Policy prüfen.
-    assessment: *not_assessed
+- id: defined_structure
+  category: requirements
+  title: Struktur und Produktionsgate sind strikt definiert
+  acceptance:
+  - Feature, Kriterien, Verifikation, Bewertung und Evidenz besitzen ein versioniertes Schema.
+  - Das Produktionsgate liefert binär produktionsreif oder nicht produktionsreif.
+  - Ein Prozentwert kann das binäre Gate nicht ersetzen.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/python
+    - feature-tracking/tracker.py
+    - validate
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/python feature-tracking/tracker.py validate
+      note: Exit-Code 0
+    assessed_by: Codex
+    assessed_at: '2026-07-20T14:11:35.220778Z'
+- id: terminal_commands
+  category: functionality
+  title: Kleine, testbare Terminalbefehle decken den Workflow ab
+  acceptance:
+  - overview, show, validate, check, update, verify, done und reopen haben getrennte Verantwortlichkeiten.
+  - check liefert Exit-Code 0 nur bei vollständig verifizierter Definition of Done.
+  - Valide aktive Features erscheinen ohne Argumente als evaluiert; done blendet sie standardmäßig aus.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/python
+    - feature-tracking/tracker.py
+    - overview
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/python feature-tracking/tracker.py overview
+      note: Exit-Code 0
+    assessed_by: Codex
+    assessed_at: '2026-07-20T14:11:37.309365Z'
+- id: automated_tests
+  category: testing
+  title: Schema, Ableitung und Updates sind fokussiert getestet
+  acceptance:
+  - Ungültige Bewertungen, unvollständige Migration und falsche Produktionsfreigabe schlagen fehl.
+  - Update und atomarer YAML-Roundtrip sind getestet.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - feature-tracking/test_tracker.py
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: safe_execution
+  category: security
+  title: YAML kann keine implizite Shellausführung oder Freigabe einschleusen
+  acceptance:
+  - Prüfkommandos werden als Argumentlisten ohne Shell ausgeführt.
+  - Unbekannte Felder und ungültige Zustände werden strikt abgelehnt.
+  required: true
+  verification:
+    kind: manual
+    instructions: Parser-, Subprocess- und Pydantic-Grenzen reviewen.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: atomic_updates
+  category: operations
+  title: Terminalupdates sind atomar und strukturiert protokolliert
+  acceptance:
+  - Updates verwenden die zentralen Dateioperations-Wrapper.
+  - Ein fehlgeschlagener Write hinterlässt keine gültig aussehende Teildatei.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - feature-tracking/test_tracker.py::test_update_and_atomic_save_round_trip
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: governance_documentation
+  category: documentation
+  title: Nutzung und Agentenpflichten sind zentral dokumentiert
+  acceptance:
+  - README erklärt Authoring, Evidenz, Exit-Codes und Updateprozess.
+  - AGENTS.md verbietet parallele Markdown-Statustracker.
+  required: true
+  verification:
+    kind: manual
+    instructions: README und AGENTS.md gegen CLI und Policy prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []

@@ -13,15 +13,22 @@ if TYPE_CHECKING:
 
 
 class VideoHlsArtifact(models.Model):
-    class ArtifactKind(models.TextChoices):
-        RAW = "raw", "Raw"
-        PROCESSED = "processed", "Processed"
-
     class Status(models.TextChoices):
         QUEUED = "queued", "Queued"
         MATERIALIZING = "materializing", "Materializing"
         READY = "ready", "Ready"
         FAILED = "failed", "Failed"
+
+    class ArtifactKind(models.TextChoices):
+        RAW = "raw", "Raw"
+        PROCESSED = "processed", "Processed"
+
+    class ErrorCode(models.TextChoices):
+        NONE = "", "None"
+        DISPATCH_FAILED = "dispatch_failed", "Dispatch Failed"
+        INCONSISTENT_ARTIFACT = "inconsistent_artifact", "Inconsistent Artifact"
+        MATERIALIZATION_FAILED = "materialization_failed", "Materialization Failed"
+        STALE_ATTEMPT = "stale_attempt", "Stale Attempt"
 
     video: models.ForeignKey[Any] = models.ForeignKey(
         "VideoFile",
@@ -42,6 +49,11 @@ class VideoHlsArtifact(models.Model):
         default=uuid_lib.uuid4,
         unique=True,
         editable=False,
+    )
+    source_generation_id: models.UUIDField[uuid_lib.UUID, Any] = models.UUIDField(
+        default=uuid_lib.uuid4,
+        editable=False,
+        help_text="Opaque generation identifier for the source snapshot of this HLS attempt.",
     )
     key_ciphertext: models.BinaryField[bytes | None, Any] = models.BinaryField(
         null=True, blank=True
@@ -71,6 +83,12 @@ class VideoHlsArtifact(models.Model):
         blank=True,
     )
     last_error: models.TextField[str, Any] = models.TextField(blank=True)
+    error_code: models.CharField[str, Any] = models.CharField(
+        max_length=64,
+        choices=ErrorCode.choices,
+        default=ErrorCode.NONE,
+        blank=True,
+    )
     created_at: models.DateTimeField[datetime, Any] = models.DateTimeField(
         auto_now_add=True
     )
@@ -83,7 +101,12 @@ class VideoHlsArtifact(models.Model):
             models.UniqueConstraint(
                 fields=["video", "artifact_kind"],
                 name="unique_video_hls_artifact_kind",
-            )
+            ),
+            models.CheckConstraint(
+                condition=(models.Q(status="failed") & ~models.Q(error_code=""))
+                | (~models.Q(status="failed") & models.Q(error_code="")),
+                name="video_hls_failure_coded",
+            ),
         ]
         indexes = [
             models.Index(fields=["video", "artifact_kind", "status"]),
@@ -99,6 +122,10 @@ class VideoHlsArtifact(models.Model):
                 errors["iv_hex"] = "HLS IV must be 32 hexadecimal characters."
             elif any(char not in "0123456789abcdefABCDEF" for char in self.iv_hex):
                 errors["iv_hex"] = "HLS IV must be hexadecimal."
+        if self.status == self.Status.FAILED.value and not self.error_code:
+            errors["error_code"] = "Failed HLS artifacts require an error code."
+        if self.status != self.Status.FAILED.value and self.error_code:
+            errors["error_code"] = "Only failed HLS artifacts may have an error code."
         if errors:
             raise ValidationError(errors)
 

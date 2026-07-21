@@ -5,7 +5,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("endoreg_db", "0045_videohlsartifact_queued_status"),
     ]
@@ -139,9 +138,7 @@ class Migration(migrations.Migration):
                 (
                     "artifact_class",
                     models.CharField(
-                        choices=[
-                            ("anonymized_processed", "Anonymized processed")
-                        ],
+                        choices=[("anonymized_processed", "Anonymized processed")],
                         max_length=32,
                     ),
                 ),

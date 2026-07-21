@@ -465,7 +465,9 @@ class FrameStreamViewTests(TestCase):
 
         assert response.status_code == 404
 
-    def test_decoded_processed_frame_stream_remains_available_across_centers(self) -> None:
+    def test_decoded_processed_frame_stream_remains_available_across_centers(
+        self,
+    ) -> None:
         from endoreg_db.views import access_control
         from endoreg_db.views.media import frame_media as frame_media_module
 

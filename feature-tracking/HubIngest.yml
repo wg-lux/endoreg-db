@@ -14,6 +14,34 @@ tracking:
     note: Alle acht Definition-of-Done-Kriterien sind mit Receiver-, Sender-, Frontend-, Security-, Integritäts-,
       Cleanup-, Health- und Runbook-Evidenz verifiziert; die freigegebene Phase 1 bleibt fail-closed auf
       mTLS und anonymisierte Processed Media begrenzt.
+  - action: reopened
+    changed_by: Codex
+    changed_at: '2026-07-20T13:38:28.852460Z'
+    note: Reopened to extend transfer integrity with schema 3.0 video segments.
+  - action: done
+    changed_by: Codex
+    changed_at: '2026-07-20T13:58:06.960322Z'
+    note: Payload schema 3.0 segment transfer contract is implemented and verified across canonical contracts,
+      receiver persistence/import, sender serialization, replay, boundary, and rollback tests.
+  - action: reopened
+    changed_by: Codex
+    changed_at: '2026-07-20T14:09:15.882076Z'
+    note: Reopened to require canonical full-payload replay equality and fail-closed source-node/source-center
+      ownership enforcement for globally hashed transfer resources.
+  - action: done
+    changed_by: Codex
+    changed_at: '2026-07-20T14:17:41.004775Z'
+    note: Canonical replay equality and fail-closed source ownership collision handling are implemented,
+      documented, type-checked, and verified by the 62-test focused hub boundary suite.
+  - action: reopened
+    changed_by: Codex
+    changed_at: '2026-07-20T14:18:28.632273Z'
+    note: Reopened to close the nullable NetworkNode.owning_center bypass at the transfer sender boundary.
+  - action: done
+    changed_by: Codex
+    changed_at: '2026-07-20T14:19:38.865231Z'
+    note: Canonical replay equality, fail-closed node/center ownership, collision persistence, and blocked
+      conflicted uploads are implemented and verified by targeted Pyright and 63 focused tests.
 source_documents:
 - path: docs/wiki/hub_ingest_gap_closure.md
   disposition: migrated
@@ -28,6 +56,42 @@ source_documents:
   disposition: reference
   note: Betriebs-, Zertifikatsrotations-, Cleanup-, Restore- und Incident-Runbook.
 definition_of_done:
+- id: segment_transfer_contract
+  category: data_integrity
+  title: Video-Segmente werden typisiert, idempotent und atomar übertragen
+  acceptance:
+  - Payload-Schema 3.0 überträgt ausschließlich typisierte, anonymisierte Segmentdaten mit quellknotengebundener
+    unveränderlicher ID.
+  - Der Receiver validiert exklusive Framegrenzen, materialisiert Segment- und Frame-Annotationen ohne
+    Zwischenzustands-Side-Effects und setzt segment_annotations_validated erst nach erfolgreichem Commit
+    aller Zeilen.
+  - Replay derselben source_node_key/source_segment_id-Paare aktualisiert bestehende Segmente ohne Duplikate;
+    fehlerhafte Grenzen rollen den gesamten Metadatenimport zurück.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - .devenv/state/venv/bin/pytest
+    - tests/models/test_persisted_json_validation.py
+    - tests/views/media/test_hub_transfer_endpoints.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/models/test_persisted_json_validation.py
+        tests/models/test_hub_provenance_validation.py tests/services/test_transfer_job_contract.py tests/views/media/test_hub_transfer_endpoints.py
+        -q (58 passed)
+    - kind: command
+      reference: lx-annotate tests/hub with canonical endoreg_db source (62 passed)
+    note: Schema 3.0, source-scoped replay upsert, boundary rejection and atomic rollback are covered
+      by receiver and sender tests.
+    assessed_by: Codex
+    assessed_at: '2026-07-20T13:57:45.626114Z'
 - id: documented_scope
   category: requirements
   title: Rollen, Grenzen, Transfermodi und Cleanup-Policy sind festgelegt
@@ -73,11 +137,12 @@ definition_of_done:
     status: verified
     evidence:
     - kind: command
-      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/authz/test_video_media_policy.py
-        tests/views/media/test_hub_transfer_endpoints.py -q
-      note: Exit-Code 0
+      reference: 'Targeted Pyright: 0 errors; canonical local lx-dtypes focused hub boundary suite: 63
+        passed'
+    note: Transfer senders must have an owning center and may only declare that center; nullable ownership
+      can no longer authorize arbitrary center claims.
     assessed_by: Codex
-    assessed_at: '2026-07-17T12:50:59.506359Z'
+    assessed_at: '2026-07-20T14:19:36.322566Z'
 - id: idempotent_ingest
   category: functionality
   title: Upload, Watcher und Transfer konvergieren idempotent auf denselben Workflow
@@ -100,11 +165,12 @@ definition_of_done:
     status: verified
     evidence:
     - kind: command
-      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/views/media/test_hub_transfer_endpoints.py
-        tests/services/test_preanonymized_watcher_ingest.py -q
-      note: Exit-Code 0
+      reference: 'PYTHONPATH=/home/admin/lx-data-models focused hub boundary suite: 62 passed'
+    note: Canonical transfer-key replay now compares source center, modes, policies, schema version, resource
+      rows, processing snapshot and sender-managed provenance; changed replays return 409 and exact replays
+      remain idempotent.
     assessed_by: Codex
-    assessed_at: '2026-07-17T12:51:46.683120Z'
+    assessed_at: '2026-07-20T14:17:12.621603Z'
 - id: transfer_integrity
   category: data_integrity
   title: Metadaten, Artefakte und Provenienz werden als konsistenter Transfer persistiert
@@ -121,13 +187,12 @@ definition_of_done:
     status: verified
     evidence:
     - kind: command
-      reference: 'endoreg-db Hub-/Integrity-Bahn: 91 passed'
-    - kind: command
-      reference: 'lx-annotate Sender-/End-to-End-Bahn: 69 passed'
-    note: Content- und Processed-Hashes, typed Snapshots/Provenienz, idempotentes Acknowledgement sowie
-      Quarantäne, LOST und persistentes INCONSISTENT wurden boundary-spezifisch geprüft.
+      reference: 'PYTHONPATH=/home/admin/lx-data-models focused hub boundary suite: 62 passed'
+    note: Source-center claims are bound to authenticated node ownership; cross-node and cross-center
+      resource-hash collisions persist INCONSISTENT without mutating existing video/report rows, and conflicted
+      media uploads are rejected.
     assessed_by: Codex
-    assessed_at: '2026-07-17T12:59:24.831286Z'
+    assessed_at: '2026-07-20T14:17:14.442790Z'
 - id: automated_tests
   category: testing
   title: Rollen-, Transfer-, Replay-, Integritäts- und Cleanup-Pfade sind getestet

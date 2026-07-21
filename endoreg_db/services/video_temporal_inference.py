@@ -487,8 +487,7 @@ def _resolve_score_timeline(
             "Frame-score presentation timestamps must be complete, finite, and non-negative."
         )
     if any(
-        current <= previous
-        for previous, current in zip(timestamps, timestamps[1:])
+        current <= previous for previous, current in zip(timestamps, timestamps[1:])
     ):
         raise TemporalInferenceConfigError(
             "Frame-score presentation timestamps must be strictly increasing."
@@ -506,7 +505,10 @@ def _resolve_score_timeline(
     if next_boundary is not None:
         terminal_frame_number = int(next_boundary[0])
         terminal_timestamp = float(next_boundary[1])
-    elif video.frame_count is not None and int(video.frame_count) == frame_numbers[-1] + 1:
+    elif (
+        video.frame_count is not None
+        and int(video.frame_count) == frame_numbers[-1] + 1
+    ):
         terminal_frame_number = int(video.frame_count)
         terminal_timestamp = float(video.frame_number_to_s(terminal_frame_number))
     else:
@@ -1527,9 +1529,7 @@ def _run_video_temporal_inference(
         sequences = _segments_to_sequences(
             inference_result.temporal_segments,
             timeline=score_timeline,
-            min_length_seconds=float(
-                normalized_temporal_options["min_length_seconds"]
-            ),
+            min_length_seconds=float(normalized_temporal_options["min_length_seconds"]),
             max_gap_seconds=float(normalized_temporal_options["max_gap_seconds"]),
         )
         has_segment_ranges = any(bool(ranges) for ranges in sequences.values())

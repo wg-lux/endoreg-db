@@ -202,6 +202,10 @@ CELERY_TASK_ROUTES = {
         "queue": CELERY_MAINTENANCE_QUEUE,
         "routing_key": CELERY_MAINTENANCE_QUEUE,
     },
+    "endoreg_db.retry_due_upload_jobs": {
+        "queue": CELERY_MAINTENANCE_QUEUE,
+        "routing_key": CELERY_MAINTENANCE_QUEUE,
+    },
 }
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_TASK_TRACK_STARTED = True
@@ -210,6 +214,15 @@ CELERY_TASK_SOFT_TIME_LIMIT = 60 * 60 * 5
 CELERY_TIMEZONE = get_time_zone()
 CELERY_ENABLE_UTC = True
 CELERY_BEAT_SCHEDULE = {}
+CELERY_BEAT_SCHEDULE["retry-due-upload-jobs"] = DjangoBeatScheduleEntryPayload(
+    task="endoreg_db.retry_due_upload_jobs",
+    schedule=60,
+    options=DjangoBeatScheduleOptionsPayload(
+        queue=CELERY_MAINTENANCE_QUEUE,
+        routing_key=CELERY_MAINTENANCE_QUEUE,
+        expires=55,
+    ),
+).model_dump(by_alias=True, mode="python")
 WATCHER_CELERY_INLINE_FALLBACK_ENABLED = watcher_celery_inline_fallback_enabled()
 if celery_audit_ledger_integrity_beat_enabled():
     CELERY_BEAT_SCHEDULE["audit-ledger-integrity-refresh"] = (

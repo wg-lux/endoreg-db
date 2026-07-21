@@ -107,6 +107,16 @@ class ApplicationSettingsEndpointTests(TestCase):
             "available_path_count",
             "source_roots",
         }
+        assert set(payload["deployment_profile"]) == {
+            "deployment_role",
+            "hub_mode",
+            "enable_hub_transfers",
+            "transfer_api_enabled",
+            "transfer_require_secure_transport",
+            "transfer_require_mtls",
+        }
+        assert "transfer_mtls_meta_key" not in response.content.decode()
+        assert "transfer_mtls_meta_value" not in response.content.decode()
 
     def test_patch_application_settings_with_valid_ids(self):
         dataset = AIDataSet.objects.create(

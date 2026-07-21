@@ -10,6 +10,7 @@ from typing import TypedDict, cast
 
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError, CommandParser
+from django.db import models
 from django.db.utils import OperationalError, ProgrammingError
 from django.utils import timezone
 
@@ -19,6 +20,7 @@ from endoreg_db.config.env import (
     get_protected_media_url,
 )
 from endoreg_db.models.hub.upload_job import UploadJob
+from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
 from endoreg_db.models.state.raw_pdf import RawPdfState
 from endoreg_db.models.state.video import VideoState
@@ -108,15 +110,67 @@ def _quarantine_stats(now: float) -> dict[str, int | float | None | str]:
 
 def _upload_job_failure_stats() -> dict[str, int | str | None]:
     try:
+        now = timezone.now()
         return {
             "failed": UploadJob.objects.filter(status=UploadJob.Status.ERROR).count(),
             "lost": UploadJob.objects.filter(status=UploadJob.Status.LOST).count(),
+            "retrying": UploadJob.objects.filter(
+                status=UploadJob.Status.RETRYING
+            ).count(),
+            "retry_due": UploadJob.objects.filter(
+                status=UploadJob.Status.RETRYING,
+                next_retry_at__lte=now,
+            ).count(),
+            "retry_exhausted": UploadJob.objects.filter(
+                status=UploadJob.Status.ERROR,
+                retry_count__gte=models.F("max_retries"),
+                retry_count__gt=0,
+            ).count(),
             "error": None,
         }
     except (OperationalError, ProgrammingError) as exc:
         return {
             "failed": None,
             "lost": None,
+            "retrying": None,
+            "retry_due": None,
+            "retry_exhausted": None,
+            "error": str(exc),
+        }
+
+
+def _hls_materialization_stats() -> dict[str, int | str | None]:
+    stale_before = timezone.now() - VIDEO_PROCESSING_STALE_TIMEOUT
+    try:
+        return {
+            "queued": VideoHlsArtifact.objects.filter(
+                status=VideoHlsArtifact.Status.QUEUED
+            ).count(),
+            "materializing": VideoHlsArtifact.objects.filter(
+                status=VideoHlsArtifact.Status.MATERIALIZING
+            ).count(),
+            "ready": VideoHlsArtifact.objects.filter(
+                status=VideoHlsArtifact.Status.READY
+            ).count(),
+            "failed": VideoHlsArtifact.objects.filter(
+                status=VideoHlsArtifact.Status.FAILED
+            ).count(),
+            "stale_in_flight": VideoHlsArtifact.objects.filter(
+                status__in=(
+                    VideoHlsArtifact.Status.QUEUED,
+                    VideoHlsArtifact.Status.MATERIALIZING,
+                ),
+                updated_at__lte=stale_before,
+            ).count(),
+            "error": None,
+        }
+    except (OperationalError, ProgrammingError) as exc:
+        return {
+            "queued": None,
+            "materializing": None,
+            "ready": None,
+            "failed": None,
+            "stale_in_flight": None,
             "error": str(exc),
         }
 
@@ -240,6 +294,7 @@ class Command(BaseCommand):
         )
         quarantine = _quarantine_stats(now)
         upload_jobs = _upload_job_failure_stats()
+        hls_materializations = _hls_materialization_stats()
         anonymization_processing = _anonymization_processing_stats()
         storage_free = _storage_free_stats()
         audit_ledger_integrity = _audit_ledger_integrity_status()
@@ -271,6 +326,15 @@ class Command(BaseCommand):
                     ),
                     "local_study_server_no_lost_upload_jobs": (
                         upload_jobs["lost"] == 0
+                    ),
+                    "local_study_server_no_exhausted_upload_retries": (
+                        upload_jobs["retry_exhausted"] == 0
+                    ),
+                    "local_study_server_no_failed_hls_materialization": (
+                        hls_materializations["failed"] == 0
+                    ),
+                    "local_study_server_no_stale_hls_materialization": (
+                        hls_materializations["stale_in_flight"] == 0
                     ),
                     "local_study_server_no_failed_anonymization": (
                         anonymization_processing["failed_videos"] == 0
@@ -319,6 +383,7 @@ class Command(BaseCommand):
                 "audit_ledger_integrity": audit_ledger_integrity,
                 "quarantine": quarantine,
                 "upload_jobs": upload_jobs,
+                "hls_materializations": hls_materializations,
                 "anonymization_processing": anonymization_processing,
                 "storage_free": storage_free,
                 "min_free_bytes": min_free_bytes,

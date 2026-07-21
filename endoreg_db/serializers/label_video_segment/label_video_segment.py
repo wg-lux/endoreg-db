@@ -257,9 +257,7 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
             return label
         return None
 
-    def _convert_time_to_frame(
-        self, video_file: VideoFile, time_val: float
-    ) -> int:
+    def _convert_time_to_frame(self, video_file: VideoFile, time_val: float) -> int:
         try:
             return video_seconds_to_frame_number(video_file, time_val)
         except ValueError as exc:

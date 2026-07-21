@@ -43,7 +43,7 @@ def test_transfer_api_enabled_requires_central_hub_and_flag() -> None:
         assert deployment.transfer_api_enabled() is False
 
 
-def test_deployment_profile_payload_trims_meta_fields() -> None:
+def test_deployment_profile_payload_excludes_internal_mtls_metadata() -> None:
     with override_settings(
         ENDOREG_DEPLOYMENT_ROLE="central_hub",
         ENDOREG_ENABLE_HUB_TRANSFERS=True,
@@ -54,11 +54,11 @@ def test_deployment_profile_payload_trims_meta_fields() -> None:
     ):
         payload = deployment.deployment_profile_payload()
 
-    assert payload["deployment_role"] == "central_hub"
-    assert payload["hub_mode"] is True
-    assert payload["enable_hub_transfers"] is True
-    assert payload["transfer_api_enabled"] is True
-    assert payload["transfer_require_secure_transport"] is False
-    assert payload["transfer_require_mtls"] is True
-    assert payload["transfer_mtls_meta_key"] == "node-key"
-    assert payload["transfer_mtls_meta_value"] == "secret"
+    assert payload.deployment_role == "central_hub"
+    assert payload.hub_mode is True
+    assert payload.enable_hub_transfers is True
+    assert payload.transfer_api_enabled is True
+    assert payload.transfer_require_secure_transport is False
+    assert payload.transfer_require_mtls is True
+    assert "transfer_mtls_meta_key" not in payload.model_fields_set
+    assert "transfer_mtls_meta_value" not in payload.model_fields_set

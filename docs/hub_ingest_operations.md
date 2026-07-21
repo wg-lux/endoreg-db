@@ -5,6 +5,87 @@ Site-Node-zu-Central-Hub-Ingest. Der Fertigstellungsstatus wird ausschließlich
 in [`feature-tracking/HubIngest.yml`](../feature-tracking/HubIngest.yml)
 geführt.
 
+Das produktionskritische Import-Monitoring einschließlich transienter Fehler,
+Quarantäne und HTTP-Live-Streaming-(HLS)-Materialisierung wird ausschließlich
+in [`feature-tracking/ImportMonitoring.yml`](../feature-tracking/ImportMonitoring.yml)
+bewertet. Dieses Runbook beschreibt den Betrieb, führt aber keinen parallelen
+Fertigstellungsstatus.
+
+## Import-Monitoring und Zustandsachsen
+
+Import, Anonymisierung, HLS-Materialisierung und Cleanup sind voneinander
+unabhängige Zustandsachsen. Ein erfolgreich importiertes oder anonymisiertes
+Video ist deshalb nicht automatisch streambereit; ebenso ändert ein
+HLS-Fehler nicht rückwirkend den Importstatus.
+
+| Importzustand | Bedeutung | Automatik | Bedieneraktion |
+| --- | --- | --- | --- |
+| `pending` | Persistiert und wartet auf Verarbeitung | Worker-Dispatch | Bei ungewöhnlichem Alter Worker und Queue prüfen |
+| `processing` | Ein Worker verarbeitet den Import | keine parallele Verarbeitung | Bei Überschreitung der betrieblichen Laufzeitschwelle eskalieren |
+| `retrying` | Transienter Dispatchfehler, Quelle bleibt geschützt erhalten | begrenzter exponentieller Retry | Bis `next_retry_at` abwarten; Versuchszähler beobachten |
+| `anonymized` | Importverarbeitung erfolgreich | keine | Separate Anonymisierungs-, HLS- und Cleanup-Achsen prüfen |
+| `error` | Terminaler, stabil codierter Fehler | keine automatische Wiederholung | Fehlercode prüfen; Konfiguration korrigieren oder sicheren Neuimport planen |
+| `lost` | Quelle oder Ledger ist inkonsistent | fail-closed | Logs und Storage sichern, niemals manuell auf Erfolg setzen |
+| Quarantäne | Geschützte Quelle wurde aus dem aktiven Importfluss isoliert | keine automatische Löschung | Ledger abgleichen und Reviewentscheidung dokumentieren |
+
+Erlaubte Hauptübergänge sind `pending -> processing -> anonymized`,
+`processing -> retrying -> processing` und nach ausgeschöpften Versuchen
+`retrying -> error`. `lost` ist terminal. Ein Quarantäneeintrag besitzt einen
+eigenen Review-Lebenszyklus und überschreibt keinen Upload-Job-Status.
+
+Die Retry-Policy startet bei 30 Sekunden, verdoppelt die Verzögerung je
+Versuch, ist auf 15 Minuten begrenzt und erlaubt standardmäßig drei Versuche.
+Der periodische Task `endoreg_db.retry_due_upload_jobs` übernimmt fällige Jobs
+unter Datenbanksperre und übergibt sie idempotent an die Pipeline-Queue.
+
+Stabile Importfehlercodes:
+
+| Code | Bedeutung und nächster Schritt |
+| --- | --- |
+| `dispatch_unavailable` | Transient; automatischen Retry abwarten, bei Erschöpfung Queue oder Broker eskalieren |
+| `duplicate_content` | Kein Neuimport; vorhandene validierte Daten bleiben maßgeblich |
+| `invalid_configuration` | Terminal; Center-, Worker- oder Laufzeitkonfiguration korrigieren |
+| `invalid_input` | Terminal; Eingangsvertrag korrigieren und sicher neu importieren |
+| `media_integrity_failed` | Terminal; Quelle und Quarantäne prüfen, keine unsichere Wiederherstellung |
+| `processing_failed` | Terminal; geschützte strukturierte Logs über Upload-Job-ID korrelieren |
+| `source_missing` | Terminal beziehungsweise `lost`; Storage und Ledger abgleichen |
+
+Die Monitoring-API liefert ausschließlich freigegebene Bedienertexte. Absolute
+Pfade, Hashes, Stacktraces, Rohmedien und technische Ausnahmetexte verbleiben in
+zugriffsgeschützten Logs. Die Anonymisierungsübersicht erkennt insbesondere
+Duplikate nur über `error_code`, nie durch Textsuche.
+
+### HLS-Materialisierung
+
+Raw- und Processed-HLS werden getrennt als `queued`, `materializing`, `ready`
+oder `failed` gezeigt. Jeder Eintrag enthält die Upload-Job-Korrelation, eine
+opaque Quellgeneration, die Zielgeneration, Segmentzahl und Zeitpunkte.
+`ready` ist erst nach validierter, atomarer Veröffentlichung einer vollständigen
+Playlist-, Schlüssel- und Segmentgeneration zulässig. Bei Fehlern wird ein
+stabiler Code (`dispatch_failed`, `materialization_failed`,
+`inconsistent_artifact` oder `stale_attempt`) ausgegeben; eine vorherige valide
+Generation wird wiederhergestellt und nicht gelöscht. Wiedergabe- und
+Segment-Update-Leases sowie die Details der atomaren Veröffentlichung sind im
+kanonischen [`video_storage_normalization.md`](video_storage_normalization.md)
+definiert.
+
+### Diagnose und Wiederanlauf
+
+```sh
+python manage.py check_system_health --json
+python manage.py materialize_video_hls --artifact-kind raw --json
+python manage.py materialize_video_hls --artifact-kind processed --json
+python manage.py reap_quarantine --older-than-days 30 --dry-run --json
+```
+
+Der Health-Check meldet unter anderem wartende und fällige Retries,
+ausgeschöpfte Versuche, `ERROR`, `LOST`, fehlgeschlagene oder hängende
+HLS-Materialisierungen, Quarantänealter und freien Speicher. Vor manueller
+Wiederholung muss geprüft werden, dass kein aktiver Job und keine aktive
+Media-Operation-Lease konkurriert. Quarantäne wird zuerst synchronisiert und
+reviewt; Löschung erfolgt ausschließlich nach expliziter Freigabe und separatem
+Reap-Schritt.
+
 ## Geltungsbereich und Sicherheitsphase
 
 Der produktive Transfervertrag befindet sich in Phase 1:

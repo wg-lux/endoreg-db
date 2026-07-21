@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
 from collections.abc import Mapping, Sequence
 
+from django.db import transaction
 from django.db.models import Q  # Import Q for complex queries
 from icecream import ic
 from lx_dtypes.models.contracts.video_segments import (
@@ -25,6 +26,10 @@ if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
 
 logger = logging.getLogger(__name__)
+
+
+class PredictionSegmentMaterializationError(RuntimeError):
+    """Raised when a prediction result cannot be persisted completely."""
 
 
 class _InformationSourceManagerLike(Protocol):
@@ -88,11 +93,11 @@ def _convert_sequences_to_db_segments(
     )
     created_count = 0
     skipped_count = 0
-    error_count = 0
     state_created_count = 0
-    state_error_count = 0
 
     processed_labels: set[str] = set()
+    expected_segments: set[tuple[int, int, int]] = set()
+    segments_to_create: list[tuple[LabelVideoSegment, tuple[int, int, int]]] = []
     prediction_source, _ = cast(
         _InformationSourceManagerLike, InformationSource.objects
     ).get_or_create_by_name("prediction")
@@ -116,102 +121,86 @@ def _convert_sequences_to_db_segments(
                 label_name, case_insensitive=True
             )
         if label is None:
-            logger.error(
-                "Could not get Label '%s' while converting prediction sequences",
-                label_name,
+            raise PredictionSegmentMaterializationError(
+                "no LabelVideoSegment rows could be materialized for unresolved "
+                f"prediction label {label_name!r}."
             )
-            error_count += len(sequence_list)
-            continue
 
-        segments_to_create: list[LabelVideoSegment] = []
         for start_frame, end_frame in sequence_list:
             if start_frame >= end_frame or start_frame < 0:
-                logger.warning(
-                    "Skipping invalid sequence for label '%s': start=%d, end=%d",
-                    label_name,
-                    start_frame,
-                    end_frame,
+                raise PredictionSegmentMaterializationError(
+                    "Invalid prediction sequence for "
+                    f"{label_name!r}: start={start_frame}, end={end_frame}."
                 )
+            identity = (int(label.pk), int(start_frame), int(end_frame))
+            if identity in expected_segments:
                 skipped_count += 1
                 continue
-
-            if LabelVideoSegment.objects.filter(
-                video_file=video,
-                label=label,
-                prediction_meta=video_prediction_meta,
-                start_frame_number=start_frame,
-                end_frame_number=end_frame,
-            ).exists():
-                skipped_count += 1
-                continue
-
+            expected_segments.add(identity)
             segments_to_create.append(
-                LabelVideoSegment(
-                    video_file=video,
-                    label=label,
-                    start_frame_number=start_frame,
-                    end_frame_number=end_frame,
-                    source=prediction_source,
-                    prediction_meta=video_prediction_meta,
+                (
+                    LabelVideoSegment(
+                        video_file=video,
+                        label=label,
+                        start_frame_number=start_frame,
+                        end_frame_number=end_frame,
+                        source=prediction_source,
+                        prediction_meta=video_prediction_meta,
+                    ),
+                    identity,
                 )
             )
 
-        if segments_to_create:
-            try:
-                LabelVideoSegment.objects.bulk_create(
-                    segments_to_create, ignore_conflicts=True
-                )
-                created_count += len(segments_to_create)
-                logger.debug(
-                    "Bulk created %d segments for label '%s'",
-                    len(segments_to_create),
-                    label_name,
-                )
-            except Exception as e:
-                logger.error(
-                    "Error bulk creating segments for label '%s': %s",
-                    label_name,
-                    e,
-                    exc_info=True,
-                )
-                error_count += len(segments_to_create)
+    with transaction.atomic():
+        existing_segments = LabelVideoSegment.objects.filter(
+            video_file=video,
+            prediction_meta=video_prediction_meta,
+            label__name__in=processed_labels,
+        )
+        existing_identities = {
+            (int(label_id), int(start_frame), int(end_frame))
+            for label_id, start_frame, end_frame in existing_segments.values_list(
+                "label_id", "start_frame_number", "end_frame_number"
+            )
+        }
+        pending_segments = [
+            segment
+            for segment, identity in segments_to_create
+            if identity not in existing_identities
+        ]
+        if pending_segments:
+            LabelVideoSegment.objects.bulk_create(pending_segments)
+            created_count = len(pending_segments)
 
-    newly_created_segments = LabelVideoSegment.objects.filter(
-        video_file=video,
-        prediction_meta=video_prediction_meta,
-        label__name__in=processed_labels,
-    )
+        materialized_segments = LabelVideoSegment.objects.filter(
+            video_file=video,
+            prediction_meta=video_prediction_meta,
+            label__name__in=processed_labels,
+        )
+        materialized_identities = {
+            (int(label_id), int(start_frame), int(end_frame))
+            for label_id, start_frame, end_frame in materialized_segments.values_list(
+                "label_id", "start_frame_number", "end_frame_number"
+            )
+        }
+        missing_segments = expected_segments - materialized_identities
+        if missing_segments:
+            raise PredictionSegmentMaterializationError(
+                "Prediction segment materialization was incomplete; missing "
+                f"identities: {sorted(missing_segments)!r}."
+            )
 
-    logger.info(
-        "Attempting to create state objects for %d potentially new segments (Video: %s, PredictionMeta: %s)",
-        newly_created_segments.count(),
-        video.video_hash,
-        video_prediction_meta.pk,
-    )
-
-    for segment in newly_created_segments:
-        try:
+        for segment in materialized_segments:
             _state, created = segment.get_or_create_state()
             if created:
                 state_created_count += 1
-        except Exception as e:
-            logger.error(
-                "Failed to get or create state for segment %s (Video: %s): %s",
-                segment.pk,
-                video.video_hash,
-                e,
-                exc_info=True,
-            )
-            state_error_count += 1
 
     logger.info(
-        "LabelVideoSegment conversion finished for video %s. Segments Created: %d, Skipped: %d, Errors: %d. States Created: %d, State Errors: %d",
+        "LabelVideoSegment conversion finished for video %s. Segments Created: %d, Skipped: %d. States Created: %d",
         video.video_hash,
         created_count,
         skipped_count,
-        error_count,
         state_created_count,
-        state_error_count,
     )
 
 

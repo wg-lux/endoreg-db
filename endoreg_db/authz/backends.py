@@ -15,7 +15,8 @@
 #   - We assume you added a Keycloak mapper so roles appear either as a flat "roles" claim,
 #     or the standard "realm_access": {"roles": [...]}.
 #   - We *replace* the user's groups each login to match Keycloak (source of truth).
-#   - If you also need *client roles* (per-client), see the optional code in _extract_realm_roles().
+#   - Client roles are not authorization inputs unless a caller explicitly selects one
+#     trusted resource through the LXDM contract.
 #
 # Settings that enable this backend (in config/settings/dev.py):
 #   AUTHENTICATION_BACKENDS = (
@@ -77,29 +78,6 @@ class _UserModel(Protocol):
 
 def _claims_payload(claims: Mapping[str, JsonValue]) -> KeycloakClaimsPayload:
     return validate_keycloak_claims(claims)
-
-
-def _extract_realm_roles(claims: KeycloakClaimsPayload) -> set[str]:
-    """
-    Extract Keycloak *realm* roles from ID token claims.
-
-    We support two common forms:
-      1) A custom 'roles' flat claim (if you added a "roles-flat" mapper in Keycloak)
-         e.g.,  "roles": ["data:read", "data:write"]
-      2) The standard 'realm_access.roles' structure from Keycloak
-         e.g.,  "realm_access": {"roles": ["data:read", "data:write"]}
-
-    Returns:
-        set[str]: unique, non-empty role names.
-    """
-    # OPTIONAL — include client roles as well (uncomment if you use them)
-    # resource_access = claims.resource_access
-    # for client_id, entry in resource_access.items():
-    #     for r in entry.roles:
-    #         # Prefix client roles to avoid name collisions with realm roles
-    #         roles.add(f"{client_id}:{r}")
-
-    return set(claims.roles) | set(claims.realm_access.roles)
 
 
 class KeycloakOIDCBackend(OIDCAuthenticationBackend):
@@ -184,7 +162,7 @@ class KeycloakOIDCBackend(OIDCAuthenticationBackend):
         If you prefer "additive only" behavior (never remove), change user.groups.set(...)
         to a union/update pattern instead.
         """
-        kc_roles = _extract_realm_roles(claims)
+        kc_roles = claims.role_names
 
         groups: list[Group] = []
         for r in kc_roles:

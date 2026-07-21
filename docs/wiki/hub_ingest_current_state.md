@@ -239,6 +239,18 @@ Current transfer-mode rules:
 - raw-media transfer modes are rejected
 - the media upload endpoint accepts only anonymized `processed` media
 
+Current replay and ownership rules:
+
+- reuse of a `transfer_key` requires equality of the complete canonical sender
+  payload; changing metadata, processing state, policy, schema version or
+  sender provenance returns a conflict instead of silently reusing stale state
+- a node with an `owning_center` may only declare that center as
+  `source_center_key`
+- an existing globally hashed media row is never reassigned to another center
+  or source node; an ownership collision is persisted as `INCONSISTENT`
+- media upload is rejected for ownership-conflicted or otherwise rejected
+  transfers
+
 Relevant files:
 
 - `endoreg_db/views/media/hub/transfers.py`
@@ -373,7 +385,9 @@ Not implemented yet:
 - KMS-backed key management
 - full peer discovery or topology negotiation
 - automatic transfer cleanup execution
-- cross-node conflict resolution between multiple authoritative peers
+- automatic reconciliation of cross-node conflicts between multiple
+  authoritative peers; ownership conflicts currently fail closed for operator
+  review
 - complete federation of the wider database graph beyond the currently applied
   media-related rows
 

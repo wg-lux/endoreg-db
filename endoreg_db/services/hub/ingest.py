@@ -52,6 +52,8 @@ from endoreg_db.services.hub.media_integrity import (
     MediaIntegrityResult,
     check_upload_job_media_integrity,
 )
+from endoreg_db.services.hub.import_monitoring import schedule_dispatch_retry
+from endoreg_db.services.hub.quarantine import index_quarantine_file
 from endoreg_db.services.hub.watcher_handoff import (
     WatcherFileNotReadyError,
     assert_watcher_file_unchanged as _assert_watcher_file_unchanged,
@@ -645,7 +647,10 @@ def _reserve_video_upload_import_handoff(
             job.mark_lost("Upload job has no stored file")
             return job, False
         if job.source_center is None:
-            job.mark_error("Upload job has no resolved source center")
+            job.mark_error(
+                "Upload job has no resolved source center",
+                error_code=UploadJob.ErrorCode.INVALID_CONFIGURATION.value,
+            )
             return job, False
 
         provenance = _upload_provenance(
@@ -666,8 +671,7 @@ def _reserve_video_upload_import_handoff(
             job.mark_error(reason)
             logger.warning("Recovered stale video upload import: job=%s", job.id)
 
-        job.status = UploadJob.Status.PROCESSING.value
-        job.error_detail = ""
+        job.mark_processing()
         _update_upload_provenance(
             job,
             stored_upload_path=job.file.name,
@@ -677,8 +681,6 @@ def _reserve_video_upload_import_handoff(
         )
         job.save(
             update_fields=[
-                "status",
-                "error_detail",
                 "processing_provenance",
                 "updated_at",
             ]
@@ -924,9 +926,15 @@ def create_or_reuse_upload_job(
                         previous_upload_job_id=invalid_job.id,
                     )
                 if invalid_status == UploadJob.Status.LOST:
-                    invalid_job.mark_lost(invalid_reason)
+                    invalid_job.mark_lost(
+                        invalid_reason,
+                        error_code=UploadJob.ErrorCode.MEDIA_INTEGRITY_FAILED.value,
+                    )
                 else:
-                    invalid_job.mark_error(invalid_reason)
+                    invalid_job.mark_error(
+                        invalid_reason,
+                        error_code=UploadJob.ErrorCode.MEDIA_INTEGRITY_FAILED.value,
+                    )
                 _cleanup_persisted_watcher_source(invalid_job)
             continue
         except OperationalError as exc:
@@ -1054,6 +1062,16 @@ def _quarantine_preanonymized_drop(
             quarantine_path = quarantine_dir / f"{uuid.uuid4().hex}_{media_path.name}"
         atomic_move_file(source=media_path, destination=quarantine_path)
         updates["quarantined_path"] = str(quarantine_path)
+        index_quarantine_file(
+            quarantine_path,
+            root=quarantine_dir,
+            source_event="watcher.preanonymized_rejected",
+            source_system=(
+                upload_job.source_system if upload_job is not None else None
+            ),
+            reason="Preanonymized import validation failed.",
+            upload_job=upload_job,
+        )
     if sidecar_path is not None and sidecar_path.exists():
         quarantine_sidecar_path = quarantine_dir / sidecar_path.name
         if quarantine_sidecar_path.exists():
@@ -1062,6 +1080,16 @@ def _quarantine_preanonymized_drop(
             )
         atomic_move_file(source=sidecar_path, destination=quarantine_sidecar_path)
         updates["quarantined_sidecar_path"] = str(quarantine_sidecar_path)
+        index_quarantine_file(
+            quarantine_sidecar_path,
+            root=quarantine_dir,
+            source_event="watcher.preanonymized_sidecar_rejected",
+            source_system=(
+                upload_job.source_system if upload_job is not None else None
+            ),
+            reason="Preanonymized sidecar validation failed.",
+            upload_job=upload_job,
+        )
     if upload_job is not None and updates:
         _update_upload_provenance(upload_job, **updates)
         upload_job.save(update_fields=["processing_provenance", "updated_at"])
@@ -1101,6 +1129,14 @@ def _quarantine_upload_job_file(
             "processing_provenance",
             "updated_at",
         ]
+    )
+    index_quarantine_file(
+        quarantine_path,
+        root=_quarantine_dir(),
+        source_event="upload_job.processing_failed",
+        source_system=upload_job.source_system,
+        reason="Upload processing failed and the protected source was quarantined.",
+        upload_job=upload_job,
     )
     return quarantine_path
 
@@ -1540,7 +1576,10 @@ def process_upload_job(job_id: str) -> bool:
 
     center = job.source_center
     if center is None:
-        job.mark_error("Upload job has no resolved source center")
+        job.mark_error(
+            "Upload job has no resolved source center",
+            error_code=UploadJob.ErrorCode.INVALID_CONFIGURATION.value,
+        )
         return False
 
     if job.content_type == "application/pdf":
@@ -1600,7 +1639,16 @@ def process_upload_job(job_id: str) -> bool:
         return True
     except Exception as exc:
         logger.exception("Video upload import handoff failed for %s: %s", job_id, exc)
-        job.mark_error(f"Failed to start video import: {exc}")
+        if _is_celery_broker_connection_error(exc):
+            schedule_dispatch_retry(
+                job,
+                technical_detail=f"Failed to start video import: {exc}",
+            )
+        else:
+            job.mark_error(
+                f"Failed to start video import: {exc}",
+                error_code=UploadJob.ErrorCode.INVALID_CONFIGURATION.value,
+            )
         return False
 
 
@@ -1618,7 +1666,10 @@ def _run_video_upload_import_job(job_id: str) -> bool:
 
     center = job.source_center
     if center is None:
-        job.mark_error("Upload job has no resolved source center")
+        job.mark_error(
+            "Upload job has no resolved source center",
+            error_code=UploadJob.ErrorCode.INVALID_CONFIGURATION.value,
+        )
         return False
 
     job.mark_processing()
@@ -1650,6 +1701,8 @@ def _run_video_upload_import_job(job_id: str) -> bool:
                 sensitive_meta = (
                     video.sensitive_meta if isinstance(video, VideoFile) else None
                 )
+            except IntegrityError:
+                raise
             except Exception:
                 quarantine_path = _quarantine_upload_job_file(
                     job,
@@ -1694,6 +1747,13 @@ def _run_video_upload_import_job(job_id: str) -> bool:
                     exc,
                 )
         return True
+    except IntegrityError as exc:
+        logger.warning("Duplicate upload content rejected for job %s", job_id)
+        job.mark_error(
+            str(exc),
+            error_code=UploadJob.ErrorCode.DUPLICATE_CONTENT.value,
+        )
+        return False
     except (FileNotFoundError, OSError) as exc:
         if source_materialized:
             logger.exception("Upload job processing failed for %s: %s", job_id, exc)
@@ -1720,8 +1780,7 @@ def _run_watcher_upload_job_inline(
     processor_name: str | None = None,
 ) -> UploadJob:
     upload_job.refresh_from_db()
-    upload_job.status = UploadJob.Status.PROCESSING
-    upload_job.error_detail = ""
+    upload_job.mark_processing()
     _update_upload_provenance(
         upload_job,
         processing_handoff="inline",
@@ -1729,8 +1788,6 @@ def _run_watcher_upload_job_inline(
     )
     upload_job.save(
         update_fields=[
-            "status",
-            "error_detail",
             "processing_provenance",
             "updated_at",
         ]
@@ -1857,7 +1914,18 @@ def start_upload_job_processing(
             upload_job.id,
             exc,
         )
-        upload_job.mark_error(f"Failed to start processing: {exc}")
+        upload_job.refresh_from_db()
+        if upload_job.status != UploadJob.Status.RETRYING.value:
+            if _is_celery_broker_connection_error(exc):
+                schedule_dispatch_retry(
+                    upload_job,
+                    technical_detail=f"Failed to start processing: {exc}",
+                )
+            else:
+                upload_job.mark_error(
+                    f"Failed to start processing: {exc}",
+                    error_code=UploadJob.ErrorCode.INVALID_CONFIGURATION.value,
+                )
         raise
 
     if provenance.get("processing_handoff") != handoff_mode:
@@ -1993,11 +2061,23 @@ def process_watcher_file(
             watched_path,
             exc,
         )
+        upload_job.refresh_from_db()
+        if upload_job.status == UploadJob.Status.RETRYING.value:
+            safe_unlink_file(watched_path, missing_ok=True)
+            return upload_job
         upload_job.mark_error(str(exc))
         # Move the failed file to quarantine
         try:
             quarantine_path = _quarantine_dir() / watched_path.name
             atomic_move_file(source=watched_path, destination=quarantine_path)
+            index_quarantine_file(
+                quarantine_path,
+                root=_quarantine_dir(),
+                source_event="watcher.handoff_failed",
+                source_system=upload_job.source_system,
+                reason="Watcher processing handoff failed.",
+                upload_job=upload_job,
+            )
             _update_upload_provenance(upload_job, quarantined_path=str(quarantine_path))
             upload_job.save(update_fields=["processing_provenance", "updated_at"])
             logger.warning(

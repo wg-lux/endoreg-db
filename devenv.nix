@@ -220,9 +220,6 @@ in
     '';
     uvsnc.exec = ''
       sync_cmd="${SYNC_CMD}"
-      if [ -d "../lx-ai-core" ]; then
-        sync_cmd="$sync_cmd --group ai-local"
-      fi
       $sync_cmd
     '';
   };
@@ -247,9 +244,6 @@ in
       description = "Sync the Python environment for Codex/agent workflows";
       exec = ''
         sync_cmd="${SYNC_CMD}"
-        if [ -d "../lx-ai-core" ]; then
-          sync_cmd="$sync_cmd --group ai-local"
-        fi
         $sync_cmd
       '';
     };

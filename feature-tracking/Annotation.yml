@@ -13,6 +13,16 @@ tracking:
     changed_at: '2026-07-17T12:36:20.999264Z'
     note: Alle sieben Definition-of-Done-Kriterien sind mit Backend-, Frontend-, Security-, Reconciliation-
       und isolierter Operations-Evidenz verifiziert.
+  - action: reopened
+    changed_by: Codex
+    changed_at: '2026-07-21T06:52:22.406745Z'
+    note: Add isolated prediction-correction provenance without replacing manual or prediction tracks.
+  - action: done
+    changed_by: Codex
+    changed_at: '2026-07-21T07:20:50.961952Z'
+    note: Die KI-Segmentgenerierung, der isolierte atomare Korrekturimport, die kanonische Zeitachsenabbildung
+      und der asynchrone Frontend-Joblebenszyklus sind implementiert; alle acht Pflichtkriterien sind
+      verifiziert.
 source_documents:
 - path: docs/wiki/frame_annotation_current_support.md
   disposition: reference
@@ -44,9 +54,12 @@ definition_of_done:
   title: CRUD, Bulk-Upsert, Ableitung und Finalisierung sind konsistent
   acceptance:
   - Wiederholte Operationen sind idempotent und erhalten Provenienz.
+  - Korrigierte KI-Segmente werden in einem eigenen Prediction-Correction-Track persistiert; ein erneuter
+    Import ersetzt ausschließlich diesen Korrektur-Track und erhält sowohl ursprüngliche Predictions als
+    auch gewöhnliche manuelle Annotationen.
   - Ungültige Zeitsegmente und unfertige Annotationen werden abgelehnt.
-  - Das Speichern von Frame-Boxen erzeugt einen eindeutigen positiven oder negativen Review-Zustand
-    und wechselt erst nach erfolgreicher Persistenz zur nächsten Aufgabe.
+  - Das Speichern von Frame-Boxen erzeugt einen eindeutigen positiven oder negativen Review-Zustand und
+    wechselt erst nach erfolgreicher Persistenz zur nächsten Aufgabe.
   - Vorab geladene Frame-Aufgaben enthalten innerhalb einer Queue-Generation keine doppelten Frame-IDs.
   required: true
   verification:
@@ -70,8 +83,16 @@ definition_of_done:
         src/stores/__tests__/annotationQueue.test.ts
       note: 28 Tests bestanden; positive und negative Box-Reviews, Fortschaltung und Queue-Deduplizierung
         sind abgedeckt.
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/views/video/test_segments_crud.py
+        -q (32 passed)
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/views/video/test_segments_crud.py
+        -q (33 passed)
+    note: Prediction corrections use an isolated source track; replacement is atomic and preserves ordinary
+      manual and prediction rows.
     assessed_by: Codex
-    assessed_at: '2026-07-20T13:46:44+02:00'
+    assessed_at: '2026-07-21T07:01:46.259701Z'
 - id: automated_tests
   category: testing
   title: Service-, API- und Reconciliation-Pfade sind regressionsgetestet
@@ -96,6 +117,54 @@ definition_of_done:
       note: Exit-Code 0
     assessed_by: Codex
     assessed_at: '2026-07-17T12:10:28.383538Z'
+- id: ai_segment_acceptance
+  category: testing
+  title: KI-Segmentgenerierung, Korrekturimport und Frontend-Lebenszyklus sind fail-closed abgesichert
+  acceptance:
+  - 'Aufgabe Backend-Persistenz: Wenn auch nur ein von der temporalen Inferenz geliefertes Label oder
+    Segment nicht materialisiert werden kann, schlägt der gesamte Lauf fehl; es werden weder Teilsegmente
+    persistiert noch der Verarbeitungslauf als erfolgreich markiert.'
+  - 'Aufgabe atomarer Korrekturimport: Ein ungültiges Element in einer Importliste bewirkt einen vollständigen
+    Rollback; bestehende Prediction-Correction-, Prediction- und gewöhnliche manuelle Tracks bleiben unverändert.'
+  - 'Aufgabe Zeitachsenintegrität: Importierte oder im Frontend korrigierte Segmentgrenzen werden bei
+    Validierung ausschließlich über den kanonischen Präsentationszeitstempel-Resolver auf Frames abgebildet;
+    eine Umrechnung mit nominalen Bildern pro Sekunde ist auch bei variabler Bildrate unzulässig.'
+  - 'Aufgabe Frontend-Joblebenszyklus: Eine Antwort mit queued, already_queued oder pending_after_rebuild
+    wird als laufender Hintergrundjob angezeigt; alte Segmente werden nicht als neues Ergebnis gemeldet
+    und erst nach nachgewiesenem completed-Status neu geladen. failed und busy werden mit ihrer Backendmeldung
+    dargestellt.'
+  - Die Akzeptanztests liegen in tests/acceptance/test_ai_segment_workflow_acceptance.py und im lx-annotate-Frontend
+    unter frontend/tests/components/VideoPredictionSegments.acceptance.spec.ts. Erwartete-Fehler-Markierungen
+    werden im Rahmen der jeweiligen Aufgabe entfernt; erst danach darf dieses Kriterium verifiziert werden.
+  required: true
+  verification:
+    kind: command
+    command:
+    - bash
+    - -lc
+    - devenv shell -- .devenv/state/venv/bin/pytest tests/acceptance/test_ai_segment_workflow_acceptance.py
+      -q && cd /home/admin/dev/lx-annotate/frontend && devenv shell -- npm run test:unit -- --run tests/components/VideoPredictionSegments.acceptance.spec.ts
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: tests/acceptance/test_ai_segment_workflow_acceptance.py (3 passed)
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/acceptance/test_ai_segment_workflow_acceptance.py
+        tests/services/test_video_temporal_inference.py tests/views/video/test_segments_crud.py -q (63
+        passed)
+    - kind: command
+      reference: npm run test:unit -- --run tests/components/VideoPredictionSegments.acceptance.spec.ts
+        src/stores/__tests__/VideoStoreOptimization.spec.ts tests/components/VideoExaminationAnnotation.functionality.spec.ts
+        src/components/VideoExamination/__tests__/VideoExaminationAnnotation.dropdown.test.ts (29 passed)
+    - kind: command
+      reference: npm run type-check (exit 0)
+    note: Fail-closed und atomare Materialisierung, transaktionaler Korrekturimport, präsentationszeitstempelbasierte
+      Frame-Abbildung sowie asynchrones Frontend-Polling sind implementiert und durch fokussierte Backend-
+      und Frontend-Tests nachgewiesen.
+    assessed_by: Codex
+    assessed_at: '2026-07-21T07:20:34.143734Z'
 - id: security_controls
   category: security
   title: Annotationen sind authentifiziert, dataset-übergreifend und quellengebunden
@@ -107,7 +176,8 @@ definition_of_done:
   - Interaktive Frame- und Box-Endpunkte akzeptieren ausschließlich manuelle Informationsquellen und können
     keine Prediction-Provenienz erzeugen.
   - Direkt aus Rohvideo dekodierte Frames werden nur innerhalb des Center-Scopes des authentifizierten
-    Nutzers ausgeliefert; verarbeitete Frames bleiben gemäß dem center-übergreifenden Annotationsvertrag verfügbar.
+    Nutzers ausgeliefert; verarbeitete Frames bleiben gemäß dem center-übergreifenden Annotationsvertrag
+    verfügbar.
   required: true
   verification:
     kind: manual

@@ -113,6 +113,67 @@ def test_transfer_job_processing_snapshot_rejects_unknown_keys() -> None:
     assert "raw_media" in str(exc_info.value)
 
 
+def test_transfer_job_resource_rows_validate_video_segments() -> None:
+    job = TransferJob(
+        resource_kind=TransferJob.ResourceKind.VIDEO,
+        resource_rows={
+            "video_file": {"video_hash": "abc123", "frame_count": 20},
+            "video_segments": [
+                {
+                    "source_node_key": "site-a",
+                    "source_segment_id": 7,
+                    "video_hash": "abc123",
+                    "start_frame_number": 4,
+                    "end_frame_number_exclusive": 12,
+                    "label_name": "lesion_visible",
+                    "source_kind": "manual_annotation",
+                    "validation_state": "validated",
+                    "export_segment": True,
+                    "anonymous_provenance": {
+                        "information_source_name": "manual_annotation"
+                    },
+                }
+            ],
+        },
+        processing_snapshot={},
+        provenance={},
+    )
+
+    job.clean()
+
+    assert job.resource_rows["video_segments"][0]["source_segment_id"] == 7
+
+
+def test_transfer_job_resource_rows_reject_segment_outside_video() -> None:
+    job = TransferJob(
+        resource_kind=TransferJob.ResourceKind.VIDEO,
+        resource_rows={
+            "video_file": {"video_hash": "abc123", "frame_count": 10},
+            "video_segments": [
+                {
+                    "source_node_key": "site-a",
+                    "source_segment_id": 7,
+                    "video_hash": "abc123",
+                    "start_frame_number": 4,
+                    "end_frame_number_exclusive": 11,
+                    "label_name": "lesion_visible",
+                    "source_kind": "manual_annotation",
+                    "validation_state": "validated",
+                    "export_segment": True,
+                    "anonymous_provenance": {
+                        "information_source_name": "manual_annotation"
+                    },
+                }
+            ],
+        },
+        processing_snapshot={},
+        provenance={},
+    )
+
+    with pytest.raises(DjangoValidationError, match="exceeds video frame_count"):
+        job.clean()
+
+
 def test_video_file_meta_validates_known_integrity_keys() -> None:
     video = VideoFile(video_hash="video-json-validation", meta={"origin": "site-a"})
     video.clean()

@@ -1,37 +1,28 @@
 # pyright: reportUnusedClass=false
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from datetime import datetime
-from typing import Protocol, TypedDict, cast
+from typing import Iterable, Protocol, TypedDict, cast
 
 from rest_framework import serializers
 
 from lx_dtypes.models.contracts import DocumentType as DocumentTypeContract
+from lx_dtypes.models.contracts.anonymization_overview import (
+    OverviewHlsMaterializationData,
+    OverviewHlsMaterializationPayload,
+    OverviewUploadJobMonitoringData,
+    OverviewUploadJobMonitoringPayload,
+)
 from lx_dtypes.models.contracts.json_types import JsonObject
 
-from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.models.state.anonymization import AnonymizationState
+from endoreg_db.services.hub.import_monitoring import safe_import_error_detail
 
-PATH_PATTERN = re.compile(r"([A-Za-z]:\\[^\s]+|/[^\s]+)")
 DOCUMENT_TYPE_VALUES = {document_type.value for document_type in DocumentTypeContract}
-
-
-class _FileOverviewUploadJobSummary(TypedDict, total=False):
-    id: str
-    status: str
-    ingest_mode: str
-    source_system: str
-    source_center_key: str | None
-    original_filename: str
-    source_file_persisted: bool
-    cleanup_status: str
-    created_at: str | None
-    updated_at: str | None
-    error_detail: str
 
 
 class _FileOverviewPayload(TypedDict):
@@ -43,7 +34,8 @@ class _FileOverviewPayload(TypedDict):
     created_at: datetime
     sensitive_meta_id: int | None
     file_size: int
-    upload_job: _FileOverviewUploadJobSummary | None
+    upload_job: OverviewUploadJobMonitoringData | None
+    hls_materializations: list[OverviewHlsMaterializationData]
     document_type: str | None
     patient_hash_display: str | None
     examination_hash_display: str | None
@@ -77,9 +69,15 @@ class _FileOverviewUploadJobLike(Protocol):
     original_filename: str | None
     source_file_persisted: bool
     cleanup_status: str
-    created_at: datetime | None
-    updated_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
     error_detail: str | None
+    error_code: str
+    retryable: bool
+    retry_count: int
+    max_retries: int
+    next_retry_at: datetime | None
+    last_attempt_at: datetime | None
 
 
 class _FileOverviewSensitiveMetaLike(Protocol):
@@ -88,6 +86,10 @@ class _FileOverviewSensitiveMetaLike(Protocol):
     examination_hash: str | None
     pseudo_patient_id: int | None
     pseudo_examination_id: int | None
+
+
+class _HlsArtifactManager(Protocol):
+    def all(self) -> Iterable[VideoHlsArtifact]: ...
 
 
 class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
@@ -100,6 +102,7 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
     sensitive_meta_id = serializers.IntegerField(read_only=True, allow_null=True)
     file_size = serializers.IntegerField(read_only=True, required=False)
     upload_job = serializers.DictField(read_only=True, allow_null=True, required=False)
+    hls_materializations = serializers.ListField(read_only=True, required=False)
     document_type = serializers.CharField(
         read_only=True, allow_null=True, required=False
     )
@@ -116,24 +119,11 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
         read_only=True, allow_null=True, required=False
     )
 
-    def _datetime_value(self, value: datetime | None) -> str | None:
-        return value.isoformat() if value else None
-
     def _safe_original_filename(self, upload_job: _FileOverviewUploadJobLike) -> str:
         if not upload_job.original_filename:
             return ""
         normalized_name = str(upload_job.original_filename).replace("\\", "/")
         return Path(normalized_name).name
-
-    def _safe_error_detail(self, upload_job: _FileOverviewUploadJobLike) -> str:
-        if upload_job.status not in {UploadJob.Status.ERROR, UploadJob.Status.LOST}:
-            return ""
-
-        detail = " ".join(str(upload_job.error_detail or "").split())
-        detail = PATH_PATTERN.sub("[path]", detail)
-        if len(detail) > 240:
-            return f"{detail[:237]}..."
-        return detail
 
     def _overview_upload_job(
         self, instance: object
@@ -153,32 +143,72 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
 
     def _upload_job_summary(
         self, instance: object
-    ) -> _FileOverviewUploadJobSummary | None:
+    ) -> OverviewUploadJobMonitoringData | None:
         upload_job = self._overview_upload_job(instance)
         if upload_job is None:
             return None
 
         source_center = getattr(upload_job, "source_center", None)
-        summary: _FileOverviewUploadJobSummary = {
-            "id": str(upload_job.id),
-            "status": upload_job.status,
-            "ingest_mode": upload_job.ingest_mode,
-            "source_system": upload_job.source_system,
-            "source_center_key": (
-                source_center.center_key if source_center is not None else None
-            ),
-            "original_filename": self._safe_original_filename(upload_job),
-            "source_file_persisted": upload_job.source_file_persisted,
-            "cleanup_status": upload_job.cleanup_status,
-            "created_at": self._datetime_value(upload_job.created_at),
-            "updated_at": self._datetime_value(upload_job.updated_at),
-        }
+        if upload_job.status == "anonymized":
+            allowed_actions = ["delete"]
+        elif (
+            upload_job.status in {"error", "lost"}
+            and upload_job.error_code != "duplicate_content"
+        ):
+            allowed_actions = ["safe_reimport", "delete"]
+        else:
+            allowed_actions = []
+        return OverviewUploadJobMonitoringPayload.model_validate(
+            {
+                "id": upload_job.id,
+                "status": upload_job.status,
+                "ingest_mode": upload_job.ingest_mode,
+                "source_system": upload_job.source_system or "unknown",
+                "source_center_key": (
+                    source_center.center_key if source_center is not None else None
+                ),
+                "original_filename": self._safe_original_filename(upload_job),
+                "source_file_persisted": upload_job.source_file_persisted,
+                "cleanup_status": upload_job.cleanup_status,
+                "allowed_actions": allowed_actions,
+                "error_code": upload_job.error_code,
+                "error_detail": safe_import_error_detail(upload_job.error_code),
+                "retryable": upload_job.retryable,
+                "retry_count": upload_job.retry_count,
+                "max_retries": upload_job.max_retries,
+                "next_retry_at": upload_job.next_retry_at,
+                "last_attempt_at": upload_job.last_attempt_at,
+                "created_at": upload_job.created_at,
+                "updated_at": upload_job.updated_at,
+            }
+        ).to_data()
 
-        error_detail = self._safe_error_detail(upload_job)
-        if error_detail:
-            summary["error_detail"] = error_detail
-
-        return summary
+    def _hls_materializations(
+        self, instance: object
+    ) -> list[OverviewHlsMaterializationData]:
+        if not isinstance(instance, VideoFile):
+            return []
+        manager = cast(_HlsArtifactManager, getattr(instance, "hls_artifacts"))
+        artifacts = list(manager.all())
+        upload_job = self._overview_upload_job(instance)
+        return [
+            OverviewHlsMaterializationPayload.model_validate(
+                {
+                    "artifact_kind": artifact.artifact_kind,
+                    "status": artifact.status,
+                    "triggering_upload_job_id": (
+                        upload_job.id if upload_job is not None else None
+                    ),
+                    "source_generation_id": artifact.source_generation_id,
+                    "target_generation_id": artifact.key_id,
+                    "segment_count": artifact.segment_count,
+                    "error_code": artifact.error_code,
+                    "created_at": artifact.created_at,
+                    "updated_at": artifact.updated_at,
+                }
+            ).to_data()
+            for artifact in sorted(artifacts, key=lambda item: item.artifact_kind)
+        ]
 
     def _hash_display(self, value: str | None) -> str | None:
         return f"...{value[-8:]}" if value else None
@@ -275,6 +305,7 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
             "sensitive_meta_id": sensitive_meta.pk if sensitive_meta else None,
             "file_size": file_size,
             "upload_job": self._upload_job_summary(instance),
+            "hls_materializations": self._hls_materializations(instance),
             "document_type": document_type,
             "patient_hash_display": (
                 self._hash_display(sensitive_meta.patient_hash)

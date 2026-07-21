@@ -31,6 +31,7 @@ from endoreg_db.services.jobs.video_fps_normalization_jobs import (
     FpsNormalizationDispatchResult,
 )
 from endoreg_db.views.video.segments_crud import (
+    PREDICTION_CORRECTION_SOURCE_NAME,
     ensure_prediction_segment_annotations_for_video,
     import_prediction_segments_to_manual,
     video_segment_validate,
@@ -1154,6 +1155,9 @@ class VideoSegmentsSourceKindFilterTest(TestCase):
         self.label = Label.objects.create(name="segment-filter-label")
         self.manual_source = InformationSource.objects.create(name="manual_annotation")
         self.prediction_source = InformationSource.objects.create(name="prediction")
+        self.correction_source = InformationSource.objects.create(
+            name=PREDICTION_CORRECTION_SOURCE_NAME
+        )
 
         self.manual_segment = LabelVideoSegment.objects.create(
             video_file=self.video,
@@ -1168,6 +1172,13 @@ class VideoSegmentsSourceKindFilterTest(TestCase):
             start_frame_number=20,
             end_frame_number=30,
             source=self.prediction_source,
+        )
+        self.correction_segment = LabelVideoSegment.objects.create(
+            video_file=self.video,
+            label=self.label,
+            start_frame_number=40,
+            end_frame_number=50,
+            source=self.correction_source,
         )
 
     def test_source_kind_manual_returns_only_manual_segments(self):
@@ -1196,6 +1207,19 @@ class VideoSegmentsSourceKindFilterTest(TestCase):
         self.assertEqual(data[0]["id"], self.prediction_segment.pk)
         self.assertEqual(data[0]["segment_origin"], "prediction")
         self.assertEqual(data[0]["source_name"], "prediction")
+
+    def test_source_kind_prediction_correction_returns_only_corrections(self):
+        request = self.factory.get(
+            f"/api/media/videos/{self.video.pk}/segments/"
+            f"?source_kind={PREDICTION_CORRECTION_SOURCE_NAME}"
+        )
+        response = video_segments_by_video(request, pk=self.video.pk)
+        data = json.loads(response.content.decode())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["id"], self.correction_segment.pk)
+        self.assertEqual(data[0]["source_name"], PREDICTION_CORRECTION_SOURCE_NAME)
 
 
 class VideoSegmentsBulkMutationTest(TestCase):
@@ -1441,6 +1465,9 @@ class ImportPredictionSegmentsToManualTest(TestCase):
         self.label_b = Label.objects.create(name="polyp")
         self.manual_source = InformationSource.objects.create(name="manual_annotation")
         self.prediction_source = InformationSource.objects.create(name="prediction")
+        self.correction_source = InformationSource.objects.create(
+            name=PREDICTION_CORRECTION_SOURCE_NAME
+        )
 
         self.existing_manual_segment = LabelVideoSegment.objects.create(
             video_file=self.video,
@@ -1456,8 +1483,15 @@ class ImportPredictionSegmentsToManualTest(TestCase):
             end_frame_number=20,
             source=self.prediction_source,
         )
+        self.existing_correction_segment = LabelVideoSegment.objects.create(
+            video_file=self.video,
+            label=self.label_a,
+            start_frame_number=30,
+            end_frame_number=40,
+            source=self.correction_source,
+        )
 
-    def test_import_replaces_manual_segments_but_keeps_prediction_segments(self):
+    def test_import_replaces_only_corrections_and_preserves_other_tracks(self):
         request = self.factory.post(
             f"/api/media/videos/{self.video.pk}/segments/import-predictions/",
             {
@@ -1485,6 +1519,7 @@ class ImportPredictionSegmentsToManualTest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(data["created_count"], 2)
         self.assertTrue(data["replaced_existing"])
+        self.assertEqual(data["source_name"], PREDICTION_CORRECTION_SOURCE_NAME)
         self.assertEqual(
             [segment["segment_origin"] for segment in data["segments"]],
             ["manual", "manual"],
@@ -1493,9 +1528,9 @@ class ImportPredictionSegmentsToManualTest(TestCase):
         persisted_manual_segments = LabelVideoSegment.objects.filter(
             video_file=self.video,
             source__name="manual_annotation",
-        ).order_by("start_frame_number")
-        self.assertEqual(persisted_manual_segments.count(), 2)
-        self.assertFalse(
+        )
+        self.assertEqual(persisted_manual_segments.count(), 1)
+        self.assertTrue(
             persisted_manual_segments.filter(
                 pk=self.existing_manual_segment.pk
             ).exists()
@@ -1504,3 +1539,57 @@ class ImportPredictionSegmentsToManualTest(TestCase):
         self.assertTrue(
             LabelVideoSegment.objects.filter(pk=self.prediction_segment.pk).exists()
         )
+        persisted_corrections = LabelVideoSegment.objects.filter(
+            video_file=self.video,
+            source__name=PREDICTION_CORRECTION_SOURCE_NAME,
+        )
+        self.assertEqual(persisted_corrections.count(), 2)
+        self.assertFalse(
+            persisted_corrections.filter(
+                pk=self.existing_correction_segment.pk
+            ).exists()
+        )
+
+    @patch("endoreg_db.views.video.segments_crud.LabelVideoSegmentSerializer")
+    def test_invalid_item_preserves_every_existing_track(
+        self,
+        serializer_class: MagicMock,
+    ):
+        valid_serializer = MagicMock()
+        valid_serializer.is_valid.return_value = True
+        invalid_serializer = MagicMock()
+        invalid_serializer.is_valid.return_value = False
+        invalid_serializer.errors = {"end_time": ["Invalid segment boundary."]}
+        serializer_class.side_effect = [valid_serializer, invalid_serializer]
+
+        existing_ids = set(
+            LabelVideoSegment.objects.filter(video_file=self.video).values_list(
+                "pk", flat=True
+            )
+        )
+        request = self.factory.post(
+            f"/api/media/videos/{self.video.pk}/segments/import-predictions/",
+            {
+                "replace_existing": True,
+                "segments": [
+                    {"label_name": "outside", "start_time": 2.0, "end_time": 4.0},
+                    {"label_name": "polyp", "start_time": 5.0, "end_time": 7.0},
+                ],
+            },
+            format="json",
+        )
+
+        response = import_prediction_segments_to_manual(request, pk=self.video.pk)
+        data = json.loads(response.content.decode())
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(data["segment_index"], 1)
+        self.assertEqual(
+            set(
+                LabelVideoSegment.objects.filter(video_file=self.video).values_list(
+                    "pk", flat=True
+                )
+            ),
+            existing_ids,
+        )
+        valid_serializer.save.assert_not_called()

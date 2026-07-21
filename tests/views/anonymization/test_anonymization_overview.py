@@ -15,6 +15,7 @@ from endoreg_db.models import (
     RawPdfState,
     Center,
     UploadJob,
+    VideoHlsArtifact,
 )
 from endoreg_db.models.state.anonymization import AnonymizationState
 from endoreg_db.views.anonymization.overview import AnonymizationOverviewView
@@ -91,6 +92,13 @@ def test_anonymization_overview_mixed_content():
         source_file_persisted=True,
         cleanup_status=UploadJob.CleanupStatus.PENDING,
         error_detail="OCR failed while parsing /protected/raw/new_report.pdf",
+        error_code=UploadJob.ErrorCode.PROCESSING_FAILED,
+    )
+    VideoHlsArtifact.objects.create(
+        video=video,
+        artifact_kind=VideoHlsArtifact.ArtifactKind.RAW,
+        status=VideoHlsArtifact.Status.READY,
+        segment_count=2,
     )
 
     # 2. Execute Request
@@ -113,7 +121,12 @@ def test_anonymization_overview_mixed_content():
     assert data[0]["upload_job"]["ingest_mode"] == UploadJob.IngestMode.API
     assert data[0]["upload_job"]["original_filename"] == "new_report.pdf"
     assert data[0]["upload_job"]["source_file_persisted"] is True
-    assert data[0]["upload_job"]["error_detail"] == "OCR failed while parsing [path]"
+    assert data[0]["upload_job"]["error_code"] == "processing_failed"
+    assert data[0]["upload_job"]["allowed_actions"] == ["safe_reimport", "delete"]
+    assert data[0]["upload_job"]["error_detail"] == (
+        "Import processing failed. Technical details are available in protected logs."
+    )
+    assert "/protected" not in data[0]["upload_job"]["error_detail"]
 
     # Verify Video (Older)
     assert data[1]["media_type"] == "video"
@@ -126,10 +139,16 @@ def test_anonymization_overview_mixed_content():
     assert data[1]["upload_job"]["original_filename"] == "old_video.mp4"
     assert data[1]["upload_job"]["source_file_persisted"] is False
     assert data[1]["upload_job"]["cleanup_status"] == UploadJob.CleanupStatus.COMPLETED
+    assert data[1]["upload_job"]["allowed_actions"] == ["delete"]
     assert "processing_provenance" not in data[1]["upload_job"]
     assert "idempotency_key" not in data[1]["upload_job"]
     assert "content_hash" not in data[1]["upload_job"]
     assert "file" not in data[1]["upload_job"]
+    assert data[1]["hls_materializations"][0]["artifact_kind"] == "raw"
+    assert data[1]["hls_materializations"][0]["status"] == "ready"
+    assert data[1]["hls_materializations"][0]["segment_count"] == 2
+    assert data[1]["hls_materializations"][0]["source_generation_id"]
+    assert data[1]["hls_materializations"][0]["target_generation_id"]
 
     # Verify Statuses
     assert (

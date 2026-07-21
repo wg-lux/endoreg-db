@@ -323,6 +323,7 @@ def test_materialize_video_hls_command_dry_run_reports_bulk_audit(
         video=failed_video,
         artifact_kind=VideoHlsArtifact.ArtifactKind.PROCESSED.value,
         status=VideoHlsArtifact.Status.FAILED.value,
+        error_code=VideoHlsArtifact.ErrorCode.MATERIALIZATION_FAILED.value,
     )
 
     stdout = StringIO()

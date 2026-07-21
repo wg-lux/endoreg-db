@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 import os
 from typing import Any, Protocol, cast
 
 from django.db import transaction
 from django.utils import timezone
-from lx_dtypes.models.ledger.p_examination.Pydantic import PExamination
-
-from endoreg_db.schemas import validate_dtypes_p_examination_payload
+from lx_dtypes.models.contracts.dtypes_record_persistence import (
+    parse_dtypes_record_persistence_payload,
+)
+from lx_dtypes.models.contracts.json_types import JsonValue
+from pydantic import BaseModel
 
 
 class _ExaminationLike(Protocol):
@@ -26,6 +29,19 @@ class _PatientExaminationLike(Protocol):
     def save(self, *args: object, **kwargs: object) -> None: ...
 
 
+class _DtypesFindingLike(Protocol):
+    patient_examination: str
+
+
+class _DtypesRecordLike(Protocol):
+    examination: str
+    knowledge_base_module: str | None
+    knowledge_base_version: str | None
+    patient_findings: list[_DtypesFindingLike]
+
+    def model_dump(self, *args: object, **kwargs: object) -> dict[str, Any]: ...
+
+
 def _patient_examination(value: object) -> _PatientExaminationLike:
     if not hasattr(value, "examination_safe"):
         raise ValueError("patient_examination must expose examination_safe")
@@ -34,16 +50,21 @@ def _patient_examination(value: object) -> _PatientExaminationLike:
     return cast(_PatientExaminationLike, value)
 
 
-def _validated_p_examination(value: PExamination | dict[str, Any]) -> PExamination:
-    payload = validate_dtypes_p_examination_payload(value)
-    if not payload:
+def _validated_p_examination(
+    value: BaseModel | Mapping[str, JsonValue],
+) -> _DtypesRecordLike:
+    if isinstance(value, BaseModel):
+        candidate = value.model_dump(mode="json", exclude_none=True)
+    else:
+        candidate = value
+    if not candidate:
         raise ValueError("dtypes_record must not be empty")
-    return PExamination.model_validate(payload)
+    return cast(_DtypesRecordLike, parse_dtypes_record_persistence_payload(candidate))
 
 
 def _validate_host_patient_examination_match(
     patient_examination: _PatientExaminationLike,
-    payload: PExamination,
+    payload: _DtypesRecordLike,
 ) -> None:
     examination = patient_examination.examination_safe
     if payload.examination != examination.name:
@@ -65,7 +86,7 @@ def _validate_host_patient_examination_match(
 
 def persist_patient_examination_dtypes_record(
     patient_examination: object,
-    value: PExamination | dict[str, Any],
+    value: BaseModel | Mapping[str, JsonValue],
 ) -> dict[str, Any]:
     host_patient_examination = _patient_examination(patient_examination)
     payload = _validated_p_examination(value)

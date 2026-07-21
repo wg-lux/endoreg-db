@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from types import NoneType
 from typing import Any, TYPE_CHECKING, Protocol, TypeAlias, cast
 
@@ -79,9 +79,20 @@ class UploadJob(models.Model):
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"
         PROCESSING = "processing", "Processing"
+        RETRYING = "retrying", "Retrying"
         ANONYMIZED = "anonymized", "Anonymized"
         ERROR = "error", "Error"
         LOST = "lost", "Lost"
+
+    class ErrorCode(models.TextChoices):
+        NONE = "", "None"
+        DISPATCH_UNAVAILABLE = "dispatch_unavailable", "Dispatch Unavailable"
+        DUPLICATE_CONTENT = "duplicate_content", "Duplicate Content"
+        INVALID_CONFIGURATION = "invalid_configuration", "Invalid Configuration"
+        INVALID_INPUT = "invalid_input", "Invalid Input"
+        MEDIA_INTEGRITY_FAILED = "media_integrity_failed", "Media Integrity Failed"
+        PROCESSING_FAILED = "processing_failed", "Processing Failed"
+        SOURCE_MISSING = "source_missing", "Source Missing"
 
     class IngestMode(models.TextChoices):
         API = "api", "API"
@@ -247,6 +258,45 @@ class UploadJob(models.Model):
         blank=True, help_text="Error message if processing failed"
     )
 
+    error_code: models.CharField[str, Any] = models.CharField(
+        max_length=64,
+        choices=ErrorCode.choices,
+        default=ErrorCode.NONE,
+        blank=True,
+        help_text="Stable machine-readable import failure classification.",
+    )
+
+    retryable: models.BooleanField[bool, Any] = models.BooleanField(
+        default=False,
+        help_text="Whether this job is waiting for an automatic retry.",
+    )
+
+    retry_count: models.PositiveIntegerField[int, Any] = models.PositiveIntegerField(
+        default=0,
+        help_text="Number of automatic retries scheduled for this job.",
+    )
+
+    max_retries: models.PositiveIntegerField[int, Any] = models.PositiveIntegerField(
+        default=3,
+        help_text="Maximum number of automatic retries allowed for this job.",
+    )
+
+    next_retry_at: models.DateTimeField[UploadJobDateTime | None, Any] = (
+        models.DateTimeField(
+            null=True,
+            blank=True,
+            help_text="When the next automatic retry becomes due.",
+        )
+    )
+
+    last_attempt_at: models.DateTimeField[UploadJobDateTime | None, Any] = (
+        models.DateTimeField(
+            null=True,
+            blank=True,
+            help_text="When import processing was most recently attempted.",
+        )
+    )
+
     created_at: models.DateTimeField[datetime, Any] = models.DateTimeField(
         auto_now_add=True, help_text="When the upload job was created"
     )
@@ -275,6 +325,10 @@ class UploadJob(models.Model):
                 fields=["source_system", "created_at"],
                 name="upload_job_source_time_idx",
             ),
+            models.Index(
+                fields=["status", "next_retry_at"],
+                name="upload_job_retry_due_idx",
+            ),
         ]
         constraints = [
             models.UniqueConstraint(
@@ -298,6 +352,28 @@ class UploadJob(models.Model):
                     & ~models.Q(status__in=["error", "lost"])
                 ),
                 name="uniq_uploadjob_idempotency_scope_active",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        status="retrying",
+                        retryable=True,
+                        next_retry_at__isnull=False,
+                        retry_count__gt=0,
+                    )
+                    & ~models.Q(error_code="")
+                )
+                | (
+                    ~models.Q(status="retrying")
+                    & models.Q(retryable=False, next_retry_at__isnull=True)
+                ),
+                name="upload_job_retry_state_consistent",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    ~models.Q(status__in=["error", "lost"]) | ~models.Q(error_code="")
+                ),
+                name="upload_job_terminal_error_coded",
             ),
         ]
 
@@ -335,14 +411,41 @@ class UploadJob(models.Model):
     def mark_processing(self) -> None:
         """Mark the job as processing."""
         self.status = self.Status.PROCESSING.value
-        self.save(update_fields=["status", "updated_at"])
+        self.error_code = self.ErrorCode.NONE.value
+        self.error_detail = ""
+        self.retryable = False
+        self.next_retry_at = None
+        self.last_attempt_at = timezone.now()
+        self.save(
+            update_fields=[
+                "status",
+                "error_code",
+                "error_detail",
+                "retryable",
+                "next_retry_at",
+                "last_attempt_at",
+                "updated_at",
+            ]
+        )
 
     def mark_completed(self, sensitive_meta: UploadJobSensitiveMeta = None) -> None:
         """Mark the job as successfully completed."""
         self.status = self.Status.ANONYMIZED.value
+        self.error_code = self.ErrorCode.NONE.value
+        self.error_detail = ""
+        self.retryable = False
+        self.next_retry_at = None
         if sensitive_meta:
             self.sensitive_meta = sensitive_meta
-        update_fields = ["status", "sensitive_meta", "updated_at"]
+        update_fields = [
+            "status",
+            "sensitive_meta",
+            "error_code",
+            "error_detail",
+            "retryable",
+            "next_retry_at",
+            "updated_at",
+        ]
         target_cleanup_status = self.cleanup_status
 
         if self.retention_policy == self.RetentionPolicy.DELETE_AFTER_SUCCESS.value:
@@ -361,17 +464,51 @@ class UploadJob(models.Model):
             update_fields.append("cleanup_status")
         self.save(update_fields=update_fields)
 
-    def mark_error(self, error_detail: str) -> None:
+    def mark_error(
+        self,
+        error_detail: str,
+        *,
+        error_code: str = ErrorCode.PROCESSING_FAILED,
+    ) -> None:
         """Mark the job as failed with error details."""
         self.status = self.Status.ERROR.value
         self.error_detail = error_detail
-        self.save(update_fields=["status", "error_detail", "updated_at"])
+        self.error_code = error_code
+        self.retryable = False
+        self.next_retry_at = None
+        self.save(
+            update_fields=[
+                "status",
+                "error_detail",
+                "error_code",
+                "retryable",
+                "next_retry_at",
+                "updated_at",
+            ]
+        )
 
-    def mark_lost(self, error_detail: str) -> None:
+    def mark_lost(
+        self,
+        error_detail: str,
+        *,
+        error_code: str = ErrorCode.SOURCE_MISSING,
+    ) -> None:
         """Mark the job as unrecoverably inconsistent with on-disk state."""
         self.status = self.Status.LOST.value
         self.error_detail = error_detail
-        self.save(update_fields=["status", "error_detail", "updated_at"])
+        self.error_code = error_code
+        self.retryable = False
+        self.next_retry_at = None
+        self.save(
+            update_fields=[
+                "status",
+                "error_detail",
+                "error_code",
+                "retryable",
+                "next_retry_at",
+                "updated_at",
+            ]
+        )
         emit_structured_event(
             logger,
             "media.integrity_lost",
@@ -383,3 +520,43 @@ class UploadJob(models.Model):
             ),
             detail=safe_log_value(error_detail),
         )
+
+    def schedule_retry(
+        self,
+        error_detail: str,
+        *,
+        error_code: str,
+        delay_seconds: int,
+        max_retries: int | None = None,
+    ) -> bool:
+        """Persist a bounded retry or transition to a coded terminal error."""
+        retry_limit = self.max_retries if max_retries is None else max_retries
+        if retry_limit < 1:
+            raise ValueError("max_retries must be positive")
+        if delay_seconds < 1:
+            raise ValueError("delay_seconds must be positive")
+
+        self.max_retries = retry_limit
+        if self.retry_count >= retry_limit:
+            self.mark_error(error_detail, error_code=error_code)
+            return False
+
+        self.retry_count += 1
+        self.status = self.Status.RETRYING.value
+        self.error_detail = error_detail
+        self.error_code = error_code
+        self.retryable = True
+        self.next_retry_at = timezone.now() + timedelta(seconds=delay_seconds)
+        self.save(
+            update_fields=[
+                "status",
+                "error_detail",
+                "error_code",
+                "retryable",
+                "retry_count",
+                "max_retries",
+                "next_retry_at",
+                "updated_at",
+            ]
+        )
+        return True

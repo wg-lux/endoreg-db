@@ -75,7 +75,10 @@ from endoreg_db.services.jobs.video_fps_normalization_jobs import (
     dispatch_video_fps_normalization,
     normalization_status,
 )
-from endoreg_db.services.video_files import get_or_create_video_state, get_video_fps
+from endoreg_db.services.video_files import (
+    get_or_create_video_state,
+    video_seconds_to_frame_number,
+)
 from endoreg_db.models.state.label_video_segment import LabelVideoSegmentState
 from endoreg_db.serializers.label_video_segment import (
     LabelVideoSegmentTimelineSerializer,
@@ -93,6 +96,7 @@ from endoreg_db.utils.operation_log import (
 logger = logging.getLogger(__name__)
 
 SegmentSnapshot = dict[str, Any]
+PREDICTION_CORRECTION_SOURCE_NAME = "prediction_correction"
 
 
 def _request_payload(request: Request) -> Mapping[str, Any]:
@@ -241,6 +245,10 @@ def _prediction_segment_query() -> Q:
     return Q(prediction_meta__isnull=False) | Q(source__name="prediction")
 
 
+def _prediction_correction_segment_query() -> Q:
+    return Q(source__name=PREDICTION_CORRECTION_SOURCE_NAME)
+
+
 def _filter_segments_by_origin(
     queryset: QuerySet[LabelVideoSegment],
     source_kind: str | None,
@@ -248,8 +256,14 @@ def _filter_segments_by_origin(
     normalized = str(source_kind or "all").strip().lower()
     if normalized == "prediction":
         return queryset.filter(_prediction_segment_query()).distinct()
+    if normalized == PREDICTION_CORRECTION_SOURCE_NAME:
+        return queryset.filter(_prediction_correction_segment_query()).distinct()
     if normalized == "manual":
-        return queryset.exclude(_prediction_segment_query()).distinct()
+        return (
+            queryset.exclude(_prediction_segment_query())
+            .exclude(_prediction_correction_segment_query())
+            .distinct()
+        )
     return queryset
 
 
@@ -520,9 +534,10 @@ def video_segments_blacken_outside(request: Request, pk: int) -> Response:
     outside_segment_count = outside_segments.count()
     segment_rows = LabelVideoSegment.objects.filter(video_file=video)
 
-    if segment_rows.exists() and segment_rows.exclude(
-        state__is_validated=True
-    ).exists():
+    if (
+        segment_rows.exists()
+        and segment_rows.exclude(state__is_validated=True).exists()
+    ):
         return Response(
             {
                 "message": "All video segments must be validated before blackening.",
@@ -947,8 +962,10 @@ def video_segments_bulk_mutation(request: Request, pk: int) -> Response:
 @permission_classes([EnvironmentAwarePermission])
 def import_prediction_segments_to_manual(request: Request, pk: int) -> Response:
     """
-    Replace or extend the manual segment layer for a video using a caller-supplied
-    segment list, typically loaded from pipe-1 predictions and adjusted in the UI.
+    Replace or extend the prediction-correction segment layer for a video using
+    a caller-supplied segment list adjusted from pipe-1 predictions in the UI.
+
+    Prediction and ordinary manual segment layers are always preserved.
 
     POST /api/media/videos/<pk>/segments/import-predictions/
 
@@ -972,18 +989,38 @@ def import_prediction_segments_to_manual(request: Request, pk: int) -> Response:
             message="Invalid segment import payload",
         )
 
-    manual_source, _ = InformationSource.objects.get_or_create(
-        name="manual_annotation",
-        defaults={"description": "Manually created label segments via web interface"},
+    correction_source, _ = InformationSource.objects.get_or_create(
+        name=PREDICTION_CORRECTION_SOURCE_NAME,
+        defaults={
+            "description": (
+                "Human corrections derived from immutable video segment predictions"
+            )
+        },
     )
+
+    validated_serializers: list[LabelVideoSegmentSerializer] = []
+    for idx, item in enumerate(import_payload.segments):
+        payload = item.serializer_payload(video_id=pk)
+        serializer = LabelVideoSegmentSerializer(data=payload)
+        if not serializer.is_valid():
+            details = _serializer_errors(serializer)
+            return Response(
+                {
+                    "error": "Invalid segment import payload",
+                    "details": details,
+                    "segment_index": idx,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        validated_serializers.append(serializer)
 
     created_segments: list[LabelVideoSegment] = []
     with transaction.atomic():
         if import_payload.replace_existing:
-            manual_segments = LabelVideoSegment.objects.filter(
-                video_file=video
-            ).exclude(_prediction_segment_query())
-            for segment in manual_segments.iterator():
+            correction_segments = LabelVideoSegment.objects.filter(
+                video_file=video,
+            ).filter(_prediction_correction_segment_query())
+            for segment in correction_segments.iterator():
                 segment_label = _segment_label(segment)
                 if segment_label is not None:
                     delete_model_meta = segment.get_model_meta()
@@ -999,23 +1036,10 @@ def import_prediction_segments_to_manual(request: Request, pk: int) -> Response:
                     )
                 _delete_segment(segment)
 
-        for idx, item in enumerate(import_payload.segments):
-            payload = item.serializer_payload(video_id=pk)
-            serializer = LabelVideoSegmentSerializer(data=payload)
-            if not serializer.is_valid():
-                details = _serializer_errors(serializer)
-                return Response(
-                    {
-                        "error": "Invalid segment import payload",
-                        "details": details,
-                        "segment_index": idx,
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
+        for serializer in validated_serializers:
             segment = serializer.save()
-            if getattr(segment, "source_id", None) != getattr(manual_source, "pk"):
-                segment.source = manual_source
+            if getattr(segment, "source_id", None) != getattr(correction_source, "pk"):
+                segment.source = correction_source
                 _save_segment(segment, update_fields=["source"])
             _sync_frame_annotations(segment=segment)
             created_segments.append(segment)
@@ -1026,9 +1050,10 @@ def import_prediction_segments_to_manual(request: Request, pk: int) -> Response:
     )
     return Response(
         {
-            "message": "Prediction segments imported to manual annotations.",
+            "message": "Prediction corrections imported to a separate annotation track.",
             "created_count": len(created_segments),
             "replaced_existing": import_payload.replace_existing,
+            "source_name": PREDICTION_CORRECTION_SOURCE_NAME,
             "segments": _serializer_data(response_serializer),
         },
         status=status.HTTP_200_OK,
@@ -1200,25 +1225,26 @@ def video_segment_validate(request: Request, pk: int, segment_id: int) -> Respon
 
         # Optional: update times (seconds) before validation
         annotation_input = payload.to_annotation_input(video_id=int(video.pk))
-        fps_value = 0.0
-        if annotation_input is not None:
-            fps_value = get_video_fps(_segment_video_file(segment)) or 0
-
         with transaction.atomic():
             if annotation_input is not None:
-                if fps_value > 0:
-                    new_start, new_end = annotation_input.to_frame_range(fps_value)
-                    _validate_segment_frame_range(
-                        new_start,
-                        new_end,
-                        video_file=_segment_video_file(segment),
-                    )
-                    segment.start_frame_number = new_start
-                    segment.end_frame_number = new_end
-                    _save_segment(
-                        segment,
-                        update_fields=["start_frame_number", "end_frame_number"],
-                    )
+                segment_video = _segment_video_file(segment)
+                new_start = video_seconds_to_frame_number(
+                    segment_video, annotation_input.start_time
+                )
+                new_end = video_seconds_to_frame_number(
+                    segment_video, annotation_input.end_time
+                )
+                _validate_segment_frame_range(
+                    new_start,
+                    new_end,
+                    video_file=segment_video,
+                )
+                segment.start_frame_number = new_start
+                segment.end_frame_number = new_end
+                _save_segment(
+                    segment,
+                    update_fields=["start_frame_number", "end_frame_number"],
+                )
 
             segment.mark_validated(
                 is_validated=is_validated,
@@ -1373,18 +1399,6 @@ def video_segments_validate_bulk(request: Request, pk: int) -> Response:
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        fps_by_segment_id: dict[int, float] = {}
-        for segment in segments:
-            segment_pk = int(segment.pk)
-            data = segments_data.get(segment_pk)
-            if data is None:
-                continue
-            annotation_input = data.to_annotation_input(video_id=int(video.pk))
-            if annotation_input is not None:
-                fps_by_segment_id[segment_pk] = (
-                    get_video_fps(_segment_video_file(segment)) or 0
-                )
-
         updated_count = 0
         failed_ids: list[int] = []
         with transaction.atomic():
@@ -1396,25 +1410,27 @@ def video_segments_validate_bulk(request: Request, pk: int) -> Response:
                     if data is not None:
                         annotation_input = data.to_annotation_input(video_id=pk)
                         if annotation_input is not None:
-                            fps_value = fps_by_segment_id.get(segment_pk, 0)
-                            if fps_value > 0:
-                                new_start, new_end = annotation_input.to_frame_range(
-                                    fps_value
-                                )
-                                _validate_segment_frame_range(
-                                    new_start,
-                                    new_end,
-                                    video_file=_segment_video_file(segment),
-                                )
-                                segment.start_frame_number = new_start
-                                segment.end_frame_number = new_end
-                                _save_segment(
-                                    segment,
-                                    update_fields=[
-                                        "start_frame_number",
-                                        "end_frame_number",
-                                    ],
-                                )
+                            segment_video = _segment_video_file(segment)
+                            new_start = video_seconds_to_frame_number(
+                                segment_video, annotation_input.start_time
+                            )
+                            new_end = video_seconds_to_frame_number(
+                                segment_video, annotation_input.end_time
+                            )
+                            _validate_segment_frame_range(
+                                new_start,
+                                new_end,
+                                video_file=segment_video,
+                            )
+                            segment.start_frame_number = new_start
+                            segment.end_frame_number = new_end
+                            _save_segment(
+                                segment,
+                                update_fields=[
+                                    "start_frame_number",
+                                    "end_frame_number",
+                                ],
+                            )
                     was_validated = bool(segment.state and segment.state.is_validated)
                     status_before = (
                         STATUS_VALIDATED

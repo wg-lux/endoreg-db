@@ -120,9 +120,7 @@ def video_frame_number_to_seconds(video: "VideoFile", frame_number: int) -> floa
     return _frame_number_to_s(video, frame_number)
 
 
-def video_seconds_to_frame_number(
-    video: "VideoFile", timestamp_seconds: float
-) -> int:
+def video_seconds_to_frame_number(video: "VideoFile", timestamp_seconds: float) -> int:
     from ._time import _seconds_to_frame_number
 
     return _seconds_to_frame_number(video, timestamp_seconds)

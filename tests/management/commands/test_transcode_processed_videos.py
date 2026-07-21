@@ -127,6 +127,7 @@ def _patch_transcode_and_streamable(
             frame_count=250,
         ),
     )
+
     def fake_probe_video_artifact(_path: Path) -> VideoArtifactProbe:
         return probe
 

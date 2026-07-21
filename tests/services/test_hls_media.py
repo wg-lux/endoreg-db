@@ -854,6 +854,7 @@ def test_materialize_video_hls_failure_unlinks_partial_segments_and_keys(
 
     artifact = VideoHlsArtifact.objects.get(video=video, artifact_kind="processed")
     assert artifact.status == VideoHlsArtifact.Status.FAILED.value
+    assert artifact.error_code == VideoHlsArtifact.ErrorCode.MATERIALIZATION_FAILED
     assert artifact.key_ciphertext is None
     assert artifact.key_nonce is None
     assert artifact.playlist_relative_path == ""

@@ -363,22 +363,26 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
                 "endoreg_db.services.hub.ingest._run_watcher_upload_job_inline",
                 side_effect=AssertionError("inline fallback must be disabled"),
             ),
-            self.assertRaises(ConnectionRefusedError),
         ):
-            process_watcher_file(
+            upload_job = process_watcher_file(
                 file_path=temp_file_path,
                 file_type="report",
                 center=self.center,
             )
 
-        upload_job = UploadJob.objects.order_by("-created_at").first()
-        self.assertIsNotNone(upload_job)
-        assert upload_job is not None
-        self.assertEqual(upload_job.status, UploadJob.Status.ERROR)
-        self.assertIn("broker down", upload_job.error_detail)
+        upload_job.refresh_from_db()
+        self.assertEqual(upload_job.status, UploadJob.Status.RETRYING)
+        self.assertEqual(
+            upload_job.error_code,
+            UploadJob.ErrorCode.DISPATCH_UNAVAILABLE,
+        )
+        self.assertTrue(upload_job.retryable)
+        self.assertEqual(upload_job.retry_count, 1)
+        self.assertIsNotNone(upload_job.next_retry_at)
         quarantined_path = self.quarantine_dir / filename
-        self.assertTrue(quarantined_path.exists())
+        self.assertFalse(quarantined_path.exists())
         self.assertFalse(temp_file_path.exists())
+        self.assertTrue(upload_job.file)
 
     def test_process_watcher_file_quarantines_on_failure(self):
         filename = "failed_watcher_video.mp4"

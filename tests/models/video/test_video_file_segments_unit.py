@@ -41,7 +41,6 @@ def test_convert_sequences_creates_segments() -> None:
 
     sequences = {
         "lesion": [(0, 4), (10, 12)],
-        "unknown": [(3, 6)],
     }
 
     segments_module._convert_sequences_to_db_segments(video, sequences, prediction_meta)
@@ -59,7 +58,42 @@ def test_convert_sequences_creates_segments() -> None:
 
 
 @pytest.mark.django_db
-def test_convert_sequences_skips_single_frame_segments() -> None:
+def test_convert_sequences_rejects_unknown_label_atomically() -> None:
+    center = Center.objects.create(name="unknown-center", display_name="Unknown Center")
+    video = VideoFile.objects.create(center=center, video_hash="unknown-hash")
+
+    label_type = LabelType.objects.create(name="video")
+    label = Label.objects.create(name="lesion", label_type=label_type)
+
+    labelset = LabelSet.objects.create(name="set-unknown", version=1)
+    labelset.labels.add(label)
+
+    ai_model = AiModel.objects.create(name="model-unknown")
+    model_meta = ModelMeta.objects.create(
+        name="meta-unknown", version="1", model=ai_model, labelset=labelset
+    )
+    prediction_meta = VideoPredictionMeta.objects.create(
+        model_meta=model_meta, video_file=video
+    )
+
+    with pytest.raises(
+        segments_module.PredictionSegmentMaterializationError,
+        match="unresolved prediction label 'unknown'",
+    ):
+        segments_module._convert_sequences_to_db_segments(
+            video,
+            {"lesion": [(0, 4)], "unknown": [(3, 6)]},
+            prediction_meta,
+        )
+
+    assert not LabelVideoSegment.objects.filter(
+        video_file=video,
+        prediction_meta=prediction_meta,
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_convert_sequences_rejects_single_frame_segments_atomically() -> None:
     center = Center.objects.create(
         name="singleton-center", display_name="Singleton Center"
     )
@@ -83,18 +117,21 @@ def test_convert_sequences_skips_single_frame_segments() -> None:
         "appendix": [(5, 5), (10, 12)],
     }
 
-    segments_module._convert_sequences_to_db_segments(video, sequences, prediction_meta)
+    with pytest.raises(
+        segments_module.PredictionSegmentMaterializationError,
+        match="Invalid prediction sequence",
+    ):
+        segments_module._convert_sequences_to_db_segments(
+            video,
+            sequences,
+            prediction_meta,
+        )
 
-    created = LabelVideoSegment.objects.filter(
-        video_file=video, label=label, prediction_meta=prediction_meta
-    )
-    assert created.count() == 1
-    segment = created.get()
-    assert segment.start_frame_number == 10
-    assert segment.end_frame_number == 12
-    assert segment.source is not None
-    assert segment.source.name == "prediction"
-    assert segment.state is not None
+    assert not LabelVideoSegment.objects.filter(
+        video_file=video,
+        label=label,
+        prediction_meta=prediction_meta,
+    ).exists()
 
 
 @pytest.mark.django_db

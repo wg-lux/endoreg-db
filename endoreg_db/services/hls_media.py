@@ -115,6 +115,7 @@ class HlsMaterializationResult:
 class _ArtifactSnapshot:
     status: str
     key_id: UUID
+    source_generation_id: UUID
     key_ciphertext: bytes | None
     key_nonce: bytes | None
     key_wrap_algorithm: str
@@ -314,6 +315,7 @@ def _artifact_snapshot(
     return _ArtifactSnapshot(
         status=VideoHlsArtifact.Status.READY.value,
         key_id=artifact.key_id,
+        source_generation_id=artifact.source_generation_id,
         key_ciphertext=(
             bytes(artifact.key_ciphertext)
             if artifact.key_ciphertext is not None
@@ -337,6 +339,7 @@ def _restore_artifact_snapshot(
 ) -> None:
     artifact.status = snapshot.status
     artifact.key_id = snapshot.key_id
+    artifact.source_generation_id = snapshot.source_generation_id
     artifact.key_ciphertext = snapshot.key_ciphertext
     artifact.key_nonce = snapshot.key_nonce
     artifact.key_wrap_algorithm = snapshot.key_wrap_algorithm
@@ -346,10 +349,12 @@ def _restore_artifact_snapshot(
     artifact.segment_count = snapshot.segment_count
     artifact.source_file_name = snapshot.source_file_name
     artifact.last_error = last_error
+    artifact.error_code = VideoHlsArtifact.ErrorCode.NONE.value
     artifact.save(
         update_fields=[
             "status",
             "key_id",
+            "source_generation_id",
             "key_ciphertext",
             "key_nonce",
             "key_wrap_algorithm",
@@ -359,6 +364,7 @@ def _restore_artifact_snapshot(
             "segment_count",
             "source_file_name",
             "last_error",
+            "error_code",
             "updated_at",
         ]
     )
@@ -371,6 +377,7 @@ def _mark_artifact_failed(
     previous: _ArtifactSnapshot | None,
     expected_key_id: UUID | None = None,
     expected_status: str | None = None,
+    error_code: str = VideoHlsArtifact.ErrorCode.MATERIALIZATION_FAILED,
 ) -> bool:
     with transaction.atomic():
         artifact = VideoHlsArtifact.objects.select_for_update().get(pk=artifact_id)
@@ -402,6 +409,7 @@ def _mark_artifact_failed(
         artifact.segment_directory_relative_path = ""
         artifact.segment_count = 0
         artifact.last_error = error[:4000]
+        artifact.error_code = error_code
         artifact.save(
             update_fields=[
                 "status",
@@ -412,6 +420,7 @@ def _mark_artifact_failed(
                 "segment_directory_relative_path",
                 "segment_count",
                 "last_error",
+                "error_code",
                 "updated_at",
             ]
         )
@@ -472,6 +481,7 @@ def _recover_stale_in_flight_artifact(
     artifact.segment_directory_relative_path = ""
     artifact.segment_count = 0
     artifact.last_error = recovery_error
+    artifact.error_code = VideoHlsArtifact.ErrorCode.STALE_ATTEMPT.value
     artifact.save(
         update_fields=[
             "status",
@@ -482,6 +492,7 @@ def _recover_stale_in_flight_artifact(
             "segment_directory_relative_path",
             "segment_count",
             "last_error",
+            "error_code",
             "updated_at",
         ]
     )
@@ -539,7 +550,10 @@ def reserve_hls_materialization_dispatch(
         artifact.status = VideoHlsArtifact.Status.QUEUED.value
         if not recovered_stale_artifact:
             artifact.last_error = ""
-        artifact.save(update_fields=["status", "last_error", "updated_at"])
+        artifact.error_code = VideoHlsArtifact.ErrorCode.NONE.value
+        artifact.save(
+            update_fields=["status", "last_error", "error_code", "updated_at"]
+        )
         return HlsMaterializationDispatchReservation(
             artifact_id=int(artifact.pk),
             artifact_kind=parsed_kind.value,
@@ -558,6 +572,7 @@ def mark_hls_materialization_dispatch_failed(*, artifact_id: int, error: str) ->
             error=error,
             previous=None,
             expected_status=VideoHlsArtifact.Status.QUEUED.value,
+            error_code=VideoHlsArtifact.ErrorCode.DISPATCH_FAILED.value,
         )
 
 
@@ -611,6 +626,7 @@ def _prepare_artifact_record(
         )
         artifact.status = VideoHlsArtifact.Status.MATERIALIZING.value
         artifact.key_id = key_id
+        artifact.source_generation_id = uuid4()
         artifact.key_ciphertext = key_ciphertext
         artifact.key_nonce = key_nonce
         artifact.key_wrap_algorithm = HLS_KEY_WRAP_ALGORITHM
@@ -620,11 +636,13 @@ def _prepare_artifact_record(
         artifact.segment_count = 0
         artifact.source_file_name = source_file_name
         artifact.last_error = ""
+        artifact.error_code = VideoHlsArtifact.ErrorCode.NONE.value
         artifact.full_clean()
         artifact.save(
             update_fields=[
                 "status",
                 "key_id",
+                "source_generation_id",
                 "key_ciphertext",
                 "key_nonce",
                 "key_wrap_algorithm",
@@ -634,6 +652,7 @@ def _prepare_artifact_record(
                 "segment_count",
                 "source_file_name",
                 "last_error",
+                "error_code",
                 "updated_at",
             ]
         )
@@ -669,6 +688,7 @@ def _mark_artifact_ready(
         artifact.segment_directory_relative_path = segment_directory_relative_path
         artifact.segment_count = segment_count
         artifact.last_error = ""
+        artifact.error_code = VideoHlsArtifact.ErrorCode.NONE.value
         artifact.full_clean()
         artifact.save(
             update_fields=[
@@ -677,6 +697,7 @@ def _mark_artifact_ready(
                 "segment_directory_relative_path",
                 "segment_count",
                 "last_error",
+                "error_code",
                 "updated_at",
             ]
         )
@@ -1354,6 +1375,7 @@ def _existing_ready_result(
             previous=None,
             expected_key_id=artifact.key_id,
             expected_status=VideoHlsArtifact.Status.READY.value,
+            error_code=VideoHlsArtifact.ErrorCode.INCONSISTENT_ARTIFACT.value,
         )
         raise RuntimeError(
             f"HLS artifact state is inconsistent for video={video_id} "

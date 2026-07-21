@@ -204,15 +204,17 @@ def transcode_processed_video_for_storage_pressure(
             )
             profile = configured_video_storage_profile()
             source_probe = probe_video_artifact(source_path)
-            if resample_max_fps is not None and LabelVideoSegment.objects.filter(
-                video_file=video
-            ).exists():
+            if (
+                resample_max_fps is not None
+                and LabelVideoSegment.objects.filter(video_file=video).exists()
+            ):
                 raise RuntimeError(
                     "Annotation FPS resampling must run before segment rows exist."
                 )
-            if resample_max_fps is not None and video.frames.filter(
-                is_extracted=True
-            ).exists():
+            if (
+                resample_max_fps is not None
+                and video.frames.filter(is_extracted=True).exists()
+            ):
                 raise RuntimeError(
                     "Annotation FPS resampling refuses extracted frame rows because "
                     "their coordinates would be invalidated."

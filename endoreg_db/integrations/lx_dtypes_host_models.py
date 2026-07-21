@@ -9,6 +9,12 @@ import django
 from django.apps import apps
 from django.db import models
 from django.db.models import QuerySet
+from lx_dtypes.models.contracts.json_types import JsonValue
+from pydantic import BaseModel
+from rest_framework.exceptions import AuthenticationFailed
+
+from endoreg_db.authz.auth import KeycloakJWTAuthentication
+from endoreg_db.services.hub import resolve_allowed_center_id
 
 if TYPE_CHECKING:
     from endoreg_db.models.administration.center.center import Center
@@ -144,7 +150,7 @@ def get_finding_classification_choice(
 def active_patient_findings_queryset() -> QuerySet[PatientFinding]:
     model = _patient_finding_model()
     return model.objects.filter(is_active=True).select_related(
-        "patient_examination",
+        "patient_examination__patient",
         "finding",
     )
 
@@ -180,9 +186,69 @@ def create_patient_finding_classification(
     )
 
 
+def authenticate_request_user(request: Any) -> Any | None:
+    """Resolve a session or verified Bearer principal for lx-dtypes routes."""
+    user = getattr(request, "user", None)
+    if getattr(user, "is_authenticated", False):
+        return user
+
+    try:
+        authentication_result = KeycloakJWTAuthentication().authenticate(request)
+    except AuthenticationFailed:
+        return None
+    if authentication_result is None:
+        return None
+
+    authenticated_user = authentication_result[0]
+    request.user = authenticated_user
+    return authenticated_user
+
+
+def patient_finding_access_allowed(request: Any, patient_finding: object) -> bool:
+    """Authorize one patient finding without revealing foreign-center records."""
+    patient_examination = getattr(patient_finding, "patient_examination", None)
+    return patient_examination_access_allowed(request, patient_examination)
+
+
+def patient_examination_access_allowed(
+    request: Any, patient_examination: object
+) -> bool:
+    """Authorize one examination from the authenticated user's center scope."""
+    user = getattr(request, "user", None)
+    if not getattr(user, "is_authenticated", False):
+        return False
+
+    allowed_center_id = resolve_allowed_center_id(user)
+    if allowed_center_id is None:
+        return True
+    if allowed_center_id == -1:
+        return False
+
+    patient = getattr(patient_examination, "patient", None)
+    object_center_id = getattr(patient, "center_id", None)
+    return isinstance(object_center_id, int) and object_center_id == allowed_center_id
+
+
+def patient_findings_queryset_for_request(
+    request: Any,
+) -> QuerySet[PatientFinding]:
+    """Return active findings restricted to the authenticated center scope."""
+    queryset = active_patient_findings_queryset()
+    user = getattr(request, "user", None)
+    if not getattr(user, "is_authenticated", False):
+        return queryset.none()
+
+    allowed_center_id = resolve_allowed_center_id(user)
+    if allowed_center_id is None:
+        return queryset
+    if allowed_center_id == -1:
+        return queryset.none()
+    return queryset.filter(patient_examination__patient__center_id=allowed_center_id)
+
+
 def persist_patient_examination_dtypes_record(
     patient_examination: PatientExamination,
-    payload: Any,
+    payload: BaseModel | Mapping[str, JsonValue],
 ) -> dict[str, Any]:
     from endoreg_db.services.dtypes_records import (
         persist_patient_examination_dtypes_record as persist_record,
@@ -205,6 +271,7 @@ __all__ = [
     "PatientFinding",
     "PatientFindingClassification",
     "active_patient_findings_queryset",
+    "authenticate_request_user",
     "create_patient_finding",
     "create_patient_finding_classification",
     "get_active_patient_finding",
@@ -213,5 +280,8 @@ __all__ = [
     "get_finding_classification_choice",
     "get_patient_examination",
     "orm_models",
+    "patient_examination_access_allowed",
+    "patient_finding_access_allowed",
+    "patient_findings_queryset_for_request",
     "persist_patient_examination_dtypes_record",
 ]

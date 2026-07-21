@@ -120,14 +120,15 @@ def _metadata_for_file(
 def index_quarantine_file(
     path: Path | str,
     *,
+    root: Path | None = None,
     source_event: str = "quarantine.discovered",
     source_system: str | None = None,
     reason: str | None = None,
     upload_job: UploadJob | None = None,
     now: datetime | None = None,
 ) -> tuple[QuarantineItem, bool]:
-    root = ensure_directory(quarantine_dir()).resolve()
-    resolved = _validate_quarantine_path(Path(path), root=root)
+    quarantine_root = ensure_directory(root or quarantine_dir()).resolve()
+    resolved = _validate_quarantine_path(Path(path), root=quarantine_root)
     if not resolved.exists() or not resolved.is_file():
         raise ValueError(f"Quarantine path is not an existing file: {resolved}")
 
@@ -140,7 +141,7 @@ def index_quarantine_file(
         file_mtime_ns=stat_result.st_mtime_ns,
         upload_job=upload_job,
     )
-    relative_path = _relative_quarantine_path(resolved, root=root)
+    relative_path = _relative_quarantine_path(resolved, root=quarantine_root)
     quarantined_at = _quarantined_at_from_stat(stat_result.st_mtime)
     defaults = {
         "relative_path": relative_path,

@@ -693,6 +693,7 @@ def test_run_video_post_validation_rebuild_accepts_valid_processed_output(
         return __import__("numpy").zeros((4, 4, 3), dtype="uint8")
 
     monkeypatch.setattr(jobs, "_capture_frame", fake_capture_frame)
+
     def fake_censor_outside_video_frames(
         _video: VideoFile,
         *,
@@ -708,8 +709,12 @@ def test_run_video_post_validation_rebuild_accepts_valid_processed_output(
     ) -> None:
         return None
 
-    monkeypatch.setattr(jobs, "censor_outside_video_frames", fake_censor_outside_video_frames)
-    monkeypatch.setattr(jobs, "_verify_outside_frames_blackened", fake_verify_outside_frames_blackened)
+    monkeypatch.setattr(
+        jobs, "censor_outside_video_frames", fake_censor_outside_video_frames
+    )
+    monkeypatch.setattr(
+        jobs, "_verify_outside_frames_blackened", fake_verify_outside_frames_blackened
+    )
 
     history = VideoProcessingHistory.objects.create(
         video=video,
@@ -779,6 +784,7 @@ def test_run_video_post_validation_rebuild_reuses_merged_intervals(
         "_verify_processed_video_contract",
         fake_verify_processed_video_contract,
     )
+
     def fake_censor_outside_video_frames(
         _video: VideoFile,
         *,

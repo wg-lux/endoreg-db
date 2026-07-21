@@ -27,6 +27,7 @@ from endoreg_db.services.video_files import (
     get_video_by_pk,
     validate_video_metadata_annotation,
 )
+from endoreg_db.services.hub import resolve_allowed_center_id
 from endoreg_db.serializers.misc.file_overview import FileOverviewSerializer
 from ...serializers import VoPPatientDataSerializer
 from endoreg_db.utils.operation_log import (
@@ -141,7 +142,7 @@ class AnonymizationOverviewView(APIView):
 
     def get(self, request: Request) -> Response:
         serializer = FileOverviewSerializer(
-            cast(Any, self.get_queryset()),
+            cast(Any, self.get_queryset(request_user=request.user)),
             many=True,
             context={"request": request},
         )
@@ -151,14 +152,18 @@ class AnonymizationOverviewView(APIView):
             status=status.HTTP_200_OK,
         )
 
-    def get_queryset(self) -> list[VideoFile | RawPdfFile]:
+    def get_queryset(
+        self,
+        *,
+        request_user: object | None = None,
+    ) -> list[VideoFile | RawPdfFile]:
         """
         Returns a combined queryset of VideoFile and RawPdfFile instances.
         """
         # 1) VideoFile queryset - only fields that exist on VideoFile
         qs_video = (
             VideoFile.objects.select_related("state", "sensitive_meta")
-            .prefetch_related("label_video_segments__state")
+            .prefetch_related("label_video_segments__state", "hls_artifacts")
             .only(
                 "id",
                 "original_file_name",
@@ -189,6 +194,14 @@ class AnonymizationOverviewView(APIView):
             "sensitive_meta__pseudo_patient",
             "sensitive_meta__pseudo_examination",
         )
+
+        allowed_center_id = resolve_allowed_center_id(request_user)
+        if allowed_center_id == -1:
+            qs_video = qs_video.none()
+            qs_pdf = qs_pdf.none()
+        elif allowed_center_id is not None:
+            qs_video = qs_video.filter(center_id=allowed_center_id)
+            qs_pdf = qs_pdf.filter(center_id=allowed_center_id)
 
         combined = list(qs_video) + list(qs_pdf)
         _attach_overview_upload_jobs(combined)

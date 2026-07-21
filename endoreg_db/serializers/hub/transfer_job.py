@@ -68,9 +68,9 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
 
     def validate_payload_schema_version(self, value: str) -> str:
         normalized = value.strip()
-        if normalized != "2.0":
+        if normalized != "3.0":
             raise serializers.ValidationError(
-                "Only privacy-preserving hub payload_schema_version '2.0' is accepted."
+                "Only privacy-preserving hub payload_schema_version '3.0' is accepted."
             )
         return normalized
 
@@ -146,6 +146,26 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
                 )
         elif source_node.owning_center is not None:
             source_center = source_node.owning_center
+
+        owning_center_id = getattr(source_node, "owning_center_id", None)
+        resolved_source_center_id = getattr(source_center, "pk", None)
+        if owning_center_id is None:
+            raise serializers.ValidationError(
+                {
+                    "source_node_key": (
+                        "The authenticated source node must have an owning center"
+                    )
+                }
+            )
+        if resolved_source_center_id != owning_center_id:
+            raise serializers.ValidationError(
+                {
+                    "source_center_key": (
+                        "source_center_key must match the authenticated "
+                        "source node owning center"
+                    )
+                }
+            )
 
         resource_rows = cast(dict[str, object], attrs.get("resource_rows", {}))
         self._validate_privacy_boundary(resource_rows)
@@ -301,12 +321,45 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
         except ValueError as exc:
             raise serializers.ValidationError({"resource_rows": str(exc)}) from exc
 
-        self._validate_sensitive_meta_linkage(resource_rows)
+        validated_resource_rows = cast(
+            dict[str, object], attrs.get("resource_rows", {})
+        )
+        if str(attrs["resource_kind"]) == TransferJob.ResourceKind.VIDEO.value:
+            self._validate_video_segment_source_scope(
+                validated_resource_rows,
+                source_node_key=source_node.node_key,
+            )
+
+        self._validate_sensitive_meta_linkage(validated_resource_rows)
 
         attrs["source_node"] = source_node
         attrs["target_node"] = target_node
         attrs["source_center"] = source_center
         return attrs
+
+    @staticmethod
+    def _validate_video_segment_source_scope(
+        resource_rows: dict[str, object],
+        *,
+        source_node_key: str,
+    ) -> None:
+        segments_value = resource_rows.get("video_segments", [])
+        if not isinstance(segments_value, list):
+            return
+        segments = cast(list[object], segments_value)
+        for segment_value in segments:
+            if not isinstance(segment_value, dict):
+                continue
+            segment = cast(dict[str, object], segment_value)
+            if str(segment.get("source_node_key") or "") != source_node_key:
+                raise serializers.ValidationError(
+                    {
+                        "resource_rows": (
+                            "video segment source_node_key must match transfer "
+                            "source_node_key"
+                        )
+                    }
+                )
 
     def _validate_transfer_eligible_anonymization_status(
         self,

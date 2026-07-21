@@ -145,6 +145,20 @@ class LabelVideoSegment(models.Model):
         default=False,
         help_text="If true, include this segment in export selection.",
     )
+    source_node_key: models.CharField[Any, Any] = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        editable=False,
+        help_text="Immutable source node key for an imported segment.",
+    )
+    source_segment_id: models.CharField[Any, Any] = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        editable=False,
+        help_text="Immutable source-local identifier for an imported segment.",
+    )
 
     if TYPE_CHECKING:
         model_meta: SegmentModelMeta
@@ -155,6 +169,18 @@ class LabelVideoSegment(models.Model):
             CheckConstraint(
                 condition=Q(start_frame_number__lt=F("end_frame_number")),
                 name="segment_start_lt_end",
+            ),
+            CheckConstraint(
+                condition=(
+                    Q(source_node_key__isnull=True, source_segment_id__isnull=True)
+                    | Q(source_node_key__isnull=False, source_segment_id__isnull=False)
+                ),
+                name="segment_source_identity_complete",
+            ),
+            models.UniqueConstraint(
+                fields=["source_node_key", "source_segment_id"],
+                condition=Q(source_node_key__isnull=False),
+                name="unique_segment_source_identity",
             ),
         ]
         indexes = [

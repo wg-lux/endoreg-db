@@ -1,90 +1,224 @@
-schema_version: "1.0"
+schema_version: '1.0'
 id: lxdm
 name: LX-Datenmodell-Integration
 description: Strikt typisierte Integration von lx_dtypes als klinischer Wissens- und Austauschvertrag.
 owners:
-  - endoreg_db maintainers
+- endoreg_db maintainers
 production_critical: true
+tracking:
+  state: active
+  history: []
 source_documents:
-  - path: docs/dtypes_lookup_module_entrypoint.md
-    disposition: reference
-    note: Beschreibt den aktuellen Lookup- und Host-Modul-Vertrag.
+- path: docs/dtypes_lookup_module_entrypoint.md
+  disposition: reference
+  note: Beschreibt den aktuellen Lookup- und Host-Modul-Vertrag.
+- path: docs/lxdm_contract_usage_audit.md
+  disposition: reference
+  note: Prüfspezifikation für Inventar, Nutzungsklassifikation und priorisierte Einführung der lx_dtypes-Contracts;
+    der Status wird ausschließlich im Kriterium contract_usage_audit geführt.
+- path: docs/lxdm_contract_inventory.md
+  disposition: reference
+  note: Reproduzierbares vollständiges Modul-, Export-, Invarianten-, Test- und Consumer-Inventar.
 definition_of_done:
-  - id: documented_scope
-    category: requirements
-    title: Ownership zwischen Django, lx_dtypes und Knowledge Base ist eindeutig
-    acceptance:
-      - Für jedes persistierte oder exportierte Feld ist die zuständige Quelle festgelegt.
-      - Versions- und Kompatibilitätsgrenzen sind dokumentiert.
-    required: true
-    verification:
-      kind: manual
-      instructions: Feldownership und Versionsvertrag gegen Host-Modelle und Service prüfen.
-    assessment: &not_assessed
-      status: not_assessed
-  - id: typed_boundary
-    category: functionality
-    title: Externe und persistierte Daten werden einmalig strikt validiert
-    acceptance:
-      - API-Daten werden am Rand in lx_dtypes-Verträge überführt.
-      - Interne Workflows verwenden keine parallelen untypisierten Payloadformen.
-    required: true
-    verification:
-      kind: command
-      command: [.devenv/state/venv/bin/pytest, tests/api/test_dtypes_record_persistence.py, -q]
-      timeout_seconds: 600
-    assessment: *not_assessed
-  - id: record_consistency
-    category: data_integrity
-    title: Persistierter LXDM-Datensatz folgt allen klinischen Änderungen
-    acceptance:
-      - Erstellen, Ändern und Löschen abhängiger Befunde aktualisiert den Datensatz idempotent.
-      - Fremde Untersuchungsdatensätze werden abgelehnt.
-    required: true
-    verification:
-      kind: command
-      command: [.devenv/state/venv/bin/pytest, tests/api/test_dtypes_record_persistence.py, -q]
-      timeout_seconds: 600
-    assessment: *not_assessed
-  - id: automated_tests
-    category: testing
-    title: Importgrenzen und Persistenzvertrag sind regressionsgetestet
-    acceptance:
-      - Import-Boundary- und Datensatztests laufen mit strikt typisierten Verträgen.
-    required: true
-    verification:
-      kind: command
-      command: [.devenv/state/venv/bin/pytest, tests/app/test_lx_dtypes_import_boundary.py, tests/api/test_dtypes_record_persistence.py, -q]
-      timeout_seconds: 600
-    assessment: *not_assessed
-  - id: security_controls
-    category: security
-    title: Klinische Identität und Provenienz werden nicht durch lose Payloads umgangen
-    acceptance:
-      - Center- und Untersuchungsbezug werden serverseitig geprüft.
-      - Persistierte JSON-Daten werden am Modellrand validiert.
-    required: true
-    verification:
-      kind: manual
-      instructions: Boundary-Review für fremde Untersuchung, ungültiges JSON und Center-Scope durchführen.
-    assessment: *not_assessed
-  - id: operational_readiness
-    category: operations
-    title: Versionswechsel und Reparatur bestehender Datensätze sind beherrscht
-    acceptance:
-      - Upgrade-, Backfill-, Fehler- und Rollbackverfahren sind definiert und getestet.
-    required: true
-    verification:
-      kind: manual
-      instructions: Versionsupgrade und Backfill mit repräsentativem Datenbestand proben.
-    assessment: *not_assessed
-  - id: integration_documentation
-    category: documentation
-    title: Host-Modul, Wissensbasis und API-Nutzung sind dokumentiert
-    acceptance:
-      - Neue Entwickler können Datenfluss, Imports und Kompatibilitätsregeln ohne Quellcodeforensik nachvollziehen.
-    required: true
-    verification:
-      kind: manual
-      instructions: Dokumentation gegen aktuellen Import- und Persistenzpfad prüfen.
-    assessment: *not_assessed
+- id: documented_scope
+  category: requirements
+  title: Ownership zwischen Django, lx_dtypes und Knowledge Base ist eindeutig
+  acceptance:
+  - Für jedes persistierte oder exportierte Feld ist die zuständige Quelle festgelegt.
+  - Versions- und Kompatibilitätsgrenzen sind dokumentiert.
+  required: true
+  verification:
+    kind: manual
+    instructions: Feldownership und Versionsvertrag gegen Host-Modelle und Service prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/dtypes_lookup_module_entrypoint.md
+    note: Feldownership und Kompatibilitätsgrenze 0.2.1/<0.3 gegen Host-Service und Modelle dokumentiert.
+    assessed_by: Codex
+    assessed_at: '2026-07-20T14:26:24.820980Z'
+- id: contract_usage_audit
+  category: requirements
+  title: LXDM-Contract-Nutzung ist vollständig inventarisiert und priorisiert
+  acceptance:
+  - Jedes öffentliche Nicht-Test-Modul unter /home/admin/lx-data-models/lx_dtypes/models/contracts ist
+    mit exportierten Typen, Invarianten und vorhandenen Contract-Tests erfasst.
+  - Statische und dynamische Consumer in endoreg-db sind je API-, Persistenz-, Job-, Import-/Export-,
+    Authentifizierungs- oder Mediengrenze nachvollziehbar zugeordnet.
+  - Parallele lokale Schemata, untypisierte Dictionaries und fehlende Boundary-Validierung sind mit Risiko
+    und Ownership klassifiziert.
+  - Verbesserungsvorschläge sind in kleine priorisierte Migrationskohorten mit Zielcontract, betroffenen
+    Dateien und überprüfbaren Pyright- und Testnachweisen gegliedert.
+  - Contract-Änderungen und Endoreg-Adoption werden getrennt bewertet; öffentliche oder persistierte Verträge
+    erhalten eine Versions- und Kompatibilitätsstrategie.
+  required: true
+  verification:
+    kind: manual
+    instructions: Prüfspezifikation vollständig abarbeiten, Inventar gegen rg-basierte Contract- und Consumer-Suche
+      abgleichen und priorisierte Kohorten mit Ownership und Verifikation reviewen.
+    timeout_seconds: 1800
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/lxdm_contract_inventory.md
+    - kind: command
+      reference: feature-tracking/audit_lxdm_contracts.py
+    note: Alle 111 Contract-Module reproduzierbar inventarisiert; Consumer, Invarianten, Tests, Risiken
+      und priorisierte Kohorten dokumentiert.
+    assessed_by: Codex
+    assessed_at: '2026-07-20T14:26:25.596650Z'
+- id: typed_boundary
+  category: functionality
+  title: Externe und persistierte Daten werden einmalig strikt validiert
+  acceptance:
+  - API-Daten werden am Rand in lx_dtypes-Verträge überführt.
+  - Interne Workflows verwenden keine parallelen untypisierten Payloadformen.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - env
+    - PYTHONPATH=/home/admin/lx-data-models
+    - .devenv/state/venv/bin/pytest
+    - tests/api/test_dtypes_record_persistence.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell -- env PYTHONPATH=/home/admin/lx-data-models .devenv/state/venv/bin/pytest
+        tests/api/test_dtypes_record_persistence.py -q
+      note: Exit-Code 0
+    assessed_by: Codex
+    assessed_at: '2026-07-20T14:40:28.135445Z'
+- id: record_consistency
+  category: data_integrity
+  title: Persistierter LXDM-Datensatz folgt allen klinischen Änderungen
+  acceptance:
+  - Erstellen, Ändern und Löschen abhängiger Befunde aktualisiert den Datensatz idempotent.
+  - Soft-Delete und Aktualisierung des persistierten LXDM-Datensatzes erfolgen atomar.
+  - Fremde Untersuchungsdatensätze werden abgelehnt.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - env
+    - PYTHONPATH=/home/admin/lx-data-models
+    - .devenv/state/venv/bin/pytest
+    - tests/api/test_dtypes_record_persistence.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell -- env PYTHONPATH=/home/admin/lx-data-models .devenv/state/venv/bin/pytest
+        tests/api/test_dtypes_record_persistence.py -q
+      note: Exit-Code 0
+    assessed_by: Codex
+    assessed_at: '2026-07-20T14:41:11.678360Z'
+- id: automated_tests
+  category: testing
+  title: Importgrenzen und Persistenzvertrag sind regressionsgetestet
+  acceptance:
+  - Import-Boundary- und Datensatztests laufen mit strikt typisierten Verträgen.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - env
+    - PYTHONPATH=/home/admin/lx-data-models
+    - .devenv/state/venv/bin/pytest
+    - tests/app/test_lx_dtypes_import_boundary.py
+    - tests/api/test_dtypes_record_persistence.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell -- env PYTHONPATH=/home/admin/lx-data-models .devenv/state/venv/bin/pytest
+        tests/app/test_lx_dtypes_import_boundary.py tests/api/test_dtypes_record_persistence.py -q
+      note: Exit-Code 0
+    assessed_by: Codex
+    assessed_at: '2026-07-20T14:42:01.423471Z'
+- id: security_controls
+  category: security
+  title: Klinische Identität und Provenienz werden nicht durch lose Payloads umgangen
+  acceptance:
+  - Center- und Untersuchungsbezug werden serverseitig geprüft.
+  - Patientenbefunde werden nur authentifiziert und innerhalb des eigenen Center-Scopes gelistet.
+  - Erstellen, Ändern, Klassifizieren, Reaktivieren und Deaktivieren von Patientenbefunden erfordern Authentifizierung
+    und Center-Scope; fremde Ressourcen liefern 404.
+  - Jede Deaktivierung erhält einen authentifizierten Akteur und einen serverseitigen Zeitstempel.
+  - Persistierte JSON-Daten werden am Modellrand validiert.
+  required: true
+  verification:
+    kind: manual
+    instructions: Boundary-Review für fremde Untersuchung, ungültiges JSON und Center-Scope durchführen.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell -- env PYTHONPATH=/home/admin/lx-data-models .devenv/state/venv/bin/pytest
+        tests/api/test_dtypes_record_persistence.py -q
+    - kind: review
+      reference: lx_dtypes_host_models.py + findings_routes.py host authorization boundary
+    note: Alle Patient-Finding-Listen und -Mutationen authentifizieren, scopen Querysets auf das Center,
+      liefern für fremde Objekte 404 und auditieren Deaktivierungen.
+    assessed_by: Codex
+    assessed_at: '2026-07-20T14:42:22.499618Z'
+- id: operational_readiness
+  category: operations
+  title: Versionswechsel und Reparatur bestehender Datensätze sind beherrscht
+  acceptance:
+  - Upgrade-, Backfill-, Fehler- und Rollbackverfahren sind definiert und getestet.
+  required: true
+  verification:
+    kind: manual
+    instructions: Versionsupgrade und Backfill mit repräsentativem Datenbestand proben.
+    timeout_seconds: 300
+  assessment:
+    status: blocked
+    evidence:
+    - kind: runbook
+      reference: docs/dtypes_lookup_module_entrypoint.md
+    - kind: test
+      reference: 'Candidate integration, persistence, transfer and hub endpoint lane: 72 passed'
+    note: Codepfad, Backfill- und atomarer Rollback sind getestet; Produktionsfreigabe bleibt bis Veröffentlichung/Pin
+      von lx-dtypes 0.2.1 und realer Backup-Restore-Probe blockiert.
+    assessed_by: Codex
+    assessed_at: '2026-07-20T14:42:24.877342Z'
+- id: integration_documentation
+  category: documentation
+  title: Host-Modul, Wissensbasis und API-Nutzung sind dokumentiert
+  acceptance:
+  - Neue Entwickler können Datenfluss, Imports und Kompatibilitätsregeln ohne Quellcodeforensik nachvollziehen.
+  required: true
+  verification:
+    kind: manual
+    instructions: Dokumentation gegen aktuellen Import- und Persistenzpfad prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/dtypes_lookup_module_entrypoint.md
+    note: Datenfluss, Imports, Ownership, Kompatibilität und Betriebspfad gegen aktuelle Implementierung
+      geprüft.
+    assessed_by: Codex
+    assessed_at: '2026-07-20T14:26:27.077629Z'

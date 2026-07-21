@@ -62,7 +62,27 @@ def _health_command_patches(
         patch.object(
             health_command,
             "_upload_job_failure_stats",
-            return_value={"failed": 0, "lost": 0, "error": None},
+            return_value={
+                "failed": 0,
+                "lost": 0,
+                "retrying": 0,
+                "retry_due": 0,
+                "retry_exhausted": 0,
+                "error": None,
+            },
+        ),
+        patch.object(
+            health_command,
+            "_hls_materialization_stats",
+            return_value={
+                "queued": 0,
+                "materializing": 0,
+                "ready": 0,
+                "failed": 0,
+                "stale_in_flight": 0,
+                "stale_timeout_seconds": 30 * 60,
+                "error": None,
+            },
         ),
         patch.object(
             health_command,
