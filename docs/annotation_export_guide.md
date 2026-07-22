@@ -29,7 +29,9 @@ rule, not an annotation ownership boundary.
 ## Data Model
 
 - **Frame**: one database row per video frame, with `id`, `frame_number`,
-  `timestamp`, and `relative_path`.
+  `presentation_timestamp`, `timestamp`, and `relative_path`. The integer
+  presentation timestamp (PTS) is interpreted only with the rational video
+  stream timebase persisted in `VideoFile.meta.source_timeline`.
 - **LabelVideoSegment**: a labeled video time/frame range created by a user or
   prediction workflow.
 - **ImageClassificationAnnotation (ICA)**: the frame-level label row consumed by
@@ -75,6 +77,7 @@ config = export_config(
     output_dir=Path("/data/endoreg-training/gastronet_run_001"),
     output_path="annotations.csv",
     output_format="csv",
+    export_profile="pts_dataset_v1",
     load_base_data=True,
     use_export_flags=True,
     information_source_name="manual_annotation",
@@ -138,6 +141,7 @@ Prefer YAML configs for reproducible training exports.
 output_dir: /data/endoreg-training/gastronet_run_001
 output_path: annotations.csv
 output_format: csv
+export_profile: pts_dataset_v1
 load_base_data: true
 
 use_export_flags: true
@@ -177,6 +181,9 @@ The annotation table columns are:
 
 - `annotation_id`, `video_id`, `video_hash`
 - `frame_id`, `frame_number`, `frame_relative_path`, `frame_timestamp`
+- `presentation_timestamp`, `presentation_time_seconds`
+- `stream_time_base_num`, `stream_time_base_den`, `timeline_version`
+- `export_frame_index`, `artifact_kind`, `artifact_sha256`
 - `label_id`, `label_name`, `value`, `float_value`
 - `annotator`, `information_source_id`, `information_source_name`
 - `model_meta_id`, `date_created`, `date_modified`
@@ -186,6 +193,14 @@ Training code should resolve image files as:
 ```python
 image_path = export_dir / "frames" / f"video_{video_id}" / frame_relative_path
 ```
+
+For `pts_dataset_v1`, unique frames are sorted per video by integer presentation
+timestamp and receive a one-based `export_frame_index`. Multiple annotations on
+the same frame share that index. The exporter fails closed when the exact PTS or
+stream timebase or the processed-artifact SHA-256 digest is missing; it never
+derives frame identity from nominal frames per second. `presentation_time_seconds`
+is the portable time coordinate, while the integer PTS remains specific to the
+exported processed artifact and its timebase.
 
 ## Frame Extraction Modes
 
@@ -199,6 +214,9 @@ use_frame_pk_paths: false
 
 This keeps `frame_relative_path` aligned with the stable frame contract:
 `frame_{frame_number:07d}.jpg`. See `docs/video_frame_extraction_contract.md`.
+This legacy-cache mode applies only to `legacy_table_v1`. The
+`pts_dataset_v1` profile always regenerates requested images from the validated
+processed artifact so the manifest and image provenance cannot diverge.
 
 Use transcoding when frame image files must be created from the active video for
 the exported annotations:
@@ -206,7 +224,6 @@ the exported annotations:
 ```yaml
 export_frames: true
 transcode_frames: true
-transcode_fps: 50
 transcode_quality: 2
 transcode_ext: jpg
 transcode_overwrite: false
@@ -215,6 +232,11 @@ transcode_overwrite: false
 When `transcode_frames=true`, `use_frame_pk_paths` defaults to true. The exported
 table then references frame primary-key filenames such as `frame_12345.jpg`,
 which are copied under `frames/video_<video_id>/`.
+Frame transcoding preserves the persisted source coordinates. The legacy
+`transcode_fps` option is ignored and must not be used to resample annotations.
+When exact integer timestamps are available, sparse exports select those PTS
+values directly in the processed video stream instead of decoding the complete
+ordinal range between the first and last requested frame.
 
 ## Filtering What Gets Exported
 
@@ -264,8 +286,10 @@ Recommended payload for model training:
   "output_dir": "/data/endoreg-training/gastronet_run_001",
   "output_path": "annotations.csv",
   "output_format": "csv",
+  "export_profile": "pts_dataset_v1",
+  "video_id": 42,
+  "segment_ids": [101, 102, 103],
   "use_export_flags": true,
-  "information_source_name": "manual_annotation",
   "export_frames": true,
   "export_videos": false,
   "transcode_frames": false,
@@ -287,10 +311,10 @@ Response:
 }
 ```
 
-If the API request omits `config_path`, the current implementation defaults to
-`export_frames=true`, `export_videos=true`, and `use_export_flags=true`. Set
-`export_videos=false` explicitly unless copied videos are required and confirmed
-to be anonymized.
+The API requires `video_id`. `label_id`, `information_source_name`, `only_true`,
+and `limit` are optional filters because selected segments already carry their
+label and provenance identity. The safe defaults are `export_frames=true`,
+`export_videos=false`, and `use_export_flags=true`.
 
 ## Segment API Inputs
 
@@ -372,6 +396,12 @@ structure through `EndoMultiLabelDataset`.
 
 ## Notes and Caveats
 
+- Frame rows created before the exact integer PTS migration can have a null
+  `presentation_timestamp`. `pts_dataset_v1` rejects those rows. Do not derive
+  the missing value from nominal frames per second or rewrite coordinates after
+  annotations exist; use the approved reimport/normalization workflow before
+  coordinates are persisted, or retain `legacy_table_v1` until a separately
+  approved legacy migration is available.
 - ICA does not currently have a direct foreign key to `LabelVideoSegment`.
   Segment filtering matches by frame range, label, information source, and model
   metadata.

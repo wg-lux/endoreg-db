@@ -10,12 +10,13 @@ from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from types import NoneType
-from typing import Literal, Protocol, TypedDict, cast
+from typing import Literal, Protocol, TypeAlias, TypedDict, cast
 
 from django.db.models import Q, QuerySet
 from endoreg_db.utils.ffmpeg_wrapper import (
     extract_frame_range as ffmpeg_extract_frame_range,
     extract_frames as ffmpeg_extract_frames,
+    extract_frames_by_presentation_timestamp as ffmpeg_extract_frames_by_pts,
 )
 from lx_dtypes.models.contracts import (
     VideoFrameAnnotationExportConfigPayload,
@@ -34,7 +35,12 @@ from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
 )
 from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.schemas.video_storage import VideoSourceTimelineEvidence
 from endoreg_db.services.hub.deployment import local_study_server_mode_enabled
+from endoreg_db.services.seekable_media_input import (
+    SeekableFieldFile,
+    serve_seekable_media_input,
+)
 from endoreg_db.services.video_files import get_video_frame_dir_path
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
@@ -52,6 +58,7 @@ from endoreg_db.utils.paths import (
 )
 from endoreg_db.utils import ensure_local_file
 from endoreg_db.utils.storage_streaming import (
+    field_file_has_decrypted_range_storage,
     local_plaintext_path_from_name,
     maybe_local_plaintext_path,
 )
@@ -59,6 +66,10 @@ from endoreg_db.utils.storage_streaming import (
 logger = logging.getLogger(__name__)
 
 type Null = NoneType
+VideoFrameAnnotationExportProfile: TypeAlias = Literal[
+    "legacy_table_v1",
+    "pts_dataset_v1",
+]
 type ConfigScalar = str | int | float | bool | Null
 type ExportConfigFieldValue = Path | str | int | float | bool | list[int] | Null
 type AnnotationCell = str | int | float | bool | Null
@@ -70,6 +81,14 @@ type AnnotationFieldName = Literal[
     "frame_number",
     "frame_relative_path",
     "frame_timestamp",
+    "presentation_timestamp",
+    "presentation_time_seconds",
+    "stream_time_base_num",
+    "stream_time_base_den",
+    "timeline_version",
+    "export_frame_index",
+    "artifact_kind",
+    "artifact_sha256",
     "label_id",
     "label_name",
     "value",
@@ -90,6 +109,14 @@ DEFAULT_FIELDNAMES: tuple[AnnotationFieldName, ...] = (
     "frame_number",
     "frame_relative_path",
     "frame_timestamp",
+    "presentation_timestamp",
+    "presentation_time_seconds",
+    "stream_time_base_num",
+    "stream_time_base_den",
+    "timeline_version",
+    "export_frame_index",
+    "artifact_kind",
+    "artifact_sha256",
     "label_id",
     "label_name",
     "value",
@@ -111,6 +138,14 @@ class AnnotationRow(TypedDict):
     frame_number: int | Null
     frame_relative_path: str | Null
     frame_timestamp: float | Null
+    presentation_timestamp: int | Null
+    presentation_time_seconds: float | Null
+    stream_time_base_num: int | Null
+    stream_time_base_den: int | Null
+    timeline_version: str | Null
+    export_frame_index: int
+    artifact_kind: str
+    artifact_sha256: str | Null
     label_name: str | Null
     label_id: int | Null
     value: bool | Null
@@ -141,7 +176,8 @@ class _FrameExportModel(Protocol):
     pk: int
     frame_number: int
     relative_path: str
-    timestamp: float
+    timestamp: float | Null
+    presentation_timestamp: int | Null
     file_path: str
     video: VideoFile
 
@@ -158,6 +194,8 @@ class _VideoFramesExportModel(Protocol):
 class _VideoHashExportModel(Protocol):
     pk: int
     video_hash: str | Null
+    meta: dict[str, object] | Null
+    state: object | Null
 
 
 class _AnnotationExportModel(Protocol):
@@ -310,6 +348,14 @@ def _normalize_export_config(config: export_config) -> export_config:
     center_key = str(config.center_key or "").strip() or None
     updates["center_key"] = center_key
 
+    if config.export_profile == "pts_dataset_v1" and _config_bool(config.export_frames):
+        # The PTS manifest names the processed artifact explicitly, so its images
+        # must be regenerated from that same artifact rather than copied from a
+        # legacy frame cache with unknown provenance.
+        updates["transcode_frames"] = True
+        updates["transcode_overwrite"] = True
+        updates["use_frame_pk_paths"] = True
+
     if local_study_server_mode_enabled() and _config_bool(config.export_frames):
         # Local study server frame-image exports are generated from processed media
         # at export time. Reusing older frame files would not prove anonymized source.
@@ -354,6 +400,7 @@ class annotation_exporter_client:
             if config.output_format == "json":
                 exported_path = export_frames_with_labels_to_json(
                     output_path=output_path,
+                    export_profile=config.export_profile,
                     video_id=config.video_id,
                     label_id=config.label_id,
                     information_source_name=config.information_source_name,
@@ -375,6 +422,7 @@ class annotation_exporter_client:
             else:
                 exported_path = export_frames_with_labels_to_csv(
                     output_path=output_path,
+                    export_profile=config.export_profile,
                     video_id=config.video_id,
                     label_id=config.label_id,
                     information_source_name=config.information_source_name,
@@ -481,6 +529,7 @@ def export_frames_with_labels_from_yaml(config_path: Path | str) -> Path:
 
     return export_frames_with_labels_to_csv(
         output_path=config_data.output_path,
+        export_profile=config_data.export_profile,
         video_id=config_data.video_id,
         label_id=config_data.label_id,
         information_source_name=config_data.information_source_name,
@@ -506,6 +555,7 @@ def export_frames_with_labels_from_yaml(config_path: Path | str) -> Path:
 def export_frames_with_labels_to_csv(
     output_path: Path | str,
     *,
+    export_profile: VideoFrameAnnotationExportProfile = "legacy_table_v1",
     annotations: QuerySet[ImageClassificationAnnotation] | Null = None,
     video_id: int | Null = None,
     label_id: int | Null = None,
@@ -571,14 +621,12 @@ def export_frames_with_labels_to_csv(
             ),
         )
 
-    rows: list[AnnotationRow] = [
-        _annotation_to_row(
-            annotation,
-            use_frame_pk_paths=use_frame_pk_paths,
-            frame_ext=transcode_ext,
-        )
-        for annotation in annotations.iterator()
-    ]
+    rows = _build_annotation_rows(
+        annotations,
+        export_profile=export_profile,
+        use_frame_pk_paths=use_frame_pk_paths,
+        frame_ext=transcode_ext,
+    )
     csv_buffer = io.StringIO()
     writer = csv.DictWriter[AnnotationFieldName](
         csv_buffer,
@@ -598,6 +646,7 @@ def export_frames_with_labels_to_csv(
 def export_frames_with_labels_to_json(
     output_path: Path | str,
     *,
+    export_profile: VideoFrameAnnotationExportProfile = "legacy_table_v1",
     annotations: QuerySet[ImageClassificationAnnotation] | Null = None,
     video_id: int | Null = None,
     label_id: int | Null = None,
@@ -665,15 +714,12 @@ def export_frames_with_labels_to_json(
             ),
         )
 
-    rows: list[AnnotationRow] = []
-    for annotation in annotations.iterator():
-        rows.append(
-            _annotation_to_row(
-                annotation,
-                use_frame_pk_paths=use_frame_pk_paths,
-                frame_ext=transcode_ext,
-            )
-        )
+    rows = _build_annotation_rows(
+        annotations,
+        export_profile=export_profile,
+        use_frame_pk_paths=use_frame_pk_paths,
+        frame_ext=transcode_ext,
+    )
 
     atomic_write_file(
         destination=output_file,
@@ -1069,6 +1115,21 @@ def _transcode_video_to_frame_dir(
                 raise FileNotFoundError(
                     f"processed video artifact missing for {video.pk}"
                 )
+            if field_file_has_decrypted_range_storage(processed_file):
+                with serve_seekable_media_input(
+                    cast(SeekableFieldFile, processed_file)
+                ) as seekable_source:
+                    _extract_and_move_transcoded_frames(
+                        video,
+                        source_path=seekable_source.url,
+                        frame_dir=frame_dir,
+                        frame_pks=frame_pks,
+                        fps=fps,
+                        quality=quality,
+                        ext=ext,
+                        overwrite=overwrite,
+                    )
+                return
             with ensure_local_file(processed_file) as source_path_fallback:
                 _extract_and_move_transcoded_frames(
                     video,
@@ -1099,7 +1160,7 @@ def _transcode_video_to_frame_dir(
 def _extract_and_move_transcoded_frames(
     video: VideoFile,
     *,
-    source_path: Path,
+    source_path: Path | str,
     frame_dir: Path,
     frame_pks: set[int] | Null,
     fps: float,
@@ -1119,7 +1180,13 @@ def _extract_and_move_transcoded_frames(
         frames_by_pk = {
             int(frame.pk): int(frame.frame_number)
             for frame in cast(_VideoFramesExportModel, video).frames.only(
-                "pk", "frame_number"
+                "pk", "frame_number", "presentation_timestamp"
+            )
+        }
+        presentation_timestamps_by_pk = {
+            int(frame.pk): frame.presentation_timestamp
+            for frame in cast(_VideoFramesExportModel, video).frames.only(
+                "pk", "presentation_timestamp"
             )
         }
         requested_numbers = sorted(
@@ -1135,7 +1202,46 @@ def _extract_and_move_transcoded_frames(
             )
         if not requested_numbers:
             return
-        if frame_pks is None:
+        requested_pts = [
+            presentation_timestamps_by_pk[frame_pk] for frame_pk in frame_pks or set()
+        ]
+        moved_frame_pks: set[int] = set()
+        used_pts_extraction = False
+        if frame_pks is not None and all(value is not None for value in requested_pts):
+            frames_by_pts: list[tuple[int, int]] = []
+            for frame_pk in frame_pks:
+                presentation_timestamp = presentation_timestamps_by_pk[frame_pk]
+                if presentation_timestamp is None:
+                    raise ValueError(f"Frame {frame_pk} has no presentation timestamp")
+                frames_by_pts.append((presentation_timestamp, frame_pk))
+            frames_by_pts.sort()
+            if len({pts for pts, _ in frames_by_pts}) != len(frames_by_pts):
+                raise ValueError(
+                    f"Duplicate presentation timestamps for video {video.pk}"
+                )
+            time_base_num, time_base_den = _required_video_time_base(video)
+            extracted_paths = ffmpeg_extract_frames_by_pts(
+                source_path,
+                tmp_dir,
+                [pts for pts, _ in frames_by_pts],
+                time_base_num=time_base_num,
+                time_base_den=time_base_den,
+                quality=quality,
+                ext=ext,
+            )
+            moved_frame_pks = _move_sparse_pts_frames_to_pk_names(
+                extracted_paths,
+                frame_dir,
+                ordered_frame_pks=[frame_pk for _, frame_pk in frames_by_pts],
+                ext=ext,
+                overwrite=overwrite,
+            )
+            used_pts_extraction = True
+        elif isinstance(source_path, str):
+            raise ValueError(
+                "Seekable encrypted export requires exact presentation timestamps"
+            )
+        elif frame_pks is None:
             extracted_paths = ffmpeg_extract_frames(
                 source_path,
                 tmp_dir,
@@ -1152,14 +1258,15 @@ def _extract_and_move_transcoded_frames(
                 quality=quality,
                 ext=ext,
             )
-        moved_frame_pks = _move_extracted_frames_to_pk_names(
-            video,
-            extracted_paths,
-            frame_dir,
-            frame_pks=frame_pks,
-            ext=ext,
-            overwrite=overwrite,
-        )
+        if not used_pts_extraction:
+            moved_frame_pks = _move_extracted_frames_to_pk_names(
+                video,
+                extracted_paths,
+                frame_dir,
+                frame_pks=frame_pks,
+                ext=ext,
+                overwrite=overwrite,
+            )
         missing_outputs = sorted((frame_pks or set(frames_by_pk)) - moved_frame_pks)
         if missing_outputs:
             raise RuntimeError(
@@ -1168,6 +1275,40 @@ def _extract_and_move_transcoded_frames(
             )
     finally:
         safe_rmtree(tmp_dir, missing_ok=True)
+
+
+def _move_sparse_pts_frames_to_pk_names(
+    extracted_paths: list[Path],
+    frame_dir: Path,
+    *,
+    ordered_frame_pks: list[int],
+    ext: str,
+    overwrite: bool,
+) -> set[int]:
+    if len(extracted_paths) != len(ordered_frame_pks):
+        raise RuntimeError("Sparse presentation-timestamp frame count mismatch")
+    moved: set[int] = set()
+    for extracted_path, frame_pk in zip(
+        sorted(extracted_paths), ordered_frame_pks, strict=True
+    ):
+        target_path = frame_dir / _frame_pk_filename(frame_pk, ext)
+        if target_path.exists() and not overwrite:
+            safe_unlink_file(extracted_path, missing_ok=True)
+        else:
+            atomic_move_file(source=extracted_path, destination=target_path)
+        moved.add(frame_pk)
+    return moved
+
+
+def _required_video_time_base(video: VideoFile) -> tuple[int, int]:
+    evidence = _video_timeline_evidence(cast(_VideoHashExportModel, video))
+    if evidence is None:
+        raise ValueError(f"Video {video.pk} has no pts_v1 timeline evidence")
+    numerator = evidence.source.timeline.time_base_num
+    denominator = evidence.source.timeline.time_base_den
+    if numerator is None or denominator is None:
+        raise ValueError(f"Video {video.pk} has no stream time base")
+    return numerator, denominator
 
 
 def _move_extracted_frames_to_pk_names(
@@ -1236,6 +1377,14 @@ def _annotation_row_to_csv_dict(
         "frame_number": row["frame_number"],
         "frame_relative_path": row["frame_relative_path"],
         "frame_timestamp": row["frame_timestamp"],
+        "presentation_timestamp": row["presentation_timestamp"],
+        "presentation_time_seconds": row["presentation_time_seconds"],
+        "stream_time_base_num": row["stream_time_base_num"],
+        "stream_time_base_den": row["stream_time_base_den"],
+        "timeline_version": row["timeline_version"],
+        "export_frame_index": row["export_frame_index"],
+        "artifact_kind": row["artifact_kind"],
+        "artifact_sha256": row["artifact_sha256"],
         "label_id": row["label_id"],
         "label_name": row["label_name"],
         "value": row["value"],
@@ -1396,6 +1545,8 @@ def _annotation_to_row(
     *,
     use_frame_pk_paths: bool,
     frame_ext: str,
+    export_frame_index: int,
+    export_profile: VideoFrameAnnotationExportProfile,
 ) -> AnnotationRow:
     annotation_export = cast(_AnnotationExportModel, annotation)
     frame = annotation_export.frame
@@ -1414,6 +1565,30 @@ def _annotation_to_row(
     model_meta = annotation_export.model_meta
     date_created = annotation_export.date_created
     date_modified = annotation_export.date_modified
+    timeline = _video_timeline_evidence(video)
+    presentation_timestamp = frame.presentation_timestamp
+    presentation_time_seconds = frame.timestamp
+    time_base_num = (
+        timeline.source.timeline.time_base_num if timeline is not None else None
+    )
+    time_base_den = (
+        timeline.source.timeline.time_base_den if timeline is not None else None
+    )
+    state = getattr(video, "state", None)
+    artifact_sha256_value = str(
+        getattr(state, "processed_file_sha256", "") or ""
+    ).strip()
+    artifact_sha256 = artifact_sha256_value or None
+    if export_profile == "pts_dataset_v1" and (
+        presentation_timestamp is None
+        or presentation_time_seconds is None
+        or time_base_num is None
+        or time_base_den is None
+        or artifact_sha256 is None
+    ):
+        raise ValueError(
+            f"Frame {frame.pk} has no complete pts_v1 timeline and processed-artifact identity"
+        )
 
     return {
         "annotation_id": annotation_export.pk,
@@ -1423,6 +1598,14 @@ def _annotation_to_row(
         "frame_number": frame.frame_number,
         "frame_relative_path": frame_relative_path,
         "frame_timestamp": frame.timestamp,
+        "presentation_timestamp": presentation_timestamp,
+        "presentation_time_seconds": presentation_time_seconds,
+        "stream_time_base_num": time_base_num,
+        "stream_time_base_den": time_base_den,
+        "timeline_version": timeline.timeline_version if timeline is not None else None,
+        "export_frame_index": export_frame_index,
+        "artifact_kind": "processed",
+        "artifact_sha256": artifact_sha256,
         "label_id": label.pk,
         "label_name": label.name,
         "value": annotation_export.value,
@@ -1436,6 +1619,76 @@ def _annotation_to_row(
         if date_modified is not None
         else None,
     }
+
+
+def _video_timeline_evidence(
+    video: _VideoHashExportModel,
+) -> VideoSourceTimelineEvidence | None:
+    meta = video.meta
+    if not isinstance(meta, dict):
+        return None
+    payload = meta.get("source_timeline")
+    if payload is None:
+        return None
+    try:
+        return VideoSourceTimelineEvidence.model_validate(payload)
+    except ValueError as exc:
+        raise ValueError(
+            f"Video {video.pk} has invalid source timeline evidence"
+        ) from exc
+
+
+def _build_annotation_rows(
+    annotations: QuerySet[ImageClassificationAnnotation],
+    *,
+    export_profile: VideoFrameAnnotationExportProfile,
+    use_frame_pk_paths: bool,
+    frame_ext: str,
+) -> list[AnnotationRow]:
+    annotation_rows = list(annotations.iterator())
+    annotation_rows.sort(key=_annotation_export_sort_key)
+    frame_indices: dict[tuple[int, int], int] = {}
+    next_index_by_video: dict[int, int] = {}
+    rows: list[AnnotationRow] = []
+    for annotation in annotation_rows:
+        annotation_export = cast(_AnnotationExportModel, annotation)
+        frame = annotation_export.frame
+        video_id = int(frame.video.pk)
+        frame_key = (video_id, int(frame.pk))
+        export_frame_index = frame_indices.get(frame_key)
+        if export_frame_index is None:
+            export_frame_index = next_index_by_video.get(video_id, 0) + 1
+            next_index_by_video[video_id] = export_frame_index
+            frame_indices[frame_key] = export_frame_index
+        rows.append(
+            _annotation_to_row(
+                annotation,
+                use_frame_pk_paths=use_frame_pk_paths,
+                frame_ext=frame_ext,
+                export_frame_index=export_frame_index,
+                export_profile=export_profile,
+            )
+        )
+    return rows
+
+
+def _annotation_export_sort_key(
+    annotation: ImageClassificationAnnotation,
+) -> tuple[int, int, int, int, int]:
+    annotation_export = cast(_AnnotationExportModel, annotation)
+    frame = annotation_export.frame
+    timestamp_order = (
+        frame.presentation_timestamp
+        if frame.presentation_timestamp is not None
+        else frame.frame_number
+    )
+    return (
+        int(frame.video.pk),
+        int(timestamp_order),
+        int(frame.frame_number),
+        int(annotation_export.label.pk),
+        int(annotation_export.pk),
+    )
 
 
 """

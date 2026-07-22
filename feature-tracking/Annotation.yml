@@ -23,6 +23,25 @@ tracking:
     note: Die KI-Segmentgenerierung, der isolierte atomare Korrekturimport, die kanonische Zeitachsenabbildung
       und der asynchrone Frontend-Joblebenszyklus sind implementiert; alle acht Pflichtkriterien sind
       verifiziert.
+  - action: reopened
+    changed_by: Codex
+    changed_at: '2026-07-21T13:40:25.636640Z'
+    note: PTS-sicheren nativen Dataset-Export mit exaktem Integer-Präsentationszeitstempel, rationaler
+      Timebase und typisiertem Frontend-Vertrag implementieren.
+  - action: done
+    changed_by: Codex
+    changed_at: '2026-07-21T14:07:07.765997Z'
+    note: PTS-sicherer nativer Dataset-Export, exakte Timeline-Persistenz, sparse Processed-Media-Extraktion
+      und typisierter lx-annotate-Vertrag sind mit lx-dtypes 0.2.5 verifiziert.
+  - action: reopened
+    changed_by: Codex
+    changed_at: '2026-07-21T14:10:26.908016Z'
+    note: Seekable verschlüsselten Processed-Media-Pfad in die finale Export-Evidenz aufnehmen.
+  - action: done
+    changed_by: Codex
+    changed_at: '2026-07-21T14:10:28.822123Z'
+    note: PTS-sicherer nativer Dataset-Export einschließlich seekable Range-Decoding ist mit lx-dtypes
+      0.2.5 vollständig verifiziert.
 source_documents:
 - path: docs/wiki/frame_annotation_current_support.md
   disposition: reference
@@ -253,6 +272,55 @@ definition_of_done:
       or local DB configuration and are documented as deployment prerequisites.
     assessed_by: Codex
     assessed_at: '2026-07-17T12:36:08.924148Z'
+- id: pts_interoperable_annotation_export
+  category: interoperability
+  title: Dataset-Exporte erhalten die exakte Präsentationszeitachse
+  acceptance:
+  - Das versionierte Profil pts_dataset_v1 exportiert pro Annotation den exakten Integer-Präsentationszeitstempel,
+    Sekunden, rationale Stream-Timebase und die Timeline-Version des ausgewählten Video-Streams.
+  - Eindeutige Frames werden pro Video aufsteigend nach Präsentationszeitstempel sortiert und erhalten
+    einen deterministischen sequenziellen export_frame_index; mehrere Annotationen desselben Frames teilen
+    dieselbe Export-ID.
+  - Der Export leitet keine Framekoordinaten aus nominalen Bildern pro Sekunde ab und schlägt bei fehlendem
+    Integer-Präsentationszeitstempel, fehlender Timebase oder fehlendem Hash des verarbeiteten Artefakts
+    geschlossen fehl.
+  - Das lx-annotate-Frontend sendet einen typisierten, ausschließlich automatisch nach snake_case konvertierten
+    Request, verwendet sichere Frame-/Video-Defaults und zeigt das synchrone Exportergebnis an.
+  required: true
+  verification:
+    kind: command
+    command:
+    - bash
+    - -lc
+    - devenv shell -- bash -lc 'PYTHONPATH=/home/admin/lx-data-models .devenv/state/venv/bin/pytest tests/services/test_export_frames_contract.py
+      tests/views/misc/test_export_annotated_contract.py tests/services/test_video_storage_normalization.py
+      tests/utils/video/test_ffmpeg_wrapper.py::test_extract_frames_by_presentation_timestamp_builds_sparse_pts_filter
+      -q && cd /home/admin/dev/lx-annotate/frontend && npm run type-check && npm run test:unit -- --run
+      src/components/VideoExamination/__tests__/ExportAnnotations.pts-contract.test.ts'
+    timeout_seconds: 1200
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: lx-dtypes 0.2.5 installiert und Lockfile auf 0.2.5 fixiert
+    - kind: command
+      reference: 'Pyright: 0 Fehler'
+    - kind: command
+      reference: 41 Backend-Tests ohne PYTHONPATH-Override bestanden
+    - kind: command
+      reference: 6 lx-data-models Vertragstests bestanden
+    - kind: command
+      reference: Frontend-Typecheck und 2 Vitest-Tests bestanden
+    - kind: test
+      reference: tests/services/test_export_frames_contract.py
+    - kind: test
+      reference: tests/utils/video/test_ffmpeg_wrapper.py
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/frontend/src/components/VideoExamination/__tests__/ExportAnnotations.pts-contract.test.ts
+    note: pts_dataset_v1 ist über lx-dtypes 0.2.5 installiert, reproduzierbar gepinnt und einschließlich
+      verschlüsseltem seekable Processed-Media-Pfad in Backend sowie Frontend verifiziert.
+    assessed_by: Codex
+    assessed_at: '2026-07-21T14:10:27.855374Z'
 - id: user_documentation
   category: documentation
   title: Annotation und Export sind für Nutzer und Integratoren dokumentiert
@@ -270,6 +338,7 @@ definition_of_done:
     status: verified
     evidence:
     - kind: document
-      reference: docs/wiki/frame_annotation_current_support.md and docs/annotation_export_guide.md
+      reference: docs/annotation_export_guide.md
+    note: Leitfaden beschreibt pts_dataset_v1, sichere Defaults, optionale Segmentfilter und sparse PTS-Extraktion.
     assessed_by: Codex
-    assessed_at: '2026-07-17T12:03:04.189189Z'
+    assessed_at: '2026-07-21T13:56:35.674773Z'
