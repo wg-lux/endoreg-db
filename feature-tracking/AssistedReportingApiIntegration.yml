@@ -1,0 +1,204 @@
+schema_version: '1.0'
+id: assisted_reporting_api_integration
+name: Assisted-Reporting-API-Integration
+description: Produktionsreife Integration der Reporting-Oberfläche mit den kanonischen endoreg_db- und
+  lx_dtypes-Endpunkten für Terminologiepakete, Befundkataloge und patientenbezogene Befunde.
+owners:
+- endoreg_db maintainers
+- lx-annotate maintainers
+- lx_dtypes maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/assisted_reporting_api_integration.md
+  disposition: reference
+  note: Kanonischer Integrations- und Betriebsvertrag.
+definition_of_done:
+- id: canonical_route_ownership
+  category: requirements
+  title: Eigentümer und Verträge aller Reporting-Routen sind eindeutig festgelegt
+  acceptance:
+  - /dtypes-api/terminology/bundles, /dtypes-api/examinations/{examination_id}/findings/ und /dtypes-api/patient-findings/
+    sind als von lx_dtypes implementierte und von endoreg_db gehostete kanonische Verträge dokumentiert.
+  - Für den Aufruf /endoreg-api/findings/ ist entschieden und dokumentiert, ob ein autorisierter endoreg_db-Listenvertrag
+    implementiert oder der tote Frontend-Aufruf entfernt und durch einen kanonischen, kontextbezogenen
+    lx_dtypes-Aufruf ersetzt wird.
+  - Pfadformat, HTTP-Methode, Query-Parameter, snake_case-Wireformat und camelCase-Konvertierung an der
+    zentralen Frontend-Grenze sind je Vertrag festgelegt.
+  required: true
+  verification:
+    kind: manual
+    instructions: ReportingShell, useFindingSelectors, findingsApi, terminologyApi, endoreg_db.root_urls
+      und die lx_dtypes-Routen gemeinsam gegen den dokumentierten Vertrag prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: review
+      reference: docs/assisted_reporting_api_integration.md; frontend/src/api/findingsApi.ts
+    note: Kanonische Routen und der harte Cutover auf dtypes sind implementiert und dokumentiert.
+    assessed_by: Codex
+    assessed_at: '2026-07-22T08:27:03.568509Z'
+- id: host_adapter_configuration
+  category: functionality
+  title: Der lx_dtypes-Hostadapter ist in jedem unterstützten Laufzeitprofil verfügbar
+  acceptance:
+  - LX_DTYPES_HOST_MODELS_MODULE wird vor dem Start der Django-Anwendung auf endoreg_db.integrations.lx_dtypes_host_models
+    gesetzt oder gleichwertig und importierbar in den Django-Settings bereitgestellt.
+  - Entwicklung, Tests, Wheel-Paket und NixOS-systemd-Dienst verwenden denselben Hostadaptervertrag; die
+    Produktionskonfiguration darf nicht vom devenv-only Environment abhängen.
+  - Eine fehlende oder nicht importierbare Adapterkonfiguration verhindert den Dienststart mit einer handlungsorientierten
+    Fehlermeldung statt erst Requests mit HTTP 500 scheitern zu lassen.
+  - GET /dtypes-api/examinations/{examination_id}/findings/ und GET /dtypes-api/patient-findings/?patient_examination={id}
+    liefern in einem gepackten Produktionsprofil den definierten Erfolg, 4xx-Fehler oder eine leere Liste,
+    aber keinen Konfigurationsfehler als HTTP 500.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/integrations/test_lx_dtypes_host_models.py
+    - tests/views/test_dtypes_findings_api.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/tests/system/test_environment_checks.py
+    note: Produktionssettings, deklarative Umgebung und Fail-fast-Checks sind implementiert; paketiertes
+      Deployment steht noch aus.
+    assessed_by: Codex
+    assessed_at: '2026-07-22T08:27:06.477117Z'
+- id: terminology_registry_runtime
+  category: functionality
+  title: Terminologiepakete aus lx-terminology-editor sind im Produktionsprofil auffindbar
+  acceptance:
+  - LX_DTYPES_TERMINOLOGY_REGISTRY oder LX_DTYPES_KB_REGISTRY verweist in jedem unterstützten Deployment
+    auf eine lesbare, schema-gültige Registry innerhalb des vorgesehenen persistenten Datenbereichs.
+  - Die Registry referenziert versionierte, für den Dienst lesbare Exportpakete aus lx-terminology-editor
+    und enthält eine explizite aktive Auswahl oder einen dokumentierten Zustand ohne aktive Auswahl.
+  - GET /dtypes-api/terminology/bundles liefert die typisierte Bundle-Liste; eine fehlende Registry wird
+    bereits beim Deployment erkannt und nicht als irreführender Route-404 erst bei Nutzung sichtbar.
+  - Import und Auswahl eines Bundles bleiben auf die vorgesehenen schreibenden Rollen beschränkt und verändern
+    die Registry atomar.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/views/test_dtypes_terminology_api.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: /home/admin/lx-data-models/lx_dtypes/django/api/tests/test_terminology_routes.py
+    note: Registry-Provisionierung, atomische Veröffentlichung und immutable Versionen sind implementiert;
+      Deployment-Abnahme steht noch aus.
+    assessed_by: Codex
+    assessed_at: '2026-07-22T08:27:08.288088Z'
+- id: frontend_backend_contract_tests
+  category: testing
+  title: Die Reporting-Aufrufe werden repository-übergreifend regressionsgetestet
+  acceptance:
+  - Frontend-Tests belegen die kanonischen Pfade für Bundle-Liste, Untersuchungsbefunde und patientenbezogene
+    Befunde; veraltete VITE_FINDINGS_BACKEND-Werte können keine entfernten Routen reaktivieren.
+  - Backend-Tests lösen die kanonischen Pfade unter /dtypes-api/ auf, weisen entfernte /endoreg-api/-Befundpfade
+    als nicht unterstützt nach und prüfen Erfolg, leere Ergebnisse, unbekannte IDs, ungültige Query-Parameter
+    sowie strukturierte Fehlerantworten.
+  - Ein paketierter Deployment-Smoke-Test verwendet die gebaute Frontend- und Python-Artefaktkombination
+    und schlägt bei fehlender Route, fehlendem Hostadapter oder fehlender Terminologie-Registry fehl.
+  required: true
+  verification:
+    kind: manual
+    instructions: Die fokussierten Frontend-, endoreg_db-, lx_dtypes- und Paket-Smoke-Testläufe ausführen
+      und ihre Artefaktversionen gemeinsam dokumentieren.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/frontend/src/api/__tests__/findingsApi.test.ts
+    note: Frontend- und lx_dtypes-Tests sind grün; der endoreg_db-Paketlauf wird durch die unabhängige
+      Http403-Änderung blockiert.
+    assessed_by: Codex
+    assessed_at: '2026-07-22T08:27:09.966888Z'
+- id: reporting_access_controls
+  category: security
+  title: Befund- und Terminologierouten erzwingen den vorgesehenen Zugriffskontext
+  acceptance:
+  - Patientenbezogene Befunde sind authentifiziert und nach Center beziehungsweise PatientExamination
+    gescoped; fremde Datensätze werden nicht offengelegt.
+  - Befundkatalog- und Bundle-Lesezugriffe haben eine explizite Rollenentscheidung; Bundle-Import und
+    -Aktivierung verlangen eine dokumentierte explizite Schreibrolle.
+  - Fehlerantworten enthalten weder lokale Registry-Pfade noch Patienten- oder Konfigurationsgeheimnisse.
+  required: true
+  verification:
+    kind: manual
+    instructions: Positive und negative Authentifizierungs-, Rollen- und Center-Scope-Tests für alle kanonischen
+      Reporting-Routen prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: tests/api/test_dtypes_record_persistence.py::test_terminology_write_access_requires_explicit_write_role
+    note: Host-Rollenprüfung und schreibende Terminologie-Gates sind implementiert; vollständiger Host-Routentest
+      ist extern blockiert.
+    assessed_by: Codex
+    assessed_at: '2026-07-22T08:27:11.715462Z'
+- id: deployment_readiness
+  category: operations
+  title: Deployment erkennt unvollständige Reporting-Abhängigkeiten vor Traffic
+  acceptance:
+  - Startup- oder Readiness-Prüfungen validieren Hostadapter, Terminologie-Registry, aktive Bundle-Identität
+    und die Auflösung aller vom gebauten Frontend benötigten API-Routen.
+  - Der NixOS-Dienst und alle Worker erhalten die erforderlichen nicht geheimen lx_dtypes-Einstellungen
+    aus einer einzigen deklarativen Quelle.
+  - Deployment-Evidenz zeichnet lx-annotate-, endoreg_db- und lx_dtypes-Versionen gemeinsam auf, damit
+    Frontend-/Wheel-Drift diagnostizierbar ist.
+  - Monitoring unterscheidet fehlende Routen, fehlende Registry, fehlenden Hostadapter, Autorisierungsfehler
+    und fachlich leere Ergebnisse.
+  required: true
+  verification:
+    kind: manual
+    instructions: Ein Produktionsprofil mit absichtlich fehlender Konfiguration und anschließend mit vollständiger
+      Konfiguration deployen; Fail-closed-Verhalten und erfolgreiche Readiness dokumentieren.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/tests/system/test_wheel_deployment_acceptance.py
+    note: Nix-Umgebung, Registry-Provisionierung und Startup-Checks sind implementiert; eine reale Deployment-Übung
+      fehlt.
+    assessed_by: Codex
+    assessed_at: '2026-07-22T08:27:13.113642Z'
+- id: integration_documentation
+  category: documentation
+  title: Einrichtung, Nutzung und Fehlerdiagnose sind repository-übergreifend dokumentiert
+  acceptance:
+  - Die Dokumentation nennt die kanonischen Routen, zuständigen Repositories, erforderlichen Settings,
+    Registry-Format und Bundle-Exportablauf aus lx-terminology-editor.
+  - Ein Runbook ordnet HTTP 404, HTTP 401/403, HTTP 500 und leere Listen konkreten Prüfschritten zu, ohne
+    sensible Konfiguration in Logs oder Antworten offenzulegen.
+  - Die Entfernung von VITE_FINDINGS_BACKEND und die Ablösung nicht kanonischer Frontend-Pfade sind dokumentiert.
+  required: true
+  verification:
+    kind: manual
+    instructions: Setup und Fehlerdiagnose anhand eines frischen paketierten Deployments und eines aus
+      lx-terminology-editor exportierten Bundles nachvollziehen.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: docs/assisted_reporting_api_integration.md
+    note: Integrations- und Fehlerdiagnose-Runbook ist erstellt; Nachvollzug auf einem frischen Deployment
+      fehlt.
+    assessed_by: Codex
+    assessed_at: '2026-07-22T08:27:14.711014Z'

@@ -58,6 +58,44 @@ def _json_mapping(value: JsonValue) -> Mapping[str, JsonValue]:
     return value
 
 
+def test_terminology_write_access_requires_explicit_write_role() -> None:
+    class Groups:
+        def __init__(self, roles: tuple[str, ...]) -> None:
+            self.roles = roles
+
+        def values_list(self, _field: str, *, flat: bool) -> tuple[str, ...]:
+            assert flat
+            return self.roles
+
+    class Actor:
+        def __init__(self, roles: tuple[str, ...], *, is_staff: bool = False) -> None:
+            self.is_superuser = False
+            self.is_staff = is_staff
+            self.groups = Groups(roles)
+
+    reader = Actor(())
+    writer = Actor(("terminology:write",))
+    staff = Actor((), is_staff=True)
+
+    assert not lx_dtypes_host_models.terminology_write_access_allowed(reader)
+    assert lx_dtypes_host_models.terminology_write_access_allowed(writer)
+    assert lx_dtypes_host_models.terminology_write_access_allowed(staff)
+
+
+def test_dtypes_terminology_mutation_rejects_read_only_actor(client: Client) -> None:
+    reader = User.objects.create_user(username="terminology-api-reader")
+    client.force_login(reader)
+
+    response = client.post(
+        "/dtypes-api/terminology/bundles/select",
+        data=json.dumps({"module_name": "example", "version": "1"}),
+        content_type="application/json",
+        secure=True,
+    )
+
+    assert response.status_code == 403
+
+
 def _json_int(payload: Mapping[str, JsonValue], key: str) -> int:
     value = payload[key]
     if not isinstance(value, int):

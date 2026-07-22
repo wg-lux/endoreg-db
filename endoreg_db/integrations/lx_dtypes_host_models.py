@@ -14,7 +14,8 @@ from pydantic import BaseModel
 from rest_framework.exceptions import AuthenticationFailed
 
 from endoreg_db.authz.auth import KeycloakJWTAuthentication
-from endoreg_db.services.hub import resolve_allowed_center_id
+from endoreg_db.authz.policy import satisfies
+from endoreg_db.services.center_access import resolve_allowed_center_ids
 
 if TYPE_CHECKING:
     from endoreg_db.models.administration.center.center import Center
@@ -218,15 +219,15 @@ def patient_examination_access_allowed(
     if not getattr(user, "is_authenticated", False):
         return False
 
-    allowed_center_id = resolve_allowed_center_id(user)
-    if allowed_center_id is None:
+    allowed_center_ids = resolve_allowed_center_ids(user)
+    if allowed_center_ids is None:
         return True
-    if allowed_center_id == -1:
+    if not allowed_center_ids:
         return False
 
     patient = getattr(patient_examination, "patient", None)
     object_center_id = getattr(patient, "center_id", None)
-    return isinstance(object_center_id, int) and object_center_id == allowed_center_id
+    return isinstance(object_center_id, int) and object_center_id in allowed_center_ids
 
 
 def patient_findings_queryset_for_request(
@@ -238,12 +239,23 @@ def patient_findings_queryset_for_request(
     if not getattr(user, "is_authenticated", False):
         return queryset.none()
 
-    allowed_center_id = resolve_allowed_center_id(user)
-    if allowed_center_id is None:
+    allowed_center_ids = resolve_allowed_center_ids(user)
+    if allowed_center_ids is None:
         return queryset
-    if allowed_center_id == -1:
+    if not allowed_center_ids:
         return queryset.none()
-    return queryset.filter(patient_examination__patient__center_id=allowed_center_id)
+    return queryset.filter(patient_examination__patient__center_id__in=allowed_center_ids)
+
+
+def terminology_write_access_allowed(actor: object) -> bool:
+    """Restrict terminology registry mutations to explicit write-capable actors."""
+    if bool(getattr(actor, "is_superuser", False) or getattr(actor, "is_staff", False)):
+        return True
+    groups = getattr(actor, "groups", None)
+    if groups is None:
+        return False
+    role_names = set(groups.values_list("name", flat=True))
+    return "terminology:write" in role_names or satisfies(role_names, "data:write")
 
 
 def persist_patient_examination_dtypes_record(
@@ -283,5 +295,6 @@ __all__ = [
     "patient_examination_access_allowed",
     "patient_finding_access_allowed",
     "patient_findings_queryset_for_request",
+    "terminology_write_access_allowed",
     "persist_patient_examination_dtypes_record",
 ]
