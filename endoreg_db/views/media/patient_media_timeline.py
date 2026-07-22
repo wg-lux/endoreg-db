@@ -37,6 +37,7 @@ from endoreg_db.utils.media_urls import (
     build_video_hls_playlist_path,
 )
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.views.access_control import assert_center_scope_allowed
 
 
 class _InterventionRows(Protocol):
@@ -325,6 +326,7 @@ class PatientMediaTimelineView(APIView):
             patient = Patient.objects.get(pk=patient_id)
         except Patient.DoesNotExist:
             raise Http404(f"Patient with ID {patient_id} not found")
+        assert_center_scope_allowed(request=request, obj=patient)
 
         params = _query_params(request)
         pe_filter_id = _query_int_param(params, "patient_examination_id")

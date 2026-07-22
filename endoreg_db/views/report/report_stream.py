@@ -36,6 +36,7 @@ from endoreg_db.utils.nginx_accel import (
 )
 
 from endoreg_db.utils.cors import resolve_response_origin
+from endoreg_db.views.access_control import assert_center_scope_allowed
 
 
 logger = logging.getLogger(__name__)
@@ -270,6 +271,7 @@ class ReportStreamView(APIView):
         except RawPdfFile.DoesNotExist as exc:
             raise Http404(f"Report with ID {pk} not found") from exc
 
+        assert_center_scope_allowed(request=request, obj=report)
         self.check_object_permissions(request, report)
 
         file_type = self._parse_file_type(request)

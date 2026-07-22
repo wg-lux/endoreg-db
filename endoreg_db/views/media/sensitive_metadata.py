@@ -31,6 +31,7 @@ from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.medical.examination.examination import Examination
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+from endoreg_db.views.access_control import assert_center_scope_allowed
 from endoreg_db.services.case_resolution_state import (
     get_case_resolution_meta,
     persist_case_resolution_state,
@@ -541,6 +542,7 @@ def get_sensitive_metadata_pk(request: Request, pk: int, media_type: str) -> Res
 
     if media_type == "video":
         video = get_object_or_404(VideoFile, pk=pk)
+        assert_center_scope_allowed(request=request, obj=video)
         sensitive_meta = cast(
             SensitiveMeta | None, _get_object_field(video, "sensitive_meta")
         )
@@ -558,6 +560,7 @@ def get_sensitive_metadata_pk(request: Request, pk: int, media_type: str) -> Res
         return Response({"sm": sm_id})
     if media_type == "pdf":
         pdf = get_object_or_404(RawPdfFile, pk=pk)
+        assert_center_scope_allowed(request=request, obj=pdf)
         sensitive_meta = cast(
             SensitiveMeta | None, _get_object_field(pdf, "sensitive_meta")
         )
@@ -590,6 +593,7 @@ def video_sensitive_metadata(request: Request, pk: int) -> Response:
     Video-scoped: Uses video ID to locate related sensitive metadata.
     """
     video = get_object_or_404(VideoFile, pk=pk)
+    assert_center_scope_allowed(request=request, obj=video)
     sensitive_meta = cast(
         SensitiveMeta | None, _get_object_field(video, "sensitive_meta")
     )
@@ -648,6 +652,7 @@ def video_case_resolution(request: Request, pk: int) -> Response:
     Return read-only case resolution hints for a validated or pending video.
     """
     video = get_object_or_404(VideoFile, pk=pk)
+    assert_center_scope_allowed(request=request, obj=video)
     sensitive_meta = cast(
         SensitiveMeta | None, _get_object_field(video, "sensitive_meta")
     )
@@ -692,6 +697,7 @@ def video_sensitive_metadata_verify(request: Request, pk: int) -> Response:
     }
     """
     video = get_object_or_404(VideoFile, pk=pk)
+    assert_center_scope_allowed(request=request, obj=video)
     sensitive_meta = cast(
         SensitiveMeta | None, _get_object_field(video, "sensitive_meta")
     )
@@ -749,6 +755,7 @@ def pdf_sensitive_metadata(request: Request, pk: int) -> Response:
     report-scoped: Uses report ID to locate related sensitive metadata.
     """
     pdf = get_object_or_404(RawPdfFile, pk=pk)
+    assert_center_scope_allowed(request=request, obj=pdf)
     sensitive_meta = cast(
         SensitiveMeta | None, _get_object_field(pdf, "sensitive_meta")
     )
@@ -810,6 +817,7 @@ def pdf_case_resolution(request: Request, pk: int) -> Response:
     Return read-only case resolution hints for a validated or pending PDF.
     """
     pdf = get_object_or_404(RawPdfFile, pk=pk)
+    assert_center_scope_allowed(request=request, obj=pdf)
     sensitive_meta = cast(
         SensitiveMeta | None, _get_object_field(pdf, "sensitive_meta")
     )
@@ -854,6 +862,7 @@ def pdf_sensitive_metadata_verify(request: Request, pk: int) -> Response:
     }
     """
     pdf = get_object_or_404(RawPdfFile, pk=pk)
+    assert_center_scope_allowed(request=request, obj=pdf)
     sensitive_meta = cast(
         SensitiveMeta | None, _get_object_field(pdf, "sensitive_meta")
     )

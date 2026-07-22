@@ -7,6 +7,7 @@ Includes session-scoped fixtures for video files and database optimization.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
@@ -186,29 +187,25 @@ def _json_payload_contains_none(data: dict[str, JsonValue | None]) -> bool:
     return any(value is None for value in data.values())
 
 
-def _ffmpeg_probe_payload_as_json(payload: FfmpegProbeDataPayload) -> JsonObject:
-    return cast(JsonObject, payload.model_dump(mode="python", exclude_none=True))
-
-
 def _mock_probe_stream_info() -> JsonObject:
-    payload = FfmpegProbeDataPayload.model_validate(
-        {
-            "streams": [
-                {
-                    "codec_name": "h264",
-                    "codec_type": "video",
-                    "pix_fmt": "yuv420p",
-                    "color_range": "pc",
-                    "width": 1920,
-                    "height": 1080,
-                    "r_frame_rate": f"{int(DEFAULT_VIDEO_FPS)}/1",
-                    "duration": "10.0",
-                    "nb_frames": str(MAX_MOCK_VIDEO_FRAMES),
-                }
-            ]
-        }
-    )
-    return _ffmpeg_probe_payload_as_json(payload)
+    return {
+        "streams": [
+            {
+                "codec_name": "h264",
+                "codec_type": "video",
+                "pix_fmt": "yuv420p",
+                "color_range": "pc",
+                "width": 1920,
+                "height": 1080,
+                "r_frame_rate": f"{int(DEFAULT_VIDEO_FPS)}/1",
+                # The examination fixtures selected by the import integration
+                # tests use this stream time base.
+                "time_base": "1/16000",
+                "duration": "10.0",
+                "nb_frames": str(MAX_MOCK_VIDEO_FRAMES),
+            }
+        ]
+    }
 
 
 def _mock_flat_video_metadata() -> JsonObject:
@@ -1085,7 +1082,7 @@ def _apply_global_video_mocks(cache: CacheManager) -> None:
 
         try:
             # Try real operation first - direct call to avoid import loops
-            if RUN_VIDEO_TESTS and not SKIP_EXPENSIVE_TESTS and file_path.exists():
+            if not SKIP_EXPENSIVE_TESTS and file_path.exists():
                 LOGGER.debug("trying real ffprobe for %s", file_path)
                 import subprocess
 
@@ -1101,9 +1098,14 @@ def _apply_global_video_mocks(cache: CacheManager) -> None:
                 result = subprocess.run(
                     command, capture_output=True, text=True, check=True
                 )
-                stream_info = _ffmpeg_probe_payload_as_json(
-                    FfmpegProbeDataPayload.model_validate_json(result.stdout)
+                raw_stream_info = json.loads(result.stdout)
+                if not isinstance(raw_stream_info, dict):
+                    raise ValueError("ffprobe stream payload must be an object")
+                FfmpegProbeDataPayload.model_validate(
+                    raw_stream_info,
+                    extra="ignore",
                 )
+                stream_info = cast(JsonObject, raw_stream_info)
 
                 # Cache successful real result
                 LOGGER.debug("real ffprobe succeeded for %s", file_path)
@@ -1115,24 +1117,7 @@ def _apply_global_video_mocks(cache: CacheManager) -> None:
 
         # Return mock data as fallback
         LOGGER.debug("using mock stream info for %s", file_path)
-        mock_stream_info = _ffmpeg_probe_payload_as_json(
-            FfmpegProbeDataPayload.model_validate(
-                {
-                    "streams": [
-                        {
-                            "codec_name": "h264",
-                            "codec_type": "video",
-                            "pix_fmt": "yuv420p",
-                            "color_range": "pc",
-                            "width": 1920,
-                            "height": 1080,
-                            "r_frame_rate": f"{int(DEFAULT_VIDEO_FPS)}/1",
-                            "duration": "10.0",
-                        }
-                    ]
-                }
-            )
-        )
+        mock_stream_info = _mock_probe_stream_info()
         ffmpeg_cache.set(cache_key, mock_stream_info)
         return mock_stream_info
 
@@ -1434,8 +1419,11 @@ def auto_mock_ffmpeg_for_video_tests(
         or "Video" in str(item_class)
         or any(mark.name == "video" for mark in node.iter_markers())
     )
+    allows_real_stack = any(
+        mark.name in {"integration", "expensive"} for mark in node.iter_markers()
+    )
 
-    if is_video_test:
+    if is_video_test and not allows_real_stack:
 
         def safe_extract_frames(
             source_path: Path,

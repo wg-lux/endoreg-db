@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, TypeAlias, cast
 from django.db.models import Q
 from django.db.models.fields.files import FieldFile
 from django.db.models.query import QuerySet
+from django.core.exceptions import PermissionDenied
 from django.http import Http404
 from rest_framework import status
 from rest_framework.request import Request
@@ -25,6 +26,10 @@ from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.utils.api_urls import endoreg_api_path
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.views.access_control import (
+    assert_center_scope_allowed,
+    filter_center_scoped_queryset,
+)
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.pdf.report_file import AnonymExaminationReport
@@ -103,15 +108,16 @@ class PdfMediaView(APIView):
 
     def get(self, request: Request, pk: int | None = None) -> Response:
         if pk is not None:
-            return self._get_pdf_detail(pk=pk)
+            return self._get_pdf_detail(request=request, pk=pk)
         return self._list_pdfs(request)
 
-    def _get_pdf_detail(self, pk: int) -> Response:
+    def _get_pdf_detail(self, *, request: Request, pk: int) -> Response:
         try:
             pdf_id = pk
             pdf = RawPdfFile.objects.select_related(
                 "sensitive_meta", "anonym_examination_report"
             ).get(pk=pdf_id)
+            assert_center_scope_allowed(request=request, obj=pdf)
 
             file_obj = cast(FieldFile | None, getattr(pdf, "file", None))
             pdf_hash = cast(str | None, getattr(pdf, "pdf_hash", None))
@@ -166,6 +172,8 @@ class PdfMediaView(APIView):
 
         except RawPdfFile.DoesNotExist:
             raise Http404(f"report with ID {pk} not found")
+        except (Http404, PermissionDenied):
+            raise
         except Exception as exc:
             logger.error(
                 f"Unexpected error in report detail view for ID {pk}: {str(exc)}"
@@ -180,6 +188,13 @@ class PdfMediaView(APIView):
             queryset = RawPdfFile.objects.select_related(
                 "sensitive_meta", "anonym_examination_report"
             ).all()
+            queryset = cast(
+                QuerySet[RawPdfFile],
+                filter_center_scoped_queryset(
+                    queryset=queryset,
+                    user=request.user,
+                ),
+            )
 
             query_params = _query_params(request)
             queryset = self._apply_filters(queryset, query_params)

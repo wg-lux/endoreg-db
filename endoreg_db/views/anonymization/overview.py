@@ -10,6 +10,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.exceptions import PermissionDenied
 
 from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.authz.permissions import PolicyPermission
@@ -22,13 +23,21 @@ from endoreg_db.services.polling_coordinator import (
     ProcessingLockContext,
 )
 from endoreg_db.services.raw_pdf_files import validate_report_metadata_annotation
+from endoreg_db.services.center_access import resolve_allowed_center_ids
+from endoreg_db.services.hub import hub_mode_enabled
 from endoreg_db.services.video_files import (
     get_or_create_video_state,
     get_video_by_pk,
     validate_video_metadata_annotation,
 )
-from endoreg_db.services.hub import resolve_allowed_center_id
-from endoreg_db.serializers.misc.file_overview import FileOverviewSerializer
+from endoreg_db.views.access_control import (
+    filter_video_read_queryset,
+    has_cross_center_hub_processed_access,
+)
+from endoreg_db.serializers.misc.file_overview import (
+    CrossCenterProcessedOverviewSerializer,
+    FileOverviewSerializer,
+)
 from ...serializers import VoPPatientDataSerializer
 from endoreg_db.utils.operation_log import (
     record_operation,
@@ -141,14 +150,32 @@ class AnonymizationOverviewView(APIView):
     permission_classes = [PolicyPermission]
 
     def get(self, request: Request) -> Response:
-        serializer = FileOverviewSerializer(
-            cast(Any, self.get_queryset(request_user=request.user)),
-            many=True,
-            context={"request": request},
-        )
-        serializer_data = cast(Any, serializer).data
+        allowed_center_ids = resolve_allowed_center_ids(request.user)
+        if allowed_center_ids == frozenset() and not hub_mode_enabled():
+            raise PermissionDenied(
+                "No center membership is assigned. Contact an administrator."
+            )
+        serializer_data = [
+            cast(
+                dict[str, object],
+                cast(
+                    Any,
+                    CrossCenterProcessedOverviewSerializer(item)
+                    if isinstance(item, VideoFile)
+                    and has_cross_center_hub_processed_access(
+                        user=request.user,
+                        obj=item,
+                    )
+                    else FileOverviewSerializer(
+                        cast(Any, item),
+                        context={"request": request},
+                    ),
+                ).data,
+            )
+            for item in self.get_queryset(request_user=request.user)
+        ]
         return Response(
-            cast(list[dict[str, object]], serializer_data),
+            serializer_data,
             status=status.HTTP_200_OK,
         )
 
@@ -162,16 +189,20 @@ class AnonymizationOverviewView(APIView):
         """
         # 1) VideoFile queryset - only fields that exist on VideoFile
         qs_video = (
-            VideoFile.objects.select_related("state", "sensitive_meta")
+            VideoFile.objects.select_related("state", "sensitive_meta", "center")
             .prefetch_related("label_video_segments__state", "hls_artifacts")
             .only(
                 "id",
                 "original_file_name",
+                "processed_file",
                 "raw_file",
                 "uploaded_at",
                 "video_hash",
                 "state",
                 "sensitive_meta",
+                "center",
+                "center__center_key",
+                "center__display_name",
             )
         )
         # 2) RawPdfFile queryset - only fields that exist on RawPdfFile
@@ -195,13 +226,15 @@ class AnonymizationOverviewView(APIView):
             "sensitive_meta__pseudo_examination",
         )
 
-        allowed_center_id = resolve_allowed_center_id(request_user)
-        if allowed_center_id == -1:
-            qs_video = qs_video.none()
+        allowed_center_ids = resolve_allowed_center_ids(request_user)
+        qs_video = filter_video_read_queryset(
+            queryset=qs_video,
+            user=request_user,
+        )
+        if allowed_center_ids == frozenset():
             qs_pdf = qs_pdf.none()
-        elif allowed_center_id is not None:
-            qs_video = qs_video.filter(center_id=allowed_center_id)
-            qs_pdf = qs_pdf.filter(center_id=allowed_center_id)
+        elif allowed_center_ids is not None:
+            qs_pdf = qs_pdf.filter(center_id__in=allowed_center_ids)
 
         combined = list(qs_video) + list(qs_pdf)
         _attach_overview_upload_jobs(combined)

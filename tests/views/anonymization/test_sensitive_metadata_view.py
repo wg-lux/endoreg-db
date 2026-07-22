@@ -24,6 +24,7 @@ from endoreg_db.models import (
     Gender,
     Patient,
     PatientExamination,
+    PortalUserInfo,
     RawPdfFile,
     SensitiveMeta,
     VideoFile,
@@ -44,6 +45,18 @@ class TestSensitiveMetadataEndpoints:
     @pytest.fixture
     def user(self) -> User:
         return User.objects.create_user(username=f"sm-user-{uuid4().hex[:8]}")
+
+    @pytest.fixture(autouse=True)
+    def authenticate_center_user(
+        self,
+        client: DjangoClient,
+        user: User,
+        sensitive_meta: SensitiveMeta,
+    ) -> None:
+        portal_info = PortalUserInfo.objects.create(user=user)
+        assert sensitive_meta.center is not None
+        portal_info.centers.add(sensitive_meta.center)
+        client.force_login(user)
 
     @pytest.fixture
     def sensitive_meta(self) -> SensitiveMeta:

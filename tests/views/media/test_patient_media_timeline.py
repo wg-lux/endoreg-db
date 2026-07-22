@@ -6,6 +6,7 @@ from datetime import date
 from uuid import uuid4
 
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.contrib.auth.models import User
 from django.test import TestCase
 
 from endoreg_db.models import (
@@ -20,6 +21,7 @@ from endoreg_db.models import (
     PatientExamination,
     PatientFinding,
     PatientFindingIntervention,
+    PortalUserInfo,
     RawPdfFile,
     VideoFile,
 )
@@ -45,6 +47,10 @@ class PatientMediaTimelineViewTests(TestCase):
             examination=self.examination,
             hash=f"timeline-pe-{uuid4().hex}",
         )
+        user = User.objects.create_user(username=f"timeline-user-{uuid4().hex}")
+        portal_info = PortalUserInfo.objects.create(user=user)
+        portal_info.centers.add(self.center)
+        self.client.force_login(user)
 
     def _create_report(self, anonymized_text: str) -> RawPdfFile:
         return RawPdfFile.objects.create(

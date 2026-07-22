@@ -328,3 +328,39 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
                 else None
             ),
         }
+
+
+class CrossCenterProcessedOverviewSerializer(serializers.Serializer[VideoFile]):
+    """Shape-compatible, pseudonymous overview payload for hub-wide reads."""
+
+    def to_representation(self, instance: VideoFile) -> dict[str, object]:
+        state = getattr(instance, "state", None)
+        raw_status = getattr(
+            state,
+            "anonymization_status",
+            AnonymizationState.NOT_STARTED,
+        )
+        center = getattr(instance, "center", None)
+        return {
+            "id": instance.pk,
+            "filename": f"Video {instance.pk}",
+            "media_type": "video",
+            "anonymization_status": raw_status,
+            "annotation_status": (
+                "validated"
+                if raw_status == AnonymizationState.VALIDATED
+                else "not_started"
+            ),
+            "created_at": instance.uploaded_at,
+            "sensitive_meta_id": None,
+            "file_size": 0,
+            "upload_job": None,
+            "hls_materializations": [],
+            "document_type": None,
+            "patient_hash_display": None,
+            "examination_hash_display": None,
+            "pseudo_patient_id": None,
+            "pseudo_examination_id": None,
+            "center_key": getattr(center, "center_key", None),
+            "center_name": getattr(center, "display_name", None),
+        }

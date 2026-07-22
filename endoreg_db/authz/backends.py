@@ -35,6 +35,10 @@ from django.contrib.auth.models import AbstractUser, Group
 from django.db.models.query import QuerySet
 from lx_dtypes.models.contracts import KeycloakClaimsPayload, validate_keycloak_claims
 from lx_dtypes.models.contracts.json_types import JsonValue
+from endoreg_db.services.center_access import (
+    synchronize_user_center_groups,
+    validated_center_group_paths,
+)
 
 User = get_user_model()
 
@@ -105,6 +109,7 @@ class KeycloakOIDCBackend(OIDCAuthenticationBackend):
         # Preferred username is the most human-friendly identifier in Keycloak.
         # Fallback to 'sub' (the stable subject identifier) if needed.
         claims_payload = _claims_payload(claims)
+        center_group_paths = validated_center_group_paths(claims)
         username = claims_payload.username
 
         # Create a minimal user; no password is set (OIDC will handle auth).
@@ -120,7 +125,11 @@ class KeycloakOIDCBackend(OIDCAuthenticationBackend):
         )
 
         # Ensure Django groups mirror Keycloak roles immediately.
-        self._sync_groups(cast(_AuthenticatedUser, user), claims_payload)
+        self._sync_groups(
+            cast(_AuthenticatedUser, user),
+            claims_payload,
+            center_group_paths=center_group_paths,
+        )
         return user
 
     # Called by the base class when a matching user already exists.
@@ -139,17 +148,26 @@ class KeycloakOIDCBackend(OIDCAuthenticationBackend):
         """
         # Keep user profile in sync with IdP data (safe truncation to field max length)
         claims_payload = _claims_payload(claims)
+        center_group_paths = validated_center_group_paths(claims)
         user.email = claims_payload.email or user.email
         user.first_name = (claims_payload.given_name or user.first_name)[:150]
         user.last_name = (claims_payload.family_name or user.last_name)[:150]
         user.save(update_fields=["email", "first_name", "last_name"])
 
         # Keep roles (groups) in sync on every login
-        self._sync_groups(user, claims_payload)
+        self._sync_groups(
+            user,
+            claims_payload,
+            center_group_paths=center_group_paths,
+        )
         return user
 
     def _sync_groups(
-        self, user: _AuthenticatedUser, claims: KeycloakClaimsPayload
+        self,
+        user: _AuthenticatedUser,
+        claims: KeycloakClaimsPayload,
+        *,
+        center_group_paths: tuple[str, ...],
     ) -> None:
         """
         Make Django Groups *exactly* match the roles coming from Keycloak.
@@ -172,6 +190,7 @@ class KeycloakOIDCBackend(OIDCAuthenticationBackend):
         # Replace membership to exactly match Keycloak roles
         user.groups.set(groups)
         user.save()
+        synchronize_user_center_groups(user=user, group_paths=center_group_paths)
 
         # OPTIONAL — map specific roles to Django staff/superuser:
         # if "admin" in kc_roles or "realm-admin" in kc_roles:

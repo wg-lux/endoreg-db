@@ -1,0 +1,238 @@
+schema_version: '1.0'
+id: center_access
+name: Center Access and Central-Hub Video Visibility
+description: Production-readiness criteria for identity-backed multi-center assignments and deployment-aware
+  video access, including authenticated cross-center viewing of anonymized processed media on a central
+  hub while non-hub profiles and sensitive resources remain center-scoped.
+owners:
+- endoreg_db maintainers
+- lx-annotate maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/center_access_operations.md
+  disposition: reference
+  note: Zugriffsmatrix, Identity-Provider-Gruppen, Diagnose sowie Rollout- und Rücknahmeablauf.
+definition_of_done:
+- id: deployment_access_matrix
+  category: requirements
+  title: The access contract is explicit for every deployment profile and resource class
+  acceptance:
+  - The contract distinguishes standalone, site-node, local-study-server, and central-hub behavior.
+  - It separately defines access to anonymization overview entries, anonymized processed playback, raw
+    media, patients, reports, uploads, exports, administration, and write operations.
+  - On a central hub, every authenticated user with the existing video-read permission can discover and
+    view anonymized processed videos from every center without a center assignment.
+  - Central-hub video visibility does not implicitly grant cross-center access to raw media, patient data,
+    reports, uploads, exports, administration, or write operations.
+  - Node-authenticated hub transfer routes derive center scope from NetworkNode.owning_center rather than
+    a Django user, while debug-only anonymous application routes retain their documented permission contract.
+  - Cross-center object reads conceal resource existence consistently, and the regression matrix includes
+    hub transfer, FHIR export, report access, and patient creation callsites.
+  required: true
+  verification:
+    kind: manual
+    instructions: Review the deployment and resource access matrix against endoreg_db views, lx-annotate
+      callers, and the clinical data-boundary requirements.
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/center_access_operations.md
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/views/media/test_hub_transfer_endpoints.py
+        tests/services/test_transfer_job_contract.py tests/services/test_fhir_r4_export.py tests/views/misc/test_patient_center_contract.py
+        tests/views/report/test_report_llm_status.py tests/views/test_center_access_matrix.py tests/views/media/test_center_scoped_reads.py
+        -q (80 passed)
+    note: Die Zugriffsmatrix wurde um Node-authentifizierte Hub-Transfers, anonymen Debug-Zugriff, FHIR,
+      Reports, Patientenerstellung und 404-Existenzverschleierung erweitert und gegen 80 fokussierte Tests
+      geprüft.
+    assessed_by: Codex
+    assessed_at: '2026-07-22T12:43:32.411430Z'
+- id: identity_center_memberships
+  category: functionality
+  title: Verified identity claims produce deterministic local center memberships
+  acceptance:
+  - Center memberships are represented as typed model relationships and support zero, one, or multiple
+    centers without relying on the workflow default center.
+  - Only verified identity-provider center groups update memberships; unknown or malformed center keys
+    fail loudly and do not produce partial assignments.
+  - Reauthentication replaces the local membership cache deterministically, and the legacy Examiner.center
+    relationship is migrated without silently dropping existing access.
+  - Staff and superuser global access remains explicit and is not inferred from missing membership data.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_center_access.py
+    - tests/authz/test_center_group_sync.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_center_access.py tests/authz/test_center_group_sync.py
+        -q
+      note: Exit-Code 0
+    assessed_by: Max
+    assessed_at: '2026-07-22T11:46:38.599344Z'
+- id: deployment_aware_video_reads
+  category: functionality
+  title: Video discovery and playback enforce the same deployment-aware policy
+  acceptance:
+  - The anonymization overview does not center-filter authenticated central-hub users, including users
+    without a center membership, while non-hub profiles filter by all assigned center IDs.
+  - Processed HLS playlists, keys, segments, frames, and timeline endpoints apply the same central-hub
+    visibility rule and retain their existing video-read authorization checks.
+  - Cross-center discovery and detail responses include only pseudonymous playback metadata and omit patient
+    identity, original filenames, filesystem paths, operator names, raw integrity details, and upload
+    diagnostics.
+  - The central-hub exception requires both a processed artifact and an anonymized, non-error, non-lost
+    state; incomplete artifacts remain invisible and forbidden.
+  - Raw artifact paths remain center-scoped, and anonymous requests are denied in every deployment profile.
+  - Missing or incomplete center membership fails closed outside the explicitly unrestricted central-hub
+    processed-video read boundary.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/views/anonymization/test_anonymization_overview.py
+    - tests/views/video/test_hls_stream.py
+    - tests/views/video/test_video_timeline_view.py
+    - tests/views/media/test_frame_stream.py
+    - tests/views/media/test_video_media_view.py
+    - tests/views/video/test_video_stream.py
+    - tests/views/media/test_center_scoped_reads.py
+    - tests/views/anonymization/test_sensitive_metadata_view.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/views/anonymization/test_anonymization_overview.py
+        tests/views/video/test_hls_stream.py tests/views/video/test_video_timeline_view.py tests/views/media/test_frame_stream.py
+        tests/views/media/test_video_media_view.py tests/views/video/test_video_stream.py tests/views/media/test_center_scoped_reads.py
+        tests/views/anonymization/test_sensitive_metadata_view.py -q
+      note: Exit-Code 0
+    assessed_by: Max
+    assessed_at: '2026-07-22T11:47:11.495629Z'
+- id: access_regression_tests
+  category: testing
+  title: Deployment, identity, artifact, and negative authorization paths are regression tested
+  acceptance:
+  - Tests cover zero, one, and multiple center memberships, replacement on reauthentication, malformed
+    group paths, unknown centers, and legacy membership migration.
+  - Central-hub tests cover authenticated ordinary users from another center and users without memberships
+    across overview, processed HLS playlist, key, segment, frame, and timeline endpoints.
+  - Negative tests prove that anonymous access, raw cross-center reads, non-hub cross-center reads, and
+    unrelated patient, report, upload, export, administration, and write access remain denied.
+  - lx-annotate integration tests prove that the video list remains usable and playback URLs do not reintroduce
+    a frontend-only center filter.
+  - When the backend deliberately omits an original filename, lx-annotate renders a neutral Video-ID label
+    and preserves backend-provided center keys and names.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run and review the focused endoreg_db and lx-annotate authorization suites, including
+      positive and negative cases for every row of the deployment access matrix.
+    timeout_seconds: 1200
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: Erweiterte Center-/Hub-/FHIR-/Patient-/Report-Regressionssuite (80 passed)
+    note: Die zuvor fehlenden Hub-Transfer-, FHIR-, Patientenerstellungs-, Report- und Existenzverschleierungsfälle
+      sind grün. Die vorgeschriebene manuelle Prüfung jeder Ressourcenzeile bleibt ausstehend.
+    assessed_by: Codex
+    assessed_at: '2026-07-22T12:43:33.535623Z'
+- id: authorization_boundaries
+  category: security
+  title: Unrestricted hub viewing is narrow, authenticated, and non-transitive
+  acceptance:
+  - The central-hub exception requires an authenticated principal and the existing video-read permission;
+    it is not implemented as staff or superuser promotion.
+  - Center group claims are accepted only after identity-token validation and cannot be supplied by request
+    payloads or unverified headers.
+  - The exception grants no raw-media export and no access to master keys, patient identity, reports,
+    transfer administration, or storage mutation.
+  - Permission failures disclose no cross-center clinical metadata and fail closed when deployment role,
+    identity state, or artifact kind is inconsistent.
+  required: true
+  verification:
+    kind: manual
+    instructions: Perform a security review of authentication ordering, permission classes, deployment-role
+      resolution, artifact-kind branching, and negative cross-resource authorization tests.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: pyright; 117 fokussierte Backend-Tests
+    note: Die Hub-Ausnahme und Metadatenminimierung wurden implementiert und geprüft; die vollständige
+      manuelle Sicherheitsfreigabe bleibt ausstehend.
+    assessed_by: Codex
+    assessed_at: '2026-07-22T11:43:01.009171Z'
+- id: deployment_and_migration_readiness
+  category: operations
+  title: Membership migration and deployment rollout are observable and reversible
+  acceptance:
+  - The schema migration preserves existing Examiner-based center access and has a tested forward and
+    reverse operational plan without unsafe automatic recovery.
+  - Operators can identify deployment role, effective center memberships, identity synchronization failures,
+    and denied access without logging tokens or clinical payloads.
+  - Rollout checks verify the central-hub role and restart all affected backend services before declaring
+    unrestricted processed-video viewing active.
+  - Alerts distinguish identity-provider configuration errors, unknown center claims, missing memberships,
+    ordinary permission denials, and unexpected central-hub policy failures.
+  - Structured events contain stable reason codes and technical identifiers but no tokens, claim payloads,
+    original filenames, filesystem paths, or clinical data.
+  required: true
+  verification:
+    kind: manual
+    instructions: Exercise migration, authentication refresh, central-hub rollout, rollback, and failure
+      diagnosis in a production-like environment and preserve structured evidence.
+    timeout_seconds: 1200
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: document
+      reference: docs/center_access_operations.md
+    note: Runbook und strukturierte Ereignisse sind vorhanden; produktionsnahe Vorwärts-/Rückmigration,
+      Alerts und Rollout wurden nicht ausgeführt.
+    assessed_by: Codex
+    assessed_at: '2026-07-22T11:43:02.376082Z'
+- id: administrator_and_operator_documentation
+  category: documentation
+  title: Administrators and operators can understand assignment and hub visibility behavior
+  acceptance:
+  - Documentation explains that a standard or default center does not itself grant access and identifies
+    the authoritative identity-provider group format for center membership.
+  - It explains multi-center membership, membership refresh timing, effective-access diagnosis, and the
+    distinction between center-scoped profiles and central-hub processed-video viewing.
+  - Django superusers and principals with the exact Keycloak-synchronized center-scope capabilities can
+    assign and revoke plural center memberships through an audited backend API; delegated administrators
+    remain limited to their own unambiguous center.
+  - The runbook states that raw media and unrelated clinical resources remain scoped and provides concrete
+    troubleshooting steps for blank lists, forbidden playback, unknown center claims, and stale memberships.
+  required: true
+  verification:
+    kind: manual
+    instructions: Have an administrator assign and revoke center groups and have an operator diagnose
+      one central-hub and one site-node access case using only the published documentation.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: document
+      reference: docs/center_access_operations.md
+    note: Das Runbook ist veröffentlicht; die vorgeschriebene Übung durch Administrator und Operator steht
+      aus.
+    assessed_by: Codex
+    assessed_at: '2026-07-22T11:43:03.438866Z'

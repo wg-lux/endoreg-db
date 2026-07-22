@@ -155,7 +155,7 @@ class UploadFileView(APIView):
     """
 
     parser_classes = [MultiPartParser, FormParser]
-    permission_classes = [EnvironmentAwarePermission]
+    permission_classes = [EnvironmentAwarePermission, PolicyPermission]
 
     # Maximum file size (1 GiB)
     MAX_FILE_SIZE = 1024 * 1024 * 1024  # 1 GiB in bytes
@@ -451,18 +451,19 @@ class UploadStatusView(APIView):
                 "source_center",
             ).get(id=id)
 
-            allowed_center_id = ingest.resolve_allowed_center_id(
+            from endoreg_db.services.center_access import resolve_allowed_center_ids
+
+            allowed_center_ids = resolve_allowed_center_ids(
                 getattr(request, "user", None)
             )
             source_center_id = getattr(upload_job, "source_center_id", None)
             if (
-                allowed_center_id is not None
-                and allowed_center_id != -1
+                allowed_center_ids is not None
                 and source_center_id is not None
-                and source_center_id != allowed_center_id
+                and source_center_id not in allowed_center_ids
             ):
                 raise Http404("Upload job not found")
-            if allowed_center_id == -1:
+            if allowed_center_ids == frozenset():
                 raise PermissionDenied("You do not have access to upload jobs.")
 
             # Serialize the response

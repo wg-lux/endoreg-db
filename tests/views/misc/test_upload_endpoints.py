@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+# pyright: reportUnknownMemberType=false
+
 from typing import cast
 from unittest.mock import patch
 from uuid import uuid4
 
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Group, User
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.test.utils import override_settings
@@ -24,6 +26,20 @@ MINIMAL_PDF_BYTES = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
 
 
 class UploadEndpointTests(TestCase):
+    def _authenticate_for_center(self, center: Center | None = None) -> Center:
+        resolved_center = center or ApplicationSettings.get_solo().center
+        if resolved_center is None:
+            resolved_center = Center.objects.create(name=f"upload-{uuid4().hex[:8]}")
+            settings_obj = ApplicationSettings.get_solo()
+            settings_obj.center = resolved_center
+            settings_obj.save(update_fields=["center"])
+        user = User.objects.create_user(username=f"upload-user-{uuid4().hex[:8]}")
+        user.groups.add(Group.objects.get_or_create(name="patient:write")[0])
+        portal_info = PortalUserInfo.objects.create(user=user)
+        portal_info.centers.add(resolved_center)
+        self.client.force_login(user)
+        return resolved_center
+
     def test_upload_rejects_missing_file(self):
         response = self.client.post("/api/upload/", data={})
         assert response.status_code == 400, response.content
@@ -34,6 +50,7 @@ class UploadEndpointTests(TestCase):
         assert response.status_code == 404, response.content
 
     def test_upload_pdf_creates_job_and_status_is_available(self):
+        self._authenticate_for_center()
         uploaded = SimpleUploadedFile(
             name="upload-test.pdf",
             content=MINIMAL_PDF_BYTES,
@@ -62,6 +79,7 @@ class UploadEndpointTests(TestCase):
         assert status_payload["status"] == "pending"
 
     def test_upload_reuses_existing_job_for_same_idempotency_key(self):
+        self._authenticate_for_center()
         uploaded_a = SimpleUploadedFile(
             name="upload-a.pdf",
             content=MINIMAL_PDF_BYTES,
@@ -96,6 +114,7 @@ class UploadEndpointTests(TestCase):
         assert first.json()["upload_id"] == second.json()["upload_id"]
 
     def test_upload_reuses_existing_job_for_same_content_hash(self):
+        self._authenticate_for_center()
         uploaded_a = SimpleUploadedFile(
             name="upload-a.pdf",
             content=MINIMAL_PDF_BYTES,
@@ -157,6 +176,7 @@ class UploadEndpointTests(TestCase):
         settings_obj = ApplicationSettings.get_solo()
         settings_obj.center = default_center
         settings_obj.save()
+        self._authenticate_for_center(default_center)
 
         uploaded = SimpleUploadedFile(
             name="upload-test.pdf",
@@ -481,6 +501,7 @@ class UploadEndpointTests(TestCase):
 
     def test_upload_status_includes_report_llm_job_for_queued_import(self):
         center = Center.objects.create(name="llm-status-center")
+        self._authenticate_for_center(center)
         upload_job = UploadJob.objects.create(
             file=SimpleUploadedFile(
                 name="status-report.pdf",
@@ -517,6 +538,7 @@ class UploadEndpointTests(TestCase):
 
     def test_upload_status_report_llm_job_includes_poll_url_after_pdf_exists(self):
         center = Center.objects.create(name="llm-status-completed-center")
+        self._authenticate_for_center(center)
         report = RawPdfFile.objects.create(
             center=center,
             pdf_hash=f"llm-status-completed-report-{uuid4().hex}",
@@ -558,6 +580,7 @@ class UploadEndpointTests(TestCase):
         )
 
     def test_upload_dispatches_inline_processing_when_celery_is_unavailable(self):
+        self._authenticate_for_center()
         uploaded = SimpleUploadedFile(
             name="upload-test.pdf",
             content=MINIMAL_PDF_BYTES,
@@ -582,6 +605,7 @@ class UploadEndpointTests(TestCase):
         start_processing.assert_called_once_with(upload_job=upload_job)
 
     def test_upload_returns_500_when_processing_handoff_fails(self):
+        self._authenticate_for_center()
         uploaded = SimpleUploadedFile(
             name="upload-test.pdf",
             content=MINIMAL_PDF_BYTES,

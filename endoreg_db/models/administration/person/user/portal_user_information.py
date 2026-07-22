@@ -38,6 +38,11 @@ class PortalUserInfo(models.Model):
         null=True,
         related_name="portal_user_info",
     )
+    centers: models.ManyToManyField[Any, Any] = models.ManyToManyField(
+        "endoreg_db.Center",
+        blank=True,
+        related_name="authorized_portal_user_infos",
+    )
 
     def __str__(self) -> str:
         user = cast(_PortalUserSource, self.user)

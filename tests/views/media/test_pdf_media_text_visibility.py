@@ -4,6 +4,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 import json
+from django.contrib.auth.models import User
 from django.test import TestCase
 from lx_dtypes.models import SensitiveMeta
 
@@ -60,6 +61,14 @@ class PdfMediaTextVisibilityTests(TestCase):
         from endoreg_db.helpers.data_load_orchestrator import load_base_db_data
 
         load_base_db_data()
+
+    def setUp(self) -> None:
+        self.client.force_login(
+            User.objects.create_user(
+                username="pdf-media-text-reader",
+                is_staff=True,
+            )
+        )
 
     def test_txt_import_is_rejected_instead_of_exposing_raw_text_as_anonymized(self):
         txt_content = "patient report from txt\nline two"

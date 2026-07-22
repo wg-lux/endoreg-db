@@ -101,6 +101,23 @@ ROUTE_RESOURCE: RouteResourceMap = {
     "video-apply-mask": "video",
     "video-remove-frames": "video",
     "video-segments-blacken-outside": "video",
+    "video-segments-rerun-predictions": "video",
+    "video-segments-normalize-fps": "video",
+    "video-segments-import-predictions": "video",
+    "video-segment-ensure-annotations": "video",
+    "video-segments-ensure-annotations": "video",
+    "video-segment-ensure-prediction-annotations": "video",
+    "video-segments-ensure-prediction-annotations": "video",
+    "video-segments-stats": "video",
+    "video-segments-by-video": "video",
+    "video-segments-bulk-mutation": "video",
+    "video-segment-detail": "video",
+    "video-segment-validate": "video",
+    "video-segments-validate-bulk": "video",
+    "video-segments-validation-status": "video",
+    "video-annotated-export": "video",
+    "video-mark-ready-for-export": "video",
+    "video_upload": "patient",
     "get_lvs_list": "video",
     # report + sensitive metadata endpoints expose patient-linked data.
     "pdf-list": "patient",
@@ -141,6 +158,9 @@ ROUTE_RESOURCE: RouteResourceMap = {
 #   1) ROUTE_RESOURCE + RESOURCE_ROLES
 #   2) DEFAULT_ROLE_BY_METHOD
 REQUIRED_ROLES: RouteRoles = {
+    "anonymization_items_overview": {
+        "GET": "video:read",
+    },
     # Example: make patient DELETE admin-only (optional)
     # "patient-detail": {
     #     "DELETE": "admin",  # admin role in Keycloak

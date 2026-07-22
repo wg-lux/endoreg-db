@@ -254,20 +254,10 @@ class PatientExaminationReportApi:
         )
 
     def _allowed_center_ids_for_user(self, user: object | None) -> set[int] | None:
-        if self._is_privileged_user(user):
-            return None
-        if not user or not getattr(user, "is_authenticated", False):
-            return set()
+        from endoreg_db.services.center_access import resolve_allowed_center_ids
 
-        center_ids: set[int] = set()
-        portal_user_info = getattr(user, "portaluserinfo", None)
-        examiner = (
-            getattr(portal_user_info, "examiner", None) if portal_user_info else None
-        )
-        center_id = getattr(examiner, "center_id", None) if examiner else None
-        if isinstance(center_id, int):
-            center_ids.add(center_id)
-        return center_ids
+        allowed_center_ids = resolve_allowed_center_ids(user)
+        return None if allowed_center_ids is None else set(allowed_center_ids)
 
     def _apply_center_scope(self, queryset: QuerySet[ModelT]) -> QuerySet[ModelT]:
         allowed_center_ids = self._allowed_center_ids_for_user(

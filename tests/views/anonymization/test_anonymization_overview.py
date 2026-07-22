@@ -1,8 +1,12 @@
 from datetime import timedelta
+from typing import Any, cast
 
 import pytest
+from django.contrib.auth.models import User
+from django.core.files.base import ContentFile
 from django.utils import timezone
-from rest_framework.test import APIRequestFactory
+from django.test import override_settings
+from rest_framework.test import APIRequestFactory, force_authenticate
 from rest_framework import status
 from django.core.files.uploadedfile import SimpleUploadedFile  # <--- Import this
 import json
@@ -16,9 +20,29 @@ from endoreg_db.models import (
     Center,
     UploadJob,
     VideoHlsArtifact,
+    PortalUserInfo,
 )
 from endoreg_db.models.state.anonymization import AnonymizationState
 from endoreg_db.views.anonymization.overview import AnonymizationOverviewView
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "deployment_role",
+    ("standalone", "site_node", "local_study_server"),
+)
+def test_centerless_overview_returns_explicit_forbidden(
+    deployment_role: str,
+) -> None:
+    request = APIRequestFactory().get("/api/anonymization/items/overview/")
+    user = User.objects.create_user(username=f"centerless-{deployment_role}")
+    force_authenticate(request, user=user)
+
+    with override_settings(ENDOREG_DEPLOYMENT_ROLE=deployment_role):
+        response = AnonymizationOverviewView.as_view(permission_classes=[])(request)
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+    assert "No center membership" in str(response.data["detail"])
 
 
 @pytest.mark.django_db
@@ -104,6 +128,10 @@ def test_anonymization_overview_mixed_content():
     # 2. Execute Request
     url = "/api/anonymization/items/overview/"
     request = factory.get(url)
+    user = User.objects.create_user(username="overview-reader")
+    portal_info = PortalUserInfo.objects.create(user=user)
+    portal_info.centers.add(center)
+    force_authenticate(request, user=user)
     view = AnonymizationOverviewView.as_view(permission_classes=[])
     response = view(request)
 
@@ -159,3 +187,71 @@ def test_anonymization_overview_mixed_content():
 
     assert data[1]["anonymization_status"] == AnonymizationState.VALIDATED
     assert data[1]["annotation_status"] == "validated"
+
+
+@pytest.mark.django_db
+@override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+def test_central_hub_overview_unscopes_videos_but_not_reports() -> None:
+    local = Center.objects.create(name="Local", center_key="local")
+    foreign = Center.objects.create(name="Foreign", center_key="foreign")
+    local_video = VideoFile.objects.create(center=local, video_hash="local-video")
+    foreign_video = VideoFile.objects.create(
+        center=foreign,
+        video_hash="foreign-video",
+        original_file_name="patient-name-foreign.mp4",
+    )
+    cast(Any, foreign_video.processed_file).save(
+        "foreign-anonymized.mp4", ContentFile(b"processed"), save=True
+    )
+    foreign_state = foreign_video.get_or_create_state()
+    foreign_state.anonymized = True
+    foreign_state.save(update_fields=["anonymized"])
+    local_pdf = RawPdfFile.objects.create(center=local, pdf_hash="local-pdf")
+    foreign_pdf = RawPdfFile.objects.create(center=foreign, pdf_hash="foreign-pdf")
+    user = User.objects.create_user(username="hub-overview-reader")
+    portal_info = PortalUserInfo.objects.create(user=user)
+    portal_info.centers.add(local)
+
+    items = AnonymizationOverviewView().get_queryset(request_user=user)
+
+    assert {item.pk for item in items if isinstance(item, VideoFile)} == {
+        local_video.pk,
+        foreign_video.pk,
+    }
+    assert {item.pk for item in items if isinstance(item, RawPdfFile)} == {local_pdf.pk}
+    assert foreign_pdf not in items
+
+    request = APIRequestFactory().get("/api/anonymization/items/overview/")
+    force_authenticate(request, user=user)
+    response = AnonymizationOverviewView.as_view(permission_classes=[])(request)
+    payload = json.loads(response.content)
+    foreign_payload = next(
+        item
+        for item in payload
+        if item["media_type"] == "video" and item["id"] == foreign_video.pk
+    )
+    assert foreign_payload["filename"] == f"Video {foreign_video.pk}"
+    assert foreign_payload["sensitive_meta_id"] is None
+    assert foreign_payload["patient_hash_display"] is None
+    assert foreign_payload["pseudo_patient_id"] is None
+    assert foreign_payload["upload_job"] is None
+
+
+@pytest.mark.django_db
+@override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+def test_central_hub_centerless_user_discovers_processed_videos_only() -> None:
+    center = Center.objects.create(name="Foreign", center_key="foreign")
+    video = VideoFile.objects.create(center=center, video_hash="centerless-hub-video")
+    cast(Any, video.processed_file).save(
+        "centerless-hub-anonymized.mp4", ContentFile(b"processed"), save=True
+    )
+    state = video.get_or_create_state()
+    state.anonymized = True
+    state.save(update_fields=["anonymized"])
+    report = RawPdfFile.objects.create(center=center, pdf_hash="centerless-hub-report")
+    user = User.objects.create_user(username="centerless-hub-overview-reader")
+
+    items = AnonymizationOverviewView().get_queryset(request_user=user)
+
+    assert video in items
+    assert report not in items

@@ -23,6 +23,10 @@ from lx_dtypes.models.contracts.patient_view import (
     PatientDeletionSafetyPayload,
     PatientPseudonymPayload,
 )
+from endoreg_db.views.access_control import (
+    assert_center_id_allowed,
+    filter_center_scoped_queryset,
+)
 
 
 class _PatientNameLike(Protocol):
@@ -57,8 +61,19 @@ class PatientViewSet(viewsets.ModelViewSet[Patient]):  # pyright: ignore[reportI
     serializer_class = PatientSerializer
     permission_classes = [PolicyPermission]
 
+    def get_queryset(self):  # pyright: ignore[reportIncompatibleMethodOverride]
+        return filter_center_scoped_queryset(
+            queryset=Patient.objects.all(),
+            user=self.request.user,
+        )
+
     def perform_create(self, serializer: serializers.BaseSerializer[Patient]) -> None:  # pyright: ignore[reportIncompatibleMethodOverride]
         """Erweiterte Validierung beim Erstellen eines Patienten"""
+        center = serializer.validated_data.get("center")
+        assert_center_id_allowed(
+            request=self.request,
+            center_id=getattr(center, "pk", None),
+        )
         try:
             serializer.save()
         except Exception as e:

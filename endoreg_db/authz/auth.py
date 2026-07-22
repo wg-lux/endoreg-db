@@ -15,6 +15,10 @@ from rest_framework.request import Request
 
 from endoreg_db.authz.settings import ensure_keycloak_settings
 from lx_dtypes.models.contracts import validate_keycloak_claims
+from endoreg_db.services.center_access import (
+    synchronize_user_center_groups,
+    validated_center_group_paths,
+)
 from lx_dtypes.models.contracts.json_types import JsonValue
 
 User = get_user_model()
@@ -162,9 +166,9 @@ class KeycloakJWTAuthentication(authentication.BaseAuthentication):
                 issuer=issuer,
                 options={"require": ["exp", "iat", "iss"]},
             )
-            claims = validate_keycloak_claims(
-                cast(Mapping[str, JsonValue], decoded_claims)
-            )
+            decoded_claims_mapping = cast(Mapping[str, JsonValue], decoded_claims)
+            claims = validate_keycloak_claims(decoded_claims_mapping)
+            center_group_paths = validated_center_group_paths(decoded_claims_mapping)
         except Exception as e:
             raise exceptions.AuthenticationFailed(f"Invalid token: {e}")
 
@@ -190,5 +194,10 @@ class KeycloakJWTAuthentication(authentication.BaseAuthentication):
                 groups.append(grp)
             auth_user.groups.set(groups)
             auth_user.save()
+
+        synchronize_user_center_groups(
+            user=auth_user,
+            group_paths=center_group_paths,
+        )
 
         return (auth_user, None)
