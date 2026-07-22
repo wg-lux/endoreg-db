@@ -25,7 +25,11 @@ from endoreg_db.services.jobs.frame_extraction_jobs import (
 )
 from endoreg_db.services.video_files import get_video_frame_dir_path
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
-from endoreg_db.views.access_control import assert_center_scope_allowed
+from endoreg_db.views.access_control import (
+    CenterScopedVideoPermission,
+    assert_anonymized_center_scope_allowed,
+    assert_center_scope_allowed,
+)
 from endoreg_db.utils.paths import (
     ensure_within_protected_media_root,
 )
@@ -314,7 +318,11 @@ class DecodedFrameStreamView(APIView):
     - GET /api/media/videos/<video_id>/frames/<frame_number>/decoded-stream/?file_type=raw|processed
     """
 
-    permission_classes = [EnvironmentAwarePermission, PolicyPermission]
+    permission_classes = [
+        EnvironmentAwarePermission,
+        PolicyPermission,
+        CenterScopedVideoPermission,
+    ]
 
     @staticmethod
     def _parse_file_type(
@@ -379,7 +387,13 @@ class DecodedFrameStreamView(APIView):
             return parse_error
         assert artifact_kind is not None
 
-        if artifact_kind == VideoArtifactKind.RAW:
+        if artifact_kind == VideoArtifactKind.PROCESSED:
+            assert_anonymized_center_scope_allowed(
+                request=request,
+                obj=video,
+                not_found_message="Video not found",
+            )
+        else:
             assert_center_scope_allowed(
                 request=request,
                 obj=video,

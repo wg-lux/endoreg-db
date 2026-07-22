@@ -60,7 +60,8 @@ definition_of_done:
     Zeitstempel autoritativ und eine nominelle FPS-Angabe allein ist unzulässig.
   - Zeitbasierte Modellfenster für Glättung, Mindestdauer und Lückenschluss werden gegen die persistierten
     Präsentationszeitstempel ausgewertet; fehlende, nicht endliche, nicht streng steigende oder unvollständige
-    Zeitstempelfolgen brechen die temporale Inferenz laut ab und fallen nicht auf eine nominelle Bildrate zurück.
+    Zeitstempelfolgen brechen die temporale Inferenz laut ab und fallen nicht auf eine nominelle Bildrate
+    zurück.
   - Jede Normalisierung persistiert Provenienz und eine überprüfbare Abbildung von Quell- zu Ziel-Timeline;
     Drift, ausgelassene oder doppelte Frames außerhalb der freigegebenen Toleranz verhindern die Freigabe.
   - Frame-Extraktion an Segmentanfang, Segmentende und inneren Zeitpunkten wählt vor und nach dem Transcode
@@ -152,6 +153,17 @@ definition_of_done:
   - Sobald Segmentzeilen existieren, lehnt der FPS-Pfad jede Änderung der Framekoordinaten laut ab. Seeking
     sowie Segmentanfang und -ende referenzieren nach Storage-Normalisierung deterministisch denselben
     klinischen Bildinhalt.
+  - Der Einzelbild-Decode verwendet den autoritativen Präsentationszeitstempel und einen nur an Loopback
+    gebundenen, nicht erratbaren Byte-Range-Zugriff auf das ausgewählte verschlüsselte Artefakt. Er erzeugt
+    keine vollständige temporäre Klartextkopie, entschlüsselt nur die von FFmpeg angeforderten Chunks
+    und schlägt bei nicht seekbarem Storage laut fehl.
+  - lx-annotate bewahrt binäre Einzelbildantworten unverändert als Blob, lädt pro ausgewählter Aufgabe
+    ohne expliziten Wiederholungsversuch höchstens einmal und zeigt HTTP-Status beziehungsweise Backendfehler
+    statt einer generischen Bildfehlermeldung an. Selten benötigte Queue-Parameter bleiben in einer eingeklappten
+    erweiterten Konfiguration verfügbar, während der Standardpfad nur die fachlich nötige Auswahl zeigt.
+  - Der Dataset-Export bindet Integer-Präsentationszeitstempel, rationale Stream-Timebase und Timeline-Version
+    an denselben persistierten pts_v1-Vertrag. Fehlende Zeitachsenidentität führt zu einem lauten Fehler;
+    nominale Bilder pro Sekunde dürfen keine Exportkoordinaten erzeugen.
   - Playlist-, Key- und Segmentzugriffe erzeugen beziehungsweise erneuern eine Media-Operation-Lease.
     Normalisierung, HLS-Neuerzeugung und Cleanup warten bei aktivem Playback oder Segment-Update und veröffentlichen
     eine neue Generation atomar, ohne laufende Annotationen auf gemischte Derivate zu lenken.
@@ -179,21 +191,28 @@ definition_of_done:
     - kind: test
       reference: /home/admin/dev/lx-annotate/frontend/src/utils/__tests__/segmentTimeline.test.ts
     - kind: test
-      reference: tests/views/video/test_video_timeline_view.py; tests/services/test_segment_frame_extraction.py; /home/admin/dev/lx-annotate/frontend/src/components/VideoExamination/__tests__/Timeline.pts-navigation.test.ts
+      reference: tests/views/video/test_video_timeline_view.py; tests/services/test_segment_frame_extraction.py;
+        /home/admin/dev/lx-annotate/frontend/src/components/VideoExamination/__tests__/Timeline.pts-navigation.test.ts
+    - kind: test
+      reference: tests/services/test_seekable_media_input.py; tests/utils/test_encryption_range.py; tests/utils/test_storage_streaming.py;
+        tests/utils/video/test_frame_stream.py; tests/views/media/test_frame_stream.py
     - kind: command
       reference: devenv shell bash -lc 'exec .devenv/state/venv/bin/pytest tests/services/test_video_fps_normalization_jobs.py
         -q'
-    note: Das gemeinsame mock_video_file-Fixture erzeugt nun ein persistiertes 60-FPS-Video und der Backendtest
-      weist required→queued→running→failed→ready sowie den 50-FPS-Zielvertrag nach. Der lx-annotate-Contract-Test
-      weist timestamp-only Segment-Create/-Update mit irregulären Zeitwerten sowie die Übernahme kanonischer
-      Backendgrenzen nach. Frame vor/zurück verwendet nun denselben kanonischen PTS-Resolver über einen
-      center-scoped Nachbarschaftsendpoint und schlägt bei fehlenden VFR-PTS geschlossen fehl. Ein begrenztes
-      Backendfenster, Frontendcache, `(video, timestamp)`-Index und Vier-Query-Budget schützen den interaktiven Pfad
-      ohne eine zweite Mappinglogik. Blockiert bleiben
-      authentifiziertes Processed-HLS, atomare Generationsveröffentlichung, Lease-Konkurrenz und der vollständige
-      Segment-PTS-Roundtrip über ein reales Video im Cross-Repository-Test.
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/frontend/src/api/__tests__/axiosInstance.binary.test.ts;
+        /home/admin/dev/lx-annotate/frontend/src/views/__tests__/FrameAnnotationPage.test.ts; /home/admin/dev/lx-annotate/frontend/src/views/__tests__/FrameAnnotationPage.usability.test.ts
+        (24 passed)
+    - kind: command
+      reference: devenv shell -- npm run type-check (exit 0)
+    note: Der lx-annotate-Einzelbildpfad bewahrt Blob-Antworten nun unverändert, validiert Status, Content-Type
+      und leere Antworten, lädt einen erfolgreichen Task ohne expliziten Retry einmal und reduziert die
+      Standardauswahl auf Label-Gruppe und Ziel-Label. Fokussierte Frontendtests und Vue-Typecheck sind
+      erfolgreich. Das Gesamtkriterium bleibt wegen der bereits dokumentierten offenen Nachweise für authentifiziertes
+      Processed-HLS, atomare Generationsveröffentlichung, Lease-Konkurrenz und den realen Cross-Repository-Segment-PTS-Roundtrip
+      blockiert.
     assessed_by: Codex
-    assessed_at: '2026-07-20T10:59:45.040797Z'
+    assessed_at: '2026-07-22T06:34:19.658379Z'
 - id: derived_artifact_lifecycle
   category: functionality
   title: Redundante Roh- und HLS-Artefakte werden erst nach vollständiger Freigabe entfernt

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any, cast
 
 import pytest
+from django.core.files.base import ContentFile
+from django.contrib.auth.models import User
 from django.db import connection
+from django.test import override_settings
 from django.test.utils import CaptureQueriesContext
-from rest_framework.test import APIRequestFactory
+from rest_framework.test import APIRequestFactory, force_authenticate
 
 from endoreg_db.models import Center, Frame, VideoFile
 from endoreg_db.views import access_control
@@ -63,12 +67,18 @@ def _video_with_vfr_pts() -> VideoFile:
     return video
 
 
+def _force_staff_authentication(request: Any, username: str) -> None:
+    user = User.objects.create_user(username=username, is_staff=True)
+    force_authenticate(request, user=user)
+
+
 def test_frame_neighborhood_view_returns_canonical_pts() -> None:
     video = _video_with_vfr_pts()
     request = APIRequestFactory().get(
         f"/api/media/videos/{video.pk}/timeline/frame-neighborhood/",
         {"timestamp": "0.12"},
     )
+    _force_staff_authentication(request, "canonical-timeline-reader")
 
     response = VideoFrameNeighborhoodView.as_view()(request, pk=video.pk)
 
@@ -97,6 +107,7 @@ def test_frame_neighborhood_view_has_a_constant_four_query_budget() -> None:
         f"/api/media/videos/{video.pk}/timeline/frame-neighborhood/",
         {"timestamp": "0.12", "radius": "1"},
     )
+    _force_staff_authentication(request, "timeline-query-budget-reader")
 
     with CaptureQueriesContext(connection) as queries:
         response = VideoFrameNeighborhoodView.as_view()(request, pk=video.pk)
@@ -132,6 +143,7 @@ def test_frame_neighborhood_view_fails_closed_for_missing_vfr_pts() -> None:
         f"/api/media/videos/{video.pk}/timeline/frame-neighborhood/",
         {"timestamp": "0.12"},
     )
+    _force_staff_authentication(request, "missing-timeline-reader")
 
     response = VideoFrameNeighborhoodView.as_view()(request, pk=video.pk)
 
@@ -156,7 +168,31 @@ def test_frame_neighborhood_view_is_center_scoped(
         f"/api/media/videos/{video.pk}/timeline/frame-neighborhood/",
         {"timestamp": "0.12"},
     )
+    user = User.objects.create_user(username="wrong-center-timeline-reader")
+    force_authenticate(request, user=user)
 
     response = VideoFrameNeighborhoodView.as_view()(request, pk=video.pk)
 
-    assert response.status_code == 404
+    assert response.status_code == 403
+
+
+@override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+def test_centerless_hub_user_can_read_processed_video_timeline() -> None:
+    video = _video_with_vfr_pts()
+    cast(Any, video.processed_file).save(
+        "timeline-anonymized.mp4", ContentFile(b"processed"), save=True
+    )
+    state = video.get_or_create_state()
+    state.anonymized = True
+    state.save(update_fields=["anonymized"])
+    user = User.objects.create_user(username="centerless-hub-timeline-reader")
+    request = APIRequestFactory().get(
+        f"/api/media/videos/{video.pk}/timeline/frame-neighborhood/",
+        {"timestamp": "0.12"},
+    )
+    force_authenticate(request, user=user)
+
+    response = VideoFrameNeighborhoodView.as_view()(request, pk=video.pk)
+
+    assert response.status_code == 200
+    assert response.data["timeline_version"] == "pts_v1"

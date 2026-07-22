@@ -39,6 +39,11 @@ class Frame(models.Model):
     frame_number: models.PositiveIntegerField[Any, Any] = models.PositiveIntegerField()
     relative_path: models.CharField[Any, Any] = models.CharField(max_length=512)
     timestamp: models.FloatField[Any, Any] = models.FloatField(null=True, blank=True)
+    presentation_timestamp: models.BigIntegerField[Any, Any] = models.BigIntegerField(
+        null=True,
+        blank=True,
+        help_text="Exact presentation timestamp tick in the selected video stream time base.",
+    )
 
     is_extracted: models.BooleanField[Any, Any] = models.BooleanField(default=False)
 

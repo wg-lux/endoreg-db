@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from django.contrib.auth.models import User
 from django.test import Client
 
 from endoreg_db.views.video import video_stream as view_module
@@ -26,6 +27,9 @@ def test_legacy_video_stream_redirects_to_processed_hls(
     client: Client,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    client.force_login(
+        User.objects.create_user(username="legacy-stream", is_staff=True)
+    )
     monkeypatch.setattr(
         view_module.VideoStreamView,
         "_get_video_or_404",
@@ -53,6 +57,9 @@ def test_legacy_video_detail_stream_alias_redirects_to_processed_hls(
     client: Client,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    client.force_login(
+        User.objects.create_user(username="legacy-detail", is_staff=True)
+    )
     monkeypatch.setattr(
         view_module.VideoStreamView,
         "_get_video_or_404",
@@ -74,6 +81,7 @@ def test_legacy_video_stream_preserves_configured_cors(
     client: Client,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    client.force_login(User.objects.create_user(username="legacy-cors", is_staff=True))
     monkeypatch.setenv("DJANGO_CORS_ALLOWED_ORIGINS", "http://frontend.test")
     monkeypatch.setattr(
         view_module.VideoStreamView,

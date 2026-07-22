@@ -19,7 +19,10 @@ from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.video_files import get_video_frame_neighborhood
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
-from endoreg_db.views.access_control import assert_center_scope_allowed
+from endoreg_db.views.access_control import (
+    CenterScopedVideoPermission,
+    assert_anonymized_center_scope_allowed,
+)
 
 PermissionClass: TypeAlias = type[BasePermission] | OperandHolder | SingleOperandHolder
 
@@ -37,6 +40,7 @@ class VideoFrameNeighborhoodView(APIView):
     permission_classes: Sequence[PermissionClass] = (
         EnvironmentAwarePermission,
         PolicyPermission,
+        CenterScopedVideoPermission,
     )
 
     def get(self, request: Request, pk: int) -> Response:
@@ -52,7 +56,7 @@ class VideoFrameNeighborhoodView(APIView):
             )
 
         video = get_object_or_404(VideoFile, pk=pk)
-        assert_center_scope_allowed(request=request, obj=video)
+        assert_anonymized_center_scope_allowed(request=request, obj=video)
         self.check_object_permissions(request, video)
         try:
             neighborhood = get_video_frame_neighborhood(

@@ -8,6 +8,7 @@ import pytest
 
 from endoreg_db.models import Center, Frame, VideoFile
 from endoreg_db.schemas.video_storage import (
+    FramePresentationTimestamp,
     VideoArtifactProbe,
     VideoSourceTimelineEvidence,
     VideoTimelineContract,
@@ -332,9 +333,18 @@ def test_probe_video_frame_pts_rejects_non_monotonic_timestamps(
             stdout=json.dumps(
                 {
                     "frames": [
-                        {"best_effort_timestamp_time": "0.000"},
-                        {"best_effort_timestamp_time": "0.040"},
-                        {"best_effort_timestamp_time": "0.040"},
+                        {
+                            "best_effort_timestamp": "0",
+                            "best_effort_timestamp_time": "0.000",
+                        },
+                        {
+                            "best_effort_timestamp": "3600",
+                            "best_effort_timestamp_time": "0.040",
+                        },
+                        {
+                            "best_effort_timestamp": "7200",
+                            "best_effort_timestamp_time": "0.040",
+                        },
                     ]
                 }
             )
@@ -347,6 +357,43 @@ def test_probe_video_frame_pts_rejects_non_monotonic_timestamps(
         match="strictly increasing",
     ):
         normalization.probe_video_frame_pts(Path("video.mp4"))
+
+
+@pytest.mark.unit
+def test_probe_video_frame_timestamps_accepts_numeric_ffprobe_ticks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        normalization.ffmpeg_wrapper,
+        "resolve_ffprobe_executable",
+        lambda: "/usr/bin/ffprobe",
+    )
+
+    def fake_run(*args: object, **kwargs: object) -> SimpleNamespace:
+        _ = args, kwargs
+        return SimpleNamespace(
+            stdout=json.dumps(
+                {
+                    "frames": [
+                        {
+                            "best_effort_timestamp": 0,
+                            "best_effort_timestamp_time": "0.000",
+                        },
+                        {
+                            "best_effort_timestamp": 3600,
+                            "best_effort_timestamp_time": "0.040",
+                        },
+                    ]
+                }
+            )
+        )
+
+    monkeypatch.setattr(normalization.subprocess, "run", fake_run)
+
+    timestamps = normalization.probe_video_frame_timestamps(Path("video.mp4"))
+
+    assert [row.presentation_timestamp for row in timestamps] == [0, 3600]
+    assert [row.presentation_time_seconds for row in timestamps] == [0.0, 0.04]
 
 
 @pytest.mark.django_db
@@ -385,6 +432,24 @@ def test_persist_video_source_timeline_uses_probed_pts_for_vfr(
     def fake_probe_video_frame_pts(_path: Path) -> list[float]:
         return [0.0, 0.033, 0.091]
 
+    def fake_probe_video_frame_timestamps(
+        _path: Path,
+    ) -> list[FramePresentationTimestamp]:
+        return [
+            FramePresentationTimestamp(
+                presentation_timestamp=0,
+                presentation_time_seconds=0.0,
+            ),
+            FramePresentationTimestamp(
+                presentation_timestamp=2970,
+                presentation_time_seconds=0.033,
+            ),
+            FramePresentationTimestamp(
+                presentation_timestamp=8190,
+                presentation_time_seconds=0.091,
+            ),
+        ]
+
     monkeypatch.setattr(
         normalization,
         "probe_video_artifact",
@@ -394,6 +459,11 @@ def test_persist_video_source_timeline_uses_probed_pts_for_vfr(
         normalization,
         "probe_video_frame_pts",
         fake_probe_video_frame_pts,
+    )
+    monkeypatch.setattr(
+        normalization,
+        "probe_video_frame_timestamps",
+        fake_probe_video_frame_timestamps,
     )
 
     normalization.persist_video_source_timeline(video, tmp_path / "source.mp4")
@@ -405,11 +475,48 @@ def test_persist_video_source_timeline_uses_probed_pts_for_vfr(
     )
     video.refresh_from_db()
     assert timestamps == [0.0, 0.033, 0.091]
+    assert list(
+        Frame.objects.filter(video=video)
+        .order_by("frame_number")
+        .values_list("presentation_timestamp", flat=True)
+    ) == [0, 2970, 8190]
     meta = video.meta
     assert isinstance(meta, dict)
     evidence = VideoSourceTimelineEvidence.model_validate(meta["source_timeline"])
     assert evidence.timeline_version == "pts_v1"
     assert evidence.timestamp_mapping == "ffprobe_pts"
+
+    def fake_inconsistent_frame_timestamps(
+        _path: Path,
+    ) -> list[FramePresentationTimestamp]:
+        return [
+            FramePresentationTimestamp(
+                presentation_timestamp=0,
+                presentation_time_seconds=0.0,
+            ),
+            FramePresentationTimestamp(
+                presentation_timestamp=2970,
+                presentation_time_seconds=0.05,
+            ),
+            FramePresentationTimestamp(
+                presentation_timestamp=8190,
+                presentation_time_seconds=0.091,
+            ),
+        ]
+
+    monkeypatch.setattr(
+        normalization,
+        "probe_video_frame_timestamps",
+        fake_inconsistent_frame_timestamps,
+    )
+    with pytest.raises(
+        normalization.VideoStorageNormalizationError,
+        match="does not match stream time base",
+    ):
+        normalization.persist_video_source_timeline(
+            video,
+            tmp_path / "source.mp4",
+        )
 
 
 @pytest.mark.unit

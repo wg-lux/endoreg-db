@@ -77,6 +77,8 @@ from endoreg_db.utils.file_operations import (
     safe_unlink_file,
 )
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.authz.permissions import PolicyPermission
+from endoreg_db.views.access_control import CenterScopedVideoPermission
 from endoreg_db.utils.media_urls import (
     build_absolute_media_url,
     build_video_hls_playlist_path,
@@ -224,7 +226,11 @@ class VideoCorrectionView(APIView):
     GET /api/video/media/video-correction/{id}/ - Get video details for correction
     """
 
-    permission_classes: Sequence[PermissionClass] = (EnvironmentAwarePermission,)
+    permission_classes: Sequence[PermissionClass] = (
+        EnvironmentAwarePermission,
+        PolicyPermission,
+        CenterScopedVideoPermission,
+    )
 
     def get(self, request: Request, pk: int) -> Response:
         video = get_object_or_404(VideoFile, pk=pk)
@@ -235,7 +241,11 @@ class VideoCorrectionView(APIView):
 class VideoAnonymizationCorrectionView(APIView):
     """Select, apply, and audit a correction-time anonymization strategy."""
 
-    permission_classes: Sequence[PermissionClass] = (EnvironmentAwarePermission,)
+    permission_classes: Sequence[PermissionClass] = (
+        EnvironmentAwarePermission,
+        PolicyPermission,
+        CenterScopedVideoPermission,
+    )
     _STRATEGIES = ("detector_assisted", "processor_region")
 
     def get(self, request: Request, pk: int) -> Response:
@@ -598,7 +608,11 @@ class VideoProcessingHistoryView(APIView):
         ]
     """
 
-    permission_classes: Sequence[PermissionClass] = (EnvironmentAwarePermission,)
+    permission_classes: Sequence[PermissionClass] = (
+        EnvironmentAwarePermission,
+        PolicyPermission,
+        CenterScopedVideoPermission,
+    )
 
     def get(self, request: Request, pk: int) -> Response:
         """Get processing history for a video."""
@@ -645,7 +659,11 @@ class VideoApplyMaskView(APIView):
     Note: Currently synchronous. Will be converted to Celery task in Phase 1.2.
     """
 
-    permission_classes: Sequence[PermissionClass] = (EnvironmentAwarePermission,)
+    permission_classes: Sequence[PermissionClass] = (
+        EnvironmentAwarePermission,
+        PolicyPermission,
+        CenterScopedVideoPermission,
+    )
 
     def post(self, request: Request, pk: int) -> Response:
         """Apply masking to video."""
@@ -794,7 +812,11 @@ class VideoRemoveFramesView(APIView):
     Note: Currently synchronous. Will be converted to Celery task in Phase 1.2.
     """
 
-    permission_classes: Sequence[PermissionClass] = (EnvironmentAwarePermission,)
+    permission_classes: Sequence[PermissionClass] = (
+        EnvironmentAwarePermission,
+        PolicyPermission,
+        CenterScopedVideoPermission,
+    )
 
     def post(self, request: Request, pk: int) -> Response:
         """Remove frames from video."""

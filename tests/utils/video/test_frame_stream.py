@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import io
+import shutil
 from collections.abc import Generator
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from django.core.files.base import ContentFile
 from pytest import MonkeyPatch
 
 import endoreg_db.utils.frame_stream as frame_stream
+from endoreg_db.utils.encryption.encrypted import EncryptedStorage
 
 
 class FakeStreamingProcess:
@@ -141,7 +145,7 @@ def test_read_video_path_frame_jpeg_uses_timestamp_seek_and_mjpeg_pipe(
         "-v",
         "error",
         "-ss",
-        "2.500000",
+        "2.500000000",
         "-i",
         str(tmp_path / "video.mp4"),
         "-map",
@@ -159,6 +163,141 @@ def test_read_video_path_frame_jpeg_uses_timestamp_seek_and_mjpeg_pipe(
         "mjpeg",
         "pipe:1",
     ]
+
+
+@pytest.mark.unit
+def test_read_video_file_frame_jpeg_uses_authoritative_pts_and_seekable_ranges(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    from contextlib import contextmanager
+
+    field_file = SimpleNamespace(name="processed/video.mp4", storage=object())
+
+    class FakeVideo:
+        video_hash = "abc123"
+        raw_file = SimpleNamespace(name="raw/video.mp4", storage=object())
+        processed_file = field_file
+
+        def get_fps(self) -> float:
+            raise AssertionError("authoritative PTS must replace FPS-derived seeking")
+
+        def frame_number_to_s(self, frame_number: int) -> float:
+            assert frame_number == 144224
+            return 123.456789123
+
+    @contextmanager
+    def fake_seekable_input(
+        selected_field_file: object,
+    ) -> Generator[object, None, None]:
+        assert selected_field_file is field_file
+        yield SimpleNamespace(
+            url="http://127.0.0.1:43210/token/video.mp4",
+            plaintext_size=10_000,
+        )
+
+    created_commands: list[list[str]] = []
+
+    def fake_popen(command: list[str], **kwargs: Any) -> FakeStreamingProcess:
+        created_commands.append(command)
+        return FakeStreamingProcess(b"\xff\xd8encoded-jpeg")
+
+    def no_local_plaintext_path(field_file_value: object) -> None:
+        return None
+
+    def supports_decrypted_ranges(field_file_value: object) -> bool:
+        return True
+
+    monkeypatch.setattr(
+        frame_stream,
+        "maybe_local_plaintext_path",
+        no_local_plaintext_path,
+    )
+    monkeypatch.setattr(
+        frame_stream,
+        "field_file_has_decrypted_range_storage",
+        supports_decrypted_ranges,
+    )
+    monkeypatch.setattr(frame_stream, "serve_seekable_media_input", fake_seekable_input)
+    monkeypatch.setattr(frame_stream, "_resolve_ffmpeg_executable", lambda: "/ffmpeg")
+    monkeypatch.setattr(frame_stream.subprocess, "Popen", fake_popen)
+
+    sample = frame_stream.read_video_file_frame_jpeg(
+        cast(Any, FakeVideo()),
+        frame_number=144224,
+        file_type="processed",
+    )
+
+    assert sample.timestamp == 123.456789123
+    command = created_commands[0]
+    assert command[command.index("-ss") + 1] == "123.456789123"
+    assert command[command.index("-seekable") + 1] == "1"
+    assert command[command.index("-i") + 1].startswith("http://127.0.0.1:")
+
+
+@pytest.mark.ffmpeg
+@pytest.mark.video
+def test_read_video_file_frame_jpeg_decodes_from_encrypted_ranges(
+    tmp_path: Path,
+) -> None:
+    ffmpeg_executable = shutil.which("ffmpeg")
+    if ffmpeg_executable is None:
+        pytest.skip("ffmpeg is not available")
+
+    source_path = tmp_path / "source.mp4"
+    completed = frame_stream.subprocess.run(
+        [
+            ffmpeg_executable,
+            "-nostdin",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=red:s=64x64:r=10:d=1",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+            "-an",
+            "-y",
+            str(source_path),
+        ],
+        check=False,
+        capture_output=True,
+    )
+    if completed.returncode != 0:
+        pytest.skip("ffmpeg test fixture could not be generated")
+
+    storage = EncryptedStorage(
+        location=tmp_path / "encrypted",
+        master_key=b"k" * 32,
+        chunk_size=128,
+    )
+    stored_name = storage.save("video.mp4", ContentFile(source_path.read_bytes()))
+    field_file = SimpleNamespace(name=stored_name, storage=storage)
+
+    class FakeVideo:
+        video_hash = "encrypted-range-video"
+        raw_file = field_file
+        processed_file = field_file
+
+        def get_fps(self) -> float:
+            return 10.0
+
+        def frame_number_to_s(self, frame_number: int) -> float:
+            return frame_number / 10.0
+
+    sample = frame_stream.read_video_file_frame_jpeg(
+        cast(Any, FakeVideo()),
+        frame_number=5,
+        file_type="processed",
+    )
+
+    assert sample.frame_number == 5
+    assert sample.timestamp == 0.5
+    assert sample.image_bytes.startswith(b"\xff\xd8")
 
 
 @pytest.mark.unit

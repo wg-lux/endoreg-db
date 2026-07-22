@@ -30,6 +30,16 @@ from endoreg_db.models.label.label_video_segment.label_video_segment import (
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.serializers.video.video_file_detail import VideoDetailSerializer
 from endoreg_db.serializers.video.video_file_list import VideoFileListSerializer
+from endoreg_db.serializers.video.video_file_list import (
+    CrossCenterProcessedVideoSerializer,
+)
+from endoreg_db.views.access_control import (
+    CenterScopedVideoPermission,
+    assert_anonymized_center_scope_allowed,
+    assert_center_scope_allowed,
+    filter_video_read_queryset,
+    has_cross_center_hub_processed_access,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +132,11 @@ class VideoMediaView(APIView):
     Video media management API for listing and detail operations.
     """
 
-    permission_classes = [IsAuthenticated, PolicyPermission]
+    permission_classes = [
+        IsAuthenticated,
+        PolicyPermission,
+        CenterScopedVideoPermission,
+    ]
 
     def get(self, request: Request, pk: int | None = None) -> Response:
         if pk is not None:
@@ -140,6 +154,7 @@ class VideoMediaView(APIView):
             video: VideoFile = VideoFile.objects.get(pk=pk)
         except VideoFile.DoesNotExist:
             raise Http404(f"Video with ID {pk} not found")
+        assert_center_scope_allowed(request=request, obj=video)
 
         payload = cast(Mapping[str, JsonValue], request.data)
         raw_export_flag = payload.get("export_segments_by_video")
@@ -159,24 +174,18 @@ class VideoMediaView(APIView):
 
     def _get_video_detail(self, request: Request, pk: int) -> Response:
         try:
-            video = VideoFile.objects.select_related("state", "sensitive_meta").get(
-                pk=pk
-            )
-            _video_contract_payload(video)
-            serializer = VideoDetailSerializer(video, context={"request": request})
-            return Response(_serialize_response_data(cast(_SerializerLike, serializer)))
+            video = VideoFile.objects.select_related(
+                "state", "sensitive_meta", "center"
+            ).get(pk=pk)
         except VideoFile.DoesNotExist:
             raise Http404(f"Video with ID {pk} not found")
-        except Exception as exc:
-            logger.error(
-                "Unexpected error in video detail view for ID %s: %s",
-                pk,
-                exc,
-            )
-            return Response(
-                {"error": "Failed to retrieve video details"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+        assert_anonymized_center_scope_allowed(request=request, obj=video)
+        _video_contract_payload(video)
+        if has_cross_center_hub_processed_access(user=request.user, obj=video):
+            serializer = CrossCenterProcessedVideoSerializer(video)
+        else:
+            serializer = VideoDetailSerializer(video, context={"request": request})
+        return Response(_serialize_response_data(cast(_SerializerLike, serializer)))
 
     def _list_videos(self, request: Request) -> Response:
         try:
@@ -192,8 +201,13 @@ class VideoMediaView(APIView):
             )
             queryset: QuerySet[VideoFile] = (
                 VideoFile.objects.select_related("state", "sensitive_meta")
+                .select_related("center")
                 .prefetch_related(segments_prefetch)
                 .all()
+            )
+            queryset = cast(
+                QuerySet[VideoFile],
+                filter_video_read_queryset(queryset=queryset, user=request.user),
             )
 
             query_params = _query_params(request)
@@ -213,10 +227,19 @@ class VideoMediaView(APIView):
             for video in videos:
                 _video_contract_payload(video)
 
-            serializer = VideoFileListSerializer(videos, many=True)
-            serialized_data = _serialize_response_data(
-                cast(_SerializerLike, serializer)
-            )
+            serialized_data = [
+                _serialize_response_data(
+                    cast(
+                        _SerializerLike,
+                        CrossCenterProcessedVideoSerializer(video)
+                        if has_cross_center_hub_processed_access(
+                            user=request.user, obj=video
+                        )
+                        else VideoFileListSerializer(video),
+                    )
+                )
+                for video in videos
+            ]
             include_unresolved = _query_bool_param(query_params, "include_unresolved")
             return Response(
                 {

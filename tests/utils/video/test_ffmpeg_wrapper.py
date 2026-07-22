@@ -722,6 +722,56 @@ def test_extract_frame_range_numbers_outputs_by_requested_frame(
 
 
 @pytest.mark.unit
+def test_extract_frames_by_presentation_timestamp_builds_sparse_pts_filter(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    input_path = tmp_path / "input.mp4"
+    output_dir = tmp_path / "frames"
+    input_path.write_bytes(b"video")
+    captured_commands: list[list[str]] = []
+
+    monkeypatch.setattr(
+        "endoreg_db.utils.video.frame_extraction._resolve_ffmpeg_executable",
+        _smart_ffmpeg_path,
+    )
+
+    def fake_run(
+        command: list[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        captured_commands.append(command)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / "frame_0000000.jpg").write_bytes(b"first")
+        (output_dir / "frame_0000001.jpg").write_bytes(b"second")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    result = ffmpeg_wrapper.extract_frames_by_presentation_timestamp(
+        input_path,
+        output_dir,
+        [144_224, 45_000],
+        time_base_num=1,
+        time_base_den=90_000,
+        quality=2,
+    )
+
+    assert len(result) == 2
+    assert len(captured_commands) == 2
+    first_command = captured_commands[0]
+    second_command = captured_commands[1]
+    assert first_command[first_command.index("-ss") + 1] == "0.500000000"
+    assert first_command[first_command.index("-map") + 1] == "0:v:0"
+    assert first_command[first_command.index("-vf") + 1] == ("select='eq(pts\\,45000)'")
+    assert second_command[second_command.index("-ss") + 1] == "1.602488889"
+    assert second_command[second_command.index("-vf") + 1] == (
+        "select='eq(pts\\,144224)'"
+    )
+    assert first_command[first_command.index("-fps_mode") + 1] == "passthrough"
+
+
+@pytest.mark.unit
 def test_extract_frames_numbers_full_extraction_from_zero(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

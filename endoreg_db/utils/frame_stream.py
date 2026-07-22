@@ -11,11 +11,19 @@ from typing import IO, Callable, Iterator, Protocol, TypedDict, cast
 import numpy as np
 
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS
+from endoreg_db.services.seekable_media_input import (
+    SeekableFieldFile,
+    serve_seekable_media_input,
+)
 from endoreg_db.utils.ffmpeg_wrapper import (
     _resolve_ffmpeg_executable,
     get_stream_info,
 )
 from endoreg_db.utils.storage import materialize_video_file as _materialize_video_file
+from endoreg_db.utils.storage_streaming import (
+    field_file_has_decrypted_range_storage,
+    maybe_local_plaintext_path,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +51,8 @@ class _VideoLike(Protocol):
     processed_file: object
 
     def get_fps(self) -> float | int | str | None: ...
+
+    def frame_number_to_s(self, frame_number: int) -> float: ...
 
 
 def _materialize_video_file_typed(
@@ -333,11 +343,38 @@ def read_video_path_frame_jpeg(
     *,
     frame_number: int,
     fps_hint: float | None = None,
+    timestamp: float | None = None,
     quality: int = 2,
 ) -> EncodedFrameSample:
     if frame_number < 0:
         raise ValueError("frame_number must be non-negative.")
 
+    if quality < 1 or quality > 31:
+        raise ValueError("quality must be between 1 and 31 for ffmpeg mjpeg output.")
+
+    resolved_timestamp = timestamp
+    if resolved_timestamp is None:
+        fps = _video_stream_fps(video_path, fps_hint=fps_hint)
+        resolved_timestamp = frame_number / fps
+    return _read_video_input_frame_jpeg(
+        str(video_path),
+        frame_number=frame_number,
+        timestamp=resolved_timestamp,
+        quality=quality,
+        seekable_http=False,
+    )
+
+
+def _read_video_input_frame_jpeg(
+    input_reference: str,
+    *,
+    frame_number: int,
+    timestamp: float,
+    quality: int,
+    seekable_http: bool,
+) -> EncodedFrameSample:
+    if timestamp < 0:
+        raise ValueError("timestamp must be non-negative.")
     if quality < 1 or quality > 31:
         raise ValueError("quality must be between 1 and 31 for ffmpeg mjpeg output.")
 
@@ -347,32 +384,36 @@ def read_video_path_frame_jpeg(
             "ffmpeg command not found. Ensure FFmpeg is installed and in PATH."
         )
 
-    fps = _video_stream_fps(video_path, fps_hint=fps_hint)
-    timestamp = frame_number / fps
     command = [
         ffmpeg_executable,
         "-nostdin",
         "-v",
         "error",
         "-ss",
-        f"{timestamp:.6f}",
-        "-i",
-        str(video_path),
-        "-map",
-        "0:v:0",
-        "-an",
-        "-sn",
-        "-dn",
-        "-frames:v",
-        "1",
-        "-q:v",
-        str(quality),
-        "-f",
-        "image2pipe",
-        "-vcodec",
-        "mjpeg",
-        "pipe:1",
+        f"{timestamp:.9f}",
     ]
+    if seekable_http:
+        command.extend(["-seekable", "1"])
+    command.extend(
+        [
+            "-i",
+            input_reference,
+            "-map",
+            "0:v:0",
+            "-an",
+            "-sn",
+            "-dn",
+            "-frames:v",
+            "1",
+            "-q:v",
+            str(quality),
+            "-f",
+            "image2pipe",
+            "-vcodec",
+            "mjpeg",
+            "pipe:1",
+        ]
+    )
     process = subprocess.Popen(
         command,
         stdout=subprocess.PIPE,
@@ -392,13 +433,11 @@ def read_video_path_frame_jpeg(
     stderr = stderr_bytes.decode("utf-8", errors="replace") if stderr_bytes else ""
     if process.returncode != 0:
         raise RuntimeError(
-            f"ffmpeg single-frame jpeg decode failed for {video_path.name} "
+            "ffmpeg single-frame jpeg decode failed "
             f"with exit code {process.returncode}: {stderr.strip()}"
         )
     if not stdout:
-        raise RuntimeError(
-            f"ffmpeg produced no encoded frame {frame_number} for {video_path.name}."
-        )
+        raise RuntimeError(f"ffmpeg produced no encoded frame {frame_number}.")
 
     return EncodedFrameSample(
         frame_number=frame_number,
@@ -458,22 +497,43 @@ def read_video_file_frame_jpeg(
     file_type: str = "raw",
     quality: int = 2,
 ) -> EncodedFrameSample:
-    fps_hint: float | None = None
-    try:
-        fps_value = video.get_fps()
-        if isinstance(fps_value, (int, float)):
-            fps_hint = float(fps_value) or None
-        elif isinstance(fps_value, str):
-            fps_hint = float(fps_value) or None
-    except (TypeError, ValueError):
-        fps_hint = None
+    normalized_type = file_type.strip().lower()
+    if normalized_type == "raw":
+        field_file = video.raw_file
+    elif normalized_type == "processed":
+        field_file = video.processed_file
+    else:
+        raise ValueError(f"Unsupported video file type: {file_type}")
 
-    with _materialize_video_file_typed(video, file_type) as source_path:
+    field_file_name = getattr(field_file, "name", None)
+    if not isinstance(field_file_name, str) or not field_file_name:
+        raise FileNotFoundError(
+            f"{normalized_type.title()} video file is not available for "
+            f"{video.video_hash}."
+        )
+
+    timestamp = float(video.frame_number_to_s(frame_number))
+    local_path = maybe_local_plaintext_path(field_file)
+    if local_path is not None:
         return read_video_path_frame_jpeg(
-            source_path,
+            local_path,
             frame_number=frame_number,
-            fps_hint=fps_hint,
+            timestamp=timestamp,
             quality=quality,
+        )
+
+    if not field_file_has_decrypted_range_storage(field_file):
+        raise RuntimeError(
+            "Video storage cannot provide seekable decrypted byte ranges."
+        )
+
+    with serve_seekable_media_input(cast(SeekableFieldFile, field_file)) as source:
+        return _read_video_input_frame_jpeg(
+            source.url,
+            frame_number=frame_number,
+            timestamp=timestamp,
+            quality=quality,
+            seekable_http=True,
         )
 
 

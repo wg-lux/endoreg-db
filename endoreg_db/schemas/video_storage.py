@@ -34,6 +34,15 @@ class VideoTimelineContract(BaseModel):
         return self.fps_num / self.fps_den
 
 
+class FramePresentationTimestamp(BaseModel):
+    """Exact video-stream timestamp and its presentation time in seconds."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    presentation_timestamp: int = Field(ge=0)
+    presentation_time_seconds: float = Field(ge=0)
+
+
 class SegmentTimelineReference(BaseModel):
     """Auditable conversion of a persisted segment frame range to timestamps."""
 
@@ -156,6 +165,7 @@ class ClinicalFrameQualityEvidence(BaseModel):
 
 
 __all__ = [
+    "FramePresentationTimestamp",
     "SegmentTimelineReference",
     "ClinicalFrameQualityEvidence",
     "VideoArtifactProbe",

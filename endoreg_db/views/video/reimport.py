@@ -16,6 +16,11 @@ from rest_framework import status
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from endoreg_db.authz.permissions import PolicyPermission
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.views.access_control import (
+    CenterScopedVideoPermission,
+)
 
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.video_import import VideoImportService
@@ -47,6 +52,12 @@ class VideoReimportView(APIView):
     API endpoint to re-import a video file and regenerate metadata.
     This is useful when OCR failed or metadata is incomplete.
     """
+
+    permission_classes = [
+        EnvironmentAwarePermission,
+        PolicyPermission,
+        CenterScopedVideoPermission,
+    ]
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)

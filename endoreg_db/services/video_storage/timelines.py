@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
 from endoreg_db.schemas.video_storage import (
+    FramePresentationTimestamp,
     SegmentTimelineReference,
     VideoArtifactProbe,
     VideoSourceTimelineEvidence,
@@ -112,6 +113,8 @@ def persist_video_source_timeline(
     *,
     probe_artifact: Callable[[Path], VideoArtifactProbe],
     probe_frame_pts: Callable[[Path], list[float]],
+    probe_frame_timestamps: Callable[[Path], list[FramePresentationTimestamp]]
+    | None = None,
 ) -> None:
     """Persist a versioned source timeline and per-frame presentation times."""
     from endoreg_db.models.media.frame.frame import Frame
@@ -120,7 +123,32 @@ def persist_video_source_timeline(
     rows = list(Frame.objects.filter(video=video).order_by("frame_number"))
     if not rows:
         raise VideoStorageNormalizationError("Source timeline has no persisted frames")
-    if source.timeline.variable_frame_rate:
+    exact_timestamps = (
+        probe_frame_timestamps(path) if probe_frame_timestamps is not None else None
+    )
+    if exact_timestamps is not None:
+        time_base_num = source.timeline.time_base_num
+        time_base_den = source.timeline.time_base_den
+        if time_base_num is None or time_base_den is None:
+            raise VideoStorageNormalizationError(
+                "Exact presentation timestamps require a stream time base"
+            )
+        tick_seconds = time_base_num / time_base_den
+        for index, item in enumerate(exact_timestamps):
+            expected_seconds = item.presentation_timestamp * tick_seconds
+            if not math.isclose(
+                item.presentation_time_seconds,
+                expected_seconds,
+                rel_tol=0.0,
+                abs_tol=max(1e-9, tick_seconds / 2),
+            ):
+                raise VideoStorageNormalizationError(
+                    "Frame presentation timestamp does not match stream time base: "
+                    f"frame={index}"
+                )
+        timestamps = [item.presentation_time_seconds for item in exact_timestamps]
+        mapping = "ffprobe_pts"
+    elif source.timeline.variable_frame_rate:
         timestamps = probe_frame_pts(path)
         mapping = "ffprobe_pts"
     else:
@@ -160,9 +188,18 @@ def persist_video_source_timeline(
                 )
             }
         )
-    for row, timestamp in zip(rows, timestamps, strict=True):
+    if exact_timestamps is not None and len(exact_timestamps) != len(rows):
+        raise VideoStorageNormalizationError(
+            "Probed exact presentation timestamp count does not match persisted frames"
+        )
+    for index, (row, timestamp) in enumerate(zip(rows, timestamps, strict=True)):
         row.timestamp = timestamp
-    Frame.objects.bulk_update(rows, ["timestamp"], batch_size=2000)
+        if exact_timestamps is not None:
+            row.presentation_timestamp = exact_timestamps[index].presentation_timestamp
+    update_fields = ["timestamp"]
+    if exact_timestamps is not None:
+        update_fields.append("presentation_timestamp")
+    Frame.objects.bulk_update(rows, update_fields, batch_size=2000)
     evidence = VideoSourceTimelineEvidence(
         persisted_at=datetime.now(UTC),
         source=source,

@@ -52,12 +52,16 @@ class VideoFileListSerializer(serializers.ModelSerializer[VideoFile]):
     segments = LabelVideoSegmentTimelineSerializer(
         many=True, read_only=True, source="label_video_segments"
     )
+    center_key = serializers.CharField(source="center.center_key", read_only=True)
+    center_name = serializers.CharField(source="center.display_name", read_only=True)
 
     class Meta(_ModelSerializerMeta):
         model = VideoFile  # pyright: ignore[reportAssignmentType]
         fields = [
             "id",
             "original_file_name",
+            "center_key",
+            "center_name",
             "status",
             "assigned_user",
             "anonymized",
@@ -238,3 +242,22 @@ class VideoFileListSerializer(serializers.ModelSerializer[VideoFile]):
             return []
 
         return validated_annotators_for_video(obj)
+
+
+class CrossCenterProcessedVideoSerializer(VideoFileListSerializer):
+    """Pseudonymous discovery payload for the central-hub exception."""
+
+    duration = serializers.FloatField(read_only=True)
+
+    class Meta(VideoFileListSerializer.Meta):
+        fields = [
+            "id",
+            "center_key",
+            "center_name",
+            "duration",
+            "status",
+            "anonymized",
+            "segment_annotations_validated",
+            "segment_annotation_status",
+            "segments",
+        ]

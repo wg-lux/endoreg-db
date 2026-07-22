@@ -28,6 +28,7 @@ from endoreg_db.utils.media_urls import (
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.utils.storage_streaming import add_cors_headers
 from endoreg_db.views.video.lookups import get_video_or_404
+from endoreg_db.views.access_control import assert_anonymized_center_scope_allowed
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,7 @@ class VideoStreamView(APIView):
         pk: int | str | None = None,
     ) -> HttpResponseBase:
         video = self._get_video_or_404(pk)
+        assert_anonymized_center_scope_allowed(request=request, obj=video)
         self.check_object_permissions(request, video)
 
         hls_playlist_url = build_absolute_media_url(

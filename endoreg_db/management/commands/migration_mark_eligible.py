@@ -29,6 +29,7 @@ class MigrationUploadJob(Protocol):
     source_file_delete_eligible_at: datetime | None
     status: str
     error_detail: str
+    error_code: str
     cleanup_status: str
     source_file_persisted: bool
 
@@ -123,7 +124,12 @@ class Command(BaseCommand):
                 UploadJob.Status.PROCESSING,
             }:
                 upload_job.status = UploadJob.Status.LOST
-                update_fields.append("status")
+                upload_job.error_code = (
+                    UploadJob.ErrorCode.PROCESSING_FAILED
+                    if source_exists
+                    else UploadJob.ErrorCode.SOURCE_MISSING
+                )
+                update_fields.extend(["status", "error_code"])
                 marked_lost += 1
 
             if source_exists:
@@ -150,7 +156,7 @@ class Command(BaseCommand):
             if "source_file_delete_eligible_at" in update_fields:
                 orphan_update_fields.append("source_file_delete_eligible_at")
             if upload_job.status == UploadJob.Status.LOST:
-                orphan_update_fields.extend(["status", "error_detail"])
+                orphan_update_fields.extend(["status", "error_code", "error_detail"])
                 if not upload_job.error_detail:
                     upload_job.error_detail = "Migration source file missing during cleanup eligibility backfill."
             upload_job.file.name = ""

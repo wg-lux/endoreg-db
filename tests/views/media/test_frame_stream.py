@@ -11,9 +11,10 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
+from django.contrib.auth.models import User
 from django.core.files.base import ContentFile
-from django.test import TestCase
-from rest_framework.test import APIRequestFactory
+from django.test import TestCase, override_settings
+from rest_framework.test import APIRequestFactory, force_authenticate
 
 from endoreg_db.models import Center, Frame, FrameExtractionRequest, VideoFile
 from endoreg_db.utils.paths import protected_media_root
@@ -343,6 +344,11 @@ class FrameStreamViewTests(TestCase):
                 f"/api/media/videos/{self.video.pk}/frames/"
                 f"{self.frame.frame_number}/decoded-stream/?file_type=raw",
             )
+            user = User.objects.create_user(
+                username="raw-frame-operator",
+                is_staff=True,
+            )
+            force_authenticate(req, user=user)
             view = frame_media_module.DecodedFrameStreamView.as_view()
             resp = view(
                 req,
@@ -385,6 +391,9 @@ class FrameStreamViewTests(TestCase):
             ContentFile(b"fake processed video"),
             save=True,
         )
+        state = self.video.get_or_create_state()
+        state.anonymized = True
+        state.save(update_fields=["anonymized"])
         self.video.save(update_fields=["processed_file"])
 
         def fake_failing_read_video_file_frame_jpeg(
@@ -406,6 +415,11 @@ class FrameStreamViewTests(TestCase):
                 f"/api/media/videos/{self.video.pk}/frames/"
                 f"{self.frame.frame_number}/decoded-stream/?file_type=processed",
             )
+            user = User.objects.create_user(
+                username="processed-frame-operator",
+                is_staff=True,
+            )
+            force_authenticate(req, user=user)
             view = frame_media_module.DecodedFrameStreamView.as_view()
             resp = view(
                 req,
@@ -421,6 +435,7 @@ class FrameStreamViewTests(TestCase):
         assert data["status"] == "frame_decode_failed"
         assert data["file_type"] == "processed"
 
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_decoded_raw_frame_stream_rejects_video_outside_center_scope(self) -> None:
         from endoreg_db.views import access_control
         from endoreg_db.views.media import frame_media as frame_media_module
@@ -455,6 +470,8 @@ class FrameStreamViewTests(TestCase):
                 f"/api/media/videos/{self.video.pk}/frames/"
                 f"{self.frame.frame_number}/decoded-stream/?file_type=raw"
             )
+            user = User.objects.create_user(username="wrong-center-raw-frame-reader")
+            force_authenticate(request, user=user)
             response = frame_media_module.DecodedFrameStreamView.as_view()(
                 request,
                 video_id=self.video.pk,
@@ -463,9 +480,10 @@ class FrameStreamViewTests(TestCase):
         finally:
             monkeypatches.undo()
 
-        assert response.status_code == 404
+        assert response.status_code == 403
 
-    def test_decoded_processed_frame_stream_remains_available_across_centers(
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_decoded_processed_frame_stream_is_available_on_central_hub(
         self,
     ) -> None:
         from endoreg_db.views import access_control
@@ -476,6 +494,9 @@ class FrameStreamViewTests(TestCase):
             ContentFile(b"fake processed video"),
             save=True,
         )
+        state = self.video.get_or_create_state()
+        state.anonymized = True
+        state.save(update_fields=["anonymized"])
 
         def resolve_other_center(_user: object) -> int:
             return int(self.center.pk) + 1
@@ -508,6 +529,8 @@ class FrameStreamViewTests(TestCase):
                 f"/api/media/videos/{self.video.pk}/frames/"
                 f"{self.frame.frame_number}/decoded-stream/?file_type=processed"
             )
+            user = User.objects.create_user(username="centerless-hub-frame-reader")
+            force_authenticate(request, user=user)
             response = frame_media_module.DecodedFrameStreamView.as_view()(
                 request,
                 video_id=self.video.pk,
@@ -518,3 +541,42 @@ class FrameStreamViewTests(TestCase):
 
         assert response.status_code == 200
         assert response.content == b"\xff\xd8processed-jpeg"
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="local_study_server")
+    def test_decoded_processed_frame_stream_is_center_scoped_outside_hub(
+        self,
+    ) -> None:
+        from endoreg_db.views.media import frame_media as frame_media_module
+
+        self.video.processed_file.save(
+            "videos/processed_frame_stream_non_hub.mp4",
+            ContentFile(b"fake processed video"),
+            save=True,
+        )
+
+        def fail_processed_frame_decode(*args: object, **kwargs: object) -> object:
+            _ = args, kwargs
+            pytest.fail("processed frame decode must not run")
+
+        monkeypatches = pytest.MonkeyPatch()
+        monkeypatches.setattr(
+            frame_media_module,
+            "read_video_file_frame_jpeg",
+            fail_processed_frame_decode,
+        )
+        try:
+            request = APIRequestFactory().get(
+                f"/api/media/videos/{self.video.pk}/frames/"
+                f"{self.frame.frame_number}/decoded-stream/?file_type=processed"
+            )
+            user = User.objects.create_user(username="centerless-non-hub-frame-reader")
+            force_authenticate(request, user=user)
+            response = frame_media_module.DecodedFrameStreamView.as_view()(
+                request,
+                video_id=self.video.pk,
+                frame_number=self.frame.frame_number,
+            )
+        finally:
+            monkeypatches.undo()
+
+        assert response.status_code == 403

@@ -45,6 +45,10 @@ def _create_processed_video(center: Center) -> VideoFile:
         ContentFile(b"view source payload"),
         save=True,
     )
+    state = video.get_or_create_state()
+    state.anonymized = True
+    state.processing_error = False
+    state.save(update_fields=["anonymized", "processing_error"])
     return video
 
 
@@ -65,10 +69,11 @@ def _authenticated_request(
     user: User,
     *,
     origin: str | None = None,
+    global_access: bool = True,
 ) -> Any:
     # Staff users are intentionally cross-center operators in the production
     # access-control contract. Center-scoped denial is covered separately.
-    user.is_staff = True
+    user.is_staff = global_access
     factory = APIRequestFactory()
     if origin is None:
         request = factory.get(path)
@@ -417,7 +422,65 @@ def test_hls_playlist_rejects_video_outside_user_center_scope(
 
     response = hls_stream.HLSPlaylistView.as_view()(request, pk=video_pk)
 
-    assert response.status_code == 404
+    assert response.status_code == 403
+
+
+@override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+def test_centerless_hub_user_can_read_processed_playlist_key_and_segment(
+    hls_artifact: VideoHlsArtifact,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SERVE_WITH_NGINX", "true")
+    monkeypatch.setenv("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
+    user = User.objects.create_user(username="centerless-hub-hls-reader")
+    video_pk = _artifact_video_pk(hls_artifact)
+
+    playlist = hls_stream.HLSPlaylistView.as_view()(
+        _authenticated_request(
+            f"/endoreg-api/media/videos/{video_pk}/hls/playlist/",
+            user,
+            global_access=False,
+        ),
+        pk=video_pk,
+    )
+    key = hls_stream.HLSKeyView.as_view()(
+        _authenticated_request(
+            f"/endoreg-api/media/videos/{video_pk}/hls/key/{hls_artifact.key_id}/",
+            user,
+            global_access=False,
+        ),
+        pk=video_pk,
+        key_id=hls_artifact.key_id,
+    )
+    segment = hls_stream.HLSSegmentView.as_view()(
+        _authenticated_request(
+            f"/endoreg-api/media/videos/{video_pk}/hls/segments/"
+            f"{hls_artifact.key_id}/seg_000.ts",
+            user,
+            global_access=False,
+        ),
+        pk=video_pk,
+        key_id=hls_artifact.key_id,
+        segment_name="seg_000.ts",
+    )
+
+    assert playlist.status_code == 200
+    assert key.status_code == 200
+    assert segment.status_code == 200
+
+
+@override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+def test_central_hub_processed_playlist_rejects_anonymous_user(
+    hls_artifact: VideoHlsArtifact,
+) -> None:
+    video_pk = _artifact_video_pk(hls_artifact)
+    request = APIRequestFactory().get(
+        f"/endoreg-api/media/videos/{video_pk}/hls/playlist/"
+    )
+
+    response = hls_stream.HLSPlaylistView.as_view()(request, pk=video_pk)
+
+    assert response.status_code == 403
 
 
 @override_settings(DEBUG=False)

@@ -8,7 +8,11 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from endoreg_db.schemas.video_storage import VideoArtifactProbe, VideoTimelineContract
+from endoreg_db.schemas.video_storage import (
+    FramePresentationTimestamp,
+    VideoArtifactProbe,
+    VideoTimelineContract,
+)
 from endoreg_db.services.video_storage.contracts import (
     VideoStorageNormalizationError,
 )
@@ -49,6 +53,7 @@ class _FrameProbeRow(BaseModel):
     model_config = ConfigDict(extra="ignore", strict=True)
 
     best_effort_timestamp_time: str | None = None
+    best_effort_timestamp: int | str | None = None
 
 
 class _FrameProbePayload(BaseModel):
@@ -177,8 +182,8 @@ def probe_video_artifact(path: Path) -> VideoArtifactProbe:
     )
 
 
-def probe_video_frame_pts(path: Path) -> list[float]:
-    """Return the authoritative presentation timestamp of each decoded frame."""
+def probe_video_frame_timestamps(path: Path) -> list[FramePresentationTimestamp]:
+    """Return exact timestamp ticks and seconds for every decoded video frame."""
     ffprobe = ffmpeg_wrapper.resolve_ffprobe_executable()
     if ffprobe is None:
         raise VideoStorageNormalizationError("ffprobe executable is not available")
@@ -190,7 +195,7 @@ def probe_video_frame_pts(path: Path) -> list[float]:
         "v:0",
         "-show_frames",
         "-show_entries",
-        "frame=best_effort_timestamp_time",
+        "frame=best_effort_timestamp,best_effort_timestamp_time",
         "-of",
         "json",
         str(Path(path)),
@@ -213,28 +218,43 @@ def probe_video_frame_pts(path: Path) -> list[float]:
         raise VideoStorageNormalizationError(
             f"ffprobe returned invalid frame PTS for {path}"
         ) from exc
-    timestamps: list[float] = []
+    timestamps: list[FramePresentationTimestamp] = []
     for index, row in enumerate(payload.frames):
         raw_timestamp = row.best_effort_timestamp_time
-        if raw_timestamp is None:
+        raw_tick = row.best_effort_timestamp
+        if raw_timestamp is None or raw_tick is None:
             raise VideoStorageNormalizationError(
                 f"Frame {index} has no presentation timestamp"
             )
         try:
             timestamp = float(raw_timestamp)
+            tick = int(raw_tick)
         except ValueError as exc:
             raise VideoStorageNormalizationError(
                 f"Frame {index} has an invalid presentation timestamp"
             ) from exc
-        if not math.isfinite(timestamp) or timestamp < 0:
+        if not math.isfinite(timestamp) or timestamp < 0 or tick < 0:
             raise VideoStorageNormalizationError(
                 f"Frame {index} has an invalid presentation timestamp"
             )
-        if timestamps and timestamp <= timestamps[-1]:
+        if timestamps and (
+            timestamp <= timestamps[-1].presentation_time_seconds
+            or tick <= timestamps[-1].presentation_timestamp
+        ):
             raise VideoStorageNormalizationError(
                 "Frame presentation timestamps must be strictly increasing"
             )
-        timestamps.append(timestamp)
+        timestamps.append(
+            FramePresentationTimestamp(
+                presentation_timestamp=tick,
+                presentation_time_seconds=timestamp,
+            )
+        )
     if not timestamps:
         raise VideoStorageNormalizationError("ffprobe returned no frame timestamps")
     return timestamps
+
+
+def probe_video_frame_pts(path: Path) -> list[float]:
+    """Compatibility projection of exact frame timestamps to seconds."""
+    return [row.presentation_time_seconds for row in probe_video_frame_timestamps(path)]

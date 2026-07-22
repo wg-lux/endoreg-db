@@ -32,6 +32,8 @@ definition_of_done:
     und in Quarantäne sind fachlich getrennte Zustände mit erlaubten Übergängen und terminaler Bedeutung.
   - Für jeden Fehlerzustand ist festgelegt, ob automatisch wiederholt werden darf, ein Bedienereingriff
     erforderlich ist oder ein sicherer Neuimport erfolgen muss.
+  - Bestandsdaten mit terminalem Import- oder fehlgeschlagenem HLS-Zustand werden vor Aktivierung der
+    Fehlercode-Constraints deterministisch klassifiziert; die Migration bleibt atomar und wiederanlauffähig.
   - Import-, Anonymisierungs-, HLS-Materialisierungs- und Cleanup-Zustand bleiben getrennte Zustandsachsen
     und dürfen einander nicht implizit überschreiben.
   required: true

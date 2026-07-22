@@ -25,7 +25,11 @@ from endoreg_db.utils.cors import resolve_response_origin
 from endoreg_db.utils.nginx_accel import build_nginx_accel_response_for_path
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.utils.storage_streaming import add_cors_headers
-from endoreg_db.views.access_control import assert_center_scope_allowed
+from endoreg_db.views.access_control import (
+    CenterScopedVideoPermission,
+    assert_anonymized_center_scope_allowed,
+    assert_center_scope_allowed,
+)
 from endoreg_db.views.video.lookups import get_video_or_404 as _get_video_or_404
 
 HLS_PLAYLIST_CONTENT_TYPE = "application/vnd.apple.mpegurl"
@@ -73,7 +77,11 @@ def _file_response(path: Path, *, content_type: str) -> FileResponse:
 
 
 class HLSPlaylistView(APIView):
-    permission_classes = [EnvironmentAwarePermission, PolicyPermission]
+    permission_classes = [
+        EnvironmentAwarePermission,
+        PolicyPermission,
+        CenterScopedVideoPermission,
+    ]
 
     def get(
         self,
@@ -81,9 +89,12 @@ class HLSPlaylistView(APIView):
         pk: int | str | None = None,
     ) -> HttpResponseBase:
         video = _get_video_or_404(pk)
-        assert_center_scope_allowed(request=request, obj=video)
-        self.check_object_permissions(request, video)
         artifact_kind = _artifact_kind_from_request(request)
+        if artifact_kind == VideoArtifactKind.PROCESSED:
+            assert_anonymized_center_scope_allowed(request=request, obj=video)
+        else:
+            assert_center_scope_allowed(request=request, obj=video)
+        self.check_object_permissions(request, video)
         try:
             artifact = get_ready_hls_artifact(
                 video=video,
@@ -113,7 +124,11 @@ class HLSPlaylistView(APIView):
 
 
 class HLSKeyView(APIView):
-    permission_classes = [EnvironmentAwarePermission, PolicyPermission]
+    permission_classes = [
+        EnvironmentAwarePermission,
+        PolicyPermission,
+        CenterScopedVideoPermission,
+    ]
 
     def get(
         self,
@@ -124,7 +139,6 @@ class HLSKeyView(APIView):
         if key_id is None:
             raise Http404("HLS key ID is required")
         video = _get_video_or_404(pk)
-        assert_center_scope_allowed(request=request, obj=video)
         self.check_object_permissions(request, video)
         try:
             artifact = get_ready_hls_artifact_by_key(
@@ -134,6 +148,10 @@ class HLSKeyView(APIView):
             key = unwrap_hls_content_key(artifact)
         except (FileNotFoundError, ValueError, VideoHlsArtifact.DoesNotExist):
             raise Http404("HLS key is not available") from None
+        if artifact.artifact_kind == VideoArtifactKind.PROCESSED:
+            assert_anonymized_center_scope_allowed(request=request, obj=video)
+        else:
+            assert_center_scope_allowed(request=request, obj=video)
         create_video_stream_lease(
             video,
             file_type=f"hls_{artifact.artifact_kind}_key",
@@ -146,7 +164,11 @@ class HLSKeyView(APIView):
 
 
 class HLSSegmentView(APIView):
-    permission_classes = [EnvironmentAwarePermission, PolicyPermission]
+    permission_classes = [
+        EnvironmentAwarePermission,
+        PolicyPermission,
+        CenterScopedVideoPermission,
+    ]
 
     def get(
         self,
@@ -158,7 +180,6 @@ class HLSSegmentView(APIView):
         if key_id is None:
             raise Http404("HLS key ID is required")
         video = _get_video_or_404(pk)
-        assert_center_scope_allowed(request=request, obj=video)
         self.check_object_permissions(request, video)
         if not nginx_offload_enabled():
             raise Http404("HLS segment offload is not configured")
@@ -170,6 +191,10 @@ class HLSSegmentView(APIView):
             path = hls_segment_path(artifact, segment_name)
         except (FileNotFoundError, ValueError, VideoHlsArtifact.DoesNotExist):
             raise Http404("HLS segment is not available") from None
+        if artifact.artifact_kind == VideoArtifactKind.PROCESSED:
+            assert_anonymized_center_scope_allowed(request=request, obj=video)
+        else:
+            assert_center_scope_allowed(request=request, obj=video)
         create_video_stream_lease(
             video,
             file_type=f"hls_{artifact.artifact_kind}_segment",

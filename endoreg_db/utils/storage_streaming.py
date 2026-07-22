@@ -184,6 +184,11 @@ def field_file_has_decrypting_storage(field_file: object) -> bool:
     return _has_decrypted_range_storage(storage) or _has_plaintext_size_storage(storage)
 
 
+def field_file_has_decrypted_range_storage(field_file: object) -> bool:
+    """Return whether the storage can decrypt arbitrary plaintext byte ranges."""
+    return _has_decrypted_range_storage(_field_file_storage(field_file))
+
+
 def field_file_is_local_encrypted_without_reader(field_file: object) -> bool:
     if field_file_has_decrypting_storage(field_file):
         return False

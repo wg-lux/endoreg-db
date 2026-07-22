@@ -11,6 +11,8 @@ the only authoritative source for implementation and approval status.
   used for canonical and compatibility video files.
 - **HTTP Live Streaming (HLS):** the playlist-and-segment streaming format used
   for raw and processed playback.
+- **Hypertext Transfer Protocol (HTTP):** the request protocol used for local
+  byte-range access and authenticated media delivery.
 - **frames per second (FPS):** the frame-rate measure used by the source,
   normalized master, and annotation workflow.
 - **presentation timestamp (PTS):** the persisted display time that defines
@@ -108,6 +110,29 @@ segments or extracted frames block this coordinate-changing operation.
 Playlist, key, and segment requests renew a stream lease. Transcoding, HLS
 regeneration, and cleanup are deferred in a resumable state while a stream or
 segment-update lease is active.
+
+### On-Demand Single-Frame Decode
+
+Single-frame annotation requests must not materialize the complete encrypted
+video as a temporary plaintext file. The backend resolves the requested frame
+through the authoritative persisted presentation timestamp and gives FFmpeg a
+short-lived, seekable Hypertext Transfer Protocol (HTTP) byte-range input bound
+exclusively to the local loopback interface. A cryptographically random path
+limits that input to the requesting FFmpeg process lifetime.
+
+FFmpeg remains responsible for Moving Picture Experts Group container seeking:
+it reads the container metadata and requests the byte ranges needed to seek to
+the preceding keyframe and decode through the target presentation timestamp.
+The backend decrypts only the encrypted chunks intersecting those requested
+ranges. It does not construct an invalid standalone slice beginning at a media
+packet offset, and it does not persist a second frame-to-timestamp mapping.
+
+Storage without local plaintext access or authenticated random-access
+decryption fails loudly. The master key remains inside the storage backend and
+is never included in the loopback address, process arguments, or response
+payload. Reimport, normalization, and reanonymization therefore continue to use
+the published artifact generation and the existing `pts_v1` coordinate
+contract without introducing another independently versioned seek index.
 
 ## Inventory and Migration
 

@@ -21,23 +21,17 @@ from endoreg_db.utils.rust_backend import is_lx_encrypted_file
 from .encryption import (
     DEFAULT_CHUNK_SIZE,
     DecryptedStream,
-    EncryptedChunkIndexEntry,
-    EncryptedFileHeader,
+    EncryptedFileLayout,
     MAGIC,
-    build_chunk_index,
     encrypt_stream,
+    inspect_encrypted_file_layout,
     iter_decrypted_byte_range,
     load_master_key,
 )
 
 
 IndexCacheKey: TypeAlias = tuple[str, int, int]
-IndexCacheValue: TypeAlias = tuple[
-    EncryptedFileHeader,
-    bytes,
-    list[EncryptedChunkIndexEntry],
-    int,
-]
+IndexCacheValue: TypeAlias = EncryptedFileLayout
 
 
 class _HasFileLike(Protocol):
@@ -134,13 +128,13 @@ class EncryptedStorage(FileSystemStorage):
             return cached
 
         with self.open_encrypted(name) as source:
-            index_payload: IndexCacheValue = build_chunk_index(source)
+            index_payload = inspect_encrypted_file_layout(source)
         self._index_cache.clear()
         self._index_cache[cache_key] = index_payload
         return index_payload
 
     def get_plaintext_size(self, name: str) -> int:
-        return self._get_cached_index(name)[3]
+        return self._get_cached_index(name).plaintext_size
 
     def iter_decrypted_range(
         self,
@@ -150,7 +144,8 @@ class EncryptedStorage(FileSystemStorage):
         end: int,
         chunk_size: int = 64 * 1024,
     ) -> Iterator[bytes]:
-        plaintext_size = self.get_plaintext_size(name)
+        layout = self._get_cached_index(name)
+        plaintext_size = layout.plaintext_size
         if start < 0 or end < start or end >= plaintext_size:
             raise ValueError(
                 f"Requested byte range {start}-{end} exceeds plaintext size {plaintext_size}"
@@ -163,6 +158,7 @@ class EncryptedStorage(FileSystemStorage):
                 start=start,
                 end=end,
                 output_chunk_size=chunk_size,
+                layout=layout,
             )
 
     def _save(self, name: str, content: object) -> str:

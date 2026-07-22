@@ -85,6 +85,8 @@ from endoreg_db.serializers.label_video_segment import (
     LabelVideoSegmentSerializer,
 )
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.authz.permissions import PolicyPermission
+from endoreg_db.views.access_control import CenterScopedVideoPermission
 
 from endoreg_db.utils.operation_log import (
     record_operation,
@@ -507,7 +509,9 @@ def _segment_validation_state_payload(video: VideoFile) -> dict[str, object]:
 
 
 @api_view(["POST"])
-@permission_classes([EnvironmentAwarePermission])
+@permission_classes(
+    [EnvironmentAwarePermission, PolicyPermission, CenterScopedVideoPermission]
+)
 def video_segments_blacken_outside(request: Request, pk: int) -> Response:
     """
     POST /api/media/videos/<pk>/segments/blacken-outside/
@@ -626,7 +630,9 @@ def video_segments_blacken_outside(request: Request, pk: int) -> Response:
 
 
 @api_view(["GET", "POST"])
-@permission_classes([EnvironmentAwarePermission])
+@permission_classes(
+    [EnvironmentAwarePermission, PolicyPermission, CenterScopedVideoPermission]
+)
 def video_segments_normalize_fps(request: Request, pk: int) -> Response:
     """Start or inspect idempotent pre-annotation FPS normalization."""
     video = get_object_or_404(VideoFile, pk=pk)
@@ -655,7 +661,9 @@ def video_segments_normalize_fps(request: Request, pk: int) -> Response:
 
 
 @api_view(["GET"])
-@permission_classes([EnvironmentAwarePermission])
+@permission_classes(
+    [EnvironmentAwarePermission, PolicyPermission, CenterScopedVideoPermission]
+)
 def video_segments_stats(request: Request) -> Response:
     """
     Statistics endpoint for video segments.
@@ -697,7 +705,9 @@ def video_segments_stats(request: Request) -> Response:
 
 
 @api_view(["GET", "POST"])
-@permission_classes([EnvironmentAwarePermission])
+@permission_classes(
+    [EnvironmentAwarePermission, PolicyPermission, CenterScopedVideoPermission]
+)
 def video_segments_collection(request: Request) -> Response:
     """
     Collection endpoint for all video segments across all videos.
@@ -803,7 +813,9 @@ def video_segments_collection(request: Request) -> Response:
 
 
 @api_view(["GET", "POST"])
-@permission_classes([EnvironmentAwarePermission])
+@permission_classes(
+    [EnvironmentAwarePermission, PolicyPermission, CenterScopedVideoPermission]
+)
 def video_segments_by_video(request: Request, pk: int) -> Response:
     """
     Video-specific segments endpoint.
@@ -906,7 +918,9 @@ def video_segments_by_video(request: Request, pk: int) -> Response:
 
 
 @api_view(["POST"])
-@permission_classes([EnvironmentAwarePermission])
+@permission_classes(
+    [EnvironmentAwarePermission, PolicyPermission, CenterScopedVideoPermission]
+)
 def video_segments_bulk_mutation(request: Request, pk: int) -> Response:
     """
     Bulk mutate manual timeline segments for a video.
@@ -959,7 +973,9 @@ def video_segments_bulk_mutation(request: Request, pk: int) -> Response:
 
 
 @api_view(["POST"])
-@permission_classes([EnvironmentAwarePermission])
+@permission_classes(
+    [EnvironmentAwarePermission, PolicyPermission, CenterScopedVideoPermission]
+)
 def import_prediction_segments_to_manual(request: Request, pk: int) -> Response:
     """
     Replace or extend the prediction-correction segment layer for a video using
@@ -1061,7 +1077,9 @@ def import_prediction_segments_to_manual(request: Request, pk: int) -> Response:
 
 
 @api_view(["GET", "PATCH", "DELETE"])
-@permission_classes([EnvironmentAwarePermission])
+@permission_classes(
+    [EnvironmentAwarePermission, PolicyPermission, CenterScopedVideoPermission]
+)
 def video_segment_detail(request: Request, pk: int, segment_id: int) -> Response:
     """
     Detail endpoint for a specific video segment.
@@ -1170,7 +1188,9 @@ def video_segment_detail(request: Request, pk: int, segment_id: int) -> Response
 
 
 @api_view(["POST"])
-@permission_classes([EnvironmentAwarePermission])
+@permission_classes(
+    [EnvironmentAwarePermission, PolicyPermission, CenterScopedVideoPermission]
+)
 def video_segment_validate(request: Request, pk: int, segment_id: int) -> Response:
     """
     Validate a single video segment.
@@ -1343,7 +1363,9 @@ def video_segment_validate(request: Request, pk: int, segment_id: int) -> Respon
 
 # TODO Pass user based information source to backend. This is the endpoint currently used by the VideoExamination endpoint
 @api_view(["POST"])
-@permission_classes([EnvironmentAwarePermission])
+@permission_classes(
+    [EnvironmentAwarePermission, PolicyPermission, CenterScopedVideoPermission]
+)
 def video_segments_validate_bulk(request: Request, pk: int) -> Response:
     """
     Validate multiple video segments at once.
@@ -1655,7 +1677,9 @@ def video_segments_validate_bulk(request: Request, pk: int) -> Response:
 
 
 @api_view(["GET", "POST"])
-@permission_classes([EnvironmentAwarePermission])
+@permission_classes(
+    [EnvironmentAwarePermission, PolicyPermission, CenterScopedVideoPermission]
+)
 def video_segments_validation_status(request: Request, pk: int) -> Response:
     """
     Get or update validation status for all segments of a video.
@@ -1814,7 +1838,9 @@ def video_segments_validation_status(request: Request, pk: int) -> Response:
 
 
 @api_view(["POST"])
-@permission_classes([EnvironmentAwarePermission])
+@permission_classes(
+    [EnvironmentAwarePermission, PolicyPermission, CenterScopedVideoPermission]
+)
 def ensure_segment_annotations_for_video(request: Request, pk: int) -> Response:
     """
     Trigger idempotent annotation regeneration for segments attached to a single video.
@@ -1858,7 +1884,9 @@ def ensure_segment_annotations_for_video(request: Request, pk: int) -> Response:
 
 
 @api_view(["POST"])
-@permission_classes([EnvironmentAwarePermission])
+@permission_classes(
+    [EnvironmentAwarePermission, PolicyPermission, CenterScopedVideoPermission]
+)
 def ensure_segment_annotations_bulk(request: Request) -> Response:
     """
     Trigger annotation regeneration for multiple videos/segments.
@@ -1908,7 +1936,9 @@ def ensure_segment_annotations_bulk(request: Request) -> Response:
 
 
 @api_view(["POST"])
-@permission_classes([EnvironmentAwarePermission])
+@permission_classes(
+    [EnvironmentAwarePermission, PolicyPermission, CenterScopedVideoPermission]
+)
 def ensure_prediction_segment_annotations_for_video(
     request: Request,
     pk: int,
@@ -1956,7 +1986,9 @@ def ensure_prediction_segment_annotations_for_video(
 
 
 @api_view(["POST"])
-@permission_classes([EnvironmentAwarePermission])
+@permission_classes(
+    [EnvironmentAwarePermission, PolicyPermission, CenterScopedVideoPermission]
+)
 def ensure_prediction_segment_annotations_bulk(request: Request) -> Response:
     """
     Trigger annotation generation for AI/prediction-based segments for multiple

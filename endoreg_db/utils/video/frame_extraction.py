@@ -15,6 +15,7 @@ from endoreg_db.utils.file_operations import (
 from .command_construction import (
     _build_extract_frame_range_command,
     _build_extract_frames_command,
+    _frame_image_encoder_args,
 )
 from .executable_discovery import _resolve_ffmpeg_executable
 
@@ -299,4 +300,78 @@ def extract_frame_range(
         end_frame,
         video_path.name,
     )
+    return extracted_files
+
+
+def extract_frames_by_presentation_timestamp(
+    video_path: Path | str,
+    output_dir: Path,
+    presentation_timestamps: list[int],
+    time_base_num: int,
+    time_base_den: int,
+    quality: int,
+    ext: str = "jpg",
+) -> List[Path]:
+    """Extract sparse frames by exact video-stream presentation timestamp."""
+    timestamps = sorted(set(presentation_timestamps))
+    if not timestamps:
+        return []
+    if timestamps[0] < 0:
+        raise ValueError("presentation timestamps must be non-negative")
+    if time_base_num <= 0 or time_base_den <= 0:
+        raise ValueError("stream time base must be positive")
+
+    ffmpeg_executable = _resolve_ffmpeg_executable()
+    if not ffmpeg_executable:
+        raise FileNotFoundError(
+            "ffmpeg command not found. Ensure FFmpeg is installed and in PATH."
+        )
+    ensure_directory(output_dir)
+    for index, presentation_timestamp in enumerate(timestamps):
+        seek_seconds = presentation_timestamp * time_base_num / time_base_den
+        output_path = output_dir / f"frame_{index:07d}.{ext}"
+        command = [
+            ffmpeg_executable,
+            "-nostdin",
+            "-hide_banner",
+            "-ss",
+            f"{seek_seconds:.9f}",
+            "-copyts",
+            "-i",
+            str(video_path),
+            "-map",
+            "0:v:0",
+            "-an",
+            "-sn",
+            "-dn",
+            "-vf",
+            f"select='eq(pts\\,{presentation_timestamp})'",
+            "-frames:v",
+            "1",
+            "-fps_mode",
+            "passthrough",
+            *_frame_image_encoder_args(ext=ext, quality=quality),
+            "-y",
+            str(output_path),
+        ]
+        try:
+            subprocess.run(
+                command,
+                check=True,
+                capture_output=True,
+                text=True,
+                stdin=subprocess.DEVNULL,
+            )
+        except subprocess.CalledProcessError as exc:
+            raise RuntimeError(
+                "FFmpeg presentation-timestamp extraction failed for "
+                f"{video_path} at PTS {presentation_timestamp}"
+            ) from exc
+
+    extracted_files = sorted(output_dir.glob(f"frame_*.{ext}"))
+    if len(extracted_files) != len(timestamps):
+        raise RuntimeError(
+            "Presentation-timestamp extraction did not produce every requested "
+            f"frame: expected={len(timestamps)} actual={len(extracted_files)}"
+        )
     return extracted_files

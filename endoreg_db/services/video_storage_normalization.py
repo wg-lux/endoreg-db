@@ -36,6 +36,7 @@ from endoreg_db.services.video_storage.normalization import (
 from endoreg_db.services.video_storage.probes import (
     probe_video_artifact,
     probe_video_frame_pts,
+    probe_video_frame_timestamps,
 )
 from endoreg_db.services.video_storage.timelines import (
     persist_video_source_timeline as _persist_video_source_timeline,
@@ -61,6 +62,7 @@ def persist_video_source_timeline(video: "VideoFile", path: Path) -> None:
         path,
         probe_artifact=probe_video_artifact,
         probe_frame_pts=probe_video_frame_pts,
+        probe_frame_timestamps=probe_video_frame_timestamps,
     )
 
 

@@ -541,6 +541,7 @@ def test_reset_reimport_state_does_not_reactivate_duplicate_upload_jobs(
     failed_job: Any = UploadJob.objects.create(
         file=SimpleUploadedFile("failed.mp4", b"failed", content_type="video/mp4"),
         status=UploadJob.Status.ERROR,
+        error_code=UploadJob.ErrorCode.PROCESSING_FAILED,
         content_type="video/mp4",
         source_center=center,
         content_hash=video.video_hash,
@@ -601,6 +602,7 @@ def test_mark_upload_jobs_anonymized_leaves_duplicate_failed_jobs_inactive(
     failed_job: Any = UploadJob.objects.create(
         file=SimpleUploadedFile("failed.mp4", b"failed", content_type="video/mp4"),
         status=UploadJob.Status.ERROR,
+        error_code=UploadJob.ErrorCode.PROCESSING_FAILED,
         content_type="video/mp4",
         source_center=center,
         content_hash=video.video_hash,

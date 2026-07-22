@@ -8,6 +8,7 @@ import pytest
 
 from endoreg_db.utils.storage_streaming import (
     build_partial_content_response,
+    field_file_has_decrypted_range_storage,
     iter_field_file_bytes,
     parse_byte_range,
 )
@@ -63,6 +64,16 @@ class _EncryptedFieldFile:
         self.storage = storage
 
 
+class _SizeOnlyStorage:
+    def get_plaintext_size(self, name: str) -> int:
+        return 16
+
+
+class _SizeOnlyFieldFile:
+    name = "video.mp4"
+    storage = _SizeOnlyStorage()
+
+
 @pytest.mark.unit
 def test_parse_byte_range_clamps_end_to_file_size() -> None:
     byte_range = parse_byte_range("bytes=2-999", file_size=10)
@@ -109,6 +120,14 @@ def test_iter_field_file_bytes_prefers_encrypted_storage_range_api() -> None:
     assert storage.calls == [
         {"name": "encrypted.bin", "start": 4, "end": 8, "chunk_size": 2}
     ]
+
+
+@pytest.mark.unit
+def test_decrypted_range_capability_requires_the_range_method() -> None:
+    storage = _EncryptedRangeStorage(b"0123456789abcdef")
+    assert field_file_has_decrypted_range_storage(_EncryptedFieldFile(storage))
+
+    assert not field_file_has_decrypted_range_storage(_SizeOnlyFieldFile())
 
 
 @pytest.mark.unit
