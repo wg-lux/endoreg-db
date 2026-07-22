@@ -17,6 +17,7 @@ from endoreg_db.models import (
     ImageClassificationAnnotation,
     InformationSource,
     Label,
+    PortalUserInfo,
     VideoFile,
     VideoState,
 )
@@ -95,6 +96,8 @@ class ExportAnnotatedContractTests(TestCase):
             annotator="export-contract-test",
         )
         self.user = User.objects.create_user(username=f"export-user-{suffix}")
+        portal_info = PortalUserInfo.objects.create(user=self.user)
+        portal_info.centers.add(self.center)
         self.client.force_login(self.user)
 
     def _valid_payload(self, **overrides: object) -> dict[str, object]:
@@ -102,6 +105,7 @@ class ExportAnnotatedContractTests(TestCase):
             "output_path": "frames.csv",
             "output_dir": "data/export",
             "output_format": "csv",
+            "export_profile": "pts_dataset_v1",
             "video_id": self.video.pk,
             "label_id": self.label.pk,
             "information_source_name": self.source.name,
@@ -142,10 +146,6 @@ class ExportAnnotatedContractTests(TestCase):
 
         response_text = str(response.json())
         assert "video_id" in response_text
-        assert "label_id" in response_text
-        assert "information_source_name" in response_text
-        assert "only_true" in response_text
-        assert "limit" in response_text
 
     def test_api_accepts_valid_strict_export_payload(self) -> None:
         captured: dict[str, export_config] = {}
@@ -165,6 +165,7 @@ class ExportAnnotatedContractTests(TestCase):
         config = captured["config"]
         assert config.output_path == Path("frames.csv")
         assert config.output_dir == Path("data/export")
+        assert config.export_profile == "pts_dataset_v1"
         assert config.output_path is not None
         assert config.output_dir is not None
         assert Path(config.output_dir) / Path(config.output_path) == Path(
@@ -180,6 +181,60 @@ class ExportAnnotatedContractTests(TestCase):
         assert config.use_export_flags is True
         assert config.segment_ids == []
         assert config.center_key is None
+
+    def test_api_rejects_video_outside_authenticated_center_scope(self) -> None:
+        foreign_center = Center.objects.create(name=f"foreign-{uuid4().hex[:8]}")
+        foreign_video = VideoFile.objects.create(
+            center=foreign_center,
+            state=VideoState.objects.create(),
+            video_hash=f"foreign-video-{uuid4().hex[:8]}",
+        )
+        captured: dict[str, export_config] = {}
+
+        with patch(
+            "endoreg_db.services.export_annotated.annotation_exporter_client",
+            return_value=_FakeExporterClient(captured),
+        ):
+            response = self.client.post(
+                "/api/media/videos/export-annotated/",
+                data=self._valid_payload(video_id=foreign_video.pk),
+                content_type="application/json",
+            )
+
+        assert response.status_code == 403, response.content
+        assert "config" not in captured
+
+    def test_api_accepts_segment_scoped_pts_payload_without_duplicate_filters(
+        self,
+    ) -> None:
+        captured: dict[str, export_config] = {}
+        with patch(
+            "endoreg_db.services.export_annotated.annotation_exporter_client",
+            return_value=_FakeExporterClient(captured),
+        ):
+            response = self.client.post(
+                "/api/media/videos/export-annotated/",
+                data={
+                    "output_dir": "data/export",
+                    "output_path": "annotations.json",
+                    "output_format": "json",
+                    "export_profile": "pts_dataset_v1",
+                    "video_id": self.video.pk,
+                    "segment_ids": [17, 18],
+                    "use_export_flags": False,
+                    "export_frames": True,
+                    "export_videos": False,
+                },
+                content_type="application/json",
+            )
+
+        assert response.status_code == 200, response.content
+        config = captured["config"]
+        assert config.segment_ids == [17, 18]
+        assert config.label_id is None
+        assert config.information_source_name is None
+        assert config.only_true is None
+        assert config.limit is None
 
     def test_api_boolean_strings_are_normalized_before_export_config(self) -> None:
         captured: dict[str, export_config] = {}
@@ -242,10 +297,6 @@ class ExportAnnotatedContractTests(TestCase):
 
         response_text = str(response.json())
         assert "video_id" in response_text
-        assert "label_id" in response_text
-        assert "information_source_name" in response_text
-        assert "only_true" in response_text
-        assert "limit" in response_text
         assert "output_dir" in response_text
         assert "use_frame_pk_paths" in response_text
 
@@ -268,7 +319,6 @@ class ExportAnnotatedContractTests(TestCase):
         assert "config" not in captured
 
         response_text = str(response.json())
-        assert "information_source_name" in response_text
         assert "transcode_ext" in response_text
 
     def test_api_rejects_invalid_non_positive_ids_and_limit(self) -> None:

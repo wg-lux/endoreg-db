@@ -3,11 +3,12 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 import json
 import logging
-from typing import cast
+from typing import Any, cast
 from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
+from django.contrib.auth.models import Group, User
 from rest_framework.test import APIClient
 
 from endoreg_db.exceptions import FhirExportValidationError
@@ -335,10 +336,17 @@ def test_patient_examination_fhir_endpoint_enforces_center_scope(
 ) -> None:
     examination = _clinical_examination()
     assert examination.patient.center_id is not None
+    user = User.objects.create_user(username="foreign-fhir-reader")
+    cast(Any, user).groups.add(Group.objects.create(name="data:read"))
+    api_client.force_authenticate(user=user)
 
-    with patch(
-        "endoreg_db.views.access_control.resolve_allowed_center_id",
-        return_value=examination.patient.center_id + 1,
+    with (
+        patch("endoreg_db.utils.permissions.is_debug_mode", return_value=False),
+        patch("endoreg_db.authz.permissions.is_debug_mode", return_value=False),
+        patch(
+            "endoreg_db.views.access_control.resolve_allowed_center_id",
+            return_value=examination.patient.center_id + 1,
+        ),
     ):
         response = api_client.get(f"/api/patient-examinations/{examination.pk}/fhir/")
 

@@ -12,7 +12,6 @@ from django.core.exceptions import (
 from pydantic import ValidationError as PydanticValidationError
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
@@ -21,6 +20,8 @@ from endoreg_db.services.export_annotated import (
     ExportAnnotatedService,
     ExportConflictError,
 )
+from endoreg_db.authz.permissions import PolicyPermission
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 
 def _request_payload(data: object) -> dict[str, Any]:
@@ -48,7 +49,7 @@ def _export_result_payload(result: object) -> dict[str, Any]:
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([EnvironmentAwarePermission, PolicyPermission])
 def export_annotated(request: Request) -> Response:
     payload = _request_payload(request.data)
     service = ExportAnnotatedService.default()

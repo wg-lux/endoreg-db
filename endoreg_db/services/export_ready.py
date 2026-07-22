@@ -16,7 +16,7 @@ from endoreg_db.models.state.video_segment_validation import (
     resolve_segment_annotation_status,
     segment_annotations_are_final,
 )
-from endoreg_db.services.hub import resolve_allowed_center_id
+from endoreg_db.services.center_access import resolve_allowed_center_ids
 from endoreg_db.services.hub.audit import emit_hub_audit_event
 from endoreg_db.services.video_files import get_or_create_video_state
 from endoreg_db.utils.file_operations import sha256_file
@@ -76,13 +76,13 @@ def _verify_center_scope(*, user: Any, video: VideoFile, center: Center) -> None
             status_code=403,
         )
 
-    allowed_center_id = resolve_allowed_center_id(user)
-    if allowed_center_id == -1:
+    allowed_center_ids = resolve_allowed_center_ids(user)
+    if allowed_center_ids == frozenset():
         raise ReadyForExportError(
             "Authenticated user is not assigned to a center.",
             status_code=403,
         )
-    if allowed_center_id is not None and allowed_center_id != center_pk:
+    if allowed_center_ids is not None and center_pk not in allowed_center_ids:
         raise ReadyForExportError(
             "Video center is outside the authenticated scope.",
             status_code=403,

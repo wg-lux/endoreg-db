@@ -21,16 +21,26 @@ from endoreg_db.services.export_ready import (
 )
 from endoreg_db.utils.pydantic_drf import drf_validation_error_detail
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.authz.permissions import PolicyPermission
+from endoreg_db.views.access_control import (
+    CenterScopedVideoPermission,
+    assert_center_scope_allowed,
+)
 
 
 class VideoMarkReadyForExportView(APIView):
-    permission_classes = [EnvironmentAwarePermission]
+    permission_classes = [
+        EnvironmentAwarePermission,
+        PolicyPermission,
+        CenterScopedVideoPermission,
+    ]
 
     def post(self, request: Request, pk: int) -> Response:
         video = get_object_or_404(
             VideoFile.objects.select_related("center", "state"),
             pk=pk,
         )
+        assert_center_scope_allowed(request=request, obj=video)
         request_payload = cast(object, request.data)
         payload_mapping: Mapping[str, object] = (
             cast(Mapping[str, object], request_payload)

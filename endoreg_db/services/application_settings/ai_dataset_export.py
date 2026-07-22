@@ -13,8 +13,8 @@ from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.aidataset.aidataset import AIDataSet, AIDataSetExportArtifact
 from endoreg_db.services.hub import (
     local_study_server_mode_enabled,
-    resolve_allowed_center_id,
 )
+from endoreg_db.services.center_access import resolve_allowed_center_ids
 from endoreg_db.utils import paths as path_settings
 from endoreg_db.utils.api_urls import endoreg_api_path
 from endoreg_db.utils.set_default_center import get_application_settings
@@ -289,10 +289,10 @@ def _dataset_export_scope_error(
         center = Center.objects.filter(center_key=center_key).first()
         if center is None:
             return f"Unknown center_key: {center_key}", 400
-        allowed_center_id = resolve_allowed_center_id(user)
-        if allowed_center_id == -1:
+        allowed_center_ids = resolve_allowed_center_ids(user)
+        if allowed_center_ids == frozenset():
             return "You do not have access to export center data.", 403
-        if allowed_center_id is not None and _center_id(center) != allowed_center_id:
+        if allowed_center_ids is not None and _center_id(center) not in allowed_center_ids:
             return "Export center is outside the authenticated scope.", 403
 
     return None
