@@ -21,7 +21,7 @@ class _FakeUploadFile:
 
 
 class _FakeVideoUploadJob:
-    status = UploadJob.Status.PENDING
+    status: str = UploadJob.Status.PENDING
     file = _FakeUploadFile()
     source_center = object()
     processing_provenance: dict[str, object] = {}
@@ -29,6 +29,11 @@ class _FakeVideoUploadJob:
 
     def __init__(self) -> None:
         self.saved_update_fields: list[str] | None = None
+        self.mark_processing_called = False
+
+    def mark_processing(self) -> None:
+        self.mark_processing_called = True
+        self.status = UploadJob.Status.PROCESSING
 
     def save(self, *, update_fields: list[str]) -> None:
         self.saved_update_fields = update_fields
@@ -185,6 +190,7 @@ class UploadJobDispatchTests(TestCase):
             "sensitive_meta",
         )
         assert upload_job_manager.get_id == "upload-job-id"
+        assert job.mark_processing_called is True
 
     def test_create_or_reuse_upload_job_normalizes_provenance_contract(self):
         with patch("endoreg_db.services.hub.audit.logger.info") as audit_log:

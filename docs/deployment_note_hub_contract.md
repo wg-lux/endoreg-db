@@ -172,6 +172,8 @@ Before promoting an upgrade, verify the following in the host environment:
 5. watcher ingest still works for the local trusted drop zone
 6. upload-job status and media-read endpoints respect center scope
 7. cleanup jobs do not delete retained source artifacts unexpectedly
+8. hub transfer registration, status and processed-media upload succeed with
+   valid node credentials without a Django user and reject node/center mismatch
 
 ## What downstream projects can remove
 

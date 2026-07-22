@@ -117,6 +117,12 @@ API, Watcher und Transfer benutzen getrennte Eingangsgrenzen, konvergieren aber
 auf persistierte Upload-/Transfer-Ledger, Content-Hashes, Center-Auflösung,
 Provenienz und explizite Retention-Zustände.
 
+Der Hub-Transfer-Receiver ist ein Machine-to-Machine-Endpunkt: Registrierung,
+Status und Upload authentifizieren immer den `NetworkNode` und übernehmen den
+Center-Scope ausschließlich aus dessen `owning_center`. Eine Django-Sitzung ist
+weder erforderlich noch eine alternative Berechtigung; eine vorhandene Sitzung
+darf die Node-Grenze nicht erweitern oder einschränken.
+
 ## Central-Hub-Konfiguration
 
 Für den Central Hub sind mindestens folgende Werte erforderlich:
@@ -192,6 +198,14 @@ Ein erfolgreicher Transfer endet erst mit einem Hub-Acknowledgement
 `transfer_status=applied`. `awaiting_media` ist ein Zwischenzustand;
 `failed`, `inconsistent`, Hashabweichungen und widersprüchliche Snapshots sind
 Incident-Zustände und dürfen nicht automatisch als Erfolg behandelt werden.
+
+Das Acknowledgement enthält zusätzlich den erwarteten Hash des anonymisierten
+Processed-Mediums. Der Sender muss Transfer-ID, Transfer-Key, Quell- und
+Zielknoten, Quellzentrum, Ressourcenart, Ressourcenhash, Processed-Media-Hash,
+Transfermodus und Payload-Schemaversion gegen seinen unveränderlichen lokalen
+Auftrag prüfen. Erst ein vollständig passendes `applied` darf den lokalen
+Auftrag abschließen oder Cleanup-fähig machen. Abweichungen sind terminale
+Integritätsfehler und werden nicht automatisch wiederholt.
 
 ## Cleanup und Quarantäne
 

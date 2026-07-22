@@ -60,6 +60,8 @@ definition_of_done:
     title: Alle geschützten Routen erzwingen Authentifizierung und Scope
     acceptance:
       - Medien-, Berichts-, Upload- und Adminrouten erzwingen ihren dokumentierten Ressourcen-, Patienten- und Center-Scope.
+      - Auf Site-Nodes wird Center-Zugriff als Keycloak-synchronisierte Mehrfachzuordnung modelliert; fehlende oder unbekannte Center-Gruppen verweigern den Zugriff sicher.
+      - Auf dem Central Hub dürfen authentifizierte Leser anonymisierte Medien center-übergreifend lesen; Raw-Medien bleiben auch dort center-bezogen und dürfen den lokalen Storage-Bereich nicht verlassen.
       - Ausdrücklich center-übergreifende Annotationsrouten erzwingen stattdessen Dataset-, Annotator- und Rollenberechtigungen; Raw-Video-Streams bleiben center-bezogen.
       - DEBUG-Bypass kann in keinem Produktionsprofil aktiv sein.
     required: true

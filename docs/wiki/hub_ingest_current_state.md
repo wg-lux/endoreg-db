@@ -226,11 +226,14 @@ Current validation and security behavior:
   `DJANGO_SECURE_PROXY_SSL_HEADER_NAME=HTTP_X_FORWARDED_PROTO` and
   `DJANGO_SECURE_PROXY_SSL_HEADER_VALUE=https` so `request.is_secure()` sees
   proxy-attested HTTPS
-- if the request is not already authenticated as a user, the caller must
-  present `X-Network-Node-Key` and `X-Network-Node-Secret`
+- every receiver request presents `X-Network-Node-Key` and
+  `X-Network-Node-Secret`; a Django user session is neither required nor used
+  as a substitute for node authentication
 - when `ENDOREG_HUB_TRANSFER_REQUIRE_MTLS=true`, the request must also carry
   the configured proxy-verified mTLS metadata
-- source-center access is still scoped for authenticated users
+- registration, status and processed-media upload derive source-center scope
+  exclusively from the authenticated `NetworkNode.owning_center`; an unrelated
+  or missing Django user session does not change that machine-to-machine scope
 
 Current transfer-mode rules:
 

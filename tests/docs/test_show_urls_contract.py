@@ -33,6 +33,9 @@ KNOWN_ENDOREG_API_COMPATIBILITY_URLS = {
 }
 
 KNOWN_BASE_API_URLS = {
+    "/base_api/terminology/bundles",
+    "/base_api/terminology/bundles/import",
+    "/base_api/terminology/bundles/select",
     "/base_api/examinations/",
     "/base_api/examinations/<examination_id>/",
     "/base_api/examinations/<examination_id>/findings/",
@@ -45,6 +48,9 @@ KNOWN_BASE_API_URLS = {
 }
 
 KNOWN_DTYPES_API_URLS = {
+    "/dtypes-api/terminology/bundles",
+    "/dtypes-api/terminology/bundles/import",
+    "/dtypes-api/terminology/bundles/select",
     "/dtypes-api/examinations/",
     "/dtypes-api/examinations/<examination_id>/",
     "/dtypes-api/examinations/<examination_id>/findings/",

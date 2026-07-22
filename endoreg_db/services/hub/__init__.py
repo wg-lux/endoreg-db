@@ -32,6 +32,7 @@ __all__ = [
     "process_watcher_file",
     "reap_upload_job_sources",
     "resolve_allowed_center_id",
+    "resolve_allowed_center_ids",
     "resolve_api_upload_context",
     "resolve_declared_upload_center",
     "resolve_default_center",
@@ -83,6 +84,7 @@ _EXPORTS = {
     "start_upload_job_processing": (".ingest", "start_upload_job_processing"),
     "hub_mode_enabled": (".ingest", "hub_mode_enabled"),
     "resolve_allowed_center_id": (".ingest", "resolve_allowed_center_id"),
+    "resolve_allowed_center_ids": ("..center_access", "resolve_allowed_center_ids"),
     "resolve_declared_upload_center": (
         ".ingest",
         "resolve_declared_upload_center",
@@ -131,6 +133,7 @@ if TYPE_CHECKING:
         resolve_upload_center,
         start_upload_job_processing,
     )
+    from ..center_access import resolve_allowed_center_ids
     from .media_integrity import (
         MediaIntegrityError,
         MediaIntegrityExpectation,

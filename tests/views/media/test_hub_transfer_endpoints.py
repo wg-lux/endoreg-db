@@ -152,8 +152,12 @@ class HubTransferEndpointTests(TestCase):
         processed_video_hash: str | None = None,
         examination_date: str = "2026-03-20",
     ) -> dict[str, Any]:
+        effective_processed_video_hash = processed_video_hash or self._sha256(
+            f"processed:{video_hash}".encode()
+        )
         video_file_payload: dict[str, object] = {
             "video_hash": video_hash,
+            "processed_video_hash": effective_processed_video_hash,
             "suffix": ".mp4",
             "fps": 25.0,
             "duration": 12.5,
@@ -161,9 +165,6 @@ class HubTransferEndpointTests(TestCase):
             "width": 1280,
             "height": 720,
         }
-        if processed_video_hash:
-            video_file_payload["processed_video_hash"] = processed_video_hash
-
         patient_hash = self._sha256(b"site-a-patient")
         examination_hash = self._sha256(
             f"site-a-examination:{examination_date}".encode()
@@ -192,10 +193,7 @@ class HubTransferEndpointTests(TestCase):
                     "sensitive_meta_processed": True,
                     "anonymized": True,
                     "anonymization_validated": True,
-                    "processed_file_sha256": (
-                        processed_video_hash
-                        or self._sha256(f"processed:{video_hash}".encode())
-                    ),
+                    "processed_file_sha256": effective_processed_video_hash,
                 },
                 "processing_history": {
                     "file_hash": video_hash,
@@ -320,6 +318,10 @@ class HubTransferEndpointTests(TestCase):
         body = response.json()
         assert body["transfer_status"] == "awaiting_media"
         assert body["processing_decision"] == "wait_for_missing_media"
+        assert (
+            body["processed_media_hash"]
+            == payload["resource_rows"]["video_file"]["processed_video_hash"]
+        )
 
         video = VideoFile.objects.get(video_hash="hash-1")
         assert video.center == self.center
@@ -344,6 +346,32 @@ class HubTransferEndpointTests(TestCase):
             == TransferJob.CleanupPolicy.RETAIN_ALL
         )
         assert transfer_job.cleanup_status == TransferJob.CleanupStatus.NOT_REQUESTED
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_transfer_center_scope_uses_authenticated_node_not_django_user(self):
+        foreign_center = Center.objects.create(name="foreign-session-center")
+        session_user = User.objects.create_user(username="foreign-session-user")
+        portal_info = PortalUserInfo.objects.create(user=session_user)
+        portal_info.centers.add(foreign_center)
+        self.client.force_login(session_user)
+        payload = self._video_transfer_payload(
+            transfer_key="site-a__video__node-scope",
+            video_hash="hash-node-scope",
+        )
+
+        response = self._secure_post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            headers=self._auth_headers(),
+        )
+
+        assert response.status_code == 201, response.content
+        transfer_job = TransferJob.objects.get(transfer_key=payload["transfer_key"])
+        assert (
+            cast(Any, transfer_job).source_center_id
+            == cast(Any, self.source_node).owning_center_id
+        )
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfer_registration_rejects_direct_identity_fields(self):
@@ -725,7 +753,7 @@ class HubTransferEndpointTests(TestCase):
         ).exists()
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
-    def test_transfer_registration_rejects_authenticated_user_without_center_scope(
+    def test_node_authenticated_transfer_ignores_missing_user_center_scope(
         self,
     ):
         user = User.objects.create(
@@ -746,9 +774,11 @@ class HubTransferEndpointTests(TestCase):
             headers=self._auth_headers(),
         )
 
-        assert response.status_code == 403, response.content
-        detail = cast(str, response.json()["detail"])
-        assert "do not have access" in detail
+        assert response.status_code == 201, response.content
+        assert TransferJob.objects.filter(
+            transfer_key=payload["transfer_key"],
+            source_center=self.center,
+        ).exists()
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfer_registration_requires_secure_transport(self):
@@ -1394,6 +1424,9 @@ class HubTransferEndpointTests(TestCase):
         body = upload_response.json()
         assert body["transfer_status"] == "applied"
         assert body["processing_decision"] == "skip_processing_preserved_state"
+        assert body["transfer_key"] == payload["transfer_key"]
+        assert body["resource_hash"] == payload["resource_hash"]
+        assert body["processed_media_hash"] == processed_hash
 
         video = VideoFile.objects.get(video_hash=raw_hash)
         assert video.processed_video_hash == processed_hash
@@ -1434,6 +1467,10 @@ class HubTransferEndpointTests(TestCase):
         )
 
         assert upload_response.status_code == 200, upload_response.content
+        response_body = upload_response.json()
+        assert response_body["transfer_key"] == payload["transfer_key"]
+        assert response_body["resource_hash"] == payload["resource_hash"]
+        assert response_body["processed_media_hash"] == processed_hash
         transfer_job = TransferJob.objects.get(transfer_key=payload["transfer_key"])
         report = RawPdfFile.objects.get(pdf_hash=payload["resource_hash"])
         assert report.state is not None
@@ -1479,7 +1516,7 @@ class HubTransferEndpointTests(TestCase):
         )
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
-    def test_transfer_media_upload_is_center_scoped_for_authenticated_users(self):
+    def test_transfer_media_upload_uses_node_scope_not_user_scope(self):
         other_center = Center.objects.create(
             name="center-b",
             display_name="Center B",
@@ -1530,7 +1567,7 @@ class HubTransferEndpointTests(TestCase):
             headers=self._auth_headers(),
         )
 
-        assert upload_response.status_code == 404, upload_response.content
+        assert upload_response.status_code == 200, upload_response.content
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfer_status_returns_404_for_unknown_transfer(self) -> None:

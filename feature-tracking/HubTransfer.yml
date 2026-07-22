@@ -1,0 +1,222 @@
+schema_version: '1.0'
+id: hub_transfer
+name: Multi-Center Hub Transfer
+description: Production-readiness criteria for attributable, authenticated, integrity-checked outbound
+  transfer of anonymized processed media from lx-annotate site nodes to an endoreg_db central hub.
+owners:
+- endoreg_db maintainers
+- lx-annotate maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/wiki/hub_ingest_current_state.md
+  disposition: reference
+  note: Defines the current receiver protocol, replay, ownership, and integrity boundary that the sender
+    must satisfy.
+- path: docs/deployment_note_hub_contract.md
+  disposition: reference
+  note: Defines deployment roles and the fail-closed mTLS boundary shared by sender and receiver.
+- path: docs/hub_ingest_operations.md
+  disposition: reference
+  note: Provides the existing ingest operations model that outbound transfer operations must complement.
+definition_of_done:
+- id: documented_transfer_scope
+  category: requirements
+  title: Sender roles, transfer scope, approval semantics, and phase boundaries are explicit
+  acceptance:
+  - Only anonymized processed video and report artifacts are in scope; raw-media export remains prohibited.
+  - The contracts distinguish operator marking, queueing, registration, media upload, verified hub apply,
+    and local cleanup as separate states.
+  - Phase 1 uses mTLS and the local encrypted storage boundary; standalone blobs remain blocked until
+    envelope encryption is implemented.
+  required: true
+  verification:
+    kind: manual
+    instructions: Review lx-annotate sender documentation and code against the endoreg_db receiver contract
+      and deployment roles.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: document
+      reference: docs/wiki/hub_ingest_current_state.md
+    - kind: document
+      reference: docs/hub_ingest_operations.md
+    - kind: document
+      reference: docs/deployment_note_hub_contract.md
+    note: Der Machine-to-Machine-Vertrag, die Node-basierte Center-Grenze und die Trennung von Benutzer-Uploads
+      sind dokumentiert; die vorgesehene gemeinsame Sender-/Receiver-Review bleibt ausstehend.
+    assessed_by: Codex
+    assessed_at: '2026-07-22T12:44:37.094923Z'
+- id: operator_verification_and_attribution
+  category: functionality
+  title: Every transfer intent is visibly verified and attributable to an authenticated operator
+  acceptance:
+  - The export overview identifies the authenticated operator, selected target, selected resource count,
+    configuration readiness, and privacy-verification outcome without accepting a client-supplied actor.
+  - The server persists the authenticated request user for a newly marked transfer and exposes sufficient
+    historical attribution for an operator to identify who marked each resource and when.
+  - Marking and unmarking are reversible only while the transfer state permits it, and bulk requests are
+    atomic or return per-resource results that cannot be mistaken for full success.
+  required: true
+  verification:
+    kind: manual
+    instructions: Exercise the export overview with two authenticated users and verify UI identity, persisted
+      marked_by/marked_at, history visibility, state-dependent reversal, and partial-failure behavior.
+    timeout_seconds: 600
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: authenticated_fail_closed_transport
+  category: security
+  title: Transport, node identity, center ownership, and export authorization fail closed
+  acceptance:
+  - Production sender profiles cannot register or upload when required mTLS certificate, key, CA trust,
+    HTTPS target, node identity, or center ownership is missing or inconsistent.
+  - Receiver registration, status, and processed-media upload authorize center scope from the authenticated
+    NetworkNode and its owning_center; these node-authenticated endpoints do not require or trust a Django
+    user session.
+  - NetworkNode.shared_secret is used only for request authentication and never for payload encryption.
+  - The long-lived master key is neither transmitted nor stored in lx-annotate configuration, payloads,
+    logs, or transfer records.
+  required: true
+  verification:
+    kind: manual
+    instructions: Review production settings and inject missing, expired, mismatched, and wrong-center
+      credentials; confirm every sender path fails before payload or media disclosure.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/views/media/hub/transfers.py
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/views/media/test_hub_transfer_endpoints.py
+        tests/services/test_transfer_job_contract.py -q (51 passed)
+    note: Node-only-Authentifizierung, owning_center-Bindung, mTLS-, HTTPS-, Secret- und Negativpfade
+      sind automatisiert grün. Die manuelle Injektion abgelaufener Zertifikate und produktionsnahe Proxy-Prüfung
+      bleiben ausstehend.
+    assessed_by: Codex
+    assessed_at: '2026-07-22T12:44:42.553983Z'
+- id: transfer_integrity_and_replay
+  category: data_integrity
+  title: Registration, media upload, acknowledgement, and replay preserve one canonical transfer
+  acceptance:
+  - The sender validates typed payload schema, immutable transfer identity, source ownership, processed-media
+    hash, and resource rows before network transmission.
+  - Timeouts and retries reuse the same transfer key; changed canonical payloads and ownership collisions
+    fail as INCONSISTENT rather than creating or mutating unrelated resources.
+  - Completion and cleanup eligibility require a receiver acknowledgement tied to the same transfer, artifact
+    hash, and verified apply outcome.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run cross-repository registration, upload, exact replay, changed replay, hash mismatch,
+      ownership collision, and lost-acknowledgement scenarios and compare both ledgers.
+    timeout_seconds: 1200
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/serializers/hub/transfer_job.py; endoreg_db/services/hub/transfers.py; /home/admin/dev/lx-annotate/lx_annotate/hub/hub_export_payloads.py;
+        /home/admin/dev/lx-annotate/lx_annotate/hub/hub_export_worker.py
+    - kind: command
+      reference: 'lx-annotate: devenv shell -- .devenv/state/venv/bin/pytest tests/hub -q (65 passed)'
+    - kind: command
+      reference: endoreg-db receiver and contract suite (51 passed)
+    note: Sender und Receiver validieren typisierten Payload, SHA-256-Hash, Node-/Center-Ownership, Replay
+      und Acknowledgement. Offen bleibt der produktionsnahe Cross-Repository-Lauf.
+    assessed_by: Codex
+    assessed_at: '2026-07-22T12:44:50.335687Z'
+- id: automated_boundary_tests
+  category: testing
+  title: Sender, receiver, UI, authorization, retry, and negative integrity paths are regression tested
+  acceptance:
+  - Tests cover authenticated user attribution, overview verification information, permission denial,
+    ineligible resources, mixed bulk outcomes, and state-dependent unmarking.
+  - Tests cover mTLS fail-closed behavior, no raw export, canonical replay equality, hash mismatch, cross-center
+    collision, retry exhaustion, worker restart, and verified acknowledgement.
+  - Receiver tests prove that valid node-only requests succeed without a Django user and that missing,
+    mismatched, inactive, or wrong-center node identity fails before transfer metadata or media disclosure.
+  - A cross-repository compatibility check pins and tests the same canonical payload schema on both sides.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - .devenv/state/venv/bin/pytest
+    - tests/views/media/test_hub_transfer_endpoints.py
+    - tests/services/test_transfer_job_contract.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: 'endoreg-db: receiver and transfer contract suite (51 passed)'
+    - kind: command
+      reference: 'lx-annotate: tests/hub (65 passed)'
+    - kind: command
+      reference: 'lx-annotate frontend: HubExportOverviewComponent and hubExportStore (9 passed)'
+    note: Receiver Node-/Center-Grenzen, Sender-Autorisierung und -Integrität sowie UI-/Store-Verträge
+      sind in beiden Repositories grün.
+    assessed_by: Codex
+    assessed_at: '2026-07-22T12:45:55.462479Z'
+- id: recovery_cleanup_and_capacity
+  category: operations
+  title: Recovery, retry exhaustion, cleanup, and capacity handling are production-ready
+  acceptance:
+  - Stale jobs are reconciled idempotently, exhausted retries remain visible, and inconsistent state fails
+    loudly without unsafe automatic recovery.
+  - Local processed media is retained until verified hub apply; cleanup uses typed atomic filesystem wrappers
+    and emits structured JSON logs.
+  - Operators can handle storage pressure, hub outage, certificate rotation, worker restart, and database/media
+    restore without losing transfer provenance.
+  required: true
+  verification:
+    kind: manual
+    instructions: Perform a production-like outage, restart, retry-exhaustion, capacity, cleanup, certificate-rotation,
+      and backup/restore exercise across a site node and central hub.
+    timeout_seconds: 1800
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: transfer_observability
+  category: observability
+  title: Operators can correlate user intent, sender work, receiver decisions, and cleanup
+  acceptance:
+  - Structured events correlate authenticated user, outbound job, transfer key, resource, source center,
+    source node, target node, receiver transfer ID, attempt, acknowledgement, and cleanup decision.
+  - Dashboards and alerts distinguish configuration rejection, authorization denial, integrity inconsistency,
+    transient retry, terminal failure, completed transfer, and verified apply without exposing secrets
+    or raw media.
+  required: true
+  verification:
+    kind: manual
+    instructions: Reconstruct one successful transfer and each terminal failure class using only persisted
+      ledgers, structured logs, metrics, and alerts.
+    timeout_seconds: 600
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: operator_runbook
+  category: documentation
+  title: Deployment, approval, transfer, incident, and recovery procedures are executable
+  acceptance:
+  - Documentation explains operator identity and approval, roles, mTLS provisioning and rotation, supported
+    transfer mode, retry/replay, verification, cleanup, monitoring, and incident preservation.
+  - The runbook explicitly documents current Phase 1 limitations and the Phase 2 envelope-encryption prerequisite
+    for standalone artifact transfer.
+  required: true
+  verification:
+    kind: manual
+    instructions: Have an operator execute the sender-to-hub deployment and incident runbook in a fresh
+      production-like environment and record deviations.
+    timeout_seconds: 1800
+  assessment:
+    status: not_assessed
+    evidence: []

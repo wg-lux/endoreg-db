@@ -146,3 +146,30 @@ def test_resolve_api_upload_context_rejects_anonymous_in_strict_mode(
     assert error == "Authentication is required for center-scoped API uploads."
     assert payload["hub_mode"] is True
     emit_audit.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_resolve_api_upload_context_allows_anonymous_debug_access(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    center = Center.objects.create(
+        name="debug-upload-center",
+        display_name="Debug Upload Center",
+        center_key="debug-upload-center",
+    )
+    monkeypatch.setattr(ingest, "hub_mode_enabled", lambda: False)
+    monkeypatch.setattr(ingest, "local_study_server_mode_enabled", lambda: False)
+    monkeypatch.setattr(ingest, "strict_center_upload_mode_enabled", lambda: False)
+    monkeypatch.setattr(ingest, "is_debug_mode", lambda: True)
+
+    source_center, allowed_center_id, error, payload = (
+        ingest.resolve_api_upload_context(
+            user=AnonymousUser(),
+            center_key=center.center_key,
+        )
+    )
+
+    assert source_center == center
+    assert allowed_center_id is None
+    assert error is None
+    assert payload["hub_mode"] is False

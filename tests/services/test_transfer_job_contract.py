@@ -11,7 +11,10 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 
 from endoreg_db.models import Center, NetworkNode, TransferJob, VideoFile
 from endoreg_db.models.state.anonymization import AnonymizationState
-from endoreg_db.serializers.hub.transfer_job import TransferJobCreateSerializer
+from endoreg_db.serializers.hub.transfer_job import (
+    TransferJobCreateSerializer,
+    TransferJobStatusSerializer,
+)
 from endoreg_db.services.hub import transfers
 from endoreg_db.services.hub.transfers import (
     attach_transfer_media,
@@ -130,6 +133,28 @@ class TransferJobContractTests(TestCase):
 
         assert retain_all.cleanup_status == TransferJob.CleanupStatus.NOT_REQUESTED
         assert delete_after_apply.cleanup_status == TransferJob.CleanupStatus.DEFERRED
+
+    def test_transfer_status_acknowledges_processed_media_hash(self) -> None:
+        processed_media_hash = "a" * 64
+        transfer_job = self._create_video_transfer(
+            transfer_key="status-processed-hash",
+            cleanup_policy=TransferJob.CleanupPolicy.RETAIN_ALL,
+            resource_hash="video-resource-hash",
+        )
+        resource_rows = cast(dict[str, object], transfer_job.resource_rows)
+        video_file = cast(dict[str, object], resource_rows["video_file"])
+        video_file["processed_video_hash"] = processed_media_hash
+        transfer_job.resource_rows = resource_rows
+        transfer_job.save(update_fields=["resource_rows"])
+
+        payload = cast(
+            dict[str, object],
+            TransferJobStatusSerializer(transfer_job).data,  # pyright: ignore[reportUnknownMemberType]
+        )
+
+        assert payload["transfer_key"] == transfer_job.transfer_key
+        assert payload["resource_hash"] == transfer_job.resource_hash
+        assert payload["processed_media_hash"] == processed_media_hash
 
     def test_authenticate_network_node_rejects_missing_shared_secret_hash(self) -> None:
         with patch("endoreg_db.services.hub.audit.logger.info") as audit_log:

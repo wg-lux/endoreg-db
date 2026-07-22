@@ -495,6 +495,18 @@ class TransferJobStatusSerializer(serializers.ModelSerializer[TransferJob]):
         read_only=True,
         allow_null=True,
     )
+    processed_media_hash = serializers.SerializerMethodField()
+
+    def get_processed_media_hash(self, transfer_job: TransferJob) -> str:
+        resource_rows = cast(dict[str, object], transfer_job.resource_rows or {})
+        if transfer_job.resource_kind == TransferJob.ResourceKind.VIDEO:
+            video_file = cast(dict[str, object], resource_rows.get("video_file") or {})
+            return str(video_file.get("processed_video_hash") or "").strip()
+
+        raw_pdf_state = cast(
+            dict[str, object], resource_rows.get("raw_pdf_state") or {}
+        )
+        return str(raw_pdf_state.get("processed_file_sha256") or "").strip()
 
     class Meta:  # type: ignore[reportIncompatibleVariableOverride]
         model = TransferJob
@@ -506,6 +518,7 @@ class TransferJobStatusSerializer(serializers.ModelSerializer[TransferJob]):
             "source_center_key",
             "resource_kind",
             "resource_hash",
+            "processed_media_hash",
             "transfer_mode",
             "transfer_status",
             "processing_policy",

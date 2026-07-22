@@ -29,7 +29,6 @@ from endoreg_db.services.hub import (
     attach_transfer_media,
     authenticate_network_node,
     create_or_reuse_transfer_job,
-    resolve_allowed_center_id,
     transfer_api_enabled,
 )
 from endoreg_db.utils.structured_logging import (
@@ -222,18 +221,18 @@ def _enforce_transfer_node_auth(request: Request, source_node_key: str) -> Netwo
 
 
 def _assert_transfer_center_scope(
-    request: Request, source_center_id: int | None
+    authenticated_node: NetworkNode, source_center_id: int | None
 ) -> None:
-    allowed_center_id = resolve_allowed_center_id(getattr(request, "user", None))
-    if allowed_center_id == -1:
-        raise PermissionDenied("You do not have access to transfer jobs.")
+    """Bind node-authenticated transfers to the node's configured owner."""
+    owning_center_id = getattr(authenticated_node, "owning_center_id", None)
     if (
-        allowed_center_id is not None
-        and allowed_center_id >= 0
-        and source_center_id is not None
-        and source_center_id != allowed_center_id
+        not isinstance(owning_center_id, int)
+        or source_center_id is None
+        or source_center_id != owning_center_id
     ):
-        raise Http404("Transfer job not found")
+        raise PermissionDenied(
+            "Transfer source is outside the authenticated node scope"
+        )
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -258,10 +257,10 @@ class HubTransferCreateView(APIView):
         data = cast(dict[str, _TransferPayloadValue], serializer.validated_data)
         source_node = cast("NetworkNode", data.get("source_node"))
         source_node_key = cast(str, getattr(source_node, "node_key", ""))
-        _enforce_transfer_node_auth(request, source_node_key)
+        authenticated_node = _enforce_transfer_node_auth(request, source_node_key)
         source_center = cast(Center | None, data.get("source_center"))
         source_center_id = cast(int | None, getattr(source_center, "id", None))
-        _assert_transfer_center_scope(request, source_center_id)
+        _assert_transfer_center_scope(authenticated_node, source_center_id)
         target_node = cast("NetworkNode", data.get("target_node"))
         provenance = cast("TransferProvenance", data.get("provenance", {}))
 
@@ -340,14 +339,14 @@ class HubTransferStatusView(APIView):
             raise Http404("Transfer job not found")
 
         transfer_source_node = cast(NetworkNode, getattr(transfer_job, "source_node"))
-        _enforce_transfer_node_auth(
+        authenticated_node = _enforce_transfer_node_auth(
             request, cast(str, getattr(transfer_source_node, "node_key"))
         )
         source_center = cast(
             Center | None, getattr(transfer_job, "source_center", None)
         )
         source_center_id = cast(int | None, getattr(source_center, "id", None))
-        _assert_transfer_center_scope(request, source_center_id)
+        _assert_transfer_center_scope(authenticated_node, source_center_id)
 
         serializer = TransferJobStatusSerializer(transfer_job)
         payload = _serialize_response_data(serializer)
@@ -378,7 +377,7 @@ class HubTransferMediaUploadView(APIView):
             raise Http404("Transfer job not found")
 
         transfer_source_node = cast(NetworkNode, getattr(transfer_job, "source_node"))
-        _enforce_transfer_node_auth(
+        authenticated_node = _enforce_transfer_node_auth(
             request,
             cast(str, getattr(transfer_source_node, "node_key")),
         )
@@ -386,7 +385,7 @@ class HubTransferMediaUploadView(APIView):
             Center | None, getattr(transfer_job, "source_center", None)
         )
         source_center_id = cast(int | None, getattr(source_center, "id", None))
-        _assert_transfer_center_scope(request, source_center_id)
+        _assert_transfer_center_scope(authenticated_node, source_center_id)
 
         uploaded_file = cast(Mapping[str, UploadedFile], request.FILES).get("file")
         if not isinstance(uploaded_file, UploadedFile):

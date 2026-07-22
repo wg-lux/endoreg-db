@@ -32,6 +32,7 @@ from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.medical.hardware.endoscopy_processor import EndoscopyProcessor
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
+from endoreg_db.services.center_access import resolve_allowed_center_ids
 from endoreg_db.services.raw_pdf_files import get_or_create_raw_pdf_state
 from endoreg_db.services.jobs.heavy_jobs import (
     HeavyJobKind,
@@ -76,6 +77,7 @@ from endoreg_db.utils.file_operations import (
 from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.paths import to_storage_relative
 from endoreg_db.utils.storage import delete_field_file, ensure_local_file
+from endoreg_db.utils.permissions import is_debug_mode
 from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
 
 STALE_UPLOAD_JOB_AGE = timedelta(hours=2)
@@ -426,18 +428,23 @@ def resolve_default_center() -> Center | None:
 
 
 def resolve_allowed_center_id(user: Any) -> int | None:
+    """Compatibility adapter for callers that only support one center."""
     if (
         not user
         or isinstance(user, AnonymousUser)
         or not getattr(user, "is_authenticated", False)
     ):
         return None
-    if getattr(user, "is_staff", False) or getattr(user, "is_superuser", False):
+    allowed_center_ids = resolve_allowed_center_ids(user)
+    if allowed_center_ids is None:
         return None
-    portal_user_info = getattr(user, "portaluserinfo", None)
-    examiner = getattr(portal_user_info, "examiner", None) if portal_user_info else None
-    center_id = getattr(examiner, "center_id", None) if examiner else None
-    return int(center_id) if isinstance(center_id, int) else -1
+    if not allowed_center_ids:
+        return -1
+    if len(allowed_center_ids) != 1:
+        raise RuntimeError(
+            "Multiple center assignments require resolve_allowed_center_ids()."
+        )
+    return next(iter(allowed_center_ids))
 
 
 def resolve_api_upload_context(
@@ -502,8 +509,20 @@ def resolve_api_upload_context(
                 },
             )
 
-    allowed_center_id = resolve_allowed_center_id(user)
-    if allowed_center_id == -1:
+    anonymous_debug_access = is_debug_mode() and not bool(
+        user
+        and not isinstance(user, AnonymousUser)
+        and getattr(user, "is_authenticated", False)
+    )
+    allowed_center_ids = (
+        None if anonymous_debug_access else resolve_allowed_center_ids(user)
+    )
+    allowed_center_id = (
+        None
+        if allowed_center_ids is None or len(allowed_center_ids) != 1
+        else next(iter(allowed_center_ids))
+    )
+    if allowed_center_ids == frozenset():
         return (
             None,
             allowed_center_id,
@@ -514,10 +533,9 @@ def resolve_api_upload_context(
             },
         )
     if (
-        allowed_center_id is not None
-        and allowed_center_id >= 0
+        allowed_center_ids is not None
         and declared_center is not None
-        and declared_center.pk != allowed_center_id
+        and declared_center.pk not in allowed_center_ids
     ):
         return (
             None,
@@ -549,10 +567,9 @@ def resolve_api_upload_context(
         allowed_center_id=allowed_center_id,
     )
     if (
-        allowed_center_id is not None
-        and allowed_center_id >= 0
+        allowed_center_ids is not None
         and source_center is not None
-        and source_center.pk != allowed_center_id
+        and source_center.pk not in allowed_center_ids
     ):
         return (
             None,
