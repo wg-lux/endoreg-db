@@ -81,6 +81,33 @@ loudly instead of falling back. Media outside the profile is rejected. Release
 then requires either a new versioned profile or an explicit quarantine review.
 Stream copy, upsampling, and unbounded source-quality encoding are prohibited.
 
+## Transcoding Steps and Idempotency
+
+All storage transcoding entry points use `clinical_h264_bounded_v1` as their
+shared compliance contract:
+
+1. Import probes the incoming video before canonical raw storage. A compliant
+   source is copied atomically into attempt-scoped protected staging without
+   re-encoding. A non-compliant source is transcoded there, probed again, and
+   published only after codec, pixel format, dimensions, frame rate, duration,
+   frame count, bitrate, byte budget, and timeline checks pass.
+2. Reimport and reanonymization probe the fresh anonymized candidate against
+   the validated raw-source timeline. A compliant candidate is retained
+   unchanged. A non-compliant candidate is transcoded into an attempt-scoped
+   sibling and atomically replaces the candidate only after the same complete
+   gate passes.
+3. HLS materialization decrypts the selected raw or processed source only into
+   its attempt-scoped directory inside the protected transcoding boundary. The
+   source is checked against the same profile and is normalized there only when
+   required. HLS then encodes H.264 High Profile, YUV420P, full-range color,
+   bounded bitrate, and source-timeline frame-rate passthrough. A complete
+   current HLS generation is returned idempotently without starting FFmpeg.
+
+The separate `annotation_fps_resample_v1` workflow is the only storage workflow
+that intentionally changes a video above 50 frames per second to exactly 50
+frames per second. Import, reimport, storage normalization, and HLS
+materialization do not use that limit as an implicit fallback.
+
 ## Timeline and Frame-Quality Gate
 
 During import, the source timeline is persisted in

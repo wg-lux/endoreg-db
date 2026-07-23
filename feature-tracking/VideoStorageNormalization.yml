@@ -113,6 +113,10 @@ definition_of_done:
   acceptance:
   - Neuimport, Reimport und Reanonymisierung durchlaufen denselben typisierten Normalisierungsschritt;
     Duplicate- und Existing-Video-Pfade umgehen ihn nicht unbemerkt.
+  - Vor jedem Neuimport sowie nach jedem Reimport und jeder Reanonymisierung wird das konkrete Kandidatenartefakt
+    gegen `clinical_h264_bounded_v1` geprüft. Bereits konforme Artefakte werden ohne erneute Kodierung
+    atomar übernommen; nicht konforme Artefakte werden in einem versuchsspezifischen Staging-Pfad auf
+    dasselbe Profil transkodiert und erst nach erneuter vollständiger Prüfung veröffentlicht.
   - Das finale Video wird vor Veröffentlichung auf Codec, Pixel-Format, Dimensionen, FPS, Dauer, Bitrate,
     Dateigröße und Timeline-Konformität geprüft.
   - Ein Full-Frame-Maskierungs- oder Passthrough-Pfad darf das verpflichtende Storage-Profil nicht durch
@@ -167,6 +171,11 @@ definition_of_done:
   - Playlist-, Key- und Segmentzugriffe erzeugen beziehungsweise erneuern eine Media-Operation-Lease.
     Normalisierung, HLS-Neuerzeugung und Cleanup warten bei aktivem Playback oder Segment-Update und veröffentlichen
     eine neue Generation atomar, ohne laufende Annotationen auf gemischte Derivate zu lenken.
+  - Vor der HLS-Materialisierung wird die ausgewählte Raw- oder Processed-Quelle innerhalb des geschützten
+    Transcoding-Verzeichnisses idempotent gegen `clinical_h264_bounded_v1` geprüft und nur bei Abweichung
+    normalisiert. Die HLS-Kodierung verwendet danach denselben Codec-, Pixelformat-, Farbbereichs-,
+    Bitraten- und FPS-Passthrough-Vertrag; eine bereits vollständige Generation wird ohne erneute
+    Materialisierung zurückgegeben.
   - Ein Cross-Repository-Test deckt mindestens ein Video oberhalb von 50 FPS, die Zustände required/queued/running/ready/failed,
     authentifiziertes Processed-HLS-Playback und Segment-Zeit-/Frame-Roundtrips ab.
   required: true
