@@ -1,6 +1,7 @@
 # pyright: reportPrivateUsage=false
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -58,6 +59,20 @@ def get_video_fps(video: "VideoFile") -> float:
     from ._metadata import _get_fps
 
     return _get_fps(video)
+
+
+def require_persisted_video_fps(video: "VideoFile") -> float:
+    """Return valid persisted frames per second (FPS) without staging media."""
+    value = video.fps
+    if isinstance(value, bool):
+        raise ValueError(f"Video {video.pk} has no valid persisted FPS.")
+    try:
+        fps = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"Video {video.pk} has no valid persisted FPS.") from exc
+    if not math.isfinite(fps) or fps <= 0:
+        raise ValueError(f"Video {video.pk} has no valid positive persisted FPS.")
+    return fps
 
 
 def get_video_endo_roi(video: "VideoFile") -> RoiBoxCore | None:

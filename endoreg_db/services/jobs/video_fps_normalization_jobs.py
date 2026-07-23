@@ -22,7 +22,7 @@ from endoreg_db.services.jobs.stale_recovery import (
     recover_stale_video_processing_history,
 )
 from endoreg_db.services.media_operation_gate import defer_if_video_media_busy
-from endoreg_db.services.video_files import get_video_fps
+from endoreg_db.services.video_files import get_video_fps, require_persisted_video_fps
 from endoreg_db.services.video_processed_transcode import (
     transcode_processed_video_for_storage_pressure,
 )
@@ -70,9 +70,7 @@ def _active_history(video: VideoFile) -> VideoProcessingHistory | None:
 
 
 def normalization_status(video: VideoFile) -> FpsNormalizationDispatchResult:
-    fps = float(get_video_fps(video))
-    if not math.isfinite(fps) or fps <= 0:
-        raise ValueError(f"Video {video.pk} has no valid positive FPS.")
+    fps = require_persisted_video_fps(video)
     active = _active_history(video)
     if active is not None:
         return FpsNormalizationDispatchResult(
@@ -160,9 +158,7 @@ def _run_video_fps_normalization(  # pyright: ignore[reportUnusedFunction]
 def dispatch_video_fps_normalization(
     video: VideoFile,
 ) -> FpsNormalizationDispatchResult:
-    current_fps = float(get_video_fps(video))
-    if not math.isfinite(current_fps) or current_fps <= 0:
-        raise ValueError(f"Video {video.pk} has no valid positive FPS.")
+    current_fps = require_persisted_video_fps(video)
     if 0 < current_fps <= MAX_SEGMENTATION_FPS:
         return FpsNormalizationDispatchResult(
             video_id=int(video.pk),

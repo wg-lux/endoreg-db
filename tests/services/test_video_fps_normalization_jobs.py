@@ -19,6 +19,51 @@ class _ChangedResult:
 
 
 @pytest.mark.django_db
+def test_normalization_status_uses_persisted_fps_without_probing_media(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    center = Center.objects.create(
+        name="fps-status-center",
+        display_name="FPS Status Center",
+    )
+    video = VideoFile.objects.create(
+        center=center,
+        video_hash="fps-status-video",
+        fps=25.0,
+        duration=10.0,
+        frame_count=250,
+    )
+
+    def fail_media_probe(_video: VideoFile) -> float:
+        raise AssertionError("normalization status must not probe or stage media")
+
+    monkeypatch.setattr(jobs, "get_video_fps", fail_media_probe)
+
+    result = jobs.normalization_status(video)
+
+    assert result.status == "ready"
+    assert result.fps == 25.0
+
+
+@pytest.mark.django_db
+def test_normalization_status_rejects_invalid_persisted_fps() -> None:
+    center = Center.objects.create(
+        name="fps-invalid-status-center",
+        display_name="FPS Invalid Status Center",
+    )
+    video = VideoFile.objects.create(
+        center=center,
+        video_hash="fps-invalid-status-video",
+        fps=None,
+        duration=10.0,
+        frame_count=250,
+    )
+
+    with pytest.raises(ValueError, match="persisted FPS"):
+        jobs.normalization_status(video)
+
+
+@pytest.mark.django_db
 def test_fps_normalization_job_requests_explicit_pre_annotation_downsampling(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -84,6 +129,11 @@ def test_mock_video_above_50_fps_exposes_full_normalization_status_lifecycle(
     video.duration = 10.0
     video.frame_count = 600
     video.save(update_fields=["fps", "duration", "frame_count", "date_modified"])
+
+    def fail_media_probe(_video: VideoFile) -> float:
+        raise AssertionError("status and dispatch must not probe or stage media")
+
+    monkeypatch.setattr(jobs, "get_video_fps", fail_media_probe)
 
     def fake_queue_for_job_kind(_kind: HeavyJobKind) -> str:
         return "ffmpeg-media"
