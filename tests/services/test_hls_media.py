@@ -194,7 +194,8 @@ def test_ffmpeg_hls_command_uses_clinical_quality_h264_settings(
     assert command[command.index("-profile:v") + 1] == hls_media.HLS_VIDEO_PROFILE
     assert command[command.index("-pix_fmt") + 1] == hls_media.HLS_VIDEO_PIXEL_FORMAT
     assert command[command.index("-color_range") + 1] == "pc"
-    assert command[command.index("-fpsmax") + 1] == "50"
+    assert command[command.index("-fps_mode") + 1] == "passthrough"
+    assert "-fpsmax" not in command
     assert "-r" not in command
     assert command[command.index("-vf") + 1] == (
         "scale=iw:ih:in_range=auto:out_range=full,format=yuv420p"
@@ -590,6 +591,32 @@ def test_force_materialize_video_hls_removes_replaced_artifact_directory(
     assert fake_hls.source_payloads == [first_payload, second_payload]
     assert not first_segment_dir.exists()
     assert second_segment_dir.exists()
+
+
+def test_materialize_video_hls_rebuilds_when_source_file_name_changes(
+    hls_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    video = _create_processed_video(center=hls_center, payload=b"first source")
+    fake_hls = FakeHlsOutputRecorder()
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
+
+    first = hls_media.materialize_video_hls(video.pk, artifact_kind="processed")
+    cast(Any, video.processed_file).save(
+        "replacement-source.mp4",
+        ContentFile(b"replacement source"),
+        save=True,
+    )
+
+    second = hls_media.materialize_video_hls(
+        video.pk,
+        artifact_kind="processed",
+    )
+
+    assert first.status == "materialized"
+    assert second.status == "materialized"
+    assert second.key_id != first.key_id
+    assert fake_hls.source_payloads == [b"first source", b"replacement source"]
 
 
 def test_force_materialize_video_hls_keeps_new_artifact_when_old_cleanup_fails(

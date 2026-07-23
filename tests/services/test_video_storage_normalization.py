@@ -592,3 +592,49 @@ def test_normalize_video_file_replaces_only_after_all_gates_pass(
     assert evidence.temporal_equivalent is True
     assert evidence.storage_compliant is True
     assert evidence.profile_name == "test"
+
+
+@pytest.mark.unit
+def test_ensure_video_file_profile_copies_compliant_input_without_transcoding(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    input_path = tmp_path / "incoming.mp4"
+    output_path = tmp_path / "canonical.mp4"
+    input_path.write_bytes(b"already-compliant")
+    compliant_probe = _probe()
+    probed_paths: list[Path] = []
+
+    def fake_probe(path: Path) -> VideoArtifactProbe:
+        probed_paths.append(path)
+        return compliant_probe
+
+    def fail_transcode(**_kwargs: object) -> None:
+        raise AssertionError("Compliant input must not be transcoded")
+
+    monkeypatch.setattr(normalization, "probe_video_artifact", fake_probe)
+    monkeypatch.setattr(
+        normalization.ffmpeg_wrapper,
+        "transcode_video",
+        fail_transcode,
+    )
+    profile = normalization.VideoStorageProfile(
+        name="test",
+        max_bit_rate_bps=12_000_000,
+        max_bytes_per_second=1_600_000,
+        fixed_overhead_bytes=1024,
+    )
+
+    evidence = normalization.ensure_video_file_profile(
+        input_path=input_path,
+        output_path=output_path,
+        reference_path=input_path,
+        quality_mode="quality",
+        profile=profile,
+    )
+
+    assert input_path.read_bytes() == b"already-compliant"
+    assert output_path.read_bytes() == b"already-compliant"
+    assert evidence.storage_compliant is True
+    assert probed_paths[0:2] == [input_path, input_path]
+    assert probed_paths[-1] != output_path

@@ -31,6 +31,7 @@ from endoreg_db.services.video_storage.inventory import (
     video_normalization_evidence,
 )
 from endoreg_db.services.video_storage.normalization import (
+    ensure_video_file_profile as _ensure_video_file_profile,
     normalize_video_file as _normalize_video_file,
 )
 from endoreg_db.services.video_storage.probes import (
@@ -89,6 +90,31 @@ def normalize_video_file(
     )
 
 
+def ensure_video_file_profile(
+    *,
+    input_path: Path,
+    output_path: Path,
+    reference_path: Path,
+    quality_mode: str,
+    profile: VideoStorageProfile | None = None,
+    segments: list[SegmentTimelineReference] | None = None,
+    force_cpu: bool = False,
+) -> VideoStorageNormalizationEvidence:
+    """Publish a compliant output while avoiding unnecessary re-encoding."""
+    selected_profile = profile or configured_video_storage_profile()
+    return _ensure_video_file_profile(
+        input_path=input_path,
+        output_path=output_path,
+        reference_path=reference_path,
+        quality_mode=quality_mode,
+        profile=selected_profile,
+        segments=segments,
+        force_cpu=force_cpu,
+        probe_artifact=probe_video_artifact,
+        validate_output=validate_normalized_output,
+    )
+
+
 def video_storage_capacity(
     *,
     storage_root: Path,
@@ -110,6 +136,7 @@ __all__ = [
     "assert_temporal_equivalence",
     "configured_video_storage_profile",
     "evidence_as_json",
+    "ensure_video_file_profile",
     "inventory_video_storage",
     "normalize_video_file",
     "persist_video_source_timeline",

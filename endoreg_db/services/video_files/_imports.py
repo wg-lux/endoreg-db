@@ -8,10 +8,14 @@ from importlib import import_module
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Protocol, Type, TypedDict, cast
 
+from endoreg_db.config.env import get_ffmpeg_transcode_quality_mode
 from endoreg_db.exceptions import InsufficientStorageError
 from endoreg_db.import_files.file_storage.cleanup import safe_cleanup_staging_file
 from endoreg_db.services.video_files.processor_resolution import (
     resolve_processor_name_for_import,
+)
+from endoreg_db.services.video_storage_normalization import (
+    ensure_video_file_profile,
 )
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
@@ -29,10 +33,7 @@ if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
 
 import endoreg_db.utils.paths as path_utils
-from endoreg_db.utils.ffmpeg_wrapper import (
-    get_stream_info,
-    transcode_videofile_if_required,
-)
+from endoreg_db.utils.ffmpeg_wrapper import get_stream_info
 
 logger = logging.getLogger(__name__)
 
@@ -312,23 +313,19 @@ def _create_from_file(
         logger.debug("Checking transcoding requirement for %s", file_path)
 
         try:
-            transcoded_file_path = transcode_videofile_if_required(
+            ensure_video_file_profile(
                 input_path=file_path,
                 output_path=temp_output_path,
+                reference_path=file_path,
+                quality_mode=get_ffmpeg_transcode_quality_mode(),
             )
+            transcoded_file_path = temp_output_path
         except Exception as exc:
             raise RuntimeError(
                 "Video standardization failed; refusing to promote the original file "
                 f"into canonical raw storage for {file_path}."
             ) from exc
 
-        if transcoded_file_path is None:
-            raise RuntimeError(
-                "Video standardization did not produce a compliant output; refusing "
-                f"to promote the original file into canonical raw storage for {file_path}."
-            )
-
-        transcoded_file_path = Path(transcoded_file_path)
         logger.debug("Standardized video candidate: %s", transcoded_file_path)
 
         existing_video = cls_model.objects.filter(video_hash=video_hash).first()

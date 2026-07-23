@@ -19,7 +19,10 @@ from django.db import transaction
 from django.db.models.fields.files import FieldFile
 from django.utils import timezone
 
-from endoreg_db.config.env import get_ffmpeg_transcode_timeout_seconds
+from endoreg_db.config.env import (
+    get_ffmpeg_transcode_quality_mode,
+    get_ffmpeg_transcode_timeout_seconds,
+)
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services import streamable_media
@@ -31,6 +34,7 @@ from endoreg_db.utils import ffmpeg_wrapper
 from endoreg_db.utils.video.encoding_standard import STANDARD_VIDEO_ENCODING
 from endoreg_db.services.video_storage_normalization import (
     configured_video_storage_profile,
+    normalize_video_file,
 )
 from endoreg_db.utils.encryption.encryption import load_master_key
 from endoreg_db.utils.file_operations import (
@@ -70,9 +74,7 @@ HLS_KEY_WRAP_NONCE_BYTES = 12
 HLS_MATERIALIZATION_STALE_GRACE_SECONDS = 60
 FFMPEG_STDIN_CHUNK_BYTES = 1024 * 1024
 FFMPEG_STDERR_TAIL_BYTES = 64 * 1024
-FFMPEG_STDIN_WATCHDOG_SECONDS = 30.0
-FFMPEG_STDIN_WATCHDOG_INTERVAL_SECONDS = 1.0
-FFMPEG_INPUT_THREAD_JOIN_TIMEOUT_SECONDS = 2.0
+FFMPEG_PROCESS_POLL_INTERVAL_SECONDS = 1.0
 FFMPEG_OUTPUT_PROGRESS_WATCHDOG_SECONDS = 300.0
 MP4_PIPE_COMPATIBILITY_SCAN_BYTES = 64 * 1024
 HLS_VIDEO_PRESET = "medium"
@@ -80,7 +82,6 @@ HLS_VIDEO_CRF = "18"
 HLS_VIDEO_PROFILE = STANDARD_VIDEO_ENCODING.profile
 HLS_VIDEO_PIXEL_FORMAT = STANDARD_VIDEO_ENCODING.pixel_format
 HLS_VIDEO_COLOR_RANGE = STANDARD_VIDEO_ENCODING.color_range
-HLS_VIDEO_MAX_FPS = STANDARD_VIDEO_ENCODING.max_fps_arg()
 HLS_AUDIO_CODEC = "copy"
 HLS_FFMPEG_THREADS_ENV = "LX_ANNOTATE_HLS_FFMPEG_THREADS"
 
@@ -147,45 +148,11 @@ class _HlsSource:
     field_file: FieldFile
 
 
-@dataclass
-class _FFmpegStdinFeedState:
-    last_activity: float
-    bytes_written: int = 0
-    error: BaseException | None = None
-
-
 @dataclass(frozen=True)
 class _HlsOutputProgress:
     file_count: int
     total_bytes: int
     latest_mtime_ns: int
-
-
-class _PrefixedBinarySource:
-    def __init__(self, prefix: bytes, source: BinaryIO) -> None:
-        self._prefix = prefix
-        self._source = source
-        self._offset = 0
-
-    def read(self, size: int = -1) -> bytes:
-        remaining_prefix = len(self._prefix) - self._offset
-        if remaining_prefix <= 0:
-            return self._source.read(size)
-
-        if size < 0:
-            prefix_chunk = self._prefix[self._offset :]
-            self._offset = len(self._prefix)
-            return prefix_chunk + self._source.read()
-
-        if size == 0:
-            return b""
-
-        prefix_size = min(size, remaining_prefix)
-        prefix_chunk = self._prefix[self._offset : self._offset + prefix_size]
-        self._offset += prefix_size
-        if prefix_size == size:
-            return prefix_chunk
-        return prefix_chunk + self._source.read(size - prefix_size)
 
 
 def _coerce_hls_artifact_kind(value: object) -> VideoArtifactKind:
@@ -540,6 +507,8 @@ def reserve_hls_materialization_dispatch(
             artifact.status == VideoHlsArtifact.Status.READY.value
             and not force
             and _ready_artifact_paths_exist(artifact)
+            and artifact.source_file_name
+            == _hls_source(video, parsed_kind).source_file_name
         ):
             return HlsMaterializationDispatchReservation(
                 artifact_id=int(artifact.pk),
@@ -598,6 +567,7 @@ def _prepare_artifact_record(
             artifact.status == VideoHlsArtifact.Status.READY.value
             and not force
             and _ready_artifact_paths_exist(artifact)
+            and artifact.source_file_name == source_file_name
         ):
             return _PreparedArtifact(
                 artifact_id=int(artifact.pk),
@@ -839,67 +809,6 @@ def _drain_pipe_tail(pipe: BinaryIO, chunks: deque[bytes]) -> None:
             total_bytes -= len(chunks.popleft())
 
 
-def _feed_source_to_ffmpeg(
-    source: BinaryIO,
-    process: subprocess.Popen[bytes],
-    state: _FFmpegStdinFeedState,
-) -> None:
-    if process.stdin is None:
-        raise RuntimeError("FFmpeg stdin pipe was not created")
-
-    while True:
-        chunk = source.read(FFMPEG_STDIN_CHUNK_BYTES)
-        if not chunk:
-            break
-        process.stdin.write(chunk)
-        state.bytes_written += len(chunk)
-        state.last_activity = time.monotonic()
-
-
-def _start_stdin_pumper(
-    source: BinaryIO,
-    process: subprocess.Popen[bytes],
-) -> tuple[threading.Thread, _FFmpegStdinFeedState]:
-    state = _FFmpegStdinFeedState(last_activity=time.monotonic())
-
-    def _pump() -> None:
-        try:
-            _feed_source_to_ffmpeg(source=source, process=process, state=state)
-        except BaseException as exc:
-            state.error = exc
-        finally:
-            if process.stdin is not None and not process.stdin.closed:
-                process.stdin.close()
-
-    thread = threading.Thread(
-        target=_pump,
-        name="ffmpeg-stdin-pumper",
-        daemon=True,
-    )
-    thread.start()
-    return thread, state
-
-
-def _source_name_looks_like_seekable_container(source_file_name: str) -> bool:
-    return Path(source_file_name.lower()).suffix in {".mp4", ".m4v", ".mov"}
-
-
-def _source_requires_seekable_input(
-    *,
-    source_file_name: str,
-    prefix: bytes,
-) -> bool:
-    # Production hotfix:
-    # MP4/MOV over pipe:0 is not operationally safe for long/non-faststart
-    # inputs. FFmpeg can spend hours consuming CPU before emitting the first
-    # HLS segment because it cannot seek container metadata. Prefer the
-    # already-hardened 0700/0600 seekable temp-file path for every MP4-like
-    # source instead of relying on atom-position heuristics.
-    if len(prefix) >= 12 and prefix[4:8] == b"ftyp":
-        return True
-    return _source_name_looks_like_seekable_container(source_file_name)
-
-
 def _source_size_bytes(field_file: FieldFile) -> int | None:
     try:
         value = int(getattr(field_file, "size"))
@@ -1014,7 +923,7 @@ def _wait_for_ffmpeg_completion(
 
     while True:
         try:
-            return process.wait(timeout=FFMPEG_STDIN_WATCHDOG_INTERVAL_SECONDS)
+            return process.wait(timeout=FFMPEG_PROCESS_POLL_INTERVAL_SECONDS)
         except subprocess.TimeoutExpired:
             pass
 
@@ -1109,8 +1018,8 @@ def _ffmpeg_command(
         STANDARD_VIDEO_ENCODING.filter_chain(),
         "-color_range",
         HLS_VIDEO_COLOR_RANGE,
-        "-fpsmax",
-        HLS_VIDEO_MAX_FPS,
+        "-fps_mode",
+        "passthrough",
         "-codec:a",
         HLS_AUDIO_CODEC,
         "-f",
@@ -1141,25 +1050,21 @@ def _run_ffmpeg_hls(
     segment_base_url: str,
 ) -> None:
     source_path: Path | None = None
-    stdin_source: BinaryIO | None = None
     try:
         prefix = source.read(MP4_PIPE_COMPATIBILITY_SCAN_BYTES)
-        use_seekable_source = _source_requires_seekable_input(
-            source_file_name=source_file_name,
+        source_path = _materialize_seekable_plaintext_source(
+            source=source,
             prefix=prefix,
+            source_file_name=source_file_name,
+            source_size_bytes=source_size_bytes,
+            temp_source_dir=temp_source_dir,
         )
-        if use_seekable_source:
-            source_path = _materialize_seekable_plaintext_source(
-                source=source,
-                prefix=prefix,
-                source_file_name=source_file_name,
-                source_size_bytes=source_size_bytes,
-                temp_source_dir=temp_source_dir,
-            )
-            input_arg = str(source_path)
-        else:
-            stdin_source = cast(BinaryIO, _PrefixedBinarySource(prefix, source))
-            input_arg = "pipe:0"
+        normalize_video_file(
+            input_path=source_path,
+            reference_path=source_path,
+            quality_mode=get_ffmpeg_transcode_quality_mode(),
+        )
+        input_arg = str(source_path)
     except BaseException:
         _cleanup_seekable_plaintext_source(
             temp_source_dir=temp_source_dir,
@@ -1178,7 +1083,7 @@ def _run_ffmpeg_hls(
     try:
         process = subprocess.Popen(
             command,
-            stdin=subprocess.PIPE if stdin_source is not None else subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
         )
@@ -1188,13 +1093,6 @@ def _run_ffmpeg_hls(
             source_path=source_path,
         )
         raise
-    input_thread: threading.Thread | None = None
-    input_state: _FFmpegStdinFeedState | None = None
-    if stdin_source is not None:
-        input_thread, input_state = _start_stdin_pumper(
-            source=stdin_source,
-            process=process,
-        )
     stderr_thread: threading.Thread | None = None
     if process.stderr is not None:
         stderr_thread = threading.Thread(
@@ -1205,35 +1103,6 @@ def _run_ffmpeg_hls(
         stderr_thread.start()
 
     try:
-        if input_thread is not None and input_state is not None:
-            while input_thread.is_alive():
-                input_thread.join(timeout=FFMPEG_STDIN_WATCHDOG_INTERVAL_SECONDS)
-
-                if input_state.error is not None:
-                    raise RuntimeError(
-                        "FFmpeg stdin pump failed with "
-                        f"{type(input_state.error).__name__}: {input_state.error}"
-                    ) from input_state.error
-
-                if process.poll() is not None:
-                    raise RuntimeError(
-                        "FFmpeg exited before stdin feed completed with "
-                        f"returncode={process.returncode}"
-                    )
-
-                idle_seconds = time.monotonic() - input_state.last_activity
-                if idle_seconds > FFMPEG_STDIN_WATCHDOG_SECONDS:
-                    raise TimeoutError(
-                        "FFmpeg input stream stalled for "
-                        f"{idle_seconds:.1f}s while feeding chunks"
-                    )
-
-            if input_state.error is not None:
-                raise RuntimeError(
-                    "FFmpeg stdin pump failed with "
-                    f"{type(input_state.error).__name__}: {input_state.error}"
-                ) from input_state.error
-
         return_code = _wait_for_ffmpeg_completion(
             process=process,
             segment_pattern=segment_pattern,
@@ -1286,10 +1155,6 @@ def _run_ffmpeg_hls(
                 pass
         raise
     finally:
-        if process.stdin is not None and not process.stdin.closed:
-            process.stdin.close()
-        if input_thread is not None and input_thread.is_alive():
-            input_thread.join(timeout=FFMPEG_INPUT_THREAD_JOIN_TIMEOUT_SECONDS)
         if stderr_thread is not None:
             stderr_thread.join(timeout=5.0)
         _cleanup_seekable_plaintext_source(
@@ -1367,6 +1232,9 @@ def _existing_ready_result(
         return None
 
     if artifact.status != VideoHlsArtifact.Status.READY.value:
+        return None
+    source_ref = _hls_source(artifact.video, artifact_kind)
+    if artifact.source_file_name != source_ref.source_file_name:
         return None
     if not _ready_artifact_paths_exist(artifact):
         _mark_artifact_failed(

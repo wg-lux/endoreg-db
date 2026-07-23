@@ -93,9 +93,14 @@ def test_video_import_persists_raw_video_as_encrypted_bytes(
     def fake_initialize(self: VideoFile) -> VideoFile:
         return self
 
-    def fake_transcode(input_path: Path, output_path: Path) -> Path:
+    def fake_ensure_profile(
+        *,
+        input_path: Path,
+        output_path: Path,
+        **_kwargs: object,
+    ) -> object:
         output_path.write_bytes(input_path.read_bytes())
-        return output_path
+        return object()
 
     def fake_get_stream_info(_path: Path) -> dict[str, list[dict[str, str]]]:
         return {
@@ -112,8 +117,8 @@ def test_video_import_persists_raw_video_as_encrypted_bytes(
     monkeypatch.setattr(VideoFile, "initialize", fake_initialize, raising=True)
     monkeypatch.setattr(
         video_create_module,
-        "transcode_videofile_if_required",
-        fake_transcode,
+        "ensure_video_file_profile",
+        fake_ensure_profile,
         raising=True,
     )
     monkeypatch.setattr(
