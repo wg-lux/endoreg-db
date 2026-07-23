@@ -43,11 +43,18 @@ definition_of_done:
     - kind: review
       reference: endoreg_db/services/video_storage/contracts.py; endoreg_db/services/video_storage/validation.py;
         docs/video_storage_normalization.md
-    note: Typisierte Auflösungs-, Quell-FPS-, Annotations-FPS-, Bitraten- und Größenlimits sowie Artefaktmatrix
-      und Fail-closed-Ausnahmeprozess sind implementiert und dokumentiert. Offen bleibt die formale Abnahme
-      durch Betrieb, klinischen Reviewer und Storage-Verantwortliche.
+    - kind: code
+      reference: c3dfaf0a; 3f7084c4
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_video_storage_normalization.py
+        tests/import_files/test_video_import_normalization.py tests/import_files/test_import_encryption.py
+        tests/services/test_hls_media.py -q (45 passed)
+    note: Der typisierte Vertrag wird jetzt bei Import, Reimport, Reanonymisierung sowie vor und nach
+      HLS-Transcoding durchgesetzt. Bereits konforme Artefakte werden ohne erneute Kodierung übernommen;
+      verschlüsselte HLS-Ausgaben werden vor Veröffentlichung vollständig geprobt. Offen bleibt die formale
+      Abnahme durch Betrieb, klinischen Reviewer und Storage-Verantwortliche.
     assessed_by: Codex
-    assessed_at: '2026-07-20T10:19:49.123387Z'
+    assessed_at: '2026-07-23T09:07:36.963905Z'
 - id: temporal_frame_contract
   category: data_integrity
   title: Persistierte Segmente referenzieren Frames transcode-stabil und eindeutig
@@ -141,8 +148,17 @@ definition_of_done:
       reference: devenv shell bash -lc 'exec .devenv/state/venv/bin/pytest tests/import_files/test_video_import_normalization.py
         tests/services/test_video_storage_normalization.py -q'
       note: Exit-Code 0
-    assessed_by: Max
-    assessed_at: '2026-07-20T10:41:29.074290Z'
+    - kind: code
+      reference: c3dfaf0a
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_video_storage_normalization.py
+        tests/import_files/test_video_import_normalization.py tests/import_files/test_import_encryption.py
+        tests/services/test_hls_media.py -q (45 passed)
+    note: Neuimport, Reimport und Reanonymisierung verwenden den gemeinsamen Profilcheck. Konforme Quellen
+      werden atomar kopiert, Abweichungen transkodiert und erst nach vollständiger Storage- und Timeline-Prüfung
+      veröffentlicht; 45 fokussierte Import-, Normalisierungs-, Verschlüsselungs- und HLS-Tests bestanden.
+    assessed_by: Codex
+    assessed_at: '2026-07-23T09:07:37.900435Z'
 - id: video_examination_annotation_contract
   category: interoperability
   title: Normalisierte Videos bleiben in der Segmentannotation sicher nutzbar
@@ -173,9 +189,9 @@ definition_of_done:
     eine neue Generation atomar, ohne laufende Annotationen auf gemischte Derivate zu lenken.
   - Vor der HLS-Materialisierung wird die ausgewählte Raw- oder Processed-Quelle innerhalb des geschützten
     Transcoding-Verzeichnisses idempotent gegen `clinical_h264_bounded_v1` geprüft und nur bei Abweichung
-    normalisiert. Die HLS-Kodierung verwendet danach denselben Codec-, Pixelformat-, Farbbereichs-,
-    Bitraten- und FPS-Passthrough-Vertrag; eine bereits vollständige Generation wird ohne erneute
-    Materialisierung zurückgegeben.
+    normalisiert. Die HLS-Kodierung verwendet danach denselben Codec-, Pixelformat-, Farbbereichs-, Bitraten-
+    und FPS-Passthrough-Vertrag; eine bereits vollständige Generation wird ohne erneute Materialisierung
+    zurückgegeben.
   - Das verschlüsselte HLS-Ergebnis wird vor atomarer Veröffentlichung über eine versuchsspezifische lokale
     Prüfplaylist entschlüsselt geprobt. Codec, Pixelformat, Dimensionen, Bildrate, Dauer, Frameanzahl,
     Bitrate, Gesamtgröße und Timeline müssen dem typisierten Profil entsprechen; Abweichungen verhindern
@@ -218,14 +234,27 @@ definition_of_done:
         (24 passed)
     - kind: command
       reference: devenv shell -- npm run type-check (exit 0)
-    note: Der lx-annotate-Einzelbildpfad bewahrt Blob-Antworten nun unverändert, validiert Status, Content-Type
-      und leere Antworten, lädt einen erfolgreichen Task ohne expliziten Retry einmal und reduziert die
-      Standardauswahl auf Label-Gruppe und Ziel-Label. Fokussierte Frontendtests und Vue-Typecheck sind
-      erfolgreich. Das Gesamtkriterium bleibt wegen der bereits dokumentierten offenen Nachweise für authentifiziertes
-      Processed-HLS, atomare Generationsveröffentlichung, Lease-Konkurrenz und den realen Cross-Repository-Segment-PTS-Roundtrip
-      blockiert.
+    - kind: code
+      reference: c3dfaf0a; 3f7084c4
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_hls_media.py tests/services/test_video_storage_normalization.py
+        -q (passed)
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_video_fps_normalization_jobs.py
+        tests/views/video/test_hls_stream.py tests/services/test_media_operation_gate.py tests/services/test_video_post_validation_jobs.py
+        -q (46 passed)
+    - kind: command
+      reference: 'lx-annotate: devenv shell -- npm --prefix frontend run test:unit -- --run src/composables/__tests__/useAuthenticatedVideoStream.test.ts
+        src/components/VideoExamination/__tests__/VideoExaminationAnnotation.dropdown.test.ts src/components/VideoExamination/__tests__/Timeline.pts-navigation.test.ts
+        src/utils/__tests__/segmentTimeline.test.ts (24 passed)'
+    note: Backendseitig sind >50-FPS-Zustände, authentifizierte Playlist-/Key-/Segment-Endpunkte, Lease-Erneuerung,
+      Lease-Deferral und Post-Validation-Konkurrenz durch 46 Tests nachgewiesen. lx-annotate weist credentialed
+      HLS.js-/Native-HLS-Zugriff, fail-closed Fehlerbehandlung, automatische FPS-Normalisierung vor Segmentladung
+      sowie PTS-basierte Navigation und Segment-Roundtrips durch 24 Tests nach. Offen bleibt ein einzelner
+      realer Cross-Repository-End-to-End-Lauf mit einem Video oberhalb 50 FPS über required/queued/running/ready
+      beziehungsweise failed, atomare HLS-Generation und Segment-PTS-Stabilität nach UI-Reload.
     assessed_by: Codex
-    assessed_at: '2026-07-22T06:34:19.658379Z'
+    assessed_at: '2026-07-23T09:10:11.092950Z'
 - id: derived_artifact_lifecycle
   category: functionality
   title: Redundante Roh- und HLS-Artefakte werden erst nach vollständiger Freigabe entfernt
@@ -279,12 +308,16 @@ definition_of_done:
     evidence:
     - kind: test
       reference: tests/services/test_video_storage_atomic_migration.py (5 passed)
-    note: Failure-Injection für ENOSPC, kontrollierte Unterbrechung, Integritätsgate und atomaren Publikationsfehler
-      ist implementiert. Kandidaten bleiben im Master-Verzeichnis, der bestehende Master bleibt erhalten,
-      Part-Dateien werden bereinigt und strukturierte Lifecycle-/Dateioperationsereignisse werden geprüft.
-      Offen bleibt die manuelle Abnahme im verschlüsselten Produktionsprofil einschließlich harter Prozessbeendigung.
+    - kind: code
+      reference: 3f7084c4
+    - kind: test
+      reference: tests/services/test_hls_media.py::test_materialize_video_hls_profile_failure_prevents_publication
+    note: Zusätzlich zu den bestehenden Failure-Injection-Nachweisen wird verschlüsseltes HLS jetzt vor
+      Veröffentlichung über eine versuchsspezifische lokale Prüfplaylist validiert. Profilfehler markieren
+      den Versuch als fehlgeschlagen und entfernen Staging, Prüfplaylist und Schlüsselmaterial. Offen
+      bleibt die manuelle Abnahme im verschlüsselten Produktionsprofil einschließlich harter Prozessbeendigung.
     assessed_by: Codex
-    assessed_at: '2026-07-20T10:37:52.494260Z'
+    assessed_at: '2026-07-23T09:07:39.713637Z'
 - id: migration_regression_tests
   category: testing
   title: Größen-, Timeline-, Qualitäts- und Cleanup-Invarianten sind regressionsgetestet
@@ -392,8 +425,10 @@ definition_of_done:
       reference: docs/video_storage_normalization.md
     - kind: review
       reference: AGENTS.md; docs/video_storage_normalization.md
-    note: Das kanonische Runbook liegt vollständig auf Englisch vor, erklärt Abkürzungen zentral und AGENTS.md
-      erklärt die Videoregeln für alle Agenten verbindlich. Offen bleibt die formale Abnahme durch Betrieb,
-      Security und klinischen Reviewer.
+    - kind: document
+      reference: a33c73fe; 3f7084c4; docs/video_storage_normalization.md
+    note: Das englische Runbook dokumentiert nun die idempotenten Import-, Reimport- und HLS-Schritte
+      einschließlich der verschlüsselten Vorveröffentlichungsprüfung und der Trennung von annotation_fps_resample_v1.
+      Offen bleibt die formale Abnahme durch Betrieb, Security und klinischen Reviewer.
     assessed_by: Codex
-    assessed_at: '2026-07-20T11:00:29.670278Z'
+    assessed_at: '2026-07-23T09:07:40.613087Z'
