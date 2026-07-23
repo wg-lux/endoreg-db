@@ -169,7 +169,10 @@ definition_of_done:
   - Der GET-/POST-Vertrag segments/normalize-fps normalisiert Videos oberhalb von 50 FPS vor der ersten
     Segmentanlage mit einem eigenen typisierten Resampling-Profil. Er aktualisiert FPS, Frameanzahl, Timeline-Version
     und Provenienz konsistent; eine Storage-Normalisierung mit FPS-Passthrough darf diesen Pfad nicht
-    als erfolgreich behandeln oder blockieren.
+    als erfolgreich behandeln oder blockieren. Statusabfragen und der gewöhnliche FPS-Endpunkt validieren
+    ausschließlich die persistierte positive, endliche Bildrate und dürfen weder das verschlüsselte Video
+    entschlüsseln noch eine vollständige temporäre Klartextkopie anlegen; die dateibasierte Prüfung bleibt
+    auf Import-, Normalisierungs- und explizite Integritäts-Workflows begrenzt.
   - Sobald Segmentzeilen existieren, lehnt der FPS-Pfad jede Änderung der Framekoordinaten laut ab. Seeking
     sowie Segmentanfang und -ende referenzieren nach Storage-Normalisierung deterministisch denselben
     klinischen Bildinhalt.
@@ -181,6 +184,11 @@ definition_of_done:
     ohne expliziten Wiederholungsversuch höchstens einmal und zeigt HTTP-Status beziehungsweise Backendfehler
     statt einer generischen Bildfehlermeldung an. Selten benötigte Queue-Parameter bleiben in einer eingeklappten
     erweiterten Konfiguration verfügbar, während der Standardpfad nur die fachlich nötige Auswahl zeigt.
+  - lx-annotate lädt Video-Metadaten und Segmentdaten pro Auswahl über genau einen logisch verantwortlichen
+    Ladepfad. Status-Polling ist unabhängig von der Anzahl gleichzeitig ausstehender Videos auf einen
+    Request-Zyklus begrenzt, lädt unveränderte Labels nicht erneut und wird beim Verlassen der Ansicht
+    vollständig abgebrochen. Eine vom Normalisierungsstatus bereits validierte Bildrate wird für denselben
+    Ladevorgang wiederverwendet; der separate FPS-Endpunkt wird dann nicht zusätzlich aufgerufen.
   - Der Dataset-Export bindet Integer-Präsentationszeitstempel, rationale Stream-Timebase und Timeline-Version
     an denselben persistierten pts_v1-Vertrag. Fehlende Zeitachsenidentität führt zu einem lauten Fehler;
     nominale Bilder pro Sekunde dürfen keine Exportkoordinaten erzeugen.
@@ -211,6 +219,12 @@ definition_of_done:
     evidence:
     - kind: review
       reference: endoreg_db/services/jobs/video_fps_normalization_jobs.py; endoreg_db/services/video_processed_transcode.py
+    - kind: review
+      reference: endoreg_db/services/video_files/metadata.py; endoreg_db/views/video/video_fps.py;
+        /home/admin/dev/lx-annotate/frontend/src/components/VideoExamination/VideoExaminationAnnotation.vue;
+        /home/admin/dev/lx-annotate/frontend/src/stores/videoStore.ts
+      note: Normalisierungsstatus und gewöhnlicher FPS-Endpunkt validieren persistierte Metadaten ohne
+        Media-Staging; das Frontend übernimmt die bereits validierte Bildrate in denselben Ladevorgang.
     - kind: review
       reference: /home/admin/dev/lx-annotate/frontend/src/components/VideoExamination/VideoExaminationAnnotation.vue:1177-1280,1810-1819
     - kind: test
@@ -247,13 +261,32 @@ definition_of_done:
       reference: 'lx-annotate: devenv shell -- npm --prefix frontend run test:unit -- --run src/composables/__tests__/useAuthenticatedVideoStream.test.ts
         src/components/VideoExamination/__tests__/VideoExaminationAnnotation.dropdown.test.ts src/components/VideoExamination/__tests__/Timeline.pts-navigation.test.ts
         src/utils/__tests__/segmentTimeline.test.ts (24 passed)'
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_video_fps_normalization_jobs.py
+        tests/views/video/test_video_fps_view.py tests/views/video/test_segment_validation_status_view.py::VideoSegmentFpsNormalizationStatusViewTest
+        tests/views/video/test_segments_crud.py::VideoSegmentFpsNormalizationViewTest tests/media/video/test_get_fps.py
+        -q (15 passed)
+    - kind: command
+      reference: 'lx-annotate: devenv tasks run vue:test (Vue-Typecheck, komponentenspezifischer Test-Typecheck
+        und vollständige Vitest-Suite bestanden)'
+    - kind: monitoring
+      reference: 'gc-10 journalctl, 2026-07-23 10:57-12:23 CEST: erster Upstream-Timeout auf
+        GET media/videos/22/segments/normalize-fps/; anschließend wiederholte Overview-/FPS-/Detail-Anfragen;
+        manueller Restart 12:21:49 und expliziter SIGKILL 12:23:16'
+      note: Kein Kernel- oder systemd-OOM-Kill. Der alte Webprozess erreichte 4 GiB Memory-Peak sowie
+        77,3 GiB Reads und 104,9 GiB Writes. Die optimierten Artefakte waren zum Analysezeitpunkt auf
+        gc-10 noch nicht ausgerollt.
     - kind: review
       reference: /home/admin/dev/lx-annotate/frontend/package.json; /home/admin/dev/lx-annotate/frontend/cypress/e2e/video-examination-annotations.cy.ts
         (keine Cypress-Lane; API vollständig gemockt; veralteter FPS-/Payload-Vertrag)
-    note: 'Backendseitig sind >50-FPS-Zustände, authentifizierte Playlist-/Key-/Segment-Endpunkte, Lease-Erneuerung,
-      Lease-Deferral und Post-Validation-Konkurrenz durch 46 Tests nachgewiesen. lx-annotate weist credentialed
-      HLS.js-/Native-HLS-Zugriff, fail-closed Fehlerbehandlung, automatische FPS-Normalisierung vor Segmentladung
-      sowie PTS-basierte Navigation und Segment-Roundtrips durch 24 Tests nach. Offen bleibt ein einzelner
+    note: 'Der gc-10-Incident vom 2026-07-23 wurde auf synchrones vollständiges Media-Staging in gewöhnlichen
+      FPS-/Normalisierungsstatus-Anfragen mit anschließender Frontend-Anfrageverstärkung zurückgeführt;
+      Restart, SIGKILL und Host-Shutdown waren manuell ausgelöst. Der Read-Pfad ist nun strikt metadatenbasiert,
+      und lx-annotate vermeidet den zweiten FPS-Aufruf. Backendseitig sind >50-FPS-Zustände, authentifizierte
+      Playlist-/Key-/Segment-Endpunkte, Lease-Erneuerung, Lease-Deferral und Post-Validation-Konkurrenz
+      durch 46 Tests nachgewiesen. lx-annotate weist credentialed HLS.js-/Native-HLS-Zugriff, fail-closed
+      Fehlerbehandlung, automatische FPS-Normalisierung vor Segmentladung sowie PTS-basierte Navigation
+      und Segment-Roundtrips durch 24 Tests nach. Offen bleiben Deployment und Lastnachweis auf gc-10 sowie ein einzelner
       realer Cross-Repository-End-to-End-Lauf mit einem Video oberhalb 50 FPS über required/queued/running/ready
       beziehungsweise failed, atomare HLS-Generation und Segment-PTS-Stabilität nach UI-Reload. Die vorhandene
       Cypress-Datei ist dafür keine ausführbare Evidenz: Cypress ist weder in package.json konfiguriert

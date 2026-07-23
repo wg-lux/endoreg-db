@@ -117,6 +117,9 @@ definition_of_done:
   title: Service-, API- und Reconciliation-Pfade sind regressionsgetestet
   acceptance:
   - Annotationserstellung, zeitliche Ableitung, Export und Reparatur haben positive und negative Tests.
+  - Die Video-Segmentansicht lädt Metadaten und Segmente pro Auswahl höchstens einmal, übernimmt eine
+    bereits vom Normalisierungsstatus validierte Bildrate ohne zweiten FPS-Aufruf, koalesziert paralleles
+    Status-Polling und beendet Timer beim Verlassen der Ansicht.
   required: true
   verification:
     kind: command
@@ -134,6 +137,15 @@ definition_of_done:
       reference: .devenv/state/venv/bin/pytest tests/services/test_segment_annotation_flow.py tests/views/video/test_frame_annotation_task_endpoints.py
         tests/management/commands/test_reconcile_frame_segment_annotations.py -q
       note: Exit-Code 0
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/frontend/src/components/VideoExamination/__tests__/VideoExaminationAnnotation.dropdown.test.ts;
+        /home/admin/dev/lx-annotate/frontend/src/stores/__tests__/VideoStoreOptimization.spec.ts;
+        /home/admin/dev/lx-annotate/frontend/tests/components/VideoExaminationAnnotation.functionality.spec.ts
+    - kind: command
+      reference: 'lx-annotate: devenv tasks run vue:test'
+      note: Produktions-Typecheck, komponentenspezifischer Test-Typecheck und vollständige Vitest-Suite bestanden.
+    note: Die Segmentansicht besitzt Regressionstests gegen doppelte Metadaten-, Segment- und FPS-Aufrufe,
+      wiederholtes Label-Laden, unkoalesziertes Polling und nach Unmount weiterlaufende Timer.
     assessed_by: Codex
     assessed_at: '2026-07-17T12:10:28.383538Z'
 - id: ai_segment_acceptance
