@@ -247,14 +247,20 @@ definition_of_done:
       reference: 'lx-annotate: devenv shell -- npm --prefix frontend run test:unit -- --run src/composables/__tests__/useAuthenticatedVideoStream.test.ts
         src/components/VideoExamination/__tests__/VideoExaminationAnnotation.dropdown.test.ts src/components/VideoExamination/__tests__/Timeline.pts-navigation.test.ts
         src/utils/__tests__/segmentTimeline.test.ts (24 passed)'
-    note: Backendseitig sind >50-FPS-Zustände, authentifizierte Playlist-/Key-/Segment-Endpunkte, Lease-Erneuerung,
+    - kind: review
+      reference: /home/admin/dev/lx-annotate/frontend/package.json; /home/admin/dev/lx-annotate/frontend/cypress/e2e/video-examination-annotations.cy.ts
+        (keine Cypress-Lane; API vollständig gemockt; veralteter FPS-/Payload-Vertrag)
+    note: 'Backendseitig sind >50-FPS-Zustände, authentifizierte Playlist-/Key-/Segment-Endpunkte, Lease-Erneuerung,
       Lease-Deferral und Post-Validation-Konkurrenz durch 46 Tests nachgewiesen. lx-annotate weist credentialed
       HLS.js-/Native-HLS-Zugriff, fail-closed Fehlerbehandlung, automatische FPS-Normalisierung vor Segmentladung
       sowie PTS-basierte Navigation und Segment-Roundtrips durch 24 Tests nach. Offen bleibt ein einzelner
       realer Cross-Repository-End-to-End-Lauf mit einem Video oberhalb 50 FPS über required/queued/running/ready
-      beziehungsweise failed, atomare HLS-Generation und Segment-PTS-Stabilität nach UI-Reload.
+      beziehungsweise failed, atomare HLS-Generation und Segment-PTS-Stabilität nach UI-Reload. Die vorhandene
+      Cypress-Datei ist dafür keine ausführbare Evidenz: Cypress ist weder in package.json konfiguriert
+      noch installiert, alle relevanten API-Aufrufe werden mit Fixtures interceptet, und die Assertions
+      verwenden den veralteten Zeit-mal-30-FPS- sowie camelCase-Vertrag.'
     assessed_by: Codex
-    assessed_at: '2026-07-23T09:10:11.092950Z'
+    assessed_at: '2026-07-23T09:12:53.429224Z'
 - id: derived_artifact_lifecycle
   category: functionality
   title: Redundante Roh- und HLS-Artefakte werden erst nach vollständiger Freigabe entfernt
