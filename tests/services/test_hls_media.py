@@ -805,6 +805,41 @@ def test_materialize_video_hls_real_ffmpeg_commits_staged_output(
     assert not list(segment_dir.glob("*.key"))
 
 
+@pytest.mark.ffmpeg
+def test_materialize_video_hls_profile_failure_prevents_publication(
+    hls_center: Center,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_path = tmp_path / "invalid-profile-source.mp4"
+    _write_tiny_ffmpeg_mp4(source_path)
+    video = _create_processed_video(
+        center=hls_center,
+        payload=source_path.read_bytes(),
+    )
+
+    def fail_profile_validation(**_kwargs: object) -> None:
+        raise RuntimeError("generated HLS profile mismatch")
+
+    monkeypatch.setattr(
+        hls_media,
+        "_validate_generated_hls_profile",
+        fail_profile_validation,
+    )
+
+    with pytest.raises(RuntimeError, match="generated HLS profile mismatch"):
+        hls_media.materialize_video_hls(video.pk, artifact_kind="processed")
+
+    artifact = VideoHlsArtifact.objects.get(video=video, artifact_kind="processed")
+    paths = EndoregPathsModel.from_environment()
+    assert artifact.status == VideoHlsArtifact.Status.FAILED.value
+    assert artifact.playlist_relative_path == ""
+    assert artifact.segment_directory_relative_path == ""
+    assert not (
+        paths.transcoding / "hls_output" / str(video.pk) / str(artifact.key_id)
+    ).exists()
+
+
 def test_materialize_video_hls_encrypts_raw_for_local_authenticated_playback(
     hls_center: Center,
     monkeypatch: pytest.MonkeyPatch,

@@ -100,8 +100,13 @@ shared compliance contract:
    its attempt-scoped directory inside the protected transcoding boundary. The
    source is checked against the same profile and is normalized there only when
    required. HLS then encodes H.264 High Profile, YUV420P, full-range color,
-   bounded bitrate, and source-timeline frame-rate passthrough. A complete
-   current HLS generation is returned idempotently without starting FFmpeg.
+   bounded bitrate, and source-timeline frame-rate passthrough. Before atomic
+   publication, a temporary local playlist resolves the encrypted segments
+   with the attempt key and probes the complete result again for codec, pixel
+   format, dimensions, frame rate, duration, frame count, bitrate, byte budget,
+   and timeline equivalence. The validation playlist is removed immediately.
+   A complete current HLS generation is returned idempotently without starting
+   FFmpeg.
 
 The separate `annotation_fps_resample_v1` workflow is the only storage workflow
 that intentionally changes a video above 50 frames per second to exactly 50

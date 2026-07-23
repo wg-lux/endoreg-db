@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import subprocess
 import threading
 import time
@@ -12,6 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import BinaryIO, Literal, cast
+from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -25,6 +27,7 @@ from endoreg_db.config.env import (
 )
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.schemas.video_storage import VideoArtifactProbe
 from endoreg_db.services import streamable_media
 from endoreg_db.services.video_files import (
     VideoArtifactKind,
@@ -35,11 +38,13 @@ from endoreg_db.utils.video.encoding_standard import STANDARD_VIDEO_ENCODING
 from endoreg_db.services.video_storage_normalization import (
     configured_video_storage_profile,
     normalize_video_file,
+    probe_video_artifact,
+    validate_normalized_output,
 )
 from endoreg_db.utils.encryption.encryption import load_master_key
+from endoreg_db.utils.filesystem.file_operations import atomic_write_file
 from endoreg_db.utils.file_operations import (
     atomic_move_path,
-    atomic_write_file,
     ensure_disk_capacity,
     ensure_directory,
     safe_rmtree,
@@ -84,6 +89,7 @@ HLS_VIDEO_PIXEL_FORMAT = STANDARD_VIDEO_ENCODING.pixel_format
 HLS_VIDEO_COLOR_RANGE = STANDARD_VIDEO_ENCODING.color_range
 HLS_AUDIO_CODEC = "copy"
 HLS_FFMPEG_THREADS_ENV = "LX_ANNOTATE_HLS_FFMPEG_THREADS"
+HLS_KEY_URI_PATTERN = re.compile(r'URI="[^"]+"')
 
 _HLS_KEY_WRAP_AAD_PREFIX = b"endoreg-db:hls-content-key:v1"
 
@@ -1038,6 +1044,93 @@ def _ffmpeg_command(
     ]
 
 
+def _local_hls_validation_playlist(
+    *,
+    playlist_path: Path,
+    key_info_path: Path,
+) -> Path:
+    key_info_lines = key_info_path.read_text(encoding="utf-8").splitlines()
+    if len(key_info_lines) != 3:
+        raise RuntimeError("HLS key info must contain URI, key path, and IV")
+    key_path = ensure_within_protected_root(Path(key_info_lines[1]))
+    if not key_path.is_file() or key_path.stat().st_size != HLS_CONTENT_KEY_BYTES:
+        raise RuntimeError("HLS profile validation key is missing or invalid")
+
+    rewritten_lines: list[str] = []
+    key_rewritten = False
+    for line in playlist_path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("#EXT-X-KEY:"):
+            rewritten, replacements = HLS_KEY_URI_PATTERN.subn(
+                f'URI="{key_path.resolve().as_uri()}"',
+                line,
+                count=1,
+            )
+            if replacements != 1:
+                raise RuntimeError("HLS playlist key URI is missing")
+            rewritten_lines.append(rewritten)
+            key_rewritten = True
+            continue
+        if not line or line.startswith("#"):
+            rewritten_lines.append(line)
+            continue
+
+        segment_name = Path(urlsplit(line).path).name
+        segment_path = ensure_within_protected_root(playlist_path.parent / segment_name)
+        if not segment_path.is_file() or segment_path.stat().st_size <= 0:
+            raise RuntimeError(
+                f"HLS profile validation segment is missing: {segment_name}"
+            )
+        rewritten_lines.append(segment_path.resolve().as_uri())
+
+    if not key_rewritten:
+        raise RuntimeError("HLS playlist has no encryption key declaration")
+    payload = ("\n".join(rewritten_lines) + "\n").encode("utf-8")
+    validation_path = playlist_path.with_name(".profile-validation.m3u8")
+    atomic_write_file(
+        destination=validation_path,
+        content=(payload,),
+        required_bytes=len(payload),
+        file_mode=HLS_TEMP_FILE_MODE,
+        dir_mode=HLS_TEMP_DIRECTORY_MODE,
+    )
+    return validation_path
+
+
+def _validate_generated_hls_profile(
+    *,
+    playlist_path: Path,
+    key_info_path: Path,
+    source_probe: VideoArtifactProbe,
+) -> None:
+    validation_path = _local_hls_validation_playlist(
+        playlist_path=playlist_path,
+        key_info_path=key_info_path,
+    )
+    try:
+        output_probe = probe_video_artifact(validation_path)
+        total_size_bytes = playlist_path.stat().st_size + sum(
+            segment.stat().st_size for segment in playlist_path.parent.glob("seg_*.ts")
+        )
+        output_probe = output_probe.model_copy(
+            update={"size_bytes": total_size_bytes},
+        )
+        evidence = validate_normalized_output(
+            source=source_probe,
+            output=output_probe,
+            profile=configured_video_storage_profile(),
+            segments=None,
+        )
+        logger.info(
+            "Validated HLS transcoding profile before publication: "
+            "profile=%s playlist=%s segments_bytes=%s",
+            evidence.profile_name,
+            playlist_path,
+            total_size_bytes,
+        )
+    finally:
+        safe_unlink_file(validation_path, missing_ok=True)
+
+
 def _run_ffmpeg_hls(
     *,
     source: BinaryIO,
@@ -1059,7 +1152,7 @@ def _run_ffmpeg_hls(
             source_size_bytes=source_size_bytes,
             temp_source_dir=temp_source_dir,
         )
-        normalize_video_file(
+        normalization_evidence = normalize_video_file(
             input_path=source_path,
             reference_path=source_path,
             quality_mode=get_ffmpeg_transcode_quality_mode(),
@@ -1167,6 +1260,11 @@ def _run_ffmpeg_hls(
             "FFmpeg HLS pipeline failed: "
             f"returncode={return_code} stderr={_stderr_tail(stderr_chunks)}"
         )
+    _validate_generated_hls_profile(
+        playlist_path=playlist_path,
+        key_info_path=key_info_path,
+        source_probe=normalization_evidence.output,
+    )
 
 
 def _open_field_file(field_file: FieldFile) -> BinaryIO:

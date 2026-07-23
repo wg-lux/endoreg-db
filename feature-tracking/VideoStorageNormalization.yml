@@ -176,6 +176,10 @@ definition_of_done:
     normalisiert. Die HLS-Kodierung verwendet danach denselben Codec-, Pixelformat-, Farbbereichs-,
     Bitraten- und FPS-Passthrough-Vertrag; eine bereits vollständige Generation wird ohne erneute
     Materialisierung zurückgegeben.
+  - Das verschlüsselte HLS-Ergebnis wird vor atomarer Veröffentlichung über eine versuchsspezifische lokale
+    Prüfplaylist entschlüsselt geprobt. Codec, Pixelformat, Dimensionen, Bildrate, Dauer, Frameanzahl,
+    Bitrate, Gesamtgröße und Timeline müssen dem typisierten Profil entsprechen; Abweichungen verhindern
+    die Veröffentlichung und entfernen Prüfplaylist, Teilsegmente und Schlüsselmaterial.
   - Ein Cross-Repository-Test deckt mindestens ein Video oberhalb von 50 FPS, die Zustände required/queued/running/ready/failed,
     authentifiziertes Processed-HLS-Playback und Segment-Zeit-/Frame-Roundtrips ab.
   required: true

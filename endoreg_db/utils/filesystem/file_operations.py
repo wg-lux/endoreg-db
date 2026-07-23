@@ -8,7 +8,13 @@ atomicity, and monkeypatch compatibility without duplicating mutation logic.
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_move_file,
+    atomic_write_file,
     safe_unlink_file,
 )
 
-__all__ = ["atomic_copy_file", "atomic_move_file", "safe_unlink_file"]
+__all__ = [
+    "atomic_copy_file",
+    "atomic_move_file",
+    "atomic_write_file",
+    "safe_unlink_file",
+]
