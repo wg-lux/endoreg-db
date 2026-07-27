@@ -1,4 +1,4 @@
-# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportPrivateUsage=false
 
 """
 Unit tests for video import service functionality.
@@ -155,17 +155,19 @@ def _isolate_duplicate_hls_readiness(  # pyright: ignore[reportUnusedFunction]
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Keep import-service units from invoking the real HLS/database boundary."""
+    import endoreg_db.import_files.file_storage.state_management as state_management
     import endoreg_db.import_files.video_import_service as vis_module
 
     def hls_ready(_video: VideoFile, *, force: bool = False) -> None:
-        assert force is False
+        del force
 
-    monkeypatch.setattr(
-        vis_module,
-        "ensure_video_hls",
-        hls_ready,
-        raising=True,
-    )
+    for module in (state_management, vis_module):
+        monkeypatch.setattr(
+            module,
+            "ensure_video_hls",
+            hls_ready,
+            raising=True,
+        )
 
 
 class TestVideoImportService(TestCase):
@@ -1184,6 +1186,14 @@ def test_import_and_anonymize_acquires_content_hash_lock_before_staging(
         yield
         events.append(("hash_lock_exit", file_hash, Path(lock_root)))
 
+    def fake_raw_source_identity(path: Path) -> SimpleNamespace:
+        events.append(("source_identity", Path(path)))
+        return SimpleNamespace(
+            size_bytes=5,
+            modified_time_ns=1,
+            sha256="a" * 64,
+        )
+
     def fake_create_sensitive_copy(
         src: Path,
         sensitive_root: Path,
@@ -1214,6 +1224,12 @@ def test_import_and_anonymize_acquires_content_hash_lock_before_staging(
     monkeypatch.setattr(vis_module, "file_lock", fake_file_lock, raising=True)
     monkeypatch.setattr(vis_module, "content_hash_lock", fake_hash_lock, raising=True)
     monkeypatch.setattr(
+        vis_module,
+        "_raw_source_identity",
+        fake_raw_source_identity,
+        raising=True,
+    )
+    monkeypatch.setattr(
         vis_module, "create_sensitive_copy", fake_create_sensitive_copy, raising=True
     )
     monkeypatch.setattr(
@@ -1234,9 +1250,42 @@ def test_import_and_anonymize_acquires_content_hash_lock_before_staging(
     assert result is not None
     assert result.pk == 1
     assert events[0] == ("file_lock_enter", source_path)
-    assert events[1][0] == "hash_lock_enter"
-    assert events[2] == ("create_sensitive_copy", source_path)
-    assert events[3][0] == "create_or_retrieve"
+    assert events[1] == ("source_identity", source_path)
+    assert events[2][0] == "hash_lock_enter"
+    assert events[3] == ("create_sensitive_copy", source_path)
+    assert events[4][0] == "create_or_retrieve"
+
+
+@pytest.mark.unit
+def test_raw_source_identity_fallback_rejects_concurrent_source_change(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import endoreg_db.import_files.video_import_service as vis_module
+
+    source_path = tmp_path / "changing.mp4"
+    source_path.write_bytes(b"before")
+
+    def no_native_identity(path: Path) -> None:
+        return None
+
+    monkeypatch.setattr(
+        vis_module, "stable_file_identity", no_native_identity, raising=True
+    )
+
+    def mutate_while_hashing(path: Path) -> str:
+        path.write_bytes(b"after-is-longer")
+        return "a" * 64
+
+    monkeypatch.setattr(
+        vis_module,
+        "sha256_file",
+        mutate_while_hashing,
+        raising=True,
+    )
+
+    with pytest.raises(RuntimeError, match="changed while deriving stable identity"):
+        vis_module._raw_source_identity(source_path)
 
 
 @pytest.mark.unit
