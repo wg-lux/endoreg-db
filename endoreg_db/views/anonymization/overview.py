@@ -4,6 +4,7 @@ from typing import Any, Protocol, cast
 
 from django.db import transaction
 from django.db.models import Q
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.request import Request
@@ -25,6 +26,11 @@ from endoreg_db.services.polling_coordinator import (
 from endoreg_db.services.raw_pdf_files import validate_report_metadata_annotation
 from endoreg_db.services.center_access import resolve_allowed_center_ids
 from endoreg_db.services.hub import hub_mode_enabled
+from endoreg_db.services.hub.import_monitoring import (
+    INSUFFICIENT_STORAGE_ERROR_PREFIX,
+    is_retryable_storage_failure,
+    schedule_storage_retry,
+)
 from endoreg_db.services.video_files import (
     get_or_create_video_state,
     get_video_by_pk,
@@ -37,6 +43,8 @@ from endoreg_db.views.access_control import (
 from endoreg_db.serializers.misc.file_overview import (
     CrossCenterProcessedOverviewSerializer,
     FileOverviewSerializer,
+    overview_upload_job_summary,
+    safe_upload_job_original_filename,
 )
 from ...serializers import VoPPatientDataSerializer
 from endoreg_db.utils.operation_log import (
@@ -155,6 +163,7 @@ class AnonymizationOverviewView(APIView):
             raise PermissionDenied(
                 "No center membership is assigned. Contact an administrator."
             )
+        items = self.get_queryset(request_user=request.user)
         serializer_data = [
             cast(
                 dict[str, object],
@@ -172,12 +181,87 @@ class AnonymizationOverviewView(APIView):
                     ),
                 ).data,
             )
-            for item in self.get_queryset(request_user=request.user)
+            for item in items
         ]
+        serializer_data.extend(
+            self._unattached_retryable_upload_job_rows(
+                items=items,
+                allowed_center_ids=allowed_center_ids,
+            )
+        )
+        serializer_data.sort(
+            key=lambda item: str(item.get("created_at") or ""),
+            reverse=True,
+        )
         return Response(
             serializer_data,
             status=status.HTTP_200_OK,
         )
+
+    def _unattached_retryable_upload_job_rows(
+        self,
+        *,
+        items: list[VideoFile | RawPdfFile],
+        allowed_center_ids: frozenset[int] | None,
+    ) -> list[dict[str, object]]:
+        attached_job_ids = {
+            upload_job.pk
+            for item in items
+            if (
+                upload_job := cast(
+                    UploadJob | None,
+                    getattr(item, "_overview_upload_job", None),
+                )
+            )
+            is not None
+        }
+        retry_jobs = (
+            UploadJob.objects.select_related("source_center")
+            .filter(
+                Q(status=UploadJob.Status.RETRYING, retryable=True)
+                | Q(
+                    status=UploadJob.Status.ERROR,
+                    error_code=UploadJob.ErrorCode.PROCESSING_FAILED,
+                    source_file_persisted=True,
+                    error_detail__startswith=INSUFFICIENT_STORAGE_ERROR_PREFIX,
+                )
+            )
+            .exclude(pk__in=attached_job_ids)
+            .order_by("-created_at")
+        )
+        if allowed_center_ids is not None:
+            retry_jobs = retry_jobs.filter(source_center_id__in=allowed_center_ids)
+
+        used_ids = {int(item.pk) for item in items}
+        rows: list[dict[str, object]] = []
+        for upload_job in retry_jobs:
+            synthetic_id = -(upload_job.id.int % 2_000_000_000 + 1)
+            while synthetic_id in used_ids:
+                synthetic_id -= 1
+            used_ids.add(synthetic_id)
+            media_type = "pdf" if "pdf" in upload_job.content_type.lower() else "video"
+            filename = safe_upload_job_original_filename(cast(Any, upload_job))
+            rows.append(
+                {
+                    "id": synthetic_id,
+                    "filename": filename or f"Import {upload_job.pk}",
+                    "media_type": media_type,
+                    "anonymization_status": "failed",
+                    "annotation_status": "",
+                    "created_at": upload_job.created_at,
+                    "sensitive_meta_id": None,
+                    "file_size": 0,
+                    "upload_job": overview_upload_job_summary(cast(Any, upload_job)),
+                    "hls_materializations": [],
+                    "document_type": None,
+                    "patient_hash_display": None,
+                    "examination_hash_display": None,
+                    "pseudo_patient_id": None,
+                    "pseudo_examination_id": None,
+                    "import_only": True,
+                }
+            )
+        return rows
 
     def get_queryset(
         self,
@@ -249,6 +333,68 @@ class AnonymizationOverviewView(APIView):
             reverse=True,
         )
         return combined
+
+
+class UploadJobRetryView(APIView):
+    """Make a retained, storage-blocked upload job due for import again."""
+
+    permission_classes = [PolicyPermission]
+
+    @transaction.atomic
+    def post(self, request: Request, job_id: object) -> Response:
+        upload_job = (
+            UploadJob.objects.select_for_update()
+            .select_related("source_center")
+            .filter(pk=job_id)
+            .first()
+        )
+        if upload_job is None:
+            return Response(
+                {"detail": "Upload job not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        allowed_center_ids = resolve_allowed_center_ids(request.user)
+        source_center_id = cast(
+            int | None,
+            getattr(upload_job, "source_center_id", None),
+        )
+        if (
+            allowed_center_ids is not None
+            and source_center_id not in allowed_center_ids
+        ):
+            raise PermissionDenied("Upload job is outside the assigned center scope.")
+
+        if (
+            upload_job.status == UploadJob.Status.RETRYING.value
+            and upload_job.retryable
+        ):
+            upload_job.next_retry_at = timezone.now()
+            upload_job.save(update_fields=["next_retry_at", "updated_at"])
+        elif is_retryable_storage_failure(upload_job):
+            if not schedule_storage_retry(
+                upload_job,
+                technical_detail=upload_job.error_detail,
+            ):
+                return Response(
+                    {"detail": "The retry limit has been exhausted."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            upload_job.next_retry_at = timezone.now()
+            upload_job.save(update_fields=["next_retry_at", "updated_at"])
+        else:
+            return Response(
+                {"detail": "This upload job is not safely retryable."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        return Response(
+            {
+                "detail": "Upload job queued for retry.",
+                "upload_job": overview_upload_job_summary(cast(Any, upload_job)),
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
 
 
 class AnonymizationValidateView(APIView):

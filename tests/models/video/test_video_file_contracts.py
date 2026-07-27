@@ -48,16 +48,6 @@ def test_video_queryset_next_after_orders_by_primary_key(video_center: Center) -
 
 
 @pytest.mark.django_db
-def test_video_file_hash_lookup_helpers(video_center: Center):
-    video = VideoFile.objects.create(center=video_center, video_hash="known-hash")
-
-    assert VideoFile.check_hash_exists("known-hash") is True
-    assert VideoFile.check_hash_exists("missing-hash") is False
-    assert VideoFile.get_video_by_pk(video.pk) == video
-    assert VideoFile.get_video_by_content_hash("known-hash") == video
-
-
-@pytest.mark.django_db
 def test_video_file_import_context_names_prefer_video_processor(
     video_center: Center,
 ):

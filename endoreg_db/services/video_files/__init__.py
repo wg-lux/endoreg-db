@@ -62,8 +62,6 @@ from .metadata import (
     video_seconds_to_frame_number,
 )
 from .queries import (
-    count_unmodified_other_videos,
-    get_all_videos,
     get_video_by_content_hash,
     get_video_by_pk,
     video_hash_exists,
@@ -101,7 +99,6 @@ __all__ = [
     "can_offload_video_stream",
     "censor_outside_video_frames",
     "cleanup_video_raw_assets",
-    "count_unmodified_other_videos",
     "create_anonymized_video_frame_files",
     "create_initialized_video_file_from_path",
     "create_video_file_from_path",
@@ -121,7 +118,6 @@ __all__ = [
     "get_active_video_file",
     "get_active_video_file_path",
     "get_active_video_file_url",
-    "get_all_videos",
     "get_or_create_video_state",
     "get_processed_video_file_path",
     "get_processed_video_stream_path",

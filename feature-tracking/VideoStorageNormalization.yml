@@ -563,6 +563,18 @@ definition_of_done:
     Videos, freigegebenen löschbaren Bestand, erzielte Einsparung, Fehler und verfügbaren Headroom aus.
   - Konfigurierbare Warn- und Stoppschwellen verhindern, dass Transcoding oder HLS-Materialisierung den
     kritischen Storage erschöpfen.
+  - Ein wegen unzureichenden Storage-Headrooms vor der Medienanlage abgebrochener Import bewahrt seine
+    verschlüsselte verwaltete Quelle, erscheint center-begrenzt in der Anonymisierungsübersicht als
+    wiederholbar und kann nach Freigabe von Speicher automatisch oder explizit erneut angestoßen werden;
+    der Kapazitätsfehler führt nicht zur Quarantäne.
+  - Gewöhnliche Laufzeit-, Transcoding-, Worker- und Dispatchfehler verschieben eine bereits verschlüsselt
+    verwaltete Importquelle nicht in die Quarantäne. Sie bewahren die unveränderte Quelle und verwenden
+    begrenzte, beobachtbare Wiederholungsversuche; nach Ausschöpfung bleibt die Quelle für eine explizite
+    Betreiberentscheidung erhalten.
+  - Quarantäne bleibt auf seltene Trust-Boundary- oder Integritätsfälle begrenzt, in denen eine Quelle
+    nicht sicher als verwalteter Import weiterverarbeitet werden darf, insbesondere abgelehnte
+    voranonymisierte Drops. Profil-, Timeline-, Hash- und Referenzfehler bleiben fail-closed und werden
+    durch diese Einschränkung weder akzeptiert noch mit einem schwächeren Verarbeitungspfad umgangen.
   - Nach jedem Batch werden Zähler aus Datenbank und Dateisystem abgeglichen; Abweichungen stoppen weitere
     destruktive Schritte.
   required: true
@@ -577,11 +589,25 @@ definition_of_done:
     - kind: command
       reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_video_storage_normalization.py
         tests/management/commands/test_normalize_video_storage.py -q
+    - kind: test
+      reference: tests/services/test_ingest_idempotency_quarantine.py::IngestIdempotencyQuarantineTests::test_insufficient_storage_retains_source_and_schedules_retry;
+        tests/views/anonymization/test_anonymization_overview.py::test_overview_includes_storage_blocked_upload_without_video_file;
+        tests/views/anonymization/test_anonymization_overview.py::test_retry_view_recovers_legacy_terminal_storage_failure
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_ingest_idempotency_quarantine.py
+        tests/services/test_import_monitoring.py tests/views/anonymization/test_anonymization_overview.py
+        -q (24 passed); devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_hub_ingest_dispatch.py
+        tests/services/test_upload_job_import_lease.py tests/services/test_watcher_storage_import.py
+        -q (32 passed)
     note: Kapazitätsprojektion, Warn-/Stoppschwellen, Rollen- und Statuszähler, batch_id, strukturierte
-      Ergebnislogs und Fail-closed-Referenzabgleich sind implementiert; 18 fokussierte Tests bestanden.
-      Offen bleibt die Demonstration in einer produktionsnahen verschlüsselten Kopie.
+      Ergebnislogs und Fail-closed-Referenzabgleich sind implementiert. Storage-blockierte Neuimporte
+      bewahren jetzt ihre verwaltete Quelle, vermeiden Quarantäne, erscheinen center-begrenzt in der
+      Übersicht und unterstützen automatischen sowie expliziten Retry. Gewöhnliche Fehler bei verwalteten
+      Videoimporten und Watcher-Handoffs bewahren die Importquelle nun ebenfalls und verwenden begrenzte
+      Wiederholungen statt Quarantäne; abgelehnte voranonymisierte Trust-Boundary-Drops bleiben im
+      Quarantäneprozess. Offen bleibt die Demonstration in einer produktionsnahen verschlüsselten Kopie.
     assessed_by: Codex
-    assessed_at: '2026-07-20T10:22:03.009183Z'
+    assessed_at: '2026-07-27T13:32:14Z'
 - id: operator_documentation
   category: documentation
   title: Profilwahl, Rollout, Recovery und Qualitätsprüfung sind dokumentiert

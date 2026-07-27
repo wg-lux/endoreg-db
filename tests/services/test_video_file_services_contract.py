@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
+from typing import cast
 
 import pytest
 from pytest import MonkeyPatch
 from django.core.files.base import ContentFile
 
+import endoreg_db.services.video_files as video_file_services
+import endoreg_db.services.video_files.queries as video_query_services
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.media.video.storage_mode import VideoStorageMode
@@ -48,13 +51,39 @@ def video(video_center: Center) -> VideoFile:
     )
 
 
+class _HashExistsResult:
+    def __init__(self, value: bool) -> None:
+        self._value = value
+
+    def exists(self) -> bool:
+        return self._value
+
+
+class _TrackingVideoManager:
+    def __init__(self) -> None:
+        self.filters: list[dict[str, object]] = []
+
+    def filter(self, **kwargs: object) -> _HashExistsResult:
+        self.filters.append(kwargs)
+        return _HashExistsResult(True)
+
+
+class _CustomVideoModel:
+    objects = _TrackingVideoManager()
+
+
 @pytest.mark.django_db
-def test_video_query_and_state_services_preserve_wrapper_behavior(
+def test_video_query_and_state_services(
     video: VideoFile,
 ) -> None:
     assert video_hash_exists(video.video_hash) is True
+    assert video_hash_exists("") is False
     assert get_video_by_pk(video.pk) == video
     assert get_video_by_content_hash(video.video_hash) == video
+    with pytest.raises(VideoFile.DoesNotExist):
+        get_video_by_pk(video.pk + 1)
+    with pytest.raises(VideoFile.DoesNotExist):
+        get_video_by_content_hash("missing-video-hash")
 
     state = get_or_create_video_state(video)
     video.refresh_from_db()
@@ -62,6 +91,36 @@ def test_video_query_and_state_services_preserve_wrapper_behavior(
     assert state.pk is not None
     assert video.state == state
     assert video.get_or_create_state() == state
+
+
+def test_video_hash_exists_uses_explicit_model_manager() -> None:
+    manager = _CustomVideoModel.objects
+    manager.filters.clear()
+    model_cls = cast(type[VideoFile], _CustomVideoModel)
+
+    assert video_hash_exists("", model_cls=model_cls) is False
+    assert manager.filters == []
+    assert video_hash_exists("custom-video-hash", model_cls=model_cls) is True
+    assert manager.filters == [{"video_hash": "custom-video-hash"}]
+
+
+def test_video_file_query_facades_are_retired() -> None:
+    retired_names = (
+        "check_hash_exists",
+        "get_all_videos",
+        "count_unmodified_others",
+        "get_video_by_pk",
+        "get_video_by_content_hash",
+    )
+
+    assert [name for name in retired_names if hasattr(VideoFile, name)] == []
+
+
+def test_unused_video_query_services_are_retired() -> None:
+    retired_names = ("get_all_videos", "count_unmodified_other_videos")
+
+    for module in (video_file_services, video_query_services):
+        assert [name for name in retired_names if hasattr(module, name)] == []
 
 
 @pytest.mark.django_db

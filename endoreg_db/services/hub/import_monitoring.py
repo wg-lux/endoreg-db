@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_RETRY_DELAY_SECONDS = 30
 MAX_RETRY_DELAY_SECONDS = 15 * 60
+STORAGE_RETRY_MAX_RETRIES = 96
+INSUFFICIENT_STORAGE_ERROR_PREFIX = "Insufficient pipeline storage."
 
 
 class UploadJobRetryDispatcher(Protocol):
@@ -76,6 +78,74 @@ def schedule_dispatch_retry(upload_job: UploadJob, *, technical_detail: str) -> 
         level=logging.WARNING if scheduled else logging.ERROR,
         upload_job_id=str(upload_job.pk),
         error_code=UploadJob.ErrorCode.DISPATCH_UNAVAILABLE.value,
+        retryable=scheduled,
+        retry_count=upload_job.retry_count,
+        max_retries=upload_job.max_retries,
+        next_retry_at=(
+            upload_job.next_retry_at.isoformat()
+            if upload_job.next_retry_at is not None
+            else None
+        ),
+    )
+    return scheduled
+
+
+def is_retryable_storage_failure(upload_job: UploadJob) -> bool:
+    """Recognize legacy terminal jobs created before storage retries existed."""
+    return (
+        upload_job.status == UploadJob.Status.ERROR.value
+        and upload_job.error_code == UploadJob.ErrorCode.PROCESSING_FAILED.value
+        and upload_job.source_file_persisted
+        and bool(upload_job.file and upload_job.file.name)
+        and upload_job.error_detail.startswith(INSUFFICIENT_STORAGE_ERROR_PREFIX)
+    )
+
+
+def schedule_storage_retry(upload_job: UploadJob, *, technical_detail: str) -> bool:
+    """Retain a managed source and schedule bounded recovery from disk pressure."""
+    delay_seconds = retry_delay_seconds(upload_job.retry_count)
+    scheduled = upload_job.schedule_retry(
+        technical_detail,
+        error_code=UploadJob.ErrorCode.PROCESSING_FAILED.value,
+        delay_seconds=delay_seconds,
+        max_retries=max(upload_job.max_retries, STORAGE_RETRY_MAX_RETRIES),
+    )
+    emit_structured_event(
+        logger,
+        "import.storage_retry_scheduled"
+        if scheduled
+        else "import.storage_retry_exhausted",
+        level=logging.WARNING if scheduled else logging.ERROR,
+        upload_job_id=str(upload_job.pk),
+        error_code=UploadJob.ErrorCode.PROCESSING_FAILED.value,
+        retryable=scheduled,
+        retry_count=upload_job.retry_count,
+        max_retries=upload_job.max_retries,
+        next_retry_at=(
+            upload_job.next_retry_at.isoformat()
+            if upload_job.next_retry_at is not None
+            else None
+        ),
+    )
+    return scheduled
+
+
+def schedule_processing_retry(upload_job: UploadJob, *, technical_detail: str) -> bool:
+    """Retain a managed source and schedule bounded recovery from processing faults."""
+    delay_seconds = retry_delay_seconds(upload_job.retry_count)
+    scheduled = upload_job.schedule_retry(
+        technical_detail,
+        error_code=UploadJob.ErrorCode.PROCESSING_FAILED.value,
+        delay_seconds=delay_seconds,
+    )
+    emit_structured_event(
+        logger,
+        "import.processing_retry_scheduled"
+        if scheduled
+        else "import.processing_retry_exhausted",
+        level=logging.WARNING if scheduled else logging.ERROR,
+        upload_job_id=str(upload_job.pk),
+        error_code=UploadJob.ErrorCode.PROCESSING_FAILED.value,
         retryable=scheduled,
         retry_count=upload_job.retry_count,
         max_retries=upload_job.max_retries,
@@ -149,7 +219,10 @@ def dispatch_due_upload_job_retries(
 __all__ = [
     "UploadJobRetryDispatchResult",
     "dispatch_due_upload_job_retries",
+    "is_retryable_storage_failure",
     "retry_delay_seconds",
     "safe_import_error_detail",
     "schedule_dispatch_retry",
+    "schedule_processing_retry",
+    "schedule_storage_retry",
 ]

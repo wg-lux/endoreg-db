@@ -20,6 +20,7 @@ from endoreg_db.models import (
     RawPdfFile,
     UploadJob,
 )
+from endoreg_db.exceptions import InsufficientStorageError
 from endoreg_db.services.hub.ingest import (
     _run_video_upload_import_job,  # pyright: ignore[reportPrivateUsage]
     create_or_reuse_upload_job,
@@ -247,7 +248,7 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
         )
         self.assertEqual(job_reingest.status, UploadJob.Status.PENDING)
 
-    def test_process_upload_job_quarantines_video_on_failure(self):
+    def test_process_upload_job_retains_video_and_schedules_retry_on_failure(self):
         filename = "failed_upload.mp4"
         temp_file_path = self._create_temp_file(filename, self.pdf_content)
 
@@ -281,18 +282,63 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
         self.assertFalse(result)
 
         upload_job.refresh_from_db()
-        self.assertEqual(upload_job.status, UploadJob.Status.ERROR)
+        self.assertEqual(upload_job.status, UploadJob.Status.RETRYING)
+        self.assertTrue(upload_job.retryable)
+        self.assertEqual(upload_job.retry_count, 1)
+        self.assertIsNotNone(upload_job.next_retry_at)
         self.assertIn("Test processing error", upload_job.error_detail)
+        self.assertTrue(upload_job.source_file_persisted)
+        self.assertTrue(temp_file_path.exists())
+        self.assertFalse((self.quarantine_dir / filename).exists())
+        self.assertNotIn("quarantined_path", upload_job.processing_provenance)
 
-        quarantined_path = self.quarantine_dir / filename
-        self.assertTrue(quarantined_path.exists())
-        self.assertFalse(temp_file_path.exists())
-        self.assertEqual(quarantined_path.read_bytes(), self.pdf_content)
-        self.assertIn("quarantined_path", upload_job.processing_provenance)
-        self.assertEqual(
-            upload_job.processing_provenance["quarantined_path"],
-            str(quarantined_path),
+    def test_insufficient_storage_retains_source_and_schedules_retry(self):
+        filename = "storage_blocked_upload.mp4"
+        temp_file_path = self._create_temp_file(filename, self.video_content)
+        upload_job = UploadJob.objects.create(
+            file=SimpleUploadedFile(
+                name=filename,
+                content=self.video_content,
+                content_type="video/mp4",
+            ),
+            content_type="video/mp4",
+            source_center=self.center,
+            source_system="test",
+            original_filename=filename,
         )
+        upload_job.file.name = temp_file_path.relative_to(
+            self.test_media_dir
+        ).as_posix()
+        upload_job.save()
+
+        with (
+            patch(
+                "endoreg_db.services.hub.ingest._default_processor_name",
+                return_value="processor",
+            ),
+            patch(
+                "endoreg_db.services.video_import.VideoImportService.import_and_anonymize",
+                side_effect=InsufficientStorageError(
+                    "Insufficient pipeline storage. Required: 11.1 GB, "
+                    "Available: 2.8 GB",
+                    required_space=11_100_000_000,
+                    available_space=2_800_000_000,
+                ),
+            ),
+        ):
+            result = _run_video_upload_import_job(str(upload_job.id))
+
+        self.assertFalse(result)
+        upload_job.refresh_from_db()
+        self.assertEqual(upload_job.status, UploadJob.Status.RETRYING)
+        self.assertTrue(upload_job.retryable)
+        self.assertEqual(upload_job.retry_count, 1)
+        self.assertGreaterEqual(upload_job.max_retries, 96)
+        self.assertIsNotNone(upload_job.next_retry_at)
+        self.assertTrue(upload_job.source_file_persisted)
+        self.assertTrue(temp_file_path.exists())
+        self.assertFalse((self.quarantine_dir / filename).exists())
+        self.assertNotIn("quarantined_path", upload_job.processing_provenance)
 
     def test_process_watcher_file_queues_processing_and_removes_watched_source(self):
         filename = "successful_watcher_report.pdf"
@@ -384,7 +430,7 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
         self.assertFalse(temp_file_path.exists())
         self.assertTrue(upload_job.file)
 
-    def test_process_watcher_file_quarantines_on_failure(self):
+    def test_process_watcher_file_retains_managed_source_on_handoff_failure(self):
         filename = "failed_watcher_video.mp4"
         temp_file_path = self._create_temp_file(filename, self.video_content)
         EndoscopyProcessor.objects.create(name="test_processor")
@@ -417,21 +463,19 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
         upload_job = UploadJob.objects.order_by("-created_at").first()
         self.assertIsNotNone(upload_job)
         assert upload_job is not None
-        self.assertEqual(upload_job.status, UploadJob.Status.ERROR)
+        self.assertEqual(upload_job.status, UploadJob.Status.RETRYING)
+        self.assertTrue(upload_job.retryable)
+        self.assertEqual(upload_job.retry_count, 1)
+        self.assertIsNotNone(upload_job.next_retry_at)
         self.assertIn("Watcher dispatch error", upload_job.error_detail)
 
         quarantined_path = self.quarantine_dir / filename
-        self.assertTrue(quarantined_path.exists())
+        self.assertFalse(quarantined_path.exists())
         self.assertFalse(temp_file_path.exists())
-        self.assertEqual(quarantined_path.read_bytes(), self.video_content)
-        self.assertIn("quarantined_path", upload_job.processing_provenance)
-        self.assertEqual(
-            upload_job.processing_provenance["quarantined_path"],
-            str(quarantined_path),
-        )
-        self.assertEqual(upload_job.cleanup_status, UploadJob.CleanupStatus.COMPLETED)
-        self.assertFalse(upload_job.source_file_persisted)
-        self.assertEqual(upload_job.file.name, "")
+        self.assertNotIn("quarantined_path", upload_job.processing_provenance)
+        self.assertEqual(upload_job.cleanup_status, UploadJob.CleanupStatus.PENDING)
+        self.assertTrue(upload_job.source_file_persisted)
+        self.assertTrue(upload_job.file.name)
 
     def test_process_preanonymized_watcher_file_quarantines_on_failure(self):
         filename = "failed_preanonymized.mp4"

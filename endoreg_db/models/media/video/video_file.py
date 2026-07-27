@@ -622,12 +622,6 @@ class VideoFile(models.Model):
             cap=cap,
         )
 
-    @classmethod
-    def check_hash_exists(cls, video_hash: str) -> bool:
-        from endoreg_db.services.video_files import video_hash_exists
-
-        return video_hash_exists(video_hash, model_cls=cls)
-
     @property
     def is_processed(self) -> bool:
         return bool(self.processed_file and self.processed_file.name)
@@ -853,39 +847,10 @@ class VideoFile(models.Model):
             outside_intervals=outside_intervals,
         )
 
-    @classmethod
-    def get_all_videos(cls) -> models.QuerySet["VideoFile"]:
-        from endoreg_db.services.video_files import get_all_videos
-
-        return get_all_videos(model_cls=cls)
-
-    def count_unmodified_others(self) -> int:
-        """
-        Count the number of other VideoFile instances that have not been modified since creation.
-
-        Returns:
-            int: The count of VideoFile records, excluding this instance, where the modification timestamp matches the creation timestamp.
-        """
-        from endoreg_db.services.video_files import count_unmodified_other_videos
-
-        return count_unmodified_other_videos(self)
-
     def frame_number_to_s(self, frame_number: int) -> float:
         from endoreg_db.services.video_files import video_frame_number_to_seconds
 
         return video_frame_number_to_seconds(self, frame_number)
-
-    @staticmethod
-    def get_video_by_pk(pk: int) -> "VideoFile":
-        from endoreg_db.services.video_files import get_video_by_pk
-
-        return get_video_by_pk(pk)
-
-    @staticmethod
-    def get_video_by_content_hash(hash: str) -> "VideoFile":
-        from endoreg_db.services.video_files import get_video_by_content_hash
-
-        return get_video_by_content_hash(hash)
 
     def get_raw_stream_relative_path(self) -> str | None:
         from endoreg_db.services.video_files import get_raw_video_stream_relative_path

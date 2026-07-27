@@ -13,6 +13,20 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import QuerySet
 from django.utils import timezone
+from lx_dtypes.models.contracts.aidataset_export import (
+    AIDataSetExportPayload,
+    AIDataSetExportSummary,
+    AIDataSetFrameAnnotationExport,
+    AIDataSetFrameLabelExport,
+)
+from lx_dtypes.models.contracts.aidataset_frame_buckets import (
+    AIDataSetFrameBucketCount,
+    AIDataSetFrameBucketDistribution,
+    AIDataSetFrameBucketSummary,
+    AIDataSetLabelDistributionEntry,
+    AIDataSetLabelFrameBucketCount,
+    AIDataSetTargetFrameBucket,
+)
 
 from endoreg_db.schemas import (
     AIFrameFormatManifest,
@@ -23,20 +37,6 @@ from endoreg_db.schemas import (
     validate_ai_model_training_artifact_paths,
     validate_ai_model_training_request_payload,
     validate_ai_model_training_result_payload,
-)
-from endoreg_db.services.aidataset_exports import (
-    AIDataSetExportPayload,
-    AIDataSetExportSummary,
-    AIDataSetFrameAnnotationExport,
-    AIDataSetFrameLabelExport,
-)
-from endoreg_db.services.aidataset_frame_buckets import (
-    AIDataSetFrameBucketCount,
-    AIDataSetFrameBucketDistribution,
-    AIDataSetFrameBucketSummary,
-    AIDataSetLabelDistributionEntry,
-    AIDataSetLabelFrameBucketCount,
-    AIDataSetTargetFrameBucket,
 )
 from endoreg_db.utils.validation_types import ValidationErrorMessageArg
 

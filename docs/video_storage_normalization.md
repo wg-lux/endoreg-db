@@ -256,13 +256,21 @@ must be reconciled.
 
 ### Quarantine and Release
 
-A profile, timeline, hash, quality, or reference failure must not be bypassed
-through a weaker codec path. The operator records the video ID, `batch_id`,
-error, and affected generation and retains the previous source. A quarantine
-release may return media to migration only under a versioned, reviewed profile
-or after the source has been corrected. Quarantine files are reviewed through
-the existing quarantine workflow and are not deleted by
-`normalize_video_storage`.
+A managed import source remains in protected ingest storage when capacity,
+transcoding, worker, dispatch, or other ordinary processing fails. The upload
+job uses bounded, observable retries and retains the source for an explicit
+operator decision after retry exhaustion. These operational failures do not
+create quarantine copies.
+
+Quarantine is reserved for rare trust-boundary or integrity cases where a
+source cannot safely continue as a managed import, especially a rejected
+pre-anonymized drop. A profile, timeline, hash, quality, or reference failure
+must still fail closed and must not be bypassed through a weaker codec path.
+The operator records the video ID, `batch_id`, error, and affected generation
+and retains the previous valid source. A quarantine release may return media
+to migration only under a versioned, reviewed profile or after the source has
+been corrected. Quarantine files are reviewed through the existing quarantine
+workflow and are not deleted by `normalize_video_storage`.
 
 ### Publication Rollback
 

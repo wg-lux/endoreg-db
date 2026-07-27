@@ -23,7 +23,10 @@ from endoreg_db.models import (
     PortalUserInfo,
 )
 from endoreg_db.models.state.anonymization import AnonymizationState
-from endoreg_db.views.anonymization.overview import AnonymizationOverviewView
+from endoreg_db.views.anonymization.overview import (
+    AnonymizationOverviewView,
+    UploadJobRetryView,
+)
 
 
 @pytest.mark.django_db
@@ -187,6 +190,92 @@ def test_anonymization_overview_mixed_content():
 
     assert data[1]["anonymization_status"] == AnonymizationState.VALIDATED
     assert data[1]["annotation_status"] == "validated"
+
+
+@pytest.mark.django_db
+def test_overview_includes_storage_blocked_upload_without_video_file() -> None:
+    center = Center.objects.create(name="Retry Center")
+    user = User.objects.create_user(username="storage-retry-reader")
+    portal_info = PortalUserInfo.objects.create(user=user)
+    portal_info.centers.add(center)
+    upload_job = UploadJob.objects.create(
+        file=SimpleUploadedFile(
+            "storage-blocked.mp4",
+            b"managed-source",
+            content_type="video/mp4",
+        ),
+        content_type="video/mp4",
+        source_center=center,
+        source_system="watcher-daemon",
+        ingest_mode=UploadJob.IngestMode.WATCHER,
+        original_filename="/input/storage-blocked.mp4",
+    )
+    upload_job.schedule_retry(
+        "Insufficient pipeline storage. Required: 11.1 GB, Available: 2.8 GB",
+        error_code=UploadJob.ErrorCode.PROCESSING_FAILED,
+        delay_seconds=30,
+        max_retries=96,
+    )
+
+    request = APIRequestFactory().get("/api/anonymization/items/overview/")
+    force_authenticate(request, user=user)
+    response = AnonymizationOverviewView.as_view(permission_classes=[])(request)
+
+    assert response.status_code == status.HTTP_200_OK
+    payload = json.loads(response.content)
+    assert len(payload) == 1
+    row = payload[0]
+    assert row["import_only"] is True
+    assert row["filename"] == "storage-blocked.mp4"
+    assert row["media_type"] == "video"
+    assert row["upload_job"]["id"] == str(upload_job.pk)
+    assert row["upload_job"]["status"] == "retrying"
+    assert row["upload_job"]["retryable"] is True
+    assert row["upload_job"]["error_detail"] == (
+        "Import processing failed. Technical details are available in protected logs."
+    )
+    assert "/input/" not in json.dumps(row)
+
+
+@pytest.mark.django_db
+def test_retry_view_recovers_legacy_terminal_storage_failure() -> None:
+    center = Center.objects.create(name="Retry Center")
+    user = User.objects.create_user(username="storage-retry-operator")
+    portal_info = PortalUserInfo.objects.create(user=user)
+    portal_info.centers.add(center)
+    upload_job = UploadJob.objects.create(
+        file=SimpleUploadedFile(
+            "retained.mp4",
+            b"managed-source",
+            content_type="video/mp4",
+        ),
+        content_type="video/mp4",
+        source_center=center,
+        original_filename="retained.mp4",
+        status=UploadJob.Status.ERROR,
+        error_code=UploadJob.ErrorCode.PROCESSING_FAILED,
+        error_detail=(
+            "Insufficient pipeline storage. Required: 11.1 GB, Available: 2.8 GB"
+        ),
+    )
+    request = APIRequestFactory().post(
+        f"/api/anonymization/upload-jobs/{upload_job.pk}/retry/"
+    )
+    force_authenticate(request, user=user)
+
+    response = UploadJobRetryView.as_view(permission_classes=[])(
+        request,
+        job_id=upload_job.pk,
+    )
+
+    assert response.status_code == status.HTTP_202_ACCEPTED
+    upload_job.refresh_from_db()
+    assert upload_job.status == UploadJob.Status.RETRYING
+    assert upload_job.retryable is True
+    assert upload_job.retry_count == 1
+    assert upload_job.max_retries == 96
+    assert upload_job.next_retry_at is not None
+    assert upload_job.next_retry_at <= timezone.now()
 
 
 @pytest.mark.django_db

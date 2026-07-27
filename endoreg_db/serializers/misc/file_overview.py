@@ -25,6 +25,52 @@ from endoreg_db.services.hub.import_monitoring import safe_import_error_detail
 DOCUMENT_TYPE_VALUES = {document_type.value for document_type in DocumentTypeContract}
 
 
+def safe_upload_job_original_filename(upload_job: _FileOverviewUploadJobLike) -> str:
+    if not upload_job.original_filename:
+        return ""
+    normalized_name = str(upload_job.original_filename).replace("\\", "/")
+    return Path(normalized_name).name
+
+
+def overview_upload_job_summary(
+    upload_job: _FileOverviewUploadJobLike,
+) -> OverviewUploadJobMonitoringData:
+    source_center = getattr(upload_job, "source_center", None)
+    if upload_job.status == "anonymized":
+        allowed_actions = ["delete"]
+    elif (
+        upload_job.status in {"error", "lost"}
+        and upload_job.error_code != "duplicate_content"
+    ):
+        allowed_actions = ["safe_reimport", "delete"]
+    else:
+        allowed_actions = []
+    return OverviewUploadJobMonitoringPayload.model_validate(
+        {
+            "id": upload_job.id,
+            "status": upload_job.status,
+            "ingest_mode": upload_job.ingest_mode,
+            "source_system": upload_job.source_system or "unknown",
+            "source_center_key": (
+                source_center.center_key if source_center is not None else None
+            ),
+            "original_filename": safe_upload_job_original_filename(upload_job),
+            "source_file_persisted": upload_job.source_file_persisted,
+            "cleanup_status": upload_job.cleanup_status,
+            "allowed_actions": allowed_actions,
+            "error_code": upload_job.error_code,
+            "error_detail": safe_import_error_detail(upload_job.error_code),
+            "retryable": upload_job.retryable,
+            "retry_count": upload_job.retry_count,
+            "max_retries": upload_job.max_retries,
+            "next_retry_at": upload_job.next_retry_at,
+            "last_attempt_at": upload_job.last_attempt_at,
+            "created_at": upload_job.created_at,
+            "updated_at": upload_job.updated_at,
+        }
+    ).to_data()
+
+
 class _FileOverviewPayload(TypedDict):
     id: int | str | None
     filename: str
@@ -120,10 +166,7 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
     )
 
     def _safe_original_filename(self, upload_job: _FileOverviewUploadJobLike) -> str:
-        if not upload_job.original_filename:
-            return ""
-        normalized_name = str(upload_job.original_filename).replace("\\", "/")
-        return Path(normalized_name).name
+        return safe_upload_job_original_filename(upload_job)
 
     def _overview_upload_job(
         self, instance: object
@@ -147,41 +190,7 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
         upload_job = self._overview_upload_job(instance)
         if upload_job is None:
             return None
-
-        source_center = getattr(upload_job, "source_center", None)
-        if upload_job.status == "anonymized":
-            allowed_actions = ["delete"]
-        elif (
-            upload_job.status in {"error", "lost"}
-            and upload_job.error_code != "duplicate_content"
-        ):
-            allowed_actions = ["safe_reimport", "delete"]
-        else:
-            allowed_actions = []
-        return OverviewUploadJobMonitoringPayload.model_validate(
-            {
-                "id": upload_job.id,
-                "status": upload_job.status,
-                "ingest_mode": upload_job.ingest_mode,
-                "source_system": upload_job.source_system or "unknown",
-                "source_center_key": (
-                    source_center.center_key if source_center is not None else None
-                ),
-                "original_filename": self._safe_original_filename(upload_job),
-                "source_file_persisted": upload_job.source_file_persisted,
-                "cleanup_status": upload_job.cleanup_status,
-                "allowed_actions": allowed_actions,
-                "error_code": upload_job.error_code,
-                "error_detail": safe_import_error_detail(upload_job.error_code),
-                "retryable": upload_job.retryable,
-                "retry_count": upload_job.retry_count,
-                "max_retries": upload_job.max_retries,
-                "next_retry_at": upload_job.next_retry_at,
-                "last_attempt_at": upload_job.last_attempt_at,
-                "created_at": upload_job.created_at,
-                "updated_at": upload_job.updated_at,
-            }
-        ).to_data()
+        return overview_upload_job_summary(upload_job)
 
     def _hls_materializations(
         self, instance: object

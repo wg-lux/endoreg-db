@@ -453,15 +453,3 @@ class RawPdfFile(models.Model):
         from endoreg_db.services.raw_pdf_files import build_report_reader_config
 
         return build_report_reader_config(self)
-
-    @staticmethod
-    def get_report_by_pk(pk: int) -> "RawPdfFile":
-        from endoreg_db.services.raw_pdf_files import get_raw_pdf_by_pk
-
-        return get_raw_pdf_by_pk(pk)
-
-    @staticmethod
-    def get_report_by_hash(hash: str) -> "RawPdfFile":
-        from endoreg_db.services.raw_pdf_files import get_raw_pdf_by_content_hash
-
-        return get_raw_pdf_by_content_hash(hash)

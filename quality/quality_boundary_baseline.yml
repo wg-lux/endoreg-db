@@ -7,15 +7,16 @@ scan:
     - migrations
     - __pycache__
 broad_exception:
-  count: 472
-  fingerprint: 8cf63f252a06507b7eb079df3b2a119c44b855872f856bfb5dda0f255190567a
+  count: 471
+  fingerprint: 77272f15bd3ad2cf51300f376536eb7cd04cac8e2fbc12c69e55c62a7b49630d
   owner: endoreg_db maintainers
   reason: >-
     Geprüfter Bestand einschließlich der Import-Orchestrierungs-, Heartbeat-,
     Storage-Cleanup- und nativen Rust-Integrationsgrenzen. Die neuen Handler
     sichern Cleanup oder übersetzen unbekannte Boundary-Fehler fail-closed und
-    reichen die Ursache weiter; dies ist keine allgemeine Freigabe breiter
-    Handler.
+    reichen die Ursache weiter. Der verschachtelte breite Fehlerhandler beim
+    Watcher-Quarantäne-Move wurde mit dem alten Handoff-Pfad entfernt; dies ist
+    keine allgemeine Freigabe breiter Handler.
   review_after: 2026-10-17
 type_suppression:
   count: 145

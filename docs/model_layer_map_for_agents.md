@@ -217,6 +217,27 @@ Primary references:
 - `endoreg_db/services/raw_pdf_files/io.py:21`
 - `endoreg_db/services/raw_pdf_files/imports.py:17`
 
+### Retired Query Facades
+
+Query-only model facades were removed after repository-wide and lx-annotate
+consumer scans found no remaining callers. Use the service-owned query
+contracts:
+
+- replace `VideoFile.check_hash_exists(...)` with
+  `endoreg_db.services.video_files.queries.video_hash_exists(...)`;
+- replace `VideoFile.get_video_by_pk(...)` and
+  `VideoFile.get_video_by_content_hash(...)` with the corresponding functions
+  in `endoreg_db.services.video_files.queries`;
+- replace `RawPdfFile.get_report_by_pk(...)` and
+  `RawPdfFile.get_report_by_hash(...)` with `get_raw_pdf_by_pk(...)` and
+  `get_raw_pdf_by_content_hash(...)` from
+  `endoreg_db.services.raw_pdf_files.queries`.
+
+The unused `VideoFile.get_all_videos()` and
+`VideoFile.count_unmodified_others()` facades and their service helpers were
+removed without replacement. Consumers should express owned query semantics
+through a domain service instead of reintroducing global model enumeration.
+
 ### Dataset And Annotation
 
 `AIDataSet`, `LabelVideoSegment`, `frame_annotation`, and video services share
@@ -230,6 +251,11 @@ Primary references:
 - `endoreg_db/models/state/frame_annotation.py:83`
 - `endoreg_db/services/aidataset_exports.py:13`
 - `endoreg_db/services/aidataset_frame_buckets.py:11`
+
+The `AIDataSet` model imports neutral export and frame-bucket contracts directly
+from their owning `lx_dtypes.models.contracts` modules. Only the three retained
+workflow compatibility methods import the endoreg-db dataset services. Do not
+route neutral contract types back through those service modules.
 
 ## Workflow Responsibility Ranking
 

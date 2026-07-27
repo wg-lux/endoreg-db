@@ -60,10 +60,6 @@ ALLOWLISTED_MODEL_TO_SERVICE_IMPORTS = {
         "endoreg_db.services.aidataset_exports",
     ): frozenset(
         {
-            "AIDataSetExportPayload",
-            "AIDataSetExportSummary",
-            "AIDataSetFrameAnnotationExport",
-            "AIDataSetFrameLabelExport",
             "build_export_payload",
             "export_to_standardized_structure",
         }
@@ -73,12 +69,6 @@ ALLOWLISTED_MODEL_TO_SERVICE_IMPORTS = {
         "endoreg_db.services.aidataset_frame_buckets",
     ): frozenset(
         {
-            "AIDataSetFrameBucketCount",
-            "AIDataSetFrameBucketDistribution",
-            "AIDataSetFrameBucketSummary",
-            "AIDataSetLabelDistributionEntry",
-            "AIDataSetLabelFrameBucketCount",
-            "AIDataSetTargetFrameBucket",
             "build_frame_bucket_distribution",
         }
     ),
@@ -104,8 +94,6 @@ ALLOWLISTED_MODEL_TO_SERVICE_IMPORTS = {
             "get_or_create_raw_pdf_state",
             "get_processed_pdf_file_url",
             "get_processed_pdf_plaintext_path",
-            "get_raw_pdf_by_content_hash",
-            "get_raw_pdf_by_pk",
             "get_raw_pdf_file_path",
             "get_raw_pdf_file_url",
             "get_raw_pdf_plaintext_path",
@@ -129,7 +117,6 @@ ALLOWLISTED_MODEL_TO_SERVICE_IMPORTS = {
             "bulk_create_video_frames",
             "can_offload_video_stream",
             "cleanup_video_raw_assets",
-            "count_unmodified_other_videos",
             "create_anonymized_video_frame_files",
             "create_initialized_video_file_from_path",
             "create_video_file_from_path",
@@ -148,7 +135,6 @@ ALLOWLISTED_MODEL_TO_SERVICE_IMPORTS = {
             "get_active_video_file",
             "get_active_video_file_path",
             "get_active_video_file_url",
-            "get_all_videos",
             "get_or_create_video_state",
             "get_processed_video_file_path",
             "get_processed_video_stream_path",
@@ -160,8 +146,6 @@ ALLOWLISTED_MODEL_TO_SERVICE_IMPORTS = {
             "get_target_anonymized_video_path",
             "get_temp_anonymized_video_frame_dir",
             "get_video_base_frame_dir",
-            "get_video_by_content_hash",
-            "get_video_by_pk",
             "get_video_crop_template",
             "get_video_duration",
             "get_video_endo_roi",
@@ -189,7 +173,6 @@ ALLOWLISTED_MODEL_TO_SERVICE_IMPORTS = {
             "update_video_text_metadata",
             "validate_video_metadata_annotation",
             "video_frame_number_to_seconds",
-            "video_hash_exists",
         }
     ),
     (

@@ -21,6 +21,7 @@ from django.db import IntegrityError, OperationalError, transaction
 from kombu.exceptions import OperationalError as KombuOperationalError
 from pydantic import ValidationError
 
+from endoreg_db.exceptions import InsufficientStorageError
 from endoreg_db.models.administration.ai.ai_model import AiModel
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.administration.person.patient.patient_external_id import (
@@ -53,7 +54,11 @@ from endoreg_db.services.hub.media_integrity import (
     MediaIntegrityResult,
     check_upload_job_media_integrity,
 )
-from endoreg_db.services.hub.import_monitoring import schedule_dispatch_retry
+from endoreg_db.services.hub.import_monitoring import (
+    schedule_dispatch_retry,
+    schedule_processing_retry,
+    schedule_storage_retry,
+)
 from endoreg_db.services.hub.upload_job_import_lease import (
     UploadJobImportLease,
     UploadJobImportLeaseBusy,
@@ -85,7 +90,7 @@ from endoreg_db.utils.file_operations import (
 )
 from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.paths import to_storage_relative
-from endoreg_db.utils.storage import delete_field_file, ensure_local_file
+from endoreg_db.utils.storage import ensure_local_file
 from endoreg_db.utils.permissions import is_debug_mode
 from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
 
@@ -1131,52 +1136,6 @@ def _quarantine_preanonymized_drop(
         upload_job.save(update_fields=["processing_provenance", "updated_at"])
 
 
-def _quarantine_upload_job_file(
-    upload_job: UploadJob,
-    *,
-    local_path: Path,
-) -> Path | None:
-    if not local_path.exists() or not local_path.is_file():
-        return None
-
-    quarantine_dir = _quarantine_dir()
-    ensure_directory(quarantine_dir)
-    original_name = (
-        upload_job.original_filename
-        or Path(getattr(upload_job.file, "name", "")).name
-        or local_path.name
-    )
-    quarantine_path = quarantine_dir / original_name
-    if quarantine_path.exists():
-        quarantine_path = quarantine_dir / f"{uuid.uuid4().hex}_{original_name}"
-
-    atomic_copy_file(source=local_path, destination=quarantine_path)
-    delete_field_file(upload_job, "file", missing_ok=True, save=False)
-    safe_unlink_file(local_path, missing_ok=True)
-    upload_job.file.name = ""
-    upload_job.source_file_persisted = False
-    upload_job.cleanup_status = UploadJob.CleanupStatus.COMPLETED
-    _update_upload_provenance(upload_job, quarantined_path=str(quarantine_path))
-    upload_job.save(
-        update_fields=[
-            "file",
-            "source_file_persisted",
-            "cleanup_status",
-            "processing_provenance",
-            "updated_at",
-        ]
-    )
-    index_quarantine_file(
-        quarantine_path,
-        root=_quarantine_dir(),
-        source_event="upload_job.processing_failed",
-        source_system=upload_job.source_system,
-        reason="Upload processing failed and the protected source was quarantined.",
-        upload_job=upload_job,
-    )
-    return quarantine_path
-
-
 def _validate_local_preanonymized_drop_path(watched_path: Path) -> None:
     drop_root = path_utils.WATCHER_PREANONYMIZED_DROP_DIR.resolve()
     try:
@@ -1801,20 +1760,10 @@ def _run_video_upload_import_job(
                     sensitive_meta = (
                         video.sensitive_meta if isinstance(video, VideoFile) else None
                     )
-                except IntegrityError:
+                except (IntegrityError, InsufficientStorageError):
                     raise
                 except Exception:
                     heartbeat.guard()
-                    quarantine_path = _quarantine_upload_job_file(
-                        job,
-                        local_path=Path(file_path),
-                    )
-                    if quarantine_path is not None:
-                        logger.warning(
-                            "Upload job %s failed; source quarantined at %s.",
-                            job_id,
-                            quarantine_path,
-                        )
                     raise
 
             heartbeat.guard()
@@ -1855,6 +1804,19 @@ def _run_video_upload_import_job(
     except UploadJobImportLeaseLost as exc:
         logger.error("Stale video upload worker fenced for %s: %s", job_id, exc)
         return False
+    except InsufficientStorageError as exc:
+        logger.warning(
+            "Video upload job %s is waiting for pipeline storage: %s",
+            job_id,
+            exc,
+        )
+        try:
+            with locked_upload_job_import_lease(lease) as owned_job:
+                schedule_storage_retry(owned_job, technical_detail=str(exc))
+            release_upload_job_import_lease(lease)
+        except UploadJobImportLeaseLost:
+            logger.error("Storage-retry worker was fenced: job=%s", job_id)
+        return False
     except IntegrityError as exc:
         logger.warning("Duplicate upload content rejected for job %s", job_id)
         try:
@@ -1872,7 +1834,10 @@ def _run_video_upload_import_job(
             logger.exception("Upload job processing failed for %s: %s", job_id, exc)
             try:
                 with locked_upload_job_import_lease(lease) as owned_job:
-                    owned_job.mark_error(str(exc))
+                    schedule_processing_retry(
+                        owned_job,
+                        technical_detail=str(exc),
+                    )
                 release_upload_job_import_lease(lease)
             except UploadJobImportLeaseLost:
                 logger.error("Failed worker was fenced: job=%s", job_id)
@@ -1892,7 +1857,10 @@ def _run_video_upload_import_job(
         logger.exception("Upload job processing failed for %s: %s", job_id, exc)
         try:
             with locked_upload_job_import_lease(lease) as owned_job:
-                owned_job.mark_error(str(exc))
+                schedule_processing_retry(
+                    owned_job,
+                    technical_detail=str(exc),
+                )
             release_upload_job_import_lease(lease)
         except UploadJobImportLeaseLost:
             logger.error("Failed worker was fenced: job=%s", job_id)
@@ -2193,31 +2161,8 @@ def process_watcher_file(
         if upload_job.status == UploadJob.Status.RETRYING.value:
             safe_unlink_file(watched_path, missing_ok=True)
             return upload_job
-        upload_job.mark_error(str(exc))
-        # Move the failed file to quarantine
-        try:
-            quarantine_path = _quarantine_dir() / watched_path.name
-            atomic_move_file(source=watched_path, destination=quarantine_path)
-            index_quarantine_file(
-                quarantine_path,
-                root=_quarantine_dir(),
-                source_event="watcher.handoff_failed",
-                source_system=upload_job.source_system,
-                reason="Watcher processing handoff failed.",
-                upload_job=upload_job,
-            )
-            _update_upload_provenance(upload_job, quarantined_path=str(quarantine_path))
-            upload_job.save(update_fields=["processing_provenance", "updated_at"])
-            logger.warning(
-                "File %s moved to quarantine: %s", watched_path, quarantine_path
-            )
-        except Exception as move_exc:
-            logger.error(
-                "Failed to move file %s to quarantine during error handling: %s",
-                watched_path,
-                move_exc,
-            )
-        _cleanup_persisted_watcher_source(upload_job)
+        schedule_processing_retry(upload_job, technical_detail=str(exc))
+        safe_unlink_file(watched_path, missing_ok=True)
         raise
 
 
