@@ -1811,7 +1811,7 @@ def video_segments_validation_status(request: Request, pk: int) -> Response:
         logger.info(f"Completed validation for {updated_count} segments in video {pk}")
         logger.info("Queueing segment annotation expansion job")
         mark_segment_annotations_pending_cleanup(video)
-        annotation_task_id = _dispatch_segment_annotation_expansion(
+        annotation_task_id, _ = _dispatch_segment_annotation_expansion(
             video_id=int(video.pk),
             segment_ids=[_segment_pk(segment) for segment in segment_list],
             information_source_name="manual_annotation",

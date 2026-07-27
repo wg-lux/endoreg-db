@@ -16,6 +16,7 @@ from django.utils import timezone
 from endoreg_db.models import Center, VideoFile
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.services import hls_media
+from endoreg_db.utils import transcode_execution
 from endoreg_db.utils.ffmpeg_wrapper import resolve_ffmpeg_executable
 from endoreg_db.utils.paths import EndoregPathsModel
 from tests.helpers.hls import FakeHlsOutputRecorder
@@ -762,7 +763,13 @@ def test_materialize_video_hls_ignores_existing_processed_streamable_source(
 def test_materialize_video_hls_real_ffmpeg_commits_staged_output(
     hls_center: Center,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(
+        hls_media.ffmpeg_wrapper,
+        "get_stream_info",
+        transcode_execution.get_stream_info,
+    )
     source_path = tmp_path / "hls-source.mp4"
     _write_tiny_ffmpeg_mp4(source_path)
     video = _create_processed_video(

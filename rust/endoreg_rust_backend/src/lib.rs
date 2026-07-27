@@ -1,6 +1,9 @@
-mod errors;
+mod capabilities;
+mod encrypted_range;
 mod encryption_state;
+mod errors;
 mod file_copy;
+mod file_identity;
 mod frames;
 mod hashing;
 mod pdf;
@@ -15,6 +18,7 @@ pub use stubs::stub_info;
 
 #[pymodule]
 fn endoreg_rust_backend(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_function(wrap_pyfunction!(capabilities::native_capabilities, module)?)?;
     module.add_function(wrap_pyfunction!(
         encryption_state::encryption_status,
         module
@@ -24,7 +28,19 @@ fn endoreg_rust_backend(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResu
         module
     )?)?;
     module.add_function(wrap_pyfunction!(
+        encrypted_range::decrypt_encrypted_file_range,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
         file_copy::copy_file_descriptor_to_path,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
+        file_identity::stable_file_identity,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
+        file_identity::stable_snapshot_to_path,
         module
     )?)?;
     module.add_function(wrap_pyfunction!(hashing::sha256_file_hex, module)?)?;

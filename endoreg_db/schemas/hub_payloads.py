@@ -161,6 +161,7 @@ class UploadProvenancePayload(BaseModel):
     prediction_queue: str | None = None
     video_import_task_id: str | None = None
     video_import_queue: str | None = None
+    video_import_fencing_epoch: int | None = Field(default=None, ge=1)
     stored_upload_path: str | None = None
     quarantined_path: str | None = None
     quarantined_sidecar_path: str | None = None

@@ -1,5 +1,11 @@
 # Endoreg-db Agents.md
 
+The goal of this repository is to provide consistent, anonymous data and to keep it encrypted and safe. Import is handled by video_import_service.py or report_import_service.py.
+
+1. Ensure Import Always Works After Editing
+2. Ensure Data Is Streamable
+3. Ensure Concurrent Behaviour Is Given
+
 You are working in an existing codebase. Do not guess architecture from filenames alone.
 
 Before editing:

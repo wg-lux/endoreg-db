@@ -12,8 +12,12 @@ _build_expected_frame_records: Callable[[int, str], list[tuple[int, str]]] | Non
 _build_frame_records: Callable[..., list[tuple[int, str]]] | None
 _render_single_page_pdf: Callable[[str], bytes] | None
 _sha256_file_hex: Callable[[Path, int], str] | None
+_stable_file_identity: Callable[[Path, int], tuple[int, int, str]] | None
+_stable_snapshot_to_path: Callable[[Path, Path, int], tuple[int, int, str]] | None
+_native_capabilities: Callable[[], list[tuple[str, str, str]]] | None
 _encryption_status: Callable[[Path], str] | None
 _is_lx_encrypted_file: Callable[[Path], bool] | None
+_decrypt_encrypted_file_range: Callable[[Path, bytes, int, int], bytes] | None
 _copy_file_descriptor_to_path: Callable[[int, Path, int], int] | None
 _derive_anonymization_status: (
     Callable[[bool, bool, bool, bool, bool, bool, bool], str] | None
@@ -57,8 +61,16 @@ try:
         rust_backend, "normalize_frame_sampling_strategy_token", None
     )
     _sha256_file_hex = getattr(rust_backend, "sha256_file_hex", None)
+    _stable_file_identity = getattr(rust_backend, "stable_file_identity", None)
+    _stable_snapshot_to_path = getattr(rust_backend, "stable_snapshot_to_path", None)
+    _native_capabilities = getattr(rust_backend, "native_capabilities", None)
     _encryption_status = getattr(rust_backend, "encryption_status", None)
     _is_lx_encrypted_file = getattr(rust_backend, "is_lx_encrypted_file", None)
+    _decrypt_encrypted_file_range = getattr(
+        rust_backend,
+        "decrypt_encrypted_file_range",
+        None,
+    )
     _copy_file_descriptor_to_path = getattr(
         rust_backend, "copy_file_descriptor_to_path", None
     )
@@ -74,8 +86,12 @@ except Exception as exc:
     _parse_extracted_frame_numbers = None
     _render_single_page_pdf = None
     _sha256_file_hex = None
+    _stable_file_identity = None
+    _stable_snapshot_to_path = None
+    _native_capabilities = None
     _encryption_status = None
     _is_lx_encrypted_file = None
+    _decrypt_encrypted_file_range = None
     _copy_file_descriptor_to_path = None
     _derive_anonymization_status = None
     _derive_report_anonymization_status = None
@@ -89,6 +105,39 @@ except Exception as exc:
 RUST_BACKEND_AVAILABLE: bool = _rust_backend_available
 
 
+def native_capabilities() -> tuple[tuple[str, str, str], ...]:
+    """Return versioned capabilities exposed by the loaded native extension."""
+    if _native_capabilities is None:
+        return ()
+    try:
+        rows = _native_capabilities()
+    except Exception as exc:
+        raise RuntimeError(f"Rust native_capabilities failed: {exc}") from exc
+    return tuple(
+        (str(name), str(contract), str(version)) for name, contract, version in rows
+    )
+
+
+def has_native_capability(name: str, contract_version: str) -> bool:
+    return any(
+        capability_name == name and capability_contract == contract_version
+        for (
+            capability_name,
+            capability_contract,
+            _implementation_version,
+        ) in native_capabilities()
+    )
+
+
+def native_capability_version(name: str, contract_version: str) -> str | None:
+    for capability_name, capability_contract, implementation_version in (
+        native_capabilities()
+    ):
+        if capability_name == name and capability_contract == contract_version:
+            return implementation_version
+    return None
+
+
 def sha256_file_hex(path: Path, chunk_size: int) -> str | None:
     if _sha256_file_hex is None:
         return None
@@ -97,6 +146,45 @@ def sha256_file_hex(path: Path, chunk_size: int) -> str | None:
     except Exception as exc:
         logger.warning("Rust sha256_file_hex failed, falling back to Python: %s", exc)
         return None
+
+
+def stable_file_identity(
+    path: Path, chunk_size: int = 1024 * 1024
+) -> tuple[int, int, str] | None:
+    """Return a stable native file snapshot, or ``None`` without native support."""
+    if _stable_file_identity is None:
+        return None
+    try:
+        size_bytes, modified_time_ns, sha256 = _stable_file_identity(
+            Path(path), chunk_size
+        )
+    except Exception as exc:
+        raise RuntimeError(
+            f"Rust stable_file_identity failed for {Path(path)}: {exc}"
+        ) from exc
+    return int(size_bytes), int(modified_time_ns), str(sha256)
+
+
+def stable_snapshot_to_path(
+    source_path: Path,
+    target_path: Path,
+    chunk_size: int = 1024 * 1024,
+) -> tuple[int, int, str] | None:
+    """Copy and hash one stable source view with the native backend."""
+    if _stable_snapshot_to_path is None:
+        return None
+    try:
+        size_bytes, modified_time_ns, sha256 = _stable_snapshot_to_path(
+            Path(source_path),
+            Path(target_path),
+            chunk_size,
+        )
+    except Exception as exc:
+        raise RuntimeError(
+            "Rust stable_snapshot_to_path failed for "
+            f"{Path(source_path)} -> {Path(target_path)}: {exc}"
+        ) from exc
+    return int(size_bytes), int(modified_time_ns), str(sha256)
 
 
 def encryption_status(path: Path) -> str | None:
@@ -120,6 +208,31 @@ def is_lx_encrypted_file(path: Path) -> bool | None:
             "Rust is_lx_encrypted_file failed, falling back to Python: %s", exc
         )
         return None
+
+
+def decrypt_encrypted_file_range(
+    *,
+    path: Path,
+    master_key: bytes,
+    start: int,
+    end: int,
+) -> bytes | None:
+    """Decrypt one bounded file range natively, or report unavailable native code."""
+    if _decrypt_encrypted_file_range is None:
+        return None
+    try:
+        return bytes(
+            _decrypt_encrypted_file_range(
+                Path(path),
+                master_key,
+                start,
+                end,
+            )
+        )
+    except Exception as exc:
+        raise RuntimeError(
+            f"Rust encrypted range decryption failed for {Path(path)}: {exc}"
+        ) from exc
 
 
 def copy_file_descriptor_to_path(

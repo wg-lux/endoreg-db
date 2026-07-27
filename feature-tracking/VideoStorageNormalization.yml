@@ -14,6 +14,10 @@ source_documents:
 - path: docs/video_storage_normalization.md
   disposition: reference
   note: Artefaktvertrag, Profil, Migrationsgate und Betriebsablauf.
+- path: docs/video_import_concurrency_contract.md
+  disposition: reference
+  note: Repository-übergreifender Vertrag für Import-Leases, Fencing, unveränderliche Staging-Artefakte
+    und versuchslokale Anonymisierung.
 - path: docs/video_pts_fps_callsite_inventory.md
   disposition: reference
   note: Repository-weites Risikoinventar und rückwärtskompatible FPS-zu-PTS-Migration.
@@ -130,6 +134,10 @@ definition_of_done:
     Stream-Copy umgehen.
   - Fehlende oder widersprüchliche Metadaten führen zu einem expliziten Fehlerzustand und bewahren die
     noch benötigte Quelle.
+  - Der Content-Hash für die Import-Sperre wird erst unter der pfadbasierten Import-Sperre aus einer stabilen
+    Dateiidentität gebildet. Gleichzeitige Änderung oder Ersetzung der Quelle während des Hashings schlägt
+    laut fehl; die native Hash-Berechnung gibt den Python Global Interpreter Lock frei, damit unabhängige
+    Imports parallel fortschreiten können.
   required: true
   verification:
     kind: command
@@ -154,11 +162,75 @@ definition_of_done:
       reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_video_storage_normalization.py
         tests/import_files/test_video_import_normalization.py tests/import_files/test_import_encryption.py
         tests/services/test_hls_media.py -q (45 passed)
-    note: Neuimport, Reimport und Reanonymisierung verwenden den gemeinsamen Profilcheck. Konforme Quellen
-      werden atomar kopiert, Abweichungen transkodiert und erst nach vollständiger Storage- und Timeline-Prüfung
-      veröffentlicht; 45 fokussierte Import-, Normalisierungs-, Verschlüsselungs- und HLS-Tests bestanden.
+    - kind: command
+      reference: devenv shell -- cargo test --manifest-path rust/endoreg_rust_backend/Cargo.toml (8 passed);
+        .devenv/state/venv/bin/pyright (0 errors); devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_video_import_service.py
+        tests/rust_backend/test_rust_backend_fallbacks.py -q (28 passed)
+    note: Neuimport, Reimport und Reanonymisierung verwenden den gemeinsamen Profilcheck. Die Content-Hash-Sperre
+      wird unter der pfadbasierten Sperre aus einer stabilen, GIL-freien Rust-Dateiidentität abgeleitet;
+      Quelländerungen während des Hashings brechen laut ab. Rust-, Typ- und fokussierte Importtests sind
+      erfolgreich.
     assessed_by: Codex
-    assessed_at: '2026-07-23T09:07:37.900435Z'
+    assessed_at: '2026-07-27T06:12:03.245922Z'
+- id: concurrent_import_ownership
+  category: functionality
+  title: Gleichzeitige Videoimporte besitzen eindeutige, eingezäunte Ausführungsrechte
+  acceptance:
+  - Ein persistierter, typisierter Importversuch besitzt eine eindeutige aktive Lease, durch Datenbankzeit
+    bestimmte Ablaufzeit, Heartbeat und monotonen Fencing-Token. Dateisperren sind ausschließlich lokale
+    Optimierungen und dürfen nicht allein anhand ihres Alters fremd übernommen werden.
+  - Jeder persistente Zustandswechsel und jede atomare Veröffentlichung prüft den aktuellen Fencing-Token.
+    Ein abgelaufener oder ersetzter Worker darf weder Zustand ändern noch Kandidaten veröffentlichen oder
+    fremde Artefakte bereinigen.
+  - Der Watcher übergibt reguläre, nicht symbolisch verknüpfte Quelldateien atomar in ein unveränderliches,
+    versuchseigenes Staging innerhalb des verschlüsselten Storage. Hashing, Anonymisierung und Validierung
+    arbeiten auf derselben geprüften Quellgeneration.
+  - endoreg-db bleibt alleiniger Eigentümer von Lease, Retry, Storage-Routing, Datenbankzustand und Veröffentlichung.
+    lx-anonymizer verarbeitet pro Aufruf genau eine Quelle in einen unveröffentlichten, versuchseigenen
+    Kandidaten und besitzt keine konkurrierende Sperr- oder Publikationslogik.
+  - Pro gleichzeitigem Video wird eine eigene `FrameCleaner`-Laufinstanz beziehungsweise ein typisiertes
+    Run-State-Objekt verwendet. Veränderliche Frame-, Metadaten- und Large-Language-Model-(LLM)-Zustände
+    werden nicht zwischen Aufrufen geteilt; gemeinsam genutzte Modelle benötigen einen nachgewiesenen
+    thread- und prozesssicheren Vertrag.
+  - Langlebige Rust- und FFmpeg-Operationen sind abbrechbar beziehungsweise begrenzt, geben den Python
+    Global Interpreter Lock frei, beenden Kindprozesse zuverlässig und propagieren Integritätsfehler ohne
+    stillen Erfolgsfallback. Das Produktionsprofil prüft eine versionierte native Capability-Menge beim
+    Start und schlägt bei Pflichtinkompatibilität geschlossen fehl.
+  - Prozessbasierte Konkurrenz- und Failure-Injection-Tests decken gleiche Pfade, gleiche Inhalte, unabhängige
+    Inhalte, Source-Mutation, Lease-Verlust, veraltete Fencing-Token, Worker-Abbruch, Disk-full, Retry
+    und Datenbank-/Dateisystem-Reconciliation ab.
+  - Strukturierte Logs und Metriken weisen Lease-Wartezeit, Heartbeats, Backendwahl, gehashte und temporäre
+    Bytes, Phasendauer, Abbruch, Fencing-Ablehnung, Duplicate-Short-Circuit und Cleanup-Eigentum je Versuch
+    nach, ohne Patientendaten oder unzulässige Rohpfade offenzulegen.
+  required: true
+  verification:
+    kind: manual
+    instructions: Prozessbasierte Cross-Repository-Tests und Failure Injection aus docs/video_import_concurrency_contract.md
+      ausführen; Lease-/Fencing-Evidenz, Rust-Capability-Gate, FFmpeg-Kindprozess-Cleanup und produktionsnahe
+      Lastmetriken gemeinsam durch Betrieb, Security und Storage-Verantwortliche prüfen.
+    timeout_seconds: 1800
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/hub/upload_job_import_lease.py
+    - kind: code
+      reference: endoreg_db/services/hub/ingest.py
+    - kind: code
+      reference: endoreg_db/import_files/processing/video_processing/video_anonymization.py
+    - kind: code
+      reference: /home/admin/lx-anonymizer/lx_anonymizer/frame_cleaner.py
+    - kind: test
+      reference: 73 endoreg-db concurrency/import tests; 29 FFmpeg tests; 6 lx-anonymizer native/concurrency
+        tests; cargo test passed
+    note: Implementiert sind DB-Zeit-Lease, Heartbeat und monotones Fencing auf UploadJob, eingezäunte
+      Task-Zustandswechsel und Publikations-Guards, versuchseigene Kandidaten, symlink-freier Watcher-Handoff,
+      eine FrameCleaner-Instanz pro Versuch, ein versionierter nativer Capability-Vertrag sowie FFmpeg-Prozessgruppenbeendigung
+      bei Timeout. Offen bleiben produktionsnahe Mehrprozess-/Crash-/Disk-full-Failure-Injection, unmittelbare
+      Lease-Verlust-Cancellation in allen lx-anonymizer-Unterprozessen, vollständige Phasenmetriken und
+      Betriebs-/Security-Abnahme.
+    assessed_by: Codex
+    assessed_at: '2026-07-27T07:04:09.259390Z'
 - id: video_examination_annotation_contract
   category: interoperability
   title: Normalisierte Videos bleiben in der Segmentannotation sicher nutzbar
@@ -204,6 +276,11 @@ definition_of_done:
     Prüfplaylist entschlüsselt geprobt. Codec, Pixelformat, Dimensionen, Bildrate, Dauer, Frameanzahl,
     Bitrate, Gesamtgröße und Timeline müssen dem typisierten Profil entsprechen; Abweichungen verhindern
     die Veröffentlichung und entfernen Prüfplaylist, Teilsegmente und Schlüsselmaterial.
+  - Gleichzeitige verschlüsselte Byte-Range-Lesezugriffe verwenden bevorzugt die native Rust-Implementierung,
+    die Datei-I/O und AES-GCM-Entschlüsselung ohne gehaltenen Python Global Interpreter Lock ausführt.
+    Rückgaben bleiben pro Request größenbegrenzt und byteidentisch zum Python-Referenzpfad; native Integritäts-,
+    Schlüssel- oder Geometriefehler schlagen laut fehl. Nur eine beim Prozessstart nicht verfügbare native
+    Erweiterung darf den explizit getesteten Python-Fallback verwenden.
   - Ein Cross-Repository-Test deckt mindestens ein Video oberhalb von 50 FPS, die Zustände required/queued/running/ready/failed,
     authentifiziertes Processed-HLS-Playback und Segment-Zeit-/Frame-Roundtrips ab.
   required: true
@@ -220,8 +297,7 @@ definition_of_done:
     - kind: review
       reference: endoreg_db/services/jobs/video_fps_normalization_jobs.py; endoreg_db/services/video_processed_transcode.py
     - kind: review
-      reference: endoreg_db/services/video_files/metadata.py; endoreg_db/views/video/video_fps.py;
-        /home/admin/dev/lx-annotate/frontend/src/components/VideoExamination/VideoExaminationAnnotation.vue;
+      reference: endoreg_db/services/video_files/metadata.py; endoreg_db/views/video/video_fps.py; /home/admin/dev/lx-annotate/frontend/src/components/VideoExamination/VideoExaminationAnnotation.vue;
         /home/admin/dev/lx-annotate/frontend/src/stores/videoStore.ts
       note: Normalisierungsstatus und gewöhnlicher FPS-Endpunkt validieren persistierte Metadaten ohne
         Media-Staging; das Frontend übernimmt die bereits validierte Bildrate in denselben Ladevorgang.
@@ -270,9 +346,9 @@ definition_of_done:
       reference: 'lx-annotate: devenv tasks run vue:test (Vue-Typecheck, komponentenspezifischer Test-Typecheck
         und vollständige Vitest-Suite bestanden)'
     - kind: monitoring
-      reference: 'gc-10 journalctl, 2026-07-23 10:57-12:23 CEST: erster Upstream-Timeout auf
-        GET media/videos/22/segments/normalize-fps/; anschließend wiederholte Overview-/FPS-/Detail-Anfragen;
-        manueller Restart 12:21:49 und expliziter SIGKILL 12:23:16'
+      reference: 'gc-10 journalctl, 2026-07-23 10:57-12:23 CEST: erster Upstream-Timeout auf GET media/videos/22/segments/normalize-fps/;
+        anschließend wiederholte Overview-/FPS-/Detail-Anfragen; manueller Restart 12:21:49 und expliziter
+        SIGKILL 12:23:16'
       note: Kein Kernel- oder systemd-OOM-Kill. Der alte Webprozess erreichte 4 GiB Memory-Peak sowie
         77,3 GiB Reads und 104,9 GiB Writes. Die optimierten Artefakte waren zum Analysezeitpunkt auf
         gc-10 noch nicht ausgerollt.
@@ -286,12 +362,12 @@ definition_of_done:
       Playlist-/Key-/Segment-Endpunkte, Lease-Erneuerung, Lease-Deferral und Post-Validation-Konkurrenz
       durch 46 Tests nachgewiesen. lx-annotate weist credentialed HLS.js-/Native-HLS-Zugriff, fail-closed
       Fehlerbehandlung, automatische FPS-Normalisierung vor Segmentladung sowie PTS-basierte Navigation
-      und Segment-Roundtrips durch 24 Tests nach. Offen bleiben Deployment und Lastnachweis auf gc-10 sowie ein einzelner
-      realer Cross-Repository-End-to-End-Lauf mit einem Video oberhalb 50 FPS über required/queued/running/ready
-      beziehungsweise failed, atomare HLS-Generation und Segment-PTS-Stabilität nach UI-Reload. Die vorhandene
-      Cypress-Datei ist dafür keine ausführbare Evidenz: Cypress ist weder in package.json konfiguriert
-      noch installiert, alle relevanten API-Aufrufe werden mit Fixtures interceptet, und die Assertions
-      verwenden den veralteten Zeit-mal-30-FPS- sowie camelCase-Vertrag.'
+      und Segment-Roundtrips durch 24 Tests nach. Offen bleiben Deployment und Lastnachweis auf gc-10
+      sowie ein einzelner realer Cross-Repository-End-to-End-Lauf mit einem Video oberhalb 50 FPS über
+      required/queued/running/ready beziehungsweise failed, atomare HLS-Generation und Segment-PTS-Stabilität
+      nach UI-Reload. Die vorhandene Cypress-Datei ist dafür keine ausführbare Evidenz: Cypress ist weder
+      in package.json konfiguriert noch installiert, alle relevanten API-Aufrufe werden mit Fixtures interceptet,
+      und die Assertions verwenden den veralteten Zeit-mal-30-FPS- sowie camelCase-Vertrag.'
     assessed_by: Codex
     assessed_at: '2026-07-23T09:12:53.429224Z'
 - id: derived_artifact_lifecycle

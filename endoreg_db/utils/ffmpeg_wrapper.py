@@ -9,6 +9,7 @@ module working for existing callers.
 import logging
 
 from .video.command_construction import (
+    FFprobeInputPolicy,
     TimestampRepairMode,
     _TIMESTAMP_REPAIR_SEQUENCE,
     _build_extract_frame_range_command,
@@ -83,6 +84,7 @@ __all__ = [
     "extract_frame_range",
     "extract_frames_by_presentation_timestamp",
     "TimestampRepairMode",
+    "FFprobeInputPolicy",
     "FFMPEG_TRANSCODE_TIMEOUT_SECONDS",
     "_TIMESTAMP_REPAIR_SEQUENCE",
     "_blacken_filter_args",

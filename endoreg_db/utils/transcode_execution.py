@@ -1,6 +1,8 @@
 # pyright: reportPrivateUsage=false
 import json
 import logging
+import os
+import signal
 import subprocess
 from pathlib import Path
 from typing import Any, List, Optional, Tuple, TypedDict, Unpack, cast
@@ -20,6 +22,7 @@ from endoreg_db.utils.file_operations import (
 )
 
 from .video.command_construction import (
+    FFprobeInputPolicy,
     TimestampRepairMode,
     _TIMESTAMP_REPAIR_SEQUENCE,
     _build_ffprobe_stream_info_command,
@@ -36,6 +39,7 @@ from .video.executable_discovery import (
 logger = logging.getLogger("ffmpeg_wrapper")
 FFMPEG_TRANSCODE_TIMEOUT_SECONDS = get_ffmpeg_transcode_timeout_seconds()
 FULL_RANGE_YUV420P_PIXEL_FORMATS = frozenset({"yuv420p", "yuvj420p"})
+FFMPEG_TERMINATION_GRACE_SECONDS = 5
 
 
 class _TranscodeOptions(TypedDict, total=False):
@@ -115,21 +119,38 @@ def _run_ffmpeg_command(command: List[str]) -> Tuple[int, str]:
         stderr=subprocess.PIPE,
         text=True,
         universal_newlines=True,
+        start_new_session=(os.name == "posix"),
     )
     try:
         _stdout, stderr_output = process.communicate(
             timeout=FFMPEG_TRANSCODE_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired as exc:
-        process.kill()
-        _stdout, stderr_output = process.communicate()
+        if os.name == "posix" and isinstance(getattr(process, "pid", None), int):
+            os.killpg(process.pid, signal.SIGTERM)
+        else:
+            process.kill()
+        try:
+            _stdout, stderr_output = process.communicate(
+                timeout=FFMPEG_TERMINATION_GRACE_SECONDS
+            )
+        except subprocess.TimeoutExpired:
+            if os.name == "posix" and isinstance(getattr(process, "pid", None), int):
+                os.killpg(process.pid, signal.SIGKILL)
+            else:
+                process.kill()
+            _stdout, stderr_output = process.communicate()
         cast(Any, exc).stderr = stderr_output
         raise exc
 
     return process.returncode, stderr_output or ""
 
 
-def get_stream_info(file_path: Path) -> JsonObject | None:
+def get_stream_info(
+    file_path: Path,
+    *,
+    input_policy: FFprobeInputPolicy = FFprobeInputPolicy.DEFAULT,
+) -> JsonObject | None:
     """
     Retrieves video stream information from a file using ffprobe.
 
@@ -149,6 +170,7 @@ def get_stream_info(file_path: Path) -> JsonObject | None:
     command = _build_ffprobe_stream_info_command(
         ffprobe_executable=ffprobe_executable,
         file_path=file_path,
+        input_policy=input_policy,
     )
     try:
         result = subprocess.run(

@@ -1,5 +1,6 @@
 # pyright: reportPrivateUsage=false, reportUnusedFunction=false
 import subprocess
+import signal
 from pathlib import Path
 from typing import NoReturn
 
@@ -10,6 +11,7 @@ from lx_dtypes.models.contracts.json_types import JsonObject
 from endoreg_db.utils import transcode_execution
 from endoreg_db.utils import ffmpeg_wrapper
 from endoreg_db.utils.video.command_construction import (
+    FFprobeInputPolicy,
     TimestampRepairMode,
     _build_extract_frame_range_command,
     _build_extract_frames_command,
@@ -140,6 +142,35 @@ def test_transcode_video_timeout_removes_partial_output(
     assert not output_path.exists()
     assert created_processes
     assert created_processes[0].killed
+
+
+@pytest.mark.unit
+def test_ffmpeg_timeout_terminates_the_process_group(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process = FakePopen(["ffmpeg"], timeout=True)
+    setattr(process, "pid", 4242)
+    signals: list[tuple[int, signal.Signals]] = []
+
+    def fake_killpg(pid: int, sent_signal: signal.Signals) -> None:
+        signals.append((pid, sent_signal))
+        process.killed = True
+
+    def fake_popen(
+        command: list[str],
+        **_kwargs: str | int | bool,
+    ) -> FakePopen:
+        assert command == ["ffmpeg"]
+        return process
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(transcode_execution.os, "name", "posix")
+    monkeypatch.setattr(transcode_execution.os, "killpg", fake_killpg)
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        transcode_execution._run_ffmpeg_command(["ffmpeg"])
+
+    assert signals == [(4242, signal.SIGTERM)]
 
 
 @pytest.mark.unit
@@ -489,9 +520,33 @@ def test_build_ffprobe_stream_info_command_omits_ffmpeg_only_nostdin() -> None:
         "-print_format",
         "json",
         "-show_streams",
+        "-show_format",
         "/data/input.mp4",
     ]
     assert "-nostdin" not in command
+
+
+@pytest.mark.unit
+def test_build_ffprobe_stream_info_command_allows_trusted_local_hls_key() -> None:
+    command = _build_ffprobe_stream_info_command(
+        ffprobe_executable="/smart/bin/ffprobe",
+        file_path=Path("/protected/.profile-validation.m3u8"),
+        input_policy=FFprobeInputPolicy.TRUSTED_LOCAL_HLS,
+    )
+
+    assert command == [
+        "/smart/bin/ffprobe",
+        "-hide_banner",
+        "-v",
+        "quiet",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        "-allowed_extensions",
+        "ALL",
+        "/protected/.profile-validation.m3u8",
+    ]
 
 
 @pytest.mark.unit

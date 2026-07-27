@@ -270,6 +270,10 @@ in
         rm rust/endoreg_rust_backend/endoreg_rust_backend.pyi
       '';
     };
+    "rust:report-runtime" = {
+      description = "Verify Rust report snapshot tests, stubs, capability, and wheel";
+      exec = "scripts/check_report_native_runtime.sh";
+    };
     "agent:pre-commit" = {
       description = "Run the full default pre-commit suite for agent preflight";
       exec = ".devenv/state/venv/bin/pre-commit run --all-files";

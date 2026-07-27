@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import stat
 import time
 from pathlib import Path
 
@@ -46,15 +47,24 @@ def reject_in_progress_handoff_path(file_path: Path | str) -> None:
 
 
 def watcher_file_stat(file_path: Path) -> os.stat_result:
-    if not file_path.exists():
+    try:
+        stat_result = file_path.lstat()
+    except FileNotFoundError:
         raise FileNotFoundError(f"Watcher file not found: {file_path}")
-    if not file_path.is_file():
+    if stat.S_ISLNK(stat_result.st_mode):
+        raise ValueError(f"Watcher source must not be a symbolic link: {file_path}")
+    if not stat.S_ISREG(stat_result.st_mode):
         raise ValueError(f"Watcher path is not a regular file: {file_path}")
-    return file_path.stat()
+    return stat_result
 
 
-def watcher_stat_snapshot(stat_result: os.stat_result) -> tuple[int, int]:
-    return int(stat_result.st_size), int(stat_result.st_mtime_ns)
+def watcher_stat_snapshot(stat_result: os.stat_result) -> tuple[int, int, int, int]:
+    return (
+        int(stat_result.st_dev),
+        int(stat_result.st_ino),
+        int(stat_result.st_size),
+        int(stat_result.st_mtime_ns),
+    )
 
 
 def wait_for_watcher_file_ready(
@@ -91,13 +101,13 @@ def wait_for_watcher_file_ready(
 
     deadline = time.monotonic() + max(timeout_seconds, stable_after + poll_interval)
     stable_since: float | None = None
-    previous_snapshot: tuple[int, int] | None = None
+    previous_snapshot: tuple[int, int, int, int] | None = None
     previous_size: int | None = None
 
     while True:
         stat_result = watcher_file_stat(file_path)
         snapshot = watcher_stat_snapshot(stat_result)
-        size_bytes, mtime_ns = snapshot
+        _device_id, _inode, size_bytes, mtime_ns = snapshot
         now = time.monotonic()
 
         if size_bytes > 0 and snapshot == previous_snapshot:
@@ -150,10 +160,10 @@ def assert_watcher_file_unchanged(
                 "event": "watcher.file_changed_after_settle",
                 "path": str(file_path),
                 "stage": stage,
-                "expected_size_bytes": expected_snapshot[0],
-                "current_size_bytes": current_snapshot[0],
-                "expected_mtime_ns": expected_snapshot[1],
-                "current_mtime_ns": current_snapshot[1],
+                "expected_size_bytes": expected_snapshot[2],
+                "current_size_bytes": current_snapshot[2],
+                "expected_mtime_ns": expected_snapshot[3],
+                "current_mtime_ns": current_snapshot[3],
             }
         )
     )

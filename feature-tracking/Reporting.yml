@@ -5,7 +5,10 @@ description: Sicherer Import, Bearbeitung, Materialisierung, LLM-Verarbeitung un
 owners:
   - endoreg_db maintainers
 production_critical: true
-source_documents: []
+source_documents:
+  - path: docs/report_import_concurrency_implementation.md
+    disposition: reference
+    note: Verbindliche Implementierungsleitlinie für stabile Snapshots, Fencing, native Laufzeit und den Vertrag mit lx-anonymizer.
 definition_of_done:
   - id: documented_scope
     category: requirements
@@ -65,6 +68,56 @@ definition_of_done:
       kind: command
       command: [.devenv/state/venv/bin/pytest, tests/services/test_report_artifact_integrity.py, tests/services/test_report_materialization_contracts.py, -q]
       timeout_seconds: 600
+    assessment: *not_assessed
+  - id: stable_report_snapshot
+    category: functionality
+    title: Berichtsquellen werden als stabile, unveränderliche Snapshots übernommen
+    acceptance:
+      - Hashing und Kopieren lesen dieselbe geöffnete Quelldatei innerhalb eines versionierten, typisierten Snapshot-Vertrags.
+      - Änderung, Austausch, symbolische Verknüpfung oder unzulässiger Dateityp der Quelle führen vor Datenbankmutation zu einem lauten Abbruch.
+      - Der Snapshot wird ausschließlich innerhalb der freigegebenen verschlüsselten Speichergrenze atomar veröffentlicht.
+    required: true
+    verification:
+      kind: command
+      command: [.devenv/state/venv/bin/pytest, tests/services/test_report_import_concurrency.py, tests/rust_backend/test_report_snapshot_parity.py, -q]
+      timeout_seconds: 600
+    assessment: *not_assessed
+  - id: report_import_fencing
+    category: data_integrity
+    title: Parallele Berichtsimporte sind durch Sperren und Fencing gegen überholte Worker geschützt
+    acceptance:
+      - Pfadanspruch, inhaltsbezogene Deduplizierung und Datenbankpublikation besitzen eine dokumentierte, zyklusfreie Reihenfolge.
+      - Ein abgelaufener oder ersetzter Worker kann keinen neueren Versuch finalisieren.
+      - Zwei Prozesse erzeugen für denselben Inhalt höchstens ein kanonisches RawPdfFile und genau eine erfolgreiche Publikation.
+    required: true
+    verification:
+      kind: command
+      command: [.devenv/state/venv/bin/pytest, tests/services/test_report_import_concurrency.py, tests/services/test_report_import_fencing.py, -q]
+      timeout_seconds: 900
+    assessment: *not_assessed
+  - id: native_report_runtime
+    category: operations
+    title: Native Berichtsfunktionen sind baubar, erkennbar und versionsfest
+    acceptance:
+      - Continuous Integration baut das PyO3-Modul aus demselben Commit und prüft Stub-, Capability- und Wheel-Import-Parität.
+      - Das Produktionsprofil bricht beim Start ab, wenn eine verpflichtende native Fähigkeit fehlt; ein erlaubter Python-Fallback ist explizit konfiguriert und beobachtbar.
+      - Artefaktmanifest und strukturierte Ereignisse enthalten Backend-, Vertrags- und Implementierungsversion ohne Patientendaten.
+    required: true
+    verification:
+      kind: manual
+      instructions: Wheel aus sauberem Checkout bauen, installieren und Capability-/Startup-Prüfung in Produktionskonfiguration ausführen.
+    assessment: *not_assessed
+  - id: anonymizer_report_contract
+    category: documentation
+    title: Die Grenze zu lx-anonymizer ist typisiert, isoliert und kompatibilitätsgeprüft
+    acceptance:
+      - endoreg-db besitzt Import, Snapshot, Sperren, Persistenz und kanonische Publikation; lx-anonymizer besitzt ausschließlich die inhaltliche Anonymisierung im zugewiesenen Versuchsverzeichnis.
+      - Anfrage, Ergebnis, Fehlerklassen, Provenienz und Versionsaushandlung sind in beiden Repositories deckungsgleich dokumentiert.
+      - Ein Cross-Repository-Vertragstest prüft mindestens die älteste unterstützte und die aktuelle lx-anonymizer-Version.
+    required: true
+    verification:
+      kind: manual
+      instructions: Beide Vertragsdokumente und die unterstützte Versionsmatrix gegen einen installierten Wheel-Vertrag prüfen.
     assessment: *not_assessed
   - id: operational_readiness
     category: operations

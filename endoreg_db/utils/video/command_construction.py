@@ -19,6 +19,11 @@ class TimestampRepairMode(str, Enum):
     RESET_TO_ZERO = "reset_to_zero"
 
 
+class FFprobeInputPolicy(str, Enum):
+    DEFAULT = "default"
+    TRUSTED_LOCAL_HLS = "trusted_local_hls"
+
+
 _TIMESTAMP_REPAIR_SEQUENCE = (
     TimestampRepairMode.GENERATE_PTS,
     TimestampRepairMode.IGNORE_DTS,
@@ -115,7 +120,14 @@ def _build_ffprobe_stream_info_command(
     *,
     ffprobe_executable: str,
     file_path: Path,
+    input_policy: FFprobeInputPolicy = FFprobeInputPolicy.DEFAULT,
 ) -> List[str]:
+    input_args_by_policy = {
+        FFprobeInputPolicy.DEFAULT: [],
+        FFprobeInputPolicy.TRUSTED_LOCAL_HLS: ["-allowed_extensions", "ALL"],
+    }
+    input_args = input_args_by_policy[input_policy]
+
     return [
         ffprobe_executable,
         *_COMMON_FFPROBE_ARGS,
@@ -124,6 +136,8 @@ def _build_ffprobe_stream_info_command(
         "-print_format",
         "json",
         "-show_streams",
+        "-show_format",
+        *input_args,
         str(file_path),
     ]
 

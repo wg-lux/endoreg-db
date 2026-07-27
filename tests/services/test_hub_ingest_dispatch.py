@@ -2,10 +2,12 @@ from __future__ import annotations
 
 # pyright: reportUnknownVariableType=false
 
+from datetime import timedelta
 from unittest.mock import Mock, patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
+from django.utils import timezone
 
 from endoreg_db.models import Center, ReportLlmInferenceJob, UploadJob
 from endoreg_db.services.hub.ingest import (
@@ -14,6 +16,7 @@ from endoreg_db.services.hub.ingest import (
     process_upload_job,
     start_upload_job_processing,
 )
+from endoreg_db.services.hub.upload_job_import_lease import UploadJobImportLease
 
 
 class _FakeUploadFile:
@@ -21,6 +24,7 @@ class _FakeUploadFile:
 
 
 class _FakeVideoUploadJob:
+    pk = "upload-job-id"
     status: str = UploadJob.Status.PENDING
     file = _FakeUploadFile()
     source_center = object()
@@ -175,14 +179,29 @@ class UploadJobDispatchTests(TestCase):
         fake_upload_job_model.objects = upload_job_manager
         fake_upload_job_model.Status = UploadJob.Status
 
-        with patch("endoreg_db.services.hub.ingest.UploadJob", fake_upload_job_model):
-            reserved_job, should_dispatch = _reserve_video_upload_import_handoff(
+        lease = UploadJobImportLease(
+            upload_job_id="upload-job-id",
+            owner="video-import-task-id",
+            fencing_epoch=1,
+            expires_at=timezone.now() + timedelta(minutes=5),
+        )
+        with (
+            patch("endoreg_db.services.hub.ingest.UploadJob", fake_upload_job_model),
+            patch(
+                "endoreg_db.services.hub.ingest.acquire_upload_job_import_lease",
+                return_value=lease,
+            ),
+        ):
+            reserved_job, reserved_lease, should_dispatch = (
+                _reserve_video_upload_import_handoff(
                 upload_job_id="upload-job-id",
                 queue="ffmpeg_media",
                 task_id="video-import-task-id",
             )
+            )
 
         assert reserved_job is job
+        assert reserved_lease == lease
         assert should_dispatch is True
         assert upload_job_manager.select_for_update_kwargs == {"of": ("self",)}
         assert upload_job_manager.select_related_fields == (

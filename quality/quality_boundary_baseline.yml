@@ -7,8 +7,8 @@ scan:
     - migrations
     - __pycache__
 broad_exception:
-  count: 461
-  fingerprint: 6e70ec3ac4e8e3a7a40b9138142dddc06432cd3e1b8d043bae571b34d16cf6f1
+  count: 459
+  fingerprint: 071a7a19c291516d3c81ac623db996b85270099486db496c993c75f5a7230fc9
   owner: endoreg_db maintainers
   reason: >-
     Eingefrorener Altbestand, keine Freigabe. Jede Änderung erfordert die

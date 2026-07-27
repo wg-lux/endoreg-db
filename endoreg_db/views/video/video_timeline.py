@@ -37,6 +37,8 @@ class FrameNeighborhoodQuery(BaseModel):
 class VideoFrameNeighborhoodView(APIView):
     """Return the PTS-backed previous/current/next display-frame boundaries."""
 
+    cache_center_scoped_video = True
+    _center_scoped_video: VideoFile | None = None
     permission_classes: Sequence[PermissionClass] = (
         EnvironmentAwarePermission,
         PolicyPermission,
@@ -55,7 +57,9 @@ class VideoFrameNeighborhoodView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        video = get_object_or_404(VideoFile, pk=pk)
+        video = self._center_scoped_video
+        if video is None or video.pk != pk:
+            video = get_object_or_404(VideoFile, pk=pk)
         assert_anonymized_center_scope_allowed(request=request, obj=video)
         self.check_object_permissions(request, video)
         try:

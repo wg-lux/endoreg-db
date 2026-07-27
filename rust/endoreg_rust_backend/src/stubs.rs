@@ -28,6 +28,14 @@ fn stub_type_storage_policy_rows() -> TypeInfo {
     TypeInfo::builtin("list[tuple[str, str, str]]")
 }
 
+fn stub_type_native_capabilities() -> TypeInfo {
+    TypeInfo::builtin("list[tuple[str, str, str]]")
+}
+
+fn stub_type_file_identity() -> TypeInfo {
+    TypeInfo::builtin("tuple[int, int, str]")
+}
+
 fn stub_type_path() -> TypeInfo {
     TypeInfo::with_module("pathlib.Path", "pathlib".into())
 }
@@ -38,6 +46,17 @@ fn stub_type_str() -> TypeInfo {
 
 fn stub_type_bool() -> TypeInfo {
     TypeInfo::builtin("bool")
+}
+
+inventory::submit! {
+    PyFunctionInfo {
+        name: "native_capabilities",
+        args: &[],
+        r#return: stub_type_native_capabilities,
+        doc: "",
+        signature: Some(""),
+        module: None,
+    }
 }
 
 inventory::submit! {
@@ -79,6 +98,22 @@ inventory::submit! {
 
 inventory::submit! {
     PyFunctionInfo {
+        name: "decrypt_encrypted_file_range",
+        args: &[
+            ArgInfo { name: "path", r#type: stub_type_path },
+            ArgInfo { name: "master_key", r#type: stub_type_bytes },
+            ArgInfo { name: "start", r#type: stub_type_int },
+            ArgInfo { name: "end", r#type: stub_type_int },
+        ],
+        r#return: stub_type_bytes,
+        doc: "",
+        signature: Some("path: pathlib.Path, master_key: bytes, start: int, end: int"),
+        module: None,
+    }
+}
+
+inventory::submit! {
+    PyFunctionInfo {
         name: "sha256_file_hex",
         args: &[
             ArgInfo { name: "path", r#type: stub_type_path },
@@ -87,6 +122,37 @@ inventory::submit! {
         r#return: stub_type_str,
         doc: "",
         signature: Some("path: pathlib.Path, chunk_size: int = ..."),
+        module: None,
+    }
+}
+
+inventory::submit! {
+    PyFunctionInfo {
+        name: "stable_file_identity",
+        args: &[
+            ArgInfo { name: "path", r#type: stub_type_path },
+            ArgInfo { name: "chunk_size", r#type: stub_type_int },
+        ],
+        r#return: stub_type_file_identity,
+        doc: "",
+        signature: Some("path: pathlib.Path, chunk_size: int = ..."),
+        module: None,
+    }
+}
+
+inventory::submit! {
+    PyFunctionInfo {
+        name: "stable_snapshot_to_path",
+        args: &[
+            ArgInfo { name: "source_path", r#type: stub_type_path },
+            ArgInfo { name: "target_path", r#type: stub_type_path },
+            ArgInfo { name: "chunk_size", r#type: stub_type_int },
+        ],
+        r#return: stub_type_file_identity,
+        doc: "",
+        signature: Some(
+            "source_path: pathlib.Path, target_path: pathlib.Path, chunk_size: int = ..."
+        ),
         module: None,
     }
 }

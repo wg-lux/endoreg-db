@@ -54,6 +54,15 @@ from endoreg_db.services.hub.media_integrity import (
     check_upload_job_media_integrity,
 )
 from endoreg_db.services.hub.import_monitoring import schedule_dispatch_retry
+from endoreg_db.services.hub.upload_job_import_lease import (
+    UploadJobImportLease,
+    UploadJobImportLeaseBusy,
+    UploadJobImportLeaseHeartbeat,
+    UploadJobImportLeaseLost,
+    acquire_upload_job_import_lease,
+    locked_upload_job_import_lease,
+    release_upload_job_import_lease,
+)
 from endoreg_db.services.hub.quarantine import index_quarantine_file
 from endoreg_db.services.hub.watcher_handoff import (
     WatcherFileNotReadyError,
@@ -210,6 +219,7 @@ class UploadProvenance(TypedDict, total=False):
     prediction_queue: str
     video_import_task_id: str
     video_import_queue: str
+    video_import_fencing_epoch: int
     stored_upload_path: str
     quarantined_path: str
     quarantined_sidecar_path: str
@@ -647,7 +657,7 @@ def _reserve_video_upload_import_handoff(
     upload_job_id: str,
     queue: str,
     task_id: str,
-) -> tuple[UploadJob, bool]:
+) -> tuple[UploadJob, UploadJobImportLease | None, bool]:
     upload_job_manager = UploadJob.objects
     with transaction.atomic():
         job = (
@@ -659,16 +669,16 @@ def _reserve_video_upload_import_handoff(
             .get(id=upload_job_id)
         )
         if job.status == UploadJob.Status.ANONYMIZED.value:
-            return job, False
+            return job, None, False
         if not job.file or not job.file.name:
             job.mark_lost("Upload job has no stored file")
-            return job, False
+            return job, None, False
         if job.source_center is None:
             job.mark_error(
                 "Upload job has no resolved source center",
                 error_code=UploadJob.ErrorCode.INVALID_CONFIGURATION.value,
             )
-            return job, False
+            return job, None, False
 
         provenance = _upload_provenance(
             cast(UploadProvenance | None, job.processing_provenance)
@@ -676,17 +686,22 @@ def _reserve_video_upload_import_handoff(
         existing_task_id = provenance.get("video_import_task_id")
         if (
             job.status == UploadJob.Status.PROCESSING.value
+            and not job.processing_lease_owner
             and isinstance(existing_task_id, str)
             and existing_task_id.strip()
+            and timezone.now() - job.updated_at <= STALE_UPLOAD_JOB_AGE
         ):
-            if timezone.now() - job.updated_at <= STALE_UPLOAD_JOB_AGE:
-                return job, False
-            reason = (
-                "Recovered stale video upload import handoff after "
-                f"{STALE_UPLOAD_JOB_AGE}."
+            # Compatibility for jobs that were already processing when the
+            # lease migration was deployed. New reservations always use leases.
+            return job, None, False
+
+        try:
+            lease = acquire_upload_job_import_lease(
+                upload_job_id=str(job.pk),
+                owner=task_id,
             )
-            job.mark_error(reason)
-            logger.warning("Recovered stale video upload import: job=%s", job.id)
+        except UploadJobImportLeaseBusy:
+            return job, None, False
 
         job.mark_processing()
         _update_upload_provenance(
@@ -695,6 +710,7 @@ def _reserve_video_upload_import_handoff(
             processing_handoff="ffmpeg_media",
             video_import_task_id=task_id,
             video_import_queue=queue,
+            video_import_fencing_epoch=lease.fencing_epoch,
         )
         job.save(
             update_fields=[
@@ -702,7 +718,7 @@ def _reserve_video_upload_import_handoff(
                 "updated_at",
             ]
         )
-        return job, True
+        return job, lease, True
 
 
 def _media_integrity_provenance(
@@ -1627,13 +1643,16 @@ def process_upload_job(job_id: str) -> bool:
         job.mark_error(dispatch_result.reason or "Report LLM dispatch failed")
         return False
 
+    reserved_lease: UploadJobImportLease | None = None
     try:
         queue = queue_for_job_kind(HeavyJobKind.VIDEO_UPLOAD_IMPORT)
         task_id = uuid.uuid4().hex
-        reserved_job, should_dispatch = _reserve_video_upload_import_handoff(
+        reserved_job, reserved_lease, should_dispatch = (
+            _reserve_video_upload_import_handoff(
             upload_job_id=str(job.id),
             queue=queue,
             task_id=task_id,
+        )
         )
         if not should_dispatch:
             return reserved_job.status in {
@@ -1656,6 +1675,14 @@ def process_upload_job(job_id: str) -> bool:
         return True
     except Exception as exc:
         logger.exception("Video upload import handoff failed for %s: %s", job_id, exc)
+        if reserved_lease is not None:
+            try:
+                release_upload_job_import_lease(reserved_lease)
+            except UploadJobImportLeaseLost:
+                logger.warning(
+                    "Video upload dispatch lease was already fenced: job=%s",
+                    job_id,
+                )
         if _is_celery_broker_connection_error(exc):
             schedule_dispatch_retry(
                 job,
@@ -1669,7 +1696,11 @@ def process_upload_job(job_id: str) -> bool:
         return False
 
 
-def _run_video_upload_import_job(job_id: str) -> bool:
+def _run_video_upload_import_job(
+    job_id: str,
+    *,
+    lease_owner: str | None = None,
+) -> bool:
     upload_job_manager = UploadJob.objects
     job = upload_job_manager.select_related("source_center", "sensitive_meta").get(
         id=job_id
@@ -1689,102 +1720,152 @@ def _run_video_upload_import_job(job_id: str) -> bool:
         )
         return False
 
-    job.mark_processing()
-    provenance = _update_upload_provenance(job, stored_upload_path=job.file.name)
-    provenance.setdefault("stored_upload_path", job.file.name)
-    job.save(update_fields=["processing_provenance", "updated_at"])
+    owner = (lease_owner or f"direct-{uuid.uuid4().hex}").strip()
+    try:
+        lease = acquire_upload_job_import_lease(
+            upload_job_id=str(job.pk),
+            owner=owner,
+        )
+    except UploadJobImportLeaseBusy:
+        logger.info("Video upload job already has a live owner: job=%s", job_id)
+        return False
 
     source_materialized = False
     try:
-        with _ensure_upload_job_local_file(job) as file_path:
-            source_materialized = True
-            try:
-                processor_name = (
-                    provenance.get("processor_name") or _default_processor_name()
+        with UploadJobImportLeaseHeartbeat(lease) as heartbeat:
+            with locked_upload_job_import_lease(heartbeat.lease) as owned_job:
+                owned_job.mark_processing()
+                stored_upload_path = owned_job.file.name or ""
+                provenance = _update_upload_provenance(
+                    owned_job,
+                    stored_upload_path=stored_upload_path,
+                    video_import_fencing_epoch=heartbeat.lease.fencing_epoch,
                 )
-                if not processor_name:
-                    raise ObjectDoesNotExist(
-                        "No default EndoscopyProcessor is configured"
+                provenance.setdefault("stored_upload_path", stored_upload_path)
+                owned_job.save(
+                    update_fields=["processing_provenance", "updated_at"]
+                )
+                job = owned_job
+
+            with _ensure_upload_job_local_file(job) as file_path:
+                source_materialized = True
+                try:
+                    processor_name = (
+                        provenance.get("processor_name") or _default_processor_name()
+                    )
+                    if not processor_name:
+                        raise ObjectDoesNotExist(
+                            "No default EndoscopyProcessor is configured"
+                        )
+
+                    from endoreg_db.services.video_import import VideoImportService
+
+                    video = VideoImportService().import_and_anonymize(
+                        file_path=file_path,
+                        center_name=center.name,
+                        processor_name=processor_name,
+                        retry=False,
+                        attempt_id=uuid.uuid5(uuid.NAMESPACE_URL, owner).hex,
+                        execution_guard=heartbeat.guard,
+                    )
+                    sensitive_meta = (
+                        video.sensitive_meta if isinstance(video, VideoFile) else None
+                    )
+                except IntegrityError:
+                    raise
+                except Exception:
+                    heartbeat.guard()
+                    quarantine_path = _quarantine_upload_job_file(
+                        job,
+                        local_path=Path(file_path),
+                    )
+                    if quarantine_path is not None:
+                        logger.warning(
+                            "Upload job %s failed; source quarantined at %s.",
+                            job_id,
+                            quarantine_path,
+                        )
+                    raise
+
+            heartbeat.guard()
+            with locked_upload_job_import_lease(heartbeat.lease) as owned_job:
+                owned_job.mark_completed(sensitive_meta=sensitive_meta)
+                job = owned_job
+            cleanup_upload_job_source(job)
+            prediction_model_name = provenance.get("prediction_model_name")
+            if isinstance(video, VideoFile) and prediction_model_name:
+                try:
+                    from endoreg_db.services.video_temporal_inference import (
+                        dispatch_video_temporal_inference,
                     )
 
-                from endoreg_db.services.video_import import VideoImportService
-
-                video = VideoImportService().import_and_anonymize(
-                    file_path=file_path,
-                    center_name=center.name,
-                    processor_name=processor_name,
-                    retry=False,
-                )
-                sensitive_meta = (
-                    video.sensitive_meta if isinstance(video, VideoFile) else None
-                )
-            except IntegrityError:
-                raise
-            except Exception:
-                quarantine_path = _quarantine_upload_job_file(
-                    job,
-                    local_path=Path(file_path),
-                )
-                if quarantine_path is not None:
+                    ai_model = AiModel.objects.get(name=str(prediction_model_name))
+                    model_meta = ai_model.get_latest_version()
+                    prediction_dispatch = dispatch_video_temporal_inference(
+                        video_id=video.pk,
+                        model_meta_id=model_meta.pk,
+                        replace_prediction_segments=True,
+                        delete_frames_after=True,
+                    )
+                    _update_upload_provenance(
+                        job,
+                        prediction_task_id=prediction_dispatch.task_id,
+                        prediction_history_id=prediction_dispatch.history_id,
+                        prediction_queue=prediction_dispatch.queue,
+                    )
+                    job.save(update_fields=["processing_provenance", "updated_at"])
+                except Exception as exc:
                     logger.warning(
-                        "Upload job %s failed; source quarantined at %s.",
+                        "Video upload job %s imported but prediction dispatch failed: %s",
                         job_id,
-                        quarantine_path,
+                        exc,
                     )
-                raise
-
-        job.mark_completed(sensitive_meta=sensitive_meta)
-        cleanup_upload_job_source(job)
-        prediction_model_name = provenance.get("prediction_model_name")
-        if isinstance(video, VideoFile) and prediction_model_name:
-            try:
-                from endoreg_db.services.video_temporal_inference import (
-                    dispatch_video_temporal_inference,
-                )
-
-                ai_model = AiModel.objects.get(name=str(prediction_model_name))
-                model_meta = ai_model.get_latest_version()
-                prediction_dispatch = dispatch_video_temporal_inference(
-                    video_id=video.pk,
-                    model_meta_id=model_meta.pk,
-                    replace_prediction_segments=True,
-                    delete_frames_after=True,
-                )
-                _update_upload_provenance(
-                    job,
-                    prediction_task_id=prediction_dispatch.task_id,
-                    prediction_history_id=prediction_dispatch.history_id,
-                    prediction_queue=prediction_dispatch.queue,
-                )
-                job.save(update_fields=["processing_provenance", "updated_at"])
-            except Exception as exc:
-                logger.warning(
-                    "Video upload job %s imported but prediction dispatch failed: %s",
-                    job_id,
-                    exc,
-                )
+            release_upload_job_import_lease(heartbeat.lease)
         return True
+    except UploadJobImportLeaseLost as exc:
+        logger.error("Stale video upload worker fenced for %s: %s", job_id, exc)
+        return False
     except IntegrityError as exc:
         logger.warning("Duplicate upload content rejected for job %s", job_id)
-        job.mark_error(
-            str(exc),
-            error_code=UploadJob.ErrorCode.DUPLICATE_CONTENT.value,
-        )
+        try:
+            with locked_upload_job_import_lease(lease) as owned_job:
+                owned_job.mark_error(
+                    str(exc),
+                    error_code=UploadJob.ErrorCode.DUPLICATE_CONTENT.value,
+                )
+            release_upload_job_import_lease(lease)
+        except UploadJobImportLeaseLost:
+            logger.error("Duplicate-content worker was fenced: job=%s", job_id)
         return False
     except (FileNotFoundError, OSError) as exc:
         if source_materialized:
             logger.exception("Upload job processing failed for %s: %s", job_id, exc)
-            job.mark_error(str(exc))
+            try:
+                with locked_upload_job_import_lease(lease) as owned_job:
+                    owned_job.mark_error(str(exc))
+                release_upload_job_import_lease(lease)
+            except UploadJobImportLeaseLost:
+                logger.error("Failed worker was fenced: job=%s", job_id)
         else:
             error_detail = (
                 f"Upload source could not be materialized from storage. {exc}"
             )
             logger.exception("Upload job source missing for %s: %s", job_id, exc)
-            job.mark_lost(error_detail)
+            try:
+                with locked_upload_job_import_lease(lease) as owned_job:
+                    owned_job.mark_lost(error_detail)
+                release_upload_job_import_lease(lease)
+            except UploadJobImportLeaseLost:
+                logger.error("Missing-source worker was fenced: job=%s", job_id)
         return False
     except Exception as exc:
         logger.exception("Upload job processing failed for %s: %s", job_id, exc)
-        job.mark_error(str(exc))
+        try:
+            with locked_upload_job_import_lease(lease) as owned_job:
+                owned_job.mark_error(str(exc))
+            release_upload_job_import_lease(lease)
+        except UploadJobImportLeaseLost:
+            logger.error("Failed worker was fenced: job=%s", job_id)
         return False
 
 

@@ -159,6 +159,21 @@ def test_wait_for_watcher_file_ready_rejects_atomic_handoff_marker(
         )
 
 
+@pytest.mark.unit
+def test_wait_for_watcher_file_ready_rejects_symbolic_link(tmp_path: Path) -> None:
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"video")
+    watched_link = tmp_path / "linked.mp4"
+    watched_link.symlink_to(source)
+
+    with pytest.raises(ValueError, match="symbolic link"):
+        ingest._wait_for_watcher_file_ready(
+            watched_link,
+            stable_after_seconds=0,
+            poll_interval_seconds=0.01,
+        )
+
+
 @pytest.mark.django_db
 def test_process_watcher_file_waits_for_direct_slow_writer(
     tmp_path: Path,

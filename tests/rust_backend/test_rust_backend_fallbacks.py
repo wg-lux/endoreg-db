@@ -86,3 +86,79 @@ def test_build_expected_frame_records_returns_none_when_rust_backend_errors(
     )
 
     assert rust_backend_module.build_expected_frame_records(3) is None
+
+
+def test_stable_file_identity_normalizes_native_values(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import endoreg_db.utils.rust_backend as rust_backend_module
+
+    test_file = tmp_path / "video.mp4"
+    test_file.write_bytes(b"video")
+
+    def native_identity(path: Path, chunk_size: int) -> tuple[int, int, str]:
+        return 5, 123, "a" * 64
+
+    monkeypatch.setattr(
+        rust_backend_module,
+        "_stable_file_identity",
+        native_identity,
+    )
+
+    assert rust_backend_module.stable_file_identity(test_file) == (
+        5,
+        123,
+        "a" * 64,
+    )
+
+
+def test_stable_file_identity_fails_loudly_on_native_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import endoreg_db.utils.rust_backend as rust_backend_module
+
+    test_file = tmp_path / "video.mp4"
+    test_file.write_bytes(b"video")
+
+    def raise_changed_file(path: Path, chunk_size: int) -> NoReturn:
+        raise OSError("file changed")
+
+    monkeypatch.setattr(
+        rust_backend_module,
+        "_stable_file_identity",
+        raise_changed_file,
+    )
+
+    with pytest.raises(RuntimeError, match="stable_file_identity failed"):
+        rust_backend_module.stable_file_identity(test_file)
+
+
+def test_native_capabilities_are_normalized(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import endoreg_db.utils.rust_backend as rust_backend_module
+
+    def capabilities() -> list[tuple[str, str, str]]:
+        return [
+            (
+                "report_source_snapshot",
+                "report_source_snapshot_v1",
+                "0.1.0",
+            )
+        ]
+
+    monkeypatch.setattr(
+        rust_backend_module,
+        "_native_capabilities",
+        capabilities,
+    )
+
+    assert rust_backend_module.native_capabilities() == (
+        ("report_source_snapshot", "report_source_snapshot_v1", "0.1.0"),
+    )
+    assert rust_backend_module.has_native_capability(
+        "report_source_snapshot",
+        "report_source_snapshot_v1",
+    )

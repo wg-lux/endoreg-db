@@ -15,6 +15,7 @@ from endoreg_db.schemas.video_storage import (
 )
 from endoreg_db.services import video_storage_normalization as normalization
 from endoreg_db.services.video_storage import contracts as storage_contracts
+from endoreg_db.utils.video.command_construction import FFprobeInputPolicy
 
 
 def _timeline(
@@ -164,7 +165,12 @@ def test_probe_video_artifact_keeps_rational_fps_time_base_and_vfr(
     path = tmp_path / "source.mp4"
     path.write_bytes(b"video")
 
-    def fake_get_stream_info(_path: Path) -> dict[str, object]:
+    def fake_get_stream_info(
+        _path: Path,
+        *,
+        input_policy: FFprobeInputPolicy = FFprobeInputPolicy.DEFAULT,
+    ) -> dict[str, object]:
+        del input_policy
         return {
             "streams": [
                 {

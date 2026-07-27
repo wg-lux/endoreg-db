@@ -30,6 +30,12 @@ the only authoritative source for implementation and approval status.
   production profile.
 - **YUV 4:2:0 planar (YUV420P):** a pixel format with one luma plane and two
   chroma planes sampled at 4:2:0.
+- **Advanced Encryption Standard in Galois/Counter Mode (AES-GCM):** the
+  authenticated-encryption algorithm used by the chunked protected-media
+  storage format.
+- **Python Global Interpreter Lock (GIL):** the interpreter lock released by
+  native Rust file input/output and AES-GCM work so independent encrypted
+  range readers can progress concurrently.
 
 Names such as `pts_v1`, configuration-variable suffixes, command options, and
 profile identifiers are literal implementation names. Their meaning is
@@ -165,6 +171,14 @@ is never included in the loopback address, process arguments, or response
 payload. Reimport, normalization, and reanonymization therefore continue to use
 the published artifact generation and the existing `pts_v1` coordinate
 contract without introducing another independently versioned seek index.
+
+Application-served encrypted byte ranges prefer the native Rust reader. Each
+native call is capped at 4 MiB by the Python storage boundary and at 8 MiB by
+the Rust boundary; file input/output and AES-GCM authentication run without the
+Python GIL. Independent requests use separate file handles. A missing native
+extension at process start uses the byte-identical Python reference reader,
+while native key, authentication, geometry, or length failures stop the
+response instead of falling back.
 
 ## Inventory and Migration
 

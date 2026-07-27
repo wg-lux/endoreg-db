@@ -34,6 +34,7 @@ from endoreg_db.services.video_files import (
     get_active_raw_video_file,
 )
 from endoreg_db.utils import ffmpeg_wrapper
+from endoreg_db.utils.video.command_construction import FFprobeInputPolicy
 from endoreg_db.utils.video.encoding_standard import STANDARD_VIDEO_ENCODING
 from endoreg_db.services.video_storage_normalization import (
     configured_video_storage_profile,
@@ -1107,7 +1108,10 @@ def _validate_generated_hls_profile(
         key_info_path=key_info_path,
     )
     try:
-        output_probe = probe_video_artifact(validation_path)
+        output_probe = probe_video_artifact(
+            validation_path,
+            input_policy=FFprobeInputPolicy.TRUSTED_LOCAL_HLS,
+        )
         total_size_bytes = playlist_path.stat().st_size + sum(
             segment.stat().st_size for segment in playlist_path.parent.glob("seg_*.ts")
         )

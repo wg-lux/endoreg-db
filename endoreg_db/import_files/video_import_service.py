@@ -2,7 +2,8 @@
 import logging
 import shutil
 from contextlib import AbstractContextManager, contextmanager, nullcontext
-from collections.abc import Generator
+from collections.abc import Callable, Generator
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
 
@@ -60,12 +61,20 @@ from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.file_operations import (
     sha256_file,
 )
+from endoreg_db.utils.rust_backend import stable_file_identity
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
 
 logger = logging.getLogger(__name__)
 PIPELINE_STORAGE_MULTIPLIER = 2.5
+
+
+@dataclass(frozen=True)
+class _RawSourceIdentity:
+    size_bytes: int
+    modified_time_ns: int
+    sha256: str
 
 
 class _VideoAnonymizer(Protocol):
@@ -100,6 +109,30 @@ def _load_video_anonymizer_class() -> type[_VideoAnonymizer]:
     global VideoAnonymizer
     if VideoAnonymizer is not None:
         return VideoAnonymizer
+
+    configured_capabilities = getattr(
+        settings,
+        "LX_ANONYMIZER_REQUIRED_NATIVE_CAPABILITIES",
+        (),
+    )
+    if isinstance(configured_capabilities, str):
+        required_capabilities = tuple(
+            item.strip()
+            for item in configured_capabilities.split(",")
+            if item.strip()
+        )
+    else:
+        required_capabilities = tuple(str(item) for item in configured_capabilities)
+    if required_capabilities:
+        try:
+            from lx_anonymizer._native import (  # pyright: ignore[reportMissingTypeStubs]
+                require_native_capabilities,  # pyright: ignore[reportAttributeAccessIssue,reportUnknownVariableType]
+            )
+        except ImportError as exc:
+            raise RuntimeError(
+                "Required lx-anonymizer native capability contract is unavailable"
+            ) from exc
+        require_native_capabilities(required_capabilities)
 
     try:
         from endoreg_db.import_files.processing.video_processing.video_anonymization import (
@@ -195,7 +228,11 @@ def _video_meta_stream_contract(video: VideoFile | None) -> SourceStreamData:
     return contract
 
 
-def _record_validated_raw_source(ctx: ImportContext, local_source_path: Path) -> None:
+def _record_validated_raw_source(
+    ctx: ImportContext,
+    local_source_path: Path,
+    identity: _RawSourceIdentity,
+) -> None:
     local_source_path = Path(local_source_path)
     if not local_source_path.exists():
         raise FileNotFoundError(f"Video raw source not found: {local_source_path}")
@@ -204,15 +241,13 @@ def _record_validated_raw_source(ctx: ImportContext, local_source_path: Path) ->
             f"Video raw source is not a regular file: {local_source_path}"
         )
 
-    stat_result = local_source_path.stat()
-    if stat_result.st_size <= 0:
+    if identity.size_bytes <= 0:
         raise RuntimeError(f"Video raw source is empty: {local_source_path}")
 
-    source_sha256 = sha256_file(local_source_path)
     ctx.validated_raw_source_path = local_source_path.resolve()
-    ctx.validated_raw_source_size_bytes = int(stat_result.st_size)
-    ctx.validated_raw_source_mtime_ns = int(stat_result.st_mtime_ns)
-    ctx.validated_raw_source_sha256 = source_sha256
+    ctx.validated_raw_source_size_bytes = identity.size_bytes
+    ctx.validated_raw_source_mtime_ns = identity.modified_time_ns
+    ctx.validated_raw_source_sha256 = identity.sha256
     ctx.validated_raw_source_stream = _video_meta_stream_contract(ctx.current_video)
     logger.info(
         "Validated local raw source for anonymization: video=%s path=%s "
@@ -226,13 +261,36 @@ def _record_validated_raw_source(ctx: ImportContext, local_source_path: Path) ->
     )
 
 
-def _raw_source_identity(local_source_path: Path) -> tuple[int, int, str]:
+def _raw_source_identity(local_source_path: Path) -> _RawSourceIdentity:
     local_source_path = Path(local_source_path)
-    stat_result = local_source_path.stat()
-    return (
-        int(stat_result.st_size),
-        int(stat_result.st_mtime_ns),
-        sha256_file(local_source_path),
+    native_identity = stable_file_identity(local_source_path)
+    if native_identity is not None:
+        return _RawSourceIdentity(*native_identity)
+
+    before = local_source_path.stat()
+    source_sha256 = sha256_file(local_source_path)
+    after = local_source_path.stat()
+    before_metadata = (
+        int(before.st_dev),
+        int(before.st_ino),
+        int(before.st_size),
+        int(before.st_mtime_ns),
+    )
+    after_metadata = (
+        int(after.st_dev),
+        int(after.st_ino),
+        int(after.st_size),
+        int(after.st_mtime_ns),
+    )
+    if before_metadata != after_metadata:
+        raise RuntimeError(
+            f"Video raw source changed while deriving stable identity: "
+            f"{local_source_path}"
+        )
+    return _RawSourceIdentity(
+        size_bytes=int(after.st_size),
+        modified_time_ns=int(after.st_mtime_ns),
+        sha256=source_sha256,
     )
 
 
@@ -338,28 +396,35 @@ class VideoImportService:
         center_name: str,
         processor_name: str,
         retry: bool = False,
+        *,
+        attempt_id: str | None = None,
+        execution_guard: Callable[[], None] | None = None,
     ) -> "VideoFile | None":
         """
         Public entrypoint: wrap import_and_anonymize logic.
         """
         # First, initialize import context. this will be updated during import and keep track of current paths, file type and center and processor.
-        ctx = ImportContext(
-            file_path=Path(file_path),
-            center_name=center_name,
-            processor_name=processor_name,
-            file_type="video",
-            defer_video_initialization=True,
-        )
+        context_values: dict[str, object] = {
+            "file_path": Path(file_path),
+            "center_name": center_name,
+            "processor_name": processor_name,
+            "file_type": "video",
+            "defer_video_initialization": True,
+            "execution_guard": execution_guard,
+        }
+        if attempt_id is not None:
+            context_values["attempt_id"] = attempt_id
+        ctx = ImportContext.model_validate(context_values)
         self.logger.info("validating and preparing file")
         if not ctx.file_path.exists():
             raise FileNotFoundError(f"Video file not found: {file_path}")
 
-        ctx.file_hash = sha256_file(ctx.file_path)
         ctx.original_path = ctx.file_path
         lock_path = ctx.original_path
 
         with file_lock(lock_path):
             logger.info("Acquired file lock for %s", lock_path)
+            ctx.file_hash = _raw_source_identity(ctx.file_path).sha256
             with content_hash_lock(ctx.file_hash, _hash_lock_dir()):
                 logger.info("Acquired content-hash lock for %s", ctx.file_hash)
                 existing_completed_video = self._get_existing_completed_video(ctx)
@@ -414,6 +479,8 @@ class VideoImportService:
                     with self._verified_local_raw_source(ctx):
                         ctx = self.anonymizer.anonymize_video(ctx)
                         _normalize_reimport_video_quality(ctx)
+                    if ctx.execution_guard is not None:
+                        ctx.execution_guard()
                     logger.info(
                         "Primary video anonymization succeeded for %s",
                         ctx.file_path,
@@ -466,7 +533,7 @@ class VideoImportService:
                 raise RuntimeError(
                     "Video raw source changed during VideoMeta extraction."
                 )
-            _record_validated_raw_source(ctx, local_source_path)
+            _record_validated_raw_source(ctx, local_source_path, after_identity)
             ctx.local_source_path = local_source_path
             try:
                 yield
@@ -502,7 +569,8 @@ class VideoImportService:
             with file_lock(local_source_path):
                 logger.info("Acquired file lock for re-anonymization: %s", video_hash)
                 center_name, processor_name = get_video_import_context_names(video)
-                source_hash = sha256_file(local_source_path)
+                source_identity = _raw_source_identity(local_source_path)
+                source_hash = source_identity.sha256
                 ctx = ImportContext(
                     file_path=local_source_path,
                     center_name=center_name,
@@ -540,7 +608,7 @@ class VideoImportService:
                         raise RuntimeError(
                             "Video raw source changed during VideoMeta extraction."
                         )
-                    _record_validated_raw_source(ctx, local_source_path)
+                    _record_validated_raw_source(ctx, local_source_path, after_identity)
 
                     try:
                         mark_instance_processing_started(video, ctx)

@@ -50,7 +50,6 @@ from endoreg_db.services.video_files import (
 from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
-    atomic_move_file,
     ensure_directory,
     safe_unlink_file,
     sha256_file,
@@ -646,7 +645,6 @@ class VideoAnonymizer:
     def __init__(self):
         _ensure_ffmpeg_tools_on_path()
         self._frame_cleaning_available: bool = False
-        self._frame_cleaning_class: _FrameCleaner | None = None
         self._ensure_frame_cleaning_available()
 
     def anonymize_video(self, ctx: ImportContext):
@@ -667,16 +665,20 @@ class VideoAnonymizer:
 
         video_hash = video.video_hash
         anonymized_output_path = anonymized_dir / f"{video_hash}.mp4"
-        temp_output_path = _temp_media_path(anonymized_output_path)
+        temp_output_path = _temp_media_path(
+            anonymized_output_path,
+            marker=f"attempt-{ctx.attempt_id}",
+        )
         safe_unlink_file(temp_output_path, missing_ok=True)
         ensure_directory(temp_output_path.parent)
 
-        frame_cleaner = getattr(self, "_frame_cleaning_class", None)
-        if frame_cleaner is None:
+        if not self._frame_cleaning_available:
             self._ensure_frame_cleaning_available()
-            frame_cleaner = self._frame_cleaning_class
-        if frame_cleaner is None:
+        if not self._frame_cleaning_available:
             raise RuntimeError("Frame cleaning is unavailable.")
+        # FrameCleaner owns mutable frame, metadata, OCR, and LLM run state.
+        # A fresh instance is mandatory for every attempt.
+        frame_cleaner = cast(_FrameCleaner, FrameCleaner())
 
         endoscope_roi, endoscope_roi_nested = self._get_processor_roi_info(ctx)
         explicit_source_path = getattr(ctx, "local_source_path", None)
@@ -714,8 +716,6 @@ class VideoAnonymizer:
         if extracted_metadata is None:
             extracted_metadata = {}
         temp_result_path = ctx.anonymized_path
-        if temp_result_path is None:
-            raise RuntimeError("Video anonymization did not return an output path.")
         if not temp_result_path.exists():
             raise RuntimeError(
                 f"Video anonymization output does not exist: {temp_result_path}"
@@ -725,31 +725,28 @@ class VideoAnonymizer:
                 f"Video anonymization output is empty: {temp_result_path}"
             )
 
-        if ctx.retry:
-            try:
-                retry_output_is_canonical = (
-                    temp_result_path.resolve() == anonymized_output_path.resolve()
-                )
-            except FileNotFoundError:
-                retry_output_is_canonical = False
-            if retry_output_is_canonical:
-                raise RuntimeError(
-                    "Video re-anonymization must remain staged until quality "
-                    "normalization succeeds."
-                )
-            ctx.anonymized_path = temp_result_path
-            logger.info(
-                "Retained re-anonymized video in staging pending quality "
-                "normalization: video=%s path=%s",
-                video_hash,
-                temp_result_path,
+        try:
+            candidate_is_canonical = (
+                temp_result_path.resolve() == anonymized_output_path.resolve()
             )
-        else:
-            atomic_move_file(
-                source=temp_result_path,
-                destination=anonymized_output_path,
+        except FileNotFoundError:
+            candidate_is_canonical = False
+        if candidate_is_canonical:
+            raise RuntimeError(
+                "Video anonymization must remain in attempt-local staging until "
+                "validation and fenced publication succeed."
             )
-            ctx.anonymized_path = anonymized_output_path
+        ctx.anonymized_path = temp_result_path
+        logger.info(
+            "Retained anonymized video in attempt-local staging pending validation: "
+            "video=%s attempt=%s path=%s",
+            video_hash,
+            ctx.attempt_id,
+            temp_result_path,
+        )
+
+        if ctx.execution_guard is not None:
+            ctx.execution_guard()
 
         lx_sensitive_payload = {
             key: value
@@ -964,7 +961,6 @@ class VideoAnonymizer:
             Tuple of (availability_flag, FrameCleaner_class, ReportReader_class)
         """
         assert FrameCleaner is not None
-        self._frame_cleaning_class = cast(_FrameCleaner, FrameCleaner())
         self._frame_cleaning_available = True
 
     def _get_processor_roi_info(

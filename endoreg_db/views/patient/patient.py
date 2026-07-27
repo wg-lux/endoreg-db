@@ -61,7 +61,7 @@ class PatientViewSet(viewsets.ModelViewSet[Patient]):  # pyright: ignore[reportI
     serializer_class = PatientSerializer
     permission_classes = [PolicyPermission]
 
-    def get_queryset(self):  # pyright: ignore[reportIncompatibleMethodOverride]
+    def get_queryset(self):
         return filter_center_scoped_queryset(
             queryset=Patient.objects.all(),
             user=self.request.user,

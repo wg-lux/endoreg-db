@@ -1,21 +1,33 @@
 from __future__ import annotations
 
 import errno
+import fcntl
 import hashlib
 import logging
 import os
 import shutil
+import stat
 import time
+from collections.abc import Generator
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterable
+from typing import TYPE_CHECKING, Any, Iterable
+from uuid import uuid4
 
 from django.db.models.fields.files import FieldFile
 
-from endoreg_db.utils.rust_backend import sha256_file_hex as rust_sha256_file_hex
+from endoreg_db.utils.rust_backend import (
+    native_capability_version,
+    sha256_file_hex as rust_sha256_file_hex,
+    stable_snapshot_to_path as rust_stable_snapshot_to_path,
+)
 from endoreg_db.utils.structured_logging import (
     emit_structured_event,
     path_reference,
 )
+
+if TYPE_CHECKING:
+    from endoreg_db.schemas.report_import import ReportSourceSnapshot
 
 logger = logging.getLogger(__name__)
 
@@ -216,6 +228,226 @@ def atomic_copy_file(
         bytes=source.stat().st_size,
     )
     return destination
+
+
+def _source_metadata_identity(stat_result: os.stat_result) -> tuple[int, int, int, int]:
+    return (
+        int(stat_result.st_dev),
+        int(stat_result.st_ino),
+        int(stat_result.st_size),
+        int(stat_result.st_mtime_ns),
+    )
+
+
+def _python_stable_snapshot_to_path(
+    *,
+    source: Path,
+    temporary_destination: Path,
+    chunk_size: int,
+) -> tuple[int, int, str]:
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    source_fd = os.open(source, flags)
+    try:
+        before = os.fstat(source_fd)
+        if not stat.S_ISREG(before.st_mode):
+            raise ValueError(f"Report snapshot source is not a regular file: {source}")
+
+        digest = hashlib.sha256()
+        bytes_written = 0
+        with (
+            os.fdopen(os.dup(source_fd), "rb", closefd=True) as source_handle,
+            temporary_destination.open("xb") as target_handle,
+        ):
+            while chunk := source_handle.read(chunk_size):
+                target_handle.write(chunk)
+                digest.update(chunk)
+                bytes_written += len(chunk)
+            target_handle.flush()
+            os.fsync(target_handle.fileno())
+
+        after = os.fstat(source_fd)
+        current = source.stat(follow_symlinks=False)
+        if _source_metadata_identity(before) != _source_metadata_identity(
+            after
+        ) or _source_metadata_identity(after) != _source_metadata_identity(current):
+            raise RuntimeError(
+                f"Report source changed while creating stable snapshot: {source}"
+            )
+        if bytes_written != int(after.st_size):
+            raise RuntimeError(
+                "Report snapshot byte count differs from source size: "
+                f"copied={bytes_written} expected={after.st_size}"
+            )
+        return int(after.st_size), int(after.st_mtime_ns), digest.hexdigest()
+    finally:
+        os.close(source_fd)
+
+
+def atomic_report_source_snapshot(
+    *,
+    source: Path,
+    destination: Path,
+    chunk_size: int = 1024 * 1024,
+    file_mode: int | None = None,
+) -> ReportSourceSnapshot:
+    """Atomically copy and hash one stable view of a local report source."""
+    from endoreg_db.schemas.report_import import ReportSourceSnapshot
+
+    source = Path(source)
+    destination = Path(destination)
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be greater than zero")
+    if destination.exists():
+        raise FileExistsError(
+            f"Report snapshot destination already exists: {destination}"
+        )
+
+    ensure_directory(destination.parent)
+    ensure_disk_capacity(
+        destination_dir=destination.parent,
+        required_bytes=source.stat(follow_symlinks=False).st_size,
+    )
+    temporary_destination = destination.with_name(
+        f"{destination.name}.snapshot.{os.getpid()}.{uuid4().hex}"
+    )
+    backend = "rust"
+    implementation_version = (
+        native_capability_version(
+            "report_source_snapshot",
+            "report_source_snapshot_v1",
+        )
+        or "unadvertised"
+    )
+    try:
+        native_result = rust_stable_snapshot_to_path(
+            source,
+            temporary_destination,
+            chunk_size,
+        )
+        if native_result is None:
+            backend = "python"
+            implementation_version = "python-fallback-v1"
+            native_result = _python_stable_snapshot_to_path(
+                source=source,
+                temporary_destination=temporary_destination,
+                chunk_size=chunk_size,
+            )
+        size_bytes, modified_time_ns, sha256 = native_result
+        if temporary_destination.stat().st_size != size_bytes:
+            raise RuntimeError(
+                "Report snapshot target size differs from snapshot identity: "
+                f"target={temporary_destination.stat().st_size} identity={size_bytes}"
+            )
+        if file_mode is not None:
+            os.chmod(temporary_destination, file_mode)
+        os.link(temporary_destination, destination)
+        safe_unlink_file(temporary_destination)
+        _fsync_directory_best_effort(destination.parent)
+    except Exception as exc:
+        safe_unlink_file(temporary_destination, missing_ok=True)
+        _emit_file_operation_event(
+            operation="report_source_snapshot",
+            status="error",
+            source=source,
+            destination=destination,
+            detail=str(exc),
+            backend=backend,
+            implementation_version=implementation_version,
+        )
+        raise
+
+    snapshot = ReportSourceSnapshot(
+        path=destination,
+        size_bytes=size_bytes,
+        modified_time_ns=modified_time_ns,
+        sha256=sha256,
+    )
+    _emit_file_operation_event(
+        operation="report_source_snapshot",
+        status="ok",
+        source=source,
+        destination=destination,
+        bytes=snapshot.size_bytes,
+        sha256_prefix=snapshot.sha256[:12],
+        contract_version=snapshot.contract_version,
+        backend=backend,
+        implementation_version=implementation_version,
+    )
+    return snapshot
+
+
+@contextmanager
+def advisory_file_lock(
+    *,
+    lock_path: Path,
+    timeout_seconds: float = 90.0,
+    poll_interval_seconds: float = 0.05,
+) -> Generator[None]:
+    """Acquire a persistent process-owned advisory lock without stale reclaim."""
+    if timeout_seconds < 0:
+        raise ValueError("timeout_seconds must not be negative")
+    if poll_interval_seconds <= 0:
+        raise ValueError("poll_interval_seconds must be greater than zero")
+
+    lock_path = Path(lock_path)
+    ensure_directory(lock_path.parent)
+    descriptor = os.open(
+        lock_path,
+        os.O_CREAT | os.O_RDWR | getattr(os, "O_CLOEXEC", 0),
+        0o600,
+    )
+    acquired = False
+    started_at = time.monotonic()
+    try:
+        deadline = started_at + timeout_seconds
+        while True:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(
+                        f"Timed out waiting for advisory lock: {lock_path}"
+                    )
+                time.sleep(poll_interval_seconds)
+
+        os.ftruncate(descriptor, 0)
+        os.write(
+            descriptor,
+            f"pid={os.getpid()} acquired_monotonic={time.monotonic_ns()}\n".encode(
+                "ascii"
+            ),
+        )
+        os.fsync(descriptor)
+        _emit_file_operation_event(
+            operation="advisory_lock",
+            status="acquired",
+            destination=lock_path,
+            wait_seconds=time.monotonic() - started_at,
+        )
+        yield
+    except Exception as exc:
+        if not acquired:
+            _emit_file_operation_event(
+                operation="advisory_lock",
+                status="error",
+                destination=lock_path,
+                detail=str(exc),
+                wait_seconds=time.monotonic() - started_at,
+            )
+        raise
+    finally:
+        if acquired:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+            _emit_file_operation_event(
+                operation="advisory_lock",
+                status="released",
+                destination=lock_path,
+            )
+        os.close(descriptor)
 
 
 def atomic_move_file(

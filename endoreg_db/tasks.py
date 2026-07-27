@@ -21,7 +21,10 @@ if TYPE_CHECKING:
 def run_video_upload_import_task(_task: Task[[str], bool], job_id: str) -> bool:
     from endoreg_db.services.hub.ingest import _run_video_upload_import_job
 
-    return _run_video_upload_import_job(str(job_id))
+    return _run_video_upload_import_job(
+        str(job_id),
+        lease_owner=str(_task.request.id),
+    )
 
 
 @shared_task(

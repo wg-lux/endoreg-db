@@ -4,8 +4,49 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from pytest_django.fixtures import SettingsWrapper
 
 from endoreg_db.services import environment_readiness as readiness
+
+
+def test_native_report_snapshot_is_required_when_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+    settings: SettingsWrapper,
+) -> None:
+    monkeypatch.setattr(
+        settings,
+        "REPORT_IMPORT_REQUIRE_NATIVE_SNAPSHOT",
+        True,
+        raising=False,
+    )
+
+    def capability_missing(name: str, contract: str) -> bool:
+        return False
+
+    monkeypatch.setattr(readiness, "has_native_capability", capability_missing)
+
+    issues = readiness._check_report_native_snapshot_contract()  # pyright: ignore[reportPrivateUsage]
+
+    assert [issue.code for issue in issues] == ["report_native_snapshot_unavailable"]
+
+
+def test_native_report_snapshot_requirement_accepts_matching_capability(
+    monkeypatch: pytest.MonkeyPatch,
+    settings: SettingsWrapper,
+) -> None:
+    monkeypatch.setattr(
+        settings,
+        "REPORT_IMPORT_REQUIRE_NATIVE_SNAPSHOT",
+        True,
+        raising=False,
+    )
+
+    def capability_available(name: str, contract: str) -> bool:
+        return True
+
+    monkeypatch.setattr(readiness, "has_native_capability", capability_available)
+
+    assert readiness._check_report_native_snapshot_contract() == []  # pyright: ignore[reportPrivateUsage]
 
 
 def test_path_within_rejects_external_candidate() -> None:

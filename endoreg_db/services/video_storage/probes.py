@@ -17,6 +17,7 @@ from endoreg_db.services.video_storage.contracts import (
     VideoStorageNormalizationError,
 )
 from endoreg_db.utils import ffmpeg_wrapper
+from endoreg_db.utils.video.command_construction import FFprobeInputPolicy
 
 
 class _ProbeStream(BaseModel):
@@ -100,7 +101,11 @@ def _positive_ratio(value: str | None, *, field_name: str) -> Fraction | None:
     return parsed if parsed > 0 else None
 
 
-def probe_video_artifact(path: Path) -> VideoArtifactProbe:
+def probe_video_artifact(
+    path: Path,
+    *,
+    input_policy: FFprobeInputPolicy = FFprobeInputPolicy.DEFAULT,
+) -> VideoArtifactProbe:
     candidate = Path(path)
     if not candidate.is_file():
         raise VideoStorageNormalizationError(f"Video artifact is missing: {candidate}")
@@ -108,7 +113,10 @@ def probe_video_artifact(path: Path) -> VideoArtifactProbe:
     if size_bytes <= 0:
         raise VideoStorageNormalizationError(f"Video artifact is empty: {candidate}")
 
-    raw_payload = ffmpeg_wrapper.get_stream_info(candidate)
+    raw_payload = ffmpeg_wrapper.get_stream_info(
+        candidate,
+        input_policy=input_policy,
+    )
     if raw_payload is None:
         raise VideoStorageNormalizationError(f"ffprobe failed for video: {candidate}")
     payload = _ProbePayload.model_validate(raw_payload)

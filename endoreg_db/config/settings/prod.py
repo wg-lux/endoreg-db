@@ -28,6 +28,10 @@ from . import keycloak as KEYCLOAK
 pytest_active = "PYTEST_CURRENT_TEST" in os.environ
 
 DEBUG = False if pytest_active else env_bool("DJANGO_DEBUG", False)
+REPORT_IMPORT_REQUIRE_NATIVE_SNAPSHOT = env_bool(
+    "REPORT_IMPORT_REQUIRE_NATIVE_SNAPSHOT",
+    not pytest_active,
+)
 if env_bool("DJANGO_DEBUG", False) and not pytest_active:
     raise ValueError(
         "DJANGO_DEBUG must be false in production; refusing to start with debug-mode auth bypass enabled"
