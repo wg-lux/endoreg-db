@@ -5,6 +5,7 @@ import math
 import os
 import uuid
 from contextlib import nullcontext
+from fractions import Fraction
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 
@@ -91,6 +92,7 @@ class _FrameCleaner(Protocol):
         video_path: Path,
         endoscope_image_roi: dict[str, int],
         endoscope_data_roi_nested: dict[str, dict[str, int | None]],
+        source_frame_rate: Fraction,
         output_path: Path,
     ) -> tuple[Path, JsonObject | None]: ...
 
@@ -431,6 +433,28 @@ def _first_video_stream(
     return video_streams[0] if video_streams else None
 
 
+def _source_frame_rate(stream: FfmpegStreamProbeEntry) -> Fraction:
+    for field_name, value in (
+        ("avg_frame_rate", stream.avg_frame_rate),
+        ("r_frame_rate", stream.r_frame_rate),
+    ):
+        if value is None:
+            continue
+        try:
+            frame_rate = Fraction(value)
+        except ZeroDivisionError:
+            continue
+        except ValueError as exc:
+            raise RuntimeError(
+                f"Anonymizer source has invalid {field_name}: {value!r}"
+            ) from exc
+        if frame_rate > 0:
+            return frame_rate
+    raise RuntimeError(
+        "Anonymizer source has no positive rational average or nominal frame rate."
+    )
+
+
 def _critical_source_mismatch(
     *,
     video_hash: str,
@@ -597,6 +621,7 @@ def _verify_anonymizer_source(
         raise RuntimeError(
             f"Anonymizer source has unreadable structural dimensions: {source_path}"
         )
+    source_frame_rate = _source_frame_rate(video_stream)
 
     raw_expected_stream = getattr(ctx, "validated_raw_source_stream", None)
     expected_stream: JsonObject = (
@@ -634,6 +659,8 @@ def _verify_anonymizer_source(
         "sha256": str(source_sha256),
         "width": width,
         "height": height,
+        "fps_num": source_frame_rate.numerator,
+        "fps_den": source_frame_rate.denominator,
         "codec_name": video_stream.codec_name or None,
     }
     _log_anonymizer_source_verified(video_hash=video_hash, snapshot=snapshot)
@@ -701,6 +728,13 @@ class VideoAnonymizer:
                 raise RuntimeError(
                     "Anonymizer source dimensions are unavailable after verification."
                 )
+            fps_num = _positive_int(source_snapshot.get("fps_num"))
+            fps_den = _positive_int(source_snapshot.get("fps_den"))
+            if fps_num is None or fps_den is None:
+                raise RuntimeError(
+                    "Anonymizer source rational frame rate is unavailable after verification."
+                )
+            source_frame_rate = Fraction(fps_num, fps_den)
             endoscope_roi, endoscope_roi_nested = _normalize_roi_to_source_dimensions(
                 endoscope_roi=endoscope_roi,
                 sensitive_rois=endoscope_roi_nested,
@@ -711,6 +745,7 @@ class VideoAnonymizer:
                 video_path=verified_source,
                 endoscope_image_roi=endoscope_roi,
                 endoscope_data_roi_nested=endoscope_roi_nested,
+                source_frame_rate=source_frame_rate,
                 output_path=temp_output_path,
             )
         if extracted_metadata is None:

@@ -25,6 +25,7 @@ from endoreg_db.config.env import (
     get_ffmpeg_transcode_quality_mode,
     get_ffmpeg_transcode_timeout_seconds,
 )
+from endoreg_db.exceptions import MediaOperationDeferred
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.schemas.video_storage import VideoArtifactProbe
@@ -64,6 +65,11 @@ from endoreg_db.utils.paths import (
     resolve_existing_protected_media_path,
     to_protected_media_relative,
 )
+from endoreg_db.utils.rust_backend import (
+    derive_hls_publication_action,
+    derive_hls_reconciliation_action,
+    derive_hls_reservation_action,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -88,9 +94,13 @@ HLS_VIDEO_CRF = "18"
 HLS_VIDEO_PROFILE = STANDARD_VIDEO_ENCODING.profile
 HLS_VIDEO_PIXEL_FORMAT = STANDARD_VIDEO_ENCODING.pixel_format
 HLS_VIDEO_COLOR_RANGE = STANDARD_VIDEO_ENCODING.color_range
-HLS_AUDIO_CODEC = "copy"
 HLS_FFMPEG_THREADS_ENV = "LX_ANNOTATE_HLS_FFMPEG_THREADS"
 HLS_KEY_URI_PATTERN = re.compile(r'URI="[^"]+"')
+HLS_IN_FLIGHT_STATUSES = (
+    VideoHlsArtifact.Status.QUEUED.value,
+    VideoHlsArtifact.Status.MATERIALIZING.value,
+    VideoHlsArtifact.Status.VALIDATED.value,
+)
 
 _HLS_KEY_WRAP_AAD_PREFIX = b"endoreg-db:hls-content-key:v1"
 
@@ -121,6 +131,7 @@ class HlsMaterializationResult:
 
 @dataclass(frozen=True)
 class _ArtifactSnapshot:
+    artifact_id: int
     status: str
     key_id: UUID
     source_generation_id: UUID
@@ -140,6 +151,7 @@ class _PreparedArtifact:
     key_id: UUID
     previous: _ArtifactSnapshot | None
     should_materialize: bool
+    publish_only: bool = False
 
 
 @dataclass(frozen=True)
@@ -287,6 +299,7 @@ def _artifact_snapshot(
     if not is_ready and not is_queued_ready:
         return None
     return _ArtifactSnapshot(
+        artifact_id=int(artifact.pk),
         status=VideoHlsArtifact.Status.READY.value,
         key_id=artifact.key_id,
         source_generation_id=artifact.source_generation_id,
@@ -415,12 +428,17 @@ def _recover_stale_in_flight_artifact(
     artifact_kind: VideoArtifactKind,
     include_queued: bool,
 ) -> bool:
-    recoverable_statuses = {VideoHlsArtifact.Status.MATERIALIZING.value}
+    recoverable_statuses = {
+        VideoHlsArtifact.Status.MATERIALIZING.value,
+        VideoHlsArtifact.Status.VALIDATED.value,
+    }
     if include_queued:
         recoverable_statuses.add(VideoHlsArtifact.Status.QUEUED.value)
-    if artifact.status not in recoverable_statuses:
-        return False
-    if artifact.updated_at > _materialization_stale_before():
+    action = derive_hls_reconciliation_action(
+        status=str(artifact.status),
+        is_stale=artifact.updated_at <= _materialization_stale_before(),
+    )
+    if artifact.status not in recoverable_statuses or action != "fail_and_cleanup":
         return False
 
     stale_status = str(artifact.status)
@@ -477,6 +495,14 @@ def _recover_stale_in_flight_artifact(
         artifact.pk,
         stale_status,
     )
+    stale_key_id = artifact.key_id
+    stale_video_id = int(video_id)
+    transaction.on_commit(
+        lambda: _cleanup_transient_hls_artifact(
+            video_id=stale_video_id,
+            key_id=stale_key_id,
+        )
+    )
     return True
 
 
@@ -490,45 +516,45 @@ def reserve_hls_materialization_dispatch(
     parsed_kind = coerce_hls_artifact_kind(artifact_kind)
     with transaction.atomic():
         video = VideoFile.objects.select_for_update().get(pk=int(video_id))
-        artifact, created = VideoHlsArtifact.objects.select_for_update().get_or_create(
+        artifacts = VideoHlsArtifact.objects.select_for_update().filter(
             video=video,
             artifact_kind=parsed_kind.value,
-            defaults={"status": VideoHlsArtifact.Status.QUEUED.value},
         )
-        recovered_stale_artifact = _recover_stale_in_flight_artifact(
-            artifact,
-            video_id=int(video.pk),
-            artifact_kind=parsed_kind,
-            include_queued=True,
+        active = artifacts.filter(status__in=HLS_IN_FLIGHT_STATUSES).first()
+        ready = artifacts.filter(status=VideoHlsArtifact.Status.READY.value).first()
+        source_file_name = _hls_source(video, parsed_kind).source_file_name
+        ready_matches_source = bool(
+            ready is not None
+            and ready.source_file_name == source_file_name
+            and _ready_artifact_paths_exist(ready)
         )
-        if not created and artifact.status in {
-            VideoHlsArtifact.Status.QUEUED.value,
-            VideoHlsArtifact.Status.MATERIALIZING.value,
-        }:
+        active_status = str(active.status) if active is not None else ""
+        active_is_stale = bool(
+            active is not None and active.updated_at <= _materialization_stale_before()
+        )
+        action = derive_hls_reservation_action(
+            active_status=active_status,
+            active_is_stale=active_is_stale,
+            ready_matches_source=ready_matches_source,
+            force=force,
+        )
+        if action == "already_in_flight" and active is not None:
             return HlsMaterializationDispatchReservation(
-                artifact_id=int(artifact.pk),
+                artifact_id=int(active.pk),
                 artifact_kind=parsed_kind.value,
                 status="already_queued",
             )
-        if (
-            artifact.status == VideoHlsArtifact.Status.READY.value
-            and not force
-            and _ready_artifact_paths_exist(artifact)
-            and artifact.source_file_name
-            == _hls_source(video, parsed_kind).source_file_name
-        ):
+        if action == "already_ready" and ready is not None:
             return HlsMaterializationDispatchReservation(
-                artifact_id=int(artifact.pk),
+                artifact_id=int(ready.pk),
                 artifact_kind=parsed_kind.value,
                 status="already_ready",
             )
-
-        artifact.status = VideoHlsArtifact.Status.QUEUED.value
-        if not recovered_stale_artifact:
-            artifact.last_error = ""
-        artifact.error_code = VideoHlsArtifact.ErrorCode.NONE.value
-        artifact.save(
-            update_fields=["status", "last_error", "error_code", "updated_at"]
+        artifact = VideoHlsArtifact.objects.create(
+            video=video,
+            artifact_kind=parsed_kind.value,
+            status=VideoHlsArtifact.Status.QUEUED.value,
+            source_file_name=source_file_name,
         )
         return HlsMaterializationDispatchReservation(
             artifact_id=int(artifact.pk),
@@ -565,30 +591,34 @@ def _prepare_artifact_record(
 ) -> _PreparedArtifact:
     with transaction.atomic():
         video = VideoFile.objects.select_for_update().get(pk=video_id)
-        artifact, created = VideoHlsArtifact.objects.select_for_update().get_or_create(
+        artifacts = VideoHlsArtifact.objects.select_for_update().filter(
             video=video,
             artifact_kind=artifact_kind.value,
-            defaults={"status": VideoHlsArtifact.Status.MATERIALIZING.value},
         )
+        ready = artifacts.filter(status=VideoHlsArtifact.Status.READY.value).first()
         if (
-            artifact.status == VideoHlsArtifact.Status.READY.value
+            ready is not None
             and not force
-            and _ready_artifact_paths_exist(artifact)
-            and artifact.source_file_name == source_file_name
+            and _ready_artifact_paths_exist(ready)
+            and ready.source_file_name == source_file_name
         ):
             return _PreparedArtifact(
-                artifact_id=int(artifact.pk),
-                key_id=artifact.key_id,
+                artifact_id=int(ready.pk),
+                key_id=ready.key_id,
                 previous=None,
                 should_materialize=False,
             )
-        if not created:
-            _recover_stale_in_flight_artifact(
+        artifact = artifacts.filter(status__in=HLS_IN_FLIGHT_STATUSES).first()
+        if artifact is not None:
+            recovered = _recover_stale_in_flight_artifact(
                 artifact,
                 video_id=video_id,
                 artifact_kind=artifact_kind,
-                include_queued=False,
+                include_queued=True,
             )
+            if recovered:
+                artifact = None
+        if artifact is not None:
             if artifact.status == VideoHlsArtifact.Status.MATERIALIZING.value:
                 return _PreparedArtifact(
                     artifact_id=int(artifact.pk),
@@ -596,11 +626,20 @@ def _prepare_artifact_record(
                     previous=None,
                     should_materialize=False,
                 )
+            if artifact.status == VideoHlsArtifact.Status.VALIDATED.value:
+                return _PreparedArtifact(
+                    artifact_id=int(artifact.pk),
+                    key_id=artifact.key_id,
+                    previous=None,
+                    should_materialize=False,
+                    publish_only=True,
+                )
 
-        previous = _artifact_snapshot(
-            artifact,
-            allow_queued_ready_artifact=True,
-        )
+        if artifact is None:
+            artifact = VideoHlsArtifact(
+                video=video,
+                artifact_kind=artifact_kind.value,
+            )
         artifact.status = VideoHlsArtifact.Status.MATERIALIZING.value
         artifact.key_id = key_id
         artifact.source_generation_id = uuid4()
@@ -615,38 +654,19 @@ def _prepare_artifact_record(
         artifact.last_error = ""
         artifact.error_code = VideoHlsArtifact.ErrorCode.NONE.value
         artifact.full_clean()
-        artifact.save(
-            update_fields=[
-                "status",
-                "key_id",
-                "source_generation_id",
-                "key_ciphertext",
-                "key_nonce",
-                "key_wrap_algorithm",
-                "iv_hex",
-                "playlist_relative_path",
-                "segment_directory_relative_path",
-                "segment_count",
-                "source_file_name",
-                "last_error",
-                "error_code",
-                "updated_at",
-            ]
-        )
+        artifact.save()
         return _PreparedArtifact(
             artifact_id=int(artifact.pk),
             key_id=key_id,
-            previous=previous,
+            previous=None,
             should_materialize=True,
         )
 
 
-def _mark_artifact_ready(
+def _mark_artifact_validated(
     *,
     artifact_id: int,
     expected_key_id: UUID,
-    playlist_relative_path: str,
-    segment_directory_relative_path: str,
     segment_count: int,
 ) -> VideoHlsArtifact:
     with transaction.atomic():
@@ -660,9 +680,88 @@ def _mark_artifact_ready(
                 f"artifact={artifact_id} expected_key={expected_key_id} "
                 f"current_key={artifact.key_id} current_status={artifact.status}"
             )
+        artifact.status = VideoHlsArtifact.Status.VALIDATED.value
+        artifact.segment_count = segment_count
+        artifact.last_error = ""
+        artifact.error_code = VideoHlsArtifact.ErrorCode.NONE.value
+        artifact.full_clean()
+        artifact.save(
+            update_fields=[
+                "status",
+                "segment_count",
+                "last_error",
+                "error_code",
+                "updated_at",
+            ]
+        )
+        return artifact
+
+
+def _publish_validated_artifact(
+    *,
+    video_id: int,
+    artifact_kind: VideoArtifactKind,
+    artifact_id: int,
+    expected_key_id: UUID,
+    temp_output_dir: Path,
+    target_dir: Path,
+) -> tuple[VideoHlsArtifact, _ArtifactSnapshot | None]:
+    from endoreg_db.services.media_operation_gate import (
+        video_has_active_media_operation_leases,
+    )
+
+    with transaction.atomic():
+        video = VideoFile.objects.select_for_update().get(pk=int(video_id))
+        artifacts = VideoHlsArtifact.objects.select_for_update().filter(
+            video=video,
+            artifact_kind=artifact_kind.value,
+        )
+        artifact = artifacts.get(pk=artifact_id)
+        ready = artifacts.filter(status=VideoHlsArtifact.Status.READY.value).first()
+        action = derive_hls_publication_action(
+            attempt_status=str(artifact.status),
+            owner_matches=artifact.key_id == expected_key_id,
+            has_active_lease=video_has_active_media_operation_leases(int(video.pk)),
+            has_ready_generation=ready is not None,
+        )
+        if action == "defer":
+            raise MediaOperationDeferred(
+                "HLS publication deferred because media operation leases are active."
+            )
+        if action == "reject":
+            raise RuntimeError(
+                "HLS materialization ownership was lost before READY publication: "
+                f"artifact={artifact_id} expected_key={expected_key_id} "
+                f"current_key={artifact.key_id} current_status={artifact.status}"
+            )
+
+        playlist_path = target_dir / "playlist.m3u8"
+        if temp_output_dir.is_dir():
+            _commit_hls_output(
+                temp_output_dir=temp_output_dir,
+                target_dir=target_dir,
+            )
+        segment_count = _assert_hls_outputs(
+            playlist_path=playlist_path,
+            target_dir=target_dir,
+        )
+        if segment_count != int(artifact.segment_count):
+            raise RuntimeError(
+                "Validated HLS segment count changed before publication: "
+                f"expected={artifact.segment_count} actual={segment_count}"
+            )
+
+        previous = _artifact_snapshot(ready) if ready is not None else None
+        if ready is not None:
+            ready.status = VideoHlsArtifact.Status.SUPERSEDED.value
+            ready.error_code = VideoHlsArtifact.ErrorCode.NONE.value
+            ready.save(update_fields=["status", "error_code", "updated_at"])
+
         artifact.status = VideoHlsArtifact.Status.READY.value
-        artifact.playlist_relative_path = playlist_relative_path
-        artifact.segment_directory_relative_path = segment_directory_relative_path
+        artifact.playlist_relative_path = to_protected_media_relative(playlist_path)
+        artifact.segment_directory_relative_path = to_protected_media_relative(
+            target_dir
+        )
         artifact.segment_count = segment_count
         artifact.last_error = ""
         artifact.error_code = VideoHlsArtifact.ErrorCode.NONE.value
@@ -678,7 +777,7 @@ def _mark_artifact_ready(
                 "updated_at",
             ]
         )
-        return artifact
+        return artifact, previous
 
 
 def _hls_root_for_kind(artifact_kind: VideoArtifactKind) -> Path:
@@ -1003,8 +1102,6 @@ def _ffmpeg_command(
         input_arg,
         "-map",
         "0:v:0",
-        "-map",
-        "0:a?",
         "-codec:v",
         "libx264",
         "-threads",
@@ -1027,8 +1124,7 @@ def _ffmpeg_command(
         HLS_VIDEO_COLOR_RANGE,
         "-fps_mode",
         "passthrough",
-        "-codec:a",
-        HLS_AUDIO_CODEC,
+        "-an",
         "-f",
         "hls",
         "-hls_time",
@@ -1325,16 +1421,18 @@ def _existing_ready_result(
     video_id: int,
     artifact_kind: VideoArtifactKind,
 ) -> HlsMaterializationResult | None:
-    try:
-        artifact = VideoHlsArtifact.objects.get(
+    artifact = (
+        VideoHlsArtifact.objects.filter(
             video_id=video_id,
             artifact_kind=artifact_kind.value,
+            status=VideoHlsArtifact.Status.READY.value,
         )
-    except VideoHlsArtifact.DoesNotExist:
+        .select_related("video")
+        .first()
+    )
+    if artifact is None:
         return None
 
-    if artifact.status != VideoHlsArtifact.Status.READY.value:
-        return None
     source_ref = _hls_source(artifact.video, artifact_kind)
     if artifact.source_file_name != source_ref.source_file_name:
         return None
@@ -1420,10 +1518,13 @@ def _cleanup_replaced_artifact(snapshot: _ArtifactSnapshot | None) -> None:
         parent = segment_dir.parent
         if parent.exists() and not any(_iter_path_tree(parent)):
             safe_rmtree(parent, missing_ok=True)
-        return
-
-    if playlist_path is not None:
+    elif playlist_path is not None:
         safe_unlink_file(playlist_path, missing_ok=True)
+    VideoHlsArtifact.objects.filter(
+        pk=snapshot.artifact_id,
+        key_id=snapshot.key_id,
+        status=VideoHlsArtifact.Status.SUPERSEDED.value,
+    ).delete()
 
 
 def _cleanup_transient_hls_artifact(*, video_id: int, key_id: UUID) -> None:
@@ -1552,7 +1653,7 @@ def materialize_video_hls(
         force=force,
     )
 
-    if not prepared.should_materialize:
+    if not prepared.should_materialize and not prepared.publish_only:
         artifact = VideoHlsArtifact.objects.get(pk=prepared.artifact_id)
         if artifact.status == VideoHlsArtifact.Status.READY.value:
             return _result_from_ready_artifact(artifact, status="already_ready")
@@ -1567,6 +1668,7 @@ def materialize_video_hls(
             detail="An HLS materialization task is already active.",
         )
 
+    key_id = prepared.key_id
     target_dir = _artifact_target_dir(
         video=video,
         artifact_kind=parsed_kind,
@@ -1578,50 +1680,53 @@ def materialize_video_hls(
         video_id=int(video.pk),
         key_id=key_id,
     )
-    playlist_path = target_dir / "playlist.m3u8"
     temp_playlist_path = temp_output_dir / "playlist.m3u8"
     temp_segment_pattern = temp_output_dir / "seg_%03d.ts"
     key_uri = build_video_hls_key_path(int(video.pk), str(key_id))
     segment_base_url = build_video_hls_segment_base_path(int(video.pk), str(key_id))
 
+    preserve_validated_output = False
     try:
-        safe_rmtree(target_dir, missing_ok=True)
-        safe_rmtree(temp_output_dir, missing_ok=True)
-        ensure_directory(temp_output_dir, dir_mode=HLS_TEMP_DIRECTORY_MODE)
-        with _temporary_hls_key_material(
-            temp_key_dir=temp_key_dir,
-            cek=cek,
-            key_uri=key_uri,
-            iv_hex=iv_hex,
-        ) as (_, _key_info_path):
-            with _open_hls_source(source_ref) as source:
-                _run_ffmpeg_hls(
-                    source=source,
-                    source_file_name=source_ref.source_file_name,
-                    source_size_bytes=_source_size_bytes(source_ref.field_file),
-                    temp_source_dir=temp_source_dir,
-                    key_info_path=_key_info_path,
-                    segment_pattern=temp_segment_pattern,
-                    playlist_path=temp_playlist_path,
-                    segment_base_url=segment_base_url,
-                )
-        segment_count = _assert_hls_outputs(
-            playlist_path=temp_playlist_path,
-            target_dir=temp_output_dir,
-        )
-        _commit_hls_output(
+        if prepared.should_materialize:
+            safe_rmtree(target_dir, missing_ok=True)
+            safe_rmtree(temp_output_dir, missing_ok=True)
+            ensure_directory(temp_output_dir, dir_mode=HLS_TEMP_DIRECTORY_MODE)
+            with _temporary_hls_key_material(
+                temp_key_dir=temp_key_dir,
+                cek=cek,
+                key_uri=key_uri,
+                iv_hex=iv_hex,
+            ) as (_, _key_info_path):
+                with _open_hls_source(source_ref) as source:
+                    _run_ffmpeg_hls(
+                        source=source,
+                        source_file_name=source_ref.source_file_name,
+                        source_size_bytes=_source_size_bytes(source_ref.field_file),
+                        temp_source_dir=temp_source_dir,
+                        key_info_path=_key_info_path,
+                        segment_pattern=temp_segment_pattern,
+                        playlist_path=temp_playlist_path,
+                        segment_base_url=segment_base_url,
+                    )
+            segment_count = _assert_hls_outputs(
+                playlist_path=temp_playlist_path,
+                target_dir=temp_output_dir,
+            )
+            _mark_artifact_validated(
+                artifact_id=prepared.artifact_id,
+                expected_key_id=prepared.key_id,
+                segment_count=segment_count,
+            )
+        artifact, previous = _publish_validated_artifact(
+            video_id=int(video.pk),
+            artifact_kind=parsed_kind,
+            artifact_id=prepared.artifact_id,
+            expected_key_id=prepared.key_id,
             temp_output_dir=temp_output_dir,
             target_dir=target_dir,
         )
-        artifact = _mark_artifact_ready(
-            artifact_id=prepared.artifact_id,
-            expected_key_id=prepared.key_id,
-            playlist_relative_path=to_protected_media_relative(playlist_path),
-            segment_directory_relative_path=to_protected_media_relative(target_dir),
-            segment_count=segment_count,
-        )
         try:
-            _cleanup_replaced_artifact(prepared.previous)
+            _cleanup_replaced_artifact(previous)
         except Exception as cleanup_exc:
             logger.warning(
                 "Could not remove replaced HLS artifact after materialization: %s",
@@ -1629,6 +1734,9 @@ def materialize_video_hls(
                 exc_info=True,
             )
         return _result_from_ready_artifact(artifact, status="materialized")
+    except MediaOperationDeferred:
+        preserve_validated_output = True
+        raise
     except BaseException as exc:
         safe_rmtree(temp_output_dir, missing_ok=True)
         _cleanup_partial_output(target_dir)
@@ -1643,9 +1751,9 @@ def materialize_video_hls(
             _mark_artifact_failed(
                 artifact_id=prepared.artifact_id,
                 error=error_msg,
-                previous=prepared.previous,
+                previous=None,
                 expected_key_id=prepared.key_id,
-                expected_status=VideoHlsArtifact.Status.MATERIALIZING.value,
+                expected_status=None,
             )
         except Exception as mark_exc:
             logger.warning(
@@ -1656,7 +1764,8 @@ def materialize_video_hls(
             )
         raise
     finally:
-        safe_rmtree(temp_output_dir, missing_ok=True)
+        if not preserve_validated_output:
+            safe_rmtree(temp_output_dir, missing_ok=True)
 
 
 def get_ready_hls_artifact(

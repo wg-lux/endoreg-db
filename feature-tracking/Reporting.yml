@@ -1,142 +1,266 @@
-schema_version: "1.0"
+schema_version: '1.0'
 id: reporting
 name: Klinisches Reporting
-description: Sicherer Import, Bearbeitung, Materialisierung, LLM-Verarbeitung und Streaming klinischer Berichte.
+description: Sicherer Import, Bearbeitung, Materialisierung, LLM-Verarbeitung und Streaming klinischer
+  Berichte.
 owners:
-  - endoreg_db maintainers
+- endoreg_db maintainers
 production_critical: true
+tracking:
+  state: active
+  history: []
 source_documents:
-  - path: docs/report_import_concurrency_implementation.md
-    disposition: reference
-    note: Verbindliche Implementierungsleitlinie für stabile Snapshots, Fencing, native Laufzeit und den Vertrag mit lx-anonymizer.
+- path: docs/report_import_concurrency_implementation.md
+  disposition: reference
+  note: Verbindliche Implementierungsleitlinie für stabile Snapshots, Fencing, native Laufzeit und den
+    Vertrag mit lx-anonymizer.
 definition_of_done:
-  - id: documented_scope
-    category: requirements
-    title: Berichtslebenszyklus und unterstützte Dokumenttypen sind definiert
-    acceptance:
-      - Import, Entwurf, Finalisierung, PDF-Materialisierung und Historie haben explizite Invarianten.
-      - LLM-Verarbeitung ist optional, nachverfolgbar und kein stiller Freigabeersatz.
-    required: true
-    verification:
-      kind: manual
-      instructions: Berichtszustände gegen Modelle, Services, API und Jobs prüfen.
-    assessment: &not_assessed
-      status: not_assessed
-  - id: report_workflow
-    category: functionality
-    title: Import bis Streaming funktioniert deterministisch und idempotent
-    acceptance:
-      - Finalisierung verlangt Untersuchung und Dokumenttyp.
-      - Materialisierung und Reimport erzeugen nachvollziehbare Versionen ohne stille Duplikate.
-    required: true
-    verification:
-      kind: command
-      command: [.devenv/state/venv/bin/pytest, tests/services/test_report_import_service_unit.py, tests/services/test_report_materialization_contracts.py, tests/views/report/test_patient_examination_report_ninja_api.py, -q]
-      timeout_seconds: 900
-    assessment: *not_assessed
-  - id: automated_tests
-    category: testing
-    title: Import, Persistenz, Materialisierung, LLM-Jobs und Streaming sind getestet
-    acceptance:
-      - Kritische positive und negative Pfade laufen in fokussierten Testlanes.
-    required: true
-    verification:
-      kind: command
-      command: [.devenv/state/venv/bin/pytest, tests/services/test_report_persistence_service.py, tests/services/test_report_materialization_contracts.py, tests/views/report/test_report_stream.py, tests/services/test_report_llm_jobs.py, -q]
-      timeout_seconds: 900
-    assessment: *not_assessed
-  - id: access_controls
-    category: security
-    title: Berichtszugriff und LLM-Verarbeitung sind patienten- und center-bezogen
-    acceptance:
-      - Fremde Berichte können weder gelesen noch verarbeitet oder gestreamt werden.
-      - Rohberichte verlassen den lokalen Schutzbereich nicht über Exportpfade.
-    required: true
-    verification:
-      kind: command
-      command: [.devenv/state/venv/bin/pytest, tests/authz/test_report_llm_policy.py, tests/views/report/test_report_stream.py, -q]
-      timeout_seconds: 600
-    assessment: *not_assessed
-  - id: artifact_integrity
-    category: data_integrity
-    title: Berichtsversionen und PDF-Artefakte sind atomar und nachvollziehbar
-    acceptance:
-      - Hash, Version, Quelldokument und Renderergebnis bleiben konsistent.
-      - Fehlgeschlagene Materialisierung hinterlässt kein freigegebenes Teilprodukt.
-    required: true
-    verification:
-      kind: command
-      command: [.devenv/state/venv/bin/pytest, tests/services/test_report_artifact_integrity.py, tests/services/test_report_materialization_contracts.py, -q]
-      timeout_seconds: 600
-    assessment: *not_assessed
-  - id: stable_report_snapshot
-    category: functionality
-    title: Berichtsquellen werden als stabile, unveränderliche Snapshots übernommen
-    acceptance:
-      - Hashing und Kopieren lesen dieselbe geöffnete Quelldatei innerhalb eines versionierten, typisierten Snapshot-Vertrags.
-      - Änderung, Austausch, symbolische Verknüpfung oder unzulässiger Dateityp der Quelle führen vor Datenbankmutation zu einem lauten Abbruch.
-      - Der Snapshot wird ausschließlich innerhalb der freigegebenen verschlüsselten Speichergrenze atomar veröffentlicht.
-    required: true
-    verification:
-      kind: command
-      command: [.devenv/state/venv/bin/pytest, tests/services/test_report_import_concurrency.py, tests/rust_backend/test_report_snapshot_parity.py, -q]
-      timeout_seconds: 600
-    assessment: *not_assessed
-  - id: report_import_fencing
-    category: data_integrity
-    title: Parallele Berichtsimporte sind durch Sperren und Fencing gegen überholte Worker geschützt
-    acceptance:
-      - Pfadanspruch, inhaltsbezogene Deduplizierung und Datenbankpublikation besitzen eine dokumentierte, zyklusfreie Reihenfolge.
-      - Ein abgelaufener oder ersetzter Worker kann keinen neueren Versuch finalisieren.
-      - Zwei Prozesse erzeugen für denselben Inhalt höchstens ein kanonisches RawPdfFile und genau eine erfolgreiche Publikation.
-    required: true
-    verification:
-      kind: command
-      command: [.devenv/state/venv/bin/pytest, tests/services/test_report_import_concurrency.py, tests/services/test_report_import_fencing.py, -q]
-      timeout_seconds: 900
-    assessment: *not_assessed
-  - id: native_report_runtime
-    category: operations
-    title: Native Berichtsfunktionen sind baubar, erkennbar und versionsfest
-    acceptance:
-      - Continuous Integration baut das PyO3-Modul aus demselben Commit und prüft Stub-, Capability- und Wheel-Import-Parität.
-      - Das Produktionsprofil bricht beim Start ab, wenn eine verpflichtende native Fähigkeit fehlt; ein erlaubter Python-Fallback ist explizit konfiguriert und beobachtbar.
-      - Artefaktmanifest und strukturierte Ereignisse enthalten Backend-, Vertrags- und Implementierungsversion ohne Patientendaten.
-    required: true
-    verification:
-      kind: manual
-      instructions: Wheel aus sauberem Checkout bauen, installieren und Capability-/Startup-Prüfung in Produktionskonfiguration ausführen.
-    assessment: *not_assessed
-  - id: anonymizer_report_contract
-    category: documentation
-    title: Die Grenze zu lx-anonymizer ist typisiert, isoliert und kompatibilitätsgeprüft
-    acceptance:
-      - endoreg-db besitzt Import, Snapshot, Sperren, Persistenz und kanonische Publikation; lx-anonymizer besitzt ausschließlich die inhaltliche Anonymisierung im zugewiesenen Versuchsverzeichnis.
-      - Anfrage, Ergebnis, Fehlerklassen, Provenienz und Versionsaushandlung sind in beiden Repositories deckungsgleich dokumentiert.
-      - Ein Cross-Repository-Vertragstest prüft mindestens die älteste unterstützte und die aktuelle lx-anonymizer-Version.
-    required: true
-    verification:
-      kind: manual
-      instructions: Beide Vertragsdokumente und die unterstützte Versionsmatrix gegen einen installierten Wheel-Vertrag prüfen.
-    assessment: *not_assessed
-  - id: operational_readiness
-    category: operations
-    title: Jobfehler, Renderer und Wiederanlauf sind betreibbar
-    acceptance:
-      - Status, Fehlergrund, Retry-Entscheidung und Abhängigkeiten sind für Betreiber sichtbar.
-      - Wiederholung ist idempotent und verliert keine Historie.
-    required: true
-    verification:
-      kind: manual
-      instructions: Renderer- und LLM-Fehler samt Wiederanlauf im Betriebsprofil durchführen.
-    assessment: *not_assessed
-  - id: user_documentation
-    category: documentation
-    title: API-, Nutzer- und Betriebsdokumentation entspricht dem Berichtsworkflow
-    acceptance:
-      - Unterstützte Formate, Status, Fehler und Berechtigungen sind vollständig beschrieben.
-    required: true
-    verification:
-      kind: manual
-      instructions: Dokumentation anhand eines vollständigen Import-bis-Stream-Ablaufs prüfen.
-    assessment: *not_assessed
+- id: documented_scope
+  category: requirements
+  title: Berichtslebenszyklus und unterstützte Dokumenttypen sind definiert
+  acceptance:
+  - Import, Entwurf, Finalisierung, PDF-Materialisierung und Historie haben explizite Invarianten.
+  - LLM-Verarbeitung ist optional, nachverfolgbar und kein stiller Freigabeersatz.
+  required: true
+  verification:
+    kind: manual
+    instructions: Berichtszustände gegen Modelle, Services, API und Jobs prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: report_workflow
+  category: functionality
+  title: Import bis Streaming funktioniert deterministisch und idempotent
+  acceptance:
+  - Finalisierung verlangt Untersuchung und Dokumenttyp.
+  - Materialisierung und Reimport erzeugen nachvollziehbare Versionen ohne stille Duplikate.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_report_import_service_unit.py
+    - tests/services/test_report_materialization_contracts.py
+    - tests/views/report/test_patient_examination_report_ninja_api.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: automated_tests
+  category: testing
+  title: Import, Persistenz, Materialisierung, LLM-Jobs und Streaming sind getestet
+  acceptance:
+  - Kritische positive und negative Pfade laufen in fokussierten Testlanes.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_report_persistence_service.py
+    - tests/services/test_report_materialization_contracts.py
+    - tests/views/report/test_report_stream.py
+    - tests/services/test_report_llm_jobs.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: access_controls
+  category: security
+  title: Berichtszugriff und LLM-Verarbeitung sind patienten- und center-bezogen
+  acceptance:
+  - Fremde Berichte können weder gelesen noch verarbeitet oder gestreamt werden.
+  - Rohberichte verlassen den lokalen Schutzbereich nicht über Exportpfade.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/authz/test_report_llm_policy.py
+    - tests/views/report/test_report_stream.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: artifact_integrity
+  category: data_integrity
+  title: Berichtsversionen und PDF-Artefakte sind atomar und nachvollziehbar
+  acceptance:
+  - Hash, Version, Quelldokument und Renderergebnis bleiben konsistent.
+  - Fehlgeschlagene Materialisierung hinterlässt kein freigegebenes Teilprodukt.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_report_artifact_integrity.py
+    - tests/services/test_report_materialization_contracts.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: stable_report_snapshot
+  category: functionality
+  title: Berichtsquellen werden als stabile, unveränderliche Snapshots übernommen
+  acceptance:
+  - Hashing und Kopieren lesen dieselbe geöffnete Quelldatei innerhalb eines versionierten, typisierten
+    Snapshot-Vertrags.
+  - Änderung, Austausch, symbolische Verknüpfung oder unzulässiger Dateityp der Quelle führen vor Datenbankmutation
+    zu einem lauten Abbruch.
+  - Der Snapshot wird ausschließlich innerhalb der freigegebenen verschlüsselten Speichergrenze atomar
+    veröffentlicht.
+  - Ein vom aktuellen Fencing-Versuch besessener Snapshot bleibt über Zustands- und Retry-Resets hinweg
+    bis zur erfolgreichen Publikation oder zur endgültigen, besitzgeprüften Fehlerbereinigung erhalten.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_report_import_concurrency.py
+    - tests/rust_backend/test_report_snapshot_parity.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: tests/rust_backend/test_report_snapshot_parity.py; tests/services/test_report_import_concurrency.py
+    - kind: command
+      reference: devenv tasks run rust:report-runtime
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_report_import_service.py
+        (3 passed); tests/services/test_report_import_service_unit.py tests/models/metadata/file_import/test_create_report_file.py
+        tests/import_files/test_storage_state_management.py (17 passed); full pyright (0 errors)
+    note: Der aktive, versuchseigene Snapshot bleibt jetzt über den besitzgeprüften Retry-Reset erhalten;
+      brandneue Imports führen keinen destruktiven Selbst-Reset mehr aus. Endgültige Fehlerbereinigung
+      entfernt den Snapshot weiterhin. Der Reparaturpfad widerruft außerdem veraltete Readiness-Flags
+      und den SHA-256 des entfernten Processed-PDFs.
+    assessed_by: Codex
+    assessed_at: '2026-07-27T10:04:10.365662Z'
+- id: report_import_fencing
+  category: data_integrity
+  title: Parallele Berichtsimporte sind durch Sperren und Fencing gegen überholte Worker geschützt
+  acceptance:
+  - Pfadanspruch, inhaltsbezogene Deduplizierung und Datenbankpublikation besitzen eine dokumentierte,
+    zyklusfreie Reihenfolge.
+  - Ein abgelaufener oder ersetzter Worker kann keinen neueren Versuch finalisieren.
+  - Zwei Prozesse erzeugen für denselben Inhalt höchstens ein kanonisches RawPdfFile und genau eine erfolgreiche
+    Publikation.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_report_import_concurrency.py
+    - tests/services/test_report_import_fencing.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: tests/services/test_report_import_fencing.py; tests/services/test_report_import_concurrency.py
+    note: Persistiertes monotones Fencing, Lease-Erneuerung, bedingte Fehlerfreigabe und Prozess-Lock
+      sind implementiert. Offen bleibt ein vollständiger Zwei-Prozess-Importtest bis zur kanonischen RawPdfFile-Publikation.
+    assessed_by: Codex
+    assessed_at: '2026-07-27T07:17:45.266117Z'
+- id: native_report_runtime
+  category: operations
+  title: Native Berichtsfunktionen sind baubar, erkennbar und versionsfest
+  acceptance:
+  - Continuous Integration baut das PyO3-Modul aus demselben Commit und prüft Stub-, Capability- und Wheel-Import-Parität.
+  - Das Produktionsprofil bricht beim Start ab, wenn eine verpflichtende native Fähigkeit fehlt; ein erlaubter
+    Python-Fallback ist explizit konfiguriert und beobachtbar.
+  - Artefaktmanifest und strukturierte Ereignisse enthalten Backend-, Vertrags- und Implementierungsversion
+    ohne Patientendaten.
+  required: true
+  verification:
+    kind: manual
+    instructions: Wheel aus sauberem Checkout bauen, installieren und Capability-/Startup-Prüfung in Produktionskonfiguration
+      ausführen.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: devenv tasks run rust:report-runtime
+    - kind: code
+      reference: .github/workflows/ci.yml; scripts/check_report_native_runtime.sh
+    - kind: code
+      reference: endoreg_db/services/environment_readiness.py; endoreg_db/import_files/video_import_service.py
+    - kind: test
+      reference: tests/services/test_environment_readiness_unit.py; tests/utils/video/test_ffmpeg_wrapper.py
+        (included in 65 passed focused lane)
+    note: Wheel-, Stub- und Capability-Parität sowie fail-closed Prüfhelfer sind implementiert. Nicht
+      nachgewiesen ist die automatische Erzwingung beim Start jedes Produktions-Web- und Worker-Prozesses;
+      das lx-anonymizer-Video-Gate wird derzeit erst beim Laden des Importers geprüft. Für Verifizierung
+      müssen die Pflichtfähigkeiten in einen verbindlichen Startup-Preflight aufgenommen und mit installiertem
+      Release-Wheel in Web- und Worker-Profilen negativ getestet werden.
+    assessed_by: Codex
+    assessed_at: '2026-07-27T08:14:05.205607Z'
+- id: anonymizer_report_contract
+  category: documentation
+  title: Die Grenze zu lx-anonymizer ist typisiert, isoliert und kompatibilitätsgeprüft
+  acceptance:
+  - endoreg-db besitzt Import, Snapshot, Sperren, Persistenz und kanonische Publikation; lx-anonymizer
+    besitzt ausschließlich die inhaltliche Anonymisierung im zugewiesenen Versuchsverzeichnis.
+  - Anfrage, Ergebnis, Fehlerklassen, Provenienz und Versionsaushandlung sind in beiden Repositories deckungsgleich
+    dokumentiert.
+  - Ein Cross-Repository-Vertragstest prüft mindestens die älteste unterstützte und die aktuelle lx-anonymizer-Version.
+  required: true
+  verification:
+    kind: manual
+    instructions: Beide Vertragsdokumente und die unterstützte Versionsmatrix gegen einen installierten
+      Wheel-Vertrag prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/report_anonymization.py; /home/admin/lx-anonymizer/lx_anonymizer/report_contracts.py;
+        /home/admin/lx-anonymizer/lx_anonymizer/report_reader.py
+    - kind: test
+      reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/tests/test_report_anonymization.py
+        (5 passed); /home/admin/lx-anonymizer/tests/test_report_reader_contract_v2.py (7 passed)
+    - kind: command
+      reference: devenv shell -- env PYTHONPATH=/home/admin/lx-data-models:/home/admin/lx-anonymizer python
+        -m pytest tests/import_files/test_report_anonymization_contract.py -q (2 passed)
+    - kind: document
+      reference: docs/report_import_concurrency_implementation.md; /home/admin/lx-anonymizer/docs/report_pipeline_concurrency_contract.md
+    note: Der serialisierbare V2-Vertrag liegt gemeinsam in lx_dtypes, lx-anonymizer konsumiert ihn ohne
+      lokale Modellduplikate, und der aktuelle lokale Endoreg-Vertragstest besteht. Verifizierung bleibt
+      bis zur Veröffentlichung einer neuen, unverbrauchten lx-dtypes-Version und einer CI-Matrix mit installierten
+      ältester und aktueller unterstützter lx-anonymizer-Wheel-Version offen.
+    assessed_by: Codex
+    assessed_at: '2026-07-27T08:10:05.924121Z'
+- id: operational_readiness
+  category: operations
+  title: Jobfehler, Renderer und Wiederanlauf sind betreibbar
+  acceptance:
+  - Status, Fehlergrund, Retry-Entscheidung und Abhängigkeiten sind für Betreiber sichtbar.
+  - Wiederholung ist idempotent und verliert keine Historie.
+  required: true
+  verification:
+    kind: manual
+    instructions: Renderer- und LLM-Fehler samt Wiederanlauf im Betriebsprofil durchführen.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: user_documentation
+  category: documentation
+  title: API-, Nutzer- und Betriebsdokumentation entspricht dem Berichtsworkflow
+  acceptance:
+  - Unterstützte Formate, Status, Fehler und Berechtigungen sind vollständig beschrieben.
+  required: true
+  verification:
+    kind: manual
+    instructions: Dokumentation anhand eines vollständigen Import-bis-Stream-Ablaufs prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []

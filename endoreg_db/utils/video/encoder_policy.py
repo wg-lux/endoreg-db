@@ -38,6 +38,7 @@ def _detect_nvenc_support() -> bool:
             "h264_nvenc",
             "-preset",
             "p1",
+            "-an",
             "-f",
             "null",
             "-",

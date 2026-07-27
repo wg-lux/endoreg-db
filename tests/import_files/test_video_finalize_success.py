@@ -193,6 +193,11 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
     )
 
     store_calls: list[tuple[Path, str]] = []
+    ownership_checks = 0
+
+    def require_current_attempt() -> None:
+        nonlocal ownership_checks
+        ownership_checks += 1
 
     def fake_store_existing_final_file(
         field_file: object,
@@ -200,6 +205,7 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
         *,
         relative_name: str | None = None,
     ) -> str:
+        assert ownership_checks >= 1
         assert relative_name is not None
         stored_path = _runtime_storage_root() / relative_name
         stored_path.parent.mkdir(parents=True, exist_ok=True)
@@ -242,6 +248,7 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
         file_path=import_file,
         center_name="university_hospital_wuerzburg",
         processor_name="olympus_cv_1500",
+        execution_guard=require_current_attempt,
     )
     ctx.file_hash = "file-hash"
     ctx.current_video = cast(VideoFile, video)
@@ -258,6 +265,7 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
     assert video.processed_video_hash == sha256(b"anonymized").hexdigest()
     assert video.processed_file.name.endswith("anonymized_videos/video_hash.mp4")
     assert store_calls == [(final_anonymized, video.processed_file.name)]
+    assert ownership_checks >= 1
     assert hls_calls == [1]
 
 

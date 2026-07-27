@@ -4,6 +4,7 @@ import shutil
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from collections.abc import Callable, Generator
 from dataclasses import dataclass
+from importlib import import_module
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
 
@@ -117,18 +118,18 @@ def _load_video_anonymizer_class() -> type[_VideoAnonymizer]:
     )
     if isinstance(configured_capabilities, str):
         required_capabilities = tuple(
-            item.strip()
-            for item in configured_capabilities.split(",")
-            if item.strip()
+            item.strip() for item in configured_capabilities.split(",") if item.strip()
         )
     else:
         required_capabilities = tuple(str(item) for item in configured_capabilities)
     if required_capabilities:
         try:
-            from lx_anonymizer._native import (  # pyright: ignore[reportMissingTypeStubs]
-                require_native_capabilities,  # pyright: ignore[reportAttributeAccessIssue,reportUnknownVariableType]
+            native_module = import_module("lx_anonymizer._native")
+            require_native_capabilities = cast(
+                Callable[[tuple[str, ...]], None],
+                getattr(native_module, "require_native_capabilities"),
             )
-        except ImportError as exc:
+        except (AttributeError, ImportError) as exc:
             raise RuntimeError(
                 "Required lx-anonymizer native capability contract is unavailable"
             ) from exc
@@ -311,6 +312,25 @@ def _configured_reimport_transcode_quality_mode() -> str:
     return quality_mode
 
 
+def _require_execution_ownership(ctx: ImportContext) -> None:
+    """Fail before a durable mutation when the caller no longer owns the attempt."""
+    if ctx.execution_guard is not None:
+        ctx.execution_guard()
+
+
+def _finalize_video_failure_if_owned(
+    ctx: ImportContext,
+    *,
+    preserve_existing_video_artifacts: bool = False,
+) -> None:
+    """Never let a superseded worker reset state or delete shared artifacts."""
+    _require_execution_ownership(ctx)
+    if preserve_existing_video_artifacts:
+        finalize_failure(ctx, preserve_existing_video_artifacts=True)
+    else:
+        finalize_failure(ctx)
+
+
 def _normalize_reimport_video_quality(ctx: ImportContext) -> None:
     """Normalize a fresh anonymized output against the stored source timeline."""
     source_path = ctx.anonymized_path
@@ -430,19 +450,23 @@ class VideoImportService:
                 existing_completed_video = self._get_existing_completed_video(ctx)
                 if existing_completed_video is not None and not retry:
                     ctx.current_video = existing_completed_video
+                    _require_execution_ownership(ctx)
                     ensure_video_hls(existing_completed_video)
                     self._cleanup_duplicate_staging(ctx)
                     return existing_completed_video
 
+                _require_execution_ownership(ctx)
                 self._ensure_pipeline_storage_budget(ctx.file_path)
                 ctx.sensitive_path = create_sensitive_copy(
                     ctx.file_path, _sensitive_video_dir(), ctx
                 )
 
                 # create or retrieve VideoFile + update history
+                _require_execution_ownership(ctx)
                 ctx.current_video, _processed, needs_processing = (
                     create_or_retrieve_video_file(ctx)
                 )
+                _require_execution_ownership(ctx)
                 get_or_create_video_state(ctx.current_video)
                 current_video = cast(_LocalRawVideo, ctx.current_video)
                 if current_video.state is None:
@@ -460,17 +484,19 @@ class VideoImportService:
                     and needs_processing
                     and not current_state.anonymization_validated
                 ):
-                    finalize_failure(ctx)
+                    _finalize_video_failure_if_owned(ctx)
                     ctx.current_video, _processed, needs_processing = (
                         create_or_retrieve_video_file(ctx)
                     )
 
                 if not needs_processing and not retry:
+                    _require_execution_ownership(ctx)
                     ensure_video_hls(ctx.current_video)
                     self._cleanup_duplicate_staging(ctx)
                     return ctx.current_video
 
                 try:
+                    _require_execution_ownership(ctx)
                     mark_instance_processing_started(ctx.current_video, ctx)
                     logger.info(
                         "Persisted video state as processing before anonymization: video=%s",
@@ -479,8 +505,7 @@ class VideoImportService:
                     with self._verified_local_raw_source(ctx):
                         ctx = self.anonymizer.anonymize_video(ctx)
                         _normalize_reimport_video_quality(ctx)
-                    if ctx.execution_guard is not None:
-                        ctx.execution_guard()
+                    _require_execution_ownership(ctx)
                     logger.info(
                         "Primary video anonymization succeeded for %s",
                         ctx.file_path,
@@ -500,7 +525,16 @@ class VideoImportService:
                         ctx.file_path,
                         exc,
                     )
-                    finalize_failure(ctx)
+                    try:
+                        _finalize_video_failure_if_owned(ctx)
+                    except Exception as ownership_exc:
+                        logger.error(
+                            "Skipping video failure finalization because execution "
+                            "ownership is no longer valid: attempt=%s error=%s",
+                            ctx.attempt_id,
+                            ownership_exc,
+                        )
+                        raise ownership_exc from exc
                     raise
 
     @contextmanager

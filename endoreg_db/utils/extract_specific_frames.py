@@ -27,6 +27,7 @@ def extract_single_frame(
         input_path,
         "-frames:v",
         "1",
+        "-an",
         "-q:v",
         str(quality),
         output_path,

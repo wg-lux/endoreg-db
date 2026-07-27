@@ -115,6 +115,7 @@ def analyze_video_with_ffmpeg(video_path: str | Path) -> FrameVideoAnalysisResul
             "error",
             "-i",
             str(video_path),
+            "-an",
             "-f",
             "null",
             "-",

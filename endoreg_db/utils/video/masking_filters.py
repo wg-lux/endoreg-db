@@ -235,15 +235,11 @@ def blacken_video_frame_intervals(
     extra_args = [
         "-map",
         "0:v:0",
-        "-map",
-        "0:a?",
         *filter_args,
         "-color_range",
         STANDARD_VIDEO_ENCODING.color_range,
         "-fpsmax",
         STANDARD_VIDEO_ENCODING.max_fps_arg(),
-        "-c:a",
-        "copy",
         "-movflags",
         "+faststart",
     ]
@@ -341,15 +337,11 @@ def mask_video_to_roi_and_blacken_intervals(
     extra_args = [
         "-map",
         "0:v:0",
-        "-map",
-        "0:a?",
         *filter_args,
         "-color_range",
         STANDARD_VIDEO_ENCODING.color_range,
         "-fpsmax",
         STANDARD_VIDEO_ENCODING.max_fps_arg(),
-        "-c:a",
-        "copy",
         "-movflags",
         "+faststart",
     ]

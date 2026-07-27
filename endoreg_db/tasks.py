@@ -184,13 +184,23 @@ def video_hls_materialization(
     artifact_kind: str = "processed",
     force: bool = False,
 ) -> dict[str, object]:
+    from endoreg_db.exceptions import MediaOperationDeferred
     from endoreg_db.services.hls_media import materialize_video_hls
+    from endoreg_db.services.jobs.error_handling import retry_deferred_media_operation
 
-    result = materialize_video_hls(
-        int(video_id),
-        artifact_kind=str(artifact_kind),
-        force=bool(force),
-    )
+    try:
+        result = materialize_video_hls(
+            int(video_id),
+            artifact_kind=str(artifact_kind),
+            force=bool(force),
+        )
+    except MediaOperationDeferred as exc:
+        retry_deferred_media_operation(
+            retry=_task.retry,
+            error=exc,
+            job_name="video_hls_materialization",
+            video_id=video_id,
+        )
     return result.as_dict()
 
 

@@ -70,21 +70,21 @@ class PdfMediaTextVisibilityTests(TestCase):
             )
         )
 
-    def test_txt_import_is_rejected_instead_of_exposing_raw_text_as_anonymized(self):
+    def test_txt_import_is_rendered_before_anonymization(self):
         txt_content = "patient report from txt\nline two"
         with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
             txt_path = Path(tmp.name)
         txt_path.write_text(txt_content, encoding="utf-8")
 
         try:
-            with self.assertRaisesRegex(
-                ValueError, "Raw TXT report import is disabled"
-            ):
-                ReportImportService().import_and_anonymize(
-                    file_path=txt_path,
-                    center_name=DEFAULT_CENTER_NAME,
-                    retry=False,
-                )
+            converted_path = ReportImportService()._create_temp_pdf_from_txt(  # pyright: ignore[reportPrivateUsage]
+                txt_path
+            )
+            try:
+                self.assertEqual(converted_path.suffix, ".pdf")
+                self.assertTrue(converted_path.read_bytes().startswith(b"%PDF-1.4"))
+            finally:
+                converted_path.unlink(missing_ok=True)
         finally:
             txt_path.unlink(missing_ok=True)
 

@@ -69,11 +69,11 @@ def test_derive_anonymization_status_matches_python_status_tokens(
     [
         (
             {"anonymization_validated": True, "processing_error": True},
-            AnonymizationState.VALIDATED,
+            AnonymizationState.FAILED,
         ),
         (
             {"sensitive_meta_processed": True, "processing_error": True},
-            AnonymizationState.DONE_PROCESSING_ANONYMIZATION,
+            AnonymizationState.FAILED,
         ),
         (
             {"processing_started": True, "anonymized": False},

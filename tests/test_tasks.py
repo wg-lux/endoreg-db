@@ -150,6 +150,13 @@ def test_video_post_validation_rebuild_task_delegates_with_normalized_args() -> 
             {"only_validated": 1, "history_id": "7"},
             "video_post_validation_rebuild",
         ),
+        (
+            tasks.video_hls_materialization,
+            "endoreg_db.services.hls_media.materialize_video_hls",
+            ("42",),
+            {"artifact_kind": "processed", "force": False},
+            "video_hls_materialization",
+        ),
     ],
 )
 def test_media_tasks_share_retry_contract_when_media_busy(

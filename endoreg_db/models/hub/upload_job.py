@@ -304,20 +304,20 @@ class UploadJob(models.Model):
         help_text="Opaque worker identity that currently owns import processing.",
     )
 
-    processing_lease_expires_at: models.DateTimeField[
-        UploadJobDateTime | None, Any
-    ] = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="Database-time expiry of the current import-processing lease.",
+    processing_lease_expires_at: models.DateTimeField[UploadJobDateTime | None, Any] = (
+        models.DateTimeField(
+            null=True,
+            blank=True,
+            help_text="Database-time expiry of the current import-processing lease.",
+        )
     )
 
-    processing_heartbeat_at: models.DateTimeField[
-        UploadJobDateTime | None, Any
-    ] = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="Database time of the most recent import-processing heartbeat.",
+    processing_heartbeat_at: models.DateTimeField[UploadJobDateTime | None, Any] = (
+        models.DateTimeField(
+            null=True,
+            blank=True,
+            help_text="Database time of the most recent import-processing heartbeat.",
+        )
     )
 
     processing_fencing_token: models.PositiveBigIntegerField[int, Any] = (

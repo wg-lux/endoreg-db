@@ -146,7 +146,32 @@ class RawPdfState(models.Model):
             save (bool): If True, persist the change to the database immediately. Defaults to True.
         """
         self.processing_started = True
-        self.save(update_fields=["processing_started", "date_modified"])
+        # An explicit retry starts a new attempt after a previous failure.
+        self.processing_error = False
+        self.save(
+            update_fields=["processing_started", "processing_error", "date_modified"]
+        )
+
+    def mark_processing_failed(self, *, save: bool = True) -> None:
+        """Record failure and revoke readiness derived from the removed artifact."""
+        self.processing_error = True
+        self.processing_started = False
+        self.anonymized = False
+        self.sensitive_meta_processed = False
+        self.anonymization_validated = False
+        self.processed_file_sha256 = ""
+        if save:
+            self.save(
+                update_fields=[
+                    "processing_error",
+                    "processing_started",
+                    "anonymized",
+                    "sensitive_meta_processed",
+                    "anonymization_validated",
+                    "processed_file_sha256",
+                    "date_modified",
+                ]
+            )
 
     # ---- Single‑responsibility mutators ---------------------------------
     def mark_sensitive_meta_processed(self, *, save: bool = True) -> None:

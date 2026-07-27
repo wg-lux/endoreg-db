@@ -16,7 +16,6 @@ from endoreg_db.services.raw_pdf_files.queries import (
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
-from endoreg_db.import_files.file_storage.state_management import finalize_failure
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +74,6 @@ def create_or_retrieve_report_file(
     elif has_failure_history:
         if not isinstance(ctx.current_report, RawPdfFile):
             ctx.current_report = get_raw_pdf_by_content_hash(ctx.file_hash)
-        finalize_failure(ctx)
         processed = True
         needs_processing = True
 

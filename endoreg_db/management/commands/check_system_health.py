@@ -149,8 +149,14 @@ def _hls_materialization_stats() -> dict[str, int | str | None]:
             "materializing": VideoHlsArtifact.objects.filter(
                 status=VideoHlsArtifact.Status.MATERIALIZING
             ).count(),
+            "validated": VideoHlsArtifact.objects.filter(
+                status=VideoHlsArtifact.Status.VALIDATED
+            ).count(),
             "ready": VideoHlsArtifact.objects.filter(
                 status=VideoHlsArtifact.Status.READY
+            ).count(),
+            "superseded": VideoHlsArtifact.objects.filter(
+                status=VideoHlsArtifact.Status.SUPERSEDED
             ).count(),
             "failed": VideoHlsArtifact.objects.filter(
                 status=VideoHlsArtifact.Status.FAILED
@@ -159,6 +165,7 @@ def _hls_materialization_stats() -> dict[str, int | str | None]:
                 status__in=(
                     VideoHlsArtifact.Status.QUEUED,
                     VideoHlsArtifact.Status.MATERIALIZING,
+                    VideoHlsArtifact.Status.VALIDATED,
                 ),
                 updated_at__lte=stale_before,
             ).count(),

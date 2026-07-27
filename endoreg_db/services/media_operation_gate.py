@@ -59,10 +59,11 @@ def create_video_stream_lease(
     if not normalized_file_type:
         raise ValueError("file_type must not be empty")
     with transaction.atomic():
+        locked_video = VideoFile.objects.select_for_update().get(pk=int(video.pk))
         existing = (
             MediaOperationLease.objects.select_for_update()
             .filter(
-                video=video,
+                video=locked_video,
                 lease_type=MediaOperationLease.LEASE_STREAM,
                 metadata__file_type=normalized_file_type,
             )
@@ -74,7 +75,7 @@ def create_video_stream_lease(
             existing.save(update_fields=["expires_at"])
             return existing
         return MediaOperationLease.objects.create(
-            video=video,
+            video=locked_video,
             lease_type=MediaOperationLease.LEASE_STREAM,
             expires_at=expires_at,
             metadata={"file_type": normalized_file_type},
@@ -92,12 +93,14 @@ def create_video_segment_update_lease(
         else max(1, int(ttl_seconds))
     )
     expires_at = timezone.now() + timedelta(seconds=ttl)
-    return MediaOperationLease.objects.create(
-        video=video,
-        lease_type=MediaOperationLease.LEASE_SEGMENT_UPDATE,
-        expires_at=expires_at,
-        metadata={"source": "segment_validation"},
-    )
+    with transaction.atomic():
+        locked_video = VideoFile.objects.select_for_update().get(pk=int(video.pk))
+        return MediaOperationLease.objects.create(
+            video=locked_video,
+            lease_type=MediaOperationLease.LEASE_SEGMENT_UPDATE,
+            expires_at=expires_at,
+            metadata={"source": "segment_validation"},
+        )
 
 
 def release_media_operation_lease(lease: MediaOperationLease | None) -> None:

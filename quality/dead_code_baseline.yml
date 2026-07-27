@@ -21,6 +21,9 @@ accepted_findings:
     owner: endoreg_db maintainers
     review_after: 2026-10-17
   - <<: *protocol_signature
+    path: endoreg_db/services/video_files/_ai.py
+    message: "unused variable 'high_quality'"
+  - <<: *protocol_signature
     path: endoreg_db/authz/permissions.py
     message: "unused variable 'flat'"
   - <<: *protocol_signature

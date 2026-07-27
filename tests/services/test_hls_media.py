@@ -201,9 +201,10 @@ def test_ffmpeg_hls_command_uses_clinical_quality_h264_settings(
     assert command[command.index("-vf") + 1] == (
         "scale=iw:ih:in_range=auto:out_range=full,format=yuv420p"
     )
-    assert command[command.index("-codec:a") + 1] == hls_media.HLS_AUDIO_CODEC
+    assert "-an" in command
+    assert "-codec:a" not in command
     assert "0:v:0" in command
-    assert "0:a?" in command
+    assert "0:a?" not in command
     assert "-level" not in command
     assert "-b:a" not in command
 
@@ -346,7 +347,7 @@ def test_hls_dispatch_reservation_deduplicates_queued_artifact(
     assert artifact.status == VideoHlsArtifact.Status.QUEUED.value
 
 
-def test_hls_dispatch_reservation_recovers_stale_materializing_artifact(
+def test_hls_dispatch_reservation_preserves_stale_materializing_artifact(
     hls_center: Center,
 ) -> None:
     video = _create_processed_video(center=hls_center)
@@ -368,12 +369,13 @@ def test_hls_dispatch_reservation_recovers_stale_materializing_artifact(
     )
 
     artifact.refresh_from_db()
-    assert reservation.status == "queued"
-    assert artifact.status == VideoHlsArtifact.Status.QUEUED.value
-    assert "Recovered stale HLS materializing attempt" in artifact.last_error
+    assert reservation.status == "already_queued"
+    assert reservation.artifact_id == artifact.pk
+    assert artifact.status == VideoHlsArtifact.Status.MATERIALIZING.value
+    assert artifact.last_error == ""
 
 
-def test_hls_dispatch_reservation_recovers_stale_queued_artifact(
+def test_hls_dispatch_reservation_preserves_stale_queued_artifact(
     hls_center: Center,
 ) -> None:
     video = _create_processed_video(center=hls_center)
@@ -395,12 +397,13 @@ def test_hls_dispatch_reservation_recovers_stale_queued_artifact(
     )
 
     artifact.refresh_from_db()
-    assert reservation.status == "queued"
+    assert reservation.status == "already_queued"
+    assert reservation.artifact_id == artifact.pk
     assert artifact.status == VideoHlsArtifact.Status.QUEUED.value
-    assert "Recovered stale HLS queued attempt" in artifact.last_error
+    assert artifact.last_error == ""
 
 
-def test_stale_forced_queue_preserves_previous_ready_artifact(
+def test_stale_forced_queue_preserves_active_attempt_and_previous_ready_artifact(
     hls_center: Center,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -431,18 +434,23 @@ def test_stale_forced_queue_preserves_previous_ready_artifact(
         force=True,
     )
 
-    artifact = VideoHlsArtifact.objects.get(pk=first_reservation.artifact_id)
+    active_artifact = VideoHlsArtifact.objects.get(pk=first_reservation.artifact_id)
+    ready_artifact = VideoHlsArtifact.objects.get(
+        video=video,
+        artifact_kind=VideoHlsArtifact.ArtifactKind.PROCESSED.value,
+        status=VideoHlsArtifact.Status.READY.value,
+    )
     assert first_reservation.status == "queued"
-    assert second_reservation.status == "queued"
+    assert second_reservation.status == "already_queued"
     assert second_reservation.artifact_id == first_reservation.artifact_id
-    assert artifact.status == VideoHlsArtifact.Status.QUEUED.value
-    assert str(artifact.key_id) == ready_result.key_id
-    assert artifact.playlist_relative_path == ready_result.playlist_relative_path
+    assert active_artifact.status == VideoHlsArtifact.Status.QUEUED.value
+    assert active_artifact.last_error == ""
+    assert str(ready_artifact.key_id) == ready_result.key_id
+    assert ready_artifact.playlist_relative_path == ready_result.playlist_relative_path
     assert (
-        artifact.segment_directory_relative_path
+        ready_artifact.segment_directory_relative_path
         == ready_result.segment_directory_relative_path
     )
-    assert "Recovered stale HLS queued attempt" in artifact.last_error
 
 
 def test_queued_hls_worker_claims_reservation_and_materializes(
@@ -537,11 +545,9 @@ def test_stale_hls_worker_cannot_overwrite_new_owner(
 
     assert prepared.should_materialize is True
     with pytest.raises(RuntimeError, match="ownership was lost"):
-        cast(Any, hls_media)._mark_artifact_ready(
+        cast(Any, hls_media)._mark_artifact_validated(
             artifact_id=artifact.pk,
             expected_key_id=stale_key_id,
-            playlist_relative_path="stale/playlist.m3u8",
-            segment_directory_relative_path="stale",
             segment_count=1,
         )
     marked_failed = cast(Any, hls_media)._mark_artifact_failed(
@@ -553,10 +559,13 @@ def test_stale_hls_worker_cannot_overwrite_new_owner(
     )
 
     artifact.refresh_from_db()
+    current_owner = VideoHlsArtifact.objects.get(pk=prepared.artifact_id)
     assert marked_failed is False
-    assert artifact.status == VideoHlsArtifact.Status.MATERIALIZING.value
-    assert artifact.key_id == new_key_id
-    assert artifact.key_ciphertext == b"new wrapped key"
+    assert artifact.status == VideoHlsArtifact.Status.FAILED.value
+    assert artifact.error_code == VideoHlsArtifact.ErrorCode.STALE_ATTEMPT.value
+    assert current_owner.status == VideoHlsArtifact.Status.MATERIALIZING.value
+    assert current_owner.key_id == new_key_id
+    assert current_owner.key_ciphertext == b"new wrapped key"
 
 
 def test_force_materialize_video_hls_removes_replaced_artifact_directory(
@@ -691,16 +700,24 @@ def test_failed_forced_queue_attempt_restores_previous_ready_artifact(
             force=True,
         )
 
-    artifact = VideoHlsArtifact.objects.get(pk=reservation.artifact_id)
+    failed_artifact = VideoHlsArtifact.objects.get(pk=reservation.artifact_id)
+    ready_artifact = VideoHlsArtifact.objects.get(
+        video=video,
+        artifact_kind=VideoHlsArtifact.ArtifactKind.PROCESSED.value,
+        status=VideoHlsArtifact.Status.READY.value,
+    )
     assert reservation.status == "queued"
-    assert artifact.status == VideoHlsArtifact.Status.READY.value
-    assert str(artifact.key_id) == ready_result.key_id
-    assert artifact.playlist_relative_path == ready_result.playlist_relative_path
+    assert failed_artifact.status == VideoHlsArtifact.Status.FAILED.value
+    assert failed_artifact.error_code == (
+        VideoHlsArtifact.ErrorCode.MATERIALIZATION_FAILED.value
+    )
+    assert str(ready_artifact.key_id) == ready_result.key_id
+    assert ready_artifact.playlist_relative_path == ready_result.playlist_relative_path
     assert (
-        artifact.segment_directory_relative_path
+        ready_artifact.segment_directory_relative_path
         == ready_result.segment_directory_relative_path
     )
-    assert "forced retry failed" in artifact.last_error
+    assert "forced retry failed" in failed_artifact.last_error
 
 
 def test_materialized_playlist_uses_api_rooted_relative_key_and_segment_uris(

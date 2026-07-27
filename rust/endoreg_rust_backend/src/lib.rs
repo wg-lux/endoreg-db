@@ -6,11 +6,12 @@ mod file_copy;
 mod file_identity;
 mod frames;
 mod hashing;
+mod hls_state;
 mod pdf;
 mod state_enums;
 mod storage_profile;
 mod stubs;
-mod video_state;
+mod import_state;
 
 use pyo3::prelude::*;
 
@@ -44,6 +45,18 @@ fn endoreg_rust_backend(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResu
         module
     )?)?;
     module.add_function(wrap_pyfunction!(hashing::sha256_file_hex, module)?)?;
+    module.add_function(wrap_pyfunction!(
+        hls_state::derive_hls_reservation_action,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
+        hls_state::derive_hls_publication_action,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
+        hls_state::derive_hls_reconciliation_action,
+        module
+    )?)?;
     module.add_function(wrap_pyfunction!(pdf::render_single_page_pdf, module)?)?;
     module.add_function(wrap_pyfunction!(
         frames::parse_extracted_frame_numbers,
@@ -55,11 +68,11 @@ fn endoreg_rust_backend(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResu
         module
     )?)?;
     module.add_function(wrap_pyfunction!(
-        video_state::derive_anonymization_status,
+        import_state::derive_anonymization_status,
         module
     )?)?;
     module.add_function(wrap_pyfunction!(
-        video_state::derive_report_anonymization_status,
+        import_state::derive_report_anonymization_status,
         module
     )?)?;
     module.add_function(wrap_pyfunction!(

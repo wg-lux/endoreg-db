@@ -34,7 +34,7 @@ repos:
         pass_filenames: false
         types: [python]
       - id: dead-code-baseline
-        name: reviewed dead-code baseline
+        name: dead code
         entry: .devenv/state/venv/bin/python scripts/check_dead_code.py
         language: system
         pass_filenames: false

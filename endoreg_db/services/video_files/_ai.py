@@ -4,9 +4,11 @@ from __future__ import annotations
 import gc
 import logging
 import json
+import re
 import time
-from collections import Counter, defaultdict
+from collections import Counter
 from dataclasses import dataclass
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -20,10 +22,10 @@ from typing import (
     TypeAlias,
     Protocol,
     cast,
-    DefaultDict,
 )
 
 import numpy as np
+import cv2
 from numpy.typing import NDArray
 from safetensors import safe_open
 from lx_dtypes.models.contracts.ai_prediction import AiPredictionConfigPayload
@@ -43,6 +45,7 @@ if TYPE_CHECKING:
         EndoscopyProcessor,
     )
     from endoreg_db.models.media.video.video_file import VideoFile
+    from lx_dtypes.models.contracts.endoscopy_processor import RoiBoxCore
 
 
 class _TensorPredictionLike(Protocol):
@@ -55,6 +58,24 @@ PredictionActivation: TypeAlias = Callable[[object], _TensorPredictionLike]
 
 
 logger = logging.getLogger(__name__)
+
+type _VideoMetadataOcrRoi = dict[str, int | None]
+type _VideoMetadataOcrRois = dict[str, _VideoMetadataOcrRoi]
+type _VideoMetadataOcrResult = dict[str, str | None]
+
+
+class _LxFrameOcr(Protocol):
+    def extract_text_from_frame(
+        self,
+        frame: NDArray[np.uint8],
+        roi: _VideoMetadataOcrRoi,
+        high_quality: bool = True,
+    ) -> tuple[str, float, dict[str, Any]]: ...
+
+
+_DATE_OCR_FIELDS = frozenset({"examination_date", "patient_dob"})
+_NAME_OCR_FIELDS = frozenset({"patient_first_name", "patient_last_name"})
+_OCR_NAME_CLEANUP_RE = re.compile(r'[0-9!"#$%&\'()*+,\-./:;<=>?@[\\\]^_`{|}~\s]+')
 
 
 # ==========================================
@@ -301,11 +322,98 @@ def _remap_prediction_dict(
 # ==========================================
 
 
+def _usable_video_metadata_ocr_roi(
+    roi: RoiBoxCore | None,
+) -> _VideoMetadataOcrRoi | None:
+    if roi is None or roi.x < 0 or roi.y < 0 or roi.width <= 0 or roi.height <= 0:
+        return None
+    return {
+        "x": roi.x,
+        "y": roi.y,
+        "width": roi.width,
+        "height": roi.height,
+    }
+
+
+def _video_metadata_ocr_rois(
+    processor: EndoscopyProcessor,
+) -> _VideoMetadataOcrRois:
+    configured_rois = (
+        ("examination_date", processor.get_roi_examination_date()),
+        ("patient_first_name", processor.get_roi_patient_first_name()),
+        ("patient_last_name", processor.get_roi_patient_last_name()),
+        ("patient_dob", processor.get_roi_patient_dob()),
+        ("endoscope_type", processor.get_roi_endoscope_type()),
+        ("endoscope_sn", processor.get_roi_endoscopy_sn()),
+    )
+    return {
+        name: usable_roi
+        for name, roi in configured_rois
+        if (usable_roi := _usable_video_metadata_ocr_roi(roi)) is not None
+    }
+
+
+def _normalize_video_metadata_ocr_date(value: str) -> str | None:
+    digits = re.sub(r"\D", "", value)
+    if len(digits) not in {8, 14}:
+        return None
+    try:
+        day = int(digits[0:2])
+        month = int(digits[2:4])
+        year = int(digits[4:8])
+        if len(digits) == 14:
+            datetime(
+                year,
+                month,
+                day,
+                int(digits[8:10]),
+                int(digits[10:12]),
+                int(digits[12:14]),
+                tzinfo=UTC,
+            )
+        return date(year, month, day).isoformat()
+    except ValueError:
+        return None
+
+
+def _normalize_video_metadata_ocr_value(field_name: str, value: str) -> str | None:
+    if field_name in _DATE_OCR_FIELDS:
+        return _normalize_video_metadata_ocr_date(value)
+    if field_name in _NAME_OCR_FIELDS:
+        normalized_name = _OCR_NAME_CLEANUP_RE.sub("", value).strip()
+        return normalized_name.capitalize() if normalized_name else None
+    normalized_value = " ".join(value.split())
+    return normalized_value or None
+
+
+def _extract_video_metadata_from_frame(
+    frame_path: Path,
+    configured_rois: _VideoMetadataOcrRois,
+    frame_ocr: _LxFrameOcr,
+) -> _VideoMetadataOcrResult:
+    raw_frame = cast(object, cv2.imread(str(frame_path), cv2.IMREAD_GRAYSCALE))
+    if raw_frame is None:
+        raise ValueError(f"Video metadata OCR frame is unreadable: {frame_path}")
+    if not isinstance(raw_frame, np.ndarray):
+        raise TypeError(f"Video metadata OCR frame has an invalid type: {frame_path}")
+    frame = cast(NDArray[np.uint8], raw_frame)
+
+    result: _VideoMetadataOcrResult = {}
+    for field_name, roi in configured_rois.items():
+        text, _confidence, _metadata = frame_ocr.extract_text_from_frame(
+            frame,
+            roi,
+            high_quality=True,
+        )
+        result[field_name] = _normalize_video_metadata_ocr_value(field_name, text)
+    return result
+
+
 def _extract_text_from_video_frames(
     video: VideoFile, frame_fraction: float = 0.001, cap: int = 15
 ) -> Optional[Dict[str, str | None]]:
     """Extracts text from a sample of video frames using OCR based on processor ROIs."""
-    from endoreg_db.utils.ocr import extract_text_from_rois
+    from lx_anonymizer.ocr.ocr_frame import FrameOCR
 
     state: Any = video.get_or_create_state()
     if not state.frames_extracted:
@@ -353,15 +461,26 @@ def _extract_text_from_video_frames(
     step = max(1, n_frames // n_frames_to_process)
     selected_frame_paths = frame_paths[::step][:n_frames_to_process]
 
-    rois_texts: DefaultDict[Any, List[str]] = defaultdict(list)
+    configured_rois = _video_metadata_ocr_rois(processor)
+    if not configured_rois:
+        logger.warning(
+            "No usable video metadata OCR regions configured for processor %s.",
+            processor.pk,
+        )
+        return None
+
+    ocr = cast(_LxFrameOcr, FrameOCR())
+    rois_texts: dict[str, list[str]] = {roi_name: [] for roi_name in configured_rois}
     errors_encountered = False
     for frame_path in selected_frame_paths:
         try:
-            extracted_texts = cast(
-                Dict[Any, Optional[str]], extract_text_from_rois(frame_path, processor)
+            extracted_texts = _extract_video_metadata_from_frame(
+                Path(frame_path),
+                configured_rois,
+                ocr,
             )
             for roi, text in extracted_texts.items():
-                if text:
+                if roi in rois_texts and text:
                     rois_texts[roi].append(text)
         except Exception as e:
             logger.error(
@@ -375,22 +494,21 @@ def _extract_text_from_video_frames(
 
     most_frequent_texts: Dict[str, str | None] = {}
     for roi, texts in rois_texts.items():
-        roi_key = str(roi)
         if not texts:
-            most_frequent_texts[roi_key] = None
+            most_frequent_texts[roi] = None
             continue
         try:
             counter = Counter(texts)
             most_common = counter.most_common(1)
             if most_common:
-                most_frequent_texts[roi_key] = most_common[0][0]
+                most_frequent_texts[roi] = most_common[0][0]
             else:
-                most_frequent_texts[roi_key] = None
+                most_frequent_texts[roi] = None
         except Exception as e:
             logger.error(
                 "Error finding most common text for ROI %s: %s", roi, e, exc_info=True
             )
-            most_frequent_texts[roi_key] = None
+            most_frequent_texts[roi] = None
 
     if errors_encountered:
         logger.warning(

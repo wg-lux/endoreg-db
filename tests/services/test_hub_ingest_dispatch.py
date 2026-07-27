@@ -194,10 +194,10 @@ class UploadJobDispatchTests(TestCase):
         ):
             reserved_job, reserved_lease, should_dispatch = (
                 _reserve_video_upload_import_handoff(
-                upload_job_id="upload-job-id",
-                queue="ffmpeg_media",
-                task_id="video-import-task-id",
-            )
+                    upload_job_id="upload-job-id",
+                    queue="ffmpeg_media",
+                    task_id="video-import-task-id",
+                )
             )
 
         assert reserved_job is job

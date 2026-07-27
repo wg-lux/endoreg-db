@@ -172,6 +172,38 @@ def test_delete_associated_files_removes_anonymized_and_sensitive_paths(
 
 
 @pytest.mark.unit
+def test_delete_associated_files_preserves_active_sensitive_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import endoreg_db.import_files.file_storage.cleanup as cleanup_module
+
+    sensitive_path = tmp_path / "sensitive.pdf"
+    sensitive_path.write_bytes(b"sensitive")
+    ctx = ImportContext(
+        file_path=sensitive_path,
+        center_name="state-storage-center",
+        file_type="report",
+    )
+    ctx.sensitive_path = sensitive_path
+
+    monkeypatch.setattr(
+        cleanup_module,
+        "staging_cleanup_roots",
+        lambda: (tmp_path,),
+        raising=True,
+    )
+
+    state_management.delete_associated_files(
+        ctx,
+        preserve_sensitive_staging=True,
+    )
+
+    assert ctx.sensitive_path == sensitive_path
+    assert sensitive_path.read_bytes() == b"sensitive"
+
+
+@pytest.mark.unit
 def test_nuke_transcoding_dir_removes_files_symlinks_and_directories(
     tmp_path: Path,
 ) -> None:

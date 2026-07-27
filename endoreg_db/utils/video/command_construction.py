@@ -68,7 +68,9 @@ def _build_transcode_command(
     extra_args: List[str] | None,
     timestamp_repair_mode: TimestampRepairMode,
 ) -> List[str]:
-    disable_audio = _has_flag(extra_args, "-an")
+    # Retain the legacy parameters at the API boundary while enforcing the
+    # repository-wide invariant that generated media never contains audio.
+    _ = audio_codec, audio_bitrate
     command = [
         ffmpeg_executable,
         *_COMMON_FFMPEG_ARGS,
@@ -77,11 +79,6 @@ def _build_transcode_command(
         str(input_path),
         *encoder_args,
     ]
-
-    if not disable_audio:
-        command.extend(["-c:a", audio_codec])
-        if audio_codec != "copy":
-            command.extend(["-b:a", audio_bitrate])
 
     command.extend(
         [
@@ -92,6 +89,7 @@ def _build_transcode_command(
 
     if extra_args:
         command.extend(extra_args)
+    command.append("-an")
     command.append(str(output_path))
     return command
 
@@ -112,6 +110,7 @@ def _build_filter_transcode_command(
         *encoder_args,
         *extra_args,
         "-y",
+        "-an",
         str(output_path),
     ]
 
@@ -158,6 +157,7 @@ def _build_extract_frames_command(
         str(video_path),
         "-start_number",
         "0",
+        "-an",
     ]
 
     if fps is not None:
@@ -194,6 +194,7 @@ def _build_extract_frame_range_command(
         "-copyts",
         "-start_number",
         str(start_frame),
+        "-an",
         str(output_pattern),
     ]
 
@@ -220,10 +221,6 @@ def _update_or_append_ffmpeg_arg(args: List[str], key: str, value: str) -> None:
             value,
         )
         args[value_index] = value
-
-
-def _has_flag(args: List[str] | None, flag: str) -> bool:
-    return args is not None and flag in args
 
 
 def _frame_image_encoder_args(*, ext: str, quality: int) -> list[str]:

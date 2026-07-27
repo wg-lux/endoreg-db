@@ -6,6 +6,9 @@ import tempfile
 from unittest.mock import Mock, patch
 
 from endoreg_db.import_files.context.import_context import ImportContext
+from endoreg_db.import_files.report_import_service import (
+    _sensitive_report_dir,  # pyright: ignore[reportPrivateUsage]
+)
 from endoreg_db.services.raw_pdf_files import ProcessedReportIntegrityError
 from endoreg_db.services.report_import import ReportImportService
 from endoreg_db.utils.file_operations import (
@@ -30,7 +33,7 @@ class TestReportImportServiceUnit(unittest.TestCase):
                 retry=False,
             )
 
-    def test_import_and_anonymize_rejects_raw_txt(self) -> None:
+    def test_txt_input_is_converted_to_pdf_inside_sensitive_storage(self) -> None:
         service = ReportImportService()
         txt_path = None
         try:
@@ -43,13 +46,14 @@ class TestReportImportServiceUnit(unittest.TestCase):
                 required_bytes=len(txt_content),
             )
 
-            with self.assertRaisesRegex(
-                ValueError, "Raw TXT report import is disabled"
-            ):
-                service.import_and_anonymize(
-                    file_path=txt_path,
-                    center_name="dummy-center",
-                )
+            converted_path = service._create_temp_pdf_from_txt(txt_path)  # pyright: ignore[reportPrivateUsage]
+            self.assertEqual(converted_path.suffix, ".pdf")
+            self.assertEqual(
+                converted_path.parent,
+                _sensitive_report_dir(),
+            )
+            self.assertTrue(converted_path.is_file())
+            safe_unlink_file(converted_path)
         finally:
             if txt_path is not None and txt_path.exists():
                 safe_unlink_file(txt_path)

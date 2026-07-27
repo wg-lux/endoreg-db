@@ -35,8 +35,11 @@ class _TaskDispatcher(Protocol):
 
 
 _HLS_STATUS_VALUES = (
+    VideoHlsArtifact.Status.QUEUED.value,
     VideoHlsArtifact.Status.MATERIALIZING.value,
+    VideoHlsArtifact.Status.VALIDATED.value,
     VideoHlsArtifact.Status.READY.value,
+    VideoHlsArtifact.Status.SUPERSEDED.value,
     VideoHlsArtifact.Status.FAILED.value,
 )
 _BOTH_ARTIFACT_KINDS = "both"

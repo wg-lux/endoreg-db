@@ -43,6 +43,8 @@ class _ProcessableState(Protocol):
 
     def mark_processing_not_started(self) -> None: ...
 
+    def mark_processing_failed(self) -> None: ...
+
     def mark_anonymized(self) -> None: ...
 
     def mark_sensitive_meta_processed(self) -> None: ...
@@ -77,6 +79,12 @@ def _verify_final_video_output(path: Path) -> None:
     stream_info = validate_ffmpeg_stream_info(raw_stream_info)
     if not stream_info.has_video_stream:
         raise RuntimeError(f"Final anonymized video has no video stream: {path}")
+
+
+def _require_execution_ownership(ctx: ImportContext) -> None:
+    """Reject a superseded import attempt at a durable publication boundary."""
+    if ctx.execution_guard is not None:
+        ctx.execution_guard()
 
 
 def _store_existing_final_file(
@@ -367,6 +375,7 @@ def finalize_video_success(
                 )
             instance.processed_video_hash = sha256_file(src)
             relative_name = path_utils.to_storage_relative(expected_final_path)
+            _require_execution_ownership(ctx)
             saved_name = _store_existing_final_file(
                 instance.processed_file,
                 src,
@@ -434,6 +443,7 @@ def finalize_failure(
     ctx: ImportContext,
     *,
     preserve_existing_video_artifacts: bool = False,
+    preserve_sensitive_staging: bool = False,
 ) -> None:
     """
     Finalize a failed instance import/anonymization.
@@ -442,6 +452,8 @@ def finalize_failure(
     - Mark ProcessingHistory.success = False
     - Delete all associated files, unless an in-place video re-import failed
       before committing its staged replacement
+    - Preserve the current sensitive staging snapshot only when a fenced retry
+      reset explicitly requests it
     """
 
     if ctx.instance is None:
@@ -466,7 +478,10 @@ def finalize_failure(
     if state is not None:
         try:
             processable_state = cast(_ProcessableState, state)
-            processable_state.mark_processing_not_started()
+            if isinstance(ctx.instance, RawPdfFile):
+                processable_state.mark_processing_failed()
+            else:
+                processable_state.mark_processing_not_started()
 
             processable_state.save()
             logger.info(
@@ -484,6 +499,7 @@ def finalize_failure(
         delete_associated_files(
             ctx,
             preserve_existing_video_artifacts=preserve_existing_video_artifacts,
+            preserve_sensitive_staging=preserve_sensitive_staging,
         )
     except Exception as e:
         logger.warning(f"There might be files remaining. {e}")
@@ -498,6 +514,7 @@ def delete_associated_files(
     ctx: ImportContext,
     *,
     preserve_existing_video_artifacts: bool = False,
+    preserve_sensitive_staging: bool = False,
 ) -> None:
     """
     Best-effort cleanup of anonymized, sensitive and transcoding artefacts.
@@ -506,7 +523,8 @@ def delete_associated_files(
       from ctx.sensitive_path into the appropriate IMPORT_*_DIR.
     - Delete anonymized file (if any).
     - Delete known transient paths recorded on the import context.
-    - Delete sensitive file (if any).
+    - Delete sensitive file (if any), unless it is the explicitly preserved
+      input snapshot for the current retry attempt.
 
     This function should *not* raise on non-critical cleanup errors; it logs instead.
     Only restoration of the original import file is treated as critical.
@@ -534,7 +552,7 @@ def delete_associated_files(
             ctx.anonymized_path = None
 
     # --- Delete sensitive file (best-effort) ---
-    if isinstance(ctx.sensitive_path, Path):
+    if not preserve_sensitive_staging and isinstance(ctx.sensitive_path, Path):
         try:
             safe_cleanup_staging_file(
                 ctx.sensitive_path,

@@ -5,12 +5,14 @@ from uuid import UUID
 
 from django.http import FileResponse, Http404, HttpResponse
 from django.http.response import HttpResponseBase
+from django.db import transaction
 from rest_framework.request import Request
 from rest_framework.views import APIView
 
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.config.env import nginx_offload_enabled
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.hls_media import (
     coerce_hls_artifact_kind,
     get_ready_hls_artifact,
@@ -96,17 +98,19 @@ class HLSPlaylistView(APIView):
             assert_center_scope_allowed(request=request, obj=video)
         self.check_object_permissions(request, video)
         try:
-            artifact = get_ready_hls_artifact(
-                video=video,
-                artifact_kind=artifact_kind,
-            )
-            path = hls_playlist_path(artifact)
+            with transaction.atomic():
+                locked_video = VideoFile.objects.select_for_update().get(pk=video.pk)
+                artifact = get_ready_hls_artifact(
+                    video=locked_video,
+                    artifact_kind=artifact_kind,
+                )
+                path = hls_playlist_path(artifact)
+                create_video_stream_lease(
+                    locked_video,
+                    file_type=f"hls_{artifact.artifact_kind}_playlist",
+                )
         except (FileNotFoundError, ValueError, VideoHlsArtifact.DoesNotExist):
             raise Http404("HLS playlist is not available") from None
-        create_video_stream_lease(
-            video,
-            file_type=f"hls_{artifact.artifact_kind}_playlist",
-        )
 
         if nginx_offload_enabled():
             response = build_nginx_accel_response_for_path(
@@ -141,21 +145,25 @@ class HLSKeyView(APIView):
         video = _get_video_or_404(pk)
         self.check_object_permissions(request, video)
         try:
-            artifact = get_ready_hls_artifact_by_key(
-                video=video,
-                key_id=key_id,
-            )
-            key = unwrap_hls_content_key(artifact)
+            with transaction.atomic():
+                locked_video = VideoFile.objects.select_for_update().get(pk=video.pk)
+                artifact = get_ready_hls_artifact_by_key(
+                    video=locked_video,
+                    key_id=key_id,
+                )
+                key = unwrap_hls_content_key(artifact)
+                if artifact.artifact_kind == VideoArtifactKind.PROCESSED:
+                    assert_anonymized_center_scope_allowed(
+                        request=request, obj=locked_video
+                    )
+                else:
+                    assert_center_scope_allowed(request=request, obj=locked_video)
+                create_video_stream_lease(
+                    locked_video,
+                    file_type=f"hls_{artifact.artifact_kind}_key",
+                )
         except (FileNotFoundError, ValueError, VideoHlsArtifact.DoesNotExist):
             raise Http404("HLS key is not available") from None
-        if artifact.artifact_kind == VideoArtifactKind.PROCESSED:
-            assert_anonymized_center_scope_allowed(request=request, obj=video)
-        else:
-            assert_center_scope_allowed(request=request, obj=video)
-        create_video_stream_lease(
-            video,
-            file_type=f"hls_{artifact.artifact_kind}_key",
-        )
 
         response = HttpResponse(key, content_type=HLS_KEY_CONTENT_TYPE)
         response["Content-Length"] = str(len(key))
@@ -184,21 +192,25 @@ class HLSSegmentView(APIView):
         if not nginx_offload_enabled():
             raise Http404("HLS segment offload is not configured")
         try:
-            artifact = get_ready_hls_artifact_by_key(
-                video=video,
-                key_id=key_id,
-            )
-            path = hls_segment_path(artifact, segment_name)
+            with transaction.atomic():
+                locked_video = VideoFile.objects.select_for_update().get(pk=video.pk)
+                artifact = get_ready_hls_artifact_by_key(
+                    video=locked_video,
+                    key_id=key_id,
+                )
+                path = hls_segment_path(artifact, segment_name)
+                if artifact.artifact_kind == VideoArtifactKind.PROCESSED:
+                    assert_anonymized_center_scope_allowed(
+                        request=request, obj=locked_video
+                    )
+                else:
+                    assert_center_scope_allowed(request=request, obj=locked_video)
+                create_video_stream_lease(
+                    locked_video,
+                    file_type=f"hls_{artifact.artifact_kind}_segment",
+                )
         except (FileNotFoundError, ValueError, VideoHlsArtifact.DoesNotExist):
             raise Http404("HLS segment is not available") from None
-        if artifact.artifact_kind == VideoArtifactKind.PROCESSED:
-            assert_anonymized_center_scope_allowed(request=request, obj=video)
-        else:
-            assert_center_scope_allowed(request=request, obj=video)
-        create_video_stream_lease(
-            video,
-            file_type=f"hls_{artifact.artifact_kind}_segment",
-        )
 
         response = build_nginx_accel_response_for_path(
             path=path,

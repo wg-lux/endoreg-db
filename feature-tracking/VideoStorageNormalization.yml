@@ -33,6 +33,8 @@ definition_of_done:
     Strings durch den Workflow gereicht.
   - Genau ein anonymisiertes kanonisches Video bleibt dauerhaft erhalten; HLS ist ein reproduzierbares,
     größenbegrenztes Derivat mit expliziter Cache- und Eviction-Regel.
+  - Jeder FFmpeg-Befehl, der ein Video, HLS-Derivat oder extrahiertes Frame erzeugt, deaktiviert Audio
+    explizit mit `-an`.
   - Abweichungen vom Profil werden laut abgelehnt oder in einen expliziten Quarantänestatus versetzt;
     stilles Stream-Copy oder unbeschränktes Source-Quality-Encoding ist kein Produktionsfallback.
   required: true
@@ -130,6 +132,9 @@ definition_of_done:
     dasselbe Profil transkodiert und erst nach erneuter vollständiger Prüfung veröffentlicht.
   - Das finale Video wird vor Veröffentlichung auf Codec, Pixel-Format, Dimensionen, FPS, Dauer, Bitrate,
     Dateigröße und Timeline-Konformität geprüft.
+  - Die rationale Bildrate der verifizierten, unveränderlichen Quelle wird ohne Float-Rundung bis zur
+    Maskierungsgrenze in lx-anonymizer durchgereicht. FFmpeg-Maskierung erhält Quell-Präsentationszeitstempel
+    mit `-fps_mode passthrough` und darf weder `-r`, `-fpsmax` noch einen `fps`-Filter ergänzen.
   - Ein Full-Frame-Maskierungs- oder Passthrough-Pfad darf das verpflichtende Storage-Profil nicht durch
     Stream-Copy umgehen.
   - Fehlende oder widersprüchliche Metadaten führen zu einem expliziten Fehlerzustand und bewahren die
@@ -223,14 +228,46 @@ definition_of_done:
     - kind: test
       reference: 73 endoreg-db concurrency/import tests; 29 FFmpeg tests; 6 lx-anonymizer native/concurrency
         tests; cargo test passed
-    note: Implementiert sind DB-Zeit-Lease, Heartbeat und monotones Fencing auf UploadJob, eingezäunte
-      Task-Zustandswechsel und Publikations-Guards, versuchseigene Kandidaten, symlink-freier Watcher-Handoff,
-      eine FrameCleaner-Instanz pro Versuch, ein versionierter nativer Capability-Vertrag sowie FFmpeg-Prozessgruppenbeendigung
-      bei Timeout. Offen bleiben produktionsnahe Mehrprozess-/Crash-/Disk-full-Failure-Injection, unmittelbare
-      Lease-Verlust-Cancellation in allen lx-anonymizer-Unterprozessen, vollständige Phasenmetriken und
-      Betriebs-/Security-Abnahme.
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/utils/video/test_ffmpeg_wrapper.py
+        tests/services/test_environment_readiness_unit.py tests/services/test_video_import_service.py
+        tests/rust_backend/test_rust_backend_fallbacks.py -q (65 passed)
+    - kind: command
+      reference: /home/admin/lx-anonymizer/.devenv/state/venv/bin/python -m pytest tests/test_frame_cleaner_concurrency.py
+        tests/test_ocr_text_native.py tests/test_report_reader_contract_v2.py -q (13 passed)
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pyright <video ownership files>; .devenv/state/venv/bin/pytest
+        tests/services/test_upload_job_import_lease.py tests/services/test_hub_ingest_dispatch.py tests/services/test_video_import_service.py
+        tests/services/test_watcher_storage_import.py tests/import_files/test_video_import_normalization.py
+        -q (56 passed)
+    - kind: command
+      reference: 'lx-anonymizer: devenv shell -- pyright lx_anonymizer/_native.py lx_anonymizer/frame_cleaner.py
+        tests/test_frame_cleaner_concurrency.py tests/test_ocr_text_native.py; pytest tests/test_frame_cleaner_concurrency.py
+        tests/test_ocr_text_native.py -q (6 passed)'
+    - kind: command
+      reference: devenv shell -- ruff; scoped pyright; pytest tests/import_files/test_video_finalize_success.py
+        tests/services/test_upload_job_import_lease.py tests/services/test_hub_ingest_dispatch.py tests/services/test_video_import_service.py
+        tests/services/test_watcher_storage_import.py tests/import_files/test_video_import_normalization.py
+        -q (61 passed)
+    - kind: code
+      reference: endoreg_db/services/video_files/_ai.py uses lx_anonymizer.ocr.ocr_frame.FrameOCR; endoreg_db/utils/ocr.py
+        retired
+    - kind: command
+      reference: devenv shell -- pyright endoreg_db/services/video_files/_ai.py tests/services/test_video_metadata_ocr_boundary.py
+        (0 errors); pytest tests/services/test_video_metadata_ocr_boundary.py tests/models/test_video_metadata.py
+        tests/services/test_video_file_services_contract.py -q (28 passed)
+    note: Nachgewiesen sind Datenbankzeit-Lease, Heartbeat und monotones Fencing auf UploadJob, eingezäunte
+      Task-Zustandswechsel einschließlich Fehlerbereinigung, versuchseigene Kandidaten, symlink-freier
+      Watcher-Handoff und eine erneute Besitzprüfung unmittelbar vor der kanonischen Storage-Veröffentlichung.
+      Alle endoreg-db-Anwendungswege delegieren OCR nun an den lx-anonymizer-FrameOCR-Vertrag; pro gesampeltem
+      Video wird eine eigene Instanz verwendet und das frühere endoreg_db/utils/ocr.py ist entfernt. lx-anonymizer
+      lehnt konkurrierende FrameCleaner-Instanznutzung ab, beendet FFmpeg-Prozessgruppen bei Timeout und
+      prüft native Pflicht-Capabilities fail-closed. Offen bleiben ein kurzer atomarer, durch denselben
+      Fencing-Token geschützter Datenbank-/Generationswechsel, produktionsnahe Mehrprozess-/Crash-/Disk-full-Failure-Injection,
+      unmittelbare Lease-Verlust-Cancellation in allen lx-anonymizer-Unterprozessen, vollständige Phasenmetriken
+      und Betriebs-/Security-Abnahme.
     assessed_by: Codex
-    assessed_at: '2026-07-27T07:04:09.259390Z'
+    assessed_at: '2026-07-27T08:54:22.647069Z'
 - id: video_examination_annotation_contract
   category: interoperability
   title: Normalisierte Videos bleiben in der Segmentannotation sicher nutzbar
@@ -267,6 +304,11 @@ definition_of_done:
   - Playlist-, Key- und Segmentzugriffe erzeugen beziehungsweise erneuern eine Media-Operation-Lease.
     Normalisierung, HLS-Neuerzeugung und Cleanup warten bei aktivem Playback oder Segment-Update und veröffentlichen
     eine neue Generation atomar, ohne laufende Annotationen auf gemischte Derivate zu lenken.
+  - Ein versionierter nativer Rust-Zustandsreduzierer entscheidet die zulässigen HLS-Reservierungs-, Claim-,
+    Publikations- und Reconciliation-Aktionen. Datenbank-Constraints erlauben je Video und Artefaktart
+    höchstens eine veröffentlichte `ready`-Generation und höchstens einen aktiven `queued`-, `materializing`-
+    oder `validated`-Kandidaten. Eine vorherige `ready`-Generation bleibt während der Kandidatenerzeugung
+    streambar; die Publikation serialisiert auf derselben Videozeile wie die Lease-Erzeugung.
   - Vor der HLS-Materialisierung wird die ausgewählte Raw- oder Processed-Quelle innerhalb des geschützten
     Transcoding-Verzeichnisses idempotent gegen `clinical_h264_bounded_v1` geprüft und nur bei Abweichung
     normalisiert. Die HLS-Kodierung verwendet danach denselben Codec-, Pixelformat-, Farbbereichs-, Bitraten-
@@ -382,6 +424,20 @@ definition_of_done:
     Löschung.
   - Nach einem Teilfehler bleibt ein wiederanlauffähiger, eindeutig beobachtbarer Zustand zurück; ein
     Cleanup-Erfolg wird erst nach Prüfung des tatsächlichen Dateisystemzustands persistiert.
+  - Eine versionierte native Rust-Zustandsmaschine entscheidet deterministisch über Reservierung, Veröffentlichung
+    und Reconciliation. Datenbankzeilen, Media-Operation-Leases, Dateibesitz und atomare Veröffentlichung
+    bleiben autoritativ im Python-Service.
+  - Der automatische Backfill stellt vorhandene `queued`, `materializing` oder `validated`-Versuche unabhängig
+    von ihrem Alter nicht erneut in den Broker. Nur ein tatsächlich zugestellter Worker darf einen veralteten
+    Versuch unter Datenbanksperre als fehlgeschlagen abgrenzen und eine neue Generation übernehmen; duplizierte
+    Broker-Nachrichten erzeugen keine parallelen Generationen.
+  - Validierte HLS-Ausgaben bleiben bei aktiver Playback- oder Segment-Update-Lease unveröffentlicht und
+    werden über einen begrenzten Task-Retry erneut zur Veröffentlichung angeboten. Ein späterer Besitzer
+    darf weder ihren Zustand ändern noch ihre temporären Dateien bereinigen.
+  - Reconciliation markiert ausschließlich abgelaufene, durch Datenbank-ID und Generationsschlüssel eindeutig
+    besessene HLS-Versuche als fehlgeschlagen und entfernt nur deren versuchsspezifische temporäre Pfade
+    über die typisierten Dateisystem-Wrapper. Unbekannte Verzeichnisse, aktive Leases und nicht abgelaufene
+    Versuche blockieren automatische Löschung und werden strukturiert gemeldet.
   required: true
   verification:
     kind: command
@@ -393,14 +449,22 @@ definition_of_done:
     - -q
     timeout_seconds: 1200
   assessment:
-    status: verified
+    status: in_progress
     evidence:
     - kind: command
       reference: .devenv/state/venv/bin/pytest tests/services/test_hls_media.py tests/models/video/test_video_file_io_helpers.py
         tests/views/anonymization/test_validate_view.py -q
       note: Exit-Code 0
-    assessed_by: Max
-    assessed_at: '2026-07-20T10:42:11.149131Z'
+    - kind: command
+      reference: devenv shell -- env RUSTFLAGS=-C_link-arg=-lpython3.12 cargo test --manifest-path rust/endoreg_rust_backend/Cargo.toml
+        (17 passed); pytest tests/services/test_hls_media.py (22 passed); pytest tests/management/commands/test_materialize_video_hls.py
+        tests/test_tasks.py (24 passed)
+    note: Die Rust-HLS-Zustandsmaschine, getrennte aktive/ready Generationen, Worker-Fencing, lease-geschützte
+      Veröffentlichung und begrenzter Task-Retry sind lokal implementiert und fokussiert getestet. Offen
+      bleiben Migration und Rollout auf gc-10, die fail-closed Inventur unbekannter verwaister Verzeichnisse
+      sowie ein produktionsnaher Konkurrenz- und Reconciliation-Nachweis.
+    assessed_by: Codex
+    assessed_at: '2026-07-27T09:44:47.066973Z'
 - id: secure_atomic_migration
   category: security
   title: Normalisierung und Löschung bleiben innerhalb der geschützten Storage-Grenze

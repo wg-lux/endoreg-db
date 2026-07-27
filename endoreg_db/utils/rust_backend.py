@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from importlib import import_module
 from pathlib import Path
-from typing import Callable, Sequence
+from typing import Callable, Literal, Sequence, cast
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +25,9 @@ _derive_anonymization_status: (
 _derive_report_anonymization_status: (
     Callable[[bool, bool, bool, bool, bool], str] | None
 )
+_derive_hls_reservation_action: Callable[[str, bool, bool, bool], str] | None
+_derive_hls_publication_action: Callable[[str, bool, bool, bool], str] | None
+_derive_hls_reconciliation_action: Callable[[str, bool], str] | None
 _derive_segment_annotation_status: Callable[[bool, bool, bool], str] | None
 _derive_frame_annotation_status: Callable[[bool, bool, bool, bool, bool], str] | None
 _normalize_frame_task_mode_token: Callable[[str], str] | None
@@ -47,6 +50,15 @@ try:
     )
     _derive_report_anonymization_status = getattr(
         rust_backend, "derive_report_anonymization_status", None
+    )
+    _derive_hls_reservation_action = getattr(
+        rust_backend, "derive_hls_reservation_action", None
+    )
+    _derive_hls_publication_action = getattr(
+        rust_backend, "derive_hls_publication_action", None
+    )
+    _derive_hls_reconciliation_action = getattr(
+        rust_backend, "derive_hls_reconciliation_action", None
     )
     _derive_segment_annotation_status = getattr(
         rust_backend, "derive_segment_annotation_status", None
@@ -95,6 +107,9 @@ except Exception as exc:
     _copy_file_descriptor_to_path = None
     _derive_anonymization_status = None
     _derive_report_anonymization_status = None
+    _derive_hls_reservation_action = None
+    _derive_hls_publication_action = None
+    _derive_hls_reconciliation_action = None
     _derive_segment_annotation_status = None
     _derive_frame_annotation_status = None
     _normalize_frame_task_mode_token = None
@@ -130,9 +145,11 @@ def has_native_capability(name: str, contract_version: str) -> bool:
 
 
 def native_capability_version(name: str, contract_version: str) -> str | None:
-    for capability_name, capability_contract, implementation_version in (
-        native_capabilities()
-    ):
+    for (
+        capability_name,
+        capability_contract,
+        implementation_version,
+    ) in native_capabilities():
         if capability_name == name and capability_contract == contract_version:
             return implementation_version
     return None
@@ -376,6 +393,121 @@ def derive_report_anonymization_status(
             exc,
         )
         return None
+
+
+HlsReservationAction = Literal[
+    "queue",
+    "already_ready",
+    "already_in_flight",
+]
+HlsPublicationAction = Literal[
+    "publish_initial",
+    "replace_ready",
+    "defer",
+    "reject",
+]
+HlsReconciliationAction = Literal["preserve", "fail_and_cleanup"]
+
+_HLS_IN_FLIGHT_STATUSES = frozenset({"queued", "materializing", "validated"})
+_HLS_RESERVATION_ACTIONS = frozenset({"queue", "already_ready", "already_in_flight"})
+_HLS_PUBLICATION_ACTIONS = frozenset(
+    {"publish_initial", "replace_ready", "defer", "reject"}
+)
+_HLS_RECONCILIATION_ACTIONS = frozenset({"preserve", "fail_and_cleanup"})
+
+
+def _validate_hls_in_flight_status(status: str) -> None:
+    if status and status not in _HLS_IN_FLIGHT_STATUSES:
+        raise ValueError(f"unsupported HLS in-flight status: {status}")
+
+
+def derive_hls_reservation_action(
+    *,
+    active_status: str,
+    active_is_stale: bool,
+    ready_matches_source: bool,
+    force: bool,
+) -> HlsReservationAction:
+    _validate_hls_in_flight_status(active_status)
+    if _derive_hls_reservation_action is None:
+        if active_status:
+            return "already_in_flight"
+        if ready_matches_source and not force:
+            return "already_ready"
+        return "queue"
+    try:
+        action = str(
+            _derive_hls_reservation_action(
+                active_status,
+                active_is_stale,
+                ready_matches_source,
+                force,
+            )
+        )
+    except Exception as exc:
+        raise RuntimeError(f"Rust derive_hls_reservation_action failed: {exc}") from exc
+    if action not in _HLS_RESERVATION_ACTIONS:
+        raise RuntimeError(
+            f"Rust returned unsupported HLS reservation action: {action}"
+        )
+    return cast(HlsReservationAction, action)
+
+
+def derive_hls_publication_action(
+    *,
+    attempt_status: str,
+    owner_matches: bool,
+    has_active_lease: bool,
+    has_ready_generation: bool,
+) -> HlsPublicationAction:
+    _validate_hls_in_flight_status(attempt_status)
+    if _derive_hls_publication_action is None:
+        if attempt_status != "validated" or not owner_matches:
+            return "reject"
+        if has_active_lease:
+            return "defer"
+        return "replace_ready" if has_ready_generation else "publish_initial"
+    try:
+        action = str(
+            _derive_hls_publication_action(
+                attempt_status,
+                owner_matches,
+                has_active_lease,
+                has_ready_generation,
+            )
+        )
+    except Exception as exc:
+        raise RuntimeError(f"Rust derive_hls_publication_action failed: {exc}") from exc
+    if action not in _HLS_PUBLICATION_ACTIONS:
+        raise RuntimeError(
+            f"Rust returned unsupported HLS publication action: {action}"
+        )
+    return cast(HlsPublicationAction, action)
+
+
+def derive_hls_reconciliation_action(
+    *,
+    status: str,
+    is_stale: bool,
+) -> HlsReconciliationAction:
+    _validate_hls_in_flight_status(status)
+    if _derive_hls_reconciliation_action is None:
+        return (
+            "fail_and_cleanup"
+            if status in _HLS_IN_FLIGHT_STATUSES and is_stale
+            else "preserve"
+        )
+    try:
+        action = str(_derive_hls_reconciliation_action(status, is_stale))
+    except Exception as exc:
+        raise RuntimeError(
+            f"Rust derive_hls_reconciliation_action failed: {exc}"
+        ) from exc
+    if action not in _HLS_RECONCILIATION_ACTIONS:
+        raise RuntimeError(
+            f"Rust returned unsupported HLS reconciliation action: {action}"
+        )
+    return cast(HlsReconciliationAction, action)
 
 
 def derive_segment_annotation_status(

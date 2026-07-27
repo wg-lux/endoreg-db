@@ -345,8 +345,11 @@ def test_materialize_video_hls_command_dry_run_reports_bulk_audit(
         "eligible_processed_videos": 3,
         "videos_without_processed_file": 1,
         "hls_artifacts": {
+            "queued": 0,
             "materializing": 0,
+            "validated": 0,
             "ready": 1,
+            "superseded": 0,
             "failed": 1,
         },
         "missing_hls_artifacts": 1,

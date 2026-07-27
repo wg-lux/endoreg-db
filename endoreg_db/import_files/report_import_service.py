@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 import logging
-import tempfile
 from pathlib import Path
-from typing import Protocol, cast
+from uuid import uuid4
 
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.context.report_lock import (
@@ -45,17 +44,13 @@ from endoreg_db.services.report_import_fencing import (
     renew_report_import_fence,
     report_import_finalization_guard,
 )
-from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.file_operations import atomic_write_file, sha256_file
 from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.rust_backend import (
     render_single_page_pdf as rust_render_pdf,
 )
 
 logger = logging.getLogger(__name__)
-
-
-class _RawPdfImportState(Protocol):
-    anonymization_validated: bool
 
 
 def _sensitive_report_dir() -> Path:
@@ -159,10 +154,13 @@ class ReportImportService:
         pdf_bytes = self._render_single_page_pdf(
             f"txt_sha256:{txt_hash}\n{txt_content}"
         )
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-            tmp.write(pdf_bytes)
-            tmp.flush()
-            return Path(tmp.name)
+        destination = _sensitive_report_dir() / f"txt-conversion-{uuid4().hex}.pdf"
+        atomic_write_file(
+            destination=destination,
+            content=(pdf_bytes,),
+            required_bytes=len(pdf_bytes),
+        )
+        return destination
 
     def _cleanup_path(self, file_path: Path, log_prefix: str) -> None:
         safe_cleanup_staging_file(file_path, label=log_prefix, missing_ok=False)
@@ -188,14 +186,8 @@ class ReportImportService:
         self.logger.info("validating and preparing file")
         if not ctx.file_path.exists():
             raise FileNotFoundError(f"Report file not found: {file_path}")
-        if ctx.file_path.suffix.lower() == ".txt":
-            raise ValueError(
-                "Raw TXT report import is disabled because plain text cannot be "
-                "treated as an anonymized report. Upload a PDF or use the validated "
-                "preanonymized import workflow."
-            )
-        if ctx.file_path.suffix.lower() != ".pdf":
-            raise ValueError("Report import only accepts PDF files.")
+        if ctx.file_path.suffix.lower() not in {".pdf", ".txt"}:
+            raise ValueError("Report import only accepts PDF or TXT files.")
 
         try:
             if ctx.file_path.suffix.lower() == ".txt":
@@ -203,15 +195,18 @@ class ReportImportService:
                 temp_pdf_path = self._create_temp_pdf_from_txt(ctx.file_path)
                 ctx.file_path = temp_pdf_path
 
-            lock_path = ctx.original_path if is_txt_input else ctx.file_path
-            if lock_path is None:
-                raise ValueError(f"failed to lock {ctx.original_path}")
+            if is_txt_input:
+                if not isinstance(ctx.original_path, Path):
+                    raise ValueError(
+                        "TXT report import requires an original source path."
+                    )
+                lock_path = ctx.original_path
+            else:
+                lock_path = ctx.file_path
 
             with report_source_lock(lock_path):
                 logger.info("Acquired file lock for %s", lock_path)
-                sensitive_src = ctx.original_path if is_txt_input else ctx.file_path
-                if sensitive_src is None:
-                    raise ValueError("Could not set any source for file.")
+                sensitive_src = ctx.file_path
                 snapshot = create_sensitive_report_snapshot(
                     sensitive_src,
                     _sensitive_report_dir(),
@@ -239,22 +234,20 @@ class ReportImportService:
                             get_or_create_raw_pdf_state(ctx.current_report)
                             if ctx.current_report.state is None:
                                 raise ValueError("Could not create state for report.")
-                            current_state = cast(
-                                _RawPdfImportState, ctx.current_report.state
-                            )
-                            ctx.current_report = ctx.current_report
 
                             if processed or retry:
                                 ctx.retry = True
 
-                            # Retry is a forced overwrite of needs processing - therefore the retry will cause full deletion of processed files using finalize failure.
-                            if (
-                                ctx.retry
-                                and needs_processing
-                                and not current_state.anonymization_validated
-                            ):
+                            if not needs_processing and not ctx.retry:
+                                self._cleanup_duplicate_staging(ctx)
+                                mark_report_import_fence_failed(fence)
+                                return ctx.current_report
+                            if ctx.retry:
                                 renew_report_import_fence(fence)
-                                finalize_failure(ctx)
+                                finalize_failure(
+                                    ctx,
+                                    preserve_sensitive_staging=True,
+                                )
                                 ctx.current_report, processed, needs_processing = (
                                     create_or_retrieve_report_file(ctx)
                                 )
@@ -262,18 +255,6 @@ class ReportImportService:
                                     raise ValueError(
                                         f"File already processed: {ctx.original_path}"
                                     )
-                            elif not needs_processing and not ctx.retry:
-                                self._cleanup_duplicate_staging(ctx)
-                                mark_report_import_fence_failed(fence)
-                                return ctx.current_report
-                            else:
-                                renew_report_import_fence(fence)
-                                finalize_failure(ctx)
-                                ctx.current_report, processed, needs_processing = (
-                                    create_or_retrieve_report_file(ctx)
-                                )
-                                if needs_processing is not True:
-                                    raise ValueError("File already processed.")
 
                             renew_report_import_fence(fence)
                             mark_instance_processing_started(ctx.current_report, ctx)

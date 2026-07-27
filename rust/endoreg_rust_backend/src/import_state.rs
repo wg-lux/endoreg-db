@@ -87,6 +87,10 @@ fn resolve_report_anonymization_status(
 ) -> AnonymizationStatus {
     match state {
         ReportAnonymizationStateFlags {
+            processing_error: true,
+            ..
+        } => AnonymizationStatus::Failed,
+        ReportAnonymizationStateFlags {
             anonymization_validated: true,
             ..
         } => AnonymizationStatus::Validated,
@@ -100,10 +104,6 @@ fn resolve_report_anonymization_status(
             anonymized: false,
             ..
         } => AnonymizationStatus::ProcessingAnonymization,
-        ReportAnonymizationStateFlags {
-            processing_error: true,
-            ..
-        } => AnonymizationStatus::Failed,
         ReportAnonymizationStateFlags {
             processing_started: true,
             ..
@@ -254,7 +254,7 @@ mod tests {
                     processing_error: true,
                     ..EMPTY_REPORT_STATE
                 },
-                AnonymizationStatus::Validated,
+                AnonymizationStatus::Failed,
             ),
             (
                 ReportAnonymizationStateFlags {
@@ -262,7 +262,7 @@ mod tests {
                     processing_error: true,
                     ..EMPTY_REPORT_STATE
                 },
-                AnonymizationStatus::DoneProcessingAnonymization,
+                AnonymizationStatus::Failed,
             ),
             (
                 ReportAnonymizationStateFlags {

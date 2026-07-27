@@ -624,6 +624,8 @@ def _safe_existing_media_root_path(storage_name: str | None) -> Path | None:
 @contextmanager
 def _ensure_upload_job_local_file(
     job: UploadJob,
+    *,
+    lease: UploadJobImportLease,
 ) -> Generator[Path, None, None]:
     try:
         with ensure_local_file(job.file) as file_path:
@@ -634,14 +636,15 @@ def _ensure_upload_job_local_file(
         if fallback_path is None:
             raise storage_exc
         fallback_hash = sha256_file(fallback_path)
-        if job.content_hash:
-            if fallback_hash != job.content_hash:
+        with locked_upload_job_import_lease(lease) as owned_job:
+            if owned_job.content_hash and fallback_hash != owned_job.content_hash:
                 raise IOError(
                     "Fallback upload source failed content-hash verification"
                 ) from storage_exc
-        else:
-            job.content_hash = fallback_hash
-            job.save(update_fields=["content_hash", "updated_at"])
+            if not owned_job.content_hash:
+                owned_job.content_hash = fallback_hash
+                owned_job.save(update_fields=["content_hash", "updated_at"])
+            job.content_hash = owned_job.content_hash
         logger.warning(
             "Using verified MEDIA_ROOT fallback for upload job %s because storage "
             "could not materialize %s: %s",
@@ -1649,10 +1652,10 @@ def process_upload_job(job_id: str) -> bool:
         task_id = uuid.uuid4().hex
         reserved_job, reserved_lease, should_dispatch = (
             _reserve_video_upload_import_handoff(
-            upload_job_id=str(job.id),
-            queue=queue,
-            task_id=task_id,
-        )
+                upload_job_id=str(job.id),
+                queue=queue,
+                task_id=task_id,
+            )
         )
         if not should_dispatch:
             return reserved_job.status in {
@@ -1667,23 +1670,40 @@ def process_upload_job(job_id: str) -> bool:
             task_id=task_id,
         )
         if str(async_result.id) != task_id:
-            _update_upload_provenance(
-                reserved_job,
-                video_import_task_id=str(async_result.id),
-            )
-            reserved_job.save(update_fields=["processing_provenance", "updated_at"])
+            if reserved_lease is None:
+                raise RuntimeError(
+                    "Video import dispatch lost its ownership lease before "
+                    "recording the broker task identifier."
+                )
+            with locked_upload_job_import_lease(reserved_lease) as owned_job:
+                _update_upload_provenance(
+                    owned_job,
+                    video_import_task_id=str(async_result.id),
+                )
+                owned_job.save(update_fields=["processing_provenance", "updated_at"])
         return True
     except Exception as exc:
         logger.exception("Video upload import handoff failed for %s: %s", job_id, exc)
         if reserved_lease is not None:
             try:
+                with locked_upload_job_import_lease(reserved_lease) as owned_job:
+                    if _is_celery_broker_connection_error(exc):
+                        schedule_dispatch_retry(
+                            owned_job,
+                            technical_detail=f"Failed to start video import: {exc}",
+                        )
+                    else:
+                        owned_job.mark_error(
+                            f"Failed to start video import: {exc}",
+                            error_code=UploadJob.ErrorCode.INVALID_CONFIGURATION.value,
+                        )
                 release_upload_job_import_lease(reserved_lease)
             except UploadJobImportLeaseLost:
                 logger.warning(
                     "Video upload dispatch lease was already fenced: job=%s",
                     job_id,
                 )
-        if _is_celery_broker_connection_error(exc):
+        elif _is_celery_broker_connection_error(exc):
             schedule_dispatch_retry(
                 job,
                 technical_detail=f"Failed to start video import: {exc}",
@@ -1708,18 +1728,6 @@ def _run_video_upload_import_job(
     if job.status == UploadJob.Status.ANONYMIZED.value:
         return True
 
-    if not job.file or not job.file.name:
-        job.mark_lost("Upload job has no stored file")
-        return False
-
-    center = job.source_center
-    if center is None:
-        job.mark_error(
-            "Upload job has no resolved source center",
-            error_code=UploadJob.ErrorCode.INVALID_CONFIGURATION.value,
-        )
-        return False
-
     owner = (lease_owner or f"direct-{uuid.uuid4().hex}").strip()
     try:
         lease = acquire_upload_job_import_lease(
@@ -1732,6 +1740,27 @@ def _run_video_upload_import_job(
 
     source_materialized = False
     try:
+        validation_failed = False
+        center: Center | None = None
+        with locked_upload_job_import_lease(lease) as owned_job:
+            if not owned_job.file or not owned_job.file.name:
+                owned_job.mark_lost("Upload job has no stored file")
+                validation_failed = True
+            elif owned_job.source_center is None:
+                owned_job.mark_error(
+                    "Upload job has no resolved source center",
+                    error_code=UploadJob.ErrorCode.INVALID_CONFIGURATION.value,
+                )
+                validation_failed = True
+            else:
+                center = owned_job.source_center
+                job = owned_job
+        if validation_failed:
+            release_upload_job_import_lease(lease)
+            return False
+        if center is None:
+            raise RuntimeError("Upload job center vanished after fenced validation")
+
         with UploadJobImportLeaseHeartbeat(lease) as heartbeat:
             with locked_upload_job_import_lease(heartbeat.lease) as owned_job:
                 owned_job.mark_processing()
@@ -1742,12 +1771,13 @@ def _run_video_upload_import_job(
                     video_import_fencing_epoch=heartbeat.lease.fencing_epoch,
                 )
                 provenance.setdefault("stored_upload_path", stored_upload_path)
-                owned_job.save(
-                    update_fields=["processing_provenance", "updated_at"]
-                )
+                owned_job.save(update_fields=["processing_provenance", "updated_at"])
                 job = owned_job
 
-            with _ensure_upload_job_local_file(job) as file_path:
+            with _ensure_upload_job_local_file(
+                job,
+                lease=heartbeat.lease,
+            ) as file_path:
                 source_materialized = True
                 try:
                     processor_name = (

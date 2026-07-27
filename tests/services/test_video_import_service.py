@@ -510,6 +510,47 @@ def test_import_and_anonymize_anonymizer_failure_finalizes_failure(
 
 
 @pytest.mark.unit
+def test_superseded_attempt_cannot_finalize_video_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import endoreg_db.import_files.video_import_service as vis_module
+
+    source_path = tmp_path / "source.mp4"
+    source_path.write_bytes(b"video")
+    cleanup_called = False
+
+    class LeaseLostForTest(RuntimeError):
+        pass
+
+    def reject_stale_worker() -> NoReturn:
+        raise LeaseLostForTest("fenced")
+
+    def forbidden_cleanup(ctx: ImportContext) -> None:
+        nonlocal cleanup_called
+        cleanup_called = True
+
+    ctx = ImportContext(
+        file_path=source_path,
+        center_name="center",
+        processor_name="processor",
+        file_type="video",
+        execution_guard=reject_stale_worker,
+    )
+    monkeypatch.setattr(
+        vis_module,
+        "finalize_failure",
+        forbidden_cleanup,
+        raising=True,
+    )
+
+    with pytest.raises(LeaseLostForTest, match="fenced"):
+        vis_module._finalize_video_failure_if_owned(ctx)
+
+    assert not cleanup_called
+
+
+@pytest.mark.unit
 def test_video_import_service_does_not_construct_anonymizer_in_init(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

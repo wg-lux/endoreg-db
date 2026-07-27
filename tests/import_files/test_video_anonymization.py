@@ -2,6 +2,7 @@
 import os
 from collections.abc import Callable
 from contextlib import nullcontext
+from fractions import Fraction
 from pathlib import Path
 from typing import NoReturn, Protocol, cast
 
@@ -50,6 +51,8 @@ def _valid_stream_info(*, width: int = 640, height: int = 480) -> JsonObject:
                 "codec_name": "h264",
                 "width": width,
                 "height": height,
+                "avg_frame_rate": "30000/1001",
+                "r_frame_rate": "30000/1001",
             }
         ]
     }
@@ -143,6 +146,37 @@ def _stream_info_for_path(path: Path) -> JsonObject:
 
 def _small_stream_info_for_path(path: Path) -> JsonObject:
     return _valid_stream_info(width=640, height=480)
+
+
+@pytest.mark.unit
+def test_source_frame_rate_preserves_rational_rate_and_uses_nominal_when_needed() -> (
+    None
+):
+    stream = video_anonymization._first_video_stream(
+        {
+            "streams": [
+                {
+                    "codec_type": "video",
+                    "avg_frame_rate": "0/0",
+                    "r_frame_rate": "30000/1001",
+                }
+            ]
+        }
+    )
+
+    assert stream is not None
+    assert video_anonymization._source_frame_rate(stream) == Fraction(30000, 1001)
+
+
+@pytest.mark.unit
+def test_source_frame_rate_rejects_missing_rate() -> None:
+    stream = video_anonymization._first_video_stream(
+        {"streams": [{"codec_type": "video"}]}
+    )
+
+    assert stream is not None
+    with pytest.raises(RuntimeError, match="no positive rational"):
+        video_anonymization._source_frame_rate(stream)
 
 
 def _path_string_resolver(path: Path) -> Callable[[], str]:
@@ -564,8 +598,10 @@ def test_anonymize_video_persists_phi_region_proposals_from_frame_cleaner(
             video_path: Path,
             endoscope_image_roi: dict[str, int],
             endoscope_data_roi_nested: dict[str, dict[str, int | None]],
+            source_frame_rate: Fraction,
             output_path: Path,
         ) -> tuple[Path, JsonObject]:
+            assert source_frame_rate == Fraction(30000, 1001)
             output_path.write_bytes(b"anonymized-video")
             return output_path, {
                 "frame_observations": [_phi_observation()],
@@ -609,10 +645,13 @@ def test_anonymize_video_persists_phi_region_proposals_from_frame_cleaner(
         processor_name=processor.name,
     )
     anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
+    anonymizer._frame_cleaning_available = True
 
     result_ctx = anonymizer.anonymize_video(ctx)
 
-    assert result_ctx.anonymized_path == output_dir / "phi-video-anonymize.mp4"
+    assert result_ctx.anonymized_path == (
+        output_dir / f"phi-video-anonymize.attempt-{ctx.attempt_id}.mp4"
+    )
     assert result_ctx.anonymized_path is not None
     assert result_ctx.anonymized_path.read_bytes() == b"anonymized-video"
     assert FrameBoxAnnotation.objects.count() == 1
@@ -656,8 +695,10 @@ def test_reanonymize_video_keeps_new_output_staged_until_finalization(
             video_path: Path,
             endoscope_image_roi: dict[str, int],
             endoscope_data_roi_nested: dict[str, dict[str, int | None]],
+            source_frame_rate: Fraction,
             output_path: Path,
         ) -> tuple[Path, JsonObject]:
+            assert source_frame_rate == Fraction(30000, 1001)
             output_path.write_bytes(b"fresh-anonymized-video")
             return output_path, {}
 
@@ -689,13 +730,14 @@ def test_reanonymize_video_keeps_new_output_staged_until_finalization(
     )
     ctx.retry = True
     anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
+    anonymizer._frame_cleaning_available = True
 
     result_ctx = anonymizer.anonymize_video(ctx)
 
     assert canonical_output.read_bytes() == b"previous-processed-video"
     assert result_ctx.anonymized_path is not None
-    assert (
-        result_ctx.anonymized_path == output_dir / "staged-reanonymize-video.part.mp4"
+    assert result_ctx.anonymized_path == (
+        output_dir / f"staged-reanonymize-video.attempt-{ctx.attempt_id}.mp4"
     )
     assert result_ctx.anonymized_path.read_bytes() == b"fresh-anonymized-video"
 
@@ -749,8 +791,10 @@ def test_anonymize_video_uses_local_source_path_override(
             video_path: Path,
             endoscope_image_roi: dict[str, int],
             endoscope_data_roi_nested: dict[str, dict[str, int | None]],
+            source_frame_rate: Fraction,
             output_path: Path,
         ) -> tuple[Path, JsonObject]:
+            assert source_frame_rate == Fraction(30000, 1001)
             cleaned_paths.append(video_path)
             output_path.write_bytes(b"anonymized-video")
             return output_path, {}
@@ -789,6 +833,7 @@ def test_anonymize_video_uses_local_source_path_override(
         processor_name=processor.name,
     )
     anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
+    anonymizer._frame_cleaning_available = True
 
     result_ctx = anonymizer.anonymize_video(ctx)
 
@@ -800,7 +845,9 @@ def test_anonymize_video_uses_local_source_path_override(
         result_ctx.anonymizer_source_snapshot.get("sha256")
         == ctx.validated_raw_source_sha256
     )
-    assert result_ctx.anonymized_path == output_dir / "local-source-video.mp4"
+    assert result_ctx.anonymized_path == (
+        output_dir / f"local-source-video.attempt-{ctx.attempt_id}.mp4"
+    )
     assert result_ctx.anonymized_path is not None
     assert result_ctx.anonymized_path.read_bytes() == b"anonymized-video"
 
@@ -831,8 +878,10 @@ def test_anonymizer_reuses_initialized_frame_cleaner(
             video_path: Path,
             endoscope_image_roi: dict[str, int],
             endoscope_data_roi_nested: dict[str, dict[str, int | None]],
+            source_frame_rate: Fraction,
             output_path: Path,
         ) -> tuple[Path, JsonObject]:
+            assert source_frame_rate == Fraction(30000, 1001)
             output_path.write_bytes(b"anonymized-video")
             return output_path, {}
 
@@ -893,8 +942,10 @@ def test_anonymize_video_scales_processor_roi_to_source_dimensions(
             video_path: Path,
             endoscope_image_roi: dict[str, int],
             endoscope_data_roi_nested: dict[str, dict[str, int | None]],
+            source_frame_rate: Fraction,
             output_path: Path,
         ) -> tuple[Path, JsonObject]:
+            assert source_frame_rate == Fraction(30000, 1001)
             observed_endoscope_rois.append(endoscope_image_roi)
             observed_sensitive_rois.append(endoscope_data_roi_nested)
             output_path.write_bytes(b"anonymized-video")
@@ -927,6 +978,7 @@ def test_anonymize_video_scales_processor_roi_to_source_dimensions(
         processor_name=processor.name,
     )
     anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
+    anonymizer._frame_cleaning_available = True
 
     anonymizer.anonymize_video(ctx)
 

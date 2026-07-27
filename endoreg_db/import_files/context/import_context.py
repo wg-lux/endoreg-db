@@ -39,6 +39,8 @@ class AnonymizerSourceSnapshot(TypedDict, total=False):
     sha256: str
     width: int
     height: int
+    fps_num: int
+    fps_den: int
     codec_name: str | None
 
 

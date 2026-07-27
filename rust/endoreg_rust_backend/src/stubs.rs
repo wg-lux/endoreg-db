@@ -246,6 +246,52 @@ inventory::submit! {
 
 inventory::submit! {
     PyFunctionInfo {
+        name: "derive_hls_reservation_action",
+        args: &[
+            ArgInfo { name: "active_status", r#type: stub_type_str },
+            ArgInfo { name: "active_is_stale", r#type: stub_type_bool },
+            ArgInfo { name: "ready_matches_source", r#type: stub_type_bool },
+            ArgInfo { name: "force", r#type: stub_type_bool },
+        ],
+        r#return: stub_type_str,
+        doc: "",
+        signature: Some("active_status: str, active_is_stale: bool, ready_matches_source: bool, force: bool"),
+        module: None,
+    }
+}
+
+inventory::submit! {
+    PyFunctionInfo {
+        name: "derive_hls_publication_action",
+        args: &[
+            ArgInfo { name: "attempt_status", r#type: stub_type_str },
+            ArgInfo { name: "owner_matches", r#type: stub_type_bool },
+            ArgInfo { name: "has_active_lease", r#type: stub_type_bool },
+            ArgInfo { name: "has_ready_generation", r#type: stub_type_bool },
+        ],
+        r#return: stub_type_str,
+        doc: "",
+        signature: Some("attempt_status: str, owner_matches: bool, has_active_lease: bool, has_ready_generation: bool"),
+        module: None,
+    }
+}
+
+inventory::submit! {
+    PyFunctionInfo {
+        name: "derive_hls_reconciliation_action",
+        args: &[
+            ArgInfo { name: "status", r#type: stub_type_str },
+            ArgInfo { name: "is_stale", r#type: stub_type_bool },
+        ],
+        r#return: stub_type_str,
+        doc: "",
+        signature: Some("status: str, is_stale: bool"),
+        module: None,
+    }
+}
+
+inventory::submit! {
+    PyFunctionInfo {
         name: "derive_segment_annotation_status",
         args: &[
             ArgInfo { name: "segment_annotations_created", r#type: stub_type_bool },

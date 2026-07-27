@@ -225,10 +225,6 @@ def test_transcode_video_force_cpu_uses_cpu_only_flags(
         "23",
         "-profile:v",
         "high",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "128k",
         "-y",
         "-profile:v",
         "high",
@@ -240,6 +236,7 @@ def test_transcode_video_force_cpu_uses_cpu_only_flags(
         "pc",
         "-fpsmax",
         "50",
+        "-an",
         str(output_path),
     ]
 
@@ -454,15 +451,12 @@ def test_build_transcode_command_preserves_legacy_extra_arg_order() -> None:
         "23",
         "-profile:v",
         "high",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "128k",
         "-y",
         "-pix_fmt",
         "yuv420p",
         "-color_range",
         "pc",
+        "-an",
         "/data/output.mp4",
     ]
 
@@ -492,15 +486,12 @@ def test_build_transcode_command_preserves_legacy_timestamp_repair_order() -> No
         "/data/input.mp4",
         "-c:v",
         "libx264",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "128k",
         "-avoid_negative_ts",
         "make_zero",
         "-muxdelay",
         "0",
         "-y",
+        "-an",
         "/data/output.mp4",
     ]
 
@@ -550,17 +541,9 @@ def test_build_ffprobe_stream_info_command_allows_trusted_local_hls_key() -> Non
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize(
-    ("audio_codec", "extra_args", "unexpected_args"),
-    [
-        ("copy", None, ["-b:a"]),
-        ("aac", ["-an"], ["-c:a", "-b:a"]),
-    ],
-)
-def test_build_transcode_command_skips_unneeded_audio_args(
+@pytest.mark.parametrize("audio_codec", ["copy", "aac"])
+def test_build_transcode_command_always_disables_audio(
     audio_codec: str,
-    extra_args: list[str] | None,
-    unexpected_args: list[str],
 ) -> None:
     command = _build_transcode_command(
         ffmpeg_executable="/smart/bin/ffmpeg",
@@ -569,14 +552,13 @@ def test_build_transcode_command_skips_unneeded_audio_args(
         encoder_args=["-c:v", "libx264"],
         audio_codec=audio_codec,
         audio_bitrate="128k",
-        extra_args=extra_args,
+        extra_args=None,
         timestamp_repair_mode=TimestampRepairMode.NONE,
     )
 
-    for arg in unexpected_args:
-        assert arg not in command
-    if audio_codec == "copy":
-        assert command[command.index("-c:a") + 1] == "copy"
+    assert "-an" in command
+    assert "-c:a" not in command
+    assert "-b:a" not in command
 
 
 @pytest.mark.unit
@@ -609,6 +591,7 @@ def test_build_frame_extraction_commands_preserve_legacy_order() -> None:
         "/data/input.mp4",
         "-start_number",
         "0",
+        "-an",
         "-vf",
         "fps=5.0",
         "-qscale:v",
@@ -630,6 +613,7 @@ def test_build_frame_extraction_commands_preserve_legacy_order() -> None:
         "-copyts",
         "-start_number",
         "10",
+        "-an",
         "/data/frames/frame_%07d.jpg",
     ]
 
@@ -724,6 +708,7 @@ def test_build_filter_transcode_command_preserves_legacy_order() -> None:
         "-movflags",
         "+faststart",
         "-y",
+        "-an",
         "/data/output.mp4",
     ]
 
@@ -911,7 +896,7 @@ def test_blacken_filter_args_switches_to_script_for_large_interval_sets(
 
 
 @pytest.mark.unit
-def test_blacken_video_frame_intervals_maps_audio_and_filter(
+def test_blacken_video_frame_intervals_disables_audio_and_applies_filter(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -942,11 +927,11 @@ def test_blacken_video_frame_intervals_maps_audio_and_filter(
     assert result == output_path
     command = captured_commands[0]
     assert "-map" in command
-    assert command.count("-map") == 2
+    assert command.count("-map") == 1
     assert "0:v:0" in command
-    assert "0:a?" in command
-    assert "-c:a" in command
-    assert command[command.index("-c:a") + 1] == "copy"
+    assert "0:a?" not in command
+    assert "-c:a" not in command
+    assert "-an" in command
     assert "-vf" in command
     assert "(gte(n\\,10)*lt(n\\,20))" in command[command.index("-vf") + 1]
     assert "out_range=full" in command[command.index("-vf") + 1]
@@ -1011,7 +996,7 @@ def test_build_roi_mask_and_blacken_filter_expression_combines_roi_and_intervals
 
 
 @pytest.mark.unit
-def test_mask_video_to_roi_and_blacken_intervals_maps_audio_and_filter(
+def test_mask_video_to_roi_and_blacken_intervals_disables_audio_and_applies_filter(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -1042,11 +1027,11 @@ def test_mask_video_to_roi_and_blacken_intervals_maps_audio_and_filter(
 
     assert result == output_path
     command = captured_commands[0]
-    assert command.count("-map") == 2
+    assert command.count("-map") == 1
     assert "0:v:0" in command
-    assert "0:a?" in command
-    assert "-c:a" in command
-    assert command[command.index("-c:a") + 1] == "copy"
+    assert "0:a?" not in command
+    assert "-c:a" not in command
+    assert "-an" in command
     assert "-vf" in command
     filter_expression = command[command.index("-vf") + 1]
     assert "drawbox=x=0:y=0:w=iw:h=20:color=black:t=fill" in filter_expression

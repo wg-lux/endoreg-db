@@ -16,7 +16,9 @@ class VideoHlsArtifact(models.Model):
     class Status(models.TextChoices):
         QUEUED = "queued", "Queued"
         MATERIALIZING = "materializing", "Materializing"
+        VALIDATED = "validated", "Validated"
         READY = "ready", "Ready"
+        SUPERSEDED = "superseded", "Superseded"
         FAILED = "failed", "Failed"
 
     class ArtifactKind(models.TextChoices):
@@ -100,7 +102,13 @@ class VideoHlsArtifact(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["video", "artifact_kind"],
-                name="unique_video_hls_artifact_kind",
+                condition=models.Q(status="ready"),
+                name="unique_ready_video_hls_artifact_kind",
+            ),
+            models.UniqueConstraint(
+                fields=["video", "artifact_kind"],
+                condition=models.Q(status__in=["queued", "materializing", "validated"]),
+                name="unique_active_video_hls_attempt",
             ),
             models.CheckConstraint(
                 condition=(models.Q(status="failed") & ~models.Q(error_code=""))
