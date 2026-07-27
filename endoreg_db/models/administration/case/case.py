@@ -1,14 +1,22 @@
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from types import NoneType
 from typing import TYPE_CHECKING, TypeAlias, Any
 
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
 if TYPE_CHECKING:
     from ...medical.patient.patient_examination import PatientExamination
+    from ...medical.patient.patient_lab_sample import PatientLabSample
+    from ...medical.patient.patient_lab_value import PatientLabValue
+    from ...medical.patient.patient_medication import PatientMedication
+    from ...medical.patient.patient_medication_schedule import (
+        PatientMedicationSchedule,
+    )
 
 NoCaseEndDate: TypeAlias = NoneType
 CaseEndDate: TypeAlias = datetime | NoCaseEndDate
@@ -31,6 +39,13 @@ class Case(models.Model):
         updated_at (datetime): Timestamp of last case update.
     """
 
+    case_id: models.UUIDField[Any, Any] = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        editable=False,
+        db_index=True,
+        help_text="Stable public identifier for the clinical case.",
+    )
     patient: models.ForeignKey[Any] = models.ForeignKey(
         "Patient",
         on_delete=models.CASCADE,
@@ -42,6 +57,18 @@ class Case(models.Model):
         "PatientExamination",
         related_name="cases",
         help_text="The examinations included in this case.",
+    )
+    patient_medications: "models.ManyToManyField[PatientMedication, PatientMedication]" = models.ManyToManyField(
+        "PatientMedication", related_name="cases", blank=True
+    )
+    patient_medication_schedules: "models.ManyToManyField[PatientMedicationSchedule, PatientMedicationSchedule]" = models.ManyToManyField(
+        "PatientMedicationSchedule", related_name="cases", blank=True
+    )
+    patient_lab_samples: "models.ManyToManyField[PatientLabSample, PatientLabSample]" = models.ManyToManyField(
+        "PatientLabSample", related_name="cases", blank=True
+    )
+    patient_lab_values: "models.ManyToManyField[PatientLabValue, PatientLabValue]" = (
+        models.ManyToManyField("PatientLabValue", related_name="cases", blank=True)
     )
     hash: models.CharField[Any, Any] = models.CharField(
         max_length=255,
@@ -85,6 +112,20 @@ class Case(models.Model):
         ordering = ["-start_date", "patient"]
         verbose_name = "Case"
         verbose_name_plural = "Cases"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(end_date__isnull=True)
+                | models.Q(end_date__gte=models.F("start_date")),
+                name="case_end_not_before_start",
+            )
+        ]
+
+    def clean(self) -> None:
+        super().clean()
+        if self.end_date is not None and self.end_date < self.start_date:
+            raise ValidationError(
+                {"end_date": "Case end date must not be earlier than start date."}
+            )
 
     def __str__(self) -> str:
         string_representation = f"Case {self.pk} ({self.patient})"

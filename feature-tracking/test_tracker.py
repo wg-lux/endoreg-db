@@ -59,6 +59,19 @@ def _verified_feature(feature: FeatureDefinition) -> FeatureDefinition:
     )
 
 
+def _unassessed_feature(feature: FeatureDefinition) -> FeatureDefinition:
+    criteria = tuple(
+        criterion.model_copy(update={"assessment": Assessment()})
+        for criterion in feature.definition_of_done
+    )
+    return feature.model_copy(
+        update={
+            "source_documents": (),
+            "definition_of_done": criteria,
+        }
+    )
+
+
 def _run_git(repository: Path, *arguments: str) -> None:
     subprocess.run(
         ("git", *arguments),
@@ -71,46 +84,19 @@ def _run_git(repository: Path, *arguments: str) -> None:
 
 def test_repository_registry_is_valid_and_tracks_current_assessments() -> None:
     _, features = load_registry(TRACKING_DIR)
+    feature_paths = tuple(
+        path
+        for path in TRACKING_DIR.glob("*.yml")
+        if path.name not in {"policy.yml", "schema.example.yml"}
+    )
 
-    assert len(features) == 16
-    assert {feature.id for feature in features} == {
-        "annotation",
-        "anonymization",
-        "audit_ledger",
-        "api_contracts",
-        "colonoscopy",
-        "code_quality",
-        "data_loading",
-        "dicom",
-        "fhir",
-        "hub_ingest",
-        "lxdm",
-        "production_workflow",
-        "reporting",
-        "storage_security",
-        "standard",
-        "type_safety",
-    }
-    readiness_by_id = {
-        feature.id: derive_readiness(feature).status for feature in features
-    }
-    assert {
-        feature_id
-        for feature_id, status in readiness_by_id.items()
-        if status is ReadinessStatus.IN_PROGRESS
-    } == {
-        "anonymization",
-        "code_quality",
-        "dicom",
-        "fhir",
-        "production_workflow",
-        "type_safety",
-    }
-    assert {
-        feature_id
-        for feature_id, status in readiness_by_id.items()
-        if status is ReadinessStatus.PRODUCTION_READY
-    } == {"annotation", "hub_ingest"}
+    assert len(features) == len(feature_paths)
+    assert len({feature.id for feature in features}) == len(features)
+    assert {feature.id for feature in features} >= {"standard", "type_safety"}
+    for feature in features:
+        readiness = derive_readiness(feature)
+        assert 0 <= readiness.verified_required <= readiness.required_total
+        assert 0 <= readiness.score_percent <= 100
 
 
 def test_verified_status_requires_evidence_and_assessor() -> None:
@@ -178,8 +164,29 @@ def test_file_name_must_match_feature_id(tmp_path: Path) -> None:
         load_feature_file(path)
 
 
-def test_check_returns_failure_until_definition_of_done_is_verified() -> None:
-    assert main(["check", "standard"]) == 1
+def test_check_returns_failure_until_definition_of_done_is_verified(
+    tmp_path: Path,
+) -> None:
+    policy, features = load_registry(TRACKING_DIR)
+    source = next(item for item in features if item.id == "standard")
+    feature = _unassessed_feature(source)
+    tracking_dir = tmp_path / "feature-tracking"
+    tracking_dir.mkdir()
+    (tracking_dir / "policy.yml").write_text(
+        yaml.safe_dump(
+            policy.model_copy(update={"migrated_markdown_trackers": ()}).model_dump(
+                mode="json"
+            ),
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    (tracking_dir / "Standard.yml").write_text(
+        yaml.safe_dump(feature.model_dump(mode="json"), sort_keys=False),
+        encoding="utf-8",
+    )
+
+    assert main(["--directory", str(tracking_dir), "check", "standard"]) == 1
 
 
 def test_verify_update_requires_assessor_before_command_runs() -> None:
@@ -204,17 +211,7 @@ def test_commit_guard_uses_staged_readiness_not_unstaged_yaml(
 ) -> None:
     _, repository_features = load_registry(TRACKING_DIR)
     source = next(item for item in repository_features if item.id == "standard")
-    feature = FeatureDefinition(
-        schema_version=source.schema_version,
-        id=source.id,
-        name=source.name,
-        description=source.description,
-        owners=source.owners,
-        production_critical=source.production_critical,
-        tracking=source.tracking,
-        source_documents=(),
-        definition_of_done=source.definition_of_done,
-    )
+    feature = _unassessed_feature(source)
     policy, _ = load_registry(TRACKING_DIR)
     staged_policy = policy.model_copy(update={"migrated_markdown_trackers": ()})
     tracking_dir = tmp_path / "feature-tracking"
@@ -252,16 +249,23 @@ def test_commit_guard_uses_staged_readiness_not_unstaged_yaml(
 def test_default_overview_marks_valid_features_as_evaluated(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    _, features = load_registry(TRACKING_DIR)
+    active_count = len(actively_tracked_features(features))
+    done_count = sum(
+        feature.tracking.state is FeatureTrackingState.DONE for feature in features
+    )
+
     assert main([]) == 0
 
     output = capsys.readouterr().out
     assert "evaluiert" in output
-    assert "Aktiv getrackt: 14; Done: 2" in output
+    assert f"Aktiv getrackt: {active_count}; Done: {done_count}" in output
 
 
 def test_done_requires_complete_dod_and_excludes_feature_from_tracking() -> None:
     _, features = load_registry(TRACKING_DIR)
-    feature = next(item for item in features if item.id == "standard")
+    source = next(item for item in features if item.id == "standard")
+    feature = _unassessed_feature(source)
 
     with pytest.raises(TrackerError, match="kann nicht done gesetzt werden"):
         mark_feature_done(

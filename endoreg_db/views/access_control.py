@@ -39,9 +39,15 @@ class CenterScopedVideoPermission(BasePermission):
             video_id = int(raw_video_id)
         except (TypeError, ValueError):
             return False
-        video = VideoFile.objects.filter(pk=video_id).only("pk", "center_id").first()
+        cache_video = bool(getattr(view, "cache_center_scoped_video", False))
+        videos = VideoFile.objects.filter(pk=video_id)
+        video = (
+            videos.first() if cache_video else videos.only("pk", "center_id").first()
+        )
         if video is None:
             return True
+        if cache_video:
+            setattr(view, "_center_scoped_video", video)
         allowed_center_ids = _allowed_center_ids(user)
         allowed = allowed_center_ids is None or video.center_id in allowed_center_ids
         if (

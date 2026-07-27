@@ -51,6 +51,19 @@ def _empty_stream_info(_path: Path) -> JsonObject:
     return {"streams": []}
 
 
+def _copy_profile_candidate(
+    *,
+    input_path: Path,
+    output_path: Path,
+    reference_path: Path,
+    quality_mode: str,
+) -> None:
+    """Stand in for profile normalization while preserving its typed call contract."""
+    assert reference_path == input_path
+    assert quality_mode
+    shutil.copy2(input_path, output_path)
+
+
 def _center_and_processor_names() -> tuple[str, str]:
     center = Center.objects.first()
     processor = EndoscopyProcessor.objects.first()
@@ -114,15 +127,10 @@ def test_create_from_file_happy_path(
         raising=True,
     )
 
-    # Fake transcoder: copy input -> output and return output path
-    def fake_transcode(input_path: Path, output_path: Path) -> Path:
-        shutil.copy2(input_path, output_path)
-        return output_path
-
     monkeypatch.setattr(
         create_from_file_module,
-        "transcode_videofile_if_required",
-        fake_transcode,
+        "ensure_video_file_profile",
+        _copy_profile_candidate,
         raising=True,
     )
 
@@ -182,14 +190,10 @@ def test_create_from_file_duplicate_with_existing_file(
         raising=True,
     )
 
-    def fake_transcode(input_path: Path, output_path: Path) -> Path:
-        shutil.copy2(input_path, output_path)
-        return output_path
-
     monkeypatch.setattr(
         create_from_file_module,
-        "transcode_videofile_if_required",
-        fake_transcode,
+        "ensure_video_file_profile",
+        _copy_profile_candidate,
         raising=True,
     )
 
@@ -485,14 +489,10 @@ def test_create_from_file_duplicate_with_missing_file_reuses_existing_record_wit
         raising=True,
     )
 
-    def fake_transcode(input_path: Path, output_path: Path) -> Path:
-        shutil.copy2(input_path, output_path)
-        return output_path
-
     monkeypatch.setattr(
         create_from_file_module,
-        "transcode_videofile_if_required",
-        fake_transcode,
+        "ensure_video_file_profile",
+        _copy_profile_candidate,
         raising=True,
     )
 
@@ -597,15 +597,21 @@ def test_create_from_file_uses_unique_standardization_temp_paths(
 
     captured_output_paths: list[Path] = []
 
-    def failing_transcode(*, input_path: Path, output_path: Path) -> NoReturn:
-        _ = input_path
+    def failing_normalization(
+        *,
+        input_path: Path,
+        output_path: Path,
+        reference_path: Path,
+        quality_mode: str,
+    ) -> NoReturn:
+        del input_path, reference_path, quality_mode
         captured_output_paths.append(output_path)
         raise RuntimeError("transcode failed before output promotion")
 
     monkeypatch.setattr(
         create_from_file_module,
-        "transcode_videofile_if_required",
-        failing_transcode,
+        "ensure_video_file_profile",
+        failing_normalization,
         raising=True,
     )
 
@@ -770,13 +776,20 @@ def test_create_from_file_transcoding_failure_fails_closed(
         raising=True,
     )
 
-    def failing_transcode(_input_path: Path, _output_path: Path) -> NoReturn:
+    def failing_normalization(
+        *,
+        input_path: Path,
+        output_path: Path,
+        reference_path: Path,
+        quality_mode: str,
+    ) -> NoReturn:
+        del input_path, output_path, reference_path, quality_mode
         raise RuntimeError("ffmpeg died horribly")
 
     monkeypatch.setattr(
         create_from_file_module,
-        "transcode_videofile_if_required",
-        failing_transcode,
+        "ensure_video_file_profile",
+        failing_normalization,
         raising=True,
     )
 
@@ -833,19 +846,26 @@ def test_create_from_file_transcoding_failure_is_retry_safe(
 
     call_count = {"count": 0}
 
-    def flaky_transcode(input_path: Path, output_path: Path):
+    def flaky_normalization(
+        *,
+        input_path: Path,
+        output_path: Path,
+        reference_path: Path,
+        quality_mode: str,
+    ) -> None:
+        assert reference_path == input_path
+        assert quality_mode
         call_count["count"] += 1
         if call_count["count"] == 1:
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_bytes(b"partial-output")
             raise RuntimeError("first transcode attempt failed")
         shutil.copy2(input_path, output_path)
-        return output_path
 
     monkeypatch.setattr(
         create_from_file_module,
-        "transcode_videofile_if_required",
-        flaky_transcode,
+        "ensure_video_file_profile",
+        flaky_normalization,
         raising=True,
     )
 

@@ -292,7 +292,10 @@ def _dataset_export_scope_error(
         allowed_center_ids = resolve_allowed_center_ids(user)
         if allowed_center_ids == frozenset():
             return "You do not have access to export center data.", 403
-        if allowed_center_ids is not None and _center_id(center) not in allowed_center_ids:
+        if (
+            allowed_center_ids is not None
+            and _center_id(center) not in allowed_center_ids
+        ):
             return "Export center is outside the authenticated scope.", 403
 
     return None

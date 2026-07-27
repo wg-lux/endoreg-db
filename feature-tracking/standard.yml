@@ -69,13 +69,21 @@ definition_of_done:
   verification:
     kind: command
     command:
+    - devenv
+    - shell
+    - --
     - .devenv/state/venv/bin/pytest
     - feature-tracking/test_tracker.py
     - -q
     timeout_seconds: 300
   assessment:
-    status: not_assessed
-    evidence: []
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest feature-tracking/test_tracker.py -q
+      note: Exit-Code 0
+    assessed_by: Codex
+    assessed_at: '2026-07-23T08:01:22.134957Z'
 - id: safe_execution
   category: security
   title: YAML kann keine implizite Shellausführung oder Freigabe einschleusen
@@ -88,8 +96,16 @@ definition_of_done:
     instructions: Parser-, Subprocess- und Pydantic-Grenzen reviewen.
     timeout_seconds: 300
   assessment:
-    status: not_assessed
-    evidence: []
+    status: verified
+    evidence:
+    - kind: review
+      reference: 'feature-tracking/tracker.py: Verification, FeatureDefinition, run_verification'
+    - kind: test
+      reference: feature-tracking/test_tracker.py
+    note: Pydantic-Modelle verbieten unbekannte Felder; Verifikationskommandos sind typisierte Argumentlisten
+      und werden mit subprocess.run ohne Shell-Expansion ausgeführt.
+    assessed_by: Codex
+    assessed_at: '2026-07-23T08:01:37.612032Z'
 - id: atomic_updates
   category: operations
   title: Terminalupdates sind atomar und strukturiert protokolliert
@@ -100,13 +116,22 @@ definition_of_done:
   verification:
     kind: command
     command:
+    - devenv
+    - shell
+    - --
     - .devenv/state/venv/bin/pytest
     - feature-tracking/test_tracker.py::test_update_and_atomic_save_round_trip
     - -q
     timeout_seconds: 300
   assessment:
-    status: not_assessed
-    evidence: []
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest feature-tracking/test_tracker.py::test_update_and_atomic_save_round_trip
+        -q
+      note: Exit-Code 0
+    assessed_by: Codex
+    assessed_at: '2026-07-23T08:01:26.661552Z'
 - id: governance_documentation
   category: documentation
   title: Nutzung und Agentenpflichten sind zentral dokumentiert
@@ -119,5 +144,13 @@ definition_of_done:
     instructions: README und AGENTS.md gegen CLI und Policy prüfen.
     timeout_seconds: 300
   assessment:
-    status: not_assessed
-    evidence: []
+    status: verified
+    evidence:
+    - kind: document
+      reference: feature-tracking/README.md
+    - kind: review
+      reference: 'AGENTS.md: Feature Readiness Tracking'
+    note: README beschreibt Authoring, Evidenz, Exit-Codes, atomare Updates und den Pflegeprozess; AGENTS.md
+      erklärt feature-tracking als einzige Statusquelle und verbietet parallele Tracker.
+    assessed_by: Codex
+    assessed_at: '2026-07-23T08:01:38.520989Z'

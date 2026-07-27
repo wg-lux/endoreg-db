@@ -77,6 +77,7 @@ from endoreg_db.utils.file_operations import (
     safe_rmtree,
     safe_unlink_file,
 )
+from endoreg_db.utils.video.command_construction import FFprobeInputPolicy
 from lx_dtypes.models.contracts.ffmpeg_metadata import FfmpegProbeDataPayload
 from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
 from tests.helpers.model_weights import (
@@ -163,7 +164,12 @@ class _ConnectionCreatedSignal(Protocol):
 
 
 class _GetStreamInfoCallable(Protocol):
-    def __call__(self, file_path: Path) -> JsonObject: ...
+    def __call__(
+        self,
+        file_path: Path,
+        *,
+        input_policy: FFprobeInputPolicy = FFprobeInputPolicy.DEFAULT,
+    ) -> JsonObject: ...
 
 
 class _StorageField(Protocol):
@@ -1066,14 +1072,22 @@ def _apply_global_video_mocks(cache: CacheManager) -> None:
     from pathlib import Path
     from unittest import mock
 
-    ffmpeg_cache = cache.namespace("ffmpeg")
+    ffmpeg_cache = cache.namespace("ffmpeg_real_first")
 
-    def cached_get_stream_info_with_fallback(file_path: Path) -> JsonObject:
+    def cached_get_stream_info_with_fallback(
+        file_path: Path,
+        *,
+        input_policy: FFprobeInputPolicy = FFprobeInputPolicy.DEFAULT,
+    ) -> JsonObject:
         """
         Smart caching system that tries real operations first, falls back to mocks.
         Caches successful real results for reuse.
         """
-        LOGGER.debug("mock get_stream_info called for %s", file_path)
+        LOGGER.debug(
+            "mock get_stream_info called for %s with policy %s",
+            file_path,
+            input_policy.value,
+        )
         cache_key = f"stream_info_{file_path}"
         cached = ffmpeg_cache.get(cache_key)
         if isinstance(cached, dict):
@@ -1302,13 +1316,20 @@ def mock_ffmpeg(monkeypatch: pytest.MonkeyPatch) -> None:
         return frame_paths
 
     # Mock ffmpeg probe function with fallback to real implementation
-    def mock_get_stream_info(file_path: Path) -> JsonObject:
+    def mock_get_stream_info(
+        file_path: Path,
+        *,
+        input_policy: FFprobeInputPolicy = FFprobeInputPolicy.DEFAULT,
+    ) -> JsonObject:
         """Mock video metadata extraction with fallback"""
         # In video test mode, try real implementation first for some files
         if RUN_VIDEO_TESTS and not SKIP_EXPENSIVE_TESTS:
             try:
                 if original_get_stream_info and file_path.exists():
-                    return original_get_stream_info[0](file_path)
+                    return original_get_stream_info[0](
+                        file_path,
+                        input_policy=input_policy,
+                    )
             except (OSError, RuntimeError, ValueError):
                 pass  # Fall back to mock
 
@@ -1442,8 +1463,13 @@ def auto_mock_ffmpeg_for_video_tests(
 
             return frame_paths
 
-        def safe_get_stream_info(file_path: Path) -> JsonObject:
+        def safe_get_stream_info(
+            file_path: Path,
+            *,
+            input_policy: FFprobeInputPolicy = FFprobeInputPolicy.DEFAULT,
+        ) -> JsonObject:
             """Safe stream info extraction with fallback"""
+            del input_policy
             return _mock_probe_stream_info()
 
         def safe_transcode_videofile_if_required(
@@ -1526,14 +1552,22 @@ def smart_video_mocks(
     Intelligent video operation mocks with real-code-first caching.
     This fixture takes precedence over other video mocks.
     """
-    ffmpeg_cache = cache.namespace("ffmpeg")
+    ffmpeg_cache = cache.namespace("ffmpeg_smart_mock")
 
-    def cached_get_stream_info_with_fallback(file_path: Path) -> JsonObject:
+    def cached_get_stream_info_with_fallback(
+        file_path: Path,
+        *,
+        input_policy: FFprobeInputPolicy = FFprobeInputPolicy.DEFAULT,
+    ) -> JsonObject:
         """
         Smart caching system that tries real operations first, falls back to mocks.
         Caches successful real results for reuse.
         """
-        LOGGER.debug("smart mock get_stream_info called for %s", file_path)
+        LOGGER.debug(
+            "smart mock get_stream_info called for %s with policy %s",
+            file_path,
+            input_policy.value,
+        )
         cache_key = f"stream_info_{file_path}"
         cached = ffmpeg_cache.get(cache_key)
         if isinstance(cached, dict):

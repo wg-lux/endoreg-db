@@ -1,0 +1,313 @@
+schema_version: '1.0'
+id: case_persistence
+name: Persistenter klinischer Fallgraph
+description: Persistiert einen klinischen Fall mit Patient, Aufnahme- und Entlasszeitraum, Fallkennung,
+  Untersuchungen und allen fallbezogenen klinischen und medialen Anhängen vollständig, nachvollziehbar
+  und wiederherstellbar in endoreg_db.
+owners:
+- endoreg_db maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/model_layer_map_for_agents.md
+  disposition: reference
+  note: Definiert Ownership, typisierte Grenzen und den zulässigen Persistenz-/Service-Schnitt.
+- path: docs/video_storage_normalization.md
+  disposition: reference
+  note: Verbindlicher Speicher-, Integritäts- und Lebenszyklusvertrag für fallbezogene Videos.
+definition_of_done:
+- id: complete_graph_scope
+  category: requirements
+  title: Der persistente Fallgraph und seine Ownership sind vollständig definiert
+  acceptance:
+  - Ein versioniertes Inventar benennt für jede fallbezogene Entität Owner, Kardinalität, Fremdschlüsselrichtung,
+    Zeitbezug, Löschverhalten und Provenienz.
+  - Das Inventar umfasst mindestens Patient, Fallkennung, Aufnahme- und Entlasszeitpunkt, Untersuchungen,
+    Indikationen, Befunde, Klassifikationen, Interventionen, Berichte, Dokumente, Videos, Bilder, Segmente,
+    Annotationen, Medikation, Einnahmepläne, Laborproben und Laborwerte.
+  - Für heute nur patientenbezogene Medikation und Laborwerte ist eine eindeutige, überprüfbare Fallzuordnung
+    oder ein unveränderlicher Fallsnapshot festgelegt; der aktuelle Patientenzustand darf nicht nachträglich
+    als historischer Fallinhalt gelten.
+  - Neue fallerreichbare Modellrelationen müssen im Inventar klassifiziert werden und können nicht still
+    aus Persistenz, Export oder Wiederherstellung herausfallen.
+  - /home/admin/dev/lx-annotate/frontend/src/views/reporting/ReportingShell.vue ist als primärer Frontend-Consumer
+    erfasst; sein aktuell als Fall verwendeter PatientExamination-Kontext wird ausdrücklich vom persistenten
+    Case-Kontext abgegrenzt.
+  required: true
+  verification:
+    kind: manual
+    instructions: Fallgraph-Inventar gegen Django-Modelle, lx_dtypes-Vertrag, Serializer, Services und
+      Löschregeln prüfen; jede erreichbare Relation muss genau einen Owner besitzen.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence: []
+    note: Persistenzumfang und ReportingShell-Consumer sind im Tracker erfasst; vollständiges Relationsinventar
+      und Ownership-Review stehen noch aus.
+    assessed_by: Codex
+    assessed_at: '2026-07-22T15:09:52.085067Z'
+- id: case_lifecycle_persistence
+  category: functionality
+  title: Fallidentität, Zeitraum und Untersuchungszuordnung werden dauerhaft gespeichert
+  acceptance:
+  - Erstellen, Aktualisieren, Schließen und Wiederöffnen eines Falls persistiert Fallkennung, Patient,
+    Aufnahmezeitpunkt, optionalen Entlasszeitpunkt und Status atomar.
+  - Jede Untersuchung eines Falls gehört demselben Patienten; fallfremde oder mehrfach widersprüchlich
+    zugeordnete Untersuchungen werden laut abgelehnt.
+  - Wiederholte identische Imports oder API-Aufrufe erzeugen weder doppelte Fälle noch doppelte Anhänge.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_case_persistence.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: tests/views/case/test_case_viewset.py
+    - kind: test
+      reference: tests/services/test_case_persistence.py
+    note: Stable UUID, atomare zeilengesperrte Close-/Reopen-Übergänge, Zeitraumvalidierung, center-scoped
+      CRUD und Same-Patient-Prüfung sind implementiert und getestet. Offen bleiben ein expliziter Idempotency-Key-Vertrag
+      für Create/Import und die zugehörigen Duplikat-Negativtests.
+    assessed_by: Codex
+    assessed_at: '2026-07-23T08:05:06.965340Z'
+- id: clinical_attachment_persistence
+  category: data_integrity
+  title: Klinische Anhänge bleiben vollständig und historisch korrekt mit dem Fall verbunden
+  acceptance:
+  - Untersuchungsbefunde, Indikationen, Klassifikationen, Interventionen und versionierte Berichte überstehen
+    Datenbank-Roundtrip, Prozessneustart und erneutes Laden ohne Verlust.
+  - Fallbezogene Medikamente einschließlich Indikation, Dosis, Einheit, Einnahmezeiten und Zeitgültigkeit
+    sowie Laborproben und -werte einschließlich Einheit, Zeitstempel und Normalbereich werden vollständig
+    persistiert.
+  - Änderungen am späteren Patientenzustand verändern keinen bereits abgeschlossenen Fallinhalt ohne explizite,
+    auditierte Revision.
+  - Datenbank-Constraints und typisierte Boundary-Validierung verhindern verwaiste, patientenfremde oder
+    zeitlich unmögliche Fallanhänge.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_case_clinical_attachments.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: tests/views/case/test_case_viewset.py
+    note: Case relations now persist examinations, patient medications, medication schedules, lab samples
+      and lab values atomically with same-patient validation; historical snapshot/revision semantics and
+      deeper findings/report roundtrips remain.
+    assessed_by: Codex
+    assessed_at: '2026-07-22T15:27:13.325812Z'
+- id: media_attachment_persistence
+  category: interoperability
+  title: Medien, Dokumente und abgeleitete Artefakte besitzen dauerhafte Fallreferenzen
+  acceptance:
+  - PDF-Berichte, Videos, Bilder und DICOM-Daten sowie ihre fallbezogenen Metadaten, Segmente, Frames
+    und Annotationen sind über stabile Datenbankreferenzen erreichbar.
+  - Datenbankzustand, verschlüsselte Dateiablage, Hashes, Generationen und Provenienz können reconciliert
+    werden; fehlende oder fremde Artefakte führen zu einem expliziten Fehlerzustand.
+  - Video-Persistenz erfüllt vollständig den separaten Vertrag VideoStorageNormalization; dieser Tracker
+    schwächt dessen Freigabegates nicht ab.
+  - Rohmedien bleiben innerhalb der freigegebenen verschlüsselten Speichergrenze und werden weder durch
+    Fallpersistenz noch Export unzulässig übertragen.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_case_media_attachments.py
+    - -q
+    timeout_seconds: 1200
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: reporting_shell_integration
+  category: interoperability
+  title: ReportingShell verwendet den persistenten Fall statt einer Untersuchung als Fallersatz
+  acceptance:
+  - /home/admin/dev/lx-annotate/frontend/src/views/reporting/ReportingShell.vue erhält eine stabile Case-ID,
+    Fallstatus, Aufnahme- und Entlasszeitpunkt sowie die Liste der zugehörigen PatientExaminations über
+    einen typisierten snake_case-API-Vertrag.
+  - Fallauswahl und Fall-ID-Anzeige leiten die Case-ID nicht länger aus flow.patientExaminationId ab;
+    eine Untersuchung wird innerhalb des ausgewählten Falls separat gewählt und kann gewechselt werden.
+  - Medien-Preload, Berichtsentwurf, Befunde und Timeline bleiben an Fall und ausgewählte Untersuchung
+    gebunden; Berichte, Videos und Frames eines anderen Falls werden nicht angezeigt oder wiederverwendet.
+  - Neu laden und erneutes Öffnen stellen den gespeicherten Fallkontext einschließlich klinischer Anhänge
+    wieder her, ohne nur lokalen Pinia-Zustand als Quelle zu verwenden.
+  - Frontend-Tests decken einen Fall mit mehreren Untersuchungen, leere und vollständige Anhänge, fremde
+    Fallressourcen sowie persistierten Kontext nach Reload ab.
+  required: true
+  verification:
+    kind: command
+    command:
+    - pnpm
+    - --dir
+    - /home/admin/dev/lx-annotate/frontend
+    - exec
+    - vitest
+    - run
+    - src/views/reporting/__tests__/ReportingShell.mediaPreload.test.ts
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/frontend/src/views/reporting/__tests__/ReportingShell.mediaPreload.test.ts
+    note: ReportingShell resolves and displays the stable Case ID, selects examinations within that case,
+      and reports unanchored examinations; full cross-case media isolation and reload coverage remain.
+    assessed_by: Codex
+    assessed_at: '2026-07-22T15:27:14.216060Z'
+- id: transactional_consistency
+  category: functionality
+  title: Mutationen am Fallgraph sind atomar, idempotent und nebenläufigkeitssicher
+  acceptance:
+  - Ein Fehler beim Speichern eines Pflichtanhangs hinterlässt keinen als vollständig sichtbaren Teilfall;
+    Transaktionsgrenzen und Wiederholungsstrategie sind explizit.
+  - Gleichzeitiges Aktualisieren, Schließen oder Anhängen erkennt Konflikte und verhindert verlorene Updates.
+  - Soft-Delete, Retention und endgültige Löschung folgen expliziten Regeln für alle Datenbankzeilen und
+    Datei-Artefakte des Fallgraphs.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_case_persistence_transactions.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: endoreg_db/services/cases.py
+    - kind: test
+      reference: tests/views/case/test_case_viewset.py
+    - kind: test
+      reference: tests/services/test_case_persistence_transactions.py
+    note: Create, Update, Close/Reopen und CaseSetup verwenden atomare Transaktionen; Updates sperren
+      die persistierte Fallzeile, ausgelassene Relationsfelder werden nicht zurückgeschrieben, und Failure-Injection
+      beweist den Rollback skalarer Änderungen bei Relationsfehlern. Offen bleiben ein expliziter Optimistic-Concurrency-Vertrag
+      sowie Retention- und Delete-Semantik.
+    assessed_by: Codex
+    assessed_at: '2026-07-23T08:16:28.883937Z'
+- id: automated_tests
+  category: testing
+  title: Der vollständige Fallgraph ist durch Roundtrip-, Fehler- und Migrationstests geschützt
+  acceptance:
+  - Tests decken leere, minimale, aktive und geschlossene Fälle sowie Fälle mit allen unterstützten klinischen
+    und medialen Anhängen ab.
+  - Tests decken patientenfremde Relationen, ungültige Zeiträume, Teilfehler, Duplikate, Parallelupdates,
+    Kaskaden und verwaiste Dateien ab.
+  - Migrations- und Restore-Tests belegen, dass vorhandene Fälle und Anhänge ohne Verlust auf das neue
+    Schema überführt werden.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_case_persistence.py
+    - tests/services/test_case_clinical_attachments.py
+    - tests/services/test_case_media_attachments.py
+    - tests/services/test_case_persistence_transactions.py
+    - tests/migrations/test_case_persistence.py
+    - -q
+    timeout_seconds: 1800
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: pytest tests/views/case/test_case_viewset.py; vitest ReportingShell.mediaPreload.test.ts
+        CaseSetupPage.test.ts
+    - kind: command
+      reference: pytest tests/views/case/test_case_viewset.py (3 passed); vitest focused reporting suite
+        (14 passed)
+    - kind: test
+      reference: tests/services/test_case_persistence.py
+    - kind: test
+      reference: tests/migrations/test_case_persistence.py
+    - kind: test
+      reference: tests/services/test_case_persistence_transactions.py
+    note: Zehn fokussierte Backend-Lifecycle-, Graph-, Transaktions- und Migrationstests sowie vierzehn
+      Frontend-Case-/Reportingtests bestehen. Offen bleiben klinische Snapshot-, Medien-, Restore-, echte
+      Parallelkonflikt-, Retention- und vollständige Fehlerkohorten.
+    assessed_by: Codex
+    assessed_at: '2026-07-23T08:16:29.760556Z'
+- id: security_and_privacy
+  category: security
+  title: Fallzugriff schützt Mandantengrenzen, Identität und sensible Artefakte
+  acceptance:
+  - Lesen und Mutieren des Falls und jedes Anhangs erfordert Authentifizierung und den serverseitig geprüften
+    Center-/Patienten-Scope; fremde Ressourcen werden nicht offengelegt.
+  - Identitäts-, Fall-, Medikations- und Labordaten werden nur in den vorgesehenen persistierten Feldern
+    beziehungsweise strikt validierten Payloads gespeichert.
+  - Datei-Artefakte bleiben verschlüsselt; Fallpersistenz umgeht weder mTLS-, Export-, Schlüssel- noch
+    Raw-Media-Regeln.
+  - Erstellen, Ändern, Schließen, Wiederöffnen und Löschen eines Falls sowie relevante Anhangsmutationen
+    besitzen Akteur, Zeitstempel und nachvollziehbare Audit-Evidenz.
+  required: true
+  verification:
+    kind: manual
+    instructions: Autorisierungs-, Mandanten-, Audit-, Verschlüsselungs- und Exportgrenzen mit positiven
+      und negativen Zugriffsfällen reviewen.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: endoreg_db/views/case.py
+    note: Case querysets and create/update mutations use existing center-scope authorization and reject
+      cross-patient attachments. Production authentication, audit events, and negative cross-center coverage
+      remain.
+    assessed_by: Codex
+    assessed_at: '2026-07-22T15:27:23.580460Z'
+- id: backup_restore_operations
+  category: operations
+  title: Backup, Restore, Reconciliation und Rollback erhalten den vollständigen Fallgraph
+  acceptance:
+  - Eine dokumentierte Backup-/Restore-Probe stellt Datenbankbeziehungen und verschlüsselte Medienartefakte
+    eines repräsentativen vollständigen Falls gemeinsam wieder her.
+  - Reconciliation erkennt fehlende Zeilen, verwaiste Referenzen, Hashabweichungen und fehlende Dateien
+    und korrigiert nichts still oder destruktiv.
+  - Backfill und Rollback für bestehende Fälle sind idempotent, messbar und unterbrechen keinen gültigen
+    Altbestand.
+  - Monitoring meldet fehlgeschlagene Persistenz, unvollständige Fallgraphen und Reconciliation-Abweichungen
+    mit stabilen Fall- und Korrelationskennungen.
+  required: true
+  verification:
+    kind: manual
+    instructions: Backup, Restore, Backfill, Rollback und Reconciliation mit einem vollständigen repräsentativen
+      Fall in einer produktionsnahen verschlüsselten Umgebung proben.
+    timeout_seconds: 1800
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: integration_documentation
+  category: documentation
+  title: Datenmodell, API, Lebenszyklus und Betrieb des Fallgraphs sind dokumentiert
+  acceptance:
+  - Dokumentation erklärt Ownership, Schema, Zeitsemantik, Anhangsinventar, Transaktionsgrenzen, Query-/Prefetch-Plan
+    und snake_case-API-Vertrag.
+  - Migrations-, Backfill-, Backup-, Restore-, Reconciliation-, Retention- und Fehlerverfahren sind für
+    Betreiber reproduzierbar beschrieben.
+  - Die Abgrenzung zu LXDM, VideoStorageNormalization, DICOM und bestehenden PatientExamination-Verträgen
+    ist ohne konkurrierenden Fertigstellungsstatus dokumentiert.
+  - Der Datenfluss bis /home/admin/dev/lx-annotate/frontend/src/views/reporting/ReportingShell.vue einschließlich
+    Case-Auswahl, separater Untersuchungsauswahl, Reload und Fehlerzuständen ist dokumentiert.
+  required: true
+  verification:
+    kind: manual
+    instructions: Architektur-, API- und Betriebsdokumentation gegen Modelle, Services, Tests und die
+      angrenzenden Feature-Tracker reviewen.
+    timeout_seconds: 900
+  assessment:
+    status: not_assessed
+    evidence: []

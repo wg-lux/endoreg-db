@@ -244,7 +244,9 @@ def patient_findings_queryset_for_request(
         return queryset
     if not allowed_center_ids:
         return queryset.none()
-    return queryset.filter(patient_examination__patient__center_id__in=allowed_center_ids)
+    return queryset.filter(
+        patient_examination__patient__center_id__in=allowed_center_ids
+    )
 
 
 def terminology_write_access_allowed(actor: object) -> bool:

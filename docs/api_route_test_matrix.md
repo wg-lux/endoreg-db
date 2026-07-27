@@ -8,6 +8,43 @@ This matrix tracks high-risk API routes and the backend tests that exercise them
 Routes are shown with the canonical `/endoreg-api/` mount. `/api/` remains a
 compatibility alias during migration.
 
+## Mount Ownership And Compatibility
+
+| Mount | Owner | Support contract | Removal gate |
+|---|---|---|---|
+| `/endoreg-api/` | `endoreg_db` | Canonical mount for the locally hosted REST Framework and Ninja endpoints. New consumers must build paths through `endoregApi()` or the temporary `r()` wrapper around it. | Canonical; not scheduled for removal. |
+| `/api/` | `endoreg_db` | Compatibility mount of the same URL configuration. It is accepted for existing deployments only and must not appear as a direct string literal in new `lx-annotate` runtime code. | Remove only after the frontend contract scan is clean, every deployment sets the canonical prefix, reverse-proxy routes are migrated, and an announced compatibility window has elapsed. |
+| `/dtypes-api/` | `lx_dtypes`, hosted by `endoreg_db` | Canonical mount for terminology, finding, classification, and typed-record contracts. New consumers must use `dtypesApi()`. | Canonical; not scheduled for removal. |
+| `/base_api/` | `lx_dtypes` | Upstream compatibility mount retained by the `lx_dtypes` URL configuration. It must not be nested below `/endoreg-api/`. | Remove only in a coordinated `lx_dtypes` contract release after all host deployments and consumers use `/dtypes-api/`, compatibility tests are migrated, and the announced support window has elapsed. |
+
+`endoreg_db.utils.api_urls` owns the backend prefix constants.
+`lx-annotate/frontend/src/api/axiosInstance.ts` owns frontend path construction
+and deployment overrides. A deployment may temporarily select a compatibility
+prefix, but feature code must not bypass these boundaries with a literal mount.
+
+## Common Wire Contract
+
+- Public paths are currently unversioned. Compatibility is controlled through
+  canonical mounts, explicit aliases, typed schemas, and announced migrations;
+  a breaking payload change requires a new versioned contract or a compatibility
+  adapter rather than an in-place reinterpretation.
+- Backend and wire payload fields use `snake_case`. The central `lx-annotate`
+  Axios boundary converts request keys to `snake_case` and JSON response keys to
+  `camelCase`; endpoint code must not add a second conversion layer.
+- Authentication and authorization are route-specific and fail closed.
+  Unauthenticated requests return `401` or the configured OpenID Connect flow;
+  authenticated callers without the required role or scope return `403`.
+  Center-scoped resources may return `404` to avoid disclosing foreign object
+  existence.
+- Validation failures use structured `4xx` JSON responses. Expected error
+  payloads expose a stable `detail`, field-error, or approved `error` message;
+  stack traces, local paths, secrets, and raw clinical media are not response
+  payloads.
+- Media, upload, report, administration, and terminology routes retain their
+  domain-specific permission and integrity tests listed below. The compatibility
+  mount does not weaken those controls because it resolves the same URL
+  configuration.
+
 ## Sensitive Media + Streaming
 
 | Route | Purpose | Test Coverage |

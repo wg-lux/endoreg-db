@@ -12,6 +12,7 @@ from rest_framework.routers import DefaultRouter
 from endoreg_db.authz.views_auth import auth_bootstrap
 from endoreg_db.utils.django_static import static
 from endoreg_db.views import PatientExaminationViewSet
+from endoreg_db.views.case import CaseViewSet
 from endoreg_db.views.report import patient_examination_report
 
 from .anonymization import url_patterns as anonymization_url_patterns
@@ -63,6 +64,7 @@ api_urls += _typed_url_patterns(stats_url_patterns)
 # DRF endpoints
 router = DefaultRouter()
 router.register(r"patient-examinations", PatientExaminationViewSet)
+router.register(r"cases", CaseViewSet, basename="case")
 
 # Ninja endpoints
 _release_ninja_api_namespace(NINJA_API_NAMESPACE)

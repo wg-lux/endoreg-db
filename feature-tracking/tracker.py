@@ -123,7 +123,7 @@ class FeatureTrackingEvent(BaseModel):
 
 class FeatureTracking(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-
+    
     state: FeatureTrackingState = FeatureTrackingState.ACTIVE
     history: tuple[FeatureTrackingEvent, ...] = ()
 
