@@ -1,4 +1,6 @@
 import re
+import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Literal, Self, TypedDict
 
@@ -81,6 +83,11 @@ class ImportContext(BaseModel):
     sensitive_path: Path | None = None
     anonymized_path: Path | None = None
     storage_normalization_evidence: VideoStorageNormalizationEvidence | None = None
+    attempt_id: str = Field(default_factory=lambda: uuid.uuid4().hex)
+    execution_guard: SkipValidation[Callable[[], None] | None] = Field(
+        default=None,
+        exclude=True,
+    )
 
     current_report: SkipValidation[RawPdfFile | None] = None
     current_video: SkipValidation[VideoFile | None] = None
@@ -150,6 +157,14 @@ class ImportContext(BaseModel):
         ):
             raise ValueError("validated_raw_source_sha256 must be a SHA-256 hex digest")
         return hash_value
+
+    @field_validator("attempt_id")
+    @classmethod
+    def _validate_attempt_id(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if not re.fullmatch(r"[0-9a-f]{32}", normalized):
+            raise ValueError("attempt_id must be a 32-character lowercase UUID hex")
+        return normalized
 
     @field_validator("extracted_metadata", mode="before")
     @classmethod

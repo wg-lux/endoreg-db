@@ -5,6 +5,7 @@ import sys
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Protocol, cast
+from uuid import uuid4
 
 from lx_dtypes.models.meta.SensitiveMeta import SensitiveMeta as LxSensitiveMeta
 from lx_dtypes.models.contracts.report_anonymization import ReportAnonymizationResult
@@ -27,6 +28,17 @@ class _ReportReader(Protocol):
         create_anonymized_pdf: bool,
         anonymized_pdf_output_path: str,
     ) -> tuple[object, object, object, object]: ...
+
+
+class _ReportAnonymizationV2Result(Protocol):
+    original_text: str
+    anonymized_text: str
+    extracted_metadata: object
+    artifact_path: Path
+
+
+class _ReportReaderV2(Protocol):
+    def process_report_v2(self, request: object) -> _ReportAnonymizationV2Result: ...
 
 
 class _ReportReaderClass(Protocol):
@@ -96,14 +108,55 @@ class ReportAnonymizer:
             anonymized_output_path = anonymized_dir / f"{pdf_hash}.pdf"
             report_reader = self._instantiate_report_reader()
 
-            # Process with enhanced process_report method (returns 4-tuple now)
-            anonymization_result = ReportAnonymizationResult.from_process_report_result(
-                report_reader.process_report(
-                    pdf_path=ctx.file_path,
-                    create_anonymized_pdf=True,
-                    anonymized_pdf_output_path=str(anonymized_output_path),
+            process_report_v2 = getattr(report_reader, "process_report_v2", None)
+            if callable(process_report_v2):
+                contract_module = importlib.import_module(
+                    "lx_anonymizer.report_contracts"
                 )
-            )
+                request_class = getattr(
+                    contract_module,
+                    "ReportAnonymizationRequestV2",
+                )
+                attempt_directory = ensure_directory(
+                    anonymized_dir / f"attempt-{uuid4().hex}"
+                )
+                if not isinstance(ctx.file_hash, str):
+                    raise RuntimeError(
+                        "Stable report snapshot hash is required for v2 anonymization."
+                    )
+                request = request_class(
+                    attempt_id=uuid4(),
+                    source_path=ctx.file_path,
+                    source_sha256=ctx.file_hash,
+                    source_size_bytes=ctx.file_path.stat().st_size,
+                    output_directory=attempt_directory,
+                )
+                v2_result = cast(
+                    _ReportReaderV2,
+                    report_reader,
+                ).process_report_v2(request)
+                anonymization_result = ReportAnonymizationResult.model_validate(
+                    {
+                        "original_text": v2_result.original_text,
+                        "anonymized_text": v2_result.anonymized_text,
+                        "extracted_metadata": v2_result.extracted_metadata,
+                        "anonymized_path": v2_result.artifact_path,
+                    }
+                )
+            else:
+                logger.warning(
+                    "lx-anonymizer does not expose report_anonymization_v2; "
+                    "using the legacy report tuple contract."
+                )
+                anonymization_result = (
+                    ReportAnonymizationResult.from_process_report_result(
+                        report_reader.process_report(
+                            pdf_path=ctx.file_path,
+                            create_anonymized_pdf=True,
+                            anonymized_pdf_output_path=str(anonymized_output_path),
+                        )
+                    )
+                )
             ctx.original_text = anonymization_result.original_text
             ctx.anonymized_text = anonymization_result.anonymized_text
             ctx.extracted_metadata = self._coerce_extracted_metadata(
