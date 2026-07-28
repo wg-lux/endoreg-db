@@ -7,11 +7,11 @@ mod file_identity;
 mod frames;
 mod hashing;
 mod hls_state;
+mod import_state;
 mod pdf;
 mod state_enums;
 mod storage_profile;
 mod stubs;
-mod import_state;
 
 use pyo3::prelude::*;
 
@@ -19,6 +19,7 @@ pub use stubs::stub_info;
 
 #[pymodule]
 fn endoreg_rust_backend(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_class::<file_identity::BatchProcessor>()?;
     module.add_function(wrap_pyfunction!(capabilities::native_capabilities, module)?)?;
     module.add_function(wrap_pyfunction!(
         encryption_state::encryption_status,

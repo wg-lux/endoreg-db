@@ -135,6 +135,75 @@ def test_stable_file_identity_fails_loudly_on_native_error(
         rust_backend_module.stable_file_identity(test_file)
 
 
+def test_batch_stable_file_identities_use_bounded_processor(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import endoreg_db.utils.rust_backend as rust_backend_module
+
+    first = tmp_path / "first.mp4"
+    second = tmp_path / "second.mp4"
+
+    class FakeBatchProcessor:
+        def __init__(self, worker_count: int) -> None:
+            assert worker_count == 2
+            self.worker_count = worker_count
+
+        def stable_file_identities(
+            self,
+            paths: list[Path],
+            chunk_size: int,
+        ) -> list[tuple[int, int, str]]:
+            assert paths == [first, second]
+            assert chunk_size == 4096
+            return [(1, 11, "a" * 64), (2, 22, "b" * 64)]
+
+    monkeypatch.setattr(
+        rust_backend_module,
+        "_batch_processor_factory",
+        FakeBatchProcessor,
+    )
+
+    assert rust_backend_module.stable_file_identities(
+        [first, second],
+        worker_count=2,
+        chunk_size=4096,
+    ) == (
+        (1, 11, "a" * 64),
+        (2, 22, "b" * 64),
+    )
+
+
+def test_batch_stable_file_identities_fails_loudly_on_native_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import endoreg_db.utils.rust_backend as rust_backend_module
+
+    class FailingBatchProcessor:
+        def __init__(self, worker_count: int) -> None:
+            self.worker_count = worker_count
+
+        def stable_file_identities(
+            self,
+            paths: list[Path],
+            chunk_size: int,
+        ) -> list[tuple[int, int, str]]:
+            raise OSError("source changed")
+
+    monkeypatch.setattr(
+        rust_backend_module,
+        "_batch_processor_factory",
+        FailingBatchProcessor,
+    )
+
+    with pytest.raises(RuntimeError, match="batch stable file identity failed"):
+        rust_backend_module.stable_file_identities(
+            [tmp_path / "video.mp4"],
+            worker_count=1,
+        )
+
+
 def test_native_capabilities_are_normalized(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

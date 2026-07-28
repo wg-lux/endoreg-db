@@ -3,10 +3,27 @@ from __future__ import annotations
 import logging
 from importlib import import_module
 from pathlib import Path
-from typing import Callable, Literal, Sequence, cast
+from typing import Callable, Literal, Protocol, Sequence, cast
 
 logger = logging.getLogger(__name__)
 
+
+class NativeBatchProcessor(Protocol):
+    @property
+    def worker_count(self) -> int: ...
+
+    def stable_file_identities(
+        self,
+        paths: list[Path],
+        chunk_size: int = 1024 * 1024,
+    ) -> list[tuple[int, int, str]]: ...
+
+
+class _NativeBatchProcessorFactory(Protocol):
+    def __call__(self, worker_count: int) -> NativeBatchProcessor: ...
+
+
+_batch_processor_factory: _NativeBatchProcessorFactory | None
 _parse_extracted_frame_numbers: Callable[[list[str]], list[int]] | None
 _build_expected_frame_records: Callable[[int, str], list[tuple[int, str]]] | None
 _build_frame_records: Callable[..., list[tuple[int, str]]] | None
@@ -37,6 +54,10 @@ _rust_backend_available = False
 
 try:
     rust_backend = import_module("endoreg_db.endoreg_rust_backend")
+    _batch_processor_factory = cast(
+        _NativeBatchProcessorFactory | None,
+        getattr(rust_backend, "BatchProcessor", None),
+    )
     _build_expected_frame_records = getattr(
         rust_backend, "build_expected_frame_records", None
     )
@@ -93,6 +114,7 @@ try:
     _rust_backend_available = True
 except Exception as exc:
     logger.debug("Rust backend unavailable, using Python fallbacks: %s", exc)
+    _batch_processor_factory = None
     _build_expected_frame_records = None
     _build_frame_records = None
     _parse_extracted_frame_numbers = None
@@ -126,7 +148,7 @@ def native_capabilities() -> tuple[tuple[str, str, str], ...]:
         return ()
     try:
         rows = _native_capabilities()
-    except Exception as exc:
+    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
         raise RuntimeError(f"Rust native_capabilities failed: {exc}") from exc
     return tuple(
         (str(name), str(contract), str(version)) for name, contract, version in rows
@@ -160,7 +182,7 @@ def sha256_file_hex(path: Path, chunk_size: int) -> str | None:
         return None
     try:
         return _sha256_file_hex(Path(path), chunk_size)
-    except Exception as exc:
+    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
         logger.warning("Rust sha256_file_hex failed, falling back to Python: %s", exc)
         return None
 
@@ -175,11 +197,47 @@ def stable_file_identity(
         size_bytes, modified_time_ns, sha256 = _stable_file_identity(
             Path(path), chunk_size
         )
-    except Exception as exc:
+    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
         raise RuntimeError(
             f"Rust stable_file_identity failed for {Path(path)}: {exc}"
         ) from exc
     return int(size_bytes), int(modified_time_ns), str(sha256)
+
+
+def stable_file_identities(
+    paths: Sequence[Path],
+    *,
+    worker_count: int,
+    chunk_size: int = 1024 * 1024,
+) -> tuple[tuple[int, int, str], ...] | None:
+    """
+    Derive stable identities concurrently in a bounded native Rayon pool.
+
+    ``None`` means that the loaded extension predates this optional capability.
+    Native integrity and mutation failures propagate instead of falling back.
+    """
+    if worker_count < 1:
+        raise ValueError("worker_count must be greater than zero")
+    if chunk_size < 1:
+        raise ValueError("chunk_size must be greater than zero")
+    if _batch_processor_factory is None:
+        logger.warning(
+            "Rust BatchProcessor is unavailable; caller must use the observable "
+            "sequential file-identity path."
+        )
+        return None
+    try:
+        processor = _batch_processor_factory(worker_count)
+        rows = processor.stable_file_identities(
+            [Path(path) for path in paths],
+            chunk_size,
+        )
+    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
+        raise RuntimeError(f"Rust batch stable file identity failed: {exc}") from exc
+    return tuple(
+        (int(size_bytes), int(modified_time_ns), str(sha256))
+        for size_bytes, modified_time_ns, sha256 in rows
+    )
 
 
 def stable_snapshot_to_path(
@@ -196,7 +254,7 @@ def stable_snapshot_to_path(
             Path(target_path),
             chunk_size,
         )
-    except Exception as exc:
+    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
         raise RuntimeError(
             "Rust stable_snapshot_to_path failed for "
             f"{Path(source_path)} -> {Path(target_path)}: {exc}"
@@ -209,7 +267,7 @@ def encryption_status(path: Path) -> str | None:
         return None
     try:
         status = _encryption_status(Path(path))
-    except Exception as exc:
+    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
         logger.warning("Rust encryption_status failed, falling back to Python: %s", exc)
         return None
     return status if status in {"encrypted", "plaintext"} else None
@@ -220,7 +278,7 @@ def is_lx_encrypted_file(path: Path) -> bool | None:
         return None
     try:
         return bool(_is_lx_encrypted_file(Path(path)))
-    except Exception as exc:
+    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
         logger.warning(
             "Rust is_lx_encrypted_file failed, falling back to Python: %s", exc
         )
@@ -246,7 +304,7 @@ def decrypt_encrypted_file_range(
                 end,
             )
         )
-    except Exception as exc:
+    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
         raise RuntimeError(
             f"Rust encrypted range decryption failed for {Path(path)}: {exc}"
         ) from exc
@@ -268,7 +326,7 @@ def copy_file_descriptor_to_path(
                 chunk_size,
             )
         )
-    except Exception as exc:
+    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
         logger.warning(
             "Rust copy_file_descriptor_to_path failed, falling back to Python: %s",
             exc,
@@ -281,7 +339,7 @@ def render_single_page_pdf(text: str) -> bytes | None:
         return None
     try:
         return bytes(_render_single_page_pdf(text))
-    except Exception as exc:
+    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
         logger.warning(
             "Rust render_single_page_pdf failed, falling back to Python: %s", exc
         )
@@ -293,7 +351,7 @@ def parse_extracted_frame_numbers(paths: Sequence[Path]) -> list[int] | None:
         return None
     try:
         return list(_parse_extracted_frame_numbers([str(path) for path in paths]))
-    except Exception as exc:
+    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
         logger.warning(
             "Rust parse_extracted_frame_numbers failed, falling back to Python: %s",
             exc,
@@ -317,7 +375,7 @@ def build_frame_records(
                 zero_based=zero_based,
             )
         )
-    except Exception as exc:
+    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
         logger.warning(
             "Rust build_frame_records failed, falling back to Python: %s", exc
         )
@@ -331,7 +389,7 @@ def build_expected_frame_records(
         return None
     try:
         return list(_build_expected_frame_records(frame_count, ext))
-    except Exception as exc:
+    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
         logger.warning(
             "Rust build_expected_frame_records failed, falling back to Python: %s",
             exc,
@@ -361,7 +419,7 @@ def derive_anonymization_status(
             was_created,
             processing_started,
         )
-    except Exception as exc:
+    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
         logger.warning(
             "Rust derive_anonymization_status failed, falling back to Python: %s",
             exc,
@@ -387,7 +445,7 @@ def derive_report_anonymization_status(
             anonymized,
             processing_started,
         )
-    except Exception as exc:
+    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
         logger.warning(
             "Rust derive_report_anonymization_status failed, falling back to Python: %s",
             exc,
@@ -444,7 +502,7 @@ def derive_hls_reservation_action(
                 force,
             )
         )
-    except Exception as exc:
+    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
         raise RuntimeError(f"Rust derive_hls_reservation_action failed: {exc}") from exc
     if action not in _HLS_RESERVATION_ACTIONS:
         raise RuntimeError(
@@ -476,7 +534,7 @@ def derive_hls_publication_action(
                 has_ready_generation,
             )
         )
-    except Exception as exc:
+    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
         raise RuntimeError(f"Rust derive_hls_publication_action failed: {exc}") from exc
     if action not in _HLS_PUBLICATION_ACTIONS:
         raise RuntimeError(
@@ -499,7 +557,7 @@ def derive_hls_reconciliation_action(
         )
     try:
         action = str(_derive_hls_reconciliation_action(status, is_stale))
-    except Exception as exc:
+    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
         raise RuntimeError(
             f"Rust derive_hls_reconciliation_action failed: {exc}"
         ) from exc
@@ -524,7 +582,7 @@ def derive_segment_annotation_status(
             segment_annotations_validated,
             outside_segments_removed,
         )
-    except Exception as exc:
+    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
         logger.warning(
             "Rust derive_segment_annotation_status failed, falling back to Python: %s",
             exc,
@@ -550,7 +608,7 @@ def derive_frame_annotation_status(
             lvs_created,
             frame_annotations_generated,
         )
-    except Exception as exc:
+    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
         logger.warning(
             "Rust derive_frame_annotation_status failed, falling back to Python: %s",
             exc,
@@ -563,7 +621,7 @@ def normalize_frame_task_mode_token(value: str) -> str | None:
         return None
     try:
         return _normalize_frame_task_mode_token(value)
-    except Exception as exc:
+    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
         logger.warning(
             "Rust normalize_frame_task_mode_token failed, falling back to Python: %s",
             exc,
@@ -576,7 +634,7 @@ def normalize_frame_sampling_strategy_token(value: str) -> str | None:
         return None
     try:
         return _normalize_frame_sampling_strategy_token(value)
-    except Exception as exc:
+    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
         logger.warning(
             "Rust normalize_frame_sampling_strategy_token failed, falling back to Python: %s",
             exc,
@@ -589,7 +647,7 @@ def storage_profile_policy_rows() -> list[tuple[str, str, str]] | None:
         return None
     try:
         return list(_storage_profile_policy_rows())
-    except Exception as exc:
+    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
         logger.warning(
             "Rust storage_profile_policy_rows failed; storage routing cannot use Rust table: %s",
             exc,

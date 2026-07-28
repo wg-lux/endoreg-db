@@ -7,6 +7,7 @@ from importlib import import_module
 from typing import TYPE_CHECKING, Protocol, TypeAlias, cast
 
 from django.core.files.uploadedfile import UploadedFile
+from django.db import DatabaseError
 from django.http import Http404
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework.exceptions import PermissionDenied
@@ -17,6 +18,7 @@ from rest_framework.request import Request
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from kombu.exceptions import OperationalError as KombuOperationalError
 
 # Try to import python-magic, but provide fallback if not available
 try:
@@ -225,7 +227,7 @@ def _detected_content_type(
 ) -> tuple[str | None, Response | None]:
     try:
         content_type = detect_mime_type(uploaded_file)
-    except Exception as exc:
+    except (OSError, ValueError) as exc:
         return None, _error_response(
             f"Could not determine file type: {exc}",
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -348,7 +350,13 @@ def _start_created_upload_job(
             )
         else:
             ingest.start_upload_job_processing(upload_job=upload_job)
-    except Exception as exc:
+    except (
+        DatabaseError,
+        KombuOperationalError,
+        OSError,
+        RuntimeError,
+        TypeError,
+    ) as exc:
         return _error_response(
             f"Failed to start processing: {exc}",
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -448,7 +456,16 @@ class UploadFileView(APIView):
                 str(exc),
                 status_code=status.HTTP_403_FORBIDDEN,
             )
-        except Exception as exc:
+        except (
+            AttributeError,
+            DatabaseError,
+            ImportError,
+            KombuOperationalError,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ) as exc:
             return _error_response(
                 f"Failed to create upload job: {exc}",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -559,8 +576,8 @@ class UploadStatusView(APIView):
             raise Http404("Upload job not found")
         except (Http404, PermissionDenied):
             raise
-        except Exception as e:
+        except (DatabaseError, RuntimeError, TypeError, ValueError) as exc:
             return Response(
-                {"error": f"Failed to get upload status: {str(e)}"},
+                {"error": f"Failed to get upload status: {exc}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )

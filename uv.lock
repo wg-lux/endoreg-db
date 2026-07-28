@@ -1020,7 +1020,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/62/59/e47bbd0542d0e6f4c
 
 [[package]]
 name = "endoreg-db"
-version = "1.0.7.8"
+version = "1.0.7.9"
 source = { editable = "." }
 dependencies = [
     { name = "celery" },
@@ -1072,6 +1072,7 @@ dependencies = [
     { name = "safetensors" },
     { name = "scikit-learn" },
     { name = "scipy" },
+    { name = "snakemake" },
     { name = "soundfile" },
     { name = "sphinx" },
     { name = "sphinx-rtd-theme" },
@@ -1108,7 +1109,6 @@ dev = [
     { name = "pytest-xdist" },
     { name = "radon" },
     { name = "ruff" },
-    { name = "snakemake" },
     { name = "twine" },
     { name = "types-django-filter" },
     { name = "types-pyyaml" },
@@ -1204,7 +1204,7 @@ requires-dist = [
     { name = "safetensors", specifier = ">=0.4.5" },
     { name = "scikit-learn", specifier = ">=1.5.2" },
     { name = "scipy", specifier = ">=1.16.1" },
-    { name = "snakemake", marker = "extra == 'dev'", specifier = ">=9.23.1" },
+    { name = "snakemake", specifier = "==9.23.1" },
     { name = "soundfile", specifier = "==0.12.1" },
     { name = "sphinx", specifier = ">=8.2.3" },
     { name = "sphinx", marker = "extra == 'docs'", specifier = ">=8.2.3,<9.0" },

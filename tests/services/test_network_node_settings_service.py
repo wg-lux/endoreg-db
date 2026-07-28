@@ -89,6 +89,37 @@ def test_create_network_node_rejects_non_string_shared_secret():
 
 
 @pytest.mark.django_db
+def test_create_network_node_aggregates_errors_without_writing():
+    existing = NetworkNode.objects.create(
+        display_name="Existing Node",
+        node_key="existing-node-key",
+    )
+    initial_count = NetworkNode.objects.count()
+
+    with pytest.raises(NetworkNodeValidationError) as exc_info:
+        create_network_node(
+            {
+                "display_name": " ",
+                "role": "invalid-role",
+                "node_key": existing.node_key,
+                "is_active": "yes",
+                "owning_center_id": 999_999,
+                "shared_secret": 123,
+            }
+        )
+
+    assert exc_info.value.errors == {
+        "display_name": "display_name is required.",
+        "role": "Invalid role.",
+        "is_active": "is_active must be a boolean.",
+        "owning_center": "Owning center not found.",
+        "shared_secret": "shared_secret must be a string.",
+        "node_key": "node_key already exists.",
+    }
+    assert NetworkNode.objects.count() == initial_count
+
+
+@pytest.mark.django_db
 def test_update_network_node_rejects_invalid_clear_shared_secret_type():
     node = NetworkNode.objects.create(
         display_name="Invalid Clear Flag Node",

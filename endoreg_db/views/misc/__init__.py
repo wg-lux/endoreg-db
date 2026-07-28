@@ -6,20 +6,24 @@ from .application_settings import (
     application_settings_processors_dropdown,
     application_settings_annotators_dropdown,
     application_settings_report_templates_dropdown,
-    application_settings_ai_datasets_dropdown,
-    application_settings_ai_dataset_attachments,
-    application_settings_ai_dataset_frame_bucket_distribution,
-    application_settings_ai_dataset_training_manifest,
     application_settings_model_training_options,
     application_settings_model_training_runs,
     application_settings_model_training_run_detail,
     application_settings_video_dimension_backfill_runs,
     application_settings_video_dimension_backfill_run_detail,
+)
+from .application_settings_ai_datasets import (
+    application_settings_ai_dataset_attachments,
     application_settings_ai_dataset_export,
     application_settings_ai_dataset_export_download,
-    application_settings_network_nodes,
+    application_settings_ai_dataset_frame_bucket_distribution,
+    application_settings_ai_dataset_training_manifest,
+    application_settings_ai_datasets_dropdown,
+)
+from .application_settings_network_nodes import (
     application_settings_network_node_detail,
     application_settings_network_node_roles_dropdown,
+    application_settings_network_nodes,
 )
 from .csrf import csrf_token_view
 from .gender import GenderViewSet

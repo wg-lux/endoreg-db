@@ -1,7 +1,8 @@
 {
   "include": [
     "endoreg_db",
-    "tests"
+    "tests",
+    "workflow"
   ],
   "exclude": [
     "**/__pycache__",

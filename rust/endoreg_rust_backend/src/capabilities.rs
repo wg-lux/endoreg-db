@@ -11,6 +11,11 @@ pub(crate) fn native_capabilities() -> Vec<(String, String, String)> {
             BACKEND_IMPLEMENTATION_VERSION.to_owned(),
         ),
         (
+            "batch_file_identity".to_owned(),
+            "batch_file_identity_v1".to_owned(),
+            BACKEND_IMPLEMENTATION_VERSION.to_owned(),
+        ),
+        (
             "hls_state_machine".to_owned(),
             "hls_state_v1".to_owned(),
             BACKEND_IMPLEMENTATION_VERSION.to_owned(),

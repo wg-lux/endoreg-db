@@ -230,6 +230,165 @@ individual video's publication sequence.
 - Load shedding produces an explicit deferred or capacity error state; it does
   not switch to a lower-integrity processing path.
 
+### Snakemake batch orchestration
+
+`workflow/Snakefile` is the optional macro-concurrency guard for explicitly
+configured batch work. It does not replace Celery for online requests and does
+not own database state. The batch graph can select:
+
+1. a video import from a configured immutable source;
+2. an optional processed-video storage-pressure transcode, selected either by
+   a database video identifier or an upstream import receipt;
+3. an optional raw or processed HTTP Live Streaming (HLS) materialization,
+   selected by a database video identifier, import receipt, or transcode
+   receipt.
+
+Each rule invokes the existing Python service. Import leases, fencing,
+protected storage routing, profile validation, atomic publication, media
+operation leases, and cleanup therefore remain authoritative in the same
+service paths used outside Snakemake. A successful import already requires raw
+and processed HLS readiness. A later configured HLS rule is an idempotent
+readiness or regeneration request, not a weaker replacement for that import
+gate.
+
+Stage handoff uses typed, atomically written JavaScript Object Notation (JSON)
+receipts beneath the configured receipt directory. A downstream rule validates
+the complete schema, stage, job identity, status, and expected source or
+processed generation from its single declared upstream receipt. It then
+re-loads the authoritative video from the database and rejects stale
+generation provenance. Receipt metadata is never publication authority.
+
+The `offline-batch` profile uses `forceall: true`. Every supervised invocation
+therefore re-enters the idempotent services and reconciles database state; an
+old completed receipt cannot suppress a readiness or regeneration check. The
+same profile enables one retry, incomplete-job reruns, a bounded filesystem
+latency wait, and fail-fast scheduling.
+
+The workflow declares `mem_mb`, graphics processing unit (`gpu`), and
+`rust_workers` as global resources
+so local scheduling limits apply across the complete directed acyclic graph.
+Operators must provide the actual host budget; rule declarations are
+scheduling requirements, not runtime memory enforcement:
+
+```bash
+devenv shell -- snakemake \
+  --snakefile workflow/Snakefile \
+  --profile workflow/profiles/offline-batch \
+  --cores 16 \
+  --resources mem_mb=64000 gpu=1 rust_workers=16
+```
+
+The local workflow must not be run concurrently with an independently
+scheduled batch that bypasses the same database leases and storage headroom
+checks. Snakemake file locks protect its working directory, while database
+leases and fencing remain the cross-process and cross-node authority.
+
+Run the lane through its supervised entry point:
+
+```bash
+devenv shell -- python manage.py run_offline_batch \
+  --config config/offline_batch_runner.yaml \
+  --json
+```
+
+Snakemake's generic lint recommends per-rule Conda or container declarations.
+This repository intentionally satisfies runtime reproducibility at the outer
+boundary instead: the runner, Snakemake, Python services, native extension,
+FFmpeg, and shared libraries execute from the pinned Devenv and uv lockfile
+environment. Operators must start the command through `devenv shell`; an
+unreviewed system-Python, Conda, or container fallback is not supported.
+
+The versioned runner configuration supplies an approved local state path,
+maximum runtime, shutdown grace period, heartbeat interval, and host-wide CPU,
+memory, graphics processing unit, and Rust-worker budgets. Before Snakemake
+starts, the runner loads the same typed workflow configuration and fails
+closed if any configured rule requires more of one of those resources than
+the host budget provides. The instance lock is process-owned, cannot be
+reclaimed by age, and must remain inside the configured workflow root. It is a
+local-host guard only; authoritative database leases and fencing remain the
+cross-process and cross-node controls.
+
+Startup is also fail-closed for explicitly configured native capability
+contracts. Video imports require
+`batch_file_identity/batch_file_identity_v1`. With the default
+`assert_environment_readiness: true`, the supervisor invokes the existing
+Django readiness gate for protected storage, permissions, media routing, and
+production-required native contracts before starting Snakemake. Disabling
+that check is an explicit development-only policy. Stage services still own
+the authoritative per-attempt storage-headroom, lease, fencing, generation,
+publication, and cleanup checks.
+
+The runner starts Snakemake in a dedicated process group. A termination or
+interrupt signal requests graceful process-group termination, waits only for
+the configured grace period, escalates to forced termination when necessary,
+and reaps the child before releasing the instance lock. The child starts with
+a `0077` file-creation mask, protecting log files even if interpreter or
+import failure occurs before stage code can enforce `0700` directory and
+`0600` file modes. The maximum runtime uses the same bounded termination
+sequence. Exit statuses are stable:
+
+- `0`: completed;
+- `75`: another local runner owns the instance lock;
+- `124`: configured maximum runtime exceeded;
+- `128 + signal number`: operator interruption;
+- a nonzero Snakemake status: workflow failure.
+
+Structured runner events are
+`offline_batch.runner.lock_acquired`, `.lock_rejected`, `.started`,
+`.heartbeat`, `.shutdown_requested`, `.termination_requested`,
+`.termination_escalated`, `.completed`, and `.failed`. Every terminal event
+contains the same random `batch_id` supplied to all stage receipts, a
+`supervisor_config_sha256` digest of the runner configuration, the canonical
+`workflow_config_sha256` digest used by stage receipts and calculated without
+the per-run batch identifier, Coordinated Universal Time start and completion
+timestamps, status, exit code, duration, and a zero-or-one failure counter.
+Metrics fields expose starts, completions, failures, active heartbeats, lock
+contention, shutdowns, termination requests, and forced termination. They
+contain neither configuration contents nor source paths.
+Alert at minimum on every `.failed`, `.lock_rejected`, and
+`.termination_escalated` event, and on the absence of `.heartbeat` for longer
+than the configured interval plus the monitoring system's ingestion margin.
+The same terminal payload is strictly validated and atomically persisted with
+mode `0600` beneath the configured `0700` summary directory for completion,
+failure, interruption, timeout, and collision-safe lock rejection.
+
+This remains an optional offline lane, not the online production owner.
+Readiness still requires lease-deferral failure injection, a real
+import-to-transcode-to-HLS end-to-end test, and a 20-to-50-video shadow pilot
+measuring graphics processing unit utilization, peak memory,
+protected-storage throughput, failure rate, and operator time. Resource
+declarations are scheduler accounting and do not enforce an operating-system
+memory limit.
+
+### Thread-pool alignment
+
+For each rule, `threads` is the total central processing unit (CPU) allocation. The configured
+`rust_workers` and `ffmpeg_threads` must each be less than or equal to
+`threads`. Snakemake can reduce `threads` to the cores available at execution,
+so the stage script caps every inner pool again at the effective
+`snakemake.threads` value and exports:
+
+- `RAYON_NUM_THREADS` for libraries that use Rayon's global pool;
+- `LX_ANNOTATE_HLS_FFMPEG_THREADS` for the HLS encoder;
+- `OMP_NUM_THREADS` for Open Multi-Processing (OpenMP) and
+  `MKL_NUM_THREADS` for Intel Math Kernel Library scientific runtimes.
+
+`BatchProcessor` does not use Rayon's process-global pool. It owns a private
+pool with the explicit effective `rust_workers` count, and its parallel file
+identity method releases the Python Global Interpreter Lock for the complete
+Rust-only operation. It never calls Python from a Rayon worker. Returned rows
+retain input order, while any file mutation, replacement, truncation, or input
+error fails the whole batch.
+
+Do not allocate `threads=N` to a Snakemake rule and independently give Rayon,
+FFmpeg, OpenMP, and an artificial-intelligence runtime `N` active workers at
+the same time. When engines overlap, partition the rule's total allocation
+between them or serialize their phases. The current video stages serialize
+native identity work, anonymization/transcoding, and HLS publication. This
+keeps the maximum active CPU pool bounded by the rule allocation and avoids
+oversubscription. Waiting for a Python callback from inside a GIL-detached
+Rayon operation is prohibited because it can introduce lock-order deadlocks.
+
 ## Required Structured Events
 
 Logs and metrics must identify the attempt without exposing patient data or

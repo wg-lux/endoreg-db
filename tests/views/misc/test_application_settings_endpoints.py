@@ -15,6 +15,9 @@ from django.test import TestCase
 from django.test.utils import override_settings
 from django.utils import timezone
 
+from endoreg_db.views.misc import (
+    application_settings_ai_datasets as ai_dataset_view_module,
+)
 from endoreg_db.models import (
     AIDataSet,
     AIDataSetExportArtifact,
@@ -272,6 +275,33 @@ class ApplicationSettingsEndpointTests(TestCase):
         assert dataset.image_annotations.filter(pk=annotation.pk).exists()
         assert dataset.video_annotations.filter(pk=segment.pk).exists()
 
+    def test_ai_dataset_attachment_rejects_all_with_explicit_selection(self):
+        dataset = AIDataSet.objects.create(
+            name=f"dataset-attach-conflict-{uuid4().hex[:8]}",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+
+        response = self.client.post(
+            f"/api/settings/application/ai_datasets/{dataset.pk}/attachments/",
+            data={
+                "video_id": 999_999,
+                "include_all_annotations": True,
+                "include_frame_annotations": True,
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400, response.content
+        assert response.json()["errors"] == {
+            "include_all_annotations": (
+                "include_all_annotations cannot be combined with "
+                "video_id, frame_annotation_ids, or segment_ids."
+            )
+        }
+        assert dataset.image_annotations.count() == 0
+        assert dataset.video_annotations.count() == 0
+
     def test_get_application_settings_uses_authenticated_username_as_fallback(self):
         user_model = get_user_model()
         user = cast(_UserManager, user_model.objects).create_user(
@@ -430,6 +460,31 @@ class ApplicationSettingsEndpointTests(TestCase):
         assert payload["ai_model_type"] == AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL
         assert payload["name_count"] == 2
 
+    def test_ai_dataset_dropdown_post_aggregates_errors_without_writing(self):
+        initial_count = AIDataSet.objects.count()
+
+        response = self.client.post(
+            "/api/settings/application/dropdowns/ai_datasets/",
+            data={
+                "name": 123,
+                "dataset_type": "invalid",
+                "ai_model_type": "incompatible",
+                "description": ["invalid"],
+                "is_active": "yes",
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400, response.content
+        assert response.json()["errors"] == {
+            "name": "name must be a string.",
+            "dataset_type": "dataset_type must be one of: image, video.",
+            "ai_model_type": "ai_model_type is not compatible with dataset_type.",
+            "description": "description must be a string.",
+            "is_active": "is_active must be a boolean.",
+        }
+        assert AIDataSet.objects.count() == initial_count
+
     def test_ai_dataset_frame_bucket_distribution_endpoint(self):
         dataset = AIDataSet.objects.create(
             name=f"dataset-buckets-{uuid4().hex[:8]}",
@@ -500,7 +555,7 @@ class ApplicationSettingsEndpointTests(TestCase):
                 return {"schema_version": "1.0", "labels": ["a", "b"]}
 
         with patch.object(
-            view_module,
+            ai_dataset_view_module,
             "build_frame_multilabel_training_manifest",
             return_value=StubManifest(),
         ) as builder:
@@ -1342,6 +1397,58 @@ class ApplicationSettingsEndpointTests(TestCase):
         assert response.status_code == 400, response.content
         assert "node_key" in response.json()["errors"]
 
+    def test_network_node_create_resolves_owning_center_key(self):
+        response = self.client.post(
+            "/api/settings/application/network_nodes/",
+            data={
+                "display_name": "Center Key Node",
+                "owning_center_key": self.center.center_key,
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 201, response.content
+        payload = response.json()
+        assert payload["owning_center_id"] == self.center.pk
+        assert payload["owning_center_key"] == self.center.center_key
+
+    def test_network_node_patch_aggregates_errors_without_partial_write(self):
+        node = NetworkNode.objects.create(
+            display_name="Unchanged Node",
+            role=NetworkNode.Role.SITE_NODE,
+            base_url="https://original.example/",
+        )
+
+        response = self.client.patch(
+            f"/api/settings/application/network_nodes/{node.pk}/",
+            data={
+                "node_key": "changed-key",
+                "display_name": " ",
+                "role": "invalid-role",
+                "base_url": "https://should-not-apply.example/",
+                "is_active": "yes",
+                "owning_center_id": 999_999,
+                "shared_secret": 123,
+                "clear_shared_secret": None,
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400, response.content
+        assert response.json()["errors"] == {
+            "node_key": "node_key is immutable once assigned.",
+            "display_name": "display_name must not be blank.",
+            "role": "Invalid role.",
+            "is_active": "is_active must be a boolean.",
+            "owning_center": "Owning center not found.",
+            "shared_secret": "shared_secret must be a string.",
+            "clear_shared_secret": "clear_shared_secret must be a boolean.",
+        }
+        node.refresh_from_db()
+        assert node.display_name == "Unchanged Node"
+        assert node.base_url == "https://original.example/"
+        assert node.is_active is True
+
     def test_network_node_patch_updates_shared_secret_without_returning_secret(self):
         node = NetworkNode.objects.create(
             display_name="Secret Node",
@@ -1366,6 +1473,27 @@ class ApplicationSettingsEndpointTests(TestCase):
         assert node.check_shared_secret("new-secret") is True
         assert node.check_shared_secret("old-secret") is False
         assert node.shared_secret_hash != "new-secret"
+
+    def test_network_node_patch_clear_secret_wins_over_rotation(self):
+        node = NetworkNode.objects.create(
+            display_name="Rotate And Clear Node",
+            role=NetworkNode.Role.SITE_NODE,
+        )
+
+        response = self.client.patch(
+            f"/api/settings/application/network_nodes/{node.pk}/",
+            data={
+                "shared_secret": "transient-secret",
+                "clear_shared_secret": True,
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200, response.content
+        assert response.json()["has_shared_secret"] is False
+        node.refresh_from_db()
+        assert node.shared_secret_hash == ""
+        assert node.check_shared_secret("transient-secret") is False
 
     def test_network_node_create_rejects_duplicate_node_key_and_bad_types(self):
         existing = NetworkNode.objects.create(

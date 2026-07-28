@@ -7,15 +7,17 @@ scan:
     - migrations
     - __pycache__
 broad_exception:
-  count: 466
-  fingerprint: 23d563fe74d4ac7388e032e1811916e674eb37395579d3beef5a37818609a971
+  count: 413
+  fingerprint: ee5e86f070a6c2b41079a369ff41925bd769681c23dc38408a64dfa690b36d9e
   owner: endoreg_db maintainers
   reason: >-
-    Geprüfter Bestand nach der Komplexitätskohorte: bestehende breite Handler
-    wurden aus großen Orchestratoren in benannte Command-, HTTP-, Import-,
-    Inference-, Cleanup- und Integrationsgrenzen verschoben. Die Fehlersemantik
-    bleibt fail-closed; insgesamt wurden fünf breite Handler entfernt und keine
-    zusätzliche Freigabe für innere Domainlogik erteilt.
+    Geprüfter Bestand nach der Exception-Reduktionskohorte: 53 breite Handler
+    wurden im Rust-Adapter, Storage-Command, Sensitive-Metadata-Domaincode und
+    Upload-View entfernt oder durch konkrete Fehlerverträge ersetzt. Je ein
+    Handler bleibt für die optionale native Modulinitialisierung, die
+    Management-Command-Grenze und den dynamischen python-magic-Fallback.
+    Unerwartete Domain-, ORM-, Integritäts- und Identitätsfehler propagieren
+    fail-closed; es wurden keine neuen breiten Handler akzeptiert.
   review_after: 2026-10-17
 type_suppression:
   count: 141

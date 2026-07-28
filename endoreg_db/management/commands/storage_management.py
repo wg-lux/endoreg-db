@@ -6,7 +6,9 @@ from datetime import datetime, timedelta
 from typing import cast
 from uuid import UUID
 
+from django.core.exceptions import FieldError, ImproperlyConfigured
 from django.core.management.base import BaseCommand, CommandError, CommandParser
+from django.db import DatabaseError
 from pydantic import ValidationError
 
 from endoreg_db.models.media.video.video_file import VideoFile
@@ -145,9 +147,9 @@ class Command(BaseCommand):
             final_storage = self.get_storage_info()
             self.display_cleanup_summary(storage_info, final_storage)
 
-        except Exception as e:
-            logger.error(f"Storage management failed: {e}")
-            raise CommandError(f"Storage management failed: {e}")
+        except Exception as exc:
+            logger.error(f"Storage management failed: {exc}")
+            raise CommandError(f"Storage management failed: {exc}") from exc
 
     def get_storage_info(self) -> StorageManagementInfoPayload:
         """Get current storage information."""
@@ -169,8 +171,8 @@ class Command(BaseCommand):
                 critical=usage_percent >= 95.0,
                 warning=usage_percent >= 85.0,
             )
-        except Exception as e:
-            logger.error(f"Failed to get storage info: {e}")
+        except (OSError, ValidationError, ZeroDivisionError) as exc:
+            logger.error(f"Failed to get storage info: {exc}")
             raise
 
     def get_directory_size(self, path: Path) -> int:
@@ -182,9 +184,9 @@ class Command(BaseCommand):
                     filepath = os.path.join(dirpath, filename)
                     try:
                         total_size += os.path.getsize(filepath)
-                    except (OSError, IOError):
+                    except OSError:
                         continue
-        except Exception:
+        except OSError:
             pass
         return total_size
 
@@ -338,9 +340,9 @@ class Command(BaseCommand):
                             f"  Removed frames for {video_uuid}: {dir_size / (1024**2):.1f} MB"
                         )
 
-            except Exception as e:
+            except (AttributeError, OSError) as exc:
                 logger.warning(
-                    f"Failed to clean frames for video {_video_uuid_text(video)}: {e}"
+                    f"Failed to clean frames for video {_video_uuid_text(video)}: {exc}"
                 )
                 continue
 
@@ -372,8 +374,8 @@ class Command(BaseCommand):
 
                         total_freed += file_size
 
-                except Exception as e:
-                    logger.warning(f"Failed to clean upload file {file_path}: {e}")
+                except (OSError, OverflowError, ValueError) as exc:
+                    logger.warning(f"Failed to clean upload file {file_path}: {exc}")
                     continue
 
         self.stdout.write(
@@ -402,8 +404,8 @@ class Command(BaseCommand):
                         f"  Truncated {log_file}: {file_size / (1024**2):.1f} MB"
                     )
 
-            except Exception as e:
-                logger.warning(f"Failed to clean log file {log_file}: {e}")
+            except OSError as exc:
+                logger.warning(f"Failed to clean log file {log_file}: {exc}")
                 continue
 
         self.stdout.write(f"✅ Log cleanup: {total_freed / (1024**3):.2f} GB freed")
@@ -430,8 +432,8 @@ class Command(BaseCommand):
 
                         total_freed += file_size
 
-            except Exception as e:
-                logger.warning(f"Failed to clean temp dir {temp_dir}: {e}")
+            except OSError as exc:
+                logger.warning(f"Failed to clean temp dir {temp_dir}: {exc}")
                 continue
 
         self.stdout.write(
@@ -464,7 +466,7 @@ class Command(BaseCommand):
                 f"Found {old_videos.count()} processed videos older than {max_age_days} days"
             )
 
-        except Exception:
+        except (DatabaseError, FieldError):
             # Fallback: try different date field names
             try:
                 old_videos = VideoFile.objects.filter(
@@ -478,8 +480,8 @@ class Command(BaseCommand):
                 self.stdout.write(
                     f"Using fallback filter, found {old_videos.count()} processed videos"
                 )
-            except Exception as e2:
-                logger.error(f"Failed to query videos: {e2}")
+            except (DatabaseError, FieldError) as exc:
+                logger.error(f"Failed to query videos: {exc}")
                 return total_freed
 
         for video in old_videos:
@@ -488,7 +490,14 @@ class Command(BaseCommand):
                 if processed_field and getattr(processed_field, "name", None):
                     try:
                         file_size = field_file_size(processed_field)
-                    except Exception:
+                    except (
+                        AttributeError,
+                        ImproperlyConfigured,
+                        KeyError,
+                        OSError,
+                        TypeError,
+                        ValueError,
+                    ):
                         file_size = 0
 
                     if not self.dry_run:
@@ -504,9 +513,15 @@ class Command(BaseCommand):
                         f"  Removed processed video {_video_uuid_text(video)}: {file_size / (1024**2):.1f} MB"
                     )
 
-            except Exception as e:
+            except (
+                AttributeError,
+                DatabaseError,
+                OSError,
+                TypeError,
+                ValueError,
+            ) as exc:
                 logger.warning(
-                    f"Failed to clean processed video {_video_uuid_text(video)}: {e}"
+                    f"Failed to clean processed video {_video_uuid_text(video)}: {exc}"
                 )
                 continue
 
@@ -556,8 +571,8 @@ class Command(BaseCommand):
                         f"  Removed frame file {item.name}: {file_size / (1024**2):.1f} MB"
                     )
 
-        except Exception as e:
-            logger.error(f"Failed to clean frames directory: {e}")
+        except OSError as exc:
+            logger.error(f"Failed to clean frames directory: {exc}")
 
         self.stdout.write(
             f"✅ Aggressive frames cleanup: {total_freed / (1024**3):.2f} GB freed"
@@ -584,8 +599,8 @@ class Command(BaseCommand):
 
                     total_freed += file_size
 
-        except Exception as e:
-            logger.error(f"Failed to clean uploads directory: {e}")
+        except OSError as exc:
+            logger.error(f"Failed to clean uploads directory: {exc}")
 
         self.stdout.write(
             f"✅ Aggressive upload cleanup: {total_freed / (1024**3):.2f} GB freed"
@@ -617,14 +632,20 @@ class Command(BaseCommand):
                 try:
                     freed = self._cleanup_processed_video_file(video)
                     total_freed += freed
-                except Exception as e:
+                except (
+                    AttributeError,
+                    DatabaseError,
+                    OSError,
+                    TypeError,
+                    ValueError,
+                ) as exc:
                     logger.warning(
-                        f"Failed to clean processed video {_video_uuid_text(video)}: {e}"
+                        f"Failed to clean processed video {_video_uuid_text(video)}: {exc}"
                     )
                     continue
 
-        except Exception as e:
-            logger.error(f"Failed to query processed videos: {e}")
+        except (DatabaseError, FieldError) as exc:
+            logger.error(f"Failed to query processed videos: {exc}")
 
         self.stdout.write(
             f"✅ Aggressive processed videos cleanup: {total_freed / (1024**3):.2f} GB freed"
@@ -639,7 +660,14 @@ class Command(BaseCommand):
         if processed_field and getattr(processed_field, "name", None):
             try:
                 file_size = field_file_size(processed_field)
-            except Exception:
+            except (
+                AttributeError,
+                ImproperlyConfigured,
+                KeyError,
+                OSError,
+                TypeError,
+                ValueError,
+            ):
                 file_size = 0
             if not self.dry_run:
                 delete_field_file(

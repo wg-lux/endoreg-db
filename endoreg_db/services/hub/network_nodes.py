@@ -21,6 +21,17 @@ class _NetworkNodeUpdatePlan:
     clear_shared_secret: bool
 
 
+@dataclass(frozen=True, slots=True)
+class _NetworkNodeCreatePlan:
+    display_name: str
+    role: str
+    base_url: str
+    node_key: str
+    shared_secret: str | None
+    is_active: bool
+    owning_center: Center | None
+
+
 class NetworkNodeValidationError(ValueError):
     def __init__(self, errors: dict[str, str]) -> None:
         super().__init__("Network node validation failed.")
@@ -30,6 +41,16 @@ class NetworkNodeValidationError(ValueError):
 def _raise_for_errors(errors: dict[str, str]) -> None:
     if errors:
         raise NetworkNodeValidationError(errors)
+
+
+def _record_field_error(
+    errors: dict[str, str],
+    *,
+    field_name: str,
+    error: str | None,
+) -> None:
+    if error is not None:
+        errors[field_name] = error
 
 
 def _resolve_center_from_payload(
@@ -54,49 +75,102 @@ def _resolve_center_from_payload(
     return center
 
 
-@transaction.atomic
-def create_network_node(data: Mapping[str, Any]) -> NetworkNode:
-    display_name = str(data.get("display_name", "") or "").strip()
-    role = str(data.get("role", "") or NetworkNode.Role.SITE_NODE).strip()
-    base_url = str(data.get("base_url", "") or "").strip()
-    provided_node_key = str(data.get("node_key", "") or "").strip()
-    shared_secret = data.get("shared_secret")
-    is_active = data.get("is_active", True)
+def _normalize_required_display_name(value: object) -> tuple[str, str | None]:
+    display_name = str(value or "").strip()
+    if not display_name:
+        return "", "display_name is required."
+    return display_name, None
+
+
+def _normalize_role(value: object) -> tuple[str, str | None]:
+    role = str(value or NetworkNode.Role.SITE_NODE).strip()
+    if role not in NetworkNode.Role.values:
+        return role, "Invalid role."
+    return role, None
+
+
+def _normalize_is_active(value: object) -> tuple[bool, str | None]:
+    if not isinstance(value, bool):
+        return False, "is_active must be a boolean."
+    return value, None
+
+
+def _normalize_shared_secret(value: object) -> tuple[str | None, str | None]:
+    if value is not None and not isinstance(value, str):
+        return None, "shared_secret must be a string."
+    return value, None
+
+
+def _normalize_node_key(value: object) -> tuple[str, str | None]:
+    node_key = str(value or "").strip()
+    if node_key and NetworkNode.objects.filter(node_key=node_key).exists():
+        return node_key, "node_key already exists."
+    return node_key, None
+
+
+def _build_network_node_create_plan(
+    data: Mapping[str, Any],
+) -> _NetworkNodeCreatePlan:
+    display_name, display_name_error = _normalize_required_display_name(
+        data.get("display_name")
+    )
+    role, role_error = _normalize_role(data.get("role"))
+    is_active, is_active_error = _normalize_is_active(data.get("is_active", True))
+    shared_secret, shared_secret_error = _normalize_shared_secret(
+        data.get("shared_secret")
+    )
+    node_key, node_key_error = _normalize_node_key(data.get("node_key"))
 
     errors: dict[str, str] = {}
-    if not display_name:
-        errors["display_name"] = "display_name is required."
-    if role not in NetworkNode.Role.values:
-        errors["role"] = "Invalid role."
-    if not isinstance(is_active, bool):
-        errors["is_active"] = "is_active must be a boolean."
-
+    _record_field_error(
+        errors,
+        field_name="display_name",
+        error=display_name_error,
+    )
+    _record_field_error(errors, field_name="role", error=role_error)
+    _record_field_error(errors, field_name="is_active", error=is_active_error)
     owning_center = _resolve_center_from_payload(data, errors=errors)
-    if shared_secret is not None and not isinstance(shared_secret, str):
-        errors["shared_secret"] = "shared_secret must be a string."
-
-    if (
-        provided_node_key
-        and NetworkNode.objects.filter(node_key=provided_node_key).exists()
-    ):
-        errors["node_key"] = "node_key already exists."
-
+    _record_field_error(
+        errors,
+        field_name="shared_secret",
+        error=shared_secret_error,
+    )
+    _record_field_error(errors, field_name="node_key", error=node_key_error)
     _raise_for_errors(errors)
 
-    node = NetworkNode(
+    return _NetworkNodeCreatePlan(
         display_name=display_name,
         role=role,
-        base_url=base_url,
+        base_url=str(data.get("base_url", "") or "").strip(),
+        node_key=node_key,
+        shared_secret=shared_secret,
         is_active=is_active,
-        owning_center=owning_center if isinstance(owning_center, Center) else None,
+        owning_center=(owning_center if isinstance(owning_center, Center) else None),
     )
-    if provided_node_key:
-        node.node_key = provided_node_key
-    if isinstance(shared_secret, str) and shared_secret.strip():
-        node.set_shared_secret(shared_secret)
+
+
+def _persist_network_node_create_plan(
+    plan: _NetworkNodeCreatePlan,
+) -> NetworkNode:
+    node = NetworkNode(
+        display_name=plan.display_name,
+        role=plan.role,
+        base_url=plan.base_url,
+        is_active=plan.is_active,
+        owning_center=plan.owning_center,
+    )
+    if plan.node_key:
+        node.node_key = plan.node_key
+    if plan.shared_secret is not None and plan.shared_secret.strip():
+        node.set_shared_secret(plan.shared_secret)
     node.save()
     node.refresh_from_db()
     return node
+
+
+@transaction.atomic
+def create_network_node(data: Mapping[str, Any]) -> NetworkNode:
+    return _persist_network_node_create_plan(_build_network_node_create_plan(data))
 
 
 def _validate_node_key_update(

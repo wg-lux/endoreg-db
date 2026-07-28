@@ -207,6 +207,19 @@ definition_of_done:
   - Strukturierte Logs und Metriken weisen Lease-Wartezeit, Heartbeats, Backendwahl, gehashte und temporäre
     Bytes, Phasendauer, Abbruch, Fencing-Ablehnung, Duplicate-Short-Circuit und Cleanup-Eigentum je Versuch
     nach, ohne Patientendaten oder unzulässige Rohpfade offenzulegen.
+  - Der optionale Snakemake-Batchpfad orchestriert Import, Processed-Video-Transcoding und HLS-Materialisierung
+    ausschließlich über typisierte Konfigurationen und atomare Receipt-Dateien. Globale CPU-, Speicher-,
+    Rust-Worker- und GPU-Budgets begrenzen die Parallelität über den gesamten gerichteten azyklischen
+    Graphen; Datenbank-Leases, Fencing, Publikation und Cleanup bleiben in den autoritativen Python-Services.
+  - Native Batch-Dateiidentitäten verwenden einen versuchslokalen, explizit begrenzten Rayon-Threadpool,
+    geben den Python Global Interpreter Lock frei und bewahren Eingabereihenfolge sowie fail-closed
+    Mutationsprüfung. Die Zahl der Rayon-Worker überschreitet nie die dem Snakemake-Job zugewiesenen Threads.
+  - Der überwachte Offline-Batch-Runner erzwingt eine prozessgebundene lokale Einzelinstanz-Sperre innerhalb
+    des freigegebenen Workflow-Pfads, prüft die Pflichtbudgets gegen jeden konfigurierten Job und beendet
+    sowie reapet die vollständige Snakemake-Prozessgruppe bei Signal oder Laufzeitüberschreitung mit begrenzter
+    Eskalation. Terminale strukturierte Ereignisse und Stage-Receipts teilen dieselbe Batch-ID; getrennte
+    Supervisor- und Workflow-Konfigurationsdigests, Start, Ende, Status, Exit-Code, Dauer und alarmierbare
+    Fehlerzähler werden ohne Quellpfade oder Patientendaten protokolliert.
   required: true
   verification:
     kind: manual
@@ -256,13 +269,21 @@ definition_of_done:
       reference: devenv shell -- pyright endoreg_db/services/video_files/_ai.py tests/services/test_video_metadata_ocr_boundary.py
         (0 errors); pytest tests/services/test_video_metadata_ocr_boundary.py tests/models/test_video_metadata.py
         tests/services/test_video_file_services_contract.py -q (28 passed)
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pyright endoreg_db/services/offline_batch_runner.py
+        endoreg_db/management/commands/run_offline_batch.py tests/services/test_offline_batch_runner.py
+        tests/management/commands/test_run_offline_batch.py (0 errors); devenv shell -- .devenv/state/venv/bin/pytest
+        tests/services/test_offline_batch_runner.py tests/management/commands/test_run_offline_batch.py -q
+        (15 passed)
     note: Nachgewiesen sind Datenbankzeit-Lease, Heartbeat und monotones Fencing auf UploadJob, eingezäunte
       Task-Zustandswechsel einschließlich Fehlerbereinigung, versuchseigene Kandidaten, symlink-freier
       Watcher-Handoff und eine erneute Besitzprüfung unmittelbar vor der kanonischen Storage-Veröffentlichung.
       Alle endoreg-db-Anwendungswege delegieren OCR nun an den lx-anonymizer-FrameOCR-Vertrag; pro gesampeltem
       Video wird eine eigene Instanz verwendet und das frühere endoreg_db/utils/ocr.py ist entfernt. lx-anonymizer
       lehnt konkurrierende FrameCleaner-Instanznutzung ab, beendet FFmpeg-Prozessgruppen bei Timeout und
-      prüft native Pflicht-Capabilities fail-closed. Offen bleiben ein kurzer atomarer, durch denselben
+      prüft native Pflicht-Capabilities fail-closed. Der optionale Snakemake-Pfad besitzt nun einen typisierten,
+      fail-closed Einzelinstanz-Runner mit Pflichtbudgetprüfung, begrenzter Prozessgruppenbeendigung und
+      alarmierbaren PHI-freien Laufzusammenfassungen. Offen bleiben ein kurzer atomarer, durch denselben
       Fencing-Token geschützter Datenbank-/Generationswechsel, produktionsnahe Mehrprozess-/Crash-/Disk-full-Failure-Injection,
       unmittelbare Lease-Verlust-Cancellation in allen lx-anonymizer-Unterprozessen, vollständige Phasenmetriken
       und Betriebs-/Security-Abnahme.

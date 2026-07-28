@@ -3,6 +3,21 @@
 
 import pathlib
 
+class BatchProcessor:
+    r"""
+    Bounded native worker pool for stable identities of independent files.
+
+    Durable orchestration, publication, and cleanup remain Python service
+    responsibilities. This class owns only a private Rayon pool and performs
+    immutable, fail-closed reads.
+    """
+
+    worker_count: int
+    def __new__(cls, worker_count: int) -> BatchProcessor: ...
+    def stable_file_identities(
+        self, paths: list[pathlib.Path], chunk_size: int = ...
+    ) -> list[tuple[int, int, str]]: ...
+
 def build_expected_frame_records(
     frame_count: int, ext: str = ...
 ) -> list[tuple[int, str]]: ...
