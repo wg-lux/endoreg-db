@@ -746,81 +746,25 @@ class Command(BaseCommand):
         content_hash = sha256_file(destination_path)
         stem_hash = self._canonical_hash_stem(destination_path)
         rel_path = to_storage_relative(destination_path)
-        updated_count = 0
-        # Re-point existing Video records
         if rule.target_root in {
             MANAGED_ANONYMIZED_VIDEOS_DIR,
             IMPORT_ANONYMIZED_VIDEO_DIR,
         }:
-            video = self._resolve_unique_video(
+            updated_count = self._sync_processed_video(
                 content_hash=content_hash,
                 stem_hash=stem_hash,
-                include_processed_hash=True,
+                relative_name=rel_path,
                 source_path=source_path,
                 destination_path=destination_path,
             )
-            if video is not None:
-                processed_video_hash = getattr(video, "processed_video_hash", None)
-                processed_hash_mismatch = bool(
-                    processed_video_hash and processed_video_hash != content_hash
-                )
-                file_changed = self._store_file_field_if_needed(
-                    instance=cast(PersistedMigrationModel, video),
-                    field_name="processed_file",
-                    relative_name=rel_path,
-                    source_path=source_path,
-                    payload_kind=PayloadKind.VIDEO_PROCESSED,
-                    force_upload_to=processed_hash_mismatch,
-                )
-                video_update_fields: dict[str, MigrationFieldValue] = {}
-                if not processed_video_hash:
-                    video_update_fields["processed_video_hash"] = content_hash
-                elif processed_hash_mismatch:
-                    logger.warning(
-                        "Processed video hash mismatch during migration sync for "
-                        "video=%s source=%s destination=%s existing=%s incoming=%s. "
-                        "Leaving processed_video_hash unchanged.",
-                        video.pk,
-                        source_path,
-                        destination_path,
-                        processed_video_hash,
-                        content_hash,
-                    )
-                extra_changed = self._changed_fields(
-                    cast(PersistedMigrationModel, video), video_update_fields
-                )
-                for field_name, desired_value in extra_changed.items():
-                    setattr(video, field_name, desired_value)
-                if file_changed or extra_changed:
-                    update_fields: list[str] = [
-                        *(["processed_file"] if file_changed else []),
-                        *extra_changed.keys(),
-                    ]
-                    cast("PersistedMigrationModel", video).save(
-                        update_fields=update_fields
-                    )
-                    updated_count = 1
         elif rule.target_root == SENSITIVE_VIDEO_DIR:
-            video = self._resolve_unique_video(
+            updated_count = self._sync_raw_video(
                 content_hash=content_hash,
                 stem_hash=stem_hash,
-                include_processed_hash=False,
+                relative_name=rel_path,
                 source_path=source_path,
                 destination_path=destination_path,
             )
-            if video is not None:
-                changed = self._store_file_field_if_needed(
-                    instance=cast(PersistedMigrationModel, video),
-                    field_name="raw_file",
-                    relative_name=rel_path,
-                    source_path=source_path,
-                    payload_kind=PayloadKind.VIDEO_RAW,
-                )
-                if changed:
-                    cast("PersistedMigrationModel", video).save(
-                        update_fields=["raw_file"]
-                    )
-                    updated_count = 1
         elif rule.target_root == _streamable_raw_video_root():
             if self._raw_streamable_disabled(rule):
                 logger.warning(
@@ -830,77 +774,48 @@ class Command(BaseCommand):
                     destination_path,
                 )
                 return False
-            video = self._resolve_unique_video(
+            updated_count = self._sync_streamable_video(
                 content_hash=content_hash,
                 stem_hash=stem_hash,
                 include_processed_hash=False,
+                relative_field_name="raw_streamable_relative_path",
+                relative_name=rel_path,
                 source_path=source_path,
                 destination_path=destination_path,
             )
-            if video is not None:
-                updated_count = self._update_video_if_changed(
-                    video,
-                    raw_streamable_relative_path=rel_path,
-                    storage_mode=VideoStorageMode.STREAMABLE,
-                )
         elif rule.target_root == _streamable_processed_video_root():
-            video = self._resolve_unique_video(
+            updated_count = self._sync_streamable_video(
                 content_hash=content_hash,
                 stem_hash=stem_hash,
                 include_processed_hash=True,
+                relative_field_name="processed_streamable_relative_path",
+                relative_name=rel_path,
                 source_path=source_path,
                 destination_path=destination_path,
             )
-            if video is not None:
-                updated_count = self._update_video_if_changed(
-                    video,
-                    processed_streamable_relative_path=rel_path,
-                    storage_mode=VideoStorageMode.STREAMABLE,
-                )
-
-        # Re-point existing Report records
         elif rule.target_root in {
             MANAGED_ANONYMIZED_REPORTS_DIR,
             IMPORT_ANONYMIZED_REPORT_DIR,
         }:
-            report = self._resolve_unique_report(
+            updated_count = self._sync_report_file(
                 content_hash=content_hash,
                 stem_hash=stem_hash,
+                field_name="processed_file",
+                relative_name=rel_path,
                 source_path=source_path,
                 destination_path=destination_path,
             )
-            if report is not None:
-                processed_changed = self._store_file_field_if_needed(
-                    instance=cast(PersistedMigrationModel, report),
-                    field_name="processed_file",
-                    relative_name=rel_path,
-                    source_path=source_path,
-                    payload_kind=PayloadKind.REPORT_PDF,
-                )
-                if processed_changed:
-                    update_fields: list[str] = ["processed_file"]
-                    cast("PersistedMigrationModel", report).save(
-                        update_fields=update_fields,
-                    )
-                    updated_count = 1
         elif rule.target_root == SENSITIVE_REPORT_DIR:
-            report = self._resolve_unique_report(
+            updated_count = self._sync_report_file(
                 content_hash=content_hash,
                 stem_hash=stem_hash,
+                field_name="file",
+                relative_name=rel_path,
                 source_path=source_path,
                 destination_path=destination_path,
             )
-            if report is not None:
-                changed = self._store_file_field_if_needed(
-                    instance=cast(PersistedMigrationModel, report),
-                    field_name="file",
-                    relative_name=rel_path,
-                    source_path=source_path,
-                    payload_kind=PayloadKind.REPORT_PDF,
-                )
-                if changed:
-                    cast("PersistedMigrationModel", report).save(update_fields=["file"])
-                    updated_count = 1
+        else:
+            updated_count = 0
 
         if updated_count > 0:
             self.stdout.write(
@@ -910,6 +825,154 @@ class Command(BaseCommand):
             )
             return True
         return False
+
+    def _sync_processed_video(
+        self,
+        *,
+        content_hash: str,
+        stem_hash: str | NoMigrationValue,
+        relative_name: str,
+        source_path: Path,
+        destination_path: Path,
+    ) -> int:
+        video = self._resolve_unique_video(
+            content_hash=content_hash,
+            stem_hash=stem_hash,
+            include_processed_hash=True,
+            source_path=source_path,
+            destination_path=destination_path,
+        )
+        if video is None:
+            return 0
+
+        processed_video_hash = video.processed_video_hash
+        processed_hash_mismatch = bool(
+            processed_video_hash and processed_video_hash != content_hash
+        )
+        file_changed = self._store_file_field_if_needed(
+            instance=cast(PersistedMigrationModel, video),
+            field_name="processed_file",
+            relative_name=relative_name,
+            source_path=source_path,
+            payload_kind=PayloadKind.VIDEO_PROCESSED,
+            force_upload_to=processed_hash_mismatch,
+        )
+        desired_fields: dict[str, MigrationFieldValue] = {}
+        if not processed_video_hash:
+            desired_fields["processed_video_hash"] = content_hash
+        elif processed_hash_mismatch:
+            logger.warning(
+                "Processed video hash mismatch during migration sync for "
+                "video=%s source=%s destination=%s existing=%s incoming=%s. "
+                "Leaving processed_video_hash unchanged.",
+                video.pk,
+                source_path,
+                destination_path,
+                processed_video_hash,
+                content_hash,
+            )
+
+        changed_fields = self._changed_fields(
+            cast(PersistedMigrationModel, video), desired_fields
+        )
+        for field_name, desired_value in changed_fields.items():
+            setattr(video, field_name, desired_value)
+        update_fields = [
+            *(["processed_file"] if file_changed else []),
+            *changed_fields.keys(),
+        ]
+        if not update_fields:
+            return 0
+        cast("PersistedMigrationModel", video).save(update_fields=update_fields)
+        return 1
+
+    def _sync_raw_video(
+        self,
+        *,
+        content_hash: str,
+        stem_hash: str | NoMigrationValue,
+        relative_name: str,
+        source_path: Path,
+        destination_path: Path,
+    ) -> int:
+        video = self._resolve_unique_video(
+            content_hash=content_hash,
+            stem_hash=stem_hash,
+            include_processed_hash=False,
+            source_path=source_path,
+            destination_path=destination_path,
+        )
+        if video is None:
+            return 0
+        changed = self._store_file_field_if_needed(
+            instance=cast(PersistedMigrationModel, video),
+            field_name="raw_file",
+            relative_name=relative_name,
+            source_path=source_path,
+            payload_kind=PayloadKind.VIDEO_RAW,
+        )
+        if not changed:
+            return 0
+        cast("PersistedMigrationModel", video).save(update_fields=["raw_file"])
+        return 1
+
+    def _sync_streamable_video(
+        self,
+        *,
+        content_hash: str,
+        stem_hash: str | NoMigrationValue,
+        include_processed_hash: bool,
+        relative_field_name: str,
+        relative_name: str,
+        source_path: Path,
+        destination_path: Path,
+    ) -> int:
+        video = self._resolve_unique_video(
+            content_hash=content_hash,
+            stem_hash=stem_hash,
+            include_processed_hash=include_processed_hash,
+            source_path=source_path,
+            destination_path=destination_path,
+        )
+        if video is None:
+            return 0
+        return self._update_video_if_changed(
+            video,
+            **{
+                relative_field_name: relative_name,
+                "storage_mode": VideoStorageMode.STREAMABLE,
+            },
+        )
+
+    def _sync_report_file(
+        self,
+        *,
+        content_hash: str,
+        stem_hash: str | NoMigrationValue,
+        field_name: str,
+        relative_name: str,
+        source_path: Path,
+        destination_path: Path,
+    ) -> int:
+        report = self._resolve_unique_report(
+            content_hash=content_hash,
+            stem_hash=stem_hash,
+            source_path=source_path,
+            destination_path=destination_path,
+        )
+        if report is None:
+            return 0
+        changed = self._store_file_field_if_needed(
+            instance=cast(PersistedMigrationModel, report),
+            field_name=field_name,
+            relative_name=relative_name,
+            source_path=source_path,
+            payload_kind=PayloadKind.REPORT_PDF,
+        )
+        if not changed:
+            return 0
+        cast("PersistedMigrationModel", report).save(update_fields=[field_name])
+        return 1
 
     @staticmethod
     def _raw_streamable_disabled(rule: MigrationRule) -> bool:

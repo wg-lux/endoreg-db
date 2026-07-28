@@ -31,11 +31,9 @@ from endoreg_db.schemas import validate_raw_pdf_meta_payload
 from endoreg_db.services.dtypes_records import (
     persist_patient_examination_dtypes_record_from_ledger,
 )
-from endoreg_db.services.report_finding_sync import (
-    parse_report_date,
-    sync_report_findings,
-)
+from endoreg_db.services.report_finding_sync import sync_report_findings
 from endoreg_db.services.report_history import get_patient_examination_history_context
+from endoreg_db.services.report_patient_context import update_report_patient_context
 from lx_dtypes.models.contracts.patient_examination_report import (
     report_json_safe_dict,
 )
@@ -131,26 +129,6 @@ class _FindingsSyncResult:
     warnings: list[str]
     persisted_record: dict[str, object] | None
     persisted_record_updated_at: datetime | None
-
-
-def _resolve_gender(value: object) -> Gender | None:
-    if value in (None, ""):
-        return None
-    if isinstance(value, int):
-        return Gender.objects.filter(pk=value).first()
-    if isinstance(value, str):
-        return Gender.objects.filter(name=value).first()
-    return None
-
-
-def _resolve_center(value: object) -> Center | None:
-    if value in (None, ""):
-        return None
-    if isinstance(value, int):
-        return Center.objects.filter(pk=value).first()
-    if isinstance(value, str):
-        return Center.objects.filter(name=value).first()
-    return None
 
 
 def _normalize_pdf_meta_payload(
@@ -381,53 +359,6 @@ def persist_report_pdf_artifact(
     return full_report.pk, raw_pdf.pk
 
 
-def _update_patient_context(
-    patient_examination: PatientExamination, patient_data: Mapping[str, object]
-) -> None:
-    patient = patient_examination.patient
-    assert patient is not None, "PatientExamination must have an associated patient."
-    patient_ref = cast(_PatientContextLike, patient)
-    changed_fields: list[str] = []
-
-    writable_field_map = {
-        "patient_birth_date": "dob",
-        "dob": "dob",
-        "first_name": "first_name",
-        "last_name": "last_name",
-    }
-    for payload_key, model_field in writable_field_map.items():
-        if payload_key not in patient_data:
-            continue
-        value = patient_data[payload_key]
-        if model_field == "dob":
-            value = parse_report_date(value)
-        if getattr(patient_ref, model_field) != value:
-            setattr(patient_ref, model_field, value)
-            changed_fields.append(model_field)
-
-    if "patient_gender" in patient_data or "gender" in patient_data:
-        gender_value = patient_data.get("patient_gender", patient_data.get("gender"))
-        gender = _resolve_gender(gender_value)
-        if gender_value not in (None, "") and gender is None:
-            raise ValidationError({"patient_gender": "Unknown gender."})
-        gender_id = cast(_IdentifiedLike, gender).id if gender is not None else None
-        if patient_ref.gender_id != gender_id:
-            patient_ref.gender = gender
-            changed_fields.append("gender")
-
-    if "center" in patient_data:
-        center = _resolve_center(patient_data["center"])
-        if patient_data["center"] not in (None, "") and center is None:
-            raise ValidationError({"center": "Unknown center."})
-        center_id = cast(_IdentifiedLike, center).id if center is not None else None
-        if patient_ref.center_id != center_id:
-            patient_ref.center = center
-            changed_fields.append("center")
-
-    if changed_fields:
-        patient_ref.save(update_fields=sorted(set(changed_fields)))
-
-
 def _sync_indications(
     patient_examination: PatientExamination,
     indications_payload: Sequence[Mapping[str, object]] | None,
@@ -518,7 +449,7 @@ def _sync_submission_clinical_context(
     user: AuthUser | None,
 ) -> _FindingsSyncResult:
     if patient_data:
-        _update_patient_context(patient_examination, patient_data)
+        update_report_patient_context(patient_examination, patient_data)
     if indications is not None:
         _sync_indications(patient_examination, indications)
     if findings is None:

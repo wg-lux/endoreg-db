@@ -53,6 +53,25 @@ def _repairable_rows() -> list[dict[str, object]]:
     ]
 
 
+def test_initially_feasible_table_is_released_without_search() -> None:
+    rows = [
+        {"center": "a", "age_band": "50-59", "diagnosis": "x"},
+        {"center": "a", "age_band": "50-59", "diagnosis": "y"},
+        {"center": "b", "age_band": "60-69", "diagnosis": "x"},
+        {"center": "b", "age_band": "60-69", "diagnosis": "y"},
+    ]
+
+    result = build_k_pseudonymous_release(rows, _config())
+
+    assert result.released_rows is not None
+    assert result.manifest.status == "released"
+    assert result.manifest.reason == "initial_table_satisfies_release_predicate"
+    assert result.manifest.state_evaluations == 1
+    assert result.manifest.synthetic_row_count == 0
+    assert result.manifest.synthetic_row_indices == ()
+    assert result.manifest.source_table_sha256 == result.manifest.release_table_sha256
+
+
 def test_bounded_release_repairs_k_l_t_without_modifying_real_rows() -> None:
     rows = _repairable_rows()
     original_snapshot = deepcopy(rows)
@@ -63,18 +82,36 @@ def test_bounded_release_repairs_k_l_t_without_modifying_real_rows() -> None:
     assert result.released_rows is not None
     assert len(result.released_rows) == 4
     assert result.manifest.status == "released"
+    assert result.manifest.reason == "bounded_search_found_feasible_release"
+    assert result.manifest.state_evaluations == 3
     assert result.manifest.synthetic_row_count == 1
     assert result.manifest.synthetic_row_indices == (3,)
     assert result.manifest.real_rows_modified is False
     assert len(result.manifest.source_table_sha256) == 64
     assert len(result.manifest.release_table_sha256) == 64
     assert result.manifest.source_table_sha256 != result.manifest.release_table_sha256
+    assert result.manifest.initial_predicate.feasible is False
     assert result.manifest.final_predicate.feasible is True
     assert result.manifest.final_predicate.d_util <= 1.0
     repaired = result.released_rows[3]
     assert repaired["center"] == "a"
     assert repaired["age_band"] == "50-59"
     assert repaired["diagnosis"] == "y"
+
+
+def test_release_discards_partial_candidate_scan_when_budget_is_exhausted() -> None:
+    result = build_k_pseudonymous_release(
+        _repairable_rows(),
+        _config(max_state_evaluations=2),
+    )
+
+    assert result.released_rows is None
+    assert result.manifest.status == "no_release"
+    assert result.manifest.reason == "max_state_evaluations_reached"
+    assert result.manifest.state_evaluations == 2
+    assert result.manifest.synthetic_row_count == 0
+    assert result.manifest.source_table_sha256 == result.manifest.release_table_sha256
+    assert result.manifest.final_predicate == result.manifest.initial_predicate
 
 
 def test_release_fails_closed_when_utility_threshold_is_exceeded() -> None:
@@ -85,11 +122,33 @@ def test_release_fails_closed_when_utility_threshold_is_exceeded() -> None:
 
     assert result.released_rows is None
     assert result.manifest.status == "no_release"
+    assert (
+        result.manifest.reason
+        == "utility_threshold_exceeded_without_local_privacy_violation"
+    )
+    assert result.manifest.state_evaluations == 3
+    assert result.manifest.synthetic_row_count == 1
     assert result.manifest.final_predicate.feasible is False
-    assert any(
+    assert result.manifest.final_predicate.violations
+    assert all(
         violation.startswith("utility:")
         for violation in result.manifest.final_predicate.violations
     )
+
+
+def test_release_stops_at_zero_synthetic_row_limit() -> None:
+    result = build_k_pseudonymous_release(
+        _repairable_rows(),
+        _config(max_synthetic_rows=0),
+    )
+
+    assert result.released_rows is None
+    assert result.manifest.status == "no_release"
+    assert result.manifest.reason == "max_synthetic_rows_reached"
+    assert result.manifest.state_evaluations == 1
+    assert result.manifest.synthetic_row_count == 0
+    assert result.manifest.synthetic_row_indices == ()
+    assert result.manifest.source_table_sha256 == result.manifest.release_table_sha256
 
 
 def test_config_rejects_visible_synthetic_provenance_counting_toward_k() -> None:

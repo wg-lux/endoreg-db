@@ -1,8 +1,9 @@
 # pyright: reportPrivateUsage=false, reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import timedelta
+from importlib import import_module
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Protocol, cast
@@ -35,10 +36,17 @@ from endoreg_db.models import (
 )
 from endoreg_db.services.jobs import model_training_jobs
 from endoreg_db.views.misc import application_settings as view_module
+from endoreg_db.views.misc import (
+    application_settings_model_training as model_training_view_module,
+)
 
 
 class _TextWriter(Protocol):
     def write(self, text: str) -> object: ...
+
+
+class _BackupViewModule(Protocol):
+    _required_backup_sources: Callable[[], list[Path]]
 
 
 class _UserManager(Protocol):
@@ -48,6 +56,12 @@ class _UserManager(Protocol):
         password: str | None = None,
         **extra_fields: object,
     ) -> AbstractBaseUser: ...
+
+
+backup_view_module = cast(
+    _BackupViewModule,
+    import_module("endoreg_db.views.misc.application_settings_backup"),
+)
 
 
 def _writer_from_kwargs(kwargs: Mapping[str, object], key: str) -> _TextWriter:
@@ -737,8 +751,6 @@ class ApplicationSettingsEndpointTests(TestCase):
             ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
         )
 
-        from endoreg_db.views.misc import application_settings as view_module
-
         captured_kwargs: dict[str, object] = {}
 
         def fake_launch(run_id: str, *, command_kwargs: dict[str, object]) -> None:
@@ -770,9 +782,9 @@ class ApplicationSettingsEndpointTests(TestCase):
                 ]
             )
 
-        original_launch = view_module._launch_model_training_run
+        original_launch = model_training_view_module._launch_model_training_run
         try:
-            view_module._launch_model_training_run = fake_launch
+            model_training_view_module._launch_model_training_run = fake_launch
             create_response = self.client.post(
                 "/api/settings/application/model_training/runs/",
                 data={
@@ -789,7 +801,7 @@ class ApplicationSettingsEndpointTests(TestCase):
                 content_type="application/json",
             )
         finally:
-            view_module._launch_model_training_run = original_launch
+            model_training_view_module._launch_model_training_run = original_launch
 
         assert create_response.status_code == 202, create_response.content
         created_payload = create_response.json()
@@ -835,16 +847,14 @@ class ApplicationSettingsEndpointTests(TestCase):
             ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
         )
 
-        from endoreg_db.views.misc import application_settings as view_module
-
         captured_kwargs: dict[str, object] = {}
 
         def fake_launch(run_id: str, *, command_kwargs: dict[str, object]) -> None:
             captured_kwargs.update(command_kwargs)
 
-        original_launch = view_module._launch_model_training_run
+        original_launch = model_training_view_module._launch_model_training_run
         try:
-            view_module._launch_model_training_run = fake_launch
+            model_training_view_module._launch_model_training_run = fake_launch
             create_response = self.client.post(
                 "/api/settings/application/model_training/runs/",
                 data={
@@ -858,7 +868,7 @@ class ApplicationSettingsEndpointTests(TestCase):
                 content_type="application/json",
             )
         finally:
-            view_module._launch_model_training_run = original_launch
+            model_training_view_module._launch_model_training_run = original_launch
 
         assert create_response.status_code == 202, create_response.content
         created_payload = create_response.json()
@@ -900,8 +910,6 @@ class ApplicationSettingsEndpointTests(TestCase):
     def test_phi_region_detector_training_run_endpoints_create_run(self):
         dataset_yaml = Path("/tmp/phi-region-detector-dataset.yaml")
 
-        from endoreg_db.views.misc import application_settings as view_module
-
         captured_kwargs: dict[str, object] = {}
 
         def fake_launch(run_id: str, *, command_kwargs: dict[str, object]) -> None:
@@ -940,9 +948,9 @@ class ApplicationSettingsEndpointTests(TestCase):
                 ]
             )
 
-        original_launch = view_module._launch_model_training_run
+        original_launch = model_training_view_module._launch_model_training_run
         try:
-            view_module._launch_model_training_run = fake_launch
+            model_training_view_module._launch_model_training_run = fake_launch
             create_response = self.client.post(
                 "/api/settings/application/model_training/runs/",
                 data={
@@ -965,7 +973,7 @@ class ApplicationSettingsEndpointTests(TestCase):
                 content_type="application/json",
             )
         finally:
-            view_module._launch_model_training_run = original_launch
+            model_training_view_module._launch_model_training_run = original_launch
 
         assert create_response.status_code == 202, create_response.content
         created_payload = create_response.json()
@@ -1257,8 +1265,6 @@ class ApplicationSettingsEndpointTests(TestCase):
         assert config.treat_unlabeled_as_negative is False
 
     def test_application_settings_backup_endpoint(self):
-        from endoreg_db.views.misc import application_settings as view_module
-
         with (
             TemporaryDirectory() as storage_dir,
             TemporaryDirectory() as target_dir,
@@ -1266,16 +1272,16 @@ class ApplicationSettingsEndpointTests(TestCase):
             storage_path = Path(storage_dir)
             target_path = Path(target_dir)
             (storage_path / "alpha.txt").write_text("alpha", encoding="utf-8")
-            original_sources = view_module._required_backup_sources
+            original_sources = backup_view_module._required_backup_sources
             try:
-                view_module._required_backup_sources = lambda: [storage_path]
+                backup_view_module._required_backup_sources = lambda: [storage_path]
                 response = self.client.post(
                     "/api/settings/application/backup/",
                     data={"target_path": str(target_path)},
                     content_type="application/json",
                 )
             finally:
-                view_module._required_backup_sources = original_sources
+                backup_view_module._required_backup_sources = original_sources
 
             assert response.status_code == 201, response.content
             payload = response.json()
@@ -1296,20 +1302,18 @@ class ApplicationSettingsEndpointTests(TestCase):
         assert "target_path" in response.json()["errors"]
 
     def test_application_settings_backup_rejects_live_data_child_target(self):
-        from endoreg_db.views.misc import application_settings as view_module
-
         with TemporaryDirectory() as storage_dir:
             storage_path = Path(storage_dir)
-            original_sources = view_module._required_backup_sources
+            original_sources = backup_view_module._required_backup_sources
             try:
-                view_module._required_backup_sources = lambda: [storage_path]
+                backup_view_module._required_backup_sources = lambda: [storage_path]
                 response = self.client.post(
                     "/api/settings/application/backup/",
                     data={"target_path": str(storage_path / "nested-backup")},
                     content_type="application/json",
                 )
             finally:
-                view_module._required_backup_sources = original_sources
+                backup_view_module._required_backup_sources = original_sources
 
         assert response.status_code == 400, response.content
         assert "live data roots" in response.json()["errors"]["target_path"]

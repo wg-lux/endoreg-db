@@ -1,17 +1,14 @@
 from .center import CenterViewSet
 from .application_settings import (
     application_settings_detail,
-    application_settings_backup,
     application_settings_centers_dropdown,
     application_settings_processors_dropdown,
     application_settings_annotators_dropdown,
     application_settings_report_templates_dropdown,
-    application_settings_model_training_options,
-    application_settings_model_training_runs,
-    application_settings_model_training_run_detail,
     application_settings_video_dimension_backfill_runs,
     application_settings_video_dimension_backfill_run_detail,
 )
+from .application_settings_backup import application_settings_backup
 from .application_settings_ai_datasets import (
     application_settings_ai_dataset_attachments,
     application_settings_ai_dataset_export,
@@ -19,6 +16,11 @@ from .application_settings_ai_datasets import (
     application_settings_ai_dataset_frame_bucket_distribution,
     application_settings_ai_dataset_training_manifest,
     application_settings_ai_datasets_dropdown,
+)
+from .application_settings_model_training import (
+    application_settings_model_training_options,
+    application_settings_model_training_run_detail,
+    application_settings_model_training_runs,
 )
 from .application_settings_network_nodes import (
     application_settings_network_node_detail,

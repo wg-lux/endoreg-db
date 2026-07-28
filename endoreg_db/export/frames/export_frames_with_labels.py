@@ -6,7 +6,7 @@ import json
 import logging
 import uuid
 from collections.abc import Iterable
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from types import NoneType
@@ -224,6 +224,14 @@ class _LabelVideoSegmentExportModel(Protocol):
 class _FrameValueRow(TypedDict):
     frame__video_id: int | NoneType
     frame_id: int | NoneType
+
+
+@dataclass(frozen=True)
+class _RequestedFrameCoordinates:
+    requested_frame_pks: set[int]
+    requested_frame_numbers: list[int]
+    frames_by_presentation_timestamp: list[tuple[int, int]] | NoneType
+    extract_all_frames: bool
 
 
 DEFAULT_TRANSCODE_FPS = 50.0
@@ -1176,104 +1184,202 @@ def _extract_and_move_transcoded_frames(
         )
     tmp_dir = ensure_directory(frame_dir / f"transcode_tmp_{uuid.uuid4().hex}")
     try:
-        frames_by_pk = {
-            int(frame.pk): int(frame.frame_number)
-            for frame in cast(_VideoFramesExportModel, video).frames.only(
-                "pk", "frame_number", "presentation_timestamp"
-            )
-        }
-        presentation_timestamps_by_pk = {
-            int(frame.pk): frame.presentation_timestamp
-            for frame in cast(_VideoFramesExportModel, video).frames.only(
-                "pk", "presentation_timestamp"
-            )
-        }
-        requested_numbers = sorted(
-            frames_by_pk[frame_pk]
-            for frame_pk in frame_pks or frames_by_pk.keys()
-            if frame_pk in frames_by_pk
-        )
-        if frame_pks is not None and len(requested_numbers) != len(frame_pks):
-            missing_pks = sorted(frame_pks - frames_by_pk.keys())
-            raise ValueError(
-                f"Requested annotation frames are missing for video {video.pk}: "
-                f"{missing_pks[:10]}"
-            )
-        if not requested_numbers:
+        coordinates = _requested_frame_coordinates(video, frame_pks=frame_pks)
+        if not coordinates.requested_frame_numbers:
             return
-        requested_pts = [
-            presentation_timestamps_by_pk[frame_pk] for frame_pk in frame_pks or set()
-        ]
-        moved_frame_pks: set[int] = set()
-        used_pts_extraction = False
-        if frame_pks is not None and all(value is not None for value in requested_pts):
-            frames_by_pts: list[tuple[int, int]] = []
-            for frame_pk in frame_pks:
-                presentation_timestamp = presentation_timestamps_by_pk[frame_pk]
-                if presentation_timestamp is None:
-                    raise ValueError(f"Frame {frame_pk} has no presentation timestamp")
-                frames_by_pts.append((presentation_timestamp, frame_pk))
-            frames_by_pts.sort()
-            if len({pts for pts, _ in frames_by_pts}) != len(frames_by_pts):
-                raise ValueError(
-                    f"Duplicate presentation timestamps for video {video.pk}"
-                )
-            time_base_num, time_base_den = _required_video_time_base(video)
-            extracted_paths = ffmpeg_extract_frames_by_pts(
-                source_path,
-                tmp_dir,
-                [pts for pts, _ in frames_by_pts],
-                time_base_num=time_base_num,
-                time_base_den=time_base_den,
-                quality=quality,
-                ext=ext,
-            )
-            moved_frame_pks = _move_sparse_pts_frames_to_pk_names(
-                extracted_paths,
-                frame_dir,
-                ordered_frame_pks=[frame_pk for _, frame_pk in frames_by_pts],
-                ext=ext,
-                overwrite=overwrite,
-            )
-            used_pts_extraction = True
-        elif isinstance(source_path, str):
-            raise ValueError(
-                "Seekable encrypted export requires exact presentation timestamps"
-            )
-        elif frame_pks is None:
-            extracted_paths = ffmpeg_extract_frames(
-                source_path,
-                tmp_dir,
-                quality=quality,
-                ext=ext,
-                fps=None,
-            )
-        else:
-            extracted_paths = ffmpeg_extract_frame_range(
-                source_path,
-                tmp_dir,
-                start_frame=requested_numbers[0],
-                end_frame=requested_numbers[-1] + 1,
-                quality=quality,
-                ext=ext,
-            )
-        if not used_pts_extraction:
-            moved_frame_pks = _move_extracted_frames_to_pk_names(
-                video,
-                extracted_paths,
-                frame_dir,
-                frame_pks=frame_pks,
-                ext=ext,
-                overwrite=overwrite,
-            )
-        missing_outputs = sorted((frame_pks or set(frames_by_pk)) - moved_frame_pks)
-        if missing_outputs:
-            raise RuntimeError(
-                f"Identity-preserving extraction did not produce requested frames "
-                f"for video {video.pk}: {missing_outputs[:10]}"
-            )
+        moved_frame_pks = _extract_requested_frames(
+            video,
+            source_path=source_path,
+            tmp_dir=tmp_dir,
+            frame_dir=frame_dir,
+            coordinates=coordinates,
+            quality=quality,
+            ext=ext,
+            overwrite=overwrite,
+        )
+        _require_all_requested_frames(video, coordinates, moved_frame_pks)
     finally:
         safe_rmtree(tmp_dir, missing_ok=True)
+
+
+def _requested_frame_coordinates(
+    video: VideoFile,
+    *,
+    frame_pks: set[int] | NoneType,
+) -> _RequestedFrameCoordinates:
+    persisted_coordinates = {
+        int(frame.pk): (int(frame.frame_number), frame.presentation_timestamp)
+        for frame in cast(_VideoFramesExportModel, video).frames.only(
+            "pk", "frame_number", "presentation_timestamp"
+        )
+    }
+    all_frame_pks = set(persisted_coordinates)
+    requested_frame_pks = all_frame_pks if frame_pks is None else set(frame_pks)
+    missing_pks = requested_frame_pks - all_frame_pks
+    if missing_pks:
+        raise ValueError(
+            f"Requested annotation frames are missing for video {video.pk}: "
+            f"{sorted(missing_pks)[:10]}"
+        )
+
+    requested_frame_numbers = sorted(
+        persisted_coordinates[frame_pk][0] for frame_pk in requested_frame_pks
+    )
+    frames_by_presentation_timestamp = _ordered_presentation_timestamps(
+        video,
+        frame_pks=frame_pks,
+        requested_frame_pks=requested_frame_pks,
+        persisted_coordinates=persisted_coordinates,
+    )
+    return _RequestedFrameCoordinates(
+        requested_frame_pks=requested_frame_pks,
+        requested_frame_numbers=requested_frame_numbers,
+        frames_by_presentation_timestamp=frames_by_presentation_timestamp,
+        extract_all_frames=frame_pks is None,
+    )
+
+
+def _ordered_presentation_timestamps(
+    video: VideoFile,
+    *,
+    frame_pks: set[int] | NoneType,
+    requested_frame_pks: set[int],
+    persisted_coordinates: dict[int, tuple[int, int | NoneType]],
+) -> list[tuple[int, int]] | NoneType:
+    if frame_pks is None:
+        return None
+    timestamps = [
+        persisted_coordinates[frame_pk][1] for frame_pk in requested_frame_pks
+    ]
+    if any(timestamp is None for timestamp in timestamps):
+        return None
+
+    ordered = sorted(
+        (cast(int, persisted_coordinates[frame_pk][1]), frame_pk)
+        for frame_pk in requested_frame_pks
+    )
+    if len({timestamp for timestamp, _ in ordered}) != len(ordered):
+        raise ValueError(f"Duplicate presentation timestamps for video {video.pk}")
+    return ordered
+
+
+def _extract_requested_frames(
+    video: VideoFile,
+    *,
+    source_path: Path | str,
+    tmp_dir: Path,
+    frame_dir: Path,
+    coordinates: _RequestedFrameCoordinates,
+    quality: int,
+    ext: str,
+    overwrite: bool,
+) -> set[int]:
+    if coordinates.frames_by_presentation_timestamp is not None:
+        return _extract_sparse_presentation_timestamp_frames(
+            video,
+            source_path=source_path,
+            tmp_dir=tmp_dir,
+            frame_dir=frame_dir,
+            frames_by_presentation_timestamp=(
+                coordinates.frames_by_presentation_timestamp
+            ),
+            quality=quality,
+            ext=ext,
+            overwrite=overwrite,
+        )
+    if isinstance(source_path, str):
+        raise ValueError(
+            "Seekable encrypted export requires exact presentation timestamps"
+        )
+
+    extracted_paths = _extract_local_frame_paths(
+        source_path,
+        tmp_dir,
+        requested_frame_numbers=coordinates.requested_frame_numbers,
+        extract_all=coordinates.extract_all_frames,
+        quality=quality,
+        ext=ext,
+    )
+    return _move_extracted_frames_to_pk_names(
+        video,
+        extracted_paths,
+        frame_dir,
+        frame_pks=coordinates.requested_frame_pks,
+        ext=ext,
+        overwrite=overwrite,
+    )
+
+
+def _extract_sparse_presentation_timestamp_frames(
+    video: VideoFile,
+    *,
+    source_path: Path | str,
+    tmp_dir: Path,
+    frame_dir: Path,
+    frames_by_presentation_timestamp: list[tuple[int, int]],
+    quality: int,
+    ext: str,
+    overwrite: bool,
+) -> set[int]:
+    time_base_num, time_base_den = _required_video_time_base(video)
+    extracted_paths = ffmpeg_extract_frames_by_pts(
+        source_path,
+        tmp_dir,
+        [timestamp for timestamp, _ in frames_by_presentation_timestamp],
+        time_base_num=time_base_num,
+        time_base_den=time_base_den,
+        quality=quality,
+        ext=ext,
+    )
+    return _move_sparse_pts_frames_to_pk_names(
+        extracted_paths,
+        frame_dir,
+        ordered_frame_pks=[
+            frame_pk for _, frame_pk in frames_by_presentation_timestamp
+        ],
+        ext=ext,
+        overwrite=overwrite,
+    )
+
+
+def _extract_local_frame_paths(
+    source_path: Path,
+    tmp_dir: Path,
+    *,
+    requested_frame_numbers: list[int],
+    extract_all: bool,
+    quality: int,
+    ext: str,
+) -> list[Path]:
+    if extract_all:
+        return ffmpeg_extract_frames(
+            source_path,
+            tmp_dir,
+            quality=quality,
+            ext=ext,
+            fps=None,
+        )
+    return ffmpeg_extract_frame_range(
+        source_path,
+        tmp_dir,
+        start_frame=requested_frame_numbers[0],
+        end_frame=requested_frame_numbers[-1] + 1,
+        quality=quality,
+        ext=ext,
+    )
+
+
+def _require_all_requested_frames(
+    video: VideoFile,
+    coordinates: _RequestedFrameCoordinates,
+    moved_frame_pks: set[int],
+) -> None:
+    missing_outputs = sorted(coordinates.requested_frame_pks - moved_frame_pks)
+    if missing_outputs:
+        raise RuntimeError(
+            f"Identity-preserving extraction did not produce requested frames "
+            f"for video {video.pk}: {missing_outputs[:10]}"
+        )
 
 
 def _move_sparse_pts_frames_to_pk_names(

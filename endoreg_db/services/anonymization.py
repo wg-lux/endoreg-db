@@ -212,146 +212,137 @@ class AnonymizationService:
         """
         # Try VideoFile first
         if kind == "video" or kind is None:
-            vf = (
+            video = (
                 VideoFile.objects.select_related(
                     "state", "sensitive_meta", "center", "video_meta__processor"
                 )
                 .filter(pk=file_id)
                 .first()
             )
-            if vf:
-                try:
-                    logger.info(
-                        f"Starting video anonymization for VideoFile ID: {file_id}"
-                    )
+            if video:
+                return self._start_video(video, file_id)
 
-                    if _video_has_integrity_failure(vf):
-                        integrity_status, integrity_error = _video_integrity_status(vf)
-                        logger.error(
-                            "Refusing anonymization for failed/lost VideoFile %s "
-                            "(hash=%s, integrity_status=%s, reason=%s)",
-                            file_id,
-                            _optional_text(getattr(vf, "video_hash", None)),
-                            integrity_status,
-                            integrity_error,
-                        )
-                        return None
-
-                    # Check if already processed
-                    video_state = _related_object(vf, "state")
-                    if _state_is_anonymized(video_state):
-                        logger.info(f"VideoFile {file_id} already anonymized, skipping")
-                        return "video"
-
-                    raw_file = vf.raw_file
-                    if not raw_file or not raw_file.name or not file_exists(raw_file):
-                        logger.error(
-                            "Raw file not found for VideoFile %s in storage",
-                            file_id,
-                        )
-                        return None
-
-                    # Get processor name
-                    processor_name = _related_text(
-                        _related_object(vf, "video_meta") or vf,
-                        "processor",
-                        "name",
-                    )
-
-                    # Get center name
-                    center_name = _required_text(
-                        _related_text(vf, "center", "name"),
-                        fallback="unknown_center",
-                    )
-
-                    # Mark as started
-                    _mark_state_processing_started(video_state)
-
-                    # Use VideoImportService for anonymization
-                    safe_processor_name = processor_name or "unknown_processor"
-                    with ensure_local_file(raw_file) as file_path:
-                        self.video_service.import_and_anonymize(
-                            file_path=file_path,
-                            center_name=center_name,
-                            processor_name=safe_processor_name,
-                        )
-
-                    logger.info(
-                        f"Video anonymization completed for VideoFile ID: {file_id}"
-                    )
-                    return "video"
-
-                except Exception as e:
-                    logger.error(f"Failed to anonymize VideoFile {file_id}: {e}")
-                    # Mark as failed if state exists
-                    _mark_state_processing_not_started(_related_object(vf, "state"))
-                    raise
         if kind == "report" or kind is None:
             # Try RawPdfFile
-            pdf = (
+            report = (
                 RawPdfFile.objects.select_related("state", "sensitive_meta", "center")
                 .filter(pk=file_id)
                 .first()
             )
-            if pdf:
-                try:
-                    logger.info(
-                        f"Starting report processing for RawPdfFile ID: {file_id}"
-                    )
-
-                    # Check if already processed
-                    pdf_state = _related_object(pdf, "state")
-                    if _state_is_anonymized(pdf_state):
-                        logger.info(f"RawPdfFile {file_id} already processed, skipping")
-                        return "pdf"
-
-                    file_field = pdf.file
-                    if not file_field or not file_field.name:
-                        logger.error(f"report file not found for RawPdfFile {file_id}")
-                        return None
-
-                    if not file_exists(file_field):
-                        logger.error(
-                            "report file missing from storage for RawPdfFile %s",
-                            file_id,
-                        )
-                        return None
-
-                    # Get center name
-                    center_name = _required_text(
-                        _related_text(pdf, "center", "name"),
-                        fallback="unknown_center",
-                    )
-
-                    # Mark as started
-                    _mark_state_processing_started(pdf_state)
-
-                    with ensure_local_file(file_field) as local_path:
-                        self.pdf_service.import_and_anonymize(
-                            file_path=local_path,
-                            center_name=center_name,
-                        )
-
-                    logger.info(
-                        f"report processing completed for RawPdfFile ID: {file_id}"
-                    )
-                    return "pdf"
-
-                except Exception as e:
-                    logger.error(f"Failed to process RawPdfFile {file_id}: {e}")
-                    # Mark as failed if state exists
-                    failure_state = _related_object(pdf, "state") or _related_object(
-                        pdf, "sensitive_meta"
-                    )
-                    saver = getattr(failure_state, "save", None)
-                    if callable(saver):
-                        saver(update_fields=["processing_failed"])
-                    raise
+            if report:
+                return self._start_report(report, file_id)
 
             logger.warning(f"No file found with ID: {file_id}")
             return None
 
         return None
+
+    def _start_video(
+        self,
+        video: VideoFile,
+        file_id: int,
+    ) -> AnonymizationStartResult | None:
+        try:
+            logger.info(f"Starting video anonymization for VideoFile ID: {file_id}")
+
+            if _video_has_integrity_failure(video):
+                integrity_status, integrity_error = _video_integrity_status(video)
+                logger.error(
+                    "Refusing anonymization for failed/lost VideoFile %s "
+                    "(hash=%s, integrity_status=%s, reason=%s)",
+                    file_id,
+                    _optional_text(getattr(video, "video_hash", None)),
+                    integrity_status,
+                    integrity_error,
+                )
+                return None
+
+            video_state = _related_object(video, "state")
+            if _state_is_anonymized(video_state):
+                logger.info(f"VideoFile {file_id} already anonymized, skipping")
+                return "video"
+
+            raw_file = video.raw_file
+            if not raw_file or not raw_file.name or not file_exists(raw_file):
+                logger.error(
+                    "Raw file not found for VideoFile %s in storage",
+                    file_id,
+                )
+                return None
+
+            processor_name = _related_text(
+                _related_object(video, "video_meta") or video,
+                "processor",
+                "name",
+            )
+            center_name = _required_text(
+                _related_text(video, "center", "name"),
+                fallback="unknown_center",
+            )
+            _mark_state_processing_started(video_state)
+
+            with ensure_local_file(raw_file) as file_path:
+                self.video_service.import_and_anonymize(
+                    file_path=file_path,
+                    center_name=center_name,
+                    processor_name=processor_name or "unknown_processor",
+                )
+
+            logger.info(f"Video anonymization completed for VideoFile ID: {file_id}")
+            return "video"
+        except Exception as error:
+            logger.error(f"Failed to anonymize VideoFile {file_id}: {error}")
+            _mark_state_processing_not_started(_related_object(video, "state"))
+            raise
+
+    def _start_report(
+        self,
+        report: RawPdfFile,
+        file_id: int,
+    ) -> AnonymizationStartResult | None:
+        try:
+            logger.info(f"Starting report processing for RawPdfFile ID: {file_id}")
+
+            report_state = _related_object(report, "state")
+            if _state_is_anonymized(report_state):
+                logger.info(f"RawPdfFile {file_id} already processed, skipping")
+                return "pdf"
+
+            file_field = report.file
+            if not file_field or not file_field.name:
+                logger.error(f"report file not found for RawPdfFile {file_id}")
+                return None
+
+            if not file_exists(file_field):
+                logger.error(
+                    "report file missing from storage for RawPdfFile %s",
+                    file_id,
+                )
+                return None
+
+            center_name = _required_text(
+                _related_text(report, "center", "name"),
+                fallback="unknown_center",
+            )
+            _mark_state_processing_started(report_state)
+
+            with ensure_local_file(file_field) as local_path:
+                self.pdf_service.import_and_anonymize(
+                    file_path=local_path,
+                    center_name=center_name,
+                )
+
+            logger.info(f"report processing completed for RawPdfFile ID: {file_id}")
+            return "pdf"
+        except Exception as error:
+            logger.error(f"Failed to process RawPdfFile {file_id}: {error}")
+            failure_state = _related_object(report, "state") or _related_object(
+                report, "sensitive_meta"
+            )
+            saver = getattr(failure_state, "save", None)
+            if callable(saver):
+                saver(update_fields=["processing_failed"])
+            raise
 
     @staticmethod
     @transaction.atomic

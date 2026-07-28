@@ -279,11 +279,9 @@ class ReconciliationService:
         sensitive_dir: Path,
         hashed_candidates: dict[str, list[Path]],
     ) -> Path | None:
-        raw_file_name = getattr(video.raw_file, "name", None)
-        raw_name = Path(raw_file_name).name if raw_file_name else None
-        suffix = Path(raw_name).suffix if raw_name else (video.suffix or ".mp4")
-        canonical_path = (
-            sensitive_dir / f"{video.video_hash}{suffix}" if suffix else None
+        raw_name, canonical_path = self._raw_candidate_names(
+            video=video,
+            sensitive_dir=sensitive_dir,
         )
         content_matches = hashed_candidates.get(str(video.video_hash), [])
         competing_content_matches = [
@@ -292,33 +290,80 @@ class ReconciliationService:
             if canonical_path is None or path != canonical_path
         ]
 
-        if canonical_path and canonical_path.is_file():
-            if raw_name == canonical_path.name:
-                return canonical_path
-            if competing_content_matches:
-                logger.warning(
-                    "Skipping relink for video %s because canonical path %s exists but competing content-hash candidates were also found: %s",
-                    video.video_hash,
-                    canonical_path,
-                    [str(path) for path in competing_content_matches],
-                )
-                return None
+        if canonical_path is not None and canonical_path.is_file():
+            return self._resolve_existing_canonical_candidate(
+                video=video,
+                raw_name=raw_name,
+                canonical_path=canonical_path,
+                competing_content_matches=competing_content_matches,
+            )
+        deterministic_candidate = self._first_deterministic_raw_candidate(
+            raw_name=raw_name,
+            canonical_path=canonical_path,
+            sensitive_dir=sensitive_dir,
+        )
+        if deterministic_candidate is not None:
+            return deterministic_candidate
+        return self._unique_content_hash_candidate(video, content_matches)
+
+    def _raw_candidate_names(
+        self,
+        *,
+        video: VideoFile,
+        sensitive_dir: Path,
+    ) -> tuple[str | None, Path | None]:
+        raw_file_name = getattr(video.raw_file, "name", None)
+        raw_name = Path(raw_file_name).name if raw_file_name else None
+        suffix = Path(raw_name).suffix if raw_name else (video.suffix or ".mp4")
+        canonical_path = (
+            sensitive_dir / f"{video.video_hash}{suffix}" if suffix else None
+        )
+        return raw_name, canonical_path
+
+    def _resolve_existing_canonical_candidate(
+        self,
+        *,
+        video: VideoFile,
+        raw_name: str | None,
+        canonical_path: Path,
+        competing_content_matches: list[Path],
+    ) -> Path | None:
+        if raw_name == canonical_path.name:
             return canonical_path
+        if not competing_content_matches:
+            return canonical_path
+        logger.warning(
+            "Skipping relink for video %s because canonical path %s exists but competing content-hash candidates were also found: %s",
+            video.video_hash,
+            canonical_path,
+            [str(path) for path in competing_content_matches],
+        )
+        return None
 
-        deterministic_candidates: list[Path] = []
-        if canonical_path:
-            deterministic_candidates.append(canonical_path)
+    def _first_deterministic_raw_candidate(
+        self,
+        *,
+        raw_name: str | None,
+        canonical_path: Path | None,
+        sensitive_dir: Path,
+    ) -> Path | None:
+        candidates = [canonical_path] if canonical_path is not None else []
         if raw_name:
-            deterministic_candidates.append(sensitive_dir / raw_name)
-
+            candidates.append(sensitive_dir / raw_name)
         seen: set[Path] = set()
-        for candidate in deterministic_candidates:
+        for candidate in candidates:
             if candidate in seen:
                 continue
             seen.add(candidate)
             if candidate.is_file():
                 return candidate
+        return None
 
+    def _unique_content_hash_candidate(
+        self,
+        video: VideoFile,
+        content_matches: list[Path],
+    ) -> Path | None:
         if len(content_matches) == 1:
             return content_matches[0]
         if len(content_matches) > 1:

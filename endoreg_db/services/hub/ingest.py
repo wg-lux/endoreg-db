@@ -1647,102 +1647,143 @@ def _finalize_preanonymized_video(
         delete_source=delete_source,
     )
 
-    processor = None
-    effective_processor_name = processor_name or _default_processor_name()
-    if effective_processor_name:
-        processor = EndoscopyProcessor.objects.filter(
-            name=effective_processor_name
-        ).first()
-
+    processor = _resolve_preanonymized_video_processor(processor_name)
     relative_name = to_storage_relative(final_path)
     with transaction.atomic():
-        video = VideoFile.objects.filter(video_hash=video_hash).first()
-        if video is None:
-            video = VideoFile.objects.create(
-                center=center,
-                processor=processor,
-                original_file_name=source_path.name,
-                video_hash=video_hash,
-                processed_video_hash=video_hash,
-                suffix=".mp4",
-                processed_file=relative_name,
-            )
-        else:
-            update_fields: list[str] = []
-            if video.center_id != center.pk:
-                video.center = center
-                update_fields.append("center")
-            if processor is not None and video.processor_id != processor.pk:
-                video.processor = processor
-                update_fields.append("processor")
-            if video.original_file_name != source_path.name:
-                video.original_file_name = source_path.name
-                update_fields.append("original_file_name")
-            if video.processed_video_hash != video_hash:
-                video.processed_video_hash = video_hash
-                update_fields.append("processed_video_hash")
-            if getattr(video.processed_file, "name", None) != relative_name:
-                video.processed_file.name = relative_name
-                update_fields.append("processed_file")
-            if update_fields:
-                video.save(update_fields=update_fields)
-
+        video = _get_or_update_preanonymized_video(
+            source_path=source_path,
+            center=center,
+            processor=processor,
+            video_hash=video_hash,
+            relative_name=relative_name,
+        )
         sensitive_meta = _apply_preanonymized_metadata(
             sensitive_meta=video.sensitive_meta,
             center=center,
             payload=payload,
         )
-        update_fields = []
-        sensitive_meta_patient_id = cast(
-            int | None, getattr(sensitive_meta, "pseudo_patient_id", None)
+        _link_preanonymized_video_metadata(
+            video=video,
+            sensitive_meta=sensitive_meta,
         )
-        sensitive_meta_examination_id = cast(
-            int | None, getattr(sensitive_meta, "pseudo_examination_id", None)
+        _mark_preanonymized_video_ready(
+            video=video,
+            resolve_case=sensitive_meta is not None,
         )
-        if sensitive_meta is not None and video.sensitive_meta_id != sensitive_meta.pk:
-            video.sensitive_meta = sensitive_meta
-            update_fields.append("sensitive_meta")
-        if sensitive_meta is not None and video.patient_id != sensitive_meta_patient_id:
-            video.patient = sensitive_meta.pseudo_patient
-            update_fields.append("patient")
-        if (
-            sensitive_meta is not None
-            and video.examination_id != sensitive_meta_examination_id
-        ):
-            video.examination = sensitive_meta.pseudo_examination
-            update_fields.append("examination")
-        if update_fields:
-            video.save(update_fields=update_fields)
+        return video
 
-        state = get_or_create_video_state(video)
-        state.mark_processing_started()
-        state.mark_anonymized()
-        state.mark_sensitive_meta_processed()
-        state.mark_anonymization_validated()
 
-        if sensitive_meta is not None:
-            try:
-                auto_resolve_media_case(media_type="video", media_obj=video)
-            except Exception as exc:
-                logger.warning(
-                    "Preanonymized video case resolution failed for %s: %s",
-                    video.video_hash,
-                    exc,
-                )
+def _resolve_preanonymized_video_processor(
+    processor_name: str | None,
+) -> EndoscopyProcessor | None:
+    effective_processor_name = processor_name or _default_processor_name()
+    if not effective_processor_name:
+        return None
+    return EndoscopyProcessor.objects.filter(name=effective_processor_name).first()
+
+
+def _get_or_update_preanonymized_video(
+    *,
+    source_path: Path,
+    center: Center,
+    processor: EndoscopyProcessor | None,
+    video_hash: str,
+    relative_name: str,
+) -> VideoFile:
+    video = VideoFile.objects.filter(video_hash=video_hash).first()
+    if video is None:
+        return VideoFile.objects.create(
+            center=center,
+            processor=processor,
+            original_file_name=source_path.name,
+            video_hash=video_hash,
+            processed_video_hash=video_hash,
+            suffix=".mp4",
+            processed_file=relative_name,
+        )
+
+    update_fields: list[str] = []
+    if video.center_id != center.pk:
+        video.center = center
+        update_fields.append("center")
+    if processor is not None and video.processor_id != processor.pk:
+        video.processor = processor
+        update_fields.append("processor")
+    if video.original_file_name != source_path.name:
+        video.original_file_name = source_path.name
+        update_fields.append("original_file_name")
+    if video.processed_video_hash != video_hash:
+        video.processed_video_hash = video_hash
+        update_fields.append("processed_video_hash")
+    if getattr(video.processed_file, "name", None) != relative_name:
+        video.processed_file.name = relative_name
+        update_fields.append("processed_file")
+    if update_fields:
+        video.save(update_fields=update_fields)
+    return video
+
+
+def _link_preanonymized_video_metadata(
+    *,
+    video: VideoFile,
+    sensitive_meta: SensitiveMeta | None,
+) -> None:
+    if sensitive_meta is None:
+        return
+
+    update_fields: list[str] = []
+    sensitive_meta_patient_id = cast(
+        int | None, getattr(sensitive_meta, "pseudo_patient_id", None)
+    )
+    sensitive_meta_examination_id = cast(
+        int | None, getattr(sensitive_meta, "pseudo_examination_id", None)
+    )
+    if video.sensitive_meta_id != sensitive_meta.pk:
+        video.sensitive_meta = sensitive_meta
+        update_fields.append("sensitive_meta")
+    if video.patient_id != sensitive_meta_patient_id:
+        video.patient = sensitive_meta.pseudo_patient
+        update_fields.append("patient")
+    if video.examination_id != sensitive_meta_examination_id:
+        video.examination = sensitive_meta.pseudo_examination
+        update_fields.append("examination")
+    if update_fields:
+        video.save(update_fields=update_fields)
+
+
+def _mark_preanonymized_video_ready(
+    *,
+    video: VideoFile,
+    resolve_case: bool,
+) -> None:
+    state = get_or_create_video_state(video)
+    state.mark_processing_started()
+    state.mark_anonymized()
+    state.mark_sensitive_meta_processed()
+    state.mark_anonymization_validated()
+
+    if resolve_case:
         try:
-            sync_video_streamable_artifacts(
-                video,
-                include_raw=True,
-                include_processed=True,
-                save=True,
-            )
+            auto_resolve_media_case(media_type="video", media_obj=video)
         except Exception as exc:
             logger.warning(
-                "Could not synchronize streamable artifacts for preanonymized video %s: %s",
+                "Preanonymized video case resolution failed for %s: %s",
                 video.video_hash,
                 exc,
             )
-        return video
+    try:
+        sync_video_streamable_artifacts(
+            video,
+            include_raw=True,
+            include_processed=True,
+            save=True,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Could not synchronize streamable artifacts for preanonymized video %s: %s",
+            video.video_hash,
+            exc,
+        )
 
 
 def _finalize_preanonymized_report(
@@ -2489,14 +2530,7 @@ def process_watcher_file(
         allowed_center_id=None,
     )
 
-    normalized_type = file_type.strip().lower()
-    if normalized_type == "report":
-        content_type = "application/pdf"
-    elif normalized_type == "video":
-        content_type = "video/mp4"
-    else:
-        raise ValueError(f"Unsupported watcher file type: {file_type}")
-
+    normalized_type, content_type = _watcher_file_contract(file_type)
     settled_stat = _wait_for_watcher_file_ready(watched_path)
     upload_job, created = create_or_reuse_watcher_upload_job(
         file_path=watched_path,
@@ -2511,37 +2545,26 @@ def process_watcher_file(
         },
         settled_stat=settled_stat,
     )
-    if not created:
-        safe_unlink_file(watched_path, missing_ok=True)
-        return upload_job
-    if upload_job.is_complete:
-        if _upload_job_has_usable_media(upload_job):
-            safe_unlink_file(watched_path, missing_ok=True)
-            return upload_job
-
-        upload_job.mark_error(
-            "Upload job marked complete but no usable media artifact was found. Forcing re-ingest."
-        )
-
-    upload_job.mark_processing()
-    _ = _update_upload_provenance(
-        upload_job,
-        watcher_processing_path=str(watched_path),
+    reused_job = _reuse_watcher_upload_job(
+        upload_job=upload_job,
+        created=created,
+        watched_path=watched_path,
     )
-    upload_job.save(update_fields=["processing_provenance", "updated_at"])
-    effective_processor_name: str | None = processor_name or _default_processor_name()
+    if reused_job is not None:
+        return reused_job
+    _mark_watcher_upload_job_processing(
+        upload_job=upload_job,
+        watched_path=watched_path,
+    )
+    effective_processor_name = processor_name or _default_processor_name()
 
     try:
-        if normalized_type == "video":
-            if not effective_processor_name:
-                raise ObjectDoesNotExist("No default EndoscopyProcessor is configured")
-            _ = _update_upload_provenance(
-                upload_job,
-                watcher_processing_path=str(watched_path),
-                processor_name=effective_processor_name,
-            )
-            upload_job.save(update_fields=["processing_provenance", "updated_at"])
-
+        _prepare_watcher_video_dispatch(
+            upload_job=upload_job,
+            watched_path=watched_path,
+            normalized_type=normalized_type,
+            effective_processor_name=effective_processor_name,
+        )
         start_upload_job_processing(
             upload_job=upload_job,
             task_dispatcher=_upload_job_task_dispatcher(),
@@ -2549,45 +2572,132 @@ def process_watcher_file(
         safe_unlink_file(watched_path, missing_ok=True)
         return upload_job
     except Exception as exc:
-        if _is_celery_broker_connection_error(exc) and bool(
-            getattr(settings, "WATCHER_CELERY_INLINE_FALLBACK_ENABLED", False)
-        ):
-            logger.warning(
-                "Watcher Celery handoff failed for %s; processing inline: %s",
-                watched_path,
-                exc,
-            )
-            try:
-                return _run_watcher_upload_job_inline(
-                    upload_job=upload_job,
-                    watched_path=watched_path,
-                    normalized_type=normalized_type,
-                    source_center=source_center,
-                    processor_name=(
-                        effective_processor_name if normalized_type == "video" else None
-                    ),
-                )
-            except Exception as inline_exc:
-                exc = inline_exc
-        elif _is_celery_broker_connection_error(exc):
-            logger.warning(
-                "Watcher Celery handoff failed for %s and inline fallback is disabled: %s",
-                watched_path,
-                exc,
-            )
+        recovered_job = _handle_watcher_handoff_failure(
+            upload_job=upload_job,
+            watched_path=watched_path,
+            normalized_type=normalized_type,
+            source_center=source_center,
+            effective_processor_name=effective_processor_name,
+            exc=exc,
+        )
+        if recovered_job is not None:
+            return recovered_job
+        raise
 
-        logger.exception(
-            "Watcher processing handoff failed for %s: %s",
+
+def _watcher_file_contract(file_type: str) -> tuple[str, str]:
+    normalized_type = file_type.strip().lower()
+    if normalized_type == "report":
+        return normalized_type, "application/pdf"
+    if normalized_type == "video":
+        return normalized_type, "video/mp4"
+    raise ValueError(f"Unsupported watcher file type: {file_type}")
+
+
+def _reuse_watcher_upload_job(
+    *,
+    upload_job: UploadJob,
+    created: bool,
+    watched_path: Path,
+) -> UploadJob | None:
+    if not created:
+        safe_unlink_file(watched_path, missing_ok=True)
+        return upload_job
+    if not upload_job.is_complete:
+        return None
+    if _upload_job_has_usable_media(upload_job):
+        safe_unlink_file(watched_path, missing_ok=True)
+        return upload_job
+
+    upload_job.mark_error(
+        "Upload job marked complete but no usable media artifact was found. Forcing re-ingest."
+    )
+    return None
+
+
+def _mark_watcher_upload_job_processing(
+    *,
+    upload_job: UploadJob,
+    watched_path: Path,
+) -> None:
+    upload_job.mark_processing()
+    _ = _update_upload_provenance(
+        upload_job,
+        watcher_processing_path=str(watched_path),
+    )
+    upload_job.save(update_fields=["processing_provenance", "updated_at"])
+
+
+def _prepare_watcher_video_dispatch(
+    *,
+    upload_job: UploadJob,
+    watched_path: Path,
+    normalized_type: str,
+    effective_processor_name: str | None,
+) -> None:
+    if normalized_type != "video":
+        return
+    if not effective_processor_name:
+        raise ObjectDoesNotExist("No default EndoscopyProcessor is configured")
+    _ = _update_upload_provenance(
+        upload_job,
+        watcher_processing_path=str(watched_path),
+        processor_name=effective_processor_name,
+    )
+    upload_job.save(update_fields=["processing_provenance", "updated_at"])
+
+
+def _handle_watcher_handoff_failure(
+    *,
+    upload_job: UploadJob,
+    watched_path: Path,
+    normalized_type: str,
+    source_center: Center,
+    effective_processor_name: str | None,
+    exc: Exception,
+) -> UploadJob | None:
+    technical_error = exc
+    broker_error = _is_celery_broker_connection_error(exc)
+    inline_fallback_enabled = bool(
+        getattr(settings, "WATCHER_CELERY_INLINE_FALLBACK_ENABLED", False)
+    )
+    if broker_error and inline_fallback_enabled:
+        logger.warning(
+            "Watcher Celery handoff failed for %s; processing inline: %s",
             watched_path,
             exc,
         )
-        upload_job.refresh_from_db()
-        if upload_job.status == UploadJob.Status.RETRYING.value:
-            safe_unlink_file(watched_path, missing_ok=True)
-            return upload_job
-        schedule_processing_retry(upload_job, technical_detail=str(exc))
+        try:
+            return _run_watcher_upload_job_inline(
+                upload_job=upload_job,
+                watched_path=watched_path,
+                normalized_type=normalized_type,
+                source_center=source_center,
+                processor_name=(
+                    effective_processor_name if normalized_type == "video" else None
+                ),
+            )
+        except Exception as inline_exc:
+            technical_error = inline_exc
+    elif broker_error:
+        logger.warning(
+            "Watcher Celery handoff failed for %s and inline fallback is disabled: %s",
+            watched_path,
+            exc,
+        )
+
+    logger.exception(
+        "Watcher processing handoff failed for %s: %s",
+        watched_path,
+        technical_error,
+    )
+    upload_job.refresh_from_db()
+    if upload_job.status == UploadJob.Status.RETRYING.value:
         safe_unlink_file(watched_path, missing_ok=True)
-        raise
+        return upload_job
+    schedule_processing_retry(upload_job, technical_detail=str(technical_error))
+    safe_unlink_file(watched_path, missing_ok=True)
+    return None
 
 
 @dataclass(frozen=True)

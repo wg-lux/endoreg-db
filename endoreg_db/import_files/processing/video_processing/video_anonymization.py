@@ -7,7 +7,7 @@ import uuid
 from contextlib import nullcontext
 from fractions import Fraction
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
+from typing import TYPE_CHECKING, NoReturn, Protocol, cast, runtime_checkable
 
 from pydantic import ValidationError
 from endoreg_db.utils.ffmpeg_wrapper import (
@@ -226,6 +226,26 @@ def _require_endoscope_image_roi(
     *,
     processor_name: str,
 ) -> dict[str, int]:
+    roi_data = _endoscope_roi_mapping(roi, processor_name=processor_name)
+    complete_roi, invalid_value_keys = _integer_roi_values(roi_data)
+    invalid_details = _endoscope_roi_invalid_details(
+        roi_data,
+        complete_roi=complete_roi,
+        invalid_value_keys=invalid_value_keys,
+    )
+    if invalid_details:
+        raise RuntimeError(
+            f"Endoscopy processor {processor_name!r} has invalid endoscope image ROI "
+            f"({'; '.join(invalid_details)})."
+        )
+    return complete_roi
+
+
+def _endoscope_roi_mapping(
+    roi: object,
+    *,
+    processor_name: str,
+) -> dict[str, object]:
     if roi is None:
         raise RuntimeError(
             f"Endoscopy processor {processor_name!r} has no endoscope image ROI configured."
@@ -236,19 +256,31 @@ def _require_endoscope_image_roi(
         raise RuntimeError(
             f"Endoscopy processor {processor_name!r} has invalid endoscope image ROI type."
         )
-    roi_data = cast(dict[str, object], roi)
+    return cast(dict[str, object], roi)
 
-    missing_keys = [
-        key for key in ENDOSCOPE_IMAGE_ROI_REQUIRED_KEYS if key not in roi_data
-    ]
-    invalid_value_keys: list[str] = []
+
+def _integer_roi_values(
+    roi_data: dict[str, object],
+) -> tuple[dict[str, int], list[str]]:
     complete_roi: dict[str, int] = {}
+    invalid_value_keys: list[str] = []
     for key, value in roi_data.items():
         if isinstance(value, bool) or not isinstance(value, int):
             invalid_value_keys.append(key)
-            continue
-        complete_roi[key] = value
+        else:
+            complete_roi[key] = value
+    return complete_roi, invalid_value_keys
 
+
+def _endoscope_roi_invalid_details(
+    roi_data: dict[str, object],
+    *,
+    complete_roi: dict[str, int],
+    invalid_value_keys: list[str],
+) -> list[str]:
+    missing_keys = [
+        key for key in ENDOSCOPE_IMAGE_ROI_REQUIRED_KEYS if key not in roi_data
+    ]
     invalid_positive_keys = [
         key
         for key in ENDOSCOPE_IMAGE_ROI_POSITIVE_KEYS
@@ -260,33 +292,17 @@ def _require_endoscope_image_roi(
         if key in complete_roi and complete_roi[key] < 0
     ]
 
-    if (
-        missing_keys
-        or invalid_value_keys
-        or invalid_positive_keys
-        or invalid_non_negative_keys
-    ):
-        details: list[str] = []
-        if missing_keys:
-            details.append(f"missing keys: {', '.join(missing_keys)}")
-        if invalid_value_keys:
-            details.append(
-                f"non-integer or null values: {', '.join(invalid_value_keys)}"
-            )
-        if invalid_positive_keys:
-            details.append(
-                f"non-positive dimensions: {', '.join(invalid_positive_keys)}"
-            )
-        if invalid_non_negative_keys:
-            details.append(
-                f"negative coordinates: {', '.join(invalid_non_negative_keys)}"
-            )
-        raise RuntimeError(
-            f"Endoscopy processor {processor_name!r} has invalid endoscope image ROI "
-            f"({'; '.join(details)})."
-        )
-
-    return complete_roi
+    details: list[str] = []
+    invalid_categories = (
+        ("missing keys", missing_keys),
+        ("non-integer or null values", invalid_value_keys),
+        ("non-positive dimensions", invalid_positive_keys),
+        ("negative coordinates", invalid_non_negative_keys),
+    )
+    for label, keys in invalid_categories:
+        if keys:
+            details.append(f"{label}: {', '.join(keys)}")
+    return details
 
 
 def _scale_coordinate(value: int, *, source_size: int, target_size: int) -> int:
@@ -522,136 +538,27 @@ def _verify_anonymizer_source(
     *,
     video_hash: str,
 ) -> AnonymizerSourceSnapshot:
-    source_path = Path(source_path).resolve()
-    if not source_path.exists():
-        raise FileNotFoundError(f"Video anonymization source not found: {source_path}")
-    if not source_path.is_file():
-        raise RuntimeError(
-            f"Video anonymization source is not a regular file: {source_path}"
-        )
-
-    stat_result = source_path.stat()
-    if stat_result.st_size <= 0:
-        raise RuntimeError(f"Video anonymization source is empty: {source_path}")
-
-    expected_path = getattr(ctx, "validated_raw_source_path", None)
-    if expected_path is not None:
-        expected_path = Path(expected_path).resolve()
-        if expected_path != source_path:
-            _critical_source_mismatch(
-                video_hash=video_hash,
-                source_path=source_path,
-                reason="path",
-                expected=str(expected_path),
-                actual=str(source_path),
-            )
-            raise RuntimeError(
-                "Anonymizer source path differs from validated raw materialization."
-            )
-
-    expected_size = getattr(ctx, "validated_raw_source_size_bytes", None)
-    if expected_size is not None and int(expected_size) != int(stat_result.st_size):
-        _critical_source_mismatch(
-            video_hash=video_hash,
-            source_path=source_path,
-            reason="size_bytes",
-            expected=int(expected_size),
-            actual=int(stat_result.st_size),
-        )
-        raise RuntimeError(
-            "Anonymizer source size differs from validated raw materialization."
-        )
-
-    expected_mtime_ns = getattr(ctx, "validated_raw_source_mtime_ns", None)
-    if expected_mtime_ns is not None and int(expected_mtime_ns) != int(
-        stat_result.st_mtime_ns
-    ):
-        _critical_source_mismatch(
-            video_hash=video_hash,
-            source_path=source_path,
-            reason="mtime_ns",
-            expected=int(expected_mtime_ns),
-            actual=int(stat_result.st_mtime_ns),
-        )
-        raise RuntimeError(
-            "Anonymizer source timestamp differs from validated raw materialization."
-        )
-
-    expected_sha256 = getattr(ctx, "validated_raw_source_sha256", None)
-    source_sha256 = sha256_file(source_path)
-    if expected_sha256 and str(expected_sha256) != source_sha256:
-        _critical_source_mismatch(
-            video_hash=video_hash,
-            source_path=source_path,
-            reason="sha256",
-            expected=str(expected_sha256),
-            actual=source_sha256,
-        )
-        raise RuntimeError(
-            "Anonymizer source hash differs from validated raw materialization."
-        )
-
-    stream_info = get_stream_info(source_path)
-    video_stream = _first_video_stream(stream_info)
-    if video_stream is None:
-        _critical_source_mismatch(
-            video_hash=video_hash,
-            source_path=source_path,
-            reason="video_stream",
-            expected="readable video stream",
-            actual="missing",
-        )
-        raise RuntimeError(
-            f"Anonymizer source has no readable video stream: {source_path}"
-        )
-
-    width = video_stream.width
-    height = video_stream.height
-    if width is None or height is None:
-        _critical_source_mismatch(
-            video_hash=video_hash,
-            source_path=source_path,
-            reason="dimensions",
-            expected="positive width and height",
-            actual={
-                "width": width,
-                "height": height,
-            },
-        )
-        raise RuntimeError(
-            f"Anonymizer source has unreadable structural dimensions: {source_path}"
-        )
-    source_frame_rate = _source_frame_rate(video_stream)
-
-    raw_expected_stream = getattr(ctx, "validated_raw_source_stream", None)
-    expected_stream: JsonObject = (
-        cast(JsonObject, raw_expected_stream)
-        if isinstance(raw_expected_stream, dict)
-        else {}
+    source_path, stat_result = _verified_source_file(source_path)
+    source_sha256 = _verify_validated_source_identity(
+        ctx,
+        source_path=source_path,
+        stat_result=stat_result,
+        video_hash=video_hash,
     )
-    expected_width = _positive_int(expected_stream.get("width"))
-    expected_height = _positive_int(expected_stream.get("height"))
-    if expected_width is not None and width != expected_width:
-        _critical_source_mismatch(
-            video_hash=video_hash,
-            source_path=source_path,
-            reason="width",
-            expected=expected_width,
-            actual=width,
-        )
-        raise RuntimeError("Anonymizer source width differs from VideoMeta validation.")
-    if expected_height is not None and height != expected_height:
-        _critical_source_mismatch(
-            video_hash=video_hash,
-            source_path=source_path,
-            reason="height",
-            expected=expected_height,
-            actual=height,
-        )
-        raise RuntimeError(
-            "Anonymizer source height differs from VideoMeta validation."
-        )
-
+    video_stream = _verified_anonymizer_video_stream(
+        source_path,
+        video_hash=video_hash,
+    )
+    width = cast(int, video_stream.width)
+    height = cast(int, video_stream.height)
+    source_frame_rate = _source_frame_rate(video_stream)
+    _verify_validated_source_dimensions(
+        ctx,
+        source_path=source_path,
+        video_hash=video_hash,
+        width=width,
+        height=height,
+    )
     snapshot: AnonymizerSourceSnapshot = {
         "path": str(source_path),
         "size_bytes": int(stat_result.st_size),
@@ -668,15 +575,244 @@ def _verify_anonymizer_source(
     return snapshot
 
 
+def _verified_source_file(source_path: Path) -> tuple[Path, os.stat_result]:
+    source_path = Path(source_path).resolve()
+    if not source_path.exists():
+        raise FileNotFoundError(f"Video anonymization source not found: {source_path}")
+    if not source_path.is_file():
+        raise RuntimeError(
+            f"Video anonymization source is not a regular file: {source_path}"
+        )
+
+    stat_result = source_path.stat()
+    if stat_result.st_size <= 0:
+        raise RuntimeError(f"Video anonymization source is empty: {source_path}")
+    return source_path, stat_result
+
+
+def _verify_validated_source_identity(
+    ctx: ImportContext,
+    *,
+    source_path: Path,
+    stat_result: os.stat_result,
+    video_hash: str,
+) -> str:
+    expected_path = getattr(ctx, "validated_raw_source_path", None)
+    if expected_path is not None:
+        expected_path = Path(expected_path).resolve()
+        if expected_path != source_path:
+            _abort_source_mismatch(
+                video_hash=video_hash,
+                source_path=source_path,
+                reason="path",
+                expected=str(expected_path),
+                actual=str(source_path),
+                message=(
+                    "Anonymizer source path differs from validated raw materialization."
+                ),
+            )
+
+    expected_size = getattr(ctx, "validated_raw_source_size_bytes", None)
+    if expected_size is not None and int(expected_size) != int(stat_result.st_size):
+        _abort_source_mismatch(
+            video_hash=video_hash,
+            source_path=source_path,
+            reason="size_bytes",
+            expected=int(expected_size),
+            actual=int(stat_result.st_size),
+            message=(
+                "Anonymizer source size differs from validated raw materialization."
+            ),
+        )
+
+    expected_mtime_ns = getattr(ctx, "validated_raw_source_mtime_ns", None)
+    if expected_mtime_ns is not None and int(expected_mtime_ns) != int(
+        stat_result.st_mtime_ns
+    ):
+        _abort_source_mismatch(
+            video_hash=video_hash,
+            source_path=source_path,
+            reason="mtime_ns",
+            expected=int(expected_mtime_ns),
+            actual=int(stat_result.st_mtime_ns),
+            message=(
+                "Anonymizer source timestamp differs from validated raw materialization."
+            ),
+        )
+
+    expected_sha256 = getattr(ctx, "validated_raw_source_sha256", None)
+    source_sha256 = sha256_file(source_path)
+    if expected_sha256 and str(expected_sha256) != source_sha256:
+        _abort_source_mismatch(
+            video_hash=video_hash,
+            source_path=source_path,
+            reason="sha256",
+            expected=str(expected_sha256),
+            actual=source_sha256,
+            message=(
+                "Anonymizer source hash differs from validated raw materialization."
+            ),
+        )
+    return source_sha256
+
+
+def _verified_anonymizer_video_stream(
+    source_path: Path,
+    *,
+    video_hash: str,
+) -> FfmpegStreamProbeEntry:
+    stream_info = get_stream_info(source_path)
+    video_stream = _first_video_stream(stream_info)
+    if video_stream is None:
+        _abort_source_mismatch(
+            video_hash=video_hash,
+            source_path=source_path,
+            reason="video_stream",
+            expected="readable video stream",
+            actual="missing",
+            message=f"Anonymizer source has no readable video stream: {source_path}",
+        )
+
+    width = video_stream.width
+    height = video_stream.height
+    if width is None or height is None:
+        _abort_source_mismatch(
+            video_hash=video_hash,
+            source_path=source_path,
+            reason="dimensions",
+            expected="positive width and height",
+            actual={
+                "width": width,
+                "height": height,
+            },
+            message=(
+                f"Anonymizer source has unreadable structural dimensions: {source_path}"
+            ),
+        )
+    return video_stream
+
+
+def _verify_validated_source_dimensions(
+    ctx: ImportContext,
+    *,
+    source_path: Path,
+    video_hash: str,
+    width: int,
+    height: int,
+) -> None:
+    raw_expected_stream = getattr(ctx, "validated_raw_source_stream", None)
+    expected_stream: JsonObject = (
+        cast(JsonObject, raw_expected_stream)
+        if isinstance(raw_expected_stream, dict)
+        else {}
+    )
+    expected_width = _positive_int(expected_stream.get("width"))
+    expected_height = _positive_int(expected_stream.get("height"))
+    if expected_width is not None and width != expected_width:
+        _abort_source_mismatch(
+            video_hash=video_hash,
+            source_path=source_path,
+            reason="width",
+            expected=expected_width,
+            actual=width,
+            message="Anonymizer source width differs from VideoMeta validation.",
+        )
+    if expected_height is not None and height != expected_height:
+        _abort_source_mismatch(
+            video_hash=video_hash,
+            source_path=source_path,
+            reason="height",
+            expected=expected_height,
+            actual=height,
+            message="Anonymizer source height differs from VideoMeta validation.",
+        )
+
+
+def _abort_source_mismatch(
+    *,
+    video_hash: str,
+    source_path: Path,
+    reason: str,
+    expected: object,
+    actual: object,
+    message: str,
+) -> NoReturn:
+    _critical_source_mismatch(
+        video_hash=video_hash,
+        source_path=source_path,
+        reason=reason,
+        expected=expected,
+        actual=actual,
+    )
+    raise RuntimeError(message)
+
+
+def _require_staged_anonymization_output(
+    result_path: Path,
+    *,
+    anonymized_output_path: Path,
+) -> None:
+    if not result_path.exists():
+        raise RuntimeError(f"Video anonymization output does not exist: {result_path}")
+    if result_path.stat().st_size <= 0:
+        raise RuntimeError(f"Video anonymization output is empty: {result_path}")
+
+    try:
+        candidate_is_canonical = (
+            result_path.resolve() == anonymized_output_path.resolve()
+        )
+    except FileNotFoundError:
+        candidate_is_canonical = False
+    if candidate_is_canonical:
+        raise RuntimeError(
+            "Video anonymization must remain in attempt-local staging until "
+            "validation and fenced publication succeed."
+        )
+
+
 class VideoAnonymizer:
     def __init__(self):
         _ensure_ffmpeg_tools_on_path()
         self._frame_cleaning_available: bool = False
         self._ensure_frame_cleaning_available()
 
-    def anonymize_video(self, ctx: ImportContext):
+    def anonymize_video(self, ctx: ImportContext) -> ImportContext:
         _ensure_ffmpeg_tools_on_path()
-        # Setup anonymized directory
+        video, anonymized_output_path, temp_output_path = (
+            self._prepare_anonymization_attempt(ctx)
+        )
+        frame_cleaner = self._new_frame_cleaner()
+        endoscope_roi, endoscope_roi_nested = self._get_processor_roi_info(ctx)
+        temp_result_path, extracted_metadata = self._run_frame_cleaner(
+            ctx,
+            frame_cleaner=frame_cleaner,
+            video_hash=video.video_hash,
+            temp_output_path=temp_output_path,
+            endoscope_roi=endoscope_roi,
+            endoscope_roi_nested=endoscope_roi_nested,
+        )
+        ctx.anonymized_path = temp_result_path
+        _require_staged_anonymization_output(
+            temp_result_path,
+            anonymized_output_path=anonymized_output_path,
+        )
+        logger.info(
+            "Retained anonymized video in attempt-local staging pending validation: "
+            "video=%s attempt=%s path=%s",
+            video.video_hash,
+            ctx.attempt_id,
+            temp_result_path,
+        )
+
+        if ctx.execution_guard is not None:
+            ctx.execution_guard()
+        self._persist_anonymizer_metadata(ctx, extracted_metadata)
+        return ctx
+
+    def _prepare_anonymization_attempt(
+        self,
+        ctx: ImportContext,
+    ) -> tuple[_VideoAnonymizationVideo, Path, Path]:
         anonymized_dir = ensure_directory(_processed_video_dir())
         assert ctx.current_video is not None
         video = cast(_VideoAnonymizationVideo, ctx.current_video)
@@ -688,35 +824,35 @@ class VideoAnonymizer:
             raise RuntimeError(
                 f"Video {video.video_hash} is marked failed/lost and cannot be anonymized."
             )
-        # Generate output path for anonymized report
 
-        video_hash = video.video_hash
-        anonymized_output_path = anonymized_dir / f"{video_hash}.mp4"
+        anonymized_output_path = anonymized_dir / f"{video.video_hash}.mp4"
         temp_output_path = _temp_media_path(
             anonymized_output_path,
             marker=f"attempt-{ctx.attempt_id}",
         )
         safe_unlink_file(temp_output_path, missing_ok=True)
         ensure_directory(temp_output_path.parent)
+        return video, anonymized_output_path, temp_output_path
 
-        if not self._frame_cleaning_available:
-            self._ensure_frame_cleaning_available()
-        if not self._frame_cleaning_available:
-            raise RuntimeError("Frame cleaning is unavailable.")
-        # FrameCleaner owns mutable frame, metadata, OCR, and LLM run state.
-        # A fresh instance is mandatory for every attempt.
-        frame_cleaner = cast(_FrameCleaner, FrameCleaner())
-
-        endoscope_roi, endoscope_roi_nested = self._get_processor_roi_info(ctx)
+    def _run_frame_cleaner(
+        self,
+        ctx: ImportContext,
+        *,
+        frame_cleaner: _FrameCleaner,
+        video_hash: str,
+        temp_output_path: Path,
+        endoscope_roi: dict[str, int],
+        endoscope_roi_nested: dict[str, dict[str, int | None]],
+    ) -> tuple[Path, JsonObject]:
         explicit_source_path = getattr(ctx, "local_source_path", None)
         if explicit_source_path is None:
             explicit_source_path = getattr(ctx, "file_path", None)
         if explicit_source_path is not None:
             source_context = nullcontext(Path(explicit_source_path))
         else:
+            assert ctx.current_video is not None
             source_context = ensure_local_raw_video_file(ctx.current_video)
 
-        # Process with enhanced process_report method (returns 4-tuple now)
         with source_context as source_path:
             verified_source = Path(source_path).resolve()
             source_snapshot = _verify_anonymizer_source(
@@ -741,48 +877,30 @@ class VideoAnonymizer:
                 source_width=source_width,
                 source_height=source_height,
             )
-            ctx.anonymized_path, extracted_metadata = frame_cleaner.clean_video(
+            result_path, extracted_metadata = frame_cleaner.clean_video(
                 video_path=verified_source,
                 endoscope_image_roi=endoscope_roi,
                 endoscope_data_roi_nested=endoscope_roi_nested,
                 source_frame_rate=source_frame_rate,
                 output_path=temp_output_path,
             )
-        if extracted_metadata is None:
-            extracted_metadata = {}
-        temp_result_path = ctx.anonymized_path
-        if not temp_result_path.exists():
-            raise RuntimeError(
-                f"Video anonymization output does not exist: {temp_result_path}"
-            )
-        if temp_result_path.stat().st_size <= 0:
-            raise RuntimeError(
-                f"Video anonymization output is empty: {temp_result_path}"
-            )
+        return result_path, extracted_metadata or {}
 
-        try:
-            candidate_is_canonical = (
-                temp_result_path.resolve() == anonymized_output_path.resolve()
-            )
-        except FileNotFoundError:
-            candidate_is_canonical = False
-        if candidate_is_canonical:
-            raise RuntimeError(
-                "Video anonymization must remain in attempt-local staging until "
-                "validation and fenced publication succeed."
-            )
-        ctx.anonymized_path = temp_result_path
-        logger.info(
-            "Retained anonymized video in attempt-local staging pending validation: "
-            "video=%s attempt=%s path=%s",
-            video_hash,
-            ctx.attempt_id,
-            temp_result_path,
-        )
+    def _new_frame_cleaner(self) -> _FrameCleaner:
+        if not self._frame_cleaning_available:
+            self._ensure_frame_cleaning_available()
+        if not self._frame_cleaning_available:
+            raise RuntimeError("Frame cleaning is unavailable.")
+        # FrameCleaner owns mutable frame, metadata, OCR, and LLM run state.
+        # A fresh instance is mandatory for every attempt.
+        return cast(_FrameCleaner, FrameCleaner())
 
-        if ctx.execution_guard is not None:
-            ctx.execution_guard()
-
+    def _persist_anonymizer_metadata(
+        self,
+        ctx: ImportContext,
+        extracted_metadata: JsonObject,
+    ) -> None:
+        assert ctx.current_video is not None
         lx_sensitive_payload = {
             key: value
             for key, value in extracted_metadata.items()
@@ -793,7 +911,6 @@ class VideoAnonymizer:
         )
         self._persist_paper_evaluation_metrics(ctx.current_video, extracted_metadata)
         self._persist_phi_region_proposals(ctx.current_video, extracted_metadata)
-        return ctx
 
     def _persist_paper_evaluation_metrics(
         self,
