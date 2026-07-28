@@ -500,7 +500,7 @@ class ApplicationSettingsEndpointTests(TestCase):
                 return {"schema_version": "1.0", "labels": ["a", "b"]}
 
         with patch.object(
-            AIDataSet,
+            view_module,
             "build_frame_multilabel_training_manifest",
             return_value=StubManifest(),
         ) as builder:
@@ -520,6 +520,7 @@ class ApplicationSettingsEndpointTests(TestCase):
 
         assert response.status_code == 200, response.content
         builder.assert_called_once()
+        assert builder.call_args.args == (dataset,)
         assert builder.call_args.kwargs == {
             "label_set": label_set,
             "treat_unlabeled_as_negative": True,

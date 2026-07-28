@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+from dataclasses import dataclass
 from typing import Any, cast
 from uuid import uuid4
 
@@ -17,7 +18,9 @@ from endoreg_db.services.video_processed_transcode import (
     transcode_processed_video_for_storage_pressure,
 )
 from endoreg_db.services.video_storage_normalization import (
+    VideoStorageCapacityReport,
     VideoStorageInventoryReport,
+    VideoStorageProfile,
     configured_video_storage_profile,
     inventory_video_storage,
     raw_cleanup_blockers,
@@ -29,6 +32,20 @@ from endoreg_db.utils.structured_logging import emit_structured_event
 from ._video_command_base import BaseVideoCommand
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _RunOptions:
+    apply_changes: bool
+    cleanup_validated_raw: bool
+    video_ids: list[int] | None
+    limit: int | None
+    quality_mode: str
+    force_cpu: bool
+    json_output: bool
+
+
+_InventoryRow = tuple[VideoFile, VideoStorageInventoryReport]
 
 
 class Command(BaseVideoCommand):
@@ -68,25 +85,62 @@ class Command(BaseVideoCommand):
         )
 
     def handle(self, *args: object, **options: object) -> None:
-        apply_changes = bool(options.get("apply"))
-        cleanup_validated_raw = bool(options.get("cleanup_validated_raw"))
-        if cleanup_validated_raw and not apply_changes:
+        run_options = self._run_options(options)
+        self._validate_mutation_options(run_options)
+        inventory_rows = self._inventory_rows(run_options)
+        batch_id = uuid4().hex
+        self._validate_reconciliation(run_options, inventory_rows)
+        capacity = self._capacity(inventory_rows)
+        self._validate_capacity(run_options, capacity)
+        self._emit_batch_started(batch_id, run_options, inventory_rows, capacity)
+        results, reconciliation_failed = self._process_rows(
+            batch_id=batch_id,
+            run_options=run_options,
+            inventory_rows=inventory_rows,
+        )
+        payload = self._summary_payload(
+            apply_changes=run_options.apply_changes,
+            cleanup_validated_raw=run_options.cleanup_validated_raw,
+            rows=[item[1] for item in inventory_rows],
+            results=results,
+            batch_id=batch_id,
+            capacity=capacity.as_dict(),
+        )
+        self._write_summary(payload, run_options.json_output)
+        self._raise_on_failed_results(payload, reconciliation_failed)
+
+    def _run_options(self, options: dict[str, object]) -> _RunOptions:
+        return _RunOptions(
+            apply_changes=bool(options.get("apply")),
+            cleanup_validated_raw=bool(options.get("cleanup_validated_raw")),
+            video_ids=self.selected_video_ids_from_options(options),
+            limit=self.positive_limit_from_options(options),
+            quality_mode=str(options.get("quality_mode") or "balanced"),
+            force_cpu=bool(options.get("force_cpu")),
+            json_output=bool(options.get("json_output")),
+        )
+
+    @staticmethod
+    def _validate_mutation_options(run_options: _RunOptions) -> None:
+        if run_options.cleanup_validated_raw and not run_options.apply_changes:
             raise CommandError("--cleanup-validated-raw requires --apply")
-        if apply_changes and not video_storage_destructive_migration_enabled():
+        if (
+            run_options.apply_changes
+            and not video_storage_destructive_migration_enabled()
+        ):
             raise CommandError(
                 "Destructive video migration is disabled. Verify temporal/frame "
                 "quality gates, then set "
                 "ENDOREG_VIDEO_STORAGE_DESTRUCTIVE_MIGRATION_ENABLED=true."
             )
 
-        video_ids = self.selected_video_ids_from_options(options)
-        limit = self.positive_limit_from_options(options)
+    @staticmethod
+    def _inventory_rows(run_options: _RunOptions) -> list[_InventoryRow]:
         queryset = VideoFile.objects.select_related("state").prefetch_related(
             "hls_artifacts"
         )
-        if video_ids:
-            queryset = queryset.filter(pk__in=video_ids)
-
+        if run_options.video_ids:
+            queryset = queryset.filter(pk__in=run_options.video_ids)
         inventory_rows = [(video, inventory_video_storage(video)) for video in queryset]
         inventory_rows.sort(
             key=lambda item: (
@@ -96,37 +150,61 @@ class Command(BaseVideoCommand):
             ),
             reverse=True,
         )
-        if limit is not None:
-            inventory_rows = inventory_rows[:limit]
+        if run_options.limit is not None:
+            return inventory_rows[: run_options.limit]
+        return inventory_rows
 
-        batch_id = uuid4().hex
+    @staticmethod
+    def _validate_reconciliation(
+        run_options: _RunOptions,
+        inventory_rows: list[_InventoryRow],
+    ) -> None:
         unreconciled_video_ids = [
             report.video_id for _, report in inventory_rows if not report.reconciled
         ]
-        if apply_changes and unreconciled_video_ids:
+        if run_options.apply_changes and unreconciled_video_ids:
             raise CommandError(
                 "Database/filesystem reconciliation failed before mutation for "
                 f"video IDs {unreconciled_video_ids}."
             )
+
+    @staticmethod
+    def _capacity(
+        inventory_rows: list[_InventoryRow],
+    ) -> VideoStorageCapacityReport:
         projected_temporary_bytes = max(
             (math.ceil(report.processed_bytes * 1.1) for _, report in inventory_rows),
             default=0,
         )
-        capacity = video_storage_capacity(
+        return video_storage_capacity(
             storage_root=path_utils.protected_media_root(),
             projected_temporary_bytes=projected_temporary_bytes,
         )
-        if apply_changes and capacity.status == "stop":
+
+    @staticmethod
+    def _validate_capacity(
+        run_options: _RunOptions,
+        capacity: VideoStorageCapacityReport,
+    ) -> None:
+        if run_options.apply_changes and capacity.status == "stop":
             raise CommandError(
                 "Storage hard-stop threshold reached after projected temporary "
                 "output; no files were changed."
             )
+
+    @staticmethod
+    def _emit_batch_started(
+        batch_id: str,
+        run_options: _RunOptions,
+        inventory_rows: list[_InventoryRow],
+        capacity: VideoStorageCapacityReport,
+    ) -> None:
         emit_structured_event(
             logger,
             "video_storage_normalization.batch_started",
             batch_id=batch_id,
             selected=len(inventory_rows),
-            apply=apply_changes,
+            apply=run_options.apply_changes,
             capacity_status=capacity.status,
             capacity_free_bytes=capacity.free_bytes,
             capacity_projected_temporary_bytes=capacity.projected_temporary_bytes,
@@ -134,44 +212,21 @@ class Command(BaseVideoCommand):
             capacity_stop_free_bytes=capacity.stop_free_bytes,
         )
 
-        quality_mode = str(options.get("quality_mode") or "balanced")
-        force_cpu = bool(options.get("force_cpu"))
+    @classmethod
+    def _process_rows(
+        cls,
+        *,
+        batch_id: str,
+        run_options: _RunOptions,
+        inventory_rows: list[_InventoryRow],
+    ) -> tuple[list[dict[str, Any]], bool]:
         results: list[dict[str, Any]] = []
-        reconciliation_failed = False
         for video, before in inventory_rows:
-            transcode_result: ProcessedVideoTranscodeResult | None = None
-            raw_cleanup_performed = False
-            if apply_changes:
-                transcode_result = transcode_processed_video_for_storage_pressure(
-                    video,
-                    apply=True,
-                    quality_mode=quality_mode,
-                    force_cpu=force_cpu,
-                )
-                video.refresh_from_db()
-                after_transcode = inventory_video_storage(video)
-                if (
-                    cleanup_validated_raw
-                    and after_transcode.anonymization_validated
-                    and after_transcode.normalization_verified
-                    and not raw_cleanup_blockers(video)
-                ):
-                    raw_cleanup_performed = _delete_raw_file_after_validation(video)
-                    video.refresh_from_db()
-
-            after = inventory_video_storage(video)
-            result_payload: dict[str, Any] = {
-                "before": before.as_dict(),
-                "after": after.as_dict(),
-                "bytes_reclaimed": max(0, before.total_bytes - after.total_bytes),
-                "raw_cleanup_performed": raw_cleanup_performed,
-                "transcode": (
-                    self._transcode_payload(transcode_result)
-                    if transcode_result is not None
-                    else None
-                ),
-                "reconciled": after.reconciled,
-            }
+            result_payload, reconciled = cls._process_row(
+                video=video,
+                before=before,
+                run_options=run_options,
+            )
             results.append(result_payload)
             emit_structured_event(
                 logger,
@@ -180,38 +235,80 @@ class Command(BaseVideoCommand):
                 video_id=int(video.pk),
                 result=result_payload,
             )
-            if apply_changes and not after.reconciled:
-                reconciliation_failed = True
-                break
+            if run_options.apply_changes and not reconciled:
+                return results, True
+        return results, False
 
-        payload = self._summary_payload(
-            apply_changes=apply_changes,
-            cleanup_validated_raw=cleanup_validated_raw,
-            rows=[item[1] for item in inventory_rows],
-            results=results,
-            batch_id=batch_id,
-            capacity=capacity.as_dict(),
-        )
-        if bool(options.get("json_output")):
-            self.stdout.write(json.dumps(payload, indent=2, sort_keys=True))
-        else:
-            self.stdout.write(
-                "video storage normalization: "
-                f"selected={payload['selected']} "
-                f"occupied_bytes={payload['occupied_bytes']} "
-                f"reclaimable_raw_bytes={payload['reclaimable_raw_bytes']} "
-                f"reclaimed_bytes={payload['reclaimed_bytes']} "
-                f"apply={apply_changes}"
+    @classmethod
+    def _process_row(
+        cls,
+        *,
+        video: VideoFile,
+        before: VideoStorageInventoryReport,
+        run_options: _RunOptions,
+    ) -> tuple[dict[str, Any], bool]:
+        transcode_result: ProcessedVideoTranscodeResult | None = None
+        raw_cleanup_performed = False
+        if run_options.apply_changes:
+            transcode_result = transcode_processed_video_for_storage_pressure(
+                video,
+                apply=True,
+                quality_mode=run_options.quality_mode,
+                force_cpu=run_options.force_cpu,
             )
+            video.refresh_from_db()
+            raw_cleanup_performed = cls._cleanup_raw_if_allowed(video, run_options)
+        after = inventory_video_storage(video)
+        return {
+            "before": before.as_dict(),
+            "after": after.as_dict(),
+            "bytes_reclaimed": max(0, before.total_bytes - after.total_bytes),
+            "raw_cleanup_performed": raw_cleanup_performed,
+            "transcode": (
+                cls._transcode_payload(transcode_result)
+                if transcode_result is not None
+                else None
+            ),
+            "reconciled": after.reconciled,
+        }, after.reconciled
 
-        failed = 0
-        for result in results:
-            raw_transcode = result["transcode"]
-            if not isinstance(raw_transcode, dict):
-                continue
-            transcode_payload = cast(dict[str, object], raw_transcode)
-            if transcode_payload.get("status") == "failed":
-                failed += 1
+    @staticmethod
+    def _cleanup_raw_if_allowed(
+        video: VideoFile,
+        run_options: _RunOptions,
+    ) -> bool:
+        after_transcode = inventory_video_storage(video)
+        cleanup_allowed = (
+            run_options.cleanup_validated_raw
+            and after_transcode.anonymization_validated
+            and after_transcode.normalization_verified
+            and not raw_cleanup_blockers(video)
+        )
+        if not cleanup_allowed:
+            return False
+        raw_cleanup_performed = _delete_raw_file_after_validation(video)
+        video.refresh_from_db()
+        return raw_cleanup_performed
+
+    def _write_summary(self, payload: dict[str, Any], json_output: bool) -> None:
+        if json_output:
+            self.stdout.write(json.dumps(payload, indent=2, sort_keys=True))
+            return
+        self.stdout.write(
+            "video storage normalization: "
+            f"selected={payload['selected']} "
+            f"occupied_bytes={payload['occupied_bytes']} "
+            f"reclaimable_raw_bytes={payload['reclaimable_raw_bytes']} "
+            f"reclaimed_bytes={payload['reclaimed_bytes']} "
+            f"apply={payload['apply']}"
+        )
+
+    @staticmethod
+    def _raise_on_failed_results(
+        payload: dict[str, Any],
+        reconciliation_failed: bool,
+    ) -> None:
+        failed = int(payload["failed_videos"])
         if failed:
             raise CommandError(f"Normalization failed for {failed} video(s).")
         if reconciliation_failed:
@@ -242,39 +339,70 @@ class Command(BaseVideoCommand):
         capacity: dict[str, int | str],
     ) -> dict[str, Any]:
         profile = configured_video_storage_profile()
+        inventory_counts = Command._inventory_counts(rows)
+        result_counts = Command._result_counts(results)
         return {
             "apply": apply_changes,
             "batch_id": batch_id,
             "cleanup_validated_raw": cleanup_validated_raw,
             "capacity": capacity,
-            "profile": {
-                "name": profile.name,
-                "max_bit_rate_bps": profile.max_bit_rate_bps,
-                "max_bytes_per_second": profile.max_bytes_per_second,
-                "fixed_overhead_bytes": profile.fixed_overhead_bytes,
-                "max_width": profile.max_width,
-                "max_height": profile.max_height,
-                "max_source_fps": profile.max_source_fps,
-                "annotation_max_fps": profile.annotation_max_fps,
-            },
+            "profile": Command._profile_payload(profile),
             "selected": len(rows),
-            "normalized_videos": sum(row.normalization_verified for row in rows),
-            "pending_videos": sum(not row.normalization_verified for row in rows),
-            "reconciliation_error_videos": sum(not row.reconciled for row in rows),
-            "occupied_bytes": sum(row.total_bytes for row in rows),
-            "raw_bytes": sum(row.raw_bytes for row in rows),
-            "processed_bytes": sum(row.processed_bytes for row in rows),
-            "raw_hls_bytes": sum(row.raw_hls_bytes for row in rows),
-            "processed_hls_bytes": sum(row.processed_hls_bytes for row in rows),
-            "reclaimable_raw_bytes": sum(row.reclaimable_raw_bytes for row in rows),
-            "reclaimed_bytes": sum(
-                int(result["bytes_reclaimed"]) for result in results
-            ),
-            "failed_videos": sum(
-                isinstance(result.get("transcode"), dict)
-                and cast(dict[str, object], result["transcode"]).get("status")
-                == "failed"
-                for result in results
-            ),
+            **inventory_counts,
+            **result_counts,
             "results": results,
+        }
+
+    @staticmethod
+    def _profile_payload(profile: VideoStorageProfile) -> dict[str, object]:
+        return {
+            "name": profile.name,
+            "max_bit_rate_bps": profile.max_bit_rate_bps,
+            "max_bytes_per_second": profile.max_bytes_per_second,
+            "fixed_overhead_bytes": profile.fixed_overhead_bytes,
+            "max_width": profile.max_width,
+            "max_height": profile.max_height,
+            "max_source_fps": profile.max_source_fps,
+            "annotation_max_fps": profile.annotation_max_fps,
+        }
+
+    @staticmethod
+    def _inventory_counts(rows: list[VideoStorageInventoryReport]) -> dict[str, int]:
+        counts = {
+            "normalized_videos": 0,
+            "pending_videos": 0,
+            "reconciliation_error_videos": 0,
+            "occupied_bytes": 0,
+            "raw_bytes": 0,
+            "processed_bytes": 0,
+            "raw_hls_bytes": 0,
+            "processed_hls_bytes": 0,
+            "reclaimable_raw_bytes": 0,
+        }
+        for row in rows:
+            counts["normalized_videos"] += int(row.normalization_verified)
+            counts["pending_videos"] += int(not row.normalization_verified)
+            counts["reconciliation_error_videos"] += int(not row.reconciled)
+            counts["occupied_bytes"] += row.total_bytes
+            counts["raw_bytes"] += row.raw_bytes
+            counts["processed_bytes"] += row.processed_bytes
+            counts["raw_hls_bytes"] += row.raw_hls_bytes
+            counts["processed_hls_bytes"] += row.processed_hls_bytes
+            counts["reclaimable_raw_bytes"] += row.reclaimable_raw_bytes
+        return counts
+
+    @staticmethod
+    def _result_counts(results: list[dict[str, Any]]) -> dict[str, int]:
+        reclaimed_bytes = 0
+        failed_videos = 0
+        for result in results:
+            reclaimed_bytes += int(result["bytes_reclaimed"])
+            raw_transcode = result.get("transcode")
+            if not isinstance(raw_transcode, dict):
+                continue
+            transcode = cast(dict[str, object], raw_transcode)
+            failed_videos += int(transcode.get("status") == "failed")
+        return {
+            "reclaimed_bytes": reclaimed_bytes,
+            "failed_videos": failed_videos,
         }

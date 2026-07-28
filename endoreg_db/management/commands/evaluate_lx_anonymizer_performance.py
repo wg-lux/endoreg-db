@@ -335,14 +335,31 @@ class Command(BaseCommand):
         *args: str,
         **options: Unpack[PerformanceCommandOptions],
     ) -> None:
-        repeat = options["repeat"]
-        if repeat < 1:
-            raise CommandError("--repeat must be >= 1")
+        self._validate_options(options)
+        self._load_reference_data_if_requested(options)
+        inputs = self._selected_inputs(options)
+        self._warn_for_duplicate_short_circuit(options)
+        run_results = self._run_inputs(inputs, options)
+        payload = LxAnonymizerPerformancePayload(
+            summary=self._summarize(run_results),
+            runs=run_results,
+        )
+        self._write_requested_artifacts(payload, run_results, options)
+        self._write_requested_summary(payload, options)
+        if self._has_failed_run(run_results):
+            raise CommandError("One or more evaluation runs failed.")
 
-        limit = options["limit"]
-        if limit < 0:
+    @staticmethod
+    def _validate_options(options: PerformanceCommandOptions) -> None:
+        if options["repeat"] < 1:
+            raise CommandError("--repeat must be >= 1")
+        if options["limit"] < 0:
             raise CommandError("--limit must be >= 0")
 
+    @staticmethod
+    def _load_reference_data_if_requested(
+        options: PerformanceCommandOptions,
+    ) -> None:
         if options["load_reference_data"]:
             from endoreg_db.helpers.data_load_orchestrator import (
                 load_all_reference_data,
@@ -350,13 +367,16 @@ class Command(BaseCommand):
 
             load_all_reference_data()
 
+    def _selected_inputs(
+        self,
+        options: PerformanceCommandOptions,
+    ) -> list[tuple[Path, MediaType]]:
         inputs = self._discover_inputs(
             paths=[*options["paths"], *options["input_dir"]],
             forced_media_type=options["media_type"],
             recursive=options["recursive"],
-            limit=limit,
+            limit=options["limit"],
         )
-        skipped_video_count = 0
         inputs, skipped_video_count = self._exclude_video_inputs_without_roi(
             inputs=inputs,
             processor_name=options["processor_name"],
@@ -369,17 +389,27 @@ class Command(BaseCommand):
                 else ""
             )
             raise CommandError(f"No supported video/report inputs were found.{detail}")
+        return inputs
 
-        if repeat > 1 and not options["retry"]:
+    @staticmethod
+    def _warn_for_duplicate_short_circuit(
+        options: PerformanceCommandOptions,
+    ) -> None:
+        if options["repeat"] > 1 and not options["retry"]:
             logger.warning(
                 "repeat=%s without --retry can benchmark duplicate short-circuiting, "
                 "not lx_anonymizer execution.",
-                repeat,
+                options["repeat"],
             )
 
+    def _run_inputs(
+        self,
+        inputs: list[tuple[Path, MediaType]],
+        options: PerformanceCommandOptions,
+    ) -> list[LxAnonymizerPerformanceRunPayload]:
         run_results: list[LxAnonymizerPerformanceRunPayload] = []
         for source_path, media_type in inputs:
-            for iteration in range(1, repeat + 1):
+            for iteration in range(1, options["repeat"] + 1):
                 result = self._run_one(
                     source_path=source_path,
                     media_type=media_type,
@@ -390,44 +420,71 @@ class Command(BaseCommand):
                     keep_staged_inputs=options["keep_staged_inputs"],
                 )
                 run_results.append(result)
-                if not result.ok and not options["continue_on_error"]:
+                if self._should_stop(result, options):
                     break
-            if (
-                run_results
-                and not run_results[-1].ok
-                and not options["continue_on_error"]
-            ):
+            if self._should_stop_after_input(run_results, options):
                 break
+        return run_results
 
-        payload = LxAnonymizerPerformancePayload(
-            summary=self._summarize(run_results),
-            runs=run_results,
-        )
+    @staticmethod
+    def _should_stop(
+        result: LxAnonymizerPerformanceRunPayload,
+        options: PerformanceCommandOptions,
+    ) -> bool:
+        return not result.ok and not options["continue_on_error"]
 
+    @classmethod
+    def _should_stop_after_input(
+        cls,
+        run_results: list[LxAnonymizerPerformanceRunPayload],
+        options: PerformanceCommandOptions,
+    ) -> bool:
+        if not run_results:
+            return False
+        return cls._should_stop(run_results[-1], options)
+
+    def _write_requested_artifacts(
+        self,
+        payload: LxAnonymizerPerformancePayload,
+        run_results: list[LxAnonymizerPerformanceRunPayload],
+        options: PerformanceCommandOptions,
+    ) -> None:
         if options["json_output"]:
             self._write_json(Path(options["json_output"]), payload)
         if options["csv_output"]:
             self._write_csv(Path(options["csv_output"]), run_results)
         if options["generate_manifest"]:
-            manifest_path = write_performance_evaluation_manifest(
-                payload,
-                processor_name=options["processor_name"],
-                center_name=options["center_name"],
-                output_dir=(
-                    Path(options["manifest_output_dir"])
-                    if options["manifest_output_dir"]
-                    else None
-                ),
-            )
-            self.stderr.write(f"evaluation_manifest: {manifest_path}")
+            self._write_manifest(payload, options)
 
+    def _write_manifest(
+        self,
+        payload: LxAnonymizerPerformancePayload,
+        options: PerformanceCommandOptions,
+    ) -> None:
+        configured_output_dir = options["manifest_output_dir"]
+        manifest_path = write_performance_evaluation_manifest(
+            payload,
+            processor_name=options["processor_name"],
+            center_name=options["center_name"],
+            output_dir=Path(configured_output_dir) if configured_output_dir else None,
+        )
+        self.stderr.write(f"evaluation_manifest: {manifest_path}")
+
+    def _write_requested_summary(
+        self,
+        payload: LxAnonymizerPerformancePayload,
+        options: PerformanceCommandOptions,
+    ) -> None:
         if options["json"]:
             self.stdout.write(payload.model_dump_json(indent=2))
         else:
             self._write_text_summary(payload)
 
-        if any(not result.ok for result in run_results):
-            raise CommandError("One or more evaluation runs failed.")
+    @staticmethod
+    def _has_failed_run(
+        run_results: list[LxAnonymizerPerformanceRunPayload],
+    ) -> bool:
+        return any(not result.ok for result in run_results)
 
     def _discover_inputs(
         self,

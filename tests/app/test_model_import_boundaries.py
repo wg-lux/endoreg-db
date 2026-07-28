@@ -57,6 +57,14 @@ ALLOWLISTED_MODEL_TO_SERVICE_IMPORTS = {
     ): frozenset({"ensure_model_meta_from_hf"}),
     (
         "endoreg_db/models/aidataset/aidataset.py",
+        "endoreg_db.services.aidataset_active_learning",
+    ): frozenset(
+        {
+            "select_active_learning_candidates_locally",
+        }
+    ),
+    (
+        "endoreg_db/models/aidataset/aidataset.py",
         "endoreg_db.services.aidataset_exports",
     ): frozenset(
         {

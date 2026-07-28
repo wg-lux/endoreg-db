@@ -18,6 +18,7 @@ scope.
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Final, List, Literal, Optional, TypedDict, cast
 
@@ -94,6 +95,46 @@ class ImageMultilabelDataset(TypedDict):
     labelset: LabelSet
     frame_ids: List[int]
     video_ids: List[int]
+
+
+def _new_frame_label_values() -> dict[int, dict[int, set[bool]]]:
+    return defaultdict(lambda: defaultdict(set))
+
+
+@dataclass(slots=True)
+class _FrameLabelAccumulator:
+    values_by_frame_label: dict[int, dict[int, set[bool]]] = field(
+        default_factory=_new_frame_label_values
+    )
+    frame_by_id: dict[int, Frame] = field(default_factory=dict[int, Frame])
+    frame_order: list[int] = field(default_factory=list[int])
+
+    def add(
+        self,
+        frame: Frame,
+        *,
+        label_id: int,
+        value: bool,
+        label_index: dict[int, int],
+    ) -> None:
+        if label_id not in label_index:
+            return
+        frame_id = int(frame.pk)
+        if frame_id not in self.frame_by_id:
+            self.frame_by_id[frame_id] = frame
+            self.frame_order.append(frame_id)
+        self.values_by_frame_label[frame_id][label_id].add(value)
+
+
+@dataclass(slots=True)
+class _ImageMultilabelRows:
+    image_paths: List[str] = field(default_factory=list[str])
+    label_vectors: List[List[Optional[int]]] = field(
+        default_factory=list[List[Optional[int]]]
+    )
+    label_masks: List[List[int]] = field(default_factory=list[List[int]])
+    frame_ids: List[int] = field(default_factory=list[int])
+    video_ids: List[int] = field(default_factory=list[int])
 
 
 def _label_ids_from_dataset(
@@ -237,22 +278,14 @@ def _frames_for_video_segments(
     return frames_by_video_id_and_number
 
 
-def build_image_multilabel_dataset_from_db(
+def _annotation_querysets(
     dataset: AIDataSet,
-    labelset: Optional[LabelSet] = None,
-    annotation_source_scope: str | None = ANNOTATION_SOURCE_SCOPE_ALL,
-) -> ImageMultilabelDataset:
-    """
-    Build an image multi-label dataset from the AIDataSet selection.
-    """
-    if dataset.dataset_type != AIDataSet.DATASET_TYPE_IMAGE:
-        raise ValueError(
-            f"build_image_multilabel_dataset_from_db expected dataset_type='image', "
-            f"got '{dataset.dataset_type}' for AIDataSet id={dataset.id}."
-        )
-
-    source_scope = normalize_annotation_source_scope(annotation_source_scope)
-
+    *,
+    source_scope: AnnotationSourceScope,
+) -> tuple[
+    models.QuerySet[ImageClassificationAnnotation],
+    models.QuerySet[LabelVideoSegment],
+]:
     annotations_qs = dataset.image_annotations.none()
     if uses_frame_annotations(source_scope):
         annotations_qs = (
@@ -260,7 +293,6 @@ def build_image_multilabel_dataset_from_db(
             .filter(frame__isnull=False, label__isnull=False)
             .order_by("frame__video_id", "frame__frame_number", "label__name", "pk")
         )
-
     segments_qs = dataset.video_annotations.none()
     if uses_segment_annotations(source_scope):
         segments_qs = (
@@ -278,7 +310,16 @@ def build_image_multilabel_dataset_from_db(
                 "pk",
             )
         )
+    return annotations_qs, segments_qs
 
+
+def _ensure_annotations_exist(
+    dataset: AIDataSet,
+    *,
+    source_scope: AnnotationSourceScope,
+    annotations_qs: models.QuerySet[ImageClassificationAnnotation],
+    segments_qs: models.QuerySet[LabelVideoSegment],
+) -> None:
     if not annotations_qs.exists() and not segments_qs.exists():
         raise ValueError(
             "AIDataSet id="
@@ -286,43 +327,58 @@ def build_image_multilabel_dataset_from_db(
             f"annotation_source_scope={source_scope!r}."
         )
 
-    if labelset is None:
-        labelset = _infer_labelset_from_dataset(
-            annotations_qs=annotations_qs,
-            segments_qs=segments_qs,
-        )
 
+def _resolve_labelset(
+    labelset: LabelSet | None,
+    *,
+    annotations_qs: models.QuerySet[ImageClassificationAnnotation],
+    segments_qs: models.QuerySet[LabelVideoSegment],
+) -> LabelSet:
+    if labelset is not None:
+        return labelset
+    return _infer_labelset_from_dataset(
+        annotations_qs=annotations_qs,
+        segments_qs=segments_qs,
+    )
+
+
+def _labels_and_index(labelset: LabelSet) -> tuple[List[Label], Dict[int, int]]:
     labels_in_order: List[Label] = labelset.get_labels_in_order()
     if not labels_in_order:
         labelset_id = int(getattr(labelset, "id"))
         raise ValueError(
             f"LabelSet id={labelset_id}, name='{labelset.name}' has no labels."
         )
-
     label_index: Dict[int, int] = {
         int(cast(Any, label).id): index
         for index, label in enumerate(labels_in_order)
         if cast(Any, label).id is not None
     }
-    values_by_frame_label: dict[int, dict[int, set[bool]]] = defaultdict(
-        lambda: defaultdict(set)
-    )
-    frame_by_id: dict[int, Frame] = {}
-    frame_order: list[int] = []
+    return labels_in_order, label_index
 
-    def add_frame_label(frame: Frame, label_id: int, value: bool) -> None:
-        if label_id not in label_index:
-            return
-        frame_id = int(frame.pk)
-        if frame_id not in frame_by_id:
-            frame_by_id[frame_id] = frame
-            frame_order.append(frame_id)
-        values_by_frame_label[frame_id][int(label_id)].add(bool(value))
 
+def _add_frame_annotations(
+    accumulator: _FrameLabelAccumulator,
+    *,
+    annotations_qs: models.QuerySet[ImageClassificationAnnotation],
+    label_index: dict[int, int],
+) -> None:
     for annotation in annotations_qs.iterator():
         ann_any: Any = annotation
-        add_frame_label(ann_any.frame, int(ann_any.label_id), bool(ann_any.value))
+        accumulator.add(
+            ann_any.frame,
+            label_id=int(ann_any.label_id),
+            value=bool(ann_any.value),
+            label_index=label_index,
+        )
 
+
+def _add_segment_annotations(
+    accumulator: _FrameLabelAccumulator,
+    *,
+    segments_qs: models.QuerySet[LabelVideoSegment],
+    label_index: dict[int, int],
+) -> None:
     frames_by_video_id_and_number = _frames_for_video_segments(segments_qs)
     for segment in segments_qs.iterator():
         seg_any: Any = segment
@@ -333,60 +389,142 @@ def build_image_multilabel_dataset_from_db(
         )
         for frame_number, frame in frames_by_number.items():
             if seg_any.start_frame_number <= frame_number < seg_any.end_frame_number:
-                add_frame_label(frame, int(seg_any.label_id), True)
+                accumulator.add(
+                    frame,
+                    label_id=int(seg_any.label_id),
+                    value=True,
+                    label_index=label_index,
+                )
 
-    if not frame_order:
+
+def _sort_frame_order(accumulator: _FrameLabelAccumulator) -> None:
+    accumulator.frame_order.sort(
+        key=lambda frame_id: (
+            int(getattr(accumulator.frame_by_id[frame_id], "video_id")),
+            int(accumulator.frame_by_id[frame_id].frame_number),
+            frame_id,
+        )
+    )
+
+
+def _label_vector(
+    accumulator: _FrameLabelAccumulator,
+    *,
+    frame_id: int,
+    labels_in_order: List[Label],
+    label_index: Dict[int, int],
+) -> List[Optional[int]]:
+    vector: List[Optional[int]] = [None] * len(labels_in_order)
+    for label_id, values in accumulator.values_by_frame_label[frame_id].items():
+        if len(values) > 1:
+            label_name = labels_in_order[label_index[label_id]].name
+            raise ValueError(
+                "Conflicting AIDataSet training labels for "
+                f"frame_id={frame_id} label={label_name!r}."
+            )
+        vector[label_index[label_id]] = 1 if next(iter(values)) else 0
+    return vector
+
+
+def _append_dataset_row(
+    rows: _ImageMultilabelRows,
+    *,
+    frame: Frame,
+    frame_id: int,
+    vector: List[Optional[int]],
+) -> None:
+    file_path: Path = frame.file_path
+    rows.image_paths.append(str(file_path))
+    rows.label_vectors.append(vector)
+    rows.label_masks.append([0 if value is None else 1 for value in vector])
+    rows.frame_ids.append(frame_id)
+    rows.video_ids.append(int(getattr(frame, "video_id")))
+
+
+def _build_dataset_rows(
+    accumulator: _FrameLabelAccumulator,
+    *,
+    labels_in_order: List[Label],
+    label_index: Dict[int, int],
+) -> _ImageMultilabelRows:
+    rows = _ImageMultilabelRows()
+    for frame_id in accumulator.frame_order:
+        vector = _label_vector(
+            accumulator,
+            frame_id=frame_id,
+            labels_in_order=labels_in_order,
+            label_index=label_index,
+        )
+        _append_dataset_row(
+            rows,
+            frame=accumulator.frame_by_id[frame_id],
+            frame_id=frame_id,
+            vector=vector,
+        )
+    return rows
+
+
+def build_image_multilabel_dataset_from_db(
+    dataset: AIDataSet,
+    labelset: Optional[LabelSet] = None,
+    annotation_source_scope: str | None = ANNOTATION_SOURCE_SCOPE_ALL,
+) -> ImageMultilabelDataset:
+    """
+    Build an image multi-label dataset from the AIDataSet selection.
+    """
+    if dataset.dataset_type != AIDataSet.DATASET_TYPE_IMAGE:
+        raise ValueError(
+            f"build_image_multilabel_dataset_from_db expected dataset_type='image', "
+            f"got '{dataset.dataset_type}' for AIDataSet id={dataset.id}."
+        )
+
+    source_scope = normalize_annotation_source_scope(annotation_source_scope)
+    annotations_qs, segments_qs = _annotation_querysets(
+        dataset,
+        source_scope=source_scope,
+    )
+    _ensure_annotations_exist(
+        dataset,
+        source_scope=source_scope,
+        annotations_qs=annotations_qs,
+        segments_qs=segments_qs,
+    )
+    resolved_labelset = _resolve_labelset(
+        labelset,
+        annotations_qs=annotations_qs,
+        segments_qs=segments_qs,
+    )
+    labels_in_order, label_index = _labels_and_index(resolved_labelset)
+    accumulator = _FrameLabelAccumulator()
+    _add_frame_annotations(
+        accumulator,
+        annotations_qs=annotations_qs,
+        label_index=label_index,
+    )
+    _add_segment_annotations(
+        accumulator,
+        segments_qs=segments_qs,
+        label_index=label_index,
+    )
+    if not accumulator.frame_order:
         raise ValueError(
             "AIDataSet has no frame samples for the selected LabelSet. "
             "Ensure video annotations have initialized Frame rows."
         )
-
-    # FIXED: Type-safe sorting using explicit types or getattr for dynamic fields
-    frame_order.sort(
-        key=lambda f_id: (
-            int(getattr(frame_by_id[f_id], "video_id")),
-            int(frame_by_id[f_id].frame_number),
-            f_id,
-        )
+    _sort_frame_order(accumulator)
+    rows = _build_dataset_rows(
+        accumulator,
+        labels_in_order=labels_in_order,
+        label_index=label_index,
     )
-
-    image_paths: List[str] = []
-    label_vectors: List[List[Optional[int]]] = []
-    label_masks: List[List[int]] = []
-    frame_ids: List[int] = []
-    video_ids: List[int] = []
-
-    for frame_id in frame_order:
-        frame = frame_by_id[frame_id]
-        vector: List[Optional[int]] = [None] * len(labels_in_order)
-
-        for label_id, values in values_by_frame_label[frame_id].items():
-            if len(values) > 1:
-                label_name = labels_in_order[label_index[label_id]].name
-                raise ValueError(
-                    "Conflicting AIDataSet training labels for "
-                    f"frame_id={frame_id} label={label_name!r}."
-                )
-            vector[label_index[label_id]] = 1 if next(iter(values)) else 0
-
-        mask: List[int] = [0 if value is None else 1 for value in vector]
-        file_path: Path = frame.file_path
-        image_paths.append(str(file_path))
-        label_vectors.append(vector)
-        label_masks.append(mask)
-        frame_ids.append(frame_id)
-        video_ids.append(
-            int(getattr(frame, "video_id"))
-        )  # FIXED: Typed video_id safely
-
     return ImageMultilabelDataset(
-        image_paths=image_paths,
-        label_vectors=label_vectors,
-        label_masks=label_masks,
+        image_paths=rows.image_paths,
+        label_vectors=rows.label_vectors,
+        label_masks=rows.label_masks,
         labels=labels_in_order,
-        labelset=labelset,
-        frame_ids=frame_ids,
-        video_ids=video_ids,
+        labelset=resolved_labelset,
+        frame_ids=rows.frame_ids,
+        video_ids=rows.video_ids,
     )
 
 

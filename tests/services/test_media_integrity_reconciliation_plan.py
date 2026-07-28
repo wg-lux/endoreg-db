@@ -227,6 +227,72 @@ def test_shifted_cache_with_annotations_is_reported_only(
     assert (frame_dir / "frame_0000003.jpg").exists()
 
 
+def test_shifted_cache_without_annotations_is_replaced_atomically(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    video = _video_with_initialized_frames(
+        tmp_path,
+        frame_count=3,
+        materialize_cache=True,
+    )
+    frame_dir = video.get_frame_dir_path()
+    assert frame_dir is not None
+    for frame_number in (1, 2, 3):
+        _write_test_file(
+            frame_dir / f"frame_{frame_number:07d}.jpg",
+            f"legacy-frame-{frame_number}".encode(),
+        )
+    frame_one = Frame.objects.get(video=video, frame_number=1)
+    frame_one.timestamp = 1.25
+    frame_one.presentation_timestamp = 125
+    frame_one.save(update_fields=["timestamp", "presentation_timestamp"])
+
+    def fake_extract_full_frame_set(
+        video_arg: VideoFile,
+        *,
+        output_dir: Path,
+        ext: str,
+        **_kwargs: Any,
+    ) -> list[Path]:
+        assert video_arg == video
+        ensure_directory(output_dir)
+        extracted_paths: list[Path] = []
+        for frame_number in range(3):
+            extracted_paths.append(
+                _write_test_file(
+                    output_dir / f"frame_{frame_number:07d}.{ext}",
+                    f"replacement-{frame_number}".encode(),
+                )
+            )
+        return extracted_paths
+
+    monkeypatch.setattr(
+        media_integrity,
+        "extract_full_frame_set_to_directory",
+        fake_extract_full_frame_set,
+    )
+
+    summary = reconcile_media_integrity(
+        dry_run=False,
+        video_ids=[video.pk],
+        check_frames=True,
+        repair_frames=True,
+    )
+
+    assert summary.frame_cache_shifted == 1
+    assert summary.repaired_frames == 3
+    assert sorted(path.name for path in frame_dir.glob("frame_*.jpg")) == [
+        "frame_0000000.jpg",
+        "frame_0000001.jpg",
+        "frame_0000002.jpg",
+    ]
+    frame_one.refresh_from_db()
+    assert frame_one.timestamp == 1.25
+    assert frame_one.presentation_timestamp == 125
+    assert frame_one.is_extracted is True
+
+
 def test_ffmpeg_report_records_defaulted_fps_source(tmp_path: Path):
     video = _video_with_initialized_frames(tmp_path, frame_count=3)
     video.fps = None

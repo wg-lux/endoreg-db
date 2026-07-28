@@ -602,6 +602,845 @@ def _stream_predictions_from_video(
     return predictions, frame_numbers, timestamps
 
 
+@dataclass(frozen=True)
+class _AiPipelineComponents:
+    classifier_factory: Any
+    inference_dataset_factory: Any
+    model_loader: Any
+    concat_prediction_dicts: Callable[[list[dict[str, list[float]]]], object]
+    find_true_prediction_sequences: Callable[
+        [np.ndarray[Any, Any]], List[Tuple[int, int]]
+    ]
+    smooth_predictions: Callable[..., np.ndarray[Any, Any]]
+
+
+@dataclass(frozen=True)
+class _PredictionSource:
+    mode: FrameSourceMode
+    file_type: str
+    frame_dir: Path | None
+
+
+@dataclass(frozen=True)
+class _CacheInferenceInputs:
+    string_paths: List[str]
+    crops: List[Any]
+    crop_template: Any
+
+
+@dataclass(frozen=True)
+class _LoadedInferenceModel:
+    model: Any
+    classifier: Any
+    device: Any
+
+
+@dataclass(frozen=True)
+class _InferenceOutput:
+    predictions: List[Any]
+    frame_numbers: List[int] | None
+    timestamps: List[float] | None
+    classifier: Any
+    device: Any
+
+
+def _load_ai_pipeline_components() -> _AiPipelineComponents:
+    try:
+        from endoreg_db.utils.ai import (
+            Classifier,
+            InferenceDataset,
+            MultiLabelClassificationNet,
+        )
+        from endoreg_db.utils.ai.postprocess import (
+            concat_pred_dicts,
+            find_true_pred_sequences,
+            make_smooth_preds,
+        )
+    except ImportError as error:
+        logger.error(
+            "Failed to import endo_ai components: %s. Prediction unavailable.",
+            error,
+            exc_info=True,
+        )
+        raise ImportError(
+            "Failed to import required AI components for prediction."
+        ) from error
+    return _AiPipelineComponents(
+        classifier_factory=Classifier,
+        inference_dataset_factory=InferenceDataset,
+        model_loader=MultiLabelClassificationNet,
+        concat_prediction_dicts=concat_pred_dicts,
+        find_true_prediction_sequences=find_true_pred_sequences,
+        smooth_predictions=make_smooth_preds,
+    )
+
+
+def _effective_test_run(test_run: bool, n_test_frames: int) -> tuple[bool, int]:
+    if test_run or not GLOBAL_TEST_RUN:
+        return test_run, n_test_frames
+    logger.info("Using global TEST_RUN settings for prediction pipeline.")
+    return True, GLOBAL_N_TEST_FRAMES
+
+
+def _prediction_source(
+    *,
+    video: VideoFile,
+    frame_source_mode: FrameSourceMode,
+    frame_source_file_type: str,
+) -> _PredictionSource:
+    state: Any = video.get_or_create_state()
+    mode = _resolve_frame_source_mode(
+        frame_source_mode,
+        frames_extracted=bool(state.frames_extracted),
+    )
+    file_type = _normalized_frame_source_file_type(frame_source_file_type)
+    if mode != "cache":
+        return _PredictionSource(mode=mode, file_type=file_type, frame_dir=None)
+    return _PredictionSource(
+        mode=mode,
+        file_type=file_type,
+        frame_dir=_cache_frame_dir(
+            video=video, frames_extracted=state.frames_extracted
+        ),
+    )
+
+
+def _normalized_frame_source_file_type(frame_source_file_type: str) -> str:
+    file_type = str(frame_source_file_type).strip().lower()
+    if file_type in {"raw", "processed"}:
+        return file_type
+    raise ValueError("frame_source_file_type must be one of: 'raw' or 'processed'.")
+
+
+def _cache_frame_dir(*, video: VideoFile, frames_extracted: bool) -> Path:
+    if not frames_extracted:
+        raise ValueError(
+            f"Frames not extracted for video {video.video_hash}. Prediction aborted."
+        )
+    frame_dir = video.get_frame_dir_path()
+    if not frame_dir or not frame_dir.exists() or not any(frame_dir.iterdir()):
+        raise FileNotFoundError(
+            f"Frame directory {frame_dir} is empty or does not exist for video {video.video_hash}. Prediction aborted."
+        )
+    return frame_dir
+
+
+def _prediction_weights_path(video: VideoFile, model_meta: ModelMeta) -> Path:
+    try:
+        weights_path = Path(model_meta.weights.path)  # type: ignore
+        if not weights_path.exists():
+            raise FileNotFoundError(
+                f"Model weights file {weights_path} not found for {model_meta.name} (Video: {video.video_hash}). Prediction aborted."
+            )
+        return weights_path
+    except Exception as error:
+        logger.error(
+            "Error accessing model weights path for %s (Video: %s): %s",
+            model_meta.name,
+            video.video_hash,
+            error,
+            exc_info=True,
+        )
+        raise RuntimeError(
+            f"Error accessing model weights for {model_meta.name}"
+        ) from error
+
+
+def _validate_prediction_model(video: VideoFile, model_meta: ModelMeta) -> None:
+    if model_meta.model:
+        return
+    raise ValueError(
+        f"Model not found in ModelMeta {model_meta.name} (Version: {model_meta.version}) for video {video.video_hash}. Prediction aborted."
+    )
+
+
+def _ensure_video_prediction_meta(video: VideoFile, model_meta: ModelMeta) -> None:
+    try:
+        manager: Any = VideoPredictionMeta.objects
+        _prediction_meta, created = manager.get_or_create(
+            video_file=video,
+            model_meta=model_meta,
+        )
+    except Exception as error:
+        logger.error(
+            "Failed to get or create VideoPredictionMeta for video %s, model %s: %s",
+            video.video_hash,
+            model_meta.name,
+            error,
+            exc_info=True,
+        )
+        raise RuntimeError("Failed to get or create VideoPredictionMeta") from error
+    logger.info(
+        "%s VideoPredictionMeta for video %s, model %s.",
+        "Created new" if created else "Found existing",
+        video.video_hash,
+        model_meta.name,
+    )
+
+
+def _prediction_label_names(model_meta: ModelMeta) -> List[str]:
+    label_names = _resolve_label_names(model_meta)
+    if label_names:
+        return label_names
+    raise ValueError(
+        f"Label set '{getattr(model_meta.labelset, 'name', 'unknown')}' has no labels configured."
+    )
+
+
+def _network_label_names(
+    *,
+    model_meta: ModelMeta,
+    weights_path: Path,
+    label_names: List[str],
+) -> List[str]:
+    outputs_hint = _infer_output_classes(weights_path)
+    if not outputs_hint or outputs_hint == len(label_names):
+        return label_names
+    if outputs_hint == len(LEGACY_CLASS_LABELS):
+        logger.info(
+            "Detected legacy multilabel checkpoint with %d classes; using legacy label ordering.",
+            outputs_hint,
+        )
+        return LEGACY_CLASS_LABELS
+    logger.warning(
+        "Weights %s expect %d outputs while label set '%s' defines %d labels.",
+        weights_path.name,
+        outputs_hint,
+        getattr(model_meta.labelset, "name", "unknown"),
+        len(label_names),
+    )
+    return label_names
+
+
+def _stub_prediction_result(
+    *,
+    label_names: List[str],
+    return_frame_scores: bool,
+) -> Dict[str, List[Tuple[int, int]]] | VideoFrameScoreResult:
+    if return_frame_scores:
+        return VideoFrameScoreResult(
+            labels=label_names,
+            frame_scores=empty_scores,
+            device="stub",
+            frame_count=0,
+        )
+    return {}
+
+
+def _cached_frame_paths(video: VideoFile, frame_dir: Path | None) -> List[Path]:
+    try:
+        paths = video.get_frame_paths()
+        if not paths:
+            raise FileNotFoundError(
+                f"No frame paths returned by get_frame_paths for {frame_dir} (Video: {video.video_hash})"
+            )
+        return paths
+    except Exception as error:
+        logger.error(
+            "Error listing or getting frame files from %s for video %s: %s",
+            frame_dir,
+            video.video_hash,
+            error,
+            exc_info=True,
+        )
+        raise RuntimeError(f"Error getting frame paths from {frame_dir}") from error
+
+
+def _limit_cached_test_inputs(
+    *,
+    video: VideoFile,
+    paths: List[Path],
+    string_paths: List[str],
+    crops: List[Any],
+    test_run: bool,
+    n_test_frames: int,
+) -> tuple[List[str], List[Any]]:
+    if not test_run:
+        return string_paths, crops
+    logger.info(
+        "TEST RUN: Using first %d frames for video %s.",
+        n_test_frames,
+        video.video_hash,
+    )
+    limited_paths = string_paths[:n_test_frames]
+    if not limited_paths:
+        raise ValueError(
+            f"Not enough frames ({len(paths)}) for test run (required {n_test_frames}) for video {video.video_hash}."
+        )
+    return limited_paths, crops[:n_test_frames]
+
+
+def _cache_inference_inputs(
+    *,
+    video: VideoFile,
+    source: _PredictionSource,
+    test_run: bool,
+    n_test_frames: int,
+) -> _CacheInferenceInputs:
+    crop_template = video.get_crop_template()
+    if source.mode != "cache":
+        return _CacheInferenceInputs([], [], crop_template)
+    paths = _cached_frame_paths(video, source.frame_dir)
+    logger.info(
+        "Found %d frame files in %s for video %s.",
+        len(paths),
+        source.frame_dir,
+        video.video_hash,
+    )
+    string_paths = [path.as_posix() for path in paths]
+    crops = [crop_template] * len(paths)
+    string_paths, crops = _limit_cached_test_inputs(
+        video=video,
+        paths=paths,
+        string_paths=string_paths,
+        crops=crops,
+        test_run=test_run,
+        n_test_frames=n_test_frames,
+    )
+    return _CacheInferenceInputs(string_paths, crops, crop_template)
+
+
+def _model_load_kwargs(
+    *,
+    model_meta: ModelMeta,
+    weights_path: Path,
+    network_labels: List[str],
+) -> Dict[str, Any]:
+    if weights_path.suffix.lower() != ".safetensors":
+        return {}
+    return {
+        "labels": network_labels,
+        "model_type": _infer_model_type(model_meta, weights_path),
+        "load_imagenet_weights": False,
+        "strict": False,
+    }
+
+
+def _model_activation(model_meta: ModelMeta) -> object:
+    try:
+        return ModelMeta.get_activation_function(model_meta.activation)  # type: ignore
+    except ValueError:
+        logger.warning(
+            "Unsupported activation '%s' for model %s; falling back to sigmoid.",
+            model_meta.activation,  # type: ignore
+            model_meta.name,
+        )
+        return ModelMeta.get_activation_function("sigmoid")
+
+
+def _log_dataset_sample(dataset: Any) -> None:
+    if len(dataset) <= 0:
+        return
+    sample = dataset[0]
+    logger.debug("Sample shape: %s", getattr(sample, "shape", None))
+
+
+def _classifier_config(
+    *,
+    video: VideoFile,
+    model_meta: ModelMeta,
+    components: _AiPipelineComponents,
+    source: _PredictionSource,
+    cache_inputs: _CacheInferenceInputs,
+    dataset_name: str,
+    network_labels: List[str],
+) -> AiPredictionConfigPayload:
+    if dataset_name != "inference_dataset":
+        raise ValueError(
+            f"Dataset class '{dataset_name}' not found for video {video.video_hash}. Prediction aborted."
+        )
+    try:
+        return _build_classifier_config(
+            video=video,
+            model_meta=model_meta,
+            components=components,
+            source=source,
+            cache_inputs=cache_inputs,
+            dataset_name=dataset_name,
+            network_labels=network_labels,
+        )
+    except Exception as error:
+        logger.error(
+            "Failed to create parsed configuration or dataset layer for video %s: %s",
+            video.video_hash,
+            error,
+            exc_info=True,
+        )
+        raise RuntimeError(
+            f"Failed to create configuration schema for '{dataset_name}'"
+        ) from error
+
+
+def _build_classifier_config(
+    *,
+    video: VideoFile,
+    model_meta: ModelMeta,
+    components: _AiPipelineComponents,
+    source: _PredictionSource,
+    cache_inputs: _CacheInferenceInputs,
+    dataset_name: str,
+    network_labels: List[str],
+) -> AiPredictionConfigPayload:
+    dataset_config = model_meta.get_inference_dataset_config().model_dump(mode="python")
+    if source.mode == "cache":
+        dataset = components.inference_dataset_factory(
+            cache_inputs.string_paths,
+            cache_inputs.crops,
+            config=dataset_config,
+        )
+        logger.info(
+            "Created dataset '%s' with %d items for video %s.",
+            dataset_name,
+            len(dataset),
+            video.video_hash,
+        )
+        _log_dataset_sample(dataset)
+    return AiPredictionConfigPayload.model_validate(
+        {
+            **dataset_config,
+            "batchsize": model_meta.batchsize or 16,  # type: ignore
+            "num_workers": model_meta.num_workers or 0,  # type: ignore
+            "activation": _model_activation(model_meta),
+            "labels": network_labels,
+        }
+    )
+
+
+def _load_model_on_device(
+    *,
+    components: _AiPipelineComponents,
+    weights_path: Path,
+    device: Any,
+    load_kwargs: Dict[str, Any],
+) -> Any:
+    model_instance = components.model_loader.load_from_checkpoint(
+        checkpoint_path=weights_path.as_posix(),
+        map_location=device,
+        **load_kwargs,
+    )
+    return model_instance.to(device)
+
+
+def _load_inference_model(
+    *,
+    video: VideoFile,
+    weights_path: Path,
+    components: _AiPipelineComponents,
+    classifier_config: AiPredictionConfigPayload,
+    load_kwargs: Dict[str, Any],
+) -> _LoadedInferenceModel:
+    try:
+        import torch
+
+        device = torch.device("cpu")
+        if torch.cuda.is_available():
+            try:
+                device = torch.device("cuda")
+                model_instance = _load_model_on_device(
+                    components=components,
+                    weights_path=weights_path,
+                    device=device,
+                    load_kwargs=load_kwargs,
+                )
+                logger.info("Loaded model on GPU for video %s.", video.video_hash)
+            except RuntimeError as cuda_error:
+                logger.warning(
+                    "GPU loading failed for video %s: %s. Falling back to CPU.",
+                    video.video_hash,
+                    cuda_error,
+                )
+                device = torch.device("cpu")
+                model_instance = _load_model_on_device(
+                    components=components,
+                    weights_path=weights_path,
+                    device=device,
+                    load_kwargs=load_kwargs,
+                )
+                logger.info("Loaded model on CPU for video %s.", video.video_hash)
+        else:
+            logger.info(
+                "CUDA not available. Loading model on CPU for video %s.",
+                video.video_hash,
+            )
+            model_instance = _load_model_on_device(
+                components=components,
+                weights_path=weights_path,
+                device=device,
+                load_kwargs=load_kwargs,
+            )
+        _ = model_instance.eval()
+        classifier = components.classifier_factory(
+            model_instance,
+            config=classifier_config,
+            verbose=True,
+        )
+        logger.info(
+            "AI model loaded successfully for video %s from %s.",
+            video.video_hash,
+            weights_path,
+        )
+        return _LoadedInferenceModel(model_instance, classifier, device)
+    except Exception as error:
+        logger.error(
+            "Failed to load AI model for video %s from %s: %s",
+            video.video_hash,
+            weights_path,
+            error,
+            exc_info=True,
+        )
+        raise RuntimeError(f"Failed to load AI model from {weights_path}") from error
+
+
+def _stream_inference_log(
+    *,
+    event: str,
+    video: VideoFile,
+    model_meta: ModelMeta,
+    source: _PredictionSource,
+    device: Any,
+    started_at: float,
+    frame_count: int | None = None,
+    error: Exception | None = None,
+) -> None:
+    payload: dict[str, object] = {
+        "event": event,
+        "video_id": video.pk,  # type: ignore
+        "video_hash": str(video.video_hash),
+        "model_meta_id": model_meta.pk,  # type: ignore
+        "source_kind": source.file_type,
+        "device": str(device),
+    }
+    if event == "streaming_inference_start":
+        payload["frame_source_mode"] = source.mode
+    else:
+        payload["duration_seconds"] = round(time.monotonic() - started_at, 3)
+    if frame_count is not None:
+        payload["frame_count"] = frame_count
+    if error is not None:
+        payload["error"] = str(error)
+    log = logger.error if error is not None else logger.info
+    log(json.dumps(payload))
+
+
+def _perform_inference(
+    *,
+    video: VideoFile,
+    model_meta: ModelMeta,
+    source: _PredictionSource,
+    cache_inputs: _CacheInferenceInputs,
+    loaded_model: _LoadedInferenceModel,
+    classifier_config: AiPredictionConfigPayload,
+    test_run: bool,
+    n_test_frames: int,
+) -> _InferenceOutput:
+    started_at = time.monotonic()
+    if source.mode == "stream":
+        _stream_inference_log(
+            event="streaming_inference_start",
+            video=video,
+            model_meta=model_meta,
+            source=source,
+            device=loaded_model.device,
+            started_at=started_at,
+        )
+        predictions, frame_numbers, timestamps = _stream_predictions_from_video(
+            video=video,
+            model=loaded_model.model,
+            classifier_config=classifier_config,
+            crop_template=cache_inputs.crop_template,
+            device=loaded_model.device,
+            test_run=test_run,
+            n_test_frames=n_test_frames,
+            frame_source_file_type=source.file_type,
+        )
+        _stream_inference_log(
+            event="streaming_inference_complete",
+            video=video,
+            model_meta=model_meta,
+            source=source,
+            device=loaded_model.device,
+            started_at=started_at,
+            frame_count=len(predictions),
+        )
+        return _InferenceOutput(
+            cast(List[Any], predictions),
+            frame_numbers,
+            timestamps,
+            loaded_model.classifier,
+            loaded_model.device,
+        )
+    logger.info(
+        "Starting inference on %d frames for video %s...",
+        len(cache_inputs.string_paths),
+        video.video_hash,
+    )
+    predictions = cast(
+        List[Any],
+        loaded_model.classifier.pipe(
+            cache_inputs.string_paths,
+            cache_inputs.crops,
+        ),
+    )
+    return _InferenceOutput(
+        predictions,
+        None,
+        None,
+        loaded_model.classifier,
+        loaded_model.device,
+    )
+
+
+def _is_cuda_out_of_memory(error: Exception) -> bool:
+    try:
+        import torch
+
+        return (
+            torch.cuda.is_available()
+            and isinstance(
+                error,
+                (getattr(torch.cuda, "OutOfMemoryError", RuntimeError), RuntimeError),
+            )
+            and (
+                "out of memory" in str(error).lower()
+                or "cuda out of memory" in str(error).lower()
+            )
+        )
+    except Exception:
+        return False
+
+
+def _clear_cuda_cache() -> None:
+    try:
+        import torch
+
+        torch.cuda.empty_cache()
+        gc.collect()
+    except Exception:
+        pass
+
+
+def _cpu_inference_fallback(
+    *,
+    video: VideoFile,
+    model_meta: ModelMeta,
+    source: _PredictionSource,
+    cache_inputs: _CacheInferenceInputs,
+    loaded_model: _LoadedInferenceModel,
+    classifier_config: AiPredictionConfigPayload,
+    components: _AiPipelineComponents,
+    test_run: bool,
+    n_test_frames: int,
+) -> _InferenceOutput:
+    try:
+        import torch
+
+        _clear_cuda_cache()
+        cpu_device = torch.device("cpu")
+        model_instance = loaded_model.model.cpu()
+        cpu_model = _LoadedInferenceModel(
+            model=model_instance,
+            classifier=components.classifier_factory(
+                model_instance,
+                config=classifier_config,
+                verbose=True,
+            ),
+            device=cpu_device,
+        )
+        result = _perform_inference(
+            video=video,
+            model_meta=model_meta,
+            source=source,
+            cache_inputs=cache_inputs,
+            loaded_model=cpu_model,
+            classifier_config=classifier_config,
+            test_run=test_run,
+            n_test_frames=n_test_frames,
+        )
+        logger.info(
+            "Inference completed on CPU after CUDA OOM for video %s.",
+            video.video_hash,
+        )
+        return result
+    except Exception as error:
+        logger.error(
+            "CPU fallback inference failed for video %s: %s",
+            video.video_hash,
+            error,
+            exc_info=True,
+        )
+        raise RuntimeError("Inference failed") from error
+
+
+def _run_inference_with_fallback(
+    *,
+    video: VideoFile,
+    model_meta: ModelMeta,
+    source: _PredictionSource,
+    cache_inputs: _CacheInferenceInputs,
+    loaded_model: _LoadedInferenceModel,
+    classifier_config: AiPredictionConfigPayload,
+    components: _AiPipelineComponents,
+    test_run: bool,
+    n_test_frames: int,
+) -> _InferenceOutput:
+    started_at = time.monotonic()
+    try:
+        result = _perform_inference(
+            video=video,
+            model_meta=model_meta,
+            source=source,
+            cache_inputs=cache_inputs,
+            loaded_model=loaded_model,
+            classifier_config=classifier_config,
+            test_run=test_run,
+            n_test_frames=n_test_frames,
+        )
+        logger.info("Inference completed for video %s.", video.video_hash)
+        return result
+    except Exception as error:
+        if source.mode == "stream":
+            _stream_inference_log(
+                event="streaming_inference_failure",
+                video=video,
+                model_meta=model_meta,
+                source=source,
+                device=loaded_model.device,
+                started_at=started_at,
+                error=error,
+            )
+        logger.error(
+            "Inference failed for video %s: %s",
+            video.video_hash,
+            error,
+            exc_info=True,
+        )
+        if not _is_cuda_out_of_memory(error):
+            raise RuntimeError("Inference failed") from error
+        logger.warning("CUDA OOM detected. Freeing CUDA cache and retrying on CPU…")
+        return _cpu_inference_fallback(
+            video=video,
+            model_meta=model_meta,
+            source=source,
+            cache_inputs=cache_inputs,
+            loaded_model=loaded_model,
+            classifier_config=classifier_config,
+            components=components,
+            test_run=test_run,
+            n_test_frames=n_test_frames,
+        )
+
+
+def _readable_prediction_rows(
+    *,
+    predictions: List[Any],
+    classifier: Any,
+    label_mapping: Dict[str, List[str]],
+) -> list[dict[str, list[float]]]:
+    readable_predictions = [
+        {label: [float(score)] for label, score in classifier.readable(row).items()}
+        for row in predictions
+    ]
+    if not label_mapping:
+        return readable_predictions
+    return [
+        _remap_prediction_dict(prediction, label_mapping)
+        for prediction in readable_predictions
+    ]
+
+
+def _sequence_fps(video: VideoFile) -> int:
+    frames_per_second = video.get_fps()
+    if not frames_per_second:
+        logger.warning(
+            "Video FPS is unknown for %s. Smoothing/sequence calculations might be inaccurate. Using default %.1f FPS.",
+            video.video_hash,
+            DEFAULT_VIDEO_FPS,
+        )
+        frames_per_second = DEFAULT_VIDEO_FPS
+    return int(frames_per_second)
+
+
+def _prediction_sequences(
+    *,
+    video: VideoFile,
+    merged_predictions: Dict[str, Any],
+    smooth_window_size_s: int,
+    binarize_threshold: float,
+    components: _AiPipelineComponents,
+) -> Dict[str, List[Tuple[int, int]]]:
+    frames_per_second = _sequence_fps(video)
+    sequences: Dict[str, List[Tuple[int, int]]] = {}
+    for label, prediction_array in merged_predictions.items():
+        smoothed = components.smooth_predictions(
+            prediction_array=prediction_array,
+            window_size_s=smooth_window_size_s,
+            fps=frames_per_second,
+        )
+        sequences[label] = components.find_true_prediction_sequences(
+            smoothed > binarize_threshold
+        )
+    return sequences
+
+
+def _postprocess_predictions(
+    *,
+    video: VideoFile,
+    inference_output: _InferenceOutput,
+    label_names: List[str],
+    label_mapping: Dict[str, List[str]],
+    return_frame_scores: bool,
+    smooth_window_size_s: int,
+    binarize_threshold: float,
+    components: _AiPipelineComponents,
+) -> Dict[str, List[Tuple[int, int]]] | VideoFrameScoreResult:
+    try:
+        logger.info("Post-processing predictions for video %s...", video.video_hash)
+        readable_predictions = _readable_prediction_rows(
+            predictions=inference_output.predictions,
+            classifier=inference_output.classifier,
+            label_mapping=label_mapping,
+        )
+        merged_predictions = cast(
+            Dict[str, Any],
+            components.concat_prediction_dicts(readable_predictions),
+        )
+        frame_scores = _frame_score_result_from_merged_predictions(
+            merged_predictions,
+            label_names,
+            device=str(inference_output.device),
+            frame_numbers=inference_output.frame_numbers,
+            timestamps=inference_output.timestamps,
+        )
+        if return_frame_scores:
+            logger.info(
+                "Returning %d frame-score rows for temporal inference on video %s.",
+                frame_scores.frame_count,
+                video.video_hash,
+            )
+            return frame_scores
+        sequences = _prediction_sequences(
+            video=video,
+            merged_predictions=merged_predictions,
+            smooth_window_size_s=smooth_window_size_s,
+            binarize_threshold=binarize_threshold,
+            components=components,
+        )
+        logger.info(
+            "Post-processing completed for video %s. Found sequences for labels: %s",
+            video.video_hash,
+            list(sequences),
+        )
+        return sequences
+    except Exception as error:
+        logger.error(
+            "Post-processing failed for video %s: %s",
+            video.video_hash,
+            error,
+            exc_info=True,
+        )
+        raise RuntimeError("Post-processing failed") from error
+
+
 def _predict_video_pipeline(
     video: VideoFile,
     model_meta: ModelMeta,
@@ -614,132 +1453,23 @@ def _predict_video_pipeline(
     frame_source_mode: FrameSourceMode = "stream",
     frame_source_file_type: str = "raw",
 ) -> Dict[str, List[Tuple[int, int]]] | VideoFrameScoreResult:
-    """Executes the video prediction pipeline using an AI model."""
-    from endoreg_db.models.administration.ai import AiModel
-
-    try:
-        from endoreg_db.utils.ai import (
-            Classifier,
-            InferenceDataset,
-            MultiLabelClassificationNet,
-        )
-        from endoreg_db.utils.ai.postprocess import (
-            concat_pred_dicts,
-            find_true_pred_sequences,
-            make_smooth_preds,
-        )
-    except ImportError as e:
-        logger.error(
-            "Failed to import endo_ai components: %s. Prediction unavailable.",
-            e,
-            exc_info=True,
-        )
-        raise ImportError(
-            "Failed to import required AI components for prediction."
-        ) from e
-
-    if not test_run and GLOBAL_TEST_RUN:
-        test_run = True
-        n_test_frames = GLOBAL_N_TEST_FRAMES
-        logger.info("Using global TEST_RUN settings for prediction pipeline.")
-
-    state: Any = video.get_or_create_state()
-    effective_frame_source_mode = _resolve_frame_source_mode(
-        frame_source_mode,
-        frames_extracted=bool(state.frames_extracted),
+    """Execute frame-indexed video inference and optional sequence derivation."""
+    components = _load_ai_pipeline_components()
+    test_run, n_test_frames = _effective_test_run(test_run, n_test_frames)
+    source = _prediction_source(
+        video=video,
+        frame_source_mode=frame_source_mode,
+        frame_source_file_type=frame_source_file_type,
     )
-    normalized_frame_source_file_type = str(frame_source_file_type).strip().lower()
-    if normalized_frame_source_file_type not in {"raw", "processed"}:
-        raise ValueError("frame_source_file_type must be one of: 'raw' or 'processed'.")
-    frame_dir: Path | None = None
-    if effective_frame_source_mode == "cache":
-        if not state.frames_extracted:
-            raise ValueError(
-                f"Frames not extracted for video {video.video_hash}. Prediction aborted."
-            )
-
-        frame_dir = video.get_frame_dir_path()
-        if not frame_dir or not frame_dir.exists() or not any(frame_dir.iterdir()):
-            raise FileNotFoundError(
-                f"Frame directory {frame_dir} is empty or does not exist for video {video.video_hash}. Prediction aborted."
-            )
-
-    model = cast(Optional[AiModel], model_meta.model)
-    if not model:
-        raise ValueError(
-            f"Model not found in ModelMeta {model_meta.name} (Version: {model_meta.version}) for video {video.video_hash}. Prediction aborted."
-        )
-
-    try:
-        weights_path = Path(model_meta.weights.path)  # type: ignore
-        if not weights_path.exists():
-            raise FileNotFoundError(
-                f"Model weights file {weights_path} not found for {model_meta.name} (Video: {video.video_hash}). Prediction aborted."
-            )
-    except Exception as e:
-        logger.error(
-            "Error accessing model weights path for %s (Video: %s): %s",
-            model_meta.name,
-            video.video_hash,
-            e,
-            exc_info=True,
-        )
-        raise RuntimeError(
-            f"Error accessing model weights for {model_meta.name}"
-        ) from e
-
-    try:
-        video_prediction_meta_manager: Any = VideoPredictionMeta.objects
-        _video_prediction_meta, created = video_prediction_meta_manager.get_or_create(
-            video_file=video, model_meta=model_meta
-        )
-        if created:
-            logger.info(
-                "Created new VideoPredictionMeta for video %s, model %s.",
-                video.video_hash,
-                model_meta.name,
-            )
-        else:
-            logger.info(
-                "Found existing VideoPredictionMeta for video %s, model %s.",
-                video.video_hash,
-                model_meta.name,
-            )
-    except Exception as e:
-        logger.error(
-            "Failed to get or create VideoPredictionMeta for video %s, model %s: %s",
-            video.video_hash,
-            model_meta.name,
-            e,
-            exc_info=True,
-        )
-        raise RuntimeError("Failed to get or create VideoPredictionMeta") from e
-
-    label_names = _resolve_label_names(model_meta)
-    if not label_names:
-        raise ValueError(
-            f"Label set '{getattr(model_meta.labelset, 'name', 'unknown')}' has no labels configured."
-        )
-
-    outputs_hint = _infer_output_classes(weights_path)
-
-    network_labels = label_names
-    if outputs_hint and outputs_hint != len(label_names):
-        if outputs_hint == len(LEGACY_CLASS_LABELS):
-            network_labels = LEGACY_CLASS_LABELS
-            logger.info(
-                "Detected legacy multilabel checkpoint with %d classes; using legacy label ordering.",
-                outputs_hint,
-            )
-        else:
-            logger.warning(
-                "Weights %s expect %d outputs while label set '%s' defines %d labels.",
-                weights_path.name,
-                outputs_hint,
-                getattr(model_meta.labelset, "name", "unknown"),
-                len(label_names),
-            )
-
+    _validate_prediction_model(video, model_meta)
+    weights_path = _prediction_weights_path(video, model_meta)
+    _ensure_video_prediction_meta(video, model_meta)
+    label_names = _prediction_label_names(model_meta)
+    network_labels = _network_label_names(
+        model_meta=model_meta,
+        weights_path=weights_path,
+        label_names=label_names,
+    )
     label_mapping = _build_label_mapping(network_labels, label_names)
 
     if _is_stub_weights_file(weights_path):
@@ -748,397 +1478,61 @@ def _predict_video_pipeline(
             weights_path,
             video.video_hash,
         )
-        if return_frame_scores:
-            return VideoFrameScoreResult(
-                labels=label_names,
-                frame_scores=empty_scores,
-                device="stub",
-                frame_count=0,
-            )
-        return {}
-
-    datasets = {
-        "inference_dataset": InferenceDataset,
-    }
-    dataset_model_class = datasets.get(dataset_name)
-    if not dataset_model_class:
-        raise ValueError(
-            f"Dataset class '{dataset_name}' not found for video {video.video_hash}. Prediction aborted."
+        return _stub_prediction_result(
+            label_names=label_names,
+            return_frame_scores=return_frame_scores,
         )
 
-    paths: List[Path] = []
-    string_paths: List[str] = []
-    crops: List[Any] = []
-    crop_template = video.get_crop_template()
-    if effective_frame_source_mode == "cache":
-        try:
-            paths = video.get_frame_paths()
-            if not paths:
-                raise FileNotFoundError(
-                    f"No frame paths returned by get_frame_paths for {frame_dir} (Video: {video.video_hash})"
-                )
-        except Exception as e:
-            logger.error(
-                "Error listing or getting frame files from %s for video %s: %s",
-                frame_dir,
-                video.video_hash,
-                e,
-                exc_info=True,
-            )
-            raise RuntimeError(f"Error getting frame paths from {frame_dir}") from e
-
-        logger.info(
-            "Found %d frame files in %s for video %s.",
-            len(paths),
-            frame_dir,
-            video.video_hash,
-        )
-
-        string_paths = [p.as_posix() for p in paths]
-        crops = [crop_template] * len(paths)
-
-    if effective_frame_source_mode == "cache" and test_run:
-        logger.info(
-            "TEST RUN: Using first %d frames for video %s.",
-            n_test_frames,
-            video.video_hash,
-        )
-        string_paths = string_paths[:n_test_frames]
-        crops = crops[:n_test_frames]
-        if not string_paths:
-            raise ValueError(
-                f"Not enough frames ({len(paths)}) for test run (required {n_test_frames}) for video {video.video_hash}."
-            )
-
-    load_kwargs: Dict[str, Any] = {}
-    if weights_path.suffix.lower() == ".safetensors":
-        load_kwargs.update(
-            {
-                "labels": network_labels,
-                "model_type": _infer_model_type(model_meta, weights_path),
-                "load_imagenet_weights": False,
-                "strict": False,
-            }
-        )
-
-    try:
-        ds_config = model_meta.get_inference_dataset_config().model_dump(mode="python")
-        if effective_frame_source_mode == "cache":
-            ds = dataset_model_class(string_paths, crops, config=ds_config)
-            logger.info(
-                "Created dataset '%s' with %d items for video %s.",
-                dataset_name,
-                len(ds),
-                video.video_hash,
-            )
-            if len(ds) > 0:
-                sample = ds[0]
-                logger.debug("Sample shape: %s", getattr(sample, "shape", None))
-
-        try:
-            activation = ModelMeta.get_activation_function(model_meta.activation)  # type: ignore
-        except ValueError:
-            logger.warning(
-                "Unsupported activation '%s' for model %s; falling back to sigmoid.",
-                model_meta.activation,  # type: ignore
-                model_meta.name,
-            )
-            activation = ModelMeta.get_activation_function("sigmoid")
-
-        # Parsing and runtime verification via Pydantic model
-        classifier_config = AiPredictionConfigPayload.model_validate(
-            {
-                **ds_config,
-                "batchsize": model_meta.batchsize or 16,  # type: ignore
-                "num_workers": model_meta.num_workers or 0,  # type: ignore
-                "activation": activation,
-                "labels": network_labels,
-            }
-        )
-    except Exception as e:
-        logger.error(
-            "Failed to create parsed configuration or dataset layer for video %s: %s",
-            video.video_hash,
-            e,
-            exc_info=True,
-        )
-        raise RuntimeError(
-            f"Failed to create configuration schema for '{dataset_name}'"
-        ) from e
-
+    cache_inputs = _cache_inference_inputs(
+        video=video,
+        source=source,
+        test_run=test_run,
+        n_test_frames=n_test_frames,
+    )
+    classifier_config = _classifier_config(
+        video=video,
+        model_meta=model_meta,
+        components=components,
+        source=source,
+        cache_inputs=cache_inputs,
+        dataset_name=dataset_name,
+        network_labels=network_labels,
+    )
     runtime_classifier_config = AiPredictionConfigPayload.model_validate(
         classifier_config.model_dump(mode="python")
     )
-
-    try:
-        import torch
-
-        if torch.cuda.is_available():
-            try:
-                device = torch.device("cuda")
-                ai_model_instance = MultiLabelClassificationNet.load_from_checkpoint(
-                    checkpoint_path=weights_path.as_posix(),
-                    map_location=device,
-                    **load_kwargs,
-                )
-                ai_model_instance = ai_model_instance.to(device)
-                logger.info("Loaded model on GPU for video %s.", video.video_hash)
-            except RuntimeError as cuda_err:
-                logger.warning(
-                    "GPU loading failed for video %s: %s. Falling back to CPU.",
-                    video.video_hash,
-                    cuda_err,
-                )
-                device = torch.device("cpu")
-                ai_model_instance = MultiLabelClassificationNet.load_from_checkpoint(
-                    checkpoint_path=weights_path.as_posix(),
-                    map_location=device,
-                    **load_kwargs,
-                )
-                ai_model_instance = ai_model_instance.to(device)
-                logger.info("Loaded model on CPU for video %s.", video.video_hash)
-        else:
-            logger.info(
-                "CUDA not available. Loading model on CPU for video %s.",
-                video.video_hash,
-            )
-            device = torch.device("cpu")
-            ai_model_instance = MultiLabelClassificationNet.load_from_checkpoint(
-                checkpoint_path=weights_path.as_posix(),
-                map_location=device,
-                **load_kwargs,
-            )
-            ai_model_instance = ai_model_instance.to(device)
-
-        _ = ai_model_instance.eval()
-
-        classifier = Classifier(
-            ai_model_instance, config=runtime_classifier_config, verbose=True
-        )
-        logger.info(
-            "AI model loaded successfully for video %s from %s.",
-            video.video_hash,
-            weights_path,
-        )
-    except Exception as e:
-        logger.error(
-            "Failed to load AI model for video %s from %s: %s",
-            video.video_hash,
-            weights_path,
-            e,
-            exc_info=True,
-        )
-        raise RuntimeError(f"Failed to load AI model from {weights_path}") from e
-
-    streamed_frame_numbers: List[int] | None = None
-    streamed_timestamps: List[float] | None = None
-    inference_started_at = time.monotonic()
-    try:
-        if effective_frame_source_mode == "stream":
-            logger.info(
-                json.dumps(
-                    {
-                        "event": "streaming_inference_start",
-                        "video_id": video.pk,  # type: ignore
-                        "video_hash": str(video.video_hash),
-                        "model_meta_id": model_meta.pk,  # type: ignore
-                        "frame_source_mode": effective_frame_source_mode,
-                        "source_kind": normalized_frame_source_file_type,
-                        "device": str(device),
-                    }
-                )
-            )
-            predictions, streamed_frame_numbers, streamed_timestamps = (
-                _stream_predictions_from_video(
-                    video=video,
-                    model=ai_model_instance,
-                    classifier_config=classifier_config,
-                    crop_template=crop_template,
-                    device=device,
-                    test_run=test_run,
-                    n_test_frames=n_test_frames,
-                    frame_source_file_type=normalized_frame_source_file_type,
-                )
-            )
-        else:
-            logger.info(
-                "Starting inference on %d frames for video %s...",
-                len(string_paths),
-                video.video_hash,
-            )
-            predictions = cast(List[Any], classifier.pipe(string_paths, crops))
-        logger.info("Inference completed for video %s.", video.video_hash)
-        if effective_frame_source_mode == "stream":
-            logger.info(
-                json.dumps(
-                    {
-                        "event": "streaming_inference_complete",
-                        "video_id": video.pk,  # type: ignore
-                        "video_hash": str(video.video_hash),
-                        "model_meta_id": model_meta.pk,  # type: ignore
-                        "frame_count": len(predictions),
-                        "source_kind": normalized_frame_source_file_type,
-                        "device": str(device),
-                        "duration_seconds": round(
-                            time.monotonic() - inference_started_at,
-                            3,
-                        ),
-                    }
-                )
-            )
-    except Exception as e:
-        if effective_frame_source_mode == "stream":
-            logger.error(
-                json.dumps(
-                    {
-                        "event": "streaming_inference_failure",
-                        "video_id": video.pk,  # type: ignore
-                        "video_hash": str(video.video_hash),
-                        "model_meta_id": model_meta.pk,  # type: ignore
-                        "source_kind": normalized_frame_source_file_type,
-                        "device": str(device),
-                        "duration_seconds": round(
-                            time.monotonic() - inference_started_at,
-                            3,
-                        ),
-                        "error": str(e),
-                    }
-                )
-            )
-        logger.error(
-            "Inference failed for video %s: %s", video.video_hash, e, exc_info=True
-        )
-        is_oom: bool = False
-        try:
-            import torch
-
-            is_oom = isinstance(
-                e, (getattr(torch.cuda, "OutOfMemoryError", RuntimeError), RuntimeError)
-            ) and (
-                "out of memory" in str(e).lower()
-                or "cuda out of memory" in str(e).lower()
-            )
-        except Exception:
-            is_oom = False
-
-        if torch.cuda.is_available() and is_oom:
-            logger.warning("CUDA OOM detected. Freeing CUDA cache and retrying on CPU…")
-            try:
-                torch.cuda.empty_cache()
-                gc.collect()
-            except Exception:
-                pass
-            try:
-                device = torch.device("cpu")
-                _ = ai_model_instance.cpu()
-                classifier = Classifier(
-                    ai_model_instance,
-                    config=runtime_classifier_config,
-                    verbose=True,
-                )
-                if effective_frame_source_mode == "stream":
-                    predictions, streamed_frame_numbers, streamed_timestamps = (
-                        _stream_predictions_from_video(
-                            video=video,
-                            model=ai_model_instance,
-                            classifier_config=classifier_config,
-                            crop_template=crop_template,
-                            device=device,
-                            test_run=test_run,
-                            n_test_frames=n_test_frames,
-                            frame_source_file_type=(normalized_frame_source_file_type),
-                        )
-                    )
-                else:
-                    predictions = cast(List[Any], classifier.pipe(string_paths, crops))
-                logger.info(
-                    "Inference completed on CPU after CUDA OOM for video %s.",
-                    video.video_hash,
-                )
-            except Exception as e2:
-                logger.error(
-                    "CPU fallback inference failed for video %s: %s",
-                    video.video_hash,
-                    e2,
-                    exc_info=True,
-                )
-                raise RuntimeError("Inference failed") from e2
-        else:
-            raise RuntimeError("Inference failed") from e
-
-    try:
-        logger.info("Post-processing predictions for video %s...", video.video_hash)
-        readable_predictions: list[dict[str, list[float]]] = [
-            {label: [float(score)] for label, score in classifier.readable(p).items()}
-            for p in predictions
-        ]
-        if label_mapping:
-            readable_predictions = [
-                _remap_prediction_dict(prediction, label_mapping)
-                for prediction in readable_predictions
-            ]
-
-        merged_predictions = cast(
-            Dict[str, Any], concat_pred_dicts(readable_predictions)
-        )
-        frame_score_result = _frame_score_result_from_merged_predictions(
-            merged_predictions,
-            label_names,
-            device=str(device),
-            frame_numbers=streamed_frame_numbers,
-            timestamps=streamed_timestamps,
-        )
-        if return_frame_scores:
-            logger.info(
-                "Returning %d frame-score rows for temporal inference on video %s.",
-                frame_score_result.frame_count,
-                video.video_hash,
-            )
-            return frame_score_result
-
-        fps = video.get_fps()
-        if not fps:
-            logger.warning(
-                "Video FPS is unknown for %s. Smoothing/sequence calculations might be inaccurate. Using default %.1f FPS.",
-                video.video_hash,
-                DEFAULT_VIDEO_FPS,
-            )
-            fps = DEFAULT_VIDEO_FPS
-
-        fps = int(fps)
-        smooth_merged_predictions: Dict[str, Any] = {}
-        for key in merged_predictions.keys():
-            smooth_merged_predictions[key] = make_smooth_preds(
-                prediction_array=merged_predictions[key],
-                window_size_s=smooth_window_size_s,
-                fps=fps,
-            )
-
-        binary_smooth_merged_predictions: Dict[str, Any] = {}
-        for key in smooth_merged_predictions.keys():
-            binary_smooth_merged_predictions[key] = (
-                smooth_merged_predictions[key] > binarize_threshold
-            )
-
-        sequences: Dict[str, List[Tuple[int, int]]] = {}
-        for label, prediction_array in binary_smooth_merged_predictions.items():
-            sequences[label] = find_true_pred_sequences(prediction_array)
-
-        logger.info(
-            "Post-processing completed for video %s. Found sequences for labels: %s",
-            video.video_hash,
-            list(sequences.keys()),
-        )
-        return sequences
-
-    except Exception as e:
-        logger.error(
-            "Post-processing failed for video %s: %s",
-            video.video_hash,
-            e,
-            exc_info=True,
-        )
-        raise RuntimeError("Post-processing failed") from e
+    loaded_model = _load_inference_model(
+        video=video,
+        weights_path=weights_path,
+        components=components,
+        classifier_config=runtime_classifier_config,
+        load_kwargs=_model_load_kwargs(
+            model_meta=model_meta,
+            weights_path=weights_path,
+            network_labels=network_labels,
+        ),
+    )
+    inference_output = _run_inference_with_fallback(
+        video=video,
+        model_meta=model_meta,
+        source=source,
+        cache_inputs=cache_inputs,
+        loaded_model=loaded_model,
+        classifier_config=classifier_config,
+        components=components,
+        test_run=test_run,
+        n_test_frames=n_test_frames,
+    )
+    return _postprocess_predictions(
+        video=video,
+        inference_output=inference_output,
+        label_names=label_names,
+        label_mapping=label_mapping,
+        return_frame_scores=return_frame_scores,
+        smooth_window_size_s=smooth_window_size_s,
+        binarize_threshold=binarize_threshold,
+        components=components,
+    )
 
 
 # ==========================================

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, cast
 
@@ -85,6 +86,61 @@ def _segment_frame_number(segment: object, field_name: str) -> int:
     if not isinstance(value, int):
         raise serializers.ValidationError(f"{field_name} must be an integer.")
     return value
+
+
+@dataclass(frozen=True)
+class _SegmentBoundaries:
+    start_time: object
+    end_time: object
+    start_frame: object
+    end_frame: object
+    effective_start_time: object
+    effective_end_time: object
+
+    @property
+    def has_time(self) -> bool:
+        return self.start_time is not None and self.end_time is not None
+
+    @property
+    def has_frames(self) -> bool:
+        return self.start_frame is not None and self.end_frame is not None
+
+    @property
+    def has_effective_time(self) -> bool:
+        return (
+            self.effective_start_time is not None
+            and self.effective_end_time is not None
+        )
+
+
+def _effective_time_boundary(
+    submitted_value: object,
+    *,
+    was_submitted: bool,
+    persisted_value: object,
+) -> object:
+    if submitted_value is None and not was_submitted:
+        return persisted_value
+    return submitted_value
+
+
+def _effective_frame_boundary(
+    submitted_value: object,
+    persisted_value: int,
+) -> object:
+    if submitted_value is None:
+        return persisted_value
+    return submitted_value
+
+
+def _integer_frame_boundaries(
+    boundaries: _SegmentBoundaries,
+) -> tuple[int, int] | None:
+    if not isinstance(boundaries.start_frame, int):
+        return None
+    if not isinstance(boundaries.end_frame, int):
+        return None
+    return boundaries.start_frame, boundaries.end_frame
 
 
 class FrameLike(Protocol):
@@ -322,65 +378,101 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
             payload["label_id"] = payload["label"]
         return super().to_internal_value(payload)
 
-    def validate(self, attrs: dict[str, object]) -> dict[str, object]:
+    def _segment_boundaries(self, attrs: Mapping[str, object]) -> _SegmentBoundaries:
         start_time = attrs.get("start_time")
         end_time = attrs.get("end_time")
         start_frame = attrs.get("start_frame_number")
         end_frame = attrs.get("end_frame_number")
-        effective_start_time = start_time
-        effective_end_time = end_time
 
-        if self.instance is not None:
-            instance = cast(LabelVideoSegmentLike, self.instance)
-            if start_time is None and "start_time" not in attrs:
-                effective_start_time = instance.start_time
-            if end_time is None and "end_time" not in attrs:
-                effective_end_time = instance.end_time
-            if start_frame is None:
-                start_frame = instance.start_frame_number
-            if end_frame is None:
-                end_frame = instance.end_frame_number
+        if self.instance is None:
+            return _SegmentBoundaries(
+                start_time=start_time,
+                end_time=end_time,
+                start_frame=start_frame,
+                end_frame=end_frame,
+                effective_start_time=start_time,
+                effective_end_time=end_time,
+            )
 
-        has_time = start_time is not None and end_time is not None
-        has_frames = start_frame is not None and end_frame is not None
-        has_effective_time = (
-            effective_start_time is not None and effective_end_time is not None
+        instance = cast(LabelVideoSegmentLike, self.instance)
+        return _SegmentBoundaries(
+            start_time=start_time,
+            end_time=end_time,
+            start_frame=_effective_frame_boundary(
+                start_frame, instance.start_frame_number
+            ),
+            end_frame=_effective_frame_boundary(end_frame, instance.end_frame_number),
+            effective_start_time=_effective_time_boundary(
+                start_time,
+                was_submitted="start_time" in attrs,
+                persisted_value=instance.start_time,
+            ),
+            effective_end_time=_effective_time_boundary(
+                end_time,
+                was_submitted="end_time" in attrs,
+                persisted_value=instance.end_time,
+            ),
         )
 
-        if not has_time and not has_frames and self.instance is None:
+    def _validate_boundary_presence(self, boundaries: _SegmentBoundaries) -> None:
+        if (
+            self.instance is None
+            and not boundaries.has_time
+            and not boundaries.has_frames
+        ):
             raise serializers.ValidationError(
                 "Either (start_time, end_time) OR (start_frame_number, end_frame_number) must be provided."
             )
 
-        if has_effective_time:
-            effective_video_id = attrs.get("video_id")
-            if self.instance is not None and effective_video_id is None:
-                effective_video_id = cast(
-                    LabelVideoSegmentLike, self.instance
-                ).video_file_id
-            if effective_video_id is None:
-                raise serializers.ValidationError(
-                    {"video_id": "This field is required."}
-                )
-            self._validate_segment_contract(
-                int(cast(int, effective_video_id)),
-                float(cast(float, effective_start_time)),
-                float(cast(float, effective_end_time)),
+    def _validate_effective_time(
+        self,
+        attrs: Mapping[str, object],
+        boundaries: _SegmentBoundaries,
+    ) -> None:
+        if not boundaries.has_effective_time:
+            return
+
+        effective_video_id = attrs.get("video_id")
+        if self.instance is not None and effective_video_id is None:
+            effective_video_id = cast(
+                LabelVideoSegmentLike, self.instance
+            ).video_file_id
+        if effective_video_id is None:
+            raise serializers.ValidationError({"video_id": "This field is required."})
+        self._validate_segment_contract(
+            int(cast(int, effective_video_id)),
+            float(cast(float, boundaries.effective_start_time)),
+            float(cast(float, boundaries.effective_end_time)),
+        )
+
+    @staticmethod
+    def _validate_frame_boundaries(boundaries: _SegmentBoundaries) -> None:
+        if not boundaries.has_frames:
+            return
+        frame_boundaries = _integer_frame_boundaries(boundaries)
+        if frame_boundaries is None:
+            return
+        start_frame, end_frame = frame_boundaries
+        if start_frame < 0:
+            raise serializers.ValidationError(
+                {"start_frame_number": "Must be non-negative."}
+            )
+        if end_frame <= start_frame:
+            raise serializers.ValidationError(
+                {"end_frame_number": "Must be greater than start_frame_number."}
             )
 
-        if has_frames and isinstance(start_frame, int) and isinstance(end_frame, int):
-            if start_frame < 0:
-                raise serializers.ValidationError(
-                    {"start_frame_number": "Must be non-negative."}
-                )
-            if end_frame <= start_frame:
-                raise serializers.ValidationError(
-                    {"end_frame_number": "Must be greater than start_frame_number."}
-                )
-
+    def _validate_video_reference(self, attrs: Mapping[str, object]) -> None:
         video_id = attrs.get("video_id") or self.initial_data.get("video_id")
         if not video_id and self.instance is None:
             raise serializers.ValidationError("video_id is required.")
+
+    def validate(self, attrs: dict[str, object]) -> dict[str, object]:
+        boundaries = self._segment_boundaries(attrs)
+        self._validate_boundary_presence(boundaries)
+        self._validate_effective_time(attrs, boundaries)
+        self._validate_frame_boundaries(boundaries)
+        self._validate_video_reference(attrs)
         return attrs
 
     def create(self, validated_data: dict[str, object]) -> LabelVideoSegment:

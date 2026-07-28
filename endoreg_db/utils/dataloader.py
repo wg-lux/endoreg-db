@@ -79,6 +79,12 @@ class _ModelLikeWithSave(_ModelLike, Protocol):
 
 
 _warning_log_path: Path | None = None
+_TRANSLATION_FIELDS = (
+    "name_de",
+    "name_en",
+    "description_de",
+    "description_en",
+)
 
 
 def _get_warning_log_path() -> Path:
@@ -191,173 +197,288 @@ def load_data_with_foreign_keys(
     context_label = log_context or getattr(model, "__name__", "dataloader")
 
     for entry in yaml_data:
-        raw_fields: dict[str, YamlValue] = dict(entry.get("fields", {}))
+        name, fields = _prepare_entry_fields(entry, model, validators)
+        relationships = _resolve_relationships(
+            command,
+            model,
+            fields,
+            foreign_keys,
+            foreign_key_models,
+            verbose,
+            context_label,
+        )
+        obj = _save_with_lock_retry(model, name, fields)
+        _set_many_to_many_relationships(obj, relationships)
 
-        for validator in validators:
-            validator(dict(raw_fields), entry=entry, model=model)
 
-        fields: dict[str, Any] = dict(raw_fields)
-        name = cast(str | None, fields.pop("name", None))
+def _prepare_entry_fields(
+    entry: YamlEntry,
+    model: DataLoaderModel,
+    validators: list[DataLoaderValidator],
+) -> tuple[str | None, dict[str, Any]]:
+    raw_fields = dict(entry.get("fields", {}))
+    for validator in validators:
+        validator(dict(raw_fields), entry=entry, model=model)
 
-        ####################
-        # TODO REMOVE AFTER TRANSLATION SUPPORT IS ADDED
-        SKIP_NAMES = [
-            "name_de",
-            "name_en",
-            "description_de",
-            "description_en",
-        ]
+    fields: dict[str, Any] = dict(raw_fields)
+    name = cast(str | None, fields.pop("name", None))
+    for translation_field in _TRANSLATION_FIELDS:
+        fields.pop(translation_field, None)
+    return name, fields
 
-        for skip_name in SKIP_NAMES:
-            if skip_name in fields:
-                fields.pop(skip_name)
-        ########################
 
-        m2m_relationships: dict[str, list[object]] = {}
+def _resolve_relationships(
+    command: BaseCommand,
+    model: DataLoaderModel,
+    fields: dict[str, Any],
+    foreign_keys: list[str],
+    foreign_key_models: list[DataLoaderModel],
+    verbose: bool,
+    context_label: str,
+) -> dict[str, list[object]]:
+    relationships: dict[str, list[object]] = {}
+    for field_name, related_model in zip(foreign_keys, foreign_key_models):
+        _resolve_relationship_field(
+            command,
+            model,
+            related_model,
+            field_name,
+            fields,
+            relationships,
+            verbose,
+            context_label,
+        )
+    return relationships
 
-        for fk_field, fk_model in zip(foreign_keys, foreign_key_models):
-            if fk_field not in fields:
-                continue
 
-            target_keys: Any = fields.pop(fk_field, None)
+def _resolve_relationship_field(
+    command: BaseCommand,
+    model: DataLoaderModel,
+    related_model: DataLoaderModel,
+    field_name: str,
+    fields: dict[str, Any],
+    relationships: dict[str, list[object]],
+    verbose: bool,
+    context_label: str,
+) -> None:
+    if field_name not in fields:
+        return
 
-            if target_keys is None:
-                _record_warning(
-                    command,
-                    f"Foreign key {fk_field} not found in fields",
-                    verbose,
-                    context_label,
-                )
-                continue
+    target_keys = fields.pop(field_name)
+    if target_keys is None:
+        _record_warning(
+            command,
+            f"Foreign key {field_name} not found in fields",
+            verbose,
+            context_label,
+        )
+        return
+    if isinstance(target_keys, list):
+        relationships[field_name] = _resolve_many_relationships(
+            command,
+            related_model,
+            cast(list[Any], target_keys),
+            verbose,
+            context_label,
+        )
+        return
 
-            if isinstance(target_keys, list):
-                related_objects: list[object] = []
-                # Fixed error: Cast target_keys to eliminate Unknown loop variable types
-                for key in cast(list[Any], target_keys):
-                    try:
-                        obj_fk = cast(
-                            _NaturalKeyManagerLike, fk_model.objects
-                        ).get_by_natural_key(key)
-                    except ObjectDoesNotExist:
-                        _record_warning(
-                            command,
-                            f"{fk_model.__name__} with key {key} not found",
-                            verbose,
-                            context_label,
-                        )
-                        continue
-                    related_objects.append(obj_fk)
-                m2m_relationships[fk_field] = related_objects
-            else:
-                if model.__name__ == "ModelMeta" and fk_field == "labelset":
-                    # Fixed error: Explicitly typed labelset_version to Any
-                    labelset_version: Any = fields.pop("labelset_version", None)
+    related_object = _resolve_single_relationship(
+        command,
+        model,
+        related_model,
+        field_name,
+        target_keys,
+        fields,
+        verbose,
+        context_label,
+    )
+    if related_object is not None:
+        fields[field_name] = related_object
 
-                    if isinstance(target_keys, list):
-                        target_seq = cast(list[YamlScalar], target_keys)
-                        labelset_name: Any = target_seq[0] if target_seq else None
-                        if len(target_seq) > 1 and labelset_version in (None, ""):
-                            labelset_version = target_seq[1]
-                    else:
-                        labelset_name = target_keys
 
-                    if not labelset_name:
-                        _record_warning(
-                            command,
-                            "LabelSet name missing for ModelMeta entry",
-                            verbose,
-                            context_label,
-                        )
-                        continue
+def _resolve_many_relationships(
+    command: BaseCommand,
+    related_model: DataLoaderModel,
+    target_keys: list[Any],
+    verbose: bool,
+    context_label: str,
+) -> list[object]:
+    related_objects: list[object] = []
+    manager = cast(_NaturalKeyManagerLike, related_model.objects)
+    for key in target_keys:
+        try:
+            related_object = manager.get_by_natural_key(key)
+        except ObjectDoesNotExist:
+            _record_missing_related_object(
+                command,
+                related_model,
+                key,
+                verbose,
+                context_label,
+            )
+            continue
+        related_objects.append(related_object)
+    return related_objects
 
-                    queryset = cast(_ModelManagerLike, fk_model.objects).filter(
-                        name=labelset_name
-                    )
-                    if labelset_version not in (None, "", -1):
-                        # Fixed error: Explicitly type version_value
-                        try:
-                            if isinstance(labelset_version, list):
-                                raise ValueError
-                            version_value = int(labelset_version)
-                        except (TypeError, ValueError):
-                            version_value = cast(YamlScalar, labelset_version)
-                        queryset = queryset.filter(version=version_value)
 
-                    obj_fk = queryset.order_by("-version").first()
-                    if obj_fk is None:
-                        _record_warning(
-                            command,
-                            f"LabelSet '{labelset_name}' (version={labelset_version}) not found",
-                            verbose,
-                            context_label,
-                        )
-                        continue
-                    fields[fk_field] = obj_fk
-                else:
-                    try:
-                        obj_fk = cast(
-                            _NaturalKeyManagerLike, fk_model.objects
-                        ).get_by_natural_key(target_keys)
-                    except ObjectDoesNotExist:
-                        _record_warning(
-                            command,
-                            f"{fk_model.__name__} with key {target_keys} not found",
-                            verbose,
-                            context_label,
-                        )
-                        continue
-                    fields[fk_field] = obj_fk
+def _resolve_single_relationship(
+    command: BaseCommand,
+    model: DataLoaderModel,
+    related_model: DataLoaderModel,
+    field_name: str,
+    target_key: YamlScalar,
+    fields: dict[str, Any],
+    verbose: bool,
+    context_label: str,
+) -> object | None:
+    if model.__name__ == "ModelMeta" and field_name == "labelset":
+        return _resolve_model_meta_labelset(
+            command,
+            related_model,
+            target_key,
+            fields,
+            verbose,
+            context_label,
+        )
 
-        version_value = fields.get("version")
+    try:
+        return cast(_NaturalKeyManagerLike, related_model.objects).get_by_natural_key(
+            target_key
+        )
+    except ObjectDoesNotExist:
+        _record_missing_related_object(
+            command,
+            related_model,
+            target_key,
+            verbose,
+            context_label,
+        )
+        return None
 
-        def _save_instance() -> tuple[object, bool]:
-            if name is None:
-                instance = (
-                    cast(_ModelManagerLike, model.objects).filter(**fields).first()
-                )
-                if instance is None:
-                    instance = cast(_ModelManagerLike, model.objects).create(**fields)
-                    is_created = True
-                else:
-                    is_created = False
-            else:
-                # Fixed error: Explicitly typed dict[str, Any] to allow integer version updates later
-                lookup_kwargs: dict[str, Any] = {"name": name}
-                if model.__name__ == "LabelSet" and version_value is not None:
-                    lookup_kwargs["version"] = version_value
 
-                instance = (
-                    cast(_ModelManagerLike, model.objects)
-                    .filter(**lookup_kwargs)
-                    .first()
-                )
-                if instance is None:
-                    instance = cast(_ModelManagerLike, model.objects).create(
-                        name=name, **fields
-                    )
-                    is_created = True
-                else:
-                    for k, v in fields.items():
-                        setattr(instance, k, v)
-                    cast(_ModelLikeWithSave, instance).save()
-                    is_created = False
-            return instance, is_created
+def _resolve_model_meta_labelset(
+    command: BaseCommand,
+    labelset_model: DataLoaderModel,
+    labelset_name: YamlScalar,
+    fields: dict[str, Any],
+    verbose: bool,
+    context_label: str,
+) -> object | None:
+    labelset_version = fields.pop("labelset_version", None)
+    if not labelset_name:
+        _record_warning(
+            command,
+            "LabelSet name missing for ModelMeta entry",
+            verbose,
+            context_label,
+        )
+        return None
 
-        obj: Any = None
-        max_attempts = 4
-        for attempt in range(1, max_attempts + 1):
-            try:
-                with transaction.atomic():
-                    obj, _ = _save_instance()
-                break
-            except OperationalError as exc:
-                if (
-                    "database is locked" not in str(exc).lower()
-                    or attempt == max_attempts
-                ):
-                    raise
-                time.sleep(0.05 * attempt)
+    queryset = cast(_ModelManagerLike, labelset_model.objects).filter(
+        name=labelset_name
+    )
+    if labelset_version not in (None, "", -1):
+        queryset = queryset.filter(
+            version=_normalize_labelset_version(labelset_version)
+        )
 
-        for field_name, related_objs in m2m_relationships.items():
-            if related_objs:
-                getattr(obj, field_name).set(related_objs)
+    related_object = queryset.order_by("-version").first()
+    if related_object is None:
+        _record_warning(
+            command,
+            f"LabelSet '{labelset_name}' (version={labelset_version}) not found",
+            verbose,
+            context_label,
+        )
+    return related_object
+
+
+def _normalize_labelset_version(labelset_version: Any) -> Any:
+    try:
+        if isinstance(labelset_version, list):
+            raise ValueError
+        return int(labelset_version)
+    except (TypeError, ValueError):
+        return cast(YamlScalar, labelset_version)
+
+
+def _record_missing_related_object(
+    command: BaseCommand,
+    related_model: DataLoaderModel,
+    target_key: object,
+    verbose: bool,
+    context_label: str,
+) -> None:
+    _record_warning(
+        command,
+        f"{related_model.__name__} with key {target_key} not found",
+        verbose,
+        context_label,
+    )
+
+
+def _save_with_lock_retry(
+    model: DataLoaderModel,
+    name: str | None,
+    fields: dict[str, Any],
+) -> object:
+    max_attempts = 4
+    for attempt in range(1, max_attempts + 1):
+        try:
+            with transaction.atomic():
+                return _save_instance(model, name, fields)
+        except OperationalError as exc:
+            if "database is locked" not in str(exc).lower() or attempt == max_attempts:
+                raise
+            time.sleep(0.05 * attempt)
+    raise AssertionError("database lock retry loop ended without a result")
+
+
+def _save_instance(
+    model: DataLoaderModel,
+    name: str | None,
+    fields: dict[str, Any],
+) -> object:
+    manager = cast(_ModelManagerLike, model.objects)
+    if name is None:
+        return _find_or_create_unnamed_instance(manager, fields)
+    return _create_or_update_named_instance(manager, model, name, fields)
+
+
+def _find_or_create_unnamed_instance(
+    manager: _ModelManagerLike,
+    fields: dict[str, Any],
+) -> object:
+    instance = manager.filter(**fields).first()
+    return instance if instance is not None else manager.create(**fields)
+
+
+def _create_or_update_named_instance(
+    manager: _ModelManagerLike,
+    model: DataLoaderModel,
+    name: str,
+    fields: dict[str, Any],
+) -> object:
+    lookup_kwargs: dict[str, Any] = {"name": name}
+    version_value = fields.get("version")
+    if model.__name__ == "LabelSet" and version_value is not None:
+        lookup_kwargs["version"] = version_value
+
+    instance = manager.filter(**lookup_kwargs).first()
+    if instance is None:
+        return manager.create(name=name, **fields)
+
+    for field_name, value in fields.items():
+        setattr(instance, field_name, value)
+    cast(_ModelLikeWithSave, instance).save()
+    return instance
+
+
+def _set_many_to_many_relationships(
+    instance: object,
+    relationships: dict[str, list[object]],
+) -> None:
+    for field_name, related_objects in relationships.items():
+        if related_objects:
+            getattr(instance, field_name).set(related_objects)

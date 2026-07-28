@@ -7,23 +7,22 @@ scan:
     - migrations
     - __pycache__
 broad_exception:
-  count: 471
-  fingerprint: 77272f15bd3ad2cf51300f376536eb7cd04cac8e2fbc12c69e55c62a7b49630d
+  count: 466
+  fingerprint: 23d563fe74d4ac7388e032e1811916e674eb37395579d3beef5a37818609a971
   owner: endoreg_db maintainers
   reason: >-
-    Geprüfter Bestand einschließlich der Import-Orchestrierungs-, Heartbeat-,
-    Storage-Cleanup- und nativen Rust-Integrationsgrenzen. Die neuen Handler
-    sichern Cleanup oder übersetzen unbekannte Boundary-Fehler fail-closed und
-    reichen die Ursache weiter. Der verschachtelte breite Fehlerhandler beim
-    Watcher-Quarantäne-Move wurde mit dem alten Handoff-Pfad entfernt; dies ist
-    keine allgemeine Freigabe breiter Handler.
+    Geprüfter Bestand nach der Komplexitätskohorte: bestehende breite Handler
+    wurden aus großen Orchestratoren in benannte Command-, HTTP-, Import-,
+    Inference-, Cleanup- und Integrationsgrenzen verschoben. Die Fehlersemantik
+    bleibt fail-closed; insgesamt wurden fünf breite Handler entfernt und keine
+    zusätzliche Freigabe für innere Domainlogik erteilt.
   review_after: 2026-10-17
 type_suppression:
-  count: 145
-  fingerprint: 10f8be7e0eb8136d60fc826d59680400c5f07d1a850e66a3912722c52e01b23e
+  count: 141
+  fingerprint: 47f70fedf60c4c6bec169a3d453a86d15a0a76b00dc1567cc39f92b91adad383
   owner: endoreg_db maintainers
   reason: >-
-    Geprüfter Altbestand nach Entfernung der OCR-Suppression und typisierter
-    Kapselung des dynamischen lx-anonymizer-Capability-Imports. Es wurden keine
-    neuen Suppressions akzeptiert; der verbleibende Bestand ist keine Freigabe.
+    Geprüfter Altbestand nach Entfernung von vier Typunterdrückungen aus der
+    Video-Inferenzkohorte. Es wurden keine neuen Suppressions akzeptiert; der
+    verbleibende Bestand ist keine Freigabe.
   review_after: 2026-10-17

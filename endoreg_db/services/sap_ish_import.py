@@ -208,81 +208,129 @@ def _pick_anchor_row(rows: list[SapIshNormalizedRow]) -> SapIshNormalizedRow:
     )[0]
 
 
-def _build_case_summary(rows: list[SapIshNormalizedRow]) -> str:
-    lines: list[str] = []
-    anchor_row = _pick_anchor_row(rows)
+def _case_header_lines(anchor_row: SapIshNormalizedRow) -> list[str]:
     patient_nr = anchor_row.canonical_row.get("patient_nr")
     fall_nr = anchor_row.canonical_row.get("fall_nr")
-    if patient_nr or fall_nr:
-        lines.append("Case summary generated from SAP IS-H tabular export")
-        if patient_nr:
-            lines.append(f"PatientNr: {patient_nr}")
-        if fall_nr:
-            lines.append(f"FallNr: {fall_nr}")
+    if not patient_nr and not fall_nr:
+        return []
+    lines = ["Case summary generated from SAP IS-H tabular export"]
+    if patient_nr:
+        lines.append(f"PatientNr: {patient_nr}")
+    if fall_nr:
+        lines.append(f"FallNr: {fall_nr}")
+    return lines
 
+
+def _diagnosis_details(row: SapIshNormalizedRow) -> list[str]:
+    diagnosis_key = row.canonical_row.get("diagnoseschluessel_1")
+    return [f"code={diagnosis_key}"] if diagnosis_key else []
+
+
+def _laboratory_details(row: SapIshNormalizedRow) -> list[str]:
+    details: list[str] = []
+    test_name = row.canonical_row.get("leistungstext") or row.canonical_row.get(
+        "leistung"
+    )
+    measurement = row.canonical_row.get("messwert")
+    if test_name:
+        details.append(str(test_name))
+    if measurement:
+        details.append(f"value={measurement}")
+    return details
+
+
+def _procedure_details(row: SapIshNormalizedRow) -> list[str]:
+    operation_code = row.canonical_row.get("op_code")
+    return [f"op_code={operation_code}"] if operation_code else []
+
+
+def _movement_details(row: SapIshNormalizedRow) -> list[str]:
+    details: list[str] = []
+    for value in (
+        row.canonical_row.get("behandlungsort"),
+        row.canonical_row.get("fachabteilung"),
+    ):
+        if value:
+            details.append(str(value))
+    room = row.canonical_row.get("zimmer")
+    if room:
+        details.append(f"room={room}")
+    return details
+
+
+def _pathology_document_details(row: SapIshNormalizedRow) -> list[str]:
+    details: list[str] = []
+    document_id = row.canonical_row.get("dokumentnummer")
+    document_type_id = row.canonical_row.get("dokumenttyp_id")
+    if document_id:
+        details.append(f"document_id={document_id}")
+    if document_type_id:
+        details.append(f"type={document_type_id}")
+    return details
+
+
+def _medication_details(row: SapIshNormalizedRow) -> list[str]:
+    details: list[str] = []
+    trade_name = row.canonical_row.get("tradename")
+    dose = row.canonical_row.get("actual_dose")
+    unit = row.canonical_row.get("unit_dose_name")
+    if trade_name:
+        details.append(str(trade_name))
+    if dose:
+        details.append(f"dose={dose}")
+    if unit:
+        details.append(str(unit))
+    return details
+
+
+CASE_DETAIL_BUILDERS: dict[str, Callable[[SapIshNormalizedRow], list[str]]] = {
+    "diagnosen": _diagnosis_details,
+    "labor": _laboratory_details,
+    "prozeduren": _procedure_details,
+    "bewegungen": _movement_details,
+    "pathodocs": _pathology_document_details,
+    "meona_medikamente": _medication_details,
+}
+
+
+def _case_row_details(row: SapIshNormalizedRow) -> list[str]:
+    details: list[str] = []
+    timestamp = _extract_row_timestamp(row)
+    if timestamp is not None:
+        details.append(timestamp.isoformat(sep=" ", timespec="seconds"))
+    builder = CASE_DETAIL_BUILDERS.get(row.document_type)
+    if builder is not None:
+        details.extend(builder(row))
+    return details
+
+
+def _document_summary_lines(
+    document_type: str,
+    rows: list[SapIshNormalizedRow],
+) -> list[str]:
+    if not rows:
+        return []
+    lines = [f"{document_type}: {len(rows)} row(s)"]
+    for row in rows[:5]:
+        details = _case_row_details(row)
+        if details:
+            lines.append(f"- {' | '.join(details)}")
+    return lines
+
+
+def _build_case_summary(rows: list[SapIshNormalizedRow]) -> str:
+    anchor_row = _pick_anchor_row(rows)
+    lines = _case_header_lines(anchor_row)
     grouped_rows: dict[str, list[SapIshNormalizedRow]] = defaultdict(list)
     for row in rows:
         grouped_rows[row.document_type].append(row)
-
     for document_type in ANCHOR_DOCUMENT_TYPES:
-        document_rows = grouped_rows.get(document_type) or []
-        if not document_rows:
-            continue
-        lines.append(f"{document_type}: {len(document_rows)} row(s)")
-        for row in document_rows[:5]:
-            details: list[str] = []
-            timestamp = _extract_row_timestamp(row)
-            if timestamp is not None:
-                details.append(timestamp.isoformat(sep=" ", timespec="seconds"))
-
-            if document_type == "diagnosen":
-                diagnosis_key = row.canonical_row.get("diagnoseschluessel_1")
-                if diagnosis_key:
-                    details.append(f"code={diagnosis_key}")
-            elif document_type == "labor":
-                test_name = row.canonical_row.get(
-                    "leistungstext"
-                ) or row.canonical_row.get("leistung")
-                measurement = row.canonical_row.get("messwert")
-                if test_name:
-                    details.append(str(test_name))
-                if measurement:
-                    details.append(f"value={measurement}")
-            elif document_type == "prozeduren":
-                op_code = row.canonical_row.get("op_code")
-                if op_code:
-                    details.append(f"op_code={op_code}")
-            elif document_type == "bewegungen":
-                site = row.canonical_row.get("behandlungsort")
-                specialty = row.canonical_row.get("fachabteilung")
-                room = row.canonical_row.get("zimmer")
-                if site:
-                    details.append(str(site))
-                if specialty:
-                    details.append(str(specialty))
-                if room:
-                    details.append(f"room={room}")
-            elif document_type == "pathodocs":
-                document_id = row.canonical_row.get("dokumentnummer")
-                document_type_id = row.canonical_row.get("dokumenttyp_id")
-                if document_id:
-                    details.append(f"document_id={document_id}")
-                if document_type_id:
-                    details.append(f"type={document_type_id}")
-            elif document_type == "meona_medikamente":
-                trade_name = row.canonical_row.get("tradename")
-                dose = row.canonical_row.get("actual_dose")
-                unit = row.canonical_row.get("unit_dose_name")
-                if trade_name:
-                    details.append(str(trade_name))
-                if dose:
-                    details.append(f"dose={dose}")
-                if unit:
-                    details.append(str(unit))
-
-            if details:
-                lines.append(f"- {' | '.join(details)}")
-
+        lines.extend(
+            _document_summary_lines(
+                document_type,
+                grouped_rows.get(document_type, []),
+            )
+        )
     return "\n".join(lines).strip()
 
 

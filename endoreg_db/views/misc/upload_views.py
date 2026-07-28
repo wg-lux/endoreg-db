@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import mimetypes
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from importlib import import_module
 from typing import TYPE_CHECKING, Protocol, TypeAlias, cast
 
@@ -141,6 +142,259 @@ def _celery_upload_task_dispatcher() -> "CeleryTaskDispatcher":
 CELERY_AVAILABLE = _celery_upload_task_available()
 
 
+@dataclass(frozen=True)
+class _PreparedApiUpload:
+    uploaded_file: UploadedFile
+    request_payload: UploadApiRequestPayload
+    content_type: str
+
+
+def _error_response(message: str, *, status_code: int) -> Response:
+    return Response({"error": message}, status=status_code)
+
+
+def _request_uploaded_file(
+    request: Request,
+) -> tuple[UploadedFile | None, Response | None]:
+    if "file" not in request.FILES:
+        return None, _error_response(
+            'No file provided. Please include a file in the "file" field.',
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    uploaded_file = cast(UploadedFile | object, request.FILES["file"])
+    if not isinstance(uploaded_file, UploadedFile):
+        return None, _error_response(
+            "Uploaded file must be a valid uploaded file.",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    return uploaded_file, None
+
+
+def _validate_uploaded_file_metadata(
+    uploaded_file: UploadedFile,
+    *,
+    max_file_size: int,
+) -> Response | None:
+    uploaded_file_size = uploaded_file.size
+    if uploaded_file_size is None:
+        return _error_response(
+            "Uploaded file size could not be determined.",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    if uploaded_file_size == 0:
+        return _error_response(
+            "Uploaded file is empty. Please select a valid file.",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    if uploaded_file_size > max_file_size:
+        return _error_response(
+            f"File too large. Maximum size is {max_file_size // (1024**3)} GB.",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    if not _has_valid_upload_filename(uploaded_file):
+        return _error_response(
+            "Invalid filename. Please ensure the file has a valid name.",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    return None
+
+
+def _has_valid_upload_filename(uploaded_file: UploadedFile) -> bool:
+    return bool(uploaded_file.name and uploaded_file.name.strip())
+
+
+def _validated_upload_payload(
+    request: Request,
+) -> tuple[UploadApiRequestPayload | None, Response | None]:
+    try:
+        payload = validate_upload_api_request_payload(
+            _upload_api_request_mapping(request)
+        )
+    except ValueError as exc:
+        return None, _error_response(
+            str(exc),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    return payload, None
+
+
+def _detected_content_type(
+    detect_mime_type: Callable[[UploadedFile], str],
+    allowed_mime_types: set[str],
+    uploaded_file: UploadedFile,
+) -> tuple[str | None, Response | None]:
+    try:
+        content_type = detect_mime_type(uploaded_file)
+    except Exception as exc:
+        return None, _error_response(
+            f"Could not determine file type: {exc}",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    if content_type not in allowed_mime_types:
+        return None, _error_response(
+            f"Unsupported file type: {content_type}. "
+            "Allowed types: report, MP4, AVI, MOV, WMV.",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    return content_type, None
+
+
+def _prepare_api_upload(
+    view: "UploadFileView",
+    request: Request,
+    *,
+    detect_mime_type: Callable[[UploadedFile], str],
+) -> tuple[_PreparedApiUpload | None, Response | None]:
+    uploaded_file, error = _request_uploaded_file(request)
+    if uploaded_file is None:
+        return None, error
+    metadata_error = _validate_uploaded_file_metadata(
+        uploaded_file,
+        max_file_size=view.MAX_FILE_SIZE,
+    )
+    if metadata_error is not None:
+        return None, metadata_error
+    request_payload, payload_error = _validated_upload_payload(request)
+    if request_payload is None:
+        return None, payload_error
+    content_type, content_type_error = _detected_content_type(
+        detect_mime_type,
+        view.ALLOWED_MIME_TYPES,
+        uploaded_file,
+    )
+    if content_type is None:
+        return None, content_type_error
+    return (
+        _PreparedApiUpload(
+            uploaded_file=uploaded_file,
+            request_payload=request_payload,
+            content_type=content_type,
+        ),
+        None,
+    )
+
+
+def _center_resolution_error_response(error: str) -> Response:
+    permission_fragments = (
+        "Authentication is required",
+        "outside the authenticated scope",
+        "do not have access",
+    )
+    status_code = (
+        status.HTTP_403_FORBIDDEN
+        if any(fragment in error for fragment in permission_fragments)
+        else status.HTTP_400_BAD_REQUEST
+    )
+    return _error_response(error, status_code=status_code)
+
+
+def _create_or_reuse_api_upload_job(
+    request: Request,
+    prepared: _PreparedApiUpload,
+    *,
+    source_center: Center | None,
+    processing_provenance: "UploadProvenance",
+) -> tuple[UploadJob, bool]:
+    payload = prepared.request_payload
+    idempotency_key = (
+        request.headers.get("Idempotency-Key") or payload.idempotency_key or ""
+    )
+    if source_center is None:
+        return _upload_job_factory_without_center()(
+            uploaded_file=prepared.uploaded_file,
+            content_type=prepared.content_type,
+            created_by=_request_user(request),
+            source_system=payload.source_system,
+            content_hash="",
+            idempotency_key=idempotency_key,
+            ingest_mode=UploadJob.IngestMode.API,
+            storage_class=UploadJob.StorageClass.INGEST,
+            storage_tier=UploadJob.StorageTier.UPLOAD_API,
+            retention_policy=UploadJob.RetentionPolicy.PRESERVE_SOURCE,
+            source_file_persisted=True,
+            cleanup_status=UploadJob.CleanupStatus.PENDING,
+            processing_provenance=processing_provenance,
+            allow_completed_reuse_without_media=False,
+        )
+    return _upload_job_factory_with_center()(
+        uploaded_file=prepared.uploaded_file,
+        content_type=prepared.content_type,
+        created_by=_request_user(request),
+        source_center=source_center,
+        source_system=payload.source_system,
+        content_hash="",
+        idempotency_key=idempotency_key,
+        ingest_mode=UploadJob.IngestMode.API,
+        storage_class=UploadJob.StorageClass.INGEST,
+        storage_tier=UploadJob.StorageTier.UPLOAD_API,
+        retention_policy=UploadJob.RetentionPolicy.PRESERVE_SOURCE,
+        source_file_persisted=True,
+        cleanup_status=UploadJob.CleanupStatus.PENDING,
+        processing_provenance=processing_provenance,
+        allow_completed_reuse_without_media=False,
+    )
+
+
+def _start_created_upload_job(
+    upload_job: UploadJob, *, created: bool
+) -> Response | None:
+    if not created:
+        return None
+    try:
+        if CELERY_AVAILABLE:
+            ingest.start_upload_job_processing(
+                upload_job=upload_job,
+                task_dispatcher=_celery_upload_task_dispatcher(),
+            )
+        else:
+            ingest.start_upload_job_processing(upload_job=upload_job)
+    except Exception as exc:
+        return _error_response(
+            f"Failed to start processing: {exc}",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+    return None
+
+
+def _upload_success_response(upload_job: UploadJob, *, created: bool) -> Response:
+    upload_job_id = getattr(upload_job, "id", None)
+    upload_id = str(upload_job_id) if upload_job_id is not None else ""
+    return Response(
+        {
+            "upload_id": upload_id,
+            "status_url": reverse("api:upload_status", kwargs={"id": upload_id}),
+            "message": "Upload job created successfully",
+        },
+        status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+    )
+
+
+def _perform_api_upload(request: Request, prepared: _PreparedApiUpload) -> Response:
+    source_center, _allowed_center_id, center_error, raw_context = (
+        ingest.resolve_api_upload_context(
+            user=_request_user(request),
+            center_key=prepared.request_payload.center_key,
+            center_name=prepared.request_payload.center_name,
+        )
+    )
+    if center_error:
+        return _center_resolution_error_response(center_error)
+    processing_provenance = cast(
+        "UploadProvenance",
+        {"entrypoint": "api", **cast(UploadContext, raw_context)},
+    )
+    upload_job, created = _create_or_reuse_api_upload_job(
+        request,
+        prepared,
+        source_center=source_center,
+        processing_provenance=processing_provenance,
+    )
+    processing_error = _start_created_upload_job(upload_job, created=created)
+    if processing_error is not None:
+        return processing_error
+    return _upload_success_response(upload_job, created=created)
+
+
 @method_decorator(csrf_exempt, name="dispatch")
 class UploadFileView(APIView):
     """
@@ -179,195 +433,25 @@ class UploadFileView(APIView):
         """
         Handle file upload and create processing job.
         """
-        # Validate file presence
-        if "file" not in request.FILES:
-            return Response(
-                {
-                    "error": 'No file provided. Please include a file in the "file" field.'
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        uploaded_file = cast(UploadedFile | object, request.FILES["file"])
-        if not isinstance(uploaded_file, UploadedFile):
-            return Response(
-                {"error": "Uploaded file must be a valid uploaded file."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
+        prepared, preparation_error = _prepare_api_upload(
+            self,
+            request,
+            detect_mime_type=self._detect_mime_type,
+        )
+        if prepared is None:
+            assert preparation_error is not None
+            return preparation_error
         try:
-            request_payload: UploadApiRequestPayload = (
-                validate_upload_api_request_payload(
-                    _upload_api_request_mapping(request)
-                )
-            )
-        except ValueError as exc:
-            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Validate file is not empty
-        uploaded_file_size = uploaded_file.size
-        if uploaded_file_size is None:
-            return Response(
-                {"error": "Uploaded file size could not be determined."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        if uploaded_file_size == 0:
-            return Response(
-                {"error": "Uploaded file is empty. Please select a valid file."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # Validate file size
-        if uploaded_file_size > self.MAX_FILE_SIZE:
-            return Response(
-                {
-                    "error": f"File too large. Maximum size is {self.MAX_FILE_SIZE // (1024**3)} GB."
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # Validate filename
-        if not uploaded_file.name or uploaded_file.name.strip() == "":
-            return Response(
-                {"error": "Invalid filename. Please ensure the file has a valid name."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # Detect MIME type
-        try:
-            content_type = self._detect_mime_type(uploaded_file)
-        except Exception as e:
-            return Response(
-                {"error": f"Could not determine file type: {str(e)}"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # Validate MIME type
-        if content_type not in self.ALLOWED_MIME_TYPES:
-            return Response(
-                {
-                    "error": f"Unsupported file type: {content_type}. Allowed types: report, MP4, AVI, MOV, WMV."
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        try:
-            (
-                source_center,
-                _allowed_center_id,
-                center_resolution_error,
-                raw_upload_context,
-            ) = ingest.resolve_api_upload_context(
-                user=_request_user(request),
-                center_key=request_payload.center_key,
-                center_name=request_payload.center_name,
-            )
-            upload_context = cast(UploadContext, raw_upload_context)
-            if center_resolution_error:
-                status_code = (
-                    status.HTTP_403_FORBIDDEN
-                    if "Authentication is required" in center_resolution_error
-                    or "outside the authenticated scope" in center_resolution_error
-                    or "do not have access" in center_resolution_error
-                    else status.HTTP_400_BAD_REQUEST
-                )
-                return Response(
-                    {"error": center_resolution_error},
-                    status=status_code,
-                )
-
-            source_system = request_payload.source_system
-            idempotency_key = (
-                request.headers.get("Idempotency-Key")
-                or request_payload.idempotency_key
-                or ""
-            )
-
-            processing_provenance = cast(
-                "UploadProvenance",
-                {
-                    "entrypoint": "api",
-                    **upload_context,
-                },
-            )
-
-            if source_center is None:
-                upload_job, created = _upload_job_factory_without_center()(
-                    uploaded_file=uploaded_file,
-                    content_type=content_type,
-                    created_by=_request_user(request),
-                    source_system=source_system,
-                    content_hash="",
-                    idempotency_key=idempotency_key,
-                    ingest_mode=UploadJob.IngestMode.API,
-                    storage_class=UploadJob.StorageClass.INGEST,
-                    storage_tier=UploadJob.StorageTier.UPLOAD_API,
-                    retention_policy=UploadJob.RetentionPolicy.PRESERVE_SOURCE,
-                    source_file_persisted=True,
-                    cleanup_status=UploadJob.CleanupStatus.PENDING,
-                    processing_provenance=processing_provenance,
-                    allow_completed_reuse_without_media=False,
-                )
-            else:
-                upload_job, created = _upload_job_factory_with_center()(
-                    uploaded_file=uploaded_file,
-                    content_type=content_type,
-                    created_by=_request_user(request),
-                    source_center=source_center,
-                    source_system=source_system,
-                    content_hash="",
-                    idempotency_key=idempotency_key,
-                    ingest_mode=UploadJob.IngestMode.API,
-                    storage_class=UploadJob.StorageClass.INGEST,
-                    storage_tier=UploadJob.StorageTier.UPLOAD_API,
-                    retention_policy=UploadJob.RetentionPolicy.PRESERVE_SOURCE,
-                    source_file_persisted=True,
-                    cleanup_status=UploadJob.CleanupStatus.PENDING,
-                    processing_provenance=processing_provenance,
-                    allow_completed_reuse_without_media=False,
-                )
-
-            if created:
-                try:
-                    if CELERY_AVAILABLE:
-                        ingest.start_upload_job_processing(
-                            upload_job=upload_job,
-                            task_dispatcher=_celery_upload_task_dispatcher(),
-                        )
-                    else:
-                        ingest.start_upload_job_processing(upload_job=upload_job)
-                except Exception as e:
-                    return Response(
-                        {"error": f"Failed to start processing: {str(e)}"},
-                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    )
-
-            # Prepare response
-            upload_job_id = getattr(upload_job, "id", None)
-            upload_id = str(upload_job_id) if upload_job_id is not None else ""
-            status_url = reverse("api:upload_status", kwargs={"id": upload_id})
-            response_data = {
-                "upload_id": upload_id,
-                "status_url": status_url,
-                "message": "Upload job created successfully",
-            }
-
-            # Return the response data directly since serializer fields are read-only
-            return Response(
-                response_data,
-                status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
-            )
-
+            return _perform_api_upload(request, prepared)
         except PermissionDenied as exc:
-            return Response(
-                {"error": str(exc)},
-                status=status.HTTP_403_FORBIDDEN,
+            return _error_response(
+                str(exc),
+                status_code=status.HTTP_403_FORBIDDEN,
             )
-        except Exception as e:
-            return Response(
-                {"error": f"Failed to create upload job: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        except Exception as exc:
+            return _error_response(
+                f"Failed to create upload job: {exc}",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
     def _detect_mime_type(self, uploaded_file: UploadedFile) -> str:

@@ -65,14 +65,13 @@ from endoreg_db.utils.storage_streaming import (
 
 logger = logging.getLogger(__name__)
 
-type Null = NoneType
 VideoFrameAnnotationExportProfile: TypeAlias = Literal[
     "legacy_table_v1",
     "pts_dataset_v1",
 ]
-type ConfigScalar = str | int | float | bool | Null
-type ExportConfigFieldValue = Path | str | int | float | bool | list[int] | Null
-type AnnotationCell = str | int | float | bool | Null
+type ConfigScalar = str | int | float | bool | NoneType
+type ExportConfigFieldValue = Path | str | int | float | bool | list[int] | NoneType
+type AnnotationCell = str | int | float | bool | NoneType
 type AnnotationFieldName = Literal[
     "annotation_id",
     "video_id",
@@ -132,30 +131,30 @@ DEFAULT_FIELDNAMES: tuple[AnnotationFieldName, ...] = (
 
 class AnnotationRow(TypedDict):
     annotation_id: int
-    video_id: int | Null
-    video_hash: str | Null
-    frame_id: int | Null
-    frame_number: int | Null
-    frame_relative_path: str | Null
-    frame_timestamp: float | Null
-    presentation_timestamp: int | Null
-    presentation_time_seconds: float | Null
-    stream_time_base_num: int | Null
-    stream_time_base_den: int | Null
-    timeline_version: str | Null
+    video_id: int | NoneType
+    video_hash: str | NoneType
+    frame_id: int | NoneType
+    frame_number: int | NoneType
+    frame_relative_path: str | NoneType
+    frame_timestamp: float | NoneType
+    presentation_timestamp: int | NoneType
+    presentation_time_seconds: float | NoneType
+    stream_time_base_num: int | NoneType
+    stream_time_base_den: int | NoneType
+    timeline_version: str | NoneType
     export_frame_index: int
     artifact_kind: str
-    artifact_sha256: str | Null
-    label_name: str | Null
-    label_id: int | Null
-    value: bool | Null
-    float_value: float | Null
-    annotator: str | Null
-    information_source_id: int | Null
-    information_source_name: str | Null
-    model_meta_id: int | Null
-    date_created: str | Null
-    date_modified: str | Null
+    artifact_sha256: str | NoneType
+    label_name: str | NoneType
+    label_id: int | NoneType
+    value: bool | NoneType
+    float_value: float | NoneType
+    annotator: str | NoneType
+    information_source_id: int | NoneType
+    information_source_name: str | NoneType
+    model_meta_id: int | NoneType
+    date_created: str | NoneType
+    date_modified: str | NoneType
 
 
 class _LabelExportModel(Protocol):
@@ -176,8 +175,8 @@ class _FrameExportModel(Protocol):
     pk: int
     frame_number: int
     relative_path: str
-    timestamp: float | Null
-    presentation_timestamp: int | Null
+    timestamp: float | NoneType
+    presentation_timestamp: int | NoneType
     file_path: str
     video: VideoFile
 
@@ -193,38 +192,38 @@ class _VideoFramesExportModel(Protocol):
 
 class _VideoHashExportModel(Protocol):
     pk: int
-    video_hash: str | Null
-    meta: dict[str, object] | Null
-    state: object | Null
+    video_hash: str | NoneType
+    meta: dict[str, object] | NoneType
+    state: object | NoneType
 
 
 class _AnnotationExportModel(Protocol):
     pk: int
     frame: _FrameExportModel
     label: _LabelExportModel
-    value: bool | Null
-    float_value: float | Null
-    annotator: str | Null
-    information_source: _InformationSourceExportModel | Null
-    model_meta: _ModelMetaExportModel | Null
-    date_created: datetime | Null
-    date_modified: datetime | Null
+    value: bool | NoneType
+    float_value: float | NoneType
+    annotator: str | NoneType
+    information_source: _InformationSourceExportModel | NoneType
+    model_meta: _ModelMetaExportModel | NoneType
+    date_created: datetime | NoneType
+    date_modified: datetime | NoneType
 
 
 class _LabelVideoSegmentExportModel(Protocol):
     pk: int
-    label: _LabelExportModel | Null
+    label: _LabelExportModel | NoneType
     video_file: VideoFile
     start_frame_number: int
     end_frame_number: int
-    source_id: int | Null
+    source_id: int | NoneType
 
-    def get_model_meta(self) -> _ModelMetaExportModel | Null: ...
+    def get_model_meta(self) -> _ModelMetaExportModel | NoneType: ...
 
 
 class _FrameValueRow(TypedDict):
-    frame__video_id: int | Null
-    frame_id: int | Null
+    frame__video_id: int | NoneType
+    frame_id: int | NoneType
 
 
 DEFAULT_TRANSCODE_FPS = 50.0
@@ -246,7 +245,7 @@ def _config_bool(value: ConfigScalar, *, default: bool = False) -> bool:
     return bool(value)
 
 
-def _config_optional_bool(value: ConfigScalar) -> bool | Null:
+def _config_optional_bool(value: ConfigScalar) -> bool | NoneType:
     if value is None:
         return None
     return _config_bool(value)
@@ -301,7 +300,7 @@ def _assert_video_media_export_ready(video: VideoFile) -> None:
         )
 
 
-def _resolve_processed_video_source_path(video: VideoFile) -> Path | Null:
+def _resolve_processed_video_source_path(video: VideoFile) -> Path | NoneType:
     """
     Prefer the central protected-media path resolution used by streaming.
     Fall back to storage-backed downloads (ensure_local_file) elsewhere.
@@ -327,7 +326,7 @@ def _resolve_processed_video_source_path(video: VideoFile) -> Path | Null:
 
 
 class export_job_failed_error(RuntimeError):
-    def __init__(self, message: str, *, original_error: Exception | Null = None):
+    def __init__(self, message: str, *, original_error: Exception | NoneType = None):
         super().__init__(message)
         self.original_error = original_error
 
@@ -369,7 +368,7 @@ def _normalize_export_config(config: export_config) -> export_config:
 
 
 class annotation_exporter_client:
-    def __init__(self, *, logger: logging.Logger | Null = None) -> None:
+    def __init__(self, *, logger: logging.Logger | NoneType = None) -> None:
         self._logger = logger or logging.getLogger(__name__)
 
     def run_export(self, config: export_config) -> export_result:
@@ -556,18 +555,18 @@ def export_frames_with_labels_to_csv(
     output_path: Path | str,
     *,
     export_profile: VideoFrameAnnotationExportProfile = "legacy_table_v1",
-    annotations: QuerySet[ImageClassificationAnnotation] | Null = None,
-    video_id: int | Null = None,
-    label_id: int | Null = None,
-    information_source_name: str | Null = None,
-    only_true: bool | Null = None,
-    limit: int | Null = None,
+    annotations: QuerySet[ImageClassificationAnnotation] | NoneType = None,
+    video_id: int | NoneType = None,
+    label_id: int | NoneType = None,
+    information_source_name: str | NoneType = None,
+    only_true: bool | NoneType = None,
+    limit: int | NoneType = None,
     load_base_data: bool = False,
     export_videos: bool = False,
     export_frames: bool = True,
     use_export_flags: bool = True,
-    segment_ids: list[int] | Null = None,
-    center_key: str | Null = None,
+    segment_ids: list[int] | NoneType = None,
+    center_key: str | NoneType = None,
     all_centers: bool = False,
     only_validated: bool = True,
     transcode_frames: bool = False,
@@ -575,7 +574,7 @@ def export_frames_with_labels_to_csv(
     transcode_quality: int = DEFAULT_TRANSCODE_QUALITY,
     transcode_ext: str = DEFAULT_TRANSCODE_EXT,
     transcode_overwrite: bool = False,
-    use_frame_pk_paths: bool | Null = None,
+    use_frame_pk_paths: bool | NoneType = None,
 ) -> Path:
     if load_base_data:
         load_base_db_data()
@@ -647,18 +646,18 @@ def export_frames_with_labels_to_json(
     output_path: Path | str,
     *,
     export_profile: VideoFrameAnnotationExportProfile = "legacy_table_v1",
-    annotations: QuerySet[ImageClassificationAnnotation] | Null = None,
-    video_id: int | Null = None,
-    label_id: int | Null = None,
-    information_source_name: str | Null = None,
-    only_true: bool | Null = None,
-    limit: int | Null = None,
+    annotations: QuerySet[ImageClassificationAnnotation] | NoneType = None,
+    video_id: int | NoneType = None,
+    label_id: int | NoneType = None,
+    information_source_name: str | NoneType = None,
+    only_true: bool | NoneType = None,
+    limit: int | NoneType = None,
     load_base_data: bool = False,
     export_videos: bool = False,
     export_frames: bool = True,
     use_export_flags: bool = True,
-    segment_ids: list[int] | Null = None,
-    center_key: str | Null = None,
+    segment_ids: list[int] | NoneType = None,
+    center_key: str | NoneType = None,
     all_centers: bool = False,
     only_validated: bool = True,
     transcode_frames: bool = False,
@@ -666,7 +665,7 @@ def export_frames_with_labels_to_json(
     transcode_quality: int = DEFAULT_TRANSCODE_QUALITY,
     transcode_ext: str = DEFAULT_TRANSCODE_EXT,
     transcode_overwrite: bool = False,
-    use_frame_pk_paths: bool | Null = None,
+    use_frame_pk_paths: bool | NoneType = None,
 ) -> Path:
     if load_base_data:
         load_base_db_data()
@@ -768,8 +767,8 @@ def _validate_export_scope(config: export_config) -> None:
 class ExportAssetResult(TypedDict):
     exported_video_count: int
     exported_frame_count: int
-    video_output_dir: Path | Null
-    frame_output_dir: Path | Null
+    video_output_dir: Path | NoneType
+    frame_output_dir: Path | NoneType
 
 
 def _export_media_assets(
@@ -783,7 +782,7 @@ def _export_media_assets(
     transcode_quality: int,
     transcode_ext: str,
     transcode_overwrite: bool,
-    use_frame_pk_paths: bool | Null,
+    use_frame_pk_paths: bool | NoneType,
     strict_media_validation: bool,
 ) -> ExportAssetResult:
     ensure_directory(output_dir)
@@ -839,7 +838,7 @@ def _export_media_assets(
 def _export_videos_from_annotations(
     annotations: QuerySet[ImageClassificationAnnotation],
     *,
-    output_dir: Path | Null,
+    output_dir: Path | NoneType,
     strict_media_validation: bool = True,
 ) -> int:
     if output_dir is None:
@@ -917,11 +916,11 @@ def _export_videos_from_annotations(
 def _export_frames_from_annotations(
     annotations: QuerySet[ImageClassificationAnnotation],
     *,
-    output_dir: Path | Null,
+    output_dir: Path | NoneType,
     use_frame_pk_paths: bool,
     frame_ext: str,
     strict_media_validation: bool = True,
-    generated_frame_root: Path | Null = None,
+    generated_frame_root: Path | NoneType = None,
 ) -> int:
     if output_dir is None:
         return 0
@@ -1014,8 +1013,8 @@ def _resolve_frame_source_path(
     frame_relative_path: str,
     use_frame_pk_paths: bool,
     frame_ext: str,
-    generated_frame_root: Path | Null = None,
-) -> Path | Null:
+    generated_frame_root: Path | NoneType = None,
+) -> Path | NoneType:
     video = frame.video
 
     if use_frame_pk_paths:
@@ -1045,7 +1044,7 @@ def transcode_videos_for_annotations(
     quality: int = DEFAULT_TRANSCODE_QUALITY,
     ext: str = DEFAULT_TRANSCODE_EXT,
     overwrite: bool = False,
-    export_frame_root: Path | Null = None,
+    export_frame_root: Path | NoneType = None,
 ) -> None:
     frame_rows = cast(
         Iterable[_FrameValueRow],
@@ -1079,12 +1078,12 @@ def transcode_videos_for_annotations(
 def _transcode_video_to_frame_dir(
     video: VideoFile,
     *,
-    frame_pks: set[int] | Null,
+    frame_pks: set[int] | NoneType,
     fps: float,
     quality: int,
     ext: str,
     overwrite: bool,
-    export_frame_root: Path | Null = None,
+    export_frame_root: Path | NoneType = None,
 ) -> None:
     if export_frame_root is not None:
         frame_dir = export_frame_root / f"video_{video.pk}"
@@ -1162,7 +1161,7 @@ def _extract_and_move_transcoded_frames(
     *,
     source_path: Path | str,
     frame_dir: Path,
-    frame_pks: set[int] | Null,
+    frame_pks: set[int] | NoneType,
     fps: float,
     quality: int,
     ext: str,
@@ -1316,7 +1315,7 @@ def _move_extracted_frames_to_pk_names(
     extracted_paths: list[Path],
     frame_dir: Path,
     *,
-    frame_pks: set[int] | Null,
+    frame_pks: set[int] | NoneType,
     ext: str,
     overwrite: bool,
 ) -> set[int]:
@@ -1355,7 +1354,7 @@ def _move_extracted_frames_to_pk_names(
     return moved_frame_pks
 
 
-def _parse_extracted_frame_number(frame_path: Path) -> int | Null:
+def _parse_extracted_frame_number(frame_path: Path) -> int | NoneType:
     try:
         return int(frame_path.stem.split("_")[-1])
     except (ValueError, IndexError):
@@ -1411,13 +1410,13 @@ def _build_annotations_queryset() -> QuerySet[ImageClassificationAnnotation]:
 def _apply_filters(
     annotations: QuerySet[ImageClassificationAnnotation],
     *,
-    video_id: int | Null,
-    label_id: int | Null,
-    information_source_name: str | Null,
-    only_true: bool | Null,
+    video_id: int | NoneType,
+    label_id: int | NoneType,
+    information_source_name: str | NoneType,
+    only_true: bool | NoneType,
     use_export_flags: bool = False,
-    segment_ids: list[int] | Null = None,
-    center_key: str | Null = None,
+    segment_ids: list[int] | NoneType = None,
+    center_key: str | NoneType = None,
     all_centers: bool = False,
     only_validated: bool = True,
 ) -> QuerySet[ImageClassificationAnnotation]:
@@ -1484,8 +1483,8 @@ def _count_annotations_for_config(config: export_config) -> int:
 def _filter_annotations_by_segments(
     annotations: QuerySet[ImageClassificationAnnotation],
     *,
-    video_id: int | Null,
-    segment_ids: list[int] | Null,
+    video_id: int | NoneType,
+    segment_ids: list[int] | NoneType,
     use_export_flags: bool,
 ) -> QuerySet[ImageClassificationAnnotation]:
     segments = LabelVideoSegment.objects.select_related(
@@ -1522,13 +1521,13 @@ def _filter_annotations_by_segments(
         )
 
         if segment.source_id is None:
-            seg_filter &= Q(information_source__isnull=True)
+            seg_filter &= Q(information_source__isNoneType=True)
         else:
             seg_filter &= Q(information_source_id=segment.source_id)
 
         model_meta = segment.get_model_meta()
         if model_meta is None:
-            seg_filter &= Q(model_meta__isnull=True)
+            seg_filter &= Q(model_meta__isNoneType=True)
         else:
             seg_filter &= Q(model_meta_id=model_meta.pk)
 

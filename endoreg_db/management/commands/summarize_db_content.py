@@ -1,23 +1,39 @@
-from collections.abc import Sequence
+from __future__ import annotations
+
+import csv
+import datetime
+from collections.abc import Iterable, Iterator, Sequence
+from io import BytesIO, StringIO
+from pathlib import Path
 from typing import Protocol, cast
 
 from django.apps import apps
 from django.core.management.base import BaseCommand, CommandError
-from django.db.models import Min, Max, Count, fields
+from django.db.models import Count, Max, Min, fields
 from django.utils.timezone import is_aware, make_naive
-import datetime
-import csv
-from io import BytesIO, StringIO
-from pathlib import Path
 
-from endoreg_db.utils.file_operations import (
-    atomic_write_file,
-    ensure_directory,
-)
-
+from endoreg_db.utils.file_operations import atomic_write_file, ensure_directory
 
 type SummaryCell = str | int
 type CsvSummaryRow = tuple[str, str]
+type SummaryValue = object
+
+EXCEL_HEADERS: CsvSummaryRow = ("Model Name", "Total Records")
+DATE_FIELD_NAMES = frozenset(
+    {
+        "created_at",
+        "updated_at",
+        "timestamp",
+        "date",
+        "start_time",
+        "end_time",
+        "examination_date",
+        "birth_date",
+        "record_date",
+    }
+)
+MAX_CATEGORICAL_FIELDS_TO_ANALYZE = 3
+MAX_DISTINCT_VALUES_TO_SHOW = 5
 
 
 class DbSummaryWorksheet(Protocol):
@@ -32,41 +48,66 @@ class DbSummaryWorkbook(Protocol):
     def save(self, filename: BytesIO) -> None: ...
 
 
+class SummaryValuesQuerySet(Protocol):
+    def annotate(self, **kwargs: object) -> SummaryValuesQuerySet: ...
+
+    def order_by(self, *field_names: str) -> SummaryValuesQuerySet: ...
+
+    def count(self) -> int: ...
+
+    def __iter__(self) -> Iterator[dict[str, SummaryValue]]: ...
+
+
+class SummaryModelManager(Protocol):
+    def count(self) -> int: ...
+
+    def aggregate(self, **kwargs: object) -> dict[str, SummaryValue]: ...
+
+    def values(self, *field_names: str) -> SummaryValuesQuerySet: ...
+
+
+class SummaryModelOptions(Protocol):
+    def get_fields(self) -> Sequence[object]: ...
+
+
+class SummaryModel(Protocol):
+    objects: SummaryModelManager
+
+
 class VerboseNamedField(Protocol):
-    verbose_name: str
+    verbose_name: object
 
 
 def _field_verbose_name(field: VerboseNamedField) -> str:
     return str(field.verbose_name).capitalize()
 
 
+def _model_fields(model: type[SummaryModel]) -> Sequence[object]:
+    model_options = cast(SummaryModelOptions, getattr(model, "_meta"))
+    return model_options.get_fields()
+
+
 class Command(BaseCommand):
-    help = "Generates a structured report summarizing the database content of custom endoreg_db models and saves it to Excel and CSV files, excluding models with zero records from the files."  # Updated help text
+    help = (
+        "Generates a structured report summarizing the database content of custom "
+        "endoreg_db models and saves it to Excel and CSV files, excluding models "
+        "with zero records from the files."
+    )
 
     def handle(self, *args: object, **options: object) -> None:
-        """
-        Generates a summary report of all models in the 'endoreg_db' app and exports the results to Excel and CSV files.
-
-        For each model, counts the total number of records and includes only models with at least one record in the output files. For models with records, attempts to display the range of values for common date or datetime fields and provides value counts for up to three categorical or ForeignKey fields, using heuristics based on field type and name. Handles missing app configuration, file saving errors, and aggregation exceptions gracefully, outputting progress and warnings to the console. Creates a 'data' directory within the app if it does not exist and saves the reports there.
-        """
         self.stdout.write(
             self.style.SUCCESS(
                 "Starting database content summarization for endoreg_db models..."
             )
         )
-        try:
-            from openpyxl import Workbook  # type: ignore[import-untyped]
-        except ImportError as exc:
-            raise CommandError(
-                "openpyxl is required to export the database summary workbook."
-            ) from exc
-
+        workbook = _create_workbook()
         try:
             app_config = apps.get_app_config("endoreg_db")
         except LookupError:
             self.stdout.write(
                 self.style.ERROR(
-                    "Could not find the 'endoreg_db' app. Make sure it's correctly installed and configured."
+                    "Could not find the 'endoreg_db' app. Make sure it's correctly "
+                    "installed and configured."
                 )
             )
             return
@@ -76,265 +117,267 @@ class Command(BaseCommand):
             ensure_directory(data_dir)
             self.stdout.write(self.style.SUCCESS(f"Created directory: {data_dir}"))
 
-        excel_file_path = data_dir / "db_summary.xlsx"
-        csv_file_path = data_dir / "db_summary.csv"
-
-        # --- Excel Setup ---
-        wb = cast(DbSummaryWorkbook, Workbook())
-        ws = wb.active
-        ws.title = "DB Summary"
-        excel_headers: tuple[str, str] = ("Model Name", "Total Records")
-        ws.append(excel_headers)
-        # --- End Excel Setup ---
-
-        # --- CSV Setup ---
-        csv_data_for_file: list[CsvSummaryRow] = [
-            excel_headers
-        ]  # Initialize with headers for CSV, will only store rows with count > 0
-        # --- End CSV Setup ---
-
-        app_models = app_config.get_models()
-
-        if not app_models:
-            self.stdout.write(
-                self.style.WARNING("No models found in the 'endoreg_db' app.")
-            )
-            try:
-                excel_buffer = BytesIO()
-                wb.save(excel_buffer)  # wb will only have headers
-                atomic_write_file(
-                    destination=excel_file_path,
-                    content=[excel_buffer.getvalue()],
-                )
-                self.stdout.write(
-                    self.style.SUCCESS(
-                        f"Empty summary report saved to {excel_file_path}"
-                    )
-                )
-                csv_buffer = StringIO(newline="")
-                writer = csv.writer(csv_buffer)
-                writer.writerows(
-                    csv_data_for_file
-                )  # csv_data_for_file will only contain headers
-                atomic_write_file(
-                    destination=csv_file_path,
-                    content=[csv_buffer.getvalue().encode("utf-8")],
-                )
-                self.stdout.write(
-                    self.style.SUCCESS(f"Empty summary report saved to {csv_file_path}")
-                )
-            except Exception as e:
-                self.stdout.write(self.style.ERROR(f"Error saving files: {e}"))
-            return
-
-        for model in app_models:
-            model_name = model.__name__
-            self.stdout.write(self.style.HTTP_INFO(f"\n--- Model: {model_name} ---"))
-
-            try:
-                count = model.objects.count()
-                self.stdout.write(f"  Total records: {count}")
-
-                if count == 0:
-                    self.stdout.write(
-                        self.style.NOTICE(
-                            "  No records found for this model. Skipping from file output."
-                        )
-                    )
-                    continue  # Skip further processing for this model if count is 0 for file output
-
-                # --- Add to Excel (only if count > 0) ---
-                ws.append([model_name, count])
-                # --- End Add to Excel ---
-
-                # --- Add to CSV data list (only if count > 0) ---
-                csv_data_for_file.append((model_name, str(count)))
-                # --- End Add to CSV data list ---
-
-                # Attempt to get date ranges for common date/datetime fields
-                date_fields_to_check = [
-                    "created_at",
-                    "updated_at",
-                    "timestamp",
-                    "date",
-                    "start_time",
-                    "end_time",
-                    "examination_date",
-                    "birth_date",
-                    "record_date",
-                ]
-                for field_obj in model._meta.get_fields():
-                    if not isinstance(
-                        field_obj, (fields.DateField, fields.DateTimeField)
-                    ):
-                        continue
-
-                    if field_obj.name in date_fields_to_check:
-                        try:
-                            aggregation = model.objects.aggregate(
-                                min_date=Min(field_obj.name),
-                                max_date=Max(field_obj.name),
-                            )
-                            min_val = aggregation.get("min_date")
-                            max_val = aggregation.get("max_date")
-
-                            if min_val is not None and max_val is not None:
-                                if isinstance(min_val, datetime.datetime) and is_aware(
-                                    min_val
-                                ):
-                                    min_val = make_naive(min_val).strftime(
-                                        "%Y-%m-%d %H:%M:%S"
-                                    )
-                                elif isinstance(min_val, datetime.date):
-                                    min_val = min_val.strftime("%Y-%m-%d")
-
-                                if isinstance(max_val, datetime.datetime) and is_aware(
-                                    max_val
-                                ):
-                                    max_val = make_naive(max_val).strftime(
-                                        "%Y-%m-%d %H:%M:%S"
-                                    )
-                                elif isinstance(max_val, datetime.date):
-                                    max_val = max_val.strftime("%Y-%m-%d")
-
-                                self.stdout.write(
-                                    f"  {_field_verbose_name(cast(VerboseNamedField, field_obj))} range: {min_val} to {max_val}"
-                                )
-                                break  # Process only the first found relevant date field for brevity
-                        except Exception as e:
-                            self.stdout.write(
-                                self.style.WARNING(
-                                    f"  Could not aggregate date range for '{field_obj.name}': {e}"
-                                )
-                            )
-
-                # Attempt to get value counts for potential categorical/ForeignKey fields
-                categorical_fields_found = 0
-                MAX_CATEGORICAL_FIELDS_TO_ANALYZE = 3
-                MAX_DISTINCT_VALUES_TO_SHOW = 5
-
-                for field in model._meta.get_fields():
-                    if categorical_fields_found >= MAX_CATEGORICAL_FIELDS_TO_ANALYZE:
-                        break
-
-                    if not isinstance(field, fields.Field):
-                        continue
-
-                    is_potential_categorical = False
-                    field_name_lower = field.name.lower()
-
-                    if (
-                        field.many_to_one or field.one_to_one
-                    ):  # ForeignKey or OneToOneField
-                        if field.related_model:
-                            is_potential_categorical = True
-                    elif isinstance(
-                        field,
-                        (
-                            fields.CharField,
-                            fields.IntegerField,
-                            fields.BooleanField,
-                            fields.TextField,
-                        ),
-                    ):
-                        # Heuristic for common categorical fields by name or type
-                        if (
-                            "type" in field_name_lower
-                            or "status" in field_name_lower
-                            or "gender" in field_name_lower
-                            or "category" in field_name_lower
-                            or isinstance(field, fields.BooleanField)
-                        ):
-                            is_potential_categorical = True
-                        # For CharField/TextField, also consider if it has few distinct values (expensive to check upfront for all)
-                        # We'll rely on the naming heuristic primarily or if it's a boolean.
-
-                    if is_potential_categorical:
-                        try:
-                            self.stdout.write(
-                                f"  Value counts for '{_field_verbose_name(cast(VerboseNamedField, field))}':"
-                            )
-
-                            # QuerySet for distinct values and their counts
-                            values_qs = (
-                                model.objects.values(field.name)
-                                .annotate(count=Count(field.name))
-                                .order_by("-count")
-                            )
-
-                            distinct_values_count = values_qs.count()
-
-                            if distinct_values_count == 0:
-                                self.stdout.write(
-                                    "    No distinct values found or field is often NULL."
-                                )
-                                continue
-
-                            for i, item in enumerate(values_qs):
-                                if i >= MAX_DISTINCT_VALUES_TO_SHOW:
-                                    self.stdout.write(
-                                        f"    ... and {distinct_values_count - MAX_DISTINCT_VALUES_TO_SHOW} more distinct values."
-                                    )
-                                    break
-                                val = item[field.name]
-                                val_display = (
-                                    str(val) if val is not None else "None/NULL"
-                                )
-                                # Truncate long string values for display
-                                if isinstance(val, str) and len(val_display) > 50:
-                                    val_display = val_display[:47] + "..."
-                                self.stdout.write(
-                                    f"    - {val_display}: {item['count']}"
-                                )
-
-                            categorical_fields_found += 1
-
-                        except Exception as e:
-                            # Some fields (like generic relations or complex custom fields) might not support this directly
-                            self.stdout.write(
-                                self.style.WARNING(
-                                    f"  Could not get value counts for '{field.name}': {e}"
-                                )
-                            )
-
-            except Exception as e:
-                self.stdout.write(
-                    self.style.ERROR(f"  Error processing model {model_name}: {e}")
-                )
-
-        # --- Save Excel File ---
-        try:
-            excel_buffer = BytesIO()
-            wb.save(excel_buffer)
-            atomic_write_file(
-                destination=excel_file_path,
-                content=[excel_buffer.getvalue()],
-            )
-            self.stdout.write(
-                self.style.SUCCESS(
-                    f"\nDatabase summary report saved to {excel_file_path}"
-                )
-            )
-        except Exception as e:
-            self.stdout.write(self.style.ERROR(f"\nError saving Excel file: {e}"))
-        # --- End Save Excel File ---
-
-        # --- Save CSV File ---
-        try:
-            csv_buffer = StringIO(newline="")
-            writer = csv.writer(csv_buffer)
-            writer.writerows(csv_data_for_file)
-            atomic_write_file(
-                destination=csv_file_path,
-                content=[csv_buffer.getvalue().encode("utf-8")],
-            )
-            self.stdout.write(
-                self.style.SUCCESS(f"Database summary report saved to {csv_file_path}")
-            )
-        except Exception as e:
-            self.stdout.write(self.style.ERROR(f"Error saving CSV file: {e}"))
-        # --- End Save CSV File ---
-
+        worksheet = workbook.active
+        worksheet.title = "DB Summary"
+        worksheet.append(EXCEL_HEADERS)
+        csv_rows = [EXCEL_HEADERS]
+        app_models = tuple(
+            cast(type[SummaryModel], model) for model in app_config.get_models()
+        )
+        _summarize_models(self, app_models, worksheet, csv_rows)
+        _write_summary_files(self, data_dir, workbook, csv_rows)
         self.stdout.write(
             self.style.SUCCESS("\nDatabase content summarization finished.")
         )
+
+
+def _create_workbook() -> DbSummaryWorkbook:
+    try:
+        from openpyxl import Workbook  # type: ignore[import-untyped]
+    except ImportError as exc:
+        raise CommandError(
+            "openpyxl is required to export the database summary workbook."
+        ) from exc
+    return cast(DbSummaryWorkbook, Workbook())
+
+
+def _summarize_models(
+    command: Command,
+    app_models: Sequence[type[SummaryModel]],
+    worksheet: DbSummaryWorksheet,
+    csv_rows: list[CsvSummaryRow],
+) -> None:
+    if not app_models:
+        command.stdout.write(
+            command.style.WARNING("No models found in the 'endoreg_db' app.")
+        )
+        return
+
+    for model in app_models:
+        _summarize_model_safely(command, model, worksheet, csv_rows)
+
+
+def _summarize_model_safely(
+    command: Command,
+    model: type[SummaryModel],
+    worksheet: DbSummaryWorksheet,
+    csv_rows: list[CsvSummaryRow],
+) -> None:
+    model_name = model.__name__
+    command.stdout.write(command.style.HTTP_INFO(f"\n--- Model: {model_name} ---"))
+    try:
+        _summarize_model(command, model, worksheet, csv_rows)
+    except Exception as exc:
+        command.stdout.write(
+            command.style.ERROR(f"  Error processing model {model_name}: {exc}")
+        )
+
+
+def _summarize_model(
+    command: Command,
+    model: type[SummaryModel],
+    worksheet: DbSummaryWorksheet,
+    csv_rows: list[CsvSummaryRow],
+) -> None:
+    count = model.objects.count()
+    command.stdout.write(f"  Total records: {count}")
+    if count == 0:
+        command.stdout.write(
+            command.style.NOTICE(
+                "  No records found for this model. Skipping from file output."
+            )
+        )
+        return
+
+    worksheet.append([model.__name__, count])
+    csv_rows.append((model.__name__, str(count)))
+    _write_first_date_range(command, model)
+    _write_categorical_summaries(command, model)
+
+
+def _relevant_date_fields(
+    model: type[SummaryModel],
+) -> Iterable[fields.Field[object, object]]:
+    for field in _model_fields(model):
+        if isinstance(field, (fields.DateField, fields.DateTimeField)):
+            typed_field = cast(fields.Field[object, object], field)
+            if typed_field.name in DATE_FIELD_NAMES:
+                yield typed_field
+
+
+def _date_range(
+    model: type[SummaryModel],
+    field: fields.Field[object, object],
+) -> tuple[SummaryValue, SummaryValue] | None:
+    aggregation = model.objects.aggregate(
+        min_date=Min(field.name),
+        max_date=Max(field.name),
+    )
+    min_value = aggregation.get("min_date")
+    max_value = aggregation.get("max_date")
+    if min_value is None or max_value is None:
+        return None
+    return min_value, max_value
+
+
+def _format_date_value(value: SummaryValue) -> SummaryValue:
+    if isinstance(value, datetime.datetime) and is_aware(value):
+        return make_naive(value).strftime("%Y-%m-%d %H:%M:%S")
+    if isinstance(value, datetime.date):
+        return value.strftime("%Y-%m-%d")
+    return value
+
+
+def _write_first_date_range(
+    command: Command,
+    model: type[SummaryModel],
+) -> None:
+    for field in _relevant_date_fields(model):
+        try:
+            values = _date_range(model, field)
+        except Exception as exc:
+            command.stdout.write(
+                command.style.WARNING(
+                    f"  Could not aggregate date range for '{field.name}': {exc}"
+                )
+            )
+            continue
+        if values is None:
+            continue
+        min_value, max_value = values
+        command.stdout.write(
+            f"  {_field_verbose_name(cast(VerboseNamedField, field))} range: "
+            f"{_format_date_value(min_value)} to {_format_date_value(max_value)}"
+        )
+        return
+
+
+def _is_related_categorical(field: fields.Field[object, object]) -> bool:
+    return bool(field.related_model) and bool(field.many_to_one or field.one_to_one)
+
+
+def _is_potential_categorical(field: fields.Field[object, object]) -> bool:
+    if _is_related_categorical(field):
+        return True
+    if isinstance(field, fields.BooleanField):
+        return True
+    if not isinstance(
+        field,
+        (fields.CharField, fields.IntegerField, fields.TextField),
+    ):
+        return False
+    field_name = field.name.lower()
+    return any(
+        token in field_name for token in ("type", "status", "gender", "category")
+    )
+
+
+def _categorical_fields(
+    model: type[SummaryModel],
+) -> Iterable[fields.Field[object, object]]:
+    for field in _model_fields(model):
+        if not isinstance(field, fields.Field):
+            continue
+        typed_field = cast(fields.Field[object, object], field)
+        if _is_potential_categorical(typed_field):
+            yield typed_field
+
+
+def _display_value(value: SummaryValue) -> str:
+    display = str(value) if value is not None else "None/NULL"
+    if isinstance(value, str) and len(display) > 50:
+        return display[:47] + "..."
+    return display
+
+
+def _write_value_counts(
+    command: Command,
+    model: type[SummaryModel],
+    field: fields.Field[object, object],
+) -> None:
+    command.stdout.write(
+        f"  Value counts for '{_field_verbose_name(cast(VerboseNamedField, field))}':"
+    )
+    values = (
+        model.objects.values(field.name)
+        .annotate(count=Count(field.name))
+        .order_by("-count")
+    )
+    distinct_count = values.count()
+    if distinct_count == 0:
+        command.stdout.write("    No distinct values found or field is often NULL.")
+        return
+
+    for index, item in enumerate(values):
+        if index >= MAX_DISTINCT_VALUES_TO_SHOW:
+            command.stdout.write(
+                f"    ... and {distinct_count - MAX_DISTINCT_VALUES_TO_SHOW} "
+                "more distinct values."
+            )
+            return
+        command.stdout.write(
+            f"    - {_display_value(item[field.name])}: {item['count']}"
+        )
+
+
+def _write_categorical_summaries(
+    command: Command,
+    model: type[SummaryModel],
+) -> None:
+    fields_to_analyze = list(_categorical_fields(model))[
+        :MAX_CATEGORICAL_FIELDS_TO_ANALYZE
+    ]
+    for field in fields_to_analyze:
+        try:
+            _write_value_counts(command, model, field)
+        except Exception as exc:
+            command.stdout.write(
+                command.style.WARNING(
+                    f"  Could not get value counts for '{field.name}': {exc}"
+                )
+            )
+
+
+def _write_summary_files(
+    command: Command,
+    data_dir: Path,
+    workbook: DbSummaryWorkbook,
+    csv_rows: Sequence[CsvSummaryRow],
+) -> None:
+    _write_workbook_safely(command, data_dir / "db_summary.xlsx", workbook)
+    _write_csv_safely(command, data_dir / "db_summary.csv", csv_rows)
+
+
+def _write_workbook_safely(
+    command: Command,
+    destination: Path,
+    workbook: DbSummaryWorkbook,
+) -> None:
+    try:
+        buffer = BytesIO()
+        workbook.save(buffer)
+        atomic_write_file(destination=destination, content=[buffer.getvalue()])
+        command.stdout.write(
+            command.style.SUCCESS(f"\nDatabase summary report saved to {destination}")
+        )
+    except Exception as exc:
+        command.stdout.write(command.style.ERROR(f"\nError saving Excel file: {exc}"))
+
+
+def _write_csv_safely(
+    command: Command,
+    destination: Path,
+    rows: Sequence[CsvSummaryRow],
+) -> None:
+    try:
+        buffer = StringIO(newline="")
+        csv.writer(buffer).writerows(rows)
+        atomic_write_file(
+            destination=destination,
+            content=[buffer.getvalue().encode("utf-8")],
+        )
+        command.stdout.write(
+            command.style.SUCCESS(f"Database summary report saved to {destination}")
+        )
+    except Exception as exc:
+        command.stdout.write(command.style.ERROR(f"Error saving CSV file: {exc}"))

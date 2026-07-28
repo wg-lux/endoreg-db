@@ -35,7 +35,6 @@ if TYPE_CHECKING:
         VideoImportService as VideoImportService,
     )
 
-type Null = NoneType
 type ImportFilesExportName = Literal[
     "content_hash_lock",
     "file_lock",
@@ -69,8 +68,8 @@ class _ValidateDirectories(Protocol):
 class _DefaultSensitiveMetaFactory(Protocol):
     def __call__(
         self,
-        instance: RawPdfFile | VideoFile | Null,
-    ) -> SensitiveMeta | Null: ...
+        instance: RawPdfFile | VideoFile | NoneType,
+    ) -> SensitiveMeta | NoneType: ...
 
 
 type ImportFilesExport = (

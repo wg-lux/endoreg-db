@@ -1,6 +1,8 @@
 result
 result/
 *result
+results/
+.snakemake/
 .ruff_cache/
 .devenv
 untracked_notes.md

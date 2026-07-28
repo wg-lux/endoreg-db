@@ -90,6 +90,22 @@ def _frame_segment_reconciliation_issues() -> list[FrameSegmentReconciliationIss
     return []
 
 
+def _annotation_create_list() -> list[ImageClassificationAnnotation]:
+    return []
+
+
+def _integer_list() -> list[int]:
+    return []
+
+
+def _annotation_key_set() -> set[AnnotationMatchKey]:
+    return set()
+
+
+def _integer_set() -> set[int]:
+    return set()
+
+
 @dataclass(frozen=True)
 class FrameSegmentReconciliationSpec:
     video_ids: tuple[int, ...] = ()
@@ -174,6 +190,34 @@ class FrameSegmentReconciliationReport:
             "summary": self.summary.as_dict(),
             "issues": [issue.as_dict() for issue in self.issues],
         }
+
+
+@dataclass
+class _ReconciliationContext:
+    spec: FrameSegmentReconciliationSpec
+    summary: FrameSegmentReconciliationSummary = field(
+        default_factory=FrameSegmentReconciliationSummary
+    )
+    issues: list[FrameSegmentReconciliationIssue] = field(
+        default_factory=_frame_segment_reconciliation_issues
+    )
+    annotations_to_create: list[ImageClassificationAnnotation] = field(
+        default_factory=_annotation_create_list
+    )
+    stale_annotation_ids: list[int] = field(default_factory=_integer_list)
+    expected_keys: set[AnnotationMatchKey] = field(default_factory=_annotation_key_set)
+    scope_frame_ids: set[int] = field(default_factory=_integer_set)
+    scope_video_ids: set[int] = field(default_factory=_integer_set)
+
+
+@dataclass(frozen=True)
+class _EligibleSegment:
+    segment: LabelVideoSegment
+    segment_view: _SegmentLike
+    track: str
+    frames: list[_FrameLike]
+    model_meta_id: int | None
+    create_source_id: int
 
 
 def _normalize_annotator(value: str | None) -> str | None:
@@ -406,194 +450,255 @@ def _unmarked_annotation_queryset(
     return queryset.filter(_annotator_scope_q(spec.annotator)).order_by("pk")
 
 
-def reconcile_frame_segment_annotations(
-    spec: FrameSegmentReconciliationSpec,
-) -> FrameSegmentReconciliationReport:
-    if spec.track not in VALID_FRAME_SEGMENT_TRACKS:
-        raise ValueError("track must be one of: all, manual, prediction.")
-
-    summary = FrameSegmentReconciliationSummary()
-    issues: list[FrameSegmentReconciliationIssue] = []
-    annotations_to_create: list[ImageClassificationAnnotation] = []
-    stale_annotation_ids: list[int] = []
-    expected_keys: set[AnnotationMatchKey] = set()
-    scope_frame_ids: set[int] = set()
-    scope_video_ids: set[int] = set(spec.video_ids)
-
-    segments = _selected_segments(spec)
-    summary.total_segments = len(segments)
-
-    for segment in segments:
-        segment_view = cast(_SegmentLike, segment)
-        scope_video_ids.add(segment_view.video_file_id)
-        track = _segment_track(segment)
-        if not _track_allowed(spec.track, track):
-            continue
-
-        summary.eligible_segments += 1
-        if segment_view.label_id is None:
-            summary.skipped_no_label += 1
-            issues.append(
-                FrameSegmentReconciliationIssue(
-                    issue_type="skipped_no_label",
-                    track=track,
-                    video_id=segment_view.video_file_id,
-                    segment_id=segment_view.pk,
-                )
-            )
-            continue
-
-        frames = list(segment.get_frames().only("id", "frame_number"))
-        scope_frame_ids.update(frame.pk for frame in frames)
-        if not frames:
-            summary.skipped_no_frames += 1
-            issues.append(
-                FrameSegmentReconciliationIssue(
-                    issue_type="skipped_no_frames",
-                    track=track,
-                    video_id=segment_view.video_file_id,
-                    segment_id=segment_view.pk,
-                    label_id=segment_view.label_id,
-                )
-            )
-            continue
-
-        model_meta_id = _segment_model_meta_id(segment)
-        create_source_id = segment_view.source_id
-        if track == "prediction":
-            prediction_source = _prediction_annotation_source(create=spec.apply)
-            create_source_id = prediction_source.pk if prediction_source else None
-        elif create_source_id is None:
-            summary.skipped_no_source += 1
-            issues.append(
-                FrameSegmentReconciliationIssue(
-                    issue_type="skipped_no_source",
-                    track=track,
-                    video_id=segment_view.video_file_id,
-                    segment_id=segment_view.pk,
-                    label_id=segment_view.label_id,
-                )
-            )
-            continue
-
-        frame_ids = [frame.pk for frame in frames]
-        existing_annotations = _existing_annotations_for_segment(
-            segment=segment,
-            frame_ids=frame_ids,
-            track=track,
-            model_meta_id=model_meta_id,
-            annotator=spec.annotator,
-        )
-        existing_by_key: dict[
-            AnnotationMatchKey, list[ImageClassificationAnnotation]
-        ] = {}
-        for annotation in existing_annotations:
-            key = _annotation_key(annotation, track=track)
-            existing_by_key.setdefault(key, []).append(annotation)
-
-        for frame in frames:
-            summary.expected_annotations += 1
-            expected_key = _expected_key(
+def _segment_frames_or_issue(
+    context: _ReconciliationContext,
+    segment: LabelVideoSegment,
+    segment_view: _SegmentLike,
+    track: str,
+) -> list[_FrameLike] | None:
+    if segment_view.label_id is None:
+        context.summary.skipped_no_label += 1
+        context.issues.append(
+            FrameSegmentReconciliationIssue(
+                issue_type="skipped_no_label",
                 track=track,
-                frame_id=frame.pk,
-                label_id=segment_view.label_id,
-                information_source_id=segment_view.source_id,
-                model_meta_id=model_meta_id,
-                annotator=spec.annotator,
+                video_id=segment_view.video_file_id,
+                segment_id=segment_view.pk,
             )
-            expected_keys.add(expected_key)
-            matching_annotations = existing_by_key.get(expected_key, [])
-            if matching_annotations:
-                summary.matched_annotations += 1
-                if any(
-                    not is_segment_derived_external_annotation_id(
-                        annotation.external_annotation_id
-                    )
-                    for annotation in matching_annotations
-                ):
-                    summary.legacy_matched_annotations += 1
-                    matching_annotation = cast(_AnnotationLike, matching_annotations[0])
-                    issues.append(
-                        FrameSegmentReconciliationIssue(
-                            issue_type="legacy_matched_annotation",
-                            track=track,
-                            video_id=segment_view.video_file_id,
-                            segment_id=segment_view.pk,
-                            annotation_id=matching_annotation.pk,
-                            frame_id=frame.pk,
-                            frame_number=frame.frame_number,
-                            label_id=segment_view.label_id,
-                            information_source_id=(
-                                matching_annotation.information_source_id
-                            ),
-                            model_meta_id=model_meta_id,
-                            annotator=_annotator_key(matching_annotation.annotator),
-                            external_annotation_id=(
-                                matching_annotation.external_annotation_id
-                            ),
-                            action="report_only",
-                        )
-                    )
-                continue
+        )
+        return None
+    frames = cast(
+        list[_FrameLike],
+        list(segment.get_frames().only("id", "frame_number")),
+    )
+    context.scope_frame_ids.update(frame.pk for frame in frames)
+    if frames:
+        return frames
+    context.summary.skipped_no_frames += 1
+    context.issues.append(
+        FrameSegmentReconciliationIssue(
+            issue_type="skipped_no_frames",
+            track=track,
+            video_id=segment_view.video_file_id,
+            segment_id=segment_view.pk,
+            label_id=segment_view.label_id,
+        )
+    )
+    return None
 
-            summary.missing_annotations += 1
-            action = (
-                "create"
-                if spec.apply and create_source_id is not None
-                else "report_only"
-            )
-            issues.append(
-                FrameSegmentReconciliationIssue(
-                    issue_type="missing_annotation",
-                    track=track,
-                    video_id=segment_view.video_file_id,
-                    segment_id=segment_view.pk,
-                    frame_id=frame.pk,
-                    frame_number=frame.frame_number,
-                    label_id=segment_view.label_id,
-                    information_source_id=create_source_id,
-                    model_meta_id=model_meta_id,
-                    annotator=_annotator_key(spec.annotator),
-                    action=action,
-                )
-            )
-            if spec.apply and create_source_id is not None:
-                annotations_to_create.append(
-                    ImageClassificationAnnotation(
-                        frame_id=frame.pk,
-                        label_id=segment_view.label_id,
-                        value=True,
-                        information_source_id=create_source_id,
-                        model_meta_id=model_meta_id,
-                        annotator=_normalize_annotator(spec.annotator),
-                        external_annotation_id=(
-                            segment_derived_external_annotation_id(
-                                segment_id=segment_view.pk,
-                                frame_id=frame.pk,
-                                label_id=segment_view.label_id,
-                                information_source_id=create_source_id,
-                                model_meta_id=model_meta_id,
-                                annotator=_normalize_annotator(spec.annotator),
-                            )
-                        ),
-                    )
-                )
 
-    for annotation in _generated_annotation_queryset(
-        spec=spec,
-        scope_video_ids=scope_video_ids,
-    ).iterator():
+def _segment_source_id_or_issue(
+    context: _ReconciliationContext,
+    segment_view: _SegmentLike,
+    track: str,
+) -> int | None:
+    if track == "prediction":
+        prediction_source = _prediction_annotation_source(create=context.spec.apply)
+        return prediction_source.pk if prediction_source else None
+    if segment_view.source_id is not None:
+        return segment_view.source_id
+    context.summary.skipped_no_source += 1
+    context.issues.append(
+        FrameSegmentReconciliationIssue(
+            issue_type="skipped_no_source",
+            track=track,
+            video_id=segment_view.video_file_id,
+            segment_id=segment_view.pk,
+            label_id=segment_view.label_id,
+        )
+    )
+    return None
+
+
+def _eligible_segment(
+    context: _ReconciliationContext,
+    segment: LabelVideoSegment,
+) -> _EligibleSegment | None:
+    segment_view = cast(_SegmentLike, segment)
+    context.scope_video_ids.add(segment_view.video_file_id)
+    track = _segment_track(segment)
+    if not _track_allowed(context.spec.track, track):
+        return None
+    context.summary.eligible_segments += 1
+    frames = _segment_frames_or_issue(context, segment, segment_view, track)
+    if frames is None:
+        return None
+    create_source_id = _segment_source_id_or_issue(context, segment_view, track)
+    if create_source_id is None:
+        return None
+    return _EligibleSegment(
+        segment=segment,
+        segment_view=segment_view,
+        track=track,
+        frames=frames,
+        model_meta_id=_segment_model_meta_id(segment),
+        create_source_id=create_source_id,
+    )
+
+
+def _existing_annotations_by_key(
+    context: _ReconciliationContext,
+    eligible: _EligibleSegment,
+) -> dict[AnnotationMatchKey, list[ImageClassificationAnnotation]]:
+    existing_annotations = _existing_annotations_for_segment(
+        segment=eligible.segment,
+        frame_ids=[frame.pk for frame in eligible.frames],
+        track=eligible.track,
+        model_meta_id=eligible.model_meta_id,
+        annotator=context.spec.annotator,
+    )
+    existing_by_key: dict[AnnotationMatchKey, list[ImageClassificationAnnotation]] = {}
+    for annotation in existing_annotations:
+        key = _annotation_key(annotation, track=eligible.track)
+        existing_by_key.setdefault(key, []).append(annotation)
+    return existing_by_key
+
+
+def _record_legacy_match(
+    context: _ReconciliationContext,
+    eligible: _EligibleSegment,
+    frame: _FrameLike,
+    matching_annotations: list[ImageClassificationAnnotation],
+) -> None:
+    legacy_matches = [
+        annotation
+        for annotation in matching_annotations
+        if not is_segment_derived_external_annotation_id(
+            annotation.external_annotation_id
+        )
+    ]
+    if not legacy_matches:
+        return
+    context.summary.legacy_matched_annotations += 1
+    matching_annotation = cast(_AnnotationLike, legacy_matches[0])
+    context.issues.append(
+        FrameSegmentReconciliationIssue(
+            issue_type="legacy_matched_annotation",
+            track=eligible.track,
+            video_id=eligible.segment_view.video_file_id,
+            segment_id=eligible.segment_view.pk,
+            annotation_id=matching_annotation.pk,
+            frame_id=frame.pk,
+            frame_number=frame.frame_number,
+            label_id=eligible.segment_view.label_id,
+            information_source_id=matching_annotation.information_source_id,
+            model_meta_id=eligible.model_meta_id,
+            annotator=_annotator_key(matching_annotation.annotator),
+            external_annotation_id=matching_annotation.external_annotation_id,
+            action="report_only",
+        )
+    )
+
+
+def _missing_annotation(
+    context: _ReconciliationContext,
+    eligible: _EligibleSegment,
+    frame: _FrameLike,
+) -> ImageClassificationAnnotation:
+    label_id = eligible.segment_view.label_id
+    assert label_id is not None
+    normalized_annotator = _normalize_annotator(context.spec.annotator)
+    return ImageClassificationAnnotation(
+        frame_id=frame.pk,
+        label_id=label_id,
+        value=True,
+        information_source_id=eligible.create_source_id,
+        model_meta_id=eligible.model_meta_id,
+        annotator=normalized_annotator,
+        external_annotation_id=segment_derived_external_annotation_id(
+            segment_id=eligible.segment_view.pk,
+            frame_id=frame.pk,
+            label_id=label_id,
+            information_source_id=eligible.create_source_id,
+            model_meta_id=eligible.model_meta_id,
+            annotator=normalized_annotator,
+        ),
+    )
+
+
+def _record_missing_annotation(
+    context: _ReconciliationContext,
+    eligible: _EligibleSegment,
+    frame: _FrameLike,
+) -> None:
+    context.summary.missing_annotations += 1
+    action = "create" if context.spec.apply else "report_only"
+    context.issues.append(
+        FrameSegmentReconciliationIssue(
+            issue_type="missing_annotation",
+            track=eligible.track,
+            video_id=eligible.segment_view.video_file_id,
+            segment_id=eligible.segment_view.pk,
+            frame_id=frame.pk,
+            frame_number=frame.frame_number,
+            label_id=eligible.segment_view.label_id,
+            information_source_id=eligible.create_source_id,
+            model_meta_id=eligible.model_meta_id,
+            annotator=_annotator_key(context.spec.annotator),
+            action=action,
+        )
+    )
+    if context.spec.apply:
+        context.annotations_to_create.append(
+            _missing_annotation(context, eligible, frame)
+        )
+
+
+def _reconcile_expected_frame(
+    context: _ReconciliationContext,
+    eligible: _EligibleSegment,
+    frame: _FrameLike,
+    existing_by_key: dict[AnnotationMatchKey, list[ImageClassificationAnnotation]],
+) -> None:
+    label_id = eligible.segment_view.label_id
+    assert label_id is not None
+    context.summary.expected_annotations += 1
+    expected_key = _expected_key(
+        track=eligible.track,
+        frame_id=frame.pk,
+        label_id=label_id,
+        information_source_id=eligible.segment_view.source_id,
+        model_meta_id=eligible.model_meta_id,
+        annotator=context.spec.annotator,
+    )
+    context.expected_keys.add(expected_key)
+    matching_annotations = existing_by_key.get(expected_key, [])
+    if matching_annotations:
+        context.summary.matched_annotations += 1
+        _record_legacy_match(context, eligible, frame, matching_annotations)
+        return
+    _record_missing_annotation(context, eligible, frame)
+
+
+def _reconcile_segment(
+    context: _ReconciliationContext,
+    segment: LabelVideoSegment,
+) -> None:
+    eligible = _eligible_segment(context, segment)
+    if eligible is None:
+        return
+    existing_by_key = _existing_annotations_by_key(context, eligible)
+    for frame in eligible.frames:
+        _reconcile_expected_frame(context, eligible, frame, existing_by_key)
+
+
+def _scan_generated_annotations(context: _ReconciliationContext) -> None:
+    annotations = _generated_annotation_queryset(
+        spec=context.spec,
+        scope_video_ids=context.scope_video_ids,
+    )
+    for annotation in annotations.iterator():
         annotation_view = cast(_AnnotationLike, annotation)
         track = _annotation_track(annotation)
-        if not _track_allowed(spec.track, track):
+        if not _track_allowed(context.spec.track, track):
             continue
         key = _annotation_key(annotation, track=track)
-        if key in expected_keys:
-            summary.generated_matched_annotations += 1
+        if key in context.expected_keys:
+            context.summary.generated_matched_annotations += 1
             continue
-        summary.stale_generated_annotations += 1
-        stale_annotation_ids.append(annotation.pk)
-        issues.append(
+        context.summary.stale_generated_annotations += 1
+        context.stale_annotation_ids.append(annotation.pk)
+        context.issues.append(
             FrameSegmentReconciliationIssue(
                 issue_type="stale_generated_annotation",
                 track=track,
@@ -606,24 +711,26 @@ def reconcile_frame_segment_annotations(
                 model_meta_id=annotation_view.model_meta_id,
                 annotator=_annotator_key(annotation_view.annotator),
                 external_annotation_id=annotation_view.external_annotation_id,
-                action="delete" if spec.apply else "report_only",
+                action="delete" if context.spec.apply else "report_only",
             )
         )
 
-    for annotation in _unmarked_annotation_queryset(
-        spec=spec,
-        scope_video_ids=scope_video_ids,
-        scope_frame_ids=scope_frame_ids,
-    ).iterator():
+
+def _scan_unmarked_annotations(context: _ReconciliationContext) -> None:
+    annotations = _unmarked_annotation_queryset(
+        spec=context.spec,
+        scope_video_ids=context.scope_video_ids,
+        scope_frame_ids=context.scope_frame_ids,
+    )
+    for annotation in annotations.iterator():
         annotation_view = cast(_AnnotationLike, annotation)
         track = _annotation_track(annotation)
-        if not _track_allowed(spec.track, track):
+        if not _track_allowed(context.spec.track, track):
             continue
-        key = _annotation_key(annotation, track=track)
-        if key in expected_keys:
+        if _annotation_key(annotation, track=track) in context.expected_keys:
             continue
-        summary.suspicious_unmarked_annotations += 1
-        issues.append(
+        context.summary.suspicious_unmarked_annotations += 1
+        context.issues.append(
             FrameSegmentReconciliationIssue(
                 issue_type="suspicious_unmarked_annotation",
                 track=track,
@@ -640,25 +747,57 @@ def reconcile_frame_segment_annotations(
             )
         )
 
-    if spec.apply and (annotations_to_create or stale_annotation_ids):
-        with transaction.atomic():
-            if annotations_to_create:
-                ImageClassificationAnnotation.objects.bulk_create(
-                    annotations_to_create,
-                    ignore_conflicts=True,
-                )
-                summary.created_annotations = len(annotations_to_create)
-            if stale_annotation_ids:
-                deleted, _ = ImageClassificationAnnotation.objects.filter(
-                    pk__in=stale_annotation_ids,
-                    external_annotation_id__startswith=(
-                        f"{SEGMENT_DERIVED_EXTERNAL_ANNOTATION_PREFIX}:"
-                    ),
-                ).delete()
-                summary.deleted_stale_generated_annotations = deleted
 
+def _create_missing_annotations(context: _ReconciliationContext) -> None:
+    if not context.annotations_to_create:
+        return
+    ImageClassificationAnnotation.objects.bulk_create(
+        context.annotations_to_create,
+        ignore_conflicts=True,
+    )
+    context.summary.created_annotations = len(context.annotations_to_create)
+
+
+def _delete_stale_annotations(context: _ReconciliationContext) -> None:
+    if not context.stale_annotation_ids:
+        return
+    deleted, _ = ImageClassificationAnnotation.objects.filter(
+        pk__in=context.stale_annotation_ids,
+        external_annotation_id__startswith=(
+            f"{SEGMENT_DERIVED_EXTERNAL_ANNOTATION_PREFIX}:"
+        ),
+    ).delete()
+    context.summary.deleted_stale_generated_annotations = deleted
+
+
+def _apply_reconciliation(context: _ReconciliationContext) -> None:
+    if not context.spec.apply:
+        return
+    if not context.annotations_to_create and not context.stale_annotation_ids:
+        return
+    with transaction.atomic():
+        _create_missing_annotations(context)
+        _delete_stale_annotations(context)
+
+
+def reconcile_frame_segment_annotations(
+    spec: FrameSegmentReconciliationSpec,
+) -> FrameSegmentReconciliationReport:
+    if spec.track not in VALID_FRAME_SEGMENT_TRACKS:
+        raise ValueError("track must be one of: all, manual, prediction.")
+    context = _ReconciliationContext(
+        spec=spec,
+        scope_video_ids=set(spec.video_ids),
+    )
+    segments = _selected_segments(spec)
+    context.summary.total_segments = len(segments)
+    for segment in segments:
+        _reconcile_segment(context, segment)
+    _scan_generated_annotations(context)
+    _scan_unmarked_annotations(context)
+    _apply_reconciliation(context)
     return FrameSegmentReconciliationReport(
         spec=spec,
-        summary=summary,
-        issues=issues,
+        summary=context.summary,
+        issues=context.issues,
     )

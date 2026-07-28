@@ -18,7 +18,6 @@ DEFAULT_PATIENT_LAST_NAME = "unknown"
 DEFAULT_CENTER_NAME = "endoreg_db_demo"
 DEFAULT_PATIENT_DOB = date(1970, 1, 1)
 
-type Null = NoneType
 type DefaultSensitiveMetaValue = str | date
 type DefaultSensitiveMetaData = dict[str, DefaultSensitiveMetaValue]
 
@@ -29,8 +28,8 @@ class _NamedCenter(Protocol):
 
 class _SensitiveMetaCarrier(Protocol):
     pk: int
-    center: Center | Null
-    sensitive_meta: SensitiveMeta | Null
+    center: Center | NoneType
+    sensitive_meta: SensitiveMeta | NoneType
 
     def save(self, *, update_fields: list[str]) -> None: ...
 
@@ -39,7 +38,7 @@ class _RawPdfIdentifier(Protocol):
     pdf_hash: str
 
 
-def _center_name(center: Center | Null) -> str:
+def _center_name(center: Center | NoneType) -> str:
     if center is None:
         return DEFAULT_CENTER_NAME
     named_center = cast(_NamedCenter, center)
@@ -56,8 +55,8 @@ def _instance_log_identifier(instance: _SensitiveMetaCarrier) -> str:
 
 
 def default_sensitive_meta(
-    instance: RawPdfFile | VideoFile | Null,
-) -> SensitiveMeta | Null:
+    instance: RawPdfFile | VideoFile | NoneType,
+) -> SensitiveMeta | NoneType:
     """
     Ensure the given instance has a minimal SensitiveMeta attached.
 

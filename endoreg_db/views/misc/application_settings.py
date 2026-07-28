@@ -5,6 +5,7 @@ import json
 import threading
 import traceback
 from collections import Counter
+from dataclasses import dataclass
 from datetime import datetime
 from datetime import timezone as datetime_timezone
 from pathlib import Path
@@ -43,6 +44,9 @@ from endoreg_db.models.report.patient_examination_report import PatientExaminati
 from endoreg_db.services.application_settings.ai_dataset_export import (
     create_ai_dataset_export,
     prepare_ai_dataset_export_download,
+)
+from endoreg_db.services.aidataset_training_manifests import (
+    build_frame_multilabel_training_manifest,
 )
 from endoreg_db.services.hub import deployment_profile_payload
 from endoreg_db.services.jobs.model_training_jobs import (
@@ -719,7 +723,85 @@ def _coerce_local_training_path(
     return str(Path(normalized).expanduser().resolve()), None
 
 
-def _create_phi_region_detector_training_run(payload: dict[str, Any]) -> Response:
+@dataclass(frozen=True)
+class _PhiRegionDetectorTrainingOptions:
+    dataset_yaml: str
+    output_dir: str
+    base_model: str
+    run_name: str | None
+    epochs: int
+    batch_size: int
+    input_size: int
+    device: str
+    workers: int
+    patience: int
+    export_onnx: bool
+    confidence_threshold: float
+    nms_threshold: float
+    class_ids: str
+
+
+def _optional_nonblank_string(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _required_string_error(value: str) -> str | None:
+    if not value:
+        return "base_model is required."
+    return None
+
+
+def _positive_integer_error(value: object, *, field_name: str) -> str | None:
+    if not isinstance(value, int) or value <= 0:
+        return f"{field_name} must be a positive integer."
+    return None
+
+
+def _minimum_integer_error(
+    value: object,
+    *,
+    field_name: str,
+    minimum: int,
+) -> str | None:
+    if not isinstance(value, int) or value < minimum:
+        return f"{field_name} must be an integer >= {minimum}."
+    return None
+
+
+def _boolean_field_error(value: object, *, field_name: str) -> str | None:
+    if not isinstance(value, bool):
+        return f"{field_name} must be a boolean."
+    return None
+
+
+def _unit_interval_error(value: object, *, field_name: str) -> str | None:
+    if not isinstance(value, (int, float)) or not 0.0 <= float(value) <= 1.0:
+        return f"{field_name} must be between 0 and 1."
+    return None
+
+
+def _present_field_errors(
+    field_errors: dict[str, str | None],
+) -> dict[str, str]:
+    return {
+        field_name: error
+        for field_name, error in field_errors.items()
+        if error is not None
+    }
+
+
+def _phi_detector_output_dir(output_dir: str | None) -> str:
+    if output_dir is not None:
+        return output_dir
+    return str((TRAINING_ROOT / "phi_region_detector").resolve())
+
+
+def _phi_detector_training_options(
+    payload: dict[str, Any],
+) -> tuple[_PhiRegionDetectorTrainingOptions | None, dict[str, str]]:
     dataset_yaml, dataset_yaml_error = _coerce_local_training_path(
         payload.get("dataset_yaml"),
         field_name="dataset_yaml",
@@ -729,87 +811,130 @@ def _create_phi_region_detector_training_run(payload: dict[str, Any]) -> Respons
         field_name="output_dir",
         required=False,
     )
-    if output_dir is None:
-        output_dir = str((TRAINING_ROOT / "phi_region_detector").resolve())
-
-    base_model = str(payload.get("base_model", "yolov8n.pt") or "").strip()
-    run_name_raw = payload.get("run_name")
-    run_name = (
-        str(run_name_raw).strip()
-        if isinstance(run_name_raw, str) and str(run_name_raw).strip()
-        else None
+    resolved_output_dir = _phi_detector_output_dir(output_dir)
+    base_model = _normalized_payload_string(
+        payload,
+        "base_model",
+        default="yolov8n.pt",
     )
     epochs = payload.get("epochs", 50)
     batch_size = payload.get("batch_size", 16)
     input_size = payload.get("input_size", 640)
-    device = str(payload.get("device", "auto") or "auto").strip() or "auto"
     workers = payload.get("workers", 4)
     patience = payload.get("patience", 25)
     export_onnx = payload.get("export_onnx", True)
     confidence_threshold = payload.get("confidence_threshold", 0.35)
     nms_threshold = payload.get("nms_threshold", 0.45)
-    class_ids = str(payload.get("class_ids", "") or "").strip()
-
-    errors: dict[str, str] = {}
-    if dataset_yaml_error:
-        errors["dataset_yaml"] = dataset_yaml_error
-    if output_dir_error:
-        errors["output_dir"] = output_dir_error
-    if not base_model:
-        errors["base_model"] = "base_model is required."
-    if not isinstance(epochs, int) or epochs <= 0:
-        errors["epochs"] = "epochs must be a positive integer."
-    if not isinstance(batch_size, int) or batch_size <= 0:
-        errors["batch_size"] = "batch_size must be a positive integer."
-    if not isinstance(input_size, int) or input_size < 32:
-        errors["input_size"] = "input_size must be an integer >= 32."
-    if not isinstance(workers, int) or workers < 0:
-        errors["workers"] = "workers must be an integer >= 0."
-    if not isinstance(patience, int) or patience < 0:
-        errors["patience"] = "patience must be an integer >= 0."
-    if not isinstance(export_onnx, bool):
-        errors["export_onnx"] = "export_onnx must be a boolean."
-    if not isinstance(confidence_threshold, (int, float)) or not (
-        0.0 <= float(confidence_threshold) <= 1.0
-    ):
-        errors["confidence_threshold"] = "confidence_threshold must be between 0 and 1."
-    if not isinstance(nms_threshold, (int, float)) or not (
-        0.0 <= float(nms_threshold) <= 1.0
-    ):
-        errors["nms_threshold"] = "nms_threshold must be between 0 and 1."
-
+    errors = _present_field_errors(
+        {
+            "dataset_yaml": dataset_yaml_error,
+            "output_dir": output_dir_error,
+            "base_model": _required_string_error(base_model),
+            "epochs": _positive_integer_error(epochs, field_name="epochs"),
+            "batch_size": _positive_integer_error(
+                batch_size,
+                field_name="batch_size",
+            ),
+            "input_size": _minimum_integer_error(
+                input_size,
+                field_name="input_size",
+                minimum=32,
+            ),
+            "workers": _minimum_integer_error(
+                workers,
+                field_name="workers",
+                minimum=0,
+            ),
+            "patience": _minimum_integer_error(
+                patience,
+                field_name="patience",
+                minimum=0,
+            ),
+            "export_onnx": _boolean_field_error(
+                export_onnx,
+                field_name="export_onnx",
+            ),
+            "confidence_threshold": _unit_interval_error(
+                confidence_threshold,
+                field_name="confidence_threshold",
+            ),
+            "nms_threshold": _unit_interval_error(
+                nms_threshold,
+                field_name="nms_threshold",
+            ),
+        }
+    )
     if errors:
-        return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
-
-    command_kwargs = {
-        "_command_name": "train_phi_region_detector",
-        "dataset_yaml": dataset_yaml,
-        "output_dir": output_dir,
-        "base_model": base_model,
-        "run_name": run_name,
-        "epochs": epochs,
-        "batch_size": batch_size,
-        "input_size": input_size,
-        "device": device,
-        "workers": workers,
-        "patience": patience,
-        "export_onnx": export_onnx,
-        "confidence_threshold": float(confidence_threshold),
-        "nms_threshold": float(nms_threshold),
-        "class_ids": class_ids,
-    }
-    run = AIModelTrainingRun.objects.create(
-        dataset=None,
-        dataset_name=(
-            Path(dataset_yaml).name if dataset_yaml else "PHI detector dataset"
+        return None, errors
+    assert dataset_yaml is not None
+    return (
+        _PhiRegionDetectorTrainingOptions(
+            dataset_yaml=dataset_yaml,
+            output_dir=resolved_output_dir,
+            base_model=base_model,
+            run_name=_optional_nonblank_string(payload.get("run_name")),
+            epochs=cast(int, epochs),
+            batch_size=cast(int, batch_size),
+            input_size=cast(int, input_size),
+            device=_normalized_payload_string(
+                payload,
+                "device",
+                default="auto",
+                empty_value="auto",
+            ),
+            workers=cast(int, workers),
+            patience=cast(int, patience),
+            export_onnx=cast(bool, export_onnx),
+            confidence_threshold=float(cast(int | float, confidence_threshold)),
+            nms_threshold=float(cast(int | float, nms_threshold)),
+            class_ids=_normalized_payload_string(
+                payload,
+                "class_ids",
+                default="",
+            ),
         ),
+        {},
+    )
+
+
+def _phi_detector_training_command_kwargs(
+    options: _PhiRegionDetectorTrainingOptions,
+) -> dict[str, Any]:
+    return {
+        "_command_name": "train_phi_region_detector",
+        "dataset_yaml": options.dataset_yaml,
+        "output_dir": options.output_dir,
+        "base_model": options.base_model,
+        "run_name": options.run_name,
+        "epochs": options.epochs,
+        "batch_size": options.batch_size,
+        "input_size": options.input_size,
+        "device": options.device,
+        "workers": options.workers,
+        "patience": options.patience,
+        "export_onnx": options.export_onnx,
+        "confidence_threshold": options.confidence_threshold,
+        "nms_threshold": options.nms_threshold,
+        "class_ids": options.class_ids,
+    }
+
+
+def _create_phi_detector_training_model(
+    *,
+    payload: dict[str, Any],
+    options: _PhiRegionDetectorTrainingOptions,
+    command_kwargs: dict[str, Any],
+) -> AIModelTrainingRun:
+    return AIModelTrainingRun.objects.create(
+        dataset=None,
+        dataset_name=Path(options.dataset_yaml).name,
         dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
         ai_model_type=MODEL_TRAINING_TARGET_PHI_REGION_DETECTOR,
-        backbone_name=base_model,
+        backbone_name=options.base_model,
         feature_mode="yolo_onnx_detector",
         freeze_backbone=False,
-        epochs=epochs,
-        batch_size=batch_size,
+        epochs=options.epochs,
+        batch_size=options.batch_size,
         labelset_version=1,
         treat_unlabeled_as_negative=False,
         request_payload={
@@ -819,6 +944,19 @@ def _create_phi_region_detector_training_run(payload: dict[str, Any]) -> Respons
         command_kwargs=command_kwargs,
         status=AIModelTrainingRun.STATUS_QUEUED,
         server_instance_id=_MODEL_TRAINING_SERVER_INSTANCE_ID,
+    )
+
+
+def _create_phi_region_detector_training_run(payload: dict[str, Any]) -> Response:
+    options, errors = _phi_detector_training_options(payload)
+    if errors:
+        return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
+    assert options is not None
+    command_kwargs = _phi_detector_training_command_kwargs(options)
+    run = _create_phi_detector_training_model(
+        payload=payload,
+        options=options,
+        command_kwargs=command_kwargs,
     )
     _launch_model_training_run(run.run_key, command_kwargs=command_kwargs)
     return Response(_model_training_run_payload(run), status=status.HTTP_202_ACCEPTED)
@@ -967,6 +1105,153 @@ def _network_node_roles_payload() -> list[dict[str, str]]:
     ]
 
 
+def _normalize_optional_setting(
+    data: dict[str, Any],
+    field_name: str,
+) -> object:
+    value = data.get(field_name)
+    return "" if field_name in data and value is None else value
+
+
+def _named_setting_exists(
+    model: type[models.Model],
+    value: object,
+) -> bool:
+    lookup = {"pk": value} if isinstance(value, int) else {"name": value}
+    return model.objects.filter(**lookup).exists()
+
+
+def _resolve_optional_named_setting(
+    data: dict[str, Any],
+    *,
+    id_field: str,
+    name_field: str,
+    model: type[models.Model],
+    error_field: str,
+    not_found_message: str,
+    errors: dict[str, str],
+) -> object:
+    value = data.get(id_field, data.get(name_field))
+    if not data.keys() & {id_field, name_field}:
+        return None
+    if value in ("", 0):
+        return None
+    if value is None:
+        return value
+    if not _named_setting_exists(model, value):
+        errors[error_field] = not_found_message
+    return value
+
+
+def _validate_optional_string_settings(
+    values: dict[str, object],
+    errors: dict[str, str],
+) -> None:
+    for field_name, value in values.items():
+        if value is not None and not isinstance(value, str):
+            errors[field_name] = f"{field_name} must be a string."
+
+
+def _validate_ai_dataset_type(value: object, errors: dict[str, str]) -> None:
+    if value is None or not isinstance(value, str):
+        return
+    if value not in {"", AIDataSet.DATASET_TYPE_IMAGE, AIDataSet.DATASET_TYPE_VIDEO}:
+        errors["ai_dataset_type"] = "ai_dataset_type must be one of: image, video."
+
+
+def _resolve_settings_ai_dataset(
+    data: dict[str, Any],
+    *,
+    errors: dict[str, str],
+) -> tuple[AIDataSet | None, object, object, Response | None]:
+    dataset_name = _normalize_optional_setting(data, "ai_dataset_name")
+    dataset_type = _normalize_optional_setting(data, "ai_dataset_type")
+    if "ai_dataset_id" not in data:
+        return None, dataset_name, dataset_type, None
+
+    dataset_id, id_error = _parse_optional_integer_param(
+        data.get("ai_dataset_id"),
+        field_name="ai_dataset_id",
+    )
+    if id_error is not None:
+        return None, dataset_name, dataset_type, id_error
+    if dataset_id is None:
+        return None, dataset_name, dataset_type, None
+
+    dataset = AIDataSet.objects.filter(pk=dataset_id).first()
+    if dataset is None:
+        errors["ai_dataset_id"] = "AIDataSet not found."
+        return None, dataset_name, dataset_type, None
+    return _settings_dataset_values(data, dataset, dataset_name, dataset_type)
+
+
+def _settings_dataset_values(
+    data: dict[str, Any],
+    dataset: AIDataSet,
+    dataset_name: object,
+    dataset_type: object,
+) -> tuple[AIDataSet, object, object, None]:
+    if "ai_dataset_name" not in data:
+        dataset_name = _ai_dataset_name(dataset)
+    if "ai_dataset_type" not in data:
+        dataset_type = _ai_dataset_type(dataset)
+    return dataset, dataset_name, dataset_type, None
+
+
+def _patch_application_settings(request: Request) -> Response:
+    data = _request_payload(request.data)
+    errors: dict[str, str] = {}
+    center = _resolve_optional_named_setting(
+        data,
+        id_field="center_id",
+        name_field="center_name",
+        model=Center,
+        error_field="center",
+        not_found_message="Center not found.",
+        errors=errors,
+    )
+    processor = _resolve_optional_named_setting(
+        data,
+        id_field="processor_id",
+        name_field="processor_name",
+        model=EndoscopyProcessor,
+        error_field="processor",
+        not_found_message="Processor not found.",
+        errors=errors,
+    )
+    annotator_name = _normalize_optional_setting(data, "annotator_name")
+    report_template_name = _normalize_optional_setting(data, "report_template_name")
+    ai_dataset, ai_dataset_name, ai_dataset_type, dataset_error = (
+        _resolve_settings_ai_dataset(data, errors=errors)
+    )
+    if dataset_error is not None:
+        return dataset_error
+
+    string_settings = {
+        "annotator_name": annotator_name,
+        "report_template_name": report_template_name,
+        "ai_dataset_name": ai_dataset_name,
+        "ai_dataset_type": ai_dataset_type,
+    }
+    _validate_optional_string_settings(string_settings, errors)
+    _validate_ai_dataset_type(ai_dataset_type, errors)
+    if errors:
+        return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    update_kwargs: dict[str, Any] = {
+        "center": center,
+        "processor": processor,
+        **string_settings,
+    }
+    if "ai_dataset_id" in data:
+        update_kwargs["ai_dataset"] = ai_dataset
+    update_application_defaults(**update_kwargs)
+    return Response(
+        _application_settings_payload_data(_settings_payload(request)),
+        status=status.HTTP_200_OK,
+    )
+
+
 @api_view(["GET", "PATCH"])
 @permission_classes([EnvironmentAwarePermission])
 def application_settings_detail(request: Request) -> Response:
@@ -975,111 +1260,7 @@ def application_settings_detail(request: Request) -> Response:
             _application_settings_payload_data(_settings_payload(request)),
             status=status.HTTP_200_OK,
         )
-
-    data = _request_payload(request.data)
-    center_value = data.get("center_id", data.get("center_name"))
-    processor_value = data.get("processor_id", data.get("processor_name"))
-    annotator_name = data.get("annotator_name")
-    report_template_name = data.get("report_template_name")
-    ai_dataset_id_provided = "ai_dataset_id" in data
-    ai_dataset_id_raw = data.get("ai_dataset_id")
-    ai_dataset: AIDataSet | None = None
-    ai_dataset_name = data.get("ai_dataset_name")
-    ai_dataset_type = data.get("ai_dataset_type")
-
-    if "annotator_name" in data and annotator_name is None:
-        annotator_name = ""
-    if "report_template_name" in data and report_template_name is None:
-        report_template_name = ""
-    if "ai_dataset_name" in data and ai_dataset_name is None:
-        ai_dataset_name = ""
-    if "ai_dataset_type" in data and ai_dataset_type is None:
-        ai_dataset_type = ""
-
-    errors: dict[str, str] = {}
-    if "center_id" in data or "center_name" in data:
-        if center_value not in (None, "", 0):
-            center_exists = (
-                Center.objects.filter(pk=center_value).exists()
-                if isinstance(center_value, int)
-                else Center.objects.filter(name=center_value).exists()
-            )
-            if not center_exists:
-                errors["center"] = "Center not found."
-            else:
-                pass
-        if center_value in ("", 0):
-            center_value = None
-
-    if "processor_id" in data or "processor_name" in data:
-        if processor_value not in (None, "", 0):
-            processor_exists = (
-                EndoscopyProcessor.objects.filter(pk=processor_value).exists()
-                if isinstance(processor_value, int)
-                else EndoscopyProcessor.objects.filter(name=processor_value).exists()
-            )
-            if not processor_exists:
-                errors["processor"] = "Processor not found."
-        if processor_value in ("", 0):
-            processor_value = None
-
-    if ai_dataset_id_provided:
-        ai_dataset_id, ai_dataset_id_error = _parse_optional_integer_param(
-            ai_dataset_id_raw,
-            field_name="ai_dataset_id",
-        )
-        if ai_dataset_id_error is not None:
-            return ai_dataset_id_error
-        if ai_dataset_id is not None:
-            ai_dataset = AIDataSet.objects.filter(pk=ai_dataset_id).first()
-            if ai_dataset is None:
-                errors["ai_dataset_id"] = "AIDataSet not found."
-            else:
-                if "ai_dataset_name" not in data:
-                    ai_dataset_name = _ai_dataset_name(ai_dataset)
-                if "ai_dataset_type" not in data:
-                    ai_dataset_type = _ai_dataset_type(ai_dataset)
-
-    if annotator_name is not None and not isinstance(annotator_name, str):
-        errors["annotator_name"] = "annotator_name must be a string."
-    if report_template_name is not None and not isinstance(report_template_name, str):
-        errors["report_template_name"] = "report_template_name must be a string."
-    if ai_dataset_name is not None and not isinstance(ai_dataset_name, str):
-        errors["ai_dataset_name"] = "ai_dataset_name must be a string."
-    if ai_dataset_type is not None:
-        if not isinstance(ai_dataset_type, str):
-            errors["ai_dataset_type"] = "ai_dataset_type must be a string."
-        elif ai_dataset_type not in {
-            "",
-            AIDataSet.DATASET_TYPE_IMAGE,
-            AIDataSet.DATASET_TYPE_VIDEO,
-        }:
-            errors["ai_dataset_type"] = "ai_dataset_type must be one of: image, video."
-
-    if errors:
-        return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
-
-    update_kwargs: dict[str, Any] = {
-        "center": (
-            center_value if ("center_id" in data or "center_name" in data) else None
-        ),
-        "processor": (
-            processor_value
-            if ("processor_id" in data or "processor_name" in data)
-            else None
-        ),
-        "annotator_name": annotator_name,
-        "report_template_name": report_template_name,
-        "ai_dataset_name": ai_dataset_name,
-        "ai_dataset_type": ai_dataset_type,
-    }
-    if ai_dataset_id_provided:
-        update_kwargs["ai_dataset"] = ai_dataset
-    update_application_defaults(**update_kwargs)
-    return Response(
-        _application_settings_payload_data(_settings_payload(request)),
-        status=status.HTTP_200_OK,
-    )
+    return _patch_application_settings(request)
 
 
 @api_view(["GET"])
@@ -1224,6 +1405,344 @@ def application_settings_ai_datasets_dropdown(request: Request) -> Response:
     )
 
 
+@dataclass(frozen=True)
+class _AttachmentRequest:
+    video_id: int | None
+    frame_annotation_ids: list[int]
+    segment_ids: list[int]
+    include_frame_annotations: bool
+    include_video_annotations: bool
+    include_all_annotations: bool
+    information_source_names: list[str] | None
+
+
+@dataclass(frozen=True)
+class _AttachmentRows:
+    explicit_frame_annotations: list[ImageClassificationAnnotation]
+    explicit_segments: list[LabelVideoSegment]
+    video_frame_annotations: list[ImageClassificationAnnotation]
+    video_segments: list[LabelVideoSegment]
+
+
+@dataclass
+class _AttachmentResult:
+    frame_annotation_ids: set[int]
+    segment_ids: set[int]
+    frame_annotation_count: int = 0
+    segment_count: int = 0
+
+
+def _parse_attachment_identifiers(
+    payload: dict[str, Any],
+) -> tuple[int | None, list[int], list[int], Response | None]:
+    video_id, error = _parse_optional_integer_param(
+        payload.get("video_id"),
+        field_name="video_id",
+    )
+    if error is not None:
+        return None, [], [], error
+    frame_ids, error = _payload_integer_list(
+        payload.get("frame_annotation_ids"),
+        field_name="frame_annotation_ids",
+    )
+    if error is not None:
+        return None, [], [], error
+    segment_ids, error = _payload_integer_list(
+        payload.get("segment_ids"),
+        field_name="segment_ids",
+    )
+    return video_id, frame_ids, segment_ids, error
+
+
+def _parse_attachment_flags(
+    payload: dict[str, Any],
+) -> tuple[bool, bool, bool, Response | None]:
+    include_frames, error = _payload_bool_field(
+        payload,
+        "include_frame_annotations",
+        default=False,
+    )
+    if error is not None:
+        return False, False, False, error
+    include_videos, error = _payload_bool_field(
+        payload,
+        "include_video_annotations",
+        default=False,
+    )
+    if error is not None:
+        return False, False, False, error
+    include_all, error = _payload_bool_field(
+        payload,
+        "include_all_annotations",
+        default=False,
+    )
+    return include_frames, include_videos, include_all, error
+
+
+def _parse_attachment_request(
+    payload: dict[str, Any],
+) -> tuple[_AttachmentRequest | None, Response | None]:
+    video_id, frame_ids, segment_ids, error = _parse_attachment_identifiers(payload)
+    if error is not None:
+        return None, error
+    include_frames, include_videos, include_all, error = _parse_attachment_flags(
+        payload
+    )
+    if error is not None:
+        return None, error
+    source_names, error = _payload_information_source_names(
+        payload.get("information_source_names")
+    )
+    if error is not None:
+        return None, error
+    return (
+        _AttachmentRequest(
+            video_id=video_id,
+            frame_annotation_ids=frame_ids,
+            segment_ids=segment_ids,
+            include_frame_annotations=include_frames,
+            include_video_annotations=include_videos,
+            include_all_annotations=include_all,
+            information_source_names=source_names,
+        ),
+        None,
+    )
+
+
+def _validate_attachment_request(options: _AttachmentRequest) -> Response | None:
+    if not options.include_all_annotations:
+        return None
+    has_explicit_selection = any(
+        (
+            options.video_id is not None,
+            options.frame_annotation_ids,
+            options.segment_ids,
+        )
+    )
+    has_annotation_type = any(
+        (options.include_frame_annotations, options.include_video_annotations)
+    )
+    if has_explicit_selection:
+        message = (
+            "include_all_annotations cannot be combined with "
+            "video_id, frame_annotation_ids, or segment_ids."
+        )
+    elif not has_annotation_type:
+        message = "At least one annotation type must be selected."
+    else:
+        return None
+    return Response(
+        {"errors": {"include_all_annotations": message}},
+        status=status.HTTP_400_BAD_REQUEST,
+    )
+
+
+def _load_explicit_frame_annotations(
+    annotation_ids: list[int],
+) -> tuple[list[ImageClassificationAnnotation], Response | None]:
+    if not annotation_ids:
+        return [], None
+    annotations = ImageClassificationAnnotation.objects.filter(pk__in=annotation_ids)
+    missing_ids = sorted(
+        set(annotation_ids) - set(annotations.values_list("pk", flat=True))
+    )
+    if missing_ids:
+        return [], Response(
+            {"errors": {"frame_annotation_ids": f"Unknown IDs: {missing_ids}."}},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    return list(annotations), None
+
+
+def _load_explicit_segments(
+    segment_ids: list[int],
+) -> tuple[list[LabelVideoSegment], Response | None]:
+    if not segment_ids:
+        return [], None
+    segments = LabelVideoSegment.objects.filter(pk__in=segment_ids)
+    missing_ids = sorted(set(segment_ids) - set(segments.values_list("pk", flat=True)))
+    if missing_ids:
+        return [], Response(
+            {"errors": {"segment_ids": f"Unknown IDs: {missing_ids}."}},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    return list(segments), None
+
+
+def _filter_frame_annotations_for_video(
+    video_id: int,
+    source_names: list[str] | None,
+) -> list[ImageClassificationAnnotation]:
+    annotations = ImageClassificationAnnotation.objects.filter(frame__video_id=video_id)
+    if source_names:
+        annotations = annotations.filter(information_source__name__in=source_names)
+    return list(annotations)
+
+
+def _filter_segments_for_video(
+    video_id: int,
+    source_names: list[str] | None,
+) -> list[LabelVideoSegment]:
+    segments = LabelVideoSegment.objects.filter(video_file_id=video_id)
+    if source_names:
+        segments = segments.filter(source__name__in=source_names)
+    return list(segments)
+
+
+def _load_video_attachment_rows(
+    options: _AttachmentRequest,
+) -> tuple[
+    list[ImageClassificationAnnotation], list[LabelVideoSegment], Response | None
+]:
+    if options.video_id is None:
+        return [], [], None
+    if not VideoFile.objects.filter(pk=options.video_id).exists():
+        return (
+            [],
+            [],
+            Response(
+                {"errors": {"video_id": "VideoFile not found."}},
+                status=status.HTTP_404_NOT_FOUND,
+            ),
+        )
+    frame_annotations = (
+        _filter_frame_annotations_for_video(
+            options.video_id,
+            options.information_source_names,
+        )
+        if options.include_frame_annotations
+        else []
+    )
+    segments = (
+        _filter_segments_for_video(
+            options.video_id,
+            options.information_source_names,
+        )
+        if options.include_video_annotations
+        else []
+    )
+    return frame_annotations, segments, None
+
+
+def _load_attachment_rows(
+    options: _AttachmentRequest,
+) -> tuple[_AttachmentRows | None, Response | None]:
+    explicit_frames, error = _load_explicit_frame_annotations(
+        options.frame_annotation_ids
+    )
+    if error is not None:
+        return None, error
+    explicit_segments, error = _load_explicit_segments(options.segment_ids)
+    if error is not None:
+        return None, error
+    video_frames, video_segments, error = _load_video_attachment_rows(options)
+    if error is not None:
+        return None, error
+    return (
+        _AttachmentRows(
+            explicit_frame_annotations=explicit_frames,
+            explicit_segments=explicit_segments,
+            video_frame_annotations=video_frames,
+            video_segments=video_segments,
+        ),
+        None,
+    )
+
+
+def _prepare_attachment(
+    payload: dict[str, Any],
+) -> tuple[_AttachmentRequest | None, _AttachmentRows | None, Response | None]:
+    options, error = _parse_attachment_request(payload)
+    if error is not None:
+        return None, None, error
+    assert options is not None
+    error = _validate_attachment_request(options)
+    if error is not None:
+        return None, None, error
+    rows, error = _load_attachment_rows(options)
+    return options, rows, error
+
+
+def _attach_all_annotations(
+    dataset: AIDataSet,
+    options: _AttachmentRequest,
+    result: _AttachmentResult,
+) -> None:
+    if options.include_frame_annotations:
+        annotations = ImageClassificationAnnotation.objects.all()
+        if options.information_source_names:
+            annotations = annotations.filter(
+                information_source__name__in=options.information_source_names
+            )
+        result.frame_annotation_count += _attach_queryset_in_batches(
+            dataset.add_frame_annotations,
+            annotations,
+        )
+    if options.include_video_annotations:
+        segments = LabelVideoSegment.objects.all()
+        if options.information_source_names:
+            segments = segments.filter(
+                source__name__in=options.information_source_names
+            )
+        result.segment_count += _attach_queryset_in_batches(
+            dataset.add_video_annotations,
+            segments,
+        )
+
+
+def _attach_explicit_rows(
+    dataset: AIDataSet,
+    rows: _AttachmentRows,
+    result: _AttachmentResult,
+) -> None:
+    if rows.explicit_frame_annotations:
+        dataset.add_frame_annotations(rows.explicit_frame_annotations)
+        result.frame_annotation_ids.update(
+            annotation.pk for annotation in rows.explicit_frame_annotations
+        )
+        result.frame_annotation_count += len(rows.explicit_frame_annotations)
+    if rows.explicit_segments:
+        dataset.add_video_annotations(rows.explicit_segments)
+        result.segment_ids.update(segment.pk for segment in rows.explicit_segments)
+        result.segment_count += len(rows.explicit_segments)
+
+
+def _attach_video_rows(
+    dataset: AIDataSet,
+    options: _AttachmentRequest,
+    rows: _AttachmentRows,
+    result: _AttachmentResult,
+) -> None:
+    if options.video_id is None:
+        return
+    result.frame_annotation_ids.update(
+        annotation.pk for annotation in rows.video_frame_annotations
+    )
+    result.segment_ids.update(segment.pk for segment in rows.video_segments)
+    result.frame_annotation_count += len(rows.video_frame_annotations)
+    result.segment_count += len(rows.video_segments)
+    dataset.attach_video(
+        options.video_id,
+        include_frame_annotations=options.include_frame_annotations,
+        include_video_annotations=options.include_video_annotations,
+        information_source_names=options.information_source_names,
+    )
+
+
+def _attach_dataset_rows(
+    dataset: AIDataSet,
+    options: _AttachmentRequest,
+    rows: _AttachmentRows,
+) -> _AttachmentResult:
+    result = _AttachmentResult(frame_annotation_ids=set(), segment_ids=set())
+    with transaction.atomic():
+        if options.include_all_annotations:
+            _attach_all_annotations(dataset, options, result)
+        _attach_explicit_rows(dataset, rows, result)
+        _attach_video_rows(dataset, options, rows, result)
+    return result
+
+
 @api_view(["POST"])
 @permission_classes([EnvironmentAwarePermission])
 def application_settings_ai_dataset_attachments(
@@ -1237,195 +1756,23 @@ def application_settings_ai_dataset_attachments(
         )
 
     payload: dict[str, Any] = _request_payload(request.data)
-
-    video_id, video_id_error = _parse_optional_integer_param(
-        payload.get("video_id"),
-        field_name="video_id",
-    )
-    if video_id_error is not None:
-        return video_id_error
-
-    frame_annotation_ids, frame_ids_error = _payload_integer_list(
-        payload.get("frame_annotation_ids"),
-        field_name="frame_annotation_ids",
-    )
-    if frame_ids_error is not None:
-        return frame_ids_error
-
-    segment_ids, segment_ids_error = _payload_integer_list(
-        payload.get("segment_ids"),
-        field_name="segment_ids",
-    )
-    if segment_ids_error is not None:
-        return segment_ids_error
-
-    include_frame_annotations, include_frame_error = _payload_bool_field(
-        payload,
-        "include_frame_annotations",
-        default=False,
-    )
-    if include_frame_error is not None:
-        return include_frame_error
-
-    include_video_annotations, include_video_error = _payload_bool_field(
-        payload,
-        "include_video_annotations",
-        default=False,
-    )
-    if include_video_error is not None:
-        return include_video_error
-
-    include_all_annotations, include_all_error = _payload_bool_field(
-        payload,
-        "include_all_annotations",
-        default=False,
-    )
-    if include_all_error is not None:
-        return include_all_error
-
-    information_source_names, source_names_error = _payload_information_source_names(
-        payload.get("information_source_names")
-    )
-    if source_names_error is not None:
-        return source_names_error
-
-    if include_all_annotations:
-        if video_id is not None or frame_annotation_ids or segment_ids:
-            return Response(
-                {
-                    "errors": {
-                        "include_all_annotations": (
-                            "include_all_annotations cannot be combined with "
-                            "video_id, frame_annotation_ids, or segment_ids."
-                        )
-                    }
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        if not include_frame_annotations and not include_video_annotations:
-            return Response(
-                {
-                    "errors": {
-                        "include_all_annotations": (
-                            "At least one annotation type must be selected."
-                        )
-                    }
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-    explicit_frame_annotations: list[ImageClassificationAnnotation] = []
-    explicit_segments: list[LabelVideoSegment] = []
-    video_frame_annotations: list[ImageClassificationAnnotation] = []
-    video_segments: list[LabelVideoSegment] = []
-
-    if frame_annotation_ids:
-        frame_annotations = ImageClassificationAnnotation.objects.filter(
-            pk__in=frame_annotation_ids
-        )
-        found_ids = set(frame_annotations.values_list("pk", flat=True))
-        missing_ids = sorted(set(frame_annotation_ids) - found_ids)
-        if missing_ids:
-            return Response(
-                {"errors": {"frame_annotation_ids": f"Unknown IDs: {missing_ids}."}},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        explicit_frame_annotations = list(frame_annotations)
-
-    if segment_ids:
-        segments = LabelVideoSegment.objects.filter(pk__in=segment_ids)
-        found_ids = set(segments.values_list("pk", flat=True))
-        missing_ids = sorted(set(segment_ids) - found_ids)
-        if missing_ids:
-            return Response(
-                {"errors": {"segment_ids": f"Unknown IDs: {missing_ids}."}},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        explicit_segments = list(segments)
-
-    if video_id is not None:
-        if not VideoFile.objects.filter(pk=video_id).exists():
-            return Response(
-                {"errors": {"video_id": "VideoFile not found."}},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        if include_frame_annotations:
-            frame_annotations = ImageClassificationAnnotation.objects.filter(
-                frame__video_id=video_id
-            )
-            if information_source_names:
-                frame_annotations = frame_annotations.filter(
-                    information_source__name__in=information_source_names
-                )
-            video_frame_annotations = list(frame_annotations)
-        if include_video_annotations:
-            segments = LabelVideoSegment.objects.filter(video_file_id=video_id)
-            if information_source_names:
-                segments = segments.filter(source__name__in=information_source_names)
-            video_segments = list(segments)
-
-    attached_frame_annotation_ids: set[int] = set()
-    attached_segment_ids: set[int] = set()
-    attached_frame_annotation_count = 0
-    attached_segment_count = 0
-
-    with transaction.atomic():
-        if include_all_annotations:
-            if include_frame_annotations:
-                all_frame_annotations = ImageClassificationAnnotation.objects.all()
-                if information_source_names:
-                    all_frame_annotations = all_frame_annotations.filter(
-                        information_source__name__in=information_source_names
-                    )
-                attached_frame_annotation_count += _attach_queryset_in_batches(
-                    dataset.add_frame_annotations,
-                    all_frame_annotations,
-                )
-            if include_video_annotations:
-                all_segments = LabelVideoSegment.objects.all()
-                if information_source_names:
-                    all_segments = all_segments.filter(
-                        source__name__in=information_source_names
-                    )
-                attached_segment_count += _attach_queryset_in_batches(
-                    dataset.add_video_annotations,
-                    all_segments,
-                )
-        if explicit_frame_annotations:
-            dataset.add_frame_annotations(explicit_frame_annotations)
-            attached_frame_annotation_ids.update(
-                annotation.pk for annotation in explicit_frame_annotations
-            )
-            attached_frame_annotation_count += len(explicit_frame_annotations)
-        if explicit_segments:
-            dataset.add_video_annotations(explicit_segments)
-            attached_segment_ids.update(segment.pk for segment in explicit_segments)
-            attached_segment_count += len(explicit_segments)
-        if video_id is not None:
-            attached_frame_annotation_ids.update(
-                annotation.pk for annotation in video_frame_annotations
-            )
-            attached_segment_ids.update(segment.pk for segment in video_segments)
-            attached_frame_annotation_count += len(video_frame_annotations)
-            attached_segment_count += len(video_segments)
-            dataset.attach_video(
-                video_id,
-                include_frame_annotations=include_frame_annotations,
-                include_video_annotations=include_video_annotations,
-                information_source_names=information_source_names,
-            )
+    options, rows, error = _prepare_attachment(payload)
+    if error is not None:
+        return error
+    assert options is not None
+    assert rows is not None
+    attached = _attach_dataset_rows(dataset, options, rows)
 
     return Response(
         {
             "dataset_id": dataset.pk,
-            "video_id": video_id,
+            "video_id": options.video_id,
             "frame_annotation_count": dataset.image_annotations.count(),
             "video_annotation_count": dataset.video_annotations.count(),
-            "attached_frame_annotation_ids": sorted(attached_frame_annotation_ids),
-            "attached_segment_ids": sorted(attached_segment_ids),
-            "attached_frame_annotation_count": attached_frame_annotation_count,
-            "attached_segment_count": attached_segment_count,
+            "attached_frame_annotation_ids": sorted(attached.frame_annotation_ids),
+            "attached_segment_ids": sorted(attached.segment_ids),
+            "attached_frame_annotation_count": attached.frame_annotation_count,
+            "attached_segment_count": attached.segment_count,
         },
         status=status.HTTP_200_OK,
     )
@@ -1545,7 +1892,8 @@ def application_settings_ai_dataset_training_manifest(
         return error
 
     try:
-        manifest = dataset.build_frame_multilabel_training_manifest(
+        manifest = build_frame_multilabel_training_manifest(
+            dataset,
             label_set=label_set,
             treat_unlabeled_as_negative=treat_unlabeled_as_negative,
             include_file_paths=include_file_paths,
@@ -1639,57 +1987,89 @@ def application_settings_model_training_options(request: Request) -> Response:
     )
 
 
-@api_view(["GET", "POST"])
-@permission_classes([EnvironmentAwarePermission])
-def application_settings_model_training_runs(request: Request) -> Response:
-    _mark_lost_model_training_runs()
+@dataclass(frozen=True)
+class _ImageTrainingRunRequest:
+    dataset: AIDataSet
+    backbone_name: str
+    feature_mode: str
+    backbone_checkpoint: str | None
+    epochs: int
+    batch_size: int
+    labelset_version: int
+    device: str
+    treat_unlabeled_as_negative: bool
+    annotation_source_scope: str
 
-    if request.method == "GET":
-        runs = AIModelTrainingRun.objects.select_related("dataset").order_by(
-            "-created_at",
-            "-id",
-        )[:25]
-        return Response(
-            [_model_training_run_payload(run) for run in runs],
-            status=status.HTTP_200_OK,
-        )
 
-    payload: dict[str, Any] = _request_payload(request.data)
-    training_target = str(
-        payload.get("training_target", MODEL_TRAINING_TARGET_IMAGE_MULTILABEL) or ""
-    ).strip()
-    if training_target == MODEL_TRAINING_TARGET_PHI_REGION_DETECTOR:
-        return _create_phi_region_detector_training_run(payload)
-    if training_target != MODEL_TRAINING_TARGET_IMAGE_MULTILABEL:
-        return Response(
-            {"errors": {"training_target": "Unsupported training_target."}},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+@dataclass(frozen=True)
+class _RawImageTrainingRunRequest:
+    dataset_id: object
+    backbone_name: str
+    feature_mode: str
+    epochs: object
+    batch_size: object
+    labelset_version: object
+    device: str
+    treat_unlabeled_as_negative: object
 
-    dataset_id = payload.get("dataset_id")
-    backbone_name = str(payload.get("backbone_name", "gastro_rn50") or "").strip()
-    feature_mode = str(payload.get("feature_mode", "freeze_backbone") or "").strip()
-    backbone_checkpoint_raw = payload.get("backbone_checkpoint")
-    epochs = payload.get("epochs", 10)
-    batch_size = payload.get("batch_size", 32)
-    labelset_version = payload.get(
-        "labelset_version",
-        DEFAULT_LABELSET_VERSION_TO_TRAIN,
+
+def _normalized_payload_string(
+    payload: dict[str, Any],
+    field_name: str,
+    *,
+    default: str,
+    empty_value: str = "",
+) -> str:
+    normalized = str(payload.get(field_name, default) or "").strip()
+    return normalized or empty_value
+
+
+def _raw_image_training_run_request(
+    payload: dict[str, Any],
+) -> _RawImageTrainingRunRequest:
+    return _RawImageTrainingRunRequest(
+        dataset_id=payload.get("dataset_id"),
+        backbone_name=_normalized_payload_string(
+            payload, "backbone_name", default="gastro_rn50"
+        ),
+        feature_mode=_normalized_payload_string(
+            payload, "feature_mode", default="freeze_backbone"
+        ),
+        epochs=payload.get("epochs", 10),
+        batch_size=payload.get("batch_size", 32),
+        labelset_version=payload.get(
+            "labelset_version",
+            DEFAULT_LABELSET_VERSION_TO_TRAIN,
+        ),
+        device=_normalized_payload_string(
+            payload,
+            "device",
+            default="auto",
+            empty_value="auto",
+        ),
+        treat_unlabeled_as_negative=payload.get(
+            "treat_unlabeled_as_negative",
+            True,
+        ),
     )
-    device = str(payload.get("device", "auto") or "auto").strip() or "auto"
-    treat_unlabeled_as_negative = payload.get("treat_unlabeled_as_negative", True)
-    annotation_source_scope = ANNOTATION_SOURCE_SCOPE_ALL
 
+
+def _positive_integer_field_errors(
+    values: dict[str, object],
+) -> dict[str, str]:
     errors: dict[str, str] = {}
-    try:
-        annotation_source_scope = normalize_annotation_source_scope(
-            payload.get("annotation_source_scope")
-        )
-    except ValueError as exc:
-        errors["annotation_source_scope"] = str(exc)
+    for field_name, value in values.items():
+        if not isinstance(value, int) or value <= 0:
+            errors[field_name] = f"{field_name} must be a positive integer."
+    return errors
 
-    if not isinstance(dataset_id, int):
-        errors["dataset_id"] = "dataset_id must be an integer."
+
+def _model_training_choice_errors(
+    *,
+    backbone_name: str,
+    feature_mode: str,
+) -> dict[str, str]:
+    errors: dict[str, str] = {}
     if backbone_name not in {
         option["value"] for option in MODEL_TRAINING_BACKBONE_OPTIONS
     }:
@@ -1698,73 +2078,172 @@ def application_settings_model_training_runs(request: Request) -> Response:
         option["value"] for option in MODEL_TRAINING_FEATURE_MODE_OPTIONS
     }:
         errors["feature_mode"] = "Unsupported feature_mode."
-    if not isinstance(epochs, int) or epochs <= 0:
-        errors["epochs"] = "epochs must be a positive integer."
-    if not isinstance(batch_size, int) or batch_size <= 0:
-        errors["batch_size"] = "batch_size must be a positive integer."
-    if not isinstance(labelset_version, int) or labelset_version <= 0:
-        errors["labelset_version"] = "labelset_version must be a positive integer."
-    if not isinstance(treat_unlabeled_as_negative, bool):
+    return errors
+
+
+def _normalize_backbone_checkpoint(
+    value: object,
+) -> tuple[str | None, str | None]:
+    if value in (None, ""):
+        return None, None
+    if not isinstance(value, str):
+        return None, "backbone_checkpoint must be a string."
+    return value.strip() or None, None
+
+
+def _normalize_training_annotation_source_scope(
+    value: object,
+) -> tuple[str, str | None]:
+    try:
+        return normalize_annotation_source_scope(cast(str | None, value)), None
+    except ValueError as exc:
+        return ANNOTATION_SOURCE_SCOPE_ALL, str(exc)
+
+
+def _resolve_image_training_dataset(
+    dataset_id: object,
+) -> tuple[AIDataSet | None, str | None]:
+    if not isinstance(dataset_id, int):
+        return None, "dataset_id must be an integer."
+    dataset = AIDataSet.objects.filter(pk=dataset_id).first()
+    if dataset is None:
+        return None, "AIDataSet not found."
+    if _ai_dataset_type(dataset) != AIDataSet.DATASET_TYPE_IMAGE:
+        return None, "AIDataSet must have dataset_type='image'."
+    if _ai_dataset_model_type(dataset) != AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL:
+        return (
+            None,
+            "AIDataSet must have ai_model_type='image_multilabel_classification'.",
+        )
+    return dataset, None
+
+
+def _base_image_training_errors(
+    raw: _RawImageTrainingRunRequest,
+) -> dict[str, str]:
+    errors = _model_training_choice_errors(
+        backbone_name=raw.backbone_name,
+        feature_mode=raw.feature_mode,
+    )
+    if not isinstance(raw.dataset_id, int):
+        errors["dataset_id"] = "dataset_id must be an integer."
+    errors.update(
+        _positive_integer_field_errors(
+            {
+                "epochs": raw.epochs,
+                "batch_size": raw.batch_size,
+                "labelset_version": raw.labelset_version,
+            }
+        )
+    )
+    if not isinstance(raw.treat_unlabeled_as_negative, bool):
         errors["treat_unlabeled_as_negative"] = (
             "treat_unlabeled_as_negative must be a boolean."
         )
+    return errors
 
-    backbone_checkpoint: str | None = None
-    if backbone_checkpoint_raw not in (None, ""):
-        if not isinstance(backbone_checkpoint_raw, str):
-            errors["backbone_checkpoint"] = "backbone_checkpoint must be a string."
-        else:
-            backbone_checkpoint = backbone_checkpoint_raw.strip() or None
 
-    dataset = None
+def _optional_image_training_values(
+    payload: dict[str, Any],
+    errors: dict[str, str],
+) -> tuple[str | None, str]:
+    checkpoint, checkpoint_error = _normalize_backbone_checkpoint(
+        payload.get("backbone_checkpoint")
+    )
+    if checkpoint_error is not None:
+        errors["backbone_checkpoint"] = checkpoint_error
+    annotation_scope, scope_error = _normalize_training_annotation_source_scope(
+        payload.get("annotation_source_scope")
+    )
+    if scope_error is not None:
+        errors["annotation_source_scope"] = scope_error
+    return checkpoint, annotation_scope
+
+
+def _validated_image_training_request(
+    raw: _RawImageTrainingRunRequest,
+    *,
+    dataset: AIDataSet,
+    checkpoint: str | None,
+    annotation_scope: str,
+) -> _ImageTrainingRunRequest:
+    assert isinstance(raw.epochs, int)
+    assert isinstance(raw.batch_size, int)
+    assert isinstance(raw.labelset_version, int)
+    assert isinstance(raw.treat_unlabeled_as_negative, bool)
+    return _ImageTrainingRunRequest(
+        dataset=dataset,
+        backbone_name=raw.backbone_name,
+        feature_mode=raw.feature_mode,
+        backbone_checkpoint=checkpoint,
+        epochs=raw.epochs,
+        batch_size=raw.batch_size,
+        labelset_version=raw.labelset_version,
+        device=raw.device,
+        treat_unlabeled_as_negative=raw.treat_unlabeled_as_negative,
+        annotation_source_scope=annotation_scope,
+    )
+
+
+def _parse_image_training_run_request(
+    payload: dict[str, Any],
+) -> tuple[_ImageTrainingRunRequest | None, dict[str, str]]:
+    raw = _raw_image_training_run_request(payload)
+    errors = _base_image_training_errors(raw)
+    checkpoint, annotation_scope = _optional_image_training_values(payload, errors)
+
+    dataset: AIDataSet | None = None
     if not errors:
-        dataset = AIDataSet.objects.filter(pk=dataset_id).first()
-        if dataset is None:
-            errors["dataset_id"] = "AIDataSet not found."
-        elif _ai_dataset_type(dataset) != AIDataSet.DATASET_TYPE_IMAGE:
-            errors["dataset_id"] = "AIDataSet must have dataset_type='image'."
-        elif (
-            _ai_dataset_model_type(dataset) != AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL
-        ):
-            errors["dataset_id"] = (
-                "AIDataSet must have ai_model_type='image_multilabel_classification'."
-            )
-
+        dataset, dataset_error = _resolve_image_training_dataset(raw.dataset_id)
+        if dataset_error is not None:
+            errors["dataset_id"] = dataset_error
     if errors:
-        return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
-    if dataset is None:
-        return Response(
-            {"errors": {"dataset_id": "AIDataSet not found."}},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+        return None, errors
 
-    freeze_backbone = feature_mode == "freeze_backbone"
+    assert dataset is not None
+    return (
+        _validated_image_training_request(
+            raw,
+            dataset=dataset,
+            checkpoint=checkpoint,
+            annotation_scope=annotation_scope,
+        ),
+        {},
+    )
+
+
+def _create_image_training_run(
+    payload: dict[str, Any],
+    options: _ImageTrainingRunRequest,
+) -> Response:
+    dataset = options.dataset
+    freeze_backbone = options.feature_mode == "freeze_backbone"
     command_kwargs = {
         "_command_name": "train_image_multilabel_model",
         "dataset_id": dataset.pk,
-        "backbone_name": backbone_name,
-        "backbone_checkpoint": backbone_checkpoint,
-        "epochs": epochs,
-        "batch_size": batch_size,
-        "labelset_version": labelset_version,
-        "device": device,
+        "backbone_name": options.backbone_name,
+        "backbone_checkpoint": options.backbone_checkpoint,
+        "epochs": options.epochs,
+        "batch_size": options.batch_size,
+        "labelset_version": options.labelset_version,
+        "device": options.device,
         "freeze_backbone": freeze_backbone,
-        "annotation_source_scope": annotation_source_scope,
-        "treat_unlabeled_as_negative": treat_unlabeled_as_negative,
+        "annotation_source_scope": options.annotation_source_scope,
+        "treat_unlabeled_as_negative": options.treat_unlabeled_as_negative,
     }
     run = AIModelTrainingRun.objects.create(
         dataset=dataset,
         dataset_name=_ai_dataset_name(dataset),
         dataset_type=_ai_dataset_type(dataset),
         ai_model_type=_ai_dataset_model_type(dataset),
-        backbone_name=backbone_name,
-        feature_mode=feature_mode,
+        backbone_name=options.backbone_name,
+        feature_mode=options.feature_mode,
         freeze_backbone=freeze_backbone,
-        epochs=epochs,
-        batch_size=batch_size,
-        labelset_version=labelset_version,
-        treat_unlabeled_as_negative=treat_unlabeled_as_negative,
-        backbone_checkpoint=backbone_checkpoint,
+        epochs=options.epochs,
+        batch_size=options.batch_size,
+        labelset_version=options.labelset_version,
+        treat_unlabeled_as_negative=options.treat_unlabeled_as_negative,
+        backbone_checkpoint=options.backbone_checkpoint,
         request_payload=payload,
         command_kwargs=command_kwargs,
         status=AIModelTrainingRun.STATUS_QUEUED,
@@ -1772,6 +2251,47 @@ def application_settings_model_training_runs(request: Request) -> Response:
     )
     _launch_model_training_run(run.run_key, command_kwargs=command_kwargs)
     return Response(_model_training_run_payload(run), status=status.HTTP_202_ACCEPTED)
+
+
+def _model_training_runs_payload() -> Response:
+    runs = AIModelTrainingRun.objects.select_related("dataset").order_by(
+        "-created_at",
+        "-id",
+    )[:25]
+    return Response(
+        [_model_training_run_payload(run) for run in runs],
+        status=status.HTTP_200_OK,
+    )
+
+
+def _post_model_training_run(request: Request) -> Response:
+    payload: dict[str, Any] = _request_payload(request.data)
+    training_target = _normalized_payload_string(
+        payload,
+        "training_target",
+        default=MODEL_TRAINING_TARGET_IMAGE_MULTILABEL,
+    )
+    if training_target == MODEL_TRAINING_TARGET_PHI_REGION_DETECTOR:
+        return _create_phi_region_detector_training_run(payload)
+    if training_target != MODEL_TRAINING_TARGET_IMAGE_MULTILABEL:
+        return Response(
+            {"errors": {"training_target": "Unsupported training_target."}},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    options, errors = _parse_image_training_run_request(payload)
+    if errors:
+        return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
+    assert options is not None
+    return _create_image_training_run(payload, options)
+
+
+@api_view(["GET", "POST"])
+@permission_classes([EnvironmentAwarePermission])
+def application_settings_model_training_runs(request: Request) -> Response:
+    _mark_lost_model_training_runs()
+    if request.method == "GET":
+        return _model_training_runs_payload()
+    return _post_model_training_run(request)
 
 
 @api_view(["GET"])
@@ -2044,6 +2564,132 @@ def application_settings_network_nodes(request: Request) -> Response:
     return Response(_network_node_payload(node), status=status.HTTP_201_CREATED)
 
 
+def _apply_network_node_key_patch(
+    *,
+    node: NetworkNode,
+    data: dict[str, Any],
+    errors: dict[str, str],
+) -> None:
+    if "node_key" in data:
+        requested_node_key = str(data.get("node_key", "") or "").strip()
+        if requested_node_key and requested_node_key != cast(
+            str,
+            getattr(node, "node_key", ""),
+        ):
+            errors["node_key"] = "node_key is immutable once assigned."
+
+
+def _apply_network_node_display_name_patch(
+    *,
+    node: NetworkNode,
+    data: dict[str, Any],
+    errors: dict[str, str],
+) -> None:
+    if "display_name" in data:
+        display_name = str(data.get("display_name", "") or "").strip()
+        if not display_name:
+            errors["display_name"] = "display_name must not be blank."
+        else:
+            node.display_name = display_name
+
+
+def _apply_network_node_role_patch(
+    *,
+    node: NetworkNode,
+    data: dict[str, Any],
+    errors: dict[str, str],
+) -> None:
+    if "role" in data:
+        role = str(data.get("role", "") or "").strip()
+        if role not in NetworkNode.Role.values:
+            errors["role"] = "Invalid role."
+        else:
+            node.role = role
+
+
+def _apply_network_node_base_url_patch(
+    *,
+    node: NetworkNode,
+    data: dict[str, Any],
+) -> None:
+    if "base_url" in data:
+        node.base_url = str(data.get("base_url", "") or "").strip()
+
+
+def _apply_network_node_active_patch(
+    *,
+    node: NetworkNode,
+    data: dict[str, Any],
+    errors: dict[str, str],
+) -> None:
+    if "is_active" in data:
+        is_active = data.get("is_active")
+        if not isinstance(is_active, bool):
+            errors["is_active"] = "is_active must be a boolean."
+        else:
+            node.is_active = is_active
+
+
+def _apply_network_node_center_patch(
+    *,
+    node: NetworkNode,
+    data: dict[str, Any],
+    errors: dict[str, str],
+) -> None:
+    owning_center, center_was_provided = _resolve_center_from_payload(
+        data,
+        errors=errors,
+    )
+    if center_was_provided and (
+        isinstance(owning_center, Center) or owning_center is None
+    ):
+        node.owning_center = owning_center
+
+
+def _apply_network_node_secret_patch(
+    *,
+    node: NetworkNode,
+    data: dict[str, Any],
+    errors: dict[str, str],
+) -> None:
+    if "shared_secret" in data:
+        shared_secret = data.get("shared_secret")
+        if not isinstance(shared_secret, str):
+            errors["shared_secret"] = "shared_secret must be a string."
+        elif shared_secret.strip():
+            node.set_shared_secret(shared_secret)
+
+
+def _apply_network_node_clear_secret_patch(
+    *,
+    node: NetworkNode,
+    data: dict[str, Any],
+    errors: dict[str, str],
+) -> None:
+    if data.get("clear_shared_secret") is True:
+        node.shared_secret_hash = ""
+    elif "clear_shared_secret" in data and data.get("clear_shared_secret") is not False:
+        errors["clear_shared_secret"] = "clear_shared_secret must be a boolean."
+
+
+def _patch_network_node(node: NetworkNode, data: dict[str, Any]) -> Response:
+    errors: dict[str, str] = {}
+    _apply_network_node_key_patch(node=node, data=data, errors=errors)
+    _apply_network_node_display_name_patch(node=node, data=data, errors=errors)
+    _apply_network_node_role_patch(node=node, data=data, errors=errors)
+    _apply_network_node_base_url_patch(node=node, data=data)
+    _apply_network_node_active_patch(node=node, data=data, errors=errors)
+    _apply_network_node_center_patch(node=node, data=data, errors=errors)
+    _apply_network_node_secret_patch(node=node, data=data, errors=errors)
+    _apply_network_node_clear_secret_patch(node=node, data=data, errors=errors)
+    if errors:
+        return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    cast(_SaveableNetworkNode, node).save()
+    node.refresh_from_db()
+    return Response(_network_node_payload(node), status=status.HTTP_200_OK)
+
+
 @api_view(["GET", "PATCH", "DELETE"])
 @permission_classes([EnvironmentAwarePermission])
 def application_settings_network_node_detail(request: Request, pk: int) -> Response:
@@ -2053,72 +2699,12 @@ def application_settings_network_node_detail(request: Request, pk: int) -> Respo
             {"detail": "Network node not found."},
             status=status.HTTP_404_NOT_FOUND,
         )
-
     if request.method == "GET":
         return Response(_network_node_payload(node), status=status.HTTP_200_OK)
-
     if request.method == "DELETE":
         node.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
-
-    data = _request_payload(request.data)
-    errors: dict[str, str] = {}
-
-    if "node_key" in data:
-        requested_node_key = str(data.get("node_key", "") or "").strip()
-        if requested_node_key and requested_node_key != cast(
-            str,
-            getattr(node, "node_key", ""),
-        ):
-            errors["node_key"] = "node_key is immutable once assigned."
-
-    if "display_name" in data:
-        display_name = str(data.get("display_name", "") or "").strip()
-        if not display_name:
-            errors["display_name"] = "display_name must not be blank."
-        else:
-            node.display_name = display_name
-
-    if "role" in data:
-        role = str(data.get("role", "") or "").strip()
-        if role not in NetworkNode.Role.values:
-            errors["role"] = "Invalid role."
-        else:
-            node.role = role
-
-    if "base_url" in data:
-        node.base_url = str(data.get("base_url", "") or "").strip()
-
-    if "is_active" in data:
-        is_active = data.get("is_active")
-        if not isinstance(is_active, bool):
-            errors["is_active"] = "is_active must be a boolean."
-        else:
-            node.is_active = is_active
-
-    owning_center, _ = _resolve_center_from_payload(data, errors=errors)
-    if isinstance(owning_center, Center) or owning_center is None:
-        if "owning_center_id" in data or "owning_center_key" in data:
-            node.owning_center = owning_center
-
-    if "shared_secret" in data:
-        shared_secret = data.get("shared_secret")
-        if not isinstance(shared_secret, str):
-            errors["shared_secret"] = "shared_secret must be a string."
-        elif shared_secret.strip():
-            node.set_shared_secret(shared_secret)
-
-    if data.get("clear_shared_secret") is True:
-        node.shared_secret_hash = ""
-    elif "clear_shared_secret" in data and data.get("clear_shared_secret") is not False:
-        errors["clear_shared_secret"] = "clear_shared_secret must be a boolean."
-
-    if errors:
-        return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
-
-    cast(_SaveableNetworkNode, node).save()
-    node.refresh_from_db()
-    return Response(_network_node_payload(node), status=status.HTTP_200_OK)
+    return _patch_network_node(node, _request_payload(request.data))
 
 
 @api_view(["GET"])

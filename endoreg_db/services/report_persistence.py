@@ -188,6 +188,21 @@ class SaveReportSubmissionResult:
     persisted_pdf_artifact_id: int | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class _ResolvedClassificationSync:
+    classification: FindingClassification
+    choice: FindingClassificationChoice
+    subcategories: PatientFindingClassificationSubcategoriesData | None
+    numerical_descriptors: PatientFindingClassificationNumericalDescriptorsData | None
+
+
+@dataclass(frozen=True, slots=True)
+class _FindingsSyncResult:
+    warnings: list[str]
+    persisted_record: dict[str, object] | None
+    persisted_record_updated_at: datetime | None
+
+
 def _resolve_gender(value: object) -> Gender | None:
     if value in (None, ""):
         return None
@@ -608,84 +623,126 @@ def _sync_patient_finding_classifications(
     existing_active: list[PatientFindingClassification] = list(
         patient_finding_relations.classifications.filter(is_active=True)
     )
+    existing_by_identity = {
+        _classification_identity(cast(_PatientFindingClassificationLike, row)): cast(
+            _PatientFindingClassificationLike, row
+        )
+        for row in existing_active
+    }
     matched_ids: set[int] = set()
 
     for item in classifications_payload:
-        classification = _resolve_finding_classification(
-            item.get("classification_id", item.get("classification"))
+        resolved = _resolve_classification_sync(item)
+        identity = (
+            cast(_IdentifiedLike, resolved.classification).id,
+            cast(_IdentifiedLike, resolved.choice).id,
         )
-        classification_choice = _resolve_finding_classification_choice(
-            item.get("classification_choice_id", item.get("classification_choice"))
-        )
-        if classification is None or classification_choice is None:
-            raise ValidationError(
-                {"classifications": "Unknown classification or classification choice."}
-            )
-        classification_id = cast(_IdentifiedLike, classification).id
-        classification_choice_id = cast(_IdentifiedLike, classification_choice).id
-
-        match = next(
-            (
-                cast(_PatientFindingClassificationLike, row)
-                for row in existing_active
-                if cast(_PatientFindingClassificationLike, row).classification_id
-                == classification_id
-                and cast(
-                    _PatientFindingClassificationLike, row
-                ).classification_choice_id
-                == classification_choice_id
-            ),
-            None,
-        )
+        match = existing_by_identity.get(identity)
         if match is None:
-            create_kwargs: dict[str, object] = {
-                "finding": patient_finding,
-                "classification": classification,
-                "classification_choice": classification_choice,
-            }
-            subcategories = _normalize_patient_finding_classification_subcategories(
-                item.get("subcategories") if "subcategories" in item else None
+            match = cast(
+                _PatientFindingClassificationLike,
+                _create_patient_finding_classification(patient_finding, resolved),
             )
-            if subcategories is not None:
-                create_kwargs["subcategories"] = subcategories
-            numerical_descriptors = (
-                _normalize_patient_finding_classification_numerical_descriptors(
-                    item.get("numerical_descriptors")
-                    if "numerical_descriptors" in item
-                    else None
-                )
-            )
-            if numerical_descriptors is not None:
-                create_kwargs["numerical_descriptors"] = numerical_descriptors
-            match = PatientFindingClassification.objects.create(**create_kwargs)
         else:
-            changed = False
-            subcategories = _normalize_patient_finding_classification_subcategories(
-                item.get("subcategories") if "subcategories" in item else None
-            )
-            if subcategories is not None and match.subcategories != subcategories:
-                match.subcategories = subcategories
-                changed = True
-            numerical_descriptors = (
-                _normalize_patient_finding_classification_numerical_descriptors(
-                    item.get("numerical_descriptors")
-                    if "numerical_descriptors" in item
-                    else None
-                )
-            )
-            if (
-                numerical_descriptors is not None
-                and match.numerical_descriptors != numerical_descriptors
-            ):
-                match.numerical_descriptors = numerical_descriptors
-                changed = True
-            if not match.is_active:
-                match.is_active = True
-                changed = True
-            if changed:
-                match.save()
+            _update_patient_finding_classification(match, resolved)
         matched_ids.add(cast(_IdentifiedLike, match).id)
 
+    _deactivate_unmatched_classifications(existing_active, matched_ids)
+
+
+def _classification_identity(
+    row: _PatientFindingClassificationLike,
+) -> tuple[int, int]:
+    return row.classification_id, row.classification_choice_id
+
+
+def _resolve_classification_sync(
+    item: PatientFindingClassificationSyncData,
+) -> _ResolvedClassificationSync:
+    classification = _resolve_finding_classification(
+        item.get("classification_id", item.get("classification"))
+    )
+    choice = _resolve_finding_classification_choice(
+        item.get("classification_choice_id", item.get("classification_choice"))
+    )
+    if classification is None or choice is None:
+        raise ValidationError(
+            {"classifications": "Unknown classification or classification choice."}
+        )
+    return _ResolvedClassificationSync(
+        classification=classification,
+        choice=choice,
+        subcategories=_normalize_patient_finding_classification_subcategories(
+            item.get("subcategories") if "subcategories" in item else None
+        ),
+        numerical_descriptors=(
+            _normalize_patient_finding_classification_numerical_descriptors(
+                item.get("numerical_descriptors")
+                if "numerical_descriptors" in item
+                else None
+            )
+        ),
+    )
+
+
+def _create_patient_finding_classification(
+    patient_finding: PatientFinding,
+    resolved: _ResolvedClassificationSync,
+) -> PatientFindingClassification:
+    create_kwargs: dict[str, object] = {
+        "finding": patient_finding,
+        "classification": resolved.classification,
+        "classification_choice": resolved.choice,
+    }
+    if resolved.subcategories is not None:
+        create_kwargs["subcategories"] = resolved.subcategories
+    if resolved.numerical_descriptors is not None:
+        create_kwargs["numerical_descriptors"] = resolved.numerical_descriptors
+    return PatientFindingClassification.objects.create(**create_kwargs)
+
+
+def _update_patient_finding_classification(
+    match: _PatientFindingClassificationLike,
+    resolved: _ResolvedClassificationSync,
+) -> None:
+    changed = _update_classification_subcategories(match, resolved)
+    changed |= _update_classification_numerical_descriptors(match, resolved)
+    if not match.is_active:
+        match.is_active = True
+        changed = True
+    if changed:
+        match.save()
+
+
+def _update_classification_subcategories(
+    match: _PatientFindingClassificationLike,
+    resolved: _ResolvedClassificationSync,
+) -> bool:
+    subcategories = resolved.subcategories
+    if subcategories is None or match.subcategories == subcategories:
+        return False
+    match.subcategories = subcategories
+    return True
+
+
+def _update_classification_numerical_descriptors(
+    match: _PatientFindingClassificationLike,
+    resolved: _ResolvedClassificationSync,
+) -> bool:
+    numerical_descriptors = resolved.numerical_descriptors
+    if (
+        numerical_descriptors is None
+        or match.numerical_descriptors == numerical_descriptors
+    ):
+        return False
+    match.numerical_descriptors = numerical_descriptors
+    return True
+
+
+def _deactivate_unmatched_classifications(
+    existing_active: Sequence[PatientFindingClassification],
+    matched_ids: set[int],
+) -> None:
     for row in existing_active:
         row_ref = cast(_PatientFindingClassificationLike, row)
         if cast(_IdentifiedLike, row).id not in matched_ids and row_ref.is_active:
@@ -849,6 +906,189 @@ def _sync_findings(
         )
 
 
+def _resolve_submission_examination(
+    patient_examination_id: int,
+) -> PatientExamination:
+    patient_examination = (
+        PatientExamination.objects.select_related("patient", "examination")
+        .filter(pk=patient_examination_id)
+        .first()
+    )
+    if patient_examination is None:
+        raise ValidationError(
+            {"patient_examination_id": "PatientExamination not found."}
+        )
+    return patient_examination
+
+
+def _resolve_submission_report(
+    patient_examination: PatientExamination,
+    *,
+    report_id: int | None,
+) -> tuple[PatientExaminationReport, bool]:
+    if report_id is None:
+        return (
+            PatientExaminationReport(patient_examination=patient_examination),
+            True,
+        )
+    report = (
+        PatientExaminationReport.objects.select_for_update()
+        .filter(pk=report_id, patient_examination=patient_examination)
+        .first()
+    )
+    if report is None:
+        raise ValidationError(
+            {"report_id": "Report not found for patient examination."}
+        )
+    return report, False
+
+
+def _validate_submission_version(
+    report: _PatientExaminationReportLike,
+    *,
+    created: bool,
+    expected_version: int | None,
+) -> None:
+    if expected_version is None or created or report.version == expected_version:
+        return
+    raise ValidationError(
+        {
+            "expected_version": (
+                f"Version conflict. Current version is {report.version}, "
+                f"expected {expected_version}."
+            )
+        }
+    )
+
+
+def _sync_submission_clinical_context(
+    patient_examination: PatientExamination,
+    *,
+    patient_data: Mapping[str, object] | None,
+    indications: Sequence[Mapping[str, object]] | None,
+    findings: Sequence[Mapping[str, object]] | None,
+    user: AuthUser | None,
+) -> _FindingsSyncResult:
+    if patient_data:
+        _update_patient_context(patient_examination, patient_data)
+    if indications is not None:
+        _sync_indications(patient_examination, indications)
+    if findings is None:
+        return _FindingsSyncResult(
+            warnings=[
+                "No findings payload provided; normalized findings were not synced."
+            ],
+            persisted_record=None,
+            persisted_record_updated_at=None,
+        )
+    _sync_findings(patient_examination, findings, user=user)
+    persisted_record = cast(
+        dict[str, object],
+        persist_patient_examination_dtypes_record_from_ledger(patient_examination),
+    )
+    return _FindingsSyncResult(
+        warnings=[],
+        persisted_record=persisted_record,
+        persisted_record_updated_at=patient_examination.dtypes_record_updated_at,
+    )
+
+
+def _apply_submission_report_fields(
+    report: _PatientExaminationReportLike,
+    *,
+    created: bool,
+    user: AuthUser | None,
+    template_name: str,
+    template_version: str,
+    template_hash: str,
+    title: str,
+    status: str,
+    editor_payload: Mapping[str, object] | None,
+    rendered_text: str,
+    patient_data: Mapping[str, object] | None,
+    history_context: Mapping[str, object],
+) -> None:
+    report.template_name = template_name
+    report.template_version = _value_or_default(template_version, "")
+    report.template_hash = _value_or_default(template_hash, "")
+    report.title = _value_or_default(title, report.title)
+    report.status = _value_or_default(
+        status,
+        PatientExaminationReport.Status.DRAFT.value,
+    )
+    report.editor_payload = report_json_safe_dict(_mapping_or_empty(editor_payload))
+    report.rendered_text = _value_or_default(rendered_text, "")
+    report.patient_context_snapshot = report_json_safe_dict(
+        _mapping_or_empty(patient_data)
+    )
+    report.history_context_snapshot = report_json_safe_dict(history_context)
+    report.updated_by = user
+    if created:
+        report.created_by = user
+        report.version = 1
+    else:
+        report.version += 1
+
+
+def _value_or_default(value: str, default: str) -> str:
+    return value if value else default
+
+
+def _mapping_or_empty(
+    value: Mapping[str, object] | None,
+) -> Mapping[str, object]:
+    return value if value is not None else {}
+
+
+def _apply_submission_finalization(
+    report: _PatientExaminationReportLike,
+    *,
+    user: AuthUser | None,
+) -> None:
+    if report.status == PatientExaminationReport.Status.FINAL.value:
+        report.finalized_at = timezone.now()
+        report.finalized_by = user
+        return
+    report.finalized_at = None
+    report.finalized_by = None
+
+
+def _clear_finalized_submission_draft(
+    patient_examination: PatientExamination,
+    *,
+    report_status: str,
+) -> None:
+    if report_status != PatientExaminationReport.Status.FINAL.value:
+        return
+    patient_examination.report_draft = {}
+    patient_examination.draft_updated_at = None
+    patient_examination.save(update_fields=["report_draft", "draft_updated_at"])
+
+
+def _persist_final_report_artifacts(
+    report: PatientExaminationReport,
+    patient_examination: PatientExamination,
+    *,
+    report_status: str,
+    rendered_text: str,
+    warnings: list[str],
+) -> tuple[int | None, int | None]:
+    if report_status != PatientExaminationReport.Status.FINAL.value:
+        return None, None
+    try:
+        return persist_report_pdf_artifact(
+            report,
+            patient_examination,
+            rendered_text=rendered_text,
+        )
+    except Exception as error:
+        warnings.append(
+            "PDF artifact persistence failed "
+            f"({type(error).__name__}). Report save continued."
+        )
+        return None, None
+
+
 @transaction.atomic
 def save_report_submission(
     *,
@@ -877,133 +1117,71 @@ def save_report_submission(
     - examination indications
     - normalized patient findings/classifications/interventions
     """
-    user_ref = cast(AuthUser | None, user)
-    warnings: list[str] = []
-    patient_examination = (
-        PatientExamination.objects.select_related("patient", "examination")
-        .filter(pk=patient_examination_id)
-        .first()
-    )
-    if patient_examination is None:
-        raise ValidationError(
-            {"patient_examination_id": "PatientExamination not found."}
-        )
-
     if not template_name:
         raise ValidationError({"template_name": "template_name is required."})
-
-    if report_id is not None:
-        report = (
-            PatientExaminationReport.objects.select_for_update()
-            .filter(pk=report_id, patient_examination=patient_examination)
-            .first()
-        )
-        if report is None:
-            raise ValidationError(
-                {"report_id": "Report not found for patient examination."}
-            )
-        created = False
-    else:
-        report = PatientExaminationReport(patient_examination=patient_examination)
-        created = True
+    user_ref = cast(AuthUser | None, user)
+    patient_examination = _resolve_submission_examination(patient_examination_id)
+    report, created = _resolve_submission_report(
+        patient_examination,
+        report_id=report_id,
+    )
     report_ref = cast(_PatientExaminationReportLike, report)
-
-    if (
-        expected_version is not None
-        and not created
-        and report_ref.version != expected_version
-    ):
-        raise ValidationError(
-            {
-                "expected_version": (
-                    f"Version conflict. Current version is {report_ref.version}, "
-                    f"expected {expected_version}."
-                )
-            }
-        )
-
-    if patient_data:
-        _update_patient_context(patient_examination, patient_data)
-
-    if indications is not None:
-        _sync_indications(patient_examination, indications)
-
-    persisted_dtypes_record: dict[str, object] | None = None
-    persisted_dtypes_record_updated_at: datetime | None = None
-    if findings is not None:
-        _sync_findings(patient_examination, findings, user=user_ref)
-        persisted_dtypes_record = cast(
-            dict[str, object],
-            persist_patient_examination_dtypes_record_from_ledger(patient_examination),
-        )
-        persisted_dtypes_record_updated_at = (
-            patient_examination.dtypes_record_updated_at
-        )
-    else:
-        warnings.append(
-            "No findings payload provided; normalized findings were not synced."
-        )
+    _validate_submission_version(
+        report_ref,
+        created=created,
+        expected_version=expected_version,
+    )
+    findings_result = _sync_submission_clinical_context(
+        patient_examination,
+        patient_data=patient_data,
+        indications=indications,
+        findings=findings,
+        user=user_ref,
+    )
+    warnings = findings_result.warnings
 
     history_context = get_patient_examination_history_context(
         patient_examination, limit=history_limit
     )
-
-    requested_status = status or PatientExaminationReport.Status.DRAFT.value
-
-    report_ref.template_name = template_name
-    report_ref.template_version = template_version or ""
-    report_ref.template_hash = template_hash or ""
-    report_ref.title = title or report_ref.title
-    report_ref.status = requested_status
-    report_ref.editor_payload = report_json_safe_dict(editor_payload or {})
-    report_ref.rendered_text = rendered_text or ""
-    report_ref.patient_context_snapshot = report_json_safe_dict(patient_data or {})
-    report_ref.history_context_snapshot = report_json_safe_dict(history_context)
-    report_ref.updated_by = user_ref
-    if created:
-        report_ref.created_by = user_ref
-        report_ref.version = 1
-    else:
-        report_ref.version += 1
-
-    if report_ref.status == PatientExaminationReport.Status.FINAL.value:
-        report_ref.finalized_at = timezone.now()
-        report_ref.finalized_by = user_ref
-    else:
-        report_ref.finalized_at = None
-        report_ref.finalized_by = None
-
+    _apply_submission_report_fields(
+        report_ref,
+        created=created,
+        user=user_ref,
+        template_name=template_name,
+        template_version=template_version,
+        template_hash=template_hash,
+        title=title,
+        status=status,
+        editor_payload=editor_payload,
+        rendered_text=rendered_text,
+        patient_data=patient_data,
+        history_context=history_context,
+    )
+    _apply_submission_finalization(report_ref, user=user_ref)
     report_ref.save()
-
-    if report_ref.status == PatientExaminationReport.Status.FINAL.value:
-        patient_examination.report_draft = {}
-        patient_examination.draft_updated_at = None
-        patient_examination.save(update_fields=["report_draft", "draft_updated_at"])
-
-    persisted_report_artifact_id: int | None = None
-    persisted_pdf_artifact_id: int | None = None
-    if report_ref.status == PatientExaminationReport.Status.FINAL.value:
-        try:
-            (
-                persisted_report_artifact_id,
-                persisted_pdf_artifact_id,
-            ) = persist_report_pdf_artifact(
-                report,
-                patient_examination,
-                rendered_text=report_ref.rendered_text,
-            )
-        except Exception as exc:
-            warnings.append(
-                f"PDF artifact persistence failed ({type(exc).__name__}). Report save continued."
-            )
+    _clear_finalized_submission_draft(
+        patient_examination,
+        report_status=report_ref.status,
+    )
+    persisted_report_artifact_id, persisted_pdf_artifact_id = (
+        _persist_final_report_artifacts(
+            report,
+            patient_examination,
+            report_status=report_ref.status,
+            rendered_text=report_ref.rendered_text,
+            warnings=warnings,
+        )
+    )
 
     return SaveReportSubmissionResult(
         report=report,
         created=created,
         warnings=warnings,
         history_context=cast(dict[str, object], history_context),
-        persisted_dtypes_record=persisted_dtypes_record,
-        persisted_dtypes_record_updated_at=persisted_dtypes_record_updated_at,
+        persisted_dtypes_record=findings_result.persisted_record,
+        persisted_dtypes_record_updated_at=(
+            findings_result.persisted_record_updated_at
+        ),
         persisted_report_artifact_id=persisted_report_artifact_id,
         persisted_pdf_artifact_id=persisted_pdf_artifact_id,
     )

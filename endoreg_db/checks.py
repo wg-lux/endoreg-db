@@ -39,9 +39,8 @@ CELERY_MODES = (
     CeleryMode("MODEL_TRAINING_JOB_MODE", "celery", "model training"),
 )
 ALWAYS_CELERY_LABELS = ("upload pipeline ingest",)
-type Null = NoneType
-type AppConfigSequence = Sequence[AppConfig] | Null
-type DatabaseAliasSequence = Sequence[str] | Null
+type AppConfigSequence = Sequence[AppConfig] | NoneType
+type DatabaseAliasSequence = Sequence[str] | NoneType
 type CheckKwargValue = str | bool | int | AppConfigSequence | DatabaseAliasSequence
 
 

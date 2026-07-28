@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import date as dt_date, datetime, time as dt_time
 from uuid import UUID
 from typing import Protocol, TypeAlias, cast
@@ -168,23 +168,25 @@ def _active_video_file_name(video: VideoFile) -> str | None:
     return cast(str | None, getattr(active_file, "name", None)) or None
 
 
-def _segment_category(segment: LabelVideoSegment) -> str | None:
-    label_name = (
+def _segment_label_name(segment: LabelVideoSegment) -> str:
+    return (
         cast(str, getattr(getattr(segment, "label", None), "name", "")) or ""
     ).lower()
-    patient_findings = list(segment.patient_findings.all())
+
+
+def _segment_has_polyp(
+    label_name: str,
+    patient_findings: Sequence[object],
+) -> bool:
     finding_names = [
         (cast(str, getattr(getattr(pf, "finding", None), "name", "")) or "").lower()
         for pf in patient_findings
     ]
-    has_polyp = ("polyp" in label_name) or any(
-        "polyp" in name for name in finding_names
-    )
-    if has_polyp:
-        return "polyp"
+    return ("polyp" in label_name) or any("polyp" in name for name in finding_names)
 
-    has_intervention_label = "intervention" in label_name
-    has_active_intervention = any(
+
+def _segment_has_active_intervention(patient_findings: Sequence[object]) -> bool:
+    return any(
         bool(getattr(intervention, "is_active", False))
         for pf in patient_findings
         for intervention in cast(
@@ -192,12 +194,19 @@ def _segment_category(segment: LabelVideoSegment) -> str | None:
             pf,
         ).interventions.all()
     )
-    if has_intervention_label or has_active_intervention:
-        return "intervention"
 
+
+def _segment_category(segment: LabelVideoSegment) -> str | None:
+    label_name = _segment_label_name(segment)
+    patient_findings = list(segment.patient_findings.all())
+    if _segment_has_polyp(label_name, patient_findings):
+        return "polyp"
+    if "intervention" in label_name or _segment_has_active_intervention(
+        patient_findings
+    ):
+        return "intervention"
     if patient_findings:
         return "other_findings"
-
     return None
 
 
@@ -259,21 +268,33 @@ def _pdf_timestamp(pdf: RawPdfFile) -> tuple[datetime | None, str, bool]:
     return None, "missing_timestamp", False
 
 
+def _sensitive_meta_timestamp(
+    sensitive_meta: SensitiveMeta | None,
+) -> tuple[datetime, str, bool] | None:
+    if sensitive_meta is None:
+        return None
+    examination_date = cast(
+        dt_date | None,
+        getattr(sensitive_meta, "examination_date", None),
+    )
+    if examination_date is None:
+        return None
+    examination_time = cast(
+        dt_time | None,
+        getattr(sensitive_meta, "examination_time", None),
+    )
+    return (
+        _combine_date_time(examination_date, examination_time),
+        "examination_date",
+        True,
+    )
+
+
 def _video_timestamp(video: VideoFile) -> tuple[datetime | None, str, bool]:
     sm = cast(SensitiveMeta | None, getattr(video, "sensitive_meta", None))
-    if sm is not None:
-        sensitive_meta_date = cast(
-            dt_date | None, getattr(sm, "examination_date", None)
-        )
-        sensitive_meta_time = cast(
-            dt_time | None, getattr(sm, "examination_time", None)
-        )
-        if sensitive_meta_date is not None:
-            return (
-                _combine_date_time(sensitive_meta_date, sensitive_meta_time),
-                "examination_date",
-                True,
-            )
+    sensitive_timestamp = _sensitive_meta_timestamp(sm)
+    if sensitive_timestamp is not None:
+        return sensitive_timestamp
 
     video_date = cast(dt_date | None, getattr(video, "date", None))
     if video_date is not None:
@@ -290,25 +311,722 @@ def _video_timestamp(video: VideoFile) -> tuple[datetime | None, str, bool]:
 
 def _resolved_pdf_anonymized_text(pdf: RawPdfFile) -> str | None:
     anonymized_text = cast(str | None, getattr(pdf, "anonymized_text", None))
-    if anonymized_text is not None and anonymized_text.strip():
-        return anonymized_text
-
     full_report = cast(
         AnonymExaminationReport | None, getattr(pdf, "anonym_examination_report", None)
     )
     full_report_text = cast(str | None, getattr(full_report, "text", None))
-    if full_report_text is not None and full_report_text.strip():
-        return full_report_text
-
     sensitive_meta = cast(SensitiveMeta | None, getattr(pdf, "sensitive_meta", None))
     sensitive_text = cast(str | None, getattr(sensitive_meta, "anonymized_text", None))
-    if sensitive_text is not None and sensitive_text.strip():
-        return sensitive_text
-
     pdf_text = cast(str | None, getattr(pdf, "text", None))
-    if pdf_text is not None and pdf_text.strip():
-        return pdf_text
+    for candidate in (
+        anonymized_text,
+        full_report_text,
+        sensitive_text,
+        pdf_text,
+    ):
+        if candidate is not None and candidate.strip():
+            return candidate
     return None
+
+
+def _timeline_sort_key(item: TimelineItem) -> tuple[int, datetime, int]:
+    raw_timestamp = item.get("timestamp")
+    item_id = item.get("id")
+    item_id_int = cast(int, item_id) if isinstance(item_id, int) else 0
+    if isinstance(raw_timestamp, str):
+        try:
+            return (
+                1,
+                _make_aware_if_needed(datetime.fromisoformat(raw_timestamp)),
+                item_id_int,
+            )
+        except ValueError:
+            pass
+    return 0, _make_aware_if_needed(datetime.min), item_id_int
+
+
+def _patient_payload(patient: Patient) -> dict[str, TimelineValue]:
+    return {
+        "id": cast(int | None, patient.pk),
+        "first_name": cast(str | None, getattr(patient, "first_name", None)),
+        "last_name": cast(str | None, getattr(patient, "last_name", None)),
+        "dob": _safe_iso(cast(dt_date | None, getattr(patient, "dob", None))),
+        "is_real_person": bool(getattr(patient, "is_real_person", True)),
+        "patient_hash": cast(str | None, getattr(patient, "patient_hash", None)),
+    }
+
+
+def _prioritized_segments(video_id: int) -> dict[str, LabelVideoSegment]:
+    segment_qs = (
+        LabelVideoSegment.objects.filter(video_file_id=video_id)
+        .select_related("label")
+        .prefetch_related(
+            "patient_findings",
+            "patient_findings__finding",
+            "patient_findings__interventions",
+        )
+        .order_by("-start_frame_number", "-id")
+    )
+    prioritized: dict[str, LabelVideoSegment] = {}
+    for segment in segment_qs:
+        category = _segment_category(segment)
+        if category is not None and category not in prioritized:
+            prioritized[category] = segment
+        if len(prioritized) == 3:
+            break
+    return prioritized
+
+
+def _segment_frame_item(
+    request: Request,
+    *,
+    video_id: int,
+    category: str,
+    segment: LabelVideoSegment,
+) -> TimelineItem | None:
+    frame_number = _segment_preferred_frame_number(segment)
+    if frame_number is None:
+        return None
+    segment_label = cast(
+        str | None,
+        getattr(cast(Label | None, getattr(segment, "label", None)), "name", None),
+    )
+    return {
+        "id": None,
+        "video_id": video_id,
+        "frame_number": frame_number,
+        "timestamp": None,
+        "category": category,
+        "selection_source": "segment_priority",
+        "segment_id": cast(int | None, segment.pk),
+        "segment_label": segment_label,
+        "stream_url": build_absolute_media_url(
+            request,
+            build_video_frame_stream_path(video_id, frame_number),
+        ),
+    }
+
+
+def _prioritized_frame_items(request: Request, video_id: int) -> list[TimelineItem]:
+    items: list[TimelineItem] = []
+    seen_frame_numbers: set[int] = set()
+    segments = _prioritized_segments(video_id)
+    for category in ("polyp", "intervention", "other_findings"):
+        segment = segments.get(category)
+        if segment is None:
+            continue
+        item = _segment_frame_item(
+            request,
+            video_id=video_id,
+            category=category,
+            segment=segment,
+        )
+        if item is None:
+            continue
+        frame_number = _unused_frame_number(item, seen_frame_numbers)
+        if frame_number is None:
+            continue
+        seen_frame_numbers.add(frame_number)
+        items.append(item)
+    return items
+
+
+def _existing_frame_numbers(items: Sequence[TimelineItem]) -> set[int]:
+    return {
+        frame_number
+        for item in items
+        if isinstance((frame_number := item.get("frame_number")), int)
+    }
+
+
+def _unused_frame_number(
+    item: TimelineItem,
+    seen_frame_numbers: set[int],
+) -> int | None:
+    frame_number = item.get("frame_number")
+    if not isinstance(frame_number, int) or frame_number in seen_frame_numbers:
+        return None
+    return frame_number
+
+
+def _fallback_frame_item(
+    request: Request,
+    *,
+    video_id: int,
+    frame: Frame,
+    frame_number: int,
+) -> TimelineItem:
+    return {
+        "id": cast(int | None, frame.pk),
+        "video_id": video_id,
+        "frame_number": frame_number,
+        "timestamp": cast(
+            TimelineValue,
+            cast(float | None, getattr(frame, "timestamp", None)),
+        ),
+        "category": "fallback_latest",
+        "selection_source": "latest_frame",
+        "segment_id": None,
+        "segment_label": None,
+        "stream_url": build_absolute_media_url(
+            request,
+            build_video_frame_stream_path(video_id, frame_number),
+        ),
+    }
+
+
+def _fallback_frame_items(
+    request: Request,
+    *,
+    video_id: int,
+    existing_items: Sequence[TimelineItem],
+) -> list[TimelineItem]:
+    seen_frame_numbers = _existing_frame_numbers(existing_items)
+    items: list[TimelineItem] = []
+    frame_qs = (
+        Frame.objects.filter(video_id=video_id)
+        .order_by("-frame_number")
+        .only("id", "video_id", "frame_number", "timestamp")
+    )[:12]
+    for frame in frame_qs:
+        frame_number = cast(int | None, getattr(frame, "frame_number", None))
+        if frame_number is None or frame_number in seen_frame_numbers:
+            continue
+        seen_frame_numbers.add(frame_number)
+        items.append(
+            _fallback_frame_item(
+                request,
+                video_id=video_id,
+                frame=frame,
+                frame_number=frame_number,
+            )
+        )
+        if len(existing_items) + len(items) >= 3:
+            break
+    return items
+
+
+def _latest_frame_items(
+    request: Request,
+    latest_video: TimelineItem | None,
+) -> list[TimelineItem]:
+    latest_video_id = cast(
+        int | None,
+        latest_video.get("id") if latest_video is not None else None,
+    )
+    if latest_video_id is None:
+        return []
+    items = _prioritized_frame_items(request, latest_video_id)
+    items.extend(
+        _fallback_frame_items(
+            request,
+            video_id=latest_video_id,
+            existing_items=items,
+        )
+    )
+    return items
+
+
+def _latest_timeline_response(
+    request: Request,
+    *,
+    patient: Patient,
+    items: Sequence[TimelineItem],
+) -> Response:
+    latest_report = next(
+        (item for item in items if item.get("media_type") in {"pdf", "full_report"}),
+        None,
+    )
+    latest_video = next(
+        (item for item in items if item.get("media_type") == "video"),
+        None,
+    )
+    return Response(
+        {
+            "patient": _patient_payload(patient),
+            "latest_report": latest_report,
+            "latest_video": latest_video,
+            "latest_frames": _latest_frame_items(request, latest_video),
+        }
+    )
+
+
+def _linked_patient_sources(
+    *sources: tuple[str, int | None],
+) -> list[TimelineValue]:
+    return [source_name for source_name, value in sources if value is not None]
+
+
+def _report_queryset(
+    *,
+    patient_id: int,
+    patient_examination_id: int | None,
+) -> QuerySet[AnonymExaminationReport]:
+    reports = AnonymExaminationReport.objects.select_related(
+        "patient",
+        "patient_examination",
+        "sensitive_meta",
+        "center",
+        "type",
+    ).filter(
+        Q(patient_id=patient_id)
+        | Q(sensitive_meta__pseudo_patient_id=patient_id)
+        | Q(patient_examination__patient_id=patient_id)
+    )
+    if patient_examination_id is not None:
+        reports = reports.filter(patient_examination_id=patient_examination_id)
+    return reports.distinct()
+
+
+def _report_timeline_item(
+    request: Request,
+    *,
+    patient_id: int,
+    report: AnonymExaminationReport,
+) -> TimelineItem:
+    timestamp, timestamp_source, timestamp_is_examination_date = _report_timestamp(
+        report
+    )
+    report_file = cast(FieldFile | None, getattr(report, "file", None))
+    raw_pdf = cast(RawPdfFile | None, getattr(report, "raw_pdf_file", None))
+    direct_patient = cast(Patient | None, getattr(report, "patient", None))
+    sensitive_meta = cast(
+        SensitiveMeta | None,
+        getattr(report, "sensitive_meta", None),
+    )
+    pseudo_patient = cast(
+        Patient | None,
+        getattr(sensitive_meta, "pseudo_patient", None),
+    )
+    patient_examination = cast(
+        PatientExamination | None,
+        getattr(report, "patient_examination", None),
+    )
+    examination_patient = cast(
+        Patient | None,
+        getattr(patient_examination, "patient", None),
+    )
+    full_report = cast(
+        AnonymExaminationReport | None,
+        getattr(report, "anonym_examination_report", None),
+    )
+    document_owner = full_report if full_report is not None else report
+    report_text = cast(str | None, getattr(report, "text", None))
+    return {
+        "media_type": "full_report",
+        "id": cast(int | None, report.pk),
+        "patient_id": patient_id,
+        "timestamp": _safe_iso(timestamp),
+        "timestamp_source": timestamp_source,
+        "timestamp_is_examination_date": timestamp_is_examination_date,
+        "examination_date": _safe_iso(
+            cast(dt_date | None, getattr(report, "date", None))
+        ),
+        "examination_time": _safe_iso(
+            cast(dt_time | None, getattr(report, "time", None))
+        ),
+        "center_name": cast(
+            str | None,
+            getattr(
+                cast(Center | None, getattr(report, "center", None)),
+                "name",
+                None,
+            ),
+        ),
+        "file_name": cast(str | None, getattr(report_file, "name", None)),
+        "raw_pdf_id": cast(int | None, getattr(raw_pdf, "pk", None)),
+        "patient_examination_id": cast(
+            int | None,
+            getattr(patient_examination, "pk", None),
+        ),
+        "document_type": cast(
+            str | None,
+            getattr(getattr(document_owner, "type", None), "name", None),
+        ),
+        "anonymized_text": report_text if isinstance(report_text, str) else None,
+        "linked_patient": _patient_ref(direct_patient),
+        "pseudo_patient": _patient_ref(pseudo_patient),
+        "examination_patient": _patient_ref(examination_patient),
+        "patient_link_sources": _linked_patient_sources(
+            ("patient", cast(int | None, getattr(report, "patient_id", None))),
+            (
+                "sensitive_meta.pseudo_patient",
+                cast(
+                    int | None,
+                    getattr(sensitive_meta, "pseudo_patient_id", None),
+                ),
+            ),
+            (
+                "patient_examination.patient",
+                cast(
+                    int | None,
+                    getattr(patient_examination, "patient_id", None),
+                ),
+            ),
+        ),
+        "stream_options": _pdf_stream_options(request, raw_pdf)
+        if raw_pdf is not None
+        else [],
+    }
+
+
+def _report_timeline_items(
+    request: Request,
+    *,
+    patient_id: int,
+    patient_examination_id: int | None,
+) -> list[TimelineItem]:
+    return [
+        _report_timeline_item(request, patient_id=patient_id, report=report)
+        for report in _report_queryset(
+            patient_id=patient_id,
+            patient_examination_id=patient_examination_id,
+        )
+    ]
+
+
+def _pdf_queryset(
+    *,
+    patient_id: int,
+    patient_examination_id: int | None,
+) -> QuerySet[RawPdfFile]:
+    pdfs = RawPdfFile.objects.select_related(
+        "patient",
+        "sensitive_meta",
+        "center",
+        "anonym_examination_report",
+        "anonym_examination_report__type",
+    ).filter(Q(patient_id=patient_id) | Q(sensitive_meta__pseudo_patient_id=patient_id))
+    if patient_examination_id is not None:
+        pdfs = pdfs.filter(
+            Q(examination_id=patient_examination_id)
+            | Q(
+                anonym_examination_report__patient_examination_id=patient_examination_id
+            )
+        )
+    return pdfs.distinct()
+
+
+def _pdf_full_report_id(
+    pdf: RawPdfFile,
+    full_report: AnonymExaminationReport | None,
+) -> int | None:
+    full_report_id = cast(int | None, getattr(full_report, "pk", None))
+    if full_report_id is not None:
+        return full_report_id
+    return cast(
+        int | None,
+        getattr(pdf, "anonym_examination_report_id", None),
+    )
+
+
+def _pdf_timeline_item(
+    request: Request,
+    *,
+    patient_id: int,
+    pdf: RawPdfFile,
+) -> TimelineItem:
+    timestamp, timestamp_source, timestamp_is_examination_date = _pdf_timestamp(pdf)
+    sensitive_meta = cast(
+        SensitiveMeta | None,
+        getattr(pdf, "sensitive_meta", None),
+    )
+    direct_patient = cast(Patient | None, getattr(pdf, "patient", None))
+    pseudo_patient = cast(
+        Patient | None,
+        getattr(sensitive_meta, "pseudo_patient", None),
+    )
+    full_report = cast(
+        AnonymExaminationReport | None,
+        getattr(pdf, "anonym_examination_report", None),
+    )
+    patient_examination = cast(
+        PatientExamination | None,
+        getattr(pdf, "examination", None),
+    )
+    pdf_uuid = cast(UUID | None, getattr(pdf, "uuid", None))
+    file_obj = cast(FieldFile | None, getattr(pdf, "file", None))
+    processed_file_obj = cast(
+        FieldFile | None,
+        getattr(pdf, "processed_file", None),
+    )
+    return {
+        "media_type": "pdf",
+        "id": cast(int | None, pdf.pk),
+        "uuid": str(pdf_uuid) if pdf_uuid is not None else None,
+        "patient_id": patient_id,
+        "timestamp": _safe_iso(timestamp),
+        "timestamp_source": timestamp_source,
+        "timestamp_is_examination_date": timestamp_is_examination_date,
+        "examination_date": _safe_iso(
+            cast(dt_date | None, getattr(sensitive_meta, "examination_date", None))
+        ),
+        "examination_time": _safe_iso(
+            cast(dt_time | None, getattr(sensitive_meta, "examination_time", None))
+        ),
+        "date_created": _safe_iso(
+            cast(dt_date | datetime | None, getattr(pdf, "date_created", None))
+        ),
+        "center_name": cast(
+            str | None,
+            getattr(
+                cast(Center | None, getattr(pdf, "center", None)),
+                "name",
+                None,
+            ),
+        ),
+        "pdf_hash": cast(str | None, getattr(pdf, "pdf_hash", None)),
+        "file_name": cast(str | None, getattr(file_obj, "name", None)),
+        "processed_file_name": cast(
+            str | None,
+            getattr(processed_file_obj, "name", None),
+        ),
+        "full_report_id": _pdf_full_report_id(pdf, full_report),
+        "document_type": cast(
+            str | None,
+            getattr(getattr(full_report, "type", None), "name", None),
+        ),
+        "patient_examination_id": cast(
+            int | None,
+            getattr(patient_examination, "pk", None),
+        ),
+        "anonymized_text": _resolved_pdf_anonymized_text(pdf),
+        "linked_patient": _patient_ref(direct_patient),
+        "pseudo_patient": _patient_ref(pseudo_patient),
+        "patient_link_sources": _linked_patient_sources(
+            ("patient", cast(int | None, getattr(pdf, "patient_id", None))),
+            (
+                "sensitive_meta.pseudo_patient",
+                cast(
+                    int | None,
+                    getattr(sensitive_meta, "pseudo_patient_id", None),
+                ),
+            ),
+        ),
+        "stream_options": _pdf_stream_options(request, pdf),
+    }
+
+
+def _pdf_timeline_items(
+    request: Request,
+    *,
+    patient_id: int,
+    patient_examination_id: int | None,
+) -> list[TimelineItem]:
+    return [
+        _pdf_timeline_item(request, patient_id=patient_id, pdf=pdf)
+        for pdf in _pdf_queryset(
+            patient_id=patient_id,
+            patient_examination_id=patient_examination_id,
+        )
+    ]
+
+
+def _video_queryset(
+    *,
+    patient_id: int,
+    patient_examination_id: int | None,
+) -> QuerySet[VideoFile]:
+    videos = VideoFile.objects.select_related(
+        "patient",
+        "sensitive_meta",
+        "center",
+        "examination",
+        "state",
+    ).filter(
+        Q(patient_id=patient_id)
+        | Q(sensitive_meta__pseudo_patient_id=patient_id)
+        | Q(examination__patient_id=patient_id)
+    )
+    if patient_examination_id is not None:
+        videos = videos.filter(examination_id=patient_examination_id)
+    return videos.distinct()
+
+
+def _video_timeline_item(
+    request: Request,
+    *,
+    patient_id: int,
+    video: VideoFile,
+) -> TimelineItem:
+    timestamp, timestamp_source, timestamp_is_examination_date = _video_timestamp(video)
+    sensitive_meta = cast(
+        SensitiveMeta | None,
+        getattr(video, "sensitive_meta", None),
+    )
+    direct_patient = cast(Patient | None, getattr(video, "patient", None))
+    pseudo_patient = cast(
+        Patient | None,
+        getattr(sensitive_meta, "pseudo_patient", None),
+    )
+    patient_examination = cast(
+        PatientExamination | None,
+        getattr(video, "examination", None),
+    )
+    examination_patient = cast(
+        Patient | None,
+        getattr(patient_examination, "patient", None),
+    )
+    video_uuid = cast(UUID | None, getattr(video, "uuid", None))
+    video_date = cast(dt_date | None, getattr(video, "date", None))
+    return {
+        "media_type": "video",
+        "id": cast(int | None, video.pk),
+        "uuid": str(video_uuid) if video_uuid is not None else None,
+        "patient_id": patient_id,
+        "timestamp": _safe_iso(timestamp),
+        "timestamp_source": timestamp_source,
+        "timestamp_is_examination_date": timestamp_is_examination_date,
+        "examination_date": _safe_iso(
+            cast(
+                dt_date | None,
+                getattr(sensitive_meta, "examination_date", None),
+            )
+            or video_date
+        ),
+        "examination_time": _safe_iso(
+            cast(
+                dt_time | None,
+                getattr(sensitive_meta, "examination_time", None),
+            )
+        ),
+        "uploaded_at": _safe_iso(
+            cast(datetime | None, getattr(video, "uploaded_at", None))
+        ),
+        "date_created": _safe_iso(
+            cast(datetime | None, getattr(video, "date_created", None))
+        ),
+        "center_name": cast(
+            str | None,
+            getattr(getattr(video, "center", None), "name", None),
+        ),
+        "video_hash": cast(str | None, getattr(video, "video_hash", None)),
+        "file_name": _active_video_file_name(video),
+        "original_file_name": cast(
+            str | None,
+            getattr(video, "original_file_name", None),
+        ),
+        "patient_examination_id": cast(
+            int | None,
+            getattr(patient_examination, "pk", None),
+        ),
+        "linked_patient": _patient_ref(direct_patient),
+        "pseudo_patient": _patient_ref(pseudo_patient),
+        "examination_patient": _patient_ref(examination_patient),
+        "patient_link_sources": _linked_patient_sources(
+            ("patient", cast(int | None, getattr(video, "patient_id", None))),
+            (
+                "sensitive_meta.pseudo_patient",
+                cast(
+                    int | None,
+                    getattr(sensitive_meta, "pseudo_patient_id", None),
+                ),
+            ),
+            (
+                "examination.patient",
+                cast(
+                    int | None,
+                    getattr(patient_examination, "patient_id", None),
+                ),
+            ),
+        ),
+        "stream_options": [
+            {
+                "type": "processed",
+                "url": build_absolute_media_url(
+                    request,
+                    build_video_hls_playlist_path(
+                        int(video.pk),
+                        file_type="processed",
+                    ),
+                ),
+            },
+        ],
+    }
+
+
+def _video_timeline_items(
+    request: Request,
+    *,
+    patient_id: int,
+    patient_examination_id: int | None,
+) -> list[TimelineItem]:
+    return [
+        _video_timeline_item(request, patient_id=patient_id, video=video)
+        for video in _video_queryset(
+            patient_id=patient_id,
+            patient_examination_id=patient_examination_id,
+        )
+    ]
+
+
+def _timeline_items(
+    request: Request,
+    *,
+    patient_id: int,
+    patient_examination_id: int | None,
+) -> list[TimelineItem]:
+    items = _report_timeline_items(
+        request,
+        patient_id=patient_id,
+        patient_examination_id=patient_examination_id,
+    )
+    items.extend(
+        _pdf_timeline_items(
+            request,
+            patient_id=patient_id,
+            patient_examination_id=patient_examination_id,
+        )
+    )
+    items.extend(
+        _video_timeline_items(
+            request,
+            patient_id=patient_id,
+            patient_examination_id=patient_examination_id,
+        )
+    )
+    items.sort(key=_timeline_sort_key, reverse=True)
+    return items
+
+
+def _patient_or_404(patient_id: int) -> Patient:
+    try:
+        return Patient.objects.get(pk=patient_id)
+    except Patient.DoesNotExist:
+        raise Http404(f"Patient with ID {patient_id} not found")
+
+
+def _invalid_patient_examination_response(
+    params: Mapping[str, QueryValue],
+    patient_examination_id: int | None,
+) -> Response | None:
+    if (
+        params.get("patient_examination_id") not in (None, "")
+        and patient_examination_id is None
+    ):
+        return Response(
+            {"detail": "patient_examination_id must be an integer."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    return None
+
+
+def _timeline_response(
+    request: Request,
+    *,
+    patient: Patient,
+    items: Sequence[TimelineItem],
+    latest_only: bool,
+) -> Response:
+    if latest_only:
+        return _latest_timeline_response(request, patient=patient, items=items)
+    return Response(
+        {
+            "patient": _patient_payload(patient),
+            "count": len(items),
+            "results": items,
+        }
+    )
 
 
 class PatientMediaTimelineView(APIView):
@@ -322,535 +1040,26 @@ class PatientMediaTimelineView(APIView):
     permission_classes = [EnvironmentAwarePermission, PolicyPermission]
 
     def get(self, request: Request, patient_id: int) -> Response:
-        try:
-            patient = Patient.objects.get(pk=patient_id)
-        except Patient.DoesNotExist:
-            raise Http404(f"Patient with ID {patient_id} not found")
+        patient = _patient_or_404(patient_id)
         assert_center_scope_allowed(request=request, obj=patient)
 
         params = _query_params(request)
-        pe_filter_id = _query_int_param(params, "patient_examination_id")
+        patient_examination_id = _query_int_param(params, "patient_examination_id")
         latest_only = _is_truthy(params.get("latest_only"))
-        if (
-            params.get("patient_examination_id") not in (None, "")
-            and pe_filter_id is None
-        ):
-            return Response(
-                {"detail": "patient_examination_id must be an integer."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        items: list[TimelineItem] = []
-
-        reports_qs: QuerySet[AnonymExaminationReport] = (
-            AnonymExaminationReport.objects.select_related(
-                "patient",
-                "patient_examination",
-                "sensitive_meta",
-                "center",
-                "type",
-            ).filter(
-                Q(patient_id=patient_id)
-                | Q(sensitive_meta__pseudo_patient_id=patient_id)
-                | Q(patient_examination__patient_id=patient_id)
-            )
+        invalid_response = _invalid_patient_examination_response(
+            params,
+            patient_examination_id,
         )
-        if pe_filter_id is not None:
-            reports_qs = reports_qs.filter(patient_examination_id=pe_filter_id)
-        for report in reports_qs.distinct().all():
-            ts, source, is_exam = _report_timestamp(report)
-            report_file = cast(FieldFile | None, getattr(report, "file", None))
-            report_file_name = cast(str | None, getattr(report_file, "name", None))
+        if invalid_response is not None:
+            return invalid_response
 
-            raw_pdf_obj = cast(RawPdfFile | None, getattr(report, "raw_pdf_file", None))
-            raw_pdf_id = cast(int | None, getattr(raw_pdf_obj, "pk", None))
-            direct_patient = cast(Patient | None, getattr(report, "patient", None))
-            report_sensitive_meta = cast(
-                SensitiveMeta | None, getattr(report, "sensitive_meta", None)
-            )
-            pseudo_patient = cast(
-                Patient | None,
-                getattr(report_sensitive_meta, "pseudo_patient", None),
-            )
-            patient_examination = cast(
-                PatientExamination | None,
-                getattr(report, "patient_examination", None),
-            )
-            exam_patient = cast(
-                Patient | None,
-                getattr(patient_examination, "patient", None),
-            )
-            patient_examination_id = cast(
-                int | None, getattr(patient_examination, "pk", None)
-            )
-            report_center = cast(Center | None, getattr(report, "center", None))
-            report_center_name = cast(str | None, getattr(report_center, "name", None))
-            full_report = cast(
-                AnonymExaminationReport | None,
-                getattr(report, "anonym_examination_report", None),
-            )
-
-            document_owner = full_report if full_report is not None else report
-            document_type = cast(
-                str | None,
-                getattr(getattr(document_owner, "type", None), "name", None),
-            )
-            report_text = cast(str | None, getattr(report, "text", None))
-            report_date = cast(dt_date | None, getattr(report, "date", None))
-            report_time = cast(dt_time | None, getattr(report, "time", None))
-            report_patient_id = cast(int | None, getattr(report, "patient_id", None))
-            report_pseudo_patient_id = (
-                cast(
-                    int | None,
-                    getattr(report_sensitive_meta, "pseudo_patient_id", None),
-                )
-                if report_sensitive_meta is not None
-                else None
-            )
-            report_examination_patient_id = (
-                cast(int | None, getattr(patient_examination, "patient_id", None))
-                if patient_examination is not None
-                else None
-            )
-            linked_source: list[TimelineValue] = [
-                source_name
-                for source_name, value in (
-                    ("patient", report_patient_id),
-                    ("sensitive_meta.pseudo_patient", report_pseudo_patient_id),
-                    ("patient_examination.patient", report_examination_patient_id),
-                )
-                if value is not None
-            ]
-
-            item: TimelineItem = {
-                "media_type": "full_report",
-                "id": cast(int | None, report.pk),
-                "patient_id": patient_id,
-                "timestamp": _safe_iso(ts),
-                "timestamp_source": source,
-                "timestamp_is_examination_date": is_exam,
-                "examination_date": _safe_iso(report_date),
-                "examination_time": _safe_iso(report_time),
-                "center_name": report_center_name,
-                "file_name": report_file_name,
-                "raw_pdf_id": raw_pdf_id,
-                "patient_examination_id": patient_examination_id,
-                "document_type": document_type,
-                "anonymized_text": (
-                    report_text if isinstance(report_text, str) else None
-                ),
-                "linked_patient": _patient_ref(direct_patient),
-                "pseudo_patient": _patient_ref(pseudo_patient),
-                "examination_patient": _patient_ref(exam_patient),
-                "patient_link_sources": linked_source,
-            }
-            if raw_pdf_obj is not None:
-                item["stream_options"] = _pdf_stream_options(request, raw_pdf_obj)
-            else:
-                item["stream_options"] = []
-            items.append(item)
-
-        pdfs_qs: QuerySet[RawPdfFile] = RawPdfFile.objects.select_related(
-            "patient",
-            "sensitive_meta",
-            "center",
-            "anonym_examination_report",
-            "anonym_examination_report__type",
-        ).filter(
-            Q(patient_id=patient_id) | Q(sensitive_meta__pseudo_patient_id=patient_id)
-        )
-        if pe_filter_id is not None:
-            pdfs_qs = pdfs_qs.filter(
-                Q(examination_id=pe_filter_id)
-                | Q(anonym_examination_report__patient_examination_id=pe_filter_id)
-            )
-        for pdf in pdfs_qs.distinct().all():
-            ts, source, is_exam = _pdf_timestamp(pdf)
-            sm = cast(SensitiveMeta | None, getattr(pdf, "sensitive_meta", None))
-            direct_patient = cast(Patient | None, getattr(pdf, "patient", None))
-            pseudo_patient = cast(Patient | None, getattr(sm, "pseudo_patient", None))
-            full_report = cast(
-                AnonymExaminationReport | None,
-                getattr(pdf, "anonym_examination_report", None),
-            )
-            pdf_center = cast(Center | None, getattr(pdf, "center", None))
-            center_name = cast(str | None, getattr(pdf_center, "name", None))
-            pdf_uuid = cast(UUID | None, getattr(pdf, "uuid", None))
-            patient_examination = cast(
-                PatientExamination | None,
-                getattr(pdf, "examination", None),
-            )
-            patient_examination_id = cast(
-                int | None, getattr(patient_examination, "pk", None)
-            )
-            file_obj = cast(FieldFile | None, getattr(pdf, "file", None))
-            processed_file_obj = cast(
-                FieldFile | None, getattr(pdf, "processed_file", None)
-            )
-            full_report_id = cast(int | None, getattr(full_report, "pk", None))
-            if full_report_id is None:
-                full_report_id = cast(
-                    int | None,
-                    getattr(pdf, "anonym_examination_report_id", None),
-                )
-            sm_pseudo_patient_id = (
-                cast(int | None, getattr(sm, "pseudo_patient_id", None))
-                if sm is not None
-                else None
-            )
-            patient_link_sources: list[TimelineValue] = [
-                source_name
-                for source_name, value in (
-                    ("patient", cast(int | None, getattr(pdf, "patient_id", None))),
-                    ("sensitive_meta.pseudo_patient", sm_pseudo_patient_id),
-                )
-                if value is not None
-            ]
-
-            item: TimelineItem = {
-                "media_type": "pdf",
-                "id": pdf.pk,
-                "uuid": str(pdf_uuid) if pdf_uuid is not None else None,
-                "patient_id": patient_id,
-                "timestamp": _safe_iso(ts),
-                "timestamp_source": source,
-                "timestamp_is_examination_date": is_exam,
-                "examination_date": _safe_iso(
-                    cast(dt_date | None, getattr(sm, "examination_date", None))
-                ),
-                "examination_time": _safe_iso(
-                    cast(dt_time | None, getattr(sm, "examination_time", None))
-                ),
-                "date_created": _safe_iso(
-                    cast(dt_date | datetime | None, getattr(pdf, "date_created", None))
-                ),
-                "center_name": center_name,
-                "pdf_hash": cast(str | None, getattr(pdf, "pdf_hash", None)),
-                "file_name": cast(str | None, getattr(file_obj, "name", None)),
-                "processed_file_name": cast(
-                    str | None,
-                    getattr(processed_file_obj, "name", None),
-                ),
-                "full_report_id": full_report_id,
-                "document_type": cast(
-                    str | None,
-                    getattr(getattr(full_report, "type", None), "name", None),
-                ),
-                "patient_examination_id": patient_examination_id,
-                "anonymized_text": _resolved_pdf_anonymized_text(pdf),
-                "linked_patient": _patient_ref(direct_patient),
-                "pseudo_patient": _patient_ref(pseudo_patient),
-                "patient_link_sources": patient_link_sources,
-                "stream_options": _pdf_stream_options(request, pdf),
-            }
-            items.append(item)
-
-        videos_qs: QuerySet[VideoFile] = VideoFile.objects.select_related(
-            "patient", "sensitive_meta", "center", "examination", "state"
-        ).filter(
-            Q(patient_id=patient_id)
-            | Q(sensitive_meta__pseudo_patient_id=patient_id)
-            | Q(examination__patient_id=patient_id)
-        )
-        if pe_filter_id is not None:
-            videos_qs = videos_qs.filter(examination_id=pe_filter_id)
-        for video in videos_qs.distinct().all():
-            ts, source, is_exam = _video_timestamp(video)
-            sm = cast(SensitiveMeta | None, getattr(video, "sensitive_meta", None))
-            direct_patient = cast(Patient | None, getattr(video, "patient", None))
-            pseudo_patient = cast(Patient | None, getattr(sm, "pseudo_patient", None))
-            exam_patient = cast(
-                Patient | None,
-                getattr(
-                    cast(
-                        PatientExamination | None, getattr(video, "examination", None)
-                    ),
-                    "patient",
-                    None,
-                ),
-            )
-            active_file_name = _active_video_file_name(video)
-            center_name = cast(
-                str | None, getattr(getattr(video, "center", None), "name", None)
-            )
-            examination_id = cast(
-                int | None,
-                getattr(
-                    cast(
-                        PatientExamination | None, getattr(video, "examination", None)
-                    ),
-                    "pk",
-                    None,
-                ),
-            )
-            video_uuid = cast(UUID | None, getattr(video, "uuid", None))
-            sm_examination_date = (
-                cast(dt_date | None, getattr(sm, "examination_date", None))
-                if sm is not None
-                else None
-            )
-            sm_examination_time = (
-                cast(dt_time | None, getattr(sm, "examination_time", None))
-                if sm is not None
-                else None
-            )
-            sm_pseudo_patient_id = (
-                cast(int | None, getattr(sm, "pseudo_patient_id", None))
-                if sm is not None
-                else None
-            )
-            video_examination_patient_id = (
-                cast(
-                    int | None,
-                    getattr(
-                        cast(
-                            PatientExamination | None,
-                            getattr(video, "examination", None),
-                        ),
-                        "patient_id",
-                        None,
-                    ),
-                )
-                if getattr(video, "examination", None) is not None
-                else None
-            )
-            video_date = cast(dt_date | None, getattr(video, "date", None))
-            uploaded_at = cast(datetime | None, getattr(video, "uploaded_at", None))
-            date_created = cast(datetime | None, getattr(video, "date_created", None))
-            video_timestamp = _safe_iso(ts)
-            item: TimelineItem = {
-                "media_type": "video",
-                "id": cast(int | None, video.pk),
-                "uuid": str(video_uuid) if video_uuid is not None else None,
-                "patient_id": patient_id,
-                "timestamp": video_timestamp,
-                "timestamp_source": source,
-                "timestamp_is_examination_date": is_exam,
-                "examination_date": _safe_iso(sm_examination_date or video_date),
-                "examination_time": _safe_iso(sm_examination_time),
-                "uploaded_at": _safe_iso(uploaded_at),
-                "date_created": _safe_iso(date_created),
-                "center_name": center_name,
-                "video_hash": cast(str | None, getattr(video, "video_hash", None)),
-                "file_name": active_file_name,
-                "original_file_name": cast(
-                    str | None, getattr(video, "original_file_name", None)
-                ),
-                "patient_examination_id": examination_id,
-                "linked_patient": _patient_ref(direct_patient),
-                "pseudo_patient": _patient_ref(pseudo_patient),
-                "examination_patient": _patient_ref(exam_patient),
-                "patient_link_sources": [
-                    source_name
-                    for source_name, value in (
-                        (
-                            "patient",
-                            cast(int | None, getattr(video, "patient_id", None)),
-                        ),
-                        ("sensitive_meta.pseudo_patient", sm_pseudo_patient_id),
-                        (
-                            "examination.patient",
-                            video_examination_patient_id,
-                        ),
-                    )
-                    if value is not None
-                ],
-                "stream_options": [
-                    {
-                        "type": "processed",
-                        "url": build_absolute_media_url(
-                            request,
-                            build_video_hls_playlist_path(
-                                int(video.pk), file_type="processed"
-                            ),
-                        ),
-                    },
-                ],
-            }
-            items.append(item)
-
-        def _sort_key(item_value: TimelineItem) -> tuple[int, datetime, int]:
-            raw_ts = item_value.get("timestamp")
-            item_id = item_value.get("id")
-            item_id_int = cast(int, item_id) if isinstance(item_id, int) else 0
-            if isinstance(raw_ts, str):
-                try:
-                    return (
-                        1,
-                        _make_aware_if_needed(datetime.fromisoformat(raw_ts)),
-                        item_id_int,
-                    )
-                except ValueError:
-                    pass
-            return (
-                0,
-                _make_aware_if_needed(datetime.min),
-                item_id_int,
-            )
-
-        items.sort(key=_sort_key, reverse=True)
-
-        if latest_only:
-            latest_report = next(
-                (
-                    item
-                    for item in items
-                    if item.get("media_type") in {"pdf", "full_report"}
-                ),
-                None,
-            )
-            latest_video = next(
-                (item for item in items if item.get("media_type") == "video"),
-                None,
-            )
-
-            latest_frames: list[TimelineItem] = []
-            latest_video_id = cast(
-                int | None,
-                latest_video.get("id") if isinstance(latest_video, dict) else None,
-            )
-            if latest_video_id is not None:
-                seen_frame_numbers: set[int] = set()
-                segment_qs = (
-                    LabelVideoSegment.objects.filter(video_file_id=latest_video_id)
-                    .select_related("label")
-                    .prefetch_related(
-                        "patient_findings",
-                        "patient_findings__finding",
-                        "patient_findings__interventions",
-                    )
-                    .order_by("-start_frame_number", "-id")
-                )
-
-                prioritized_segments: dict[str, LabelVideoSegment] = {}
-                for segment in segment_qs:
-                    category = _segment_category(segment)
-                    if category is not None and category not in prioritized_segments:
-                        prioritized_segments[category] = segment
-                    if len(prioritized_segments) == 3:
-                        break
-
-                for category in ("polyp", "intervention", "other_findings"):
-                    selected_segment = prioritized_segments.get(category)
-                    if selected_segment is None:
-                        continue
-                    frame_number = _segment_preferred_frame_number(selected_segment)
-                    if frame_number is None or frame_number in seen_frame_numbers:
-                        continue
-                    seen_frame_numbers.add(frame_number)
-                    segment_label = cast(
-                        str | None,
-                        getattr(
-                            cast(
-                                Label | None, getattr(selected_segment, "label", None)
-                            ),
-                            "name",
-                            None,
-                        ),
-                    )
-                    latest_frames.append(
-                        {
-                            "id": None,
-                            "video_id": latest_video_id,
-                            "frame_number": frame_number,
-                            "timestamp": None,
-                            "category": category,
-                            "selection_source": "segment_priority",
-                            "segment_id": cast(int | None, selected_segment.pk),
-                            "segment_label": segment_label,
-                            "stream_url": build_absolute_media_url(
-                                request,
-                                build_video_frame_stream_path(
-                                    latest_video_id, frame_number
-                                ),
-                            ),
-                        }
-                    )
-
-                remaining = 3 - len(latest_frames)
-                if remaining > 0:
-                    frame_qs = (
-                        Frame.objects.filter(video_id=latest_video_id)
-                        .order_by("-frame_number")
-                        .only("id", "video_id", "frame_number", "timestamp")
-                    )[:12]
-                    for frame in frame_qs:
-                        frame_number = cast(
-                            int | None, getattr(frame, "frame_number", None)
-                        )
-                        if frame_number is None or frame_number in seen_frame_numbers:
-                            continue
-                        seen_frame_numbers.add(frame_number)
-                        latest_frames.append(
-                            {
-                                "id": cast(int | None, frame.pk),
-                                "video_id": latest_video_id,
-                                "frame_number": frame_number,
-                                "timestamp": cast(
-                                    TimelineValue,
-                                    cast(
-                                        float | None, getattr(frame, "timestamp", None)
-                                    ),
-                                ),
-                                "category": "fallback_latest",
-                                "selection_source": "latest_frame",
-                                "segment_id": None,
-                                "segment_label": None,
-                                "stream_url": build_absolute_media_url(
-                                    request,
-                                    build_video_frame_stream_path(
-                                        latest_video_id,
-                                        frame_number,
-                                    ),
-                                ),
-                            }
-                        )
-                        if len(latest_frames) >= 3:
-                            break
-
-            return Response(
-                {
-                    "patient": {
-                        "id": cast(int | None, patient.pk),
-                        "first_name": cast(
-                            str | None, getattr(patient, "first_name", None)
-                        ),
-                        "last_name": cast(
-                            str | None, getattr(patient, "last_name", None)
-                        ),
-                        "dob": _safe_iso(
-                            cast(dt_date | None, getattr(patient, "dob", None))
-                        ),
-                        "is_real_person": bool(
-                            getattr(patient, "is_real_person", True)
-                        ),
-                        "patient_hash": cast(
-                            str | None, getattr(patient, "patient_hash", None)
-                        ),
-                    },
-                    "latest_report": latest_report,
-                    "latest_video": latest_video,
-                    "latest_frames": latest_frames,
-                }
-            )
-
-        return Response(
-            {
-                "patient": {
-                    "id": cast(int | None, patient.pk),
-                    "first_name": cast(
-                        str | None, getattr(patient, "first_name", None)
-                    ),
-                    "last_name": cast(str | None, getattr(patient, "last_name", None)),
-                    "dob": _safe_iso(
-                        cast(dt_date | None, getattr(patient, "dob", None))
-                    ),
-                    "is_real_person": bool(getattr(patient, "is_real_person", True)),
-                    "patient_hash": cast(
-                        str | None, getattr(patient, "patient_hash", None)
-                    ),
-                },
-                "count": len(items),
-                "results": items,
-            }
+        return _timeline_response(
+            request,
+            patient=patient,
+            items=_timeline_items(
+                request,
+                patient_id=patient_id,
+                patient_examination_id=patient_examination_id,
+            ),
+            latest_only=latest_only,
         )

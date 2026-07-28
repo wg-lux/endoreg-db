@@ -15,6 +15,9 @@ from endoreg_db.models import (
     LabelSet,
     VideoFile,
 )
+from endoreg_db.services.aidataset_training_manifests import (
+    build_frame_multilabel_training_manifest,
+)
 from endoreg_db.utils.file_operations import atomic_write_file
 
 
@@ -90,7 +93,8 @@ class AIDataSetTrainingManifestTests(TestCase):
         )
 
     def test_build_frame_multilabel_training_manifest_preserves_unknowns(self):
-        manifest = self.dataset.build_frame_multilabel_training_manifest(
+        manifest = build_frame_multilabel_training_manifest(
+            self.dataset,
             label_set=self.label_set,
             treat_unlabeled_as_negative=False,
             check_frame_format=False,
@@ -113,7 +117,8 @@ class AIDataSetTrainingManifestTests(TestCase):
         assert second_sample.label_mask == [0, 1]
 
     def test_build_frame_multilabel_training_manifest_can_mark_unknowns_negative(self):
-        manifest = self.dataset.build_frame_multilabel_training_manifest(
+        manifest = build_frame_multilabel_training_manifest(
+            self.dataset,
             label_set=self.label_set,
             treat_unlabeled_as_negative=True,
             check_frame_format=False,
@@ -139,10 +144,11 @@ class AIDataSetTrainingManifestTests(TestCase):
         assert manifest.provenance["materialization_timestamp"]
 
     def test_export_lx_ai_core_training_manifest_uses_relative_path_by_default(self):
-        payload = self.dataset.export_lx_ai_core_training_manifest(
+        payload = build_frame_multilabel_training_manifest(
+            self.dataset,
             label_set=self.label_set,
             check_frame_format=False,
-        )
+        ).to_lx_ai_core_dict()
 
         assert payload["modality"] == "frame"
         assert payload["task_kind"] == "multilabel_classification"
@@ -166,10 +172,11 @@ class AIDataSetTrainingManifestTests(TestCase):
         pytest.importorskip("lx_ai_core.training")
         from lx_ai_core.training import TrainingDatasetManifest
 
-        payload = self.dataset.export_lx_ai_core_training_manifest(
+        payload = build_frame_multilabel_training_manifest(
+            self.dataset,
             label_set=self.label_set,
             check_frame_format=False,
-        )
+        ).to_lx_ai_core_dict()
 
         manifest = TrainingDatasetManifest.model_validate(payload)
         assert manifest.dataset_id == self.dataset.pk
@@ -182,7 +189,8 @@ class AIDataSetTrainingManifestTests(TestCase):
             for frame in self.frames:
                 self._write_frame_image(frame, frame_dir)
 
-            manifest = self.dataset.build_frame_multilabel_training_manifest(
+            manifest = build_frame_multilabel_training_manifest(
+                self.dataset,
                 label_set=self.label_set,
             )
 
@@ -201,7 +209,8 @@ class AIDataSetTrainingManifestTests(TestCase):
             self._write_frame_image(self.frames[1], frame_dir, size=(80, 48))
 
             with self.assertRaisesRegex(ValueError, "Frame format validation failed"):
-                self.dataset.build_frame_multilabel_training_manifest(
+                build_frame_multilabel_training_manifest(
+                    self.dataset,
                     label_set=self.label_set,
                 )
 
@@ -215,7 +224,8 @@ class AIDataSetTrainingManifestTests(TestCase):
         self.dataset.image_annotations.add(conflict)
 
         with self.assertRaisesRegex(ValueError, "Conflicting annotations"):
-            self.dataset.build_frame_multilabel_training_manifest(
+            build_frame_multilabel_training_manifest(
+                self.dataset,
                 label_set=self.label_set,
                 check_frame_format=False,
             )

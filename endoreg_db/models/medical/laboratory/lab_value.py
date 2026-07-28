@@ -54,6 +54,237 @@ def _generate_numeric_lab_value(
     return numeric_value
 
 
+def _resolve_gender_name(gender: object | None, *, lab_value_name: str) -> str:
+    gender_name = cast(str | None, getattr(gender, "name", None))
+    if not gender_name:
+        warnings.warn(
+            f"Gender not provided for gender-dependent LabValue '{lab_value_name}'. Defaulting to 'male' range.",
+            UserWarning,
+        )
+        return "male"
+    if gender_name in {"male", "female", "other"}:
+        return gender_name
+    warnings.warn(
+        f"Normal range for gender '{gender_name}' not found for LabValue '{lab_value_name}'. Defaulting to 'male' range.",
+        UserWarning,
+    )
+    return "male"
+
+
+def _gender_range(
+    source: LabValueNormalRangePayload,
+    *,
+    gender_name: str,
+) -> LabValueNormalRangeBandPayload | None:
+    return {
+        "male": source.male,
+        "female": source.female,
+        "other": source.other,
+    }[gender_name]
+
+
+def _resolve_gender_bounds(
+    source: LabValueNormalRangePayload,
+    *,
+    gender: object | None,
+    gender_dependent: bool,
+    lab_value_name: str,
+) -> tuple[float | None, float | None, str | None]:
+    if not gender_dependent:
+        return None, None, None
+    gender_name = _resolve_gender_name(gender, lab_value_name=lab_value_name)
+    gender_specific_range = _gender_range(source, gender_name=gender_name)
+    if gender_specific_range is None:
+        warnings.warn(
+            f"No gender-specific data found for '{gender_name}' in LabValue '{lab_value_name}'. Falling back to general range if available.",
+            UserWarning,
+        )
+        return None, None, gender_name
+    return gender_specific_range.min, gender_specific_range.max, gender_name
+
+
+def _fill_general_bounds(
+    source: LabValueNormalRangePayload,
+    *,
+    minimum: float | None,
+    maximum: float | None,
+) -> tuple[float | None, float | None]:
+    resolved_minimum = source.min if minimum is None else minimum
+    resolved_maximum = source.max if maximum is None else maximum
+    return resolved_minimum, resolved_maximum
+
+
+def _warn_unimplemented_range_variants(
+    *,
+    lab_value_name: str,
+    age: int | None,
+    age_dependent: bool,
+    special_case: bool,
+) -> None:
+    if age_dependent:
+        warnings.warn(
+            f"Age dependent normal range not implemented yet for LabValue '{lab_value_name}'. Age: {age}."
+        )
+    if special_case:
+        warnings.warn(
+            f"Special case normal range not implemented yet for LabValue '{lab_value_name}'."
+        )
+
+
+def _normal_range_gender_context(
+    gender: object | None,
+    *,
+    gender_name_used: str | None,
+) -> str:
+    gender_repr = cast(str | None, getattr(gender, "name", None)) or "None"
+    if gender_name_used and gender_name_used != gender_repr:
+        return f"{gender_repr} (lookup attempted for: {gender_name_used})"
+    return gender_repr
+
+
+def _normal_range_context(
+    *,
+    gender: object | None,
+    gender_name_used: str | None,
+    gender_dependent: bool,
+    age: int | None,
+    age_dependent: bool,
+) -> list[str]:
+    context_parts: list[str] = []
+    if gender_dependent:
+        gender_repr = _normal_range_gender_context(
+            gender,
+            gender_name_used=gender_name_used,
+        )
+        context_parts.append(f"gender: {gender_repr}")
+    if age_dependent:
+        context_parts.append(f"age: {age}")
+    return context_parts
+
+
+def _warn_missing_minimum(
+    *,
+    lab_value_name: str,
+    gender: object | None,
+    gender_name_used: str | None,
+    gender_dependent: bool,
+    age: int | None,
+    age_dependent: bool,
+) -> None:
+    context_parts = _normal_range_context(
+        gender=gender,
+        gender_name_used=gender_name_used,
+        gender_dependent=gender_dependent,
+        age=age,
+        age_dependent=age_dependent,
+    )
+    warning_message = (
+        f"Could not determine a 'min' normal range for LabValue '{lab_value_name}'"
+    )
+    if context_parts:
+        warning_message += f" with context ({', '.join(context_parts)})."
+    else:
+        warning_message += " (general context)."
+    warning_message += " Check LabValue's default_normal_range definition."
+    warnings.warn(warning_message, UserWarning)
+
+
+def _value_is_within_bounds(
+    value: float,
+    *,
+    lower_bound: float | None,
+    upper_bound: float | None,
+) -> bool:
+    if lower_bound is not None and upper_bound is not None:
+        return lower_bound <= value <= upper_bound
+    if lower_bound is not None:
+        return value >= lower_bound
+    if upper_bound is not None:
+        return value <= upper_bound
+    return True
+
+
+def _normal_range_fallback(
+    *,
+    lower_bound: float | None,
+    upper_bound: float | None,
+) -> float | None:
+    if lower_bound is not None and upper_bound is not None:
+        return (lower_bound + upper_bound) / 2.0
+    if lower_bound is not None:
+        return lower_bound
+    return upper_bound
+
+
+def _generate_normal_value(
+    distribution: "NumericValueDistribution",
+    *,
+    lab_value: "LabValue",
+    patient: "Patient",
+    lower_bound: float | None,
+    upper_bound: float | None,
+) -> float:
+    for _ in range(10):
+        generated_value = _generate_numeric_lab_value(
+            distribution,
+            lab_value=lab_value,
+            patient=patient,
+        )
+        if _value_is_within_bounds(
+            generated_value,
+            lower_bound=lower_bound,
+            upper_bound=upper_bound,
+        ):
+            return generated_value
+    if lower_bound is not None and upper_bound is not None:
+        return (lower_bound + upper_bound) / 2.0
+    return _generate_numeric_lab_value(
+        distribution,
+        lab_value=lab_value,
+        patient=patient,
+    )
+
+
+def _normal_value_without_patient(
+    *,
+    lab_value_name: str,
+    lower_bound: float | None,
+    upper_bound: float | None,
+) -> float | None:
+    warnings.warn(
+        f"Cannot use numerical distribution for {lab_value_name} without patient context. Falling back to normal range logic for normal value."
+    )
+    fallback = _normal_range_fallback(
+        lower_bound=lower_bound,
+        upper_bound=upper_bound,
+    )
+    if fallback is not None:
+        return fallback
+    warnings.warn(
+        f"Cannot determine a normal value for {lab_value_name} without a normal range or patient context for distribution.",
+        UserWarning,
+    )
+    return None
+
+
+def _normal_value_without_distribution(
+    *,
+    lab_value_name: str,
+    lower_bound: float | None,
+    upper_bound: float | None,
+) -> float | None:
+    fallback = _normal_range_fallback(
+        lower_bound=lower_bound,
+        upper_bound=upper_bound,
+    )
+    if fallback is not None:
+        return fallback
+    warnings.warn(
+        f"Cannot determine a normal value for {lab_value_name} without a numerical distribution or a normal range."
+    )
+    return None
+
+
 class CommonLabValues(BaseModel):
     """Structured lookup for common laboratory values."""
 
@@ -171,91 +402,37 @@ class LabValue(models.Model):
     def get_normal_range(
         self, age: int | None = None, gender: object | None = None
     ) -> LabValueNormalRangePayload:
-        age_dependent = self.normal_range_age_dependent
-        gender_dependent = self.normal_range_gender_dependent
-        special_case = self.normal_range_special_case
-
-        min_value: float | None = None
-        max_value: float | None = None
         current_range_source = LabValueNormalRangePayload.model_validate(
             self.default_normal_range or {}
         )
-
-        gender_name_to_use: str | None = None
-        if gender_dependent:
-            gender_name = cast(str | None, getattr(gender, "name", None))
-            if gender_name:
-                gender_name_to_use = gender_name
-                if gender_name_to_use not in {"male", "female", "other"}:
-                    warnings.warn(
-                        f"Normal range for gender '{gender_name_to_use}' not found for LabValue '{self.name}'. Defaulting to 'male' range.",
-                        UserWarning,
-                    )
-                    gender_name_to_use = "male"
-            else:
-                warnings.warn(
-                    f"Gender not provided for gender-dependent LabValue '{self.name}'. Defaulting to 'male' range.",
-                    UserWarning,
-                )
-                gender_name_to_use = "male"
-
-            gender_specific_range: LabValueNormalRangeBandPayload | None
-            if gender_name_to_use == "male":
-                gender_specific_range = current_range_source.male
-            elif gender_name_to_use == "female":
-                gender_specific_range = current_range_source.female
-            else:
-                gender_specific_range = current_range_source.other
-            if gender_specific_range is not None:
-                min_value = gender_specific_range.min
-                max_value = gender_specific_range.max
-            else:
-                warnings.warn(
-                    f"No gender-specific data found for '{gender_name_to_use}' in LabValue '{self.name}'. Falling back to general range if available.",
-                    UserWarning,
-                )
-
-        if min_value is None:
-            min_value = current_range_source.min
-        if max_value is None:
-            max_value = current_range_source.max
-
-        if age_dependent:
-            warnings.warn(
-                f"Age dependent normal range not implemented yet for LabValue '{self.name}'. Age: {age}."
-            )
-
-        if special_case:
-            warnings.warn(
-                f"Special case normal range not implemented yet for LabValue '{self.name}'."
-            )
-
+        min_value, max_value, gender_name_used = _resolve_gender_bounds(
+            current_range_source,
+            gender=gender,
+            gender_dependent=self.normal_range_gender_dependent,
+            lab_value_name=self.name,
+        )
+        min_value, max_value = _fill_general_bounds(
+            current_range_source,
+            minimum=min_value,
+            maximum=max_value,
+        )
+        _warn_unimplemented_range_variants(
+            lab_value_name=self.name,
+            age=age,
+            age_dependent=self.normal_range_age_dependent,
+            special_case=self.normal_range_special_case,
+        )
         if min_value is None and max_value is None:
             return LabValueNormalRangePayload(min=None, max=None)
         if min_value is None:
-            context_parts: list[str] = []
-            if gender_dependent:
-                gender_repr = cast(str | None, getattr(gender, "name", None))
-                if gender_repr is None:
-                    gender_repr = "None"
-                if gender_name_to_use and gender_name_to_use != gender_repr:
-                    gender_repr = (
-                        f"{gender_repr} (lookup attempted for: {gender_name_to_use})"
-                    )
-                context_parts.append(f"gender: {gender_repr}")
-            if age_dependent:
-                context_parts.append(f"age: {age}")
-
-            warning_message = (
-                f"Could not determine a 'min' normal range for LabValue '{self.name}'"
+            _warn_missing_minimum(
+                lab_value_name=self.name,
+                gender=gender,
+                gender_name_used=gender_name_used,
+                gender_dependent=self.normal_range_gender_dependent,
+                age=age,
+                age_dependent=self.normal_range_age_dependent,
             )
-            if context_parts:
-                warning_message += f" with context ({', '.join(context_parts)})."
-            else:
-                warning_message += " (general context)."
-            warning_message += " Check LabValue's default_normal_range definition."
-            warnings.warn(warning_message, UserWarning)
-
         return LabValueNormalRangePayload(min=min_value, max=max_value)
 
     def get_increased_value(self, patient: Patient | None = None) -> float | None:
@@ -338,55 +515,24 @@ class LabValue(models.Model):
 
         distribution = self.default_numerical_value_distribution
         if distribution is not None:
-            numeric_distribution = distribution
             if patient:
-                for _ in range(10):
-                    generated_value = _generate_numeric_lab_value(
-                        numeric_distribution,
-                        lab_value=self,
-                        patient=patient,
-                    )
-                    if lower_bound is not None and upper_bound is not None:
-                        if lower_bound <= generated_value <= upper_bound:
-                            return generated_value
-                    elif lower_bound is not None and generated_value >= lower_bound:
-                        return generated_value
-                    elif upper_bound is not None and generated_value <= upper_bound:
-                        return generated_value
-                    elif lower_bound is None and upper_bound is None:
-                        return generated_value
-                if lower_bound is not None and upper_bound is not None:
-                    return (lower_bound + upper_bound) / 2.0
-                return _generate_numeric_lab_value(
+                return _generate_normal_value(
                     distribution,
                     lab_value=self,
                     patient=patient,
+                    lower_bound=lower_bound,
+                    upper_bound=upper_bound,
                 )
-            warnings.warn(
-                f"Cannot use numerical distribution for {self.name} without patient context. Falling back to normal range logic for normal value."
+            return _normal_value_without_patient(
+                lab_value_name=self.name,
+                lower_bound=lower_bound,
+                upper_bound=upper_bound,
             )
-            if lower_bound is not None and upper_bound is not None:
-                return (lower_bound + upper_bound) / 2.0
-            if lower_bound is not None:
-                return lower_bound
-            if upper_bound is not None:
-                return upper_bound
-            warnings.warn(
-                f"Cannot determine a normal value for {self.name} without a normal range or patient context for distribution.",
-                UserWarning,
-            )
-            return None
-
-        if lower_bound is not None and upper_bound is not None:
-            return (lower_bound + upper_bound) / 2.0
-        if lower_bound is not None:
-            return lower_bound
-        if upper_bound is not None:
-            return upper_bound
-        warnings.warn(
-            f"Cannot determine a normal value for {self.name} without a numerical distribution or a normal range."
+        return _normal_value_without_distribution(
+            lab_value_name=self.name,
+            lower_bound=lower_bound,
+            upper_bound=upper_bound,
         )
-        return None
 
     def get_decreased_value(self, patient: Patient | None = None) -> float | None:
         _age = patient.age() if patient else None

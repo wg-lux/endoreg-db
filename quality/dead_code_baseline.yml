@@ -33,7 +33,7 @@ accepted_findings:
     path: endoreg_db/helpers/typing.py
     message: "unused variable 'objs'"
   - <<: *protocol_signature
-    path: endoreg_db/models/aidataset/aidataset.py
+    path: endoreg_db/services/aidataset_training_manifests.py
     message: "unused variable 'flat'"
   - <<: *protocol_signature
     path: endoreg_db/models/media/pdf/report_reader/report_reader_config.py
@@ -76,9 +76,6 @@ accepted_findings:
     path: endoreg_db/checks.py
     message: "unused variable 'databases'"
   - <<: *framework_contract
-    path: endoreg_db/codemods/rename_datetime_fields.py
-    message: "unused variable 'new_name'"
-  - <<: *framework_contract
     path: endoreg_db/models/state/signals.py
     message: "unused variable 'sender'"
     occurrences: 2
@@ -119,16 +116,8 @@ accepted_findings:
     path: endoreg_db/import_files/processing/report_processing/report_anonymization.py
     message: "unused variable 'anonymized_pdf_output_path'"
   - <<: *compatibility_contract
-    path: endoreg_db/services/hub/ingest.py
-    message: "unused variable 'allow_completed_reuse_without_media'"
-  - <<: *compatibility_contract
     path: endoreg_db/services/video_files/_ai.py
     message: "unused variable 'save_results'"
-  - <<: *compatibility_contract
-    path: endoreg_db/views/misc/upload_views.py
-    message: "unused variable 'allow_completed_reuse_without_media'"
-    occurrences: 2
-
   - &typing_only
     path: endoreg_db/models/media/anonymization_metrics.py
     message: "unused import 'AbstractBaseUser'"

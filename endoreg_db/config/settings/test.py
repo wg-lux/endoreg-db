@@ -8,7 +8,6 @@ from endoreg_db.config.env import env_bool, env_str
 from .base import *  # noqa: F401,F403
 from .base import BASE_DIR, INSTALLED_APPS as BASE_INSTALLED_APPS
 
-type Null = NoneType
 type DatabaseOptions = dict[str, int]
 type DatabaseConfigValue = str | DatabaseOptions
 
@@ -119,7 +118,7 @@ if env_str("TEST_DISABLE_MIGRATIONS", "false").lower() == "true":
         def __contains__(self, item: str) -> bool:
             return True
 
-        def __getitem__(self, item: str) -> Null:
+        def __getitem__(self, item: str) -> NoneType:
             return None
 
     # MIGRATION_MODULES = DisableMigrations()

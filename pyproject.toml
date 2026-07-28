@@ -121,6 +121,8 @@ dev = [
   "pyright>=1.1.411",
   "pylint>=4.0.5",  
   "vulture>=2.16",
+  "radon>=6.0.1",
+  "snakemake>=9.23.1"
 ]
 docs = [
   "linkify-it-py>=2.0.3",

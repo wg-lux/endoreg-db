@@ -172,3 +172,60 @@ def test_update_network_node_updates_display_name_and_role():
     assert updated.display_name == "Renamed Node"
     assert updated.role == NetworkNode.Role.STANDALONE.value
     assert updated.base_url == "https://node.internal/"
+
+
+@pytest.mark.django_db
+def test_update_network_node_aggregates_errors_before_mutating_fields():
+    node = NetworkNode.objects.create(
+        display_name="Unchanged Node",
+        node_key="unchanged-node",
+        base_url="https://original.example/",
+    )
+
+    with pytest.raises(NetworkNodeValidationError) as exc_info:
+        update_network_node(
+            node,
+            {
+                "node_key": "changed-node",
+                "display_name": " ",
+                "role": "invalid-role",
+                "base_url": "https://should-not-apply.example/",
+                "is_active": "yes",
+                "owning_center_id": 999_999,
+                "shared_secret": 123,
+                "clear_shared_secret": None,
+            },
+        )
+
+    assert exc_info.value.errors == {
+        "node_key": "node_key is immutable once assigned.",
+        "display_name": "display_name must not be blank.",
+        "role": "Invalid role.",
+        "is_active": "is_active must be a boolean.",
+        "owning_center": "Owning center not found.",
+        "shared_secret": "shared_secret must be a string.",
+        "clear_shared_secret": "clear_shared_secret must be a boolean.",
+    }
+    node.refresh_from_db()
+    assert node.display_name == "Unchanged Node"
+    assert node.base_url == "https://original.example/"
+    assert node.is_active is True
+
+
+@pytest.mark.django_db
+def test_update_network_node_clear_wins_over_shared_secret_update():
+    node = NetworkNode.objects.create(
+        display_name="Rotate And Clear Node",
+        node_key="rotate-and-clear-node",
+    )
+
+    updated = update_network_node(
+        node,
+        {
+            "shared_secret": "transient-secret",
+            "clear_shared_secret": True,
+        },
+    )
+
+    assert updated.shared_secret_hash == ""
+    assert updated.check_shared_secret("transient-secret") is False

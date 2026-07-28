@@ -166,6 +166,188 @@ class Command(BaseCommand):
             help="Maximum time to wait for Ollama to start in seconds",
         )
 
+    def _load_reference_data(self) -> None:
+        try:
+            load_all_reference_data()
+            self.stdout.write(self.style.SUCCESS("Successfully loaded initial data."))
+        except Exception as error:
+            self.stdout.write(self.style.ERROR(f"Failed to load initial data: {error}"))
+
+    @staticmethod
+    def _find_ollama_binary() -> str | JsonNull:
+        configured_binary = os.environ.get("OLLAMA_BIN")
+        if configured_binary:
+            return configured_binary
+
+        for candidate_pattern in (
+            "/run/current-system/sw/bin/ollama",
+            "/nix/store/*/bin/ollama",
+        ):
+            matches = glob.glob(candidate_pattern)
+            if matches:
+                return matches[0]
+        return None
+
+    def _start_ollama_if_needed(
+        self,
+        ollama_binary: str | JsonNull,
+    ) -> subprocess.Popen[bytes] | JsonNull:
+        try:
+            response = requests.get("http://127.0.0.1:11434/api/version", timeout=1)
+        except requests.exceptions.RequestException:
+            self.stdout.write(
+                self.style.WARNING("Ollama is not running, attempting to start...")
+            )
+            executable = ollama_binary or shutil.which("ollama")
+            if executable is None:
+                self.stdout.write(self.style.ERROR("Ollama binary not found in PATH"))
+                return None
+            self.stdout.write(self.style.SUCCESS(f"Starting Ollama using {executable}"))
+            process = subprocess.Popen(
+                [executable, "serve"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+            self.stdout.write(self.style.SUCCESS("Ollama server started in background"))
+            return process
+
+        if response.status_code == 200:
+            self.stdout.write(self.style.SUCCESS("Ollama is already running"))
+        else:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"Ollama returned status code {response.status_code}"
+                )
+            )
+        return None
+
+    def _initialize_ollama(
+        self,
+        *,
+        debug: bool,
+        timeout: int,
+    ) -> subprocess.Popen[bytes] | JsonNull:
+        self.stdout.write(self.style.SUCCESS("Initializing Ollama service..."))
+        process: subprocess.Popen[bytes] | JsonNull = None
+        try:
+            os.environ["OLLAMA_MAX_WAIT_TIME"] = str(timeout)
+            os.environ["OLLAMA_DEBUG"] = "true" if debug else "false"
+
+            ollama_binary = self._find_ollama_binary()
+            if ollama_binary:
+                self.stdout.write(
+                    self.style.SUCCESS(f"Using Ollama binary at: {ollama_binary}")
+                )
+                os.environ["OLLAMA_BIN"] = ollama_binary
+
+            process = self._start_ollama_if_needed(ollama_binary)
+            if init_ollama_service is None:
+                self.stdout.write(
+                    self.style.WARNING(
+                        "Ollama integration unavailable; continuing without it"
+                    )
+                )
+            else:
+                init_ollama_service(auto_start=True)
+                self.stdout.write(
+                    self.style.SUCCESS("Ollama service initialized successfully")
+                )
+        except Exception as error:
+            self.stdout.write(
+                self.style.ERROR(f"Failed to initialize Ollama service: {error}")
+            )
+            self.stdout.write(
+                self.style.WARNING(
+                    "Continuing without Ollama - some features may not work"
+                )
+            )
+        return process
+
+    def _write_import_summary(
+        self,
+        report_file_obj: object,
+        *,
+        verbose: bool,
+    ) -> None:
+        report = cast(_ImportedReport, report_file_obj)
+        report.refresh_from_db()
+        text_len = len(report.text or "")
+        anonymized_text_len = len(report.anonymized_text or "")
+        self.stdout.write(
+            self.style.SUCCESS(f"Imported report id={report.pk} hash={report.pdf_hash}")
+        )
+        sensitive_meta = report.sensitive_meta
+        sensitive_meta_id = sensitive_meta.pk if sensitive_meta is not None else None
+        self.stdout.write(
+            self.style.SUCCESS(
+                "Import summary: "
+                f"text_len={text_len}, "
+                f"anonymized_text_len={anonymized_text_len}, "
+                f"sensitive_meta_id={sensitive_meta_id}"
+            )
+        )
+        if verbose:
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"Stored file={report.file.name} "
+                    f"processed_file={report.processed_file.name}"
+                )
+            )
+
+    def _import_report(
+        self,
+        *,
+        file_path_value: str,
+        report_dir_root_value: str,
+        center_name: str,
+        save: bool,
+        verbose: bool,
+    ) -> None:
+        file_path = Path(file_path_value).expanduser()
+        if not file_path.exists():
+            self.stdout.write(self.style.ERROR(f"Report file not found: {file_path}"))
+            return
+
+        ensure_directory(Path(report_dir_root_value).expanduser())
+        if save:
+            self.stdout.write(
+                self.style.WARNING(
+                    "--save is deprecated and ignored; the central service always persists."
+                )
+            )
+
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"Importing report via ReportImportService from {file_path}..."
+            )
+        )
+        report_file_obj = ReportImportService().import_and_anonymize(
+            file_path=file_path,
+            center_name=center_name,
+            retry=False,
+        )
+        if not report_file_obj:
+            self.stdout.write(self.style.ERROR("Failed to import report."))
+            return
+        self._write_import_summary(report_file_obj, verbose=verbose)
+
+    def _terminate_ollama(
+        self,
+        process: subprocess.Popen[bytes],
+    ) -> None:
+        self.stdout.write(self.style.SUCCESS("Cleaning up Ollama server process..."))
+        try:
+            process.terminate()
+            process.wait(timeout=10)
+            self.stdout.write(self.style.SUCCESS("Ollama server process terminated."))
+        except Exception as error:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"Failed to terminate Ollama server process: {error}"
+                )
+            )
+
     def handle(
         self,
         *args: str,
@@ -178,30 +360,11 @@ class Command(BaseCommand):
         ensures the required files and directories exist, runs the report import
         pipeline, and writes a compact summary.
         """
-        # Load initial or prerequisite data for the application.
-        # This may include loading default values, configurations, or lookup table data
-        # necessary for the import process or other application functionalities.
-        try:
-            load_all_reference_data()
-            self.stdout.write(self.style.SUCCESS("Successfully loaded initial data."))
-        except Exception as e:
-            self.stdout.write(self.style.ERROR(f"Failed to load initial data: {e}"))
-            # Depending on the criticality of load_data(), you might want to exit or handle differently.
-            # For now, we'll just log the error and continue.
-
-        verbose = options["verbose"]
-        center_name = options["center_name"]
-        report_dir_root = options["report_dir_root"]
-        file_path = options["file_path"]
-        save = options["save"]
-        start_ollama = options["start_ollama"]
-        ollama_debug = options["ollama_debug"]
-        ollama_timeout = options["ollama_timeout"]
+        self._load_reference_data()
 
         self.stdout.write(
-            self.style.SUCCESS(f"Starting report import for {file_path}...")
+            self.style.SUCCESS(f"Starting report import for {options['file_path']}...")
         )
-
         if local_version_available:
             self.stdout.write(
                 self.style.SUCCESS("Using local development version of lx-anonymizer")
@@ -209,181 +372,18 @@ class Command(BaseCommand):
 
         ollama_proc: subprocess.Popen[bytes] | JsonNull = None
         try:
-            # Initialize Ollama service if requested
-            if start_ollama:
-                self.stdout.write(self.style.SUCCESS("Initializing Ollama service..."))
-                try:
-                    # Set Ollama environment variables
-                    os.environ["OLLAMA_MAX_WAIT_TIME"] = str(ollama_timeout)
-                    os.environ["OLLAMA_DEBUG"] = "true" if ollama_debug else "false"
-
-                    # Try to find Ollama binary location from env or common paths
-                    ollama_bin = os.environ.get("OLLAMA_BIN")
-                    if not ollama_bin:
-                        # Try common Nix store paths first
-                        for path in [
-                            "/run/current-system/sw/bin/ollama",
-                            "/nix/store/*/bin/ollama",
-                        ]:
-                            matches = glob.glob(path)
-                            if matches:
-                                ollama_bin = matches[0]
-                                break
-
-                    if ollama_bin:
-                        self.stdout.write(
-                            self.style.SUCCESS(f"Using Ollama binary at: {ollama_bin}")
-                        )
-                        os.environ["OLLAMA_BIN"] = ollama_bin
-
-                    # Start Ollama server process if not already running
-                    # Check if ollama is already running
-                    try:
-                        resp = requests.get(
-                            "http://127.0.0.1:11434/api/version", timeout=1
-                        )
-                        if resp.status_code == 200:
-                            self.stdout.write(
-                                self.style.SUCCESS("Ollama is already running")
-                            )
-                        else:
-                            self.stdout.write(
-                                self.style.WARNING(
-                                    f"Ollama returned status code {resp.status_code}"
-                                )
-                            )
-                    except requests.exceptions.RequestException:
-                        self.stdout.write(
-                            self.style.WARNING(
-                                "Ollama is not running, attempting to start..."
-                            )
-                        )
-                        # Find ollama binary
-                        ollama_path = ollama_bin or shutil.which("ollama")
-                        if ollama_path:
-                            self.stdout.write(
-                                self.style.SUCCESS(
-                                    f"Starting Ollama using {ollama_path}"
-                                )
-                            )
-                            # Start ollama serve in background
-                            ollama_proc = subprocess.Popen(
-                                [ollama_path, "serve"],
-                                stdout=subprocess.PIPE,
-                                stderr=subprocess.STDOUT,
-                                start_new_session=True,
-                            )
-                            self.stdout.write(
-                                self.style.SUCCESS(
-                                    "Ollama server started in background"
-                                )
-                            )
-                        else:
-                            self.stdout.write(
-                                self.style.ERROR("Ollama binary not found in PATH")
-                            )
-
-                    # Start the service with explicit initialization when available.
-                    if init_ollama_service is not None:
-                        init_ollama_service(auto_start=True)
-                        self.stdout.write(
-                            self.style.SUCCESS(
-                                "Ollama service initialized successfully"
-                            )
-                        )
-                    else:
-                        self.stdout.write(
-                            self.style.WARNING(
-                                "Ollama integration unavailable; continuing without it"
-                            )
-                        )
-                except Exception as e:
-                    self.stdout.write(
-                        self.style.ERROR(f"Failed to initialize Ollama service: {e}")
-                    )
-                    self.stdout.write(
-                        self.style.WARNING(
-                            "Continuing without Ollama - some features may not work"
-                        )
-                    )
-
-            # Ensure the report file exists
-            file_path = Path(file_path).expanduser()
-            if not file_path.exists():
-                self.stdout.write(
-                    self.style.ERROR(f"Report file not found: {file_path}")
+            if options["start_ollama"]:
+                ollama_proc = self._initialize_ollama(
+                    debug=options["ollama_debug"],
+                    timeout=options["ollama_timeout"],
                 )
-                return
-
-            # Ensure the report directory exists
-            report_dir_root = Path(report_dir_root).expanduser()
-            ensure_directory(report_dir_root)
-
-            if save:
-                self.stdout.write(
-                    self.style.WARNING(
-                        "--save is deprecated and ignored; the central service always persists."
-                    )
-                )
-
-            # Use the central report import service
-            self.stdout.write(
-                self.style.SUCCESS(
-                    f"Importing report via ReportImportService from {file_path}..."
-                )
+            self._import_report(
+                file_path_value=options["file_path"],
+                report_dir_root_value=options["report_dir_root"],
+                center_name=options["center_name"],
+                save=options["save"],
+                verbose=options["verbose"],
             )
-            report_file_obj = ReportImportService().import_and_anonymize(
-                file_path=file_path,
-                center_name=center_name,
-                retry=False,
-            )
-            if not report_file_obj:
-                self.stdout.write(self.style.ERROR("Failed to import report."))
-                return
-            report = cast(_ImportedReport, report_file_obj)
-            report.refresh_from_db()
-
-            text_len = len(report.text or "")
-            anonymized_text_len = len(report.anonymized_text or "")
-            self.stdout.write(
-                self.style.SUCCESS(
-                    f"Imported report id={report.pk} hash={report.pdf_hash}"
-                )
-            )
-            sensitive_meta = report.sensitive_meta
-            sensitive_meta_id = (
-                sensitive_meta.pk if sensitive_meta is not None else None
-            )
-            self.stdout.write(
-                self.style.SUCCESS(
-                    "Import summary: "
-                    f"text_len={text_len}, "
-                    f"anonymized_text_len={anonymized_text_len}, "
-                    f"sensitive_meta_id={sensitive_meta_id}"
-                )
-            )
-            if verbose:
-                self.stdout.write(
-                    self.style.SUCCESS(
-                        f"Stored file={report.file.name} "
-                        f"processed_file={report.processed_file.name}"
-                    )
-                )
         finally:
-            # Clean up Ollama process if we started it
             if ollama_proc is not None:
-                self.stdout.write(
-                    self.style.SUCCESS("Cleaning up Ollama server process...")
-                )
-                try:
-                    ollama_proc.terminate()
-                    ollama_proc.wait(timeout=10)
-                    self.stdout.write(
-                        self.style.SUCCESS("Ollama server process terminated.")
-                    )
-                except Exception as e:
-                    self.stdout.write(
-                        self.style.WARNING(
-                            f"Failed to terminate Ollama server process: {e}"
-                        )
-                    )
+                self._terminate_ollama(ollama_proc)

@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import random
 from hashlib import sha256
-from collections import Counter, defaultdict
+from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
 from types import NoneType
@@ -1242,191 +1242,17 @@ def _preferred_manual_positive_label_ids(
     return positive_label_ids
 
 
-def build_frame_task_queue(
-    spec: FrameAnnotationQueueSpec,
-) -> FrameAnnotationQueueResult:
-    dataset_buckets = _build_dataset_target_buckets(
-        dataset=spec.ai_dataset,
-        target_label=spec.target_label,
-        require_extracted_frames=spec.require_extracted_frames,
-    )
-    label_distribution = _build_dataset_label_distribution(
-        dataset=spec.ai_dataset,
-        label_set=spec.label_set,
-    )
-    balanced_label_order = _build_balanced_label_order(
-        label_set=spec.label_set,
-        target_label=spec.target_label,
-        distribution=label_distribution,
-    )
-    segment_frame_buckets = (
-        _build_segment_frame_buckets(
-            dataset=spec.ai_dataset,
-            label_set=spec.label_set,
-            only_prediction_segments=spec.prediction_segments_only,
-            require_extracted_frames=spec.require_extracted_frames,
-        )
-        if spec.sampling_strategy
-        in {FrameSamplingStrategy.BALANCED, FrameSamplingStrategy.SEGMENTS}
-        else {}
-    )
-    annotation_frame_buckets = (
-        _build_annotation_frame_buckets(
-            dataset=spec.ai_dataset,
-            label_set=spec.label_set,
-            require_extracted_frames=spec.require_extracted_frames,
-        )
-        if spec.sampling_strategy
-        in {FrameSamplingStrategy.BALANCED, FrameSamplingStrategy.ANNOTATIONS}
-        else {}
-    )
-    balanced_frame_buckets = _merge_frame_buckets(
-        segment_frame_buckets,
-        annotation_frame_buckets,
-    )
-    dataset_candidate_frame_ids = _build_dataset_candidate_frame_ids(
-        dataset=spec.ai_dataset,
-        label_set=spec.label_set,
-        only_prediction_segments=spec.prediction_segments_only,
-        require_extracted_frames=spec.require_extracted_frames,
-    )
-
-    tasks: list[FrameAnnotationTaskPayload] = []
-    excluded_ids: set[int] = set(spec.exclude_frame_ids)
-    selected_label_counts: Counter[int] = Counter()
-    selection_strategy = "random"
-
-    use_target_bucket_order = bool(
-        dataset_buckets and spec.sampling_strategy == FrameSamplingStrategy.BALANCED
-    )
-    if (
-        spec.sampling_strategy != FrameSamplingStrategy.NONE
-        and balanced_frame_buckets
-        and not use_target_bucket_order
-    ):
-        selection_strategy = f"dataset_{spec.sampling_strategy.value}"
-        while len(tasks) < spec.limit:
-            label_order = sorted(
-                balanced_label_order,
-                key=lambda label_id: (
-                    selected_label_counts[label_id],
-                    label_distribution.get(label_id, {}).get("total", 0),
-                    label_id,
-                ),
-            )
-            frame, selected_label_id = _pick_balanced_dataset_frame(
-                spec=spec,
-                label_order=label_order,
-                frame_buckets=balanced_frame_buckets,
-                exclude_frame_ids=excluded_ids,
-            )
-            if frame is None:
-                break
-
-            serialized_task = serialize_frame_task(frame, spec=spec)
-            if selected_label_id is not None:
-                selected_label_counts[selected_label_id] += 1
-                serialized_task = serialized_task.model_copy(
-                    update={
-                        "dataset_selection_label_id": selected_label_id,
-                        "dataset_selection_label_name": str(selected_label_id),
-                    }
-                )
-            if dataset_buckets:
-                for bucket_name, bucket_frame_ids in dataset_buckets.items():
-                    frame_id = cast(int, getattr(frame, "pk", getattr(frame, "id")))
-                    if frame_id in bucket_frame_ids:
-                        serialized_task = serialized_task.model_copy(
-                            update={"dataset_bucket": bucket_name}
-                        )
-                        break
-            serialized_task = serialized_task.model_copy(
-                update={"dataset_selection_source": spec.sampling_strategy.value}
-            )
-            tasks.append(serialized_task)
-            excluded_ids.add(cast(int, getattr(frame, "pk", getattr(frame, "id"))))
-
-    bucket_order = ["positive", "negative", "unknown"]
-    if dataset_buckets and len(tasks) < spec.limit:
-        while len(tasks) < spec.limit:
-            progress = False
-            for bucket_name in bucket_order:
-                bucket_frame_ids = dataset_buckets.get(bucket_name)
-                if not bucket_frame_ids:
-                    continue
-                frame = _pick_random_frame(
-                    spec=spec,
-                    exclude_frame_ids=excluded_ids,
-                    candidate_frame_ids=bucket_frame_ids,
-                )
-                if frame is None:
-                    continue
-                serialized_task = serialize_frame_task(frame, spec=spec).model_copy(
-                    update={"dataset_bucket": bucket_name}
-                )
-                tasks.append(serialized_task)
-                excluded_ids.add(cast(int, getattr(frame, "pk", getattr(frame, "id"))))
-                progress = True
-                if len(tasks) >= spec.limit:
-                    break
-            if not progress:
-                break
-
-    while len(tasks) < spec.limit:
-        all_candidate_frame_ids: set[int] | None = None
-        if dataset_buckets:
-            all_candidate_frame_ids = set()
-            for bucket_frame_ids in dataset_buckets.values():
-                all_candidate_frame_ids.update(bucket_frame_ids)
-        frame = _pick_random_frame(
-            spec=spec,
-            exclude_frame_ids=excluded_ids,
-            candidate_frame_ids=(
-                dataset_candidate_frame_ids
-                if dataset_candidate_frame_ids is not None
-                else all_candidate_frame_ids
-            ),
-        )
-        if frame is None:
-            if dataset_buckets and dataset_candidate_frame_ids is None:
-                frame = _pick_random_frame(
-                    spec=spec,
-                    exclude_frame_ids=excluded_ids,
-                )
-            if frame is None:
-                break
-        serialized_task = serialize_frame_task(frame, spec=spec)
-        if dataset_buckets and serialized_task.dataset_bucket is None:
-            for bucket_name, bucket_frame_ids in dataset_buckets.items():
-                frame_id = cast(int, getattr(frame, "pk", getattr(frame, "id")))
-                if frame_id in bucket_frame_ids:
-                    serialized_task = serialized_task.model_copy(
-                        update={"dataset_bucket": bucket_name}
-                    )
-                    break
-        tasks.append(serialized_task)
-        excluded_ids.add(cast(int, getattr(frame, "pk", getattr(frame, "id"))))
-
-    return FrameAnnotationQueueResult(
-        tasks=tasks,
-        selection_strategy=selection_strategy,
-        label_distribution=serialize_label_distribution(label_distribution),
-        selected_label_counts={
-            str(label_id): count for label_id, count in selected_label_counts.items()
-        },
-        segment_bucket_counts={
-            str(label_id): len(frame_ids)
-            for label_id, frame_ids in segment_frame_buckets.items()
-        },
-        annotation_bucket_counts={
-            str(label_id): len(frame_ids)
-            for label_id, frame_ids in annotation_frame_buckets.items()
-        },
-        bucket_counts={
-            bucket_name: len(frame_ids)
-            for bucket_name, frame_ids in dataset_buckets.items()
-        },
-    )
+# Transitional service-facing aliases allow the workflow facade to own queue
+# orchestration while its query helpers are migrated out of this legacy module.
+build_dataset_target_buckets = _build_dataset_target_buckets
+build_dataset_label_distribution = _build_dataset_label_distribution
+build_balanced_label_order = _build_balanced_label_order
+build_segment_frame_buckets = _build_segment_frame_buckets
+build_annotation_frame_buckets = _build_annotation_frame_buckets
+build_dataset_candidate_frame_ids = _build_dataset_candidate_frame_ids
+merge_frame_buckets = _merge_frame_buckets
+pick_balanced_dataset_frame = _pick_balanced_dataset_frame
+pick_random_frame = _pick_random_frame
 
 
 def _segment_annotation_filters(

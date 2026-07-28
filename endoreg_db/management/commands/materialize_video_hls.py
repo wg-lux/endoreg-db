@@ -69,6 +69,19 @@ class _PreflightResult:
         }
 
 
+@dataclass(frozen=True)
+class _RunOptions:
+    limit: int | None
+    video_ids: list[int] | None
+    artifact_kind: str
+    artifact_kinds: tuple[str, ...]
+    apply_changes: bool
+    inline: bool
+    force: bool
+    fail_fast: bool
+    json_output: bool
+
+
 class Command(BaseVideoCommand):
     help = (
         "Materialize legacy encrypted video media into AES-128 encrypted HLS "
@@ -111,175 +124,303 @@ class Command(BaseVideoCommand):
         self.add_json_output_argument(parser)
 
     def handle(self, *args: object, **options: object) -> None:
-        limit = self.positive_limit_from_options(options)
-        selected_video_ids = self.selected_video_ids_from_options(options)
-        artifact_kind = (
-            str(options.get("artifact_kind") or _BOTH_ARTIFACT_KINDS).strip().lower()
-        )
-        if artifact_kind == _BOTH_ARTIFACT_KINDS:
-            artifact_kinds = (
-                VideoArtifactKind.RAW.value,
-                VideoArtifactKind.PROCESSED.value,
-            )
-        else:
-            try:
-                artifact_kinds = (coerce_hls_artifact_kind(artifact_kind).value,)
-            except ValueError as exc:
-                raise CommandError(str(exc)) from exc
-        apply_changes = bool(options.get("apply"))
-        inline = bool(options.get("inline"))
-        force = bool(options.get("force"))
-        fail_fast = bool(options.get("fail_fast"))
-        json_output = bool(options.get("json_output"))
-
+        run_options = self._run_options(options)
         selected_videos = list(
             self._queryset(
-                artifact_kinds=artifact_kinds,
-                video_ids=selected_video_ids,
-                limit=limit,
+                artifact_kinds=run_options.artifact_kinds,
+                video_ids=run_options.video_ids,
+                limit=run_options.limit,
             )
         )
-        selected_artifact_count = sum(
-            1
-            for video in selected_videos
-            for selected_kind in artifact_kinds
-            if self._video_has_source(video, artifact_kind=selected_kind)
-        )
-
-        results: list[dict[str, Any]] = []
         queue = queue_for_job_kind(HeavyJobKind.VIDEO_HLS_MATERIALIZATION)
-        if artifact_kind == _BOTH_ARTIFACT_KINDS:
-            audit: dict[str, object] = {
-                selected_kind: self._audit_summary(
-                    artifact_kind=selected_kind,
-                    video_ids=selected_video_ids,
-                )
-                for selected_kind in artifact_kinds
-            }
-        else:
-            audit = self._audit_summary(
-                artifact_kind=artifact_kinds[0],
-                video_ids=selected_video_ids,
-            )
+        audit = self._selected_audit(run_options)
         preflight = self._preflight(queue=queue)
-        if apply_changes and not inline:
-            try:
-                ensure_secure_transport_for_job_kind(
-                    HeavyJobKind.VIDEO_HLS_MATERIALIZATION
-                )
-            except RuntimeError as exc:
-                raise CommandError(str(exc)) from exc
-
-        if apply_changes and selected_videos and preflight.errors:
-            payload = self._payload(
-                apply_changes=apply_changes,
-                inline=inline,
-                artifact_kind=artifact_kind,
-                selected=len(selected_videos),
-                selected_artifacts=selected_artifact_count,
-                audit=audit,
-                preflight=preflight,
-                results=results,
-            )
-            if json_output:
-                self.stdout.write(json.dumps(payload, indent=2, sort_keys=True))
-            raise CommandError(
-                "HLS materialization preflight failed: " + "; ".join(preflight.errors)
-            )
-
-        stop_after_failure = False
-        for video in selected_videos:
-            video_id = int(video.pk)
-            for selected_kind in artifact_kinds:
-                if not self._video_has_source(video, artifact_kind=selected_kind):
-                    continue
-                if not apply_changes:
-                    result = {
-                        "video_id": video_id,
-                        "artifact_kind": selected_kind,
-                        "status": "would_materialize",
-                    }
-                elif inline:
-                    try:
-                        materialized = materialize_video_hls(
-                            video_id,
-                            artifact_kind=selected_kind,
-                            force=force,
-                        )
-                        result = materialized.as_dict()
-                    except Exception as exc:
-                        result = {
-                            "video_id": video_id,
-                            "artifact_kind": selected_kind,
-                            "status": "failed",
-                            "error": str(exc),
-                        }
-                        stop_after_failure = fail_fast
-                else:
-                    reservation = reserve_hls_materialization_dispatch(
-                        video_id=video_id,
-                        artifact_kind=selected_kind,
-                        force=force,
-                    )
-                    if reservation.status != "queued":
-                        result = {
-                            "video_id": video_id,
-                            "artifact_kind": selected_kind,
-                            "status": reservation.status,
-                        }
-                        results.append(result)
-                        if not json_output:
-                            self._write_result(result)
-                        continue
-                    task_dispatcher = cast(_TaskDispatcher, video_hls_materialization)
-                    try:
-                        async_result = task_dispatcher.apply_async(
-                            args=[video_id, selected_kind, force],
-                            queue=queue,
-                            routing_key=queue,
-                        )
-                    except Exception as exc:
-                        mark_hls_materialization_dispatch_failed(
-                            artifact_id=reservation.artifact_id,
-                            error=f"Celery HLS dispatch failed: {exc}",
-                        )
-                        result = {
-                            "video_id": video_id,
-                            "artifact_kind": selected_kind,
-                            "status": "failed",
-                            "error": str(exc),
-                        }
-                    else:
-                        result = {
-                            "video_id": video_id,
-                            "artifact_kind": selected_kind,
-                            "status": "queued",
-                            "task_id": str(async_result.id),
-                            "queue": queue,
-                        }
-                results.append(result)
-                if not json_output:
-                    self._write_result(result)
-                if stop_after_failure:
-                    break
-            if stop_after_failure:
-                break
-
-        payload = self._payload(
-            apply_changes=apply_changes,
-            inline=inline,
-            artifact_kind=artifact_kind,
+        self._validate_transport(run_options)
+        selected_artifacts = self._selected_artifact_count(
+            selected_videos, run_options.artifact_kinds
+        )
+        self._fail_on_preflight_errors(
+            run_options=run_options,
             selected=len(selected_videos),
-            selected_artifacts=selected_artifact_count,
+            selected_artifacts=selected_artifacts,
+            audit=audit,
+            preflight=preflight,
+        )
+        results = self._process_videos(
+            videos=selected_videos,
+            run_options=run_options,
+            queue=queue,
+        )
+        self._write_completion(
+            run_options=run_options,
+            selected=len(selected_videos),
+            selected_artifacts=selected_artifacts,
             audit=audit,
             preflight=preflight,
             results=results,
         )
-        if json_output:
+        self._raise_on_failures(results)
+
+    @staticmethod
+    def _artifact_kinds(artifact_kind: str) -> tuple[str, ...]:
+        if artifact_kind == _BOTH_ARTIFACT_KINDS:
+            return (VideoArtifactKind.RAW.value, VideoArtifactKind.PROCESSED.value)
+        try:
+            return (coerce_hls_artifact_kind(artifact_kind).value,)
+        except ValueError as exc:
+            raise CommandError(str(exc)) from exc
+
+    def _run_options(self, options: dict[str, object]) -> _RunOptions:
+        artifact_kind = (
+            str(options.get("artifact_kind") or _BOTH_ARTIFACT_KINDS).strip().lower()
+        )
+        return _RunOptions(
+            limit=self.positive_limit_from_options(options),
+            video_ids=self.selected_video_ids_from_options(options),
+            artifact_kind=artifact_kind,
+            artifact_kinds=self._artifact_kinds(artifact_kind),
+            apply_changes=bool(options.get("apply")),
+            inline=bool(options.get("inline")),
+            force=bool(options.get("force")),
+            fail_fast=bool(options.get("fail_fast")),
+            json_output=bool(options.get("json_output")),
+        )
+
+    def _selected_audit(self, run_options: _RunOptions) -> dict[str, object]:
+        if run_options.artifact_kind != _BOTH_ARTIFACT_KINDS:
+            return self._audit_summary(
+                artifact_kind=run_options.artifact_kinds[0],
+                video_ids=run_options.video_ids,
+            )
+        return {
+            artifact_kind: self._audit_summary(
+                artifact_kind=artifact_kind,
+                video_ids=run_options.video_ids,
+            )
+            for artifact_kind in run_options.artifact_kinds
+        }
+
+    @classmethod
+    def _selected_artifact_count(
+        cls,
+        videos: list[VideoFile],
+        artifact_kinds: tuple[str, ...],
+    ) -> int:
+        return sum(
+            cls._video_has_source(video, artifact_kind=artifact_kind)
+            for video in videos
+            for artifact_kind in artifact_kinds
+        )
+
+    @staticmethod
+    def _validate_transport(run_options: _RunOptions) -> None:
+        if not run_options.apply_changes or run_options.inline:
+            return
+        try:
+            ensure_secure_transport_for_job_kind(HeavyJobKind.VIDEO_HLS_MATERIALIZATION)
+        except RuntimeError as exc:
+            raise CommandError(str(exc)) from exc
+
+    def _fail_on_preflight_errors(
+        self,
+        *,
+        run_options: _RunOptions,
+        selected: int,
+        selected_artifacts: int,
+        audit: dict[str, object],
+        preflight: _PreflightResult,
+    ) -> None:
+        if not run_options.apply_changes or not selected or not preflight.errors:
+            return
+        payload = self._payload(
+            apply_changes=run_options.apply_changes,
+            inline=run_options.inline,
+            artifact_kind=run_options.artifact_kind,
+            selected=selected,
+            selected_artifacts=selected_artifacts,
+            audit=audit,
+            preflight=preflight,
+            results=[],
+        )
+        if run_options.json_output:
+            self.stdout.write(json.dumps(payload, indent=2, sort_keys=True))
+        raise CommandError(
+            "HLS materialization preflight failed: " + "; ".join(preflight.errors)
+        )
+
+    def _process_videos(
+        self,
+        *,
+        videos: list[VideoFile],
+        run_options: _RunOptions,
+        queue: str,
+    ) -> list[dict[str, Any]]:
+        results: list[dict[str, Any]] = []
+        for video in videos:
+            video_results, stop = self._process_video(
+                video=video,
+                run_options=run_options,
+                queue=queue,
+            )
+            results.extend(video_results)
+            if stop:
+                return results
+        return results
+
+    def _process_video(
+        self,
+        *,
+        video: VideoFile,
+        run_options: _RunOptions,
+        queue: str,
+    ) -> tuple[list[dict[str, Any]], bool]:
+        results: list[dict[str, Any]] = []
+        for artifact_kind in run_options.artifact_kinds:
+            if not self._video_has_source(video, artifact_kind=artifact_kind):
+                continue
+            result, stop = self._process_artifact(
+                video_id=int(video.pk),
+                artifact_kind=artifact_kind,
+                run_options=run_options,
+                queue=queue,
+            )
+            results.append(result)
+            if not run_options.json_output:
+                self._write_result(result)
+            if stop:
+                return results, True
+        return results, False
+
+    def _process_artifact(
+        self,
+        *,
+        video_id: int,
+        artifact_kind: str,
+        run_options: _RunOptions,
+        queue: str,
+    ) -> tuple[dict[str, Any], bool]:
+        if not run_options.apply_changes:
+            return self._dry_run_result(video_id, artifact_kind), False
+        if run_options.inline:
+            return self._inline_result(
+                video_id=video_id,
+                artifact_kind=artifact_kind,
+                force=run_options.force,
+                fail_fast=run_options.fail_fast,
+            )
+        return (
+            self._dispatch_result(
+                video_id=video_id,
+                artifact_kind=artifact_kind,
+                force=run_options.force,
+                queue=queue,
+            ),
+            False,
+        )
+
+    @staticmethod
+    def _dry_run_result(video_id: int, artifact_kind: str) -> dict[str, Any]:
+        return {
+            "video_id": video_id,
+            "artifact_kind": artifact_kind,
+            "status": "would_materialize",
+        }
+
+    @staticmethod
+    def _inline_result(
+        *,
+        video_id: int,
+        artifact_kind: str,
+        force: bool,
+        fail_fast: bool,
+    ) -> tuple[dict[str, Any], bool]:
+        try:
+            result = materialize_video_hls(
+                video_id,
+                artifact_kind=artifact_kind,
+                force=force,
+            ).as_dict()
+        except Exception as exc:
+            return {
+                "video_id": video_id,
+                "artifact_kind": artifact_kind,
+                "status": "failed",
+                "error": str(exc),
+            }, fail_fast
+        return result, False
+
+    @staticmethod
+    def _dispatch_result(
+        *,
+        video_id: int,
+        artifact_kind: str,
+        force: bool,
+        queue: str,
+    ) -> dict[str, Any]:
+        reservation = reserve_hls_materialization_dispatch(
+            video_id=video_id,
+            artifact_kind=artifact_kind,
+            force=force,
+        )
+        if reservation.status != "queued":
+            return {
+                "video_id": video_id,
+                "artifact_kind": artifact_kind,
+                "status": reservation.status,
+            }
+        task_dispatcher = cast(_TaskDispatcher, video_hls_materialization)
+        try:
+            async_result = task_dispatcher.apply_async(
+                args=[video_id, artifact_kind, force],
+                queue=queue,
+                routing_key=queue,
+            )
+        except Exception as exc:
+            mark_hls_materialization_dispatch_failed(
+                artifact_id=reservation.artifact_id,
+                error=f"Celery HLS dispatch failed: {exc}",
+            )
+            return {
+                "video_id": video_id,
+                "artifact_kind": artifact_kind,
+                "status": "failed",
+                "error": str(exc),
+            }
+        return {
+            "video_id": video_id,
+            "artifact_kind": artifact_kind,
+            "status": "queued",
+            "task_id": str(async_result.id),
+            "queue": queue,
+        }
+
+    def _write_completion(
+        self,
+        *,
+        run_options: _RunOptions,
+        selected: int,
+        selected_artifacts: int,
+        audit: dict[str, object],
+        preflight: _PreflightResult,
+        results: list[dict[str, Any]],
+    ) -> None:
+        payload = self._payload(
+            apply_changes=run_options.apply_changes,
+            inline=run_options.inline,
+            artifact_kind=run_options.artifact_kind,
+            selected=selected,
+            selected_artifacts=selected_artifacts,
+            audit=audit,
+            preflight=preflight,
+            results=results,
+        )
+        if run_options.json_output:
             self.stdout.write(json.dumps(payload, indent=2, sort_keys=True))
         elif not results:
             self.stdout.write("No matching videos selected.")
 
+    @staticmethod
+    def _raise_on_failures(results: list[dict[str, Any]]) -> None:
         failures = [result for result in results if result.get("status") == "failed"]
         if failures:
             raise CommandError(
@@ -444,7 +585,9 @@ class Command(BaseVideoCommand):
             line = f"{line} task_id={result['task_id']}"
         if result.get("error"):
             line = f"{line} error={result['error']}"
+        self._write_result_line(status, line)
 
+    def _write_result_line(self, status: str, line: str) -> None:
         if status == "failed":
             self.stderr.write(self.style.ERROR(line))
         elif status in {"queued", "materialized", "already_ready", "already_queued"}:

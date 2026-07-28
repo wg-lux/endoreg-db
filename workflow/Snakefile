@@ -1,0 +1,35 @@
+from workflow.scripts.import_common import WorkflowConfig
+
+
+configfile: "config/imports.yaml"
+
+
+WORKFLOW_CONFIG = WorkflowConfig.model_validate(config)
+RECEIPT_DIRECTORY = WORKFLOW_CONFIG.receipt_directory
+JOB_ID_PATTERN = r"[A-Za-z0-9][A-Za-z0-9_.-]*"
+
+VIDEO_RECEIPTS = expand(
+    str(RECEIPT_DIRECTORY / "video/{job}.json"),
+    job=sorted(WORKFLOW_CONFIG.video_imports),
+)
+REPORT_RECEIPTS = expand(
+    str(RECEIPT_DIRECTORY / "report/{job}.json"),
+    job=sorted(WORKFLOW_CONFIG.report_imports),
+)
+
+
+localrules: all
+
+
+rule all:
+    input:
+        VIDEO_RECEIPTS,
+        REPORT_RECEIPTS,
+
+
+wildcard_constraints:
+    job=JOB_ID_PATTERN
+
+
+include: "rules/video_import.smk"
+include: "rules/report_import.smk"

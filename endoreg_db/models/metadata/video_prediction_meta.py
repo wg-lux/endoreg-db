@@ -38,6 +38,39 @@ PredictionArray = npt.NDArray[np.float64]
 ConfidenceArray = npt.NDArray[np.float64]
 
 
+def _confidence_array_from_predictions(
+    predictions: Iterable[tuple[int, float]],
+    *,
+    num_frames: int,
+    label_name: str,
+    video_obj: object,
+) -> ConfidenceArray:
+    confidences = cast(
+        ConfidenceArray,
+        np.full(num_frames, 0.5, dtype=np.float64),
+    )
+    found_predictions = False
+    for frame_num, confidence in predictions:
+        if 0 <= frame_num < num_frames:
+            confidences[frame_num] = float(confidence)
+            found_predictions = True
+        else:
+            logger.warning(
+                "Prediction found for out-of-bounds frame number %s (max: %s). "
+                "Skipping.",
+                frame_num,
+                num_frames - 1,
+            )
+
+    if not found_predictions:
+        logger.warning(
+            "No predictions found for label '%s' in %s. Using default confidence.",
+            label_name,
+            video_obj,
+        )
+    return confidences
+
+
 class VideoPredictionMeta(models.Model):
     """
     Stores metadata about predictions made by a model for a specific video.
@@ -186,25 +219,12 @@ class VideoPredictionMeta(models.Model):
                 .order_by("frame__frame_number")
                 .values_list("frame__frame_number", "float_value"),
             )
-
-            confidences = cast(
-                ConfidenceArray,
-                np.full(num_frames, 0.5, dtype=np.float64),
+            confidences = _confidence_array_from_predictions(
+                predictions,
+                num_frames=num_frames,
+                label_name=label.name,
+                video_obj=video_obj,
             )
-            found_predictions = False
-            for frame_num, confidence in predictions:
-                if 0 <= frame_num < num_frames:
-                    confidences[frame_num] = float(confidence)
-                    found_predictions = True
-                else:
-                    logger.warning(
-                        f"Prediction found for out-of-bounds frame number {frame_num} (max: {num_frames - 1}). Skipping."
-                    )
-
-            if not found_predictions:
-                logger.warning(
-                    f"No predictions found for label '{label.name}' in {video_obj}. Using default confidence."
-                )
 
             smooth_confidences = self.apply_running_mean(
                 confidences, window_size_in_seconds
@@ -304,6 +324,37 @@ class VideoPredictionMeta(models.Model):
                 f"No new video segments needed for label '{label.name}' in {video_obj}."
             )
 
+    def _get_or_calculate_prediction_array(self) -> PredictionArray | None:
+        prediction_array = self.get_prediction_array()
+        if prediction_array is not None:
+            return prediction_array
+
+        logger.info("Prediction array not found for %s. Calculating...", self)
+        self.calculate_prediction_array()
+        prediction_array = self.get_prediction_array()
+        if prediction_array is None:
+            logger.error(
+                "Failed to get or calculate prediction array for %s. "
+                "Cannot create segments.",
+                self,
+            )
+        return prediction_array
+
+    def _create_segments_for_labels(
+        self,
+        *,
+        prediction_array: PredictionArray,
+        label_list: list["Label"],
+        min_frame_length: int,
+    ) -> None:
+        for index, label in enumerate(label_list):
+            binary_predictions = prediction_array[:, index].astype(bool)
+            segments = find_segments_in_prediction_array(
+                binary_predictions, min_frame_length
+            )
+            if segments:
+                self.create_video_segments_for_label(segments, label)
+
     def create_video_segments(
         self, segment_length_threshold_in_s: Optional[float] = None
     ) -> None:
@@ -327,16 +378,9 @@ class VideoPredictionMeta(models.Model):
 
         label_list = self.get_label_list()
 
-        prediction_array = self.get_prediction_array()
+        prediction_array = self._get_or_calculate_prediction_array()
         if prediction_array is None:
-            logger.info(f"Prediction array not found for {self}. Calculating...")
-            self.calculate_prediction_array()
-            prediction_array = self.get_prediction_array()
-            if prediction_array is None:
-                logger.error(
-                    f"Failed to get or calculate prediction array for {self}. Cannot create segments."
-                )
-                return
+            return
 
         if prediction_array.shape[1] != len(label_list):
             logger.warning(
@@ -347,11 +391,9 @@ class VideoPredictionMeta(models.Model):
         logger.info(
             f"Creating video segments for {self} (min length: {min_frame_length} frames)..."
         )
-        for i, label in enumerate(label_list):
-            binary_predictions = prediction_array[:, i].astype(bool)
-            segments = find_segments_in_prediction_array(
-                binary_predictions, min_frame_length
-            )
-            if segments:
-                self.create_video_segments_for_label(segments, label)
+        self._create_segments_for_labels(
+            prediction_array=prediction_array,
+            label_list=label_list,
+            min_frame_length=min_frame_length,
+        )
         logger.info(f"Finished creating video segments for {self}.")

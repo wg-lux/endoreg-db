@@ -37,13 +37,12 @@ if TYPE_CHECKING:
 
 logger = getLogger("default_objects")
 
-type Null = NoneType
 type ReportMetaValue = str | date
 type ReportMeta = dict[str, ReportMetaValue]
 
 
 class _InformationSourceManager(Protocol):
-    def resolve_by_name(self, name: str) -> InformationSource | Null: ...
+    def resolve_by_name(self, name: str) -> InformationSource | NoneType: ...
 
 
 class _GenderManager(Protocol):
@@ -52,7 +51,7 @@ class _GenderManager(Protocol):
         name: str,
         *,
         case_insensitive: bool = True,
-    ) -> Gender | Null: ...
+    ) -> Gender | NoneType: ...
 
 
 class _NamedModel(Protocol):
@@ -301,7 +300,7 @@ def get_default_center() -> Center:
 
 
 def _resolve_patient_gender(
-    gender_input: Gender | str | Null,
+    gender_input: Gender | str | NoneType,
     *,
     randomize: bool,
 ) -> Gender:
@@ -314,7 +313,7 @@ def _resolve_patient_gender(
     return _get_gender_by_name(DEFAULT_PATIENT_GENDER_NAME)
 
 
-def _resolve_patient_center(center_input: Center | str | Null) -> Center:
+def _resolve_patient_center(center_input: Center | str | NoneType) -> Center:
     if isinstance(center_input, Center):
         return center_input
     if center_input is None:

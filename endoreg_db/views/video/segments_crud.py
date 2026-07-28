@@ -12,6 +12,7 @@ import logging
 import os
 import uuid
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any, cast
 
 from django.conf import settings
@@ -1361,6 +1362,462 @@ def video_segment_validate(request: Request, pk: int, segment_id: int) -> Respon
         )
 
 
+@dataclass(frozen=True)
+class _BulkValidationPostProcessing:
+    response_status: int
+    annotation_task_id: str | None = None
+    post_processing_job: JobDispatchResult | None = None
+    error_response: Response | None = None
+
+
+def _bulk_validation_payload(
+    request: Request,
+) -> tuple[Any | None, Response | None]:
+    try:
+        return (
+            validate_segment_bulk_validation_payload(_request_payload(request)),
+            None,
+        )
+    except PydanticValidationError as exc:
+        return None, _pydantic_error_response(exc)
+
+
+def _bulk_validation_segments(
+    *,
+    video: VideoFile,
+    segment_ids: list[int],
+) -> list[LabelVideoSegment]:
+    return list(
+        LabelVideoSegment.objects.filter(
+            pk__in=segment_ids,
+            video_file=video,
+        ).select_related("state", "video_file")
+    )
+
+
+def _apply_bulk_segment_timing(
+    *,
+    segment: LabelVideoSegment,
+    timing_data: Any,
+    video_id: int,
+) -> None:
+    if timing_data is None:
+        return
+    annotation_input = timing_data.to_annotation_input(video_id=video_id)
+    if annotation_input is None:
+        return
+    segment_video = _segment_video_file(segment)
+    new_start = video_seconds_to_frame_number(
+        segment_video,
+        annotation_input.start_time,
+    )
+    new_end = video_seconds_to_frame_number(
+        segment_video,
+        annotation_input.end_time,
+    )
+    _validate_segment_frame_range(
+        new_start,
+        new_end,
+        video_file=segment_video,
+    )
+    segment.start_frame_number = new_start
+    segment.end_frame_number = new_end
+    _save_segment(
+        segment,
+        update_fields=["start_frame_number", "end_frame_number"],
+    )
+
+
+def _segment_validation_status_before(segment: LabelVideoSegment) -> str:
+    state = cast(Any, segment).state
+    if state and state.is_validated:
+        return STATUS_VALIDATED
+    return STATUS_UNVALIDATED
+
+
+def _register_bulk_validation_audit(
+    *,
+    request: Request,
+    segment_id: int,
+    status_before: str,
+    video_id: int,
+    information_source_name: str | None,
+    annotator: str | None,
+) -> None:
+    def _log_after_commit() -> None:
+        segment = LabelVideoSegment.objects.select_related("state").get(pk=segment_id)
+        status_after = _segment_validation_status_before(segment)
+        record_operation(
+            cast(HttpRequest, request),
+            action=ACTION_SEGMENT_ANNOTATED,
+            resource_type="video_segment",
+            resource_id=_segment_pk(segment),
+            status_before=status_before,
+            status_after=status_after,
+            meta={
+                "video_id": video_id,
+                "bulk": True,
+                "information_source": information_source_name,
+                "annotator": annotator,
+            },
+        )
+
+    transaction.on_commit(_log_after_commit)
+
+
+def _validate_one_bulk_segment(
+    *,
+    request: Request,
+    segment: LabelVideoSegment,
+    timing_data: Any,
+    video_id: int,
+    is_validated: bool,
+    information_source_name: str,
+    annotator: str | None,
+) -> bool:
+    try:
+        _apply_bulk_segment_timing(
+            segment=segment,
+            timing_data=timing_data,
+            video_id=video_id,
+        )
+        status_before = _segment_validation_status_before(segment)
+        segment.mark_validated(
+            is_validated=is_validated,
+            information_source_name=(
+                information_source_name if is_validated else str(None)
+            ),
+        )
+        _register_bulk_validation_audit(
+            request=request,
+            segment_id=_segment_pk(segment),
+            status_before=status_before,
+            video_id=video_id,
+            information_source_name=information_source_name,
+            annotator=annotator,
+        )
+        return True
+    except Exception as exc:
+        logger.error("Error validating segment %s: %s", segment.pk, exc)
+        return False
+
+
+def _update_bulk_segments_atomically(
+    *,
+    request: Request,
+    video: VideoFile,
+    segments: list[LabelVideoSegment],
+    timing_by_segment_id: Mapping[int, Any],
+    is_validated: bool,
+    information_source_name: str,
+    annotator: str | None,
+) -> tuple[int, list[int]]:
+    updated_count = 0
+    failed_ids: list[int] = []
+    with transaction.atomic():
+        for segment in segments:
+            segment_id = _segment_pk(segment)
+            succeeded = _validate_one_bulk_segment(
+                request=request,
+                segment=segment,
+                timing_data=timing_by_segment_id.get(segment_id),
+                video_id=int(video.pk),
+                is_validated=is_validated,
+                information_source_name=information_source_name,
+                annotator=annotator,
+            )
+            if succeeded:
+                updated_count += 1
+            else:
+                failed_ids.append(segment_id)
+        create_segment_update_lease_on_commit(video)
+    return updated_count, failed_ids
+
+
+def _bulk_validation_dispatch_error(
+    *,
+    video: VideoFile,
+    video_id: int,
+    exc: Exception,
+) -> _BulkValidationPostProcessing:
+    logger.exception(
+        "Segment annotation expansion dispatch failed for video %s.",
+        video.pk,
+    )
+    return _BulkValidationPostProcessing(
+        response_status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        error_response=Response(
+            {
+                "error": "Segment annotation expansion dispatch failed.",
+                "detail": str(exc),
+                "video_id": video_id,
+                **_segment_validation_state_payload(video),
+            },
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        ),
+    )
+
+
+def _bulk_validation_integrity_error(
+    *,
+    video: VideoFile,
+    video_id: int,
+    updated_count: int,
+    requested_count: int,
+    annotation_errors: list[dict[str, object]],
+) -> _BulkValidationPostProcessing:
+    mark_segment_annotations_stale(video)
+    return _BulkValidationPostProcessing(
+        response_status=status.HTTP_409_CONFLICT,
+        error_response=Response(
+            {
+                "error": (
+                    "Segment validation did not create complete frame annotations."
+                ),
+                "video_id": video_id,
+                "updated_count": updated_count,
+                "requested_count": requested_count,
+                "annotation_errors": annotation_errors,
+                **_segment_validation_state_payload(video),
+            },
+            status=status.HTTP_409_CONFLICT,
+        ),
+    )
+
+
+def _completed_noop_post_validation_job(video: VideoFile) -> JobDispatchResult:
+    return JobDispatchResult(
+        task_id="",
+        mode="noop",
+        status="noop",
+        video_id=int(video.pk),
+        history_id=None,
+        validation_status="completed",
+    )
+
+
+def _finalize_bulk_postprocessing(
+    *,
+    video: VideoFile,
+    annotation_task_id: str | None,
+    requires_outside_cleanup: bool,
+) -> _BulkValidationPostProcessing:
+    if requires_outside_cleanup:
+        post_processing_job = dispatch_video_post_validation_rebuild(
+            video_id=video.pk,
+            only_validated=True,
+        )
+        return _BulkValidationPostProcessing(
+            response_status=_bulk_validation_response_status(
+                post_processing_job.status
+            ),
+            annotation_task_id=annotation_task_id,
+            post_processing_job=post_processing_job,
+        )
+    mark_segment_annotations_complete_without_cleanup(video)
+    return _BulkValidationPostProcessing(
+        response_status=status.HTTP_200_OK,
+        annotation_task_id=annotation_task_id,
+        post_processing_job=_completed_noop_post_validation_job(video),
+    )
+
+
+def _postprocess_bulk_validation(
+    *,
+    video: VideoFile,
+    video_id: int,
+    segment_ids: list[int],
+    segments: list[LabelVideoSegment],
+    updated_count: int,
+    information_source_name: str,
+    annotator: str | None,
+) -> _BulkValidationPostProcessing:
+    requires_outside_cleanup = _has_outside_cleanup_targets(video)
+    mark_segment_annotations_pending_cleanup(video)
+    try:
+        annotation_task_id, expansion_completed = (
+            _dispatch_segment_annotation_expansion(
+                video_id=int(video.pk),
+                segment_ids=[int(segment_id) for segment_id in segment_ids],
+                information_source_name=information_source_name,
+                annotator=annotator,
+                dispatch_post_validation_rebuild=requires_outside_cleanup,
+            )
+        )
+    except Exception as exc:
+        return _bulk_validation_dispatch_error(
+            video=video,
+            video_id=video_id,
+            exc=exc,
+        )
+    if not expansion_completed:
+        return _BulkValidationPostProcessing(
+            response_status=status.HTTP_202_ACCEPTED,
+            annotation_task_id=annotation_task_id,
+        )
+    annotation_errors = _segment_annotation_integrity_errors(
+        segments,
+        annotator=annotator,
+    )
+    if annotation_errors:
+        return _bulk_validation_integrity_error(
+            video=video,
+            video_id=video_id,
+            updated_count=updated_count,
+            requested_count=len(segment_ids),
+            annotation_errors=annotation_errors,
+        )
+    return _finalize_bulk_postprocessing(
+        video=video,
+        annotation_task_id=annotation_task_id,
+        requires_outside_cleanup=requires_outside_cleanup,
+    )
+
+
+def _should_postprocess_bulk_validation(
+    *,
+    is_validated: bool,
+    failed_ids: list[int],
+    updated_count: int,
+    requested_count: int,
+) -> bool:
+    return is_validated and not failed_ids and updated_count == requested_count
+
+
+def _bulk_validation_response(
+    *,
+    video: VideoFile,
+    video_id: int,
+    requested_count: int,
+    updated_count: int,
+    is_validated: bool,
+    failed_ids: list[int],
+    post_processing: _BulkValidationPostProcessing,
+) -> Response:
+    response_data: dict[str, object] = {
+        "message": f"Bulk validation completed. {updated_count} segments updated.",
+        "updated_count": updated_count,
+        "requested_count": requested_count,
+        "is_validated": is_validated,
+        "video_id": video_id,
+        **_segment_validation_state_payload(video),
+    }
+    if post_processing.annotation_task_id is not None:
+        response_data["validation_status"] = "annotation_expansion_queued"
+        response_data["annotation_expansion_task_id"] = (
+            post_processing.annotation_task_id
+        )
+    if post_processing.post_processing_job is not None:
+        response_data["validation_status"] = _validation_status_from_job(
+            post_processing.post_processing_job
+        )
+        response_data["post_processing_job"] = (
+            post_processing.post_processing_job.to_dict()
+        )
+    response_status = post_processing.response_status
+    if failed_ids:
+        response_data["failed_ids"] = failed_ids
+        response_data["warning"] = f"{len(failed_ids)} segments could not be validated"
+        response_status = status.HTTP_409_CONFLICT
+    return Response(response_data, status=response_status)
+
+
+def _validated_bulk_validation_payload(
+    request: Request,
+) -> tuple[Any | None, Response | None]:
+    payload, payload_error = _bulk_validation_payload(request)
+    if payload_error is not None:
+        return None, payload_error
+    assert payload is not None
+    if payload.notes:
+        logger.info("Segment Validiert $%s", payload.notes)
+    if not payload.segment_ids:
+        return (
+            None,
+            Response(
+                {"error": "segment_ids is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            ),
+        )
+    return payload, None
+
+
+def _execute_bulk_validation(
+    *,
+    request: Request,
+    video: VideoFile,
+    video_id: int,
+    payload: Any,
+) -> Response:
+    segment_ids = payload.segment_ids
+    is_validated = payload.is_validated
+    information_source_name = payload.information_source_name
+    annotation_annotator = payload.annotator
+    try:
+        segments = _bulk_validation_segments(
+            video=video,
+            segment_ids=segment_ids,
+        )
+        if not segments:
+            return Response(
+                {"error": "No segments found with provided IDs for this video"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        updated_count, failed_ids = _update_bulk_segments_atomically(
+            request=request,
+            video=video,
+            segments=segments,
+            timing_by_segment_id=payload.timing_by_segment_id,
+            is_validated=is_validated,
+            information_source_name=information_source_name,
+            annotator=annotation_annotator,
+        )
+        logger.info(
+            "Bulk validated %s segments in video %s",
+            updated_count,
+            video_id,
+        )
+        post_processing = _BulkValidationPostProcessing(
+            response_status=status.HTTP_200_OK
+        )
+        if _should_postprocess_bulk_validation(
+            is_validated=is_validated,
+            failed_ids=failed_ids,
+            updated_count=updated_count,
+            requested_count=len(segment_ids),
+        ):
+            post_processing = _postprocess_bulk_validation(
+                video=video,
+                video_id=video_id,
+                segment_ids=segment_ids,
+                segments=segments,
+                updated_count=updated_count,
+                information_source_name=information_source_name,
+                annotator=annotation_annotator,
+            )
+            if post_processing.error_response is not None:
+                return post_processing.error_response
+        return _bulk_validation_response(
+            video=video,
+            video_id=video_id,
+            requested_count=len(segment_ids),
+            updated_count=updated_count,
+            is_validated=is_validated,
+            failed_ids=failed_ids,
+            post_processing=post_processing,
+        )
+    except Exception as exc:
+        logger.error(
+            "Error in bulk validation for video %s: %s",
+            video_id,
+            exc,
+        )
+        return Response(
+            {"error": f"Bulk validation failed: {str(exc)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
 # TODO Pass user based information source to backend. This is the endpoint currently used by the VideoExamination endpoint
 @api_view(["POST"])
 @permission_classes(
@@ -1387,293 +1844,16 @@ def video_segments_validate_bulk(request: Request, pk: int) -> Response:
     THIS IS WHERE SEGMENTS ARE STORED IN THE DATABASE
     """
     video = get_object_or_404(VideoFile, pk=pk)
-
-    try:
-        payload = validate_segment_bulk_validation_payload(_request_payload(request))
-    except PydanticValidationError as exc:
-        return _pydantic_error_response(exc)
-
-    segment_ids = payload.segment_ids
-    is_validated = payload.is_validated
-    notes = payload.notes
-    information_source_name = payload.information_source_name
-    annotation_annotator = payload.annotator
-    if notes:
-        logger.info(f"Segment Validiert ${notes}")
-    if not segment_ids:
-        return Response(
-            {"error": "segment_ids is required"}, status=status.HTTP_400_BAD_REQUEST
-        )
-
-    # optional per-segment timing info (seconds)
-    segments_data = payload.timing_by_segment_id
-
-    try:
-        segments = list(
-            LabelVideoSegment.objects.filter(
-                pk__in=segment_ids, video_file=video
-            ).select_related("state", "video_file")
-        )
-
-        if not segments:
-            return Response(
-                {"error": "No segments found with provided IDs for this video"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        updated_count = 0
-        failed_ids: list[int] = []
-        with transaction.atomic():
-            for segment in segments:
-                try:
-                    # 1) optionally update times from payload
-                    segment_pk = int(segment.pk)
-                    data = segments_data.get(segment_pk)
-                    if data is not None:
-                        annotation_input = data.to_annotation_input(video_id=pk)
-                        if annotation_input is not None:
-                            segment_video = _segment_video_file(segment)
-                            new_start = video_seconds_to_frame_number(
-                                segment_video, annotation_input.start_time
-                            )
-                            new_end = video_seconds_to_frame_number(
-                                segment_video, annotation_input.end_time
-                            )
-                            _validate_segment_frame_range(
-                                new_start,
-                                new_end,
-                                video_file=segment_video,
-                            )
-                            segment.start_frame_number = new_start
-                            segment.end_frame_number = new_end
-                            _save_segment(
-                                segment,
-                                update_fields=[
-                                    "start_frame_number",
-                                    "end_frame_number",
-                                ],
-                            )
-                    was_validated = bool(segment.state and segment.state.is_validated)
-                    status_before = (
-                        STATUS_VALIDATED
-                        if (segment.state and was_validated)
-                        else STATUS_UNVALIDATED
-                    )
-
-                    # 2) mark as validated + update information source + notes
-                    segment.mark_validated(
-                        is_validated=is_validated,
-                        information_source_name=(
-                            information_source_name if is_validated else str(None)
-                        ),
-                    )
-                    segment_id = _segment_pk(segment)
-                    updated_count += 1
-
-                    #
-                    def _log_after_commit(
-                        segment_id: int = int(segment_id),
-                        status_before: str = status_before,
-                    ) -> None:
-                        s = LabelVideoSegment.objects.select_related("state").get(
-                            pk=segment_id
-                        )
-
-                        status_after = (
-                            STATUS_VALIDATED
-                            if (s.state and s.state.is_validated)
-                            else STATUS_UNVALIDATED
-                        )
-
-                        record_operation(
-                            cast(HttpRequest, request),
-                            action=ACTION_SEGMENT_ANNOTATED,
-                            resource_type="video_segment",
-                            resource_id=_segment_pk(s),
-                            status_before=status_before,
-                            status_after=status_after,
-                            meta={
-                                "video_id": pk,
-                                "bulk": True,
-                                "information_source": information_source_name,
-                                "annotator": annotation_annotator,
-                            },
-                        )
-
-                    transaction.on_commit(_log_after_commit)
-                    """status_after = STATUS_VALIDATED if is_validated else STATUS_UNVALIDATED
-
-                    
-                    record_operation(
-                        request,
-                        action=ACTION_SEGMENT_ANNOTATED,
-                        resource_type="video_segment",
-                        resource_id=segment.pk,
-                        status_before=status_before,
-                        status_after=status_after,
-                        meta={
-                            "video_id": pk,
-                            "bulk": True,
-                            "information_source": information_source_name,
-                        },
-                    )"""
-
-                except Exception as e:
-                    logger.error(f"Error validating segment {segment.pk}: {e}")
-                    failed_ids.append(_segment_pk(segment))
-
-            create_segment_update_lease_on_commit(video)
-
-        logger.info(f"Bulk validated {updated_count} segments in video {pk}")
-        response_status: int = status.HTTP_200_OK
-
-        annotation_task_id: str | None = None
-        post_processing_job: JobDispatchResult | None = None
-        if is_validated and not failed_ids and updated_count == len(segment_ids):
-            if _has_outside_cleanup_targets(video):
-                mark_segment_annotations_pending_cleanup(video)
-                try:
-                    (
-                        annotation_task_id,
-                        expansion_completed,
-                    ) = _dispatch_segment_annotation_expansion(
-                        video_id=int(video.pk),
-                        segment_ids=[int(segment_id) for segment_id in segment_ids],
-                        information_source_name=information_source_name,
-                        annotator=annotation_annotator,
-                        dispatch_post_validation_rebuild=True,
-                    )
-                except Exception as exc:
-                    logger.exception(
-                        "Segment annotation expansion dispatch failed for video %s.",
-                        video.pk,
-                    )
-                    return Response(
-                        {
-                            "error": "Segment annotation expansion dispatch failed.",
-                            "detail": str(exc),
-                            "video_id": pk,
-                            **_segment_validation_state_payload(video),
-                        },
-                        status=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    )
-                if expansion_completed:
-                    annotation_integrity_errors = _segment_annotation_integrity_errors(
-                        segments,
-                        annotator=annotation_annotator,
-                    )
-                    if annotation_integrity_errors:
-                        mark_segment_annotations_stale(video)
-                        return Response(
-                            {
-                                "error": "Segment validation did not create complete frame annotations.",
-                                "video_id": pk,
-                                "updated_count": updated_count,
-                                "requested_count": len(segment_ids),
-                                "annotation_errors": annotation_integrity_errors,
-                                **_segment_validation_state_payload(video),
-                            },
-                            status=status.HTTP_409_CONFLICT,
-                        )
-                    post_processing_job = dispatch_video_post_validation_rebuild(
-                        video_id=video.pk,
-                        only_validated=True,
-                    )
-                    response_status = _bulk_validation_response_status(
-                        post_processing_job.status
-                    )
-                else:
-                    response_status = status.HTTP_202_ACCEPTED
-            else:
-                mark_segment_annotations_pending_cleanup(video)
-                try:
-                    (
-                        annotation_task_id,
-                        expansion_completed,
-                    ) = _dispatch_segment_annotation_expansion(
-                        video_id=int(video.pk),
-                        segment_ids=[int(segment_id) for segment_id in segment_ids],
-                        information_source_name=information_source_name,
-                        annotator=annotation_annotator,
-                        dispatch_post_validation_rebuild=False,
-                    )
-                except Exception as exc:
-                    logger.exception(
-                        "Segment annotation expansion dispatch failed for video %s.",
-                        video.pk,
-                    )
-                    return Response(
-                        {
-                            "error": "Segment annotation expansion dispatch failed.",
-                            "detail": str(exc),
-                            "video_id": pk,
-                            **_segment_validation_state_payload(video),
-                        },
-                        status=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    )
-                if expansion_completed:
-                    annotation_integrity_errors = _segment_annotation_integrity_errors(
-                        segments,
-                        annotator=annotation_annotator,
-                    )
-                    if annotation_integrity_errors:
-                        mark_segment_annotations_stale(video)
-                        return Response(
-                            {
-                                "error": "Segment validation did not create complete frame annotations.",
-                                "video_id": pk,
-                                "updated_count": updated_count,
-                                "requested_count": len(segment_ids),
-                                "annotation_errors": annotation_integrity_errors,
-                                **_segment_validation_state_payload(video),
-                            },
-                            status=status.HTTP_409_CONFLICT,
-                        )
-                    mark_segment_annotations_complete_without_cleanup(video)
-                    post_processing_job = JobDispatchResult(
-                        task_id="",
-                        mode="noop",
-                        status="noop",
-                        video_id=int(video.pk),
-                        history_id=None,
-                        validation_status="completed",
-                    )
-                    response_status = status.HTTP_200_OK
-                else:
-                    response_status = status.HTTP_202_ACCEPTED
-
-        response_data = {
-            "message": f"Bulk validation completed. {updated_count} segments updated.",
-            "updated_count": updated_count,
-            "requested_count": len(segment_ids),
-            "is_validated": is_validated,
-            "video_id": pk,
-            **_segment_validation_state_payload(video),
-        }
-        if annotation_task_id is not None:
-            response_data["validation_status"] = "annotation_expansion_queued"
-            response_data["annotation_expansion_task_id"] = annotation_task_id
-        if post_processing_job is not None:
-            response_data["validation_status"] = _validation_status_from_job(
-                post_processing_job
-            )
-            response_data["post_processing_job"] = post_processing_job.to_dict()
-
-        if failed_ids:
-            response_data["failed_ids"] = failed_ids
-            response_data["warning"] = (
-                f"{len(failed_ids)} segments could not be validated"
-            )
-            response_status = status.HTTP_409_CONFLICT
-
-        return Response(response_data, status=response_status)
-
-    except Exception as e:
-        logger.error(f"Error in bulk validation for video {pk}: {e}")
-        return Response(
-            {"error": f"Bulk validation failed: {str(e)}"},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
+    payload, payload_error = _validated_bulk_validation_payload(request)
+    if payload_error is not None:
+        return payload_error
+    assert payload is not None
+    return _execute_bulk_validation(
+        request=request,
+        video=video,
+        video_id=pk,
+        payload=payload,
+    )
 
 
 @api_view(["GET", "POST"])

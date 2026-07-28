@@ -1,0 +1,21 @@
+# Set this explicitly here or export DJANGO_SETTINGS_MODULE before execution.
+# A conflicting environment value fails closed.
+django_settings_module: null
+
+receipt_directory: results/import_receipts
+
+resources:
+  video:
+    threads: 4
+    mem_mb: 8192
+  report:
+    threads: 1
+    mem_mb: 2048
+
+# Map each stable job identifier to:
+# source, center_name, processor_name, and optionally retry.
+video_imports: {}
+
+# Map each stable job identifier to:
+# source, center_name, and optionally retry.
+report_imports: {}

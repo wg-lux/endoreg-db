@@ -428,74 +428,106 @@ def build_lx_temporal_options(
     return lx_options, history_options
 
 
-def _resolve_score_timeline(
-    video: VideoFile,
-    score_result: VideoFrameScoreResult,
-) -> TemporalScoreTimeline:
-    """Resolve every score row to a persisted presentation timestamp."""
+def _validated_score_row_count(score_result: VideoFrameScoreResult) -> int:
     row_count = int(score_result.frame_scores.shape[0])
     if row_count != score_result.frame_count:
         raise TemporalInferenceConfigError(
             "Frame-score row count does not match the declared frame count."
         )
-    if row_count == 0:
-        return TemporalScoreTimeline((), (), 0, 0.0)
+    return row_count
 
-    frame_numbers = tuple(
-        int(value)
-        for value in (
-            score_result.frame_numbers
-            if score_result.frame_numbers is not None
-            else range(row_count)
-        )
+
+def _validated_score_frame_numbers(
+    score_result: VideoFrameScoreResult,
+    *,
+    row_count: int,
+) -> tuple[int, ...]:
+    source_numbers = score_result.frame_numbers
+    frame_numbers = (
+        tuple(range(row_count))
+        if source_numbers is None
+        else tuple(map(int, source_numbers))
     )
-    if len(frame_numbers) != row_count or any(
-        current <= previous
-        for previous, current in zip(frame_numbers, frame_numbers[1:])
-    ):
+    if len(frame_numbers) != row_count or not _strictly_increasing(frame_numbers):
         raise TemporalInferenceConfigError(
             "Frame-score frame numbers must be complete and strictly increasing."
         )
+    return frame_numbers
 
-    if score_result.timestamps is not None:
-        timestamps = tuple(float(value) for value in score_result.timestamps)
-    else:
-        persisted_rows = video.frames.filter(
-            frame_number__in=frame_numbers,
-            timestamp__isnull=False,
-        ).values_list("frame_number", "timestamp")
-        persisted_by_frame = {
-            int(frame_number): float(timestamp)
-            for frame_number, timestamp in persisted_rows
-        }
-        missing = [
-            frame_number
-            for frame_number in frame_numbers
-            if frame_number not in persisted_by_frame
-        ]
-        if missing:
+
+def _strictly_increasing(values: Sequence[int | float]) -> bool:
+    for previous, current in zip(values, values[1:]):
+        if current <= previous:
+            return False
+    return True
+
+
+def _persisted_score_timestamps(
+    video: VideoFile,
+    *,
+    frame_numbers: tuple[int, ...],
+) -> tuple[float, ...]:
+    persisted_rows = video.frames.filter(
+        frame_number__in=frame_numbers,
+        timestamp__isnull=False,
+    ).values_list("frame_number", "timestamp")
+    persisted_by_frame: dict[int, float] = {}
+    for frame_number, timestamp in persisted_rows:
+        persisted_by_frame[int(frame_number)] = float(timestamp)
+    missing = tuple(
+        filter(lambda number: number not in persisted_by_frame, frame_numbers)
+    )
+    if missing:
+        raise TemporalInferenceConfigError(
+            "Temporal inference requires persisted presentation timestamps "
+            f"for every scored frame; missing frames: {missing[:10]}."
+        )
+    return tuple(map(persisted_by_frame.__getitem__, frame_numbers))
+
+
+def _validate_timestamp_values(timestamps: tuple[float, ...]) -> None:
+    for timestamp in timestamps:
+        if not math.isfinite(timestamp) or timestamp < 0:
             raise TemporalInferenceConfigError(
-                "Temporal inference requires persisted presentation timestamps "
-                f"for every scored frame; missing frames: {missing[:10]}."
+                "Frame-score presentation timestamps must be complete, finite, "
+                "and non-negative."
             )
-        timestamps = tuple(persisted_by_frame[number] for number in frame_numbers)
 
-    if len(timestamps) != row_count or any(
-        not math.isfinite(timestamp) or timestamp < 0 for timestamp in timestamps
-    ):
+
+def _validated_score_timestamps(
+    video: VideoFile,
+    score_result: VideoFrameScoreResult,
+    *,
+    frame_numbers: tuple[int, ...],
+    row_count: int,
+) -> tuple[float, ...]:
+    if score_result.timestamps is not None:
+        timestamps = tuple(map(float, score_result.timestamps))
+    else:
+        timestamps = _persisted_score_timestamps(
+            video,
+            frame_numbers=frame_numbers,
+        )
+    if len(timestamps) != row_count:
         raise TemporalInferenceConfigError(
             "Frame-score presentation timestamps must be complete, finite, and non-negative."
         )
-    if any(
-        current <= previous for previous, current in zip(timestamps, timestamps[1:])
-    ):
+    _validate_timestamp_values(timestamps)
+    if not _strictly_increasing(timestamps):
         raise TemporalInferenceConfigError(
             "Frame-score presentation timestamps must be strictly increasing."
         )
+    return timestamps
 
+
+def _terminal_score_boundary(
+    video: VideoFile,
+    *,
+    final_frame_number: int,
+) -> tuple[int, float]:
     next_boundary = (
         video.frames.filter(
-            frame_number__gt=frame_numbers[-1],
+            frame_number__gt=final_frame_number,
             timestamp__isnull=False,
         )
         .order_by("frame_number")
@@ -507,7 +539,7 @@ def _resolve_score_timeline(
         terminal_timestamp = float(next_boundary[1])
     elif (
         video.frame_count is not None
-        and int(video.frame_count) == frame_numbers[-1] + 1
+        and int(video.frame_count) == final_frame_number + 1
     ):
         terminal_frame_number = int(video.frame_count)
         terminal_timestamp = float(video.frame_number_to_s(terminal_frame_number))
@@ -516,6 +548,31 @@ def _resolve_score_timeline(
             "Temporal inference cannot resolve the exclusive presentation-time "
             "boundary after the final scored frame."
         )
+    return terminal_frame_number, terminal_timestamp
+
+
+def _resolve_score_timeline(
+    video: VideoFile,
+    score_result: VideoFrameScoreResult,
+) -> TemporalScoreTimeline:
+    """Resolve every score row to a persisted presentation timestamp."""
+    row_count = _validated_score_row_count(score_result)
+    if row_count == 0:
+        return TemporalScoreTimeline((), (), 0, 0.0)
+    frame_numbers = _validated_score_frame_numbers(
+        score_result,
+        row_count=row_count,
+    )
+    timestamps = _validated_score_timestamps(
+        video,
+        score_result,
+        frame_numbers=frame_numbers,
+        row_count=row_count,
+    )
+    terminal_frame_number, terminal_timestamp = _terminal_score_boundary(
+        video,
+        final_frame_number=frame_numbers[-1],
+    )
     if (
         terminal_frame_number <= frame_numbers[-1]
         or not math.isfinite(terminal_timestamp)
@@ -1394,6 +1451,405 @@ def dispatch_deferred_temporal_inference_after_rebuild(
     )
 
 
+@dataclass(frozen=True)
+class _PreparedTemporalRun:
+    video: VideoFile
+    model_meta: ModelMeta
+    lx_options: Mapping[str, Any]
+    normalized_options: Mapping[str, Any]
+    requested_frame_source_mode: FrameSourceMode
+    resolved_frame_source_mode: FrameSourceMode
+    frames_touched: bool
+
+
+@dataclass(frozen=True)
+class _TemporalPrediction:
+    score_result: VideoFrameScoreResult
+    inference_result: TemporalInferenceResultPayload
+    sequences: Mapping[str, list[tuple[int, int]]]
+
+
+def _cleanup_history_frames_if_required(
+    history: VideoProcessingHistory,
+    *,
+    video_id: int,
+    delete_frames_after: bool,
+    reason: str,
+) -> None:
+    if not _history_should_cleanup_frames(
+        history,
+        delete_frames_after=delete_frames_after,
+    ):
+        return
+    history_video = VideoFile.objects.get(pk=video_id)
+    rollback_video_frame_artifacts(history_video, reason=reason)
+
+
+def _prepare_temporal_history(
+    history: VideoProcessingHistory | None,
+    *,
+    video_id: int,
+    delete_frames_after: bool,
+) -> bool:
+    if history is None:
+        return False
+    if history.status == VideoProcessingHistory.STATUS_SUCCESS:
+        _cleanup_history_frames_if_required(
+            history,
+            video_id=video_id,
+            delete_frames_after=delete_frames_after,
+            reason=(
+                "Completing frame cleanup for an already successful "
+                f"temporal inference history {history.pk}."
+            ),
+        )
+        return True
+    if history.status == VideoProcessingHistory.STATUS_RUNNING:
+        _cleanup_history_frames_if_required(
+            history,
+            video_id=video_id,
+            delete_frames_after=delete_frames_after,
+            reason=(
+                "Restarting temporal inference for a previously running "
+                f"history {history.pk}."
+            ),
+        )
+    history.mark_running()
+    return False
+
+
+def _record_resolved_frame_source_mode(
+    history: VideoProcessingHistory | None,
+    *,
+    requested: FrameSourceMode,
+    resolved: FrameSourceMode,
+) -> None:
+    if history is None:
+        return
+    history.config = {
+        **(history.config or {}),
+        "frame_source_mode": requested,
+        "requested_frame_source_mode": requested,
+        "resolved_frame_source_mode": resolved,
+    }
+    history.save(update_fields=["config"])
+
+
+def _prepare_temporal_frame_cache(
+    video: VideoFile,
+    *,
+    frame_source_mode: FrameSourceMode,
+    ocr_frame_fraction: float,
+    ocr_cap: int,
+) -> bool:
+    if frame_source_mode != "cache":
+        return False
+    extract_video_frames(video, overwrite=False)
+    update_video_text_metadata(
+        video,
+        ocr_frame_fraction=ocr_frame_fraction,
+        cap=ocr_cap,
+        overwrite=False,
+    )
+    if not _has_extracted_frame_files(video):
+        extract_video_frames(video, overwrite=True)
+    if not _has_extracted_frame_files(video):
+        raise RuntimeError(
+            f"Frame cache for video {video.pk} is empty after extraction."
+        )
+    return True
+
+
+def _prepare_temporal_run(
+    *,
+    video_id: int,
+    model_meta_id: int,
+    history: VideoProcessingHistory | None,
+    requested_frame_source_mode: FrameSourceMode,
+    temporal_options: Mapping[str, Any] | None,
+    ocr_frame_fraction: float,
+    ocr_cap: int,
+) -> _PreparedTemporalRun:
+    video = VideoFile.objects.get(pk=video_id)
+    model_meta = ModelMeta.objects.select_related("model", "labelset").get(
+        pk=model_meta_id
+    )
+    lx_options, normalized_options = build_lx_temporal_options(temporal_options)
+    mark_frame_prediction_reset(video)
+    video.refresh_from_db()
+    update_video_meta(video)
+    resolved_mode = _resolve_temporal_frame_source_mode(
+        video,
+        requested_frame_source_mode,
+    )
+    _record_resolved_frame_source_mode(
+        history,
+        requested=requested_frame_source_mode,
+        resolved=resolved_mode,
+    )
+    frames_touched = _prepare_temporal_frame_cache(
+        video,
+        frame_source_mode=resolved_mode,
+        ocr_frame_fraction=ocr_frame_fraction,
+        ocr_cap=ocr_cap,
+    )
+    return _PreparedTemporalRun(
+        video=video,
+        model_meta=model_meta,
+        lx_options=lx_options,
+        normalized_options=normalized_options,
+        requested_frame_source_mode=requested_frame_source_mode,
+        resolved_frame_source_mode=resolved_mode,
+        frames_touched=frames_touched,
+    )
+
+
+def _predict_temporal_segments(
+    prepared: _PreparedTemporalRun,
+    *,
+    history: VideoProcessingHistory | None,
+    test_run: bool,
+    n_test_frames: int,
+) -> _TemporalPrediction:
+    score_result = predict_video(
+        prepared.video,
+        model_meta=prepared.model_meta,
+        test_run=test_run,
+        n_test_frames=n_test_frames,
+        return_frame_scores=True,
+        frame_source_mode=prepared.resolved_frame_source_mode,
+        frame_source_file_type="raw",
+    )
+    if not isinstance(score_result, VideoFrameScoreResult):
+        raise RuntimeError("Video prediction did not return frame scores.")
+    score_timeline = _resolve_score_timeline(prepared.video, score_result)
+    score_result = replace(
+        score_result,
+        frame_numbers=list(score_timeline.frame_numbers),
+        timestamps=list(score_timeline.timestamps),
+    )
+    score_result = _smooth_scores_by_presentation_time(
+        score_result,
+        score_timeline,
+        window_seconds=float(prepared.normalized_options["smoothing_window_seconds"]),
+    )
+    request_id = (
+        f"video-{prepared.video.pk}-temporal-{history.pk if history else uuid.uuid4()}"
+    )
+    inference_result = _coerce_lx_temporal_inference_result(
+        _run_lx_ai_core_temporal_inference(
+            model_meta=prepared.model_meta,
+            score_result=score_result,
+            lx_options=prepared.lx_options,
+            request_id=request_id,
+        )
+    )
+    sequences = _segments_to_sequences(
+        inference_result.temporal_segments,
+        timeline=score_timeline,
+        min_length_seconds=float(prepared.normalized_options["min_length_seconds"]),
+        max_gap_seconds=float(prepared.normalized_options["max_gap_seconds"]),
+    )
+    return _TemporalPrediction(
+        score_result=score_result,
+        inference_result=inference_result,
+        sequences=sequences,
+    )
+
+
+def _replace_prediction_segments(
+    video: VideoFile,
+    *,
+    replace_existing: bool,
+) -> int:
+    if not replace_existing:
+        return 0
+    old_prediction_segments = _prediction_segments_for_video(video)
+    deleted_count = old_prediction_segments.count()
+    old_prediction_segments.delete()
+    return deleted_count
+
+
+def _materialize_temporal_segments(
+    prepared: _PreparedTemporalRun,
+    prediction: _TemporalPrediction,
+    prediction_meta: VideoPredictionMeta,
+) -> tuple[int, int]:
+    before_count = _prediction_segments_for_meta(
+        video=prepared.video,
+        prediction_meta=prediction_meta,
+    ).count()
+    convert_sequences_to_db_segments(
+        video=prepared.video,
+        sequences=prediction.sequences,
+        video_prediction_meta=prediction_meta,
+    )
+    current_count = _prediction_segments_for_meta(
+        video=prepared.video,
+        prediction_meta=prediction_meta,
+    ).count()
+    if any(prediction.sequences.values()) and current_count == 0:
+        raise RuntimeError(
+            "Temporal inference returned segment ranges, but no "
+            "LabelVideoSegment rows were materialized for prediction meta "
+            f"{prediction_meta.pk}."
+        )
+    return before_count, current_count
+
+
+def _save_temporal_video_state(
+    video: VideoFile,
+    *,
+    sequences: Mapping[str, list[tuple[int, int]]],
+    created_segment_count: int,
+) -> None:
+    video.sequences = cast(
+        VideoFileMetaJsonObject,
+        {
+            label: [[start, end] for start, end in ranges]
+            for label, ranges in sequences.items()
+        },
+    )
+    video.save(update_fields=["sequences"])
+    mark_frame_prediction_completed(video)
+    mark_prediction_segments_created(
+        video,
+        created=created_segment_count > 0 or not any(sequences.values()),
+    )
+
+
+def _record_temporal_history_success(
+    history: VideoProcessingHistory | None,
+    *,
+    prepared: _PreparedTemporalRun,
+    prediction: _TemporalPrediction,
+    before_count: int,
+    current_count: int,
+    deleted_prediction_segments: int,
+) -> None:
+    if history is None:
+        return
+    result = prediction.inference_result
+    score_result = prediction.score_result
+    resolved_mode = prepared.resolved_frame_source_mode
+    history.config = {
+        **(history.config or {}),
+        "frame_source_mode": resolved_mode,
+        "requested_frame_source_mode": prepared.requested_frame_source_mode,
+        "resolved_frame_source_mode": resolved_mode,
+        "temporal_options": dict(prepared.normalized_options),
+        "result": {
+            "backend": result.backend,
+            "device": result.device,
+            "duration_ms": result.duration_ms,
+            "provenance": result.provenance,
+            "score_frame_count": score_result.frame_count,
+            "score_label_count": len(score_result.labels),
+            "score_frame_numbers_present": score_result.frame_numbers is not None,
+            "score_timestamps_present": score_result.timestamps is not None,
+            "frame_source_mode": resolved_mode,
+            "requested_frame_source_mode": prepared.requested_frame_source_mode,
+            "resolved_frame_source_mode": resolved_mode,
+            "source_video_kind": ("frame_cache" if resolved_mode == "cache" else "raw"),
+            "temporal_segment_count": len(result.temporal_segments),
+            "materialized_segment_count": current_count,
+            "created_segment_count": max(current_count - before_count, 0),
+            "deleted_prediction_segments": deleted_prediction_segments,
+            "score_vectors_stored": False,
+        },
+    }
+    history.save(update_fields=["config"])
+    history.mark_success(details="Temporal inference completed.")
+
+
+def _persist_temporal_prediction(
+    prepared: _PreparedTemporalRun,
+    prediction: _TemporalPrediction,
+    *,
+    history: VideoProcessingHistory | None,
+    replace_prediction_segments: bool,
+) -> None:
+    with transaction.atomic():
+        prediction_meta, _ = VideoPredictionMeta.objects.get_or_create(
+            video_file=prepared.video,
+            model_meta=prepared.model_meta,
+        )
+        deleted_count = _replace_prediction_segments(
+            prepared.video,
+            replace_existing=replace_prediction_segments,
+        )
+        before_count, current_count = _materialize_temporal_segments(
+            prepared,
+            prediction,
+            prediction_meta,
+        )
+        _save_temporal_video_state(
+            prepared.video,
+            sequences=prediction.sequences,
+            created_segment_count=current_count,
+        )
+        _record_temporal_history_success(
+            history,
+            prepared=prepared,
+            prediction=prediction,
+            before_count=before_count,
+            current_count=current_count,
+            deleted_prediction_segments=deleted_count,
+        )
+
+
+def _rollback_failed_temporal_frames(
+    video: VideoFile | None,
+    *,
+    delete_frames_after: bool,
+    frames_touched: bool,
+    error: Exception,
+) -> None:
+    if video is None or not delete_frames_after or not frames_touched:
+        return
+    try:
+        rollback_video_frame_artifacts(
+            video,
+            reason=f"Temporal inference failed: {error}",
+        )
+    except Exception:
+        logger.exception(
+            "Failed to rollback frame artifacts after temporal inference "
+            "failure for video %s.",
+            video.pk,
+        )
+
+
+def _delete_successful_temporal_frames(
+    video: VideoFile | None,
+    *,
+    delete_frames_after: bool,
+    success: bool,
+    frames_touched: bool,
+) -> None:
+    should_delete = all(
+        (video is not None, delete_frames_after, success, frames_touched)
+    )
+    if not should_delete:
+        return
+    assert video is not None
+    try:
+        delete_video_frames(video)
+    except Exception:
+        logger.exception(
+            "Temporal inference succeeded, but frame cleanup failed for video %s.",
+            video.pk,
+        )
+
+
+def _mark_temporal_history_failure(
+    history: VideoProcessingHistory | None,
+    error: Exception,
+) -> None:
+    if history is not None:
+        history.mark_failure(str(error))
+
+
 def _run_video_temporal_inference(
     video_id: int,
     *,
@@ -1415,238 +1871,57 @@ def _run_video_temporal_inference(
     requested_frame_source_mode = _normalize_temporal_frame_source_mode(
         cast(str | None, frame_source_mode or history_config.get("frame_source_mode"))
     )
-    if history is not None:
-        if history.status == VideoProcessingHistory.STATUS_SUCCESS:
-            if _history_should_cleanup_frames(
-                history,
-                delete_frames_after=delete_frames_after,
-            ):
-                history_video = VideoFile.objects.get(pk=video_id)
-                rollback_video_frame_artifacts(
-                    history_video,
-                    reason=(
-                        "Completing frame cleanup for an already successful "
-                        f"temporal inference history {history.pk}."
-                    ),
-                )
-            return True
-        if history.status == VideoProcessingHistory.STATUS_RUNNING and (
-            _history_should_cleanup_frames(
-                history,
-                delete_frames_after=delete_frames_after,
-            )
-        ):
-            history_video = VideoFile.objects.get(pk=video_id)
-            rollback_video_frame_artifacts(
-                history_video,
-                reason=(
-                    "Restarting temporal inference for a previously running "
-                    f"history {history.pk}."
-                ),
-            )
-        history.mark_running()
-
+    if _prepare_temporal_history(
+        history,
+        video_id=video_id,
+        delete_frames_after=delete_frames_after,
+    ):
+        return True
     video: VideoFile | None = None
     success = False
     frames_touched = False
-    deleted_prediction_segments = 0
     try:
-        video = VideoFile.objects.get(pk=video_id)
-        model_meta = ModelMeta.objects.select_related("model", "labelset").get(
-            pk=model_meta_id
+        prepared = _prepare_temporal_run(
+            video_id=video_id,
+            model_meta_id=model_meta_id,
+            history=history,
+            requested_frame_source_mode=requested_frame_source_mode,
+            temporal_options=temporal_options,
+            ocr_frame_fraction=ocr_frame_fraction,
+            ocr_cap=ocr_cap,
         )
-        lx_options, normalized_temporal_options = build_lx_temporal_options(
-            temporal_options,
-        )
-
-        mark_frame_prediction_reset(video)
-        video.refresh_from_db()
-        update_video_meta(video)
-        resolved_frame_source_mode = _resolve_temporal_frame_source_mode(
-            video,
-            requested_frame_source_mode,
-        )
-        if history is not None:
-            history.config = {
-                **(history.config or {}),
-                "frame_source_mode": requested_frame_source_mode,
-                "requested_frame_source_mode": requested_frame_source_mode,
-                "resolved_frame_source_mode": resolved_frame_source_mode,
-            }
-            history.save(update_fields=["config"])
-        if resolved_frame_source_mode == "cache":
-            frames_touched = True
-            extract_video_frames(video, overwrite=False)
-            update_video_text_metadata(
-                video,
-                ocr_frame_fraction=ocr_frame_fraction,
-                cap=ocr_cap,
-                overwrite=False,
-            )
-            if not _has_extracted_frame_files(video):
-                frames_touched = True
-                extract_video_frames(video, overwrite=True)
-            if not _has_extracted_frame_files(video):
-                raise RuntimeError(
-                    f"Frame cache for video {video.pk} is empty after extraction."
-                )
-        score_result = predict_video(
-            video,
-            model_meta=model_meta,
+        video = prepared.video
+        frames_touched = prepared.frames_touched
+        prediction = _predict_temporal_segments(
+            prepared,
+            history=history,
             test_run=test_run,
             n_test_frames=n_test_frames,
-            return_frame_scores=True,
-            frame_source_mode=resolved_frame_source_mode,
-            frame_source_file_type="raw",
         )
-        if not isinstance(score_result, VideoFrameScoreResult):
-            raise RuntimeError("Video prediction did not return frame scores.")
-        score_timeline = _resolve_score_timeline(video, score_result)
-        score_result = replace(
-            score_result,
-            frame_numbers=list(score_timeline.frame_numbers),
-            timestamps=list(score_timeline.timestamps),
+        _persist_temporal_prediction(
+            prepared,
+            prediction,
+            history=history,
+            replace_prediction_segments=replace_prediction_segments,
         )
-        score_result = _smooth_scores_by_presentation_time(
-            score_result,
-            score_timeline,
-            window_seconds=float(
-                normalized_temporal_options["smoothing_window_seconds"]
-            ),
-        )
-
-        request_id = (
-            f"video-{video.pk}-temporal-{history.pk if history else uuid.uuid4()}"
-        )
-        inference_result = _coerce_lx_temporal_inference_result(
-            _run_lx_ai_core_temporal_inference(
-                model_meta=model_meta,
-                score_result=score_result,
-                lx_options=lx_options,
-                request_id=request_id,
-            )
-        )
-        sequences = _segments_to_sequences(
-            inference_result.temporal_segments,
-            timeline=score_timeline,
-            min_length_seconds=float(normalized_temporal_options["min_length_seconds"]),
-            max_gap_seconds=float(normalized_temporal_options["max_gap_seconds"]),
-        )
-        has_segment_ranges = any(bool(ranges) for ranges in sequences.values())
-        with transaction.atomic():
-            video_prediction_meta, _ = VideoPredictionMeta.objects.get_or_create(
-                video_file=video,
-                model_meta=model_meta,
-            )
-
-            if replace_prediction_segments:
-                old_prediction_segments = _prediction_segments_for_video(video)
-                deleted_prediction_segments = old_prediction_segments.count()
-                old_prediction_segments.delete()
-
-            before_count = _prediction_segments_for_meta(
-                video=video,
-                prediction_meta=video_prediction_meta,
-            ).count()
-            convert_sequences_to_db_segments(
-                video=video,
-                sequences=sequences,
-                video_prediction_meta=video_prediction_meta,
-            )
-            current_prediction_segment_count = _prediction_segments_for_meta(
-                video=video,
-                prediction_meta=video_prediction_meta,
-            ).count()
-
-            if has_segment_ranges and current_prediction_segment_count == 0:
-                raise RuntimeError(
-                    "Temporal inference returned segment ranges, but no "
-                    "LabelVideoSegment rows were materialized for prediction meta "
-                    f"{video_prediction_meta.pk}."
-                )
-
-            video.sequences = cast(
-                VideoFileMetaJsonObject,
-                {
-                    label: [[start, end] for start, end in ranges]
-                    for label, ranges in sequences.items()
-                },
-            )
-            video.save(update_fields=["sequences"])
-            mark_frame_prediction_completed(video)
-            mark_prediction_segments_created(
-                video,
-                created=current_prediction_segment_count > 0 or not has_segment_ranges,
-            )
-
-            if history is not None:
-                history.config = {
-                    **(history.config or {}),
-                    "frame_source_mode": resolved_frame_source_mode,
-                    "requested_frame_source_mode": requested_frame_source_mode,
-                    "resolved_frame_source_mode": resolved_frame_source_mode,
-                    "temporal_options": normalized_temporal_options,
-                    "result": {
-                        "backend": inference_result.backend,
-                        "device": inference_result.device,
-                        "duration_ms": inference_result.duration_ms,
-                        "provenance": inference_result.provenance,
-                        "score_frame_count": score_result.frame_count,
-                        "score_label_count": len(score_result.labels),
-                        "score_frame_numbers_present": (
-                            score_result.frame_numbers is not None
-                        ),
-                        "score_timestamps_present": score_result.timestamps is not None,
-                        "frame_source_mode": resolved_frame_source_mode,
-                        "requested_frame_source_mode": requested_frame_source_mode,
-                        "resolved_frame_source_mode": resolved_frame_source_mode,
-                        "source_video_kind": (
-                            "frame_cache"
-                            if resolved_frame_source_mode == "cache"
-                            else "raw"
-                        ),
-                        "temporal_segment_count": len(
-                            inference_result.temporal_segments
-                        ),
-                        "materialized_segment_count": current_prediction_segment_count,
-                        "created_segment_count": max(
-                            current_prediction_segment_count - before_count,
-                            0,
-                        ),
-                        "deleted_prediction_segments": deleted_prediction_segments,
-                        "score_vectors_stored": False,
-                    },
-                }
-                history.save(update_fields=["config"])
-                history.mark_success(details="Temporal inference completed.")
-
         success = True
         return True
     except Exception as exc:
-        if history is not None:
-            history.mark_failure(str(exc))
-        if video is not None and delete_frames_after and frames_touched:
-            try:
-                rollback_video_frame_artifacts(
-                    video,
-                    reason=f"Temporal inference failed: {exc}",
-                )
-            except Exception:
-                logger.exception(
-                    "Failed to rollback frame artifacts after temporal inference "
-                    "failure for video %s.",
-                    video.pk,
-                )
+        _mark_temporal_history_failure(history, exc)
+        _rollback_failed_temporal_frames(
+            video,
+            delete_frames_after=delete_frames_after,
+            frames_touched=frames_touched,
+            error=exc,
+        )
         raise
     finally:
-        if video is not None and delete_frames_after and success and frames_touched:
-            try:
-                delete_video_frames(video)
-            except Exception:
-                logger.exception(
-                    "Temporal inference succeeded, but frame cleanup failed for video %s.",
-                    video.pk,
-                )
+        _delete_successful_temporal_frames(
+            video,
+            delete_frames_after=delete_frames_after,
+            success=success,
+            frames_touched=frames_touched,
+        )
 
 
 def dispatch_video_temporal_inference(

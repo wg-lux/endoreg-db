@@ -22,7 +22,6 @@ from endoreg_db.services.center_access import (
 from lx_dtypes.models.contracts.json_types import JsonValue
 
 User = get_user_model()
-type Null = NoneType
 
 
 class _UserGroups(Protocol):
@@ -43,7 +42,7 @@ class _AuthenticatedUser(Protocol):
     def save(self, *, update_fields: list[str]) -> None: ...
 
 
-type AuthenticationResult = tuple[_AuthenticatedUser, Null] | Null
+type AuthenticationResult = tuple[_AuthenticatedUser, NoneType] | NoneType
 
 
 def _required_json_string(payload: Mapping[str, JsonValue], key: str) -> str:
@@ -59,9 +58,9 @@ class KeycloakJWTAuthentication(authentication.BaseAuthentication):
     Creates/updates a Django user and syncs groups if roles are present.
     """
 
-    _jwks_client: ClassVar[PyJWKClient | Null] = None
-    _iss: ClassVar[str | Null] = None
-    _aud: ClassVar[str | Null] = None
+    _jwks_client: ClassVar[PyJWKClient | NoneType] = None
+    _iss: ClassVar[str | NoneType] = None
+    _aud: ClassVar[str | NoneType] = None
 
     @staticmethod
     def _verify_ssl() -> bool:

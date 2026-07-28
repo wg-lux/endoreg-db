@@ -6,6 +6,7 @@ import hashlib
 import io
 import json
 import random
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, TypedDict, cast
 
@@ -42,6 +43,48 @@ class TrainingHistory(TypedDict):
     train_loss: list[float]
     val_loss: list[float]
     test_loss: float | None
+
+
+@dataclass
+class _PreparedTrainingData:
+    dataset: AIDataSet
+    image_paths: list[str]
+    label_vectors: list[list[Optional[int]]]
+    label_masks: list[list[int]]
+    labels: list[Any]
+    labelset: Any
+    frame_ids: list[int]
+    video_ids: list[Optional[int]]
+    kept_indices: list[int]
+    labels_arr: list[list[int]]
+    masks_arr: list[list[int]]
+    labels_tensor: torch.Tensor
+    masks_tensor: torch.Tensor
+
+
+@dataclass(frozen=True)
+class _TrainingLoaders:
+    full_dataset: EndoMultiLabelDataset
+    train: Any
+    validation: Any
+    test: Any
+
+
+@dataclass(frozen=True)
+class _TrainingRuntime:
+    model: Any
+    optimizer: Any
+    scheduler: Optional[CosineAnnealingLR]
+    warmup_epochs: int
+    base_learning_rates: list[float]
+    class_weights: torch.Tensor
+    device: torch.device
+
+
+@dataclass(frozen=True)
+class _EvaluationResult:
+    loss: float
+    metrics: MetricsResult
 
 
 def _load_lx_ai_training_contracts() -> tuple[Any, ...]:
@@ -183,434 +226,539 @@ def groupwise_split_indices_by_video(
     return train_indices, val_indices, test_indices
 
 
-# ---------------------------------------------------------------------
-# MAIN TRAINING FUNCTION
-# ---------------------------------------------------------------------
+def _print_raw_dataset_summary(
+    dataset: AIDataSet,
+    *,
+    image_paths: Sequence[str],
+    labels: Sequence[Any],
+    labelset: Any,
+) -> None:
+    print(f"[TRAIN] AIDataSet id={dataset.id}")
+    print(f"[TRAIN] #samples (raw) = {len(image_paths)}, #labels (raw) = {len(labels)}")
+    print(
+        f"[TRAIN] LabelSet id={getattr(labelset, 'id', 'N/A')}, "
+        f"name={labelset.name}, version={labelset.version}"
+    )
+    for idx, label in enumerate(labels):
+        print(f"    [{idx}] {label.name}")
 
 
-def train_gastronet_multilabel(config: TrainingConfig) -> dict[str, Any]:
-    ensure_training_directories()
+def _replace_unknown_labels_with_negative(
+    label_vectors: list[list[Optional[int]]],
+) -> tuple[list[list[Optional[int]]], list[list[int]]]:
+    vectors: list[list[Optional[int]]] = []
+    masks: list[list[int]] = []
+    for vector in label_vectors:
+        vectors.append([0 if value is None else int(value) for value in vector])
+        masks.append([1] * len(vector))
+    return vectors, masks
 
-    # Pre-initialize metrics placeholders to eliminate loop scoping unbound vulnerabilities
-    val_metrics: MetricsResult | dict[str, Any] = {}
-    test_metrics: MetricsResult | dict[str, Any] = {}
 
-    dataset_obj = AIDataSet.objects.get(id=config.dataset_id)
+def _integer_label_vector(
+    vector: Sequence[Optional[int]],
+) -> list[Optional[int]]:
+    return [0 if value is None else int(value) for value in vector]
+
+
+def _strict_integer_label_vector(
+    vector: Sequence[Optional[int]],
+) -> list[int]:
+    return [0 if value is None else int(value) for value in vector]
+
+
+def _preserved_label_mask(
+    vector: Sequence[Optional[int]],
+    mask: Sequence[int],
+) -> list[int]:
+    return [
+        0 if value is None else int(mask_value)
+        for value, mask_value in zip(vector, mask)
+    ]
+
+
+def _preserve_unknown_labels(
+    label_vectors: list[list[Optional[int]]],
+    label_masks: list[list[int]],
+) -> tuple[list[list[Optional[int]]], list[list[int]]]:
+    vectors: list[list[Optional[int]]] = []
+    masks: list[list[int]] = []
+    for vector, mask in zip(label_vectors, label_masks):
+        vectors.append(_integer_label_vector(vector))
+        masks.append(_preserved_label_mask(vector, mask))
+    return vectors, masks
+
+
+def _normalize_unknown_labels(
+    label_vectors: list[list[Optional[int]]],
+    label_masks: list[list[int]],
+    *,
+    treat_unlabeled_as_negative: bool,
+) -> tuple[list[list[Optional[int]]], list[list[int]]]:
+    if treat_unlabeled_as_negative:
+        return _replace_unknown_labels_with_negative(label_vectors)
+    return _preserve_unknown_labels(label_vectors, label_masks)
+
+
+def _integer_label_arrays(
+    label_vectors: Sequence[Sequence[Optional[int]]],
+    label_masks: Sequence[Sequence[int]],
+) -> tuple[list[list[int]], list[list[int]]]:
+    labels_arr = [_strict_integer_label_vector(vector) for vector in label_vectors]
+    masks_arr = [_integer_mask(mask) for mask in label_masks]
+    return labels_arr, masks_arr
+
+
+def _integer_mask(mask: Sequence[int]) -> list[int]:
+    return [int(value) for value in mask]
+
+
+def _print_positive_label_counts(
+    labels_tensor: torch.Tensor,
+    masks_tensor: torch.Tensor,
+) -> None:
+    pos_per_label: list[float] = cast(
+        list[float], cast(Any, (labels_tensor * masks_tensor).sum(dim=0)).tolist()
+    )
+    for idx, count in enumerate(pos_per_label):
+        print(f"    [{idx}] = {int(count)}")
+
+
+def _grouping_ids(
+    image_paths: Sequence[str],
+    frame_ids: list[int],
+    video_ids: list[int],
+) -> tuple[list[int], list[Optional[int]]]:
+    if frame_ids and video_ids:
+        return frame_ids, list(video_ids)
+    return list(range(len(image_paths))), [None] * len(image_paths)
+
+
+def _prepare_training_data(config: TrainingConfig) -> _PreparedTrainingData:
+    dataset = AIDataSet.objects.get(id=config.dataset_id)
     data = build_dataset_for_training(
-        dataset_obj,
+        dataset,
         annotation_source_scope=config.annotation_source_scope,
     )
-
-    # FIXED: Überflüssige Casts entfernt, da Pyright den Datentyp bereits kennt
     image_paths = data["image_paths"]
     label_vectors = data["label_vectors"]
     label_masks = data["label_masks"]
     labels = data["labels"]
-    labelset = data["labelset"]
-    frame_ids = data.get("frame_ids", [])
-    video_ids = data.get("video_ids", [])
-
-    num_samples_raw = len(image_paths)
-    num_labels_raw = len(labels)
-
-    labelset_any: Any = labelset
-    print(f"[TRAIN] AIDataSet id={dataset_obj.id}")
-    print(
-        f"[TRAIN] #samples (raw) = {num_samples_raw}, #labels (raw) = {num_labels_raw}"
+    labelset: Any = data["labelset"]
+    _print_raw_dataset_summary(
+        dataset,
+        image_paths=image_paths,
+        labels=labels,
+        labelset=labelset,
     )
     print(
-        f"[TRAIN] LabelSet id={getattr(labelset_any, 'id', 'N/A')}, name={labelset_any.name}, version={labelset_any.version}"
+        "[TRAIN] Filtering labels to those belonging to ANY LabelSet with "
+        f"version={config.labelset_version_to_train}..."
     )
-
-    for idx, lbl in enumerate(labels):
-        print(f"    [{idx}] {lbl.name}")
-
-    target_version = config.labelset_version_to_train
-    print(
-        f"[TRAIN] Filtering labels to those belonging to ANY LabelSet with version={target_version}..."
+    label_vectors, label_masks, labels, kept_indices = (
+        filter_labels_by_labelset_version(
+            labels=labels,
+            label_vectors=label_vectors,
+            label_masks=label_masks,
+            target_version=config.labelset_version_to_train,
+        )
     )
-
-    (
+    label_vectors, label_masks = _normalize_unknown_labels(
         label_vectors,
         label_masks,
-        labels,
-        kept_indices,
-    ) = filter_labels_by_labelset_version(
-        labels=labels,
-        label_vectors=label_vectors,
-        label_masks=label_masks,
-        target_version=target_version,
+        treat_unlabeled_as_negative=config.treat_unlabeled_as_negative,
     )
-
-    num_labels_filtered = len(labels)
-
-    if config.treat_unlabeled_as_negative:
-        # i gets the index, vec gets the actual element (label_vectors[i])
-        for i, vec in enumerate(label_vectors):
-            new_vec: Sequence[int | None] = []
-            new_mask: Sequence[int] = []
-            for x in vec:
-                if x is None:
-                    new_vec.append(0)
-                    new_mask.append(1)
-                else:
-                    new_vec.append(int(x))
-                    new_mask.append(1)
-
-            label_vectors[i] = new_vec
-            label_masks[i] = new_mask
-    else:
-        cleaned_vectors: List[List[int]] = []
-        cleaned_masks: List[List[int]] = []
-        for vec, mask in zip(label_vectors, label_masks):
-            v: List[int] = []
-            m: List[
-                int
-            ] = []  # Lokales m verursacht Scope-Leakage in Python, daher unten Variablen umbenannt
-            for x, ms in zip(vec, mask):
-                if x is None:
-                    v.append(0)
-                    m.append(0)
-                else:
-                    v.append(int(x))
-                    m.append(int(ms))
-            cleaned_vectors.append(v)
-            cleaned_masks.append(m)
-
-        label_vectors = cleaned_vectors
-        label_masks = cleaned_masks
-
-    labels_arr: List[List[int]] = []
-    masks_arr: List[List[int]] = []
-    for vec, mask in zip(label_vectors, label_masks):
-        v = [0 if x is None else int(x) for x in vec]
-        m = [int(x) for x in mask]
-        labels_arr.append(v)
-        masks_arr.append(m)
-
+    labels_arr, masks_arr = _integer_label_arrays(label_vectors, label_masks)
     labels_tensor = torch.tensor(labels_arr, dtype=torch.float32)
     masks_tensor = torch.tensor(masks_arr, dtype=torch.float32)
-
-    # FIXED: Unbenutzte Variablen mit "_" deklariert, um Pyright-Fehler zu vermeiden
-    _total_known = masks_tensor.sum().item()
-    _total_pos = (labels_tensor * masks_tensor).sum().item()
-
-    pos_per_label: list[float] = cast(
-        list[float], cast(Any, (labels_tensor * masks_tensor).sum(dim=0)).tolist()
+    _print_positive_label_counts(labels_tensor, masks_tensor)
+    frame_ids, normalized_video_ids = _grouping_ids(
+        image_paths,
+        data.get("frame_ids", []),
+        data.get("video_ids", []),
     )
-    for idx, c in enumerate(pos_per_label):
-        print(f"    [{idx}] = {int(c)}")
-
-    if not frame_ids or not video_ids:
-        frame_ids = list(range(len(image_paths)))
-        video_ids = [None] * len(image_paths)
-
-    train_indices, val_indices, test_indices = groupwise_split_indices_by_video(
+    return _PreparedTrainingData(
+        dataset=dataset,
+        image_paths=image_paths,
+        label_vectors=label_vectors,
+        label_masks=label_masks,
+        labels=labels,
+        labelset=labelset,
         frame_ids=frame_ids,
-        video_ids=video_ids,
+        video_ids=normalized_video_ids,
+        kept_indices=kept_indices,
+        labels_arr=labels_arr,
+        masks_arr=masks_arr,
+        labels_tensor=labels_tensor,
+        masks_tensor=masks_tensor,
+    )
+
+
+def _subset_dataset(
+    dataset: EndoMultiLabelDataset,
+    indices: list[int],
+) -> EndoMultiLabelDataset:
+    label_vectors = cast(
+        list[list[Optional[int]]],
+        cast(Any, dataset.labels[indices]).tolist(),
+    )
+    label_masks = cast(
+        list[list[int]],
+        cast(Any, dataset.masks[indices]).tolist(),
+    )
+    return EndoMultiLabelDataset(
+        image_paths=[dataset.image_paths[index] for index in indices],
+        label_vectors=label_vectors,
+        label_masks=label_masks,
+        image_size=dataset.image_size,
+    )
+
+
+def _data_loader(
+    dataset: EndoMultiLabelDataset,
+    *,
+    batch_size: int,
+    shuffle: bool,
+) -> Any:
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=4,
+        pin_memory=True,
+    )
+
+
+def _build_training_loaders(
+    data: _PreparedTrainingData,
+    config: TrainingConfig,
+) -> _TrainingLoaders:
+    train_indices, val_indices, test_indices = groupwise_split_indices_by_video(
+        frame_ids=data.frame_ids,
+        video_ids=data.video_ids,
         val_split=config.val_split,
         test_split=config.test_split,
         seed=config.random_seed,
     )
-
-    full_ds = EndoMultiLabelDataset(
-        image_paths=image_paths,
-        label_vectors=label_vectors,
-        label_masks=label_masks,
+    full_dataset = EndoMultiLabelDataset(
+        image_paths=data.image_paths,
+        label_vectors=data.label_vectors,
+        label_masks=data.label_masks,
         image_size=224,
     )
-
-    def subset_dataset(
-        ds: EndoMultiLabelDataset, indices: List[int]
-    ) -> EndoMultiLabelDataset:
-        sub_image_paths = [ds.image_paths[i] for i in indices]
-        sub_labels = ds.labels[indices]
-        sub_masks = ds.masks[indices]
-
-        sub_label_vectors: list[list[Optional[int]]] = cast(
-            list[list[Optional[int]]], cast(Any, sub_labels).tolist()
-        )
-        sub_label_masks: list[list[int]] = cast(
-            list[list[int]], cast(Any, sub_masks).tolist()
-        )
-        return EndoMultiLabelDataset(
-            image_paths=sub_image_paths,
-            label_vectors=sub_label_vectors,
-            label_masks=sub_label_masks,
-            image_size=ds.image_size,
-        )
-
-    train_ds = subset_dataset(full_ds, train_indices)
-    val_ds = subset_dataset(full_ds, val_indices)
-    test_ds = subset_dataset(full_ds, test_indices)
-
-    train_loader = DataLoader(
-        train_ds,
-        batch_size=config.batch_size,
-        shuffle=True,
-        num_workers=4,
-        pin_memory=True,
-    )
-    val_loader = DataLoader(
-        val_ds,
-        batch_size=config.batch_size,
-        shuffle=False,
-        num_workers=4,
-        pin_memory=True,
-    )
-    test_loader = DataLoader(
-        test_ds,
-        batch_size=config.batch_size,
-        shuffle=False,
-        num_workers=4,
-        pin_memory=True,
+    return _TrainingLoaders(
+        full_dataset=full_dataset,
+        train=_data_loader(
+            _subset_dataset(full_dataset, train_indices),
+            batch_size=config.batch_size,
+            shuffle=True,
+        ),
+        validation=_data_loader(
+            _subset_dataset(full_dataset, val_indices),
+            batch_size=config.batch_size,
+            shuffle=False,
+        ),
+        test=_data_loader(
+            _subset_dataset(full_dataset, test_indices),
+            batch_size=config.batch_size,
+            shuffle=False,
+        ),
     )
 
-    if config.device == "auto":
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    else:
-        device = torch.device(config.device)
 
-    backbone_ckpt = (
+def _training_device(configured_device: str) -> torch.device:
+    if configured_device == "auto":
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    return torch.device(configured_device)
+
+
+def _scheduler(
+    optimizer: Any,
+    config: TrainingConfig,
+) -> tuple[Optional[CosineAnnealingLR], int]:
+    if not config.use_scheduler:
+        return None, 0
+    warmup_epochs = max(config.warmup_epochs, 0)
+    return (
+        CosineAnnealingLR(
+            optimizer,
+            T_max=max(config.num_epochs - warmup_epochs, 1),
+            eta_min=config.min_lr,
+        ),
+        warmup_epochs,
+    )
+
+
+def _build_training_runtime(
+    data: _PreparedTrainingData,
+    loaders: _TrainingLoaders,
+    config: TrainingConfig,
+) -> _TrainingRuntime:
+    device = _training_device(config.device)
+    checkpoint = (
         Path(config.backbone_checkpoint)
         if config.backbone_checkpoint is not None
         else None
     )
-
     model = create_multilabel_model(
         backbone_name=config.backbone_name,
-        num_labels=num_labels_filtered,
-        backbone_checkpoint=backbone_ckpt,
+        num_labels=len(data.labels),
+        backbone_checkpoint=checkpoint,
         freeze_backbone=config.freeze_backbone,
     )
     model.to(device)
-
-    class_weights = compute_class_weights(full_ds.labels, full_ds.masks).to(device)
-
-    head_params = list(model.classifier.parameters())
-    backbone_params = [p for p in model.backbone.parameters() if p.requires_grad]
-
+    class_weights = compute_class_weights(
+        loaders.full_dataset.labels,
+        loaders.full_dataset.masks,
+    ).to(device)
     optimizer = torch.optim.AdamW(
         [
-            {"params": head_params, "lr": config.lr_head},
-            {"params": backbone_params, "lr": config.lr_backbone},
+            {"params": list(model.classifier.parameters()), "lr": config.lr_head},
+            {
+                "params": [
+                    parameter
+                    for parameter in model.backbone.parameters()
+                    if parameter.requires_grad
+                ],
+                "lr": config.lr_backbone,
+            },
         ]
     )
-
-    base_lrs = [config.lr_head, config.lr_backbone]
-
-    if config.use_scheduler:
-        total_epochs = config.num_epochs
-        warmup_epochs = max(config.warmup_epochs, 0)
-        t_max = max(total_epochs - warmup_epochs, 1)
-
-        scheduler = CosineAnnealingLR(
-            optimizer,
-            T_max=t_max,
-            eta_min=config.min_lr,
-        )
-    else:
-        scheduler: Optional[CosineAnnealingLR] = None
-        warmup_epochs = 0
-
-    history: TrainingHistory = {"train_loss": [], "val_loss": [], "test_loss": None}
-
-    first_batch = next(iter(train_loader))
-    imgs_dbg, _, _ = first_batch
-
-    model.eval()
-    with torch.no_grad():
-        _logits_dbg = model(imgs_dbg.to(device))
-
-    for epoch in range(1, config.num_epochs + 1):
-        if scheduler is not None:
-            if warmup_epochs > 0 and epoch <= warmup_epochs:
-                warmup_factor = epoch / float(warmup_epochs)
-                for i, pg in enumerate(optimizer.param_groups):
-                    pg["lr"] = base_lrs[i] * warmup_factor
-            else:
-                cast(Any, scheduler).step()
-
-        # ----------------- TRAIN PHASE -----------------------------------
-        model.train()
-        train_loss_sum = 0.0
-        train_batches = 0
-
-        # FIXED: Variablen zu y_batch und m_batch umbenannt, um Kollisionen mit dem Funktions-Scope zu meiden
-        for imgs, y_batch, m_batch in train_loader:
-            imgs = imgs.to(device, non_blocking=True)
-            y_batch = y_batch.to(device, non_blocking=True)
-            m_batch = m_batch.to(device, non_blocking=True)
-
-            optimizer.zero_grad()
-            logits = model(imgs)
-
-            loss: Any = focal_loss_with_mask(
-                logits=logits,
-                targets=y_batch,
-                masks=m_batch,
-                class_weights=class_weights,
-                alpha=config.alpha_focal,
-                gamma=config.gamma_focal,
-            )
-            loss.backward()
-            cast(Any, optimizer).step()
-
-            train_loss_sum += loss.item()
-            train_batches += 1
-
-        train_loss = train_loss_sum / max(train_batches, 1)
-        history["train_loss"].append(train_loss)
-
-        # ----------------- VALIDATION PHASE ------------------------------
-        model.eval()
-        val_loss_sum = 0.0
-        val_batches = 0
-
-        all_val_logits: list[torch.Tensor] = []
-        all_val_targets: list[torch.Tensor] = []
-        all_val_masks: list[torch.Tensor] = []
-
-        with torch.no_grad():
-            for imgs, y_batch, m_batch in val_loader:
-                imgs = imgs.to(device, non_blocking=True)
-                y_batch = y_batch.to(device, non_blocking=True)
-                m_batch = m_batch.to(device, non_blocking=True)
-
-                logits = model(imgs)
-                loss: Any = focal_loss_with_mask(
-                    logits=logits,
-                    targets=y_batch,
-                    masks=m_batch,
-                    class_weights=class_weights,
-                    alpha=config.alpha_focal,
-                    gamma=config.gamma_focal,
-                )
-                val_loss_sum += loss.item()
-                val_batches += 1
-
-                all_val_logits.append(logits)
-                all_val_targets.append(y_batch)
-                all_val_masks.append(m_batch)
-
-        val_loss = val_loss_sum / max(val_batches, 1)
-        history["val_loss"].append(val_loss)
-
-        val_logits_cat = torch.cat(all_val_logits, dim=0)
-        val_targets_cat = torch.cat(all_val_targets, dim=0)
-        val_masks_cat = torch.cat(all_val_masks, dim=0)
-
-        val_metrics = compute_metrics(
-            logits=val_logits_cat,
-            targets=val_targets_cat,
-            masks=val_masks_cat,
-            threshold=0.5,
-        )
-
-        print("\n[VAL PER-LABEL METRICS]")
-        print(f"{'Label':20s} {'Prec':>8s} {'Rec':>8s} {'F1':>8s} {'Support':>8s}")
-        print("-" * 60)
-
-        for j, stats in enumerate(val_metrics["per_label"]):
-            name = labels[j].name
-            p = stats["precision"]
-            r = stats["recall"]
-            f = stats["f1"]
-            sup = stats["support"]
-
-            if p is None:
-                print(f"{name:20s} {'N/A':>8} {'N/A':>8} {'N/A':>8} {sup:8d}")
-            else:
-                print(f"{name:20s} {p:8.4f} {r:8.4f} {f:8.4f} {sup:8d}")
-
-        print("-" * 60)
-
-    # ------------------------------------------------------------------
-    # 10. Final test loss + metrics
-    # ------------------------------------------------------------------
-    model.eval()
-    test_loss_sum = 0.0
-    test_batches = 0
-
-    all_test_logits: list[torch.Tensor] = []
-    all_test_targets: list[torch.Tensor] = []
-    all_test_masks: list[torch.Tensor] = []
-
-    with torch.no_grad():
-        for imgs, y_batch, m_batch in test_loader:
-            imgs = imgs.to(device, non_blocking=True)
-            y_batch = y_batch.to(device, non_blocking=True)
-            m_batch = m_batch.to(device, non_blocking=True)
-
-            logits = model(imgs)
-            loss: Any = focal_loss_with_mask(
-                logits=logits,
-                targets=y_batch,
-                masks=m_batch,
-                class_weights=class_weights,
-                alpha=config.alpha_focal,
-                gamma=config.gamma_focal,
-            )
-            test_loss_sum += loss.item()
-            test_batches += 1
-
-            all_test_logits.append(logits)
-            all_test_targets.append(y_batch)
-            all_test_masks.append(m_batch)
-
-    test_loss = test_loss_sum / max(test_batches, 1)
-    history["test_loss"] = test_loss
-
-    test_logits_cat = torch.cat(all_test_logits, dim=0)
-    test_targets_cat = torch.cat(all_test_targets, dim=0)
-    test_masks_cat = torch.cat(all_test_masks, dim=0)
-
-    test_metrics = compute_metrics(
-        logits=test_logits_cat,
-        targets=test_targets_cat,
-        masks=test_masks_cat,
-        threshold=0.5,
+    scheduler, warmup_epochs = _scheduler(optimizer, config)
+    return _TrainingRuntime(
+        model=model,
+        optimizer=optimizer,
+        scheduler=scheduler,
+        warmup_epochs=warmup_epochs,
+        base_learning_rates=[config.lr_head, config.lr_backbone],
+        class_weights=class_weights,
+        device=device,
     )
 
-    print("\n[TEST PER-LABEL METRICS]")
+
+def _smoke_model(runtime: _TrainingRuntime, train_loader: Any) -> None:
+    images, _, _ = next(iter(train_loader))
+    runtime.model.eval()
+    with torch.no_grad():
+        runtime.model(images.to(runtime.device))
+
+
+def _advance_scheduler(runtime: _TrainingRuntime, epoch: int) -> None:
+    if runtime.scheduler is None:
+        return
+    if runtime.warmup_epochs > 0 and epoch <= runtime.warmup_epochs:
+        warmup_factor = epoch / float(runtime.warmup_epochs)
+        for index, parameter_group in enumerate(runtime.optimizer.param_groups):
+            parameter_group["lr"] = runtime.base_learning_rates[index] * warmup_factor
+        return
+    cast(Any, runtime.scheduler).step()
+
+
+def _train_epoch(
+    runtime: _TrainingRuntime,
+    train_loader: Any,
+    config: TrainingConfig,
+) -> float:
+    runtime.model.train()
+    loss_sum = 0.0
+    batch_count = 0
+    for images, targets, masks in train_loader:
+        images = images.to(runtime.device, non_blocking=True)
+        targets = targets.to(runtime.device, non_blocking=True)
+        masks = masks.to(runtime.device, non_blocking=True)
+        runtime.optimizer.zero_grad()
+        logits = runtime.model(images)
+        loss: Any = focal_loss_with_mask(
+            logits=logits,
+            targets=targets,
+            masks=masks,
+            class_weights=runtime.class_weights,
+            alpha=config.alpha_focal,
+            gamma=config.gamma_focal,
+        )
+        loss.backward()
+        runtime.optimizer.step()
+        loss_sum += loss.item()
+        batch_count += 1
+    return loss_sum / max(batch_count, 1)
+
+
+def _evaluate(
+    runtime: _TrainingRuntime,
+    loader: Any,
+    config: TrainingConfig,
+) -> _EvaluationResult:
+    runtime.model.eval()
+    loss_sum = 0.0
+    batch_count = 0
+    all_logits: list[torch.Tensor] = []
+    all_targets: list[torch.Tensor] = []
+    all_masks: list[torch.Tensor] = []
+    with torch.no_grad():
+        for images, targets, masks in loader:
+            images = images.to(runtime.device, non_blocking=True)
+            targets = targets.to(runtime.device, non_blocking=True)
+            masks = masks.to(runtime.device, non_blocking=True)
+            logits = runtime.model(images)
+            loss: Any = focal_loss_with_mask(
+                logits=logits,
+                targets=targets,
+                masks=masks,
+                class_weights=runtime.class_weights,
+                alpha=config.alpha_focal,
+                gamma=config.gamma_focal,
+            )
+            loss_sum += loss.item()
+            batch_count += 1
+            all_logits.append(logits)
+            all_targets.append(targets)
+            all_masks.append(masks)
+    return _EvaluationResult(
+        loss=loss_sum / max(batch_count, 1),
+        metrics=compute_metrics(
+            logits=torch.cat(all_logits, dim=0),
+            targets=torch.cat(all_targets, dim=0),
+            masks=torch.cat(all_masks, dim=0),
+            threshold=0.5,
+        ),
+    )
+
+
+def _print_per_label_metrics(
+    phase: str,
+    metrics: MetricsResult,
+    labels: Sequence[Any],
+) -> None:
+    print(f"\n[{phase} PER-LABEL METRICS]")
     print(f"{'Label':20s} {'Prec':>8s} {'Rec':>8s} {'F1':>8s} {'Support':>8s}")
     print("-" * 60)
-
-    for j, stats in enumerate(test_metrics["per_label"]):
-        name = labels[j].name
-        p = stats["precision"]
-        r = stats["recall"]
-        f = stats["f1"]
-        sup = stats["support"]
-
-        if p is None:
-            print(f"{name:20s} {'N/A':>8} {'N/A':>8} {'N/A':>8} {sup:8d}")
+    for index, stats in enumerate(metrics["per_label"]):
+        name = labels[index].name
+        precision = stats["precision"]
+        recall = stats["recall"]
+        f1 = stats["f1"]
+        support = stats["support"]
+        if precision is None:
+            print(f"{name:20s} {'N/A':>8} {'N/A':>8} {'N/A':>8} {support:8d}")
         else:
-            print(f"{name:20s} {p:8.4f} {r:8.4f} {f:8.4f} {sup:8d}")
-
+            print(f"{name:20s} {precision:8.4f} {recall:8.4f} {f1:8.4f} {support:8d}")
     print("-" * 60)
 
-    # ------------------------------------------------------------------
-    # 11. Save model + metadata
-    # ------------------------------------------------------------------
-    if getattr(config, "backbone_name", "gastro_rn50") == "gastro_rn50":
-        run_name = f"aidataset_{config.dataset_id}_RN50_GastroNet1M_DINO_v{config.labelset_version_to_train}_multilabel"
+
+def _run_training_epochs(
+    runtime: _TrainingRuntime,
+    loaders: _TrainingLoaders,
+    data: _PreparedTrainingData,
+    config: TrainingConfig,
+    history: TrainingHistory,
+) -> MetricsResult | dict[str, Any]:
+    validation_metrics: MetricsResult | dict[str, Any] = {}
+    for epoch in range(1, config.num_epochs + 1):
+        _advance_scheduler(runtime, epoch)
+        history["train_loss"].append(_train_epoch(runtime, loaders.train, config))
+        validation = _evaluate(runtime, loaders.validation, config)
+        history["val_loss"].append(validation.loss)
+        validation_metrics = validation.metrics
+        _print_per_label_metrics("VAL", validation.metrics, data.labels)
+    return validation_metrics
+
+
+def _training_run_name(config: TrainingConfig) -> str:
+    if config.backbone_name == "gastro_rn50":
+        backbone_tag = "RN50_GastroNet1M_DINO"
     else:
         backbone_tag = config.backbone_name.replace(" ", "_")
-        run_name = f"aidataset_{config.dataset_id}_{backbone_tag}_v{config.labelset_version_to_train}_multilabel"
+    return (
+        f"aidataset_{config.dataset_id}_{backbone_tag}_"
+        f"v{config.labelset_version_to_train}_multilabel"
+    )
 
+
+def _training_samples(
+    TrainingSample: Any,
+    data: _PreparedTrainingData,
+) -> list[Any]:
+    return [
+        TrainingSample(
+            sample_index=index,
+            path=data.image_paths[index],
+            labels=data.labels_arr[index],
+            label_mask=data.masks_arr[index],
+            group_id=(
+                f"video:{data.video_ids[index]}"
+                if data.video_ids[index] is not None
+                else f"frame:{data.frame_ids[index]}"
+            ),
+            frame_id=data.frame_ids[index],
+            video_id=data.video_ids[index],
+            metadata={"video_id": data.video_ids[index]},
+        )
+        for index in range(len(data.image_paths))
+    ]
+
+
+def _training_config_payload(config: TrainingConfig) -> dict[str, Any]:
+    return {
+        "dataset_id": config.dataset_id,
+        "labelset_version_to_train": config.labelset_version_to_train,
+        "backbone_checkpoint": config.backbone_checkpoint,
+        "backbone_name": config.backbone_name,
+        "freeze_backbone": config.freeze_backbone,
+        "num_epochs": config.num_epochs,
+        "batch_size": config.batch_size,
+        "val_split": config.val_split,
+        "test_split": config.test_split,
+        "lr_head": config.lr_head,
+        "lr_backbone": config.lr_backbone,
+        "gamma_focal": config.gamma_focal,
+        "alpha_focal": config.alpha_focal,
+        "device": config.device,
+        "random_seed": config.random_seed,
+        "treat_unlabeled_as_negative": config.treat_unlabeled_as_negative,
+        "use_scheduler": config.use_scheduler,
+        "warmup_epochs": config.warmup_epochs,
+        "min_lr": config.min_lr,
+    }
+
+
+def _training_metadata(
+    config: TrainingConfig,
+    data: _PreparedTrainingData,
+    history: TrainingHistory,
+) -> dict[str, Any]:
+    return {
+        "config": _training_config_payload(config),
+        "original_labelset_id": int(getattr(data.labelset, "id", 0)),
+        "original_labelset_name": data.labelset.name,
+        "original_labelset_version": data.labelset.version,
+        "used_label_names": [label.name for label in data.labels],
+        "used_label_indices_original": data.kept_indices,
+        "history": history,
+    }
+
+
+def _class_frequencies(data: _PreparedTrainingData) -> list[float]:
+    positive_per_label = (data.labels_tensor * data.masks_tensor).sum(dim=0)
+    known_per_label = data.masks_tensor.sum(dim=0).clamp(min=1.0)
+    return cast(
+        list[float],
+        cast(Any, (positive_per_label / known_per_label).cpu()).tolist(),
+    )
+
+
+def _save_training_artifacts(
+    config: TrainingConfig,
+    data: _PreparedTrainingData,
+    runtime: _TrainingRuntime,
+    history: TrainingHistory,
+    validation_metrics: MetricsResult | dict[str, Any],
+    test_result: _EvaluationResult,
+) -> dict[str, Any]:
+    run_name = _training_run_name(config)
     model_path = RUNS_DIR / f"{run_name}.pth"
     manifest_path = RUNS_DIR / f"{run_name}_training_manifest.json"
     meta_path = RUNS_DIR / f"{run_name}_meta.json"
     training_result_path = RUNS_DIR / f"{run_name}_training_result.json"
-
-    positive_per_label = (labels_tensor * masks_tensor).sum(dim=0)
-    known_per_label = masks_tensor.sum(dim=0).clamp(min=1.0)
-    class_frequencies: list[float] = cast(
-        list[float], cast(Any, (positive_per_label / known_per_label).cpu()).tolist()
-    )
-    label_names = [lbl.name for lbl in labels]
-
+    label_names = [label.name for label in data.labels]
     (
         ModelSpec,
         TrainingArtifact,
@@ -620,83 +768,38 @@ def train_gastronet_multilabel(config: TrainingConfig) -> dict[str, Any]:
         TrainingSample,
         TrainingStatus,
     ) = _load_lx_ai_training_contracts()
-
     manifest = TrainingDatasetManifest(
-        dataset_id=dataset_obj.id,
-        name=dataset_obj.name,
+        dataset_id=data.dataset.id,
+        name=data.dataset.name,
         modality="frame",
         task_kind="multilabel_classification",
         labels=label_names,
-        samples=[
-            TrainingSample(
-                sample_index=index,
-                path=image_paths[index],
-                labels=labels_arr[index],
-                label_mask=masks_arr[index],
-                group_id=(
-                    f"video:{video_ids[index]}"
-                    if video_ids[index] is not None
-                    else f"frame:{frame_ids[index]}"
-                ),
-                frame_id=frame_ids[index] if frame_ids else None,
-                video_id=video_ids[index] if video_ids else None,
-                metadata={"video_id": video_ids[index]},
-            )
-            for index in range(len(image_paths))
-        ],
-        class_frequencies=class_frequencies,
+        samples=_training_samples(TrainingSample, data),
+        class_frequencies=_class_frequencies(data),
         provenance={
             "source": "endoreg_db.AIDataSet",
-            "dataset_id": dataset_obj.id,
-            "labelset_id": getattr(labelset_any, "id", None),
-            "labelset_name": labelset_any.name,
-            "labelset_version": labelset_any.version,
+            "dataset_id": data.dataset.id,
+            "labelset_id": getattr(data.labelset, "id", None),
+            "labelset_name": data.labelset.name,
+            "labelset_version": data.labelset.version,
             "treat_unlabeled_as_negative": config.treat_unlabeled_as_negative,
         },
     )
     manifest_payload = manifest.model_dump(mode="json")
     manifest_checksum, manifest_bytes = _write_json_atomic(
-        manifest_path, manifest_payload
+        manifest_path,
+        manifest_payload,
     )
-
     model_buffer = io.BytesIO()
-    cast(Any, torch).save(model.state_dict(), model_buffer)
+    cast(Any, torch).save(runtime.model.state_dict(), model_buffer)
     model_checksum, model_bytes = _write_bytes_atomic(
-        model_path, model_buffer.getvalue()
+        model_path,
+        model_buffer.getvalue(),
     )
-    labelset_id = int(getattr(labelset_any, "id", 0))
-
-    meta = {
-        "config": {
-            "dataset_id": config.dataset_id,
-            "labelset_version_to_train": config.labelset_version_to_train,
-            "backbone_checkpoint": config.backbone_checkpoint,
-            "backbone_name": config.backbone_name,
-            "freeze_backbone": config.freeze_backbone,
-            "num_epochs": config.num_epochs,
-            "batch_size": config.batch_size,
-            "val_split": config.val_split,
-            "test_split": config.test_split,
-            "lr_head": config.lr_head,
-            "lr_backbone": config.lr_backbone,
-            "gamma_focal": config.gamma_focal,
-            "alpha_focal": config.alpha_focal,
-            "device": config.device,
-            "random_seed": config.random_seed,
-            "treat_unlabeled_as_negative": config.treat_unlabeled_as_negative,
-            "use_scheduler": config.use_scheduler,
-            "warmup_epochs": config.warmup_epochs,
-            "min_lr": config.min_lr,
-        },
-        "original_labelset_id": labelset_id,
-        "original_labelset_name": labelset_any.name,
-        "original_labelset_version": labelset_any.version,
-        "used_label_names": [lbl.name for lbl in labels],
-        "used_label_indices_original": kept_indices,
-        "history": history,
-    }
-    meta_checksum, meta_bytes = _write_json_atomic(meta_path, meta)
-
+    meta_checksum, meta_bytes = _write_json_atomic(
+        meta_path,
+        _training_metadata(config, data, history),
+    )
     model_spec = ModelSpec(
         name=run_name,
         version=str(config.labelset_version_to_train),
@@ -715,8 +818,8 @@ def train_gastronet_multilabel(config: TrainingConfig) -> dict[str, Any]:
         status=TrainingStatus.SUCCESS,
         request_id=f"endoreg-db-aidataset-{config.dataset_id}-{run_name}",
         model_spec=model_spec,
-        dataset_id=dataset_obj.id,
-        sample_count=len(image_paths),
+        dataset_id=data.dataset.id,
+        sample_count=len(data.image_paths),
         artifacts=[
             TrainingArtifact(
                 kind=TrainingArtifactKind.CHECKPOINT,
@@ -742,18 +845,18 @@ def train_gastronet_multilabel(config: TrainingConfig) -> dict[str, Any]:
         ],
         metrics={
             "history": history,
-            "validation": val_metrics,
-            "test": test_metrics,
-            "test_loss": test_loss,
+            "validation": validation_metrics,
+            "test": test_result.metrics,
+            "test_loss": test_result.loss,
             "class_weights": cast(
-                list[float], cast(Any, class_weights.detach().cpu()).tolist()
+                list[float],
+                cast(Any, runtime.class_weights.detach().cpu()).tolist(),
             ),
         },
         details="image multilabel training completed",
     )
     training_result_payload = training_result.model_dump(mode="json")
     _write_json_atomic(training_result_path, training_result_payload)
-
     return {
         "model_path": str(model_path),
         "manifest_path": str(manifest_path),
@@ -762,3 +865,38 @@ def train_gastronet_multilabel(config: TrainingConfig) -> dict[str, Any]:
         "training_result": training_result_payload,
         "history": history,
     }
+
+
+# ---------------------------------------------------------------------
+# MAIN TRAINING FUNCTION
+# ---------------------------------------------------------------------
+
+
+def train_gastronet_multilabel(config: TrainingConfig) -> dict[str, Any]:
+    ensure_training_directories()
+    data = _prepare_training_data(config)
+    loaders = _build_training_loaders(data, config)
+
+    runtime = _build_training_runtime(data, loaders, config)
+    history: TrainingHistory = {"train_loss": [], "val_loss": [], "test_loss": None}
+    _smoke_model(runtime, loaders.train)
+    validation_metrics = _run_training_epochs(
+        runtime,
+        loaders,
+        data,
+        config,
+        history,
+    )
+
+    test_result = _evaluate(runtime, loaders.test, config)
+    history["test_loss"] = test_result.loss
+    _print_per_label_metrics("TEST", test_result.metrics, data.labels)
+
+    return _save_training_artifacts(
+        config,
+        data,
+        runtime,
+        history,
+        validation_metrics,
+        test_result,
+    )

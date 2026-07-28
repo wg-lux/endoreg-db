@@ -104,6 +104,32 @@ class StudyCohortFilters:
     limit: int = DEFAULT_COHORT_PREVIEW_ROWS
 
 
+@dataclass(slots=True)
+class _CohortScope:
+    filtered_cases: QuerySet[PatientExamination]
+    reports: QuerySet[RawPdfFile]
+    videos: QuerySet[VideoFile]
+    summary: StudySummary
+    preview_cases: list[PatientExamination]
+
+
+@dataclass(slots=True)
+class _PreviewMedia:
+    reports_by_case: dict[int, list[StudyReportRow]]
+    videos_by_case: dict[int, list[StudyMediaRow]]
+    center_options: dict[str, StudyCenterOption]
+    center_keys_by_case: dict[int, set[str]]
+    document_types: set[str]
+    video_ids: list[int]
+
+
+@dataclass(slots=True)
+class _ScopeOptions:
+    examinations: list[object]
+    findings: list[object]
+    annotation_labels: list[object]
+
+
 def _query_text(query_params: Mapping[str, Any], key: str) -> str:
     return str(query_params.get(key, "") or "").strip()
 
@@ -373,144 +399,251 @@ def _serialize_filters(filters: StudyCohortFilters) -> StudyFiltersPayload:
     }
 
 
-def build_study_cohort_payload(
-    filters: StudyCohortFilters,
-    *,
-    request: Any | None = None,
-) -> StudyCohortPayload:
+def _build_cohort_scope(filters: StudyCohortFilters) -> _CohortScope:
     filtered_cases = _apply_filters(_base_case_queryset(), filters)
     case_count = filtered_cases.count()
     patient_count = filtered_cases.values("patient_id").distinct().count()
-
-    reports_for_scope = _eligible_report_queryset().filter(
-        _report_case_filter(filtered_cases)
-    )
-    videos_for_scope = _eligible_video_queryset().filter(
-        _video_case_filter(filtered_cases)
-    )
-    report_count = reports_for_scope.order_by().values("pk").distinct().count()
-    video_count = videos_for_scope.order_by().values("pk").distinct().count()
-
+    reports = _eligible_report_queryset().filter(_report_case_filter(filtered_cases))
+    videos = _eligible_video_queryset().filter(_video_case_filter(filtered_cases))
+    report_count = reports.order_by().values("pk").distinct().count()
+    video_count = videos.order_by().values("pk").distinct().count()
     preview_cases = list(
         filtered_cases.order_by(F("date_start").desc(nulls_last=True), "pk")[
             : filters.limit
         ]
     )
-    preview_case_ids = [case.pk for case in preview_cases]
+    return _CohortScope(
+        filtered_cases=filtered_cases,
+        reports=reports,
+        videos=videos,
+        summary={
+            "case_count": case_count,
+            "patient_count": patient_count,
+            "report_count": report_count,
+            "video_count": video_count,
+        },
+        preview_cases=preview_cases,
+    )
 
-    reports_by_case: dict[int, list[StudyReportRow]] = {}
-    videos_by_case: dict[int, list[StudyMediaRow]] = {}
-    center_options: dict[str, StudyCenterOption] = {}
-    center_keys_by_case: dict[int, set[str]] = {}
-    document_types: set[str] = set()
-    video_ids: list[int] = []
 
-    if preview_case_ids:
-        preview_case_qs = PatientExamination.objects.filter(pk__in=preview_case_ids)
-        for report in _eligible_report_queryset().filter(
-            _report_case_filter(preview_case_qs)
-        ):
-            case_id = _report_case_id(report)
-            if case_id is None or not _field_file_available(report.processed_file):
-                continue
-            document_type = _report_document_type(report)
-            if document_type:
-                document_types.add(document_type)
-            center = _center_option(report.center)
-            if center is not None:
-                center_options[center["key"]] = center
-                center_keys_by_case.setdefault(case_id, set()).add(center["key"])
-            reports_by_case.setdefault(case_id, []).append(
-                {
-                    "id": report.pk,
-                    "document_type": document_type,
-                    "stream_url": build_absolute_media_url(
-                        request,
-                        build_pdf_stream_path(report.pk, file_type="processed"),
-                    ),
-                    "availability": "local",
-                }
-            )
+def _empty_preview_media() -> _PreviewMedia:
+    return _PreviewMedia(
+        reports_by_case={},
+        videos_by_case={},
+        center_options={},
+        center_keys_by_case={},
+        document_types=set(),
+        video_ids=[],
+    )
 
-        for video in _eligible_video_queryset().filter(
-            _video_case_filter(preview_case_qs)
-        ):
-            case_id = _video_case_id(video)
-            if case_id is None or not _field_file_available(video.processed_file):
-                continue
-            video_ids.append(video.pk)
-            center = _center_option(video.center)
-            if center is not None:
-                center_options[center["key"]] = center
-                center_keys_by_case.setdefault(case_id, set()).add(center["key"])
-            videos_by_case.setdefault(case_id, []).append(
-                {
-                    "id": video.pk,
-                    "stream_url": build_absolute_media_url(
-                        request,
-                        build_video_hls_playlist_path(video.pk, file_type="processed"),
-                    ),
-                    "availability": "local",
-                }
-            )
 
+def _record_center(
+    media: _PreviewMedia,
+    *,
+    case_id: int,
+    center: object | None,
+) -> None:
+    option = _center_option(center)
+    if option is None:
+        return
+    media.center_options[option["key"]] = option
+    media.center_keys_by_case.setdefault(case_id, set()).add(option["key"])
+
+
+def _collect_preview_reports(
+    media: _PreviewMedia,
+    *,
+    preview_case_qs: QuerySet[PatientExamination],
+    request: Any | None,
+) -> None:
+    reports = _eligible_report_queryset().filter(_report_case_filter(preview_case_qs))
+    for report in reports:
+        case_id = _report_case_id(report)
+        if case_id is None or not _field_file_available(report.processed_file):
+            continue
+        document_type = _report_document_type(report)
+        if document_type:
+            media.document_types.add(document_type)
+        _record_center(media, case_id=case_id, center=report.center)
+        media.reports_by_case.setdefault(case_id, []).append(
+            {
+                "id": report.pk,
+                "document_type": document_type,
+                "stream_url": build_absolute_media_url(
+                    request,
+                    build_pdf_stream_path(report.pk, file_type="processed"),
+                ),
+                "availability": "local",
+            }
+        )
+
+
+def _collect_preview_videos(
+    media: _PreviewMedia,
+    *,
+    preview_case_qs: QuerySet[PatientExamination],
+    request: Any | None,
+) -> None:
+    videos = _eligible_video_queryset().filter(_video_case_filter(preview_case_qs))
+    for video in videos:
+        case_id = _video_case_id(video)
+        if case_id is None or not _field_file_available(video.processed_file):
+            continue
+        media.video_ids.append(video.pk)
+        _record_center(media, case_id=case_id, center=video.center)
+        media.videos_by_case.setdefault(case_id, []).append(
+            {
+                "id": video.pk,
+                "stream_url": build_absolute_media_url(
+                    request,
+                    build_video_hls_playlist_path(video.pk, file_type="processed"),
+                ),
+                "availability": "local",
+            }
+        )
+
+
+def _collect_preview_media(
+    preview_case_ids: list[int],
+    *,
+    request: Any | None,
+) -> _PreviewMedia:
+    media = _empty_preview_media()
+    if not preview_case_ids:
+        return media
+    preview_case_qs = PatientExamination.objects.filter(pk__in=preview_case_ids)
+    _collect_preview_reports(
+        media,
+        preview_case_qs=preview_case_qs,
+        request=request,
+    )
+    _collect_preview_videos(
+        media,
+        preview_case_qs=preview_case_qs,
+        request=request,
+    )
+    return media
+
+
+def _findings_by_case(preview_case_ids: list[int]) -> dict[int, set[str]]:
     findings_by_case: dict[int, set[str]] = {}
-    for case_id, finding_name in PatientFinding.objects.filter(
+    findings = PatientFinding.objects.filter(
         patient_examination_id__in=preview_case_ids,
         is_active=True,
-    ).values_list("patient_examination_id", "finding__name"):
+    ).values_list("patient_examination_id", "finding__name")
+    for case_id, finding_name in findings:
         findings_by_case.setdefault(case_id, set()).add(str(finding_name))
+    return findings_by_case
 
+
+def _annotations_by_video(video_ids: list[int]) -> dict[int, set[str]]:
     annotations_by_video: dict[int, set[str]] = {}
-    for video_id, label_name in (
+    annotations = (
         ImageClassificationAnnotation.objects.filter(
             frame__video_id__in=video_ids,
             value=True,
         )
         .values_list("frame__video_id", "label__name")
         .distinct()
-    ):
+    )
+    for video_id, label_name in annotations:
         annotations_by_video.setdefault(video_id, set()).add(str(label_name))
+    return annotations_by_video
 
+
+def _case_annotation_labels(
+    video_rows: list[StudyMediaRow],
+    *,
+    annotations_by_video: dict[int, set[str]],
+) -> list[str]:
+    annotation_labels: set[str] = set()
+    for video_row in video_rows:
+        annotation_labels.update(annotations_by_video.get(video_row["id"], set()))
+    return sorted(annotation_labels)
+
+
+def _sorted_case_media(
+    media: _PreviewMedia,
+    *,
+    case_id: int,
+) -> tuple[list[StudyReportRow], list[StudyMediaRow]]:
+    report_rows = sorted(
+        media.reports_by_case.get(case_id, []),
+        key=lambda row: row["id"],
+    )
+    video_rows = sorted(
+        media.videos_by_case.get(case_id, []),
+        key=lambda row: row["id"],
+    )
+    return report_rows, video_rows
+
+
+def _examination_date(patient_examination: PatientExamination) -> str | None:
+    if patient_examination.date_start is None:
+        return None
+    return patient_examination.date_start.isoformat()
+
+
+def _build_case_row(
+    patient_examination: PatientExamination,
+    *,
+    media: _PreviewMedia,
+    findings_by_case: dict[int, set[str]],
+    annotations_by_video: dict[int, set[str]],
+) -> StudyCaseRow | None:
+    case_id = patient_examination.pk
+    report_rows, video_rows = _sorted_case_media(
+        media,
+        case_id=case_id,
+    )
+    if not report_rows and not video_rows:
+        return None
+    patient_hash = str(patient_examination.patient.patient_hash or "").strip()
+    examination_name = str(
+        getattr(patient_examination.examination, "name", "") or ""
+    ).strip()
+    return {
+        "patient_examination_id": case_id,
+        "case_hash": patient_examination.hash,
+        "patient_hash": patient_hash,
+        "examination_name": examination_name,
+        "examination_date": _examination_date(patient_examination),
+        "center_keys": sorted(media.center_keys_by_case.get(case_id, set())),
+        "findings": sorted(findings_by_case.get(case_id, set())),
+        "annotation_labels": _case_annotation_labels(
+            video_rows,
+            annotations_by_video=annotations_by_video,
+        ),
+        "reports": report_rows,
+        "videos": video_rows,
+    }
+
+
+def _build_case_rows(
+    preview_cases: list[PatientExamination],
+    *,
+    media: _PreviewMedia,
+    findings_by_case: dict[int, set[str]],
+    annotations_by_video: dict[int, set[str]],
+) -> list[StudyCaseRow]:
     cases: list[StudyCaseRow] = []
     for patient_examination in preview_cases:
-        case_id = patient_examination.pk
-        report_rows = sorted(
-            reports_by_case.get(case_id, []), key=lambda row: row["id"]
+        case = _build_case_row(
+            patient_examination,
+            media=media,
+            findings_by_case=findings_by_case,
+            annotations_by_video=annotations_by_video,
         )
-        video_rows = sorted(videos_by_case.get(case_id, []), key=lambda row: row["id"])
-        if not report_rows and not video_rows:
-            continue
+        if case is not None:
+            cases.append(case)
+    return cases
 
-        annotation_labels: set[str] = set()
-        for video_row in video_rows:
-            annotation_labels.update(annotations_by_video.get(video_row["id"], set()))
 
-        patient_hash = str(patient_examination.patient.patient_hash or "").strip()
-        examination_name = str(
-            getattr(patient_examination.examination, "name", "") or ""
-        ).strip()
-        cases.append(
-            {
-                "patient_examination_id": case_id,
-                "case_hash": patient_examination.hash,
-                "patient_hash": patient_hash,
-                "examination_name": examination_name,
-                "examination_date": (
-                    patient_examination.date_start.isoformat()
-                    if patient_examination.date_start
-                    else None
-                ),
-                "center_keys": sorted(center_keys_by_case.get(case_id, set())),
-                "findings": sorted(findings_by_case.get(case_id, set())),
-                "annotation_labels": sorted(annotation_labels),
-                "reports": report_rows,
-                "videos": video_rows,
-            }
-        )
-
+def _query_scope_options(
+    filtered_cases: QuerySet[PatientExamination],
+) -> _ScopeOptions:
     scope_case_ids = cast(Any, Subquery(filtered_cases.values("pk")))
-    finding_options = list(
+    findings = list(
         PatientFinding.objects.filter(
             patient_examination_id__in=scope_case_ids,
             is_active=True,
@@ -519,14 +652,14 @@ def build_study_cohort_payload(
         .values_list("finding__name", flat=True)
         .distinct()
     )
-    examination_options = list(
+    examinations = list(
         filtered_cases.exclude(examination__name__isnull=True)
         .exclude(examination__name="")
         .order_by("examination__name")
         .values_list("examination__name", flat=True)
         .distinct()
     )
-    annotation_options = list(
+    annotation_labels = list(
         ImageClassificationAnnotation.objects.filter(
             value=True,
             frame__video__state__anonymization_validated=True,
@@ -541,35 +674,82 @@ def build_study_cohort_payload(
         .values_list("label__name", flat=True)
         .distinct()
     )
+    return _ScopeOptions(
+        examinations=examinations,
+        findings=findings,
+        annotation_labels=annotation_labels,
+    )
 
-    # Include taxonomy values from the complete filtered scope, not only the preview page.
-    for report in reports_for_scope:
+
+def _record_scope_center(
+    center_options: dict[str, StudyCenterOption],
+    center: object | None,
+) -> None:
+    option = _center_option(center)
+    if option is not None:
+        center_options[option["key"]] = option
+
+
+def _extend_scope_taxonomy(
+    media: _PreviewMedia,
+    *,
+    reports: QuerySet[RawPdfFile],
+    videos: QuerySet[VideoFile],
+) -> None:
+    for report in reports:
         document_type = _report_document_type(report)
         if document_type:
-            document_types.add(document_type)
-        center = _center_option(report.center)
-        if center is not None:
-            center_options[center["key"]] = center
-    for video in videos_for_scope:
-        center = _center_option(video.center)
-        if center is not None:
-            center_options[center["key"]] = center
+            media.document_types.add(document_type)
+        _record_scope_center(media.center_options, report.center)
+    for video in videos:
+        _record_scope_center(media.center_options, video.center)
+
+
+def _build_study_options(
+    media: _PreviewMedia,
+    *,
+    scope_options: _ScopeOptions,
+) -> StudyOptions:
+    return {
+        "centers": sorted(
+            media.center_options.values(),
+            key=lambda item: item["label"],
+        ),
+        "examinations": [str(value) for value in scope_options.examinations],
+        "document_types": sorted(media.document_types),
+        "findings": [str(value) for value in scope_options.findings],
+        "annotation_labels": [str(value) for value in scope_options.annotation_labels],
+    }
+
+
+def build_study_cohort_payload(
+    filters: StudyCohortFilters,
+    *,
+    request: Any | None = None,
+) -> StudyCohortPayload:
+    scope = _build_cohort_scope(filters)
+    preview_case_ids = [case.pk for case in scope.preview_cases]
+    media = _collect_preview_media(preview_case_ids, request=request)
+    findings_by_case = _findings_by_case(preview_case_ids)
+    annotations_by_video = _annotations_by_video(media.video_ids)
+    cases = _build_case_rows(
+        scope.preview_cases,
+        media=media,
+        findings_by_case=findings_by_case,
+        annotations_by_video=annotations_by_video,
+    )
+    scope_options = _query_scope_options(scope.filtered_cases)
+    # Include taxonomy values from the complete filtered scope, not only the preview page.
+    _extend_scope_taxonomy(
+        media,
+        reports=scope.reports,
+        videos=scope.videos,
+    )
 
     return {
         "schema_version": "1.0",
         "filters": _serialize_filters(filters),
-        "summary": {
-            "case_count": case_count,
-            "patient_count": patient_count,
-            "report_count": report_count,
-            "video_count": video_count,
-        },
+        "summary": scope.summary,
         "cases": cases,
-        "options": {
-            "centers": sorted(center_options.values(), key=lambda item: item["label"]),
-            "examinations": [str(value) for value in examination_options],
-            "document_types": sorted(document_types),
-            "findings": [str(value) for value in finding_options],
-            "annotation_labels": [str(value) for value in annotation_options],
-        },
+        "options": _build_study_options(media, scope_options=scope_options),
     }

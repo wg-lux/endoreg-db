@@ -20,8 +20,7 @@ RENAMES_YML = BASE / "renames.yml"
 DEFAULT_TARGETS = ("endoreg_db/models",)  # safer default
 EXCLUDE_DIR_NAMES = {"migrations", "__pycache__"}
 
-type Null = NoneType
-type CliArgList = Sequence[str] | Null
+type CliArgList = Sequence[str] | NoneType
 type PathInput = str | Path
 
 
