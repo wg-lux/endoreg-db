@@ -28,7 +28,7 @@ class PatientMedication(models.Model):
         "Patient", on_delete=models.CASCADE
     )
     medication_indication: models.ForeignKey[
-        "MedicationIndication", "MedicationIndication"
+        "MedicationIndication", "MedicationIndication | None"
     ] = models.ForeignKey(
         "MedicationIndication",
         on_delete=models.CASCADE,

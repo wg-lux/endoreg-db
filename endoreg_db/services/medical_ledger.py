@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from django.db import transaction
 from django.db.models import Q
 from lx_dtypes.models.ledger.medical import (
@@ -199,8 +201,9 @@ def update_patient_medication(
         medication.medication = _resolve_medication(payload.medication or "")
         update_fields.append("medication")
     if "medication_indication" in payload.model_fields_set:
-        medication.medication_indication = _resolve_indication(
-            payload.medication_indication
+        medication.medication_indication = cast(
+            MedicationIndication,
+            _resolve_indication(payload.medication_indication),
         )
         update_fields.append("medication_indication")
     if "unit" in payload.model_fields_set:
