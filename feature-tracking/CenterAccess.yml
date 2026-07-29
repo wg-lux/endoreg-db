@@ -33,9 +33,35 @@ definition_of_done:
     hub transfer, FHIR export, report access, and patient creation callsites.
   required: true
   verification:
-    kind: manual
-    instructions: Review the deployment and resource access matrix against endoreg_db views, lx-annotate
-      callers, and the clinical data-boundary requirements.
+    kind: command
+    commands:
+    - working_directory: /home/admin/endoreg-db
+      command:
+      - devenv
+      - shell
+      - --
+      - .devenv/state/venv/bin/pytest
+      - tests/views/media/test_hub_transfer_endpoints.py
+      - tests/services/test_transfer_job_contract.py
+      - tests/services/test_fhir_r4_export.py
+      - tests/views/misc/test_patient_center_contract.py
+      - tests/views/report/test_report_llm_status.py
+      - tests/views/test_center_access_matrix.py
+      - tests/views/media/test_center_scoped_reads.py
+      - -q
+    - working_directory: /home/admin/dev/lx-annotate/frontend
+      command:
+      - nix
+      - develop
+      - .
+      - --command
+      - npm
+      - run
+      - test:unit
+      - --
+      - src/components/Anonymizer/__tests__/AnonymizationOverviewComponent.test.ts
+      - src/composables/__tests__/useAuthenticatedVideoStream.test.ts
+      - --run
     timeout_seconds: 600
   assessment:
     status: verified
@@ -139,9 +165,44 @@ definition_of_done:
     and preserves backend-provided center keys and names.
   required: true
   verification:
-    kind: manual
-    instructions: Run and review the focused endoreg_db and lx-annotate authorization suites, including
-      positive and negative cases for every row of the deployment access matrix.
+    kind: command
+    commands:
+    - working_directory: /home/admin/endoreg-db
+      command:
+      - devenv
+      - shell
+      - --
+      - .devenv/state/venv/bin/pytest
+      - tests/services/test_center_access.py
+      - tests/authz/test_center_group_sync.py
+      - tests/views/anonymization/test_anonymization_overview.py
+      - tests/views/video/test_hls_stream.py
+      - tests/views/video/test_video_timeline_view.py
+      - tests/views/media/test_frame_stream.py
+      - tests/views/media/test_video_media_view.py
+      - tests/views/video/test_video_stream.py
+      - tests/views/media/test_center_scoped_reads.py
+      - tests/views/anonymization/test_sensitive_metadata_view.py
+      - tests/views/media/test_hub_transfer_endpoints.py
+      - tests/services/test_transfer_job_contract.py
+      - tests/services/test_fhir_r4_export.py
+      - tests/views/misc/test_patient_center_contract.py
+      - tests/views/report/test_report_llm_status.py
+      - tests/views/test_center_access_matrix.py
+      - -q
+    - working_directory: /home/admin/dev/lx-annotate/frontend
+      command:
+      - nix
+      - develop
+      - .
+      - --command
+      - npm
+      - run
+      - test:unit
+      - --
+      - src/components/Anonymizer/__tests__/AnonymizationOverviewComponent.test.ts
+      - src/composables/__tests__/useAuthenticatedVideoStream.test.ts
+      - --run
     timeout_seconds: 1200
   assessment:
     status: in_progress

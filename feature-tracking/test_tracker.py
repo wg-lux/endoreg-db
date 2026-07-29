@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+import shlex
 import subprocess
+import sys
 
 import pytest
 import yaml
@@ -14,9 +16,13 @@ from tracker import (
     EvidenceKind,
     FeatureDefinition,
     FeatureTrackingState,
+    REPOSITORY_ROOT,
     ReadinessStatus,
     TRACKING_DIR,
     TrackerError,
+    Verification,
+    VerificationCommand,
+    VerificationKind,
     actively_tracked_features,
     derive_readiness,
     find_feature_references,
@@ -27,6 +33,7 @@ from tracker import (
     main,
     mark_feature_done,
     reopen_feature,
+    run_verification,
     save_feature,
     update_assessment,
 )
@@ -192,6 +199,206 @@ def test_check_returns_failure_until_definition_of_done_is_verified(
 def test_verify_update_requires_assessor_before_command_runs() -> None:
     with pytest.raises(TrackerError, match="erfordert --assessed-by"):
         main(["verify", "standard", "terminal_commands", "--update"])
+
+
+def test_command_verification_requires_one_command_shape() -> None:
+    with pytest.raises(ValueError, match="exactly one"):
+        Verification(kind=VerificationKind.COMMAND)
+
+    with pytest.raises(ValueError, match="exactly one"):
+        Verification(
+            kind=VerificationKind.COMMAND,
+            command=("pytest",),
+            commands=(VerificationCommand(command=("npm", "test")),),
+        )
+
+
+def test_verification_working_directory_must_be_absolute() -> None:
+    with pytest.raises(ValueError, match="must be absolute"):
+        VerificationCommand(
+            command=("pytest",),
+            working_directory="../lx-data-models",
+        )
+
+
+def test_multi_repository_verification_runs_shell_free_in_order(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    first_repository = tmp_path / "first"
+    second_repository = tmp_path / "second"
+    first_repository.mkdir()
+    second_repository.mkdir()
+    criterion = load_feature_file(TRACKING_DIR / "standard.yml").definition_of_done[
+        0
+    ]
+    verification = Verification(
+        kind=VerificationKind.COMMAND,
+        commands=(
+            VerificationCommand(
+                command=("pytest", "tests/test_first.py"),
+                working_directory=str(first_repository),
+            ),
+            VerificationCommand(
+                command=("npm", "run", "test:unit"),
+                working_directory=str(second_repository),
+            ),
+        ),
+    )
+    criterion = criterion.model_copy(update={"verification": verification})
+    calls: list[tuple[tuple[str, ...], Path]] = []
+
+    def fake_run(
+        command: tuple[str, ...],
+        *,
+        cwd: Path,
+        check: bool,
+        timeout: int,
+    ) -> subprocess.CompletedProcess[str]:
+        assert check is False
+        assert timeout == 300
+        calls.append((command, cwd))
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    successful, detail = run_verification(criterion)
+
+    assert successful is True
+    assert "tests/test_first.py" in detail
+    assert "test:unit" in detail
+    assert calls == [
+        (("pytest", "tests/test_first.py"), first_repository),
+        (("npm", "run", "test:unit"), second_repository),
+    ]
+
+
+def test_multi_repository_verification_stops_at_first_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    criterion = load_feature_file(TRACKING_DIR / "standard.yml").definition_of_done[
+        0
+    ]
+    verification = Verification(
+        kind=VerificationKind.COMMAND,
+        commands=(
+            VerificationCommand(command=("first",)),
+            VerificationCommand(command=("must-not-run",)),
+        ),
+    )
+    criterion = criterion.model_copy(update={"verification": verification})
+    calls: list[tuple[str, ...]] = []
+
+    def fake_run(
+        command: tuple[str, ...],
+        *,
+        cwd: Path,
+        check: bool,
+        timeout: int,
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 7)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    successful, detail = run_verification(criterion)
+
+    assert successful is False
+    assert "Exit-Code 7" in detail
+    assert calls == [("first",)]
+
+
+def test_verify_update_records_each_atomic_command_as_evidence(
+    tmp_path: Path,
+) -> None:
+    policy, features = load_registry(TRACKING_DIR)
+    source = _unassessed_feature(
+        next(item for item in features if item.id == "standard")
+    )
+    target = source.definition_of_done[0]
+    target = target.model_copy(
+        update={
+            "verification": Verification(
+                kind=VerificationKind.COMMAND,
+                commands=(
+                    VerificationCommand(
+                        command=(sys.executable, "-c", "print('first')")
+                    ),
+                    VerificationCommand(
+                        command=(sys.executable, "-c", "print('second')")
+                    ),
+                ),
+            )
+        }
+    )
+    feature = source.model_copy(
+        update={
+            "definition_of_done": (
+                target,
+                *source.definition_of_done[1:],
+            )
+        }
+    )
+    tracking_dir = tmp_path / "feature-tracking"
+    tracking_dir.mkdir()
+    (tracking_dir / "policy.yml").write_text(
+        yaml.safe_dump(
+            policy.model_copy(update={"migrated_markdown_trackers": ()}).model_dump(
+                mode="json"
+            ),
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    (tracking_dir / "standard.yml").write_text(
+        yaml.safe_dump(feature.model_dump(mode="json"), sort_keys=False),
+        encoding="utf-8",
+    )
+
+    result = main(
+        [
+            "--directory",
+            str(tracking_dir),
+            "verify",
+            "standard",
+            target.id,
+            "--update",
+            "--assessed-by",
+            "test@example.org",
+        ]
+    )
+
+    assert result == 0
+    updated = load_feature_file(tracking_dir / "standard.yml")
+    assessment = updated.definition_of_done[0].assessment
+    assert assessment.status is AssessmentStatus.VERIFIED
+    assert [evidence.reference for evidence in assessment.evidence] == [
+        shlex.join((sys.executable, "-c", "print('first')")),
+        shlex.join((sys.executable, "-c", "print('second')")),
+    ]
+
+
+def test_tracker_governance_documentation_contract() -> None:
+    readme = (TRACKING_DIR / "README.md").read_text(encoding="utf-8")
+    agent_rules = (REPOSITORY_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+
+    for required_readme_contract in (
+        "./feature-tracking/tracker.py show",
+        "./feature-tracking/tracker.py validate",
+        "./feature-tracking/tracker.py check",
+        "./feature-tracking/tracker.py update",
+        "./feature-tracking/tracker.py verify",
+        "./feature-tracking/tracker.py done",
+        "./feature-tracking/tracker.py reopen",
+        "Exit-Code `1`",
+        "Exit-Code `2`",
+        "atomaren und strukturiert protokollierten Dateioperationen",
+        "Automatische Kommandos sind als Argumentliste gespeichert",
+    ):
+        assert required_readme_contract in readme
+    assert "repositoryübergreifende" in readme.casefold()
+    assert "Do not create or maintain parallel TODO" in agent_rules
 
 
 def test_feature_references_match_ids_names_and_separator_variants() -> None:

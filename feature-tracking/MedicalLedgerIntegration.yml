@@ -454,11 +454,17 @@ definition_of_done:
       reference: tests/api/test_medical_ledger_read.py
     - kind: test
       reference: /home/admin/dev/lx-annotate/frontend/src/views/__tests__/PatientResourcePages.test.ts
-    note: Vier Backend- und vier Frontend-Integrationstests sowie fokussiertes Pyright, Vue TypeScript,
-      ESLint und Produktionsbuild bestehen. Create-, Migration-, Backfill-, Parallelitäts- und Restore-Lanes
-      bleiben offen.
+    - kind: test
+      reference: tests/api/test_medical_ledger_create.py
+    - kind: test
+      reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/models/ledger/medical/tests/test_write_contracts.py
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/frontend/src/api/__tests__/patientService.medicalLedger.test.ts
+    note: Drei lx-dtypes-Write-, zwölf fokussierte EndoReg-Read/Write- und sechs Frontend-Client/Ressourcentests
+      sowie Pyright, Vue TypeScript und ESLint bestehen. Aggregate-, Migration-, Backfill-, Parallelitäts-
+      und Restore-Lanes bleiben offen.
     assessed_by: Codex
-    assessed_at: '2026-07-29T12:45:09.932022Z'
+    assessed_at: '2026-07-29T12:56:17.966287Z'
 - id: observability_and_reconciliation
   category: observability
   title: Medizinische Ledger-Fehler und Persistenzabweichungen sind messbar und reparierbar

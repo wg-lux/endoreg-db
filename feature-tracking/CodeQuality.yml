@@ -28,9 +28,12 @@ definition_of_done:
   - Ausnahmen besitzen einen benannten Owner, eine überprüfbare Begründung und ein Ablauf- oder Reviewdatum.
   required: true
   verification:
-    kind: manual
-    instructions: Inventar stichprobenartig gegen statische Referenzen, Runtime-Registrierungen, Tests
-      und Paketexporte prüfen.
+    kind: command
+    command:
+    - devenv
+    - tasks
+    - run
+    - quality:dead-code
     timeout_seconds: 600
   assessment:
     status: verified

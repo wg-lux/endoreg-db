@@ -160,6 +160,35 @@ Automatische Kommandos sind als Argumentliste gespeichert und werden ohne
 Shell ausgeführt. Dadurch können YAML-Inhalte keine Shell-Expansion oder
 Pipelines einschleusen.
 
+Repositoryübergreifende Kriterien verwenden mehrere kleine, geordnete
+Kommandos. Jedes Kommando nennt sein absolutes Arbeitsverzeichnis; fehlt es,
+wird wie bisher der Root von `endoreg_db` verwendet. Alle Kommandos werden
+weiterhin direkt und ohne Shell ausgeführt, brechen beim ersten Fehler ab und
+erzeugen bei `verify --update` getrennte Evidenz:
+
+```yaml
+verification:
+  kind: command
+  commands:
+    - working_directory: /home/admin/endoreg-db
+      command:
+        - .devenv/state/venv/bin/pytest
+        - tests/api/test_contract.py
+        - -q
+    - working_directory: /home/admin/dev/lx-annotate/frontend
+      command:
+        - npm
+        - run
+        - test:unit
+        - --
+        - src/api/__tests__/contract.test.ts
+        - --run
+  timeout_seconds: 600
+```
+
+Ein einzelnes Kommando darf weiterhin direkt unter `command` stehen. Ein
+Kriterium darf entweder `command` oder `commands` verwenden, nie beides.
+
 ## Pflegeprozess
 
 1. Akzeptanzkriterien vor oder mit der Implementierung schärfen.

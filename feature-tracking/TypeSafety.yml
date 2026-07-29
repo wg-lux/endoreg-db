@@ -49,8 +49,18 @@ definition_of_done:
   - Boundary-Verträge bleiben von persistenten Modellen getrennt.
   required: true
   verification:
-    kind: manual
-    instructions: Repräsentative Requirement- und Serialisierungspfade mit Query-Counter prüfen.
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_patient_examination_links.py
+    - tests/app/test_model_import_boundaries.py
+    - tests/utils/test_model_links.py
+    - tests/models/test_patient_examination_knowledge_base_identity.py
+    - tests/api/test_dtypes_record_persistence.py
+    - -q
     timeout_seconds: 300
   assessment:
     status: verified
@@ -75,8 +85,21 @@ definition_of_done:
   - Semantische Listen und serialisierte Stringfelder sind eindeutig unterschieden.
   required: true
   verification:
-    kind: manual
-    instructions: Duplicate-Field-Prüfung und MRO-Regressionstests ausführen und reviewen.
+    kind: command
+    commands:
+    - working_directory: /home/admin/lx-data-models
+      command:
+      - devenv
+      - shell
+      - --
+      - .devenv/state/venv/bin/pytest
+      - -o
+      - addopts=
+      - --ds=lx_dtypes.django_settings_ci_test
+      - lx_dtypes/models/base/app_base_model/tests/test_inheritance_safety.py
+      - lx_dtypes/models/base/app_base_model/tests/test_app_base_model_fixtures.py
+      - lx_dtypes/models/contracts/tests/test_dicom_export.py
+      - -q
     timeout_seconds: 300
   assessment:
     status: verified
@@ -102,8 +125,16 @@ definition_of_done:
   - Ungültige oder widersprüchliche Payloads werden laut abgelehnt.
   required: true
   verification:
-    kind: manual
-    instructions: Video-, Segment- und Sensitive-Meta-Payloads über API, Service und Export verfolgen.
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_lx_video_contracts.py
+    - tests/models/test_dataset_export_scope.py
+    - tests/services/application_settings/test_ai_dataset_export.py
+    - -q
     timeout_seconds: 300
   assessment:
     status: verified
@@ -158,8 +189,16 @@ definition_of_done:
   - Sensitive Daten werden bewusst ausgewählt und nicht über generische Model-Dumps exportiert.
   required: true
   verification:
-    kind: manual
-    instructions: Sensitive Boundary- und Exportmodelle auf Extra-Felder und Datenminimierung reviewen.
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_lx_video_contracts.py
+    - tests/models/test_dataset_export_scope.py
+    - tests/services/application_settings/test_ai_dataset_export.py
+    - -q
     timeout_seconds: 300
   assessment:
     status: verified

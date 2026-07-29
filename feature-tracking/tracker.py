@@ -89,6 +89,24 @@ class VerificationKind(StrEnum):
     MANUAL = "manual"
 
 
+class VerificationCommand(BaseModel):
+    """One shell-free verification command executed in an explicit repository."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    command: tuple[str, ...] = Field(min_length=1)
+    working_directory: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def validate_working_directory(self) -> "VerificationCommand":
+        if (
+            self.working_directory is not None
+            and not Path(self.working_directory).is_absolute()
+        ):
+            raise ValueError("verification working_directory must be absolute")
+        return self
+
+
 class ReadinessStatus(StrEnum):
     EVALUATED = "evaluated"
     IN_PROGRESS = "in_progress"
@@ -206,14 +224,19 @@ class Verification(BaseModel):
 
     kind: VerificationKind
     command: tuple[str, ...] | None = Field(default=None, min_length=1)
+    commands: tuple[VerificationCommand, ...] | None = Field(
+        default=None, min_length=1
+    )
     instructions: str | None = Field(default=None, min_length=1)
     timeout_seconds: int = Field(default=300, ge=1, le=3600)
 
     @model_validator(mode="after")
     def validate_verification(self) -> "Verification":
         if self.kind is VerificationKind.COMMAND:
-            if self.command is None:
-                raise ValueError("command verification requires command")
+            if (self.command is None) == (self.commands is None):
+                raise ValueError(
+                    "command verification requires exactly one of command or commands"
+                )
             if self.instructions is not None:
                 raise ValueError(
                     "command verification cannot also define manual instructions"
@@ -221,8 +244,8 @@ class Verification(BaseModel):
         else:
             if self.instructions is None:
                 raise ValueError("manual verification requires instructions")
-            if self.command is not None:
-                raise ValueError("manual verification cannot define command")
+            if self.command is not None or self.commands is not None:
+                raise ValueError("manual verification cannot define commands")
         return self
 
 
@@ -883,32 +906,60 @@ def parse_evidence(values: Sequence[Sequence[str]] | None) -> tuple[Evidence, ..
     return tuple(parsed)
 
 
+def _verification_commands(
+    verification: Verification,
+) -> tuple[VerificationCommand, ...]:
+    if verification.command is not None:
+        return (VerificationCommand(command=verification.command),)
+    if verification.commands is not None:
+        return verification.commands
+    return ()
+
+
+def _display_verification_command(command: VerificationCommand) -> str:
+    display = shlex.join(command.command)
+    if command.working_directory is None:
+        return display
+    return f"[cwd={shlex.quote(command.working_directory)}] {display}"
+
+
 def run_verification(criterion: DoneCriterion) -> tuple[bool, str]:
     verification = criterion.verification
-    if (
-        verification.kind is not VerificationKind.COMMAND
-        or verification.command is None
-    ):
+    commands = _verification_commands(verification)
+    if verification.kind is not VerificationKind.COMMAND or not commands:
         raise TrackerError(
             f"{criterion.id} ist eine manuelle Prüfung: {verification.instructions}"
         )
-    command = verification.command
-    display = shlex.join(command)
-    print(f"\n$ {display}", flush=True)
-    try:
-        result = subprocess.run(
-            command,
-            cwd=REPOSITORY_ROOT,
-            check=False,
-            timeout=verification.timeout_seconds,
+    displays: list[str] = []
+    for command in commands:
+        display = _display_verification_command(command)
+        displays.append(display)
+        print(f"\n$ {display}", flush=True)
+        working_directory = (
+            REPOSITORY_ROOT
+            if command.working_directory is None
+            else Path(command.working_directory)
         )
-    except FileNotFoundError:
-        return False, f"Programm nicht gefunden: {command[0]}"
-    except subprocess.TimeoutExpired:
-        return False, f"Zeitlimit von {verification.timeout_seconds}s überschritten"
-    if result.returncode == 0:
-        return True, f"Erfolgreich: {display}"
-    return False, f"Exit-Code {result.returncode}: {display}"
+        if not working_directory.is_dir():
+            return False, f"Arbeitsverzeichnis fehlt: {working_directory}"
+        try:
+            result = subprocess.run(
+                command.command,
+                cwd=working_directory,
+                check=False,
+                timeout=verification.timeout_seconds,
+            )
+        except FileNotFoundError:
+            return False, f"Programm nicht gefunden: {command.command[0]}"
+        except subprocess.TimeoutExpired:
+            return (
+                False,
+                f"Zeitlimit von {verification.timeout_seconds}s überschritten: "
+                f"{display}",
+            )
+        if result.returncode != 0:
+            return False, f"Exit-Code {result.returncode}: {display}"
+    return True, f"Erfolgreich: {'; '.join(displays)}"
 
 
 def _selected_features(
@@ -1179,13 +1230,22 @@ def main(argv: Sequence[str] | None = None) -> int:
             all_successful = all_successful and successful
             if cast(bool, args.update):
                 actor = cast(str | None, args.assessed_by)
-                command_tuple = criterion.verification.command
-                if command_tuple is None:
+                verification_commands = _verification_commands(
+                    criterion.verification
+                )
+                if not verification_commands:
                     raise TrackerError(f"{criterion.id}: Prüfkommando fehlt")
-                evidence = Evidence(
-                    kind=EvidenceKind.COMMAND,
-                    reference=shlex.join(command_tuple),
-                    note="Exit-Code 0" if successful else "Prüfung fehlgeschlagen",
+                evidence = tuple(
+                    Evidence(
+                        kind=EvidenceKind.COMMAND,
+                        reference=_display_verification_command(command_tuple),
+                        note=(
+                            "Exit-Code 0"
+                            if successful
+                            else "Kriterienprüfung fehlgeschlagen"
+                        ),
+                    )
+                    for command_tuple in verification_commands
                 )
                 updated = update_assessment(
                     updated,
@@ -1197,7 +1257,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     ),
                     assessed_by=actor,
                     note=None if successful else detail,
-                    added_evidence=(evidence,),
+                    added_evidence=evidence,
                     clear_evidence=True,
                 )
         if cast(bool, args.update):

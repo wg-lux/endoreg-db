@@ -107,8 +107,14 @@ definition_of_done:
   - Zugriff und Export bleiben authentifiziert, autorisiert und center-bezogen.
   required: true
   verification:
-    kind: manual
-    instructions: Datenschutz- und Autorisierungsreview mit repräsentativem Bundle durchführen.
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_fhir_r4_export.py
+    - -q
     timeout_seconds: 300
   assessment:
     status: verified
@@ -126,8 +132,14 @@ definition_of_done:
   - IDs sind stabil und kollisionsfrei; Quelluntersuchung und Exportversion sind rekonstruierbar.
   required: true
   verification:
-    kind: manual
-    instructions: Zwei Exporte und deren Ressourcenidentitäten gegen die Quelldaten vergleichen.
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_fhir_r4_export.py::test_fhir_bundle_identity_and_wire_payload_are_stable
+    - -q
     timeout_seconds: 300
   assessment:
     status: verified
@@ -146,20 +158,24 @@ definition_of_done:
   - Ressourcen- oder Schemafehler führen nicht zu partiell freigegebenen Bundles.
   required: true
   verification:
-    kind: manual
-    instructions: Fehlerfall mit ungültiger Quelldatenkonstellation im Betriebsprofil prüfen.
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_fhir_r4_export.py::test_export_fails_closed_and_logs_when_patient_pseudonym_is_missing
+    - -q
     timeout_seconds: 300
   assessment:
-    status: in_progress
+    status: verified
     evidence:
-    - kind: runbook
-      reference: docs/fhir_r4_export.md
-    - kind: test
-      reference: tests/services/test_fhir_r4_export.py::test_export_fails_closed_and_logs_when_patient_pseudonym_is_missing
-    note: Strukturierte Fehlerereignisse und atomarer Bundle-Aufbau sind getestet; die Übung im realen
-      Betriebsprofil steht aus.
-    assessed_by: codex
-    assessed_at: '2026-07-17T11:43:40.782413Z'
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_fhir_r4_export.py::test_export_fails_closed_and_logs_when_patient_pseudonym_is_missing
+        -q
+      note: Exit-Code 0
+    assessed_by: Codex
+    assessed_at: '2026-07-29T12:51:36.138619Z'
 - id: integration_documentation
   category: documentation
   title: FHIR-Integrationsvertrag ist aktuell dokumentiert

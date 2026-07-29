@@ -211,8 +211,23 @@ definition_of_done:
     verfügbar.
   required: true
   verification:
-    kind: manual
-    instructions: Autorisierungs- und Provenienzreview für Erstellen, Ändern und Export durchführen.
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_annotation_access.py
+    - tests/services/test_segment_annotation_flow.py
+    - tests/views/video/test_frame_annotation_bulk_upsert.py
+    - tests/views/video/test_frame_annotation_task_endpoints.py
+    - tests/views/video/test_frame_box_annotation.py
+    - tests/views/video/test_annotation_access_controls.py
+    - tests/views/media/test_frame_stream.py
+    - tests/views/video/test_hls_stream.py::test_hls_playlist_rejects_video_outside_user_center_scope
+    - tests/management/commands/test_reconcile_frame_segment_annotations.py
+    - tests/views/misc/test_export_annotated_contract.py
+    - -q
     timeout_seconds: 300
   assessment:
     status: verified
@@ -268,8 +283,17 @@ definition_of_done:
   - Reconciliation unterstützt Dry-Run und auditierbare Änderungen.
   required: true
   verification:
-    kind: manual
-    instructions: Fehlgeschlagenen Annotationstask und Reconciliation im Betriebsprofil proben.
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - .devenv/state/venv/bin/pytest
+    - tests/management/commands/test_reconcile_frame_segment_annotations.py
+    - tests/views/video/test_segments_crud.py::VideoSegmentsBlackenOutsideRouteTest
+    - tests/services/test_video_post_validation_jobs.py::test_dispatch_video_post_validation_rebuild_expires_stale_history
+    - tests/services/test_video_post_validation_jobs.py::test_dispatch_video_post_validation_rebuild_expires_stale_running_history_and_rolls_back_frames
+    - -q
     timeout_seconds: 300
   assessment:
     status: verified

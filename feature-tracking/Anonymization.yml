@@ -97,8 +97,17 @@ definition_of_done:
   - Master-Key und direkte Identifikatoren gelangen weder in Payloads noch Konfiguration.
   required: true
   verification:
-    kind: manual
-    instructions: Export-, Streaming- und Fehlerpfade mit nicht freigegebenem Medium prüfen.
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_export_frames_contract.py
+    - tests/services/test_transfer_job_contract.py
+    - tests/views/media/test_hub_transfer_endpoints.py
+    - tests/utils/test_structured_logging.py
+    - -q
     timeout_seconds: 300
   assessment:
     status: verified

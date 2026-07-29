@@ -52,12 +52,12 @@ definition_of_done:
       reference: scripts/check_lx_dtypes_model_inventory.py
     - kind: test
       reference: tests/scripts/test_check_lx_dtypes_model_inventory.py
-    note: Alle 141 über die Django-App-Registry registrierten endoreg_db-Modelle sind strukturell inventarisiert
-      und gegen neue, entfernte oder veränderte Modelle geschützt. Alle Ownership-Ziele bleiben bewusst
-      unclassified; abstrakte Modelle, Boundary-Consumer, dynamische Referenzen und die lx_dtypes-Contract-Zuordnung
-      sind noch vollständig zu klassifizieren.
+    note: Der Guard inventarisiert 141 registrierte und fünf statisch erkannte abstrakte endoreg_db-Modelle
+      einschließlich Struktur, JSON-Feldern und Modulimport-Hinweisen. 18 Modelle besitzen evidenzbasierte
+      Zielklassen; 128 Ownership-Entscheidungen sowie vollständige Boundary-Consumer und dynamische Referenzen
+      bleiben offen.
     assessed_by: Codex
-    assessed_at: '2026-07-29T12:43:49.690336Z'
+    assessed_at: '2026-07-29T12:57:06.031512Z'
 - id: field_and_contract_ownership
   category: interoperability
   title: Feld-, Enum- und Contract-Ownership ist für jedes Modell eindeutig
@@ -77,8 +77,17 @@ definition_of_done:
       und Persistenzschema reviewen.
     timeout_seconds: 1200
   assessment:
-    status: not_assessed
-    evidence: []
+    status: in_progress
+    evidence:
+    - kind: document
+      reference: quality/lx_dtypes_model_inventory.yml
+    - kind: code
+      reference: scripts/check_lx_dtypes_model_inventory.py
+    note: Erste geprüfte Kohorte klassifiziert fünf abstrakte Persistenzbasen, sieben lokale Boundary-Schema-Aggregate
+      und sechs shared-lx_dtypes-Modelle mit konkreter Ownership-Evidenz. 128 Modelle bleiben unclassified;
+      dokumentierte Feldlücken gelten ausdrücklich nicht als validiert.
+    assessed_by: Codex
+    assessed_at: '2026-07-29T12:57:13.847791Z'
 - id: canonical_boundary_validation
   category: functionality
   title: Externe und repositoryübergreifende Daten werden zentral durch lx_dtypes validiert

@@ -55,9 +55,10 @@ definition_of_done:
     erhalten eine Versions- und Kompatibilitätsstrategie.
   required: true
   verification:
-    kind: manual
-    instructions: Prüfspezifikation vollständig abarbeiten, Inventar gegen rg-basierte Contract- und Consumer-Suche
-      abgleichen und priorisierte Kohorten mit Ownership und Verifikation reviewen.
+    kind: command
+    command:
+    - .devenv/state/venv/bin/python
+    - feature-tracking/audit_lxdm_contracts.py
     timeout_seconds: 1800
   assessment:
     status: verified
@@ -167,8 +168,16 @@ definition_of_done:
   - Persistierte JSON-Daten werden am Modellrand validiert.
   required: true
   verification:
-    kind: manual
-    instructions: Boundary-Review für fremde Untersuchung, ungültiges JSON und Center-Scope durchführen.
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - env
+    - PYTHONPATH=/home/admin/lx-data-models
+    - .devenv/state/venv/bin/pytest
+    - tests/api/test_dtypes_record_persistence.py
+    - -q
     timeout_seconds: 300
   assessment:
     status: verified
