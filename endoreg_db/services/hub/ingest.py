@@ -21,6 +21,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.db import IntegrityError, OperationalError, transaction
 from kombu.exceptions import OperationalError as KombuOperationalError
 from pydantic import ValidationError
+import yaml
 
 from endoreg_db.exceptions import InsufficientStorageError
 from endoreg_db.models.administration.ai.ai_model import AiModel
@@ -1347,16 +1348,34 @@ def _load_preanonymized_sidecar(
     *,
     strict: bool = False,
 ) -> tuple[PreanonymizedIngestPayload | None, Path | None]:
-    sidecar_path = file_path.with_suffix(".json")
-    if not sidecar_path.exists():
+    sidecar_paths = [
+        candidate
+        for suffix in (".json", ".yaml", ".yml")
+        if (candidate := file_path.with_suffix(suffix)).exists()
+    ]
+    if len(sidecar_paths) > 1:
+        raise ValueError(
+            "Preanonymized input has multiple sidecars: "
+            + ", ".join(str(path) for path in sidecar_paths)
+        )
+    if not sidecar_paths:
         if strict:
-            raise ValueError(f"Preanonymized sidecar is required: {sidecar_path}")
+            raise ValueError(
+                "Preanonymized sidecar is required "
+                f"(.json, .yaml, or .yml): {file_path}"
+            )
         return None, None
 
-    payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    sidecar_path = sidecar_paths[0]
+    sidecar_text = sidecar_path.read_text(encoding="utf-8")
+    payload: object
+    if sidecar_path.suffix == ".json":
+        payload = json.loads(sidecar_text)
+    else:
+        payload = yaml.safe_load(sidecar_text)
     if not isinstance(payload, dict):
         raise ValueError(
-            f"Preanonymized sidecar must contain a JSON object: {sidecar_path}"
+            f"Preanonymized sidecar must contain a mapping: {sidecar_path}"
         )
     try:
         model_cls = (
@@ -1485,11 +1504,63 @@ def _attach_external_id_to_sensitive_meta(
     if external_id_id != existing.pk:
         sensitive_meta.external_id = existing
         update_fields.append("external_id")
-    if pseudo_patient_id is None:
+    canonical_patient_id = cast(int, existing.patient.pk)
+    if pseudo_patient_id != canonical_patient_id:
         sensitive_meta.pseudo_patient = existing.patient
         update_fields.append("pseudo_patient")
+
+    canonical_patient_hash = existing.patient.patient_hash
+    if canonical_patient_hash and sensitive_meta.patient_hash != canonical_patient_hash:
+        sensitive_meta.patient_hash = canonical_patient_hash
+        update_fields.append("patient_hash")
+
+    from endoreg_db.models.medical.patient.patient_examination import (
+        PatientExamination,
+    )
+
+    examination_identity = "\0".join(
+        (
+            "preanonymized_external_case_v1",
+            normalized_origin,
+            normalized_external_id,
+            sensitive_meta.casenumber or f"sensitive-meta:{sensitive_meta.pk}",
+        )
+    )
+    canonical_examination_hash = hashlib.sha256(
+        examination_identity.encode("utf-8")
+    ).hexdigest()
+    canonical_examination, _ = PatientExamination.objects.get_or_create(
+        hash=canonical_examination_hash,
+        defaults={
+            "patient": existing.patient,
+            "date_start": sensitive_meta.examination_date,
+        },
+    )
+    if canonical_examination.patient_id != canonical_patient_id:
+        raise IntegrityError(
+            "The deterministic preanonymized examination identity is linked "
+            "to a different patient."
+        )
+    pseudo_examination_id = cast(
+        int | None, getattr(sensitive_meta, "pseudo_examination_id", None)
+    )
+    if pseudo_examination_id != canonical_examination.pk:
+        sensitive_meta.pseudo_examination = canonical_examination
+        update_fields.append("pseudo_examination")
+    if sensitive_meta.examination_hash != canonical_examination_hash:
+        sensitive_meta.examination_hash = canonical_examination_hash
+        update_fields.append("examination_hash")
     if update_fields:
-        sensitive_meta.save(update_fields=update_fields)
+        # SensitiveMeta.save() intentionally recalculates demographic hashes and
+        # pseudo links. External-ID reconciliation is the authoritative identity
+        # operation here, so persist the selected fields without re-running that
+        # derivation and keep the in-memory instance aligned with the update.
+        SensitiveMeta.objects.filter(pk=sensitive_meta.pk).update(
+            **{
+                field_name: getattr(sensitive_meta, field_name)
+                for field_name in update_fields
+            }
+        )
 
 
 def _normalize_sensitive_meta_payload(
@@ -2849,7 +2920,14 @@ def _prepare_preanonymized_watcher_context(
     source_system: str,
 ) -> _PreanonymizedWatcherContext:
     strict_local = local_study_server_mode_enabled()
-    sidecar_path = watched_path.with_suffix(".json")
+    sidecar_path = next(
+        (
+            candidate
+            for suffix in (".json", ".yaml", ".yml")
+            if (candidate := watched_path.with_suffix(suffix)).exists()
+        ),
+        watched_path.with_suffix(".json"),
+    )
     try:
         return _load_preanonymized_watcher_context(
             watched_path=watched_path,

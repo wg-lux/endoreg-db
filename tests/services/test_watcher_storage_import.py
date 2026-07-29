@@ -537,7 +537,38 @@ def test_load_preanonymized_sidecar_rejects_non_object_payload(
     watched_file.write_bytes(b"%PDF-1.4\n%%EOF\n")
     sidecar.write_text("[]", encoding="utf-8")
 
-    with pytest.raises(ValueError, match="must contain a JSON object"):
+    with pytest.raises(ValueError, match="must contain a mapping"):
+        ingest._load_preanonymized_sidecar(watched_file)
+
+
+@pytest.mark.unit
+def test_load_preanonymized_sidecar_accepts_yaml_mapping(tmp_path: Path) -> None:
+    watched_file = tmp_path / "preanonymized.pdf"
+    sidecar = watched_file.with_suffix(".yaml")
+    watched_file.write_bytes(b"%PDF-1.4\n%%EOF\n")
+    sidecar.write_text(
+        "external_id: ext-42\nexternal_id_origin: hospital\n",
+        encoding="utf-8",
+    )
+
+    payload, loaded_path = ingest._load_preanonymized_sidecar(watched_file)
+
+    assert payload is not None
+    assert payload.external_id == "ext-42"
+    assert payload.external_id_origin == "hospital"
+    assert loaded_path == sidecar
+
+
+@pytest.mark.unit
+def test_load_preanonymized_sidecar_rejects_multiple_formats(
+    tmp_path: Path,
+) -> None:
+    watched_file = tmp_path / "preanonymized.pdf"
+    watched_file.write_bytes(b"%PDF-1.4\n%%EOF\n")
+    watched_file.with_suffix(".json").write_text("{}", encoding="utf-8")
+    watched_file.with_suffix(".yaml").write_text("{}", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="multiple sidecars"):
         ingest._load_preanonymized_sidecar(watched_file)
 
 

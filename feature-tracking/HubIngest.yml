@@ -42,6 +42,35 @@ tracking:
     changed_at: '2026-07-20T14:19:38.865231Z'
     note: Canonical replay equality, fail-closed node/center ownership, collision persistence, and blocked
       conflicted uploads are implemented and verified by targeted Pyright and 63 focused tests.
+  - action: reopened
+    changed_by: Codex
+    changed_at: '2026-07-29T12:11:19.034869Z'
+    note: Reopened to add typed SAP IS-H TSV directory conversion to YAML sidecars and persistence through
+      the existing watcher ingest service.
+  - action: done
+    changed_by: Codex
+    changed_at: '2026-07-29T12:18:48.337461Z'
+    note: SAP IS-H TSV directories now produce validated YAML sidecars and persist through the existing
+      idempotent watcher ingest path; Pyright and 41 focused/regression tests pass.
+  - action: reopened
+    changed_by: Codex
+    changed_at: '2026-07-29T12:43:18.045138Z'
+    note: Acceptance was extended for center-scoped canonical identity and structured medical-table persistence;
+      reopening for verification of the new pass.
+  - action: done
+    changed_by: Codex
+    changed_at: '2026-07-29T12:45:36.739742Z'
+    note: Re-verified after the structured SAP IS-H clinical persistence pass; expanded focused suite
+      passed 37 tests.
+  - action: reopened
+    changed_by: Codex
+    changed_at: '2026-07-29T12:48:25.077846Z'
+    note: Attach final post-review verifier evidence for the stable medication identity edge case.
+  - action: done
+    changed_by: Codex
+    changed_at: '2026-07-29T12:48:28.073494Z'
+    note: Re-verified after structured clinical persistence and the final stable Meona identity edge-case
+      test.
 source_documents:
 - path: docs/wiki/hub_ingest_gap_closure.md
   disposition: migrated
@@ -56,6 +85,52 @@ source_documents:
   disposition: reference
   note: Betriebs-, Zertifikatsrotations-, Cleanup-, Restore- und Incident-Runbook.
 definition_of_done:
+- id: sap_ish_yaml_ingest
+  category: functionality
+  title: SAP-IS-H-Texttabellen werden typisiert über YAML in Django persistiert
+  acceptance:
+  - Ein Verzeichnis mit tabulatorgetrennten .txt-Dateien wird anhand der versionierten Dokumentvorlagen
+    normalisiert und als validierte .yaml-Sidecars ausgegeben; unbekannte Tabellen werden explizit gemeldet.
+  - Der optionale Process-Schritt übergibt jedes erzeugte Dateipaar an den bestehenden Preanonymized-Watcher-
+    Service, sodass die Host-Django-Modelle über denselben idempotenten und auditierten Persistenzpfad
+    geschrieben werden.
+  - Der Process-Schritt normalisiert PatientNr centerbezogen auf eine kanonische Patientenidentität und
+    persistiert unterstützte Diagnosen, Laborwerte und Medikationen zusätzlich in die medizinischen Fachtabellen;
+    nicht fallzuordenbare Meona-Zeilen bleiben ausdrücklich patientenbezogen.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - env
+    - PYTHONPATH=/home/admin/lx-parse/lx-data-models
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_sap_ish_clinical.py
+    - tests/services/test_sap_ish_import.py
+    - tests/services/test_watcher_storage_import.py
+    - tests/services/test_preanonymized_watcher_ingest.py
+    - tests/management/commands/test_import_sap_ish_txt.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell -- env PYTHONPATH=/home/admin/lx-parse/lx-data-models .devenv/state/venv/bin/pytest
+        tests/services/test_sap_ish_clinical.py tests/services/test_sap_ish_import.py tests/services/test_watcher_storage_import.py
+        tests/services/test_preanonymized_watcher_ingest.py tests/management/commands/test_import_sap_ish_txt.py
+        -q
+      note: Exit-Code 0
+    - kind: command
+      reference: devenv shell -- env PYTHONPATH=/home/admin/lx-parse/lx-data-models .devenv/state/venv/bin/pytest
+        tests/services/test_sap_ish_clinical.py tests/services/test_sap_ish_import.py tests/services/test_watcher_storage_import.py
+        tests/management/commands/test_import_sap_ish_txt.py -q (32 passed)
+    note: Structured SAP IS-H persistence remains verified after the final stable medication-identity
+      review; the medical criterion verifier passed 32 tests and the expanded Hub suite passed 37 tests.
+    assessed_by: Codex
+    assessed_at: '2026-07-29T12:48:26.465397Z'
 - id: segment_transfer_contract
   category: data_integrity
   title: Video-Segmente werden typisiert, idempotent und atomar übertragen

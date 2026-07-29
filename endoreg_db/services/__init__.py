@@ -64,6 +64,7 @@ _SYSTEM_MODULES = (
     "model_meta_from_hf",
     "polling_coordinator",
     "reconciliation",
+    "sap_ish_clinical",
     "sap_ish_import",
     "tabular_import_formats",
 )
@@ -87,6 +88,14 @@ _EXPORTS = {
         ".sap_ish_import",
         "convert_sap_ish_zip_to_preanonymized_drop",
     ),
+    "convert_sap_ish_txt_directory_to_preanonymized_drop": (
+        ".sap_ish_import",
+        "convert_sap_ish_txt_directory_to_preanonymized_drop",
+    ),
+    "persist_sap_ish_clinical_rows": (
+        ".sap_ish_clinical",
+        "persist_sap_ish_clinical_rows",
+    ),
     "load_document_templates": (
         ".tabular_import_formats",
         "load_document_templates",
@@ -103,9 +112,11 @@ _EXPORTS = {
 
 __all__ = [
     "build_preanonymized_payload",
+    "convert_sap_ish_txt_directory_to_preanonymized_drop",
     "convert_sap_ish_zip_to_preanonymized_drop",
     "load_document_templates",
     "normalize_document_row",
+    "persist_sap_ish_clinical_rows",
     "resolve_document_template",
 ]
 
@@ -143,6 +154,7 @@ if TYPE_CHECKING:
     report_pdf_renderer: ModuleType
     report_persistence: ModuleType
     sap_ish_import: ModuleType
+    sap_ish_clinical: ModuleType
     segment_annotations: ModuleType
     segment_contracts: ModuleType
     segment_sync: ModuleType
@@ -158,7 +170,11 @@ if TYPE_CHECKING:
     video_temporal_inference: ModuleType
     video_transcoding: ModuleType
 
-    from .sap_ish_import import convert_sap_ish_zip_to_preanonymized_drop
+    from .sap_ish_import import (
+        convert_sap_ish_txt_directory_to_preanonymized_drop,
+        convert_sap_ish_zip_to_preanonymized_drop,
+    )
+    from .sap_ish_clinical import persist_sap_ish_clinical_rows
     from .tabular_import_formats import (
         build_preanonymized_payload,
         load_document_templates,

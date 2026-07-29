@@ -5,12 +5,14 @@ import io
 import json
 import zipfile
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from collections.abc import Callable
-from typing import Any
+from typing import Any, Literal
+
+import yaml
 
 from endoreg_db.services.tabular_import_formats import (
     build_preanonymized_payload,
@@ -59,6 +61,7 @@ TIMESTAMP_FIELDS = (
     "prepare_date",
     "creation_date",
 )
+SidecarFormat = Literal["json", "yaml"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +87,20 @@ class SapIshImportResult:
     generated_files: tuple[GeneratedDropFile, ...]
     matched_source_files: tuple[Path, ...]
     skipped_source_files: tuple[Path, ...]
+    normalized_rows: tuple[SapIshNormalizedRow, ...]
+
+
+def sap_ish_external_id_origin(
+    *,
+    source_system: str,
+    center_key: str | None,
+) -> str:
+    """Build the stable source scope used for SAP patient identifiers."""
+    normalized_source = source_system.strip() or "sap_ish"
+    normalized_center = center_key.strip() if center_key else ""
+    if not normalized_center:
+        return normalized_source
+    return f"{normalized_source}:{normalized_center}"
 
 
 def _read_text_with_fallbacks(path: Path) -> str:
@@ -400,6 +417,10 @@ def _build_payload_for_case(
         center_name=center_name,
         center_key=center_key,
     )
+    payload_data["external_id_origin"] = sap_ish_external_id_origin(
+        source_system=source_system,
+        center_key=center_key,
+    )
 
     summary_text = _extract_preferred_text(primary_row) or _build_case_summary(
         related_rows
@@ -448,6 +469,7 @@ def _write_drop_file(
     primary_row: SapIshNormalizedRow,
     payload: SapIshDropFilePayload,
     carrier_text: str,
+    sidecar_format: SidecarFormat,
 ) -> GeneratedDropFile:
     ensure_directory(output_dir)
     payload_dict: SapIshImportPayload = dump_sap_ish_drop_file_payload(payload)
@@ -464,18 +486,27 @@ def _write_drop_file(
     document_token = _slugify_token(primary_row.document_type, fallback="document")
     stem = f"sap_ish_{case_index:04d}_{document_token}_{patient_token}_{case_token}"
     carrier_path = output_dir / f"{stem}.txt"
-    sidecar_path = output_dir / f"{stem}.json"
+    sidecar_path = output_dir / f"{stem}.{sidecar_format}"
+    if sidecar_format == "json":
+        sidecar_content = json.dumps(
+            payload_dict,
+            ensure_ascii=True,
+            indent=2,
+            sort_keys=True,
+        )
+    else:
+        sidecar_content = yaml.safe_dump(
+            payload_dict,
+            allow_unicode=False,
+            sort_keys=True,
+        )
     atomic_write_file(
         destination=carrier_path,
         content=[f"{carrier_text.strip()}\n".encode("utf-8")],
     )
     atomic_write_file(
         destination=sidecar_path,
-        content=[
-            json.dumps(
-                payload_dict, ensure_ascii=True, indent=2, sort_keys=True
-            ).encode("utf-8")
-        ],
+        content=[sidecar_content.encode("utf-8")],
     )
     return GeneratedDropFile(
         carrier_path=carrier_path,
@@ -485,90 +516,55 @@ def _write_drop_file(
     )
 
 
-def convert_sap_ish_zip_to_preanonymized_drop(
+def _convert_sap_ish_directory_to_preanonymized_drop(
     *,
-    zip_path: Path | str,
+    source_dir: Path,
     output_dir: Path | str,
-    source_system: str = "sap_ish",
-    center_name: str | None = None,
-    center_key: str | None = None,
+    source_system: str,
+    center_name: str | None,
+    center_key: str | None,
+    sidecar_format: SidecarFormat,
 ) -> SapIshImportResult:
-    archive_path = Path(zip_path).expanduser().resolve()
     destination_dir = ensure_within_data_root(Path(output_dir).expanduser().resolve())
-
-    if not archive_path.exists():
-        raise FileNotFoundError(f"SAP IS-H zip not found: {archive_path}")
-
-    with TemporaryDirectory(prefix="sap_ish_import_") as temp_dir_name:
-        extract_dir = Path(temp_dir_name)
-        with zipfile.ZipFile(archive_path) as archive:
-            archive.extractall(extract_dir)
-
-        normalized_rows, matched_files, skipped_files = _normalize_supported_rows(
-            extract_dir
+    normalized_rows, matched_files, skipped_files = _normalize_supported_rows(
+        source_dir
+    )
+    if not normalized_rows:
+        raise ValueError(
+            "No supported SAP IS-H TSV tables were found in the provided source"
         )
-        if not normalized_rows:
-            raise ValueError(
-                "No supported SAP IS-H TSV tables were found in the provided zip archive"
-            )
 
-        rows_by_case: dict[tuple[str, str], list[SapIshNormalizedRow]] = defaultdict(
-            list
-        )
-        rows_by_patient: dict[str, list[SapIshNormalizedRow]] = defaultdict(list)
-        patients_with_cases: set[str] = set()
+    rows_by_case: dict[tuple[str, str], list[SapIshNormalizedRow]] = defaultdict(list)
+    rows_by_patient: dict[str, list[SapIshNormalizedRow]] = defaultdict(list)
+    patients_with_cases: set[str] = set()
 
-        for row in normalized_rows:
-            case_key = _extract_case_key(row)
-            patient_key = _extract_patient_key(row)
-            if case_key is not None:
-                rows_by_case[case_key].append(row)
-                patients_with_cases.add(case_key[0])
-            elif patient_key is not None:
-                rows_by_patient[patient_key].append(row)
+    for row in normalized_rows:
+        case_key = _extract_case_key(row)
+        patient_key = _extract_patient_key(row)
+        if case_key is not None:
+            rows_by_case[case_key].append(row)
+            patients_with_cases.add(case_key[0])
+        elif patient_key is not None:
+            rows_by_patient[patient_key].append(row)
 
-        generated_files: list[GeneratedDropFile] = []
-        case_counter = 0
+    generated_files: list[GeneratedDropFile] = []
+    case_counter = 0
 
-        for case_key in sorted(rows_by_case):
-            patient_key = case_key[0]
-            related_rows = [
-                *rows_by_case[case_key],
-                *rows_by_patient.get(patient_key, []),
-            ]
-            primary_rows = [
-                row
-                for row in related_rows
-                if row.document_type in TEXT_DOCUMENT_TYPES
-                and _extract_preferred_text(row)
-            ]
-            if not primary_rows:
-                primary_rows = [_pick_anchor_row(related_rows)]
+    for case_key in sorted(rows_by_case):
+        patient_key = case_key[0]
+        related_rows = [
+            *rows_by_case[case_key],
+            *rows_by_patient.get(patient_key, []),
+        ]
+        primary_rows = [
+            row
+            for row in related_rows
+            if row.document_type in TEXT_DOCUMENT_TYPES and _extract_preferred_text(row)
+        ]
+        if not primary_rows:
+            primary_rows = [_pick_anchor_row(related_rows)]
 
-            for primary_row in primary_rows:
-                case_counter += 1
-                payload, carrier_text = _build_payload_for_case(
-                    primary_row=primary_row,
-                    related_rows=related_rows,
-                    source_system=source_system,
-                    center_name=center_name,
-                    center_key=center_key,
-                )
-                generated_files.append(
-                    _write_drop_file(
-                        output_dir=destination_dir,
-                        case_index=case_counter,
-                        primary_row=primary_row,
-                        payload=payload,
-                        carrier_text=carrier_text,
-                    )
-                )
-
-        for patient_key in sorted(rows_by_patient):
-            if patient_key in patients_with_cases:
-                continue
-            related_rows = rows_by_patient[patient_key]
-            primary_row = _pick_anchor_row(related_rows)
+        for primary_row in primary_rows:
             case_counter += 1
             payload, carrier_text = _build_payload_for_case(
                 primary_row=primary_row,
@@ -584,19 +580,96 @@ def convert_sap_ish_zip_to_preanonymized_drop(
                     primary_row=primary_row,
                     payload=payload,
                     carrier_text=carrier_text,
+                    sidecar_format=sidecar_format,
                 )
             )
+
+    for patient_key in sorted(rows_by_patient):
+        if patient_key in patients_with_cases:
+            continue
+        related_rows = rows_by_patient[patient_key]
+        primary_row = _pick_anchor_row(related_rows)
+        case_counter += 1
+        payload, carrier_text = _build_payload_for_case(
+            primary_row=primary_row,
+            related_rows=related_rows,
+            source_system=source_system,
+            center_name=center_name,
+            center_key=center_key,
+        )
+        generated_files.append(
+            _write_drop_file(
+                output_dir=destination_dir,
+                case_index=case_counter,
+                primary_row=primary_row,
+                payload=payload,
+                carrier_text=carrier_text,
+                sidecar_format=sidecar_format,
+            )
+        )
 
     return SapIshImportResult(
         generated_files=tuple(generated_files),
         matched_source_files=tuple(sorted(matched_files)),
         skipped_source_files=tuple(sorted(skipped_files)),
+        normalized_rows=tuple(normalized_rows),
     )
+
+
+def convert_sap_ish_txt_directory_to_preanonymized_drop(
+    *,
+    source_dir: Path | str,
+    output_dir: Path | str,
+    source_system: str = "sap_ish",
+    center_name: str | None = None,
+    center_key: str | None = None,
+) -> SapIshImportResult:
+    source_path = Path(source_dir).expanduser().resolve()
+    if not source_path.exists():
+        raise FileNotFoundError(f"SAP IS-H source directory not found: {source_path}")
+    if not source_path.is_dir():
+        raise NotADirectoryError(f"SAP IS-H source is not a directory: {source_path}")
+    return _convert_sap_ish_directory_to_preanonymized_drop(
+        source_dir=source_path,
+        output_dir=output_dir,
+        source_system=source_system,
+        center_name=center_name,
+        center_key=center_key,
+        sidecar_format="yaml",
+    )
+
+
+def convert_sap_ish_zip_to_preanonymized_drop(
+    *,
+    zip_path: Path | str,
+    output_dir: Path | str,
+    source_system: str = "sap_ish",
+    center_name: str | None = None,
+    center_key: str | None = None,
+) -> SapIshImportResult:
+    archive_path = Path(zip_path).expanduser().resolve()
+    if not archive_path.exists():
+        raise FileNotFoundError(f"SAP IS-H zip not found: {archive_path}")
+
+    with TemporaryDirectory(prefix="sap_ish_import_") as temp_dir_name:
+        extract_dir = Path(temp_dir_name)
+        with zipfile.ZipFile(archive_path) as archive:
+            archive.extractall(extract_dir)
+        return _convert_sap_ish_directory_to_preanonymized_drop(
+            source_dir=extract_dir,
+            output_dir=output_dir,
+            source_system=source_system,
+            center_name=center_name,
+            center_key=center_key,
+            sidecar_format="json",
+        )
 
 
 __all__ = [
     "GeneratedDropFile",
     "SapIshImportResult",
     "SapIshNormalizedRow",
+    "convert_sap_ish_txt_directory_to_preanonymized_drop",
     "convert_sap_ish_zip_to_preanonymized_drop",
+    "sap_ish_external_id_origin",
 ]
