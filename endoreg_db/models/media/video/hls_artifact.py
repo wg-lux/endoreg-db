@@ -30,6 +30,7 @@ class VideoHlsArtifact(models.Model):
         DISPATCH_FAILED = "dispatch_failed", "Dispatch Failed"
         INCONSISTENT_ARTIFACT = "inconsistent_artifact", "Inconsistent Artifact"
         MATERIALIZATION_FAILED = "materialization_failed", "Materialization Failed"
+        VALIDATION_FAILED = "validation_failed", "Validation Failed"
         STALE_ATTEMPT = "stale_attempt", "Stale Attempt"
 
     video: models.ForeignKey[Any] = models.ForeignKey(

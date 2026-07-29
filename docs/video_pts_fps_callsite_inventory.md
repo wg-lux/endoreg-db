@@ -1,6 +1,6 @@
 # FPS-/PTS-Callsite-Inventar
 
-Stand: 2026-07-20. Dieses Inventar ist die technische Referenz für das Feature
+Stand: 2026-07-29. Dieses Inventar ist die technische Referenz für das Feature
 [`video_storage_normalization`](../feature-tracking/VideoStorageNormalization.yml).
 Der verbindliche Reife- und Freigabestatus steht ausschließlich in der
 Feature-YAML.
@@ -57,6 +57,70 @@ Video-Generation maßgeblich.
 Die offenen Callsites verhindern derzeit noch einen vollständigen
 Cross-Repository-Nachweis für Timestamp-genaues Decoding; Segment-Create,
 -Update und Frame-Stepping sind frontendseitig migriert.
+
+## Priorität 0: gc-10-Incident bei Processed-HLS für Video 44
+
+Am 28. und 29. Juli 2026 materialisierte der einzelne
+`ffmpeg_media`-Worker auf gc-10 Processed-HLS für Video 44 wiederholt
+vollständig, verwarf die versuchsspezifische Generation anschließend jedoch
+mit:
+
+```text
+Output FPS drifted from 49.8549 to 50
+```
+
+Sechs fehlgeschlagene Versuche wurden mit derselben Celery-Task erneut
+zugestellt. Dadurch blieb diese Arbeit am Anfang der Warteschlange, während 79
+weitere Nachrichten nicht vorankamen. Die temporären HLS-Artefakte wurden nach
+jedem Fehler bereinigt; der Incident ist daher primär ein
+Timeline-Validierungs- und Retry-Ownership-Problem und kein Nachweis für einen
+beschädigten Import. Ein Reimport oder eine erneute FPS-Normalisierung ist ohne
+abweichende Integritäts- beziehungsweise Provenienzevidenz ausdrücklich nicht
+die Standard-Recovery.
+
+Der betroffene Call-Pfad ist:
+
+1. `services/hls_media.py:_run_ffmpeg_hls` normalisiert die entschlüsselte
+   Processed-Quelle innerhalb des geschützten Versuchspfads und übergibt
+   `normalization_evidence.output` als Referenz für die HLS-Prüfung.
+2. `services/video_storage/probes.py:_resolve_frame_rate` bevorzugt
+   `avg_frame_rate` gegenüber `r_frame_rate` und reduziert beide Werte auf
+   einen einzelnen rationalen FPS-Wert plus eine abgeleitete
+   Variable-Frame-Rate-Markierung.
+3. `services/video_storage/validation.py:assert_temporal_equivalence` vergleicht
+   diesen Wert mit einer allgemeinen relativen Float-Toleranz von `0.001`.
+4. Die HLS-Ausgabe wird dadurch bei `49.8549` gegenüber `50` abgelehnt, auch
+   wenn die veröffentlichte Quellgeneration laut
+   `annotation_fps_resample_v1` nominell eine versionierte
+   50-FPS-Constant-Frame-Rate-Timeline sein sollte.
+5. Der unerwartete Validierungsfehler wird im produktiven Celery-Vertrag nicht
+   als nicht wiederholbarer Profilfehler begrenzt und kann deshalb dieselbe
+   teure Materialisierung erneut ausführen.
+
+Vor einer Korrektur muss für Video 44 ohne Änderung des Masters geprüft werden:
+
+- persistierte `annotation_fps_resample_v1`-Provenienz und zugehörige
+  Generation;
+- rationales `r_frame_rate`, `avg_frame_rate`, Time-Base, Dauer und
+  Frameanzahl der Processed-Quelle;
+- monotone Präsentationszeitstempel und deren Abstände;
+- dieselben Werte der entschlüsselten lokalen HLS-Prüfplaylist;
+- vorhandene Segment- und extrahierte Framekoordinaten.
+
+Die Korrektur darf die globale FPS-Toleranz nicht pauschal erhöhen. Sie muss
+nominale Rate, Durchschnittsrate und PTS-basierte Timeline typisiert
+unterscheiden. Eine nachgewiesene versionierte 50-FPS-CFR-Generation darf nur
+dann als HLS-äquivalent gelten, wenn Generation, Frameanzahl, Dauer,
+Time-Base/PTS-Abbildung und Segmentgrenzen ebenfalls übereinstimmen. Echte
+Frameauslassung, -duplikation, variable Bildrate ohne vollständige PTS oder eine
+fremde Generation müssen weiterhin laut fehlschlagen.
+
+Zusätzlich muss ein deterministischer Profil- oder Timeline-Validierungsfehler
+als nicht automatisch wiederholbar beziehungsweise streng begrenzt behandelt
+werden. Er darf nicht die gesamte FIFO-Warteschlange durch unmittelbare
+Redelivery blockieren. Nach Ausrollen und Nachweis der Korrektur wird nur das
+Processed-HLS von Video 44 erneut materialisiert; der kanonische Master wird
+nicht reimportiert.
 
 ## Priorität 0: Annotationsexport
 
@@ -175,6 +239,14 @@ verwenden diesen Vertrag jetzt ohne clientseitige Frameableitung.
    atomare Generation, Lease-Konkurrenz und stabile Segment-PTS nach Reload.
 5. **Negativfall Generation:** Segmentdaten einer alten Generation dürfen nicht
    gegen neu veröffentlichtes HLS editierbar werden.
+6. **gc-10-Regression für nominelle 50 FPS:** Ein Fixture mit nominellem
+   `r_frame_rate=50/1`, beobachtetem `avg_frame_rate=49.8549` und belegter
+   `annotation_fps_resample_v1`-Generation prüft Processed-HLS bis zur atomaren
+   Veröffentlichung. Positive Evidenz umfasst identische Frameanzahl,
+   zulässige Dauerabweichung und stabile PTS-/Segmentgrenzen. Negativtests
+   lehnen echte Timeline-Drift und fehlende Provenienz ab. Ein deterministischer
+   Validierungsfehler wird nicht unbegrenzt erneut zugestellt und blockiert
+   keine unabhängige nachfolgende HLS-Arbeit.
 
 ## Rückwärtskompatible Abschaltung von `transcode_fps`
 

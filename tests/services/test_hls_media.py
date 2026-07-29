@@ -536,6 +536,7 @@ def test_stale_hls_worker_cannot_overwrite_new_owner(
         video_id=video.pk,
         artifact_kind=cast(Any, hls_media).VideoArtifactKind.PROCESSED,
         source_file_name=str(video.processed_file.name),
+        source_generation_id=uuid4(),
         key_id=new_key_id,
         key_ciphertext=b"new wrapped key",
         key_nonce=b"n" * 12,
@@ -920,6 +921,7 @@ def test_materialize_video_hls_failure_unlinks_partial_segments_and_keys(
         segment_pattern: Path,
         playlist_path: Path,
         segment_base_url: str,
+        timeline_validation: object,
     ) -> None:
         _ = source_file_name
         _ = source_size_bytes
@@ -927,6 +929,7 @@ def test_materialize_video_hls_failure_unlinks_partial_segments_and_keys(
         _ = source.read()
         _ = playlist_path
         _ = segment_base_url
+        _ = timeline_validation
         key_info_lines = key_info_path.read_text(encoding="utf-8").splitlines()
         observed_temp_key_paths.append(Path(key_info_lines[1]))
         segment_pattern.parent.mkdir(parents=True, exist_ok=True)
@@ -965,3 +968,70 @@ def test_materialize_video_hls_failure_unlinks_partial_segments_and_keys(
         paths.transcoding / "hls_output" / str(video.pk) / str(artifact.key_id)
     )
     assert not temp_output_dir.exists()
+
+
+def test_deterministic_hls_validation_failure_is_not_rematerialized_and_does_not_block(
+    hls_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    failed_video = _create_processed_video(
+        center=hls_center,
+        payload=b"deterministic validation failure",
+    )
+    subsequent_video = _create_processed_video(
+        center=hls_center,
+        payload=b"independent subsequent source",
+    )
+    calls = 0
+
+    def fail_validation(**_kwargs: object) -> None:
+        nonlocal calls
+        calls += 1
+        raise hls_media.VideoStorageNormalizationError(
+            "deterministic presentation-timestamp drift"
+        )
+
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fail_validation)
+    with pytest.raises(
+        hls_media.VideoStorageNormalizationError,
+        match="presentation-timestamp drift",
+    ):
+        hls_media.materialize_video_hls(
+            failed_video.pk,
+            artifact_kind="processed",
+        )
+
+    repeated = hls_media.materialize_video_hls(
+        failed_video.pk,
+        artifact_kind="processed",
+    )
+    assert repeated.status == "failed_validation"
+    assert calls == 1
+
+    failed_artifact = VideoHlsArtifact.objects.get(
+        video=failed_video,
+        artifact_kind=VideoHlsArtifact.ArtifactKind.PROCESSED.value,
+    )
+    assert failed_artifact.status == VideoHlsArtifact.Status.FAILED.value
+    assert (
+        failed_artifact.error_code == VideoHlsArtifact.ErrorCode.VALIDATION_FAILED.value
+    )
+    paths = EndoregPathsModel.from_environment()
+    assert not (
+        paths.transcoding
+        / "hls_output"
+        / str(failed_video.pk)
+        / str(failed_artifact.key_id)
+    ).exists()
+    assert not VideoHlsArtifact.objects.filter(
+        video=failed_video,
+        status=VideoHlsArtifact.Status.READY.value,
+    ).exists()
+
+    fake_hls = FakeHlsOutputRecorder()
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
+    subsequent = hls_media.materialize_video_hls(
+        subsequent_video.pk,
+        artifact_kind="processed",
+    )
+    assert subsequent.status == "materialized"

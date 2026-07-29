@@ -339,6 +339,15 @@ definition_of_done:
     Prüfplaylist entschlüsselt geprobt. Codec, Pixelformat, Dimensionen, Bildrate, Dauer, Frameanzahl,
     Bitrate, Gesamtgröße und Timeline müssen dem typisierten Profil entsprechen; Abweichungen verhindern
     die Veröffentlichung und entfernen Prüfplaylist, Teilsegmente und Schlüsselmaterial.
+  - Nominelle rationale Bildrate, gemessene durchschnittliche Bildrate und Präsentationszeitstempel-Timeline
+    sind getrennte typisierte Werte. Eine HLS-Ausgabe mit nominell 50/1 und gemessen 50/1 darf gegenüber
+    einer gemessen 49,8549-FPS-Quelle ausschließlich dann akzeptiert werden, wenn die aktuelle
+    `annotation_fps_resample_v1`-Provenienz, der Content-Hash der Processed-Generation, Frameanzahl,
+    Dauer, Time-Base, streng monotone konstante PTS-Abstände sowie alle persistierten Segment- und
+    extrahierten Framegrenzen dieselbe 50-FPS-Timeline beweisen.
+  - Fehlende oder fremde FPS-Provenienz, ein abweichender Generation-Hash, Frameverlust, Frameduplikation,
+    echte PTS- beziehungsweise Grenzendrift und variable Bildrate ohne autoritative PTS verhindern die
+    HLS-Veröffentlichung weiterhin; die allgemeine FPS-Toleranz wird dafür nicht erweitert.
   - Gleichzeitige verschlüsselte Byte-Range-Lesezugriffe verwenden bevorzugt die native Rust-Implementierung,
     die Datei-I/O und AES-GCM-Entschlüsselung ohne gehaltenen Python Global Interpreter Lock ausführt.
     Rückgaben bleiben pro Request größenbegrenzt und byteidentisch zum Python-Referenzpfad; native Integritäts-,
@@ -459,6 +468,9 @@ definition_of_done:
     besessene HLS-Versuche als fehlgeschlagen und entfernt nur deren versuchsspezifische temporäre Pfade
     über die typisierten Dateisystem-Wrapper. Unbekannte Verzeichnisse, aktive Leases und nicht abgelaufene
     Versuche blockieren automatische Löschung und werden strukturiert gemeldet.
+  - Deterministische Profil- und Timeline-Validierungsfehler erhalten einen terminalen, nicht wiederholbaren
+    Fehlercode je Source-Generation. Eine dupliziert zugestellte Task materialisiert dieselbe fehlerhafte
+    Generation nicht erneut; eine unabhängige nachfolgende HLS-Task kann auf dem Worker fortfahren.
   required: true
   verification:
     kind: command

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import subprocess
+import time
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
@@ -11,6 +12,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from endoreg_db.schemas.video_storage import (
     FramePresentationTimestamp,
+    MeasuredAverageFrameRate,
+    NominalFrameRate,
+    PresentationTimestampBoundary,
+    PresentationTimestampTimeline,
     VideoArtifactProbe,
     VideoTimelineContract,
 )
@@ -76,6 +81,8 @@ class _ValidatedVideoStream:
 @dataclass(frozen=True)
 class _FrameRateInfo:
     frame_rate: Fraction
+    average_frame_rate: Fraction | None
+    nominal_frame_rate: Fraction | None
     variable_frame_rate: bool
 
 
@@ -195,6 +202,8 @@ def _resolve_frame_rate(
     )
     return _FrameRateInfo(
         frame_rate=frame_rate,
+        average_frame_rate=average_rate,
+        nominal_frame_rate=nominal_rate,
         variable_frame_rate=variable_frame_rate,
     )
 
@@ -253,6 +262,22 @@ def _build_timeline(
         variable_frame_rate=frame_rate_info.variable_frame_rate,
         time_base_num=time_base.numerator if time_base is not None else None,
         time_base_den=time_base.denominator if time_base is not None else None,
+        nominal_frame_rate=(
+            NominalFrameRate(
+                numerator=frame_rate_info.nominal_frame_rate.numerator,
+                denominator=frame_rate_info.nominal_frame_rate.denominator,
+            )
+            if frame_rate_info.nominal_frame_rate is not None
+            else None
+        ),
+        measured_average_frame_rate=(
+            MeasuredAverageFrameRate(
+                numerator=frame_rate_info.average_frame_rate.numerator,
+                denominator=frame_rate_info.average_frame_rate.denominator,
+            )
+            if frame_rate_info.average_frame_rate is not None
+            else None
+        ),
     )
 
 
@@ -435,3 +460,136 @@ def probe_video_frame_timestamps(path: Path) -> list[FramePresentationTimestamp]
 def probe_video_frame_pts(path: Path) -> list[float]:
     """Compatibility projection of exact frame timestamps to seconds."""
     return [row.presentation_time_seconds for row in probe_video_frame_timestamps(path)]
+
+
+def _build_streaming_frame_timestamp_probe_command(
+    ffprobe: str,
+    path: Path,
+) -> list[str]:
+    return [
+        ffprobe,
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_frames",
+        "-show_entries",
+        "frame=best_effort_timestamp,best_effort_timestamp_time",
+        "-of",
+        "csv=p=0",
+        str(Path(path)),
+    ]
+
+
+def _parse_streaming_timestamp_line(
+    line: str,
+    *,
+    frame_number: int,
+) -> FramePresentationTimestamp:
+    values = [value.strip() for value in line.strip().split(",")]
+    if len(values) != 2:
+        raise VideoStorageNormalizationError(
+            f"Frame {frame_number} has an invalid presentation timestamp row"
+        )
+    return _parse_frame_timestamp_row(
+        _FrameProbeRow(
+            best_effort_timestamp=values[0],
+            best_effort_timestamp_time=values[1],
+        ),
+        index=frame_number,
+    )
+
+
+def probe_video_presentation_timeline(
+    path: Path,
+    *,
+    boundaries: list[PresentationTimestampBoundary],
+) -> PresentationTimestampTimeline:
+    """Stream an exact PTS/cadence summary without retaining every frame row."""
+    ffprobe = _require_ffprobe_executable()
+    command = _build_streaming_frame_timestamp_probe_command(ffprobe, path)
+    requested: dict[int, list[PresentationTimestampBoundary]] = {}
+    for boundary in boundaries:
+        requested.setdefault(boundary.frame_number, []).append(boundary)
+    sampled: list[PresentationTimestampBoundary] = []
+    started_at = time.monotonic()
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if process.stdout is None:
+        process.kill()
+        raise VideoStorageNormalizationError("ffprobe PTS stdout is unavailable")
+
+    first: FramePresentationTimestamp | None = None
+    previous: FramePresentationTimestamp | None = None
+    minimum_cadence = math.inf
+    maximum_cadence = 0.0
+    frame_count = 0
+    try:
+        for line in process.stdout:
+            if time.monotonic() - started_at > 3600:
+                raise TimeoutError("ffprobe PTS summary timed out")
+            if not line.strip():
+                continue
+            current = _parse_streaming_timestamp_line(
+                line,
+                frame_number=frame_count,
+            )
+            if first is None:
+                first = current
+            if previous is not None:
+                _require_strictly_increasing_frame_timestamp(previous, current)
+                cadence = (
+                    current.presentation_time_seconds
+                    - previous.presentation_time_seconds
+                )
+                minimum_cadence = min(minimum_cadence, cadence)
+                maximum_cadence = max(maximum_cadence, cadence)
+            for boundary in requested.get(frame_count, []):
+                sampled.append(
+                    boundary.model_copy(
+                        update={
+                            "timestamp_seconds": current.presentation_time_seconds,
+                        }
+                    )
+                )
+            previous = current
+            frame_count += 1
+        return_code = process.wait(timeout=10)
+        if return_code != 0:
+            stderr = process.stderr.read() if process.stderr is not None else ""
+            raise VideoStorageNormalizationError(
+                "Could not probe frame PTS summary: "
+                f"returncode={return_code} detail={stderr[-1000:]}"
+            )
+    except (OSError, subprocess.SubprocessError, TimeoutError) as exc:
+        process.kill()
+        process.wait()
+        raise VideoStorageNormalizationError(
+            f"Could not probe frame PTS summary for {path}"
+        ) from exc
+    finally:
+        process.stdout.close()
+        if process.stderr is not None:
+            process.stderr.close()
+
+    if first is None or previous is None or frame_count < 2:
+        raise VideoStorageNormalizationError(
+            "ffprobe returned insufficient frame timestamps"
+        )
+    if len(sampled) != len(boundaries):
+        missing = sorted(requested.keys() - {item.frame_number for item in sampled})
+        raise VideoStorageNormalizationError(
+            f"PTS timeline is missing persisted boundary frames: {missing}"
+        )
+    return PresentationTimestampTimeline(
+        frame_count=frame_count,
+        first_timestamp_seconds=first.presentation_time_seconds,
+        last_timestamp_seconds=previous.presentation_time_seconds,
+        minimum_cadence_seconds=minimum_cadence,
+        maximum_cadence_seconds=maximum_cadence,
+        boundaries=sampled,
+    )

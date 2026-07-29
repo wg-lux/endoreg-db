@@ -184,9 +184,18 @@ def video_hls_materialization(
     artifact_kind: str = "processed",
     force: bool = False,
 ) -> dict[str, object]:
+    import logging
+
     from endoreg_db.exceptions import MediaOperationDeferred
     from endoreg_db.services.hls_media import materialize_video_hls
     from endoreg_db.services.jobs.error_handling import retry_deferred_media_operation
+    from endoreg_db.services.video_storage_normalization import (
+        VideoStorageNormalizationError,
+    )
+    from endoreg_db.utils.structured_logging import (
+        emit_structured_event,
+        hash_identifier,
+    )
 
     try:
         result = materialize_video_hls(
@@ -201,6 +210,23 @@ def video_hls_materialization(
             job_name="video_hls_materialization",
             video_id=video_id,
         )
+    except VideoStorageNormalizationError as exc:
+        emit_structured_event(
+            logging.getLogger("endoreg_db.jobs"),
+            "job.failed_terminal",
+            level=logging.ERROR,
+            job_name="video_hls_materialization",
+            subject_id_sha256=hash_identifier(video_id),
+            error_code="video_storage_validation_failed",
+            error_type=type(exc).__name__,
+            retryable=False,
+        )
+        return {
+            "video_id": int(video_id),
+            "artifact_kind": str(artifact_kind),
+            "status": "failed_validation",
+            "retryable": False,
+        }
     return result.as_dict()
 
 

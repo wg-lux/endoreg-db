@@ -236,6 +236,39 @@ def test_video_hls_materialization_task_delegates_with_normalized_args() -> None
     runner.assert_called_once_with(42, artifact_kind="processed", force=True)
 
 
+def test_hls_validation_failure_is_terminal_and_next_task_continues() -> None:
+    from endoreg_db.services.video_storage_normalization import (
+        VideoStorageNormalizationError,
+    )
+
+    class _Result:
+        def as_dict(self) -> dict[str, object]:
+            return {"video_id": 43, "status": "materialized"}
+
+    current_task = _current_task(tasks.video_hls_materialization)
+    with (
+        patch(
+            "endoreg_db.services.hls_media.materialize_video_hls",
+            side_effect=[
+                VideoStorageNormalizationError("deterministic timeline drift"),
+                _Result(),
+            ],
+        ),
+        patch.object(current_task, "retry") as retry,
+    ):
+        failed = cast(Any, tasks.video_hls_materialization).run("44")
+        subsequent = cast(Any, tasks.video_hls_materialization).run("43")
+
+    assert failed == {
+        "video_id": 44,
+        "artifact_kind": "processed",
+        "status": "failed_validation",
+        "retryable": False,
+    }
+    assert subsequent == {"video_id": 43, "status": "materialized"}
+    retry.assert_not_called()
+
+
 def test_video_temporal_inference_task_delegates_with_bounded_defaults() -> None:
     with patch(
         "endoreg_db.services.video_temporal_inference._run_video_temporal_inference",

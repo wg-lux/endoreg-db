@@ -10,6 +10,36 @@ def _empty_segment_timeline_references() -> list["SegmentTimelineReference"]:
     return []
 
 
+def _empty_timeline_boundaries() -> list["PresentationTimestampBoundary"]:
+    return []
+
+
+class NominalFrameRate(BaseModel):
+    """Rational stream rate declared by ``r_frame_rate``."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    numerator: int = Field(gt=0)
+    denominator: int = Field(gt=0)
+
+    @property
+    def frames_per_second(self) -> float:
+        return self.numerator / self.denominator
+
+
+class MeasuredAverageFrameRate(BaseModel):
+    """Rational frame-count/duration rate declared by ``avg_frame_rate``."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    numerator: int = Field(gt=0)
+    denominator: int = Field(gt=0)
+
+    @property
+    def frames_per_second(self) -> float:
+        return self.numerator / self.denominator
+
+
 class VideoTimelineContract(BaseModel):
     """Timeline coordinates that must survive canonical video normalization."""
 
@@ -22,6 +52,8 @@ class VideoTimelineContract(BaseModel):
     variable_frame_rate: bool = False
     time_base_num: int | None = Field(default=None, gt=0)
     time_base_den: int | None = Field(default=None, gt=0)
+    nominal_frame_rate: NominalFrameRate | None = None
+    measured_average_frame_rate: MeasuredAverageFrameRate | None = None
 
     @model_validator(mode="after")
     def validate_time_base_pair(self) -> Self:
@@ -33,6 +65,18 @@ class VideoTimelineContract(BaseModel):
     def fps(self) -> float:
         return self.fps_num / self.fps_den
 
+    @property
+    def nominal_fps(self) -> float:
+        if self.nominal_frame_rate is None:
+            return self.fps
+        return self.nominal_frame_rate.frames_per_second
+
+    @property
+    def measured_average_fps(self) -> float:
+        if self.measured_average_frame_rate is None:
+            return self.fps
+        return self.measured_average_frame_rate.frames_per_second
+
 
 class FramePresentationTimestamp(BaseModel):
     """Exact video-stream timestamp and its presentation time in seconds."""
@@ -41,6 +85,42 @@ class FramePresentationTimestamp(BaseModel):
 
     presentation_timestamp: int = Field(ge=0)
     presentation_time_seconds: float = Field(ge=0)
+
+
+class PresentationTimestampBoundary(BaseModel):
+    """Persisted clinical coordinate sampled from a concrete video timeline."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    coordinate_kind: Literal["segment_start", "segment_end", "extracted_frame"]
+    reference_id: int = Field(gt=0)
+    frame_number: int = Field(ge=0)
+    timestamp_seconds: float = Field(ge=0)
+
+
+class PresentationTimestampTimeline(BaseModel):
+    """Bounded-memory proof of monotonic presentation timestamps and cadence."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    frame_count: int = Field(gt=0)
+    first_timestamp_seconds: float = Field(ge=0)
+    last_timestamp_seconds: float = Field(ge=0)
+    minimum_cadence_seconds: float = Field(gt=0)
+    maximum_cadence_seconds: float = Field(gt=0)
+    boundaries: list[PresentationTimestampBoundary] = Field(
+        default_factory=_empty_timeline_boundaries
+    )
+
+    @model_validator(mode="after")
+    def validate_timestamp_range(self) -> Self:
+        if self.frame_count > 1 and (
+            self.last_timestamp_seconds <= self.first_timestamp_seconds
+        ):
+            raise ValueError("PTS timeline must be strictly increasing")
+        if self.maximum_cadence_seconds < self.minimum_cadence_seconds:
+            raise ValueError("maximum cadence must not be below minimum cadence")
+        return self
 
 
 class SegmentTimelineReference(BaseModel):
@@ -166,6 +246,10 @@ class ClinicalFrameQualityEvidence(BaseModel):
 
 __all__ = [
     "FramePresentationTimestamp",
+    "MeasuredAverageFrameRate",
+    "NominalFrameRate",
+    "PresentationTimestampBoundary",
+    "PresentationTimestampTimeline",
     "SegmentTimelineReference",
     "ClinicalFrameQualityEvidence",
     "VideoArtifactProbe",

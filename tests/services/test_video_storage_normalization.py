@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -10,7 +11,12 @@ import pytest
 from endoreg_db.models import Center, Frame, VideoFile
 from endoreg_db.schemas.video_storage import (
     FramePresentationTimestamp,
+    MeasuredAverageFrameRate,
+    NominalFrameRate,
+    PresentationTimestampBoundary,
+    PresentationTimestampTimeline,
     VideoArtifactProbe,
+    VideoFpsResamplingEvidence,
     VideoSourceTimelineEvidence,
     VideoTimelineContract,
 )
@@ -378,6 +384,37 @@ def test_probe_video_artifact_uses_average_rate_within_vfr_tolerance(
 
 
 @pytest.mark.unit
+def test_probe_keeps_nominal_and_measured_average_rates_distinct(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "source.mp4"
+    path.write_bytes(b"video")
+    _patch_ffprobe_payload(
+        monkeypatch,
+        _ffprobe_payload(
+            average_frame_rate="498549/10000",
+            nominal_frame_rate="50/1",
+            time_base="1/12800",
+            frame_count="500",
+        ),
+    )
+
+    probe = normalization.probe_video_artifact(path)
+
+    assert probe.timeline.nominal_frame_rate == NominalFrameRate(
+        numerator=50,
+        denominator=1,
+    )
+    assert probe.timeline.measured_average_frame_rate == MeasuredAverageFrameRate(
+        numerator=498549,
+        denominator=10000,
+    )
+    assert probe.timeline.nominal_fps == 50.0
+    assert abs(probe.timeline.measured_average_fps - 49.8549) < 1e-9
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize(
     ("payload", "message"),
     [
@@ -472,6 +509,181 @@ def test_temporal_gate_rejects_changed_frame_identity() -> None:
         normalization.assert_temporal_equivalence(
             _timeline(),
             _timeline(frame_count=249),
+            profile=profile,
+        )
+
+
+def _gc10_timeline(
+    *,
+    average_numerator: int,
+    average_denominator: int,
+    frame_count: int = 500,
+    duration_seconds: float = 10.0,
+    time_base_denominator: int = 12_800,
+) -> VideoTimelineContract:
+    return VideoTimelineContract(
+        fps_num=average_numerator,
+        fps_den=average_denominator,
+        duration_seconds=duration_seconds,
+        frame_count=frame_count,
+        variable_frame_rate=average_numerator != 50 * average_denominator,
+        time_base_num=1,
+        time_base_den=time_base_denominator,
+        nominal_frame_rate=NominalFrameRate(numerator=50, denominator=1),
+        measured_average_frame_rate=MeasuredAverageFrameRate(
+            numerator=average_numerator,
+            denominator=average_denominator,
+        ),
+    )
+
+
+def _pts_summary(
+    *,
+    boundary: PresentationTimestampBoundary,
+    maximum_cadence_seconds: float = 0.02,
+) -> PresentationTimestampTimeline:
+    return PresentationTimestampTimeline(
+        frame_count=500,
+        first_timestamp_seconds=0.0,
+        last_timestamp_seconds=9.98,
+        minimum_cadence_seconds=0.02,
+        maximum_cadence_seconds=maximum_cadence_seconds,
+        boundaries=[boundary],
+    )
+
+
+@pytest.mark.unit
+def test_proven_50_fps_hls_accepts_measured_average_rate_difference() -> None:
+    profile = normalization.VideoStorageProfile(
+        name="test",
+        max_bit_rate_bps=12_000_000,
+        max_bytes_per_second=1_600_000,
+        fixed_overhead_bytes=1024,
+    )
+    source = _probe(
+        timeline=_gc10_timeline(
+            average_numerator=498549,
+            average_denominator=10000,
+        )
+    )
+    output = _probe(
+        timeline=_gc10_timeline(
+            average_numerator=50,
+            average_denominator=1,
+            time_base_denominator=90_000,
+        )
+    )
+    persisted_boundary = PresentationTimestampBoundary(
+        coordinate_kind="segment_start",
+        reference_id=7,
+        frame_number=100,
+        timestamp_seconds=2.0,
+    )
+    provenance = VideoFpsResamplingEvidence(
+        normalized_at=datetime.now(UTC),
+        max_fps=50.0,
+        source=_probe(timeline=_timeline(fps_num=60, frame_count=600)),
+        output=source,
+    )
+    context = normalization.ProvenResampledHlsContext(
+        provenance=provenance,
+        source_generation_verified=True,
+        boundaries=(persisted_boundary,),
+    )
+
+    with pytest.raises(normalization.MeasuredAverageFrameRateDriftError):
+        normalization.assert_temporal_equivalence(
+            source.timeline,
+            output.timeline,
+            profile=profile,
+        )
+    normalization.validate_proven_resampled_hls_equivalence(
+        source=source,
+        output=output,
+        source_pts=_pts_summary(boundary=persisted_boundary),
+        output_pts=_pts_summary(boundary=persisted_boundary),
+        context=context,
+        profile=profile,
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("provenance_mode", "generation_verified", "maximum_cadence", "message"),
+    [
+        ("missing", True, 0.02, "requires FPS resampling provenance"),
+        ("mismatched", True, 0.02, "frame count does not match"),
+        ("valid", False, 0.02, "source generation does not match"),
+        ("valid", True, 0.04, "cadence is not constant"),
+    ],
+)
+def test_proven_50_fps_hls_fails_closed_without_complete_temporal_proof(
+    provenance_mode: str,
+    generation_verified: bool,
+    maximum_cadence: float,
+    message: str,
+) -> None:
+    profile = normalization.VideoStorageProfile(
+        name="test",
+        max_bit_rate_bps=12_000_000,
+        max_bytes_per_second=1_600_000,
+        fixed_overhead_bytes=1024,
+    )
+    source = _probe(
+        timeline=_gc10_timeline(
+            average_numerator=498549,
+            average_denominator=10000,
+        )
+    )
+    output = _probe(
+        timeline=_gc10_timeline(
+            average_numerator=50,
+            average_denominator=1,
+            time_base_denominator=90_000,
+        )
+    )
+    boundary = PresentationTimestampBoundary(
+        coordinate_kind="segment_start",
+        reference_id=7,
+        frame_number=100,
+        timestamp_seconds=2.0,
+    )
+    provenance = None
+    if provenance_mode != "missing":
+        provenance_output = (
+            source.model_copy(
+                update={
+                    "timeline": source.timeline.model_copy(update={"frame_count": 499})
+                }
+            )
+            if provenance_mode == "mismatched"
+            else source
+        )
+        provenance = VideoFpsResamplingEvidence(
+            normalized_at=datetime.now(UTC),
+            max_fps=50.0,
+            source=_probe(timeline=_timeline(fps_num=60, frame_count=600)),
+            output=provenance_output,
+        )
+    context = normalization.ProvenResampledHlsContext(
+        provenance=provenance,
+        source_generation_verified=generation_verified,
+        boundaries=(boundary,),
+    )
+
+    with pytest.raises(
+        normalization.VideoStorageNormalizationError,
+        match=message,
+    ):
+        normalization.validate_proven_resampled_hls_equivalence(
+            source=source,
+            output=output,
+            source_pts=_pts_summary(
+                boundary=boundary,
+                maximum_cadence_seconds=maximum_cadence,
+            ),
+            output_pts=_pts_summary(boundary=boundary),
+            context=context,
             profile=profile,
         )
 

@@ -38,6 +38,7 @@ from endoreg_db.services.video_storage.probes import (
     probe_video_artifact,
     probe_video_frame_pts,
     probe_video_frame_timestamps,
+    probe_video_presentation_timeline,
 )
 from endoreg_db.services.video_storage.timelines import (
     persist_video_source_timeline as _persist_video_source_timeline,
@@ -45,10 +46,13 @@ from endoreg_db.services.video_storage.timelines import (
     timeline_from_video_metadata,
 )
 from endoreg_db.services.video_storage.validation import (
+    MeasuredAverageFrameRateDriftError,
+    ProvenResampledHlsContext,
     assert_storage_compliance,
     assert_temporal_equivalence,
     validate_annotation_fps_resample,
     validate_normalized_output,
+    validate_proven_resampled_hls_equivalence,
 )
 from endoreg_db.utils import ffmpeg_wrapper as ffmpeg_wrapper
 
@@ -132,6 +136,8 @@ __all__ = [
     "VideoStorageInventoryReport",
     "VideoStorageNormalizationError",
     "VideoStorageProfile",
+    "MeasuredAverageFrameRateDriftError",
+    "ProvenResampledHlsContext",
     "assert_storage_compliance",
     "assert_temporal_equivalence",
     "configured_video_storage_profile",
@@ -142,11 +148,13 @@ __all__ = [
     "persist_video_source_timeline",
     "probe_video_artifact",
     "probe_video_frame_pts",
+    "probe_video_presentation_timeline",
     "raw_cleanup_blockers",
     "segment_timeline_references",
     "timeline_from_video_metadata",
     "validate_annotation_fps_resample",
     "validate_normalized_output",
+    "validate_proven_resampled_hls_equivalence",
     "video_normalization_evidence",
     "video_storage_capacity",
 ]
