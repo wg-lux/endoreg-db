@@ -45,9 +45,15 @@ HostModelName: TypeAlias = Literal[
     "FindingClassificationChoice",
     "Gender",
     "Patient",
+    "PatientDisease",
+    "PatientEvent",
     "PatientExamination",
     "PatientFinding",
     "PatientFindingClassification",
+    "PatientLabSample",
+    "PatientLabValue",
+    "PatientMedication",
+    "PatientMedicationSchedule",
 ]
 
 _HOST_MODEL_NAMES: tuple[HostModelName, ...] = (
@@ -58,9 +64,15 @@ _HOST_MODEL_NAMES: tuple[HostModelName, ...] = (
     "FindingClassificationChoice",
     "Gender",
     "Patient",
+    "PatientDisease",
+    "PatientEvent",
     "PatientExamination",
     "PatientFinding",
     "PatientFindingClassification",
+    "PatientLabSample",
+    "PatientLabValue",
+    "PatientMedication",
+    "PatientMedicationSchedule",
 )
 
 

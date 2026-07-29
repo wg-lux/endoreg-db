@@ -1,0 +1,228 @@
+schema_version: '1.0'
+id: lx_dtypes_model_standardization
+name: lx-dtypes-Modellstandardisierung
+description: 'Repositoryweite Standardisierung der endoreg_db-Django-Modelle durch eindeutig verantwortete,
+  zentral validierte lx_dtypes-Verträge und lokale Persistenzgrenzen. Nicht jedes Django-Modell wird zu
+  einem lx_dtypes-Modell: Gemeinsam genutzte klinische und interoperable Datenformen gehören nach lx_dtypes,
+  während endoreg_db-spezifische Datenbankconstraints und Zustandsübergänge im Persistenzmodell verbleiben.'
+owners:
+- endoreg_db maintainers
+- lx_dtypes maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/model_layer_map_for_agents.md
+  disposition: reference
+  note: Definiert Ownership, Modell-/Servicegrenzen und die Cross-Layer-Checkliste für Feldänderungen.
+- path: docs/lxdm_contract_inventory.md
+  disposition: reference
+  note: Dokumentiert den bestehenden lx_dtypes-Contract-Bestand und bekannte endoreg_db-Consumer als Ausgangspunkt
+    der Modellstandardisierung.
+- path: docs/pydantic_django_hardening_plan.md
+  disposition: reference
+  note: Liefert Architekturkontext zu Pydantic-, Django- und Mehrfachvererbungsrisiken; der verbindliche
+    Status wird nur hier geführt.
+definition_of_done:
+- id: complete_model_inventory
+  category: requirements
+  title: Alle endoreg_db-Modelle und ihre Datengrenzen sind vollständig klassifiziert
+  acceptance:
+  - Ein reproduzierbares Inventar erfasst jedes konkrete und Proxy-Modell über die Django-App-Registry
+    sowie jedes abstrakte Modell durch statische Quelldatei-Erkennung mit Modul, App-Label soweit anwendbar,
+    Basisklasse und Persistenzstatus.
+  - Für jedes Modell sind API-, Import-, Export-, YAML-/JSON-, Job-, Service- und repositoryübergreifende
+    Datengrenzen sowie persistierte JSON-Felder und dynamische Modellreferenzen erfasst.
+  - 'Jedes Modell ist genau einer überprüfbaren Zielklasse zugeordnet: gemeinsamer lx_dtypes-Vertrag,
+    lokales endoreg_db-Boundary-Schema, reines Persistenzmodell oder begründete zeitlich befristete Ausnahme.'
+  - Das Inventar schlägt fehl, wenn ein neues Modell oder eine neue Boundary ohne Klassifikation hinzukommt.
+  required: true
+  verification:
+    kind: manual
+    instructions: Inventar gegen Django-App-Registry, endoreg_db/models, Serializer, Views, Services,
+      Importer, Exporte und dynamische Stringreferenzen abgleichen und Vollständigkeitsguard ausführen.
+    timeout_seconds: 1200
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: document
+      reference: quality/lx_dtypes_model_inventory.yml
+    - kind: code
+      reference: scripts/check_lx_dtypes_model_inventory.py
+    - kind: test
+      reference: tests/scripts/test_check_lx_dtypes_model_inventory.py
+    note: Alle 141 über die Django-App-Registry registrierten endoreg_db-Modelle sind strukturell inventarisiert
+      und gegen neue, entfernte oder veränderte Modelle geschützt. Alle Ownership-Ziele bleiben bewusst
+      unclassified; abstrakte Modelle, Boundary-Consumer, dynamische Referenzen und die lx_dtypes-Contract-Zuordnung
+      sind noch vollständig zu klassifizieren.
+    assessed_by: Codex
+    assessed_at: '2026-07-29T12:43:49.690336Z'
+- id: field_and_contract_ownership
+  category: interoperability
+  title: Feld-, Enum- und Contract-Ownership ist für jedes Modell eindeutig
+  acceptance:
+  - Gemeinsam genutzte klinische, semantische und interoperable Datenformen haben genau einen kanonischen
+    Owner in lx_dtypes.
+  - Datenbankfelder, Constraints, Relationen und endoreg_db-spezifische Zustandsübergänge bleiben im Django-Persistenzmodell;
+    Workflowlogik gehört in typisierte Services.
+  - Parallele Pydantic-Modelle, TypedDicts, DataDicts, Enums und offene Dictionaries für dieselbe Datenform
+    sind entfernt oder durch einen benannten, getesteten Kompatibilitätsadapter mit Ablaufbedingung verbunden.
+  - Jede Feldänderung dokumentiert die betroffenen Django-, lx_dtypes-, Serializer-, Loader-, Service-,
+    Persistenz- und Exportverträge sowie deren Versionsfenster.
+  required: true
+  verification:
+    kind: manual
+    instructions: Ownership-Matrix je Modellkohorte gegen Code, lx_dtypes-Exporte, Wissensbasis, Serializer
+      und Persistenzschema reviewen.
+    timeout_seconds: 1200
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: canonical_boundary_validation
+  category: functionality
+  title: Externe und repositoryübergreifende Daten werden zentral durch lx_dtypes validiert
+  acceptance:
+  - API-, Import-, Export-, Datei-, Message- und Drittanbieter-Payloads mit gemeinsam genutzter Semantik
+    werden an der besitzenden Boundary genau einmal in einen strikt typisierten lx_dtypes-Vertrag überführt.
+  - Nach erfolgreicher Validierung verwenden Serializer, Views, Services, Jobs und Exporte dieselbe typisierte
+    interne Form und führen weder das ursprüngliche Mapping noch eine konkurrierende Payloadform parallel.
+  - Unbekannte Felder, ungültige Enumwerte, widersprüchliche Identitäten und verletzte klinische Invarianten
+    werden laut und ohne stillen Fallback abgelehnt.
+  - Öffentliche API-Felder bleiben snake_case; Kompatibilitätsnormalisierung findet ausschließlich in
+    einem benannten Boundary-Adapter statt.
+  required: true
+  verification:
+    kind: manual
+    instructions: Repräsentative gültige und ungültige Payloads jeder Modellkohorte von der Eingangsgrenze
+      bis Service, Persistenz und Ausgabe verfolgen.
+    timeout_seconds: 1200
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: persisted_model_validation
+  category: data_integrity
+  title: Persistierte Modellzustände und JSON-Payloads besitzen eine zentrale Validierungsgrenze
+  acceptance:
+  - Jedes persistierte JSON-Feld wird vor jedem Schreibpfad durch ein versioniertes typisiertes Schema
+    validiert und kanonisch serialisiert.
+  - Django-Constraints, clean-Methoden und typisierte Zustandsübergänge sichern ausschließlich Persistenzinvarianten
+    und duplizieren keine abweichende lx_dtypes-Normalisierung.
+  - Direkte Manager-, Bulk-, Management-Command-, Job- und Migrationspfade können die für ihre Modellkohorte
+    erforderliche Validierung nicht unbemerkt umgehen.
+  - Round-Trip- und Invalid-Input-Tests beweisen, dass gespeicherte Daten vollständig validiert, versionszugeordnet
+    und ohne semantischen Verlust wieder geladen werden.
+  required: true
+  verification:
+    kind: manual
+    instructions: Alle Schreibpfade und JSONFields je Kohorte inventarisieren; Constraint-, Round-Trip-,
+      Bulk-/Manager- und Invalid-Input-Tests ausführen.
+    timeout_seconds: 1200
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: incremental_model_cohorts
+  category: maintainability
+  title: Die Standardisierung erfolgt in kleinen risiko- und domänenbasierten Modellkohorten
+  acceptance:
+  - Jede Kohorte nennt Modelle, aktuelle und kanonische Verträge, bekannte Consumer, Datenmigrationen,
+    Abhängigkeiten, Owner und messbare Abschlusskriterien.
+  - Klinische Identität, medizinische Ledger, Importpfade, Reports, Video, Hub-Transfer und Konfiguration
+    werden nach Risiko priorisiert, ohne unabgestimmten repositoryweiten Big-Bang-Austausch.
+  - Neue Workflowlogik landet nicht in endoreg_db/models und neue lx_dtypes-Verträge importieren weder
+    Django-Modelle noch endoreg_db-spezifische Services.
+  - Eine Kohorte gilt erst als abgeschlossen, wenn ihr Restbestand null oder als befristete Ausnahme mit
+    Owner, Begründung und Ablaufbedingung dokumentiert ist.
+  required: true
+  verification:
+    kind: manual
+    instructions: Kohortenplan, Diffs und Restbestand gegen Modellinventar, Abhängigkeitsrichtung und
+      jeweilige Abschlusskriterien prüfen.
+    timeout_seconds: 900
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: regression_and_type_guards
+  category: testing
+  title: Automatisierte Guards verhindern neue lokale oder unvalidierte Modellverträge
+  acceptance:
+  - Repositoryweites Pyright läuft ohne neue Fehler, Any-Ausweitungen, Ignore-Regeln oder sachlich unbegründete
+    Optional-/Union-Typen.
+  - Ein Registry-basierter Test verlangt für jedes Modell und jede relevante Boundary eine aktuelle Klassifikation
+    und den zugeordneten Validierungsnachweis.
+  - Architekturtests verhindern neue konkurrierende lokale Contracts, breite Modell-Barrel-Imports, Model-zu-Service-Zyklen
+    und unvalidierte persistierte JSON-Payloads.
+  - Jede Kohorte besitzt parametrisierte Tests für gültige Varianten, ungültige Eingaben, Serialisierungs-Round-Trips
+    und Rückwärtskompatibilität; Importpfade werden zusätzlich auf Parallelität und Idempotenz geprüft.
+  required: true
+  verification:
+    kind: manual
+    instructions: Pyright, Registry-/Architekturguard und die fokussierten Contract-, Modell-, Import-
+      und Round-Trip-Tests aller abgeschlossenen Kohorten in einem auditable foreground test run ausführen.
+    timeout_seconds: 1800
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: security_and_privacy_boundaries
+  category: security
+  title: Zentrale Modellvalidierung schützt Identität, Mandantengrenzen und Medieninvarianten
+  acceptance:
+  - lx_dtypes-Verträge und Adapter minimieren klinische und direkte Identitätsdaten; generische Model-Dumps
+    oder unselektierte ORM-Objekte dürfen keine Exportgrenze überschreiten.
+  - Center-, Patienten-, Untersuchungs- und Provenienzbezüge werden serverseitig validiert und können
+    nicht durch lose Payloads oder fremde Primärschlüssel umgangen werden.
+  - Validierungsfehler und strukturierte Logs enthalten keine Secrets, Master Keys, direkten Patientenidentifikatoren
+    oder vollständigen sensiblen Payloads.
+  - Video- und Reportverträge erhalten Verschlüsselung, Raw-Media- Exportverbot, kanonische Generation,
+    Präsentationszeitstempel und fail-closed Cleanup unverändert.
+  required: true
+  verification:
+    kind: manual
+    instructions: Security-Review und Negativtests für Extra-Felder, Cross-Center-Zugriff, Identitätskonflikte,
+      sensitive Serialisierung und Medieninvarianten je betroffener Kohorte durchführen.
+    timeout_seconds: 1200
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: versioned_rollout_and_recovery
+  category: operations
+  title: Contract-Versionen, Datenmigration, Rollback und Mischbetrieb sind beherrscht
+  acceptance:
+  - Jede veröffentlichte oder persistierte Contract-Änderung besitzt eine explizite lx-dtypes-Version,
+    Kompatibilitätsmatrix und zulässige Mischbetriebsdauer.
+  - Vor Deployment sind Backfill, Validierungsreport, Quarantäne, Abbruchkriterien und atomarer Rollback
+    mit repräsentativen Daten nachgewiesen.
+  - Ungültige Bestandsdaten werden nicht still korrigiert oder verworfen, sondern fail-closed mit Modell,
+    Datensatzreferenz, Contract-Version und datensparsamer Fehlerursache ausgewiesen.
+  - Import, Streaming und parallele Worker bleiben während jeder Kohorte funktionsfähig, idempotent und
+    durch fokussierte Integrations- und Concurrency-Tests belegt.
+  required: true
+  verification:
+    kind: manual
+    instructions: Eine repräsentative Kohorte mit gepinnter lx-dtypes-Version, Backfill, Mischbetrieb,
+      Fehlerfall, Rollback und Import-/Streaming- Concurrency-Probe durchführen.
+    timeout_seconds: 1800
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: contributor_documentation
+  category: documentation
+  title: Modell- und Contract-Standardisierung ist für neue Änderungen verbindlich dokumentiert
+  acceptance:
+  - Die Modellkarte erklärt Zielklassen, Ownership-Entscheidung, Boundary-Adapter, lx_dtypes-Importregeln,
+    Versionsstrategie und verbotene Doppelvalidierung anhand konkreter Beispiele.
+  - Die Cross-Layer-Checkliste verlangt Inventar-, Consumer-, Schema-, Migrations-, Security-, Pyright-
+    und Testaktualisierung für jede relevante Modell- oder Feldänderung.
+  - Das lx_dtypes- und endoreg_db-Releaseverfahren benennt Reviewowner, Reihenfolge, Kompatibilitätsfenster
+    und Produktionsnachweise.
+  - Architektur- und Betriebsdokumente verweisen auf diese Feature-ID und führen keinen parallelen Umsetzungs-
+    oder Fertigstellungsstatus.
+  required: true
+  verification:
+    kind: manual
+    instructions: Eine neue Modell- und eine Feldänderung ausschließlich anhand der Dokumentation planen
+      und prüfen, ob alle Owner, Layer, Versionen, Migrationen und Nachweise eindeutig ableitbar sind.
+    timeout_seconds: 600
+  assessment:
+    status: not_assessed
+    evidence: []

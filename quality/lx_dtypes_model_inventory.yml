@@ -1,0 +1,3120 @@
+schema_version: '1.0'
+feature_id: lx_dtypes_model_standardization
+models:
+- label: endoreg_db.AIDataSet
+  kind: registered
+  python_path: endoreg_db.models.aidataset.aidataset.AIDataSet
+  source_path: endoreg_db/models/aidataset/aidataset.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_aidataset
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.ai_dataset.AIDataSetActiveLearningCandidateContract
+  - lx_dtypes.models.contracts.ai_dataset.AIDataSetActiveLearningConfigContract
+  - lx_dtypes.models.contracts.ai_dataset.AIDataSetActiveLearningSelectionContract
+  - lx_dtypes.models.contracts.ai_dataset.AIDataSetScoredActiveLearningCandidateContract
+  - lx_dtypes.models.contracts.aidataset_export.AIDataSetExportPayload
+  - lx_dtypes.models.contracts.aidataset_export.AIDataSetExportSummary
+  - lx_dtypes.models.contracts.aidataset_export.AIDataSetFrameAnnotationExport
+  - lx_dtypes.models.contracts.aidataset_export.AIDataSetFrameLabelExport
+  - lx_dtypes.models.contracts.aidataset_frame_buckets.AIDataSetFrameBucketCount
+  - lx_dtypes.models.contracts.aidataset_frame_buckets.AIDataSetFrameBucketDistribution
+  - lx_dtypes.models.contracts.aidataset_frame_buckets.AIDataSetFrameBucketSummary
+  - lx_dtypes.models.contracts.aidataset_frame_buckets.AIDataSetLabelDistributionEntry
+  - lx_dtypes.models.contracts.aidataset_frame_buckets.AIDataSetLabelFrameBucketCount
+  - lx_dtypes.models.contracts.aidataset_frame_buckets.AIDataSetTargetFrameBucket
+  module_endoreg_schema_imports:
+  - endoreg_db.schemas.validate_ai_model_training_artifact_paths
+  - endoreg_db.schemas.validate_ai_model_training_request_payload
+  - endoreg_db.schemas.validate_ai_model_training_result_payload
+- label: endoreg_db.AIDataSetExportArtifact
+  kind: registered
+  python_path: endoreg_db.models.aidataset.aidataset.AIDataSetExportArtifact
+  source_path: endoreg_db/models/aidataset/aidataset.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_aidatasetexportartifact
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - request_payload
+  - summary
+  custom_clean: false
+  custom_save: false
+  target: shared_lx_dtypes_contract
+  owner: endoreg_db maintainers
+  rationale: Dataset export request and summary shapes are shared cross-repository
+    contracts; direct artifact model writes remain a validation gap.
+  ownership_evidence:
+  - endoreg_db/services/aidataset_exports.py:build_export_payload
+  - lx_dtypes.models.contracts.aidataset_export.AIDataSetExportPayload
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.ai_dataset.AIDataSetActiveLearningCandidateContract
+  - lx_dtypes.models.contracts.ai_dataset.AIDataSetActiveLearningConfigContract
+  - lx_dtypes.models.contracts.ai_dataset.AIDataSetActiveLearningSelectionContract
+  - lx_dtypes.models.contracts.ai_dataset.AIDataSetScoredActiveLearningCandidateContract
+  - lx_dtypes.models.contracts.aidataset_export.AIDataSetExportPayload
+  - lx_dtypes.models.contracts.aidataset_export.AIDataSetExportSummary
+  - lx_dtypes.models.contracts.aidataset_export.AIDataSetFrameAnnotationExport
+  - lx_dtypes.models.contracts.aidataset_export.AIDataSetFrameLabelExport
+  - lx_dtypes.models.contracts.aidataset_frame_buckets.AIDataSetFrameBucketCount
+  - lx_dtypes.models.contracts.aidataset_frame_buckets.AIDataSetFrameBucketDistribution
+  - lx_dtypes.models.contracts.aidataset_frame_buckets.AIDataSetFrameBucketSummary
+  - lx_dtypes.models.contracts.aidataset_frame_buckets.AIDataSetLabelDistributionEntry
+  - lx_dtypes.models.contracts.aidataset_frame_buckets.AIDataSetLabelFrameBucketCount
+  - lx_dtypes.models.contracts.aidataset_frame_buckets.AIDataSetTargetFrameBucket
+  module_endoreg_schema_imports:
+  - endoreg_db.schemas.validate_ai_model_training_artifact_paths
+  - endoreg_db.schemas.validate_ai_model_training_request_payload
+  - endoreg_db.schemas.validate_ai_model_training_result_payload
+- label: endoreg_db.AIModelTrainingRun
+  kind: registered
+  python_path: endoreg_db.models.aidataset.aidataset.AIModelTrainingRun
+  source_path: endoreg_db/models/aidataset/aidataset.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_aimodeltrainingrun
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - artifact_paths
+  - command_kwargs
+  - request_payload
+  - result
+  custom_clean: true
+  custom_save: true
+  target: local_boundary_schema
+  owner: endoreg_db maintainers
+  rationale: The persisted training-job aggregate is endoreg_db-specific and is normalized
+    by local strict schemas in clean() before save.
+  ownership_evidence:
+  - endoreg_db/models/aidataset/aidataset.py:AIModelTrainingRun.clean
+  - endoreg_db/schemas/persisted_json.py:AIModelTrainingRequestPayload
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.ai_dataset.AIDataSetActiveLearningCandidateContract
+  - lx_dtypes.models.contracts.ai_dataset.AIDataSetActiveLearningConfigContract
+  - lx_dtypes.models.contracts.ai_dataset.AIDataSetActiveLearningSelectionContract
+  - lx_dtypes.models.contracts.ai_dataset.AIDataSetScoredActiveLearningCandidateContract
+  - lx_dtypes.models.contracts.aidataset_export.AIDataSetExportPayload
+  - lx_dtypes.models.contracts.aidataset_export.AIDataSetExportSummary
+  - lx_dtypes.models.contracts.aidataset_export.AIDataSetFrameAnnotationExport
+  - lx_dtypes.models.contracts.aidataset_export.AIDataSetFrameLabelExport
+  - lx_dtypes.models.contracts.aidataset_frame_buckets.AIDataSetFrameBucketCount
+  - lx_dtypes.models.contracts.aidataset_frame_buckets.AIDataSetFrameBucketDistribution
+  - lx_dtypes.models.contracts.aidataset_frame_buckets.AIDataSetFrameBucketSummary
+  - lx_dtypes.models.contracts.aidataset_frame_buckets.AIDataSetLabelDistributionEntry
+  - lx_dtypes.models.contracts.aidataset_frame_buckets.AIDataSetLabelFrameBucketCount
+  - lx_dtypes.models.contracts.aidataset_frame_buckets.AIDataSetTargetFrameBucket
+  module_endoreg_schema_imports:
+  - endoreg_db.schemas.validate_ai_model_training_artifact_paths
+  - endoreg_db.schemas.validate_ai_model_training_request_payload
+  - endoreg_db.schemas.validate_ai_model_training_result_payload
+- label: endoreg_db.AbstractDocument
+  kind: abstract
+  python_path: endoreg_db.models.media.pdf.report_file.AbstractDocument
+  source_path: endoreg_db/models/media/pdf/report_file.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_abstractdocument
+  abstract: true
+  proxy: false
+  managed: true
+  json_fields:
+  - meta
+  custom_clean: false
+  custom_save: false
+  target: persistence_only
+  owner: endoreg_db maintainers
+  rationale: Abstract Django persistence base for document fields and relations; concrete
+    document boundaries require separate contracts.
+  ownership_evidence:
+  - endoreg_db/models/media/pdf/report_file.py:AbstractDocument.Meta
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.json_types.JsonObject
+  module_endoreg_schema_imports: []
+- label: endoreg_db.AbstractExaminationReport
+  kind: abstract
+  python_path: endoreg_db.models.media.pdf.report_file.AbstractExaminationReport
+  source_path: endoreg_db/models/media/pdf/report_file.py
+  base_classes:
+  - endoreg_db.models.media.pdf.report_file.AbstractDocument
+  db_table: endoreg_db_abstractexaminationreport
+  abstract: true
+  proxy: false
+  managed: true
+  json_fields:
+  - meta
+  custom_clean: false
+  custom_save: false
+  target: persistence_only
+  owner: endoreg_db maintainers
+  rationale: Abstract Django persistence base for examination-report relations; concrete
+    report payloads are classified separately.
+  ownership_evidence:
+  - endoreg_db/models/media/pdf/report_file.py:AbstractExaminationReport.Meta
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.json_types.JsonObject
+  module_endoreg_schema_imports: []
+- label: endoreg_db.AbstractState
+  kind: abstract
+  python_path: endoreg_db.models.state.abstract.AbstractState
+  source_path: endoreg_db/models/state/abstract.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_abstractstate
+  abstract: true
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: persistence_only
+  owner: endoreg_db maintainers
+  rationale: Abstract Django persistence base that owns timestamp columns only.
+  ownership_evidence:
+  - endoreg_db/models/state/abstract.py:AbstractState.Meta
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.ActiveModel
+  kind: registered
+  python_path: endoreg_db.models.administration.ai.active_model.ActiveModel
+  source_path: endoreg_db/models/administration/ai/active_model.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_activemodel
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.AiModel
+  kind: registered
+  python_path: endoreg_db.models.administration.ai.ai_model.AiModel
+  source_path: endoreg_db/models/administration/ai/ai_model.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_aimodel
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.AnonymExaminationReport
+  kind: registered
+  python_path: endoreg_db.models.media.pdf.report_file.AnonymExaminationReport
+  source_path: endoreg_db/models/media/pdf/report_file.py
+  base_classes:
+  - endoreg_db.models.media.pdf.report_file.AbstractExaminationReport
+  db_table: endoreg_db_anonymexaminationreport
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - meta
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.json_types.JsonObject
+  module_endoreg_schema_imports: []
+- label: endoreg_db.AnonymHistologyReport
+  kind: registered
+  python_path: endoreg_db.models.media.pdf.report_file.AnonymHistologyReport
+  source_path: endoreg_db/models/media/pdf/report_file.py
+  base_classes:
+  - endoreg_db.models.media.pdf.report_file.AbstractExaminationReport
+  db_table: endoreg_db_anonymhistologyreport
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - meta
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.json_types.JsonObject
+  module_endoreg_schema_imports: []
+- label: endoreg_db.AnonymizationFieldMetric
+  kind: registered
+  python_path: endoreg_db.models.media.anonymization_metrics.AnonymizationFieldMetric
+  source_path: endoreg_db/models/media/anonymization_metrics.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_anonymizationfieldmetric
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.AnonymizationValidationMetric
+  kind: registered
+  python_path: endoreg_db.models.media.anonymization_metrics.AnonymizationValidationMetric
+  source_path: endoreg_db/models/media/anonymization_metrics.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_anonymizationvalidationmetric
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.ApplicationSettings
+  kind: registered
+  python_path: endoreg_db.models.administration.app_settings.ApplicationSettings
+  source_path: endoreg_db/models/administration/app_settings.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_applicationsettings
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: true
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.BaseValueDistribution
+  kind: abstract
+  python_path: endoreg_db.models.other.distribution.base_value_distribution.BaseValueDistribution
+  source_path: endoreg_db/models/other/distribution/base_value_distribution.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_basevaluedistribution
+  abstract: true
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: persistence_only
+  owner: endoreg_db maintainers
+  rationale: Abstract Django persistence base for distribution rows; boundary payload
+    ownership is assigned to concrete consumers.
+  ownership_evidence:
+  - endoreg_db/models/other/distribution/base_value_distribution.py:BaseValueDistribution.Meta
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.Case
+  kind: registered
+  python_path: endoreg_db.models.administration.case.case.Case
+  source_path: endoreg_db/models/administration/case/case.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_case
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: true
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.Center
+  kind: registered
+  python_path: endoreg_db.models.administration.center.center.Center
+  source_path: endoreg_db/models/administration/center/center.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_center
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: true
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.CenterProduct
+  kind: registered
+  python_path: endoreg_db.models.administration.center.center_product.CenterProduct
+  source_path: endoreg_db/models/administration/center/center_product.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_centerproduct
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.CenterResource
+  kind: registered
+  python_path: endoreg_db.models.administration.center.center_resource.CenterResource
+  source_path: endoreg_db/models/administration/center/center_resource.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_centerresource
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.CenterShift
+  kind: registered
+  python_path: endoreg_db.models.administration.center.center_shift.CenterShift
+  source_path: endoreg_db/models/administration/center/center_shift.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_centershift
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.CenterWaste
+  kind: registered
+  python_path: endoreg_db.models.administration.center.center_waste.CenterWaste
+  source_path: endoreg_db/models/administration/center/center_waste.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_centerwaste
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.Contraindication
+  kind: registered
+  python_path: endoreg_db.models.medical.contraindication.Contraindication
+  source_path: endoreg_db/models/medical/contraindication/__init__.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_contraindication
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.contraindication.ContraindicationCore
+  module_endoreg_schema_imports: []
+- label: endoreg_db.DateValueDistribution
+  kind: registered
+  python_path: endoreg_db.models.other.distribution.date_value_distribution.DateValueDistribution
+  source_path: endoreg_db/models/other/distribution/date_value_distribution.py
+  base_classes:
+  - endoreg_db.models.other.distribution.base_value_distribution.BaseValueDistribution
+  db_table: endoreg_db_datevaluedistribution
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.DicomExportJob
+  kind: registered
+  python_path: endoreg_db.models.interoperability.dicom.DicomExportJob
+  source_path: endoreg_db/models/interoperability/dicom.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_dicomexportjob
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - manifest
+  custom_clean: true
+  custom_save: true
+  target: local_boundary_schema
+  owner: endoreg_db maintainers
+  rationale: The persisted manifest currently uses the versioned local DICOM schema
+    that explicitly mirrors the pending shared contract.
+  ownership_evidence:
+  - endoreg_db/models/interoperability/dicom.py:DicomExportJob.clean
+  - endoreg_db/schemas/dicom_export.py:DicomExportManifestV2
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports:
+  - endoreg_db.schemas.dicom_export.dump_dicom_export_manifest_v2
+- label: endoreg_db.DicomInstance
+  kind: registered
+  python_path: endoreg_db.models.interoperability.dicom.DicomInstance
+  source_path: endoreg_db/models/interoperability/dicom.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_dicominstance
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports:
+  - endoreg_db.schemas.dicom_export.dump_dicom_export_manifest_v2
+- label: endoreg_db.DicomSeries
+  kind: registered
+  python_path: endoreg_db.models.interoperability.dicom.DicomSeries
+  source_path: endoreg_db/models/interoperability/dicom.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_dicomseries
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports:
+  - endoreg_db.schemas.dicom_export.dump_dicom_export_manifest_v2
+- label: endoreg_db.DicomStudy
+  kind: registered
+  python_path: endoreg_db.models.interoperability.dicom.DicomStudy
+  source_path: endoreg_db/models/interoperability/dicom.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_dicomstudy
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports:
+  - endoreg_db.schemas.dicom_export.dump_dicom_export_manifest_v2
+- label: endoreg_db.Disease
+  kind: registered
+  python_path: endoreg_db.models.medical.disease.Disease
+  source_path: endoreg_db/models/medical/disease.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_disease
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - numerical_descriptors
+  - subcategories
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.DiseaseClassification
+  kind: registered
+  python_path: endoreg_db.models.medical.disease.DiseaseClassification
+  source_path: endoreg_db/models/medical/disease.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_diseaseclassification
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.DiseaseClassificationChoice
+  kind: registered
+  python_path: endoreg_db.models.medical.disease.DiseaseClassificationChoice
+  source_path: endoreg_db/models/medical/disease.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_diseaseclassificationchoice
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.DocumentType
+  kind: registered
+  python_path: endoreg_db.models.media.pdf.report_file.DocumentType
+  source_path: endoreg_db/models/media/pdf/report_file.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_documenttype
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.json_types.JsonObject
+  module_endoreg_schema_imports: []
+- label: endoreg_db.EmissionFactor
+  kind: registered
+  python_path: endoreg_db.models.other.emission.emission_factor.EmissionFactor
+  source_path: endoreg_db/models/other/emission/emission_factor.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_emissionfactor
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.Employee
+  kind: registered
+  python_path: endoreg_db.models.administration.person.employee.employee.Employee
+  source_path: endoreg_db/models/administration/person/employee/employee.py
+  base_classes:
+  - endoreg_db.models.administration.person.person.Person
+  db_table: endoreg_db_employee
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.EmployeeQualification
+  kind: registered
+  python_path: endoreg_db.models.administration.person.employee.employee_qualification.EmployeeQualification
+  source_path: endoreg_db/models/administration/person/employee/employee_qualification.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_employeequalification
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.EmployeeType
+  kind: registered
+  python_path: endoreg_db.models.administration.person.employee.employee_type.EmployeeType
+  source_path: endoreg_db/models/administration/person/employee/employee_type.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_employeetype
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.Endoscope
+  kind: registered
+  python_path: endoreg_db.models.medical.hardware.endoscope.Endoscope
+  source_path: endoreg_db/models/medical/hardware/endoscope.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_endoscope
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.EndoscopeType
+  kind: registered
+  python_path: endoreg_db.models.medical.hardware.endoscope.EndoscopeType
+  source_path: endoreg_db/models/medical/hardware/endoscope.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_endoscopetype
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.EndoscopyProcessor
+  kind: registered
+  python_path: endoreg_db.models.medical.hardware.endoscopy_processor.EndoscopyProcessor
+  source_path: endoreg_db/models/medical/hardware/endoscopy_processor.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_endoscopyprocessor
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.endoscopy_processor.EndoscopeImageRoiCore
+  - lx_dtypes.models.contracts.endoscopy_processor.RoiBoxCore
+  module_endoreg_schema_imports: []
+- label: endoreg_db.Event
+  kind: registered
+  python_path: endoreg_db.models.medical.event.Event
+  source_path: endoreg_db/models/medical/event.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_event
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.EventClassification
+  kind: registered
+  python_path: endoreg_db.models.medical.event.EventClassification
+  source_path: endoreg_db/models/medical/event.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_eventclassification
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.EventClassificationChoice
+  kind: registered
+  python_path: endoreg_db.models.medical.event.EventClassificationChoice
+  source_path: endoreg_db/models/medical/event.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_eventclassificationchoice
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - numerical_descriptors
+  - subcategories
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.Examination
+  kind: registered
+  python_path: endoreg_db.models.medical.examination.examination.Examination
+  source_path: endoreg_db/models/medical/examination/examination.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_examination
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.ExaminationIndication
+  kind: registered
+  python_path: endoreg_db.models.medical.examination.examination_indication.ExaminationIndication
+  source_path: endoreg_db/models/medical/examination/examination_indication.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_examinationindication
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.examination_indication.ExaminationIndicationClassificationChoiceCore
+  module_endoreg_schema_imports: []
+- label: endoreg_db.ExaminationIndicationClassification
+  kind: registered
+  python_path: endoreg_db.models.medical.examination.examination_indication.ExaminationIndicationClassification
+  source_path: endoreg_db/models/medical/examination/examination_indication.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_examinationindicationclassification
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.examination_indication.ExaminationIndicationClassificationChoiceCore
+  module_endoreg_schema_imports: []
+- label: endoreg_db.ExaminationIndicationClassificationChoice
+  kind: registered
+  python_path: endoreg_db.models.medical.examination.examination_indication.ExaminationIndicationClassificationChoice
+  source_path: endoreg_db/models/medical/examination/examination_indication.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_examinationindicationclassificationchoice
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - numerical_descriptors
+  - subcategories
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.examination_indication.ExaminationIndicationClassificationChoiceCore
+  module_endoreg_schema_imports: []
+- label: endoreg_db.ExaminationTime
+  kind: registered
+  python_path: endoreg_db.models.medical.examination.examination_time.ExaminationTime
+  source_path: endoreg_db/models/medical/examination/examination_time.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_examinationtime
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.ExaminationTimeType
+  kind: registered
+  python_path: endoreg_db.models.medical.examination.examination_time_type.ExaminationTimeType
+  source_path: endoreg_db/models/medical/examination/examination_time_type.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_examinationtimetype
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.ExaminationType
+  kind: registered
+  python_path: endoreg_db.models.medical.examination.examination_type.ExaminationType
+  source_path: endoreg_db/models/medical/examination/examination_type.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_examinationtype
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.Examiner
+  kind: registered
+  python_path: endoreg_db.models.administration.person.examiner.examiner.Examiner
+  source_path: endoreg_db/models/administration/person/examiner/examiner.py
+  base_classes:
+  - endoreg_db.models.administration.person.person.Person
+  db_table: endoreg_db_examiner
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.FFMpegMeta
+  kind: registered
+  python_path: endoreg_db.models.metadata.video_meta.FFMpegMeta
+  source_path: endoreg_db/models/metadata/video_meta.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_ffmpegmeta
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - raw_probe_data
+  custom_clean: false
+  custom_save: false
+  target: shared_lx_dtypes_contract
+  owner: endoreg_db maintainers
+  rationale: External FFmpeg probe data is normalized through the shared FfmpegProbeDataPayload
+    at the file-probe boundary.
+  ownership_evidence:
+  - endoreg_db/models/metadata/video_meta.py:FFMpegMeta.create_from_file
+  - lx_dtypes.models.contracts.ffmpeg_metadata.FfmpegProbeDataPayload
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.ffmpeg_metadata.FfmpegMetaPayload
+  - lx_dtypes.models.contracts.ffmpeg_metadata.FfmpegProbeDataPayload
+  module_endoreg_schema_imports: []
+- label: endoreg_db.Finding
+  kind: registered
+  python_path: endoreg_db.models.medical.finding.finding.Finding
+  source_path: endoreg_db/models/medical/finding/finding.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_finding
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.FindingClassification
+  kind: registered
+  python_path: endoreg_db.models.medical.finding.finding_classification.FindingClassification
+  source_path: endoreg_db/models/medical/finding/finding_classification.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_findingclassification
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.FindingClassificationChoice
+  kind: registered
+  python_path: endoreg_db.models.medical.finding.finding_classification.FindingClassificationChoice
+  source_path: endoreg_db/models/medical/finding/finding_classification.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_findingclassificationchoice
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - numerical_descriptors
+  - subcategories
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.FindingClassificationType
+  kind: registered
+  python_path: endoreg_db.models.medical.finding.finding_classification.FindingClassificationType
+  source_path: endoreg_db/models/medical/finding/finding_classification.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_findingclassificationtype
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.FindingIntervention
+  kind: registered
+  python_path: endoreg_db.models.medical.finding.finding_intervention.FindingIntervention
+  source_path: endoreg_db/models/medical/finding/finding_intervention.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_findingintervention
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.FindingInterventionType
+  kind: registered
+  python_path: endoreg_db.models.medical.finding.finding_intervention.FindingInterventionType
+  source_path: endoreg_db/models/medical/finding/finding_intervention.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_findinginterventiontype
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.FindingType
+  kind: registered
+  python_path: endoreg_db.models.medical.finding.finding_type.FindingType
+  source_path: endoreg_db/models/medical/finding/finding_type.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_findingtype
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.FirstName
+  kind: registered
+  python_path: endoreg_db.models.administration.person.names.first_name.FirstName
+  source_path: endoreg_db/models/administration/person/names/first_name.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_firstname
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.Frame
+  kind: registered
+  python_path: endoreg_db.models.media.frame.frame.Frame
+  source_path: endoreg_db/models/media/frame/frame.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_frame
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.FrameBoxAnnotation
+  kind: registered
+  python_path: endoreg_db.models.label.annotation.frame_box.FrameBoxAnnotation
+  source_path: endoreg_db/models/label/annotation/frame_box.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_frameboxannotation
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.FrameExtractionRequest
+  kind: registered
+  python_path: endoreg_db.models.media.video.frame_extraction_request.FrameExtractionRequest
+  source_path: endoreg_db/models/media/video/frame_extraction_request.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: frame_extraction_request
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.Gender
+  kind: registered
+  python_path: endoreg_db.models.other.gender.Gender
+  source_path: endoreg_db/models/other/gender.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_gender
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.ImageClassificationAnnotation
+  kind: registered
+  python_path: endoreg_db.models.label.annotation.image_classification.ImageClassificationAnnotation
+  source_path: endoreg_db/models/label/annotation/image_classification.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_imageclassificationannotation
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.InformationSource
+  kind: registered
+  python_path: endoreg_db.models.other.information_source.InformationSource
+  source_path: endoreg_db/models/other/information_source.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_informationsource
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.InformationSourceType
+  kind: registered
+  python_path: endoreg_db.models.other.information_source.InformationSourceType
+  source_path: endoreg_db/models/other/information_source.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_informationsourcetype
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.LabValue
+  kind: registered
+  python_path: endoreg_db.models.medical.laboratory.lab_value.LabValue
+  source_path: endoreg_db/models/medical/laboratory/lab_value.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_labvalue
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - default_normal_range
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.lab_value.LabValueNormalRangeBandPayload
+  - lx_dtypes.models.contracts.lab_value.LabValueNormalRangePayload
+  module_endoreg_schema_imports: []
+- label: endoreg_db.Label
+  kind: registered
+  python_path: endoreg_db.models.label.label.Label
+  source_path: endoreg_db/models/label/label.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_label
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.LabelSet
+  kind: registered
+  python_path: endoreg_db.models.label.label_set.LabelSet
+  source_path: endoreg_db/models/label/label_set.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_labelset
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.LabelType
+  kind: registered
+  python_path: endoreg_db.models.label.label_type.LabelType
+  source_path: endoreg_db/models/label/label_type.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_labeltype
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.LabelVideoSegment
+  kind: registered
+  python_path: endoreg_db.models.label.label_video_segment.label_video_segment.LabelVideoSegment
+  source_path: endoreg_db/models/label/label_video_segment/label_video_segment.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_labelvideosegment
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: true
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.LabelVideoSegmentState
+  kind: registered
+  python_path: endoreg_db.models.state.label_video_segment.LabelVideoSegmentState
+  source_path: endoreg_db/models/state/label_video_segment.py
+  base_classes:
+  - endoreg_db.models.state.abstract.AbstractState
+  db_table: endoreg_db_labelvideosegmentstate
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: true
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.LastName
+  kind: registered
+  python_path: endoreg_db.models.administration.person.names.last_name.LastName
+  source_path: endoreg_db/models/administration/person/names/last_name.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_lastname
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.Material
+  kind: registered
+  python_path: endoreg_db.models.other.material.Material
+  source_path: endoreg_db/models/other/material.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_material
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.MediaOperationLease
+  kind: registered
+  python_path: endoreg_db.models.media.operation_lease.MediaOperationLease
+  source_path: endoreg_db/models/media/operation_lease.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: media_operation_lease
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - metadata
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.Medication
+  kind: registered
+  python_path: endoreg_db.models.medical.medication.medication.Medication
+  source_path: endoreg_db/models/medical/medication/medication.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_medication
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.MedicationIndication
+  kind: registered
+  python_path: endoreg_db.models.medical.medication.medication_indication.MedicationIndication
+  source_path: endoreg_db/models/medical/medication/medication_indication.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_medicationindication
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.MedicationIndicationType
+  kind: registered
+  python_path: endoreg_db.models.medical.medication.medication_indication_type.MedicationIndicationType
+  source_path: endoreg_db/models/medical/medication/medication_indication_type.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_medicationindicationtype
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.MedicationIntakeTime
+  kind: registered
+  python_path: endoreg_db.models.medical.medication.medication_intake_time.MedicationIntakeTime
+  source_path: endoreg_db/models/medical/medication/medication_intake_time.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_medicationintaketime
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.MedicationSchedule
+  kind: registered
+  python_path: endoreg_db.models.medical.medication.medication_schedule.MedicationSchedule
+  source_path: endoreg_db/models/medical/medication/medication_schedule.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_medicationschedule
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.ModelMeta
+  kind: registered
+  python_path: endoreg_db.models.metadata.model_meta.ModelMeta
+  source_path: endoreg_db/models/metadata/model_meta.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_modelmeta
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.model_meta.ModelMetaConfigPayload
+  - lx_dtypes.models.contracts.model_meta.ModelMetaInferenceDatasetConfigPayload
+  - lx_dtypes.models.contracts.model_meta_logic.ModelMetaCreateFromFileKwargsData
+  - lx_dtypes.models.contracts.model_meta_logic.ModelMetaCreateFromFilePayload
+  module_endoreg_schema_imports: []
+- label: endoreg_db.ModelType
+  kind: registered
+  python_path: endoreg_db.models.administration.ai.model_type.ModelType
+  source_path: endoreg_db/models/administration/ai/model_type.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_modeltype
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.MultipleCategoricalValueDistribution
+  kind: registered
+  python_path: endoreg_db.models.other.distribution.multiple_categorical_value_distribution.MultipleCategoricalValueDistribution
+  source_path: endoreg_db/models/other/distribution/multiple_categorical_value_distribution.py
+  base_classes:
+  - endoreg_db.models.other.distribution.base_value_distribution.BaseValueDistribution
+  db_table: endoreg_db_multiplecategoricalvaluedistribution
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - categories
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.NetworkNode
+  kind: registered
+  python_path: endoreg_db.models.hub.network_node.NetworkNode
+  source_path: endoreg_db/models/hub/network_node.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_networknode
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: true
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.NumericValueDistribution
+  kind: registered
+  python_path: endoreg_db.models.other.distribution.numeric_value_distribution.NumericValueDistribution
+  source_path: endoreg_db/models/other/distribution/numeric_value_distribution.py
+  base_classes:
+  - endoreg_db.models.other.distribution.base_value_distribution.BaseValueDistribution
+  db_table: endoreg_db_numericvaluedistribution
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.numeric_value_distribution.NumericValueDescriptorOperator
+  - lx_dtypes.models.contracts.numeric_value_distribution.NumericValueDistributionPayload
+  - lx_dtypes.models.contracts.numeric_value_distribution.NumericValueDistributionType
+  module_endoreg_schema_imports: []
+- label: endoreg_db.Organ
+  kind: registered
+  python_path: endoreg_db.models.medical.organ.Organ
+  source_path: endoreg_db/models/medical/organ/__init__.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_organ
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.Patient
+  kind: registered
+  python_path: endoreg_db.models.administration.person.patient.patient.Patient
+  source_path: endoreg_db/models/administration/person/patient/patient.py
+  base_classes:
+  - endoreg_db.models.administration.person.person.Person
+  db_table: endoreg_db_patient
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.PatientDisease
+  kind: registered
+  python_path: endoreg_db.models.medical.patient.patient_disease.PatientDisease
+  source_path: endoreg_db/models/medical/patient/patient_disease.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_patientdisease
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - numerical_descriptors
+  - subcategories
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.subcategory_validation.NumericalDescriptorContract
+  - lx_dtypes.models.contracts.subcategory_validation.SubcategoryDictContract
+  module_endoreg_schema_imports: []
+- label: endoreg_db.PatientEvent
+  kind: registered
+  python_path: endoreg_db.models.medical.patient.patient_event.PatientEvent
+  source_path: endoreg_db/models/medical/patient/patient_event.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_patientevent
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - numerical_descriptors
+  - subcategories
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.subcategory_validation.NumericalDescriptorContract
+  - lx_dtypes.models.contracts.subcategory_validation.SubcategoryDictContract
+  module_endoreg_schema_imports: []
+- label: endoreg_db.PatientExamination
+  kind: registered
+  python_path: endoreg_db.models.medical.patient.patient_examination.PatientExamination
+  source_path: endoreg_db/models/medical/patient/patient_examination.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_patientexamination
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - dtypes_record
+  - report_draft
+  custom_clean: true
+  custom_save: true
+  target: shared_lx_dtypes_contract
+  owner: endoreg_db maintainers
+  rationale: The persisted dtypes_record is normalized through the shared PExamination
+    persistence contract; report_draft remains a follow-up gap.
+  ownership_evidence:
+  - endoreg_db/models/medical/patient/patient_examination.py:PatientExamination.clean
+  - lx_dtypes.models.contracts.dtypes_record_persistence.parse_dtypes_record_persistence_payload
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports:
+  - endoreg_db.schemas.validate_dtypes_p_examination_payload
+- label: endoreg_db.PatientExaminationIndication
+  kind: registered
+  python_path: endoreg_db.models.medical.patient.patient_examination_indication.PatientExaminationIndication
+  source_path: endoreg_db/models/medical/patient/patient_examination_indication.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_patientexaminationindication
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.PatientExaminationReport
+  kind: registered
+  python_path: endoreg_db.models.report.patient_examination_report.PatientExaminationReport
+  source_path: endoreg_db/models/report/patient_examination_report.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_patientexaminationreport
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - editor_payload
+  - history_context_snapshot
+  - patient_context_snapshot
+  custom_clean: false
+  custom_save: false
+  target: shared_lx_dtypes_contract
+  owner: endoreg_db maintainers
+  rationale: Report request, editor, selection, and snapshot shapes are owned by shared
+    patient-examination-report contracts; direct model writes remain a validation
+    gap.
+  ownership_evidence:
+  - endoreg_db/serializers/report/patient_examination_report.py:PatientExaminationReportSubmissionSchema
+  - lx_dtypes.models.contracts.patient_examination_report.PatientExaminationReportSubmissionPayload
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.PatientExternalID
+  kind: registered
+  python_path: endoreg_db.models.administration.person.patient.patient_external_id.PatientExternalID
+  source_path: endoreg_db/models/administration/person/patient/patient_external_id.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_patientexternalid
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.PatientFinding
+  kind: registered
+  python_path: endoreg_db.models.medical.patient.patient_finding.PatientFinding
+  source_path: endoreg_db/models/medical/patient/patient_finding.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_patientfinding
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.PatientFindingClassification
+  kind: registered
+  python_path: endoreg_db.models.medical.patient.patient_finding_classification.PatientFindingClassification
+  source_path: endoreg_db/models/medical/patient/patient_finding_classification.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_patientfindingclassification
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - numerical_descriptors
+  - subcategories
+  custom_clean: false
+  custom_save: true
+  target: shared_lx_dtypes_contract
+  owner: endoreg_db maintainers
+  rationale: Clinical classification subcategories and numerical descriptors are owned
+    and runtime-validated by shared lx_dtypes contracts.
+  ownership_evidence:
+  - endoreg_db/models/medical/patient/patient_finding_classification.py:PatientFindingClassification.save
+  - lx_dtypes.models.contracts.patient_finding_classification_runtime.PatientFindingClassificationSubcategoriesPayload
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.finding_classification.PatientFindingClassificationCore
+  - lx_dtypes.models.contracts.patient_finding_classification_runtime.PatientFindingClassificationNumericalDescriptorPayload
+  - lx_dtypes.models.contracts.patient_finding_classification_runtime.PatientFindingClassificationNumericalDescriptorsData
+  - lx_dtypes.models.contracts.patient_finding_classification_runtime.PatientFindingClassificationNumericalDescriptorsPayload
+  - lx_dtypes.models.contracts.patient_finding_classification_runtime.PatientFindingClassificationSubcategoriesData
+  - lx_dtypes.models.contracts.patient_finding_classification_runtime.PatientFindingClassificationSubcategoriesPayload
+  module_endoreg_schema_imports: []
+- label: endoreg_db.PatientFindingIntervention
+  kind: registered
+  python_path: endoreg_db.models.medical.patient.patient_finding_intervention.PatientFindingIntervention
+  source_path: endoreg_db/models/medical/patient/patient_finding_intervention.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_patientfindingintervention
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.patient_finding_intervention.PatientFindingInterventionCore
+  module_endoreg_schema_imports: []
+- label: endoreg_db.PatientLabSample
+  kind: registered
+  python_path: endoreg_db.models.medical.patient.patient_lab_sample.PatientLabSample
+  source_path: endoreg_db/models/medical/patient/patient_lab_sample.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_patientlabsample
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.PatientLabSampleType
+  kind: registered
+  python_path: endoreg_db.models.medical.patient.patient_lab_sample.PatientLabSampleType
+  source_path: endoreg_db/models/medical/patient/patient_lab_sample.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_patientlabsampletype
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.PatientLabValue
+  kind: registered
+  python_path: endoreg_db.models.medical.patient.patient_lab_value.PatientLabValue
+  source_path: endoreg_db/models/medical/patient/patient_lab_value.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_patientlabvalue
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - normal_range
+  custom_clean: false
+  custom_save: true
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.lab_value.LabValueNormalRangePayload
+  module_endoreg_schema_imports: []
+- label: endoreg_db.PatientMedication
+  kind: registered
+  python_path: endoreg_db.models.medical.patient.patient_medication.PatientMedication
+  source_path: endoreg_db/models/medical/patient/patient_medication.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_patientmedication
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - dosage
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.PatientMedicationSchedule
+  kind: registered
+  python_path: endoreg_db.models.medical.patient.patient_medication_schedule.PatientMedicationSchedule
+  source_path: endoreg_db/models/medical/patient/patient_medication_schedule.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_patientmedicationschedule
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.PdfMeta
+  kind: registered
+  python_path: endoreg_db.models.metadata.pdf_meta.PdfMeta
+  source_path: endoreg_db/models/metadata/pdf_meta.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_pdfmeta
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.pdf_meta.PdfMetaPayload
+  - lx_dtypes.models.contracts.pdf_meta.PdfTypeSummaryPayload
+  module_endoreg_schema_imports: []
+- label: endoreg_db.PdfProcessingHistory
+  kind: registered
+  python_path: endoreg_db.models.media.pdf.pdf_processing_history.PdfProcessingHistory
+  source_path: endoreg_db/models/media/pdf/pdf_processing_history.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: pdf_processing_history
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - redaction_manifest
+  custom_clean: false
+  custom_save: false
+  target: shared_lx_dtypes_contract
+  owner: endoreg_db maintainers
+  rationale: Redaction manifests are validated at the HTTP boundary by the shared
+    PDF redaction contract; direct model writes remain a validation gap.
+  ownership_evidence:
+  - endoreg_db/views/report/pdf_redaction.py:PdfApplyRedactionsView
+  - lx_dtypes.models.contracts.pdf_redaction.PdfRedactionManifest
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.PdfType
+  kind: registered
+  python_path: endoreg_db.models.metadata.pdf_meta.PdfType
+  source_path: endoreg_db/models/metadata/pdf_meta.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_pdftype
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.pdf_meta.PdfMetaPayload
+  - lx_dtypes.models.contracts.pdf_meta.PdfTypeSummaryPayload
+  module_endoreg_schema_imports: []
+- label: endoreg_db.Person
+  kind: abstract
+  python_path: endoreg_db.models.administration.person.person.Person
+  source_path: endoreg_db/models/administration/person/person.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_person
+  abstract: true
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: persistence_only
+  owner: endoreg_db maintainers
+  rationale: Abstract Django persistence base for person columns; it is not a standalone
+    exchange payload.
+  ownership_evidence:
+  - endoreg_db/models/administration/person/person.py:Person.Meta
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.PortalUserInfo
+  kind: registered
+  python_path: endoreg_db.models.administration.person.user.portal_user_information.PortalUserInfo
+  source_path: endoreg_db/models/administration/person/user/portal_user_information.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_portaluserinfo
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.ProcessingHistory
+  kind: registered
+  python_path: endoreg_db.models.state.processing_history.processing_history.ProcessingHistory
+  source_path: endoreg_db/models/state/processing_history/processing_history.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_processinghistory
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.Product
+  kind: registered
+  python_path: endoreg_db.models.administration.product.product.Product
+  source_path: endoreg_db/models/administration/product/product.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_product
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.ProductGroup
+  kind: registered
+  python_path: endoreg_db.models.administration.product.product_group.ProductGroup
+  source_path: endoreg_db/models/administration/product/product_group.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_productgroup
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.ProductMaterial
+  kind: registered
+  python_path: endoreg_db.models.administration.product.product_material.ProductMaterial
+  source_path: endoreg_db/models/administration/product/product_material.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_productmaterial
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.ProductWeight
+  kind: registered
+  python_path: endoreg_db.models.administration.product.product_weight.ProductWeight
+  source_path: endoreg_db/models/administration/product/product_weight.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_productweight
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.Profession
+  kind: registered
+  python_path: endoreg_db.models.administration.person.profession.Profession
+  source_path: endoreg_db/models/administration/person/profession/__init__.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_profession
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.Qualification
+  kind: registered
+  python_path: endoreg_db.models.administration.qualification.qualification.Qualification
+  source_path: endoreg_db/models/administration/qualification/qualification.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_qualification
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.QualificationType
+  kind: registered
+  python_path: endoreg_db.models.administration.qualification.qualification_type.QualificationType
+  source_path: endoreg_db/models/administration/qualification/qualification_type.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_qualificationtype
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.QuarantineItem
+  kind: registered
+  python_path: endoreg_db.models.hub.quarantine_item.QuarantineItem
+  source_path: endoreg_db/models/hub/quarantine_item.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_quarantineitem
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - metadata
+  custom_clean: true
+  custom_save: true
+  target: local_boundary_schema
+  owner: endoreg_db maintainers
+  rationale: Quarantine metadata is an endoreg_db storage-operations payload validated
+    by one local strict schema before save.
+  ownership_evidence:
+  - endoreg_db/models/hub/quarantine_item.py:QuarantineItem.clean
+  - endoreg_db/schemas/hub_payloads.py:QuarantineItemMetadataPayload
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports:
+  - endoreg_db.schemas.validate_quarantine_item_metadata
+- label: endoreg_db.RawPdfFile
+  kind: registered
+  python_path: endoreg_db.models.media.pdf.raw_pdf.RawPdfFile
+  source_path: endoreg_db/models/media/pdf/raw_pdf.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_rawpdffile
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - raw_meta
+  custom_clean: true
+  custom_save: true
+  target: local_boundary_schema
+  owner: endoreg_db maintainers
+  rationale: Raw PDF persistence metadata is normalized by the local RawPdfMetaPayload
+    boundary before save.
+  ownership_evidence:
+  - endoreg_db/models/media/pdf/raw_pdf.py:RawPdfFile.clean
+  - endoreg_db/schemas/persisted_json.py:RawPdfMetaPayload
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.json_types.JsonNull
+  - lx_dtypes.models.contracts.json_types.JsonValue
+  module_endoreg_schema_imports:
+  - endoreg_db.schemas.validate_raw_pdf_meta_payload
+- label: endoreg_db.RawPdfState
+  kind: registered
+  python_path: endoreg_db.models.state.raw_pdf.RawPdfState
+  source_path: endoreg_db/models/state/raw_pdf.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_rawpdfstate
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.ReferenceProduct
+  kind: registered
+  python_path: endoreg_db.models.administration.product.reference_product.ReferenceProduct
+  source_path: endoreg_db/models/administration/product/reference_product.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_referenceproduct
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.ReportImportAttempt
+  kind: registered
+  python_path: endoreg_db.models.state.report_import_attempt.ReportImportAttempt
+  source_path: endoreg_db/models/state/report_import_attempt.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: report_import_attempt
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.ReportLlmInferenceJob
+  kind: registered
+  python_path: endoreg_db.models.media.pdf.report_llm_job.ReportLlmInferenceJob
+  source_path: endoreg_db/models/media/pdf/report_llm_job.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: report_llm_inference_job
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - config
+  - result
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.json_types.JsonNull
+  - lx_dtypes.models.contracts.json_types.JsonValue
+  module_endoreg_schema_imports: []
+- label: endoreg_db.ReportReaderConfig
+  kind: registered
+  python_path: endoreg_db.models.media.pdf.report_reader.report_reader_config.ReportReaderConfig
+  source_path: endoreg_db/models/media/pdf/report_reader/report_reader_config.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_reportreaderconfig
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.ReportReaderFlag
+  kind: registered
+  python_path: endoreg_db.models.media.pdf.report_reader.report_reader_flag.ReportReaderFlag
+  source_path: endoreg_db/models/media/pdf/report_reader/report_reader_flag.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_reportreaderflag
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.Resource
+  kind: registered
+  python_path: endoreg_db.models.other.resource.Resource
+  source_path: endoreg_db/models/other/resource.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_resource
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.Risk
+  kind: registered
+  python_path: endoreg_db.models.medical.risk.risk.Risk
+  source_path: endoreg_db/models/medical/risk/risk.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_risk
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.RiskType
+  kind: registered
+  python_path: endoreg_db.models.medical.risk.risk_type.RiskType
+  source_path: endoreg_db/models/medical/risk/risk_type.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_risktype
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.ScheduledDays
+  kind: registered
+  python_path: endoreg_db.models.administration.shift.scheduled_days.ScheduledDays
+  source_path: endoreg_db/models/administration/shift/scheduled_days.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_scheduleddays
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.SensitiveMeta
+  kind: registered
+  python_path: endoreg_db.models.metadata.sensitive_meta.SensitiveMeta
+  source_path: endoreg_db/models/metadata/sensitive_meta.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_sensitivemeta
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - direct_identifier_tombstone
+  custom_clean: false
+  custom_save: true
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.meta.SensitiveMeta.SensitiveMeta
+  module_endoreg_schema_imports: []
+- label: endoreg_db.SensitiveMetaState
+  kind: registered
+  python_path: endoreg_db.models.state.sensitive_meta.SensitiveMetaState
+  source_path: endoreg_db/models/state/sensitive_meta.py
+  base_classes:
+  - endoreg_db.models.state.abstract.AbstractState
+  db_table: endoreg_db_sensitivemetastate
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.Shift
+  kind: registered
+  python_path: endoreg_db.models.administration.shift.shift.Shift
+  source_path: endoreg_db/models/administration/shift/shift.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_shift
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.ShiftType
+  kind: registered
+  python_path: endoreg_db.models.administration.shift.shift_type.ShiftType
+  source_path: endoreg_db/models/administration/shift/shift_type.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_shifttype
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.SingleCategoricalValueDistribution
+  kind: registered
+  python_path: endoreg_db.models.other.distribution.single_categorical_value_distribution.SingleCategoricalValueDistribution
+  source_path: endoreg_db/models/other/distribution/single_categorical_value_distribution.py
+  base_classes:
+  - endoreg_db.models.other.distribution.base_value_distribution.BaseValueDistribution
+  db_table: endoreg_db_singlecategoricalvaluedistribution
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - categories
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.Tag
+  kind: registered
+  python_path: endoreg_db.models.other.tag.Tag
+  source_path: endoreg_db/models/other/tag.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_tag
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.TransferJob
+  kind: registered
+  python_path: endoreg_db.models.hub.transfer_job.TransferJob
+  source_path: endoreg_db/models/hub/transfer_job.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_transferjob
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - processing_snapshot
+  - provenance
+  - resource_rows
+  custom_clean: true
+  custom_save: true
+  target: local_boundary_schema
+  owner: endoreg_db maintainers
+  rationale: The persisted transfer aggregate combines endoreg_db resource rows, processing
+    snapshots, and provenance under local strict adapters.
+  ownership_evidence:
+  - endoreg_db/models/hub/transfer_job.py:TransferJob.clean
+  - endoreg_db/schemas/persisted_json.py:TransferProcessingSnapshotPayload
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports:
+  - endoreg_db.schemas.validate_transfer_processing_snapshot
+  - endoreg_db.schemas.validate_transfer_provenance_payload
+  - endoreg_db.schemas.validate_transfer_resource_rows
+- label: endoreg_db.TransportRoute
+  kind: registered
+  python_path: endoreg_db.models.other.transport_route.TransportRoute
+  source_path: endoreg_db/models/other/transport_route.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_transportroute
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.Unit
+  kind: registered
+  python_path: endoreg_db.models.other.unit.Unit
+  source_path: endoreg_db/models/other/unit.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_unit
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.UploadJob
+  kind: registered
+  python_path: endoreg_db.models.hub.upload_job.UploadJob
+  source_path: endoreg_db/models/hub/upload_job.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_uploadjob
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - processing_provenance
+  custom_clean: true
+  custom_save: true
+  target: local_boundary_schema
+  owner: endoreg_db maintainers
+  rationale: Upload processing provenance is an endoreg_db ingest payload validated
+    by one local strict schema before save.
+  ownership_evidence:
+  - endoreg_db/models/hub/upload_job.py:UploadJob.clean
+  - endoreg_db/schemas/hub_payloads.py:UploadProvenancePayload
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports:
+  - endoreg_db.schemas.validate_upload_provenance_payload
+- label: endoreg_db.VideoFile
+  kind: registered
+  python_path: endoreg_db.models.media.video.video_file.VideoFile
+  source_path: endoreg_db/models/media/video/video_file.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_videofile
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - meta
+  - sequences
+  custom_clean: true
+  custom_save: true
+  target: local_boundary_schema
+  owner: endoreg_db maintainers
+  rationale: The persisted video aggregate uses a local metadata adapter; sequences
+    remain an explicitly unverified JSON-field gap.
+  ownership_evidence:
+  - endoreg_db/models/media/video/video_file.py:VideoFile.clean
+  - endoreg_db/schemas/persisted_json.py:VideoFileMetaPayload
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.endoscopy_processor.RoiBoxCore
+  - lx_dtypes.models.contracts.video_file.FrameSourceMode
+  - lx_dtypes.models.contracts.video_file.VideoFileMetaJsonObject
+  - lx_dtypes.models.contracts.video_text_metadata.VideoTextMetaPayload
+  module_endoreg_schema_imports:
+  - endoreg_db.schemas.validate_video_file_meta_payload
+- label: endoreg_db.VideoHlsArtifact
+  kind: registered
+  python_path: endoreg_db.models.media.video.hls_artifact.VideoHlsArtifact
+  source_path: endoreg_db/models/media/video/hls_artifact.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_videohlsartifact
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: true
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.VideoImportMeta
+  kind: registered
+  python_path: endoreg_db.models.metadata.video_meta.VideoImportMeta
+  source_path: endoreg_db/models/metadata/video_meta.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_videoimportmeta
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.ffmpeg_metadata.FfmpegMetaPayload
+  - lx_dtypes.models.contracts.ffmpeg_metadata.FfmpegProbeDataPayload
+  module_endoreg_schema_imports: []
+- label: endoreg_db.VideoMeta
+  kind: registered
+  python_path: endoreg_db.models.metadata.video_meta.VideoMeta
+  source_path: endoreg_db/models/metadata/video_meta.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_videometa
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: true
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.ffmpeg_metadata.FfmpegMetaPayload
+  - lx_dtypes.models.contracts.ffmpeg_metadata.FfmpegProbeDataPayload
+  module_endoreg_schema_imports: []
+- label: endoreg_db.VideoMetadata
+  kind: registered
+  python_path: endoreg_db.models.media.video.video_metadata.VideoMetadata
+  source_path: endoreg_db/models/media/video/video_metadata.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: video_metadata
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.VideoPredictionMeta
+  kind: registered
+  python_path: endoreg_db.models.metadata.video_prediction_meta.VideoPredictionMeta
+  source_path: endoreg_db/models/metadata/video_prediction_meta.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_videopredictionmeta
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.VideoProcessingHistory
+  kind: registered
+  python_path: endoreg_db.models.media.video.video_processing.VideoProcessingHistory
+  source_path: endoreg_db/models/media/video/video_processing.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: video_processing_history
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - config
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.video_processing_history.VideoProcessingHistoryOperation
+  - lx_dtypes.models.contracts.video_processing_history.VideoProcessingHistoryStatus
+  module_endoreg_schema_imports: []
+- label: endoreg_db.VideoSegmentationAnnotation
+  kind: registered
+  python_path: endoreg_db.models.label.annotation.video_segmentation_annotation.VideoSegmentationAnnotation
+  source_path: endoreg_db/models/label/annotation/video_segmentation_annotation.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_videosegmentationannotation
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.VideoSegmentationLabel
+  kind: registered
+  python_path: endoreg_db.models.label.video_segmentation_label.VideoSegmentationLabel
+  source_path: endoreg_db/models/label/video_segmentation_label.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_videosegmentationlabel
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.VideoSegmentationLabelSet
+  kind: registered
+  python_path: endoreg_db.models.label.video_segmentation_labelset.VideoSegmentationLabelSet
+  source_path: endoreg_db/models/label/video_segmentation_labelset.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_videosegmentationlabelset
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.VideoState
+  kind: registered
+  python_path: endoreg_db.models.state.video.VideoState
+  source_path: endoreg_db/models/state/video.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_videostate
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+- label: endoreg_db.Waste
+  kind: registered
+  python_path: endoreg_db.models.other.waste.Waste
+  source_path: endoreg_db/models/other/waste.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_waste
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: unclassified
+  owner: endoreg_db maintainers
+  rationale: Initial Django registry inventory; boundary and contract ownership review
+    is pending.
+  ownership_evidence: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
