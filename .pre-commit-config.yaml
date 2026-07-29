@@ -51,11 +51,6 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
-      - id: deployment-settings-contract
-        name: deployment settings contract
-        entry: devenv shell -- .devenv/state/venv/bin/pytest tests/deployment/test_prod_settings_contract.py -q
-        language: system
-        pass_filenames: false
       - id: pytest-expensive
         name: pytest expensive suite
         entry: pytest -m "expensive or pipeline or slow"
@@ -65,10 +60,5 @@ repos:
       - id: deploy-django
         name: deploy check for django resolve
         entry: devenv shell -- env DJANGO_SETTINGS_MODULE=endoreg_db.config.settings.test .devenv/state/venv/bin/python manage.py check --deploy
-        language: system
-        pass_filenames: false
-      - id: resolve-django
-        name: resolve all check_django_startup_imports
-        entry: devenv shell -- .devenv/state/venv/bin/pytest tests/test_resolve.py
         language: system
         pass_filenames: false

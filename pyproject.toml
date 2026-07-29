@@ -16,7 +16,7 @@ maintainers = [
 ]
 name = "endoreg_db"
 readme = "README.md"
-version = "1.0.7.9"
+version = "1.0.8.0"
 requires-python = ">=3.12,<3.13"
 
 classifiers = [
@@ -91,7 +91,7 @@ dependencies = [
     "lx-ai-core[torch]==0.0.1",
     "lightning-fabric>=2.6.5",
     "lx-dtypes==0.2.8",
-    "snakemake==9.23.1"
+    "snakemake==9.23.1",
 ]
 
 [project.urls]

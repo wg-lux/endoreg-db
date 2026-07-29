@@ -26,7 +26,8 @@
     "rust",
     "storage",
     "endoreg_db/migrations",
-    "endoreg_db/**/migrations"
+    "endoreg_db/**/migrations",
+    "endoreg_db/endoreg_rust_backend.pyi"
   ],
   "ignore": [
     "endoreg_db/migrations",
@@ -34,7 +35,7 @@
   ],
   "extraPaths": [
     ".",
-    "../lx-data-models"
+    "../lx-parse/lx-data-models"
   ],
   "venvPath": ".devenv/state",
   "venv": "venv",
