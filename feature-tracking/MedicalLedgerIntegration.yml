@@ -1,0 +1,532 @@
+schema_version: '1.0'
+id: medical_ledger_integration
+name: Medizinische Ledger-Integration
+description: Integriert die strikt validierten medizinischen Ledger-Modelle aus lx_dtypes mit endoreg_db,
+  sodass patientenbezogene Erkrankungen, Ereignisse, Laborproben, Laborwerte, Medikationen und Medikationspläne
+  über einen authentifizierten API-Vertrag atomar erstellt, dauerhaft gespeichert und verlustfrei wieder
+  als Ledger-Datensätze gelesen werden können.
+owners:
+- endoreg_db maintainers
+- lx_dtypes maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/model_layer_map_for_agents.md
+  disposition: reference
+  note: Definiert die Ownership-Grenze zwischen Django-Persistenz, Service-Layer und strikt typisierten
+    lx_dtypes-Verträgen.
+- path: /home/admin/lx-parse/lx-data-models/docs/guides/django-host-integration.md
+  disposition: reference
+  note: Beschreibt Ledger-Modelle, EndoReg-Adapter und den vorgesehenen Django-Host-Integrationspfad.
+definition_of_done:
+- id: sap_ish_structured_clinical_import
+  category: interoperability
+  title: SAP-IS-H-Tabellen werden mit stabiler Identität in kanonische Medizinmodelle überführt
+  acceptance:
+  - PatientNr wird center- und quellsystembezogen auf genau einen PatientExternalID und kanonischen Patienten
+    aufgelöst; mehrere Dokumente desselben Patienten erzeugen keine getrennten Pseudopatienten.
+  - FallNr erzeugt eine deterministische, idempotente Case-Zuordnung und verknüpft erreichbare PatientExaminations
+    sowie fallbezogene Laborproben und Laborwerte.
+  - Diagnosen, Laborwerte und Meona-Medikationen werden atomar in PatientDisease, PatientLabSample/PatientLabValue
+    und PatientMedication persistiert und bei Wiederholung nicht dupliziert.
+  - Importierte Terminologie ist mit dem Präfix sap_ish source-namespaced; unbekannte Semantik wird nicht
+    still einer vorhandenen Knowledge-Base-Terminologie gleichgesetzt.
+  - Meona-Zeilen ohne FallNr bleiben nachweislich patientenbezogen und werden keinem Fall oder Medikationsplan
+    geraten zugeordnet.
+  - Das Ergebnis meldet erzeugte, wiederverwendete und übersprungene Datensätze ohne PatientNr, Freitext,
+    Laborwerte oder Dosierungen in Logs oder Tracker-Evidenz offenzulegen.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - env
+    - PYTHONPATH=/home/admin/lx-parse/lx-data-models
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_sap_ish_clinical.py
+    - tests/services/test_sap_ish_import.py
+    - tests/services/test_watcher_storage_import.py
+    - tests/management/commands/test_import_sap_ish_txt.py
+    - -q
+    timeout_seconds: 1200
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell -- env PYTHONPATH=/home/admin/lx-parse/lx-data-models .devenv/state/venv/bin/pytest
+        tests/services/test_sap_ish_clinical.py tests/services/test_sap_ish_import.py tests/services/test_watcher_storage_import.py
+        tests/management/commands/test_import_sap_ish_txt.py -q
+      note: Exit-Code 0
+    note: Center-scoped PatientNr reconciliation, deterministic FallNr cases, atomic namespaced diagnosis/lab/medication
+      persistence, stable Meona row replay, and patient-level handling are implemented; verifier passed
+      32 tests.
+    assessed_by: Codex
+    assessed_at: '2026-07-29T12:48:11.222165Z'
+- id: documented_scope
+  category: requirements
+  title: Medizinischer Ledger-Umfang und Ownership sind vollständig festgelegt
+  acceptance:
+  - Das Feldinventar ordnet PatientDisease, PatientEvent, PatientLabSample, PatientLabValue, PatientMedication,
+    PatientMedicationSchedule und PatientMedicalLedger jeweils einem lx_dtypes-Vertrag und einem endoreg_db-Modell
+    zu.
+  - Für jedes Feld sind Typ, Pflichtstatus, Kardinalität, Fremdschlüsselrichtung, Löschverhalten, Zeitsemantik,
+    Provenienz und API-Repräsentation eindeutig beschrieben.
+  - lx_dtypes besitzt Validierungs-, Serialisierungs- und Austauschverträge; endoreg_db besitzt Django-Modelle,
+    Transaktionen, Berechtigungen und Datenbankmigrationen; Orchestrierung liegt im Service- beziehungsweise
+    API-Layer und nicht in den Modellen.
+  - Es ist ausdrücklich entschieden, ob der API-Vertrag nur Datensätze für einen vorhandenen Patienten
+    erstellt oder auch Patientendemografie anlegen darf; eine implizite Patientenanlage ist ausgeschlossen.
+  - Untersuchungs- und fallbezogene Daten aus dem bestehenden Ledger und patientenbezogene medizinische
+    Daten haben dokumentierte Referenz- und Snapshot-Grenzen ohne widersprüchliche Ownership.
+  required: true
+  verification:
+    kind: manual
+    instructions: Feldinventar gegen lx_dtypes Ledger-Klassen, EndoReg-Django-Modelle, Services, Serializer,
+      API-Routen, CasePersistence und LXDM-Tracker prüfen.
+    timeout_seconds: 900
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: versioned_ledger_contract
+  category: interoperability
+  title: Der medizinische Ledger-Vertrag ist öffentlich, versioniert und kompatibel
+  acceptance:
+  - Alle sieben medizinischen Ledger-Typen sind über stabile lx_dtypes-Imports und die zentrale Ledger-Registry
+    verfügbar und erzeugen ein dokumentiertes JSON-Schema.
+  - Externe IDs und Ledger-UUIDs werden aus unveränderlichen EndoReg-Identitäten deterministisch gebildet;
+    Umbenennungen von Python-Klassen oder Terminologie-Labels verändern bestehende Identitäten nicht.
+  - Jeder persistierte Datensatz trägt die für Reproduktion erforderliche Schema-, lx_dtypes- und Knowledge-Base-Version
+    oder verweist eindeutig darauf.
+  - Additive, inkompatible und veraltete Felder besitzen eine Release-, Upgrade- und Deprecation-Regel;
+    endoreg_db pinnt eine veröffentlichte kompatible lx-dtypes-Version.
+  - Snake-Case-Wireformat, Datums- und Zeitzonenformat, Dezimal-/Gleitkommasemantik, Nullwerte und verschachtelte
+    Ledger-Referenzen sind für Python- und Nicht-Python- Consumer eindeutig.
+  required: true
+  verification:
+    kind: command
+    command:
+    - env
+    - PYTHONPATH=/home/admin/lx-parse/lx-data-models
+    - .devenv/state/venv/bin/pytest
+    - /home/admin/lx-parse/lx-data-models/lx_dtypes/models/ledger/medical/tests
+    - tests/app/test_lx_dtypes_import_boundary.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: strict_clinical_validation
+  category: functionality
+  title: Ungültige medizinische Datensätze werden vor jeder Datenbankmutation abgelehnt
+  acceptance:
+  - API-JSON wird genau einmal am Request-Rand mit den öffentlichen medizinischen lx_dtypes-Modellen validiert;
+    Services erhalten keine parallele untypisierte Dictionary-Form.
+  - Erkrankungs- und Ereigniszeiträume lehnen ein Ende vor dem Beginn ab; alle Datetimes sind zeitzonenbewusst
+    und werden ohne stillen Zeitzonen-Fallback verarbeitet.
+  - Ein Laborwert besitzt gemäß dokumentierter Fachregel einen numerischen oder textuellen Wert, eine
+    gültige Einheit und einen konsistenten Normalbereich; NaN, Infinity und widersprüchliche Werteformen
+    werden abgelehnt.
+  - Dosierung, Einheit, Einnahmezeiten und Aktivstatus einer Medikation erfüllen explizite fachliche Invarianten;
+    unbekannte JSON-Strukturen und zusätzliche Felder werden nicht still übernommen.
+  - Jeder verschachtelte Datensatz gehört zum Top-Level-Patienten; fremde Patienten in Laborproben, Laborwerten,
+    Medikationen oder Plänen werden vor dem Schreiben abgelehnt.
+  - Terminologie- und Relationsreferenzen werden serverseitig auf Existenz, erwarteten Typ und zulässige
+    Kombination geprüft statt frei als Namen oder Primärschlüssel gespeichert zu werden.
+  required: true
+  verification:
+    kind: command
+    command:
+    - env
+    - PYTHONPATH=/home/admin/lx-parse/lx-data-models
+    - .devenv/state/venv/bin/pytest
+    - /home/admin/lx-parse/lx-data-models/lx_dtypes/models/ledger/medical/tests
+    - tests/api/test_medical_ledger_validation.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/models/ledger/medical/Write.py
+    - kind: test
+      reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/models/ledger/medical/tests/test_write_contracts.py
+    - kind: test
+      reference: tests/api/test_medical_ledger_create.py
+    note: Strikte extra-forbid Schreibverträge validieren Medikations- und Planpayloads einmalig am API-Rand;
+      unbekannte Terminologie liefert 409 und fremdpatientige Datensatz-IDs 404. Erkrankungen, Ereignisse
+      und Labor-Schreibverträge bleiben offen.
+    assessed_by: Codex
+    assessed_at: '2026-07-29T12:56:11.645237Z'
+- id: host_persistence_mapping
+  category: functionality
+  title: Ein expliziter Host-Service persistiert jeden Ledger-Typ verlustfrei
+  acceptance:
+  - Das konfigurierte lx_dtypes-Host-Modul stellt ausschließlich explizit freigegebene medizinische Modelle
+    und Service-Funktionen bereit; lx_dtypes importiert endoreg_db weder direkt noch über versteckte Django-Abhängigkeiten.
+  - Ein dedizierter endoreg_db-Service bildet validierte Ledger-Payloads auf die sechs patientenbezogenen
+    Django-Modelle und ihre Many-to-Many-Relationen ab.
+  - Patienten-, Terminologie-, Einheiten-, Proben- und Planreferenzen werden vor dem Schreiben aufgelöst;
+    fehlende, mehrdeutige oder typfremde Referenzen schlagen laut fehl.
+  - Datenbankgenerierte IDs und Zeitstempel werden in eine vollständig validierte PatientMedicalLedger-Antwort
+    zurückgeführt und nicht aus dem Request vorgetäuscht.
+  - Es existieren keine zweite JSON-Schattenpersistenz und keine duplizierten Django-Medizinmodelle in
+    lx_dtypes; kanonisch bleiben die normalisierten endoreg_db-Tabellen.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_medical_ledger_persistence.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/medical_ledger.py
+    - kind: test
+      reference: tests/api/test_medical_ledger_read.py
+    - kind: test
+      reference: tests/api/test_medical_ledger_create.py
+    note: Read-Projektion sowie atomare Create/Patch-Persistenz für PatientMedication und PatientMedicationSchedule
+      einschließlich Many-to-Many-Relationen sind implementiert. Erkrankungs-, Ereignis- und Laborwrites
+      sowie Paketfreigabe bleiben offen.
+    assessed_by: Codex
+    assessed_at: '2026-07-29T12:56:12.982793Z'
+- id: validated_create_api
+  category: functionality
+  title: Die API erstellt validierte patientenbezogene medizinische Datensätze atomar
+  acceptance:
+  - Eine versionierte, dokumentierte Route nimmt PatientMedicalLedger als atomaren Aggregate-Request an;
+    unterstützte Einzel-Create-Routen verwenden dieselben lx_dtypes-Modelle und denselben Persistenzservice.
+  - Erfolgreiche Erstellung liefert HTTP 201 mit kanonischen IDs, Ledger-UUIDs, Zeitstempeln, Versionen
+    und dem vollständig validierten gespeicherten Datensatz.
+  - Schemafehler liefern HTTP 422, fachliche oder Referenzkonflikte HTTP 409 und nicht sichtbare Ressourcen
+    HTTP 404 in einem stabilen strukturierten Fehlerformat; interne IDs oder fremde Patientendaten werden
+    nicht offengelegt.
+  - Ein Fehler in einem Kinddatensatz rollt PatientDisease, PatientEvent, PatientLabSample, PatientLabValue,
+    PatientMedication, Plan und alle Many-to-Many-Änderungen gemeinsam zurück.
+  - Fehlende Listen bedeuten gemäß Vertrag leer oder unverändert und können nicht versehentlich vorhandene
+    Daten löschen; Create-, Replace- und Merge-Semantik sind getrennt benannt.
+  - Die Route ist über den vorgesehenen lx_dtypes-Mount erreichbar, erscheint im OpenAPI-Schema und besitzt
+    keinen abweichenden Legacy-Serializerpfad.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/api/test_medical_ledger_create.py
+    - -q
+    timeout_seconds: 1200
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/views/patient/patient.py
+    - kind: test
+      reference: tests/api/test_medical_ledger_create.py
+    note: Patient-scoped POST/PATCH-Endpunkte für Medikationen und Medikationspläne liefern 201/200 sowie
+      strukturierte 404/409/422/503-Antworten und kanonische Ledger-Records. Aggregate PatientMedicalLedger
+      Create, übrige Medizinentitäten, Idempotency-Key und lx-dtypes-Mount bleiben offen.
+    assessed_by: Codex
+    assessed_at: '2026-07-29T12:56:14.282334Z'
+- id: roundtrip_fidelity
+  category: data_integrity
+  title: Persistenz- und API-Roundtrip erhalten den vollständigen medizinischen Graphen
+  acceptance:
+  - Jeder einzelne medizinische Ledger-Typ sowie ein vollständiger PatientMedicalLedger überstehen Create,
+    Datenbank-Reload, Service-Export und JSON-Revalidierung ohne Feld-, Präzisions-, Relations- oder Zeitzonenverlust.
+  - Direkte Laborwerte und in Proben enthaltene Werte sowie direkte Medikationen und in Plänen enthaltene
+    Medikationen werden ohne Duplikate und mit stabiler Identität repräsentiert.
+  - Leere optionale Relationen, Nullwerte, Unicode-Texte, Grenzwerte, mehrere Klassifikationen und mehrere
+    Einnahmezeiten sind roundtrip-getestet.
+  - Änderungen an Terminologie-Labels beeinflussen weder gespeicherte Referenzen noch Ledger-UUIDs; gelöschte
+    oder deaktivierte Terminologie wird explizit als historisch auflösbar oder als Integritätsfehler behandelt.
+  - Ein PatientMedicalLedger kann nach Prozessneustart allein aus kanonischer Datenbankpersistenz wiederhergestellt
+    werden; In-Memory-Objekte sind keine Quelle.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_medical_ledger_roundtrip.py
+    - -q
+    timeout_seconds: 1200
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: tests/api/test_medical_ledger_read.py
+    note: Medikation und Medikationspläne werden aus der Datenbank mit stabilen External IDs und verschachtelten
+      Details als validierter Ledger exportiert. Create-, vollständige klinische Roundtrips und Prozess-Restore
+      bleiben offen.
+    assessed_by: Codex
+    assessed_at: '2026-07-29T12:36:02.794457Z'
+- id: database_integrity
+  category: data_integrity
+  title: Datenbankconstraints schützen medizinische Invarianten auch außerhalb der API
+  acceptance:
+  - Constraints verhindern unmögliche Zeiträume, leere Pflichtreferenzen und bekannte Duplikate auch bei
+    Admin-, Import- oder direkter ORM-Nutzung.
+  - PatientLabValue.patient und PatientLabValue.sample.patient können nicht widersprüchlich sein; Plan
+    und enthaltene Medikationen können nicht verschiedenen Patienten gehören.
+  - Löschregeln für Patient, Terminologie, Einheit, Probe, Laborwert, Medikation und Plan sind explizit
+    und verhindern verwaiste oder historisch verfälschte Datensätze.
+  - Fachlich benötigte Eindeutigkeit wird durch Constraints oder einen dokumentierten, nebenläufigkeitssicheren
+    Idempotenzschlüssel erzwungen.
+  - Constraint-Verletzungen werden am Service-Rand in stabile API-Konflikte übersetzt, ohne rohe Datenbankfehler
+    oder sensible Werte zurückzugeben.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/models/medical/test_medical_ledger_constraints.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: transactional_idempotency
+  category: functionality
+  title: Wiederholte und parallele Requests erzeugen keine Teilgraphen oder Duplikate
+  acceptance:
+  - Der Create-Vertrag definiert einen Idempotency-Key oder eine gleichwertige stabile externe Identität
+    pro Top-Level-Request und medizinischem Kinddatensatz.
+  - Eine identische Wiederholung liefert denselben gespeicherten Graphen; dieselbe Idempotenzidentität
+    mit abweichendem Payload liefert einen expliziten Konflikt.
+  - Parallele identische Requests erzeugen höchstens einen fachlichen Datensatz und verlieren keine Many-to-Many-Relation.
+  - Failure-Injection nach jedem Persistenzschritt belegt den vollständigen Rollback einschließlich Join-Tabellen
+    und Idempotenzstatus.
+  - Locking-, Isolation- und Retry-Verhalten ist benannt, begrenzt und erzeugt keine stille Teilakzeptanz.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_medical_ledger_transactions.py
+    - -q
+    timeout_seconds: 1200
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: tests/api/test_medical_ledger_create.py
+    note: Scalar- und Many-to-Many-Schreibschritte laufen atomar; Failure-Injection belegt Rollback und
+      Updates sperren Zielzeilen. Idempotency-Key, Replay-Konflikt und echte Parallelitätstests bleiben
+      offen.
+    assessed_by: Codex
+    assessed_at: '2026-07-29T12:56:15.509852Z'
+- id: migrations_and_existing_data
+  category: interoperability
+  title: Bestehende medizinische Daten werden kompatibel übernommen und geprüft
+  acceptance:
+  - Schemaänderungen besitzen vorwärts und rückwärts geprüfte Django-Migrationen, ohne bestehende medizinische
+    Zeilen oder Relations-Tabellen still zu verwerfen.
+  - Ein idempotenter, wiederaufnehmbarer Backfill erzeugt fehlende stabile Ledger- Identitäten und Versionsmetadaten
+    in begrenzten Batches.
+  - Vor dem Backfill werden ungültige Zeiträume, patientenfremde Relationen, unauflösbare Terminologie
+    und Duplikate gezählt und quarantänisiert statt automatisch umgedeutet.
+  - Backup, Restore, Dry-Run, Abbruch und Rollback sind mit einem repräsentativen Datenbestand geprobt
+    und produzieren einen nachvollziehbaren Integritätsbericht.
+  - Das Deployment erzwingt eine kompatible veröffentlichte lx-dtypes-Version, bevor API- oder Backfill-Code
+    aktiviert wird.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/migrations/test_medical_ledger_integration.py
+    - -q
+    timeout_seconds: 1200
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: authorization_privacy_audit
+  category: security
+  title: Patientenzugriff, Mandantengrenzen und Audit sind fail-closed
+  acceptance:
+  - Lesen und Erstellen erfordern einen authentifizierten Akteur mit serverseitig geprüftem Center- und
+    Patienten-Scope; Request-Felder können den Scope nicht erweitern.
+  - Fehlende, unbekannte oder widersprüchliche Center-Zuordnung verweigert den Zugriff; fremde Patienten
+    und ihre Terminologiebezüge werden über 404 nicht aufgezählt.
+  - Bulk- und Nested-Create prüfen jede enthaltene Ressource und verwenden keine Berechtigung des ersten
+    Listenelements als Freigabe für den Rest.
+  - Audit-Ereignisse erfassen Akteur, Zeitpunkt, Patient, Operation, Idempotenzidentität, Ergebnis und
+    geänderte Datensatz-IDs ohne Freitext, Dosierung, Laborwert oder andere sensible Payloadinhalte zu
+    protokollieren.
+  - Persistierte medizinische Daten, Backfills, Dumps und Fehlerartefakte bleiben in den freigegebenen
+    verschlüsselten und zugriffsbeschränkten Speichergrenzen.
+  - Negative Tests decken nicht authentifizierte, fremd-centerbezogene, fremdpatientige, manipulierte
+    und teilweise autorisierte Aggregate-Requests ab.
+  required: true
+  verification:
+    kind: manual
+    instructions: API-, Host-Service-, Center-Scope-, Audit-, Logging- und Speichergrenzen gegen positive
+      und negative Security-Tests reviewen.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: tests/api/test_medical_ledger_read.py
+    - kind: code
+      reference: endoreg_db/authz/policy.py
+    note: Die neue GET-Route verwendet PatientViewSet-Policy und dessen center-scoped Queryset; ein negativer
+      Fremd-Center-Test liefert 404. Write-, Audit- und vollständige Security-Matrix bleiben offen.
+    assessed_by: Codex
+    assessed_at: '2026-07-29T12:36:05.742467Z'
+- id: patient_resource_navigation
+  category: interoperability
+  title: Patientenmedikation verwendet den validierten Ledger statt bloßer Relations-IDs
+  acceptance:
+  - Die patientenbezogene Medikationsseite lädt den center-scoped PatientMedicalLedger-Vertrag gemeinsam
+    mit Patient und Fällen über einen zentral typisierten API-Client.
+  - Fallrelationen werden über die explizite EndoReg-Identität mit PatientMedication und PatientMedicationSchedule
+    verbunden; numerische IDs werden nicht als Medikamentenname oder Fachinformation interpretiert.
+  - Verfügbare Namen, Dosierung, Einheit, Einnahmezeiten, Indikation, Aktivstatus und Planinhalt werden
+    aus dem validierten Ledger angezeigt; fehlende Projektionen bleiben als solche erkennbar und erzeugen
+    keine erfundenen Details.
+  - Die Backend-Route lädt ausschließlich den durch den sichtbaren Patienten begrenzten medizinischen
+    Graphen und liefert für Patienten außerhalb des Center-Scopes HTTP 404.
+  - Frontend- und Backend-Tests schützen die Identitätsverknüpfung, Detaildarstellung, Patientenbegrenzung
+    und fremde Center-Zugriffe.
+  required: true
+  verification:
+    kind: manual
+    instructions: Fokussierte Backend- und Frontend-Tests ausführen und API-Payload, External-ID-Verknüpfung,
+      dargestellte Medikationsdetails sowie negativen Center-Scope-Fall gegen Implementierung reviewen.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: /home/admin/dev/lx-annotate/frontend/src/views/PatientMedicationPage.vue
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/frontend/src/views/__tests__/PatientResourcePages.test.ts
+    - kind: test
+      reference: tests/api/test_medical_ledger_read.py
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/frontend/src/api/__tests__/patientService.medicalLedger.test.ts
+    note: Read-Darstellung sowie typisierte Create/Patch-Clients für Medikation und Pläne sind integriert;
+      Quelltests bestehen. Produktionsverifikation und Editieroberfläche bleiben bis Paketveröffentlichung
+      beziehungsweise separatem UI-Scope offen.
+    assessed_by: Codex
+    assessed_at: '2026-07-29T12:56:16.682956Z'
+- id: automated_test_matrix
+  category: testing
+  title: Vertrag, Persistenz, API und Migration sind durch eine vollständige Testmatrix geschützt
+  acceptance:
+  - lx_dtypes-Tests decken gültige Varianten, fehlende Pflichtfelder, zusätzliche Felder, ungültige Zeit-/Wertebereiche,
+    Serialisierung und stabile Registry-Exports ab.
+  - EndoReg-Service-Tests decken jeden Entitätstyp, den vollständigen Graphen, Relationsauflösung, Roundtrip,
+    Rollback, Idempotenz und Parallelität ab.
+  - API-Tests decken HTTP 201, 401, 404, 409 und 422, OpenAPI, Snake Case, fremde Patienten, teilweise
+    ungültige Aggregate und sichere Fehlerpayloads ab.
+  - Migrations-, Backfill- und Restore-Tests verwenden bestehende und absichtlich inkonsistente medizinische
+    Daten.
+  - Die Testlane verwendet die in endoreg_db tatsächlich gepinnte lx-dtypes-Version; eine zusätzliche
+    Consumer-Lane prüft den lx_dtypes-Quellstand vor Veröffentlichung.
+  - Pyright läuft für beide Integrationsgrenzen ohne neue Ignore-Kommentare, Any- Erweiterungen oder untypisierte
+    Serializer-Shims.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/api/test_medical_ledger_validation.py
+    - tests/api/test_medical_ledger_create.py
+    - tests/services/test_medical_ledger_persistence.py
+    - tests/services/test_medical_ledger_roundtrip.py
+    - tests/services/test_medical_ledger_transactions.py
+    - tests/models/medical/test_medical_ledger_constraints.py
+    - tests/migrations/test_medical_ledger_integration.py
+    - -q
+    timeout_seconds: 2400
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: tests/api/test_medical_ledger_read.py
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/frontend/src/views/__tests__/PatientResourcePages.test.ts
+    note: Vier Backend- und vier Frontend-Integrationstests sowie fokussiertes Pyright, Vue TypeScript,
+      ESLint und Produktionsbuild bestehen. Create-, Migration-, Backfill-, Parallelitäts- und Restore-Lanes
+      bleiben offen.
+    assessed_by: Codex
+    assessed_at: '2026-07-29T12:45:09.932022Z'
+- id: observability_and_reconciliation
+  category: observability
+  title: Medizinische Ledger-Fehler und Persistenzabweichungen sind messbar und reparierbar
+  acceptance:
+  - Strukturierte Metriken unterscheiden Validierungsfehler, Autorisierungsablehnungen, Referenzkonflikte,
+    Datenbankkonflikte, Rollbacks und erfolgreiche Erstellungen ohne sensible klinische Werte als Labels.
+  - Logs besitzen Korrelations-, Request- und Idempotenzidentität, aber keine vollständigen medizinischen
+    Payloads oder direkt identifizierende Patientendaten.
+  - Ein read-only Reconciliation-Kommando vergleicht normalisierte EndoReg-Daten mit erneut validierten
+    Ledger-Exports und meldet fehlende, fremdpatientige, duplizierte oder nicht serialisierbare Datensätze.
+  - Reconciliation verändert Daten niemals implizit; Reparatur benötigt einen getrennten, auditierten
+    und wiederaufnehmbaren Workflow.
+  - Alarmgrenzen und verantwortliche Reaktion für anhaltende Fehler-, Quarantäne- und Reconciliation-Abweichungen
+    sind im Runbook festgelegt.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/management/commands/test_reconcile_medical_ledger.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: operational_readiness
+  category: operations
+  title: Release, Backfill, Rollback und Störungsbehebung sind produktionsfähig
+  acceptance:
+  - Das Runbook beschreibt Release-Reihenfolge für lx-dtypes-Paket, EndoReg-Migration, Backfill, API-Aktivierung
+    und Consumer-Rollout einschließlich harter Stop-Gates.
+  - Feature-Flag oder vergleichbare Aktivierung ist standardmäßig geschlossen, bis Paketpin, Migration,
+    Berechtigungen, Backup und Integritätsprüfung erfolgreich sind.
+  - Rollback deaktiviert neue Writes sicher, ohne bereits bestätigte Datensätze, Join-Relationen oder
+    Ledger-Identitäten zu verlieren.
+  - Kapazitäts- und Lasttests belegen begrenzte Requestgröße, Batchgröße, Queryanzahl, Sperrdauer und
+    Laufzeit für Patienten mit großen medizinischen Historien.
+  - Eine Staging-Probe demonstriert authentifiziertes Create, Datenbank-Roundtrip, Prozessneustart, Reconciliation,
+    Backup und Restore mit repräsentativen Daten.
+  required: true
+  verification:
+    kind: manual
+    instructions: Release-, Rollback-, Last-, Reconciliation-, Backup- und Restore-Probe anhand des freigegebenen
+      Runbooks durchführen und Review-Evidenz erfassen.
+    timeout_seconds: 1800
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: integration_documentation
+  category: documentation
+  title: API-, Daten- und Betriebsverträge sind für Implementierer und Betreiber nachvollziehbar
+  acceptance:
+  - Die Integrationsdokumentation zeigt Datenfluss von API-JSON über lx_dtypes- Validierung und EndoReg-Service
+    bis zu Tabellen und zurück zum Ledger-Response.
+  - Für jeden medizinischen Typ sind Payloadbeispiele, Pflichtfelder, Referenzen, Zeitzonen, Einheiten,
+    Fehlercodes, Idempotenz und Berechtigungen dokumentiert.
+  - OpenAPI und veröffentlichte JSON-Schemata entsprechen den tatsächlich akzeptierten und zurückgegebenen
+    Payloads und werden durch Contract-Tests geschützt.
+  - Migrations-, Backfill-, Reconciliation-, Quarantäne-, Rollback- und Incident-Abläufe sind als ausführbares
+    Runbook dokumentiert.
+  - LXDM-, ApiContracts- und CasePersistence-Tracker verweisen auf diesen Feature-Vertrag, wenn ihre Akzeptanz
+    von medizinischer Ledger-Persistenz abhängt, ohne Kriterien oder Status parallel zu duplizieren.
+  required: true
+  verification:
+    kind: manual
+    instructions: Dokumentation mit lx_dtypes- und endoreg_db-Maintainern gegen Code, OpenAPI, Migrationen,
+      Testmatrix und Betriebsprobe reviewen.
+    timeout_seconds: 900
+  assessment:
+    status: not_assessed
+    evidence: []

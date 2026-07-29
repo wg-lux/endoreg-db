@@ -11,6 +11,7 @@ from rest_framework import serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.request import Request
 from rest_framework.response import Response
+from pydantic import BaseModel, ValidationError as PydanticValidationError
 
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models.administration.person.patient.patient import Patient
@@ -44,6 +45,94 @@ class _PatientIdLike(Protocol):
     id: int | str | None
 
 
+class _MedicalLedgerPayload(Protocol):
+    def model_dump(self, *, mode: str) -> dict[str, object]: ...
+
+
+class MedicalLedgerContractUnavailable(RuntimeError):
+    """Raised when EndoReg is running without the required lx-dtypes contract."""
+
+
+def _medical_contract_module_missing(exc: ModuleNotFoundError) -> bool:
+    return bool(
+        exc.name
+        and (
+            exc.name == "lx_dtypes.models.ledger.medical"
+            or exc.name.startswith("lx_dtypes.models.ledger.medical.")
+        )
+    )
+
+
+def _build_patient_medical_ledger(patient: Patient) -> _MedicalLedgerPayload:
+    try:
+        from endoreg_db.services.medical_ledger import (
+            build_patient_medical_ledger_for_patient,
+        )
+    except ModuleNotFoundError as exc:
+        if not _medical_contract_module_missing(exc):
+            raise
+        raise MedicalLedgerContractUnavailable from exc
+    return build_patient_medical_ledger_for_patient(patient)
+
+
+def _medical_contract_unavailable_response() -> Response:
+    return Response(
+        {
+            "code": "medical-ledger-contract-unavailable",
+            "detail": (
+                "The installed lx-dtypes package does not provide the "
+                "medical ledger contract."
+            ),
+        },
+        status=status.HTTP_503_SERVICE_UNAVAILABLE,
+    )
+
+
+def _medical_validation_response(exc: PydanticValidationError) -> Response:
+    errors = [
+        {
+            "field": ".".join(str(part) for part in error["loc"]),
+            "message": error["msg"],
+            "type": error["type"],
+        }
+        for error in exc.errors(include_url=False)
+    ]
+    return Response(
+        {"code": "validation-error", "errors": errors},
+        status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+    )
+
+
+def _medical_reference_conflict_response(field_name: str) -> Response:
+    return Response(
+        {
+            "code": "reference-conflict",
+            "field": field_name,
+            "detail": "A medical terminology reference could not be resolved.",
+        },
+        status=status.HTTP_409_CONFLICT,
+    )
+
+
+def _medical_resource_not_found_response() -> Response:
+    return Response(
+        {
+            "code": "not-found",
+            "detail": "Patient medical record not found.",
+        },
+        status=status.HTTP_404_NOT_FOUND,
+    )
+
+
+def _validate_medical_payload(
+    model: type[BaseModel], request: Request
+) -> BaseModel | Response:
+    try:
+        return model.model_validate(request.data)
+    except PydanticValidationError as exc:
+        return _medical_validation_response(exc)
+
+
 staff_member_access_control: Callable[..., Any] = cast(
     Callable[..., Any], staff_member_required
 )
@@ -65,6 +154,180 @@ class PatientViewSet(viewsets.ModelViewSet[Patient]):  # pyright: ignore[reportI
         return filter_center_scoped_queryset(
             queryset=Patient.objects.all(),
             user=self.request.user,
+        )
+
+    @action(detail=True, methods=["get"], url_path="medical-ledger")
+    def medical_ledger(self, request: Request, pk: int | None = None) -> Response:
+        """Return this visible patient's validated medical ledger projection."""
+        del request, pk
+        try:
+            ledger = _build_patient_medical_ledger(self.get_object())
+        except MedicalLedgerContractUnavailable:
+            return _medical_contract_unavailable_response()
+        return Response(
+            ledger.model_dump(mode="json"),
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["post"], url_path="medications")
+    def create_medication(self, request: Request, pk: int | None = None) -> Response:
+        """Create one validated medication record for this visible patient."""
+        del pk
+        try:
+            from lx_dtypes.models.ledger.medical.Write import PatientMedicationCreate
+            from endoreg_db.services.medical_ledger import (
+                MedicalLedgerReferenceConflict,
+                create_patient_medication,
+            )
+        except ModuleNotFoundError as exc:
+            if not _medical_contract_module_missing(exc):
+                raise
+            return _medical_contract_unavailable_response()
+
+        validated = _validate_medical_payload(PatientMedicationCreate, request)
+        if isinstance(validated, Response):
+            return validated
+        try:
+            medication = create_patient_medication(
+                patient=self.get_object(),
+                payload=cast(PatientMedicationCreate, validated),
+            )
+        except MedicalLedgerReferenceConflict as exc:
+            return _medical_reference_conflict_response(exc.field_name)
+        return Response(
+            medication.model_dump(mode="json"),
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(
+        detail=True,
+        methods=["patch"],
+        url_path=r"medications/(?P<medication_id>[^/.]+)",
+    )
+    def update_medication(
+        self,
+        request: Request,
+        pk: int | None = None,
+        medication_id: str | None = None,
+    ) -> Response:
+        """Patch one medication owned by this visible patient."""
+        del pk
+        try:
+            parsed_id = int(medication_id or "")
+        except ValueError:
+            return _medical_resource_not_found_response()
+        try:
+            from lx_dtypes.models.ledger.medical.Write import PatientMedicationUpdate
+            from endoreg_db.services.medical_ledger import (
+                MedicalLedgerPatientResourceNotFound,
+                MedicalLedgerReferenceConflict,
+                update_patient_medication,
+            )
+        except ModuleNotFoundError as exc:
+            if not _medical_contract_module_missing(exc):
+                raise
+            return _medical_contract_unavailable_response()
+
+        validated = _validate_medical_payload(PatientMedicationUpdate, request)
+        if isinstance(validated, Response):
+            return validated
+        try:
+            medication = update_patient_medication(
+                patient=self.get_object(),
+                medication_id=parsed_id,
+                payload=cast(PatientMedicationUpdate, validated),
+            )
+        except MedicalLedgerPatientResourceNotFound:
+            return _medical_resource_not_found_response()
+        except MedicalLedgerReferenceConflict as exc:
+            return _medical_reference_conflict_response(exc.field_name)
+        return Response(
+            medication.model_dump(mode="json"),
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["post"], url_path="medication-schedules")
+    def create_medication_schedule(
+        self, request: Request, pk: int | None = None
+    ) -> Response:
+        """Create one schedule from medication records owned by this patient."""
+        del pk
+        try:
+            from lx_dtypes.models.ledger.medical.Write import (
+                PatientMedicationScheduleCreate,
+            )
+            from endoreg_db.services.medical_ledger import (
+                MedicalLedgerPatientResourceNotFound,
+                create_patient_medication_schedule,
+            )
+        except ModuleNotFoundError as exc:
+            if not _medical_contract_module_missing(exc):
+                raise
+            return _medical_contract_unavailable_response()
+
+        validated = _validate_medical_payload(
+            PatientMedicationScheduleCreate, request
+        )
+        if isinstance(validated, Response):
+            return validated
+        try:
+            schedule = create_patient_medication_schedule(
+                patient=self.get_object(),
+                payload=cast(PatientMedicationScheduleCreate, validated),
+            )
+        except MedicalLedgerPatientResourceNotFound:
+            return _medical_resource_not_found_response()
+        return Response(
+            schedule.model_dump(mode="json"),
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(
+        detail=True,
+        methods=["patch"],
+        url_path=r"medication-schedules/(?P<schedule_id>[^/.]+)",
+    )
+    def update_medication_schedule(
+        self,
+        request: Request,
+        pk: int | None = None,
+        schedule_id: str | None = None,
+    ) -> Response:
+        """Replace the medication membership of one patient-owned schedule."""
+        del pk
+        try:
+            parsed_id = int(schedule_id or "")
+        except ValueError:
+            return _medical_resource_not_found_response()
+        try:
+            from lx_dtypes.models.ledger.medical.Write import (
+                PatientMedicationScheduleUpdate,
+            )
+            from endoreg_db.services.medical_ledger import (
+                MedicalLedgerPatientResourceNotFound,
+                update_patient_medication_schedule,
+            )
+        except ModuleNotFoundError as exc:
+            if not _medical_contract_module_missing(exc):
+                raise
+            return _medical_contract_unavailable_response()
+
+        validated = _validate_medical_payload(
+            PatientMedicationScheduleUpdate, request
+        )
+        if isinstance(validated, Response):
+            return validated
+        try:
+            schedule = update_patient_medication_schedule(
+                patient=self.get_object(),
+                schedule_id=parsed_id,
+                payload=cast(PatientMedicationScheduleUpdate, validated),
+            )
+        except MedicalLedgerPatientResourceNotFound:
+            return _medical_resource_not_found_response()
+        return Response(
+            schedule.model_dump(mode="json"),
+            status=status.HTTP_200_OK,
         )
 
     def perform_create(self, serializer: serializers.BaseSerializer[Patient]) -> None:  # pyright: ignore[reportIncompatibleMethodOverride]

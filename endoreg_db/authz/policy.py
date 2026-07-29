@@ -77,6 +77,11 @@ ROUTE_RESOURCE: RouteResourceMap = {
     # Patients
     "patient-list": "patient",  # /api/patients/
     "patient-detail": "patient",  # /api/patients/{id}/
+    "patient-medical-ledger": "patient",
+    "patient-create-medication": "patient",
+    "patient-update-medication": "patient",
+    "patient-create-medication-schedule": "patient",
+    "patient-update-medication-schedule": "patient",
     # Custom patient helper
     "check_pe_exist": "patient",
     # Example for videos (if you have these ViewSets registered)
