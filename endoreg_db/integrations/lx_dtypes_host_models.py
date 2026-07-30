@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias, cast
 
 import django
@@ -54,6 +54,10 @@ HostModelName: TypeAlias = Literal[
     "PatientLabValue",
     "PatientMedication",
     "PatientMedicationSchedule",
+]
+ReportTemplateCapability: TypeAlias = Literal[
+    "report_template:read",
+    "report_template:write",
 ]
 
 _HOST_MODEL_NAMES: tuple[HostModelName, ...] = (
@@ -272,6 +276,46 @@ def terminology_write_access_allowed(actor: object) -> bool:
     return "terminology:write" in role_names or satisfies(role_names, "data:write")
 
 
+def report_template_access_allowed(
+    actor: object,
+    capability: ReportTemplateCapability,
+) -> bool:
+    """Authorize report-template builder capabilities from synced Keycloak roles.
+
+    This adapter deliberately fails closed when the actor does not expose a
+    usable Django group relation.  ``satisfies`` retains the existing policy
+    semantics, including ``write`` implying ``read`` and approved global
+    policy roles.
+    """
+    if capability not in {"report_template:read", "report_template:write"}:
+        return False
+    if bool(getattr(actor, "is_superuser", False) or getattr(actor, "is_staff", False)):
+        return True
+
+    groups = getattr(actor, "groups", None)
+    values_list = getattr(groups, "values_list", None)
+    if not callable(values_list):
+        return False
+
+    try:
+        raw_role_names = values_list("name", flat=True)
+        if isinstance(raw_role_names, (str, bytes)) or not isinstance(
+            raw_role_names, Iterable
+        ):
+            return False
+        role_values = cast(Iterable[object], raw_role_names)
+        role_names = tuple(role_value for role_value in role_values)
+    except Exception:  # noqa: BLE001 - authorization must fail closed
+        return False
+
+    if not all(isinstance(role_name, str) for role_name in role_names):
+        return False
+    return satisfies(
+        {cast(str, role_name) for role_name in role_names},
+        capability,
+    )
+
+
 def persist_patient_examination_dtypes_record(
     patient_examination: PatientExamination,
     payload: BaseModel | Mapping[str, JsonValue],
@@ -309,6 +353,8 @@ __all__ = [
     "patient_examination_access_allowed",
     "patient_finding_access_allowed",
     "patient_findings_queryset_for_request",
+    "ReportTemplateCapability",
+    "report_template_access_allowed",
     "terminology_write_access_allowed",
     "persist_patient_examination_dtypes_record",
 ]
