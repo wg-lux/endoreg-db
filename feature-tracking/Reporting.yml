@@ -116,9 +116,17 @@ definition_of_done:
     instructions: Nach Einführung der Administration die Ninja-Endpunkte, Deployment-Profile, Rollenregeln und negativen API-Tests prüfen.
     timeout_seconds: 300
   assessment:
-    status: not_assessed
-    evidence: []
-    note: Für Version 1 ausdrücklich zurückgestellt. Die aktuelle Template-Builder-Funktion darf erst nach Einführung und Nachweis dieser Administration als produktionsreif gelten.
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/django/api/tests/test_report_template_routes_extra.py
+      note: Builder-Routen prüfen anonymen Zugriff, getrennte Read-/Write-Kapazitäten und fail-closed Verhalten.
+    - kind: test
+      reference: /home/admin/endoreg-db/tests/authz/test_lx_dtypes_report_template_access.py
+      note: Host-Integration prüft sechs Rollen- und Fail-Closed-Fälle.
+    assessed_by: Codex
+    assessed_at: '2026-07-30T12:00:00Z'
+    note: Authentifizierung und Read-/Write-Trennung sind implementiert. Auditierung, explizite Modul-/Center-Scopes, CSRF-/Paralleländerungstests und ein vollständiger Produktionsnachweis stehen noch aus.
 - id: access_controls
   category: security
   title: Berichtszugriff und LLM-Verarbeitung sind patienten- und center-bezogen

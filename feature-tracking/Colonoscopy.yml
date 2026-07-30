@@ -60,7 +60,15 @@ definition_of_done:
     verification:
       kind: manual
       instructions: LXDM-YAML-Freigabe, Elementmatrix, lx-annotate-Berichtsexport und reproduzierbare Fixtures gemeinsam durch technische und klinische Verantwortliche prüfen; erst danach technische Testevidenz und fachliche Abnahme getrennt bewerten.
-    assessment: *not_assessed
+    assessment:
+      status: in_progress
+      evidence:
+        - kind: test
+          reference: /home/admin/lx-parse/lx_dtypes/models/knowledge_base/report_template/tests/test_report_concept_coverage.py
+          note: Versionierter LXDM-Coverage-Vertrag mit stabiler Konzept-ID, Modul-/Template-Digest, Anwendbarkeit, Status und Evidenzpfad; positive und negative Modelltests.
+      assessed_by: Codex
+      assessed_at: '2026-07-30T12:00:00Z'
+      note: Der typisierte Vertrag ist implementiert. Runtime-Erzeugung, fachlich annotierte Koloskopie-Fixtures, Wert-/Einheitenvalidierung und klinische Abnahme fehlen noch.
   - id: automated_tests
     category: testing
     title: Klinische Regeln haben parametrisierte Positiv- und Negativtests
