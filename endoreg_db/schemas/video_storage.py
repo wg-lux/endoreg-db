@@ -146,6 +146,26 @@ class SegmentTimelineReference(BaseModel):
         return self
 
 
+class HlsSegmentBoundary(BaseModel):
+    """Playlist segment boundary resolved on the HLS presentation timeline."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    segment_index: int = Field(ge=0)
+    start_timestamp_seconds: float = Field(ge=0, allow_inf_nan=False)
+    duration_seconds: float = Field(gt=0, allow_inf_nan=False)
+    end_timestamp_seconds: float = Field(gt=0, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def validate_boundary(self) -> Self:
+        expected_end = self.start_timestamp_seconds + self.duration_seconds
+        if abs(expected_end - self.end_timestamp_seconds) > 1e-9:
+            raise ValueError(
+                "end_timestamp_seconds must equal start plus segment duration"
+            )
+        return self
+
+
 class VideoArtifactProbe(BaseModel):
     """Validated ffprobe and filesystem values used by the storage gate."""
 
@@ -250,6 +270,7 @@ __all__ = [
     "NominalFrameRate",
     "PresentationTimestampBoundary",
     "PresentationTimestampTimeline",
+    "HlsSegmentBoundary",
     "SegmentTimelineReference",
     "ClinicalFrameQualityEvidence",
     "VideoArtifactProbe",

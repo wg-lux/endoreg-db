@@ -15,7 +15,9 @@ from django.utils import timezone
 
 from endoreg_db.models import Center, VideoFile
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
+from endoreg_db.services.video_storage import hls_encoding
 from endoreg_db.services import hls_media
+from endoreg_db.services.video_storage.contracts import VideoStorageNormalizationError
 from endoreg_db.utils import transcode_execution
 from endoreg_db.utils.ffmpeg_wrapper import resolve_ffmpeg_executable
 from endoreg_db.utils.paths import EndoregPathsModel
@@ -185,11 +187,12 @@ def test_ffmpeg_hls_command_uses_clinical_quality_h264_settings(
         segment_pattern=Path("/tmp/seg_%03d.ts"),
         playlist_path=Path("/tmp/playlist.m3u8"),
         segment_base_url="/media/videos/1/hls/",
+        encoding_profile=hls_media.configured_hls_encoding_profile(),
         input_arg="pipe:0",
     )
 
-    assert command[command.index("-preset") + 1] == hls_media.HLS_VIDEO_PRESET
-    assert command[command.index("-crf") + 1] == hls_media.HLS_VIDEO_CRF
+    assert command[command.index("-preset") + 1] == "medium"
+    assert command[command.index("-crf") + 1] == "18"
     assert command[command.index("-maxrate") + 1] == "12000000"
     assert command[command.index("-bufsize") + 1] == "24000000"
     assert command[command.index("-profile:v") + 1] == hls_media.HLS_VIDEO_PROFILE
@@ -537,6 +540,7 @@ def test_stale_hls_worker_cannot_overwrite_new_owner(
         artifact_kind=cast(Any, hls_media).VideoArtifactKind.PROCESSED,
         source_file_name=str(video.processed_file.name),
         source_generation_id=uuid4(),
+        requested_encoding_profile_name="clinical_h264_libx264_crf_v1",
         key_id=new_key_id,
         key_ciphertext=b"new wrapped key",
         key_nonce=b"n" * 12,
@@ -922,6 +926,7 @@ def test_materialize_video_hls_failure_unlinks_partial_segments_and_keys(
         playlist_path: Path,
         segment_base_url: str,
         timeline_validation: object,
+        encoding_profile: hls_media.HlsEncodingProfile,
     ) -> None:
         _ = source_file_name
         _ = source_size_bytes
@@ -930,6 +935,7 @@ def test_materialize_video_hls_failure_unlinks_partial_segments_and_keys(
         _ = playlist_path
         _ = segment_base_url
         _ = timeline_validation
+        _ = encoding_profile
         key_info_lines = key_info_path.read_text(encoding="utf-8").splitlines()
         observed_temp_key_paths.append(Path(key_info_lines[1]))
         segment_pattern.parent.mkdir(parents=True, exist_ok=True)
@@ -1027,7 +1033,6 @@ def test_deterministic_hls_validation_failure_is_not_rematerialized_and_does_not
         video=failed_video,
         status=VideoHlsArtifact.Status.READY.value,
     ).exists()
-
     fake_hls = FakeHlsOutputRecorder()
     monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
     subsequent = hls_media.materialize_video_hls(
@@ -1035,3 +1040,41 @@ def test_deterministic_hls_validation_failure_is_not_rematerialized_and_does_not
         artifact_kind="processed",
     )
     assert subsequent.status == "materialized"
+
+
+def test_ffmpeg_hls_command_uses_explicit_nvenc_cq_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        hls_media.ffmpeg_wrapper,
+        "resolve_ffmpeg_executable",
+        lambda: "/usr/bin/ffmpeg",
+    )
+    profile = hls_encoding.hls_encoding_profile_by_name("clinical_h264_nvenc_cq_v1")
+    command = cast(Any, hls_media)._ffmpeg_command(
+        key_info_path=Path("/tmp/key_info.txt"),
+        segment_pattern=Path("/tmp/seg_%03d.ts"),
+        playlist_path=Path("/tmp/playlist.m3u8"),
+        segment_base_url="/media/videos/1/hls/",
+        encoding_profile=profile,
+        input_arg="pipe:0",
+    )
+    assert command[command.index("-codec:v") + 1] == "h264_nvenc"
+    assert command[command.index("-gpu") + 1] == "0"
+    assert command[command.index("-rc:v") + 1] == "vbr"
+    assert command[command.index("-cq:v") + 1] == "18"
+    assert command[command.index("-b:v") + 1] == "0"
+    assert "-crf" not in command
+    assert "-threads" not in command
+
+
+def test_nvenc_preflight_requires_one_isolated_visible_gpu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(hls_encoding.CUDA_VISIBLE_DEVICES_ENV, raising=False)
+    profile = hls_encoding.hls_encoding_profile_by_name("clinical_h264_nvenc_cq_v1")
+    with pytest.raises(VideoStorageNormalizationError, match="exactly one GPU"):
+        hls_encoding.assert_hls_encoder_runtime_available(
+            ffmpeg_executable="/usr/bin/ffmpeg",
+            profile=profile,
+        )

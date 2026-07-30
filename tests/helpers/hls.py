@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import BinaryIO
 
+from endoreg_db.services.video_storage.hls_encoding import HlsEncodingProfile
+
 
 @dataclass(frozen=True)
 class HlsKeyInfoRecord:
@@ -45,11 +47,13 @@ class FakeHlsOutputRecorder:
         playlist_path: Path,
         segment_base_url: str,
         timeline_validation: object,
+        encoding_profile: HlsEncodingProfile,
     ) -> None:
         _ = source_file_name
         _ = source_size_bytes
         _ = temp_source_dir
         _ = timeline_validation
+        _ = encoding_profile
         record = _read_key_info_record(key_info_path)
         if not record.key_path.exists():
             raise AssertionError(f"HLS key file does not exist: {record.key_path}")

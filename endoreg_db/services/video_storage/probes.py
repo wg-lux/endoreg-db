@@ -342,7 +342,7 @@ def _build_frame_timestamp_probe_command(
     ffprobe: str,
     path: Path,
 ) -> list[str]:
-    return [
+    command = [
         ffprobe,
         "-v",
         "error",
@@ -353,8 +353,18 @@ def _build_frame_timestamp_probe_command(
         "frame=best_effort_timestamp,best_effort_timestamp_time",
         "-of",
         "json",
-        str(Path(path)),
     ]
+    if path.suffix.lower() == ".m3u8":
+        command.extend(
+            [
+                "-protocol_whitelist",
+                "file,crypto,data",
+                "-allowed_extensions",
+                "ALL",
+            ]
+        )
+    command.append(str(Path(path)))
+    return command
 
 
 def _run_frame_timestamp_probe(

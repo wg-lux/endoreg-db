@@ -12,6 +12,7 @@ from collections.abc import Generator, Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import BinaryIO, Literal, cast
 from urllib.parse import urlsplit
@@ -33,6 +34,8 @@ from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
 from endoreg_db.schemas.video_storage import (
     PresentationTimestampBoundary,
     PresentationTimestampTimeline,
+    FramePresentationTimestamp,
+    HlsSegmentBoundary,
     VideoArtifactProbe,
 )
 from endoreg_db.services import streamable_media
@@ -48,10 +51,16 @@ from endoreg_db.services.video_storage_normalization import (
     ProvenResampledHlsContext,
     VideoStorageNormalizationError,
     assert_storage_compliance,
+    HlsEncodingProfile,
+    assert_hls_encoder_runtime_available,
+    configured_hls_encoding_profile,
     configured_video_storage_profile,
+    hls_encoding_profile_by_name,
     normalize_video_file,
     probe_video_artifact,
     probe_video_presentation_timeline,
+    probe_video_frame_timestamps,
+    validate_hls_segment_and_pts_equivalence,
     validate_normalized_output,
     validate_proven_resampled_hls_equivalence,
 )
@@ -102,8 +111,6 @@ FFMPEG_STDERR_TAIL_BYTES = 64 * 1024
 FFMPEG_PROCESS_POLL_INTERVAL_SECONDS = 1.0
 FFMPEG_OUTPUT_PROGRESS_WATCHDOG_SECONDS = 300.0
 MP4_PIPE_COMPATIBILITY_SCAN_BYTES = 64 * 1024
-HLS_VIDEO_PRESET = "medium"
-HLS_VIDEO_CRF = "18"
 HLS_VIDEO_PROFILE = STANDARD_VIDEO_ENCODING.profile
 HLS_VIDEO_PIXEL_FORMAT = STANDARD_VIDEO_ENCODING.pixel_format
 HLS_VIDEO_COLOR_RANGE = STANDARD_VIDEO_ENCODING.color_range
@@ -148,6 +155,7 @@ class _ArtifactSnapshot:
     status: str
     key_id: UUID
     source_generation_id: UUID
+    encoding_profile_name: str
     key_ciphertext: bytes | None
     key_nonce: bytes | None
     key_wrap_algorithm: str
@@ -162,6 +170,7 @@ class _ArtifactSnapshot:
 class _PreparedArtifact:
     artifact_id: int
     key_id: UUID
+    encoding_profile_name: str
     previous: _ArtifactSnapshot | None
     should_materialize: bool
     publish_only: bool = False
@@ -421,6 +430,7 @@ def _artifact_snapshot(
         status=VideoHlsArtifact.Status.READY.value,
         key_id=artifact.key_id,
         source_generation_id=artifact.source_generation_id,
+        encoding_profile_name=str(artifact.encoding_profile_name),
         key_ciphertext=(
             bytes(artifact.key_ciphertext)
             if artifact.key_ciphertext is not None
@@ -445,6 +455,7 @@ def _restore_artifact_snapshot(
     artifact.status = snapshot.status
     artifact.key_id = snapshot.key_id
     artifact.source_generation_id = snapshot.source_generation_id
+    artifact.encoding_profile_name = snapshot.encoding_profile_name
     artifact.key_ciphertext = snapshot.key_ciphertext
     artifact.key_nonce = snapshot.key_nonce
     artifact.key_wrap_algorithm = snapshot.key_wrap_algorithm
@@ -460,6 +471,7 @@ def _restore_artifact_snapshot(
             "status",
             "key_id",
             "source_generation_id",
+            "encoding_profile_name",
             "key_ciphertext",
             "key_nonce",
             "key_wrap_algorithm",
@@ -632,6 +644,7 @@ def reserve_hls_materialization_dispatch(
 ) -> HlsMaterializationDispatchReservation:
     """Atomically reserve one HLS task per video and artifact kind."""
     parsed_kind = coerce_hls_artifact_kind(artifact_kind)
+    encoding_profile = configured_hls_encoding_profile()
     with transaction.atomic():
         video = VideoFile.objects.select_for_update().get(pk=int(video_id))
         artifacts = VideoHlsArtifact.objects.select_for_update().filter(
@@ -644,6 +657,7 @@ def reserve_hls_materialization_dispatch(
         ready_matches_source = bool(
             ready is not None
             and ready.source_file_name == source_file_name
+            and ready.encoding_profile_name == encoding_profile.name.value
             and _ready_artifact_paths_exist(ready)
         )
         active_status = str(active.status) if active is not None else ""
@@ -673,6 +687,7 @@ def reserve_hls_materialization_dispatch(
             artifact_kind=parsed_kind.value,
             status=VideoHlsArtifact.Status.QUEUED.value,
             source_file_name=source_file_name,
+            encoding_profile_name=encoding_profile.name.value,
         )
         return HlsMaterializationDispatchReservation(
             artifact_id=int(artifact.pk),
@@ -702,6 +717,7 @@ def _prepare_artifact_record(
     artifact_kind: VideoArtifactKind,
     source_file_name: str,
     source_generation_id: UUID,
+    requested_encoding_profile_name: str,
     key_id: UUID,
     key_ciphertext: bytes,
     key_nonce: bytes,
@@ -721,10 +737,12 @@ def _prepare_artifact_record(
             and _ready_artifact_paths_exist(ready)
             and ready.source_file_name == source_file_name
             and ready.source_generation_id == source_generation_id
+            and ready.encoding_profile_name == requested_encoding_profile_name
         ):
             return _PreparedArtifact(
                 artifact_id=int(ready.pk),
                 key_id=ready.key_id,
+                encoding_profile_name=str(ready.encoding_profile_name),
                 previous=None,
                 should_materialize=False,
             )
@@ -742,6 +760,7 @@ def _prepare_artifact_record(
             return _PreparedArtifact(
                 artifact_id=int(deterministic_failure.pk),
                 key_id=deterministic_failure.key_id,
+                encoding_profile_name=str(deterministic_failure.encoding_profile_name),
                 previous=None,
                 should_materialize=False,
             )
@@ -760,6 +779,7 @@ def _prepare_artifact_record(
                 return _PreparedArtifact(
                     artifact_id=int(artifact.pk),
                     key_id=artifact.key_id,
+                    encoding_profile_name=str(artifact.encoding_profile_name),
                     previous=None,
                     should_materialize=False,
                 )
@@ -767,6 +787,7 @@ def _prepare_artifact_record(
                 return _PreparedArtifact(
                     artifact_id=int(artifact.pk),
                     key_id=artifact.key_id,
+                    encoding_profile_name=str(artifact.encoding_profile_name),
                     previous=None,
                     should_materialize=False,
                     publish_only=True,
@@ -776,9 +797,14 @@ def _prepare_artifact_record(
             artifact = VideoHlsArtifact(
                 video=video,
                 artifact_kind=artifact_kind.value,
+                encoding_profile_name=requested_encoding_profile_name,
             )
+        selected_encoding_profile_name = str(artifact.encoding_profile_name)
+        hls_encoding_profile_by_name(selected_encoding_profile_name)
         artifact.status = VideoHlsArtifact.Status.MATERIALIZING.value
         artifact.key_id = key_id
+        artifact.source_generation_id = source_generation_id
+        artifact.encoding_profile_name = selected_encoding_profile_name
         artifact.source_generation_id = source_generation_id
         artifact.key_ciphertext = key_ciphertext
         artifact.key_nonce = key_nonce
@@ -795,6 +821,7 @@ def _prepare_artifact_record(
         return _PreparedArtifact(
             artifact_id=int(artifact.pk),
             key_id=key_id,
+            encoding_profile_name=selected_encoding_profile_name,
             previous=None,
             should_materialize=True,
         )
@@ -1223,6 +1250,7 @@ def _ffmpeg_command(
     segment_pattern: Path,
     playlist_path: Path,
     segment_base_url: str,
+    encoding_profile: HlsEncodingProfile,
     input_arg: str = "pipe:0",
 ) -> list[str]:
     ffmpeg_executable = ffmpeg_wrapper.resolve_ffmpeg_executable()
@@ -1239,16 +1267,9 @@ def _ffmpeg_command(
         input_arg,
         "-map",
         "0:v:0",
-        "-codec:v",
-        "libx264",
-        "-threads",
-        str(threads),
-        "-preset",
-        HLS_VIDEO_PRESET,
+        *encoding_profile.ffmpeg_encoder_args(cpu_threads=threads),
         "-profile:v",
         HLS_VIDEO_PROFILE,
-        "-crf",
-        HLS_VIDEO_CRF,
         "-maxrate",
         str(storage_profile.max_bit_rate_bps),
         "-bufsize",
@@ -1278,6 +1299,61 @@ def _ffmpeg_command(
     ]
 
 
+def _parse_hls_segment_boundaries(playlist_path: Path) -> list[HlsSegmentBoundary]:
+    boundaries: list[HlsSegmentBoundary] = []
+    pending_duration: Decimal | None = None
+    current_start = Decimal("0")
+    for line_number, raw_line in enumerate(
+        playlist_path.read_text(encoding="utf-8").splitlines(),
+        start=1,
+    ):
+        line = raw_line.strip()
+        if line.startswith("#EXTINF:"):
+            if pending_duration is not None:
+                raise VideoStorageNormalizationError(
+                    "HLS playlist contains consecutive EXTINF declarations"
+                )
+            raw_duration = line.removeprefix("#EXTINF:").split(",", maxsplit=1)[0]
+            try:
+                duration = Decimal(raw_duration)
+            except InvalidOperation as exc:
+                raise VideoStorageNormalizationError(
+                    f"HLS playlist has an invalid segment duration on line {line_number}"
+                ) from exc
+            if not duration.is_finite() or duration <= 0:
+                raise VideoStorageNormalizationError(
+                    f"HLS playlist has a non-positive segment duration on line {line_number}"
+                )
+            pending_duration = duration
+            continue
+        if not line or line.startswith("#"):
+            continue
+        if pending_duration is None:
+            raise VideoStorageNormalizationError(
+                f"HLS playlist segment URI on line {line_number} has no EXTINF duration"
+            )
+        end = current_start + pending_duration
+        boundaries.append(
+            HlsSegmentBoundary(
+                segment_index=len(boundaries),
+                start_timestamp_seconds=float(current_start),
+                duration_seconds=float(pending_duration),
+                end_timestamp_seconds=float(end),
+            )
+        )
+        current_start = end
+        pending_duration = None
+    if pending_duration is not None:
+        raise VideoStorageNormalizationError(
+            "HLS playlist ends before the final segment URI"
+        )
+    if not boundaries:
+        raise VideoStorageNormalizationError(
+            "HLS playlist contains no segment boundaries"
+        )
+    return boundaries
+
+
 def _local_hls_validation_playlist(
     *,
     playlist_path: Path,
@@ -1289,13 +1365,22 @@ def _local_hls_validation_playlist(
     key_path = ensure_within_protected_root(Path(key_info_lines[1]))
     if not key_path.is_file() or key_path.stat().st_size != HLS_CONTENT_KEY_BYTES:
         raise RuntimeError("HLS profile validation key is missing or invalid")
+    validation_key_path = playlist_path.with_name(".profile-validation.key")
+    key_payload = key_path.read_bytes()
+    atomic_write_file(
+        destination=validation_key_path,
+        content=(key_payload,),
+        required_bytes=len(key_payload),
+        file_mode=HLS_TEMP_FILE_MODE,
+        dir_mode=HLS_TEMP_DIRECTORY_MODE,
+    )
 
     rewritten_lines: list[str] = []
     key_rewritten = False
     for line in playlist_path.read_text(encoding="utf-8").splitlines():
         if line.startswith("#EXT-X-KEY:"):
             rewritten, replacements = HLS_KEY_URI_PATTERN.subn(
-                f'URI="{key_path.resolve().as_uri()}"',
+                'URI="./.profile-validation.key"',
                 line,
                 count=1,
             )
@@ -1314,7 +1399,7 @@ def _local_hls_validation_playlist(
             raise RuntimeError(
                 f"HLS profile validation segment is missing: {segment_name}"
             )
-        rewritten_lines.append(segment_path.resolve().as_uri())
+        rewritten_lines.append(segment_path.name)
 
     if not key_rewritten:
         raise RuntimeError("HLS playlist has no encryption key declaration")
@@ -1337,6 +1422,7 @@ def _validate_generated_hls_profile(
     source_probe: VideoArtifactProbe,
     source_pts: PresentationTimestampTimeline | None,
     validation: _HlsTimelineValidation,
+    source_frame_timestamps: list[FramePresentationTimestamp],
 ) -> None:
     validation_path = _local_hls_validation_playlist(
         playlist_path=playlist_path,
@@ -1353,6 +1439,12 @@ def _validate_generated_hls_profile(
         output_probe = output_probe.model_copy(
             update={"size_bytes": total_size_bytes},
         )
+        output_frame_timestamps = probe_video_frame_timestamps(validation_path)
+        segment_boundaries = _parse_hls_segment_boundaries(playlist_path)
+        if len(segment_boundaries) != len(tuple(playlist_path.parent.glob("seg_*.ts"))):
+            raise VideoStorageNormalizationError(
+                "HLS playlist segment count does not match staged segment files"
+            )
         profile = configured_video_storage_profile()
         try:
             evidence = validate_normalized_output(
@@ -1380,15 +1472,30 @@ def _validate_generated_hls_profile(
             )
             assert_storage_compliance(output_probe, profile=profile)
             evidence = None
+        if evidence is not None:
+            validate_hls_segment_and_pts_equivalence(
+                source_timeline=source_probe.timeline,
+                output_timeline=output_probe.timeline,
+                source_timestamps=source_frame_timestamps,
+                output_timestamps=output_frame_timestamps,
+                segments=segment_boundaries,
+                profile=profile,
+            )
         logger.info(
-            "Validated HLS transcoding profile before publication: "
-            "profile=%s playlist=%s segments_bytes=%s",
+            "Validated HLS transcoding profile, frame PTS, and segment "
+            "boundaries before publication: profile=%s playlist=%s "
+            "segments=%s segments_bytes=%s",
             evidence.profile_name if evidence is not None else profile.name,
             playlist_path,
+            len(segment_boundaries),
             total_size_bytes,
         )
     finally:
         safe_unlink_file(validation_path, missing_ok=True)
+        safe_unlink_file(
+            playlist_path.with_name(".profile-validation.key"),
+            missing_ok=True,
+        )
 
 
 def _run_ffmpeg_hls(
@@ -1402,9 +1509,11 @@ def _run_ffmpeg_hls(
     playlist_path: Path,
     segment_base_url: str,
     timeline_validation: _HlsTimelineValidation,
+    encoding_profile: HlsEncodingProfile,
 ) -> None:
     source_path: Path | None = None
     source_pts: PresentationTimestampTimeline | None = None
+    source_frame_timestamps: list[FramePresentationTimestamp] = []
     try:
         prefix = source.read(MP4_PIPE_COMPATIBILITY_SCAN_BYTES)
         source_path = _materialize_seekable_plaintext_source(
@@ -1446,6 +1555,7 @@ def _run_ffmpeg_hls(
                 boundaries=list(timeline_validation.proof.boundaries),
             )
         input_arg = str(source_path)
+        source_frame_timestamps = probe_video_frame_timestamps(source_path)
     except BaseException:
         _cleanup_seekable_plaintext_source(
             temp_source_dir=temp_source_dir,
@@ -1459,7 +1569,20 @@ def _run_ffmpeg_hls(
         segment_pattern=segment_pattern,
         playlist_path=playlist_path,
         segment_base_url=segment_base_url,
+        encoding_profile=encoding_profile,
     )
+    ffmpeg_executable = command[0]
+    try:
+        assert_hls_encoder_runtime_available(
+            ffmpeg_executable=ffmpeg_executable,
+            profile=encoding_profile,
+        )
+    except (VideoStorageNormalizationError, OSError, RuntimeError, AssertionError):
+        _cleanup_seekable_plaintext_source(
+            temp_source_dir=temp_source_dir,
+            source_path=source_path,
+        )
+        raise
     stderr_chunks: deque[bytes] = deque()
     try:
         process = subprocess.Popen(
@@ -1554,6 +1677,7 @@ def _run_ffmpeg_hls(
         source_probe=normalization_evidence.output,
         source_pts=source_pts,
         validation=timeline_validation,
+        source_frame_timestamps=source_frame_timestamps,
     )
 
 
@@ -1610,6 +1734,7 @@ def _existing_ready_result(
     *,
     video_id: int,
     artifact_kind: VideoArtifactKind,
+    encoding_profile_name: str,
 ) -> HlsMaterializationResult | None:
     artifact = (
         VideoHlsArtifact.objects.filter(
@@ -1625,6 +1750,8 @@ def _existing_ready_result(
 
     source_ref = _hls_source(artifact.video, artifact_kind)
     if artifact.source_file_name != source_ref.source_file_name:
+        return None
+    if artifact.encoding_profile_name != encoding_profile_name:
         return None
     if not _ready_artifact_paths_exist(artifact):
         _mark_artifact_failed(
@@ -1808,8 +1935,13 @@ def materialize_video_hls(
     force: bool = False,
 ) -> HlsMaterializationResult:
     parsed_kind = coerce_hls_artifact_kind(artifact_kind)
+    requested_encoding_profile = configured_hls_encoding_profile()
     if not force:
-        existing = _existing_ready_result(video_id=video_id, artifact_kind=parsed_kind)
+        existing = _existing_ready_result(
+            video_id=video_id,
+            artifact_kind=parsed_kind,
+            encoding_profile_name=requested_encoding_profile.name.value,
+        )
         if existing is not None:
             return existing
 
@@ -1838,6 +1970,7 @@ def materialize_video_hls(
         artifact_kind=parsed_kind,
         source_file_name=source_file_name,
         source_generation_id=timeline_validation.source_generation_id,
+        requested_encoding_profile_name=requested_encoding_profile.name.value,
         key_id=key_id,
         key_ciphertext=key_ciphertext,
         key_nonce=key_nonce,
@@ -1875,6 +2008,7 @@ def materialize_video_hls(
             detail="An HLS materialization task is already active.",
         )
 
+    encoding_profile = hls_encoding_profile_by_name(prepared.encoding_profile_name)
     key_id = prepared.key_id
     target_dir = _artifact_target_dir(
         video=video,
@@ -1915,6 +2049,7 @@ def materialize_video_hls(
                         playlist_path=temp_playlist_path,
                         segment_base_url=segment_base_url,
                         timeline_validation=timeline_validation,
+                        encoding_profile=encoding_profile,
                     )
             segment_count = _assert_hls_outputs(
                 playlist_path=temp_playlist_path,
