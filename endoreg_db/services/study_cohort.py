@@ -226,9 +226,7 @@ def _report_case_filter(case_ids: QuerySet[PatientExamination]) -> Q:
 
 def _video_case_filter(case_ids: QuerySet[PatientExamination]) -> Q:
     case_id_subquery = cast(Any, Subquery(case_ids.values("pk")))
-    return Q(examination_id__in=case_id_subquery) | Q(
-        patient_examination__id__in=case_id_subquery
-    )
+    return Q(examination_id__in=case_id_subquery)
 
 
 def _base_case_queryset() -> QuerySet[PatientExamination]:
@@ -237,7 +235,7 @@ def _base_case_queryset() -> QuerySet[PatientExamination]:
         | Q(anonym_examination_report__patient_examination_id=OuterRef("pk"))
     )
     eligible_videos = _eligible_video_queryset().filter(
-        Q(examination_id=OuterRef("pk")) | Q(patient_examination__id=OuterRef("pk"))
+        Q(examination_id=OuterRef("pk"))
     )
     return (
         PatientExamination.objects.select_related("patient", "examination")
@@ -281,8 +279,7 @@ def _apply_filters(
             center__center_key=filters.center_key,
         )
         matching_video = _eligible_video_queryset().filter(
-            Q(examination_id=OuterRef("pk"))
-            | Q(patient_examination__id=OuterRef("pk")),
+            Q(examination_id=OuterRef("pk")),
             center__center_key=filters.center_key,
         )
         queryset = queryset.annotate(
@@ -313,7 +310,6 @@ def _apply_filters(
             .exclude(frame__video__processed_file="")
             .filter(
                 Q(frame__video__examination_id=OuterRef("pk"))
-                | Q(frame__video__patient_examination__id=OuterRef("pk"))
             )
         )
         queryset = queryset.annotate(
@@ -347,10 +343,7 @@ def _report_case_id(report: RawPdfFile) -> int | None:
 
 
 def _video_case_id(video: VideoFile) -> int | None:
-    if video.examination_id is not None:
-        return video.examination_id
-    patient_examination = getattr(video, "patient_examination", None)
-    return cast(int | None, getattr(patient_examination, "pk", None))
+    return video.examination_id
 
 
 def _report_document_type(report: RawPdfFile) -> str:
@@ -668,7 +661,6 @@ def _query_scope_options(
         .exclude(frame__video__processed_file="")
         .filter(
             Q(frame__video__examination_id__in=scope_case_ids)
-            | Q(frame__video__patient_examination__id__in=scope_case_ids)
         )
         .order_by("label__name")
         .values_list("label__name", flat=True)
