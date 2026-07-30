@@ -103,12 +103,11 @@ definition_of_done:
         Coverage sichtbar auf den nicht autoritativen Fallback hin.
     - kind: test
       reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/models/knowledge_base/report_template/tests/test_report_concept_coverage_builder.py
-    note: 'Der Coverage-Vertrag prüft jetzt zusätzlich semantische Werte strikt: present erfordert vorhandenen
-      und erlaubten Wert sowie erfolgreiche Validatoren; fehlend wird unknown, ungültig invalid. Offen
-      bleiben klinisch freigegebene Wertemengen, Einheiten, reale Template-Metadaten, annotierte Koloskopie-Fixtures
-      und Abnahme.'
+    note: Die Coverage-Auflösung verarbeitet wiederholte Befunde nun deterministisch über Finding-/Klassifikations-Selektoren
+      und liefert konkrete Evidenzpfade für alle Instanzen. Offen bleiben klinisch freigegebene Konzeptmatrizen,
+      Einheiten, reale Template-Metadaten, annotierte Koloskopie-Fixtures und Abnahme.
     assessed_by: Codex
-    assessed_at: '2026-07-30T13:04:15.620981Z'
+    assessed_at: '2026-07-30T13:13:54.279171Z'
 - id: automated_tests
   category: testing
   title: Klinische Regeln haben parametrisierte Positiv- und Negativtests
