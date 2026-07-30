@@ -12,6 +12,7 @@ class Migration(migrations.Migration):
             name="encoding_profile_name",
             field=models.CharField(
                 default="clinical_h264_libx264_crf_v1",
+                help_text="Versioned encoder profile used to create this HLS generation.",
                 max_length=64,
             ),
         ),
