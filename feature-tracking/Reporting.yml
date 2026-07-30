@@ -333,6 +333,6 @@ definition_of_done:
     - kind: document
       reference: /home/admin/lx-parse/lx-data-models/docs/guides/report-concept-coverage.md
     note: Technische Coverage-, Authoring- und Freigabedokumentation ist ergänzt. Vollständige Nutzer-,
-      Betriebs-, Berechtigungs- und klinische Fach dokumentation steht noch aus.
+      Betriebs-, Berechtigungs- und klinische Fachdokumentation steht noch aus.
     assessed_by: Codex
-    assessed_at: '2026-07-30T13:28:13.571798Z'
+    assessed_at: '2026-07-30T13:28:33.518862Z'
