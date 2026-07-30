@@ -328,5 +328,11 @@ definition_of_done:
     instructions: Dokumentation anhand eines vollständigen Import-bis-Stream-Ablaufs prüfen.
     timeout_seconds: 300
   assessment:
-    status: not_assessed
-    evidence: []
+    status: in_progress
+    evidence:
+    - kind: document
+      reference: /home/admin/lx-parse/lx-data-models/docs/guides/report-concept-coverage.md
+    note: Technische Coverage-, Authoring- und Freigabedokumentation ist ergänzt. Vollständige Nutzer-,
+      Betriebs-, Berechtigungs- und klinische Fach dokumentation steht noch aus.
+    assessed_by: Codex
+    assessed_at: '2026-07-30T13:28:13.571798Z'
