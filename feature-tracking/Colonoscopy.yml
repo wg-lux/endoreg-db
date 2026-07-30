@@ -101,11 +101,14 @@ definition_of_done:
       reference: /home/admin/dev/lx-annotate/frontend/src/api/__tests__/reportTemplatesApi.test.ts
       note: Frontend validiert den versionierten Serververtrag und weist bei fehlender oder ungültiger
         Coverage sichtbar auf den nicht autoritativen Fallback hin.
-    note: Der versionierte Coverage-Vertrag wird serverseitig erzeugt und im Frontend autoritativ konsumiert.
-      Offen bleiben fachlich annotierte Koloskopie-Fixtures, vollständige Wert-/Einheitenvalidierung,
-      reale freigegebene Template-Metadaten und klinische Abnahme.
+    - kind: test
+      reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/models/knowledge_base/report_template/tests/test_report_concept_coverage_builder.py
+    note: 'Der Coverage-Vertrag prüft jetzt zusätzlich semantische Werte strikt: present erfordert vorhandenen
+      und erlaubten Wert sowie erfolgreiche Validatoren; fehlend wird unknown, ungültig invalid. Offen
+      bleiben klinisch freigegebene Wertemengen, Einheiten, reale Template-Metadaten, annotierte Koloskopie-Fixtures
+      und Abnahme.'
     assessed_by: Codex
-    assessed_at: '2026-07-30T12:43:10.892282Z'
+    assessed_at: '2026-07-30T13:04:15.620981Z'
 - id: automated_tests
   category: testing
   title: Klinische Regeln haben parametrisierte Positiv- und Negativtests
