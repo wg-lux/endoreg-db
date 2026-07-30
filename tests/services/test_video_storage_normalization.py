@@ -10,6 +10,7 @@ import pytest
 from endoreg_db.models import Center, Frame, VideoFile
 from endoreg_db.schemas.video_storage import (
     FramePresentationTimestamp,
+    HlsSegmentBoundary,
     VideoArtifactProbe,
     VideoSourceTimelineEvidence,
     VideoTimelineContract,
@@ -472,6 +473,137 @@ def test_temporal_gate_rejects_changed_frame_identity() -> None:
         normalization.assert_temporal_equivalence(
             _timeline(),
             _timeline(frame_count=249),
+            profile=profile,
+        )
+
+
+def _frame_timestamps(values: list[float]) -> list[FramePresentationTimestamp]:
+    return [
+        FramePresentationTimestamp(
+            presentation_timestamp=round(value * 1000),
+            presentation_time_seconds=value,
+        )
+        for value in values
+    ]
+
+
+@pytest.mark.unit
+def test_hls_pts_and_segment_gate_accepts_equivalent_timeline() -> None:
+    profile = normalization.VideoStorageProfile(
+        name="test",
+        max_bit_rate_bps=12_000_000,
+        max_bytes_per_second=1_600_000,
+        fixed_overhead_bytes=1024,
+    )
+    timeline = _timeline(
+        fps_num=2,
+        duration_seconds=3.0,
+        frame_count=6,
+        time_base_num=1,
+        time_base_den=1000,
+    )
+    timestamps = _frame_timestamps([0.0, 0.5, 1.0, 1.5, 2.0, 2.5])
+
+    normalization.validate_hls_segment_and_pts_equivalence(
+        source_timeline=timeline,
+        output_timeline=timeline,
+        source_timestamps=timestamps,
+        output_timestamps=_frame_timestamps([1.4, 1.9, 2.4, 2.9, 3.4, 3.9]),
+        segments=[
+            HlsSegmentBoundary(
+                segment_index=0,
+                start_timestamp_seconds=0.0,
+                duration_seconds=1.5,
+                end_timestamp_seconds=1.5,
+            ),
+            HlsSegmentBoundary(
+                segment_index=1,
+                start_timestamp_seconds=1.5,
+                duration_seconds=1.5,
+                end_timestamp_seconds=3.0,
+            ),
+        ],
+        profile=profile,
+    )
+
+
+@pytest.mark.unit
+def test_hls_pts_gate_rejects_real_frame_timeline_drift() -> None:
+    profile = normalization.VideoStorageProfile(
+        name="test",
+        max_bit_rate_bps=12_000_000,
+        max_bytes_per_second=1_600_000,
+        fixed_overhead_bytes=1024,
+    )
+    timeline = _timeline(
+        fps_num=2,
+        duration_seconds=3.0,
+        frame_count=6,
+        time_base_num=1,
+        time_base_den=1000,
+    )
+
+    with pytest.raises(
+        normalization.VideoStorageNormalizationError,
+        match="presentation timestamp drifted at frame 3",
+    ):
+        normalization.validate_hls_segment_and_pts_equivalence(
+            source_timeline=timeline,
+            output_timeline=timeline,
+            source_timestamps=_frame_timestamps([0.0, 0.5, 1.0, 1.5, 2.0, 2.5]),
+            output_timestamps=_frame_timestamps([1.4, 1.9, 2.4, 2.95, 3.4, 3.9]),
+            segments=[
+                HlsSegmentBoundary(
+                    segment_index=0,
+                    start_timestamp_seconds=0.0,
+                    duration_seconds=3.0,
+                    end_timestamp_seconds=3.0,
+                )
+            ],
+            profile=profile,
+        )
+
+
+@pytest.mark.unit
+def test_hls_segment_gate_rejects_boundary_without_nearby_pts() -> None:
+    profile = normalization.VideoStorageProfile(
+        name="test",
+        max_bit_rate_bps=12_000_000,
+        max_bytes_per_second=1_600_000,
+        fixed_overhead_bytes=1024,
+    )
+    timeline = _timeline(
+        fps_num=25,
+        duration_seconds=4.0,
+        frame_count=4,
+        time_base_num=1,
+        time_base_den=1000,
+    )
+    timestamps = _frame_timestamps([0.0, 1.0, 2.0, 3.0])
+
+    with pytest.raises(
+        normalization.VideoStorageNormalizationError,
+        match="segment boundary does not map",
+    ):
+        normalization.validate_hls_segment_and_pts_equivalence(
+            source_timeline=timeline,
+            output_timeline=timeline,
+            source_timestamps=timestamps,
+            output_timestamps=timestamps,
+            segments=[
+                HlsSegmentBoundary(
+                    segment_index=0,
+                    start_timestamp_seconds=0.0,
+                    duration_seconds=1.5,
+                    end_timestamp_seconds=1.5,
+                ),
+                HlsSegmentBoundary(
+                    segment_index=1,
+                    start_timestamp_seconds=1.5,
+                    duration_seconds=2.5,
+                    end_timestamp_seconds=4.0,
+                ),
+            ],
             profile=profile,
         )
 

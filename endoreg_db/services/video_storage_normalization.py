@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from endoreg_db.schemas.video_storage import (
+    FramePresentationTimestamp,
+    HlsSegmentBoundary,
     SegmentTimelineReference,
     VideoStorageNormalizationEvidence,
 )
@@ -24,6 +26,14 @@ from endoreg_db.services.video_storage.contracts import (
     configured_video_storage_profile,
     evidence_as_json,
     video_storage_capacity as _video_storage_capacity,
+)
+from endoreg_db.services.video_storage.hls_encoding import (
+    HlsEncoderBackend,
+    HlsEncodingProfile,
+    HlsEncodingProfileName,
+    assert_hls_encoder_runtime_available,
+    configured_hls_encoding_profile,
+    hls_encoding_profile_by_name,
 )
 from endoreg_db.services.video_storage.inventory import (
     inventory_video_storage,
@@ -48,6 +58,7 @@ from endoreg_db.services.video_storage.validation import (
     assert_storage_compliance,
     assert_temporal_equivalence,
     validate_annotation_fps_resample,
+    validate_hls_segment_and_pts_equivalence,
     validate_normalized_output,
 )
 from endoreg_db.utils import ffmpeg_wrapper as ffmpeg_wrapper
@@ -128,12 +139,19 @@ def video_storage_capacity(
 
 
 __all__ = [
+    "FramePresentationTimestamp",
+    "HlsEncoderBackend",
+    "HlsEncodingProfile",
+    "HlsEncodingProfileName",
+    "HlsSegmentBoundary",
     "VideoStorageCapacityReport",
     "VideoStorageInventoryReport",
     "VideoStorageNormalizationError",
     "VideoStorageProfile",
     "assert_storage_compliance",
     "assert_temporal_equivalence",
+    "assert_hls_encoder_runtime_available",
+    "configured_hls_encoding_profile",
     "configured_video_storage_profile",
     "evidence_as_json",
     "ensure_video_file_profile",
@@ -143,9 +161,11 @@ __all__ = [
     "probe_video_artifact",
     "probe_video_frame_pts",
     "raw_cleanup_blockers",
+    "hls_encoding_profile_by_name",
     "segment_timeline_references",
     "timeline_from_video_metadata",
     "validate_annotation_fps_resample",
+    "validate_hls_segment_and_pts_equivalence",
     "validate_normalized_output",
     "video_normalization_evidence",
     "video_storage_capacity",

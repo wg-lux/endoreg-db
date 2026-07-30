@@ -57,6 +57,11 @@ class VideoHlsArtifact(models.Model):
         editable=False,
         help_text="Opaque generation identifier for the source snapshot of this HLS attempt.",
     )
+    encoding_profile_name: models.CharField[str, Any] = models.CharField(
+        max_length=64,
+        default="clinical_h264_libx264_crf_v1",
+        help_text="Versioned encoder profile used to create this HLS generation.",
+    )
     key_ciphertext: models.BinaryField[bytes | None, Any] = models.BinaryField(
         null=True, blank=True
     )

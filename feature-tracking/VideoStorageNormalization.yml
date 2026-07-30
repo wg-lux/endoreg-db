@@ -37,6 +37,16 @@ definition_of_done:
     explizit mit `-an`.
   - Abweichungen vom Profil werden laut abgelehnt oder in einen expliziten Quarantänestatus versetzt;
     stilles Stream-Copy oder unbeschränktes Source-Quality-Encoding ist kein Produktionsfallback.
+  - Die HLS-Encoderwahl erfolgt ausschließlich über ein versioniertes typisiertes Profil. Das bestehende
+    CPU-Profil verwendet libx264 mit Constant Rate Factor; das NVIDIA-NVENC-Profil verwendet explizite
+    variable Bitratenregelung mit Constant-Quality-Wert (`-cq`) und niemals libx264-CRF-Argumente.
+  - Das NVIDIA-NVENC-Profil startet nur, wenn der dedizierte FFmpeg-Worker genau ein deklarativ sichtbares
+    Grafikprozessor-Gerät besitzt und ein realer Encoder-Preflight erfolgreich ist. Fehlende, mehrere oder
+    unzugängliche Geräte sowie ein fehlender `h264_nvenc`-Encoder schlagen laut fehl; ein automatischer
+    CPU-Fallback ist unzulässig.
+  - Der Name des verwendeten HLS-Encoderprofils wird mit dem HLS-Artefakt persistiert. Ein deklarativer
+    Profilwechsel invalidiert nur das reproduzierbare HLS-Derivat und erzwingt eine neue atomare Generation,
+    ohne das kanonische Mastervideo zu verändern.
   required: true
   verification:
     kind: manual
@@ -339,6 +349,11 @@ definition_of_done:
     Prüfplaylist entschlüsselt geprobt. Codec, Pixelformat, Dimensionen, Bildrate, Dauer, Frameanzahl,
     Bitrate, Gesamtgröße und Timeline müssen dem typisierten Profil entsprechen; Abweichungen verhindern
     die Veröffentlichung und entfernen Prüfplaylist, Teilsegmente und Schlüsselmaterial.
+  - Vor HLS-Veröffentlichung müssen die vollständigen relativen Präsentationszeitstempel der normalisierten
+    Quelle und der entschlüsselten HLS-Ausgabe innerhalb der gemeinsamen Time-Base-Auflösung übereinstimmen.
+    Jede `EXTINF`-Segmentgrenze muss monoton, positiv und innerhalb höchstens einer Frame-Dauer auf einen
+    autoritativen Ausgabe-Präsentationszeitstempel abbildbar sein; Segmentanzahl und Playlist-Gesamtdauer
+    müssen mit Dateien und validierter Timeline übereinstimmen.
   - Gleichzeitige verschlüsselte Byte-Range-Lesezugriffe verwenden bevorzugt die native Rust-Implementierung,
     die Datei-I/O und AES-GCM-Entschlüsselung ohne gehaltenen Python Global Interpreter Lock ausführt.
     Rückgaben bleiben pro Request größenbegrenzt und byteidentisch zum Python-Referenzpfad; native Integritäts-,

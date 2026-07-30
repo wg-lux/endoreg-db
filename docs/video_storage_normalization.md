@@ -36,6 +36,12 @@ the only authoritative source for implementation and approval status.
 - **Python Global Interpreter Lock (GIL):** the interpreter lock released by
   native Rust file input/output and AES-GCM work so independent encrypted
   range readers can progress concurrently.
+- **NVIDIA Encoder (NVENC):** the dedicated NVIDIA hardware video encoder used
+  only by the explicitly selected HLS hardware profile.
+- **graphics processing unit (GPU):** the isolated hardware device exposed to
+  the dedicated HLS worker.
+- **constant quality (CQ):** the NVENC quality target used with bounded
+  variable-bitrate rate control; it is not the libx264 Constant Rate Factor.
 
 Names such as `pts_v1`, configuration-variable suffixes, command options, and
 profile identifiers are literal implementation names. Their meaning is
@@ -87,6 +93,23 @@ loudly instead of falling back. Media outside the profile is rejected. Release
 then requires either a new versioned profile or an explicit quarantine review.
 Stream copy, upsampling, and unbounded source-quality encoding are prohibited.
 
+HLS encoding has a separate versioned encoder-profile selector,
+`ENDOREG_HLS_ENCODING_PROFILE`. The default
+`clinical_h264_libx264_crf_v1` profile preserves the existing libx264 Constant
+Rate Factor 18 output. `clinical_h264_nvenc_cq_v1` uses `h264_nvenc`, preset
+`p6`, variable-bitrate rate control, constant-quality value 18, zero nominal
+bitrate, and the same maximum bitrate and buffer limits. It is valid only in a
+dedicated worker that exposes exactly one GPU through `CUDA_VISIBLE_DEVICES`
+and systemd device controls. The application addresses that isolated device as
+logical GPU zero and performs a one-frame encoder preflight before staging any
+HLS publication. Missing or inaccessible NVENC support fails closed; it never
+falls back to CPU.
+
+The selected encoder-profile name is persisted on the HLS artifact. Changing
+the declarative profile rematerializes only HLS and leaves the canonical master
+unchanged. Existing queued work retains its persisted profile during a rolling
+deployment; a later reservation creates the newly selected HLS generation.
+
 ## Transcoding Steps and Idempotency
 
 All storage transcoding entry points use `clinical_h264_bounded_v1` as their
@@ -110,7 +133,12 @@ shared compliance contract:
    publication, a temporary local playlist resolves the encrypted segments
    with the attempt key and probes the complete result again for codec, pixel
    format, dimensions, frame rate, duration, frame count, bitrate, byte budget,
-   and timeline equivalence. The validation playlist is removed immediately.
+   and timeline equivalence. The complete relative presentation-timestamp
+   sequence must match the normalized source within the shared time-base
+   resolution. Every positive, contiguous `EXTINF` boundary must resolve to an
+   output presentation timestamp within one frame duration, and the playlist
+   segment count and total duration must match the staged files and probed
+   timeline. The validation playlist is removed immediately.
    A complete current HLS generation is returned idempotently without starting
    FFmpeg.
 

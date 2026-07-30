@@ -37,6 +37,7 @@ DEFAULT_VIDEO_STORAGE_MAX_WIDTH = 4096
 DEFAULT_VIDEO_STORAGE_MAX_HEIGHT = 2160
 DEFAULT_VIDEO_STORAGE_MAX_SOURCE_FPS = 120.0
 DEFAULT_VIDEO_STORAGE_ANNOTATION_MAX_FPS = 50.0
+DEFAULT_HLS_ENCODING_PROFILE = "clinical_h264_libx264_crf_v1"
 DEFAULT_VIDEO_STORAGE_WARNING_FREE_BYTES = 2 * 1024 * 1024 * 1024
 DEFAULT_VIDEO_STORAGE_STOP_FREE_BYTES = 1024 * 1024 * 1024
 DEFAULT_VIDEO_FPS = 50.0
@@ -649,6 +650,16 @@ def get_video_storage_annotation_max_fps() -> float:
     )
     if value <= 0:
         raise ValueError("ENDOREG_VIDEO_STORAGE_ANNOTATION_MAX_FPS must be positive")
+    return value
+
+
+def get_hls_encoding_profile_name() -> str:
+    value = env_str(
+        "ENDOREG_HLS_ENCODING_PROFILE",
+        DEFAULT_HLS_ENCODING_PROFILE,
+    ).strip()
+    if not value:
+        raise ValueError("ENDOREG_HLS_ENCODING_PROFILE must not be empty")
     return value
 
 
