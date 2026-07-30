@@ -2,7 +2,9 @@ schema_version: '1.0'
 id: reporting
 name: Klinisches Reporting
 description: Sicherer Import, Bearbeitung, Materialisierung, LLM-Verarbeitung und Streaming klinischer
-  Berichte.
+  Berichte. Die erste Version des Template-Builders bleibt ohne produktionsreife Administration;
+  eine ausreichend garantierbare Rollen- und Berechtigungsverwaltung für Builder- und Lifecycle-
+  Aktionen ist ausdrücklich für eine spätere Version geplant.
 owners:
 - endoreg_db maintainers
 production_critical: true
@@ -67,6 +69,56 @@ definition_of_done:
   assessment:
     status: not_assessed
     evidence: []
+- id: report_template_selection_consistency
+  category: functionality
+  title: Berichtsvorlagen bleiben zwischen Auswahl, Draft und Laufzeitvalidierung konsistent
+  acceptance:
+  - Die klinische Auswahl enthält ausschließlich veröffentlichte und produktionsbereite Vorlagen.
+  - Ein Draft mit abweichender, nicht veröffentlichter oder inkompatibler Template-Identität wird nicht
+    aktiviert.
+  - Template-Wechsel mit bestehenden Befunden oder Draft-Inhalten erfordert eine explizite Bestätigung.
+  - Readiness, Veröffentlichen und Entveröffentlichen sind im Builder getrennte und getestete Aktionen.
+  - Gespeicherte Draft-Templates können im Builder über die Preview-Route wieder geöffnet werden, ohne
+    in der klinischen Auswahl zu erscheinen.
+  required: true
+  verification:
+    kind: command
+    command:
+    - bash
+    - -lc
+    - cd /home/admin/dev/lx-annotate/frontend && devenv shell -- npm run test:unit -- src/api/__tests__/reportTemplateBuilderApi.test.ts
+      src/api/__tests__/reportTemplatesApi.test.ts src/stores/__tests__/reportingFlow.template.spec.ts
+      src/views/reporting/__tests__/ReportingShell.mediaPreload.test.ts src/views/reporting/__tests__/FindingsCapturePage.test.ts
+      src/views/reporting/__tests__/ReportEditorPage.test.ts
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: bash -lc 'cd /home/admin/dev/lx-annotate/frontend && devenv shell -- npm run test:unit
+        -- src/api/__tests__/reportTemplateBuilderApi.test.ts src/api/__tests__/reportTemplatesApi.test.ts
+        src/stores/__tests__/reportingFlow.template.spec.ts src/views/reporting/__tests__/ReportingShell.mediaPreload.test.ts
+        src/views/reporting/__tests__/FindingsCapturePage.test.ts src/views/reporting/__tests__/ReportEditorPage.test.ts'
+      note: Exit-Code 0
+    assessed_by: Codex
+    assessed_at: '2026-07-30T06:59:22.614245Z'
+- id: report_template_builder_administration
+  category: security
+  title: "Spätere Version: Rollenbasierte Administration des Template-Builders"
+  acceptance:
+  - Builder-Listen, Preview, Speichern, Veröffentlichen und Entveröffentlichen sind explizit authentifiziert.
+  - Lesen, Ändern und Lifecycle-Aktionen besitzen getrennte, überprüfbare Rollen- und Berechtigungsregeln.
+  - Unberechtigte und nicht authentifizierte Zugriffe werden serverseitig abgelehnt; Frontend-Ausblendung gilt nicht als Schutz.
+  - Tests decken mindestens nicht authentifizierte, authentifizierte nicht berechtigte und berechtigte Aufrufer ab.
+  required: true
+  verification:
+    kind: manual
+    instructions: Nach Einführung der Administration die Ninja-Endpunkte, Deployment-Profile, Rollenregeln und negativen API-Tests prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []
+    note: Für Version 1 ausdrücklich zurückgestellt. Die aktuelle Template-Builder-Funktion darf erst nach Einführung und Nachweis dieser Administration als produktionsreif gelten.
 - id: access_controls
   category: security
   title: Berichtszugriff und LLM-Verarbeitung sind patienten- und center-bezogen

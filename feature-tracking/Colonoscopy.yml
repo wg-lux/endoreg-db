@@ -46,6 +46,21 @@ definition_of_done:
       command: [.devenv/state/venv/bin/pytest, tests/finding/test_colonoscopy_finding.py, tests/finding/test_colon_polyp_locations.py, tests/finding/test_colon_polyp_morphologies.py, -q]
       timeout_seconds: 600
     assessment: *not_assessed
+  - id: lxdm_report_concept_coverage
+    category: functionality
+    title: LXDM-validierte Berichte weisen die anwendbaren Reporting-Konzepte aus
+    acceptance:
+      - Das freigegebene YAML-Modul ist durch Modulname, semantische Version, unveränderliche Freigabe oder Inhaltsdigest und fachliche Freigabe identifiziert.
+      - Jedes prüfbare Reporting-Element besitzt eine stabile Konzept-ID, eine explizite Anwendbarkeitsregel, eine Wertdefinition, zulässige Einheit oder Wertemenge, Provenienz und die Modellversion.
+      - "Ein über lx-annotate erstellter Bericht wird gegen genau dieses Modul ausgewertet und liefert je Element den deterministischen Status present, missing, not_applicable, invalid oder unknown."
+      - "present wird nur bei validiertem Konzeptwert vergeben; ein bloßer lexikalischer Treffer, ein unbekannter Wert oder ein nicht aufgelöstes Synonym gilt nicht als ausreichender Nachweis."
+      - Das Ergebnis enthält die Bericht-/Template-Identität, Modulversion beziehungsweise Digest sowie die belegende Feld- oder Pfadreferenz und ist mit Positiv-, Negativ-, Nicht-anwendbar- und ungültigen Fixtures reproduzierbar.
+      - Die technische Konzeptabdeckung wird ausdrücklich getrennt von klinischer Vollständigkeit, Leitlinienadhärenz und einem Qualitätsgewinn durch Standardisierung berichtet; diese Aussagen erfordern eine fachlich annotierte Referenzmenge und eine prospektive Vergleichsstudie.
+    required: true
+    verification:
+      kind: manual
+      instructions: LXDM-YAML-Freigabe, Elementmatrix, lx-annotate-Berichtsexport und reproduzierbare Fixtures gemeinsam durch technische und klinische Verantwortliche prüfen; erst danach technische Testevidenz und fachliche Abnahme getrennt bewerten.
+    assessment: *not_assessed
   - id: automated_tests
     category: testing
     title: Klinische Regeln haben parametrisierte Positiv- und Negativtests
