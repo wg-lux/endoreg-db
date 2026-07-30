@@ -66,9 +66,15 @@ definition_of_done:
         - kind: test
           reference: /home/admin/lx-parse/lx_dtypes/models/knowledge_base/report_template/tests/test_report_concept_coverage.py
           note: Versionierter LXDM-Coverage-Vertrag mit stabiler Konzept-ID, Modul-/Template-Digest, Anwendbarkeit, Status und Evidenzpfad; positive und negative Modelltests.
+        - kind: test
+          reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/django/api/tests/test_report_templates_api.py
+          note: API-Validierung erzeugt concept_coverage aus KnowledgeBase, Template-Export, PExamination und Validatorresultat; fokussierter Lauf bestanden.
+        - kind: test
+          reference: /home/admin/dev/lx-annotate/frontend/src/api/__tests__/reportTemplatesApi.test.ts
+          note: Frontend validiert den versionierten Serververtrag und weist bei fehlender oder ungültiger Coverage sichtbar auf den nicht autoritativen Fallback hin.
       assessed_by: Codex
       assessed_at: '2026-07-30T12:00:00Z'
-      note: Der typisierte Vertrag ist implementiert. Runtime-Erzeugung, fachlich annotierte Koloskopie-Fixtures, Wert-/Einheitenvalidierung und klinische Abnahme fehlen noch.
+      note: Der typisierte Vertrag wird jetzt serverseitig erzeugt und im Frontend konsumiert. Fachlich annotierte Koloskopie-Fixtures, vollständige Wert-/Einheitenvalidierung, reale freigegebene Template-Metadaten und klinische Abnahme fehlen noch.
   - id: automated_tests
     category: testing
     title: Klinische Regeln haben parametrisierte Positiv- und Negativtests
