@@ -6,6 +6,7 @@ from typing import Any, cast
 from uuid import uuid4
 
 import pytest
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -44,6 +45,30 @@ def test_patient_examination_draft_roundtrip(api_client: APIClient) -> None:
     payload = {
         "module_name": "report_template_examples",
         "template_name": "star_upper_gi_main",
+        "template_identity": {
+            "moduleName": "report_template_examples",
+            "knowledgeBaseVersion": "0.2.8",
+            "templateVersion": "3",
+            "templateHash": "sha256:template",
+            "lifecycleStatus": "published",
+        },
+        "payload": {
+            "sections": [
+                {"name": "findings", "items": ["esophagus_polyp"]},
+            ]
+        },
+    }
+    canonical_payload = {
+        "schema_version": "1.0",
+        "module_name": "report_template_examples",
+        "template_name": "star_upper_gi_main",
+        "template_identity": {
+            "module_name": "report_template_examples",
+            "knowledge_base_version": "0.2.8",
+            "template_version": "3",
+            "template_hash": "sha256:template",
+            "lifecycle_status": "published",
+        },
         "payload": {
             "sections": [
                 {"name": "findings", "items": ["esophagus_polyp"]},
@@ -56,16 +81,16 @@ def test_patient_examination_draft_roundtrip(api_client: APIClient) -> None:
 
     body = _response_body(response)
     assert body["patient_examination_id"] == patient_examination_id
-    assert body["draft"] == payload
+    assert body["draft"] == canonical_payload
     assert body["updated_at"] is not None
 
     patient_examination.refresh_from_db()
-    assert patient_examination.report_draft == payload
+    assert patient_examination.report_draft == canonical_payload
     assert patient_examination.draft_updated_at is not None
 
     response = api_client.get(url)
     assert response.status_code == 200
-    assert _response_body(response)["draft"] == payload
+    assert _response_body(response)["draft"] == canonical_payload
 
 
 @pytest.mark.django_db
@@ -138,11 +163,58 @@ def test_patient_examination_draft_put_overwrites_previous_payload(
     second_body = _response_body(second_response)
     second_updated_at = cast(str, second_body["updated_at"])
 
-    assert second_body["draft"] == second_payload
+    assert second_body["draft"] == {
+        "schema_version": "1.0",
+        **second_payload,
+    }
     assert second_updated_at >= first_updated_at
 
     patient_examination.refresh_from_db()
-    assert patient_examination.report_draft == second_payload
+    assert patient_examination.report_draft == {
+        "schema_version": "1.0",
+        **second_payload,
+    }
+
+
+@pytest.mark.django_db
+def test_patient_examination_draft_rejects_unknown_fields(
+    api_client: APIClient,
+) -> None:
+    patient = Patient.objects.create(
+        patient_hash=f"draft-unknown-{uuid4().hex}",
+        first_name="Draft",
+        last_name="Unknown",
+    )
+    patient_examination = PatientExamination.objects.create(patient=patient)
+
+    response = api_client.put(
+        f"/api/patient-examinations/{_pk(patient_examination)}/draft/",
+        data={"module_name": "reports", "unexpected": "value"},
+        format="json",
+    )
+
+    assert response.status_code == 400
+    patient_examination.refresh_from_db()
+    assert patient_examination.report_draft == {}
+
+
+@pytest.mark.django_db
+def test_patient_examination_rejects_invalid_direct_draft_write() -> None:
+    patient = Patient.objects.create(
+        patient_hash=f"draft-direct-{uuid4().hex}",
+        first_name="Draft",
+        last_name="Direct",
+    )
+    patient_examination = PatientExamination.objects.create(patient=patient)
+    patient_examination.report_draft = {
+        "schema_version": "2.0",
+        "payload": {},
+    }
+
+    with pytest.raises(DjangoValidationError) as exc_info:
+        patient_examination.save(update_fields=["report_draft"])
+
+    assert "report_draft" in exc_info.value.message_dict
 
 
 @pytest.mark.django_db

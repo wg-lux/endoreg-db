@@ -4,7 +4,6 @@ from collections.abc import Mapping
 from datetime import date, datetime
 from typing import Protocol, TypeAlias, cast
 
-from django.db import models
 from django.db.models import QuerySet
 from django.utils import timezone
 from lx_dtypes.models.contracts.json_types import JsonObject
@@ -199,9 +198,7 @@ class PatientExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):  # p
         serializer.is_valid(raise_exception=True)
         examination.report_draft = cast(JsonObject, serializer.validated_data)
         examination.draft_updated_at = timezone.now()
-        models.Model.save(
-            examination, update_fields=["report_draft", "draft_updated_at"]
-        )
+        examination.save(update_fields=["report_draft", "draft_updated_at"])
 
         response_serializer = PatientExaminationDraftResponseSerializer(
             {
