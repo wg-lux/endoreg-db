@@ -100,8 +100,26 @@ definition_of_done:
         src/stores/__tests__/reportingFlow.template.spec.ts src/views/reporting/__tests__/ReportingShell.mediaPreload.test.ts
         src/views/reporting/__tests__/FindingsCapturePage.test.ts src/views/reporting/__tests__/ReportEditorPage.test.ts'
       note: Exit-Code 0
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/frontend/src/api/__tests__/reportDraftApi.test.ts; src/stores/__tests__/reportingFlow.template.spec.ts;
+        Frontend-Gesamtlauf 82 Dateien/413 Tests bestanden
+    - kind: test
+      reference: tests/views/patient_examination/test_patient_examination_draft_viewset.py (7 bestanden)
+    - kind: test
+      reference: '/home/admin/dev/lx-annotate/frontend/src/api/__tests__/reportDraftApi.test.ts; /home/admin/dev/lx-annotate/frontend/src/stores/__tests__/reportingFlow.template.spec.ts
+        (Frontend-Gesamtlauf: 82 Dateien, 413 Tests bestanden)'
+    - kind: test
+      reference: '/home/admin/dev/lx-annotate/frontend/src/api/__tests__/reportDraftApi.test.ts; /home/admin/dev/lx-annotate/frontend/src/stores/__tests__/reportingFlow.template.spec.ts;
+        vollständiger Frontend-Lauf: 82 Dateien, 413 Tests bestanden'
+    - kind: command
+      reference: /var/lib/lx-annotate/staticfiles/main.js SHA-256 7868bc2f69ca1af02b9faf05c9fdb67fb6cc6c0b7587f59ef87524b19c0ddaf2;
+        nginx liefert 261483 Bytes mit neuem ETag
+    note: 'Zusätzlich wurde der Draft-Transport gehärtet: mutable Readiness-Metadaten werden vor PUT aus
+      der stabilen Template-Identität entfernt; geplante Autosave-Fehler werden sichtbar gespeichert,
+      ohne unhandled Promise-Rejection. Produktionsbundle gebaut und bytegleich im nginx-Runtime-Static-Root
+      geprüft. Ein authentifizierter Browser-Roundtrip bleibt als manueller Smoke-Test beim Nutzer.'
     assessed_by: Codex
-    assessed_at: '2026-07-30T06:59:22.614245Z'
+    assessed_at: '2026-07-31T08:17:29.825578Z'
 - id: report_template_builder_administration
   category: security
   title: 'Spätere Version: Rollenbasierte Administration des Template-Builders'
@@ -133,6 +151,38 @@ definition_of_done:
       und der vollständige Produktionsnachweis.
     assessed_by: Codex
     assessed_at: '2026-07-30T12:43:10.986249Z'
+- id: localized_report_generation
+  category: functionality
+  title: Die Berichtssprache ist explizit und an die versionierte Terminologie gebunden
+  acceptance:
+  - Die lx-dtypes-API veröffentlicht die unterstützten Berichtssprachen und eine Standardsprache als typisierten
+    Vertrag.
+  - Die Sprachauswahl bleibt im Reporting-Flow erhalten und wird mit dem Editor-Payload des Berichts gespeichert.
+  - Generierte klinische Konzeptbezeichnungen verwenden ausschließlich das sprachspezifische Label der
+    aktiven KnowledgeBase oder ersatzweise den stabilen technischen Konzeptnamen.
+  - Berichtsvorlagen stellen sprachspezifische, versionierte Titel, Abschnittstitel und Untertitel bereit,
+    damit ein Bericht nicht unbemerkt gemischtsprachig erzeugt wird.
+  required: true
+  verification:
+    kind: manual
+    instructions: API-Vertrag, Flow-Persistenz, deutsch/englische Berichtserzeugung und das Verhalten
+      bei fehlenden Übersetzungen gegen eine veröffentlichte KnowledgeBase und Berichtsvorlage prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: '/home/admin/dev/lx-annotate/frontend/src/api/__tests__/reportingLanguagesApi.test.ts;
+        /home/admin/dev/lx-annotate/frontend/src/stores/__tests__/reportingFlow.template.spec.ts; /home/admin/dev/lx-annotate/frontend/src/views/reporting/__tests__/ReportEditorPage.test.ts
+        (Frontend-Gesamtlauf: 82 Dateien, 411 Tests bestanden)'
+    - kind: test
+      reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/django/api/tests/test_reporting_languages_api.py
+        (1 bestanden; Pyright 0 Fehler)
+    note: API-Sprachvertrag, Flow-Persistenz, sprachspezifische LXDM-Konzeptlabels und Editor-Provenienz
+      sind implementiert und fokussiert getestet. Offen bleiben versionierte sprachspezifische Template-,
+      Abschnitts- und Untertitel sowie ein Browser-Roundtrip gegen eine veröffentlichte KnowledgeBase.
+    assessed_by: Codex
+    assessed_at: '2026-07-31T07:36:13.468304Z'
 - id: access_controls
   category: security
   title: Berichtszugriff und LLM-Verarbeitung sind patienten- und center-bezogen

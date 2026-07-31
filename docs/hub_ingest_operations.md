@@ -2,7 +2,7 @@
 
 Dieses Dokument ist das Betriebs- und Incident-Runbook für den kontrollierten
 Site-Node-zu-Central-Hub-Ingest. Der Fertigstellungsstatus wird ausschließlich
-in [`feature-tracking/HubIngest.yml`](../feature-tracking/HubIngest.yml)
+in [`feature-tracking/done/HubIngest.yml`](../feature-tracking/done/HubIngest.yml)
 geführt.
 
 Das produktionskritische Import-Monitoring einschließlich transienter Fehler,

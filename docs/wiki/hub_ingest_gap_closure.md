@@ -1,6 +1,6 @@
 # Hub Ingest Gap Closure
 
-> Status tracking was migrated to `feature-tracking/HubIngest.yml`. This
+> Status tracking was migrated to `feature-tracking/done/HubIngest.yml`. This
 > document is retained as protocol and design context and must not carry an
 > independent completion status.
 
