@@ -4,6 +4,7 @@ from io import StringIO
 
 import pytest
 from django.core.management import call_command
+from django.core.management.base import CommandError
 
 from endoreg_db.management.commands import (
     migrate_video_streamable_storage as command_module,
@@ -124,3 +125,74 @@ def test_migrate_video_streamable_storage_regenerate_forces_hls_once(
         in output.getvalue()
     )
     assert "hls_materialized=1" in output.getvalue()
+
+
+def test_migrate_video_streamable_storage_dry_run_does_not_materialize_hls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    center = Center.objects.create(
+        name="streamable-dry-run-center",
+        display_name="Streamable Dry Run Center",
+    )
+    video = VideoFile.objects.create(
+        center=center,
+        video_hash="streamable-dry-run-video",
+    )
+    video.processed_file.name = "processed_videos_final/dry-run.mp4"
+    video.processed_streamable_relative_path = (
+        "streamable_videos/processed/dry-run.mp4"
+    )
+    video.save(update_fields=["processed_file", "processed_streamable_relative_path"])
+
+    def fake_sync_video_streamable_artifacts(
+        selected_video: VideoFile,
+        *,
+        include_raw: bool,
+        include_processed: bool,
+        save: bool,
+        force: bool,
+    ) -> list[str]:
+        assert selected_video.pk == video.pk
+        assert include_raw is False
+        assert include_processed is True
+        assert save is False
+        assert force is False
+        return []
+
+    def unexpected_materialize(*args: object, **kwargs: object) -> object:
+        raise AssertionError(f"unexpected HLS materialization: {args}, {kwargs}")
+
+    monkeypatch.setattr(
+        command_module,
+        "sync_video_streamable_artifacts",
+        fake_sync_video_streamable_artifacts,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        command_module,
+        "materialize_video_hls",
+        unexpected_materialize,
+        raising=True,
+    )
+
+    output = StringIO()
+    call_command(
+        "migrate_video_streamable_storage",
+        "--video-id",
+        str(video.pk),
+        "--processed-only",
+        "--dry-run",
+        stdout=output,
+    )
+
+    assert f"video={video.pk} would replace: 1 streamable artifact(s)" in output.getvalue()
+    assert "migrated=0 hls_materialized=1 unchanged=0 failed=0" in output.getvalue()
+
+
+def test_migrate_video_streamable_storage_rejects_conflicting_filters() -> None:
+    with pytest.raises(CommandError, match="cannot be used together"):
+        call_command(
+            "migrate_video_streamable_storage",
+            "--processed-only",
+            "--raw-only",
+        )
