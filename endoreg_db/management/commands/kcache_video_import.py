@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NoReturn, Protocol, TypedDict, cast
 from uuid import uuid4
@@ -13,6 +14,7 @@ from django.db import OperationalError, ProgrammingError, connection
 from django.db.models.fields.files import FieldFile
 
 from endoreg_db.management.commands._profiling import (
+    CommandProfilingConfig,
     add_profiling_arguments,
     command_profiling_config_from_options,
     profiling_metadata,
@@ -67,6 +69,205 @@ class _IngestModule(Protocol):
         source_center: Center,
         processor_name: str | None = None,
     ) -> UploadJob: ...
+
+
+@dataclass(frozen=True)
+class _ImportRequest:
+    source_path: Path
+    apply_changes: bool
+    center: Center | None
+    processor: EndoscopyProcessor | None
+    center_name_option: str | None
+    processor_name_option: str | None
+    source_system: str
+    prediction_model_name: str | None
+    watched_path: Path
+    source_size: int
+    source_sha256: str
+    json_output: bool
+
+
+@dataclass(frozen=True)
+class _ApplyRequest:
+    request: _ImportRequest
+    center: Center
+    processor_name: str
+
+
+def _prepare_import_request(options: dict[str, object]) -> _ImportRequest:
+    source_path = _source_path_from_options(options)
+    apply_changes = bool(options.get("apply"))
+    center_name_option = _optional_str(options.get("center_name"))
+    processor_name_option = _optional_str(options.get("processor_name"))
+    if local_study_server_mode_enabled():
+        raise CommandError(
+            "Raw watcher video ingestion is disabled for local_study_server; "
+            "use the preanonymized ingest path instead."
+        )
+    center = (
+        _resolve_center(center_name_option)
+        if apply_changes or center_name_option is not None
+        else None
+    )
+    processor = (
+        _resolve_processor(processor_name_option)
+        if apply_changes or processor_name_option is not None
+        else None
+    )
+    drop_dir = EndoregPathsModel.from_environment().watcher_video_drop
+    drop_name = _resolve_drop_name(
+        source_path=source_path,
+        requested_drop_name=_optional_str(options.get("drop_name")),
+    )
+    return _ImportRequest(
+        source_path=source_path,
+        apply_changes=apply_changes,
+        center=center,
+        processor=processor,
+        center_name_option=center_name_option,
+        processor_name_option=processor_name_option,
+        source_system=_required_str(options.get("source_system"), "--source-system"),
+        prediction_model_name=_optional_str(options.get("prediction_model_name")),
+        watched_path=drop_dir / drop_name,
+        source_size=source_path.stat().st_size,
+        source_sha256=sha256_file(source_path),
+        json_output=bool(options.get("json_output")),
+    )
+
+
+def _initial_import_payload(
+    request: _ImportRequest,
+    profiling_config: CommandProfilingConfig,
+) -> dict[str, Any]:
+    return {
+        "apply": request.apply_changes,
+        "source_path": str(request.source_path),
+        "source_size_bytes": request.source_size,
+        "source_sha256": request.source_sha256,
+        "center_name": (
+            _required_model_str(request.center, "name")
+            if request.center is not None
+            else request.center_name_option
+        ),
+        "processor_name": (
+            _required_model_str(request.processor, "name")
+            if request.processor is not None
+            else request.processor_name_option
+        ),
+        "source_system": request.source_system,
+        "watched_path": str(request.watched_path),
+        "prediction_model_name": request.prediction_model_name,
+        **_database_context_payload(),
+        **profiling_metadata(profiling_config),
+    }
+
+
+def _require_apply_request(request: _ImportRequest) -> _ApplyRequest:
+    if request.center is None:
+        raise CommandError("No center is configured for watcher ingestion.")
+    if request.processor is None:
+        raise CommandError("No EndoscopyProcessor is configured for video ingestion.")
+    if request.watched_path.exists():
+        raise CommandError(f"Watcher drop target already exists: {request.watched_path}")
+    if request.source_path.resolve() == request.watched_path.resolve(strict=False):
+        raise CommandError(
+            "source_path resolves to the watcher target; choose a different "
+            "--drop-name or source file."
+        )
+    return _ApplyRequest(
+        request=request,
+        center=request.center,
+        processor_name=_required_model_str(request.processor, "name"),
+    )
+
+
+def _create_upload_job(
+    apply_request: _ApplyRequest,
+) -> tuple[_IngestModule, UploadJob, bool]:
+    request = apply_request.request
+    atomic_handoff_file(
+        destination=request.watched_path,
+        content=_iter_file_chunks(request.source_path),
+        required_bytes=request.source_size,
+    )
+    ingest = _load_ingest()
+    upload_job, created = ingest.create_or_reuse_watcher_upload_job(
+        file_path=request.watched_path,
+        content_type="video/mp4",
+        source_center=apply_request.center,
+        source_system=request.source_system,
+        storage_tier=UploadJob.StorageTier.UPLOAD_WATCHER,
+        retention_policy=UploadJob.RetentionPolicy.DELETE_AFTER_SUCCESS,
+        processing_provenance={
+            "file_type": "video",
+            "prediction_model_name": request.prediction_model_name,
+            "processor_name": apply_request.processor_name,
+            "ingest_variant": "kcache_video_import",
+        },
+    )
+    return ingest, upload_job, created
+
+
+def _run_or_cleanup_upload_job(
+    *,
+    ingest: _IngestModule,
+    upload_job: UploadJob,
+    created: bool,
+    apply_request: _ApplyRequest,
+) -> tuple[UploadJob, bool, bool]:
+    reused_for_inline = not created and _should_retry_command_owned_upload_job(
+        upload_job
+    )
+    if created or reused_for_inline:
+        upload_job = ingest._run_watcher_upload_job_inline(
+            upload_job=upload_job,
+            watched_path=apply_request.request.watched_path,
+            normalized_type="video",
+            source_center=apply_request.center,
+            processor_name=apply_request.processor_name,
+        )
+        return upload_job, True, reused_for_inline
+    safe_unlink_file(apply_request.request.watched_path, missing_ok=True)
+    return upload_job, False, reused_for_inline
+
+
+def _update_job_payload(
+    payload: dict[str, Any],
+    *,
+    upload_job: UploadJob,
+    created: bool,
+    inline_ingest_ran: bool,
+    reused_for_inline: bool,
+    watched_path: Path,
+) -> str:
+    upload_job.refresh_from_db()
+    status = _required_model_str(upload_job, "status")
+    payload.update(
+        {
+            "upload_job_id": str(_required_model_value(upload_job, "id")),
+            "upload_job_created": created,
+            "content_hash": _required_model_str(upload_job, "content_hash"),
+            "status": status,
+            "inline_ingest_ran": inline_ingest_ran,
+            "upload_job_reused_for_inline": reused_for_inline,
+            "watched_path_exists": watched_path.exists(),
+            "cleanup_status": _required_model_str(upload_job, "cleanup_status"),
+            "processing_provenance": _required_model_dict(
+                upload_job,
+                "processing_provenance",
+            ),
+            "video": _video_payload_for_upload_job(upload_job),
+        }
+    )
+    return status
+
+
+def _raise_for_failed_upload_job(upload_job: UploadJob, status: str) -> None:
+    error_detail = _optional_str(getattr(upload_job, "error_detail", None))
+    if status == UploadJob.Status.ERROR.value:
+        raise CommandError(error_detail or "Watcher import failed.")
+    if status == UploadJob.Status.LOST.value:
+        raise CommandError(error_detail or "Watcher import was lost.")
 
 
 class Command(BaseCommand):
@@ -136,149 +337,30 @@ class Command(BaseCommand):
     def _handle_unprofiled(self, *args: object, **options: object) -> None:
         _ = args
         profiling_config = command_profiling_config_from_options(options)
-        source_path = _source_path_from_options(options)
-        apply_changes = bool(options.get("apply"))
-        center_name_option = _optional_str(options.get("center_name"))
-        processor_name_option = _optional_str(options.get("processor_name"))
-        if local_study_server_mode_enabled():
-            raise CommandError(
-                "Raw watcher video ingestion is disabled for local_study_server; "
-                "use the preanonymized ingest path instead."
-            )
-
-        center = (
-            _resolve_center(center_name_option)
-            if apply_changes or center_name_option is not None
-            else None
-        )
-        processor = (
-            _resolve_processor(processor_name_option)
-            if apply_changes or processor_name_option is not None
-            else None
-        )
-        source_system = _required_str(options.get("source_system"), "--source-system")
-        prediction_model_name = _optional_str(options.get("prediction_model_name"))
-        drop_dir = EndoregPathsModel.from_environment().watcher_video_drop
-        drop_name = _resolve_drop_name(
-            source_path=source_path,
-            requested_drop_name=_optional_str(options.get("drop_name")),
-        )
-        watched_path = drop_dir / drop_name
-
-        source_size = source_path.stat().st_size
-        source_sha256 = sha256_file(source_path)
-        payload: dict[str, Any] = {
-            "apply": apply_changes,
-            "source_path": str(source_path),
-            "source_size_bytes": source_size,
-            "source_sha256": source_sha256,
-            "center_name": (
-                _required_model_str(center, "name")
-                if center is not None
-                else center_name_option
-            ),
-            "processor_name": (
-                _required_model_str(processor, "name")
-                if processor is not None
-                else processor_name_option
-            ),
-            "source_system": source_system,
-            "watched_path": str(watched_path),
-            "prediction_model_name": prediction_model_name,
-            **_database_context_payload(),
-            **profiling_metadata(profiling_config),
-        }
-
-        if not apply_changes:
+        request = _prepare_import_request(options)
+        payload = _initial_import_payload(request, profiling_config)
+        if not request.apply_changes:
             payload["status"] = "would_ingest"
-            self._write_payload(payload, json_output=bool(options.get("json_output")))
+            self._write_payload(payload, json_output=request.json_output)
             return
-        if center is None:
-            raise CommandError("No center is configured for watcher ingestion.")
-        if processor is None:
-            raise CommandError(
-                "No EndoscopyProcessor is configured for video ingestion."
-            )
-        processor_name = _required_model_str(processor, "name")
-
-        if watched_path.exists():
-            raise CommandError(f"Watcher drop target already exists: {watched_path}")
-        if source_path.resolve() == watched_path.resolve(strict=False):
-            raise CommandError(
-                "source_path resolves to the watcher target; choose a different "
-                "--drop-name or source file."
-            )
-
-        atomic_handoff_file(
-            destination=watched_path,
-            content=_iter_file_chunks(source_path),
-            required_bytes=source_size,
+        apply_request = _require_apply_request(request)
+        ingest, upload_job, created = _create_upload_job(apply_request)
+        upload_job, inline_ingest_ran, reused_for_inline = _run_or_cleanup_upload_job(
+            ingest=ingest,
+            upload_job=upload_job,
+            created=created,
+            apply_request=apply_request,
         )
-        ingest = _load_ingest()
-        upload_job, created = ingest.create_or_reuse_watcher_upload_job(
-            file_path=watched_path,
-            content_type="video/mp4",
-            source_center=center,
-            source_system=source_system,
-            storage_tier=UploadJob.StorageTier.UPLOAD_WATCHER,
-            retention_policy=UploadJob.RetentionPolicy.DELETE_AFTER_SUCCESS,
-            processing_provenance={
-                "file_type": "video",
-                "prediction_model_name": prediction_model_name,
-                "processor_name": processor_name,
-                "ingest_variant": "kcache_video_import",
-            },
+        upload_job_status = _update_job_payload(
+            payload,
+            upload_job=upload_job,
+            created=created,
+            inline_ingest_ran=inline_ingest_ran,
+            reused_for_inline=reused_for_inline,
+            watched_path=request.watched_path,
         )
-        payload.update(
-            {
-                "upload_job_id": str(_required_model_value(upload_job, "id")),
-                "upload_job_created": created,
-                "content_hash": _required_model_str(upload_job, "content_hash"),
-            }
-        )
-
-        inline_ingest_ran = False
-        upload_job_reused_for_inline = (
-            not created and _should_retry_command_owned_upload_job(upload_job)
-        )
-        if created or upload_job_reused_for_inline:
-            upload_job = ingest._run_watcher_upload_job_inline(
-                upload_job=upload_job,
-                watched_path=watched_path,
-                normalized_type="video",
-                source_center=center,
-                processor_name=processor_name,
-            )
-            inline_ingest_ran = True
-        else:
-            safe_unlink_file(watched_path, missing_ok=True)
-
-        upload_job.refresh_from_db()
-        upload_job_status = _required_model_str(upload_job, "status")
-        payload.update(
-            {
-                "status": upload_job_status,
-                "inline_ingest_ran": inline_ingest_ran,
-                "upload_job_reused_for_inline": upload_job_reused_for_inline,
-                "watched_path_exists": watched_path.exists(),
-                "cleanup_status": _required_model_str(
-                    upload_job,
-                    "cleanup_status",
-                ),
-                "processing_provenance": _required_model_dict(
-                    upload_job,
-                    "processing_provenance",
-                ),
-                "video": _video_payload_for_upload_job(upload_job),
-            }
-        )
-        self._write_payload(payload, json_output=bool(options.get("json_output")))
-
-        error_detail = _optional_str(getattr(upload_job, "error_detail", None))
-        if upload_job_status == UploadJob.Status.ERROR.value:
-            raise CommandError(error_detail or "Watcher import failed.")
-        if upload_job_status == UploadJob.Status.LOST.value:
-            raise CommandError(error_detail or "Watcher import was lost.")
+        self._write_payload(payload, json_output=request.json_output)
+        _raise_for_failed_upload_job(upload_job, upload_job_status)
 
     def _write_payload(self, payload: dict[str, Any], *, json_output: bool) -> None:
         if json_output:
