@@ -17,14 +17,14 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ...models import (
-    Examination,
-    Label,
+from endoreg_db.models.label.label import Label
+from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
-    PatientExamination,
-    SensitiveMeta,
-    VideoFile,
 )
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.medical.examination.examination import Examination
+from endoreg_db.models.medical.patient.patient_examination import PatientExamination
+from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from ...utils.permissions import EnvironmentAwarePermission
 
 StatsDistribution = list[dict[str, object]]
