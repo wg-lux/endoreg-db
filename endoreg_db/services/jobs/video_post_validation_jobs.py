@@ -23,12 +23,12 @@ from endoreg_db.config.env import (
 )
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
-from endoreg_db.models.state.video_segment_validation import (
-    _is_outside_frame_blackening_history,
-    _resolve_blackening_run_config,
+from endoreg_db.services.video_segment_validation_workflow import (
     blackening_history_config,
+    is_outside_frame_blackening_history,
     mark_post_validation_complete,
     mark_post_validation_incomplete,
+    resolve_blackening_run_config,
 )
 from endoreg_db.services.frame_retention import (
     prune_unused_validated_outside_frames,
@@ -286,7 +286,7 @@ def _expire_stale_blackening_histories(video: VideoFile) -> None:
         created_at__lt=pending_stale_before,
     ).order_by("created_at")
     for history in pending_histories:
-        if _is_outside_frame_blackening_history(history):
+        if is_outside_frame_blackening_history(history):
             reason = f"Outside-frame blackening job exceeded {STALE_REBUILD_TIMEOUT}."
             history.mark_failure(reason)
             fail_deferred_temporal_inference_for_rebuild(
@@ -306,7 +306,7 @@ def _expire_stale_blackening_histories(video: VideoFile) -> None:
         created_at__lt=running_stale_before,
     ).order_by("created_at")
     for history in running_histories:
-        if not _is_outside_frame_blackening_history(history):
+        if not is_outside_frame_blackening_history(history):
             continue
         reason = (
             "Outside-frame blackening job was still running after "
@@ -339,7 +339,7 @@ def _reserve_blackening_history(
             locked_video
         ).select_for_update()
         for history in active_histories:
-            if _is_outside_frame_blackening_history(history):
+            if is_outside_frame_blackening_history(history):
                 if outside_history is None:
                     outside_history = history
                 continue
@@ -405,7 +405,7 @@ def _run_video_post_validation_rebuild(
 
     video: VideoFile | None = None
     try:
-        run_config = _resolve_blackening_run_config(
+        run_config = resolve_blackening_run_config(
             history=history,
             only_validated=only_validated,
         )

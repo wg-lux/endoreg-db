@@ -250,7 +250,7 @@ def run_segment_annotation_expansion_task(
 ) -> dict[str, int]:
     from endoreg_db.services.segment_annotations import ensure_segment_annotations
     from endoreg_db.models.media.video.video_file import VideoFile
-    from endoreg_db.models.state.video_segment_validation import (
+    from endoreg_db.services.video_segment_validation_workflow import (
         mark_segment_annotations_complete_without_cleanup,
     )
     from endoreg_db.services.jobs.video_post_validation_jobs import (

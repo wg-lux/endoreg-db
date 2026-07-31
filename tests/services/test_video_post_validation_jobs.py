@@ -28,6 +28,7 @@ from endoreg_db.services.media_operation_gate import (
     MediaOperationDeferred,
     create_video_stream_lease,
 )
+import endoreg_db.services.video_segment_blackening as blackening
 
 
 def _create_video_for_post_validation(tmp_path: Path) -> VideoFile:
@@ -294,10 +295,10 @@ def test_blackening_history_config_schema_accepts_valid_config(
     monkeypatch.setenv("CELERY_FFMPEG_MEDIA_QUEUE", "ffmpeg_media_hi")
 
     config = _blackening_config_json(only_validated=True)
-    parsed = segment_state._parse_blackening_history_config(config)  # pyright: ignore[reportPrivateUsage]
+    parsed = blackening.parse_blackening_history_config(config)
 
     assert parsed is not None
-    assert parsed.kind == segment_state.OUTSIDE_FRAME_BLACKENING_KIND
+    assert parsed.kind == blackening.OUTSIDE_FRAME_BLACKENING_KIND
     assert parsed.only_validated is True
     assert parsed.queue == "ffmpeg_media_hi"
 
@@ -319,8 +320,8 @@ def test_blackening_history_config_schema_accepts_valid_config(
 def test_blackening_history_config_schema_rejects_invalid_config(
     config: JsonValue,
 ) -> None:
-    with pytest.raises(segment_state.OutsideFrameBlackeningConfigError):
-        segment_state._parse_blackening_history_config(config)  # pyright: ignore[reportPrivateUsage]
+    with pytest.raises(blackening.OutsideFrameBlackeningConfigError):
+        blackening.parse_blackening_history_config(config)
 
 
 @pytest.mark.django_db
@@ -895,7 +896,6 @@ def test_run_video_post_validation_rebuild_queues_deferred_temporal_inference(
             ocr_frame_fraction=0.001,
             ocr_cap=10,
             temporal_options={"temporal_model": "markov"},
-            raw_temporal_options={"temporal_model": "markov"},
             queue="inference",
             frame_source_mode="stream",
             deferred_reason=temporal_jobs.TEMPORAL_INFERENCE_DEFERRED_REASON_REPROCESSING,
@@ -964,7 +964,6 @@ def test_run_video_post_validation_rebuild_failure_fails_deferred_temporal_infer
             ocr_frame_fraction=0.001,
             ocr_cap=10,
             temporal_options={},
-            raw_temporal_options={},
             queue="inference",
             frame_source_mode="stream",
             deferred_reason=temporal_jobs.TEMPORAL_INFERENCE_DEFERRED_REASON_REPROCESSING,
