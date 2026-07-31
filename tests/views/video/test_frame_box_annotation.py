@@ -273,6 +273,67 @@ class FrameBoxAnnotationViewTest(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("width", str(data))
 
+    def test_box_annotation_rejects_unknown_wrapper_and_item_fields(self):
+        base_item = {
+            "label_id": self.label.pk,
+            "x": 10,
+            "y": 12,
+            "width": 20,
+            "height": 32,
+            "image_width": 800,
+            "image_height": 600,
+        }
+        payloads = [
+            {
+                "frame_id": self.frame.pk,
+                "annotations": [base_item],
+                "unexpected_wrapper": True,
+            },
+            {
+                "frame_id": self.frame.pk,
+                "annotations": [{**base_item, "unexpected_item": True}],
+            },
+        ]
+
+        for payload in payloads:
+            with self.subTest(payload=payload):
+                request = self.factory.post(
+                    "/api/media/annotations/frames/boxes/",
+                    payload,
+                    format="json",
+                )
+                response = self.view(request)
+
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(FrameBoxAnnotation.objects.count(), 0)
+
+    def test_box_annotation_rejects_conflicting_outer_and_item_frame_ids(self):
+        request = self.factory.post(
+            "/api/media/annotations/frames/boxes/",
+            {
+                "frame_id": self.frame.pk,
+                "annotations": [
+                    {
+                        "frame_id": self.other_video_frame.pk,
+                        "label_id": self.label.pk,
+                        "information_source_name": self.source.name,
+                        "x": 10,
+                        "y": 12,
+                        "width": 20,
+                        "height": 32,
+                        "image_width": 800,
+                        "image_height": 600,
+                    }
+                ],
+            },
+            format="json",
+        )
+
+        response = self.view(request)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(FrameBoxAnnotation.objects.count(), 0)
+
     def test_box_annotation_rejects_frames_outside_requested_video(self):
         payload = {
             "video_id": self.video.pk,

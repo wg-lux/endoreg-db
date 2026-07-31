@@ -194,6 +194,21 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(data["error"], "Unknown frame_id.")
 
+    def test_skip_rejects_unknown_fields_before_frame_lookup(self):
+        request = self.factory.post(
+            "/api/media/annotations/frames/skip/",
+            {"frame_id": self.frame_1.pk, "unexpected": True},
+            format="json",
+        )
+
+        with patch(
+            "endoreg_db.views.video.ai.frame_annotations.Frame.objects.get"
+        ) as get_frame:
+            response = self.skip_view(request)
+
+        self.assertEqual(response.status_code, 400)
+        get_frame.assert_not_called()
+
     def test_bulk_upsert_attaches_annotations_to_exact_ai_dataset(self):
         dataset = AIDataSet.objects.create(
             name="bulk-upsert-dataset",

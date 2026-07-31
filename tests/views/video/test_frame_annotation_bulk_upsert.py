@@ -166,6 +166,29 @@ class FrameAnnotationBulkUpsertViewTest(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("missing_information_source_names", data["details"])
 
+    def test_bulk_upsert_rejects_unknown_wrapper_and_item_fields(self):
+        base_item = {
+            "frame_id": self.frame_1.pk,
+            "label_id": self.label.pk,
+            "information_source_name": self.source.name,
+        }
+        payloads = [
+            {"annotations": [base_item], "unexpected_wrapper": True},
+            {"annotations": [{**base_item, "unexpected_item": True}]},
+        ]
+
+        for payload in payloads:
+            with self.subTest(payload=payload):
+                request = self.factory.post(
+                    "/api/media/annotations/frames/bulk-upsert/",
+                    payload,
+                    format="json",
+                )
+                response = self.view(request)
+
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(ImageClassificationAnnotation.objects.count(), 0)
+
     def test_bulk_upsert_uses_authenticated_user_as_annotator(self):
         user = User.objects.create_user(username="trusted-reviewer")
         payload = [

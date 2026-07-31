@@ -14,7 +14,6 @@ from lx_dtypes.models.contracts.frame_annotation import (
 )
 from lx_dtypes.models.contracts.video_frame_annotations import (
     FrameAnnotationBulkItemData,
-    FrameAnnotationPayloadMapping,
 )
 from pydantic import ValidationError
 from rest_framework import status
@@ -24,6 +23,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from endoreg_db.helpers.model_ids import model_pk
+from endoreg_db.schemas.frame_annotation_ingress import (
+    validate_frame_annotation_bulk_ingress,
+    validate_frame_annotation_skip_ingress,
+)
 from endoreg_db.models.aidataset.aidataset import AIDataSet
 from endoreg_db.models.label.annotation.image_classification import (
     ImageClassificationAnnotation,
@@ -91,13 +94,6 @@ def _coerce_int(value: object) -> int:
     if isinstance(value, str):
         return int(value)
     raise ValueError(f"Expected integer-compatible value, got {type(value).__name__}.")
-
-
-def _optional_non_empty_string(value: object) -> str | None:
-    if not isinstance(value, str):
-        return None
-    normalized = value.strip()
-    return normalized or None
 
 
 def _object_name(instance: object) -> str:
@@ -1139,57 +1135,26 @@ class FrameAnnotationBulkUpsertView(APIView):
         *args: object,
         **kwargs: object,
     ) -> Response:
-        payload = cast(object, request.data)
+        try:
+            payload = validate_frame_annotation_bulk_ingress(
+                cast(object, request.data)
+            )
+        except (ValidationError, ValueError) as exc:
+            return Response(
+                {"error": "Invalid payload.", "details": str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        requested_video_id: int | None = None
-        if isinstance(payload, list):
-            annotation_items = cast(list[Mapping[str, Any]], payload)
-            payload_data: dict[str, Any] = {}
-        elif isinstance(payload, Mapping):
-            try:
-                payload_data = FrameAnnotationPayloadMapping.model_validate(
-                    cast(object, payload)
-                ).to_json_object()
-            except ValidationError:
-                return Response(
-                    {"error": "Payload must be a JSON object."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            annotation_items = payload_data.get("annotations")
-            requested_video_id_raw = payload_data.get("video_id")
-            if requested_video_id_raw is not None:
-                try:
-                    requested_video_id = int(requested_video_id_raw)
-                except (TypeError, ValueError):
-                    return Response(
-                        {"error": "video_id must be an integer."},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-            if annotation_items is None:
-                return Response(
-                    {
-                        "error": "Field 'annotations' is required when payload is an object."
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-        else:
-            return Response(
-                {"error": "Payload must be a list or an object with 'annotations'."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        if not isinstance(annotation_items, list):
-            return Response(
-                {"error": "annotations must be a list."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        annotation_items = [
+            item.model_dump(mode="python", exclude_none=True)
+            for item in payload.annotations
+        ]
 
         return _build_bulk_upsert_response(
             annotation_items=cast(list[Mapping[str, Any]], annotation_items),
-            requested_video_id=requested_video_id,
+            requested_video_id=payload.video_id,
             request=request,
-            ai_dataset_id_raw=(
-                payload_data.get("ai_dataset_id") if payload_data else None
-            ),
+            ai_dataset_id_raw=payload.ai_dataset_id,
         )
 
 
@@ -1241,27 +1206,17 @@ class FrameAnnotationSkipView(APIView):
         **kwargs: object,
     ) -> Response:
         try:
-            payload = FrameAnnotationPayloadMapping.model_validate(
+            payload = validate_frame_annotation_skip_ingress(
                 cast(object, request.data)
-            ).to_json_object()
-        except ValidationError:
+            )
+        except (ValidationError, ValueError) as exc:
             return Response(
-                {"error": "Payload must be a JSON object."},
+                {"error": "Invalid payload.", "details": str(exc)},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        frame_id, error = _as_int(payload.get("frame_id"), "frame_id")
-        if error is not None:
-            return error
-        if frame_id is None:
-            return Response(
-                {"error": "Field 'frame_id' is required."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        video_id, error = _as_int(payload.get("video_id"), "video_id")
-        if error is not None:
-            return error
+        frame_id = payload.frame_id
+        video_id = payload.video_id
 
         try:
             frame = Frame.objects.get(pk=frame_id)
@@ -1281,23 +1236,20 @@ class FrameAnnotationSkipView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        requested_annotator = _optional_non_empty_string(payload.get("annotator"))
+        requested_annotator = payload.annotator
         annotator = resolve_request_annotator(request, requested_annotator)
-        reason = str(payload.get("reason", "") or "").strip()
+        reason = payload.reason.strip()
 
         information_source_name = resolve_frame_information_source_name(
-            payload.get(
-                "information_source_name",
-                payload.get(
-                    "information_source", DEFAULT_FRAME_INFORMATION_SOURCE_NAME
-                ),
-            )
+            payload.information_source_name
+            or payload.information_source
+            or DEFAULT_FRAME_INFORMATION_SOURCE_NAME
         )
         information_source_name = validate_interactive_annotation_source(
             information_source_name
         )
 
-        exclude_annotated = _as_bool(payload.get("exclude_annotated"), default=True)
+        exclude_annotated = payload.exclude_annotated
         excluded_frame_ids: set[int] = {_frame_id(frame)}
         queue_spec_payload = FrameAnnotationQueueSpecPayload(
             limit=1,

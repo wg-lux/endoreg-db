@@ -9,10 +9,11 @@ from django.db.models import Q
 from lx_dtypes.models.contracts.video_frame_box_annotations import (
     VideoFrameBoxAnnotationListResponsePayload,
     VideoFrameBoxAnnotationMutationResponsePayload,
-    VideoFrameBoxAnnotationRequestPayload,
     VideoFrameBoxJsonObject,
-    validate_video_frame_box_annotation_request,
     video_frame_box_json_safe_dict,
+)
+from lx_dtypes.models.contracts.video_frame_annotations import (
+    FrameBoxAnnotationBulkEnvelopePayload,
 )
 from pydantic import ValidationError
 from rest_framework import status
@@ -21,6 +22,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from endoreg_db.helpers.model_ids import model_pk
+from endoreg_db.schemas.frame_annotation_ingress import (
+    validate_frame_box_annotation_bulk_ingress,
+)
 from endoreg_db.models.label.annotation.frame_box import FrameBoxAnnotation
 from endoreg_db.models.label.label import Label
 from endoreg_db.models.media.frame.frame import Frame
@@ -150,9 +154,17 @@ def _serializer_errors(serializer: object) -> object:
     return cast(object, getattr(serializer, "errors", {}))
 
 
-def _validation_details(exc: ValidationError) -> list[VideoFrameBoxJsonObject]:
+def _validation_details(
+    exc: ValidationError | ValueError,
+) -> list[VideoFrameBoxJsonObject]:
+    if not isinstance(exc, ValidationError):
+        return [{"message": str(exc)}]
     details: list[VideoFrameBoxJsonObject] = []
-    for error in exc.errors():
+    for error in exc.errors(
+        include_url=False,
+        include_context=False,
+        include_input=False,
+    ):
         details.append(video_frame_box_json_safe_dict(error))
     return details
 
@@ -324,8 +336,8 @@ class FrameBoxAnnotationView(APIView):
             return _annotations_must_be_list_response()
 
         try:
-            payload = validate_video_frame_box_annotation_request(payload_object)
-        except ValidationError as exc:
+            payload = validate_frame_box_annotation_bulk_ingress(payload_object)
+        except (ValidationError, ValueError) as exc:
             return Response(
                 {"error": "Invalid payload.", "details": _validation_details(exc)},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -334,7 +346,9 @@ class FrameBoxAnnotationView(APIView):
         if payload.replace and not payload.annotations:
             return self._delete_empty_replace_scope(
                 frame_id=payload.frame_id,
-                information_source_name=payload.resolved_information_source_name,
+                information_source_name=(
+                    payload.information_source_name or payload.information_source
+                ),
                 annotator=payload.annotator,
                 request=request,
             )
@@ -374,22 +388,15 @@ class FrameBoxAnnotationView(APIView):
 
     @staticmethod
     def _normalized_annotation_items(
-        payload: VideoFrameBoxAnnotationRequestPayload,
+        payload: FrameBoxAnnotationBulkEnvelopePayload,
     ) -> list[VideoFrameBoxJsonObject]:
-        normalized_items: list[VideoFrameBoxJsonObject] = []
-        for raw_item in payload.annotations:
-            item: VideoFrameBoxJsonObject = dict(raw_item)
-            if payload.frame_id is not None and item.get("frame_id") in {None, ""}:
-                item["frame_id"] = payload.frame_id
-            if not item.get("information_source_name"):
-                item["information_source_name"] = (
-                    payload.resolved_information_source_name
-                    or DEFAULT_FRAME_INFORMATION_SOURCE_NAME
-                )
-            if item.get("annotator") in {None, ""} and payload.annotator is not None:
-                item["annotator"] = payload.annotator
-            normalized_items.append(item)
-        return normalized_items
+        return [
+            cast(
+                VideoFrameBoxJsonObject,
+                item.model_dump(mode="python", exclude_none=True),
+            )
+            for item in payload.annotations
+        ]
 
     def _delete_empty_replace_scope(
         self,
