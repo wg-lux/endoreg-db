@@ -26,7 +26,10 @@ from lx_dtypes.models.contracts.aidataset_frame_buckets import (
 )
 
 from endoreg_db.schemas import (
+    dump_ai_dataset_export_request_payload,
+    dump_ai_dataset_export_summary,
     validate_ai_model_training_artifact_paths,
+    validate_ai_model_training_command_kwargs,
     validate_ai_model_training_request_payload,
     validate_ai_model_training_result_payload,
 )
@@ -623,6 +626,12 @@ class AIModelTrainingRun(models.Model):
         except ValueError as exc:
             errors["request_payload"] = str(exc)
         try:
+            self.command_kwargs = validate_ai_model_training_command_kwargs(
+                self.command_kwargs
+            )
+        except ValueError as exc:
+            errors["command_kwargs"] = str(exc)
+        try:
             self.result = validate_ai_model_training_result_payload(self.result)
         except ValueError as exc:
             errors["result"] = str(exc)
@@ -720,6 +729,26 @@ class AIDataSetExportArtifact(models.Model):
     @property
     def artifact_key(self) -> str:
         return self.artifact_id.hex
+
+    def clean(self) -> None:
+        super().clean()
+        errors: dict[str, ValidationErrorMessageArg] = {}
+        try:
+            self.request_payload = dump_ai_dataset_export_request_payload(
+                self.request_payload
+            )
+        except ValueError as exc:
+            errors["request_payload"] = str(exc)
+        try:
+            self.summary = dump_ai_dataset_export_summary(self.summary)
+        except ValueError as exc:
+            errors["summary"] = str(exc)
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args: object, **kwargs: object) -> None:
+        self.clean()
+        super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return (

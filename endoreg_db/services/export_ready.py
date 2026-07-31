@@ -12,13 +12,13 @@ from django.db.models.fields.files import FieldFile
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.state.audit_ledger import AuditLedger
-from endoreg_db.models.state.video_segment_validation import (
-    resolve_segment_annotation_status,
-    segment_annotations_are_final,
-)
 from endoreg_db.services.center_access import resolve_allowed_center_ids
 from endoreg_db.services.hub.audit import emit_hub_audit_event
 from endoreg_db.services.video_files import get_or_create_video_state
+from endoreg_db.services.video_segment_validation_workflow import (
+    resolve_segment_annotation_status,
+    segment_annotations_are_final,
+)
 from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.utils.paths import ensure_within_protected_media_root
 from lx_dtypes.models.contracts.export_ready import ReadyForExportResult

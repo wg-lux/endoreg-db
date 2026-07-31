@@ -228,34 +228,51 @@ class FhirBundle(FhirR4Model):
         urls = [item.full_url for item in self.entry]
         if len(urls) != len(set(urls)):
             raise ValueError("Bundle fullUrl values must be unique")
+        for item in self.entry:
+            expected_url = f"{item.resource.resource_type}/{item.resource.id}"
+            if item.full_url != expected_url:
+                raise ValueError(
+                    "Bundle fullUrl must match the contained resource identity: "
+                    f"expected {expected_url}"
+                )
         resources = {
             (item.resource.resource_type, item.resource.id) for item in self.entry
         }
         if len(resources) != len(self.entry):
             raise ValueError("Bundle resource identities must be unique")
-        available_references = set(urls)
-        referenced_resources: set[str] = set()
+        resources_by_reference = {
+            item.full_url: item.resource for item in self.entry
+        }
+
+        def require_reference(reference: FhirReference, expected_type: str) -> None:
+            target = resources_by_reference.get(reference.reference)
+            if target is None:
+                raise ValueError(
+                    "Bundle contains references without matching entries: "
+                    f"{reference.reference}"
+                )
+            if target.resource_type != expected_type:
+                raise ValueError(
+                    f"Bundle reference {reference.reference} must target "
+                    f"{expected_type}, not {target.resource_type}"
+                )
+
         for item in self.entry:
             resource = item.resource
             if isinstance(resource, FhirProcedure):
-                referenced_resources.add(resource.subject.reference)
+                require_reference(resource.subject, "Patient")
             elif isinstance(resource, FhirObservation):
-                referenced_resources.add(resource.subject.reference)
-                referenced_resources.update(item.reference for item in resource.part_of)
+                require_reference(resource.subject, "Patient")
+                for reference in resource.part_of:
+                    require_reference(reference, "Procedure")
             elif isinstance(resource, FhirDiagnosticReport):
-                referenced_resources.add(resource.subject.reference)
-                referenced_resources.update(item.reference for item in resource.result)
-                referenced_resources.update(
-                    item.reference for item in resource.imaging_study
-                )
+                require_reference(resource.subject, "Patient")
+                for reference in resource.result:
+                    require_reference(reference, "Observation")
+                for reference in resource.imaging_study:
+                    require_reference(reference, "ImagingStudy")
             elif isinstance(resource, FhirImagingStudy):
-                referenced_resources.add(resource.subject.reference)
-        missing = referenced_resources - available_references
-        if missing:
-            raise ValueError(
-                "Bundle contains references without matching entries: "
-                + ", ".join(sorted(missing))
-            )
+                require_reference(resource.subject, "Patient")
         return self
 
 

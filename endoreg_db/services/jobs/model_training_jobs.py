@@ -31,6 +31,8 @@ from endoreg_db.services.video_files._frames._manage_frame_range import (
 )
 from endoreg_db.schemas import (
     validate_ai_model_training_artifact_paths,
+    validate_ai_model_training_command_kwargs,
+    validate_ai_model_training_request_payload,
     validate_ai_model_training_result_payload,
 )
 from endoreg_db.services.video_files import (
@@ -51,6 +53,40 @@ MODEL_TRAINING_TARGET_PHI_REGION_DETECTOR = "phi_region_detector"
 MODEL_TRAINING_SERVER_INSTANCE_ID = uuid4().hex
 MODEL_TRAINING_LOST_TIMEOUT = timedelta(hours=25)
 DEFAULT_MODEL_TRAINING_STAGING_ROOT = Path("/mnt/fast-nvme-cache/endoreg-training")
+
+
+def _validated_model_training_run_updates(
+    updates: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Canonicalize JSONField values before a direct queryset update.
+
+    QuerySet.update() intentionally bypasses AIModelTrainingRun.clean()/save().
+    Keep the asynchronous worker's atomic status updates while applying the same
+    persisted-JSON contracts whenever one of the model's JSON fields is present.
+    """
+    normalized = dict(updates)
+    if "request_payload" in normalized:
+        normalized["request_payload"] = validate_ai_model_training_request_payload(
+            normalized["request_payload"]
+        )
+    if "command_kwargs" in normalized:
+        normalized["command_kwargs"] = validate_ai_model_training_command_kwargs(
+            normalized["command_kwargs"]
+        )
+    if "result" in normalized:
+        normalized["result"] = validate_ai_model_training_result_payload(
+            normalized["result"]
+        )
+    if "artifact_paths" in normalized:
+        normalized["artifact_paths"] = validate_ai_model_training_artifact_paths(
+            normalized["artifact_paths"]
+        )
+    return normalized
+
+
+def _update_model_training_run(run_uuid: UUID, **updates: Any) -> int:
+    normalized = _validated_model_training_run_updates(updates)
+    return AIModelTrainingRun.objects.filter(run_id=run_uuid).update(**normalized)
 
 
 class _TrainingResult(TypedDict, total=False):
@@ -477,7 +513,8 @@ def _execute_model_training_run(
     if run_uuid is None:
         return
 
-    AIModelTrainingRun.objects.filter(run_id=run_uuid).update(
+    _update_model_training_run(
+        run_uuid,
         status=AIModelTrainingRun.STATUS_RUNNING,
         started_at=timezone.now(),
         server_instance_id=MODEL_TRAINING_SERVER_INSTANCE_ID,
@@ -510,7 +547,8 @@ def _execute_model_training_run(
         artifact_paths = validate_ai_model_training_artifact_paths(
             _model_training_artifact_paths(validated_result)
         )
-        AIModelTrainingRun.objects.filter(run_id=run_uuid).update(
+        _update_model_training_run(
+            run_uuid,
             status=AIModelTrainingRun.STATUS_COMPLETED,
             finished_at=timezone.now(),
             stdout=output,
@@ -526,7 +564,8 @@ def _execute_model_training_run(
         combined_output = "\n".join(
             chunk for chunk in (output, error_output, trace) if chunk
         ).strip()
-        AIModelTrainingRun.objects.filter(run_id=run_uuid).update(
+        _update_model_training_run(
+            run_uuid,
             status=AIModelTrainingRun.STATUS_FAILED,
             finished_at=timezone.now(),
             stdout=combined_output,

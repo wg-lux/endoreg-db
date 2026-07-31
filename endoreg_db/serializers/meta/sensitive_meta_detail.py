@@ -6,7 +6,8 @@ from typing import Protocol, cast
 
 from rest_framework import serializers
 import logging
-from ...models import SensitiveMeta
+
+from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 
 logger = logging.getLogger(__name__)
 

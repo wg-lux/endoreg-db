@@ -5,8 +5,8 @@ from typing import TypedDict, cast
 
 from rest_framework import serializers
 
-from ...models import SensitiveMeta
-from ...models.state import SensitiveMetaState
+from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+from endoreg_db.models.state.sensitive_meta import SensitiveMetaState
 
 logger = logging.getLogger(__name__)
 

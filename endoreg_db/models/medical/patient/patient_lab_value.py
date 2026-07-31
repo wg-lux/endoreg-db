@@ -4,7 +4,9 @@ from datetime import datetime as dt_datetime
 from typing import TYPE_CHECKING, Protocol, cast, Any
 
 from django.db import models
+from django.core.exceptions import ValidationError
 from lx_dtypes.models.contracts.lab_value import LabValueNormalRangePayload
+from endoreg_db.schemas import validate_lab_value_normal_range
 
 if TYPE_CHECKING:
     from endoreg_db.utils.links import ModelLinks  # Added import
@@ -85,6 +87,15 @@ class PatientLabValue(models.Model):
         "Unit", on_delete=models.CASCADE, blank=True, null=True
     )
 
+    def clean(self) -> None:
+        super().clean()
+        try:
+            self.normal_range = validate_lab_value_normal_range(
+                self.normal_range, allow_none=False
+            )
+        except ValueError as exc:
+            raise ValidationError({"normal_range": str(exc)}) from exc
+
     @property
     def lab_value_safe(self) -> "LabValue":
         """Returns the lab value, raises error if not set."""
@@ -132,8 +143,8 @@ class PatientLabValue(models.Model):
     def __str__(self) -> str:
         formatted_datetime = self.timestamp.strftime("%Y-%m-%d %H:%M")
         norm_range_string = (
-            f"[{self.normal_range.min if self.normal_range.min is not None else ''}"
-            f" - {self.normal_range.max if self.normal_range.max is not None else ''}]"
+            f"[{self.normal_range.get('min', '')}"
+            f" - {self.normal_range.get('max', '')}]"
         )
         return (
             f"{self.lab_value} - {self.value} {self.unit} - "
@@ -150,12 +161,12 @@ class PatientLabValue(models.Model):
         return lab_value.get_normal_range(age, gender)
 
     def set_min_norm_value(self, value: float | None, save: bool = True) -> None:
-        self.normal_range = self.normal_range.model_copy(update={"min": value})
+        self.normal_range = {**self.normal_range, "min": value}
         if save:
             self.save()
 
     def set_max_norm_value(self, value: float | None, save: bool = True) -> None:
-        self.normal_range = self.normal_range.model_copy(update={"max": value})
+        self.normal_range = {**self.normal_range, "max": value}
         if save:
             self.save()
 
@@ -183,6 +194,7 @@ class PatientLabValue(models.Model):
 
     # customize save method so that if a numeric value exists, we round it to the precision of the lab value
     def save(self, *args: object, **kwargs: object) -> None:
+        self.clean()
         if self.value is not None:
             # only attempt rounding for real numeric types (ints/floats/compatible)
 

@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, ClassVar, Any
 
 from django.db import models
+from django.core.exceptions import ValidationError
+from endoreg_db.schemas import validate_patient_medication_dosage
 
 # Added imports for type hints
 if TYPE_CHECKING:
@@ -61,6 +63,17 @@ class PatientMedication(models.Model):
     objects: ClassVar[models.Manager["PatientMedication"]] = (  # pyright: ignore[reportIncompatibleVariableOverride]
         models.Manager()
     )
+
+    def clean(self) -> None:
+        super().clean()
+        try:
+            self.dosage = validate_patient_medication_dosage(self.dosage)
+        except ValueError as exc:
+            raise ValidationError({"dosage": str(exc)}) from exc
+
+    def save(self, *args: object, **kwargs: object) -> None:
+        self.clean()
+        super().save(*args, **kwargs)
 
     if TYPE_CHECKING:  # Added type hints block
 

@@ -45,6 +45,25 @@ class UploadEndpointTests(TestCase):
         assert response.status_code == 400, response.content
         assert "No file provided" in response.json()["error"]
 
+    def test_upload_rejects_unknown_multipart_fields_before_job_creation(self):
+        self._authenticate_for_center()
+        uploaded = SimpleUploadedFile(
+            name="upload-test.pdf",
+            content=MINIMAL_PDF_BYTES,
+            content_type="application/pdf",
+        )
+
+        response = self.client.post(
+            "/api/upload/",
+            data={"file": uploaded, "unexpected": "silently-dropped-before"},
+        )
+
+        assert response.status_code == 400, response.content
+        assert response.json() == {
+            "error": "Unknown upload request field(s): unexpected"
+        }
+        assert UploadJob.objects.count() == 0
+
     def test_upload_status_returns_404_for_unknown_job(self):
         response = self.client.get(f"/api/upload/{uuid4()}/status/")
         assert response.status_code == 404, response.content

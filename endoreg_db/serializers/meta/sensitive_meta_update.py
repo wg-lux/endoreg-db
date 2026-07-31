@@ -8,7 +8,9 @@ from django.db import transaction
 from rest_framework import serializers
 import logging
 
-from ...models import SensitiveMeta, Center, Gender
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+from endoreg_db.models.other.gender import Gender
 from lx_dtypes.models.contracts.sensitive_meta_update import SensitiveMetaUpdatePayload
 
 logger = logging.getLogger(__name__)

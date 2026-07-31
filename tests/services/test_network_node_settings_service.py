@@ -89,6 +89,59 @@ def test_create_network_node_rejects_non_string_shared_secret():
 
 
 @pytest.mark.django_db
+def test_create_network_node_rejects_unknown_boundary_fields():
+    with pytest.raises(NetworkNodeValidationError) as exc_info:
+        create_network_node(
+            {
+                "display_name": "Unknown Field Node",
+                "displayName": "legacy-camel-case",
+            }
+        )
+
+    assert exc_info.value.errors == {"displayName": "Unknown field."}
+    assert not NetworkNode.objects.filter(display_name="Unknown Field Node").exists()
+
+
+@pytest.mark.django_db
+def test_create_network_node_rejects_conflicting_center_identities():
+    center_one = Center.objects.create(name="identity-one", display_name="One")
+    center_two = Center.objects.create(name="identity-two", display_name="Two")
+
+    with pytest.raises(NetworkNodeValidationError) as exc_info:
+        create_network_node(
+            {
+                "display_name": "Conflicting Center Node",
+                "owning_center_id": center_one.pk,
+                "owning_center_key": center_two.center_key,
+            }
+        )
+
+    assert exc_info.value.errors == {
+        "owning_center": (
+            "owning_center_id and owning_center_key identify different centers."
+        )
+    }
+    assert not NetworkNode.objects.filter(
+        display_name="Conflicting Center Node"
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_create_network_node_accepts_matching_center_identities():
+    center = Center.objects.create(name="same-identity", display_name="Same")
+
+    node = create_network_node(
+        {
+            "display_name": "Matching Center Node",
+            "owning_center_id": center.pk,
+            "owning_center_key": center.center_key,
+        }
+    )
+
+    assert node.owning_center == center
+
+
+@pytest.mark.django_db
 def test_create_network_node_aggregates_errors_without_writing():
     existing = NetworkNode.objects.create(
         display_name="Existing Node",
@@ -134,6 +187,24 @@ def test_update_network_node_rejects_invalid_clear_shared_secret_type():
     }
     node.refresh_from_db()
     assert node.shared_secret_hash == ""
+
+
+@pytest.mark.django_db
+def test_update_network_node_rejects_unknown_fields_without_mutation():
+    node = NetworkNode.objects.create(
+        display_name="Strict Update Node",
+        node_key="strict-update-node",
+    )
+
+    with pytest.raises(NetworkNodeValidationError) as exc_info:
+        update_network_node(
+            node,
+            {"display_name": "Changed", "unexpected": True},
+        )
+
+    assert exc_info.value.errors == {"unexpected": "Unknown field."}
+    node.refresh_from_db()
+    assert node.display_name == "Strict Update Node"
 
 
 @pytest.mark.django_db

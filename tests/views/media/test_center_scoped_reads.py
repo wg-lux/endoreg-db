@@ -7,8 +7,17 @@ from uuid import uuid4
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.contrib.auth.models import User
 from django.test import TestCase
+from django.utils import timezone
 
-from endoreg_db.models import Center, Examination, Patient, RawPdfFile, VideoFile
+from endoreg_db.models import (
+    Case,
+    Center,
+    Examination,
+    Patient,
+    PatientExamination,
+    RawPdfFile,
+    VideoFile,
+)
 
 MINIMAL_PDF_BYTES = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
 
@@ -40,6 +49,16 @@ class CenterScopedReadTests(TestCase):
         self.examination = Examination.objects.create(
             name=f"scope-exam-{uuid4().hex[:8]}"
         )
+        self.patient_examination = PatientExamination.objects.create(
+            patient=self.patient,
+            examination=self.examination,
+            hash=f"scope-patient-examination-{uuid4().hex}",
+        )
+        self.patient_case = Case.objects.create(
+            patient=self.patient,
+            start_date=timezone.now(),
+        )
+        self.patient_case.patient_examinations.add(self.patient_examination)
         self.report = RawPdfFile.objects.create(
             pdf_hash=f"scope-pdf-{uuid4().hex}",
             file=SimpleUploadedFile(
@@ -153,3 +172,23 @@ class CenterScopedReadTests(TestCase):
         )
 
         assert response.status_code == 404, response.content
+
+    @patch("endoreg_db.views.access_control.resolve_allowed_center_id")
+    def test_case_document_attachment_is_denied_outside_center_scope(
+        self, mock_allowed_center_id: MagicMock
+    ) -> None:
+        mock_allowed_center_id.return_value = self._pk(self.center_b)
+
+        response = self.client.post(
+            f"/api/cases/{self.patient_case.case_id}/documents/",
+            data={
+                "media_type": "pdf",
+                "media_id": self._pk(self.report),
+                "patient_examination_id": self._pk(self.patient_examination),
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 404, response.content
+        self.report.refresh_from_db()
+        assert self.report.examination_id is None

@@ -1416,6 +1416,43 @@ class ApplicationSettingsEndpointTests(TestCase):
         assert payload["owning_center_id"] == self.center.pk
         assert payload["owning_center_key"] == self.center.center_key
 
+    def test_network_node_api_rejects_unknown_and_conflicting_identity_fields(self):
+        other_center = Center.objects.create(
+            name="other-network-center",
+            display_name="Other Network Center",
+        )
+        unknown_response = self.client.post(
+            "/api/settings/application/network_nodes/",
+            data={
+                "display_name": "Unknown Boundary Node",
+                "displayName": "legacy-camel-case",
+            },
+            content_type="application/json",
+        )
+        assert unknown_response.status_code == 400, unknown_response.content
+        assert unknown_response.json()["errors"] == {
+            "displayName": "Unknown field."
+        }
+
+        conflict_response = self.client.post(
+            "/api/settings/application/network_nodes/",
+            data={
+                "display_name": "Conflicting Identity Node",
+                "owning_center_id": self.center.pk,
+                "owning_center_key": other_center.center_key,
+            },
+            content_type="application/json",
+        )
+        assert conflict_response.status_code == 400, conflict_response.content
+        assert conflict_response.json()["errors"] == {
+            "owning_center": (
+                "owning_center_id and owning_center_key identify different centers."
+            )
+        }
+        assert not NetworkNode.objects.filter(
+            display_name__in=["Unknown Boundary Node", "Conflicting Identity Node"]
+        ).exists()
+
     def test_network_node_patch_aggregates_errors_without_partial_write(self):
         node = NetworkNode.objects.create(
             display_name="Unchanged Node",

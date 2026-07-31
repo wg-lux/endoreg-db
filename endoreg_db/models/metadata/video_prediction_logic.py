@@ -4,9 +4,10 @@ from typing import TYPE_CHECKING, List, Optional, Protocol, Tuple, cast
 
 import numpy as np
 
-from endoreg_db.services.video_files import get_video_fps
-
-from ..label.label_video_segment import LabelVideoSegment
+from endoreg_db.models.label.label_video_segment.label_video_segment import (
+    LabelVideoSegment,
+)
+from endoreg_db.services.video_files.metadata import get_video_fps
 
 # Import necessary models and utils used by the logic
 from ..utils import find_segments_in_prediction_array
@@ -21,7 +22,7 @@ DEFAULT_WINDOW_SIZE_IN_SECONDS_FOR_RUNNING_MEAN = 1.5
 DEFAULT_VIDEO_SEGMENT_LENGTH_THRESHOLD_IN_S = 1.0
 
 if TYPE_CHECKING:
-    from ..label import Label
+    from endoreg_db.models.label.label import Label
     from .video_prediction_meta import VideoPredictionMeta
 
 
@@ -84,7 +85,9 @@ def calculate_prediction_array_logic(
     Fetches predictions, applies smoothing, and returns the binary prediction array.
     Does not save the array itself.
     """
-    from ..label import ImageClassificationAnnotation
+    from endoreg_db.models.label.annotation.image_classification import (
+        ImageClassificationAnnotation,
+    )
 
     video_obj = instance.get_video()
     model_meta = instance.model_meta
@@ -149,7 +152,7 @@ def create_video_segments_for_label_logic(
     """
     Creates LabelVideoSegment instances for the given label and segments.
     """
-    from ..other import InformationSource
+    from endoreg_db.models.other.information_source import InformationSource
 
     video_obj = instance.get_video()
     information_source, _ = cast(

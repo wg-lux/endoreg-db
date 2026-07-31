@@ -43,7 +43,14 @@ class DicomDeidentification(_ContractModel):
     profile: str = Field(min_length=1, max_length=255)
     method: str = Field(min_length=1, max_length=255)
     patient_identity_removed: Literal[True]
-    clean_pixel_data: bool
+    clean_pixel_data: bool = Field(strict=True)
+
+    @field_validator("patient_identity_removed", mode="before")
+    @classmethod
+    def require_literal_true(cls, value: object) -> object:
+        if value is not True:
+            raise ValueError("patient_identity_removed must be true")
+        return value
 
 
 def _validate_uid(value: str) -> str:
@@ -56,12 +63,12 @@ class DicomInstanceManifest(_ContractModel):
     sop_instance_uid: str
     sop_class_uid: str
     transfer_syntax_uid: str
-    instance_number: int | None = Field(default=None, ge=1)
+    instance_number: int | None = Field(default=None, ge=1, strict=True)
     artifact_reference: str = Field(min_length=1, max_length=1024)
     artifact_class: Literal["anonymized_processed"]
     artifact_sha256: str
-    size_bytes: int = Field(ge=1)
-    masked_regions: int = Field(default=0, ge=0)
+    size_bytes: int = Field(ge=1, strict=True)
+    masked_regions: int = Field(default=0, ge=0, strict=True)
 
     @field_validator("sop_instance_uid", "sop_class_uid", "transfer_syntax_uid")
     @classmethod
@@ -89,7 +96,7 @@ class DicomInstanceManifest(_ContractModel):
 class DicomSeriesManifest(_ContractModel):
     series_instance_uid: str
     modality: str = Field(min_length=1, max_length=16)
-    series_number: int | None = Field(default=None, ge=1)
+    series_number: int | None = Field(default=None, ge=1, strict=True)
     instances: list[DicomInstanceManifest] = Field(min_length=1)
 
     @field_validator("series_instance_uid")

@@ -4,8 +4,11 @@ from datetime import date, time
 from types import NoneType
 from typing import TYPE_CHECKING, TypeAlias, Any
 
+from django.core.exceptions import ValidationError
 from django.db import models
 from lx_dtypes.models.contracts.json_types import JsonObject
+
+from endoreg_db.schemas import validate_report_file_meta_payload
 
 from ...utils import DOCUMENT_DIR, STORAGE_DIR
 
@@ -91,6 +94,17 @@ class AbstractDocument(models.Model):
 
     if TYPE_CHECKING:
         pass
+
+    def clean(self) -> None:
+        super().clean()
+        try:
+            self.meta = validate_report_file_meta_payload(self.meta)
+        except ValueError as exc:
+            raise ValidationError({"meta": str(exc)}) from exc
+
+    def save(self, *args: object, **kwargs: object) -> None:
+        self.clean()
+        super().save(*args, **kwargs)
 
     class Meta:
         abstract = True

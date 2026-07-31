@@ -9,10 +9,12 @@ import numpy as np
 import numpy.typing as npt
 from django.db import models
 
-from endoreg_db.models.label import LabelSet
-from endoreg_db.services.video_files import get_video_fps
+from endoreg_db.models.label.label_set import LabelSet
+from endoreg_db.models.label.label_video_segment.label_video_segment import (
+    LabelVideoSegment,
+)
+from endoreg_db.services.video_files.metadata import get_video_fps
 
-from ..label.label_video_segment import LabelVideoSegment
 from ..utils import find_segments_in_prediction_array
 
 logger = logging.getLogger(__name__)
@@ -21,7 +23,7 @@ DEFAULT_WINDOW_SIZE_IN_SECONDS_FOR_RUNNING_MEAN = 1.5
 DEFAULT_VIDEO_SEGMENT_LENGTH_THRESHOLD_IN_S = 1.0
 
 if TYPE_CHECKING:
-    from endoreg_db.models import Label
+    from endoreg_db.models.label.label import Label
 
     from ..media.video.video_file import VideoFile
 
@@ -185,7 +187,9 @@ class VideoPredictionMeta(models.Model):
         Fetches all predictions for the associated video, labelset, and model meta,
         applies smoothing, and saves the resulting binary prediction array.
         """
-        from ..label import ImageClassificationAnnotation
+        from endoreg_db.models.label.annotation.image_classification import (
+            ImageClassificationAnnotation,
+        )
 
         video_obj = self.get_video()
         model_meta = self.model_meta
@@ -288,7 +292,7 @@ class VideoPredictionMeta(models.Model):
         """
         Creates LabelVideoSegment instances for the given label and segments.
         """
-        from endoreg_db.models import InformationSource
+        from endoreg_db.models.other.information_source import InformationSource
 
         video_obj = self.get_video()
         information_source, _ = cast(

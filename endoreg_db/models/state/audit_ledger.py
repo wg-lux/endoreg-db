@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import logging
+import math
 import uuid
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.db.utils import OperationalError, ProgrammingError
 from django.utils import timezone
@@ -29,10 +31,39 @@ def _ledger_table_unavailable(exc: Exception) -> bool:
     )
 
 
-def _json_object(value: object) -> JsonObject:
+def _canonical_json_value(value: object, *, field_name: str) -> object:
+    """Validate and copy one value at the strict JSON persistence boundary."""
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError(f"{field_name} does not allow NaN or infinite floats")
+        return value
+    if isinstance(value, list):
+        items = cast(list[object], value)
+        return [
+            _canonical_json_value(item, field_name=field_name) for item in items
+        ]
+    if isinstance(value, dict):
+        normalized: dict[str, object] = {}
+        items = cast(dict[object, object], value)
+        for key, item in items.items():
+            if not isinstance(key, str):
+                raise ValueError(f"{field_name} keys must be strings")
+            normalized[key] = _canonical_json_value(item, field_name=field_name)
+        return normalized
+    raise ValueError(
+        f"{field_name} contains unsupported JSON value type: {type(value).__name__}"
+    )
+
+
+def _canonical_json_object(value: object) -> JsonObject:
     if not isinstance(value, dict):
-        return {}
-    return cast(JsonObject, value)
+        raise ValueError("data must be a JSON object")
+    return cast(
+        JsonObject,
+        _canonical_json_value(cast(dict[object, object], value), field_name="data"),
+    )
 
 
 class AuditLedger(models.Model):
@@ -78,6 +109,13 @@ class AuditLedger(models.Model):
         ordering = ["ts"]
         indexes = [models.Index(fields=["object_type", "object_pk"])]
 
+    def clean(self) -> None:
+        super().clean()
+        try:
+            self.data = _canonical_json_object(self.data)
+        except ValueError as exc:
+            raise ValidationError({"data": str(exc)}) from exc
+
     def save(self, *args: object, **kwargs: object) -> None:
         """
         Save a new immutable audit record, computing and linking cryptographic hashes.
@@ -85,15 +123,14 @@ class AuditLedger(models.Model):
         Raises:
             RuntimeError: If an attempt is made to modify an existing audit record.
         """
+        if not self._state.adding:
+            raise RuntimeError("AuditLedger rows are immutable")
+        self.clean()
         with transaction.atomic():
             try:
-                if self._state.adding:
-                    head = LedgerHead.lock()
-                    object.__setattr__(self, "prev_hash", head.current_hash)
-                    object.__setattr__(self, "hash", self._compute_hash())
-                else:
-                    raise RuntimeError("AuditLedger rows are immutable")
-
+                head = LedgerHead.lock()
+                object.__setattr__(self, "prev_hash", head.current_hash)
+                object.__setattr__(self, "hash", self._compute_hash())
                 super().save(*args, **kwargs)
 
                 object.__setattr__(head, "current_hash", self.hash)
@@ -150,7 +187,7 @@ class AuditLedger(models.Model):
             uid=uid,
             obj=f"{self.object_type}:{self.object_pk}",
             act=self.action,
-            data=_json_object(self.data),
+            data=cast(JsonObject, self.data),
             prev=self.prev_hash,
         )
         return payload.sha256_hex()

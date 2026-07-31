@@ -4,6 +4,7 @@ import logging
 from typing import Any, cast
 
 from django.core.exceptions import ValidationError
+from pydantic import ValidationError as PydanticValidationError
 from rest_framework import status
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -12,9 +13,10 @@ from rest_framework.views import APIView
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.pdf.report_llm_job import ReportLlmInferenceJob
+from endoreg_db.schemas.report_llm import ReportLlmReimportRequestPayload
+from endoreg_db.utils.pydantic_drf import drf_validation_error_response
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.views.access_control import assert_center_scope_allowed
-from endoreg_db.views.reimport_helpers import request_payload_dict
 
 from endoreg_db.services.jobs.report_llm_jobs import (
     dispatch_report_llm_reimport,
@@ -98,7 +100,15 @@ class ReportReimportView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        payload = request_payload_dict(request)
+        try:
+            payload = ReportLlmReimportRequestPayload.model_validate(
+                cast(object, request.data)
+            )
+        except PydanticValidationError as exc:
+            return drf_validation_error_response(
+                exc,
+                message="Invalid report re-import payload.",
+            )
         dispatch_result = dispatch_report_llm_reimport(
             report_id=pdf_id,
             payload=payload,

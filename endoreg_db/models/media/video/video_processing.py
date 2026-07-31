@@ -9,15 +9,22 @@ Created as part of Phase 1.1: Video Correction API Endpoints.
 
 import logging
 from pathlib import Path
-from typing import ClassVar, Any
+from typing import Any, ClassVar
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
+from pydantic import ValidationError as PydanticValidationError
+from lx_dtypes.models.contracts.json_types import JsonObject
 
 from lx_dtypes.models.contracts.video_processing_history import (
     VideoProcessingHistoryOperation,
     VideoProcessingHistoryStatus,
+)
+
+from endoreg_db.schemas.video_processing_history import (
+    validate_video_processing_history_config,
 )
 
 from .video_file import VideoFile
@@ -86,7 +93,7 @@ class VideoProcessingHistory(models.Model):
     )
 
     # Configuration & Results
-    config: models.JSONField[dict[str, object]] = models.JSONField(
+    config: models.JSONField[JsonObject, JsonObject] = models.JSONField(
         default=dict,
         help_text="Operation configuration (mask settings, frame list, etc.)",
     )
@@ -137,6 +144,17 @@ class VideoProcessingHistory(models.Model):
         )
         status = status_display() if callable(status_display) else self.status
         return f"{operation} on {self.video.video_hash} - {status}"
+
+    def clean(self) -> None:
+        super().clean()
+        try:
+            self.config = validate_video_processing_history_config(self.config)
+        except (PydanticValidationError, TypeError, ValueError) as exc:
+            raise ValidationError({"config": str(exc)}) from exc
+
+    def save(self, *args: object, **kwargs: object) -> None:
+        self.clean()
+        super().save(*args, **kwargs)
 
     def mark_running(self, save: bool = True) -> None:
         """Mark operation as running."""

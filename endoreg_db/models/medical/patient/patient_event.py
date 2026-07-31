@@ -3,10 +3,16 @@ from __future__ import annotations
 from datetime import date
 from typing import TYPE_CHECKING, cast, Any
 
+from django.core.exceptions import ValidationError
 from django.db import models
 from lx_dtypes.models.contracts.subcategory_validation import (
     NumericalDescriptorContract,
     SubcategoryDictContract,
+)
+
+from endoreg_db.schemas import (
+    validate_patient_numerical_descriptors,
+    validate_patient_subcategories,
 )
 
 if TYPE_CHECKING:
@@ -69,6 +75,24 @@ class PatientEvent(models.Model):
         Returns a string representation of the event's start date and name.
         """
         return str(self.date_start) + ": " + self.event.name
+
+    def clean(self) -> None:
+        super().clean()
+        errors: dict[str, str] = {}
+        for field_name, validator in (
+            ("subcategories", validate_patient_subcategories),
+            ("numerical_descriptors", validate_patient_numerical_descriptors),
+        ):
+            try:
+                setattr(self, field_name, validator(getattr(self, field_name)))
+            except ValueError as exc:
+                errors[field_name] = str(exc)
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args: object, **kwargs: object) -> None:
+        self.clean()
+        super().save(*args, **kwargs)
 
     def set_subcategories_from_classification_choice(
         self,

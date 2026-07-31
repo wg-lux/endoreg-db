@@ -231,6 +231,45 @@ def test_bundle_validation_rejects_dangling_internal_reference() -> None:
 
 
 @pytest.mark.django_db
+def test_bundle_validation_rejects_full_url_resource_identity_mismatch() -> None:
+    examination = _clinical_examination()
+    payload = dump_fhir_r4_bundle(build_patient_examination_fhir_bundle(examination))
+    entries = cast(list[dict[str, object]], payload["entry"])
+    patient_entry = next(
+        entry
+        for entry in entries
+        if cast(dict[str, object], entry["resource"])["resourceType"] == "Patient"
+    )
+    patient_entry["fullUrl"] = "Patient/not-the-contained-resource"
+
+    with pytest.raises(ValueError, match="fullUrl must match"):
+        FhirBundle.model_validate(payload)
+
+
+@pytest.mark.django_db
+def test_bundle_validation_rejects_reference_to_wrong_resource_type() -> None:
+    examination = _clinical_examination()
+    payload = dump_fhir_r4_bundle(build_patient_examination_fhir_bundle(examination))
+    resources = _resources_by_type(payload)
+    procedure = resources["Procedure"][0]
+    procedure["subject"] = {"reference": f"Procedure/{procedure['id']}"}
+
+    with pytest.raises(ValueError, match="must target Patient, not Procedure"):
+        FhirBundle.model_validate(payload)
+
+
+@pytest.mark.django_db
+def test_bundle_validation_rejects_unknown_nested_resource_field() -> None:
+    examination = _clinical_examination()
+    payload = dump_fhir_r4_bundle(build_patient_examination_fhir_bundle(examination))
+    patient = _resources_by_type(payload)["Patient"][0]
+    patient["unexpected"] = "silently ignored before strict validation"
+
+    with pytest.raises(ValueError, match="unexpected"):
+        FhirBundle.model_validate(payload)
+
+
+@pytest.mark.django_db
 def test_export_fails_closed_and_logs_when_patient_pseudonym_is_missing(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

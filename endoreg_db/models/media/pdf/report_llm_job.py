@@ -3,9 +3,15 @@ from __future__ import annotations
 import uuid as uuid_lib
 from typing import ClassVar, Literal, TYPE_CHECKING, Any
 
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 from lx_dtypes.models.contracts.json_types import JsonNull, JsonValue
+
+from endoreg_db.schemas.report_llm import (
+    dump_report_llm_job_config,
+    dump_report_llm_job_result,
+)
 
 if TYPE_CHECKING:
     pass
@@ -121,6 +127,24 @@ class ReportLlmInferenceJob(models.Model):
     @property
     def is_terminal(self) -> bool:
         return self.status in self.TERMINAL_STATUSES
+
+    def clean(self) -> None:
+        super().clean()
+        errors: dict[str, str] = {}
+        try:
+            self.config = dump_report_llm_job_config(self.config)
+        except ValueError as exc:
+            errors["config"] = str(exc)
+        try:
+            self.result = dump_report_llm_job_result(self.result)
+        except ValueError as exc:
+            errors["result"] = str(exc)
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args: object, **kwargs: object) -> None:
+        self.clean()
+        super().save(*args, **kwargs)
 
     def mark_running(self) -> None:
         self.status = self.STATUS_RUNNING

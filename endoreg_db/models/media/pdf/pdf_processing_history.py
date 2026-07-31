@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import logging
 from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias, Any
+from typing import TYPE_CHECKING, Any, TypeAlias
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
+from lx_dtypes.models.contracts.pdf_redaction import PdfRedactionManifest
+from pydantic import ValidationError as PydanticValidationError
 
 from .raw_pdf import RawPdfFile
 
@@ -49,7 +52,9 @@ class PdfProcessingHistory(models.Model):
         max_length=16,
         choices=SOURCE_TYPE_CHOICES,
     )
-    redaction_manifest: models.JSONField[Any, Any] = models.JSONField(default=dict)
+    redaction_manifest: models.JSONField[dict[str, object], Any] = models.JSONField(
+        default=dict
+    )
     note: models.TextField[Any, Any] = models.TextField(blank=True)
     client_source_sha256: models.CharField[Any, Any] = models.CharField(
         max_length=64, blank=True
@@ -85,6 +90,18 @@ class PdfProcessingHistory(models.Model):
             models.Index(fields=["pdf", "-created_at"]),
             models.Index(fields=["operation"]),
         ]
+
+    def clean(self) -> None:
+        super().clean()
+        try:
+            manifest = PdfRedactionManifest.model_validate(self.redaction_manifest)
+        except PydanticValidationError as exc:
+            raise ValidationError({"redaction_manifest": str(exc)}) from exc
+        self.redaction_manifest = manifest.model_dump(mode="json")
+
+    def save(self, *args: object, **kwargs: object) -> None:
+        self.clean()
+        super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return (

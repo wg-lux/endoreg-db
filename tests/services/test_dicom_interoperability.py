@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 import logging
+from typing import cast
 from uuid import uuid4
 
 import pytest
@@ -202,6 +203,46 @@ def test_import_rejects_original_identifier_fields() -> None:
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "patient_identity_removed",
+        "clean_pixel_data",
+        "series_number",
+        "size_bytes",
+    ],
+)
+def test_import_rejects_coerced_scalar_values(
+    mutation: str,
+) -> None:
+    examination = _examination(f"coerced-{mutation}")
+    payload = _manifest()
+    deidentification = cast(dict[str, object], payload["deidentification"])
+    study = cast(dict[str, object], payload["study"])
+    series = cast(list[dict[str, object]], study["series"])
+    first_series = series[0]
+    instances = cast(list[dict[str, object]], first_series["instances"])
+    first_instance = instances[0]
+    if mutation == "patient_identity_removed":
+        deidentification["patient_identity_removed"] = 1
+    elif mutation == "clean_pixel_data":
+        deidentification["clean_pixel_data"] = "true"
+    elif mutation == "series_number":
+        first_series["series_number"] = "1"
+    else:
+        first_instance["size_bytes"] = "1024"
+
+    with pytest.raises(DicomManifestValidationError):
+        import_dicom_export_manifest(
+            patient_examination=examination,
+            payload=payload,
+            artifact_verifier=_valid_artifact_verifier,
+        )
+
+    assert DicomExportJob.objects.count() == 0
+
+
+@pytest.mark.django_db
 def test_invalid_manifest_emits_associable_structured_rejection(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -225,3 +266,57 @@ def test_invalid_manifest_emits_associable_structured_rejection(
     assert "patient_examination_id_sha256" in event
     assert "export_id_sha256" not in event
     assert isinstance(exc_info.value.__cause__, ValueError)
+
+
+@pytest.mark.django_db
+def test_operational_recovery_retries_after_integrity_failure_with_audit_evidence(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    examination = _examination("operational-recovery")
+    payload = _manifest()
+
+    with caplog.at_level(logging.INFO, logger="endoreg_db.interoperability.dicom"):
+        with pytest.raises(DicomArtifactIntegrityError):
+            import_dicom_export_manifest(
+                patient_examination=examination,
+                payload=payload,
+                artifact_verifier=_invalid_artifact_verifier,
+            )
+
+        assert DicomExportJob.objects.count() == 0
+        assert DicomStudy.objects.count() == 0
+        assert DicomSeries.objects.count() == 0
+        assert DicomInstance.objects.count() == 0
+
+        recovered = import_dicom_export_manifest(
+            patient_examination=examination,
+            payload=payload,
+            artifact_verifier=_valid_artifact_verifier,
+        )
+        replayed = import_dicom_export_manifest(
+            patient_examination=examination,
+            payload=payload,
+            artifact_verifier=_valid_artifact_verifier,
+        )
+
+    assert recovered.created is True
+    assert replayed.created is False
+    assert replayed.export_job.pk == recovered.export_job.pk
+    assert DicomExportJob.objects.count() == 1
+    assert DicomStudy.objects.count() == 1
+    assert DicomSeries.objects.count() == 1
+    assert DicomInstance.objects.count() == 1
+    events = [
+        getattr(record, "structured_event", {})
+        for record in caplog.records
+        if getattr(record, "structured_event", None)
+    ]
+    assert [event["event"] for event in events] == [
+        "dicom.import_rejected",
+        "dicom.import_completed",
+        "dicom.import_replayed",
+    ]
+    assert events[0]["reason"] == "artifact_integrity_failed"
+    assert all("patient_pseudonym" not in event for event in events)
+    assert all("study_instance_uid" not in event for event in events)
+    assert "processed/dicom/2.25.1003.dcm" not in caplog.text

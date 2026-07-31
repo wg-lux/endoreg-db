@@ -8,7 +8,7 @@ from typing import Any, Literal, Protocol, cast
 
 from django.db import transaction
 from django.utils import timezone
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
@@ -18,6 +18,12 @@ from endoreg_db.models.media.pdf.report_llm_job import (
     ReportLlmJobJsonValue,
 )
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+from endoreg_db.schemas.report_llm import (
+    ReportLlmJobConfig,
+    ReportLlmReimportRequestPayload,
+    build_report_llm_job_config,
+    dump_report_llm_reimport_request_payload,
+)
 from endoreg_db.services.jobs.heavy_jobs import (
     HeavyJobKind,
     ensure_secure_transport_for_job_kind,
@@ -82,15 +88,6 @@ class _UploadJobLike(Protocol):
     def mark_completed(self, sensitive_meta: SensitiveMeta | None = None) -> None: ...
 
 
-class ReportLlmJobConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    kind: Literal["report_llm_reimport", "report_llm_import"]
-    queue: str
-    retry: bool = True
-    request_payload: dict[str, JsonValue] = Field(default_factory=dict)
-
-
 class ReportLlmDispatchResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -142,25 +139,6 @@ def get_report_llm_dispatch_delay_seconds() -> int:
             REPORT_LLM_DISPATCH_DELAY_SECONDS_DEFAULT,
         ),
     )
-
-
-def _json_safe(value: Any) -> JsonValue:
-    if value is None or isinstance(value, (str, int, float, bool)):
-        return value
-    if isinstance(value, dict):
-        mapping = cast(dict[object, object], value)
-        return {str(key): _json_safe(item) for key, item in mapping.items()}
-    if isinstance(value, (list, tuple)):
-        sequence = cast(list[object] | tuple[object, ...], value)
-        return [_json_safe(item) for item in sequence]
-    return str(value)
-
-
-def _json_safe_dict(payload: Any) -> ReportLlmJobJsonObject:
-    if not hasattr(payload, "items"):
-        return {}
-    mapping = cast(dict[object, object], payload)
-    return {str(key): _json_safe(value) for key, value in mapping.items()}
 
 
 def _report_llm_poll_url(*, report_id: int, job_id: str) -> str:
@@ -217,15 +195,12 @@ def _config_from_payload(
     queue: str,
     operation: ReportLlmOperation,
 ) -> ReportLlmJobConfig:
-    safe_payload = _json_safe_dict(payload)
-    retry = safe_payload.get("retry")
-    return ReportLlmJobConfig(
-        kind=operation,
+    if not isinstance(payload, dict):
+        raise ValueError("Report LLM request payload must be a JSON object.")
+    return build_report_llm_job_config(
+        cast(dict[str, Any], payload),
         queue=queue,
-        retry=True
-        if retry is None
-        else str(retry).strip().lower() not in {"0", "false", "no"},
-        request_payload=safe_payload,
+        operation=operation,
     )
 
 
@@ -618,14 +593,18 @@ def _run_report_llm_import_job(job_id: str) -> bool:
 def dispatch_report_llm_reimport(
     *,
     report_id: int,
-    payload: Any | None = None,
+    payload: ReportLlmReimportRequestPayload,
 ) -> ReportLlmDispatchResult:
     mode = get_report_llm_job_mode()
     task_id = str(uuid.uuid4())
     queue = queue_for_job_kind(HeavyJobKind.REPORT_LLM_REIMPORT)
     operation = REPORT_LLM_REIMPORT_OPERATION
     pdf = RawPdfFile.objects.get(pk=report_id)
-    config = _config_from_payload(payload or {}, queue=queue, operation=operation)
+    config = _config_from_payload(
+        dump_report_llm_reimport_request_payload(payload),
+        queue=queue,
+        operation=operation,
+    )
     job, reservation_status = _reserve_report_llm_job(
         pdf=pdf,
         task_id=task_id,

@@ -25,6 +25,7 @@ from endoreg_db.models.media.anonymization_metrics import AnonymizationValidatio
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+from endoreg_db.schemas.anonymization import normalize_direct_identifier_tombstone
 from endoreg_db.services.anonymization_metrics import (
     MAX_PHI_REGION_MATCH_ANNOTATIONS,
     PHI_REGION_ANNOTATOR,
@@ -789,12 +790,12 @@ def _mark_sensitive_meta_policy(
 ) -> None:
     SensitiveMeta.objects.filter(pk=sensitive_meta.pk).update(
         direct_identifier_policy=policy.value,
-        direct_identifier_tombstone={
+        direct_identifier_tombstone=normalize_direct_identifier_tombstone({
             "schema_version": "1.0",
             "policy": policy.value,
             "status": status,
             "direct_values_retained": True,
-        },
+        }),
     )
 
 
@@ -825,7 +826,7 @@ def _clear_sensitive_meta_direct_identifiers(
         {
             "direct_identifiers_cleared_at": cleared_at,
             "direct_identifier_policy": policy.value,
-            "direct_identifier_tombstone": {
+            "direct_identifier_tombstone": normalize_direct_identifier_tombstone({
                 "schema_version": "1.0",
                 "policy": policy.value,
                 "cleared_at": cleared_at.isoformat(),
@@ -837,7 +838,7 @@ def _clear_sensitive_meta_direct_identifiers(
                         _SensitiveMetaIdentifierRecord, sensitive_meta
                     ).examination_hash
                 ),
-            },
+            }),
         }
     )
     if updates:

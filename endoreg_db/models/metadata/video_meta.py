@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Protocol, cast, Any
 
 # import endoreg_center_id from django settings
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 
 # check if endoreg_center_id is set
@@ -16,6 +17,7 @@ from lx_dtypes.models.contracts.ffmpeg_metadata import (
     FfmpegMetaPayload,
     FfmpegProbeDataPayload,
 )
+from pydantic import ValidationError as PydanticValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -312,6 +314,20 @@ class FFMpegMeta(models.Model):
         null=True, blank=True
     )
     raw_probe_data: models.JSONField[Any, Any] = models.JSONField(null=True, blank=True)
+
+    def clean(self) -> None:
+        super().clean()
+        if self.raw_probe_data is None:
+            return
+        try:
+            probe_payload = FfmpegProbeDataPayload.model_validate(self.raw_probe_data)
+        except PydanticValidationError as exc:
+            raise ValidationError({"raw_probe_data": str(exc)}) from exc
+        self.raw_probe_data = probe_payload.model_dump(mode="json")
+
+    def save(self, *args: object, **kwargs: object) -> None:
+        self.clean()
+        super().save(*args, **kwargs)
 
     @property
     def fps(self) -> float | None:

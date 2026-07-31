@@ -2,7 +2,10 @@ from __future__ import annotations
 from typing import Any
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
+
+from endoreg_db.schemas import validate_operation_log_meta
 
 
 class OperationLog(models.Model):
@@ -75,3 +78,14 @@ class OperationLog(models.Model):
 
     def __str__(self) -> str:
         return f"[{self.created_at.isoformat()}] {self.action} by {self.actor_username or 'unknown'}"
+
+    def clean(self) -> None:
+        super().clean()
+        try:
+            self.meta = validate_operation_log_meta(self.meta)
+        except ValueError as exc:
+            raise ValidationError({"meta": str(exc)}) from exc
+
+    def save(self, *args: object, **kwargs: object) -> None:
+        self.clean()
+        super().save(*args, **kwargs)

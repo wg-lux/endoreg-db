@@ -13,12 +13,15 @@ from lx_dtypes.models.contracts.hub_transfer import (
     HubTransferSegmentProvenancePayload,
     HubTransferVideoSegmentPayload,
 )
+from lx_dtypes.models.contracts.json_types import JsonValue
+from lx_dtypes.models.contracts.lab_value import LabValueNormalRangePayload
 from lx_dtypes.models.ledger.p_examination.Pydantic import PExamination
 from lx_dtypes.serialization import serialize_path
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    TypeAdapter,
     ValidationError,
     field_validator,
     model_validator,
@@ -93,6 +96,73 @@ def _validate_model_payload(
     return model.model_dump(mode="json", exclude_none=True)
 
 
+_JSON_VALUE_ADAPTER: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
+
+
+def validate_lab_value_normal_range(
+    value: Any, *, allow_none: bool
+) -> dict[str, Any] | None:
+    """Validate and canonicalize a persisted lab-value normal range."""
+    if value is None and allow_none:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("normal range must be a JSON object")
+    _reject_non_finite_json(value, field_name="normal range")
+    # JSON normal ranges historically use integer bounds; normalize those
+    # semantically numeric values before applying the strict shared contract.
+    normalized_input: dict[str, Any] = {}
+    for key, item in cast(dict[object, Any], value).items():
+        if not isinstance(key, str):
+            raise ValueError("normal range keys must be strings")
+        normalized_input[key] = item
+    for key in ("min", "max"):
+        bound = normalized_input.get(key)
+        if isinstance(bound, int) and not isinstance(bound, bool):
+            normalized_input[key] = float(bound)
+    for gender in ("male", "female", "other"):
+        band = normalized_input.get(gender)
+        if isinstance(band, dict):
+            band_input: dict[str, Any] = {}
+            for key, item in cast(dict[object, Any], band).items():
+                if not isinstance(key, str):
+                    raise ValueError("normal range keys must be strings")
+                band_input[key] = item
+            band = band_input
+            for key in ("min", "max"):
+                bound = band.get(key)
+                if isinstance(bound, int) and not isinstance(bound, bool):
+                    band[key] = float(bound)
+            normalized_input[gender] = band
+    try:
+        payload = LabValueNormalRangePayload.model_validate(normalized_input)
+    except ValidationError as exc:
+        raise ValueError(str(exc)) from exc
+    return payload.model_dump(mode="json", exclude_none=True)
+
+
+def _reject_non_finite_json(value: Any, *, field_name: str) -> None:
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ValueError(f"{field_name} does not allow NaN or infinite floats")
+    if isinstance(value, list):
+        for item in cast(list[Any], value):
+            _reject_non_finite_json(item, field_name=field_name)
+    elif isinstance(value, dict):
+        for key, item in cast(dict[Any, Any], value).items():
+            if not isinstance(key, str):
+                raise ValueError(f"{field_name} keys must be strings")
+            _reject_non_finite_json(item, field_name=field_name)
+
+
+def validate_patient_medication_dosage(value: Any) -> JsonValue:
+    """Validate dosage against the shared strict recursive JSON contract."""
+    try:
+        normalized = _JSON_VALUE_ADAPTER.validate_python(value, strict=True)
+    except ValidationError as exc:
+        raise ValueError(str(exc)) from exc
+    _reject_non_finite_json(normalized, field_name="dosage")
+    return normalized
+
+
 def _non_empty_string(value: str | None) -> str | None:
     if value is None:
         return None
@@ -142,6 +212,62 @@ class CaseResolutionMetaPayload(BaseModel):
             allowed = ", ".join(sorted(_CASE_RESOLUTION_ACTIONS))
             raise ValueError(f"last_action must be one of: {allowed}")
         return action
+
+
+class MediaOperationLeaseMetadataPayload(BaseModel):
+    """Validated metadata persisted on a media operation lease."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    file_type: str | None = None
+    source: Literal["segment_validation"] | None = None
+
+    @field_validator("file_type", mode="before")
+    @classmethod
+    def _validate_file_type(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("file_type must be a non-empty string")
+        return value
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_payload(cls, value: Any) -> Any:
+        if value is None:
+            return {}
+        if isinstance(value, dict):
+            return _json_compatible_mapping(
+                cast(dict[Any, Any], value), field_name="metadata"
+            )
+        return value
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _coerce_json_values(cls, value: Any) -> Any:
+        return _json_compatible_value(value, field_name="metadata")
+
+
+class OperationLogMetaPayload(BaseModel):
+    """Strict JSON-object boundary for extensible operation-log metadata."""
+
+    model_config = ConfigDict(extra="allow", str_strip_whitespace=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_payload(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, dict):
+            return _json_compatible_mapping(
+                cast(dict[Any, Any], value), field_name="meta"
+            )
+        return value
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _coerce_json_values(cls, value: Any) -> Any:
+        return _json_compatible_value(value, field_name="meta")
 
 
 class VideoFileMetaPayload(BaseModel):
@@ -671,8 +797,29 @@ def validate_video_file_meta_payload(value: Any) -> dict[str, Any] | None:
     return _validate_model_payload(VideoFileMetaPayload, value, field_name="meta")
 
 
+def validate_media_operation_lease_metadata(value: Any) -> dict[str, Any]:
+    return (
+        _validate_model_payload(
+            MediaOperationLeaseMetadataPayload,
+            value,
+            field_name="metadata",
+            none_as_empty=True,
+        )
+        or {}
+    )
+
+
+def validate_operation_log_meta(value: Any) -> dict[str, Any] | None:
+    return _validate_model_payload(OperationLogMetaPayload, value, field_name="meta")
+
+
 def validate_raw_pdf_meta_payload(value: Any) -> dict[str, Any] | None:
     return _validate_model_payload(RawPdfMetaPayload, value, field_name="raw_meta")
+
+
+def validate_report_file_meta_payload(value: Any) -> dict[str, Any] | None:
+    """Validate report-file metadata against the report persistence boundary."""
+    return _validate_model_payload(RawPdfMetaPayload, value, field_name="meta")
 
 
 def validate_dtypes_p_examination_payload(value: Any) -> dict[str, Any]:
@@ -706,6 +853,23 @@ def validate_ai_model_training_request_payload(value: Any) -> dict[str, Any]:
     )
 
 
+def validate_ai_model_training_command_kwargs(value: Any) -> dict[str, Any]:
+    """Validate the dynamic options persisted for a model-training command.
+
+    Command options vary by management command, so this boundary cannot use a
+    closed schema.  It still guarantees a JSON object with string keys and
+    JSON-compatible, finite values before persistence.
+    """
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError("command_kwargs must be a JSON object")
+    return _json_compatible_mapping(
+        cast(dict[Any, Any], value),
+        field_name="command_kwargs",
+    )
+
+
 def validate_ai_model_training_result_payload(value: Any) -> dict[str, Any] | None:
     return _validate_model_payload(
         AIModelTrainingResultPayload,
@@ -728,6 +892,8 @@ __all__ = [
     "AIModelTrainingArtifactPathsPayload",
     "AIModelTrainingRequestPayload",
     "AIModelTrainingResultPayload",
+    "MediaOperationLeaseMetadataPayload",
+    "OperationLogMetaPayload",
     "RawPdfMetaPayload",
     "TransferFrameAnnotationRow",
     "TransferPatientExaminationReportRow",
@@ -736,10 +902,14 @@ __all__ = [
     "TransferVideoResourceRows",
     "VideoFileMetaPayload",
     "validate_ai_model_training_artifact_paths",
+    "validate_ai_model_training_command_kwargs",
     "validate_ai_model_training_request_payload",
     "validate_ai_model_training_result_payload",
     "validate_dtypes_p_examination_payload",
+    "validate_media_operation_lease_metadata",
+    "validate_operation_log_meta",
     "validate_raw_pdf_meta_payload",
+    "validate_report_file_meta_payload",
     "validate_transfer_processing_snapshot",
     "validate_transfer_resource_rows",
     "validate_video_file_meta_payload",

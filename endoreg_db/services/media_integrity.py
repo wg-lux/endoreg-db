@@ -15,6 +15,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.db.models.fields.files import FieldFile
 from django.utils import timezone
+from lx_dtypes.models.contracts.ffmpeg_metadata import FfmpegProbeDataPayload
 
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS
 from endoreg_db.models.hub.upload_job import UploadJob
@@ -1321,7 +1322,10 @@ def _float_or_none(value: Any) -> float | None:
 
 
 def _create_ffmpeg_meta_from_probe_data(probe_data: dict[str, Any]) -> FFMpegMeta:
-    streams = probe_data.get("streams")
+    normalized_probe_data = FfmpegProbeDataPayload.model_validate(
+        probe_data, extra="ignore"
+    ).model_dump(mode="json")
+    streams = normalized_probe_data.get("streams")
     if not isinstance(streams, list):
         raise RuntimeError("Cannot create FFMpegMeta without stream metadata")
     video_stream = _first_video_stream(cast(list[Any], streams))
@@ -1329,7 +1333,7 @@ def _create_ffmpeg_meta_from_probe_data(probe_data: dict[str, Any]) -> FFMpegMet
         raise RuntimeError("Cannot create FFMpegMeta without a video stream")
 
     duration_value = video_stream.get("duration")
-    format_value = probe_data.get("format")
+    format_value = normalized_probe_data.get("format")
     if duration_value is None and isinstance(format_value, dict):
         duration_value = cast(dict[str, Any], format_value).get("duration")
 
@@ -1351,7 +1355,7 @@ def _create_ffmpeg_meta_from_probe_data(probe_data: dict[str, Any]) -> FFMpegMet
         codec_name=video_stream.get("codec_name"),
         pixel_format=video_stream.get("pix_fmt"),
         bit_rate=_int_or_none(bit_rate_value),
-        raw_probe_data=probe_data,
+        raw_probe_data=normalized_probe_data,
     )
 
 

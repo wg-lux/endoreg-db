@@ -398,7 +398,9 @@ class TestSensitiveMetadataEndpoints:
         assert payload["case_resolution"]["is_explicitly_resolved"] is True
         assert video.examination_id == target_patient_examination.pk
         assert video.patient_id == target_patient.pk
-        assert target_patient_examination.video_id == video.pk
+        assert list(
+            target_patient_examination.video_files.values_list("id", flat=True)
+        ) == [video.pk]
 
     def test_post_pdf_case_resolution_create_new(
         self, client: DjangoClient, pdf: RawPdfFile
@@ -573,17 +575,18 @@ class TestSensitiveMetadataEndpoints:
         assert read_payload["is_deferred"] is True
         assert read_payload["linked_patient_examination_id"] is None
 
-    def test_post_video_case_resolution_attach_rejects_conflicting_primary_video(
+    def test_post_video_case_resolution_attach_keeps_existing_video(
         self, client: DjangoClient, video: VideoFile, sensitive_meta: SensitiveMeta
     ) -> None:
+        occupied_patient_examination = PatientExamination.objects.create(
+            patient=self._require_sensitive_meta(sensitive_meta).pseudo_patient,
+        )
         other_video = VideoFile.objects.create(
             center=video.center,
             video_hash=f"video-sm-{uuid4().hex}",
             original_file_name="other-video.mp4",
-        )
-        occupied_patient_examination = PatientExamination.objects.create(
             patient=self._require_sensitive_meta(sensitive_meta).pseudo_patient,
-            video=other_video,
+            examination=occupied_patient_examination,
         )
 
         response = client.post(
@@ -595,9 +598,12 @@ class TestSensitiveMetadataEndpoints:
             content_type="application/json",
         )
 
-        assert response.status_code == 400, response.content
-        payload = response.json()
-        assert payload["error"] == "Case resolution failed"
+        assert response.status_code == 200, response.content
+        video.refresh_from_db()
+        assert video.examination_id == occupied_patient_examination.pk
+        assert set(
+            occupied_patient_examination.video_files.values_list("id", flat=True)
+        ) == {video.pk, other_video.pk}
 
     def test_post_video_case_resolution_attach_has_no_report_side_effect(
         self, client: DjangoClient, video: VideoFile

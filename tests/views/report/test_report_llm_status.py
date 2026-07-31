@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from unittest.mock import patch
 from uuid import uuid4
 
 from django.contrib.auth.models import User
@@ -58,6 +59,91 @@ class ReportLlmStatusScopeTests(TestCase):
         response = self.client.post(f"/api/media/pdfs/{self.report.pk}/reimport/")
 
         assert response.status_code == 404, response.content
+
+    def test_report_reimport_rejects_unknown_fields_before_dispatch(self):
+        self._login_center_user(self.center_a)
+
+        with patch(
+            "endoreg_db.views.report.reimport.dispatch_report_llm_reimport"
+        ) as dispatch:
+            response = self.client.post(
+                f"/api/media/pdfs/{self.report.pk}/reimport/",
+                data={"unexpected": True},
+                content_type="application/json",
+            )
+
+        assert response.status_code == 400, response.content
+        assert response.json()["error"] == "Invalid report re-import payload."
+        dispatch.assert_not_called()
+
+    def test_report_reimport_rejects_non_object_body_before_dispatch(self):
+        self._login_center_user(self.center_a)
+
+        with patch(
+            "endoreg_db.views.report.reimport.dispatch_report_llm_reimport"
+        ) as dispatch:
+            response = self.client.post(
+                f"/api/media/pdfs/{self.report.pk}/reimport/",
+                data=[{"retry": True}],
+                content_type="application/json",
+            )
+
+        assert response.status_code == 400, response.content
+        dispatch.assert_not_called()
+
+    def test_report_reimport_rejects_body_ids_before_dispatch(self):
+        self._login_center_user(self.center_a)
+
+        for body_id in ("report_id", "pdf_id"):
+            with self.subTest(body_id=body_id), patch(
+                "endoreg_db.views.report.reimport.dispatch_report_llm_reimport"
+            ) as dispatch:
+                response = self.client.post(
+                    f"/api/media/pdfs/{self.report.pk}/reimport/",
+                    data={body_id: self.report.pk},
+                    content_type="application/json",
+                )
+
+            assert response.status_code == 400, response.content
+            dispatch.assert_not_called()
+
+    def test_report_reimport_requires_a_strict_boolean_retry(self):
+        self._login_center_user(self.center_a)
+
+        for retry in ("true", "false", 1, 0):
+            with self.subTest(retry=retry), patch(
+                "endoreg_db.views.report.reimport.dispatch_report_llm_reimport"
+            ) as dispatch:
+                response = self.client.post(
+                    f"/api/media/pdfs/{self.report.pk}/reimport/",
+                    data={"retry": retry},
+                    content_type="application/json",
+                )
+
+            assert response.status_code == 400, response.content
+            dispatch.assert_not_called()
+
+    def test_report_reimport_passes_only_the_typed_canonical_payload(self):
+        self._login_center_user(self.center_a)
+
+        with patch(
+            "endoreg_db.views.report.reimport.dispatch_report_llm_reimport"
+        ) as dispatch:
+            dispatch.return_value.to_dict.return_value = {
+                "status": "queued",
+                "operation": "report_llm_reimport",
+            }
+            dispatch.return_value.status = "queued"
+            response = self.client.post(
+                f"/api/media/pdfs/{self.report.pk}/reimport/",
+                data={"retry": False},
+                content_type="application/json",
+            )
+
+        assert response.status_code == 202, response.content
+        payload = dispatch.call_args.kwargs["payload"]
+        assert payload.__class__.__name__ == "ReportLlmReimportRequestPayload"
+        assert payload.model_dump(mode="json") == {"retry": False}
 
     def test_report_llm_job_status_returns_404_for_cross_center_access(self):
         self._login_center_user(self.center_b)

@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
+from uuid import UUID
+
+import pytest
 
 from endoreg_db.services.jobs import model_training_jobs as training
 
@@ -69,6 +74,43 @@ def test_model_training_artifact_paths_ignores_invalid_artifact_block() -> None:
         {"training_result": {"artifacts": [{"kind": None, "path": 7}, None, 5]}}
     )
     assert artifact_paths == {}
+
+
+def test_direct_training_run_update_validates_before_querying() -> None:
+    run_uuid = UUID("550e8400-e29b-41d4-a716-446655440000")
+
+    with patch.object(training.AIModelTrainingRun.objects, "filter") as filter_mock:
+        with pytest.raises(ValueError, match="does not allow NaN"):
+            training._update_model_training_run(
+                run_uuid,
+                result={"loss": float("nan")},
+            )
+
+    filter_mock.assert_not_called()
+
+
+def test_direct_training_run_update_canonicalizes_all_json_fields() -> None:
+    run_uuid = UUID("550e8400-e29b-41d4-a716-446655440000")
+    completed_at = datetime(2026, 7, 31, 8, 30, tzinfo=timezone.utc)
+
+    with patch.object(training.AIModelTrainingRun.objects, "filter") as filter_mock:
+        filter_mock.return_value.update.return_value = 1
+        updated = training._update_model_training_run(
+            run_uuid,
+            request_payload={"training_target": "image_multilabel"},
+            command_kwargs={"output_dir": Path("/tmp/training")},
+            result={"completed_at": completed_at},
+            artifact_paths={"model_path": Path("/tmp/training/model.pt")},
+        )
+
+    assert updated == 1
+    filter_mock.assert_called_once_with(run_id=run_uuid)
+    filter_mock.return_value.update.assert_called_once_with(
+        request_payload={"training_target": "image_multilabel"},
+        command_kwargs={"output_dir": "/tmp/training"},
+        result={"completed_at": "2026-07-31T08:30:00+00:00"},
+        artifact_paths={"model_path": "/tmp/training/model.pt"},
+    )
 
 
 def test_expected_frame_relative_path_zero_padded() -> None:

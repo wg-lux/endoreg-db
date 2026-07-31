@@ -743,16 +743,18 @@ def test_patient_finding_classification_save_populates_choice_defaults() -> None
         _create_dtypes_exam_graph()
     )
     choice.subcategories = {
-        "location": {"required": True, "choices": ["cecum"], "value": "cecum"}
+        "location": {"required": True, "choices": ["cecum"], "default": "cecum"}
     }
     choice.numerical_descriptors = {
         "size": {
+            "unit": "mm",
+            "required": True,
             "min": 0.0,
             "max": 10.0,
             "distribution": "normal",
             "mean": 5.0,
             "std": 1.0,
-            "value": 4.0,
+            "default": 4.0,
         }
     }
     choice.save(update_fields=["subcategories", "numerical_descriptors"])
@@ -767,10 +769,19 @@ def test_patient_finding_classification_save_populates_choice_defaults() -> None
         classification_choice=choice,
     )
 
-    assert patient_finding_classification.subcategories == choice.subcategories
-    assert patient_finding_classification.numerical_descriptors == (
-        choice.numerical_descriptors
-    )
+    assert patient_finding_classification.subcategories == {
+        "location": {"required": True, "choices": ["cecum"], "value": "cecum"}
+    }
+    assert patient_finding_classification.numerical_descriptors == {
+        "size": {
+            "min": 0.0,
+            "max": 10.0,
+            "distribution": "normal",
+            "mean": 5.0,
+            "std": 1.0,
+            "value": 4.0,
+        }
+    }
 
 
 def test_report_submission_refreshes_dtypes_record_with_interventions() -> None:

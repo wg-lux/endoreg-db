@@ -146,6 +146,52 @@ class PreanonymizedWatcherIngestTests(TestCase):
         assert report.get_or_create_state().anonymization_validated is True
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="local_study_server")
+    def test_local_study_server_unknown_sidecar_field_is_quarantined(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir_name:
+            temp_dir = Path(temp_dir_name)
+            drop_dir = temp_dir / "preanonymized_import"
+            quarantine_dir = temp_dir / "quarantine"
+            drop_dir.mkdir()
+            quarantine_dir.mkdir()
+            report_path = drop_dir / "incoming.pdf"
+            report_bytes = b"%PDF-1.4\n%%EOF\n"
+            report_path.write_bytes(report_bytes)
+            sidecar_path = report_path.with_suffix(".json")
+            sidecar_path.write_text(
+                json.dumps(
+                    {
+                        "center_key": self.center.center_key,
+                        "source_system": "lx-annotate",
+                        "file_sha256": hashlib.sha256(report_bytes).hexdigest(),
+                        "human_anonymization_validated": True,
+                        "validated_by": "operator-1",
+                        "validated_at": "2026-05-06T12:00:00+02:00",
+                        "unexpected_confirmation": True,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with (
+                patch(
+                    "endoreg_db.services.hub.ingest.path_utils.WATCHER_PREANONYMIZED_DROP_DIR",
+                    drop_dir,
+                ),
+                patch(
+                    "endoreg_db.services.hub.ingest._quarantine_dir",
+                    return_value=quarantine_dir,
+                ),
+                pytest.raises(ValueError, match="Invalid preanonymized sidecar"),
+            ):
+                process_preanonymized_watcher_file(file_path=report_path)
+
+            assert not report_path.exists()
+            assert not sidecar_path.exists()
+            assert (quarantine_dir / "incoming.pdf").exists()
+            assert (quarantine_dir / "incoming.json").exists()
+            assert UploadJob.objects.count() == 0
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="local_study_server")
     def test_local_study_server_hash_mismatch_quarantines_media_and_sidecar(
         self,
     ) -> None:

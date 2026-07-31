@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import warnings
 from numbers import Real
 from typing import TYPE_CHECKING, cast, Any
 
 from django.db import models
+from django.core.exceptions import ValidationError
 from lx_dtypes.models.contracts.lab_value import (
     LabValueNormalRangeBandPayload,
     LabValueNormalRangePayload,
 )
-from pydantic import BaseModel, ConfigDict
+from endoreg_db.schemas import validate_lab_value_normal_range
 
 if TYPE_CHECKING:
     from endoreg_db.models.administration.person.patient.patient import Patient
@@ -285,7 +287,8 @@ def _normal_value_without_distribution(
     return None
 
 
-class CommonLabValues(BaseModel):
+@dataclass(frozen=True, slots=True)
+class CommonLabValues:
     """Structured lookup for common laboratory values."""
 
     hb: "LabValue"
@@ -297,8 +300,6 @@ class CommonLabValues(BaseModel):
     glc: "LabValue"
     inr: "LabValue"
     crp: "LabValue"
-
-    model_config = ConfigDict(from_attributes=True, arbitrary_types_allowed=True)
 
 
 class LabValueManager(models.Manager["LabValue"]):
@@ -366,6 +367,19 @@ class LabValue(models.Model):
         help_text="Factor for adjusting bounds when generating increased/decreased values, e.g., 0.1 for 10%.",
     )
     objects = LabValueManager()
+
+    def clean(self) -> None:
+        super().clean()
+        try:
+            self.default_normal_range = validate_lab_value_normal_range(
+                self.default_normal_range, allow_none=True
+            )
+        except ValueError as exc:
+            raise ValidationError({"default_normal_range": str(exc)}) from exc
+
+    def save(self, *args: object, **kwargs: object) -> None:
+        self.clean()
+        super().save(*args, **kwargs)
 
     @classmethod
     def get_common_lab_values(cls) -> CommonLabValues:

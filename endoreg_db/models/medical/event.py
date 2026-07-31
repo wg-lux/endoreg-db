@@ -1,7 +1,13 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
+from django.core.exceptions import ValidationError
 from django.db import models
+
+from endoreg_db.schemas.classification_choice import (
+    ClassificationChoiceJSONValidationError,
+    validate_classification_choice_json_fields,
+)
 
 if TYPE_CHECKING:
     from endoreg_db.models import PatientEvent
@@ -140,6 +146,17 @@ class EventClassificationChoice(models.Model):
     )
 
     objects = EventClassificationChoiceManager()
+
+    def clean(self) -> None:
+        super().clean()
+        try:
+            validate_classification_choice_json_fields(self)
+        except ClassificationChoiceJSONValidationError as exc:
+            raise ValidationError({exc.field_name: str(exc)}) from exc
+
+    def save(self, *args: object, **kwargs: object) -> None:
+        self.clean()
+        super().save(*args, **kwargs)
 
     @property
     def event(self) -> Event:

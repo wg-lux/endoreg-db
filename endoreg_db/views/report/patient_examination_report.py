@@ -89,13 +89,6 @@ def _patient_examination_pk(patient_examination: PatientExamination) -> int:
     return model_pk(patient_examination)
 
 
-def _patient_examination_video_id(
-    patient_examination: PatientExamination,
-) -> int | None:
-    value = getattr(patient_examination, "video_id", None)
-    return int(value) if isinstance(value, int) else None
-
-
 def _segment_pk(segment: LabelVideoSegment) -> int:
     return model_pk(segment)
 
@@ -390,10 +383,6 @@ class PatientExaminationReportApi:
         segment_filter = Q(
             video_file__examination_id=_patient_examination_pk(patient_examination)
         )
-
-        video_id = _patient_examination_video_id(patient_examination)
-        if video_id is not None:
-            segment_filter |= Q(video_file_id=video_id)
 
         sensitive_meta_ids = self._patient_examination_sensitive_meta_ids(
             patient_examination

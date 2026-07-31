@@ -11,6 +11,11 @@ from rest_framework.response import Response
 from endoreg_db.helpers.model_ids import model_pk
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.hub.network_node import NetworkNode
+from endoreg_db.schemas import (
+    NetworkNodeResponsePayload,
+    NetworkNodeRole,
+    dump_network_node_response_payload,
+)
 from endoreg_db.services.hub.network_nodes import (
     NetworkNodeValidationError,
     create_network_node,
@@ -20,44 +25,41 @@ from endoreg_db.services.hub.network_nodes import (
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 
-def _request_payload(data: object) -> dict[str, Any]:
-    return cast(dict[str, Any], data) if isinstance(data, dict) else {}
-
-
 def _network_node_payload(node: NetworkNode) -> dict[str, Any]:
     owning_center = cast(Center | None, getattr(node, "owning_center", None))
     owning_center_id = model_pk(owning_center) if owning_center is not None else None
     node_role = cast(str, getattr(node, "role"))
-    try:
-        role_label = str(NetworkNode.Role(node_role).label)
-    except ValueError:
-        role_label = node_role
+    role = NetworkNodeRole(node_role)
+    role_label = str(NetworkNode.Role(node_role).label)
     created_at = cast(datetime | None, getattr(node, "created_at", None))
     updated_at = cast(datetime | None, getattr(node, "updated_at", None))
 
-    return {
-        "id": model_pk(node),
-        "node_key": cast(str, getattr(node, "node_key", "")),
-        "display_name": cast(str, getattr(node, "display_name", "")),
-        "role": node_role,
-        "role_label": role_label,
-        "base_url": cast(str, getattr(node, "base_url", "")),
-        "is_active": cast(bool, getattr(node, "is_active", False)),
-        "owning_center_id": owning_center_id,
-        "owning_center_key": (
+    payload = NetworkNodeResponsePayload(
+        id=model_pk(node),
+        node_key=cast(str, getattr(node, "node_key", "")),
+        display_name=cast(str, getattr(node, "display_name", "")),
+        role=role,
+        role_label=role_label,
+        base_url=cast(str, getattr(node, "base_url", "")),
+        is_active=cast(bool, getattr(node, "is_active", False)),
+        owning_center_id=owning_center_id,
+        owning_center_key=(
             cast(str, getattr(owning_center, "center_key", ""))
             if owning_center is not None
             else None
         ),
-        "owning_center_name": (
+        owning_center_name=(
             cast(str, getattr(owning_center, "name", ""))
             if owning_center is not None
             else None
         ),
-        "has_shared_secret": bool(cast(str, getattr(node, "shared_secret_hash", ""))),
-        "created_at": created_at.isoformat() if created_at is not None else None,
-        "updated_at": updated_at.isoformat() if updated_at is not None else None,
-    }
+        has_shared_secret=bool(
+            cast(str, getattr(node, "shared_secret_hash", ""))
+        ),
+        created_at=created_at,
+        updated_at=updated_at,
+    )
+    return dump_network_node_response_payload(payload)
 
 
 def _validation_error_response(exc: NetworkNodeValidationError) -> Response:
@@ -69,7 +71,7 @@ def _validation_error_response(exc: NetworkNodeValidationError) -> Response:
 
 def _create_network_node_response(data: object) -> Response:
     try:
-        node = create_network_node(_request_payload(data))
+        node = create_network_node(data)
     except NetworkNodeValidationError as exc:
         return _validation_error_response(exc)
     return Response(_network_node_payload(node), status=status.HTTP_201_CREATED)
@@ -77,7 +79,7 @@ def _create_network_node_response(data: object) -> Response:
 
 def _update_network_node_response(node: NetworkNode, data: object) -> Response:
     try:
-        updated_node = update_network_node(node, _request_payload(data))
+        updated_node = update_network_node(node, data)
     except NetworkNodeValidationError as exc:
         return _validation_error_response(exc)
     return Response(

@@ -4,6 +4,7 @@ import numpy as np
 from django.db import models
 
 from .base_value_distribution import BaseValueDistribution
+from endoreg_db.schemas.anonymization import normalize_categorical_distribution
 
 
 class MultipleCategoricalValueDistributionManager(
@@ -32,6 +33,14 @@ class MultipleCategoricalValueDistribution(BaseValueDistribution):
     count_std_dev: models.FloatField[float | None, Any] = models.FloatField(
         null=True, blank=True
     )
+
+    def clean(self) -> None:
+        super().clean()
+        self.categories = normalize_categorical_distribution(self.categories)
+
+    def save(self, *args: object, **kwargs: object) -> None:
+        self.clean()
+        super().save(*args, **kwargs)
 
     @property
     def count_mean_safe(self) -> float:

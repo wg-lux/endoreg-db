@@ -10,6 +10,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 
 from endoreg_db.models import Center, RawPdfFile, ReportLlmInferenceJob, UploadJob
+from endoreg_db.schemas.report_llm import ReportLlmReimportRequestPayload
 from endoreg_db.services.jobs.report_llm_jobs import (
     dispatch_report_llm_import,
     dispatch_report_llm_reimport,
@@ -65,7 +66,10 @@ def test_report_reimport_dispatches_to_llm_queue(
         apply_async,
     )
 
-    result = dispatch_report_llm_reimport(report_id=report.pk, payload={})
+    result = dispatch_report_llm_reimport(
+        report_id=report.pk,
+        payload=ReportLlmReimportRequestPayload(retry=False),
+    )
 
     assert result.status == "queued"
     assert result.operation == ReportLlmInferenceJob.OPERATION_REIMPORT
@@ -76,6 +80,8 @@ def test_report_reimport_dispatches_to_llm_queue(
     captured_kwargs = cast(dict[str, object], captured["kwargs"])
     assert captured_kwargs["queue"] == "llm_inference"
     assert captured_kwargs["routing_key"] == "llm_inference"
+    job = ReportLlmInferenceJob.objects.get(pdf=report)
+    assert job.config["request_payload"] == {"retry": False}
 
 
 def test_report_reimport_duplicate_is_idempotent(
@@ -92,7 +98,10 @@ def test_report_reimport_duplicate_is_idempotent(
     )
     monkeypatch.setenv("REPORT_LLM_JOB_MODE", "celery")
 
-    result = dispatch_report_llm_reimport(report_id=report.pk, payload={})
+    result = dispatch_report_llm_reimport(
+        report_id=report.pk,
+        payload=ReportLlmReimportRequestPayload(),
+    )
 
     assert result.status == "already_queued"
     assert result.task_id == existing.task_id
@@ -124,7 +133,10 @@ def test_report_reimport_recovers_stale_job(
         run_reimport,
     )
 
-    result = dispatch_report_llm_reimport(report_id=report.pk, payload={})
+    result = dispatch_report_llm_reimport(
+        report_id=report.pk,
+        payload=ReportLlmReimportRequestPayload(),
+    )
 
     existing.refresh_from_db()
     assert existing.status == ReportLlmInferenceJob.STATUS_FAILURE

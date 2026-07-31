@@ -3,7 +3,10 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING, Any
 
+from django.core.exceptions import ValidationError
 from django.db import models
+
+from endoreg_db.schemas import validate_media_operation_lease_metadata
 
 if TYPE_CHECKING:
     pass
@@ -37,7 +40,7 @@ class MediaOperationLease(models.Model):
         default=uuid.uuid4, unique=True, editable=False
     )
     expires_at: models.DateTimeField[Any, Any] = models.DateTimeField(db_index=True)
-    metadata: models.JSONField[dict[str, str]] = models.JSONField(
+    metadata: models.JSONField[dict[str, object]] = models.JSONField(
         default=dict, blank=True
     )
     created_at: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now_add=True)
@@ -58,3 +61,14 @@ class MediaOperationLease(models.Model):
         return (
             f"{self.lease_type} lease for video {self.video_id} until {self.expires_at}"
         )
+
+    def clean(self) -> None:
+        super().clean()
+        try:
+            self.metadata = validate_media_operation_lease_metadata(self.metadata)
+        except ValueError as exc:
+            raise ValidationError({"metadata": str(exc)}) from exc
+
+    def save(self, *args: object, **kwargs: object) -> None:
+        self.clean()
+        super().save(*args, **kwargs)

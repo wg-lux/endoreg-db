@@ -1,10 +1,16 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
+from django.core.exceptions import ValidationError
 from django.db import models
 from lx_dtypes.models.contracts.subcategory_validation import (
     NumericalDescriptorContract,
     SubcategoryDictContract,
+)
+
+from endoreg_db.schemas import (
+    validate_patient_numerical_descriptors,
+    validate_patient_subcategories,
 )
 
 if TYPE_CHECKING:
@@ -49,6 +55,24 @@ class PatientDisease(models.Model):
     def __str__(self) -> str:
         """Returns a string representation including the patient and disease name."""
         return f"{self.patient} - {self.disease}"
+
+    def clean(self) -> None:
+        super().clean()
+        errors: dict[str, str] = {}
+        for field_name, validator in (
+            ("subcategories", validate_patient_subcategories),
+            ("numerical_descriptors", validate_patient_numerical_descriptors),
+        ):
+            try:
+                setattr(self, field_name, validator(getattr(self, field_name)))
+            except ValueError as exc:
+                errors[field_name] = str(exc)
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args: object, **kwargs: object) -> None:
+        self.clean()
+        super().save(*args, **kwargs)
 
     @property
     def links(self) -> "ModelLinks":

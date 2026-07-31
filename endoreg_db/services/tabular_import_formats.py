@@ -85,6 +85,30 @@ def _parse_int(value: Any) -> int | None:
     return None
 
 
+def normalize_patient_gender(value: object) -> str | None:
+    normalized = _normalize_scalar(value)
+    if normalized is None:
+        return None
+    text = str(normalized)
+    gender_aliases = {
+        "m": "male",
+        "male": "male",
+        "männlich": "male",
+        "maennlich": "male",
+        "w": "female",
+        "f": "female",
+        "female": "female",
+        "weiblich": "female",
+        "d": "other",
+        "divers": "other",
+        "other": "other",
+        "u": "unknown",
+        "unbekannt": "unknown",
+        "unknown": "unknown",
+    }
+    return gender_aliases.get(text.casefold(), text)
+
+
 def _coerce_value(value: Any, declared_type: str) -> Any:
     if declared_type == "str":
         normalized = _normalize_scalar(value)
@@ -343,7 +367,7 @@ def build_preanonymized_payload(
         "external_id_origin": source_system,
         "casenumber": canonical_row.get("fall_nr"),
         "anonymized_text": anonymized_text,
-        "patient_gender": canonical_row.get("geschlecht"),
+        "patient_gender": normalize_patient_gender(canonical_row.get("geschlecht")),
         "source_system": source_system,
         "source_document_type": normalized_document.get("document_type"),
         "original_document_id": canonical_row.get("dokumentnummer")
@@ -370,6 +394,7 @@ __all__ = [
     "TemplateMatch",
     "build_preanonymized_payload",
     "load_document_templates",
+    "normalize_patient_gender",
     "normalize_document_row",
     "resolve_document_template",
 ]

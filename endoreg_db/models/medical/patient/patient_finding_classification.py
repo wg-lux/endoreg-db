@@ -4,11 +4,17 @@ import random
 from typing import TYPE_CHECKING, cast, Any
 
 import numpy as np
+from django.core.exceptions import ValidationError
 from django.db import models
 from lx_dtypes.models.contracts.patient_finding_classification_runtime import (
     PatientFindingClassificationNumericalDescriptorPayload,
-    PatientFindingClassificationNumericalDescriptorsPayload,
-    PatientFindingClassificationSubcategoriesPayload,
+)
+
+from endoreg_db.schemas import (
+    build_patient_finding_numerical_descriptors,
+    build_patient_finding_subcategories,
+    validate_patient_finding_numerical_descriptors,
+    validate_patient_finding_subcategories,
 )
 
 if TYPE_CHECKING:
@@ -81,31 +87,41 @@ class PatientFindingClassification(models.Model):
         """
         return f"{self.finding} - {self.classification} - {self.classification_choice}"
 
+    def clean(self) -> None:
+        super().clean()
+        errors: dict[str, str] = {}
+        if self.classification_choice not in self.classification.choices.all():
+            errors["classification_choice"] = (
+                "classification_choice must be in classification.choices"
+            )
+
+        if not self.subcategories:
+            self.subcategories = build_patient_finding_subcategories(
+                self.classification_choice.subcategories
+            )
+        if not self.numerical_descriptors:
+            self.numerical_descriptors = build_patient_finding_numerical_descriptors(
+                self.classification_choice.numerical_descriptors
+            )
+
+        for field_name, validator in (
+            ("subcategories", validate_patient_finding_subcategories),
+            ("numerical_descriptors", validate_patient_finding_numerical_descriptors),
+        ):
+            try:
+                setattr(self, field_name, validator(getattr(self, field_name)))
+            except ValueError as exc:
+                errors[field_name] = str(exc)
+        if errors:
+            raise ValidationError(errors)
+
     def save(self, *args: object, **kwargs: object) -> None:
         """
         Saves the model instance after validating and initializing classification-related fields.
 
         Ensures that the selected classification choice is valid for the associated classification. If subcategories or numerical descriptors are unset, initializes them from the classification choice before saving.
         """
-        if self.classification_choice not in self.classification.choices.all():
-            raise ValueError("classification_choice must be in classification.choices")
-
-        if not self.subcategories:
-            self.subcategories = cast(
-                "PatientFindingClassificationSubcategoriesData",
-                PatientFindingClassificationSubcategoriesPayload.model_validate(
-                    self.classification_choice.subcategories
-                ).model_dump(mode="python"),
-            )
-
-        if not self.numerical_descriptors:
-            self.numerical_descriptors = cast(
-                "PatientFindingClassificationNumericalDescriptorsData",
-                PatientFindingClassificationNumericalDescriptorsPayload.model_validate(
-                    self.classification_choice.numerical_descriptors
-                ).model_dump(mode="python"),
-            )
-
+        self.clean()
         super().save(*args, **kwargs)
 
     def initialize_and_get_subcategories(

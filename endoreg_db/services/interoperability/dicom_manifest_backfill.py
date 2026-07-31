@@ -66,8 +66,10 @@ def backfill_dicom_export_manifests_v2(
                 )
 
             canonical_digest = dicom_export_manifest_sha256(canonical_manifest)
+            canonical_source_system = str(canonical_manifest["source_system"])
             needs_update = (
                 export_job.schema_version != DICOM_EXPORT_MANIFEST_SCHEMA_VERSION
+                or export_job.source_system != canonical_source_system
                 or export_job.manifest != canonical_manifest
                 or export_job.manifest_sha256 != canonical_digest
             )
@@ -80,6 +82,7 @@ def backfill_dicom_export_manifests_v2(
                 continue
             DicomExportJob.objects.filter(pk=export_job.pk).update(
                 schema_version=DICOM_EXPORT_MANIFEST_SCHEMA_VERSION,
+                source_system=canonical_source_system,
                 manifest=canonical_manifest,
                 manifest_sha256=canonical_digest,
                 updated_at=timezone.now(),

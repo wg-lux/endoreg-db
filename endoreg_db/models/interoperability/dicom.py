@@ -6,7 +6,11 @@ from typing import TYPE_CHECKING, Any
 from django.core.exceptions import ValidationError
 from django.db import models
 
-from endoreg_db.schemas.dicom_export import dump_dicom_export_manifest_v2
+from endoreg_db.schemas.dicom_export import (
+    DICOM_EXPORT_MANIFEST_SCHEMA_VERSION,
+    dicom_export_manifest_sha256,
+    dump_dicom_export_manifest_v2,
+)
 
 
 class DicomExportJob(models.Model):
@@ -62,6 +66,9 @@ class DicomExportJob(models.Model):
                 {"manifest": "manifest export_id must match the export job id"}
             )
         self.manifest = normalized
+        self.schema_version = DICOM_EXPORT_MANIFEST_SCHEMA_VERSION
+        self.source_system = str(normalized["source_system"])
+        self.manifest_sha256 = dicom_export_manifest_sha256(normalized)
 
     def save(self, *args: object, **kwargs: object) -> None:
         self.clean()

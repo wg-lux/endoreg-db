@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, ClassVar, Protocol, Type, cast, Any
 
 from django.db import models
 from lx_dtypes.models.meta.SensitiveMeta import SensitiveMeta as LxSensitiveMeta
+from endoreg_db.schemas.anonymization import normalize_direct_identifier_tombstone
 
 
 # Import models needed for type hints and FKs
@@ -213,6 +214,12 @@ class SensitiveMeta(models.Model):
         default=dict, blank=True
     )
 
+    def clean(self) -> None:
+        super().clean()
+        self.direct_identifier_tombstone = normalize_direct_identifier_tombstone(
+            self.direct_identifier_tombstone
+        )
+
     # --- Anonymization helper method ---
     create_anonymized_record = sensitive_meta_logic._create_anonymized_record
 
@@ -415,6 +422,7 @@ class SensitiveMeta(models.Model):
         #    and creation/linking of pseudo patient/examination FKs.
         #    This function modifies the instance fields (hashes, FKs, dates).
         #    It returns the examiner instance to be linked *after* saving.
+        self.clean()
         examiner_to_link = sensitive_meta_logic.perform_save_logic(
             self
         )  # Pass only self

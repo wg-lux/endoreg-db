@@ -84,6 +84,7 @@ def test_backfill_dry_run_then_apply_canonicalizes_existing_json_fixture() -> No
     DicomExportJob.objects.filter(pk=export_job.pk).update(
         manifest=existing_payload,
         manifest_sha256="f" * 64,
+        source_system="stale-system",
     )
 
     dry_run = backfill_dicom_export_manifests_v2()
@@ -102,6 +103,7 @@ def test_backfill_dry_run_then_apply_canonicalizes_existing_json_fixture() -> No
     assert applied.updated == 1
     assert applied.applied is True
     assert export_job.schema_version == 2
+    assert export_job.source_system == export_job.manifest["source_system"]
     assert export_job.manifest == dump_dicom_export_manifest_v2(existing_payload)
     assert export_job.manifest_sha256 == dicom_export_manifest_sha256(
         export_job.manifest

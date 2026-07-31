@@ -3,7 +3,14 @@ from __future__ import annotations
 from datetime import date, datetime, time
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    ValidationError,
+    field_validator,
+)
 
 
 class PreanonymizedIngestPayload(BaseModel):
@@ -95,7 +102,7 @@ class LocalStudyServerPreanonymizedIngestPayload(PreanonymizedIngestPayload):
     center_key: str | None = Field(default=...)
     source_system: str | None = Field(default=...)
     file_sha256: str | None = Field(default=...)
-    human_anonymization_validated: bool | None = Field(default=...)
+    human_anonymization_validated: StrictBool | None = Field(default=...)
     validated_by: str | None = Field(default=...)
     validated_at: datetime | None = Field(default=...)
 
@@ -129,7 +136,11 @@ class LocalStudyServerPreanonymizedIngestPayload(PreanonymizedIngestPayload):
 
 
 class UploadProvenancePayload(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(
+        extra="forbid",
+        strict=True,
+        str_strip_whitespace=True,
+    )
 
     entrypoint: str | None = None
     ingest_mode: str | None = None
@@ -209,7 +220,11 @@ class TransferProvenancePayload(BaseModel):
 
 
 class QuarantineItemMetadataPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(
+        extra="forbid",
+        strict=True,
+        str_strip_whitespace=True,
+    )
 
     source_event: str | None = None
     source_system: str | None = None

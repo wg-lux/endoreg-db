@@ -4,13 +4,20 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Mapping, cast
+from typing import Any, Mapping
 from uuid import UUID
 
 from django.utils import timezone
+from pydantic import ValidationError as PydanticValidationError
 
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.aidataset.aidataset import AIDataSet, AIDataSetExportArtifact
+from endoreg_db.schemas.aidataset_export import (
+    AIDataSetExportRequestPayload,
+    dump_ai_dataset_export_request_payload,
+    dump_ai_dataset_export_summary,
+    parse_ai_dataset_export_request_payload,
+)
 from endoreg_db.services.hub import (
     local_study_server_mode_enabled,
 )
@@ -44,51 +51,53 @@ class DownloadResponse:
         return self.file_path is not None
 
 
-def _normalize_payload(payload: Mapping[str, Any] | None) -> dict[str, Any]:
-    if not payload:
+def _request_validation_errors(
+    exc: PydanticValidationError,
+) -> dict[str, str]:
+    errors: dict[str, str] = {}
+    for item in exc.errors(include_url=False):
+        location = item.get("loc", ())
+        field_name = str(location[0]) if location else "request_payload"
+        message = str(item.get("msg", "Invalid value."))
+        if message.startswith("Value error, "):
+            message = message.removeprefix("Value error, ")
+        if not message.endswith("."):
+            message = f"{message}."
+        errors[field_name] = message
+    return errors
+
+
+def _selection_validation_errors(
+    payload: Mapping[str, Any] | None,
+) -> dict[str, str]:
+    """Preserve all deterministic selection errors from one request.
+
+    Pydantic stops constructing the typed payload when one field has an
+    invalid literal.  The endpoint contract still reports independent name
+    and type selection errors together, so validate those raw fields at the
+    request boundary as well.
+    """
+    if payload is None:
         return {}
-    return {str(key): value for key, value in payload.items()}
 
+    errors: dict[str, str] = {}
+    if "ai_dataset_name" in payload:
+        value = payload["ai_dataset_name"]
+        if not isinstance(value, str):
+            errors["ai_dataset_name"] = "ai_dataset_name must be a string."
+        elif not value.strip():
+            errors["ai_dataset_name"] = "ai_dataset_name is required."
 
-def _integer_param_error_payload(field_name: str) -> dict[str, Any]:
-    return {"errors": {field_name: f"{field_name} must be an integer."}}
-
-
-def _parse_optional_integer_param(
-    raw_value: object,
-    *,
-    field_name: str,
-) -> tuple[int | None, ServiceResponse | None]:
-    if raw_value in (None, ""):
-        return None, None
-    if isinstance(raw_value, bool) or not isinstance(
-        raw_value, (str, bytes, bytearray, int)
-    ):
-        return None, ServiceResponse(
-            payload=_integer_param_error_payload(field_name),
-            status_code=400,
-        )
-    try:
-        return int(raw_value), None
-    except (TypeError, ValueError):
-        return None, ServiceResponse(
-            payload=_integer_param_error_payload(field_name),
-            status_code=400,
-        )
-
-
-def _payload_bool(value: Any, *, default: bool = False) -> bool:
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        normalized = value.strip().lower()
-        if normalized in {"1", "true", "yes", "on"}:
-            return True
-        if normalized in {"0", "false", "no", "off", ""}:
-            return False
-    return bool(value)
+    if "ai_dataset_type" in payload:
+        value = payload["ai_dataset_type"]
+        if not isinstance(value, str) or value not in {
+            AIDataSet.DATASET_TYPE_IMAGE,
+            AIDataSet.DATASET_TYPE_VIDEO,
+        }:
+            errors["ai_dataset_type"] = (
+                "ai_dataset_type must be one of: image, video."
+            )
+    return errors
 
 
 def sanitize_export_token(value: str) -> str:
@@ -159,10 +168,7 @@ def _artifact_byte_size(artifact: AIDataSetExportArtifact) -> int:
 
 
 def _artifact_summary(artifact: AIDataSetExportArtifact) -> dict[str, Any]:
-    summary = getattr(artifact, "summary", None)
-    if not isinstance(summary, Mapping):
-        return {}
-    return dict(cast(Mapping[str, Any], summary))
+    return dump_ai_dataset_export_summary(artifact.summary)
 
 
 def ai_dataset_export_payload(artifact: AIDataSetExportArtifact) -> dict[str, Any]:
@@ -188,18 +194,11 @@ def ai_dataset_export_payload(artifact: AIDataSetExportArtifact) -> dict[str, An
 
 
 def _resolve_ai_dataset_export_dataset(
-    payload: Mapping[str, Any],
+    payload: AIDataSetExportRequestPayload,
 ) -> tuple[AIDataSet | None, ServiceResponse | None]:
     settings_obj = get_application_settings()
-    normalized_dataset_id, dataset_id_error = _parse_optional_integer_param(
-        payload.get("dataset_id"),
-        field_name="dataset_id",
-    )
-
-    if dataset_id_error is not None:
-        return None, dataset_id_error
-    if normalized_dataset_id is not None:
-        dataset = AIDataSet.objects.filter(pk=normalized_dataset_id).first()
+    if payload.dataset_id is not None:
+        dataset = AIDataSet.objects.filter(pk=payload.dataset_id).first()
         if dataset is None:
             return None, ServiceResponse(
                 payload={"errors": {"dataset_id": "AIDataSet not found."}},
@@ -207,8 +206,8 @@ def _resolve_ai_dataset_export_dataset(
             )
         return dataset, None
 
-    dataset_name = payload.get("ai_dataset_name", settings_obj.ai_dataset_name)
-    dataset_type = payload.get("ai_dataset_type", settings_obj.ai_dataset_type)
+    dataset_name = payload.ai_dataset_name or settings_obj.ai_dataset_name
+    dataset_type = payload.ai_dataset_type or settings_obj.ai_dataset_type
 
     errors: dict[str, str] = {}
     if not isinstance(dataset_name, str) or not dataset_name.strip():
@@ -342,15 +341,23 @@ def create_ai_dataset_export(
     user: Any,
     export_root: Path | None = None,
 ) -> ServiceResponse:
-    request_payload = _normalize_payload(payload)
+    try:
+        request_payload = parse_ai_dataset_export_request_payload(payload)
+    except PydanticValidationError as exc:
+        errors = _request_validation_errors(exc)
+        errors.update(_selection_validation_errors(payload))
+        return ServiceResponse(
+            payload={"errors": errors},
+            status_code=400,
+        )
     dataset, dataset_error = _resolve_ai_dataset_export_dataset(request_payload)
     if dataset_error is not None:
         return dataset_error
     assert dataset is not None
 
-    center_key = str(request_payload.get("center_key") or "").strip() or None
-    all_centers = _payload_bool(request_payload.get("all_centers"), default=False)
-    only_validated = _payload_bool(request_payload.get("only_validated"), default=True)
+    center_key = request_payload.center_key
+    all_centers = request_payload.all_centers
+    only_validated = request_payload.only_validated
     scope_error = _dataset_export_scope_error(
         user,
         center_key=center_key,
@@ -369,7 +376,9 @@ def create_ai_dataset_export(
         dataset_name=_dataset_text(dataset, "name"),
         dataset_type=_dataset_text(dataset, "dataset_type"),
         ai_model_type=_dataset_text(dataset, "ai_model_type"),
-        request_payload=request_payload,
+        request_payload=dump_ai_dataset_export_request_payload(
+            request_payload.model_copy(update={"dataset_id": dataset.pk})
+        ),
         center_key=center_key,
         all_centers=all_centers,
         only_validated=only_validated,
