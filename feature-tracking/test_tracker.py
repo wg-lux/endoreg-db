@@ -443,6 +443,49 @@ def test_verify_update_records_each_atomic_command_as_evidence(
     ]
 
 
+def test_update_verified_requires_each_acceptance_bullet(tmp_path: Path) -> None:
+    policy, features = load_registry(TRACKING_DIR)
+    feature = _unassessed_feature(
+        next(item for item in features if item.id == "standard")
+    )
+    criterion = feature.definition_of_done[0]
+    tracking_dir = tmp_path / "feature-tracking"
+    tracking_dir.mkdir()
+    (tracking_dir / "policy.yml").write_text(
+        yaml.safe_dump(
+            policy.model_copy(update={"migrated_markdown_trackers": ()}).model_dump(
+                mode="json"
+            ),
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    (tracking_dir / "standard.yml").write_text(
+        yaml.safe_dump(feature.model_dump(mode="json"), sort_keys=False),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(TrackerError, match="jeden --acceptance-bullet"):
+        main(
+            [
+                "--directory",
+                str(tracking_dir),
+                "update",
+                feature.id,
+                criterion.id,
+                "--status",
+                "verified",
+                "--assessed-by",
+                "test@example.org",
+                "--note",
+                "Alle Punkte erfüllt.",
+                "--evidence",
+                "test",
+                "test-contract",
+            ]
+        )
+
+
 def test_tracker_governance_documentation_contract() -> None:
     readme = (TRACKING_DIR / "README.md").read_text(encoding="utf-8")
     agent_rules = (REPOSITORY_ROOT / "AGENTS.md").read_text(encoding="utf-8")
