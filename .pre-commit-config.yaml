@@ -45,6 +45,12 @@ repos:
         language: system
         pass_filenames: false
         files: ^(endoreg_db/.*\.py|scripts/.*\.py|quality/quality_boundary_baseline\.yml)$
+      - id: documentation-governance
+        name: documentation governance inventory
+        entry: .devenv/state/venv/bin/python scripts/check_documentation_governance.py --repository endoreg-db
+        language: system
+        pass_filenames: false
+        files: ^(README\.md|AGENTS\.md|docs/.*|quality/documentation_governance\.yml|scripts/check_documentation_governance\.py|tests/scripts/test_check_documentation_governance\.py)$
       - id: django-startup-smoke
         name: django startup smoke
         entry: devenv shell -- .devenv/state/venv/bin/python scripts/check_django_startup_imports.py

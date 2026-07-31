@@ -1,0 +1,266 @@
+schema_version: '1.0'
+id: documentation
+name: Zentrale Dokumentations-Governance
+description: Repository-übergreifende Verwaltung, Validierung, Bereinigung und Veröffentlichung der Dokumentation,
+  README.md- und AGENTS.md-Einstiegspunkte für endoreg-db, lx-annotate, lx-data-models und lx-anonymizer.
+owners:
+- endoreg_db maintainers
+- lx-annotate maintainers
+- lx_dtypes maintainers
+- lx-anonymizer maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: README.md
+  disposition: reference
+  note: Der EndoRegDB-Einstiegspunkt muss auf kanonische, aktuelle Dokumentation verweisen.
+- path: AGENTS.md
+  disposition: reference
+  note: Verbindliche Arbeits- und Sicherheitsregeln für automatisierte und menschliche Maintainer.
+- path: docs/README.md
+  disposition: reference
+  note: Bestehender Dokumentationsindex und Ausgangspunkt für die zentrale Navigation.
+- path: docs/wiki/README.md
+  disposition: reference
+  note: Bestehende Wiki-Auswahl, die in das zentrale Publikationskonzept eingeordnet werden muss.
+definition_of_done:
+- id: inventory_and_classification
+  category: requirements
+  title: Alle Dokumentationsartefakte sind zentral inventarisiert und klassifiziert
+  acceptance:
+  - Ein maschinenlesbares Inventar deckt /home/admin/endoreg-db/docs, /home/admin/dev/lx-annotate/docs,
+    /home/admin/lx-parse/lx-data-models/docs und /home/admin/lx-anonymizer/docs sowie die jeweiligen README.md-
+    und AGENTS.md-Dateien ab.
+  - 'Der Baseline-Snapshot vom 2026-07-31 ist nachvollziehbar erfasst: endoreg-db enthält 222 Dateien
+    mit 47 gepflegten Markdown/ReStructuredText-Quellen und 167 lokalen Build-Dateien; lx-annotate enthält
+    122 Dateien mit 21 gepflegten Markdown-Quellen und 97 derzeit versionierten Build-Dateien; lx-data-models
+    enthält 46 Dateien mit 22 Markdown/ReStructuredText-Quellen und 20 Diagrammquellen beziehungsweise
+    Diagramm-Renderings; lx-anonymizer enthält 22 Dateien mit 7 Markdown-Quellen sowie 15 Binär-, Publikations-
+    oder Capture-Artefakten.'
+  - Jeder Eintrag besitzt mindestens Repository, relativen Pfad, Dokumenttyp, Titel, Zielgruppe, fachlichen
+    Owner, Lebenszyklusstatus, kanonische Quelle, Sichtbarkeit, letzte Prüfung, nächsten Prüftermin, Nachfolger
+    und optionalen Wiki-Slug.
+  - Quellen, generierte Ausgaben, Diagrammquellen, gerenderte Diagramme, Test-Fixtures, Forschungsnachweise,
+    Publikationsentwürfe und sensible Diagnose-Captures werden unterscheidbar klassifiziert und nicht
+    pauschal als publizierbare Dokumentation behandelt.
+  required: true
+  verification:
+    kind: manual
+    instructions: Inventar gegen git ls-files und den Dateibaum aller vier Repositories abgleichen; Stichproben
+      aus jeder Artefaktklasse auf Metadatenvollständigkeit prüfen.
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/python scripts/check_documentation_governance.py
+    - kind: document
+      reference: quality/documentation_governance.yml
+    note: Reproduzierbares Inventar über alle vier Repositories läuft ohne Governance-Fehler oder Ausnahmen.
+      Es inventarisiert bewusst auch lokale generierte Build-Ausgaben, daher ist die Gesamtzahl buildabhängig;
+      fachliche Triage und Review-Metadaten je Quelldokument stehen aus.
+    assessed_by: Codex
+    assessed_at: '2026-07-31T10:03:36.139210Z'
+- id: canonical_ownership_and_navigation
+  category: functionality
+  title: Kanonische Dokumente, Ownership und Navigation werden aus einer Quelle verwaltet
+  acceptance:
+  - Für jedes Thema existiert genau ein als kanonisch markiertes Dokument; Duplikate verweisen auf dieses
+    Dokument, werden zusammengeführt oder erhalten einen klar abgegrenzten repository-spezifischen Zweck.
+  - Mindestens die doppelten Pydantic- und Datumsleitfäden in lx-annotate und lx-data-models, die zwei
+    Reporting-Template-Seiten in lx-annotate sowie die repository-übergreifenden Video-Concurrency-Verträge
+    besitzen eine dokumentierte kanonische Ownership-Entscheidung.
+  - Ein zentraler Einstiegspunkt erzeugt eine Navigation nach Zielgruppe und Aufgabe und verlinkt verlässlich
+    in repository-spezifische Entwickler-, Betriebs-, Sicherheits-, API- und Forschungsdokumentation.
+  - README.md, AGENTS.md, Sphinx-Toctrees und Wiki-Navigation werden gegen dasselbe Inventar validiert;
+    handgepflegte Indizes können keine gelöschten oder nicht kanonischen Seiten dauerhaft weiterführen.
+  required: true
+  verification:
+    kind: manual
+    instructions: Themen- und Navigationsgraph aus dem Inventar erzeugen und auf doppelte kanonische Einträge,
+      verwaiste Seiten, Zyklen und tote Einstiegspunkte prüfen.
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: document
+      reference: quality/documentation_governance.yml
+    - kind: document
+      reference: docs/video_import_concurrency_contract.md
+    - kind: document
+      reference: /home/admin/lx-anonymizer/docs/VIDEO_IMPORT_CONCURRENCY_CONTRACT.md
+    - kind: test
+      reference: tests/scripts/test_check_documentation_governance.py
+    note: Kanonische Ownership ist für Assisted Reporting, Datumsregeln, Pydantic-Muster und Videoimport-Concurrency
+      maschinenlesbar registriert. Der Videovertrag bleibt kanonisch in endoreg-db; lx-anonymizer enthält
+      ausschließlich den strengeren Komponentenvertrag und dokumentiert Konflikt- sowie Änderungsregeln.
+      Vollständige Topic-Triage und generierter Zielgruppenindex stehen aus.
+    assessed_by: Codex
+    assessed_at: '2026-07-31T10:16:11.271206Z'
+- id: automated_validation
+  category: testing
+  title: Dokumentation, README.md und AGENTS.md besitzen reproduzierbare Validierungsgates
+  acceptance:
+  - Ein repository-übergreifend ausführbarer Check validiert interne und externe Links, Sphinx-Builds
+    mit Warnungen als Fehler, Toctrees, Markdown-Struktur, Codebeispiele, Inventarmetadaten und die Existenz
+    aller referenzierten Dateien.
+  - Jede Repository-README nennt Zweck, unterstützte Einrichtung, kanonische Befehle, Dokumentationseinstieg,
+    Supportgrenzen und Feature-Tracking; veraltete Befehle, lokale absolute Pfade, fehlende Bilder und
+    Platzhalter wie "coming soon" schlagen fehl oder benötigen eine explizite, befristete Ausnahme.
+  - Jedes Repository besitzt eine AGENTS.md oder eine explizit dokumentierte und testbare Vererbung; Regeln
+    nennen Scope, Sicherheitsinvarianten, Pflichtdokumente, Testbefehle, Feature-Tracking und widersprechen
+    einander an Repository-Grenzen nicht.
+  - Pull Requests führen die Checks nur für relevante Änderungen aus, ein periodischer Vollcheck erkennt
+    externe Link-Rot und Drift, und Ausnahmen enthalten Owner, Grund und Ablaufdatum.
+  required: true
+  verification:
+    kind: manual
+    instructions: Die lokale Sammelprüfung und die CI-Jobs in allen vier Repositories ausführen; anschließend
+      je einen defekten Link, fehlenden Toctree-Eintrag, ungültigen Inventareintrag und eine veraltete
+      Ausnahme als negative Tests nachweisen.
+    timeout_seconds: 1200
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: tests/scripts/test_check_documentation_governance.py
+    - kind: command
+      reference: .devenv/state/venv/bin/python scripts/check_documentation_governance.py
+    - kind: command
+      reference: 'lx-annotate and lx-data-models: sphinx html/linkcheck -W'
+    note: Sieben Governance-Tests prüfen Artefaktklassen, Entry-Points, lokale Links, Workstation-Links,
+      sensitive Captures, Generated-Output-Ausnahmen sowie kanonische und zugehörige Dokumentpfade. Live-Inventar
+      und strikte Sphinx-Lanes sind grün; CI-Integration und ausführbare Beispiele stehen aus.
+    assessed_by: Codex
+    assessed_at: '2026-07-31T10:16:13.256884Z'
+- id: publication_safety
+  category: security
+  title: Nur freigegebene und bereinigte Inhalte können öffentlich publiziert werden
+  acceptance:
+  - Die Veröffentlichung verwendet eine explizite Allow-List und schließt Geheimnisse, personenbezogene
+    oder geschützte Gesundheitsdaten, absolute Hostpfade, interne Infrastrukturdetails, Browser-HAR-Captures,
+    Rohdatensätze und ungeprüfte Binärdateien aus.
+  - Insbesondere die HAR-Datei und die Publikationsentwürfe unter lx-anonymizer/docs werden vor jeder
+    weiteren Aufbewahrungs- oder Publikationsentscheidung auf Credentials, Patientenbezug, Lizenz, Einwilligung
+    und erforderliche Zugriffsbeschränkung geprüft.
+  - Secret-, personenbezogene-Daten- und Lizenzprüfungen laufen vor Preview und Publish; ein Fehler verhindert
+    die Veröffentlichung ohne stillen Fallback.
+  - Forschungsnachweise und klinische oder sicherheitsrelevante Verträge benennen Version, Reviewstatus
+    und Provenienz; redaktionelle Bereinigung darf Audit-Evidenz nicht vernichten.
+  required: true
+  verification:
+    kind: manual
+    instructions: Allow-List, Ausschlussregeln und negative Testartefakte mit Security, Datenschutz und
+      den Dokument-Ownern prüfen; einen absichtlich sensitiven Fixture-Publish fail-closed testen.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: scripts/check_documentation_governance.py
+    - kind: code
+      reference: /home/admin/lx-anonymizer/.gitignore
+    note: Der HAR-Capture ist aus dem Git-Index entfernt, lokal erhalten und durch *.har dauerhaft ignoriert;
+      der Governance-Lauf ist fail-closed und grün. Secret-, PHI- und Lizenzprüfung der Publish-Auswahl
+      sowie die explizite Wiki-Allow-List stehen aus.
+    assessed_by: Codex
+    assessed_at: '2026-07-31T09:57:13.176215Z'
+- id: pruning_and_lifecycle
+  category: maintainability
+  title: Veraltete Dokumentation wird messbar entfernt, ersetzt oder archiviert
+  acceptance:
+  - 'Jeder Lebenszyklusstatus ist definiert: current, review_due, deprecated, superseded, archived, generated
+    und restricted; Statusübergänge verlangen Owner, Begründung, Datum und gegebenenfalls einen kanonischen
+    Nachfolger.'
+  - Plan-, TODO-, Gap-, Current-State-, Migration- und Readiness-Dokumente tragen keinen unabhängigen
+    Fertigstellungsstatus; offene Arbeit wird in feature-tracking YAML geführt, dauerhafter Architektur-
+    oder Betriebskontext wird in aktuelle Referenzdokumente überführt.
+  - Alte Seiten werden bevorzugt gelöscht oder in eine klar getrennte, nicht publizierte Historie verschoben;
+    Stub-Seiten und ewige Deprecation-Banner gelten nicht als Bereinigung.
+  - Generierte Sphinx-Ausgaben werden reproduzierbar gebaut und nicht neben ihren Quellen versioniert;
+    insbesondere die 97 getrackten lx-annotate Build-Dateien werden nach bestätigtem Build- und Packaging-Vertrag
+    aus der Quellverwaltung entfernt.
+  - Eine initiale Triage entscheidet für jedes inventarisierte Artefakt keep, improve, merge, replace,
+    archive, restrict oder delete und priorisiert irreführende Setup-, Security- und Operations-Anweisungen
+    vor kosmetischen Verbesserungen.
+  required: true
+  verification:
+    kind: manual
+    instructions: Initiale Triage und zwei Reviewzyklen prüfen; nachweisen, dass alle fälligen Einträge
+      entschieden sind, generierte Ausgaben nicht erneut eingecheckt werden und entfernte Seiten keine
+      eingehenden Links ohne Ersatz hinterlassen.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: '/home/admin/dev/lx-annotate/Makefile: docs-build/docs-publish/package contract'
+    - kind: document
+      reference: /home/admin/dev/lx-annotate/docs/guides/reporting-template-requirements-page.md
+    - kind: document
+      reference: /home/admin/lx-parse/lx-data-models/docs/index.md
+    note: 97 generierte Sphinx-Dateien aus Git entfernt; drei doppelte lx-annotate Seiten in kanonische
+      Guides konsolidiert; elf zuvor verborgene oder fehlerhaft behandelte lx-data-models Seiten/Assets
+      in Navigation beziehungsweise Ausschlussregeln eingeordnet. Repositoryweite Triage bleibt offen.
+    assessed_by: Codex
+    assessed_at: '2026-07-31T10:03:14.613306Z'
+- id: wiki_publication
+  category: operations
+  title: Kuratierte Dokumentation wird reproduzierbar in ein zentrales GitHub Wiki publiziert
+  acceptance:
+  - Die bevorzugte Zielarchitektur publiziert freigegebene Seiten in das endoreg-db GitHub Wiki und behält
+    die repository-eigenen Markdown-Dateien als Source of Truth; direkte Wiki-Edits werden verhindert
+    oder beim nächsten Lauf eindeutig als Drift gemeldet.
+  - Ein deterministischer Build löst repository-übergreifende Links, Dateinamen, Wiki-Slugs, Navigation,
+    Bilder und Versionshinweise auf und erzeugt vor dem Push ein reviewbares Preview- und Änderungsartefakt.
+  - Veröffentlichungen sind an einen freigegebenen Commit gebunden, verwenden minimale GitHub-Berechtigungen,
+    sind wiederholbar und können auf die letzte bekannte gute Version zurückgesetzt werden.
+  - Falls GitHub Wiki die erforderlichen Zugriffs-, Review-, Such- oder Artefaktanforderungen nicht erfüllt,
+    dokumentiert eine explizite Entscheidung den Blocker und einen gleichwertig validierten GitHub-Pages-Fallback,
+    ohne eine zweite handgepflegte Dokumentationsquelle zu schaffen.
+  required: true
+  verification:
+    kind: manual
+    instructions: Preview aus einem unveröffentlichten Commit erzeugen, Security-Gates prüfen, in eine
+      Test- oder Wiki-Zielumgebung publizieren, Drift erkennen und Rollback demonstrieren.
+    timeout_seconds: 1200
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: contributor_documentation
+  category: documentation
+  title: Pflege-, Review- und Publikationsablauf ist für alle Zielgruppen verständlich
+  acceptance:
+  - Ein kurzer Maintainer-Leitfaden erklärt neue Seiten, Metadaten, kanonische Ownership, Cross-Repository-Links,
+    Diagramme, Deprecation, Archivierung, Ausnahmen und Wiki-Publishing.
+  - Jede Zielgruppe findet vom zentralen Einstieg in höchstens drei Navigationsebenen eine aktuelle Anleitung;
+    Setup- und Störungsabläufe werden durch einen frischen Nutzer beziehungsweise Operator nachvollzogen.
+  - README.md bleibt eine knappe Projekt- und Bootstrap-Seite, AGENTS.md enthält verbindliche Arbeitsregeln,
+    und ausführliche Konzepte oder Runbooks liegen in der kanonischen Dokumentation statt zwischen diesen
+    Rollen dupliziert zu werden.
+  - Dashboards oder Reports zeigen mindestens Inventarabdeckung, review_due-Anzahl, tote Links, Duplikate,
+    veraltete Ausnahmen, nicht zugeordnete Seiten und Publish-Status.
+  required: true
+  verification:
+    kind: manual
+    instructions: Leitfaden mit je einem Maintainer aus allen vier Repositories sowie einem neuen Entwickler
+      und einem Operator durchspielen; Navigation und Report-Metriken abnehmen.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: document
+      reference: docs/documentation_governance.md
+    - kind: document
+      reference: docs/README.md
+    - kind: document
+      reference: docs/wiki/README.md
+    - kind: document
+      reference: /home/admin/lx-parse/lx-data-models/AGENTS.md
+    note: Zentrale Navigation trennt verbindliche Verträge, Betrieb, generierte Referenzen und migrierte
+      Planung; Wiki-Kandidaten und Source-of-Truth sind erklärt. Zielgruppen-Review, Navigationsmetrik
+      und Publish-Report stehen aus.
+    assessed_by: Codex
+    assessed_at: '2026-07-31T10:11:28.875645Z'

@@ -1,15 +1,23 @@
-# Wiki Pages (New Setup)
+# Setup and Workflow Pages
 
 ## Purpose
-This folder contains the canonical in-repo pages for the new setup and related workflows.
+This folder contains setup and workflow pages that may be selected for a future
+generated GitHub Wiki. Repository Markdown remains the source of truth. Feature
+status and readiness evidence live in [`feature-tracking/`](../../feature-tracking/README.md).
 
 ## Pages
-- `docs/wiki/new_setup_overview.md`: what the new setup consists of and how pieces fit together
-- `docs/wiki/new_setup_general_purpose.md`: general purpose and operating model of the setup
-- `docs/wiki/dataloader_yaml_authoring.md`: how to create YAML files consumed by the dataloader
-- `docs/wiki/dataloader_layers_and_naming.md`: why two dataloader modules exist today and the proposed naming schema
-- `docs/wiki/frame_annotation_current_support.md`: currently supported custom frame-annotation API contract and frontend integration status
-- `docs/annotation_export_guide.md`: exporting frame annotations and images for AI training datasets
-- `docs/video_frame_extraction_contract.md`: frame extraction completeness, stable frame paths, and on-demand extraction behavior
-- `docs/wiki/hub_ingest_current_state.md`: current hub functionality, including deployment roles, center and node identity, watcher/API/transfer ingress, and current operational limits
-- `docs/wiki/hub_ingest_gap_closure.md`: target transfer contract for study-network hub ingest, including row-plus-media synchronization, processing replay rules, and central cleanup policy
+- [New setup overview](new_setup_overview.md)
+- [General purpose and operating model](new_setup_general_purpose.md)
+- [Dataloader YAML authoring](dataloader_yaml_authoring.md)
+- [Dataloader layers and naming](dataloader_layers_and_naming.md)
+- [Current frame-annotation support](frame_annotation_current_support.md)
+- [Annotation export](../annotation_export_guide.md)
+- [Video frame extraction contract](../video_frame_extraction_contract.md)
+- [Current hub ingest behavior](hub_ingest_current_state.md)
+
+## Historical Planning Context
+
+[Hub ingest gap closure](hub_ingest_gap_closure.md) retains design context. Its
+implementation status is owned by
+[`feature-tracking/done/HubIngest.yml`](../../feature-tracking/done/HubIngest.yml),
+not by checkboxes or verdicts in the Markdown document.

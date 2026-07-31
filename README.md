@@ -53,9 +53,9 @@ attestation header, for example `X-Client-Cert-Verified: SUCCESS`, only after
 successful client certificate verification.
 
 For downstream upgrade and deployment impact, see
-[`docs/deployment_note_hub_contract.md`](/home/admin/endoreg-db/docs/deployment_note_hub_contract.md).
+[`docs/deployment_note_hub_contract.md`](docs/deployment_note_hub_contract.md).
 For the full current-state hub behavior, see
-[`docs/wiki/hub_ingest_current_state.md`](/home/admin/endoreg-db/docs/wiki/hub_ingest_current_state.md).
+[`docs/wiki/hub_ingest_current_state.md`](docs/wiki/hub_ingest_current_state.md).
 
 ## Ingest workflow
 
@@ -349,7 +349,7 @@ For issues and questions:
 
 ## 📜 License
 
-MIT - see LICENSE
+GNU General Public License v3.0 - see [LICENSE](LICENSE).
 
 ---
 
@@ -360,14 +360,15 @@ All extended documentation lives in the project **Wiki** → **[Browse the Wiki 
 
 ### Standalone Modules In This Checkout
 
-This repository now vendors two standalone LX modules that should be used directly for report rendering and terminology bundle authoring:
+The local development layout uses two standalone LX modules for report rendering
+and terminology bundle authoring:
 
-- [lx-report-generator](/home/admin/endoreg-db/lx-report-generator): standalone Rust PDF renderer
-- [lx-terminology-editor](/home/admin/endoreg-db/lx-terminology-editor): local terminology bundle editor and publisher
+- [lx-report-generator](lx-report-generator): standalone Rust PDF renderer
+- `lx-terminology-editor`: companion checkout expected next to this repository
 
 #### `lx-report-generator` with Nix
 
-From the repo root:
+From the `endoreg-db` repository root, with the companion checkout available:
 
 ```bash
 cd lx-report-generator
@@ -389,7 +390,7 @@ export ENDOREG_REPORT_PDF_RENDERER_BIN="$PWD/target/release/report_pdf_renderer"
 From the repo root:
 
 ```bash
-cd lx-terminology-editor
+cd ../lx-terminology-editor
 direnv allow   # optional
 devenv shell
 python server.py
@@ -404,13 +405,13 @@ http://localhost:4173
 The editor can publish a terminology bundle locally under:
 
 ```text
-lx-terminology-editor/.published/<publish-name>/<version>/
+../lx-terminology-editor/.published/<publish-name>/<version>/
 ```
 
 and writes a registry file at:
 
 ```text
-lx-terminology-editor/.published/kb_registry.json
+../lx-terminology-editor/.published/kb_registry.json
 ```
 
 That registry can then be used as an `LX_DTYPES_KB_REGISTRY` source.
