@@ -34,7 +34,7 @@ definition_of_done:
       und die lx_dtypes-Routen gemeinsam gegen den dokumentierten Vertrag prüfen.
     timeout_seconds: 300
   assessment:
-    status: verified
+    status: in_progress
     evidence:
     - kind: review
       reference: docs/assisted_reporting_api_integration.md; frontend/src/api/findingsApi.ts
@@ -57,27 +57,84 @@ definition_of_done:
   required: true
   verification:
     kind: command
-    command:
-    - .devenv/state/venv/bin/pytest
-    - tests/integrations/test_lx_dtypes_host_models.py
-    - tests/views/test_dtypes_findings_api.py
-    - -q
-    timeout_seconds: 600
+    commands:
+    - command:
+      - devenv
+      - shell
+      - --
+      - .devenv/state/venv/bin/pytest
+      - tests/app/test_lx_dtypes_import_boundary.py
+      - tests/api/test_dtypes_record_persistence.py
+      - -q
+      working_directory: /home/admin/endoreg-db
+    - command:
+      - devenv
+      - shell
+      - --
+      - .devenv/state/venv/bin/pytest
+      - tests/system/test_environment_checks.py
+      - tests/system/test_wheel_deployment_acceptance.py
+      - tests/system/test_console_scripts_contract.py
+      - tests/api/test_base_api_mount.py
+      - tests/api/test_urls_state.py
+      - -q
+      working_directory: /home/admin/dev/lx-annotate
+    - command:
+      - nix
+      - build
+      - .#checks.x86_64-linux.package
+      - --no-link
+      working_directory: /home/admin/dev/lx-annotate
+    - command:
+      - nix
+      - run
+      - .#nixtest
+      - --
+      - --no-color
+      working_directory: /home/admin/dev/lx-annotate
+    timeout_seconds: 3600
+  # AGENT-MANAGER-NOTIZ (2026-07-31): `verified` widerspricht hier der eigenen
+  # Notiz und dem Akzeptanzvertrag. Wheel-, NixOS/systemd- und paketiertes
+  # Produktionsprofil sind noch nicht abgenommen; zudem belegt die vorhandene
+  # Evidenz nicht den oben definierten endoreg_db-Verifikationslauf. Erst nach
+  # exakten, reproduzierbaren Paket- und Routen-Smoke-Tests verifizieren.
   assessment:
     status: in_progress
     evidence:
-    - kind: test
-      reference: /home/admin/dev/lx-annotate/tests/system/test_environment_checks.py
-    note: Produktionssettings, deklarative Umgebung und Fail-fast-Checks sind implementiert; paketiertes
-      Deployment steht noch aus.
+    - kind: command
+      reference: '.devenv/state/venv/bin/pytest tests/integrations/test_lx_dtypes_host_models.py tests/views/test_dtypes_findings_api.py
+        -q (exit 1 before collection: missing libstdc++.so.6; declared paths also do not exist)'
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/app/test_lx_dtypes_import_boundary.py
+        tests/api/test_dtypes_record_persistence.py -q (25 passed)
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/system/test_environment_checks.py
+        tests/system/test_wheel_deployment_acceptance.py tests/system/test_console_scripts_contract.py
+        tests/api/test_base_api_mount.py tests/api/test_urls_state.py -q (49 passed)
+    - kind: command
+      reference: devenv shell -- npm run build (working directory /home/admin/dev/lx-annotate/frontend;
+        exit 0)
+    - kind: command
+      reference: 'nix build .#checks.x86_64-linux.package --no-link (exit 1: frontend production build
+        TypeScript/module errors)'
+    - kind: command
+      reference: 'nix run .#nixtest -- --no-color (exit 2: package-contract 0/1, service-vm 0/1; packaged
+        server and route smoke not reached)'
+    note: 'Akzeptanzpunkt 1: Im Quell- und Testprofil ist LX_DTYPES_HOST_MODELS_MODULE importierbar; das
+      Paketprofil erreichte den Start nicht. Akzeptanzpunkt 2: Die devenv-Tests und der Frontend-Produktionsbuild
+      im Arbeitsbaum bestanden, aber Wheel/NixOS verwenden den Vertrag noch nicht nachweisbar, weil der
+      Git-basierte Paketbuild eine nicht getrackte erforderliche Quelldatei nicht enthält. Akzeptanzpunkt
+      3: Die fail-closed Readiness-Checks bestanden im Quellprofil; ein paketierter Dienststart wurde
+      nicht erreicht. Akzeptanzpunkt 4: Nicht erfüllt; die beiden /dtypes-api-Routen konnten in keinem
+      gepackten Produktionsprofil per Smoke-Test geprüft werden. Der Status bleibt in_progress.'
     assessed_by: Codex
-    assessed_at: '2026-07-22T08:27:06.477117Z'
+    assessed_at: '2026-07-31T11:24:43.304013Z'
 - id: terminology_registry_runtime
   category: functionality
   title: Terminologiepakete aus lx-terminology-editor sind im Produktionsprofil auffindbar
   acceptance:
-  - LX_DTYPES_TERMINOLOGY_REGISTRY oder LX_DTYPES_KB_REGISTRY verweist in jedem unterstützten Deployment
-    auf eine lesbare, schema-gültige Registry innerhalb des vorgesehenen persistenten Datenbereichs.
+  - LX_DTYPES_KB_REGISTRY verweist in jedem unterstützten Deployment auf eine lesbare, schema-gültige
+    Registry innerhalb des vorgesehenen persistenten Datenbereichs.
   - Die Registry referenziert versionierte, für den Dienst lesbare Exportpakete aus lx-terminology-editor
     und enthält eine explizite aktive Auswahl oder einen dokumentierten Zustand ohne aktive Auswahl.
   - GET /dtypes-api/terminology/bundles liefert die typisierte Bundle-Liste; eine fehlende Registry wird
@@ -97,10 +154,14 @@ definition_of_done:
     evidence:
     - kind: test
       reference: /home/admin/lx-data-models/lx_dtypes/django/api/tests/test_terminology_routes.py
-    note: Registry-Provisionierung, atomische Veröffentlichung und immutable Versionen sind implementiert;
-      Deployment-Abnahme steht noch aus.
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/tests/system/test_environment_checks.py
+    note: Ein kanonisches LX_DTYPES_KB_REGISTRY, persistierte atomare Aktivierung, immutable Versionen,
+      server-private Speicherpfade und fail-closed Startup-Validierung sind im Quellstand implementiert
+      und fokussiert getestet. Veröffentlichung des neuen lx-dtypes-Artefakts und paketierte Deployment-Abnahme
+      fehlen.
     assessed_by: Codex
-    assessed_at: '2026-07-22T08:27:08.288088Z'
+    assessed_at: '2026-07-31T12:20:00Z'
 - id: frontend_backend_contract_tests
   category: testing
   title: Die Reporting-Aufrufe werden repository-übergreifend regressionsgetestet
