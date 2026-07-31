@@ -14,6 +14,7 @@ from pytest import MonkeyPatch
 
 from endoreg_db.utils import file_operations
 from endoreg_db.utils.file_operations import (
+    atomic_create_file,
     atomic_handoff_file,
     atomic_move_file,
     atomic_write_file,
@@ -130,6 +131,18 @@ def test_atomic_write_file_removes_partial_temp_file_on_generator_failure(
     assert events[-1]["destination_path"] == file_operations.path_reference(destination)
     assert events[-1]["bytes"] == 7
     assert "write source failed" in str(events[-1]["detail"])
+
+
+@pytest.mark.unit
+def test_atomic_create_file_never_replaces_existing_content(tmp_path: Path) -> None:
+    destination = tmp_path / "lock.json"
+
+    atomic_create_file(destination=destination, content=(b"first",), file_mode=0o600)
+
+    with pytest.raises(FileExistsError):
+        atomic_create_file(destination=destination, content=(b"second",))
+    assert destination.read_bytes() == b"first"
+    assert not tuple(tmp_path.glob("lock.json.tmp.*"))
 
 
 @pytest.mark.unit

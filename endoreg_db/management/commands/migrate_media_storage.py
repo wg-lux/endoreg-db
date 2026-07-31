@@ -3,18 +3,32 @@ from __future__ import annotations
 import errno
 import json
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Literal, Protocol, TypedDict, Unpack, cast
+from types import MappingProxyType
+from typing import (
+    Any,
+    Callable,
+    Final,
+    Iterable,
+    Literal,
+    Protocol,
+    TypedDict,
+    Unpack,
+    cast,
+)
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 from django.db import models
+from django.db.models.fields.files import FieldFile
 from django.db.utils import OperationalError, ProgrammingError
 from lx_dtypes.models.contracts.json_types import JsonObject
 from lx_dtypes.models.contracts.management_command import (
     MigrateMediaStorageCommandOptionsPayload,
 )
 
+from endoreg_db.config.env import video_storage_destructive_migration_enabled
 from endoreg_db.import_files.file_storage.cleanup import (
     is_safe_staging_path,
     safe_cleanup_staging_file,
@@ -39,6 +53,18 @@ logger = logging.getLogger(__name__)
 
 ObjectKind = Literal["video", "report"]
 SourceKind = Literal["legacy_path", "streamable_path"]
+CandidateFileStatus = Literal[
+    "candidate",
+    "missing",
+    "permission_error",
+    "validation_failed",
+]
+CandidateContentStatus = Literal[
+    "accepted",
+    "encrypted_blob_in_streamable_path",
+    "permission_error",
+    "validation_failed",
+]
 
 ACTIONABLE_STATUSES = {
     "would_migrate",
@@ -46,6 +72,18 @@ ACTIONABLE_STATUSES = {
     "would_sync_streamable",
 }
 REPORTABLE_STATUSES = ACTIONABLE_STATUSES | {"failed"}
+RESULT_STATUS_COUNTERS: Final[Mapping[str, tuple[str, ...]]] = MappingProxyType(
+    {
+        "failed": ("failed",),
+        "migrated": ("migrated", "changed"),
+        "ok": ("unchanged",),
+        "repaired": ("repaired", "changed"),
+        "streamable_synced": ("streamable_synced", "changed"),
+        "would_migrate": ("would_migrate",),
+        "would_repair": ("would_repair",),
+        "would_sync_streamable": ("would_sync_streamable",),
+    }
+)
 
 
 class _StorageBackedFile(Protocol):
@@ -146,6 +184,36 @@ def _is_sha256_hex(value: str | None) -> bool:
 def _path_starts_with_magic(path: Path) -> bool:
     with path.open("rb") as handle:
         return handle.read(len(LX_ENCRYPTED_MAGIC)) == LX_ENCRYPTED_MAGIC
+
+
+def _inspect_candidate_file(path: Path) -> CandidateFileStatus:
+    if not path.exists():
+        return "missing"
+    if not path.is_file() or path.is_symlink():
+        return "permission_error"
+    if path.stat().st_size <= 0:
+        return "validation_failed"
+    return "candidate"
+
+
+def _inspect_candidate_content(
+    candidate: SourceCandidate,
+    *,
+    is_allowed_source_path: Callable[[Path], bool],
+) -> CandidateContentStatus:
+    try:
+        starts_with_magic = _path_starts_with_magic(candidate.path)
+    except PermissionError:
+        return "permission_error"
+    except OSError:
+        return "validation_failed"
+    if starts_with_magic:
+        if candidate.kind == "streamable_path":
+            return "encrypted_blob_in_streamable_path"
+        return "validation_failed"
+    if not is_allowed_source_path(candidate.path):
+        return "permission_error"
+    return "accepted"
 
 
 def _as_storage_backed_file(field_file: object) -> _StorageBackedFile | None:
@@ -363,15 +431,10 @@ class Command(BaseCommand):
         options_payload = MigrateMediaStorageCommandOptionsPayload.model_validate(
             options
         )
+        self._validate_command_options(options_payload)
         apply = options_payload.apply
         repeat = options_payload.repeat_until_empty
-        if repeat and not apply:
-            raise CommandError("--repeat-until-empty requires --apply")
-
         limit = options_payload.limit
-        if limit is not None and limit <= 0:
-            raise CommandError("--limit must be a positive integer")
-
         includes = self._resolve_includes(options_payload)
         summary = self._empty_summary(
             apply=apply,
@@ -404,6 +467,21 @@ class Command(BaseCommand):
                     f"failed={summary['failed']}"
                 )
             )
+
+    @staticmethod
+    def _validate_command_options(
+        options: MigrateMediaStorageCommandOptionsPayload,
+    ) -> None:
+        if options.repeat_until_empty and not options.apply:
+            raise CommandError("--repeat-until-empty requires --apply")
+        if options.apply and not video_storage_destructive_migration_enabled():
+            raise CommandError(
+                "Destructive media storage migration is disabled. Verify both "
+                "temporal_frame_contract and clinical_frame_quality, then set "
+                "ENDOREG_VIDEO_STORAGE_DESTRUCTIVE_MIGRATION_ENABLED=true."
+            )
+        if options.limit is not None and options.limit <= 0:
+            raise CommandError("--limit must be a positive integer")
 
     def _resolve_includes(
         self, options: MigrateMediaStorageCommandOptionsPayload
@@ -489,12 +567,38 @@ class Command(BaseCommand):
         options: MigrateMediaStorageCommandOptionsPayload,
         includes: dict[str, bool],
     ) -> dict[str, Any]:
-        apply = options.apply
-        fail_fast = options.fail_fast
-        limit = options.limit
         self._delete_verified_legacy = options.delete_verified_legacy
-
         reportable_plans = self._collect_reportable_plans(options, includes)
+        selected_plans, failure_only_plans = self._partition_iteration_plans(
+            reportable_plans,
+            limit=options.limit,
+        )
+        iteration = self._new_iteration_summary(selected_plans)
+        if self._apply_selected_iteration_plans(
+            iteration,
+            selected_plans,
+            options=options,
+            includes=includes,
+        ):
+            return iteration
+        if self._append_failure_only_plans(
+            iteration,
+            failure_only_plans,
+            fail_fast=options.fail_fast,
+        ):
+            return iteration
+        if not selected_plans:
+            iteration["unchanged"] = max(
+                iteration["scanned"] - len(failure_only_plans), 0
+            )
+        return iteration
+
+    @staticmethod
+    def _partition_iteration_plans(
+        reportable_plans: list[RecordPlan],
+        *,
+        limit: int | None,
+    ) -> tuple[list[RecordPlan], list[RecordPlan]]:
         actionable_plans = [plan for plan in reportable_plans if plan.actionable]
         selected_plans = actionable_plans[:limit] if limit else actionable_plans
         selected_keys = {(plan.object_kind, plan.object_pk) for plan in selected_plans}
@@ -504,7 +608,13 @@ class Command(BaseCommand):
             if not plan.actionable
             and (plan.object_kind, plan.object_pk) not in selected_keys
         ]
-        iteration: dict[str, Any] = {
+        return selected_plans, failure_only_plans
+
+    def _new_iteration_summary(
+        self,
+        selected_plans: list[RecordPlan],
+    ) -> dict[str, Any]:
+        return {
             "changed": 0,
             "cleanup_deleted": 0,
             "failed": 0,
@@ -521,35 +631,63 @@ class Command(BaseCommand):
             "would_sync_streamable": 0,
         }
 
+    def _apply_selected_iteration_plans(
+        self,
+        iteration: dict[str, Any],
+        selected_plans: list[RecordPlan],
+        *,
+        options: MigrateMediaStorageCommandOptionsPayload,
+        includes: dict[str, bool],
+    ) -> bool:
         for record_plan in selected_plans:
             record_results = self._apply_record_plan(
                 record_plan,
-                apply=apply,
+                apply=options.apply,
                 includes=includes,
                 delete_verified_legacy=options.delete_verified_legacy,
-                fail_fast=fail_fast,
+                fail_fast=options.fail_fast,
             )
-            for result in record_results:
-                self._count_result(iteration, result)
-                iteration["records"].append(result)
-                if fail_fast and result["status"] == "failed":
-                    return iteration
+            if self._append_iteration_results(
+                iteration,
+                record_results,
+                fail_fast=options.fail_fast,
+            ):
+                return True
+        return False
 
+    def _append_failure_only_plans(
+        self,
+        iteration: dict[str, Any],
+        failure_only_plans: list[RecordPlan],
+        *,
+        fail_fast: bool,
+    ) -> bool:
         for record_plan in failure_only_plans:
             for field_plan in record_plan.field_plans:
                 if field_plan.status != "failed":
                     continue
                 result = self._result_from_plan(field_plan)
-                self._count_result(iteration, result)
-                iteration["records"].append(result)
-                if fail_fast:
-                    return iteration
+                if self._append_iteration_results(
+                    iteration,
+                    (result,),
+                    fail_fast=fail_fast,
+                ):
+                    return True
+        return False
 
-        if not selected_plans:
-            iteration["unchanged"] = max(
-                iteration["scanned"] - len(failure_only_plans), 0
-            )
-        return iteration
+    def _append_iteration_results(
+        self,
+        iteration: dict[str, Any],
+        results: Iterable[dict[str, Any]],
+        *,
+        fail_fast: bool,
+    ) -> bool:
+        for result in results:
+            self._count_result(iteration, result)
+            iteration["records"].append(result)
+            if fail_fast and result["status"] == "failed":
+                return True
+        return False
 
     def _collect_reportable_plans(
         self,
@@ -574,27 +712,52 @@ class Command(BaseCommand):
         options: MigrateMediaStorageCommandOptionsPayload,
         includes: dict[str, bool],
     ) -> Iterable[tuple[ObjectKind, models.Model]]:
-        video_ids = options.video_ids
         hash_value = options.hash_value.strip()
+        yield from self._iter_video_records(
+            video_ids=options.video_ids,
+            hash_value=hash_value,
+            includes=includes,
+        )
+        yield from self._iter_report_records(
+            video_ids=options.video_ids,
+            hash_value=hash_value,
+            includes=includes,
+        )
 
-        if includes["raw"] or includes["processed"] or includes["streamable"]:
-            video_qs = VideoFile.objects.all().order_by("pk")
-            if video_ids:
-                video_qs = video_qs.filter(pk__in=video_ids)
-            if hash_value:
-                video_qs = video_qs.filter(
-                    models.Q(video_hash=hash_value)
-                    | models.Q(processed_video_hash=hash_value)
-                )
-            for video in video_qs.iterator():
-                yield "video", video
+    @staticmethod
+    def _iter_video_records(
+        *,
+        video_ids: list[int],
+        hash_value: str,
+        includes: dict[str, bool],
+    ) -> Iterable[tuple[ObjectKind, models.Model]]:
+        if not (includes["raw"] or includes["processed"] or includes["streamable"]):
+            return
+        video_qs = VideoFile.objects.all().order_by("pk")
+        if video_ids:
+            video_qs = video_qs.filter(pk__in=video_ids)
+        if hash_value:
+            video_qs = video_qs.filter(
+                models.Q(video_hash=hash_value)
+                | models.Q(processed_video_hash=hash_value)
+            )
+        for video in video_qs.iterator():
+            yield "video", video
 
-        if includes["reports"] and not video_ids:
-            report_qs = RawPdfFile.objects.all().order_by("pk")
-            if hash_value:
-                report_qs = report_qs.filter(pdf_hash=hash_value)
-            for report in report_qs.iterator():
-                yield "report", report
+    @staticmethod
+    def _iter_report_records(
+        *,
+        video_ids: list[int],
+        hash_value: str,
+        includes: dict[str, bool],
+    ) -> Iterable[tuple[ObjectKind, models.Model]]:
+        if not includes["reports"] or video_ids:
+            return
+        report_qs = RawPdfFile.objects.all().order_by("pk")
+        if hash_value:
+            report_qs = report_qs.filter(pdf_hash=hash_value)
+        for report in report_qs.iterator():
+            yield "report", report
 
     def _plan_record(
         self,
@@ -629,21 +792,43 @@ class Command(BaseCommand):
         )
 
     def _plan_field(self, instance: models.Model, spec: MediaFieldSpec) -> FieldPlan:
-        field_file = getattr(instance, spec.field_name)
-        if _field_file_has_name(field_file) and _field_is_repairable_plaintext(
-            field_file
-        ):
+        field_file = cast(FieldFile | None, getattr(instance, spec.field_name))
+        existing_plan = self._plan_existing_field_file(instance, spec, field_file)
+        if existing_plan is not None:
+            return existing_plan
+
+        source, rejected_reason = self._find_plaintext_source(instance, spec)
+        if source is None:
+            return self._plan_missing_source(
+                instance,
+                spec,
+                field_file,
+                rejected_reason=rejected_reason,
+            )
+        return self._plan_source_migration(instance, spec, source)
+
+    @staticmethod
+    def _plan_existing_field_file(
+        instance: models.Model,
+        spec: MediaFieldSpec,
+        field_file: FieldFile | None,
+    ) -> FieldPlan | None:
+        named_file = _as_storage_backed_file(field_file)
+        if named_file is None:
+            return None
+        readable_field_file = cast(FieldFile, field_file)
+        if _field_is_repairable_plaintext(readable_field_file):
             return FieldPlan(
                 spec.object_kind,
                 instance.pk,
                 spec.field_name,
                 "would_repair",
                 reason="plaintext_fieldfile",
-                target_name=field_file.name,
+                target_name=named_file.name,
             )
 
-        if _field_file_has_name(field_file) and field_file_is_readable(field_file):
-            if not _field_is_encrypted_at_rest(field_file):
+        if field_file_is_readable(readable_field_file):
+            if not _field_is_encrypted_at_rest(readable_field_file):
                 return FieldPlan(
                     spec.object_kind,
                     instance.pk,
@@ -652,24 +837,37 @@ class Command(BaseCommand):
                     reason="validation_failed",
                 )
             return FieldPlan(spec.object_kind, instance.pk, spec.field_name, "ok")
+        return None
 
-        source, rejected_reason = self._find_plaintext_source(instance, spec)
-        if source is None:
-            if _field_file_has_name(field_file):
-                reason = (
-                    "missing_source"
-                    if not _field_storage_exists(field_file)
-                    else rejected_reason or "unreadable_fieldfile"
-                )
-                return FieldPlan(
-                    spec.object_kind,
-                    instance.pk,
-                    spec.field_name,
-                    "failed",
-                    reason=reason,
-                )
+    @staticmethod
+    def _plan_missing_source(
+        instance: models.Model,
+        spec: MediaFieldSpec,
+        field_file: FieldFile | None,
+        *,
+        rejected_reason: str,
+    ) -> FieldPlan:
+        if not _field_file_has_name(field_file):
             return FieldPlan(spec.object_kind, instance.pk, spec.field_name, "ok")
+        reason = (
+            "missing_source"
+            if not _field_storage_exists(field_file)
+            else rejected_reason or "unreadable_fieldfile"
+        )
+        return FieldPlan(
+            spec.object_kind,
+            instance.pk,
+            spec.field_name,
+            "failed",
+            reason=reason,
+        )
 
+    def _plan_source_migration(
+        self,
+        instance: models.Model,
+        spec: MediaFieldSpec,
+        source: SourceCandidate,
+    ) -> FieldPlan:
         validation_error = self._validate_source(instance, spec, source)
         if validation_error:
             return FieldPlan(
@@ -735,32 +933,18 @@ class Command(BaseCommand):
     ) -> tuple[SourceCandidate | None, str]:
         rejected_reason = ""
         for candidate in self._source_candidates(instance, spec):
-            path = candidate.path
-            if not path.exists():
+            file_status = _inspect_candidate_file(candidate.path)
+            if file_status == "missing":
                 continue
-            if not path.is_file() or path.is_symlink():
-                rejected_reason = "permission_error"
+            if file_status != "candidate":
+                rejected_reason = file_status
                 continue
-            if path.stat().st_size <= 0:
-                rejected_reason = "validation_failed"
-                continue
-            try:
-                starts_with_magic = _path_starts_with_magic(path)
-            except PermissionError:
-                rejected_reason = "permission_error"
-                continue
-            except OSError:
-                rejected_reason = "validation_failed"
-                continue
-            if starts_with_magic:
-                rejected_reason = (
-                    "encrypted_blob_in_streamable_path"
-                    if candidate.kind == "streamable_path"
-                    else "validation_failed"
-                )
-                continue
-            if not self._is_allowed_source_path(path):
-                rejected_reason = "permission_error"
+            content_status = _inspect_candidate_content(
+                candidate,
+                is_allowed_source_path=self._is_allowed_source_path,
+            )
+            if content_status != "accepted":
+                rejected_reason = content_status
                 continue
             return candidate, ""
         return None, rejected_reason
@@ -828,25 +1012,39 @@ class Command(BaseCommand):
     def _candidate_stems(
         self, instance: models.Model, spec: MediaFieldSpec
     ) -> tuple[str, ...]:
+        configured_stems = self._configured_hash_stems(instance, spec)
+        processed_stems = self._processed_video_stems(instance, spec)
+        return tuple(dict.fromkeys((*configured_stems, *processed_stems)))
+
+    @staticmethod
+    def _configured_hash_stems(
+        instance: models.Model,
+        spec: MediaFieldSpec,
+    ) -> tuple[str, ...]:
         stems: list[str] = []
         for attr in (spec.hash_attr, *spec.lookup_hash_attrs):
             if not attr:
                 continue
             value = getattr(instance, attr, "") or ""
-            if value and str(value) not in stems:
+            if value:
                 stems.append(str(value))
+        return tuple(dict.fromkeys(stems))
 
-        if spec.object_kind == "video" and spec.field_name == "processed_file":
-            video_hash = getattr(instance, "video_hash", "") or ""
-            if video_hash:
-                for stem in (
-                    f"{video_hash}_processed",
-                    f"{video_hash}-processed",
-                    f"processed_{video_hash}",
-                ):
-                    if stem not in stems:
-                        stems.append(stem)
-        return tuple(stems)
+    @staticmethod
+    def _processed_video_stems(
+        instance: models.Model,
+        spec: MediaFieldSpec,
+    ) -> tuple[str, ...]:
+        if spec.object_kind != "video" or spec.field_name != "processed_file":
+            return ()
+        video_hash = getattr(instance, "video_hash", "") or ""
+        if not video_hash:
+            return ()
+        return (
+            f"{video_hash}_processed",
+            f"{video_hash}-processed",
+            f"processed_{video_hash}",
+        )
 
     def _candidate_suffixes(
         self, instance: models.Model, spec: MediaFieldSpec
@@ -1175,27 +1373,10 @@ class Command(BaseCommand):
 
     def _count_result(self, summary: dict[str, Any], result: dict[str, Any]) -> None:
         status = result["status"]
-        if status == "failed":
-            summary["failed"] += 1
-        elif status == "migrated":
-            summary["migrated"] += 1
-            summary["changed"] += 1
-        elif status == "repaired":
-            summary["repaired"] += 1
-            summary["changed"] += 1
-        elif status == "streamable_synced":
-            summary["streamable_synced"] += 1
-            summary["changed"] += 1
-        elif status == "would_migrate":
-            summary["would_migrate"] += 1
-            if result.get("cleanup_eligible"):
-                summary["would_delete_legacy"] += 1
-        elif status == "would_repair":
-            summary["would_repair"] += 1
-        elif status == "would_sync_streamable":
-            summary["would_sync_streamable"] += 1
-        elif status == "ok":
-            summary["unchanged"] += 1
+        for counter in RESULT_STATUS_COUNTERS.get(status, ()):
+            summary[counter] += 1
+        if status == "would_migrate" and result.get("cleanup_eligible"):
+            summary["would_delete_legacy"] += 1
         if result.get("cleanup_deleted"):
             summary["cleanup_deleted"] += 1
 

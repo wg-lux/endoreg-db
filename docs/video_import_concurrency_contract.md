@@ -174,7 +174,12 @@ exactly one unpublished candidate plus typed metadata.
   It must not return `False` while leaving an ambiguous partial success.
 
 The repository-specific rules are maintained in
-`lx-anonymizer/docs/VIDEO_IMPORT_CONCURRENCY_CONTRACT.md`.
+the [`lx-anonymizer` component contract](https://github.com/wg-lux/lx-anonymizer/blob/main/docs/VIDEO_IMPORT_CONCURRENCY_CONTRACT.md).
+That document may narrow implementation rules inside `lx-anonymizer`, but it
+may not redefine durable ownership, publication, storage, retry, or cleanup.
+If the documents conflict, this cross-repository contract and the feature YAML
+prevail. A change to this boundary must update both documents and record the
+paired repository revisions in review evidence.
 
 ## FFmpeg and Cancellation
 

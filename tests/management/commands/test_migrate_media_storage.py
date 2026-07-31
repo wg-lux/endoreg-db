@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.db.models.fields.files import FieldFile
 
 from endoreg_db.management.commands import migrate_media_storage as command_module
@@ -21,6 +22,15 @@ from lx_dtypes.models.contracts.migrate_media_storage import (
 )
 
 pytestmark = pytest.mark.django_db
+
+
+@pytest.fixture(autouse=True)
+def enable_destructive_migration_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        command_module,
+        "video_storage_destructive_migration_enabled",
+        lambda: True,
+    )
 
 
 def _json_command(*args: str) -> MigrateMediaStorageSummaryPayload:
@@ -56,6 +66,20 @@ def _starts_with_magic(path: Path) -> bool:
     return path.read_bytes().startswith(MAGIC)
 
 
+def test_migrate_media_storage_apply_requires_release_gate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        command_module,
+        "video_storage_destructive_migration_enabled",
+        lambda: False,
+    )
+
+    assert _json_command("--include-raw").dry_run is True
+    with pytest.raises(CommandError, match="clinical_frame_quality"):
+        _json_command("--apply", "--include-raw")
+
+
 def test_migrate_media_storage_dry_run_changes_nothing(media_center: Center) -> None:
     video = _create_video(media_center, "dry-run-video")
     stored_path = _write_plaintext_field_file(
@@ -72,6 +96,30 @@ def test_migrate_media_storage_dry_run_changes_nothing(media_center: Center) -> 
     assert summary.changed == 0
     assert stored_path.stat().st_mtime_ns == before_mtime
     assert not _starts_with_magic(stored_path)
+
+
+def test_migrate_media_storage_discovers_legacy_processed_stem_variant(
+    media_center: Center,
+) -> None:
+    video = _create_video(media_center, "processed-stem-video")
+    source = (
+        EndoregPathsModel.from_environment().anonym_video
+        / "processed-stem-video_processed.mp4"
+    )
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_bytes(b"\x00\x00\x00\x18ftypmp42processed-stem")
+
+    try:
+        summary = _json_command(
+            "--include-processed",
+            "--video-id",
+            str(video.pk),
+        )
+
+        assert summary.would_migrate == 1
+        assert summary.records[0].source_path == str(source.resolve())
+    finally:
+        source.unlink(missing_ok=True)
 
 
 def test_migrate_media_storage_second_run_is_noop(media_center: Center) -> None:
@@ -132,6 +180,41 @@ def test_migrate_media_storage_missing_source_is_reported(
     assert summary.failed == 1
     assert summary.records[0].reason == "missing_source"
     assert summary.changed == 0
+
+
+@pytest.mark.parametrize(
+    ("kind", "expected_status"),
+    [
+        ("legacy_path", "validation_failed"),
+        ("streamable_path", "encrypted_blob_in_streamable_path"),
+    ],
+)
+def test_plaintext_candidate_inspection_rejects_invalid_content(
+    tmp_path: Path,
+    kind: command_module.SourceKind,
+    expected_status: command_module.CandidateContentStatus,
+) -> None:
+    source = tmp_path / f"encrypted-{kind}.mp4"
+    source.write_bytes(MAGIC + b"encrypted")
+    candidate = command_module.SourceCandidate(source, kind, "test")
+
+    status = command_module._inspect_candidate_content(  # pyright: ignore[reportPrivateUsage]
+        candidate,
+        is_allowed_source_path=lambda _path: True,
+    )
+
+    assert status == expected_status
+
+
+def test_plaintext_candidate_inspection_rejects_empty_file(tmp_path: Path) -> None:
+    source = tmp_path / "empty.mp4"
+    source.touch()
+
+    status = command_module._inspect_candidate_file(  # pyright: ignore[reportPrivateUsage]
+        source
+    )
+
+    assert status == "validation_failed"
 
 
 def test_migrate_media_storage_deletes_legacy_source_only_with_explicit_flag(

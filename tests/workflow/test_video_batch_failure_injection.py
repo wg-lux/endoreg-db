@@ -34,6 +34,7 @@ _PROCESSED_GENERATION_V1 = "b" * 64
 _PROCESSED_GENERATION_V2 = "c" * 64
 _STALE_GENERATION = "d" * 64
 _CONFIG_SHA256 = "e" * 64
+_PROCESS_ENTRY_TIMEOUT_SECONDS = 60
 
 
 @dataclass(frozen=True)
@@ -224,7 +225,7 @@ runpy.run_path(
         stderr=subprocess.PIPE,
         text=True,
     )
-    deadline = time.monotonic() + 20
+    deadline = time.monotonic() + _PROCESS_ENTRY_TIMEOUT_SECONDS
     try:
         while not entered_service.exists() and process.poll() is None:
             if time.monotonic() >= deadline:

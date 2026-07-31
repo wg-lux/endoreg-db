@@ -563,6 +563,57 @@ def atomic_write_file(
     return destination
 
 
+def atomic_create_file(
+    *,
+    destination: Path,
+    content: Iterable[bytes],
+    required_bytes: int | None = None,
+    file_mode: int | None = None,
+    dir_mode: int | None = None,
+) -> Path:
+    """Atomically create ``destination`` and fail if it already exists."""
+    destination = Path(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if dir_mode is not None:
+        os.chmod(destination.parent, dir_mode)
+    if required_bytes is not None:
+        ensure_disk_capacity(
+            destination_dir=destination.parent,
+            required_bytes=required_bytes,
+        )
+    temporary_destination = _temporary_destination(destination)
+    bytes_written = 0
+    try:
+        with temporary_destination.open("xb") as handle:
+            if file_mode is not None:
+                os.chmod(temporary_destination, file_mode)
+            for chunk in content:
+                handle.write(chunk)
+                bytes_written += len(chunk)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.link(temporary_destination, destination)
+        safe_unlink_file(temporary_destination)
+        _fsync_directory_best_effort(destination.parent)
+    except Exception as exc:
+        safe_unlink_file(temporary_destination, missing_ok=True)
+        _emit_file_operation_event(
+            operation="create",
+            status="error",
+            destination=destination,
+            detail=str(exc),
+            bytes=bytes_written,
+        )
+        raise
+    _emit_file_operation_event(
+        operation="create",
+        status="ok",
+        destination=destination,
+        bytes=bytes_written,
+    )
+    return destination
+
+
 def atomic_handoff_file(
     *,
     destination: Path,

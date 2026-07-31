@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from enum import StrEnum
 from pathlib import Path
 from types import NoneType
-from typing import Protocol, Sequence, TypeAlias, TypedDict, Unpack, cast
+from typing import Protocol, TypeAlias, TypedDict, Unpack, cast
 
 from django.core.files import File
 from django.core.management.base import BaseCommand, CommandError, CommandParser
@@ -167,6 +169,17 @@ class MigrationRule:
     source_file_persisted: bool
     cleanup_status: str
     allowed_extensions: MigrationExtensions = None
+
+
+class _MigrationDisposition(StrEnum):
+    MIGRATED = "migrated"
+    SKIPPED = "skipped"
+
+
+@dataclass(frozen=True, slots=True)
+class _MigrationOutcome:
+    disposition: _MigrationDisposition
+    entry: MigrateDataDirManifestEntryPayload
 
 
 VIDEO_FILE_EXTENSIONS = (".mp4", ".webm", ".avi", ".mkv", ".mov", ".m4v")
@@ -574,141 +587,238 @@ class Command(BaseCommand):
         options_payload = _migrate_data_dir_command_options_payload(
             cast(dict[str, object], options)
         )
-        source_root = Path(options_payload.source_root).expanduser().resolve()
-        if not source_root.exists() or not source_root.is_dir():
-            raise CommandError(f"Legacy source root does not exist: {source_root}")
-
-        dry_run = options_payload.dry_run
+        source_root = self._validated_source_root(options_payload.source_root)
         manifest_path = self._resolve_manifest_path(
             raw_path=options_payload.manifest_path.strip(),
             source_root=source_root,
         )
+        migrated_entries, skipped_entries = self._migrate_entries(
+            source_root=source_root,
+            dry_run=options_payload.dry_run,
+        )
+        self._write_manifest(
+            source_root=source_root,
+            manifest_path=manifest_path,
+            dry_run=options_payload.dry_run,
+            migrated_entries=migrated_entries,
+            skipped_entries=skipped_entries,
+        )
 
+    @staticmethod
+    def _validated_source_root(raw_source_root: str) -> Path:
+        source_root = Path(raw_source_root).expanduser().resolve()
+        if not source_root.exists() or not source_root.is_dir():
+            raise CommandError(f"Legacy source root does not exist: {source_root}")
+        return source_root
+
+    def _migrate_entries(
+        self,
+        *,
+        source_root: Path,
+        dry_run: bool,
+    ) -> tuple[
+        list[MigrateDataDirManifestEntryPayload],
+        list[MigrateDataDirManifestEntryPayload],
+    ]:
         migrated_entries: list[MigrateDataDirManifestEntryPayload] = []
         skipped_entries: list[MigrateDataDirManifestEntryPayload] = []
-
         for rule in MIGRATION_RULES:
-            legacy_dir = source_root / rule.legacy_relative
-            if not legacy_dir.exists():
-                continue
-            for source_path in sorted(legacy_dir.rglob("*")):
-                if not source_path.is_file():
-                    continue
-                destination_path = _ensure_within_runtime_root(
-                    rule.target_root / source_path.relative_to(legacy_dir)
+            for source_path in self._rule_source_paths(source_root, rule):
+                outcome = self._migrate_source_path(
+                    source_root=source_root,
+                    source_path=source_path,
+                    rule=rule,
+                    dry_run=dry_run,
                 )
-                entry = MigrateDataDirManifestEntryPayload(
-                    source_path=str(source_path),
-                    destination_path=str(destination_path),
-                    storage_class=rule.storage_class,
-                    storage_tier=rule.storage_tier,
-                    retention_policy=rule.retention_policy,
-                    create_upload_job=rule.create_upload_job,
-                )
-                # FIX 1: Ignore lock files
-                if source_path.suffix.lower() == ".lock":
-                    logger.warning(f"Skipping lock file: {source_path}")
+                if outcome is None:
                     continue
-
-                # FIX 2: Ignore non-media junk.
-                allowed_extensions = rule.allowed_extensions
-                if (
-                    allowed_extensions is not None
-                    and source_path.suffix.lower() not in allowed_extensions
-                ):
-                    logger.warning(f"Skipping unsupported file type: {source_path}")
-                    continue
-
-                if self._raw_streamable_disabled(rule):
-                    skipped_entries.append(
-                        entry.model_copy(
-                            update={"reason": "raw_streamable_disabled_by_policy"}
-                        )
-                    )
-                    logger.warning(
-                        "Skipping raw streamable migration because raw video policy "
-                        "requires application-encrypted storage: source=%s "
-                        "destination=%s",
-                        source_path,
-                        destination_path,
-                    )
-                    continue
-
-                if dry_run:
-                    migrated_entries.append(
-                        entry.model_copy(
-                            update={
-                                "dry_run": True,
-                                "destination_exists": destination_path.exists(),
-                            }
-                        )
-                    )
-                    continue
-
-                # 2. If it already exists at the destination, run the "Database Sync" logic
-                if destination_path.exists():
-                    source_hash = sha256_file(source_path)
-                    destination_hash = sha256_file(destination_path)
-                    if source_hash != destination_hash:
-                        logger.error(
-                            "Refusing to sync migration destination with mismatched "
-                            "content hash: source=%s destination=%s source_sha256=%s "
-                            "destination_sha256=%s",
-                            source_path,
-                            destination_path,
-                            source_hash,
-                            destination_hash,
-                        )
-                        skipped_entries.append(
-                            entry.model_copy(
-                                update={
-                                    "reason": "destination_exists_hash_mismatch",
-                                    "source_sha256": source_hash,
-                                    "destination_sha256": destination_hash,
-                                }
-                            )
-                        )
-                        continue
-
-                    synced = self.sync_db(destination_path, source_path, rule)
-                    skipped_entries.append(
-                        entry.model_copy(
-                            update={
-                                "reason": (
-                                    "destination_exists_and_synced"
-                                    if synced
-                                    else "destination_exists_unchanged"
-                                )
-                            }
-                        )
-                    )
-                    continue
-
-                atomic_copy_file(
-                    source=source_path,
-                    destination=destination_path,
-                    preserve_metadata=True,
-                )
-                job_id = None
-                if rule.create_upload_job:
-                    job = self._create_or_reuse_migration_upload_job(
-                        migrated_file=destination_path,
-                        source_path=source_path,
-                        rule=rule,
-                    )
-                    job_id = str(cast("PersistedMigrationModel", job).id)
-                if self.sync_db(destination_path, source_path, rule):
-                    logger.info(
-                        f"synced db path of {destination_path} to {source_path}"
-                    )
+                if outcome.disposition is _MigrationDisposition.MIGRATED:
+                    migrated_entries.append(outcome.entry)
                 else:
-                    logger.info(
-                        f"No existing DB records found for {source_path.name} to sync."
-                    )
-                migrated_entries.append(
-                    entry.model_copy(update={"upload_job_id": job_id})
-                )
+                    skipped_entries.append(outcome.entry)
+        return migrated_entries, skipped_entries
 
+    @staticmethod
+    def _rule_source_paths(
+        source_root: Path,
+        rule: MigrationRule,
+    ) -> Iterator[Path]:
+        legacy_dir = source_root / rule.legacy_relative
+        if not legacy_dir.exists():
+            return
+        for source_path in sorted(legacy_dir.rglob("*")):
+            if source_path.is_file():
+                yield source_path
+
+    def _migrate_source_path(
+        self,
+        *,
+        source_root: Path,
+        source_path: Path,
+        rule: MigrationRule,
+        dry_run: bool,
+    ) -> _MigrationOutcome | None:
+        legacy_dir = source_root / rule.legacy_relative
+        destination_path = _ensure_within_runtime_root(
+            rule.target_root / source_path.relative_to(legacy_dir)
+        )
+        entry = MigrateDataDirManifestEntryPayload(
+            source_path=str(source_path),
+            destination_path=str(destination_path),
+            storage_class=rule.storage_class,
+            storage_tier=rule.storage_tier,
+            retention_policy=rule.retention_policy,
+            create_upload_job=rule.create_upload_job,
+        )
+        if self._source_path_is_ignored(source_path, rule):
+            return None
+        if self._raw_streamable_disabled(rule):
+            return self._raw_streamable_disabled_outcome(
+                entry=entry,
+                source_path=source_path,
+                destination_path=destination_path,
+            )
+        if dry_run:
+            return _MigrationOutcome(
+                disposition=_MigrationDisposition.MIGRATED,
+                entry=entry.model_copy(
+                    update={
+                        "dry_run": True,
+                        "destination_exists": destination_path.exists(),
+                    }
+                ),
+            )
+        if destination_path.exists():
+            return self._existing_destination_outcome(
+                entry=entry,
+                source_path=source_path,
+                destination_path=destination_path,
+                rule=rule,
+            )
+        return self._new_destination_outcome(
+            entry=entry,
+            source_path=source_path,
+            destination_path=destination_path,
+            rule=rule,
+        )
+
+    @staticmethod
+    def _source_path_is_ignored(source_path: Path, rule: MigrationRule) -> bool:
+        if source_path.suffix.lower() == ".lock":
+            logger.warning("Skipping lock file: %s", source_path)
+            return True
+        allowed_extensions = rule.allowed_extensions
+        if (
+            allowed_extensions is not None
+            and source_path.suffix.lower() not in allowed_extensions
+        ):
+            logger.warning("Skipping unsupported file type: %s", source_path)
+            return True
+        return False
+
+    @staticmethod
+    def _raw_streamable_disabled_outcome(
+        *,
+        entry: MigrateDataDirManifestEntryPayload,
+        source_path: Path,
+        destination_path: Path,
+    ) -> _MigrationOutcome:
+        logger.warning(
+            "Skipping raw streamable migration because raw video policy "
+            "requires application-encrypted storage: source=%s destination=%s",
+            source_path,
+            destination_path,
+        )
+        return _MigrationOutcome(
+            disposition=_MigrationDisposition.SKIPPED,
+            entry=entry.model_copy(
+                update={"reason": "raw_streamable_disabled_by_policy"}
+            ),
+        )
+
+    def _existing_destination_outcome(
+        self,
+        *,
+        entry: MigrateDataDirManifestEntryPayload,
+        source_path: Path,
+        destination_path: Path,
+        rule: MigrationRule,
+    ) -> _MigrationOutcome:
+        source_hash = sha256_file(source_path)
+        destination_hash = sha256_file(destination_path)
+        if source_hash != destination_hash:
+            logger.error(
+                "Refusing to sync migration destination with mismatched content "
+                "hash: source=%s destination=%s source_sha256=%s "
+                "destination_sha256=%s",
+                source_path,
+                destination_path,
+                source_hash,
+                destination_hash,
+            )
+            return _MigrationOutcome(
+                disposition=_MigrationDisposition.SKIPPED,
+                entry=entry.model_copy(
+                    update={
+                        "reason": "destination_exists_hash_mismatch",
+                        "source_sha256": source_hash,
+                        "destination_sha256": destination_hash,
+                    }
+                ),
+            )
+
+        synced = self.sync_db(destination_path, source_path, rule)
+        reason = (
+            "destination_exists_and_synced"
+            if synced
+            else "destination_exists_unchanged"
+        )
+        return _MigrationOutcome(
+            disposition=_MigrationDisposition.SKIPPED,
+            entry=entry.model_copy(update={"reason": reason}),
+        )
+
+    def _new_destination_outcome(
+        self,
+        *,
+        entry: MigrateDataDirManifestEntryPayload,
+        source_path: Path,
+        destination_path: Path,
+        rule: MigrationRule,
+    ) -> _MigrationOutcome:
+        atomic_copy_file(
+            source=source_path,
+            destination=destination_path,
+            preserve_metadata=True,
+        )
+        job_id = None
+        if rule.create_upload_job:
+            job = self._create_or_reuse_migration_upload_job(
+                migrated_file=destination_path,
+                source_path=source_path,
+                rule=rule,
+            )
+            job_id = str(cast("PersistedMigrationModel", job).id)
+        if self.sync_db(destination_path, source_path, rule):
+            logger.info("synced db path of %s to %s", destination_path, source_path)
+        else:
+            logger.info(
+                "No existing DB records found for %s to sync.", source_path.name
+            )
+        return _MigrationOutcome(
+            disposition=_MigrationDisposition.MIGRATED,
+            entry=entry.model_copy(update={"upload_job_id": job_id}),
+        )
+
+    def _write_manifest(
+        self,
+        *,
+        source_root: Path,
+        manifest_path: Path,
+        dry_run: bool,
+        migrated_entries: list[MigrateDataDirManifestEntryPayload],
+        skipped_entries: list[MigrateDataDirManifestEntryPayload],
+    ) -> None:
         manifest = MigrateDataDirManifestPayload(
             command="migrate_data_dir",
             created_at=datetime.now(timezone.utc).isoformat(),

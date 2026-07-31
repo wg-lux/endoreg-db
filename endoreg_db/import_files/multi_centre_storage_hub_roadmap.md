@@ -1,6 +1,6 @@
 # Multi-Centre Storage Hub Roadmap
 
-> Status tracking was migrated to `feature-tracking/HubIngest.yml`. This
+> Status tracking was migrated to `feature-tracking/done/HubIngest.yml`. This
 > document is retained as architecture context and must not carry an independent
 > completion status.
 
