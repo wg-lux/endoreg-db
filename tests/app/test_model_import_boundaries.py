@@ -87,6 +87,9 @@ ALLOWLISTED_SERVICE_FRAME_ANNOTATION_IMPORTS: ImportMap = {
             "build_dataset_label_distribution",
             "build_dataset_target_buckets",
             "build_segment_frame_buckets",
+            "mark_frame_prediction_completed",
+            "mark_frame_prediction_reset",
+            "mark_prediction_segments_created",
             "merge_frame_buckets",
             "normalize_frame_sampling_strategy as _normalize_frame_sampling_strategy",
             "normalize_frame_task_mode as _normalize_frame_task_mode",
@@ -136,16 +139,6 @@ ALLOWLISTED_SERVICE_FRAME_ANNOTATION_IMPORTS: ImportMap = {
             "SegmentAnnotationSnapshot",
             "delete_frame_annotations_for_segment as _delete_frame_annotations_for_segment",
             "sync_frame_annotations_for_segment as _sync_frame_annotations_for_segment",
-        }
-    ),
-    (
-        "endoreg_db/services/video_temporal_inference.py",
-        FRAME_ANNOTATION_MODEL_WORKFLOW_MODULE,
-    ): frozenset(
-        {
-            "mark_frame_prediction_completed",
-            "mark_frame_prediction_reset",
-            "mark_prediction_segments_created",
         }
     ),
 }

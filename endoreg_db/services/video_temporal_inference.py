@@ -40,7 +40,7 @@ from endoreg_db.services.video_files._ai import (
 from endoreg_db.services.video_files._segments import (
     convert_sequences_to_db_segments,
 )
-from endoreg_db.models.state.frame_annotation import (
+from endoreg_db.services.frame_annotation_workflow import (
     mark_frame_prediction_completed,
     mark_frame_prediction_reset,
     mark_prediction_segments_created,
