@@ -1,4 +1,9 @@
 schema_version: '1.0'
+# AGENT-MANAGER-NOTIZ (2026-07-31): Vor der naechsten Status- oder Evidenzaenderung
+# alle als `command` klassifizierten Referenzen mit Platzhaltern wie `<... matrix>`
+# durch die exakten, im Vordergrund ausfuehrbaren Befehle und Testpfade ersetzen.
+# Eine Testanzahl mit Sammelbezeichnung ist keine stabile, reproduzierbare Evidenz;
+# betroffene `verified`-Bewertungen erst nach nachvollziehbarer Evidenz bestaetigen.
 id: lx_dtypes_model_standardization
 name: lx-dtypes-Modellstandardisierung
 description: 'Repositoryweite Standardisierung der endoreg_db-Django-Modelle durch eindeutig verantwortete,
@@ -44,7 +49,7 @@ definition_of_done:
       Importer, Exporte und dynamische Stringreferenzen abgleichen und Vollständigkeitsguard ausführen.
     timeout_seconds: 1200
   assessment:
-    status: in_progress
+    status: verified
     evidence:
     - kind: document
       reference: quality/lx_dtypes_model_inventory.yml
@@ -52,12 +57,26 @@ definition_of_done:
       reference: scripts/check_lx_dtypes_model_inventory.py
     - kind: test
       reference: tests/scripts/test_check_lx_dtypes_model_inventory.py
-    note: Der Guard inventarisiert 141 registrierte und fünf statisch erkannte abstrakte endoreg_db-Modelle
-      einschließlich Struktur, JSON-Feldern und Modulimport-Hinweisen. 18 Modelle besitzen evidenzbasierte
-      Zielklassen; 128 Ownership-Entscheidungen sowie vollständige Boundary-Consumer und dynamische Referenzen
-      bleiben offen.
-    assessed_by: Codex
-    assessed_at: '2026-07-29T12:57:06.031512Z'
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/python scripts/check_lx_dtypes_model_inventory.py
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/python -m pytest tests/scripts/test_check_lx_dtypes_model_inventory.py tests/app/test_model_import_boundaries.py -q
+    - kind: command
+      reference: ./feature-tracking/tracker.py validate
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pyright
+    note: 'Das reproduzierbare Inventar importiert alle Modell-Leaf-Module vor der Registry-Auswertung
+      und deckt damit 146 registrierte sowie fünf abstrakte Modelle vollständig ab. Alle 151 Deklarationen
+      besitzen genau eine konkrete Zielklasse: 53 shared_lx_dtypes_contract, 40 local_boundary_schema
+      und 58 persistence_only; es bestehen keine unclassified-Einträge oder temporary_exceptions. Erfasst
+      werden Modellstruktur, persistierte JSON-Felder, API-, Schema-, Service-, Import-, Export- und Job-Consumer
+      sowie dynamische Modellreferenzen. Neue oder veränderte Modelle und Boundaries lassen den Guard
+      fehlschlagen. Die Runtime-Metadaten wurden nach den DICOM-, Video- und Annotation-Boundary-Änderungen
+      reproduzierbar aktualisiert; der Guard meldet weiterhin 146 registrierte und fünf abstrakte Modelle
+      ohne Klassifikationsabweichung. Pyright, die fokussierten Integrations- und Tracker-Tests sowie der
+      Repositoryscan bestanden.'
+    assessed_by: codex
+    assessed_at: '2026-07-31T11:42:27Z'
 - id: field_and_contract_ownership
   category: interoperability
   title: Feld-, Enum- und Contract-Ownership ist für jedes Modell eindeutig
@@ -77,17 +96,52 @@ definition_of_done:
       und Persistenzschema reviewen.
     timeout_seconds: 1200
   assessment:
-    status: in_progress
+    status: verified
     evidence:
     - kind: document
       reference: quality/lx_dtypes_model_inventory.yml
+    - kind: document
+      reference: docs/model_layer_map_for_agents.md
     - kind: code
       reference: scripts/check_lx_dtypes_model_inventory.py
-    note: Erste geprüfte Kohorte klassifiziert fünf abstrakte Persistenzbasen, sieben lokale Boundary-Schema-Aggregate
-      und sechs shared-lx_dtypes-Modelle mit konkreter Ownership-Evidenz. 128 Modelle bleiben unclassified;
-      dokumentierte Feldlücken gelten ausdrücklich nicht als validiert.
-    assessed_by: Codex
-    assessed_at: '2026-07-29T12:57:13.847791Z'
+    - kind: code
+      reference: endoreg_db/models/medical/laboratory/lab_value.py
+    - kind: test
+      reference: tests/scripts/test_check_lx_dtypes_model_inventory.py
+    - kind: test
+      reference: tests/app/test_model_import_boundaries.py
+    - kind: test
+      reference: tests/models/test_dataset_export_scope.py
+    - kind: test
+      reference: tests/services/test_case_media_attachments.py
+    - kind: test
+      reference: tests/services/test_medical_ledger_roundtrip.py
+    - kind: test
+      reference: tests/api/test_dtypes_record_persistence.py
+    - kind: test
+      reference: tests/services/test_report_finding_sync.py
+    - kind: test
+      reference: tests/services/test_lx_video_contracts.py
+    - kind: test
+      reference: tests/services/test_video_format_reconciliation.py
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/python scripts/check_lx_dtypes_model_inventory.py
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/python -m pytest tests/scripts/test_check_lx_dtypes_model_inventory.py tests/app/test_model_import_boundaries.py tests/models/test_dataset_export_scope.py tests/services/test_case_media_attachments.py tests/services/test_medical_ledger_roundtrip.py tests/api/test_dtypes_record_persistence.py tests/services/test_report_finding_sync.py tests/services/test_lx_video_contracts.py tests/services/test_video_format_reconciliation.py -q
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pyright
+    note: 'Alle 151 Modell-Deklarationen besitzen eine überprüfbare Ownership: 53 gemeinsam genutzte Verträge
+      verweisen auf importierbare Module der gepinnten lx-dtypes-Version 0.2.9, 40 endoreg_db-spezifische
+      Boundary-Schemata bleiben lokal und 58 reine Datenbankformen bleiben im Persistenzmodell. Persistierte
+      JSON-Felder, sämtliche erkannten Consumer und dynamische Referenzen sind pro Modell dokumentiert.
+      Es bestehen keine temporären Ausnahmen. Der Guard importiert alle Modell-Leaf-Module, prüft die
+      exklusive Klassifikation und die gepinnten shared-Contract-Module und verhindert neue konkurrierende
+      lokale Pydantic-Verträge sowie Model-zu-Service- oder Barrel-Import-Abweichungen. CommonLabValues
+      wurde vom parallelen Pydantic-Vertrag zu einer typisierten unveränderlichen Dataclass reduziert.
+      Version, betroffene Layer und Consumer bleiben im Inventar und im dokumentierten Releaseverfahren
+      nachvollziehbar. Pyright und die 91 Tests umfassende Cross-Domain-Matrix bestanden.'
+    assessed_by: codex
+    assessed_at: '2026-07-30T07:45:14.217866Z'
 - id: canonical_boundary_validation
   category: functionality
   title: Externe und repositoryübergreifende Daten werden zentral durch lx_dtypes validiert
@@ -107,8 +161,172 @@ definition_of_done:
       bis Service, Persistenz und Ausgabe verfolgen.
     timeout_seconds: 1200
   assessment:
-    status: not_assessed
-    evidence: []
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/schemas/aidataset_export.py
+    - kind: code
+      reference: endoreg_db/schemas/report_draft.py
+    - kind: code
+      reference: endoreg_db/schemas/report_llm.py
+    - kind: code
+      reference: endoreg_db/services/jobs/report_llm_jobs.py
+    - kind: code
+      reference: endoreg_db/models/aidataset/aidataset.py
+    - kind: code
+      reference: endoreg_db/schemas/persisted_json.py
+    - kind: code
+      reference: endoreg_db/schemas/hub_payloads.py
+    - kind: code
+      reference: endoreg_db/schemas/network_nodes.py
+    - kind: code
+      reference: endoreg_db/services/hub/network_nodes.py
+    - kind: code
+      reference: endoreg_db/views/misc/application_settings_network_nodes.py
+    - kind: code
+      reference: endoreg_db/schemas/temporal_inference.py
+    - kind: code
+      reference: endoreg_db/services/video_temporal_inference.py
+    - kind: code
+      reference: endoreg_db/schemas/dicom_export.py
+    - kind: code
+      reference: endoreg_db/services/interoperability/dicom_import.py
+    - kind: code
+      reference: endoreg_db/schemas/fhir_r4.py
+    - kind: code
+      reference: endoreg_db/views/report/reimport.py
+    - kind: code
+      reference: endoreg_db/schemas/upload.py
+    - kind: code
+      reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/upload.py
+    - kind: code
+      reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/video_frame_annotations.py
+    - kind: code
+      reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/video_frame_box_annotations.py
+    - kind: code
+      reference: endoreg_db/schemas/frame_annotation_ingress.py
+    - kind: code
+      reference: endoreg_db/views/video/ai/frame_annotations.py
+    - kind: code
+      reference: endoreg_db/views/video/ai/frame_box_annotations.py
+    - kind: test
+      reference: tests/models/test_report_llm_job_validation.py
+    - kind: test
+      reference: tests/services/test_report_llm_jobs.py
+    - kind: test
+      reference: tests/views/report/test_report_llm_status.py
+    - kind: test
+      reference: tests/services/test_hub_ingest_dispatch.py
+    - kind: test
+      reference: tests/models/test_hub_json_contracts.py
+    - kind: test
+      reference: tests/services/test_preanonymized_payloads.py
+    - kind: test
+      reference: tests/services/test_preanonymized_watcher_ingest.py
+    - kind: test
+      reference: tests/services/test_network_node_settings_service.py
+    - kind: test
+      reference: tests/views/misc/test_application_settings_endpoints.py
+    - kind: test
+      reference: tests/services/test_video_temporal_inference.py
+    - kind: test
+      reference: tests/services/test_video_temporal_inference_callers.py
+    - kind: test
+      reference: tests/services/test_video_post_validation_jobs.py
+    - kind: test
+      reference: tests/services/test_video_pipeline.py
+    - kind: test
+      reference: tests/models/test_dicom_export_job_validation.py
+    - kind: test
+      reference: tests/services/test_dicom_interoperability.py
+    - kind: test
+      reference: tests/services/test_dicom_manifest_backfill.py
+    - kind: test
+      reference: tests/services/test_fhir_r4_export.py
+    - kind: test
+      reference: tests/views/test_interoperability_errors.py
+    - kind: test
+      reference: tests/views/misc/test_upload_endpoints.py
+    - kind: test
+      reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/tests/test_upload.py
+    - kind: test
+      reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/tests/test_video_frame_annotations.py
+    - kind: test
+      reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/tests/test_video_frame_box_annotations.py
+    - kind: test
+      reference: tests/views/video/test_frame_annotation_bulk_upsert.py
+    - kind: test
+      reference: tests/views/video/test_frame_annotation_task_endpoints.py
+    - kind: test
+      reference: tests/views/video/test_frame_box_annotation.py
+    - kind: test
+      reference: tests/views/video/test_frame_annotation_temporal_inference_workflow.py
+    - kind: test
+      reference: tests/views/video/test_annotation_access_controls.py
+    - kind: test
+      reference: tests/utils/test_media_urlpatterns_contract.py
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/python -m pytest tests/models/test_report_llm_job_validation.py tests/services/test_report_llm_jobs.py tests/views/report/test_report_llm_status.py tests/services/test_hub_ingest_dispatch.py tests/models/test_hub_json_contracts.py tests/app/test_model_import_boundaries.py -q
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pyright
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/python -m pytest tests/services/test_preanonymized_payloads.py tests/services/test_preanonymized_watcher_ingest.py tests/services/test_hub_ingest_dispatch.py tests/models/test_hub_json_contracts.py tests/services/test_network_node_settings_service.py tests/views/misc/test_application_settings_endpoints.py -q
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest -q tests/services/test_video_temporal_inference_callers.py tests/services/test_video_temporal_inference.py
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest -q tests/services/test_video_post_validation_jobs.py tests/services/test_video_pipeline.py
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/python -m pytest tests/models/test_dicom_export_job_validation.py tests/services/test_dicom_interoperability.py tests/services/test_dicom_manifest_backfill.py tests/services/test_fhir_r4_export.py tests/views/test_interoperability_errors.py -q
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/python -m pytest tests/services/test_report_llm_jobs.py tests/views/report/test_report_llm_status.py -q
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/python -m pytest tests/views/misc/test_upload_endpoints.py -q
+    - kind: command
+      reference: bash -lc 'cd /home/admin/lx-data-models && devenv shell -- pytest -q lx_dtypes/models/contracts/tests/test_upload.py'
+    - kind: command
+      reference: bash -lc 'cd /home/admin/lx-data-models && devenv shell -- pyright'
+    - kind: command
+      reference: bash -lc 'cd /home/admin/lx-data-models && devenv shell -- pytest -q lx_dtypes/models/contracts/tests/test_video_frame_annotations.py lx_dtypes/models/contracts/tests/test_video_frame_box_annotations.py'
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/python -m pytest tests/views/video/test_frame_annotation_bulk_upsert.py tests/views/video/test_frame_annotation_task_endpoints.py tests/views/video/test_frame_box_annotation.py tests/views/video/test_frame_annotation_temporal_inference_workflow.py tests/views/video/test_annotation_access_controls.py tests/utils/test_media_urlpatterns_contract.py -q
+    note: Zehn externe Boundary-Kohorten sind typisiert. AIDataSet-Exporte verwenden AIDataSetExportRequestPayload;
+      PatientExamination-Drafts verwenden PatientExaminationReportDraft Version 1.0 mit einmaliger Legacy-Normalisierung
+      zu snake_case; Report-LLM-Dispatch-Payloads werden durch den zentralen ReportLlmJobConfig-Vertrag
+      Version 1.0 in eine strikt JSON-kompatible interne Form überführt. Der frühere Service-lokale Doppelvertrag
+      und die permissive Objekt-zu-String-Konvertierung wurden entfernt. Unbekannte Contract-Felder, fremde
+      Versionen, nicht-Objekt-Payloads und nicht JSON-kompatible Werte scheitern laut. VideoFile.sequences
+      wird am Persistenzpfad über den gemeinsamen VideoSegmentsPayload-Vertrag validiert. Die zusätzlichen
+      AI-Training- und Hub-Payload-Adapter erzwingen jetzt ebenfalls strikt JSON-kompatible Formen. Der
+      Local-Study-Server-Sidecar-Vertrag lehnt unbekannte Felder und boolesche String-Coercion am Ingest ab;
+      fehlerhafte Sidecars werden vor Modellanlage quarantänisiert. NetworkNode-Create, -Update und -Response
+      verwenden einen geschlossenen snake_case-Vertrag, lehnen CamelCase/Unknown Fields sowie widersprüchliche
+      owning_center_id-/owning_center_key-Identitäten ab und führen nach der Boundary kein Roh-Mapping parallel.
+      Video-Temporal-Inferenz normalisiert Legacy-Optionen jetzt einmalig in CanonicalTemporalOptions;
+      neue History- und Celery-Payloads führen nur temporal_options weiter, während bestehende
+      raw_temporal_options-History-Einträge lesbar bleiben. Unknown Fields, NaN/Infinity, mehrdeutige
+      Boolean-Werte und inkonsistente kanonische Formen scheitern laut. Weitere externe Boundaries bleiben
+      offen. Die DICOM-/FHIR-Interoperabilitätskohorte validiert DICOM-Manifeste rekursiv geschlossen,
+      lehnt skalare Typ-Coercion ab und bindet Export-ID, Schema-Version, Quellsystem und Digest an dieselbe
+      kanonische Persistenzform. FHIR-Bundles erzwingen nun fullUrl-/Resource-ID-Konsistenz sowie den
+      korrekten Zieltyp jeder internen Referenz; Dangling References und unbekannte verschachtelte Felder
+      scheitern laut. Die exakte Interoperabilitätsmatrix bestand mit 35 Tests. Report-Reimport akzeptiert
+      nur noch den geschlossenen ReportLlmReimportRequestPayload mit einem strikt booleschen retry-Feld;
+      Body-IDs, Unknown Fields, Scalar-Coercion und nicht-objektförmige Bodies scheitern vor Dispatch und
+      Jobreservierung. Der Multipart-Upload-Vertrag im lx_dtypes-Owner toleriert ausschließlich das
+      Transportfeld file außerhalb seiner vier Contract-Felder. Bis eine Version neuer als lx_dtypes 0.2.9
+      gepinnt ist, erzwingt endoreg_db/schemas/upload.py dieselbe Regel als benannter Kompatibilitätsadapter;
+      danach kann dieser Adapter entfallen. Die fokussierten Matrizen bestanden mit 15 Report- und 21
+      Endpunkt-Tests sowie 13 Shared-Contract-Tests. Frame-Annotation-Bulk-Upsert, Skip und Box-Upsert
+      verwenden nun die geschlossenen Shared Mutation Envelopes. Unknown Wrapper-/Item-Felder und
+      widersprüchliche äußere/innere frame_id-Werte scheitern vor DRF und ORM; dokumentierte Bare-List-
+      Payloads sowie Wrapper-Vererbung für Frame, Quelle und Annotator bleiben erhalten. DRF löst danach
+      nur noch Datenbanklabels und Choices aus kanonischen Item-Dumps auf. Bis eine Version neuer als
+      lx_dtypes 0.2.9 gepinnt ist, backportiert endoreg_db/schemas/frame_annotation_ingress.py ausschließlich
+      die neuen Strictness- und Normalisierungsregeln ohne lokales Pydantic-Doppelmodell; danach kann der
+      Adapter entfallen. Die Matrix bestand mit 24 Shared-Contract- und 57 Endpunkt-/Regressions-Tests
+      sowie vier Negativ-Subtests. Pyright ist in beiden Repositories fehlerfrei.
+    assessed_by: Codex
+    assessed_at: '2026-07-31T11:40:29Z'
 - id: persisted_model_validation
   category: data_integrity
   title: Persistierte Modellzustände und JSON-Payloads besitzen eine zentrale Validierungsgrenze
@@ -128,8 +346,137 @@ definition_of_done:
       Bulk-/Manager- und Invalid-Input-Tests ausführen.
     timeout_seconds: 1200
   assessment:
-    status: not_assessed
-    evidence: []
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/models/media/pdf/report_llm_job.py
+    - kind: code
+      reference: endoreg_db/schemas/report_llm.py
+    - kind: code
+      reference: endoreg_db/services/jobs/report_llm_jobs.py
+    - kind: test
+      reference: tests/models/test_report_llm_job_validation.py
+    - kind: test
+      reference: tests/services/test_report_llm_jobs.py
+    - kind: test
+      reference: tests/views/report/test_report_llm_status.py
+    - kind: test
+      reference: tests/services/test_hub_ingest_dispatch.py
+    - kind: test
+      reference: tests/views/misc/test_upload_endpoints.py
+    - kind: test
+      reference: tests/app/test_model_import_boundaries.py
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/python -m pytest tests/models/test_report_llm_job_validation.py tests/services/test_report_llm_jobs.py tests/views/report/test_report_llm_status.py tests/services/test_hub_ingest_dispatch.py tests/views/misc/test_upload_endpoints.py tests/app/test_model_import_boundaries.py -q
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/python scripts/check_lx_dtypes_model_inventory.py
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/python manage.py makemigrations --check --dry-run
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pyright
+    - kind: code
+      reference: endoreg_db/models/media/video/video_file.py; endoreg_db/services/video_temporal_inference.py
+    - kind: code
+      reference: endoreg_db/models/metadata/video_meta.py; endoreg_db/services/media_integrity.py
+    - kind: code
+      reference: endoreg_db/models/state/audit_ledger.py
+    - kind: code
+      reference: endoreg_db/models/media/operation_lease.py; endoreg_db/models/operation_log.py
+    - kind: code
+      reference: endoreg_db/models/media/video/video_processing.py
+    - kind: code
+      reference: endoreg_db/schemas/video_processing_history.py
+    - kind: code
+      reference: endoreg_db/models/media/pdf/report_file.py
+    - kind: code
+      reference: endoreg_db/schemas/persisted_json.py:validate_report_file_meta_payload
+    - kind: code
+      reference: endoreg_db/models/interoperability/dicom.py
+    - kind: code
+      reference: endoreg_db/schemas/dicom_export.py
+    - kind: code
+      reference: endoreg_db/services/interoperability/dicom_manifest_backfill.py
+    - kind: code
+      reference: endoreg_db/services/jobs/model_training_jobs.py:_update_model_training_run
+    - kind: code
+      reference: scripts/check_jsonfield_write_paths.py
+    - kind: code
+      reference: endoreg_db/schemas/classification_choice.py; endoreg_db/schemas/patient_clinical.py
+    - kind: code
+      reference: endoreg_db/schemas/anonymization.py; endoreg_db/schemas/persisted_json.py
+    - kind: code
+      reference: endoreg_db/models/medical/disease.py; endoreg_db/models/medical/patient/patient_disease.py
+    - kind: code
+      reference: endoreg_db/models/medical/laboratory/lab_value.py; endoreg_db/models/medical/patient/patient_lab_value.py
+    - kind: code
+      reference: endoreg_db/models/metadata/sensitive_meta.py; endoreg_db/models/other/distribution/single_categorical_value_distribution.py
+    - kind: test
+      reference: tests/models/test_classification_choice_json_validation.py
+    - kind: test
+      reference: tests/models/test_patient_clinical_json_validation.py
+    - kind: test
+      reference: tests/models/test_lab_medication_json_validation.py
+    - kind: test
+      reference: tests/models/test_anonymization_and_categorical_contracts.py
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/python -m pytest tests/models/test_classification_choice_json_validation.py tests/models/test_patient_clinical_json_validation.py tests/models/test_lab_medication_json_validation.py tests/models/test_anonymization_and_categorical_contracts.py -q
+    - kind: test
+      reference: tests/models/metadata/test_ffmpeg_meta.py
+    - kind: test
+      reference: tests/models/state/test_audit_ledger.py
+    - kind: test
+      reference: tests/models/test_media_operation_lease_operation_log_validation.py
+    - kind: test
+      reference: tests/models/test_video_processing_history_validation.py
+    - kind: test
+      reference: tests/models/test_report_file_meta_validation.py
+    - kind: test
+      reference: tests/models/test_dicom_export_job_validation.py
+    - kind: test
+      reference: tests/services/test_dicom_manifest_backfill.py
+    - kind: test
+      reference: tests/services/test_model_training_jobs_unit.py
+    - kind: test
+      reference: tests/scripts/test_check_jsonfield_write_paths.py
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/python scripts/check_lx_dtypes_model_inventory.py --refresh-runtime-metadata
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/python scripts/check_jsonfield_write_paths.py
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/python -m pytest tests/scripts/test_check_jsonfield_write_paths.py tests/services/test_model_training_jobs_unit.py -q
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/python -m pytest tests/models/test_dicom_export_job_validation.py tests/services/test_dicom_interoperability.py tests/services/test_dicom_manifest_backfill.py tests/services/test_fhir_r4_export.py tests/views/test_interoperability_errors.py -q
+    note: 'Die abgeschlossenen Persistenzkohorten umfassen MedicalLedgerWriteReceipt, AIDataSetExportArtifact,
+      PdfProcessingHistory, PatientExamination, PatientExaminationReport, ReportLlmInferenceJob, VideoFile.sequences,
+      AIModelTrainingRun.command_kwargs, FFMpegMeta.raw_probe_data, AuditLedger.data, MediaOperationLease.metadata,
+      OperationLog.meta und VideoProcessingHistory.config.
+      ReportLlmInferenceJob.config/result verwenden strikte lokale Version-1.0-Schemata bei jedem normalen
+      save(); Config- und Result-Top-Level-Felder sind geschlossen, SHA-256-Digests werden geprüft und
+      kanonisiert, und {} bleibt der zulässige ausstehende Resultzustand. VideoFile.sequences wird im
+      Modell und im temporalen Inferenz-Schreibpfad durch VideoSegmentsPayload validiert. FFMpeg-, Audit-,
+      Lease-, OperationLog- und VideoProcessingHistory-Payloads werden vor Speicherung strikt validiert und
+      kanonisch serialisiert; direkte Modell-Saves und relevante Inferenz-/Integritäts-Schreibpfade sind getestet.
+      Die klinischen Definitions-, Patienten-, Labor-, Medikations-, Tombstone- und Kategoriedistributionsfelder
+      verwenden nun ebenfalls strikt geprüfte gemeinsame oder lokale Adapter; NaN, Typ-Coercion, unbekannte
+      Schlüssel und ungültige Wahrscheinlichkeiten werden fail-closed abgelehnt. Die neue Kohortenmatrix
+      bestand mit 50 Tests und repositoryweitem Pyright.
+      Die geerbte Report-JSONField-Kohorte ist nun ebenfalls abgesichert: AbstractDocument.clean()/save()
+      validieren AnonymExaminationReport und AnonymHistologyReport zentral über validate_report_file_meta_payload;
+      RawPdfMetaPayload kanonisiert bekannte Report-Metadaten und lehnt nicht-JSON-kompatible Werte, falsche
+      Top-Level-Formen, ungültige IDs sowie NaN/Infinity ab. Direkte Saves, Round-Trip-Kanonisierung und
+      ungültige Eingaben sind in test_report_file_meta_validation.py abgedeckt. Der asynchrone
+      AIModelTrainingRun-Worker führt seine atomaren QuerySet-Updates jetzt durch einen zentralen Adapter,
+      der alle vier JSONFields vor dem Datenbankzugriff mit denselben Persistenzverträgen validiert und
+      kanonisiert. Ein AST-basierter Repository-Guard prüft 33 standardisierte konkrete JSONField-Modelle
+      auf statisch auflösbare update(), bulk_update(), bulk_create() und historische apps.get_model()-Bypässe;
+      der aktuelle Bestand ist sauber. Dynamisch zusammengesetzte Querysets, Laufzeit-Feldlisten und nicht
+      auflösbare **kwargs benötigen weiterhin kohortenspezifische Prüfung. DicomExportJob leitet bei jedem
+      normalen Save Manifest, Schema-Version, Quellsystem und kanonischen SHA-256-Digest aus demselben
+      geschlossenen DICOM-V2-Vertrag ab; der transaktionale Backfill repariert dieselben vier Werte gemeinsam.
+      Direkt-Save-, Invalid-Input-, Backfill- und Rollback-Tests decken die Kohorte ab. Die Bewertung bleibt
+      wegen der dynamischen Schreibpfade in_progress. Repositoryweites Pyright ist fehlerfrei.'
+    assessed_by: Codex
+    assessed_at: '2026-07-31T11:11:00Z'
 - id: incremental_model_cohorts
   category: maintainability
   title: Die Standardisierung erfolgt in kleinen risiko- und domänenbasierten Modellkohorten
@@ -149,8 +496,44 @@ definition_of_done:
       jeweilige Abschlusskriterien prüfen.
     timeout_seconds: 900
   assessment:
-    status: not_assessed
-    evidence: []
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/model_layer_map_for_agents.md
+    - kind: document
+      reference: quality/lx_dtypes_model_inventory.yml
+    - kind: code
+      reference: endoreg_db/models/medical/patient/medical_ledger_write_receipt.py
+    - kind: test
+      reference: tests/services/test_medical_ledger_transactions.py
+    - kind: test
+      reference: tests/app/test_model_import_boundaries.py
+    - kind: code
+      reference: /home/admin/lx-data-models/lx_dtypes/models/interface/remote_data_roots.py
+    - kind: test
+      reference: /home/admin/lx-data-models/lx_dtypes/models/interface/tests/test_knowledge_base_resolver.py
+    - kind: test
+      reference: /home/admin/lx-data-models/lx_dtypes/models/interface/tests/test_remote_data_roots.py
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pyright
+    - kind: command
+      reference: bash -lc 'cd /home/admin/lx-data-models && devenv shell -- pytest -q lx_dtypes/models/interface/tests/test_knowledge_base_resolver.py lx_dtypes/models/interface/tests/test_remote_data_roots.py'
+    - kind: command
+      reference: bash -lc 'cd /home/admin/lx-data-models && devenv shell -- pyright'
+    - kind: command
+      reference: bash -o pipefail -c 'cd /home/admin/lx-data-models && ! rg -n "(^|[[:space:]])(from|import)[[:space:]]+endoreg_db" lx_dtypes --glob "*.py" --glob "!**/tests/**"'
+    note: Der verbindliche Prozess begrenzt Ausführungskohorten auf ein bis zwölf Modelle, priorisiert
+      acht Risikodomänen und verlangt pro Kohorte Modelle, Contracts, Consumer, Migrationen, Abhängigkeiten,
+      Owner, messbare Kriterien und Restschuld. Die Referenzkohorte MedicalLedgerWriteReceipt ist ohne
+      Restschuld belegt. Die einzelne Restkohorte lx_dtypes.models.interface.remote_data_roots gehört
+      lx_dtypes und materialisiert Remote-Knowledge-Base-Module für dessen Registry-Consumer; sie benötigt
+      keine Datenmigration. Der frühere Laufzeitimport von endoreg_db.utils.file_operations wurde durch
+      lokale atomare, symlink- und cleanup-gehärtete Dateisystemoperationen ersetzt, ohne Django- oder
+      Service-Logik nach lx_dtypes zu verschieben. Fokussierte Resolver-/Cache-Tests und vollständiges
+      lx_dtypes-Pyright bestehen; die exakte produktive Reverse-Import-Gegenprobe ist leer. Der Restbestand
+      dieser Kohorte ist null.
+    assessed_by: Codex
+    assessed_at: '2026-07-31T10:57:00Z'
 - id: regression_and_type_guards
   category: testing
   title: Automatisierte Guards verhindern neue lokale oder unvalidierte Modellverträge
@@ -170,8 +553,48 @@ definition_of_done:
       und Round-Trip-Tests aller abgeschlossenen Kohorten in einem auditable foreground test run ausführen.
     timeout_seconds: 1800
   assessment:
-    status: not_assessed
-    evidence: []
+    status: verified
+    evidence:
+    - kind: code
+      reference: scripts/check_lx_dtypes_model_inventory.py
+    - kind: document
+      reference: quality/lx_dtypes_model_inventory.yml
+    - kind: test
+      reference: tests/scripts/test_check_lx_dtypes_model_inventory.py
+    - kind: test
+      reference: tests/app/test_model_import_boundaries.py
+    - kind: code
+      reference: endoreg_db/models/medical/laboratory/lab_value.py
+    - kind: test
+      reference: tests/lab/test_lab_value_common.py
+    - kind: test
+      reference: tests/services/test_medical_ledger_transactions.py
+    - kind: test
+      reference: tests/services/test_medical_ledger_roundtrip.py
+    - kind: test
+      reference: tests/services/test_report_import_concurrency.py
+    - kind: test
+      reference: tests/services/test_report_import_fencing.py
+    - kind: test
+      reference: tests/services/test_watcher_storage_import.py
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pyright
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/python -m pytest tests/scripts/test_check_lx_dtypes_model_inventory.py tests/app/test_model_import_boundaries.py tests/lab/test_lab_value_common.py tests/services/test_medical_ledger_transactions.py tests/services/test_medical_ledger_roundtrip.py tests/services/test_report_import_concurrency.py tests/services/test_report_import_fencing.py tests/services/test_watcher_storage_import.py -q
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/python scripts/check_lx_dtypes_model_inventory.py
+    note: Repositoryweites Pyright ist fehlerfrei. Der Registry-/Boundary-Guard blockiert neue oder veränderte
+      Modelle, JSONFields, Consumer und dynamische Referenzen sowie unclassified oder abgelaufene Ausnahmen;
+      JSONField-Modelle benötigen shared/local/temporary Klassifikation und Ownership-Evidenz. Architekturtests
+      blockieren neue Model-Barrel-Imports, Model-zu-Service-Abweichungen, Implementierungsimporte und
+      neue lokale Pydantic-Verträge außerhalb endoreg_db.schemas; 22 bestehende Service-/View-Verträge
+      sind einzeln eingefroren. CommonLabValues wurde ohne API-Bruch vom konkurrierenden Pydantic-Modell
+      zur typisierten frozen dataclass reduziert. Die abgeschlossene Receipt-Kohorte deckt gültige, ungültige,
+      kanonische, Legacy-, Backfill-, Rollback-, Replay- und Parallelvarianten ab; Report- und Watcher-Importtests
+      belegen Locking, Parallelität und idempotente Duplikatbehandlung. Der auditable foreground Lauf
+      bestand mit 84 Tests.
+    assessed_by: Codex
+    assessed_at: '2026-07-30T07:10:33.888989Z'
 - id: security_and_privacy_boundaries
   category: security
   title: Zentrale Modellvalidierung schützt Identität, Mandantengrenzen und Medieninvarianten
@@ -191,8 +614,46 @@ definition_of_done:
       sensitive Serialisierung und Medieninvarianten je betroffener Kohorte durchführen.
     timeout_seconds: 1200
   assessment:
-    status: not_assessed
-    evidence: []
+    status: verified
+    evidence:
+    - kind: test
+      reference: tests/services/test_lx_video_contracts.py
+    - kind: test
+      reference: tests/models/test_dataset_export_scope.py
+    - kind: test
+      reference: tests/views/test_center_access_matrix.py
+    - kind: test
+      reference: tests/views/test_interoperability_errors.py
+    - kind: test
+      reference: tests/views/media/test_video_media_view.py
+    - kind: test
+      reference: tests/views/media/test_hub_transfer_endpoints.py
+    - kind: test
+      reference: tests/views/report/test_report_stream.py
+    - kind: test
+      reference: tests/services/test_hls_media.py
+    - kind: test
+      reference: tests/services/test_video_storage_normalization.py
+    - kind: test
+      reference: tests/services/test_video_storage_atomic_migration.py
+    - kind: test
+      reference: tests/services/test_video_post_validation_jobs.py
+    - kind: test
+      reference: tests/services/test_k_pseudonymity.py
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/python -m pytest tests/services/test_lx_video_contracts.py tests/models/test_dataset_export_scope.py tests/views/test_center_access_matrix.py tests/views/test_interoperability_errors.py tests/views/media/test_video_media_view.py tests/views/media/test_hub_transfer_endpoints.py tests/views/report/test_report_stream.py tests/services/test_hls_media.py tests/services/test_video_storage_normalization.py tests/services/test_video_storage_atomic_migration.py tests/services/test_video_post_validation_jobs.py tests/services/test_k_pseudonymity.py -q
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/python -m pytest tests/utils/test_structured_logging.py tests/services/test_import_monitoring.py tests/views/media/test_hub_transfer_endpoints.py -q
+    note: Der kohortenübergreifende Security-Review belegt datensparsame lx_dtypes-Exporte ohne SensitiveMeta
+      und direkte Identifikatoren, strikt center-gebundene Patienten-, Video-, Dataset- und Ledgerzugriffe,
+      serverseitige Konfliktprüfung sowie bereinigte Interoperabilitätsfehler ohne interne Payloaddetails.
+      Direkte Negativtests bestätigen außerdem, dass strukturierte Authentifizierungs- und Transportfehler
+      keine Shared Secrets protokollieren. Medien-Negativtests verbieten Raw-Media-Transfer, erzwingen
+      entschlüsselnden Reportzugriff ohne Ciphertext-Offload, verschlüsselte lokale HLS-Artefakte, atomare
+      Generationserhaltung bei Fehlern, Lease-Deferral, autoritative Präsentationszeitstempel und fail-closed
+      Cleanup. Die auditable foreground Läufe bestanden mit 44 plus drei Tests.
+    assessed_by: Codex
+    assessed_at: '2026-07-30T06:04:58.330454Z'
 - id: versioned_rollout_and_recovery
   category: operations
   title: Contract-Versionen, Datenmigration, Rollback und Mischbetrieb sind beherrscht
@@ -212,8 +673,45 @@ definition_of_done:
       Fehlerfall, Rollback und Import-/Streaming- Concurrency-Probe durchführen.
     timeout_seconds: 1800
   assessment:
-    status: not_assessed
-    evidence: []
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/medical_ledger_contract.md
+    - kind: code
+      reference: endoreg_db/schemas/medical_ledger.py
+    - kind: code
+      reference: endoreg_db/models/medical/patient/medical_ledger_write_receipt.py
+    - kind: code
+      reference: endoreg_db/services/medical_ledger.py
+    - kind: code
+      reference: endoreg_db/management/commands/backfill_medical_ledger_receipts_v1.py
+    - kind: test
+      reference: tests/services/test_medical_ledger_transactions.py
+    - kind: test
+      reference: tests/services/test_medical_ledger_roundtrip.py
+    - kind: test
+      reference: tests/services/test_report_import_concurrency.py
+    - kind: test
+      reference: tests/views/video/test_hls_stream.py
+    - kind: test
+      reference: tests/services/test_media_operation_gate.py
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pyright
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/python -m pytest tests/services/test_medical_ledger_transactions.py tests/services/test_medical_ledger_roundtrip.py tests/services/test_report_import_concurrency.py tests/views/video/test_hls_stream.py tests/services/test_media_operation_gate.py -q
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/python manage.py makemigrations --check --dry-run
+    note: Die repräsentative MedicalLedgerWriteReceipt-Kohorte pinnt lx-dtypes==0.2.9 und persistiert
+      den strikt diskriminierten record_ids-Vertrag in Version 1.0. Ein ein Release langes Mischbetriebsfenster
+      liest unversionierte Legacy-Manifeste, während jeder normale Schreibpfad kanonisch Version 1.0 schreibt;
+      explizite Fremdversionen scheitern laut. Der datensparsame Dry-run-/Apply-Befehl meldet Counts,
+      backfillt atomar und bricht bei ungültigen Bestandszeilen mit Modell, Receipt-ID, beobachteter Version
+      und Fehlerkategorie ab, ohne Payloadwerte auszugeben oder Teilupdates zu behalten. Dokumentierte
+      Deployment-, Abbruch-, logische Quarantäne- und Rollbackregeln sowie Failure-Injection, Replay,
+      parallele Ledger-Schreibvorgänge, Report-Import-Concurrency, HLS-Streaming und Lease-Tests belegen
+      den Betrieb; 58 Tests und Pyright bestanden.
+    assessed_by: Codex
+    assessed_at: '2026-07-30T06:23:20.866741Z'
 - id: contributor_documentation
   category: documentation
   title: Modell- und Contract-Standardisierung ist für neue Änderungen verbindlich dokumentiert
@@ -233,5 +731,21 @@ definition_of_done:
       und prüfen, ob alle Owner, Layer, Versionen, Migrationen und Nachweise eindeutig ableitbar sind.
     timeout_seconds: 600
   assessment:
-    status: not_assessed
-    evidence: []
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/model_layer_map_for_agents.md
+    - kind: code
+      reference: endoreg_db/models/medical/patient/medical_ledger_write_receipt.py
+    - kind: test
+      reference: tests/services/test_medical_ledger_transactions.py
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/scripts/test_check_lx_dtypes_model_inventory.py -q
+    - kind: command
+      reference: ./feature-tracking/tracker.py validate
+    note: 'Die Anleitung wurde gegen das neue Modell MedicalLedgerWriteReceipt und dessen record_ids-Feld
+      geprüft: Zielklasse, Owner, lokaler Boundary-Adapter, Modellvalidierung, Consumer, Security, Pyright,
+      Invalid-Input-/Round-Trip-/Transaktionstests sowie Release- und Kompatibilitätsnachweise sind ohne
+      Quellcodeforensik ableitbar. Der Fertigstellungsstatus bleibt ausschließlich im Feature-Tracker.'
+    assessed_by: Codex
+    assessed_at: '2026-07-29T14:21:29.426762Z'

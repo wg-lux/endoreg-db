@@ -1,6 +1,6 @@
 # Pydantic and Django Hardening Plan
 
-> Status tracking was migrated to `feature-tracking/TypeSafety.yml`. This
+> Status tracking was migrated to `feature-tracking/done/TypeSafety.yml`. This
 > document is retained as technical analysis and must not carry an independent
 > completion status.
 
