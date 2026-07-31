@@ -14,14 +14,14 @@ from ...data import (
     VIDEO_SEGMENTATION_LABEL_DATA_DIR,
     VIDEO_SEGMENTATION_LABELSET_DATA_DIR,
 )
-from ...models import (
-    AiModel,
-    LabelSet,  # Add LabelSet import
-    ModelMeta,  # Add ModelMeta back to imports
-    ModelType,
-    VideoSegmentationLabel,
+from endoreg_db.models.administration.ai.ai_model import AiModel
+from endoreg_db.models.administration.ai.model_type import ModelType
+from endoreg_db.models.label.label_set import LabelSet
+from endoreg_db.models.label.video_segmentation_label import VideoSegmentationLabel
+from endoreg_db.models.label.video_segmentation_labelset import (
     VideoSegmentationLabelSet,
 )
+from endoreg_db.models.metadata.model_meta import ModelMeta
 from ...utils import load_model_data_from_yaml
 from ...utils.yaml_model_loader import LoadModelDataMetadata
 

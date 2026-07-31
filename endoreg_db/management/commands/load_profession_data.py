@@ -8,7 +8,7 @@ from lx_dtypes.models.contracts.management_command import (
 )
 
 from ...data import PROFESSION_DATA_DIR
-from ...models import Profession
+from endoreg_db.models.administration.person.profession import Profession
 from ...utils import load_model_data_from_yaml
 from ...utils.yaml_model_loader import LoadModelDataMetadata
 

@@ -11,7 +11,8 @@ if TYPE_CHECKING:
 else:
     _ModelSerializerMeta = object
 
-from ...models import Examination, ExaminationType
+from endoreg_db.models.medical.examination.examination import Examination
+from endoreg_db.models.medical.examination.examination_type import ExaminationType
 
 
 class _ExaminationTypeManagerLike(Protocol):

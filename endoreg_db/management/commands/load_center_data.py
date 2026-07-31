@@ -8,7 +8,9 @@ from lx_dtypes.models.contracts.management_command import (
 )
 
 from ...data import CENTER_DATA_DIR, NAMES_FIRST_DATA_DIR, NAMES_LAST_DATA_DIR
-from ...models import Center, FirstName, LastName
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.administration.person.names.first_name import FirstName
+from endoreg_db.models.administration.person.names.last_name import LastName
 from ...utils import load_model_data_from_yaml
 from ...utils.yaml_model_loader import LoadModelDataMetadata
 

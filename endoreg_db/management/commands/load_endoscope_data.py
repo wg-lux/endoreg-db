@@ -12,7 +12,9 @@ from ...data import (
     ENDOSCOPE_TYPE_DATA_DIR,
     ENDOSCOPY_PROCESSOR_DATA_DIR,
 )
-from ...models import Center, Endoscope, EndoscopeType, EndoscopyProcessor
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.medical.hardware.endoscope import Endoscope, EndoscopeType
+from endoreg_db.models.medical.hardware.endoscopy_processor import EndoscopyProcessor
 from ...utils import load_model_data_from_yaml
 from ...utils.yaml_model_loader import LoadModelDataMetadata
 

@@ -8,7 +8,8 @@ from lx_dtypes.models.contracts.management_command import (
 )
 
 from ...data import REPORT_READER_FLAG_DATA_DIR
-from ...models import Shift, ShiftType
+from endoreg_db.models.administration.shift.shift import Shift
+from endoreg_db.models.administration.shift.shift_type import ShiftType
 from ...utils import load_model_data_from_yaml
 from ...utils.yaml_model_loader import LoadModelDataMetadata
 

@@ -8,7 +8,7 @@ from lx_dtypes.models.contracts.management_command import (
 )
 
 from ...data import UNIT_DATA_DIR
-from ...models import Unit
+from endoreg_db.models.other.unit import Unit
 from ...utils import load_model_data_from_yaml
 from ...utils.yaml_model_loader import LoadModelDataMetadata
 

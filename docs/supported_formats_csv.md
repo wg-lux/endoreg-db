@@ -3,10 +3,10 @@
 This repository now treats supported CSV/TSV table shapes as YAML-backed templates.
 
 Canonical template registry:
-- [document_templates.yaml](/home/admin/endoreg-db/endoreg_db/data/tabular_import_format/document_templates.yaml)
+- [document_templates.yaml](../endoreg_db/data/tabular_import_format/document_templates.yaml)
 
 Resolver and normalizer:
-- [tabular_import_formats.py](/home/admin/endoreg-db/endoreg_db/services/tabular_import_formats.py)
+- [tabular_import_formats.py](../endoreg_db/services/tabular_import_formats.py)
 
 The import flow is:
 1. Read the header columns.

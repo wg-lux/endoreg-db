@@ -9,14 +9,16 @@ from lx_dtypes.models.contracts.management_command import (
 )
 
 from ...data import EXAMINATION_DATA_DIR
-from ...models import (
-    Examination,
+from endoreg_db.models.medical.examination.examination import Examination
+from endoreg_db.models.medical.examination.examination_indication import (
     ExaminationIndication,
-    ExaminationTime,
-    ExaminationTimeType,
-    ExaminationType,
-    Finding,
 )
+from endoreg_db.models.medical.examination.examination_time import ExaminationTime
+from endoreg_db.models.medical.examination.examination_time_type import (
+    ExaminationTimeType,
+)
+from endoreg_db.models.medical.examination.examination_type import ExaminationType
+from endoreg_db.models.medical.finding.finding import Finding
 from ...utils import load_model_data_from_yaml
 from ...utils.yaml_model_loader import LoadModelDataMetadata
 

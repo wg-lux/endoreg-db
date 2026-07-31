@@ -9,7 +9,10 @@ from lx_dtypes.models.contracts.management_command import (
 
 from ...data import REPORT_TYPE_DATA_DIR
 
-from ...models import PdfType, ReportReaderFlag
+from endoreg_db.models.media.pdf.report_reader.report_reader_flag import (
+    ReportReaderFlag,
+)
+from endoreg_db.models.metadata.pdf_meta import PdfType
 from ...utils import load_model_data_from_yaml
 from ...utils.yaml_model_loader import LoadModelDataMetadata
 

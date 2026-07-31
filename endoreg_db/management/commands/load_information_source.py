@@ -8,7 +8,10 @@ from lx_dtypes.models.contracts.management_command import (
 )
 
 from ...data import INFORMATION_DATA_DIR, INFORMATION_SOURCE_TYPE_DATA_DIR
-from ...models import InformationSource, InformationSourceType
+from endoreg_db.models.other.information_source import (
+    InformationSource,
+    InformationSourceType,
+)
 from ...utils import load_model_data_from_yaml
 from ...utils.yaml_model_loader import LoadModelDataMetadata
 

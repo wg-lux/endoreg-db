@@ -11,20 +11,24 @@ from lx_dtypes.models.contracts.management_command import (
     VerboseManagementCommandOptionsPayload,
 )
 from lx_dtypes.models.interface.KnowledgeBase import KnowledgeBase
+from lx_dtypes.models.knowledge_base.examination.Examination import (
+    Examination as DtypesExamination,
+)
+from lx_dtypes.models.knowledge_base.indication.IndicationType import IndicationType
 
 from ...data import (
     EXAMINATION_INDICATION_CLASSIFICATION_CHOICE_DATA_DIR,
     EXAMINATION_INDICATION_CLASSIFICATION_DATA_DIR,
     EXAMINATION_INDICATION_DATA_DIR,
 )
-from ...models import (
-    Examination,
+from endoreg_db.models.medical.examination.examination import Examination
+from endoreg_db.models.medical.examination.examination_indication import (
     ExaminationIndication,
     ExaminationIndicationClassification,
     ExaminationIndicationClassificationChoice,
-    FindingIntervention,
-    InformationSource,
 )
+from endoreg_db.models.medical.finding.finding_intervention import FindingIntervention
+from endoreg_db.models.other.information_source import InformationSource
 from ...utils import load_model_data_from_yaml
 from ...utils.yaml_model_loader import LoadModelDataMetadata
 
@@ -255,70 +259,24 @@ class Command(BaseCommand):
 
         for indication_name, indication in indications_by_name.items():
             description: TextOrNull = indication.description.strip() or None
-            db_indication: ExaminationIndication
-            db_indication, _created = ExaminationIndication.objects.get_or_create(
-                name=indication_name,
-                defaults={"description": description},
+            db_indication = self._upsert_indication_record(
+                indication_name=indication_name,
+                description=description,
             )
-            db_indication_description = cast(DescriptionRecord, db_indication)
-            if db_indication_description.description != description:
-                db_indication_description.description = description
-                db_indication_description.save(update_fields=["description"])
-
             intervention_names = _as_str_list(indication.interventions)
-            interventions: list[FindingIntervention] = list(
-                FindingIntervention.objects.filter(name__in=intervention_names)
+            interventions = self._resolve_indication_interventions(
+                indication_name=indication_name,
+                intervention_names=intervention_names,
+                verbose=verbose,
             )
             cast(_DtypesIndicationRecord, db_indication).expected_interventions.set(
                 interventions
             )
-
-            found_intervention_names: set[str] = {
-                cast(NamedRecord, intervention).name for intervention in interventions
-            }
-            missing_interventions = sorted(
-                set(intervention_names) - found_intervention_names
-            )
-            if verbose and missing_interventions:
-                self.stdout.write(
-                    self.style.WARNING(
-                        f"[dtypes] Indication '{indication_name}' references missing "
-                        f"interventions: {', '.join(missing_interventions)}"
-                    )
-                )
-
             classification_names = _as_str_list(indication.indication_types)
-            classifications: list[ExaminationIndicationClassification] = []
-            for classification_name in classification_names:
-                indication_type = indication_types_by_name.get(classification_name)
-                classification_description: TextOrNull = None
-                if indication_type is not None:
-                    classification_description = (
-                        indication_type.description.strip() or None
-                    )
-
-                classification: ExaminationIndicationClassification
-                classification, _ = (
-                    ExaminationIndicationClassification.objects.get_or_create(
-                        name=classification_name,
-                        defaults={"description": classification_description},
-                    )
-                )
-                classification_description_record = cast(
-                    DescriptionRecord, classification
-                )
-                if (
-                    classification_description_record.description
-                    != classification_description
-                ):
-                    classification_description_record.description = (
-                        classification_description
-                    )
-                    classification_description_record.save(
-                        update_fields=["description"]
-                    )
-                classifications.append(classification)
-
+            classifications = self._upsert_indication_classifications(
+                indication_types_by_name=indication_types_by_name,
+                classification_names=classification_names,
+            )
             cast(_DtypesIndicationRecord, db_indication).classifications.set(
                 classifications
             )
@@ -330,62 +288,160 @@ class Command(BaseCommand):
                 )
             )
 
+    @staticmethod
+    def _upsert_indication_record(
+        *,
+        indication_name: str,
+        description: TextOrNull,
+    ) -> ExaminationIndication:
+        db_indication, _created = ExaminationIndication.objects.get_or_create(
+            name=indication_name,
+            defaults={"description": description},
+        )
+        Command._update_description(cast(DescriptionRecord, db_indication), description)
+        return db_indication
+
+    def _resolve_indication_interventions(
+        self,
+        *,
+        indication_name: str,
+        intervention_names: list[str],
+        verbose: bool,
+    ) -> list[FindingIntervention]:
+        interventions = list(
+            FindingIntervention.objects.filter(name__in=intervention_names)
+        )
+        found_names = {
+            cast(NamedRecord, intervention).name for intervention in interventions
+        }
+        missing_names = sorted(set(intervention_names) - found_names)
+        if verbose and missing_names:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"[dtypes] Indication '{indication_name}' references missing "
+                    f"interventions: {', '.join(missing_names)}"
+                )
+            )
+        return interventions
+
+    @staticmethod
+    def _upsert_indication_classifications(
+        *,
+        indication_types_by_name: dict[str, IndicationType],
+        classification_names: list[str],
+    ) -> list[ExaminationIndicationClassification]:
+        classifications: list[ExaminationIndicationClassification] = []
+        for classification_name in classification_names:
+            indication_type = indication_types_by_name.get(classification_name)
+            description = (
+                indication_type.description.strip() if indication_type is not None else ""
+            )
+            classification, _created = (
+                ExaminationIndicationClassification.objects.get_or_create(
+                    name=classification_name,
+                    defaults={"description": description or None},
+                )
+            )
+            Command._update_description(
+                cast(DescriptionRecord, classification), description or None
+            )
+            classifications.append(classification)
+        return classifications
+
+    @staticmethod
+    def _update_description(
+        record: DescriptionRecord,
+        description: TextOrNull,
+    ) -> None:
+        if record.description == description:
+            return
+        record.description = description
+        record.save(update_fields=["description"])
+
     def _sync_dtypes_examination_links(
         self, *, kb: KnowledgeBase, verbose: bool
     ) -> None:
         examinations_by_name = kb.examination
         if not examinations_by_name:
-            if verbose:
-                self.stdout.write(
-                    self.style.WARNING(
-                        "[dtypes] No examination records found; skipped indication link sync."
-                    )
-                )
+            self._write_no_dtypes_examinations_warning(verbose=verbose)
             return
 
         updated_exam_count = 0
         missing_exam_names: list[str] = []
         for exam_name, dtypes_examination in examinations_by_name.items():
-            db_examination = Examination.objects.filter(name=exam_name).first()
-            if db_examination is None:
+            if not self._sync_dtypes_examination_link(
+                exam_name=exam_name,
+                dtypes_examination=dtypes_examination,
+                verbose=verbose,
+            ):
                 missing_exam_names.append(exam_name)
-                continue
+            else:
+                updated_exam_count += 1
+        self._write_examination_link_summary(
+            verbose=verbose,
+            missing_exam_names=missing_exam_names,
+            updated_exam_count=updated_exam_count,
+        )
 
-            indication_names = _as_str_list(dtypes_examination.indications)
-            indication_qs = ExaminationIndication.objects.filter(
-                name__in=indication_names
-            )
-            cast(_DtypesExaminationRecord, db_examination).indications.set(
-                list(indication_qs)
-            )
-            updated_exam_count += 1
+    def _sync_dtypes_examination_link(
+        self,
+        *,
+        exam_name: str,
+        dtypes_examination: DtypesExamination,
+        verbose: bool,
+    ) -> bool:
+        db_examination = Examination.objects.filter(name=exam_name).first()
+        if db_examination is None:
+            return False
 
-            found_indication_names: set[str] = {
-                str(indication_name)
-                for indication_name in indication_qs.values_list("name", flat=True)
-            }
-            missing_indications = sorted(set(indication_names) - found_indication_names)
-            if verbose and missing_indications:
-                self.stdout.write(
-                    self.style.WARNING(
-                        f"[dtypes] Examination '{exam_name}' references missing "
-                        f"indications: {', '.join(missing_indications)}"
-                    )
+        indication_names = _as_str_list(dtypes_examination.indications)
+        indication_qs = ExaminationIndication.objects.filter(name__in=indication_names)
+        cast(_DtypesExaminationRecord, db_examination).indications.set(
+            list(indication_qs)
+        )
+        found_names = {
+            str(indication_name)
+            for indication_name in indication_qs.values_list("name", flat=True)
+        }
+        missing_names = sorted(set(indication_names) - found_names)
+        if verbose and missing_names:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"[dtypes] Examination '{exam_name}' references missing "
+                    f"indications: {', '.join(missing_names)}"
                 )
+            )
+        return True
 
-        if verbose and missing_exam_names:
+    def _write_no_dtypes_examinations_warning(self, *, verbose: bool) -> None:
+        if verbose:
+            self.stdout.write(
+                self.style.WARNING(
+                    "[dtypes] No examination records found; skipped indication link sync."
+                )
+            )
+
+    def _write_examination_link_summary(
+        self,
+        *,
+        verbose: bool,
+        missing_exam_names: list[str],
+        updated_exam_count: int,
+    ) -> None:
+        if not verbose:
+            return
+        if missing_exam_names:
             self.stdout.write(
                 self.style.WARNING(
                     "[dtypes] Examinations not found in endoreg_db and not linked: "
                     + ", ".join(sorted(missing_exam_names))
                 )
             )
-        if verbose:
-            self.stdout.write(
-                self.style.SUCCESS(
-                    f"[dtypes] Synced indication links for {updated_exam_count} examinations."
-                )
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"[dtypes] Synced indication links for {updated_exam_count} examinations."
             )
+        )
 
     def _load_from_dtypes(
         self,

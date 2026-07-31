@@ -9,7 +9,9 @@ from lx_dtypes.models.contracts.management_command import (
 )
 
 from ...data import LABEL_DATA_DIR
-from ...models import Label, LabelSet, LabelType
+from endoreg_db.models.label.label import Label
+from endoreg_db.models.label.label_set import LabelSet
+from endoreg_db.models.label.label_type import LabelType
 from ...utils import load_model_data_from_yaml
 from ...utils.yaml_model_loader import LoadModelDataMetadata
 

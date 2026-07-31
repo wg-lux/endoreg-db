@@ -8,7 +8,10 @@ from lx_dtypes.models.contracts.management_command import (
 )
 
 from ...data import QUALIFICATION_DATA_DIR
-from ...models import Qualification, QualificationType
+from endoreg_db.models.administration.qualification.qualification import Qualification
+from endoreg_db.models.administration.qualification.qualification_type import (
+    QualificationType,
+)
 from ...utils import load_model_data_from_yaml
 from ...utils.yaml_model_loader import LoadModelDataMetadata
 

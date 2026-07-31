@@ -11,7 +11,7 @@ from lx_dtypes.models.contracts.management_command import (
 from ...data import (
     GENDER_DATA_DIR,
 )
-from ...models import Gender
+from endoreg_db.models.other.gender import Gender
 from ...utils import load_model_data_from_yaml
 from ...utils.yaml_model_loader import LoadModelDataMetadata
 
