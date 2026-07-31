@@ -599,11 +599,19 @@ def test_save_feature_moves_done_and_reopened_definitions(tmp_path: Path) -> Non
     assert not done_path.exists()
 
 
+def _lockable_feature(features: tuple[FeatureDefinition, ...]) -> FeatureDefinition:
+    return next(
+        feature
+        for feature in actively_tracked_features(features)
+        if len(feature.definition_of_done) >= 2
+    )
+
+
 def test_feature_locks_reject_overlapping_scopes_and_allow_independent_work(
     tmp_path: Path,
 ) -> None:
     _, features = load_registry(TRACKING_DIR)
-    feature = next(item for item in features if item.id == "standard")
+    feature = _lockable_feature(features)
     other_feature = next(
         item for item in actively_tracked_features(features) if item.id != feature.id
     )
@@ -653,6 +661,8 @@ def test_simultaneous_feature_lock_contenders_have_exactly_one_winner(
     tmp_path: Path,
 ) -> None:
     _, features = load_registry(TRACKING_DIR)
+    feature = _lockable_feature(features)
+    criterion_id = feature.definition_of_done[0].id
     barrier = Barrier(2)
 
     def contend(owner: str) -> str:
@@ -660,8 +670,8 @@ def test_simultaneous_feature_lock_contenders_have_exactly_one_winner(
         try:
             acquire_feature_lock(
                 features,
-                feature_id="standard",
-                criterion_id="terminal_commands",
+                feature_id=feature.id,
+                criterion_id=criterion_id,
                 owner=owner,
                 directory=tmp_path,
             )
@@ -679,11 +689,12 @@ def test_simultaneous_feature_lock_contenders_have_exactly_one_winner(
 
 def test_feature_lock_expiry_renewal_and_owner_bound_release(tmp_path: Path) -> None:
     _, features = load_registry(TRACKING_DIR)
+    feature = _lockable_feature(features)
     acquired_at = datetime(2026, 7, 31, 10, 0, tzinfo=timezone.utc)
     acquired = acquire_feature_lock(
         features,
-        feature_id="standard",
-        criterion_id="terminal_commands",
+        feature_id=feature.id,
+        criterion_id=feature.definition_of_done[0].id,
         owner="agent-one",
         ttl_minutes=10,
         directory=tmp_path,
