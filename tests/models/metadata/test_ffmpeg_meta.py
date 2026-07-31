@@ -4,8 +4,62 @@ from typing import cast
 from pathlib import Path
 
 import pytest
+from django.core.exceptions import ValidationError
+from lx_dtypes.models.contracts.ffmpeg_metadata import FfmpegProbeDataPayload
 
 from endoreg_db.models.metadata.video_meta import FFMpegMeta
+
+
+def _valid_probe_data() -> dict[str, object]:
+    return {
+        "streams": [
+            {
+                "codec_type": "video",
+                "width": 640,
+                "height": 480,
+                "duration": "12.5",
+                "r_frame_rate": "25/1",
+                "codec_name": "h264",
+                "pix_fmt": "yuv420p",
+                "bit_rate": "1000",
+            }
+        ],
+        "format": {"duration": "12.5", "bit_rate": "1200"},
+    }
+
+
+@pytest.mark.django_db
+def test_ffmpeg_meta_canonicalizes_raw_probe_data_on_round_trip() -> None:
+    meta = FFMpegMeta.objects.create(
+        width=640,
+        height=480,
+        raw_probe_data=_valid_probe_data(),
+    )
+
+    meta.refresh_from_db()
+
+    expected = FfmpegProbeDataPayload.model_validate(
+        _valid_probe_data()
+    ).model_dump(mode="json")
+    assert meta.raw_probe_data == expected
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "invalid_probe_data",
+    [
+        {"streams": [{"codec_type": "video", "width": "640"}]},
+        {"streams": [{"codec_type": "video", "unexpected": "value"}]},
+        {"streams": "not-a-list"},
+    ],
+)
+def test_ffmpeg_meta_rejects_invalid_raw_probe_data(
+    invalid_probe_data: dict[str, object],
+) -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        FFMpegMeta.objects.create(raw_probe_data=invalid_probe_data)
+
+    assert "raw_probe_data" in exc_info.value.message_dict
 
 
 @pytest.mark.django_db
