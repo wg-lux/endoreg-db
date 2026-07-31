@@ -5,6 +5,7 @@ from typing import Protocol, TypeVar, cast
 
 from django.db import models, transaction
 from django.db.models import QuerySet
+from pydantic import ValidationError as PydanticValidationError
 from rest_framework import serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.request import Request
@@ -12,6 +13,7 @@ from rest_framework.response import Response
 
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models.administration.case.case import Case
+from endoreg_db.schemas.case_documents import CaseDocumentAttachmentPayload
 from endoreg_db.serializers.case import CaseSerializer
 from endoreg_db.serializers.patient_examination import PatientExaminationSerializer
 from endoreg_db.services.cases import (
@@ -20,6 +22,12 @@ from endoreg_db.services.cases import (
     persist_case_graph,
     reopen_case,
 )
+from endoreg_db.services.case_documents import (
+    CaseDocumentConflict,
+    CaseDocumentNotFound,
+    attach_document_to_case,
+)
+from endoreg_db.utils.pydantic_drf import drf_validation_error_detail
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.views.access_control import (
     assert_center_scope_allowed,
@@ -45,6 +53,9 @@ class CaseViewSet(viewsets.ModelViewSet[Case]):
             .prefetch_related(
                 "patient_examinations__patient",
                 "patient_examinations__examination",
+                "patient_examinations__raw_pdf_files",
+                "patient_examinations__video_files",
+                "patient_examinations__reports",
                 "patient_medications",
                 "patient_medication_schedules",
                 "patient_lab_samples",
@@ -114,6 +125,47 @@ class CaseViewSet(viewsets.ModelViewSet[Case]):
         patient_case = reopen_case(instance=self.get_object())
         return Response(
             cast(_SerializerDataLike, CaseSerializer(patient_case)).data,
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["post"], url_path="documents")
+    def attach_document(self, request: Request, case_id: str | None = None) -> Response:
+        """Attach an existing PDF or video to an examination in this case."""
+        del case_id
+        visible_case = self.get_object()
+        try:
+            payload = CaseDocumentAttachmentPayload.model_validate(request.data)
+        except PydanticValidationError as exc:
+            return Response(
+                {
+                    "code": "validation-error",
+                    "errors": drf_validation_error_detail(exc),
+                },
+                status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+
+        try:
+            patient_case = attach_document_to_case(
+                case_pk=cast(int, visible_case.pk),
+                payload=payload,
+            )
+        except CaseDocumentNotFound as exc:
+            return Response(
+                {"code": "not-found", "detail": str(exc)},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except CaseDocumentConflict as exc:
+            return Response(
+                {"code": "conflict", "detail": str(exc)},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        patient_case = self.get_queryset().get(pk=patient_case.pk)
+        return Response(
+            cast(
+                _SerializerDataLike,
+                CaseSerializer(patient_case, context={"request": request}),
+            ).data,
             status=status.HTTP_200_OK,
         )
 

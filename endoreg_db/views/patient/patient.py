@@ -114,6 +114,29 @@ def _medical_reference_conflict_response(field_name: str) -> Response:
     )
 
 
+def _medical_idempotency_key_required_response() -> Response:
+    return Response(
+        {
+            "code": "idempotency-key-required",
+            "detail": (
+                "A non-empty Idempotency-Key header of at most 255 characters "
+                "is required."
+            ),
+        },
+        status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+    )
+
+
+def _medical_idempotency_conflict_response() -> Response:
+    return Response(
+        {
+            "code": "idempotency-conflict",
+            "detail": "The Idempotency-Key was already used for another payload.",
+        },
+        status=status.HTTP_409_CONFLICT,
+    )
+
+
 def _medical_resource_not_found_response() -> Response:
     return Response(
         {
@@ -156,12 +179,54 @@ class PatientViewSet(viewsets.ModelViewSet[Patient]):  # pyright: ignore[reportI
             user=self.request.user,
         )
 
-    @action(detail=True, methods=["get"], url_path="medical-ledger")
+    @action(detail=True, methods=["get", "post"], url_path="medical-ledger")
     def medical_ledger(self, request: Request, pk: int | None = None) -> Response:
-        """Return this visible patient's validated medical ledger projection."""
-        del request, pk
+        """Read or atomically create this visible patient's medical ledger."""
+        del pk
+        patient = self.get_object()
+        if request.method == "POST":
+            try:
+                from lx_dtypes.models.ledger.medical.Write import (
+                    PatientMedicalLedgerCreate,
+                )
+                from endoreg_db.services.medical_ledger import (
+                    MedicalLedgerIdempotencyConflict,
+                    MedicalLedgerIdempotencyKeyInvalid,
+                    MedicalLedgerReferenceConflict,
+                    create_patient_medical_ledger,
+                )
+            except ModuleNotFoundError as exc:
+                if not _medical_contract_module_missing(exc):
+                    raise
+                return _medical_contract_unavailable_response()
+
+            validated = _validate_medical_payload(
+                PatientMedicalLedgerCreate,
+                request,
+            )
+            if isinstance(validated, Response):
+                return validated
+            try:
+                result = create_patient_medical_ledger(
+                    patient=patient,
+                    payload=cast(PatientMedicalLedgerCreate, validated),
+                    idempotency_key=request.headers.get("Idempotency-Key", ""),
+                )
+            except MedicalLedgerIdempotencyKeyInvalid:
+                return _medical_idempotency_key_required_response()
+            except MedicalLedgerIdempotencyConflict:
+                return _medical_idempotency_conflict_response()
+            except MedicalLedgerReferenceConflict as exc:
+                return _medical_reference_conflict_response(exc.field_name)
+            return Response(
+                result.ledger.model_dump(mode="json"),
+                status=(
+                    status.HTTP_200_OK if result.replayed else status.HTTP_201_CREATED
+                ),
+                headers={"Idempotency-Replayed": str(result.replayed).lower()},
+            )
         try:
-            ledger = _build_patient_medical_ledger(self.get_object())
+            ledger = _build_patient_medical_ledger(patient)
         except MedicalLedgerContractUnavailable:
             return _medical_contract_unavailable_response()
         return Response(
@@ -265,9 +330,7 @@ class PatientViewSet(viewsets.ModelViewSet[Patient]):  # pyright: ignore[reportI
                 raise
             return _medical_contract_unavailable_response()
 
-        validated = _validate_medical_payload(
-            PatientMedicationScheduleCreate, request
-        )
+        validated = _validate_medical_payload(PatientMedicationScheduleCreate, request)
         if isinstance(validated, Response):
             return validated
         try:
@@ -312,9 +375,7 @@ class PatientViewSet(viewsets.ModelViewSet[Patient]):  # pyright: ignore[reportI
                 raise
             return _medical_contract_unavailable_response()
 
-        validated = _validate_medical_payload(
-            PatientMedicationScheduleUpdate, request
-        )
+        validated = _validate_medical_payload(PatientMedicationScheduleUpdate, request)
         if isinstance(validated, Response):
             return validated
         try:

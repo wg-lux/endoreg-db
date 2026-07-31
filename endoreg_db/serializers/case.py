@@ -31,6 +31,7 @@ class CaseSerializer(serializers.ModelSerializer[Case]):
         source="end_date", required=False, allow_null=True
     )
     patient_examinations = PatientExaminationSerializer(many=True, read_only=True)
+    documents = serializers.SerializerMethodField()
     patient_medications: serializers.ManyRelatedField = cast(
         serializers.ManyRelatedField,
         serializers.PrimaryKeyRelatedField(many=True, read_only=True),
@@ -110,6 +111,7 @@ class CaseSerializer(serializers.ModelSerializer[Case]):
             "is_closed",
             "is_deleted",
             "patient_examinations",
+            "documents",
             "patient_medications",
             "patient_medication_schedules",
             "patient_lab_samples",
@@ -138,6 +140,53 @@ class CaseSerializer(serializers.ModelSerializer[Case]):
                 {"leave_date": "Leave date must not be earlier than admission date."}
             )
         return attrs
+
+    def get_documents(self, instance: Case) -> list[dict[str, object]]:
+        documents: list[dict[str, object]] = []
+        for patient_examination in instance.patient_examinations.all():
+            patient_examination_id = cast(int, patient_examination.pk)
+            for pdf in patient_examination.raw_pdf_files.all():
+                documents.append(
+                    {
+                        "media_type": "pdf",
+                        "id": pdf.pk,
+                        "uuid": str(pdf.uuid),
+                        "patient_examination_id": patient_examination_id,
+                        "occurrence_at": pdf.date_created,
+                        "file_name": getattr(pdf.file, "name", None),
+                    }
+                )
+            for video in patient_examination.video_files.all():
+                documents.append(
+                    {
+                        "media_type": "video",
+                        "id": video.pk,
+                        "uuid": str(video.uuid),
+                        "patient_examination_id": patient_examination_id,
+                        "occurrence_at": video.uploaded_at,
+                        "file_name": video.original_file_name,
+                    }
+                )
+            for report in patient_examination.reports.all():
+                documents.append(
+                    {
+                        "media_type": "text_report",
+                        "id": cast(int, report.pk),
+                        "patient_examination_id": patient_examination_id,
+                        "occurrence_at": report.created_at,
+                        "title": report.title,
+                        "status": report.status,
+                        "version": report.version,
+                    }
+                )
+        return sorted(
+            documents,
+            key=lambda document: (
+                cast(datetime, document["occurrence_at"]),
+                cast(int, document["id"]),
+            ),
+            reverse=True,
+        )
 
     def _persist(
         self, instance: Case | None, validated_data: dict[str, object]

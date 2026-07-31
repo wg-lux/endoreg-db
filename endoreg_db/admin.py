@@ -8,15 +8,16 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.urls import path
 from django.urls.resolvers import URLPattern
 
-from endoreg_db.models import (
-    ApplicationSettings,
-    Patient,
-    Examination,
-    # PatientExamination,
-    Finding,
+from endoreg_db.models.administration.app_settings import ApplicationSettings
+from endoreg_db.models.administration.person.patient.patient import Patient
+from endoreg_db.models.medical.examination.examination import Examination
+from endoreg_db.models.medical.finding.finding import Finding
+from endoreg_db.models.medical.finding.finding_classification import (
     FindingClassification,
     FindingClassificationChoice,
-    FindingIntervention,  #  Import Finding Interventions
+)
+from endoreg_db.models.medical.finding.finding_intervention import FindingIntervention
+from endoreg_db.models.medical.patient.patient_finding_intervention import (
     PatientFindingIntervention,
 )
 

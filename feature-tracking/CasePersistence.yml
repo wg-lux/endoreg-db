@@ -17,6 +17,9 @@ source_documents:
 - path: docs/video_storage_normalization.md
   disposition: reference
   note: Verbindlicher Speicher-, Integritäts- und Lebenszyklusvertrag für fallbezogene Videos.
+- path: docs/case_graph_persistence.md
+  disposition: reference
+  note: Versioniertes Relationsinventar, Ownership-, Kardinalitäts-, API- und Abfragevertrag des Fallgraphs.
 definition_of_done:
 - id: complete_graph_scope
   category: requirements
@@ -43,11 +46,15 @@ definition_of_done:
     timeout_seconds: 900
   assessment:
     status: in_progress
-    evidence: []
-    note: Persistenzumfang und ReportingShell-Consumer sind im Tracker erfasst; vollständiges Relationsinventar
-      und Ownership-Review stehen noch aus.
+    evidence:
+    - kind: document
+      reference: docs/case_graph_persistence.md
+    note: case_graph_v1 dokumentiert Owner, Richtung, Kardinalität, Zeitprovenienz, Löschverhalten und
+      API-Repräsentation für den Fallgraph einschließlich ReportingShell-Abgrenzung. Die fachliche Review
+      der Mehrfach-Fallzuordnung einer PatientExamination und unveränderliche Medikations-/Labor-Snapshots
+      bleiben offen.
     assessed_by: Codex
-    assessed_at: '2026-07-22T15:09:52.085067Z'
+    assessed_at: '2026-07-29T13:32:04.227311Z'
 - id: case_lifecycle_persistence
   category: functionality
   title: Fallidentität, Zeitraum und Untersuchungszuordnung werden dauerhaft gespeichert
@@ -114,6 +121,16 @@ definition_of_done:
   acceptance:
   - PDF-Berichte, Videos, Bilder und DICOM-Daten sowie ihre fallbezogenen Metadaten, Segmente, Frames
     und Annotationen sind über stabile Datenbankreferenzen erreichbar.
+  - Jede PatientExamination kann beliebig viele eigenständige PDF-, Text- und Video-Dokumente besitzen;
+    wiederholte Aufnahmen oder Befundungen derselben Untersuchung erzeugen neue Artefaktzeilen mit eigener
+    stabiler Identität und Zeitprovenienz und überschreiben keine frühere Aufnahme.
+  - Die Fall-API liefert alle über ihre PatientExaminations erreichbaren Dokumente als Liste und erhält
+    mehrere Dokumente desselben Medientyps und derselben Untersuchung ohne Deduplizierung nach Untersuchung
+    oder Medientyp.
+  - Eine strikt validierte, authentifizierte Fallmutation verknüpft vorhandene PDF- oder Videoartefakte
+    ausschließlich mit einer PatientExamination desselben Falls und Patienten; identische Wiederholungen
+    sind idempotent, geschlossene Fälle sowie fremde oder bereits widersprüchlich verknüpfte Artefakte
+    werden ohne Umhängen abgelehnt.
   - Datenbankzustand, verschlüsselte Dateiablage, Hashes, Generationen und Provenienz können reconciliert
     werden; fehlende oder fremde Artefakte führen zu einem expliziten Fehlerzustand.
   - Video-Persistenz erfüllt vollständig den separaten Vertrag VideoStorageNormalization; dieser Tracker
@@ -129,8 +146,31 @@ definition_of_done:
     - -q
     timeout_seconds: 1200
   assessment:
-    status: not_assessed
-    evidence: []
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/models/medical/patient/patient_examination.py
+    - kind: code
+      reference: endoreg_db/migrations/0057_patientexamination_multiple_documents.py
+    - kind: test
+      reference: tests/services/test_case_media_attachments.py
+    - kind: test
+      reference: tests/migrations/test_case_persistence.py
+    - kind: code
+      reference: endoreg_db/services/case_documents.py
+    - kind: code
+      reference: endoreg_db/views/case.py
+    - kind: code
+      reference: /home/admin/dev/lx-annotate/frontend/src/api/casesApi.ts
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/frontend/src/api/__tests__/casesApi.test.ts
+    note: Zusätzlich zur vollständigen Dokumentliste existiert nun eine strikt validierte case-scoped
+      POST-Mutation für vorhandene PDFs und Videos. Sie sperrt Fall, Untersuchung und Medienzeile atomar,
+      ist bei identischer Wiederholung idempotent und lehnt geschlossene/inaktive Fälle, fallfremde Untersuchungen,
+      fremde Patienten/Zentren und widersprüchliche bestehende Links ohne Umhängen ab. Der Frontend-Client
+      bildet denselben Vertrag typisiert ab; Reconciliation und operative Medienfreigaben bleiben offen.
+    assessed_by: Codex
+    assessed_at: '2026-07-29T13:34:19.496803Z'
 - id: reporting_shell_integration
   category: interoperability
   title: ReportingShell verwendet den persistenten Fall statt einer Untersuchung als Fallersatz
@@ -193,12 +233,15 @@ definition_of_done:
       reference: tests/views/case/test_case_viewset.py
     - kind: test
       reference: tests/services/test_case_persistence_transactions.py
-    note: Create, Update, Close/Reopen und CaseSetup verwenden atomare Transaktionen; Updates sperren
-      die persistierte Fallzeile, ausgelassene Relationsfelder werden nicht zurückgeschrieben, und Failure-Injection
-      beweist den Rollback skalarer Änderungen bei Relationsfehlern. Offen bleiben ein expliziter Optimistic-Concurrency-Vertrag
-      sowie Retention- und Delete-Semantik.
+    - kind: code
+      reference: endoreg_db/services/case_documents.py
+    - kind: test
+      reference: tests/services/test_case_media_attachments.py
+    note: Die neue Dokumentmutation validiert vor der Mutation und verwendet select_for_update für Fall,
+      Untersuchung und PDF/Video innerhalb einer transaction.atomic-Grenze; identische Wiederholung ist
+      idempotent. Echte Parallelkonflikttests, Optimistic Concurrency sowie Retention/Delete bleiben offen.
     assessed_by: Codex
-    assessed_at: '2026-07-23T08:16:28.883937Z'
+    assessed_at: '2026-07-29T13:32:32.187707Z'
 - id: automated_tests
   category: testing
   title: Der vollständige Fallgraph ist durch Roundtrip-, Fehler- und Migrationstests geschützt
@@ -236,11 +279,22 @@ definition_of_done:
       reference: tests/migrations/test_case_persistence.py
     - kind: test
       reference: tests/services/test_case_persistence_transactions.py
-    note: Zehn fokussierte Backend-Lifecycle-, Graph-, Transaktions- und Migrationstests sowie vierzehn
-      Frontend-Case-/Reportingtests bestehen. Offen bleiben klinische Snapshot-, Medien-, Restore-, echte
-      Parallelkonflikt-, Retention- und vollständige Fehlerkohorten.
+    - kind: test
+      reference: tests/services/test_case_media_attachments.py
+    - kind: test
+      reference: tests/views/anonymization/test_sensitive_metadata_view.py
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/frontend/src/views/__tests__/PatientResourcePages.test.ts
+    - kind: test
+      reference: tests/authz/test_case_policy.py
+    - kind: test
+      reference: tests/views/media/test_center_scoped_reads.py
+    note: Zusätzliche Tests decken erfolgreiche und wiederholte PDF-/Videozuordnung, strikt ungültige
+      Payloads, fallfremde Untersuchungen, fremde Patienten, bestehende Linkkonflikte, geschlossene Fälle,
+      Rollenauflösung und Fremdzentrumzugriff ab. Restore-, Retention- und echte Parallelkonfliktkohorten
+      bleiben offen.
     assessed_by: Codex
-    assessed_at: '2026-07-23T08:16:29.760556Z'
+    assessed_at: '2026-07-29T13:32:34.668012Z'
 - id: security_and_privacy
   category: security
   title: Fallzugriff schützt Mandantengrenzen, Identität und sensible Artefakte
@@ -264,11 +318,17 @@ definition_of_done:
     evidence:
     - kind: command
       reference: endoreg_db/views/case.py
-    note: Case querysets and create/update mutations use existing center-scope authorization and reject
-      cross-patient attachments. Production authentication, audit events, and negative cross-center coverage
-      remain.
+    - kind: code
+      reference: endoreg_db/authz/policy.py
+    - kind: test
+      reference: tests/authz/test_case_policy.py
+    - kind: test
+      reference: tests/views/media/test_center_scoped_reads.py
+    note: Alle Case-Routen sind nun explizit patient:read/write zugeordnet. Die Dokumentmutation wird
+      durch das center-scoped Case-get_object begrenzt und ein negativer Fremdzentrumstest belegt 404
+      ohne Mutation; Auditereignisse und vollständige Produktionsauthentifizierungsprüfung bleiben offen.
     assessed_by: Codex
-    assessed_at: '2026-07-22T15:27:23.580460Z'
+    assessed_at: '2026-07-29T13:32:33.348494Z'
 - id: backup_restore_operations
   category: operations
   title: Backup, Restore, Reconciliation und Rollback erhalten den vollständigen Fallgraph
@@ -309,5 +369,13 @@ definition_of_done:
       angrenzenden Feature-Tracker reviewen.
     timeout_seconds: 900
   assessment:
-    status: not_assessed
-    evidence: []
+    status: in_progress
+    evidence:
+    - kind: document
+      reference: docs/case_graph_persistence.md
+    note: case_graph_v1 dokumentiert Ownership, Kardinalität, Zeitsemantik, Löschverhalten, Query-/Prefetch-Plan,
+      snake_case-Dokumentmutation sowie Grenzen zu VideoStorageNormalization und Media-Lifecycle. Vollständige
+      Migrations-, Backup/Restore-, Reconciliation-, Retention- und ReportingShell-Datenflussverfahren
+      bleiben offen.
+    assessed_by: Codex
+    assessed_at: '2026-07-29T13:34:11.747199Z'

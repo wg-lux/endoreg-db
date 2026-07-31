@@ -3,7 +3,10 @@ from typing import TYPE_CHECKING, Optional, Protocol, Any, cast
 
 from django.core.exceptions import ValidationError
 from django.db import models
-from endoreg_db.schemas import validate_dtypes_p_examination_payload
+from endoreg_db.schemas import (
+    dump_patient_examination_report_draft,
+    validate_dtypes_p_examination_payload,
+)
 
 if TYPE_CHECKING:
     from endoreg_db.models.administration.person.patient.patient import Patient  # pyright: ignore
@@ -15,6 +18,9 @@ if TYPE_CHECKING:
         ExaminationIndicationClassificationChoice,
     )
     from endoreg_db.models.media.video.video_file import VideoFile
+    from endoreg_db.models.report.patient_examination_report import (
+        PatientExaminationReport,
+    )
     from ...media import (
         AnonymExaminationReport,
         AnonymHistologyReport,
@@ -37,14 +43,6 @@ class PatientExamination(models.Model):
     examination: models.ForeignKey["Examination | None"] = models.ForeignKey(
         "Examination", on_delete=models.CASCADE, null=True, blank=True
     )
-    video: models.OneToOneField["VideoFile | None"] = models.OneToOneField(
-        "VideoFile",
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="patient_examination",
-    )
-
     date_start: models.DateField[Any, Any] = models.DateField(null=True, blank=True)
     date_end: models.DateField[Any, Any] = models.DateField(null=True, blank=True)
     hash: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
@@ -70,7 +68,8 @@ class PatientExamination(models.Model):
     if TYPE_CHECKING:
         patient_id: int | None
         examination_id: int | None
-        video_id: int | None
+        video_files: models.QuerySet["VideoFile"]
+        reports: models.QuerySet["PatientExaminationReport"]
         patient_findings: models.QuerySet["PatientFinding"]
         indications: models.QuerySet["PatientExaminationIndication"]
         raw_pdf_files: models.QuerySet["RawPdfFile"]
@@ -149,12 +148,19 @@ class PatientExamination(models.Model):
 
     def clean(self) -> None:
         super().clean()
+        errors: dict[str, str] = {}
         try:
             self.dtypes_record = validate_dtypes_p_examination_payload(
                 self.dtypes_record
             )
         except ValueError as exc:
-            raise ValidationError({"dtypes_record": str(exc)}) from exc
+            errors["dtypes_record"] = str(exc)
+        try:
+            self.report_draft = dump_patient_examination_report_draft(self.report_draft)
+        except ValueError as exc:
+            errors["report_draft"] = str(exc)
+        if errors:
+            raise ValidationError(errors)
 
     def assign_knowledge_base_identity(self) -> None:
         if self.knowledge_base_module and self.knowledge_base_version:

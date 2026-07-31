@@ -117,6 +117,7 @@ from .medical import (
     PatientLabValue,
     PatientMedication,
     PatientMedicationSchedule,
+    MedicalLedgerWriteReceipt,
     Risk,
     RiskType,
 )
@@ -295,6 +296,7 @@ __all__ = [
     ## Medication
     "PatientMedication",
     "PatientMedicationSchedule",
+    "MedicalLedgerWriteReceipt",
     # Organ
     "Organ",
     # Risk

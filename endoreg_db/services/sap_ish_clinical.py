@@ -9,21 +9,23 @@ from typing import Any, cast
 from django.db import transaction
 from django.utils import timezone
 
-from endoreg_db.models import (
-    Case,
-    Center,
-    Disease,
-    LabValue,
-    Medication,
-    PatientDisease,
+from endoreg_db.models.administration.case.case import Case
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.administration.person.patient.patient_external_id import (
     PatientExternalID,
+)
+from endoreg_db.models.medical.disease import Disease
+from endoreg_db.models.medical.laboratory.lab_value import LabValue
+from endoreg_db.models.medical.medication.medication import Medication
+from endoreg_db.models.medical.patient.patient_disease import PatientDisease
+from endoreg_db.models.medical.patient.patient_lab_sample import (
     PatientLabSample,
     PatientLabSampleType,
-    PatientLabValue,
-    PatientMedication,
-    SensitiveMeta,
-    Unit,
 )
+from endoreg_db.models.medical.patient.patient_lab_value import PatientLabValue
+from endoreg_db.models.medical.patient.patient_medication import PatientMedication
+from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+from endoreg_db.models.other.unit import Unit
 from endoreg_db.services.sap_ish_import import (
     SapIshNormalizedRow,
     sap_ish_external_id_origin,

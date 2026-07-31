@@ -11,11 +11,11 @@ from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Literal
-
 import yaml
 
 from endoreg_db.services.tabular_import_formats import (
     build_preanonymized_payload,
+    normalize_patient_gender,
     normalize_document_row,
     resolve_document_template,
 )
@@ -383,9 +383,9 @@ def _build_enriched_raw_columns(
 
 def _derive_patient_gender(rows: list[SapIshNormalizedRow]) -> str | None:
     for row in rows:
-        gender = row.canonical_row.get("geschlecht")
-        if isinstance(gender, str) and gender.strip():
-            return gender.strip()
+        gender = normalize_patient_gender(row.canonical_row.get("geschlecht"))
+        if gender:
+            return gender
     return None
 
 

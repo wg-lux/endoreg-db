@@ -82,7 +82,7 @@ class ImportSapIshTxtCommandTests(TestCase):
             _write_tsv(
                 source_dir / "Patienten.txt",
                 header=["PatientNr", "PatientAlter", "Geschlecht"],
-                rows=[["2004", "64", "female"]],
+                rows=[["2004", "64", "W"]],
             )
             _write_tsv(
                 source_dir / "Diagnosen.txt",

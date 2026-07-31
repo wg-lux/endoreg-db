@@ -13,6 +13,9 @@ tracking:
   state: active
   history: []
 source_documents:
+- path: docs/medical_ledger_contract.md
+  disposition: reference
+  note: Feldinventar, Ownership-, Zeit-, Relations-, Create- und Snapshot-Grenzen.
 - path: docs/model_layer_map_for_agents.md
   disposition: reference
   note: Definiert die Ownership-Grenze zwischen Django-Persistenz, Service-Layer und strikt typisierten
@@ -89,8 +92,15 @@ definition_of_done:
       API-Routen, CasePersistence und LXDM-Tracker prüfen.
     timeout_seconds: 900
   assessment:
-    status: not_assessed
-    evidence: []
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/medical_ledger_contract.md
+    note: The field inventory documents all seven ledger types, ownership, cardinality, FK/deletion behavior,
+      time semantics, provenance, API representation, existing-patient-only creation, and Case/PatientExamination
+      reference boundaries.
+    assessed_by: Codex
+    assessed_at: '2026-07-29T13:14:10.294119Z'
 - id: versioned_ledger_contract
   category: interoperability
   title: Der medizinische Ledger-Vertrag ist öffentlich, versioniert und kompatibel
@@ -156,11 +166,12 @@ definition_of_done:
       reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/models/ledger/medical/tests/test_write_contracts.py
     - kind: test
       reference: tests/api/test_medical_ledger_create.py
-    note: Strikte extra-forbid Schreibverträge validieren Medikations- und Planpayloads einmalig am API-Rand;
-      unbekannte Terminologie liefert 409 und fremdpatientige Datensatz-IDs 404. Erkrankungen, Ereignisse
-      und Labor-Schreibverträge bleiben offen.
+    note: Strict extra-forbid write contracts now cover diseases, events, aware laboratory samples/values,
+      medications, schedules, and the aggregate; date ordering, finite exclusive lab values, schedule
+      indices, terminology ownership, and route-patient ownership are enforced. Domain-specific dosage
+      schemas and complete descriptor validation remain open.
     assessed_by: Codex
-    assessed_at: '2026-07-29T12:56:11.645237Z'
+    assessed_at: '2026-07-29T13:14:27.090220Z'
 - id: host_persistence_mapping
   category: functionality
   title: Ein expliziter Host-Service persistiert jeden Ledger-Typ verlustfrei
@@ -179,24 +190,31 @@ definition_of_done:
   verification:
     kind: command
     command:
+    - devenv
+    - shell
+    - --
+    - env
+    - ENDOREG_TEST_RUN_NAMESPACE=medical-ledger-tracker
+    - PYTHONPATH=/home/admin/lx-parse/lx-data-models
     - .devenv/state/venv/bin/pytest
-    - tests/services/test_medical_ledger_persistence.py
+    - tests/services/test_medical_ledger_roundtrip.py
+    - tests/api/test_medical_ledger_create.py
+    - tests/api/test_medical_ledger_read.py
     - -q
     timeout_seconds: 900
   assessment:
-    status: in_progress
+    status: verified
     evidence:
-    - kind: code
-      reference: endoreg_db/services/medical_ledger.py
-    - kind: test
-      reference: tests/api/test_medical_ledger_read.py
-    - kind: test
-      reference: tests/api/test_medical_ledger_create.py
-    note: Read-Projektion sowie atomare Create/Patch-Persistenz für PatientMedication und PatientMedicationSchedule
-      einschließlich Many-to-Many-Relationen sind implementiert. Erkrankungs-, Ereignis- und Laborwrites
-      sowie Paketfreigabe bleiben offen.
+    - kind: command
+      reference: devenv shell -- env ENDOREG_TEST_RUN_NAMESPACE=medical-ledger-tracker PYTHONPATH=/home/admin/lx-parse/lx-data-models
+        .devenv/state/venv/bin/pytest tests/services/test_medical_ledger_roundtrip.py tests/api/test_medical_ledger_create.py
+        tests/api/test_medical_ledger_read.py -q
+      note: Exit-Code 0
+    note: The atomic host service persists all six canonical patient medical model types, rejects missing,
+      ambiguous, mismatched, and foreign-patient references, rebuilds a validated PatientMedicalLedger
+      from database rows, and uses no shadow persistence; the verifier passed 17 tests.
     assessed_by: Codex
-    assessed_at: '2026-07-29T12:56:12.982793Z'
+    assessed_at: '2026-07-29T13:16:33.546867Z'
 - id: validated_create_api
   category: functionality
   title: Die API erstellt validierte patientenbezogene medizinische Datensätze atomar
@@ -229,11 +247,14 @@ definition_of_done:
       reference: endoreg_db/views/patient/patient.py
     - kind: test
       reference: tests/api/test_medical_ledger_create.py
-    note: Patient-scoped POST/PATCH-Endpunkte für Medikationen und Medikationspläne liefern 201/200 sowie
-      strukturierte 404/409/422/503-Antworten und kanonische Ledger-Records. Aggregate PatientMedicalLedger
-      Create, übrige Medizinentitäten, Idempotency-Key und lx-dtypes-Mount bleiben offen.
+    - kind: test
+      reference: tests/services/test_medical_ledger_transactions.py
+    note: The patient-scoped aggregate POST validates once, atomically persists all six entity types,
+      requires a durable Idempotency-Key, returns exact manifest-bounded replays, rejects changed payloads
+      with structured HTTP 409, and rolls back children, join rows, and receipts. Published-package/OpenAPI
+      gating and complete authorization/audit evidence remain open.
     assessed_by: Codex
-    assessed_at: '2026-07-29T12:56:14.282334Z'
+    assessed_at: '2026-07-29T13:39:45.759083Z'
 - id: roundtrip_fidelity
   category: data_integrity
   title: Persistenz- und API-Roundtrip erhalten den vollständigen medizinischen Graphen
@@ -261,11 +282,15 @@ definition_of_done:
     evidence:
     - kind: test
       reference: tests/api/test_medical_ledger_read.py
-    note: Medikation und Medikationspläne werden aus der Datenbank mit stabilen External IDs und verschachtelten
-      Details als validierter Ledger exportiert. Create-, vollständige klinische Roundtrips und Prozess-Restore
-      bleiben offen.
+    - kind: test
+      reference: tests/services/test_medical_ledger_roundtrip.py
+    - kind: test
+      reference: tests/services/test_medical_ledger_transactions.py
+    note: All six entity types pass database reload and validated aggregate export with stable UUIDs,
+      nested/direct identities, and exact idempotent replay timestamps bounded by the durable receipt
+      manifest. Historical terminology deletion semantics and the full edge-case matrix remain open.
     assessed_by: Codex
-    assessed_at: '2026-07-29T12:36:02.794457Z'
+    assessed_at: '2026-07-29T13:39:46.794952Z'
 - id: database_integrity
   category: data_integrity
   title: Datenbankconstraints schützen medizinische Invarianten auch außerhalb der API
@@ -307,20 +332,27 @@ definition_of_done:
   verification:
     kind: command
     command:
+    - devenv
+    - shell
+    - --
+    - env
+    - ENDOREG_TEST_RUN_NAMESPACE=medical-ledger-idempotency
+    - PYTHONPATH=/home/admin/lx-parse/lx-data-models
     - .devenv/state/venv/bin/pytest
     - tests/services/test_medical_ledger_transactions.py
+    - tests/api/test_medical_ledger_create.py
     - -q
     timeout_seconds: 1200
   assessment:
-    status: in_progress
+    status: verified
     evidence:
-    - kind: test
-      reference: tests/api/test_medical_ledger_create.py
-    note: Scalar- und Many-to-Many-Schreibschritte laufen atomar; Failure-Injection belegt Rollback und
-      Updates sperren Zielzeilen. Idempotency-Key, Replay-Konflikt und echte Parallelitätstests bleiben
-      offen.
+    - kind: command
+      reference: devenv shell -- env ENDOREG_TEST_RUN_NAMESPACE=medical-ledger-idempotency PYTHONPATH=/home/admin/lx-parse/lx-data-models
+        .devenv/state/venv/bin/pytest tests/services/test_medical_ledger_transactions.py tests/api/test_medical_ledger_create.py
+        -q
+      note: Exit-Code 0
     assessed_by: Codex
-    assessed_at: '2026-07-29T12:56:15.509852Z'
+    assessed_at: '2026-07-29T13:39:25.739469Z'
 - id: migrations_and_existing_data
   category: interoperability
   title: Bestehende medizinische Daten werden kompatibel übernommen und geprüft
@@ -376,10 +408,13 @@ definition_of_done:
       reference: tests/api/test_medical_ledger_read.py
     - kind: code
       reference: endoreg_db/authz/policy.py
-    note: Die neue GET-Route verwendet PatientViewSet-Policy und dessen center-scoped Queryset; ein negativer
-      Fremd-Center-Test liefert 404. Write-, Audit- und vollständige Security-Matrix bleiben offen.
+    - kind: test
+      reference: tests/api/test_medical_ledger_create.py
+    note: GET and aggregate POST resolve the patient through the same center-scoped PatientViewSet queryset;
+      authenticated foreign-center read and write tests return 404 before mutation. Structured medical
+      audit events, negative authentication coverage, and the complete storage/audit matrix remain open.
     assessed_by: Codex
-    assessed_at: '2026-07-29T12:36:05.742467Z'
+    assessed_at: '2026-07-29T13:16:34.643903Z'
 - id: patient_resource_navigation
   category: interoperability
   title: Patientenmedikation verwendet den validierten Ledger statt bloßer Relations-IDs
@@ -402,7 +437,7 @@ definition_of_done:
       dargestellte Medikationsdetails sowie negativen Center-Scope-Fall gegen Implementierung reviewen.
     timeout_seconds: 900
   assessment:
-    status: in_progress
+    status: verified
     evidence:
     - kind: code
       reference: /home/admin/dev/lx-annotate/frontend/src/views/PatientMedicationPage.vue
@@ -412,11 +447,14 @@ definition_of_done:
       reference: tests/api/test_medical_ledger_read.py
     - kind: test
       reference: /home/admin/dev/lx-annotate/frontend/src/api/__tests__/patientService.medicalLedger.test.ts
-    note: Read-Darstellung sowie typisierte Create/Patch-Clients für Medikation und Pläne sind integriert;
-      Quelltests bestehen. Produktionsverifikation und Editieroberfläche bleiben bis Paketveröffentlichung
-      beziehungsweise separatem UI-Scope offen.
+    - kind: command
+      reference: devenv shell -- npm run test:unit -- --run src/views/__tests__/PatientResourcePages.test.ts
+        src/api/__tests__/patientService.medicalLedger.test.ts (6 passed)
+    note: The typed frontend client and patient medication page join case relation IDs to ledger external
+      identities, render medication and schedule details without invented labels, and retain center-scoped
+      404 behavior; six focused frontend tests and the backend ledger tests pass.
     assessed_by: Codex
-    assessed_at: '2026-07-29T12:56:16.682956Z'
+    assessed_at: '2026-07-29T13:14:12.555079Z'
 - id: automated_test_matrix
   category: testing
   title: Vertrag, Persistenz, API und Migration sind durch eine vollständige Testmatrix geschützt
@@ -460,11 +498,18 @@ definition_of_done:
       reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/models/ledger/medical/tests/test_write_contracts.py
     - kind: test
       reference: /home/admin/dev/lx-annotate/frontend/src/api/__tests__/patientService.medicalLedger.test.ts
-    note: Drei lx-dtypes-Write-, zwölf fokussierte EndoReg-Read/Write- und sechs Frontend-Client/Ressourcentests
-      sowie Pyright, Vue TypeScript und ESLint bestehen. Aggregate-, Migration-, Backfill-, Parallelitäts-
-      und Restore-Lanes bleiben offen.
+    - kind: test
+      reference: tests/services/test_medical_ledger_transactions.py
+    - kind: command
+      reference: devenv shell -- env ENDOREG_TEST_RUN_NAMESPACE=medical-ledger-regression PYTHONPATH=/home/admin/lx-parse/lx-data-models
+        .devenv/state/venv/bin/pytest tests/services/test_medical_ledger_transactions.py tests/services/test_medical_ledger_roundtrip.py
+        tests/api/test_medical_ledger_create.py tests/api/test_medical_ledger_read.py -q (29 passed)
+    note: The source-contract suite has 11 passing tests; the focused EndoReg medical regression lane
+      has 29 passing tests, including real parallel idempotency, exact replay, changed-payload conflict,
+      and seven-stage rollback injection; repository Pyright reports zero errors and makemigrations reports
+      no drift. Backfill, restore, full migration, OpenAPI, and published-package lanes remain open.
     assessed_by: Codex
-    assessed_at: '2026-07-29T12:56:17.966287Z'
+    assessed_at: '2026-07-29T13:39:47.828077Z'
 - id: observability_and_reconciliation
   category: observability
   title: Medizinische Ledger-Fehler und Persistenzabweichungen sind messbar und reparierbar

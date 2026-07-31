@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from datetime import time
 from typing import Any, cast
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 
 from endoreg_db.models import (
+    Center,
     Medication,
     MedicationIntakeTime,
     Patient,
@@ -228,8 +230,7 @@ def test_create_and_update_schedule_use_only_patient_owned_medications(
 
     assert create_response.status_code == 201, create_response.content
     assert (
-        create_response.resolver_match.url_name
-        == "patient-create-medication-schedule"
+        create_response.resolver_match.url_name == "patient-create-medication-schedule"
     )
     schedule = PatientMedicationSchedule.objects.get(patient=patient)
     assert list(schedule.medication.all()) == [first]
@@ -245,8 +246,7 @@ def test_create_and_update_schedule_use_only_patient_owned_medications(
 
     assert update_response.status_code == 200, update_response.content
     assert (
-        update_response.resolver_match.url_name
-        == "patient-update-medication-schedule"
+        update_response.resolver_match.url_name == "patient-update-medication-schedule"
     )
     assert list(schedule.medication.all()) == [second]
     assert update_response.json()["medications"][0]["external_ids"]["endoreg_db"] == (
@@ -300,3 +300,193 @@ def test_create_medication_rolls_back_if_relation_persistence_fails() -> None:
         create_patient_medication(patient=patient, payload=payload)
 
     assert not PatientMedication.objects.filter(patient=patient).exists()
+
+
+@pytest.mark.django_db
+def test_create_medical_ledger_aggregate_returns_reloaded_graph(
+    api_client: APIClient,
+) -> None:
+    patient = _patient("Aggregate")
+    medication, unit, intake_time = _terminology()
+
+    response = api_client.post(
+        f"/api/patients/{_pk(patient)}/medical-ledger/",
+        data={
+            "patient": str(_pk(patient)),
+            "medications": [
+                {
+                    "medication": medication.name,
+                    "unit": unit.name,
+                    "intake_times": [intake_time.name],
+                    "dosage": {"morning": 500},
+                }
+            ],
+            "medication_schedules": [{"medication_indices": [0]}],
+        },
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="aggregate-create",
+    )
+
+    assert response.status_code == 201, response.content
+    assert response.resolver_match.url_name == "patient-medical-ledger"
+    payload = cast(dict[str, Any], response.json())
+    assert payload["patient"] == str(_pk(patient))
+    assert payload["medications"][0]["medication"] == medication.name
+    assert payload["medication_schedules"][0]["medications"][0]["medication"] == (
+        medication.name
+    )
+    assert PatientMedication.objects.filter(patient=patient).count() == 1
+    assert PatientMedicationSchedule.objects.filter(patient=patient).count() == 1
+
+
+@pytest.mark.django_db
+def test_create_medical_ledger_requires_idempotency_key(
+    api_client: APIClient,
+) -> None:
+    patient = _patient("AggregateMissingKey")
+
+    response = api_client.post(
+        f"/api/patients/{_pk(patient)}/medical-ledger/",
+        data={"patient": str(_pk(patient))},
+        format="json",
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "idempotency-key-required"
+
+
+@pytest.mark.django_db
+def test_create_medical_ledger_replays_same_response_without_duplication(
+    api_client: APIClient,
+) -> None:
+    patient = _patient("AggregateReplay")
+    medication, unit, intake_time = _terminology()
+    request_payload = {
+        "patient": str(_pk(patient)),
+        "medications": [
+            {
+                "medication": medication.name,
+                "unit": unit.name,
+                "intake_times": [intake_time.name],
+            }
+        ],
+        "medication_schedules": [{"medication_indices": [0]}],
+    }
+
+    first = api_client.post(
+        f"/api/patients/{_pk(patient)}/medical-ledger/",
+        data=request_payload,
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="aggregate-replay",
+    )
+    unrelated = _create_medication(
+        patient=patient,
+        medication=medication,
+        unit=unit,
+        intake_time=intake_time,
+    )
+    replay = api_client.post(
+        f"/api/patients/{_pk(patient)}/medical-ledger/",
+        data=request_payload,
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="aggregate-replay",
+    )
+
+    assert first.status_code == 201, first.content
+    assert first.headers["Idempotency-Replayed"] == "false"
+    assert replay.status_code == 200, replay.content
+    assert replay.headers["Idempotency-Replayed"] == "true"
+    assert replay.json() == first.json()
+    assert PatientMedication.objects.filter(patient=patient).count() == 2
+    replayed_ids = {
+        item["external_ids"]["endoreg_db"] for item in replay.json()["medications"]
+    }
+    assert f"PatientMedication:{_pk(unrelated)}" not in replayed_ids
+
+
+@pytest.mark.django_db
+def test_create_medical_ledger_rejects_changed_payload_for_same_key(
+    api_client: APIClient,
+) -> None:
+    patient = _patient("AggregateReplayConflict")
+    medication, _, _ = _terminology()
+    url = f"/api/patients/{_pk(patient)}/medical-ledger/"
+
+    first = api_client.post(
+        url,
+        data={
+            "patient": str(_pk(patient)),
+            "medications": [{"medication": medication.name, "active": True}],
+        },
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="aggregate-conflict",
+    )
+    conflict = api_client.post(
+        url,
+        data={
+            "patient": str(_pk(patient)),
+            "medications": [{"medication": medication.name, "active": False}],
+        },
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="aggregate-conflict",
+    )
+
+    assert first.status_code == 201
+    assert conflict.status_code == 409
+    assert conflict.json()["code"] == "idempotency-conflict"
+    assert PatientMedication.objects.filter(patient=patient).count() == 1
+
+
+@pytest.mark.django_db
+def test_create_medical_ledger_rejects_route_patient_mismatch(
+    api_client: APIClient,
+) -> None:
+    patient = _patient("AggregateOwner")
+    other_patient = _patient("AggregateOther")
+
+    response = api_client.post(
+        f"/api/patients/{_pk(patient)}/medical-ledger/",
+        data={"patient": str(_pk(other_patient))},
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="aggregate-patient-mismatch",
+    )
+
+    assert response.status_code == 409
+    assert response.json()["field"] == "patient"
+    assert not PatientMedication.objects.filter(patient=patient).exists()
+
+
+@pytest.mark.django_db
+@patch("endoreg_db.views.access_control.resolve_allowed_center_id")
+def test_create_medical_ledger_hides_foreign_center_patient(
+    mock_allowed_center_id: MagicMock,
+    api_client: APIClient,
+) -> None:
+    visible_center = Center.objects.create(
+        name=f"ledger-visible-{uuid4().hex}",
+        display_name="Visible",
+    )
+    foreign_center = Center.objects.create(
+        name=f"ledger-foreign-{uuid4().hex}",
+        display_name="Foreign",
+    )
+    foreign_patient = Patient.objects.create(
+        first_name="Foreign",
+        last_name="Patient",
+        center=foreign_center,
+        patient_hash=f"foreign-create-{uuid4().hex}",
+    )
+    api_client.force_login(
+        User.objects.create_user(username=f"ledger-writer-{uuid4().hex}")
+    )
+    mock_allowed_center_id.return_value = _pk(visible_center)
+
+    response = api_client.post(
+        f"/api/patients/{_pk(foreign_patient)}/medical-ledger/",
+        data={"patient": str(_pk(foreign_patient))},
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="aggregate-foreign-patient",
+    )
+
+    assert response.status_code == 404
+    assert not PatientMedication.objects.filter(patient=foreign_patient).exists()

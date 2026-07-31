@@ -82,6 +82,13 @@ ROUTE_RESOURCE: RouteResourceMap = {
     "patient-update-medication": "patient",
     "patient-create-medication-schedule": "patient",
     "patient-update-medication-schedule": "patient",
+    # Clinical cases are patient-owned resources.
+    "case-list": "patient",
+    "case-detail": "patient",
+    "case-close": "patient",
+    "case-reopen": "patient",
+    "case-create-with-examination": "patient",
+    "case-attach-document": "patient",
     # Custom patient helper
     "check_pe_exist": "patient",
     # Example for videos (if you have these ViewSets registered)
