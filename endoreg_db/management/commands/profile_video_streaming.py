@@ -110,6 +110,15 @@ class _StreamingTargets:
         return not self.hls and not self.mp4
 
 
+@dataclass
+class _FrontendVideoSimulation:
+    video_id: int
+    issues: list[str]
+    hls_probe: dict[str, object]
+    result: dict[str, object]
+    request_count: int = 0
+
+
 class Command(BaseVideoCommand):
     help = (
         "Profile processed video streaming request handling through the NGINX "
@@ -520,6 +529,74 @@ def _simulate_frontend_video(
     origin: str | None,
     hls_support: _FrontendHlsSupport,
 ) -> tuple[dict[str, object], int]:
+    simulation = _frontend_video_simulation(video, hls_artifact)
+    if hls_support == "none":
+        return _simulate_progressive_from_context(
+            simulation,
+            factory=factory,
+            stream_view=stream_view,
+            user=user,
+            origin=origin,
+            fallback_reason="hls_not_supported",
+        )
+
+    playlist_response = playlist_view(
+        _authenticated_get(
+            factory,
+            _frontend_hls_playlist_url(simulation.video_id),
+            user=user,
+            origin=origin,
+            accept=HLS_PLAYLIST_ACCEPT,
+        ),
+        pk=simulation.video_id,
+    )
+    simulation.request_count += 1
+    playlist_status = int(playlist_response.status_code)
+    simulation.result["hls_playlist_status"] = playlist_status
+    if playlist_status == 404:
+        return _simulate_progressive_from_context(
+            simulation,
+            factory=factory,
+            stream_view=stream_view,
+            user=user,
+            origin=origin,
+            fallback_reason="hls_playlist_404",
+        )
+    if playlist_status != 200:
+        _record_unavailable_hls_playlist(simulation, playlist_response)
+        return simulation.result, simulation.request_count
+
+    playlist_handoff_ok = _record_available_hls_playlist(
+        simulation,
+        playlist_response,
+        hls_support=hls_support,
+    )
+    key_ok = _probe_frontend_hls_key(
+        simulation,
+        factory=factory,
+        key_view=key_view,
+        user=user,
+        origin=origin,
+    )
+    segment_handoff_ok = _probe_frontend_hls_segment(
+        simulation,
+        factory=factory,
+        segment_view=segment_view,
+        user=user,
+        origin=origin,
+    )
+    return _finalize_frontend_hls_simulation(
+        simulation,
+        playlist_handoff_ok=playlist_handoff_ok,
+        key_ok=key_ok,
+        segment_handoff_ok=segment_handoff_ok,
+    )
+
+
+def _frontend_video_simulation(
+    video: VideoFile,
+    hls_artifact: VideoHlsArtifact | None,
+) -> _FrontendVideoSimulation:
     video_id = int(video.pk)
     issues: list[str] = []
     width = _positive_dimension(getattr(video, "width", None))
@@ -536,7 +613,7 @@ def _simulate_frontend_video(
     if not streaming_video_present:
         issues.append("missing_streaming_video")
 
-    base_result: dict[str, object] = {
+    result: dict[str, object] = {
         "video_id": video_id,
         "resolution": f"{width}x{height}" if resolution_known else None,
         "width": width,
@@ -554,124 +631,150 @@ def _simulate_frontend_video(
         "issues": issues,
         **hls_probe,
     }
-
-    if hls_support == "none":
-        return _simulate_frontend_progressive_fallback(
-            factory=factory,
-            stream_view=stream_view,
-            video_id=video_id,
-            user=user,
-            origin=origin,
-            base_result=base_result,
-            request_count=0,
-            fallback_reason="hls_not_supported",
-        )
-
-    playlist_response = playlist_view(
-        _authenticated_get(
-            factory,
-            _frontend_hls_playlist_url(video_id),
-            user=user,
-            origin=origin,
-            accept=HLS_PLAYLIST_ACCEPT,
-        ),
-        pk=video_id,
+    return _FrontendVideoSimulation(
+        video_id=video_id,
+        issues=issues,
+        hls_probe=hls_probe,
+        result=result,
     )
-    request_count = 1
-    playlist_status = int(playlist_response.status_code)
-    base_result["hls_playlist_status"] = playlist_status
 
-    if playlist_status == 404:
-        return _simulate_frontend_progressive_fallback(
-            factory=factory,
-            stream_view=stream_view,
-            video_id=video_id,
-            user=user,
-            origin=origin,
-            base_result=base_result,
-            request_count=request_count,
-            fallback_reason="hls_playlist_404",
-        )
 
-    if playlist_status != 200:
-        issues.append("hls_playlist_unavailable")
-        base_result["playback_mode"] = "error"
-        base_result["hls_playlist_x_accel_redirect"] = _optional_x_accel_redirect(
-            playlist_response
-        )
-        base_result["hls_playlist_handoff_ok"] = False
-        return base_result, request_count
+def _simulate_progressive_from_context(
+    simulation: _FrontendVideoSimulation,
+    *,
+    factory: APIRequestFactory,
+    stream_view: Callable[..., HttpResponseBase],
+    user: User,
+    origin: str | None,
+    fallback_reason: str,
+) -> tuple[dict[str, object], int]:
+    return _simulate_frontend_progressive_fallback(
+        factory=factory,
+        stream_view=stream_view,
+        video_id=simulation.video_id,
+        user=user,
+        origin=origin,
+        base_result=simulation.result,
+        request_count=simulation.request_count,
+        fallback_reason=fallback_reason,
+    )
 
+
+def _record_unavailable_hls_playlist(
+    simulation: _FrontendVideoSimulation,
+    response: HttpResponseBase,
+) -> None:
+    simulation.issues.append("hls_playlist_unavailable")
+    simulation.result["playback_mode"] = "error"
+    simulation.result["hls_playlist_x_accel_redirect"] = (
+        _optional_x_accel_redirect(response)
+    )
+    simulation.result["hls_playlist_handoff_ok"] = False
+
+
+def _record_available_hls_playlist(
+    simulation: _FrontendVideoSimulation,
+    response: HttpResponseBase,
+    *,
+    hls_support: _FrontendHlsSupport,
+) -> bool:
     playback_mode = _frontend_hls_playback_mode(hls_support)
-    playlist_redirect = _optional_x_accel_redirect(playlist_response)
-    playlist_handoff_ok = _x_accel_handoff_ok(playlist_response)
-    base_result["playback_mode"] = playback_mode
-    base_result["hls_playlist_x_accel_redirect"] = playlist_redirect
-    base_result["hls_playlist_handoff_ok"] = playlist_handoff_ok
+    playlist_redirect = _optional_x_accel_redirect(response)
+    playlist_handoff_ok = _x_accel_handoff_ok(response)
+    simulation.result["playback_mode"] = playback_mode
+    simulation.result["hls_playlist_x_accel_redirect"] = playlist_redirect
+    simulation.result["hls_playlist_handoff_ok"] = playlist_handoff_ok
     if not playlist_handoff_ok:
-        issues.append("hls_playlist_handoff_missing")
+        simulation.issues.append("hls_playlist_handoff_missing")
+    return playlist_handoff_ok
 
-    key_id = hls_probe["hls_key_id"]
-    segment_name = hls_probe["hls_segment_name"]
-    key_ok = False
-    segment_handoff_ok = False
 
+def _probe_frontend_hls_key(
+    simulation: _FrontendVideoSimulation,
+    *,
+    factory: APIRequestFactory,
+    key_view: Callable[..., HttpResponseBase],
+    user: User,
+    origin: str | None,
+) -> bool:
+    key_id = simulation.hls_probe["hls_key_id"]
     if isinstance(key_id, str):
         key_response = key_view(
             _authenticated_get(
                 factory,
-                f"/endoreg-api/media/videos/{video_id}/hls/key/{key_id}/",
+                f"/endoreg-api/media/videos/{simulation.video_id}/hls/key/{key_id}/",
                 user=user,
                 origin=origin,
             ),
-            pk=video_id,
+            pk=simulation.video_id,
             key_id=UUID(key_id),
         )
-        request_count += 1
+        simulation.request_count += 1
         key_content_length = _content_length_header(key_response)
         key_ok = (
             key_response.status_code == 200
             and key_content_length == HLS_CONTENT_KEY_BYTES
         )
-        base_result["hls_key_status"] = int(key_response.status_code)
-        base_result["hls_key_content_length"] = key_content_length
-        base_result["hls_key_ok"] = key_ok
+        simulation.result["hls_key_status"] = int(key_response.status_code)
+        simulation.result["hls_key_content_length"] = key_content_length
+        simulation.result["hls_key_ok"] = key_ok
         if not key_ok:
-            issues.append("hls_key_unavailable")
-    else:
-        issues.append("hls_key_missing")
+            simulation.issues.append("hls_key_unavailable")
+        return key_ok
+    simulation.issues.append("hls_key_missing")
+    return False
 
+
+def _probe_frontend_hls_segment(
+    simulation: _FrontendVideoSimulation,
+    *,
+    factory: APIRequestFactory,
+    segment_view: Callable[..., HttpResponseBase],
+    user: User,
+    origin: str | None,
+) -> bool:
+    key_id = simulation.hls_probe["hls_key_id"]
+    segment_name = simulation.hls_probe["hls_segment_name"]
     if isinstance(key_id, str) and isinstance(segment_name, str):
         segment_response = segment_view(
             _authenticated_get(
                 factory,
                 "/endoreg-api/media/videos/"
-                f"{video_id}/hls/segments/{key_id}/{segment_name}",
+                f"{simulation.video_id}/hls/segments/{key_id}/{segment_name}",
                 user=user,
                 origin=origin,
             ),
-            pk=video_id,
+            pk=simulation.video_id,
             key_id=UUID(key_id),
             segment_name=segment_name,
         )
-        request_count += 1
+        simulation.request_count += 1
         segment_handoff_ok = _x_accel_handoff_ok(segment_response)
-        base_result["hls_segment_status"] = int(segment_response.status_code)
-        base_result["hls_segment_x_accel_redirect"] = _optional_x_accel_redirect(
-            segment_response
+        simulation.result["hls_segment_status"] = int(segment_response.status_code)
+        simulation.result["hls_segment_x_accel_redirect"] = (
+            _optional_x_accel_redirect(segment_response)
         )
-        base_result["hls_segment_handoff_ok"] = segment_handoff_ok
+        simulation.result["hls_segment_handoff_ok"] = segment_handoff_ok
         if not segment_handoff_ok:
-            issues.append("hls_segment_handoff_missing")
-    else:
-        issues.append("hls_segment_missing")
+            simulation.issues.append("hls_segment_handoff_missing")
+        return segment_handoff_ok
+    simulation.issues.append("hls_segment_missing")
+    return False
 
+
+def _finalize_frontend_hls_simulation(
+    simulation: _FrontendVideoSimulation,
+    *,
+    playlist_handoff_ok: bool,
+    key_ok: bool,
+    segment_handoff_ok: bool,
+) -> tuple[dict[str, object], int]:
     hls_usable = playlist_handoff_ok and key_ok and segment_handoff_ok
-    base_result["nginx_handoff_can_work"] = hls_usable
-    base_result["streaming_usable"] = hls_usable
+    simulation.result["nginx_handoff_can_work"] = hls_usable
+    simulation.result["streaming_usable"] = hls_usable
     if not hls_usable:
-        issues.append("hls_streaming_unusable")
-    return base_result, request_count
+        simulation.issues.append("hls_streaming_unusable")
+    return simulation.result, simulation.request_count
 
 
 def _simulate_frontend_progressive_fallback(
