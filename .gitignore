@@ -214,4 +214,8 @@ tools/report_pdf_renderer_rust/
 
 *.bak
 
+# Runtime-only feature coordination leases
+/feature-tracking/.locks/
+/feature-tracking/.messages/
+
 *callgrind.out.*

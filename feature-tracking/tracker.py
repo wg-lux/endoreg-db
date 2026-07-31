@@ -4,15 +4,17 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import shlex
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 from pathlib import Path
 from typing import Callable, Literal, Sequence, cast
+from uuid import uuid4
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 _VENV_PYTHON = _REPOSITORY_ROOT / ".devenv/state/venv/bin/python"
@@ -24,6 +26,7 @@ try:
         ConfigDict,
         Field,
         ValidationError,
+        field_validator,
         model_validator,
     )
 except ModuleNotFoundError as exc:
@@ -40,13 +43,36 @@ except ModuleNotFoundError as exc:
         "'devenv tasks run agent:sync' ausführen."
     ) from exc
 
-from endoreg_db.utils.file_operations import atomic_write_file
+from endoreg_db.utils.filesystem.file_operations import (
+    advisory_file_lock,
+    atomic_create_file,
+    atomic_move_file,
+    atomic_write_file,
+    safe_unlink_file,
+)
 
 
 TRACKING_DIR = Path(__file__).resolve().parent
 REPOSITORY_ROOT = _REPOSITORY_ROOT
 POLICY_FILE_NAME = "policy.yml"
+DONE_DIRECTORY_NAME = "done"
 NON_FEATURE_FILES = frozenset({POLICY_FILE_NAME, "schema.example.yml"})
+LOCK_DIRECTORY_NAME = ".locks"
+LOCK_MUTEX_FILE_NAME = ".registry.lock"
+MESSAGE_DIRECTORY_NAME = ".messages"
+MESSAGE_MUTEX_FILE_NAME = ".mailbox.lock"
+DEFAULT_LOCK_TTL_MINUTES = 240
+MAXIMUM_LOCK_TTL_MINUTES = 1440
+DEFAULT_MESSAGE_TTL_HOURS = 168
+MAXIMUM_MESSAGE_TTL_HOURS = 720
+
+_OUTSTANDING_WORK_PATTERN = re.compile(
+    r"(?:\bausstehend\b|\boffen\s+bleib(?:t|en)\b|\bsteh(?:t|en)\s+noch\s+aus\b|"
+    r"\bfehl(?:t|en)\s+noch\b|\bnoch\s+nicht\b|\boutstanding\b|\bpending\b|"
+    r"\bremains?\s+(?:open|outstanding|pending|to\s+be)\b|"
+    r"\bstill\s+(?:missing|required|open|pending)\b)",
+    re.IGNORECASE,
+)
 
 
 class TrackerError(RuntimeError):
@@ -141,7 +167,7 @@ class FeatureTrackingEvent(BaseModel):
 
 class FeatureTracking(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    
+
     state: FeatureTrackingState = FeatureTrackingState.ACTIVE
     history: tuple[FeatureTrackingEvent, ...] = ()
 
@@ -224,9 +250,7 @@ class Verification(BaseModel):
 
     kind: VerificationKind
     command: tuple[str, ...] | None = Field(default=None, min_length=1)
-    commands: tuple[VerificationCommand, ...] | None = Field(
-        default=None, min_length=1
-    )
+    commands: tuple[VerificationCommand, ...] | None = Field(default=None, min_length=1)
     instructions: str | None = Field(default=None, min_length=1)
     timeout_seconds: int = Field(default=300, ge=1, le=3600)
 
@@ -324,6 +348,104 @@ class FeatureReadiness(BaseModel):
     score_percent: int = Field(ge=0, le=100)
 
 
+class FeatureLock(BaseModel):
+    """One time-limited, owner-bound claim on feature work."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    schema_version: Literal["1.0"] = "1.0"
+    lock_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+    feature_id: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+    criterion_id: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]*$")
+    files: tuple[str, ...] = ()
+    owner: str = Field(min_length=1)
+    acquired_at: datetime
+    expires_at: datetime
+    note: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def validate_lock(self) -> "FeatureLock":
+        if self.acquired_at.tzinfo is None or self.expires_at.tzinfo is None:
+            raise ValueError("feature lock timestamps must include a timezone")
+        if self.expires_at <= self.acquired_at:
+            raise ValueError("feature lock expiry must follow acquisition")
+        if len(self.files) != len(set(self.files)):
+            raise ValueError("feature lock files must be unique")
+        if any(not path or Path(path).is_absolute() for path in self.files):
+            raise ValueError("feature lock files must be relative repository paths")
+        return self
+
+    @property
+    def is_feature_wide(self) -> bool:
+        return self.criterion_id is None and not self.files
+
+
+class AgentMessageSeverity(StrEnum):
+    INFO = "info"
+    REVIEW = "review"
+    BLOCKING = "blocking"
+
+
+class AgentMessage(BaseModel):
+    """One local, owner-addressed coordination message for Codex CLI agents."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    schema_version: Literal["1.0"] = "1.0"
+    message_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+    sender: str = Field(
+        min_length=1,
+        max_length=200,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._/@:-]*$",
+    )
+    recipient: str = Field(
+        min_length=1,
+        max_length=200,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._/@:-]*$",
+    )
+    severity: AgentMessageSeverity = AgentMessageSeverity.REVIEW
+    subject: str = Field(min_length=1, max_length=200)
+    body: str = Field(min_length=1, max_length=4000)
+    feature_id: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]*$")
+    criterion_id: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]*$")
+    reply_to: str | None = Field(default=None, pattern=r"^[0-9a-f]{32}$")
+    created_at: datetime
+    expires_at: datetime
+    acknowledged_at: datetime | None = None
+    acknowledged_by: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=200,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._/@:-]*$",
+    )
+
+    @field_validator("subject", "body")
+    @classmethod
+    def reject_terminal_control_characters(cls, value: str) -> str:
+        if any(ord(character) < 32 and character not in "\n\t" for character in value):
+            raise ValueError("agent messages cannot contain terminal control characters")
+        return value
+
+    @model_validator(mode="after")
+    def validate_message(self) -> "AgentMessage":
+        if self.created_at.tzinfo is None or self.expires_at.tzinfo is None:
+            raise ValueError("agent message timestamps must include a timezone")
+        if self.expires_at <= self.created_at:
+            raise ValueError("agent message expiry must follow creation")
+        if self.criterion_id is not None and self.feature_id is None:
+            raise ValueError("criterion_id requires feature_id")
+        if (self.acknowledged_at is None) != (self.acknowledged_by is None):
+            raise ValueError("message acknowledgement fields must be set together")
+        if self.acknowledged_at is not None:
+            if self.acknowledged_at.tzinfo is None:
+                raise ValueError("acknowledged_at must include a timezone")
+            if self.acknowledged_at < self.created_at:
+                raise ValueError("message acknowledgement cannot precede creation")
+            if self.acknowledged_by != self.recipient:
+                raise ValueError("only the recipient can acknowledge a message")
+        return self
+
+
 def _load_yaml(path: Path) -> object:
     try:
         with path.open("r", encoding="utf-8") as handle:
@@ -381,6 +503,37 @@ def load_feature_file(path: Path) -> FeatureDefinition:
     )
 
 
+def _feature_paths(directory: Path) -> tuple[Path, ...]:
+    active_paths = tuple(
+        path for path in directory.glob("*.yml") if path.name not in NON_FEATURE_FILES
+    )
+    done_paths = tuple((directory / DONE_DIRECTORY_NAME).glob("*.yml"))
+    return tuple(sorted((*active_paths, *done_paths)))
+
+
+def _validate_feature_location(
+    feature: FeatureDefinition,
+    *,
+    path: Path,
+    directory: Path,
+) -> None:
+    expected_directory = (
+        directory / DONE_DIRECTORY_NAME
+        if feature.tracking.state is FeatureTrackingState.DONE
+        else directory
+    )
+    if path.parent != expected_directory:
+        expected = (
+            f"{DONE_DIRECTORY_NAME}/"
+            if feature.tracking.state is FeatureTrackingState.DONE
+            else "feature-tracking root"
+        )
+        raise TrackerError(
+            f"{feature.id}: Tracking-Status {feature.tracking.state.value} "
+            f"erfordert Ablage in {expected}, gefunden: {path}"
+        )
+
+
 def validate_feature_against_policy(
     feature: FeatureDefinition,
     policy: ReadinessPolicy,
@@ -407,6 +560,15 @@ def validate_feature_against_policy(
             raise TrackerError(
                 f"{feature.id}/{criterion.id}: mindestens "
                 f"{policy.verified_evidence_minimum} Evidenznachweise erforderlich"
+            )
+        if (
+            assessment.status is AssessmentStatus.VERIFIED
+            and assessment.note is not None
+            and _OUTSTANDING_WORK_PATTERN.search(assessment.note)
+        ):
+            raise TrackerError(
+                f"{feature.id}/{criterion.id}: verified-Bewertung beschreibt "
+                "noch ausstehende Pflichtarbeit"
             )
     if feature.tracking.state is FeatureTrackingState.DONE and any(
         criterion.assessment.status is not AssessmentStatus.VERIFIED
@@ -464,11 +626,10 @@ def load_registry(
     directory: Path = TRACKING_DIR,
 ) -> tuple[ReadinessPolicy, tuple[FeatureDefinition, ...]]:
     policy = load_policy(directory)
-    features = tuple(
-        load_feature_file(path)
-        for path in sorted(directory.glob("*.yml"))
-        if path.name not in NON_FEATURE_FILES
-    )
+    feature_paths = _feature_paths(directory)
+    features = tuple(load_feature_file(path) for path in feature_paths)
+    for path, feature in zip(feature_paths, features, strict=True):
+        _validate_feature_location(feature, path=path, directory=directory)
     return _validate_registry(
         policy,
         features,
@@ -532,7 +693,13 @@ def load_registry_from_git_index(
 
     listed = _run_git(
         repository_root,
-        ("ls-files", "--cached", "--", ":(glob)feature-tracking/*.yml"),
+        (
+            "ls-files",
+            "--cached",
+            "--",
+            ":(glob)feature-tracking/*.yml",
+            ":(glob)feature-tracking/done/*.yml",
+        ),
     )
     feature_paths = tuple(
         Path(line)
@@ -550,6 +717,13 @@ def load_registry_from_git_index(
         )
         for path in feature_paths
     )
+    tracking_directory = Path("feature-tracking")
+    for path, feature in zip(feature_paths, features, strict=True):
+        _validate_feature_location(
+            feature,
+            path=path,
+            directory=tracking_directory,
+        )
     return _validate_registry(
         policy,
         features,
@@ -601,6 +775,523 @@ def find_criterion(feature: FeatureDefinition, criterion_id: str) -> DoneCriteri
         f"Unbekanntes Kriterium '{criterion_id}' für {feature.id}. "
         f"Verfügbar: {available}"
     )
+
+
+def _lock_directory(directory: Path) -> Path:
+    return directory / LOCK_DIRECTORY_NAME
+
+
+def _lock_path(directory: Path, lock_id: str) -> Path:
+    return _lock_directory(directory) / f"{lock_id}.json"
+
+
+def _load_feature_lock(path: Path) -> FeatureLock:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        lock = FeatureLock.model_validate(payload)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise TrackerError(f"Ungültiger Feature-Lock in {path}: {exc}") from exc
+    if path.stem != lock.lock_id:
+        raise TrackerError(
+            f"Lock-Dateiname und Lock-ID stimmen nicht überein: "
+            f"{path.stem} != {lock.lock_id}"
+        )
+    return lock
+
+
+def _load_feature_locks(directory: Path) -> tuple[FeatureLock, ...]:
+    return tuple(
+        _load_feature_lock(path)
+        for path in sorted(_lock_directory(directory).glob("*.json"))
+    )
+
+
+def _remove_expired_feature_locks(
+    locks: Sequence[FeatureLock],
+    *,
+    directory: Path,
+    now: datetime,
+) -> tuple[FeatureLock, ...]:
+    active: list[FeatureLock] = []
+    for lock in locks:
+        if lock.expires_at <= now:
+            safe_unlink_file(_lock_path(directory, lock.lock_id))
+        else:
+            active.append(lock)
+    return tuple(active)
+
+
+def active_feature_locks(
+    directory: Path = TRACKING_DIR,
+    *,
+    now: datetime | None = None,
+) -> tuple[FeatureLock, ...]:
+    current_time = now or datetime.now(timezone.utc)
+    mutex_path = _lock_directory(directory) / LOCK_MUTEX_FILE_NAME
+    with advisory_file_lock(lock_path=mutex_path, timeout_seconds=10):
+        return _remove_expired_feature_locks(
+            _load_feature_locks(directory),
+            directory=directory,
+            now=current_time,
+        )
+
+
+def _normalize_locked_files(
+    values: Sequence[str], *, repository_root: Path
+) -> tuple[str, ...]:
+    root = repository_root.resolve()
+    normalized: list[str] = []
+    for value in values:
+        candidate = Path(value)
+        resolved = (
+            candidate.resolve()
+            if candidate.is_absolute()
+            else (root / candidate).resolve()
+        )
+        try:
+            relative = resolved.relative_to(root)
+        except ValueError as exc:
+            raise TrackerError(
+                f"Lock-Datei liegt außerhalb des Repositorys: {value}"
+            ) from exc
+        relative_path = relative.as_posix()
+        if relative_path == "." or relative_path.startswith(
+            f"feature-tracking/{LOCK_DIRECTORY_NAME}/"
+        ):
+            raise TrackerError(f"Ungültiger Datei-Scope für Feature-Lock: {value}")
+        normalized.append(relative_path)
+    if len(normalized) != len(set(normalized)):
+        raise TrackerError("--file darf denselben Repository-Pfad nur einmal nennen")
+    return tuple(normalized)
+
+
+def _locks_conflict(first: FeatureLock, second: FeatureLock) -> bool:
+    if set(first.files) & set(second.files):
+        return True
+    if first.feature_id != second.feature_id:
+        return False
+    if first.is_feature_wide or second.is_feature_wide:
+        return True
+    return first.criterion_id is not None and first.criterion_id == second.criterion_id
+
+
+def _validate_lock_ttl(ttl_minutes: int) -> None:
+    if not 1 <= ttl_minutes <= MAXIMUM_LOCK_TTL_MINUTES:
+        raise TrackerError(
+            f"--ttl-minutes muss zwischen 1 und {MAXIMUM_LOCK_TTL_MINUTES} liegen"
+        )
+
+
+def acquire_feature_lock(
+    features: Sequence[FeatureDefinition],
+    *,
+    feature_id: str,
+    owner: str,
+    criterion_id: str | None = None,
+    files: Sequence[str] = (),
+    note: str | None = None,
+    ttl_minutes: int = DEFAULT_LOCK_TTL_MINUTES,
+    directory: Path = TRACKING_DIR,
+    repository_root: Path = REPOSITORY_ROOT,
+    now: datetime | None = None,
+) -> FeatureLock:
+    _validate_lock_ttl(ttl_minutes)
+    feature = find_feature(features, feature_id)
+    if feature.tracking.state is FeatureTrackingState.DONE:
+        raise TrackerError(f"{feature.id} ist done und kann nicht gesperrt werden")
+    criterion = (
+        find_criterion(feature, criterion_id) if criterion_id is not None else None
+    )
+    normalized_files = _normalize_locked_files(files, repository_root=repository_root)
+    current_time = now or datetime.now(timezone.utc)
+    requested = FeatureLock(
+        lock_id=uuid4().hex,
+        feature_id=feature.id,
+        criterion_id=criterion.id if criterion is not None else None,
+        files=normalized_files,
+        owner=owner,
+        acquired_at=current_time,
+        expires_at=current_time + timedelta(minutes=ttl_minutes),
+        note=note,
+    )
+    mutex_path = _lock_directory(directory) / LOCK_MUTEX_FILE_NAME
+    with advisory_file_lock(lock_path=mutex_path, timeout_seconds=10):
+        active = _remove_expired_feature_locks(
+            _load_feature_locks(directory),
+            directory=directory,
+            now=current_time,
+        )
+        conflicting = tuple(lock for lock in active if _locks_conflict(lock, requested))
+        if conflicting:
+            details = ", ".join(
+                f"{lock.lock_id} ({lock.owner}, bis {lock.expires_at.isoformat()})"
+                for lock in conflicting
+            )
+            raise TrackerError(f"Feature-Lock kollidiert mit: {details}")
+        serialized = requested.model_dump_json(indent=2).encode("utf-8") + b"\n"
+        atomic_create_file(
+            destination=_lock_path(directory, requested.lock_id),
+            content=(serialized,),
+            required_bytes=len(serialized),
+            file_mode=0o600,
+            dir_mode=0o700,
+        )
+    return requested
+
+
+def renew_feature_lock(
+    lock_id: str,
+    *,
+    owner: str,
+    ttl_minutes: int = DEFAULT_LOCK_TTL_MINUTES,
+    directory: Path = TRACKING_DIR,
+    now: datetime | None = None,
+) -> FeatureLock:
+    _validate_lock_ttl(ttl_minutes)
+    current_time = now or datetime.now(timezone.utc)
+    mutex_path = _lock_directory(directory) / LOCK_MUTEX_FILE_NAME
+    with advisory_file_lock(lock_path=mutex_path, timeout_seconds=10):
+        path = _lock_path(directory, lock_id)
+        if not path.is_file():
+            raise TrackerError(f"Unbekannter Feature-Lock '{lock_id}'")
+        current = _load_feature_lock(path)
+        if current.owner != owner:
+            raise TrackerError(
+                f"Feature-Lock {lock_id} gehört '{current.owner}', nicht '{owner}'"
+            )
+        if current.expires_at <= current_time:
+            safe_unlink_file(path)
+            raise TrackerError(f"Feature-Lock {lock_id} ist bereits abgelaufen")
+        renewed = current.model_copy(
+            update={"expires_at": current_time + timedelta(minutes=ttl_minutes)}
+        )
+        serialized = renewed.model_dump_json(indent=2).encode("utf-8") + b"\n"
+        atomic_write_file(
+            destination=path,
+            content=(serialized,),
+            required_bytes=len(serialized),
+            file_mode=0o600,
+        )
+    return renewed
+
+
+def release_feature_lock(
+    lock_id: str,
+    *,
+    owner: str,
+    directory: Path = TRACKING_DIR,
+) -> FeatureLock:
+    mutex_path = _lock_directory(directory) / LOCK_MUTEX_FILE_NAME
+    with advisory_file_lock(lock_path=mutex_path, timeout_seconds=10):
+        path = _lock_path(directory, lock_id)
+        if not path.is_file():
+            raise TrackerError(f"Unbekannter Feature-Lock '{lock_id}'")
+        lock = _load_feature_lock(path)
+        if lock.owner != owner:
+            raise TrackerError(
+                f"Feature-Lock {lock_id} gehört '{lock.owner}', nicht '{owner}'"
+            )
+        safe_unlink_file(path)
+    return lock
+
+
+def print_feature_locks(locks: Sequence[FeatureLock]) -> None:
+    if not locks:
+        print("Keine aktiven Feature-Locks.")
+        return
+    rows: list[tuple[str, ...]] = [
+        ("Lock-ID", "Feature", "Kriterium", "Dateien", "Owner", "Läuft ab")
+    ]
+    for lock in locks:
+        rows.append(
+            (
+                lock.lock_id,
+                lock.feature_id,
+                lock.criterion_id or ("*" if lock.is_feature_wide else "-"),
+                ", ".join(lock.files) or "-",
+                lock.owner,
+                lock.expires_at.isoformat(),
+            )
+        )
+    print(_render_table(rows))
+
+
+def _message_directory(directory: Path) -> Path:
+    return directory / MESSAGE_DIRECTORY_NAME
+
+
+def _message_path(directory: Path, message_id: str) -> Path:
+    if re.fullmatch(r"[0-9a-f]{32}", message_id) is None:
+        raise TrackerError(f"Ungültige Nachrichten-ID '{message_id}'")
+    return _message_directory(directory) / f"{message_id}.json"
+
+
+def _load_agent_message(path: Path) -> AgentMessage:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        message = AgentMessage.model_validate(payload)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise TrackerError(f"Ungültige Agentennachricht in {path}: {exc}") from exc
+    if path.stem != message.message_id:
+        raise TrackerError(
+            "Nachrichten-Dateiname und Nachrichten-ID stimmen nicht überein: "
+            f"{path.stem} != {message.message_id}"
+        )
+    return message
+
+
+def _load_agent_messages(directory: Path) -> tuple[AgentMessage, ...]:
+    return tuple(
+        _load_agent_message(path)
+        for path in sorted(_message_directory(directory).glob("*.json"))
+    )
+
+
+def _remove_expired_agent_messages(
+    messages: Sequence[AgentMessage],
+    *,
+    directory: Path,
+    now: datetime,
+) -> tuple[AgentMessage, ...]:
+    active: list[AgentMessage] = []
+    for message in messages:
+        if message.expires_at <= now:
+            safe_unlink_file(_message_path(directory, message.message_id))
+        else:
+            active.append(message)
+    return tuple(active)
+
+
+def _serialize_agent_message(message: AgentMessage) -> bytes:
+    return message.model_dump_json(indent=2).encode("utf-8") + b"\n"
+
+
+def _validate_message_ttl(ttl_hours: int) -> None:
+    if not 1 <= ttl_hours <= MAXIMUM_MESSAGE_TTL_HOURS:
+        raise TrackerError(
+            f"--ttl-hours muss zwischen 1 und {MAXIMUM_MESSAGE_TTL_HOURS} liegen"
+        )
+
+
+def _validate_message_feature_context(
+    features: Sequence[FeatureDefinition],
+    *,
+    feature_id: str | None,
+    criterion_id: str | None,
+) -> tuple[str | None, str | None]:
+    if feature_id is None:
+        if criterion_id is not None:
+            raise TrackerError("--criterion erfordert --feature")
+        return None, None
+    feature = find_feature(features, feature_id)
+    criterion = (
+        find_criterion(feature, criterion_id) if criterion_id is not None else None
+    )
+    return feature.id, criterion.id if criterion is not None else None
+
+
+def send_agent_message(
+    features: Sequence[FeatureDefinition],
+    *,
+    sender: str,
+    recipient: str,
+    subject: str,
+    body: str,
+    severity: AgentMessageSeverity = AgentMessageSeverity.REVIEW,
+    feature_id: str | None = None,
+    criterion_id: str | None = None,
+    ttl_hours: int = DEFAULT_MESSAGE_TTL_HOURS,
+    directory: Path = TRACKING_DIR,
+    now: datetime | None = None,
+) -> AgentMessage:
+    """Atomically enqueue one local coordination message."""
+
+    _validate_message_ttl(ttl_hours)
+    normalized_feature_id, normalized_criterion_id = _validate_message_feature_context(
+        features,
+        feature_id=feature_id,
+        criterion_id=criterion_id,
+    )
+    current_time = now or datetime.now(timezone.utc)
+    message = AgentMessage(
+        message_id=uuid4().hex,
+        sender=sender,
+        recipient=recipient,
+        severity=severity,
+        subject=subject,
+        body=body,
+        feature_id=normalized_feature_id,
+        criterion_id=normalized_criterion_id,
+        created_at=current_time,
+        expires_at=current_time + timedelta(hours=ttl_hours),
+    )
+    mutex_path = _message_directory(directory) / MESSAGE_MUTEX_FILE_NAME
+    with advisory_file_lock(lock_path=mutex_path, timeout_seconds=10):
+        _remove_expired_agent_messages(
+            _load_agent_messages(directory),
+            directory=directory,
+            now=current_time,
+        )
+        serialized = _serialize_agent_message(message)
+        atomic_create_file(
+            destination=_message_path(directory, message.message_id),
+            content=(serialized,),
+            required_bytes=len(serialized),
+            file_mode=0o600,
+            dir_mode=0o700,
+        )
+    return message
+
+
+def agent_inbox(
+    *,
+    recipient: str,
+    include_acknowledged: bool = False,
+    directory: Path = TRACKING_DIR,
+    now: datetime | None = None,
+) -> tuple[AgentMessage, ...]:
+    """Return active messages for one owner, oldest first."""
+
+    current_time = now or datetime.now(timezone.utc)
+    mutex_path = _message_directory(directory) / MESSAGE_MUTEX_FILE_NAME
+    with advisory_file_lock(lock_path=mutex_path, timeout_seconds=10):
+        active = _remove_expired_agent_messages(
+            _load_agent_messages(directory),
+            directory=directory,
+            now=current_time,
+        )
+    selected = tuple(
+        message
+        for message in active
+        if message.recipient == recipient
+        and (include_acknowledged or message.acknowledged_at is None)
+    )
+    return tuple(sorted(selected, key=lambda item: (item.created_at, item.message_id)))
+
+
+def acknowledge_agent_message(
+    message_id: str,
+    *,
+    owner: str,
+    directory: Path = TRACKING_DIR,
+    now: datetime | None = None,
+) -> AgentMessage:
+    """Acknowledge a message, enforcing recipient ownership."""
+
+    current_time = now or datetime.now(timezone.utc)
+    mutex_path = _message_directory(directory) / MESSAGE_MUTEX_FILE_NAME
+    with advisory_file_lock(lock_path=mutex_path, timeout_seconds=10):
+        path = _message_path(directory, message_id)
+        if not path.is_file():
+            raise TrackerError(f"Unbekannte Agentennachricht '{message_id}'")
+        message = _load_agent_message(path)
+        if message.expires_at <= current_time:
+            safe_unlink_file(path)
+            raise TrackerError(f"Agentennachricht {message_id} ist bereits abgelaufen")
+        if message.recipient != owner:
+            raise TrackerError(
+                f"Agentennachricht {message_id} gehört '{message.recipient}', nicht '{owner}'"
+            )
+        if message.acknowledged_at is not None:
+            return message
+        acknowledged = AgentMessage.model_validate(
+            {
+                **message.model_dump(mode="python"),
+                "acknowledged_at": current_time,
+                "acknowledged_by": owner,
+            }
+        )
+        serialized = _serialize_agent_message(acknowledged)
+        atomic_write_file(
+            destination=path,
+            content=(serialized,),
+            required_bytes=len(serialized),
+            file_mode=0o600,
+        )
+    return acknowledged
+
+
+def reply_to_agent_message(
+    features: Sequence[FeatureDefinition],
+    message_id: str,
+    *,
+    sender: str,
+    body: str,
+    severity: AgentMessageSeverity | None = None,
+    ttl_hours: int = DEFAULT_MESSAGE_TTL_HOURS,
+    directory: Path = TRACKING_DIR,
+    now: datetime | None = None,
+) -> AgentMessage:
+    """Reply to a message as its recipient and preserve feature context."""
+
+    _validate_message_ttl(ttl_hours)
+    current_time = now or datetime.now(timezone.utc)
+    mutex_path = _message_directory(directory) / MESSAGE_MUTEX_FILE_NAME
+    with advisory_file_lock(lock_path=mutex_path, timeout_seconds=10):
+        source_path = _message_path(directory, message_id)
+        if not source_path.is_file():
+            raise TrackerError(f"Unbekannte Agentennachricht '{message_id}'")
+        source = _load_agent_message(source_path)
+        if source.expires_at <= current_time:
+            safe_unlink_file(source_path)
+            raise TrackerError(f"Agentennachricht {message_id} ist bereits abgelaufen")
+        if source.recipient != sender:
+            raise TrackerError(
+                f"Nur Empfänger '{source.recipient}' darf auf {message_id} antworten"
+            )
+        _validate_message_feature_context(
+            features,
+            feature_id=source.feature_id,
+            criterion_id=source.criterion_id,
+        )
+        reply_subject = (
+            source.subject if source.subject.startswith("Re: ") else f"Re: {source.subject}"
+        )[:200]
+        reply = AgentMessage(
+            message_id=uuid4().hex,
+            sender=sender,
+            recipient=source.sender,
+            severity=severity or source.severity,
+            subject=reply_subject,
+            body=body,
+            feature_id=source.feature_id,
+            criterion_id=source.criterion_id,
+            reply_to=source.message_id,
+            created_at=current_time,
+            expires_at=current_time + timedelta(hours=ttl_hours),
+        )
+        serialized = _serialize_agent_message(reply)
+        atomic_create_file(
+            destination=_message_path(directory, reply.message_id),
+            content=(serialized,),
+            required_bytes=len(serialized),
+            file_mode=0o600,
+            dir_mode=0o700,
+        )
+    return reply
+
+
+def print_agent_messages(
+    messages: Sequence[AgentMessage], *, as_json: bool = False
+) -> None:
+    if as_json:
+        payload = [message.model_dump(mode="json") for message in messages]
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+    if not messages:
+        print("Keine ungelesenen Agentennachrichten.")
+        return
+    for message in messages:
+        context = message.feature_id or "allgemein"
+        if message.criterion_id is not None:
+            context = f"{context}/{message.criterion_id}"
+        acknowledgement = "bestaetigt" if message.acknowledged_at else "ungelesen"
+        print(
+            f"[{message.severity.value}] {message.message_id} von {message.sender} "
+            f"({context}, {acknowledgement})\n"
+            f"  {message.subject}\n"
+            f"  {message.body}"
+        )
 
 
 def update_assessment(
@@ -736,9 +1427,8 @@ def save_feature(feature: FeatureDefinition, directory: Path = TRACKING_DIR) -> 
     )
     matching_paths = tuple(
         path
-        for path in directory.glob("*.yml")
-        if path.name not in NON_FEATURE_FILES
-        and "".join(
+        for path in _feature_paths(directory)
+        if "".join(
             character for character in path.stem.casefold() if character.isalnum()
         )
         == feature_file_id
@@ -746,8 +1436,18 @@ def save_feature(feature: FeatureDefinition, directory: Path = TRACKING_DIR) -> 
     if len(matching_paths) > 1:
         names = ", ".join(sorted(path.name for path in matching_paths))
         raise TrackerError(f"Mehrere Feature-Dateien passen zu '{feature.id}': {names}")
-    destination = (
-        matching_paths[0] if matching_paths else directory / f"{feature.id}.yml"
+    destination_directory = (
+        directory / DONE_DIRECTORY_NAME
+        if feature.tracking.state is FeatureTrackingState.DONE
+        else directory
+    )
+    source = matching_paths[0] if matching_paths else None
+    filename = source.name if source is not None else f"{feature.id}.yml"
+    destination = destination_directory / filename
+    write_destination = (
+        source
+        if source is not None and source.parent != destination_directory
+        else destination
     )
     payload = cast(
         dict[str, object], feature.model_dump(mode="json", exclude_none=True)
@@ -760,11 +1460,17 @@ def save_feature(feature: FeatureDefinition, directory: Path = TRACKING_DIR) -> 
         width=100,
     ).encode("utf-8")
     atomic_write_file(
-        destination=destination,
+        destination=write_destination,
         content=(serialized,),
         required_bytes=len(serialized),
         file_mode=0o644,
     )
+    if write_destination != destination:
+        atomic_move_file(
+            source=write_destination,
+            destination=destination,
+            file_mode=0o644,
+        )
     return destination
 
 
@@ -1097,6 +1803,13 @@ def build_parser() -> argparse.ArgumentParser:
     update.add_argument("--assessed-by")
     update.add_argument("--note")
     update.add_argument(
+        "--acceptance-bullet",
+        action="append",
+        type=int,
+        default=[],
+        help="1-basierter Index eines einzeln geprüften Akzeptanzpunkts; für verified vollständig erforderlich",
+    )
+    update.add_argument(
         "--evidence",
         action="append",
         nargs=2,
@@ -1129,6 +1842,90 @@ def build_parser() -> argparse.ArgumentParser:
     reopen.add_argument("--assessed-by", required=True)
     reopen.add_argument("--note", required=True)
 
+    lock = subparsers.add_parser(
+        "lock", help="Zeitlich begrenzte Arbeits-Locks für Agenten verwalten"
+    )
+    lock_subparsers = lock.add_subparsers(dest="lock_command", required=True)
+
+    lock_acquire = lock_subparsers.add_parser(
+        "acquire", help="Scope prüfen und atomar sperren"
+    )
+    lock_acquire.add_argument("feature_id")
+    lock_acquire.add_argument("--owner", required=True)
+    lock_acquire.add_argument("--criterion")
+    lock_acquire.add_argument("--file", action="append", default=[])
+    lock_acquire.add_argument("--note")
+    lock_acquire.add_argument(
+        "--ttl-minutes", type=int, default=DEFAULT_LOCK_TTL_MINUTES
+    )
+
+    lock_status = lock_subparsers.add_parser(
+        "status", help="Aktive Locks anzeigen und abgelaufene entfernen"
+    )
+    lock_status.add_argument("feature_id", nargs="?")
+
+    lock_renew = lock_subparsers.add_parser(
+        "renew", help="Eigenen aktiven Lock verlängern"
+    )
+    lock_renew.add_argument("lock_id")
+    lock_renew.add_argument("--owner", required=True)
+    lock_renew.add_argument("--ttl-minutes", type=int, default=DEFAULT_LOCK_TTL_MINUTES)
+
+    lock_release = lock_subparsers.add_parser("release", help="Eigenen Lock freigeben")
+    lock_release.add_argument("lock_id")
+    lock_release.add_argument("--owner", required=True)
+
+    message = subparsers.add_parser(
+        "message", help="Lokale Nachrichten zwischen Codex-CLI-Agenten verwalten"
+    )
+    message_subparsers = message.add_subparsers(
+        dest="message_command", required=True
+    )
+
+    message_send = message_subparsers.add_parser(
+        "send", help="Owner-adressierte Nachricht atomar zustellen"
+    )
+    message_send.add_argument("--from", dest="sender", required=True)
+    message_send.add_argument("--to", dest="recipient", required=True)
+    message_send.add_argument("--subject", required=True)
+    message_send.add_argument("--body", required=True)
+    message_send.add_argument(
+        "--severity",
+        choices=tuple(AgentMessageSeverity),
+        default=AgentMessageSeverity.REVIEW.value,
+    )
+    message_send.add_argument("--feature")
+    message_send.add_argument("--criterion")
+    message_send.add_argument(
+        "--ttl-hours", type=int, default=DEFAULT_MESSAGE_TTL_HOURS
+    )
+
+    message_inbox = message_subparsers.add_parser(
+        "inbox", help="Postfach eines Owners abrufen"
+    )
+    message_inbox.add_argument("--owner", required=True)
+    message_inbox.add_argument(
+        "--all", action="store_true", dest="include_acknowledged"
+    )
+    message_inbox.add_argument("--json", action="store_true", dest="as_json")
+
+    message_ack = message_subparsers.add_parser(
+        "ack", help="Nachricht als ihr Empfänger bestätigen"
+    )
+    message_ack.add_argument("message_id")
+    message_ack.add_argument("--owner", required=True)
+
+    message_reply = message_subparsers.add_parser(
+        "reply", help="Als Empfänger auf eine Nachricht antworten"
+    )
+    message_reply.add_argument("message_id")
+    message_reply.add_argument("--from", dest="sender", required=True)
+    message_reply.add_argument("--body", required=True)
+    message_reply.add_argument("--severity", choices=tuple(AgentMessageSeverity))
+    message_reply.add_argument(
+        "--ttl-hours", type=int, default=DEFAULT_MESSAGE_TTL_HOURS
+    )
+
     guard = subparsers.add_parser(
         "guard-commit-message",
         help="Commit bei nicht erfüllter Feature-DoD ablehnen",
@@ -1154,6 +1951,107 @@ def main(argv: Sequence[str] | None = None) -> int:
     if command == "show":
         print_feature(find_feature(features, cast(str, args.feature_id)))
         return 0
+    if command == "lock":
+        lock_command = cast(str, args.lock_command)
+        if lock_command == "acquire":
+            acquired = acquire_feature_lock(
+                features,
+                feature_id=cast(str, args.feature_id),
+                owner=cast(str, args.owner),
+                criterion_id=cast(str | None, args.criterion),
+                files=cast(Sequence[str], args.file),
+                note=cast(str | None, args.note),
+                ttl_minutes=cast(int, args.ttl_minutes),
+                directory=directory,
+            )
+            print(f"Feature-Lock erworben: {acquired.lock_id}")
+            print_feature_locks((acquired,))
+            unread = agent_inbox(
+                recipient=acquired.owner,
+                directory=directory,
+            )
+            if unread:
+                print(f"\nUngelesene Agentennachrichten: {len(unread)}")
+                print_agent_messages(unread)
+            return 0
+        if lock_command == "status":
+            locks = active_feature_locks(directory)
+            requested_feature_id = cast(str | None, args.feature_id)
+            if requested_feature_id is not None:
+                feature = find_feature(features, requested_feature_id)
+                locks = tuple(lock for lock in locks if lock.feature_id == feature.id)
+            print_feature_locks(locks)
+            return 0
+        if lock_command == "renew":
+            renewed = renew_feature_lock(
+                cast(str, args.lock_id),
+                owner=cast(str, args.owner),
+                ttl_minutes=cast(int, args.ttl_minutes),
+                directory=directory,
+            )
+            print(f"Feature-Lock verlängert: {renewed.lock_id}")
+            print_feature_locks((renewed,))
+            return 0
+        if lock_command == "release":
+            released = release_feature_lock(
+                cast(str, args.lock_id),
+                owner=cast(str, args.owner),
+                directory=directory,
+            )
+            print(f"Feature-Lock freigegeben: {released.lock_id}")
+            return 0
+        raise TrackerError(f"Unbekannter Lock-Befehl: {lock_command}")
+    if command == "message":
+        message_command = cast(str, args.message_command)
+        if message_command == "send":
+            sent = send_agent_message(
+                features,
+                sender=cast(str, args.sender),
+                recipient=cast(str, args.recipient),
+                subject=cast(str, args.subject),
+                body=cast(str, args.body),
+                severity=AgentMessageSeverity(cast(str, args.severity)),
+                feature_id=cast(str | None, args.feature),
+                criterion_id=cast(str | None, args.criterion),
+                ttl_hours=cast(int, args.ttl_hours),
+                directory=directory,
+            )
+            print(f"Agentennachricht zugestellt: {sent.message_id}")
+            return 0
+        if message_command == "inbox":
+            messages = agent_inbox(
+                recipient=cast(str, args.owner),
+                include_acknowledged=cast(bool, args.include_acknowledged),
+                directory=directory,
+            )
+            print_agent_messages(messages, as_json=cast(bool, args.as_json))
+            return 0
+        if message_command == "ack":
+            acknowledged = acknowledge_agent_message(
+                cast(str, args.message_id),
+                owner=cast(str, args.owner),
+                directory=directory,
+            )
+            print(f"Agentennachricht bestätigt: {acknowledged.message_id}")
+            return 0
+        if message_command == "reply":
+            severity_value = cast(str | None, args.severity)
+            reply = reply_to_agent_message(
+                features,
+                cast(str, args.message_id),
+                sender=cast(str, args.sender),
+                body=cast(str, args.body),
+                severity=(
+                    AgentMessageSeverity(severity_value)
+                    if severity_value is not None
+                    else None
+                ),
+                ttl_hours=cast(int, args.ttl_hours),
+                directory=directory,
+            )
+            print(f"Antwort zugestellt: {reply.message_id}")
+            return 0
+        raise TrackerError(f"Unbekannter Nachrichten-Befehl: {message_command}")
     if command == "validate":
         selected = _selected_features(features, cast(Sequence[str], args.feature_ids))
         for feature in selected:
@@ -1185,11 +2083,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     if command == "update":
         feature = find_feature(features, cast(str, args.feature_id))
+        criterion = find_criterion(feature, cast(str, args.criterion_id))
+        requested_status = AssessmentStatus(cast(str, args.status))
+        if requested_status is AssessmentStatus.VERIFIED:
+            reviewed = tuple(cast(Sequence[int], args.acceptance_bullet))
+            expected = tuple(range(1, len(criterion.acceptance) + 1))
+            if tuple(sorted(set(reviewed))) != expected or len(reviewed) != len(expected):
+                raise TrackerError(
+                    f"{feature.id}/{criterion.id}: --status verified erfordert "
+                    f"jeden --acceptance-bullet genau einmal ({', '.join(map(str, expected))})"
+                )
+            if cast(str | None, args.note) is None:
+                raise TrackerError(
+                    f"{feature.id}/{criterion.id}: --status verified erfordert eine "
+                    "abschließende Assessment-Notiz"
+                )
         evidence_values = cast(list[list[str]] | None, args.evidence)
         updated = update_assessment(
             feature,
             criterion_id=cast(str, args.criterion_id),
-            status=AssessmentStatus(cast(str, args.status)),
+            status=requested_status,
             assessed_by=cast(str | None, args.assessed_by),
             note=cast(str | None, args.note),
             added_evidence=parse_evidence(evidence_values),
@@ -1230,9 +2143,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             all_successful = all_successful and successful
             if cast(bool, args.update):
                 actor = cast(str | None, args.assessed_by)
-                verification_commands = _verification_commands(
-                    criterion.verification
-                )
+                verification_commands = _verification_commands(criterion.verification)
                 if not verification_commands:
                     raise TrackerError(f"{criterion.id}: Prüfkommando fehlt")
                 evidence = tuple(
@@ -1251,12 +2162,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                     updated,
                     criterion_id=criterion.id,
                     status=(
-                        AssessmentStatus.VERIFIED
+                        AssessmentStatus.IN_PROGRESS
                         if successful
                         else AssessmentStatus.BLOCKED
                     ),
                     assessed_by=actor,
-                    note=None if successful else detail,
+                    note=(
+                        "Automatischer Verifier erfolgreich; vor verified sind alle "
+                        "Akzeptanzpunkte einzeln zu prüfen."
+                        if successful
+                        else detail
+                    ),
                     added_evidence=evidence,
                     clear_evidence=True,
                 )

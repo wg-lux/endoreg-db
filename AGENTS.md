@@ -69,10 +69,27 @@ completion-tracking Markdown files.
 Before changing a tracked feature:
 
 1. Read its YAML definition in `feature-tracking/` and `policy.yml`.
-2. Add or sharpen measurable acceptance criteria before implementing scope that
+2. Acquire a feature lock before the first file edit with
+   `./feature-tracking/tracker.py lock acquire <feature_id> --owner <agent_id>`.
+   Prefer `--criterion <criterion_id>` and one or more `--file <repo_path>`
+   arguments when independent work can safely proceed in parallel. If the
+   command reports a conflict, do not edit the overlapping scope; inspect it
+   with `tracker.py lock status` and coordinate with the recorded owner.
+   Use the same stable `<agent_id>` for the entire Codex CLI process. Before
+   editing, read messages with
+   `./feature-tracking/tracker.py message inbox --owner <agent_id>`; lock
+   acquisition also prints unread messages. Acknowledge acted-on feedback with
+   `tracker.py message ack <message_id> --owner <agent_id>` and reply when the
+   manager needs a decision or verification result.
+3. Add or sharpen measurable acceptance criteria before implementing scope that
    is not represented yet.
-3. Do not declare a criterion `verified` without stable evidence and an
+4. Do not declare a criterion `verified` without stable evidence and an
    identified assessor.
+
+Renew the lock before it expires and release it with
+`tracker.py lock release <lock_id> --owner <agent_id>` when the work ends,
+including after a failed implementation attempt. The bootstrap change that
+first introduces the lock command is the only exception to acquisition.
 
 After changing a tracked feature, run:
 
@@ -86,6 +103,10 @@ the YAML remains schema-valid and writes are atomic. Markdown documents may
 remain as architecture, design, or operational references, but they must point
 to the corresponding feature YAML and must not carry an independent completion
 status.
+
+Agent messages are local operational coordination only. They may link to a
+feature, criterion, or file, but must not contain secrets, patient data, or an
+independent implementation/readiness status. Feature YAML remains authoritative.
 
 Use `rg` for search and `jq` for structured JSON inspection; both are part of
 the devenv shell for agent workflows. If tests require the activated uv virtual

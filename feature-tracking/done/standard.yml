@@ -6,8 +6,32 @@ owners:
 - endoreg_db maintainers
 production_critical: true
 tracking:
-  state: active
-  history: []
+  state: done
+  history:
+  - action: done
+    changed_by: Codex
+    changed_at: '2026-07-31T09:11:32.852237Z'
+    note: Definition of Done vollständig verifiziert; der Feature-Tracking-Standard wird aus dem aktiven
+      Tracking abgeschlossen.
+  - action: reopened
+    changed_by: Codex
+    changed_at: '2026-07-31T10:12:18.056160Z'
+    note: Feature-Lock mit atomarer Konfliktprüfung für Feature-, Kriteriums- und Dateiscopes wird ergänzt;
+      Bootstrap-Änderung, da der Lock-Befehl vor dieser Implementierung noch nicht existiert.
+  - action: done
+    changed_by: Codex
+    changed_at: '2026-07-31T10:20:34.707220Z'
+    note: Feature-Lock mit atomarer Feature-, Kriteriums- und Dateikoordination ist implementiert, dokumentiert
+      und mit 34 fokussierten Tests verifiziert.
+  - action: reopened
+    changed_by: codex/root
+    changed_at: '2026-07-31T10:32:26.102809Z'
+    note: Lokale, owner-adressierte Koordinations-API für unabhängige Codex-CLI-Prozesse ergänzen.
+  - action: done
+    changed_by: codex/root
+    changed_at: '2026-07-31T10:39:30.927919Z'
+    note: Codex-CLI-Koordination mit atomarem lokalem Nachrichtenpostfach, Owner-Bindung, Ablauf, Dokumentation
+      und 37 fokussierten Tests verifiziert.
 source_documents:
 - path: feature-tracking/README.md
   disposition: reference
@@ -40,25 +64,60 @@ definition_of_done:
   category: functionality
   title: Kleine, testbare Terminalbefehle decken den Workflow ab
   acceptance:
-  - overview, show, validate, check, update, verify, done und reopen haben getrennte Verantwortlichkeiten.
+  - overview, show, validate, check, update, verify, done, reopen und lock haben getrennte Verantwortlichkeiten.
   - check liefert Exit-Code 0 nur bei vollständig verifizierter Definition of Done.
   - Valide aktive Features erscheinen ohne Argumente als evaluiert; done blendet sie standardmäßig aus.
+  - Ein Agent erwirbt vor Änderungen atomar einen zeitlich begrenzten Lock für ein Feature, ein Kriterium,
+    eine oder mehrere Repository-Dateien oder deren Kombination und gibt ihn nach der Arbeit wieder frei.
+  - Featureweite, identische Kriteriums- und überlappende Dateiscopes werden abgelehnt; unabhängige Kriteriums-
+    und Dateiscopes dürfen parallel bearbeitet werden.
+  - Lock-Status, Ablauf, Erneuerung und owner-gebundene Freigabe sind explizit prüfbar; abgelaufene Locks
+    blockieren keine neue Arbeit.
+  - Owner-adressierte Codex-CLI-Nachrichten unterstützen Send, Inbox, Acknowledge und Reply mit optionalem
+    Feature-/Kriteriumsbezug; Lock-Akquisition zeigt ungelesene Nachrichten desselben Owners an.
+  - Nachrichten werden atomar und owner-privat im lokalen Runtime-Verzeichnis gespeichert, laufen begrenzt
+    ab, lehnen Terminal-Steuerzeichen ab und erzeugen keinen parallelen Readiness- oder Status-Tracker.
   required: true
   verification:
     kind: command
-    command:
-    - .devenv/state/venv/bin/python
-    - feature-tracking/tracker.py
-    - overview
+    commands:
+    - command:
+      - .devenv/state/venv/bin/python
+      - feature-tracking/tracker.py
+      - overview
+    - command:
+      - .devenv/state/venv/bin/pytest
+      - feature-tracking/test_tracker.py
+      - -q
     timeout_seconds: 300
   assessment:
     status: verified
     evidence:
+    - kind: test
+      reference: feature-tracking/test_tracker.py::test_feature_locks_reject_overlapping_scopes_and_allow_independent_work
+    - kind: test
+      reference: feature-tracking/test_tracker.py::test_simultaneous_feature_lock_contenders_have_exactly_one_winner
+    - kind: test
+      reference: feature-tracking/test_tracker.py::test_feature_lock_expiry_renewal_and_owner_bound_release
+    - kind: test
+      reference: feature-tracking/test_tracker.py::test_lock_cli_acquires_reports_and_releases
     - kind: command
-      reference: .devenv/state/venv/bin/python feature-tracking/tracker.py overview
-      note: Exit-Code 0
-    assessed_by: Codex
-    assessed_at: '2026-07-20T14:11:37.309365Z'
+      reference: devenv shell -- .devenv/state/venv/bin/pytest feature-tracking/test_tracker.py tests/utils/test_file_operations.py
+        -q (34 passed)
+    - kind: test
+      reference: feature-tracking/test_tracker.py::test_agent_messages_are_owner_bound_atomic_and_replyable
+    - kind: test
+      reference: feature-tracking/test_tracker.py::test_agent_message_expiry_and_terminal_control_validation
+    - kind: test
+      reference: feature-tracking/test_tracker.py::test_message_cli_and_lock_acquire_surface_unread_feedback
+    - kind: command
+      reference: devenv shell -- /home/admin/endoreg-db/.devenv/state/venv/bin/pytest feature-tracking/test_tracker.py
+        tests/utils/test_file_operations.py -q (37 passed)
+    note: Lokale Codex-CLI-Nachrichten-API unterstützt owner-adressiertes Send, Inbox, Ack und Reply,
+      automatische Inbox-Anzeige bei Lock-Akquisition, Ablaufbereinigung, JSON-Ausgabe und Feature-/Kriteriumsbezug.
+      Runtime-Dateien sind Git-ignoriert und owner-privat; Feature-YAML bleibt autoritativ.
+    assessed_by: codex/root
+    assessed_at: '2026-07-31T10:39:22.101834Z'
 - id: automated_tests
   category: testing
   title: Schema, Ableitung und Updates sind fokussiert getestet

@@ -6,8 +6,13 @@ owners:
 - endoreg_db maintainers
 production_critical: true
 tracking:
-  state: active
-  history: []
+  state: done
+  history:
+  - action: done
+    changed_by: Codex
+    changed_at: '2026-07-31T10:13:54.323736Z'
+    note: Definition of Done vollständig verifiziert; Importfehler, reparierter Wiederanlauf, idempotenter
+      Replay, Auditnachweis und V2-Backfill-Rollback wurden in isolierter migrierter Testdatenbank geprobt.
 source_documents:
 - path: docs/dicom_interoperability.md
   disposition: reference
@@ -157,16 +162,23 @@ definition_of_done:
     instructions: Betriebsübung mit Importfehler, Wiederholung und Auditnachweis durchführen.
     timeout_seconds: 300
   assessment:
-    status: in_progress
+    status: verified
     evidence:
     - kind: runbook
       reference: docs/dicom_interoperability.md
     - kind: command
       reference: pytest tests/services/test_dicom_interoperability.py
-    note: Runbook und strukturierte Auditereignisse sind implementiert; produktionsnahe Betriebsübung
-      steht aus.
-    assessed_by: codex
-    assessed_at: '2026-07-17T11:33:07.994649Z'
+    - kind: test
+      reference: tests/services/test_dicom_interoperability.py::test_operational_recovery_retries_after_integrity_failure_with_audit_evidence
+    - kind: command
+      reference: devenv shell -- env ENDOREG_TEST_RUN_NAMESPACE=dicom-operational-retirement-attached
+        .devenv/state/venv/bin/pytest tests/services/test_dicom_interoperability.py tests/services/test_dicom_manifest_backfill.py
+        -q (12 passed)
+    note: 'Produktionsnahe Übung in isolierter migrierter Testdatenbank: Integritätsfehler hinterließ
+      keine Teilzeilen; reparierter Retry und identischer Replay erzeugten die erwartete Auditsequenz.
+      V2-Dry-run, Apply, atomarer Rollback und sichere Commandfehler bestanden.'
+    assessed_by: Codex
+    assessed_at: '2026-07-31T10:13:45.096929Z'
 - id: operator_documentation
   category: documentation
   title: Integratoren und Betreiber haben aktuelle Dokumentation

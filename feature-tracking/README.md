@@ -30,6 +30,94 @@ produktionsreif ist. Damit kann derselbe Stand lokal und in CI geprüft werden.
 Ungültiges YAML, eine verletzte Policy oder ein nicht sicher ausführbarer
 Befehl liefert Exit-Code `2`.
 
+## Feature-Locks für parallele Agenten
+
+Vor der ersten Dateiänderung erwirbt jeder Agent einen zeitlich begrenzten
+Lock. `acquire` prüft vorhandene Locks und veröffentlicht den neuen Lock in
+einem atomaren, serialisierten Schritt. Ohne `--criterion` und `--file` wird das
+gesamte Feature gesperrt:
+
+```bash
+./feature-tracking/tracker.py lock acquire standard \
+  --owner "codex/session-42" \
+  --note "Feature-Lock implementieren"
+```
+
+Kleinere Scopes erlauben unabhängige parallele Arbeit. Ein Aufruf kann ein
+Kriterium, mehrere Repository-Dateien oder beides beanspruchen:
+
+```bash
+./feature-tracking/tracker.py lock acquire standard \
+  --criterion terminal_commands \
+  --file feature-tracking/tracker.py \
+  --file feature-tracking/test_tracker.py \
+  --owner "codex/session-42" \
+  --ttl-minutes 240
+```
+
+Ein featureweiter Lock kollidiert mit jedem Lock desselben Features. Gleiche
+Kriterien oder mindestens eine identische Datei kollidieren ebenfalls;
+Dateikollisionen gelten featureübergreifend. Der Befehl beendet sich mit einem
+Fehler und nennt Lock-ID, Owner und Ablaufzeit, statt parallel weiterzuarbeiten.
+
+Aktive Locks werden angezeigt, verlängert und owner-gebunden freigegeben:
+
+```bash
+./feature-tracking/tracker.py lock status
+./feature-tracking/tracker.py lock status standard
+./feature-tracking/tracker.py lock renew <lock_id> \
+  --owner "codex/session-42" --ttl-minutes 240
+./feature-tracking/tracker.py lock release <lock_id> \
+  --owner "codex/session-42"
+```
+
+Die Standardlaufzeit beträgt vier Stunden, das Maximum 24 Stunden. Abgelaufene
+Locks werden bei der nächsten Lock-Operation entfernt und blockieren keine neue
+Arbeit. Ein Agent verlängert einen Lock vor Ablauf und gibt ihn auch bei
+fehlgeschlagener Arbeit frei. Die Runtime-Dateien unter
+`feature-tracking/.locks/` werden nicht versioniert; Feature-YAML bleibt die
+einzige Quelle für Scope und Produktionsreife.
+
+## Lokale Nachrichten-API für Codex CLI
+
+Unabhängige Codex-CLI-Prozesse verwenden dieselbe stabile Owner-ID für Locks
+und Nachrichten. Nachrichten werden atomar als owner-private JSON-Dateien unter
+`feature-tracking/.messages/` gespeichert, laufen automatisch ab und werden
+nicht versioniert. Sie dienen ausschließlich der operativen Koordination; Scope,
+Bewertung und Produktionsreife verbleiben in der Feature-YAML.
+
+Eine Nachricht kann auf Feature und Kriterium verweisen:
+
+```bash
+./feature-tracking/tracker.py message send \
+  --from "codex/agent-manager" \
+  --to "codex/session-42" \
+  --severity blocking \
+  --subject "Evidenz vor Verifikation korrigieren" \
+  --body "Bitte exakte Testpfade eintragen und tracker.py validate ausführen." \
+  --feature standard \
+  --criterion terminal_commands
+```
+
+Der Empfänger liest sein Postfach vor Änderungen. `lock acquire` zeigt
+ungelesene Nachrichten für denselben Owner automatisch an:
+
+```bash
+./feature-tracking/tracker.py message inbox --owner "codex/session-42"
+./feature-tracking/tracker.py message inbox --owner "codex/session-42" --json
+./feature-tracking/tracker.py message ack <message_id> \
+  --owner "codex/session-42"
+./feature-tracking/tracker.py message reply <message_id> \
+  --from "codex/session-42" \
+  --body "Korrigiert; Validierung und fokussierte Tests sind erfolgreich."
+```
+
+Nur der adressierte Owner darf bestätigen oder antworten. `--ttl-hours`
+begrenzt die Aufbewahrung auf höchstens 30 Tage; standardmäßig laufen
+Nachrichten nach sieben Tagen ab. Betreff und Inhalt lehnen Terminal-Steuerzeichen
+ab. Nachrichten dürfen keine Secrets, Patientendaten oder vollständigen
+sensiblen Payloads enthalten.
+
 ## Commit-Gate
 
 Die Pre-Commit-Konfiguration installiert zusätzlich einen `commit-msg`-Hook.
@@ -65,9 +153,19 @@ Eine manuelle Prüfung wird mit Prüfer und Evidenz dokumentiert:
 ./feature-tracking/tracker.py update dicom security_controls \
   --status verified \
   --assessed-by "name@example.org" \
+  --acceptance-bullet 1 \
+  --acceptance-bullet 2 \
+  --note "Beide Akzeptanzpunkte sind erfüllt; es ist keine Pflichtarbeit offen." \
   --evidence review "security-review-2026-07-17" \
   --evidence test "tests/services/test_dicom_interoperability.py"
 ```
+
+Vor `verified` wird jeder unter `acceptance` aufgeführte Punkt einzeln gegen
+die Evidenz geprüft und genau einmal mit seinem 1-basierten
+`--acceptance-bullet` bestätigt. Die Assessment-Notiz muss den erfüllten Stand
+beschreiben; Hinweise auf ausstehende, offene oder noch fehlende Pflichtarbeit
+werden von `validate` abgelehnt. Verifier, Wheel-/Paketbau, Deployment- und
+Routen-Smokes werden als exakte Vordergrundkommandos mit Exit-Code dokumentiert.
 
 Ein Blocker muss begründet werden:
 
@@ -94,9 +192,11 @@ bleibt YAML unverändert:
   --update --assessed-by "name@example.org"
 ```
 
-Bei `verify --update` wird ein erfolgreiches Kommando als `verified`, ein
-fehlgeschlagenes Kommando als `blocked` gespeichert. Updates verwenden die
-atomaren und strukturiert protokollierten Dateioperationen des Projekts.
+Bei `verify --update` wird ein erfolgreiches Kommando als `in_progress` mit
+Verifier-Evidenz, ein fehlgeschlagenes Kommando als `blocked` gespeichert. Erst
+die anschließende Einzelprüfung aller Akzeptanzpunkte darf den Status mit
+`update --status verified` anheben. Updates verwenden die atomaren und strukturiert protokollierten Dateioperationen
+des Projekts.
 
 ## Tracking abschließen
 
@@ -109,10 +209,10 @@ wenn alle Pflichtkriterien verifiziert sind:
   --note "Produktionsfreigabe 2026-07"
 ```
 
-`done` wird mit Zeit, Person und Begründung in der YAML-Historie gespeichert.
-Das Feature verschwindet aus der argumentlosen Übersicht, dem ungezielten
-`check` und dem Commit-Message-Gate. Es bleibt über `show` und
-`overview --all` sichtbar.
+`done` wird mit Zeit, Person und Begründung in der YAML-Historie gespeichert
+und die Definition atomar nach `feature-tracking/done/` verschoben. Das Feature
+verschwindet aus der argumentlosen Übersicht, dem ungezielten `check` und dem
+Commit-Message-Gate. Es bleibt über `show` und `overview --all` sichtbar.
 
 Neue Anforderungen können das Feature kontrolliert wieder öffnen:
 
@@ -124,7 +224,10 @@ Neue Anforderungen können das Feature kontrolliert wieder öffnen:
 
 Das beim Reopen benannte Kriterium wird auf `in_progress` gesetzt. Dadurch kann
 ein wieder geöffnetes Feature nicht fälschlich produktionsreif bleiben.
-Bewertungen eines abgeschlossenen Features sind ansonsten unveränderlich.
+Die Definition wird dabei atomar zurück in das Wurzelverzeichnis
+`feature-tracking/` verschoben. Bewertungen eines abgeschlossenen Features sind
+ansonsten unveränderlich. `validate` lehnt aktive Definitionen im
+`done/`-Verzeichnis und abgeschlossene Definitionen im Wurzelverzeichnis ab.
 
 ## Definition of Done
 

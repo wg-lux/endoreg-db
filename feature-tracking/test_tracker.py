@@ -1,15 +1,20 @@
 from __future__ import annotations
 
-from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import shlex
+import stat
 import subprocess
 import sys
+from threading import Barrier
 
 import pytest
 import yaml
 
 from tracker import (
+    AgentMessage,
+    AgentMessageSeverity,
     Assessment,
     AssessmentStatus,
     Evidence,
@@ -23,7 +28,11 @@ from tracker import (
     Verification,
     VerificationCommand,
     VerificationKind,
+    acquire_feature_lock,
+    acknowledge_agent_message,
+    active_feature_locks,
     actively_tracked_features,
+    agent_inbox,
     derive_readiness,
     find_feature_references,
     guard_commit_message,
@@ -33,9 +42,14 @@ from tracker import (
     main,
     mark_feature_done,
     reopen_feature,
+    release_feature_lock,
+    reply_to_agent_message,
+    renew_feature_lock,
     run_verification,
     save_feature,
+    send_agent_message,
     update_assessment,
+    validate_feature_against_policy,
 )
 
 
@@ -71,8 +85,15 @@ def _unassessed_feature(feature: FeatureDefinition) -> FeatureDefinition:
         criterion.model_copy(update={"assessment": Assessment()})
         for criterion in feature.definition_of_done
     )
+    active_tracking = feature.tracking.model_copy(
+        update={
+            "state": FeatureTrackingState.ACTIVE,
+            "history": (),
+        }
+    )
     return feature.model_copy(
         update={
+            "tracking": active_tracking,
             "source_documents": (),
             "definition_of_done": criteria,
         }
@@ -93,7 +114,10 @@ def test_repository_registry_is_valid_and_tracks_current_assessments() -> None:
     _, features = load_registry(TRACKING_DIR)
     feature_paths = tuple(
         path
-        for path in TRACKING_DIR.glob("*.yml")
+        for path in (
+            *TRACKING_DIR.glob("*.yml"),
+            *(TRACKING_DIR / "done").glob("*.yml"),
+        )
         if path.name not in {"policy.yml", "schema.example.yml"}
     )
 
@@ -115,6 +139,27 @@ def test_verified_status_requires_evidence_and_assessor() -> None:
         )
 
 
+def test_verified_assessment_rejects_note_with_outstanding_work() -> None:
+    policy, features = load_registry(TRACKING_DIR)
+    feature = _verified_feature(features[0])
+    criterion = feature.definition_of_done[0]
+    contradictory = criterion.assessment.model_copy(
+        update={"note": "Wheel- und Deployment-Abnahme stehen noch aus."}
+    )
+    replacement = criterion.model_copy(update={"assessment": contradictory})
+    feature = feature.model_copy(
+        update={
+            "definition_of_done": (
+                replacement,
+                *feature.definition_of_done[1:],
+            )
+        }
+    )
+
+    with pytest.raises(TrackerError, match="ausstehende Pflichtarbeit"):
+        validate_feature_against_policy(feature, policy)
+
+
 def test_all_required_criteria_must_be_verified_for_production() -> None:
     _, features = load_registry(TRACKING_DIR)
     feature = next(item for item in features if item.id == "dicom")
@@ -128,7 +173,7 @@ def test_all_required_criteria_must_be_verified_for_production() -> None:
 
 def test_update_and_atomic_save_round_trip(tmp_path: Path) -> None:
     _, features = load_registry(TRACKING_DIR)
-    feature = next(item for item in features if item.id == "dicom")
+    feature = _unassessed_feature(next(item for item in features if item.id == "dicom"))
     updated = update_assessment(
         feature,
         criterion_id="documented_scope",
@@ -150,7 +195,7 @@ def test_update_and_atomic_save_round_trip(tmp_path: Path) -> None:
 
 def test_save_feature_preserves_existing_filename_case(tmp_path: Path) -> None:
     _, features = load_registry(TRACKING_DIR)
-    feature = next(item for item in features if item.id == "dicom")
+    feature = _unassessed_feature(next(item for item in features if item.id == "dicom"))
     existing = tmp_path / "DICOM.yml"
     existing.write_text("placeholder: true\n", encoding="utf-8")
 
@@ -197,8 +242,23 @@ def test_check_returns_failure_until_definition_of_done_is_verified(
 
 
 def test_verify_update_requires_assessor_before_command_runs() -> None:
+    _, features = load_registry(TRACKING_DIR)
+    feature = next(
+        item
+        for item in actively_tracked_features(features)
+        if any(
+            criterion.verification.kind is VerificationKind.COMMAND
+            for criterion in item.definition_of_done
+        )
+    )
+    criterion = next(
+        item
+        for item in feature.definition_of_done
+        if item.verification.kind is VerificationKind.COMMAND
+    )
+
     with pytest.raises(TrackerError, match="erfordert --assessed-by"):
-        main(["verify", "standard", "terminal_commands", "--update"])
+        main(["verify", feature.id, criterion.id, "--update"])
 
 
 def test_command_verification_requires_one_command_shape() -> None:
@@ -229,9 +289,10 @@ def test_multi_repository_verification_runs_shell_free_in_order(
     second_repository = tmp_path / "second"
     first_repository.mkdir()
     second_repository.mkdir()
-    criterion = load_feature_file(TRACKING_DIR / "standard.yml").definition_of_done[
-        0
-    ]
+    _, features = load_registry(TRACKING_DIR)
+    criterion = next(
+        item for item in features if item.id == "standard"
+    ).definition_of_done[0]
     verification = Verification(
         kind=VerificationKind.COMMAND,
         commands=(
@@ -277,9 +338,10 @@ def test_multi_repository_verification_stops_at_first_failure(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    criterion = load_feature_file(TRACKING_DIR / "standard.yml").definition_of_done[
-        0
-    ]
+    _, features = load_registry(TRACKING_DIR)
+    criterion = next(
+        item for item in features if item.id == "standard"
+    ).definition_of_done[0]
     verification = Verification(
         kind=VerificationKind.COMMAND,
         commands=(
@@ -372,7 +434,9 @@ def test_verify_update_records_each_atomic_command_as_evidence(
     assert result == 0
     updated = load_feature_file(tracking_dir / "standard.yml")
     assessment = updated.definition_of_done[0].assessment
-    assert assessment.status is AssessmentStatus.VERIFIED
+    assert assessment.status is AssessmentStatus.IN_PROGRESS
+    assert assessment.note is not None
+    assert "Akzeptanzpunkte einzeln" in assessment.note
     assert [evidence.reference for evidence in assessment.evidence] == [
         shlex.join((sys.executable, "-c", "print('first')")),
         shlex.join((sys.executable, "-c", "print('second')")),
@@ -391,6 +455,9 @@ def test_tracker_governance_documentation_contract() -> None:
         "./feature-tracking/tracker.py verify",
         "./feature-tracking/tracker.py done",
         "./feature-tracking/tracker.py reopen",
+        "./feature-tracking/tracker.py message send",
+        "./feature-tracking/tracker.py message inbox",
+        "feature-tracking/.messages/",
         "Exit-Code `1`",
         "Exit-Code `2`",
         "atomaren und strukturiert protokollierten Dateioperationen",
@@ -399,6 +466,7 @@ def test_tracker_governance_documentation_contract() -> None:
         assert required_readme_contract in readme
     assert "repositoryübergreifende" in readme.casefold()
     assert "Do not create or maintain parallel TODO" in agent_rules
+    assert "tracker.py message inbox --owner <agent_id>" in agent_rules
 
 
 def test_feature_references_match_ids_names_and_separator_variants() -> None:
@@ -409,8 +477,8 @@ def test_feature_references_match_ids_names_and_separator_variants() -> None:
         features,
     )
 
-    assert {feature.id for feature in matched} == {"dicom", "fhir", "audit_ledger"}
-    assert find_feature_references("documentation cleanup", features) == ()
+    assert {feature.id for feature in matched} == {"audit_ledger"}
+    assert find_feature_references("chore: normalize whitespace", features) == ()
 
 
 def test_commit_guard_uses_staged_readiness_not_unstaged_yaml(
@@ -501,3 +569,384 @@ def test_done_requires_complete_dod_and_excludes_feature_from_tracking() -> None
     assert actively_tracked_features((reopened,)) == (reopened,)
     assert len(reopened.tracking.history) == 2
     assert derive_readiness(reopened).status is ReadinessStatus.IN_PROGRESS
+
+
+def test_save_feature_moves_done_and_reopened_definitions(tmp_path: Path) -> None:
+    _, features = load_registry(TRACKING_DIR)
+    source = _unassessed_feature(next(item for item in features if item.id == "dicom"))
+    active_path = save_feature(source, tmp_path)
+    completed = mark_feature_done(
+        _verified_feature(source),
+        changed_by="reviewer@example.org",
+        note="Release freigegeben.",
+    )
+
+    done_path = save_feature(completed, tmp_path)
+
+    assert done_path == tmp_path / "done" / active_path.name
+    assert not active_path.exists()
+    reopened = reopen_feature(
+        completed,
+        criterion_id="documented_scope",
+        changed_by="reviewer@example.org",
+        note="Neue Anforderungen.",
+    )
+
+    reopened_path = save_feature(reopened, tmp_path)
+
+    assert reopened_path == active_path
+    assert active_path.exists()
+    assert not done_path.exists()
+
+
+def test_feature_locks_reject_overlapping_scopes_and_allow_independent_work(
+    tmp_path: Path,
+) -> None:
+    _, features = load_registry(TRACKING_DIR)
+    feature = next(item for item in features if item.id == "standard")
+    other_feature = next(
+        item for item in actively_tracked_features(features) if item.id != feature.id
+    )
+    first_criterion = feature.definition_of_done[0].id
+    second_criterion = feature.definition_of_done[1].id
+    first = acquire_feature_lock(
+        features,
+        feature_id=feature.id,
+        criterion_id=first_criterion,
+        files=("feature-tracking/tracker.py",),
+        owner="agent-one",
+        directory=tmp_path,
+    )
+
+    with pytest.raises(TrackerError, match="kollidiert"):
+        acquire_feature_lock(
+            features,
+            feature_id=other_feature.id,
+            files=("feature-tracking/tracker.py",),
+            owner="agent-two",
+            directory=tmp_path,
+        )
+
+    independent = acquire_feature_lock(
+        features,
+        feature_id=feature.id,
+        criterion_id=second_criterion,
+        files=("feature-tracking/README.md",),
+        owner="agent-two",
+        directory=tmp_path,
+    )
+
+    assert {lock.lock_id for lock in active_feature_locks(tmp_path)} == {
+        first.lock_id,
+        independent.lock_id,
+    }
+    with pytest.raises(TrackerError, match="kollidiert"):
+        acquire_feature_lock(
+            features,
+            feature_id=feature.id,
+            owner="feature-owner",
+            directory=tmp_path,
+        )
+
+
+def test_simultaneous_feature_lock_contenders_have_exactly_one_winner(
+    tmp_path: Path,
+) -> None:
+    _, features = load_registry(TRACKING_DIR)
+    barrier = Barrier(2)
+
+    def contend(owner: str) -> str:
+        barrier.wait()
+        try:
+            acquire_feature_lock(
+                features,
+                feature_id="standard",
+                criterion_id="terminal_commands",
+                owner=owner,
+                directory=tmp_path,
+            )
+        except TrackerError as exc:
+            assert "kollidiert" in str(exc)
+            return "blocked"
+        return "acquired"
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = tuple(executor.map(contend, ("agent-one", "agent-two")))
+
+    assert sorted(outcomes) == ["acquired", "blocked"]
+    assert len(active_feature_locks(tmp_path)) == 1
+
+
+def test_feature_lock_expiry_renewal_and_owner_bound_release(tmp_path: Path) -> None:
+    _, features = load_registry(TRACKING_DIR)
+    acquired_at = datetime(2026, 7, 31, 10, 0, tzinfo=timezone.utc)
+    acquired = acquire_feature_lock(
+        features,
+        feature_id="standard",
+        criterion_id="terminal_commands",
+        owner="agent-one",
+        ttl_minutes=10,
+        directory=tmp_path,
+        now=acquired_at,
+    )
+
+    with pytest.raises(TrackerError, match="gehört"):
+        renew_feature_lock(
+            acquired.lock_id,
+            owner="agent-two",
+            directory=tmp_path,
+            now=acquired_at + timedelta(minutes=1),
+        )
+    renewed = renew_feature_lock(
+        acquired.lock_id,
+        owner="agent-one",
+        ttl_minutes=20,
+        directory=tmp_path,
+        now=acquired_at + timedelta(minutes=1),
+    )
+    assert renewed.expires_at == acquired_at + timedelta(minutes=21)
+    with pytest.raises(TrackerError, match="gehört"):
+        release_feature_lock(
+            acquired.lock_id,
+            owner="agent-two",
+            directory=tmp_path,
+        )
+
+    assert active_feature_locks(tmp_path, now=acquired_at + timedelta(minutes=22)) == ()
+    assert not tuple((tmp_path / ".locks").glob("*.json"))
+
+
+def test_lock_cli_acquires_reports_and_releases(tmp_path: Path) -> None:
+    policy, features = load_registry(TRACKING_DIR)
+    feature = _unassessed_feature(
+        next(item for item in features if item.id == "standard")
+    )
+    tracking_dir = tmp_path / "feature-tracking"
+    tracking_dir.mkdir()
+    (tracking_dir / "policy.yml").write_text(
+        yaml.safe_dump(
+            policy.model_copy(update={"migrated_markdown_trackers": ()}).model_dump(
+                mode="json"
+            ),
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    (tracking_dir / "standard.yml").write_text(
+        yaml.safe_dump(feature.model_dump(mode="json"), sort_keys=False),
+        encoding="utf-8",
+    )
+
+    assert (
+        main(
+            [
+                "--directory",
+                str(tracking_dir),
+                "lock",
+                "acquire",
+                "standard",
+                "--criterion",
+                "terminal_commands",
+                "--owner",
+                "agent-one",
+            ]
+        )
+        == 0
+    )
+    (lock,) = active_feature_locks(tracking_dir)
+    assert main(["--directory", str(tracking_dir), "lock", "status", "standard"]) == 0
+    assert (
+        main(
+            [
+                "--directory",
+                str(tracking_dir),
+                "lock",
+                "release",
+                lock.lock_id,
+                "--owner",
+                "agent-one",
+            ]
+        )
+        == 0
+    )
+    assert active_feature_locks(tracking_dir) == ()
+
+
+def test_agent_messages_are_owner_bound_atomic_and_replyable(tmp_path: Path) -> None:
+    _, features = load_registry(TRACKING_DIR)
+    created_at = datetime(2026, 7, 31, 10, 0, tzinfo=timezone.utc)
+    message = send_agent_message(
+        features,
+        sender="codex/manager",
+        recipient="codex/worker-1",
+        subject="Tracker evidence needs review",
+        body="Replace the placeholder command before verification.",
+        severity=AgentMessageSeverity.BLOCKING,
+        feature_id="standard",
+        criterion_id="terminal_commands",
+        directory=tmp_path,
+        now=created_at,
+    )
+
+    message_path = tmp_path / ".messages" / f"{message.message_id}.json"
+    assert stat.S_IMODE(message_path.stat().st_mode) == 0o600
+    assert agent_inbox(
+        recipient="codex/worker-1",
+        directory=tmp_path,
+        now=created_at,
+    ) == (message,)
+    assert agent_inbox(
+        recipient="codex/other",
+        directory=tmp_path,
+        now=created_at,
+    ) == ()
+
+    with pytest.raises(TrackerError, match="gehört"):
+        acknowledge_agent_message(
+            message.message_id,
+            owner="codex/other",
+            directory=tmp_path,
+            now=created_at + timedelta(minutes=1),
+        )
+
+    acknowledged = acknowledge_agent_message(
+        message.message_id,
+        owner="codex/worker-1",
+        directory=tmp_path,
+        now=created_at + timedelta(minutes=1),
+    )
+    assert acknowledged.acknowledged_by == "codex/worker-1"
+    assert agent_inbox(
+        recipient="codex/worker-1",
+        directory=tmp_path,
+        now=created_at + timedelta(minutes=1),
+    ) == ()
+
+    reply = reply_to_agent_message(
+        features,
+        message.message_id,
+        sender="codex/worker-1",
+        body="Acknowledged; exact commands will be recorded.",
+        directory=tmp_path,
+        now=created_at + timedelta(minutes=2),
+    )
+    assert reply.recipient == "codex/manager"
+    assert reply.reply_to == message.message_id
+    assert reply.feature_id == "standard"
+    assert reply.criterion_id == "terminal_commands"
+    assert agent_inbox(
+        recipient="codex/manager",
+        directory=tmp_path,
+        now=created_at + timedelta(minutes=2),
+    ) == (reply,)
+
+
+def test_agent_message_expiry_and_terminal_control_validation(tmp_path: Path) -> None:
+    _, features = load_registry(TRACKING_DIR)
+    created_at = datetime(2026, 7, 31, 10, 0, tzinfo=timezone.utc)
+    message = send_agent_message(
+        features,
+        sender="manager",
+        recipient="worker",
+        subject="Short-lived review",
+        body="Review this scope.",
+        ttl_hours=1,
+        directory=tmp_path,
+        now=created_at,
+    )
+
+    assert agent_inbox(
+        recipient="worker",
+        directory=tmp_path,
+        now=created_at + timedelta(hours=2),
+    ) == ()
+    assert not (tmp_path / ".messages" / f"{message.message_id}.json").exists()
+
+    with pytest.raises(ValueError, match="control characters"):
+        AgentMessage(
+            message_id="a" * 32,
+            sender="manager",
+            recipient="worker",
+            subject="Unsafe\x1b[31m",
+            body="body",
+            created_at=created_at,
+            expires_at=created_at + timedelta(hours=1),
+        )
+
+
+def test_message_cli_and_lock_acquire_surface_unread_feedback(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    policy, features = load_registry(TRACKING_DIR)
+    feature = _unassessed_feature(
+        next(item for item in features if item.id == "standard")
+    )
+    tracking_dir = tmp_path / "feature-tracking"
+    tracking_dir.mkdir()
+    (tracking_dir / "policy.yml").write_text(
+        yaml.safe_dump(
+            policy.model_copy(update={"migrated_markdown_trackers": ()}).model_dump(
+                mode="json"
+            ),
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    (tracking_dir / "standard.yml").write_text(
+        yaml.safe_dump(feature.model_dump(mode="json"), sort_keys=False),
+        encoding="utf-8",
+    )
+
+    assert main(
+        [
+            "--directory",
+            str(tracking_dir),
+            "message",
+            "send",
+            "--from",
+            "codex/manager",
+            "--to",
+            "codex/worker",
+            "--subject",
+            "Please review the evidence",
+            "--body",
+            "Run the exact verifier before changing status.",
+            "--feature",
+            "standard",
+            "--criterion",
+            "terminal_commands",
+        ]
+    ) == 0
+    capsys.readouterr()
+
+    assert main(
+        [
+            "--directory",
+            str(tracking_dir),
+            "lock",
+            "acquire",
+            "standard",
+            "--criterion",
+            "terminal_commands",
+            "--owner",
+            "codex/worker",
+        ]
+    ) == 0
+    lock_output = capsys.readouterr().out
+    assert "Ungelesene Agentennachrichten: 1" in lock_output
+    assert "Please review the evidence" in lock_output
+
+    assert main(
+        [
+            "--directory",
+            str(tracking_dir),
+            "message",
+            "inbox",
+            "--owner",
+            "codex/worker",
+            "--json",
+        ]
+    ) == 0
+    inbox_output = capsys.readouterr().out
+    assert '"recipient": "codex/worker"' in inbox_output

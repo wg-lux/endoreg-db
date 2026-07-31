@@ -6,8 +6,13 @@ owners:
 - endoreg_db maintainers
 production_critical: true
 tracking:
-  state: active
-  history: []
+  state: done
+  history:
+  - action: done
+    changed_by: Codex
+    changed_at: '2026-07-31T09:11:27.131977Z'
+    note: Definition of Done vollständig verifiziert; produktionsreifer FHIR-R4-Export wird aus dem aktiven
+      Tracking abgeschlossen.
 source_documents:
 - path: docs/fhir_r4_export.md
   disposition: reference

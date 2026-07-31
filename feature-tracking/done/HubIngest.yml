@@ -71,6 +71,15 @@ tracking:
     changed_at: '2026-07-29T12:48:28.073494Z'
     note: Re-verified after structured clinical persistence and the final stable Meona identity edge-case
       test.
+  - action: reopened
+    changed_by: Codex
+    changed_at: '2026-07-29T14:01:09.281619Z'
+    note: Reopened after the full mirror test exposed SAP gender-code normalization missing at the typed
+      persistence boundary.
+  - action: done
+    changed_by: Codex
+    changed_at: '2026-07-29T14:01:13.513640Z'
+    note: Full SAP mirror import and clinical replay verified after source gender-code normalization.
 source_documents:
 - path: docs/wiki/hub_ingest_gap_closure.md
   disposition: migrated
@@ -118,19 +127,14 @@ definition_of_done:
     status: verified
     evidence:
     - kind: command
-      reference: devenv shell -- env PYTHONPATH=/home/admin/lx-parse/lx-data-models .devenv/state/venv/bin/pytest
-        tests/services/test_sap_ish_clinical.py tests/services/test_sap_ish_import.py tests/services/test_watcher_storage_import.py
-        tests/services/test_preanonymized_watcher_ingest.py tests/management/commands/test_import_sap_ish_txt.py
-        -q
-      note: Exit-Code 0
+      reference: 'Full mirror import in isolated migrated Django database: 649 generated, 51,293 clinical
+        rows, 36,130 created, 15,121 reused, 42 skipped; clinical replay created zero rows'
     - kind: command
-      reference: devenv shell -- env PYTHONPATH=/home/admin/lx-parse/lx-data-models .devenv/state/venv/bin/pytest
-        tests/services/test_sap_ish_clinical.py tests/services/test_sap_ish_import.py tests/services/test_watcher_storage_import.py
-        tests/management/commands/test_import_sap_ish_txt.py -q (32 passed)
-    note: Structured SAP IS-H persistence remains verified after the final stable medication-identity
-      review; the medical criterion verifier passed 32 tests and the expanded Hub suite passed 37 tests.
+      reference: 'Pyright: 0 errors; focused SAP/tabular/watcher suite: 42 passed'
+    note: M/W and German gender aliases normalize to the strict shared vocabulary; full mirror persistence
+      and replay idempotency are verified.
     assessed_by: Codex
-    assessed_at: '2026-07-29T12:48:26.465397Z'
+    assessed_at: '2026-07-29T14:01:10.299646Z'
 - id: segment_transfer_contract
   category: data_integrity
   title: Video-Segmente werden typisiert, idempotent und atomar übertragen
