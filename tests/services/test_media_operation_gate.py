@@ -11,7 +11,7 @@ from django.utils import timezone
 from endoreg_db.models import Center, VideoFile
 from endoreg_db.models.media.operation_lease import MediaOperationLease
 from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
-from endoreg_db.models.state import video_segment_validation as segment_state
+import endoreg_db.services.video_segment_blackening as blackening
 from endoreg_db.services.media_operation_gate import (
     FFMPEG_STREAM_THROTTLE_NORMAL,
     FFMPEG_STREAM_THROTTLE_STREAMING,
@@ -160,7 +160,7 @@ def test_defer_if_video_media_busy_marks_history_without_running_rebuild() -> No
         video=video,
         operation=VideoProcessingHistory.OPERATION_REPROCESSING,
         status=VideoProcessingHistory.STATUS_PENDING,
-        config=segment_state.blackening_history_config(only_validated=False),
+        config=blackening.blackening_history_config(only_validated=False),
     )
 
     with pytest.raises(MediaOperationDeferred, match="media operation leases"):

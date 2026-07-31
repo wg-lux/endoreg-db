@@ -21,8 +21,8 @@ from endoreg_db.models import (
     VideoProcessingHistory,
     VideoState,
 )
-from endoreg_db.models.state import video_segment_validation as segment_state
 from endoreg_db.models.state.audit_ledger import AuditLedger
+import endoreg_db.services.video_segment_blackening as blackening
 
 
 class VideoReadyExportEndpointTests(TestCase):
@@ -215,7 +215,7 @@ class VideoReadyExportEndpointTests(TestCase):
                         operation=VideoProcessingHistory.OPERATION_REPROCESSING,
                         status=history_status,
                         task_id=f"cleanup-{history_status}",
-                        config=segment_state.blackening_history_config(
+                        config=blackening.blackening_history_config(
                             only_validated=False
                         ),
                     )

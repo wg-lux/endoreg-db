@@ -10,7 +10,7 @@ from lx_dtypes.models.contracts.frame_annotation import FrameAnnotationQueueSpec
 from endoreg_db.models.aidataset.aidataset import AIDataSet
 from endoreg_db.models.label.label import Label
 from endoreg_db.models.label.label_set import LabelSet
-from endoreg_db.models.state.frame_annotation import (
+from endoreg_db.services.frame_annotation_workflow import (
     FrameAnnotationQueueSpec,
     normalize_frame_sampling_strategy,
     normalize_frame_task_mode,

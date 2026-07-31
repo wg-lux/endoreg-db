@@ -21,7 +21,6 @@ from endoreg_db.models import (
     VideoFile,
     VideoProcessingHistory,
 )
-from endoreg_db.models.state import video_segment_validation as segment_state
 from endoreg_db.services import video_temporal_inference as temporal_jobs
 from endoreg_db.services.jobs import video_post_validation_jobs as jobs
 from endoreg_db.services.media_operation_gate import (
@@ -29,6 +28,9 @@ from endoreg_db.services.media_operation_gate import (
     create_video_stream_lease,
 )
 import endoreg_db.services.video_segment_blackening as blackening
+from endoreg_db.services.video_segment_validation_workflow import (
+    resolve_segment_annotation_status,
+)
 
 
 def _create_video_for_post_validation(tmp_path: Path) -> VideoFile:
@@ -80,7 +82,7 @@ def _audio_stream_info(_path: Path) -> JsonObject:
 
 
 def _blackening_config_json(*, only_validated: bool) -> JsonValue:
-    config = segment_state.blackening_history_config(only_validated=only_validated)
+    config = blackening.blackening_history_config(only_validated=only_validated)
     return {
         "kind": config["kind"],
         "only_validated": config["only_validated"],
@@ -254,7 +256,7 @@ def test_dispatch_video_post_validation_rebuild_celery_failure_does_not_fall_bac
     state.refresh_from_db()
     assert state.segment_annotations_validated is False
     assert state.outside_segments_removed is False
-    assert segment_state.resolve_segment_annotation_status(video) == "cleanup_failed"
+    assert resolve_segment_annotation_status(video) == "cleanup_failed"
 
 
 @pytest.mark.django_db
@@ -307,11 +309,11 @@ def test_blackening_history_config_schema_accepts_valid_config(
     "config",
     [
         {
-            "kind": segment_state.OUTSIDE_FRAME_BLACKENING_KIND,
+            "kind": blackening.OUTSIDE_FRAME_BLACKENING_KIND,
             "only_validated": "yes",
         },
         {
-            "kind": segment_state.OUTSIDE_FRAME_BLACKENING_KIND,
+            "kind": blackening.OUTSIDE_FRAME_BLACKENING_KIND,
             "only_validated": False,
             "queue": "",
         },
@@ -329,13 +331,13 @@ def test_blackening_history_config_schema_rejects_invalid_config(
     ("legacy_config", "expected_only_validated", "expected_queue"),
     [
         (
-            {"kind": segment_state.OUTSIDE_FRAME_BLACKENING_KIND},
+            {"kind": blackening.OUTSIDE_FRAME_BLACKENING_KIND},
             False,
             "ffmpeg_media_hi",
         ),
         (
             {
-                "kind": segment_state.OUTSIDE_FRAME_BLACKENING_KIND,
+                "kind": blackening.OUTSIDE_FRAME_BLACKENING_KIND,
                 "only_validated": True,
             },
             True,
@@ -343,7 +345,7 @@ def test_blackening_history_config_schema_rejects_invalid_config(
         ),
         (
             {
-                "kind": segment_state.OUTSIDE_FRAME_BLACKENING_KIND,
+                "kind": blackening.OUTSIDE_FRAME_BLACKENING_KIND,
                 "queue": "legacy_ffmpeg_queue",
             },
             False,
@@ -367,15 +369,15 @@ def test_blackening_history_repairs_recognized_legacy_config(
         config=legacy_config,
     )
 
-    assert segment_state.is_outside_frame_blackening_history(history) is True
+    assert blackening.is_outside_frame_blackening_history(history) is True
     history.refresh_from_db()
     assert history.config == {
-        "kind": segment_state.OUTSIDE_FRAME_BLACKENING_KIND,
+        "kind": blackening.OUTSIDE_FRAME_BLACKENING_KIND,
         "only_validated": expected_only_validated,
         "queue": expected_queue,
     }
 
-    assert segment_state.is_outside_frame_blackening_history(history) is True
+    assert blackening.is_outside_frame_blackening_history(history) is True
 
 
 @pytest.mark.django_db
@@ -384,7 +386,7 @@ def test_blackening_history_does_not_repair_unknown_config_fields(
 ) -> None:
     video = _create_video_for_post_validation(tmp_path)
     malformed_config = {
-        "kind": segment_state.OUTSIDE_FRAME_BLACKENING_KIND,
+        "kind": blackening.OUTSIDE_FRAME_BLACKENING_KIND,
         "legacy_unknown": "preserve-for-audit",
     }
     history = VideoProcessingHistory.objects.create(
@@ -394,7 +396,7 @@ def test_blackening_history_does_not_repair_unknown_config_fields(
         config=malformed_config,
     )
 
-    assert segment_state.is_outside_frame_blackening_history(history) is True
+    assert blackening.is_outside_frame_blackening_history(history) is True
     history.refresh_from_db()
     assert history.config == malformed_config
 
@@ -465,7 +467,7 @@ def test_dispatch_video_post_validation_rebuild_expires_stale_history(
         operation=VideoProcessingHistory.OPERATION_REPROCESSING,
         status=VideoProcessingHistory.STATUS_PENDING,
         task_id="stale-task",
-        config=segment_state.blackening_history_config(only_validated=False),
+        config=blackening.blackening_history_config(only_validated=False),
     )
     VideoProcessingHistory.objects.filter(pk=stale_history.pk).update(
         created_at=timezone.now() - jobs.STALE_REBUILD_TIMEOUT - timedelta(minutes=1)
@@ -520,7 +522,7 @@ def test_dispatch_video_post_validation_rebuild_expires_stale_running_history_an
         operation=VideoProcessingHistory.OPERATION_REPROCESSING,
         status=VideoProcessingHistory.STATUS_RUNNING,
         task_id="running-blackening-task",
-        config=segment_state.blackening_history_config(only_validated=False),
+        config=blackening.blackening_history_config(only_validated=False),
     )
     VideoProcessingHistory.objects.filter(pk=running_history.pk).update(
         created_at=timezone.now()
@@ -595,7 +597,7 @@ def test_run_video_post_validation_rebuild_rolls_back_frames_when_rebuild_return
         video=video,
         operation=VideoProcessingHistory.OPERATION_REPROCESSING,
         status=VideoProcessingHistory.STATUS_PENDING,
-        config=segment_state.blackening_history_config(only_validated=False),
+        config=blackening.blackening_history_config(only_validated=False),
     )
 
     assert (
@@ -625,7 +627,7 @@ def test_run_video_post_validation_rebuild_defers_when_stream_lease_active(
         video=video,
         operation=VideoProcessingHistory.OPERATION_REPROCESSING,
         status=VideoProcessingHistory.STATUS_PENDING,
-        config=segment_state.blackening_history_config(only_validated=False),
+        config=blackening.blackening_history_config(only_validated=False),
     )
 
     with pytest.raises(MediaOperationDeferred):
@@ -721,7 +723,7 @@ def test_run_video_post_validation_rebuild_accepts_valid_processed_output(
         video=video,
         operation=VideoProcessingHistory.OPERATION_REPROCESSING,
         status=VideoProcessingHistory.STATUS_PENDING,
-        config=segment_state.blackening_history_config(only_validated=False),
+        config=blackening.blackening_history_config(only_validated=False),
     )
 
     assert (
@@ -817,7 +819,7 @@ def test_run_video_post_validation_rebuild_reuses_merged_intervals(
         video=video,
         operation=VideoProcessingHistory.OPERATION_REPROCESSING,
         status=VideoProcessingHistory.STATUS_PENDING,
-        config=segment_state.blackening_history_config(only_validated=False),
+        config=blackening.blackening_history_config(only_validated=False),
     )
 
     assert (
@@ -882,7 +884,7 @@ def test_run_video_post_validation_rebuild_queues_deferred_temporal_inference(
         video=video,
         operation=VideoProcessingHistory.OPERATION_REPROCESSING,
         status=VideoProcessingHistory.STATUS_PENDING,
-        config=segment_state.blackening_history_config(only_validated=False),
+        config=blackening.blackening_history_config(only_validated=False),
     )
     deferred_history = VideoProcessingHistory.objects.create(
         video=video,
@@ -950,7 +952,7 @@ def test_run_video_post_validation_rebuild_failure_fails_deferred_temporal_infer
         video=video,
         operation=VideoProcessingHistory.OPERATION_REPROCESSING,
         status=VideoProcessingHistory.STATUS_PENDING,
-        config=segment_state.blackening_history_config(only_validated=False),
+        config=blackening.blackening_history_config(only_validated=False),
     )
     deferred_history = VideoProcessingHistory.objects.create(
         video=video,
@@ -1025,7 +1027,7 @@ def test_run_video_post_validation_rebuild_rejects_processed_output_without_vide
         video=video,
         operation=VideoProcessingHistory.OPERATION_REPROCESSING,
         status=VideoProcessingHistory.STATUS_PENDING,
-        config=segment_state.blackening_history_config(only_validated=False),
+        config=blackening.blackening_history_config(only_validated=False),
     )
 
     with pytest.raises(RuntimeError, match="no probeable video stream"):

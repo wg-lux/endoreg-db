@@ -429,6 +429,7 @@ __all__ = [
     "SUPPORTED_FRAME_SAMPLING_STRATEGIES",
     "SUPPORTED_FRAME_TASK_MODES",
     "FrameAnnotationQueueResult",
+    "FrameAnnotationQueueSpec",
     "FrameAnnotationTaskPayload",
     "ai_dataset_requires_raw_frames",
     "build_frame_task_queue",

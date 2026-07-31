@@ -842,6 +842,8 @@ models:
   dynamic_model_references: []
   module_lx_dtypes_imports: []
   module_endoreg_schema_imports:
+  - endoreg_db.schemas.dicom_export.DICOM_EXPORT_MANIFEST_SCHEMA_VERSION
+  - endoreg_db.schemas.dicom_export.dicom_export_manifest_sha256
   - endoreg_db.schemas.dicom_export.dump_dicom_export_manifest_v2
   exception_owner: null
   exception_review_by: null
@@ -871,6 +873,8 @@ models:
   dynamic_model_references: []
   module_lx_dtypes_imports: []
   module_endoreg_schema_imports:
+  - endoreg_db.schemas.dicom_export.DICOM_EXPORT_MANIFEST_SCHEMA_VERSION
+  - endoreg_db.schemas.dicom_export.dicom_export_manifest_sha256
   - endoreg_db.schemas.dicom_export.dump_dicom_export_manifest_v2
   exception_owner: null
   exception_review_by: null
@@ -901,6 +905,8 @@ models:
   dynamic_model_references: []
   module_lx_dtypes_imports: []
   module_endoreg_schema_imports:
+  - endoreg_db.schemas.dicom_export.DICOM_EXPORT_MANIFEST_SCHEMA_VERSION
+  - endoreg_db.schemas.dicom_export.dicom_export_manifest_sha256
   - endoreg_db.schemas.dicom_export.dump_dicom_export_manifest_v2
   exception_owner: null
   exception_review_by: null
@@ -931,6 +937,8 @@ models:
   dynamic_model_references: []
   module_lx_dtypes_imports: []
   module_endoreg_schema_imports:
+  - endoreg_db.schemas.dicom_export.DICOM_EXPORT_MANIFEST_SCHEMA_VERSION
+  - endoreg_db.schemas.dicom_export.dicom_export_manifest_sha256
   - endoreg_db.schemas.dicom_export.dump_dicom_export_manifest_v2
   exception_owner: null
   exception_review_by: null
@@ -4913,6 +4921,7 @@ models:
   - service:endoreg_db/services/case_documents.py
   - service:endoreg_db/services/case_resolution_state.py
   - service:endoreg_db/services/evaluation_manifest.py
+  - service:endoreg_db/services/frame_annotation_workflow.py
   - service:endoreg_db/services/frame_retention.py
   - service:endoreg_db/services/hls_media.py
   - service:endoreg_db/services/hub/ingest.py
@@ -4932,6 +4941,7 @@ models:
   - service:endoreg_db/services/video_files/queries.py
   - service:endoreg_db/services/video_post_validation_blackening.py
   - service:endoreg_db/services/video_processed_transcode.py
+  - service:endoreg_db/services/video_segment_validation_workflow.py
   - service:endoreg_db/services/video_segments_bulk_mutation.py
   - service:endoreg_db/services/video_temporal_inference.py
   - service:endoreg_db/tasks.py
@@ -5183,6 +5193,8 @@ models:
   - job:endoreg_db/services/jobs/video_fps_normalization_jobs.py
   - job:endoreg_db/services/jobs/video_post_validation_jobs.py
   - service:endoreg_db/services/media_operation_gate.py
+  - service:endoreg_db/services/video_segment_blackening.py
+  - service:endoreg_db/services/video_segment_validation_workflow.py
   - service:endoreg_db/services/video_temporal_inference.py
   dynamic_model_references: []
   module_lx_dtypes_imports:
