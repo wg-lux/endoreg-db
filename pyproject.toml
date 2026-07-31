@@ -16,11 +16,13 @@ maintainers = [
 ]
 name = "endoreg_db"
 readme = "README.md"
-version = "1.0.8.0"
+version = "1.0.8.1"
 requires-python = ">=3.12,<3.13"
+license = {file = "LICENSE"}
 
 classifiers = [
   "Development Status :: 3 - Alpha",
+  "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
   "Topic :: Scientific/Engineering :: Medical Science Apps.",
   "Programming Language :: Python :: 3.12",
 ]
@@ -88,9 +90,8 @@ dependencies = [
     "django-types>=0.24.0",
     "djangorestframework-types>=0.9.0",
     "celery-types>=0.26.0",
-    "lx-ai-core[torch]==0.0.1",
     "lightning-fabric>=2.6.5",
-    "lx-dtypes==0.2.8",
+    "lx-dtypes==0.2.9",
     "snakemake==9.23.1",
 ]
 

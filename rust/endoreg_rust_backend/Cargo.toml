@@ -2,6 +2,11 @@
 name = "endoreg_rust_backend"
 version = "0.1.0"
 edition = "2021"
+description = "Native performance and integrity primitives for endoreg-db"
+license = "GPL-3.0-only"
+homepage = "https://info.coloreg.de"
+documentation = "https://github.com/wg-lux/endoreg-db/tree/main/docs"
+repository = "https://github.com/wg-lux/endoreg-db"
 
 [lib]
 name = "endoreg_rust_backend"
