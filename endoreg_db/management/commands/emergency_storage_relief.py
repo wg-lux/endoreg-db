@@ -474,6 +474,57 @@ def find_validated_bundle_roots(
     return bundles
 
 
+def bundle_resources_are_validated(payload: dict[str, Any]) -> bool:
+    resources = marker_resources(payload)
+    return bool(resources) and all(
+        resource_is_validated(resource) for resource in resources
+    )
+
+
+def validated_bundle_label(bundle_root: Path, export_dir: Path) -> str:
+    label = bundle_root.relative_to(export_dir).as_posix()
+    return export_dir.name if label == "." else label
+
+
+def archive_validated_bundle(
+    *,
+    config: StorageReliefConfig,
+    export_dir: Path,
+    bundle_root: Path,
+    marker: Path,
+) -> list[ArchiveItem]:
+    items: list[ArchiveItem] = []
+    bundle_label = validated_bundle_label(bundle_root, export_dir)
+    for source in sorted(path for path in bundle_root.rglob("*") if path.is_file()):
+        rel_path = source.relative_to(bundle_root)
+        destination = archive_destination(
+            config.archive_root,
+            "validated-export-bundles",
+            bundle_label,
+            rel_path,
+            datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S"),
+        )
+        result = copy_verify_delete(
+            source=source,
+            destination=destination,
+            archive_root=config.archive_root,
+            staging_root=config.staging_root,
+            dry_run=config.dry_run,
+            delete_after_verify=config.delete_after_verify,
+            expected_hash=None,
+        )
+        result.update(
+            {
+                "category": "validated_export_bundle",
+                "bundle_root": str(bundle_root),
+                "marker": str(marker),
+            }
+        )
+        emit("lx_annotate_storage_relief_item", **result)
+        items.append(result)
+    return items
+
+
 def archive_validated_export_bundles(
     *,
     config: StorageReliefConfig,
@@ -487,10 +538,7 @@ def archive_validated_export_bundles(
             payload = marker_payload(marker)
             if payload is None:
                 continue
-            resources = marker_resources(payload)
-            if not resources or not all(
-                resource_is_validated(resource) for resource in resources
-            ):
+            if not bundle_resources_are_validated(payload):
                 emit(
                     "lx_annotate_storage_relief_skip",
                     reason="export bundle resources are not validated",
@@ -498,40 +546,14 @@ def archive_validated_export_bundles(
                     marker=str(marker),
                 )
                 continue
-
-            bundle_label = bundle_root.relative_to(export_dir).as_posix()
-            if bundle_label == ".":
-                bundle_label = export_dir.name
-
-            for source in sorted(
-                path for path in bundle_root.rglob("*") if path.is_file()
-            ):
-                rel_path = source.relative_to(bundle_root)
-                destination = archive_destination(
-                    config.archive_root,
-                    "validated-export-bundles",
-                    bundle_label,
-                    rel_path,
-                    datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S"),
+            items.extend(
+                archive_validated_bundle(
+                    config=config,
+                    export_dir=export_dir,
+                    bundle_root=bundle_root,
+                    marker=marker,
                 )
-                result = copy_verify_delete(
-                    source=source,
-                    destination=destination,
-                    archive_root=config.archive_root,
-                    staging_root=config.staging_root,
-                    dry_run=config.dry_run,
-                    delete_after_verify=config.delete_after_verify,
-                    expected_hash=None,
-                )
-                result.update(
-                    {
-                        "category": "validated_export_bundle",
-                        "bundle_root": str(bundle_root),
-                        "marker": str(marker),
-                    }
-                )
-                emit("lx_annotate_storage_relief_item", **result)
-                items.append(result)
+            )
     return items
 
 
