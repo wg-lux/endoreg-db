@@ -7,6 +7,7 @@ import pytest
 from scripts.check_dead_code import (
     AcceptedDeadCodeFinding,
     DeadCodeBaseline,
+    DeadCodeDeletionCandidate,
     DeadCodeToolConfig,
     compare_findings,
     parse_vulture_output,
@@ -21,7 +22,7 @@ def _baseline(
             paths=["endoreg_db"],
             min_confidence=90,
         ),
-        accepted_findings=list(findings),
+        accepted_findings=findings,
     )
 
 
@@ -88,3 +89,39 @@ def test_compare_findings_rejects_duplicate_baseline_keys() -> None:
             _baseline(_accepted(), _accepted()),
             today=date(2026, 7, 17),
         )
+
+
+def test_baseline_counts_confirmed_deletion_candidates_separately() -> None:
+    baseline = _baseline()
+    baseline = baseline.model_copy(
+        update={
+            "deletion_candidates": (
+                DeadCodeDeletionCandidate(
+                    path="endoreg_db/obsolete.py",
+                    line_range="1-12",
+                    symbol="entire module",
+                    classification="confirmed_dead",
+                    evidence=["No repository import or dynamic registration."],
+                    reason="The module has no consumer.",
+                    recommended_action="remove",
+                    risk="low",
+                    owner="endoreg_db maintainers",
+                    review_after=date(2026, 8, 31),
+                ),
+                DeadCodeDeletionCandidate(
+                    path="endoreg_db/compat.py",
+                    line_range="1-4",
+                    symbol="public export shim",
+                    classification="compatibility_contract",
+                    evidence=["No internal import; external consumers are unknown."],
+                    reason="The package path may be imported downstream.",
+                    recommended_action="verify_consumers",
+                    risk="medium",
+                    owner="endoreg_db maintainers",
+                    review_after=date(2026, 8, 31),
+                ),
+            )
+        }
+    )
+
+    assert baseline.confirmed_deletion_count == 1

@@ -16,6 +16,13 @@ Owner und Reviewdatum. Der Guard schlägt fehl, wenn:
 - ein Baseline-Eintrag stale wird oder
 - das Reviewdatum einer Ausnahme abläuft.
 
+Dieselbe Datei enthält unter `deletion_candidates` separat untersuchte
+Löschkandidaten. Sie besitzen Pfad und Zeilenbereich, Klassifikation, konkrete
+Consumer-Evidenz, Risiko, empfohlene Aktion, Owner und Reviewdatum. Diese Liste
+ist keine Vulture-Allowlist: `confirmed_dead` ist eine geplante Entfernung,
+während `compatibility_contract` und `uncertain` vor einer Löschung weitere
+Consumer-Evidenz verlangen.
+
 Eine statische Meldung allein autorisiert keine Löschung. Vor einer Entfernung
 sind Leaf- und Barrel-Imports, String-Imports, Django-Registrierungen, URLs,
 Signale, Jobs, Commands, Paketexporte und repositoryübergreifende Verbraucher

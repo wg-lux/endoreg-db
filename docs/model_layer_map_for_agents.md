@@ -83,6 +83,175 @@ are applicable and update them in the same change:
 If ownership is unclear or two layers would normalize the same value, stop and
 resolve the ownership boundary before implementation.
 
+## lx-dtypes Model Standardization Workflow
+
+The binding readiness record for this work is feature
+`lx_dtypes_model_standardization` in
+`feature-tracking/LxDtypesModelStandardization.yml`. This section describes how
+to perform and review the work; it does not carry an independent completion
+status.
+
+Every Django model is recorded in
+`quality/lx_dtypes_model_inventory.yml`. The inventory is checked against both
+the Django app registry and statically declared abstract models by
+`scripts/check_lx_dtypes_model_inventory.py`. A model must have exactly one
+target:
+
+| Target | Use when | Required evidence |
+| --- | --- | --- |
+| `shared_lx_dtypes_contract` | The shape has clinical, semantic, interoperability, or cross-repository meaning. | The owning `lx_dtypes` contract plus the Endoreg adapter, serializer, or service that consumes it. |
+| `local_boundary_schema` | The shape is specific to Endoreg persistence, jobs, storage operations, or legacy normalization. | The strict local schema plus every model boundary that invokes it. |
+| `persistence_only` | The model owns relational columns, constraints, or an abstract persistence base and has no independent payload shape. | The model constraint or abstract base and a consumer review showing that no exchange contract is being duplicated. |
+| `temporary_exception` | Migration cannot be completed safely in the current compatibility window. | Owner, concrete reason, expiry condition, and tests that freeze rather than expand the debt. |
+| `unclassified` | Ownership review is incomplete. | This is active debt and cannot be used as completion evidence. |
+
+Classification identifies the target architecture; it does not assert that all
+fields are already validated. Put unresolved field-level gaps in `rationale`.
+For example, `VideoFile` targets its local persistence schema while the
+unvalidated `sequences` field remains an explicit gap.
+
+Use this decision order:
+
+1. Inventory all writers and readers, including managers, bulk operations,
+   migrations, commands, tasks, serializers, views, imports, exports, and
+   dynamic string references.
+2. Decide whether the shape is shared or Endoreg-specific. Cross-repository
+   clinical meaning takes precedence over the convenience of an existing local
+   schema.
+3. Select one canonical validator. A local adapter may translate legacy input
+   or framework exceptions, but must not reimplement different field rules
+   already owned by `lx_dtypes`.
+4. Validate once at the owning input boundary. Persisted JSON is additionally
+   canonicalized at the model boundary so direct ORM writes cannot store a
+   competing representation.
+5. Pass only the validated typed object or its canonical dump inward. Do not
+   carry the original mapping in parallel.
+6. Record ownership evidence and run the inventory guard before review.
+
+`MedicalLedgerWriteReceipt` is the local-boundary example. Its
+`MedicalLedgerRecordIds` schema owns the Endoreg row-identity payload; the model
+canonicalizes `record_ids` during `save()`, while the service uses
+`full_clean()` for the database constraints around the idempotency receipt.
+The schema is not duplicated in the service.
+
+### Risk-Ordered Cohort Execution
+
+An execution cohort contains one to twelve closely related models. Larger
+domains must be split before implementation. Every cohort review records:
+
+- exact model labels and fields;
+- current and canonical contracts;
+- known API, import, export, service, job, persistence, and external consumers;
+- migrations, backfills, package versions, and preceding cohort dependencies;
+- Endoreg, `lx_dtypes`, security, and clinical owners as applicable;
+- measurable completion criteria and the focused verification command;
+- remaining gaps, each either unresolved or a time-bounded exception with an
+  owner, reason, and expiry condition.
+
+The domain queue is risk-ordered. It sets sequencing but does not claim
+completion:
+
+| Priority | Domain queue | Initial model slice | Canonical direction | Dependencies and required evidence |
+| --- | --- | --- | --- | --- |
+| 1 | Clinical identity and medical ledger | `Patient`, `SensitiveMeta`, `PatientExamination`, then the patient disease, event, finding, laboratory, and medication aggregates | Shared clinical shapes in `lx_dtypes`; Endoreg-only row identities and database constraints remain local. | Compatible medical-ledger package, center/patient-scope tests, identity minimization review, migration and rollback evidence. |
+| 2 | Import boundaries | `UploadJob`, `ReportImportAttempt`, `RawPdfFile`, and import metadata on `VideoFile` | Strict local orchestration schemas consuming shared upload, report, and media contracts. | Identity cohort, idempotent concurrent import tests, quarantine behavior, encrypted-storage review. |
+| 3 | Reports | `PatientExaminationReport`, `RawPdfFile`, `PdfProcessingHistory`, and concrete document models | Shared report submission, history, anonymization, and redaction contracts with one Endoreg persistence adapter. | Import cohort, persisted-JSON backfill if required, API compatibility and report round-trip tests. |
+| 4 | Video | `VideoFile`, `VideoMeta`, `FFMpegMeta`, `VideoProcessingHistory`, `VideoHlsArtifact`, segments, and frames | Shared media contracts plus the versioned Endoreg storage profile. | Report/import stability, presentation-timestamp inventory, lease/concurrency tests, clinical quality and encrypted-storage approvals. |
+| 5 | Hub transfer | `TransferJob`, `QuarantineItem`, `NetworkNode`, and hub provenance fields | Shared transfer semantics with local persistence and authorization adapters. | Anonymized-only export, mutual TLS profile, center-scope tests, mixed-version transfer tests. |
+| 6 | Configuration and knowledge base | `ApplicationSettings`, `ModelMeta`, terminology models, and YAML-backed lookup models | Shared configuration and knowledge-base contracts; database loading remains an Endoreg service concern. | Pinned package and knowledge-base versions, `load_base_db_data` tests, configuration rollback. |
+| 7 | Annotation and artificial-intelligence datasets | Annotation models, `LabelVideoSegment`, `AIDataSet`, `AIModelTrainingRun`, and `AIDataSetExportArtifact` | Shared annotation/export payloads; queueing and persistence orchestration remain local services. | Video cohort, deterministic frame identity, export data-minimization and round-trip tests. |
+| 8 | Remaining persistence-only lookups | Exact groups selected from the still-unclassified inventory, never the whole remainder at once | `persistence_only` only after consumer search proves there is no duplicated exchange shape. | Clean static/dynamic consumer search, natural-key/data-loading tests, no unreviewed exception. |
+
+The first reference execution cohort is exactly
+`endoreg_db.MedicalLedgerWriteReceipt.record_ids`:
+
+- current and canonical contract:
+  `endoreg_db.schemas.medical_ledger.MedicalLedgerRecordIds`;
+- consumers: `endoreg_db.services.medical_ledger` create/replay paths and the
+  medical-ledger API;
+- migration: `0058_medicalledgerwritereceipt`, dependent on the published
+  medical-ledger contract used by the service;
+- owners: Endoreg maintainers for persistence, `lx_dtypes` maintainers for the
+  surrounding shared medical aggregate, and security/clinical reviewers for
+  identity semantics;
+- completion evidence: classified inventory entry, canonical model save,
+  invalid direct-write rejection, transaction rollback, replay and parallel
+  idempotency tests, Pyright, and the inventory guard;
+- remaining cohort debt: none. A future bulk writer is a new write boundary and
+  must add validation and tests before use.
+
+New workflow behavior remains in services throughout every cohort. Models may
+keep persistence validation and thin typed state transitions, but a cohort must
+not add a model-to-service dependency. Likewise, `lx_dtypes` must not import
+Django models or Endoreg services. The model import-boundary test and a reverse
+dependency search of the `lx_dtypes` source tree are required cohort evidence.
+
+Run the guard and its focused verification from the repository root:
+
+```bash
+devenv shell -- .devenv/state/venv/bin/python \
+  scripts/check_lx_dtypes_model_inventory.py
+.devenv/state/venv/bin/pyright
+devenv shell -- .devenv/state/venv/bin/pytest \
+  tests/scripts/test_check_lx_dtypes_model_inventory.py -q
+```
+
+### Model And Field Review Checklist
+
+For every new model, and for every added, renamed, optionalized, or removed
+field:
+
+1. Update the inventory structure, target, owner, rationale, and stable
+   ownership evidence.
+2. Search static imports, dynamic references, and all API, import, export, job,
+   service, persistence, and repository-external consumers.
+3. Update the Django field/constraint/migration, boundary schema, shared
+   contract, serializer, loader/dumper, and service signatures that apply.
+4. Preserve snake_case and add explicit legacy normalization only at one named
+   boundary.
+5. Review data minimization, center and patient scope, direct identifiers,
+   secrets, encrypted storage, raw-media prohibition, and fail-closed error
+   behavior.
+6. Define compatibility, backfill, quarantine, rollback, and mixed-version
+   behavior before changing a persisted or public shape.
+7. Run Pyright before focused positive, invalid-input, canonical round-trip,
+   migration, import, concurrency, and integration tests.
+8. Update the feature assessment only with stable evidence and a named
+   assessor. Do not copy completion state into this document or another plan.
+
+### Cross-Repository Release Procedure
+
+The `lx_dtypes` maintainer owns shared contract semantics and package release;
+the `endoreg_db` maintainer owns the persistence adapter, migration, and
+deployment evidence. Security or clinical reviewers must approve changes that
+affect identity, authorization, clinical meaning, anonymization, or media
+integrity.
+
+For a shared-contract change, use this order:
+
+1. Add the versioned contract and valid/invalid/round-trip tests in
+   `lx_dtypes`. Declare whether the change is additive or breaking and name the
+   supported old/new version window.
+2. Publish the reviewed `lx_dtypes` package. Do not make production depend on a
+   source checkout.
+3. Pin the compatible package version in Endoreg and add or update the single
+   boundary adapter. Test both ends of any declared mixed-version window.
+4. Deploy readers that accept the new canonical shape before deploying writers
+   that emit it.
+5. Run validation reporting and any required backfill. Invalid existing data
+   is quarantined or fails closed; it is not silently rewritten.
+6. Deploy writers, observe boundary failures and data-integrity metrics, and
+   retain the rollback version for the declared window.
+7. Remove a compatibility adapter only after all known consumers have migrated,
+   the announced window has elapsed, and consumer search plus integration tests
+   are clean.
+
+Required production evidence is the package/version pin, contract and consumer
+tests, migration/backfill output when applicable, security or clinical
+approval when applicable, deployment observation, and a rehearsed rollback or
+backup/restore reference. The feature tracker is the sole place where that
+evidence changes readiness status.
+
 The shared `lx_dtypes` layer enforces the inheritance rules in
 `lx_dtypes/models/base/app_base_model/tests/test_inheritance_safety.py`. The
 test imports the complete model package, rejects duplicate fields declared by

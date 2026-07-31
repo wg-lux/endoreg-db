@@ -1,4 +1,10 @@
 schema_version: '1.0'
+# AGENT-MANAGER-NOTIZ (2026-07-31): Fuer Dead-Code-Audits keinen parallelen
+# Feature-Tracker wie `feature-tracking/DeletableCode.yml` anlegen. Scope,
+# Bewertung und Produktionsreife gehoeren in die bestehenden Kriterien
+# `dead_code_baseline` und `dead_code_reduction`; einzelne Funde und Entscheide
+# gehoeren in `quality/dead_code_baseline.yml`. Vor einer neuen Tracker-Datei
+# zuerst eine tatsaechlich fehlende, eigenstaendige Feature-Grenze nachweisen.
 id: code_quality
 name: Codequalität und Wartbarkeit
 description: Toten Code belastbar identifizieren und entfernen, Helper- und Klassengrenzen vereinheitlichen
@@ -39,15 +45,24 @@ definition_of_done:
     status: verified
     evidence:
     - kind: command
-      reference: devenv tasks run quality:dead-code (38 reviewed findings; no new, stale, or expired entries)
+      reference: devenv tasks run quality:dead-code (35 reviewed Vulture findings; 15 confirmed deletion
+        candidates; 20 candidates total; no new, stale, or expired findings)
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/scripts/test_check_dead_code.py -q
+        (5 passed)
+    - kind: command
+      reference: .devenv/state/venv/bin/pyright scripts/check_dead_code.py tests/scripts/test_check_dead_code.py
+        (0 errors)
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/python scripts/check_django_startup_imports.py
+        (startup-smoke ok; 7 root URL patterns)
     - kind: document
       reference: quality/dead_code_baseline.yml
-    - kind: document
-      reference: docs/code_quality.md#dead-code-verfahren
-    note: Vulture 90-100% findings are classified with evidence, owner, reason, occurrence count, and
-      review date; dynamic Django surfaces are excluded from automatic deletion.
+    note: The existing baseline separates 35 reviewed Vulture contracts from 15 confirmed deletion candidates
+      and 5 compatibility candidates. Each candidate records path/lines, consumer evidence, risk, action,
+      owner, and review date; no application code has been removed.
     assessed_by: Codex
-    assessed_at: '2026-07-17T13:28:04.928186Z'
+    assessed_at: '2026-07-31T10:28:39.427146Z'
 - id: dead_code_reduction
   category: functionality
   title: Bestätigter toter Code ist sicher entfernt oder kontrolliert deprecatet

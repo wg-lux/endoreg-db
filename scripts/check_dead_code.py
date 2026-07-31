@@ -47,12 +47,41 @@ class AcceptedDeadCodeFinding(BaseModel):
     review_after: date
 
 
+class DeadCodeDeletionCandidate(BaseModel):
+    """One investigated removal candidate that is not a Vulture exception."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    path: str = Field(min_length=1)
+    line_range: str = Field(min_length=1)
+    symbol: str = Field(min_length=1)
+    classification: Literal[
+        "confirmed_dead",
+        "compatibility_contract",
+        "uncertain",
+    ]
+    evidence: list[str] = Field(min_length=1)
+    reason: str = Field(min_length=1)
+    recommended_action: Literal["remove", "verify_consumers"]
+    risk: Literal["low", "medium", "high"]
+    owner: str = Field(min_length=1)
+    review_after: date
+
+
 class DeadCodeBaseline(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     schema_version: Literal["1.0"] = "1.0"
     tool: DeadCodeToolConfig
-    accepted_findings: list[AcceptedDeadCodeFinding] = Field(default_factory=list)
+    accepted_findings: tuple[AcceptedDeadCodeFinding, ...] = ()
+    deletion_candidates: tuple[DeadCodeDeletionCandidate, ...] = ()
+
+    @property
+    def confirmed_deletion_count(self) -> int:
+        return sum(
+            item.classification == "confirmed_dead"
+            for item in self.deletion_candidates
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,7 +234,9 @@ def main() -> int:
         return 1
     print(
         "Dead-code baseline clean: "
-        f"{len(findings)} reviewed findings, no new/stale/expired entries."
+        f"{len(findings)} reviewed findings, no new/stale/expired entries; "
+        f"{baseline.confirmed_deletion_count} confirmed deletion candidate(s), "
+        f"{len(baseline.deletion_candidates)} candidate(s) total."
     )
     return 0
 

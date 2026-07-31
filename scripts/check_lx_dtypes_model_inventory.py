@@ -3,13 +3,16 @@ from __future__ import annotations
 import argparse
 import ast
 from dataclasses import dataclass
+from datetime import date
 from enum import StrEnum
 from functools import lru_cache
 from importlib import import_module
 import os
 from pathlib import Path
+import re
 import sys
-from typing import cast, Literal, Protocol
+import tempfile
+from typing import cast, Iterable, Literal, Protocol
 
 import django
 from django.apps import apps
@@ -64,8 +67,13 @@ class ModelInventoryEntry(BaseModel):
     owner: str = Field(min_length=1)
     rationale: str = Field(min_length=1)
     ownership_evidence: list[str] = Field(default_factory=list)
+    boundary_consumers: list[str] = Field(default_factory=list)
+    dynamic_model_references: list[str] = Field(default_factory=list)
     module_lx_dtypes_imports: list[str] = Field(default_factory=list)
     module_endoreg_schema_imports: list[str] = Field(default_factory=list)
+    exception_owner: str | None = None
+    exception_review_by: date | None = None
+    exception_exit_criteria: str | None = None
 
     @model_validator(mode="after")
     def validate_lists(self) -> "ModelInventoryEntry":
@@ -77,9 +85,15 @@ class ModelInventoryEntry(BaseModel):
             raise ValueError(
                 f"{self.label} ownership_evidence must be sorted and unique"
             )
-        if self.module_lx_dtypes_imports != sorted(
-            set(self.module_lx_dtypes_imports)
-        ):
+        if self.boundary_consumers != sorted(set(self.boundary_consumers)):
+            raise ValueError(
+                f"{self.label} boundary_consumers must be sorted and unique"
+            )
+        if self.dynamic_model_references != sorted(set(self.dynamic_model_references)):
+            raise ValueError(
+                f"{self.label} dynamic_model_references must be sorted and unique"
+            )
+        if self.module_lx_dtypes_imports != sorted(set(self.module_lx_dtypes_imports)):
             raise ValueError(
                 f"{self.label} module_lx_dtypes_imports must be sorted and unique"
             )
@@ -93,12 +107,24 @@ class ModelInventoryEntry(BaseModel):
             raise ValueError(f"{self.label} registered model cannot be abstract")
         if self.kind is ModelKind.ABSTRACT and not self.abstract:
             raise ValueError(f"{self.label} abstract inventory entry must be abstract")
-        if (
-            self.target is not ModelTarget.UNCLASSIFIED
-            and not self.ownership_evidence
-        ):
+        if self.target is not ModelTarget.UNCLASSIFIED and not self.ownership_evidence:
             raise ValueError(
                 f"{self.label} classified target requires ownership_evidence"
+            )
+        exception_values = (
+            self.exception_owner,
+            self.exception_review_by,
+            self.exception_exit_criteria,
+        )
+        if self.target is ModelTarget.TEMPORARY_EXCEPTION:
+            if not all(exception_values):
+                raise ValueError(
+                    f"{self.label} temporary exception requires owner, "
+                    "review date, and exit criteria"
+                )
+        elif any(value is not None for value in exception_values):
+            raise ValueError(
+                f"{self.label} exception metadata requires temporary_exception target"
             )
         return self
 
@@ -166,9 +192,7 @@ def _source_contract_imports(
     for name in imported_names:
         if name == "lx_dtypes" or name.startswith("lx_dtypes."):
             lx_dtypes.add(name)
-        elif name == "endoreg_db.schemas" or name.startswith(
-            "endoreg_db.schemas."
-        ):
+        elif name == "endoreg_db.schemas" or name.startswith("endoreg_db.schemas."):
             endoreg_schemas.add(name)
     return tuple(sorted(lx_dtypes)), tuple(sorted(endoreg_schemas))
 
@@ -190,9 +214,7 @@ def _entry_from_model(
         raise ValueError(
             f"{meta.label} source is outside the repository: {source_path}"
         ) from exc
-    lx_dtypes_imports, endoreg_schema_imports = _source_contract_imports(
-        source_path
-    )
+    lx_dtypes_imports, endoreg_schema_imports = _source_contract_imports(source_path)
 
     return ModelInventoryEntry(
         label=meta.label,
@@ -224,10 +246,20 @@ def _entry_from_model(
     )
 
 
+def _import_all_model_modules() -> None:
+    models_root = PROJECT_ROOT / "endoreg_db" / "models"
+    for source_path in sorted(models_root.rglob("*.py")):
+        if source_path.name == "__init__.py":
+            continue
+        relative_module = source_path.relative_to(PROJECT_ROOT).with_suffix("")
+        import_module(".".join(relative_module.parts))
+
+
 def discover_registered_models() -> tuple[ModelInventoryEntry, ...]:
     if not apps.ready:
         os.environ.setdefault("DJANGO_SETTINGS_MODULE", DEFAULT_SETTINGS_MODULE)
         django.setup()
+    _import_all_model_modules()
 
     discovered = (
         _entry_from_model(model, kind=ModelKind.REGISTERED)
@@ -294,10 +326,90 @@ def discover_abstract_models() -> tuple[ModelInventoryEntry, ...]:
                 f"Static abstract-model declaration is not a Django abstract "
                 f"model: {module_name}.{class_name}"
             )
-        discovered.append(
-            _entry_from_model(candidate, kind=ModelKind.ABSTRACT)
-        )
+        discovered.append(_entry_from_model(candidate, kind=ModelKind.ABSTRACT))
     return tuple(sorted(discovered, key=lambda item: item.label))
+
+
+def _boundary_kind(relative_path: Path) -> str:
+    parts = relative_path.parts
+    path_text = relative_path.as_posix().lower()
+    if "serializers" in parts or "views" in parts:
+        return "api"
+    if "import_files" in parts or "import" in relative_path.stem.lower():
+        return "import"
+    if "management" in parts or "tasks" in parts or "job" in path_text:
+        return "job"
+    if "export" in path_text:
+        return "export"
+    if "schemas" in parts:
+        return "schema"
+    return "service"
+
+
+def _boundary_source_files(source_root: Path) -> Iterable[Path]:
+    for path in sorted(source_root.rglob("*")):
+        if not path.is_file():
+            continue
+        relative_path = path.relative_to(source_root)
+        if relative_path.parts[0] in {"migrations", "models"}:
+            continue
+        if path.suffix in {".py", ".json", ".yaml", ".yml"}:
+            yield path
+
+
+def discover_boundary_references(
+    entries: tuple[ModelInventoryEntry, ...],
+    *,
+    source_root: Path = PROJECT_ROOT / "endoreg_db",
+) -> dict[str, tuple[tuple[str, ...], tuple[str, ...]]]:
+    """Find stable boundary consumers and exact dynamic model references."""
+    class_names = {entry.label.rsplit(".", 1)[-1] for entry in entries}
+    labels_by_class = {entry.label.rsplit(".", 1)[-1]: entry.label for entry in entries}
+    consumers: dict[str, set[str]] = {entry.label: set() for entry in entries}
+    dynamic: dict[str, set[str]] = {entry.label: set() for entry in entries}
+
+    for path in _boundary_source_files(source_root):
+        within_source = path.relative_to(source_root)
+        relative_path = (Path(source_root.name) / within_source).as_posix()
+        kind = _boundary_kind(within_source)
+        text = path.read_text(encoding="utf-8")
+        identifiers: set[str] = set()
+        string_values: set[str] = set()
+        if path.suffix == ".py":
+            tree = ast.parse(text, filename=str(path))
+            identifiers.update(
+                node.id for node in ast.walk(tree) if isinstance(node, ast.Name)
+            )
+            identifiers.update(
+                node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)
+            )
+            string_values.update(
+                node.value
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Constant) and isinstance(node.value, str)
+            )
+        else:
+            identifiers.update(
+                name
+                for name in class_names
+                if re.search(rf"\b{re.escape(name)}\b", text)
+            )
+
+        for class_name in class_names & identifiers:
+            label = labels_by_class[class_name]
+            consumers[label].add(f"{kind}:{relative_path}")
+        for class_name, label in labels_by_class.items():
+            accepted_references = {class_name, label}
+            if string_values & accepted_references:
+                dynamic[label].add(relative_path)
+
+    return {
+        entry.label: (
+            tuple(sorted(consumers[entry.label])),
+            tuple(sorted(dynamic[entry.label])),
+        )
+        for entry in entries
+    }
 
 
 def discover_models() -> tuple[ModelInventoryEntry, ...]:
@@ -305,7 +417,17 @@ def discover_models() -> tuple[ModelInventoryEntry, ...]:
     models_by_label = {item.label: item for item in discovered}
     if len(models_by_label) != len(discovered):
         raise ValueError("Model discovery produced duplicate labels")
-    return tuple(models_by_label[label] for label in sorted(models_by_label))
+    ordered = tuple(models_by_label[label] for label in sorted(models_by_label))
+    references = discover_boundary_references(ordered)
+    return tuple(
+        entry.model_copy(
+            update={
+                "boundary_consumers": list(references[entry.label][0]),
+                "dynamic_model_references": list(references[entry.label][1]),
+            }
+        )
+        for entry in ordered
+    )
 
 
 def _runtime_shape(entry: ModelInventoryEntry) -> tuple[object, ...]:
@@ -321,6 +443,8 @@ def _runtime_shape(entry: ModelInventoryEntry) -> tuple[object, ...]:
         tuple(entry.json_fields),
         entry.custom_clean,
         entry.custom_save,
+        tuple(entry.boundary_consumers),
+        tuple(entry.dynamic_model_references),
         tuple(entry.module_lx_dtypes_imports),
         tuple(entry.module_endoreg_schema_imports),
     )
@@ -362,6 +486,183 @@ def _print_comparison(comparison: ModelInventoryComparison) -> None:
         )
 
 
+def _write_inventory(path: Path, inventory: ModelInventory) -> None:
+    payload = yaml.safe_dump(
+        inventory.model_dump(mode="json"),
+        allow_unicode=True,
+        sort_keys=False,
+        width=100,
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        delete=False,
+    ) as handle:
+        temporary_path = Path(handle.name)
+        handle.write(payload)
+    os.replace(temporary_path, path)
+
+
+def refresh_boundary_metadata(
+    *,
+    path: Path,
+    inventory: ModelInventory,
+    discovered: tuple[ModelInventoryEntry, ...],
+) -> None:
+    discovered_by_label = {item.label: item for item in discovered}
+    refreshed = inventory.model_copy(
+        update={
+            "models": [
+                entry.model_copy(
+                    update={
+                        "boundary_consumers": discovered_by_label[
+                            entry.label
+                        ].boundary_consumers,
+                        "dynamic_model_references": discovered_by_label[
+                            entry.label
+                        ].dynamic_model_references,
+                    }
+                )
+                for entry in inventory.models
+            ]
+        }
+    )
+    _write_inventory(path, refreshed)
+
+
+def refresh_runtime_metadata(
+    *,
+    path: Path,
+    inventory: ModelInventory,
+    discovered: tuple[ModelInventoryEntry, ...],
+) -> None:
+    """Refresh reproducible model metadata without changing review decisions."""
+
+    discovered_by_label = {item.label: item for item in discovered}
+    inventory_labels = {item.label for item in inventory.models}
+    if inventory_labels != set(discovered_by_label):
+        raise ValueError(
+            "Cannot refresh runtime metadata while models are new or stale; "
+            "review their classifications first"
+        )
+    runtime_fields = {
+        "kind",
+        "python_path",
+        "source_path",
+        "base_classes",
+        "db_table",
+        "abstract",
+        "proxy",
+        "managed",
+        "json_fields",
+        "custom_clean",
+        "custom_save",
+        "boundary_consumers",
+        "dynamic_model_references",
+        "module_lx_dtypes_imports",
+        "module_endoreg_schema_imports",
+    }
+    refreshed = inventory.model_copy(
+        update={
+            "models": [
+                entry.model_copy(
+                    update=discovered_by_label[entry.label].model_dump(
+                        include=runtime_fields
+                    )
+                )
+                for entry in inventory.models
+            ]
+        }
+    )
+    _write_inventory(path, refreshed)
+
+
+def timebox_unclassified_models(
+    *,
+    path: Path,
+    inventory: ModelInventory,
+    review_by: date,
+) -> None:
+    timeboxed = inventory.model_copy(
+        update={
+            "models": [
+                entry.model_copy(
+                    update={
+                        "target": ModelTarget.TEMPORARY_EXCEPTION,
+                        "owner": "endoreg_db and lx_dtypes maintainers",
+                        "rationale": (
+                            "Boundary inventory is complete, but canonical "
+                            "contract ownership remains pending its risk-ordered "
+                            "domain-cohort review."
+                        ),
+                        "ownership_evidence": sorted(
+                            {
+                                f"{entry.source_path}:{entry.label.rsplit('.', 1)[-1]}",
+                                (
+                                    "scripts/check_lx_dtypes_model_inventory.py:"
+                                    "discover_boundary_references"
+                                ),
+                            }
+                        ),
+                        "exception_owner": "endoreg_db and lx_dtypes maintainers",
+                        "exception_review_by": review_by,
+                        "exception_exit_criteria": (
+                            "The owning domain cohort reviews every discovered "
+                            "consumer and dynamic reference, selects "
+                            "shared_lx_dtypes_contract, local_boundary_schema, "
+                            "or persistence_only, and records stable contract evidence."
+                        ),
+                    }
+                )
+                if entry.target is ModelTarget.UNCLASSIFIED
+                else entry
+                for entry in inventory.models
+            ]
+        }
+    )
+    payload = yaml.safe_dump(
+        timeboxed.model_dump(mode="json"),
+        allow_unicode=True,
+        sort_keys=False,
+        width=100,
+    )
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        delete=False,
+    ) as handle:
+        temporary_path = Path(handle.name)
+        handle.write(payload)
+    os.replace(temporary_path, path)
+
+
+def classification_errors(
+    inventory: ModelInventory,
+    *,
+    today: date | None = None,
+) -> tuple[str, ...]:
+    effective_today = today or date.today()
+    errors: list[str] = []
+    for entry in inventory.models:
+        if entry.target is ModelTarget.UNCLASSIFIED:
+            errors.append(f"{entry.label} remains unclassified")
+        if (
+            entry.target is ModelTarget.TEMPORARY_EXCEPTION
+            and entry.exception_review_by is not None
+            and entry.exception_review_by < effective_today
+        ):
+            errors.append(
+                f"{entry.label} temporary exception expired on "
+                f"{entry.exception_review_by.isoformat()}"
+            )
+    return tuple(errors)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
@@ -375,13 +676,61 @@ def main() -> int:
         default=DEFAULT_INVENTORY,
         help="Path to the reviewed model inventory YAML.",
     )
+    parser.add_argument(
+        "--refresh-boundaries",
+        action="store_true",
+        help="Atomically refresh discovered consumer and dynamic-reference metadata.",
+    )
+    parser.add_argument(
+        "--refresh-runtime-metadata",
+        action="store_true",
+        help=(
+            "Atomically refresh all reproducible model structure, import, and "
+            "boundary metadata while preserving reviewed classifications."
+        ),
+    )
+    parser.add_argument(
+        "--timebox-unclassified-until",
+        type=date.fromisoformat,
+        metavar="YYYY-MM-DD",
+        help=(
+            "Convert reviewed unclassified entries to explicit temporary "
+            "exceptions with this review deadline."
+        ),
+    )
     args = parser.parse_args()
 
     inventory = load_inventory(args.inventory.resolve())
     discovered = discover_models()
+    if args.refresh_runtime_metadata:
+        refresh_runtime_metadata(
+            path=args.inventory.resolve(),
+            inventory=inventory,
+            discovered=discovered,
+        )
+        inventory = load_inventory(args.inventory.resolve())
+    if args.refresh_boundaries:
+        refresh_boundary_metadata(
+            path=args.inventory.resolve(),
+            inventory=inventory,
+            discovered=discovered,
+        )
+        inventory = load_inventory(args.inventory.resolve())
+    if args.timebox_unclassified_until is not None:
+        timebox_unclassified_models(
+            path=args.inventory.resolve(),
+            inventory=inventory,
+            review_by=args.timebox_unclassified_until,
+        )
+        inventory = load_inventory(args.inventory.resolve())
     comparison = compare_inventory(discovered, inventory)
     _print_comparison(comparison)
     if not comparison.is_clean:
+        return 1
+    errors = classification_errors(inventory)
+    if errors:
+        for error in errors:
+            print(f"CLASSIFICATION {error}")
         return 1
 
     target_counts = {
@@ -389,13 +738,9 @@ def main() -> int:
         for target in ModelTarget
     }
     counts = ", ".join(
-        f"{target.value}={count}"
-        for target, count in target_counts.items()
-        if count
+        f"{target.value}={count}" for target, count in target_counts.items() if count
     )
-    registered_count = sum(
-        item.kind is ModelKind.REGISTERED for item in discovered
-    )
+    registered_count = sum(item.kind is ModelKind.REGISTERED for item in discovered)
     abstract_count = sum(item.kind is ModelKind.ABSTRACT for item in discovered)
     print(
         f"Model inventory clean: {registered_count} registered and "
